@@ -16,6 +16,8 @@ ropey = "1.6"
 serde = { version = "1", features = ["derive"] }
 smallvec = { version = "1.16", features = ["union"] }
 toml = "1.1"
+unicode-segmentation = "1.13"
+unicode-width = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -18,11 +18,20 @@ pub struct ViewId(pub u32);
 /// `Buffer::undo` or `Buffer::redo`.
 type HistoryStep = fn(&mut Buffer, TxId, Author, &Selection) -> Result<Option<Selection>, Error>;
 
-/// A buffer shown on screen, with its own selection.
+/// A buffer shown on screen, with its own selection and scroll position.
 #[derive(Debug, Clone)]
 pub struct View {
     pub buffer: BufferId,
     pub selection: Selection,
+    pub scroll: Scroll,
+}
+
+/// The first thing a view shows: a buffer line, and how many of its wrapped
+/// rows are scrolled past.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Scroll {
+    pub line: usize,
+    pub row: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,8 +98,10 @@ impl Editor {
     /// Opens a second view of the same buffer, with the same selection, and
     /// focuses it.
     pub fn split(&mut self, view: ViewId) -> ViewId {
-        let View { buffer, selection } = self.view(view).clone();
-        self.add_view(buffer, selection)
+        let copy = self.view(view).clone();
+        let id = self.add_view(copy.buffer, copy.selection);
+        self.view_mut(id).scroll = copy.scroll;
+        id
     }
 
     /// Panics if the buffer doesn't exist; ids come from the editor itself.
@@ -259,7 +270,14 @@ impl Editor {
 
     fn add_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
         let id = ViewId(self.next_id());
-        self.views.insert(id, View { buffer, selection });
+        self.views.insert(
+            id,
+            View {
+                buffer,
+                selection,
+                scroll: Scroll::default(),
+            },
+        );
         self.focus = id;
         id
     }

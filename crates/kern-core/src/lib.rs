@@ -6,13 +6,14 @@ mod history;
 pub mod keymap;
 pub mod luau;
 pub mod registry;
+pub mod render;
 
 use std::fmt;
 
 use kern_text::TxId;
 
 pub use buffer::{Buffer, BufferId};
-pub use editor::{Editor, KeyOutcome, View, ViewId, parse_marked};
+pub use editor::{Editor, KeyOutcome, Scroll, View, ViewId, parse_marked};
 pub use history::History;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
