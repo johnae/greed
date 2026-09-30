@@ -1,0 +1,21 @@
+--- The test API, for files in a plugin's `test/` directory, through
+--- `require("@kern/test")`. Run tests with `kern test PLUGIN_DIR`.
+---
+--- Buffers are written with markers: `|` at each cursor or selection head,
+--- and `^` at the anchor of a selection. "^hello |world" selects "hello ".
+
+export type TestContext = {
+	--- Opens a fresh buffer in normal mode.
+	buffer: (self: TestContext, marked: string) -> (),
+	--- Presses keys, e.g. "g g" or "i h i esc".
+	keys: (self: TestContext, keys: string) -> (),
+	run: (self: TestContext, command: string) -> (),
+	--- The buffer with markers.
+	marked: (self: TestContext) -> string,
+	--- Fails unless the buffer, with markers, is `marked`.
+	expect: (self: TestContext, marked: string) -> (),
+	expect_mode: (self: TestContext, mode: string) -> (),
+}
+
+--- Declares a test. Each test runs in a fresh editor.
+return (nil :: any) :: (name: string, body: (t: TestContext) -> ()) -> ()

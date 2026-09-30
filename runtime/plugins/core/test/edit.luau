@@ -3,7 +3,7 @@
 
 local test = require("@kern/test")
 
-local function check(t, before: string, keys: string, after: string)
+local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
 	t:keys(keys)
 	t:expect(after)

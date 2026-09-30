@@ -5,11 +5,11 @@ local motions = require("./motions")
 
 local each_range, point = motions.each_range, motions.point
 
-local function from(range)
+local function from(range: kern.Range): number
 	return math.min(range.anchor, range.head)
 end
 
-local function to(range)
+local function to(range: kern.Range): number
 	return math.max(range.anchor, range.head)
 end
 
@@ -55,9 +55,11 @@ kern.command({
 })
 
 -- Inserts `text` at every cursor; cursors end up after it.
-local function insert_at_heads(ctx, text: string)
-	ctx.buffer:edit(ctx.view:selection(), function(e, range)
-		e:insert(range.head, text)
+local function insert_at_heads(ctx: kern.Context, text: string)
+	ctx.buffer:edit(function(e)
+		for _, range in ctx.view:selection().ranges do
+			e:insert(range.head, text)
+		end
 	end)
 end
 
@@ -83,21 +85,25 @@ kern.command({
 	name = "delete-back",
 	doc = "Delete the character before each cursor",
 	run = function(ctx)
-		ctx.buffer:edit(ctx.view:selection(), function(e, range)
-			if range.head > 0 then
-				e:delete(ctx.buffer:prev_char(range.head), range.head)
+		ctx.buffer:edit(function(e)
+			for _, range in ctx.view:selection().ranges do
+				if range.head > 0 then
+					e:delete(ctx.buffer:prev_char(range.head), range.head)
+				end
 			end
 		end)
 	end,
 })
 
 -- Deletes each selection, or the character under each cursor.
-local function delete_selections(ctx)
-	ctx.buffer:edit(ctx.view:selection(), function(e, range)
-		if range.anchor ~= range.head then
-			e:delete(from(range), to(range))
-		elseif range.head < ctx.buffer:len() then
-			e:delete(range.head, ctx.buffer:next_char(range.head))
+local function delete_selections(ctx: kern.Context)
+	ctx.buffer:edit(function(e)
+		for _, range in ctx.view:selection().ranges do
+			if range.anchor ~= range.head then
+				e:delete(from(range), to(range))
+			elseif range.head < ctx.buffer:len() then
+				e:delete(range.head, ctx.buffer:next_char(range.head))
+			end
 		end
 	end)
 end
@@ -162,3 +168,5 @@ kern.command({
 		ctx.view:redo()
 	end,
 })
+
+return {}

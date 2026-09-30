@@ -7,11 +7,18 @@
 local kern = require("@kern")
 local text = require("./text")
 
+type Buffer = kern.Buffer
+type Range = kern.Range
+type Selection = kern.Selection
+
+-- Finds a new position from a cursor's head.
+type Target = (buffer: Buffer, head: number) -> number
+
 local M = {}
 
 -- Replaces every range with `f(buffer, range)` and sets the result as the
 -- view's selection.
-local function each_range(ctx, f)
+local function each_range(ctx: kern.Context, f: (buffer: Buffer, range: Range) -> Range)
 	local sel = ctx.view:selection()
 	for i, range in sel.ranges do
 		sel.ranges[i] = f(ctx.buffer, range)
@@ -19,12 +26,12 @@ local function each_range(ctx, f)
 	ctx.view:set_selection(sel)
 end
 
-local function point(pos)
+local function point(pos: number): Range
 	return { anchor = pos, head = pos }
 end
 
 -- Registers a command that moves each cursor to `target(buffer, head)`.
-local function move(name, doc, target)
+local function move(name: string, doc: string, target: Target)
 	kern.command({
 		name = name,
 		doc = doc,
@@ -37,7 +44,7 @@ local function move(name, doc, target)
 end
 
 -- Registers a command that selects from each head to `target(buffer, head)`.
-local function select_to(name, doc, target)
+local function select_to(name: string, doc: string, target: Target)
 	kern.command({
 		name = name,
 		doc = doc,
@@ -52,9 +59,9 @@ end
 -- Vertical moves aim for the column each cursor started from, so moving
 -- through a short line doesn't lose it. The goal columns are kept while
 -- nothing but vertical moves has touched the selection.
-local goal = { view = nil :: number?, selection = nil :: any, columns = {} :: { number } }
+local goal: { view: number?, selection: Selection?, columns: { number } } = { columns = {} }
 
-local function same_selection(a, b): boolean
+local function same_selection(a: Selection, b: Selection?): boolean
 	if b == nil or #a.ranges ~= #b.ranges then
 		return false
 	end
@@ -66,7 +73,7 @@ local function same_selection(a, b): boolean
 	return true
 end
 
-local function vertical(name, doc, delta)
+local function vertical(name: string, doc: string, delta: number)
 	kern.command({
 		name = name,
 		doc = doc,

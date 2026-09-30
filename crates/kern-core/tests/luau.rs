@@ -29,11 +29,11 @@ kern.command {
   name = "wrap-in-some",
   doc = "Wrap each selection in Some(...)",
   run = function(ctx)
-    ctx.buffer:edit(ctx.view:selection(), function(e, range)
-      local from = math.min(range.anchor, range.head)
-      local to = math.max(range.anchor, range.head)
-      e:insert(from, "Some(")
-      e:insert(to, ")")
+    ctx.buffer:edit(function(e)
+      for _, range in ctx.view:selection().ranges do
+        e:insert(math.min(range.anchor, range.head), "Some(")
+        e:insert(math.max(range.anchor, range.head), ")")
+      end
     end)
   end,
 }
@@ -86,7 +86,7 @@ fn insert_mode_fallback_gets_the_typed_char() {
         local kern = require("@kern")
         kern.command { name = "insert-char", run = function(ctx)
           local pos = ctx.view:selection().ranges[1].head
-          ctx.buffer:edit(nil, function(e) e:insert(pos, ctx.char) end)
+          ctx.buffer:edit(function(e) e:insert(pos, ctx.char) end)
         end }
         kern.command { name = "insert-mode", run = function() kern.mode.set("insert") end }
         kern.keymap.bind("normal", { i = "insert-mode" })
@@ -291,7 +291,9 @@ fn selections_round_trip_and_are_validated() {
 fn overlapping_edits_are_rejected_without_changing_anything() {
     let h = host("hello");
     let err = h
-        .eval("require('@kern').view():buffer():edit(nil, function(e) e:delete(0, 3) e:delete(2, 4) end)")
+        .eval(
+            "require('@kern').view():buffer():edit(function(e) e:delete(0, 3) e:delete(2, 4) end)",
+        )
         .unwrap_err();
     assert!(err.to_string().contains("overlap"), "{err}");
     assert_eq!(text(&h), "hello");
@@ -302,7 +304,7 @@ fn plugin_edits_are_attributed_to_the_plugin() {
     let h = host("");
     h.load_str(
         "bot",
-        "require('@kern').view():buffer():edit(nil, function(e) e:insert(0, 'hi') end)",
+        "require('@kern').view():buffer():edit(function(e) e:insert(0, 'hi') end)",
     )
     .unwrap();
     let author = h.with_editor(|ed| {
@@ -317,7 +319,7 @@ fn plugin_edits_are_attributed_to_the_plugin() {
 #[test]
 fn views_undo_and_redo() {
     let h = host("");
-    h.eval("require('@kern').view():buffer():edit(nil, function(e) e:insert(0, 'x') end)")
+    h.eval("require('@kern').view():buffer():edit(function(e) e:insert(0, 'x') end)")
         .unwrap();
     assert_eq!(h.eval("require('@kern').view():undo()").unwrap(), "true");
     assert_eq!(text(&h), "");

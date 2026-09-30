@@ -1,6 +1,10 @@
 -- Text helpers shared by motions: character classes, word boundaries and
 -- columns. Positions are byte offsets, as everywhere in the kern API.
 
+local kern = require("@kern")
+
+type Buffer = kern.Buffer
+
 local M = {}
 
 -- "space", "eol", "word" or "punct"; nil past the end of the buffer.
@@ -22,12 +26,12 @@ local function blank(class: string?): boolean
 	return class == "space" or class == "eol"
 end
 
-local function class_at(buffer, pos: number): string?
+local function class_at(buffer: Buffer, pos: number): string?
 	return M.class(buffer:char_at(pos))
 end
 
 -- Skips forward over characters for which `keep(class)` holds.
-local function skip_forward(buffer, pos: number, keep: (string?) -> boolean): number
+local function skip_forward(buffer: Buffer, pos: number, keep: (string?) -> boolean): number
 	local len = buffer:len()
 	while pos < len and keep(class_at(buffer, pos)) do
 		pos = buffer:next_char(pos)
@@ -37,7 +41,7 @@ end
 
 -- The start of the next word after `pos`: past the rest of the current word
 -- and any blanks after it.
-function M.next_word_start(buffer, pos: number): number
+function M.next_word_start(buffer: Buffer, pos: number): number
 	local class = class_at(buffer, pos)
 	if not blank(class) then
 		pos = skip_forward(buffer, pos, function(c)
@@ -48,7 +52,7 @@ function M.next_word_start(buffer, pos: number): number
 end
 
 -- The start of the word before `pos`, skipping blanks in between.
-function M.prev_word_start(buffer, pos: number): number
+function M.prev_word_start(buffer: Buffer, pos: number): number
 	while pos > 0 and blank(class_at(buffer, buffer:prev_char(pos))) do
 		pos = buffer:prev_char(pos)
 	end
@@ -63,7 +67,7 @@ function M.prev_word_start(buffer, pos: number): number
 end
 
 -- The end (exclusive) of the next word at or after `pos`.
-function M.word_end(buffer, pos: number): number
+function M.word_end(buffer: Buffer, pos: number): number
 	pos = skip_forward(buffer, pos, blank)
 	local class = class_at(buffer, pos)
 	return skip_forward(buffer, pos, function(c)
@@ -72,7 +76,7 @@ function M.word_end(buffer, pos: number): number
 end
 
 -- How many characters `pos` is from the start of its line.
-function M.column(buffer, pos: number): number
+function M.column(buffer: Buffer, pos: number): number
 	local p = buffer:line_start(buffer:line_of(pos))
 	local column = 0
 	while p < pos do
@@ -84,7 +88,7 @@ end
 
 -- The position `column` characters into `line`, or the line's end if it is
 -- shorter.
-function M.at_column(buffer, line: number, column: number): number
+function M.at_column(buffer: Buffer, line: number, column: number): number
 	local p = buffer:line_start(line)
 	local stop = buffer:line_end(line)
 	for _ = 1, column do

@@ -399,18 +399,11 @@ impl BufferRef {
         self.with_buffer(lua, |buffer| f(buffer.text()))
     }
 
-    /// Calls `f` with an edit collector, once per range of `selection` or
-    /// once if there is none, then applies everything as one transaction.
-    fn edit(&self, lua: &Lua, selection: Option<Table>, f: &Function) -> LuaResult<()> {
+    /// Calls `f` with an edit collector, then applies everything it collected
+    /// as one transaction.
+    fn edit(&self, lua: &Lua, f: &Function) -> LuaResult<()> {
         let edits = lua.create_userdata(Edits::default())?;
-        match selection {
-            Some(t) => {
-                for range in selection_from_lua(&t)?.ranges() {
-                    f.call::<()>((&edits, range_to_lua(lua, *range)?))?;
-                }
-            }
-            None => f.call::<()>(&edits)?,
-        }
+        f.call::<()>(&edits)?;
         let Edits {
             mut changes,
             selection,
@@ -495,9 +488,7 @@ impl UserData for BufferRef {
                 Ok(b.path().map(|p| p.to_string_lossy().into_owned()))
             })
         });
-        methods.add_method("edit", |lua, this, (selection, f)| {
-            this.edit(lua, selection, &f)
-        });
+        methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
     }
 }
 
