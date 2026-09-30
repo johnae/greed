@@ -300,6 +300,32 @@ impl<M: Measure> Renderer<M> {
         top
     }
 
+    fn text_width(&self, text: &str) -> usize {
+        text.graphemes(true).map(|g| self.measure.width(g)).sum()
+    }
+
+    /// `text` if it fits in `room` cells, or as much of its end as fits after
+    /// an ellipsis. The end of a path is the part that tells files apart.
+    fn keep_end(&self, text: &str, room: usize) -> String {
+        if self.text_width(text) <= room {
+            return text.to_owned();
+        }
+        if room == 0 {
+            return String::new();
+        }
+        let mut kept = 0;
+        let mut start = text.len();
+        for (offset, grapheme) in text.grapheme_indices(true).rev() {
+            let w = self.measure.width(grapheme);
+            if kept + w + 1 > room {
+                break;
+            }
+            kept += w;
+            start = offset;
+        }
+        format!("…{}", &text[start..])
+    }
+
     fn status(&self, editor: &Editor, view: &View, size: Size, message: Option<&str>) -> Row {
         let buffer = editor.buffer(view.buffer);
         let text = buffer.text();
@@ -318,11 +344,11 @@ impl<M: Measure> Renderer<M> {
             ),
         };
         let position = format!("{}:{column} ", line + 1);
-        let used = self.measure.width(&mode)
-            + 1
-            + self.measure.width(&middle)
-            + self.measure.width(&position);
-        let padding = " ".repeat(usize::from(size.width).saturating_sub(used));
+        let room = usize::from(size.width)
+            .saturating_sub(self.text_width(&mode) + 2 + self.text_width(&position));
+        let middle = self.keep_end(&middle, room);
+        // At least one space between the middle and the position.
+        let padding = " ".repeat(room - self.text_width(&middle) + 1);
 
         let mut row = Row::default();
         row.push(&mode, smallvec![Tag::Mode]);

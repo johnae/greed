@@ -1,16 +1,18 @@
-//! The `kern` command line. For now: a headless REPL for driving the editor
-//! core from a terminal, a script, or an agent, and a test runner for
-//! plugins.
+//! The `kern` command line: the editor itself, a headless REPL for driving
+//! the editor core from a script or an agent, and a test runner for plugins.
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod tui;
+
 use kern_core::Editor;
-use kern_core::luau::{Host, run_tests};
+use kern_core::luau::{Host, HostError, run_tests};
+use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern repl [FILE]\n       kern test [PLUGIN_DIR]";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -25,10 +27,12 @@ Type Luau to evaluate it, or one of:
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
+        [] => edit(None),
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => test(&core_plugin()),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
+        [file] if !file.starts_with('-') => edit(Some(PathBuf::from(file))),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -55,15 +59,30 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
-fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    let text = match &file {
-        Some(path) if path.exists() => std::fs::read_to_string(path)?,
-        _ => String::new(),
-    };
+/// The text of `file`, or nothing if there is no file yet.
+fn read(file: Option<&Path>) -> io::Result<String> {
+    match file {
+        Some(path) if path.exists() => std::fs::read_to_string(path),
+        _ => Ok(String::new()),
+    }
+}
+
+/// An editor with `text` open and the core plugin loaded.
+fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
     let mut editor = Editor::new(ClientId(1));
-    editor.open("file", &text, file);
+    editor.open("file", text, file);
     let host = Host::new(editor)?;
     host.load_dir(&core_plugin())?;
+    Ok(host)
+}
+
+fn edit(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let text = read(file.as_deref())?;
+    tui::run(server::spawn(move || host(&text, file)))
+}
+
+fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let host = host(&read(file.as_deref())?, file)?;
 
     let interactive = io::stdin().is_terminal();
     if interactive {

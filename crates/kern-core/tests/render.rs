@@ -145,3 +145,19 @@ fn the_status_line_shows_mode_file_and_position() {
     assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
     assert_eq!(f.mode, "normal");
 }
+
+#[test]
+fn long_paths_keep_their_end_on_the_status_line() {
+    let (text, selection) = parse_marked("|x").unwrap();
+    let mut ed = Editor::new(ClientId(1));
+    let (_, view) = ed.open(
+        "file",
+        &text,
+        Some("/very/long/path/to/some/notes.md".into()),
+    );
+    ed.view_mut(view).selection = selection;
+    let f = frame(&mut ed, 30, 2);
+    let status = f.rows.last().unwrap().text();
+    assert_eq!(status, " NORMAL  …o/some/notes.md 1:1 ");
+    assert_eq!(status.chars().count(), 30);
+}
