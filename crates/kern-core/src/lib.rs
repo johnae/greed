@@ -2,6 +2,8 @@
 
 mod buffer;
 mod history;
+pub mod keymap;
+pub mod registry;
 
 use std::fmt;
 
