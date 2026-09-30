@@ -10,6 +10,7 @@ rust-version = "1.90"
 [workspace.dependencies]
 proptest = "1.11"
 ropey = "1.6"
+smallvec = { version = "1.16", features = ["union"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

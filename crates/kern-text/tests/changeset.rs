@@ -1,11 +1,8 @@
+mod common;
+
+use common::{apply, doc_and_changeset, doc_and_two_changesets};
 use kern_text::{Assoc, ChangeSet, Error, Operation, Rope};
 use proptest::prelude::*;
-
-fn apply(cs: &ChangeSet, doc: &str) -> String {
-    let mut rope = Rope::from_str(doc);
-    cs.apply(&mut rope).expect("apply");
-    rope.to_string()
-}
 
 // --- Examples -------------------------------------------------------------
 
@@ -162,72 +159,6 @@ fn invert_restores_original() {
 }
 
 // --- Properties -----------------------------------------------------------
-
-/// Text with multi-byte characters and newlines so byte/char mistakes show up.
-fn text() -> impl Strategy<Value = String> {
-    "[ab é😀\n]{0,24}"
-}
-
-#[derive(Debug, Clone)]
-enum Step {
-    Retain(usize),
-    Delete(usize),
-    Insert(String),
-}
-
-fn step() -> impl Strategy<Value = Step> {
-    prop_oneof![
-        (0..6usize).prop_map(Step::Retain),
-        (0..6usize).prop_map(Step::Delete),
-        "[xé😀\n]{0,4}".prop_map(Step::Insert),
-    ]
-}
-
-/// Builds a change set over `doc` by walking it char by char, so every
-/// retain and delete lands on a char boundary.
-fn build(doc: &str, steps: &[Step]) -> ChangeSet {
-    let chars: Vec<usize> = doc
-        .char_indices()
-        .map(|(i, _)| i)
-        .chain([doc.len()])
-        .collect();
-    let n_chars = chars.len() - 1;
-    let mut ci = 0;
-    let mut cs = ChangeSet::default();
-    let advance = |n: usize, ci: &mut usize| {
-        let end = (*ci + n).min(n_chars);
-        let bytes = chars[end] - chars[*ci];
-        *ci = end;
-        bytes
-    };
-    for s in steps {
-        match s {
-            Step::Retain(n) => cs.retain(advance(*n, &mut ci)),
-            Step::Delete(n) => cs.delete(advance(*n, &mut ci)),
-            Step::Insert(t) => cs.insert(t),
-        }
-    }
-    cs.retain(doc.len() - chars[ci]);
-    cs
-}
-
-fn changeset_for(doc: String) -> impl Strategy<Value = (String, ChangeSet)> {
-    prop::collection::vec(step(), 0..8).prop_map(move |steps| {
-        let cs = build(&doc, &steps);
-        (doc.clone(), cs)
-    })
-}
-
-fn doc_and_changeset() -> impl Strategy<Value = (String, ChangeSet)> {
-    text().prop_flat_map(changeset_for)
-}
-
-fn doc_and_two_changesets() -> impl Strategy<Value = (String, ChangeSet, ChangeSet)> {
-    doc_and_changeset().prop_flat_map(|(doc, a)| {
-        let after = apply(&a, &doc);
-        changeset_for(after).prop_map(move |(_, b)| (doc.clone(), a.clone(), b))
-    })
-}
 
 fn assert_canonical(cs: &ChangeSet) {
     for op in cs.ops() {

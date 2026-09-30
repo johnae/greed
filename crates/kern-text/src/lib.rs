@@ -3,11 +3,13 @@
 //! Positions throughout are byte offsets into UTF-8 text.
 
 mod changeset;
+mod selection;
 
 use std::fmt;
 
 pub use changeset::{Assoc, ChangeSet, Operation};
 pub use ropey::Rope;
+pub use selection::{Range, Selection};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -19,6 +21,8 @@ pub enum Error {
     OverlappingChanges { at: usize },
     /// A position was past the end of the document.
     OutOfBounds { pos: usize, len: usize },
+    /// A selection must have at least one range.
+    EmptySelection,
 }
 
 impl fmt::Display for Error {
@@ -36,6 +40,7 @@ impl fmt::Display for Error {
             Error::OutOfBounds { pos, len } => {
                 write!(f, "byte {pos} is past the end of a {len} byte document")
             }
+            Error::EmptySelection => write!(f, "a selection needs at least one range"),
         }
     }
 }
