@@ -28,25 +28,6 @@ fn parse(marked: &str) -> (String, Selection) {
     )
 }
 
-fn render(host: &Host) -> String {
-    host.with_editor(|ed| {
-        let view = ed.view(ed.focus());
-        let mut text = ed.buffer(view.buffer).text().to_string();
-        let mut marks: Vec<(usize, char)> = Vec::new();
-        for r in view.selection.ranges() {
-            marks.push((r.head, '|'));
-            if !r.is_empty() {
-                marks.push((r.anchor, '^'));
-            }
-        }
-        marks.sort_by(|a, b| b.cmp(a));
-        for (pos, mark) in marks {
-            text.insert(pos, mark);
-        }
-        text
-    })
-}
-
 fn editor(marked: &str) -> Host {
     let (text, selection) = parse(marked);
     let mut editor = Editor::new(ClientId(1));
@@ -65,7 +46,11 @@ fn editor(marked: &str) -> Host {
 fn check(before: &str, keys: &str, after: &str) {
     let host = editor(before);
     host.press_keys(keys).unwrap();
-    assert_eq!(render(&host), after, "{before:?} + {keys:?}");
+    assert_eq!(
+        host.with_editor(|ed| ed.marked_text(ed.focus())),
+        after,
+        "{before:?} + {keys:?}"
+    );
 }
 
 #[test]

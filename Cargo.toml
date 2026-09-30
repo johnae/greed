@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.90"
 
 [workspace.dependencies]
+kern-core = { path = "crates/kern-core" }
 kern-text = { path = "crates/kern-text" }
 mlua = { version = "0.12", features = ["luau"] }
 proptest = "1.11"

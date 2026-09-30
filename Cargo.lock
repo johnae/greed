@@ -147,6 +147,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kern"
+version = "0.1.0"
+dependencies = [
+ "kern-core",
+ "kern-text",
+]
+
+[[package]]
 name = "kern-core"
 version = "0.1.0"
 dependencies = [

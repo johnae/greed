@@ -1,0 +1,13 @@
+[package]
+name = "kern"
+description = "A small, fast, extensible editor for programmers and authors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kern-core.workspace = true
+kern-text.workspace = true
+
+[lints]
+workspace = true

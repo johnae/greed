@@ -199,6 +199,28 @@ impl Editor {
         }
     }
 
+    /// The text of `view`'s buffer with its selection marked: `|` at each
+    /// head and `^` at the anchor of each non-empty range. For tests and the
+    /// REPL.
+    pub fn marked_text(&self, view: ViewId) -> String {
+        let view = self.view(view);
+        let mut text = self.buffer(view.buffer).text().to_string();
+        let mut marks: Vec<(usize, char)> = view
+            .selection
+            .ranges()
+            .iter()
+            .flat_map(|r| {
+                let anchor = (!r.is_empty()).then_some((r.anchor, '^'));
+                std::iter::once((r.head, '|')).chain(anchor)
+            })
+            .collect();
+        marks.sort_unstable_by(|a, b| b.cmp(a));
+        for (pos, mark) in marks {
+            text.insert(pos, mark);
+        }
+        text
+    }
+
     /// Queues a message for the user.
     pub fn echo(&mut self, message: impl Into<String>) {
         self.messages.push(message.into());

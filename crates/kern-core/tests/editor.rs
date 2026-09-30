@@ -140,3 +140,12 @@ fn messages_are_collected_and_taken() {
     assert_eq!(ed.take_messages(), ["hello", "again"]);
     assert!(ed.take_messages().is_empty());
 }
+
+#[test]
+fn marked_text_shows_heads_and_anchors() {
+    let mut ed = editor("hello world");
+    let v = ed.focus();
+    ed.view_mut(v).selection =
+        Selection::new([Range::new(0, 5), Range::point(8), Range::new(11, 9)], 0).unwrap();
+    assert_eq!(ed.marked_text(v), "^hello| wo|r|ld^");
+}
