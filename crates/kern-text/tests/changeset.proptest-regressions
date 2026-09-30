@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 74db9ad19ad2754070f6e73ef3f3e140d4645c9b84f2cfad604ee337fb465012 # shrinks to (doc, cs) = (" ", ChangeSet { ops: [Insert("\n"), Retain(1)], len: 1, len_after: 2 })
+cc ea2c70e3a626922a6f15757691f28504ffd59af3247c3da73e73d4ea0524638c # shrinks to (_doc, a, b) = ("ba", ChangeSet { ops: [Delete(2)], len: 2, len_after: 0 }, ChangeSet { ops: [Insert("é")], len: 0, len_after: 2 })

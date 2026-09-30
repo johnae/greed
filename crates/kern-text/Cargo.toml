@@ -1,0 +1,15 @@
+[package]
+name = "kern-text"
+description = "Text model for Kern: ropes, selections, change sets and transactions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ropey.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
