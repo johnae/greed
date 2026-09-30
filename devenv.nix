@@ -13,11 +13,10 @@
     cargo-deny
     bacon
 
-    # Luau: runtime/analyzer, language server, formatter, linter
+    # Luau: runtime/analyzer, language server, formatter
     luau
     luau-lsp
     stylua
-    selene
 
     tree-sitter
   ];
