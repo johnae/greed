@@ -1,11 +1,9 @@
-//! The `kern` module plugins get from `require("kern")`, and the buffer and
+//! The `kern` module plugins get from `require("@kern")`, and the buffer and
 //! view handles passed to commands.
 //!
 //! Positions are 0-based byte offsets and lines are 0-based, matching LSP.
 //! A range is `{ anchor = n, head = n }`; a selection is
 //! `{ ranges = { range, ... }, primary = i }` with a 1-based `primary`.
-
-use std::path::PathBuf;
 
 use kern_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, Value, Variadic};
@@ -16,56 +14,6 @@ use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue
 use crate::{Buffer, KeyOutcome, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
-
-/// The environment for `owner`'s code, created on first use.
-pub(super) fn plugin_env(lua: &Lua, owner: &str, dir: Option<PathBuf>) -> LuaResult<Table> {
-    if let Some(env) = state(lua).envs.get(owner) {
-        return Ok(env.clone());
-    }
-    fresh_plugin_env(lua, owner, dir)
-}
-
-/// A new environment for `owner`: its own globals over the read-only
-/// standard library, with `require` resolving `"kern"` and files in `dir`.
-pub(super) fn fresh_plugin_env(lua: &Lua, owner: &str, dir: Option<PathBuf>) -> LuaResult<Table> {
-    let owner: PluginId = owner.into();
-    let env = lua.create_table()?;
-    let meta = lua.create_table()?;
-    meta.set("__index", lua.globals())?;
-    env.set_metatable(Some(meta))?;
-
-    let kern = kern_module(lua, &owner)?;
-    let loaded = lua.create_table()?;
-    let require_env = env.clone();
-    let require_owner = owner.clone();
-    env.set(
-        "require",
-        lua.create_function(move |lua, name: String| {
-            if name == "kern" {
-                return Ok(Value::Table(kern.clone()));
-            }
-            if let Some(module) = loaded.get::<Option<Value>>(name.as_str())? {
-                return Ok(module);
-            }
-            let Some(dir) = &dir else {
-                return Err(mlua::Error::runtime(format!("can't require {name:?} here")));
-            };
-            let file = format!("{}.luau", name.trim_start_matches("./"));
-            let source = std::fs::read_to_string(dir.join(&file))
-                .map_err(|err| mlua::Error::runtime(format!("can't require {name:?}: {err}")))?;
-            let module: Value = lua
-                .load(source)
-                .set_name(format!("@{require_owner}/{file}"))
-                .set_environment(require_env.clone())
-                .eval()?;
-            loaded.set(name.as_str(), module.clone())?;
-            Ok(module)
-        })?,
-    )?;
-
-    state_mut(lua).envs.insert(owner, env.clone());
-    Ok(env)
-}
 
 /// Runs a command as the user, with `keys` as the sequence that triggered
 /// it.
@@ -135,7 +83,7 @@ fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
     first_error.map_or(Ok(()), Err)
 }
 
-fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
+pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let kern = lua.create_table()?;
 
     let o = owner.clone();

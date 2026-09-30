@@ -1,6 +1,6 @@
 -- Modes and editing commands: insert, append, delete, change, undo.
 
-local kern = require("kern")
+local kern = require("@kern")
 local motions = require("./motions")
 
 local each_range, point = motions.each_range, motions.point

@@ -1,11 +1,14 @@
 //! `kern test`: runs a plugin's `test/*.luau` files against a headless
 //! editor.
 //!
-//! A test file calls `test(name, function(t) ... end)` for each test. Every
+//! A test file gets `test` from `require("@kern/test")` and calls
+//! `test(name, function(t) ... end)` for each test. Every
 //! test runs in a fresh host with the plugins loaded, so tests can't affect
 //! each other. `t` sets up a buffer, presses keys and checks the result:
 //!
 //! ```luau
+//! local test = require("@kern/test")
+//!
 //! test("w selects a word", function(t)
 //!     t:buffer("|hello world")
 //!     t:keys("w")
@@ -23,6 +26,7 @@ use std::rc::Rc;
 use kern_text::ClientId;
 use mlua::{Function, Lua, UserData, UserDataMethods};
 
+use super::modules::Modules;
 use super::{Host, HostError, api, budgeted, state, state_mut};
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
@@ -39,6 +43,10 @@ pub struct TestResult {
 /// Runs every test in `dir/test/*.luau`. Each test gets a fresh host with
 /// `plugins` loaded, in order.
 pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, HostError> {
+    let dir = &dir.canonicalize().map_err(|err| HostError::Manifest {
+        path: dir.to_owned(),
+        message: err.to_string(),
+    })?;
     let mut files: Vec<PathBuf> = match std::fs::read_dir(dir.join("test")) {
         Ok(entries) => entries
             .filter_map(|entry| entry.ok().map(|e| e.path()))
@@ -56,12 +64,8 @@ pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, Hos
 
     let mut results = Vec::new();
     for file in files {
-        let source = std::fs::read_to_string(&file).map_err(|err| HostError::Manifest {
-            path: file.clone(),
-            message: err.to_string(),
-        })?;
-        for name in fresh_host(plugins)?.test_names(&file, &source)? {
-            let failure = fresh_host(plugins)?.run_test(&file, &source, &name)?;
+        for name in fresh_host(plugins)?.test_names(dir, &file)? {
+            let failure = fresh_host(plugins)?.run_test(dir, &file, &name)?;
             results.push(TestResult {
                 file: file.clone(),
                 name,
@@ -84,7 +88,7 @@ fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
 
 impl Host {
     /// The names of the tests in a test file, in order.
-    fn test_names(&self, file: &Path, source: &str) -> Result<Vec<String>, HostError> {
+    fn test_names(&self, root: &Path, file: &Path) -> Result<Vec<String>, HostError> {
         let names = Rc::new(RefCell::new(Vec::new()));
         let collected = names.clone();
         let test = self
@@ -93,12 +97,12 @@ impl Host {
                 collected.borrow_mut().push(name);
                 Ok(())
             })?;
-        self.run_test_file(file, source, test)?;
+        self.run_test_file(root, file, test)?;
         Ok(names.take())
     }
 
     /// Runs the test called `name`. Returns why it failed, or `None`.
-    fn run_test(&self, file: &Path, source: &str, name: &str) -> Result<Option<String>, HostError> {
+    fn run_test(&self, root: &Path, file: &Path, name: &str) -> Result<Option<String>, HostError> {
         let target = name.to_owned();
         let test = self
             .lua
@@ -109,22 +113,15 @@ impl Host {
                 Ok(())
             })?;
         Ok(self
-            .run_test_file(file, source, test)
+            .run_test_file(root, file, test)
             .err()
             .map(|err| failure_message(&err)))
     }
 
-    fn run_test_file(&self, file: &Path, source: &str, test: Function) -> Result<(), HostError> {
-        let env = api::fresh_plugin_env(&self.lua, "test", file.parent().map(Path::to_owned))?;
-        env.set("test", test)?;
-        budgeted(&self.lua, || {
-            self.lua
-                .load(source)
-                .set_name(format!("@{}", file.display()))
-                .set_environment(env)
-                .exec()
-                .map_err(HostError::from)
-        })
+    fn run_test_file(&self, root: &Path, file: &Path, test: Function) -> Result<(), HostError> {
+        let modules = Modules::new(&self.lua, "test", Some(root.to_owned()), Some(test))?;
+        budgeted(&self.lua, || modules.run_file(&self.lua, file))?;
+        Ok(())
     }
 }
 

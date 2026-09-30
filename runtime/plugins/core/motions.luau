@@ -4,7 +4,7 @@
 -- cursor is an empty range; a motion like `next-word` selects the text it
 -- moves over, with the anchor where it started.
 
-local kern = require("kern")
+local kern = require("@kern")
 local text = require("./text")
 
 local M = {}

@@ -1,6 +1,8 @@
 -- Buffers are written with markers: `|` is a selection's head and `^` its
 -- anchor (left out for cursors). "^hello |world" selects "hello ".
 
+local test = require("@kern/test")
+
 local function check(t, before: string, keys: string, after: string)
 	t:buffer(before)
 	t:keys(keys)

@@ -28,7 +28,7 @@ fn keys_edit_and_show_the_buffer() {
 
 #[test]
 fn luau_expressions_print_their_value() {
-    let out = repl(&[], "1 + 2\nrequire('kern').echo('hello')\n");
+    let out = repl(&[], "1 + 2\nrequire('@kern').echo('hello')\n");
     assert_eq!(out, "3\nhello\n");
 }
 

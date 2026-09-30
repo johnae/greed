@@ -2,10 +2,10 @@
 -- the same API any plugin uses. Read this to see how commands and keymaps
 -- fit together; copy any part of it into your own config to change it.
 
-local kern = require("kern")
+local kern = require("@kern")
 
-require("./motions")
-require("./edit")
+require("@self/motions")
+require("@self/edit")
 
 kern.keymap.bind("normal", {
 	h = "move-left",

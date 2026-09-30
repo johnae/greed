@@ -24,7 +24,7 @@ fn focus(host: &Host) -> ViewId {
 }
 
 const WRAP: &str = r#"
-local kern = require("kern")
+local kern = require("@kern")
 kern.command {
   name = "wrap-in-some",
   doc = "Wrap each selection in Some(...)",
@@ -83,7 +83,7 @@ fn insert_mode_fallback_gets_the_typed_char() {
     h.load_str(
         "insert",
         r#"
-        local kern = require("kern")
+        local kern = require("@kern")
         kern.command { name = "insert-char", run = function(ctx)
           local pos = ctx.view:selection().ranges[1].head
           ctx.buffer:edit(nil, function(e) e:insert(pos, ctx.char) end)
@@ -113,7 +113,7 @@ fn errors_name_the_plugin_and_line() {
     let h = host("");
     h.load_str(
         "broken",
-        "local kern = require('kern')\nkern.command { name = 'boom', run = function()\n  error('nope')\nend }",
+        "local kern = require('@kern')\nkern.command { name = 'boom', run = function()\n  error('nope')\nend }",
     )
     .unwrap();
     let err = h.run("boom").unwrap_err().to_string();
@@ -137,7 +137,7 @@ fn unknown_commands_are_reported() {
     assert!(matches!(h.run("nope"), Err(HostError::UnknownCommand(_))));
     h.load_str(
         "k",
-        "require('kern').keymap.bind('normal', { x = 'missing' })",
+        "require('@kern').keymap.bind('normal', { x = 'missing' })",
     )
     .unwrap();
     assert!(matches!(
@@ -152,7 +152,7 @@ fn reloading_replaces_registrations() {
     h.load_str("p", WRAP).unwrap();
     h.load_str(
         "p",
-        "require('kern').command { name = 'other', run = function() end }",
+        "require('@kern').command { name = 'other', run = function() end }",
     )
     .unwrap();
     h.with_registry(|reg| {
@@ -175,7 +175,7 @@ fn plugin_directories_load_with_local_requires() {
     std::fs::write(dir.join("words.luau"), "return { hello = 'hi there' }\n").unwrap();
     std::fs::write(
         dir.join("init.luau"),
-        "local kern = require('kern')\nlocal words = require('./words')\nkern.command { name = 'greet', run = function() kern.echo(words.hello) end }\n",
+        "local kern = require('@kern')\nlocal words = require('@self/words')\nkern.command { name = 'greet', run = function() kern.echo(words.hello) end }\n",
     )
     .unwrap();
 
@@ -193,7 +193,7 @@ fn eval_returns_values_and_keeps_globals() {
     assert_eq!(h.eval("x = 40").unwrap(), "");
     assert_eq!(h.eval("x + 2").unwrap(), "42");
     assert_eq!(
-        h.eval("require('kern').view():buffer():text()").unwrap(),
+        h.eval("require('@kern').view():buffer():text()").unwrap(),
         "hello"
     );
 }
@@ -204,13 +204,13 @@ fn mode_changes_emit_an_event() {
     h.load_str(
         "watch",
         r#"
-        local kern = require("kern")
+        local kern = require("@kern")
         kern.on("mode.changed", function(ev) kern.echo(ev.from .. "->" .. ev.to) end)
         "#,
     )
     .unwrap();
-    h.eval("require('kern').mode.set('insert')").unwrap();
-    h.eval("require('kern').mode.set('insert')").unwrap();
+    h.eval("require('@kern').mode.set('insert')").unwrap();
+    h.eval("require('@kern').mode.set('insert')").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["normal->insert"]);
 }
 
@@ -219,21 +219,21 @@ fn options_round_trip_through_luau() {
     let h = host("");
     h.load_str(
         "opts",
-        "local o = require('kern').option\no.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }",
+        "local o = require('@kern').option\no.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }",
     )
     .unwrap();
     assert_eq!(
-        h.eval("require('kern').option.get('tab-width')").unwrap(),
+        h.eval("require('@kern').option.get('tab-width')").unwrap(),
         "4"
     );
-    h.eval("require('kern').option.set('tab-width', 2)")
+    h.eval("require('@kern').option.set('tab-width', 2)")
         .unwrap();
     assert_eq!(
         h.with_registry(|reg| reg.option("tab-width").cloned()),
         Some(Value::Int(2))
     );
     assert!(
-        h.eval("require('kern').option.set('tab-width', 'x')")
+        h.eval("require('@kern').option.set('tab-width', 'x')")
             .is_err()
     );
 }
@@ -243,7 +243,7 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
     let h = host("aé\nb\r\nlast");
     let eval = |s: &str| {
         h.eval(&format!(
-            "(function() local b = require('kern').view():buffer(); return {s} end)()"
+            "(function() local b = require('@kern').view():buffer(); return {s} end)()"
         ))
         .unwrap()
     };
@@ -259,11 +259,11 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
     assert_eq!(eval("b:prev_char(3)"), "1");
     assert_eq!(eval("b:slice(0, 3)"), "aé");
     assert!(
-        h.eval("require('kern').view():buffer():char_at(2)")
+        h.eval("require('@kern').view():buffer():char_at(2)")
             .is_err()
     );
     assert!(
-        h.eval("require('kern').view():buffer():slice(0, 99)")
+        h.eval("require('@kern').view():buffer():slice(0, 99)")
             .is_err()
     );
 }
@@ -271,18 +271,18 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
 #[test]
 fn selections_round_trip_and_are_validated() {
     let h = host("hello world");
-    h.eval("require('kern').view():set_selection({ ranges = { { anchor = 0, head = 5 }, { anchor = 6, head = 11 } }, primary = 2 })")
+    h.eval("require('@kern').view():set_selection({ ranges = { { anchor = 0, head = 5 }, { anchor = 6, head = 11 } }, primary = 2 })")
         .unwrap();
     let sel = selection(&h);
     assert_eq!(sel.ranges(), &[Range::new(0, 5), Range::new(6, 11)]);
     assert_eq!(sel.primary(), Range::new(6, 11));
     assert_eq!(
-        h.eval("require('kern').view():selection().primary")
+        h.eval("require('@kern').view():selection().primary")
             .unwrap(),
         "2"
     );
     assert!(
-        h.eval("require('kern').view():set_selection({ ranges = { { anchor = 0, head = 50 } } })")
+        h.eval("require('@kern').view():set_selection({ ranges = { { anchor = 0, head = 50 } } })")
             .is_err()
     );
 }
@@ -291,7 +291,7 @@ fn selections_round_trip_and_are_validated() {
 fn overlapping_edits_are_rejected_without_changing_anything() {
     let h = host("hello");
     let err = h
-        .eval("require('kern').view():buffer():edit(nil, function(e) e:delete(0, 3) e:delete(2, 4) end)")
+        .eval("require('@kern').view():buffer():edit(nil, function(e) e:delete(0, 3) e:delete(2, 4) end)")
         .unwrap_err();
     assert!(err.to_string().contains("overlap"), "{err}");
     assert_eq!(text(&h), "hello");
@@ -302,7 +302,7 @@ fn plugin_edits_are_attributed_to_the_plugin() {
     let h = host("");
     h.load_str(
         "bot",
-        "require('kern').view():buffer():edit(nil, function(e) e:insert(0, 'hi') end)",
+        "require('@kern').view():buffer():edit(nil, function(e) e:insert(0, 'hi') end)",
     )
     .unwrap();
     let author = h.with_editor(|ed| {
@@ -317,11 +317,78 @@ fn plugin_edits_are_attributed_to_the_plugin() {
 #[test]
 fn views_undo_and_redo() {
     let h = host("");
-    h.eval("require('kern').view():buffer():edit(nil, function(e) e:insert(0, 'x') end)")
+    h.eval("require('@kern').view():buffer():edit(nil, function(e) e:insert(0, 'x') end)")
         .unwrap();
-    assert_eq!(h.eval("require('kern').view():undo()").unwrap(), "true");
+    assert_eq!(h.eval("require('@kern').view():undo()").unwrap(), "true");
     assert_eq!(text(&h), "");
-    assert_eq!(h.eval("require('kern').view():undo()").unwrap(), "false");
-    assert_eq!(h.eval("require('kern').view():redo()").unwrap(), "true");
+    assert_eq!(h.eval("require('@kern').view():undo()").unwrap(), "false");
+    assert_eq!(h.eval("require('@kern').view():redo()").unwrap(), "true");
     assert_eq!(text(&h), "x");
+}
+
+/// Writes a plugin called `name` with `files` into a fresh temp directory.
+fn plugin_dir(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("kern-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for (path, source) in files {
+        let path = dir.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, source).unwrap();
+    }
+    std::fs::write(dir.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
+    dir
+}
+
+#[test]
+fn requires_resolve_like_luau_tooling() {
+    let dir = plugin_dir(
+        "requires",
+        &[
+            (
+                "init.luau",
+                "local a = require('@self/lib/a')\nrequire('@kern').echo(a.name, a.b)",
+            ),
+            ("lib/a.luau", "return { name = 'a', b = require('./b') }"),
+            ("lib/b.luau", "return 'b'"),
+        ],
+    );
+    let h = host("");
+    h.load_dir(&dir).unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["a b"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn bad_requires_explain_themselves() {
+    let cases = [
+        ("bare", "require('kern')", "use \"@kern\""),
+        (
+            "self-outside-init",
+            "require('./lib/x')",
+            "outside the plugin",
+        ),
+        (
+            "test-api",
+            "require('@kern/test')",
+            "only available in test files",
+        ),
+        ("missing", "require('@self/nope')", "no such file"),
+    ];
+    for (name, source, expected) in cases {
+        let dir = plugin_dir(name, &[("init.luau", source)]);
+        let err = host("").load_dir(&dir).unwrap_err().to_string();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(err.contains(expected), "{name}: {err}");
+    }
+
+    let dir = plugin_dir(
+        "self-in-module",
+        &[
+            ("init.luau", "require('@self/a')"),
+            ("a.luau", "return require('@self/b')"),
+        ],
+    );
+    let err = host("").load_dir(&dir).unwrap_err().to_string();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(err.contains("@self is for init.luau"), "{err}");
 }

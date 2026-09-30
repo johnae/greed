@@ -26,7 +26,7 @@ fn failures_name_the_line_and_what_differed() {
     std::fs::create_dir_all(dir.join("test")).unwrap();
     std::fs::write(
         dir.join("test/sample.luau"),
-        "test('passes', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('a|b')\nend)\n\
+        "local test = require('@kern/test')\ntest('passes', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('a|b')\nend)\n\
          test('fails', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('ab|')\nend)\n\
          test('errors', function(t)\n  t:run('no-such-command')\nend)\n",
     )
@@ -43,7 +43,7 @@ fn failures_name_the_line_and_what_differed() {
     assert_eq!(summary[1].0, "fails");
     let failure = summary[1].1.unwrap();
     assert!(
-        failure.contains("line 9: expected buffer \"ab|\", got \"a|b\""),
+        failure.contains("line 10: expected buffer \"ab|\", got \"a|b\""),
         "{failure}"
     );
     assert!(summary[2].1.unwrap().contains("no-such-command"));

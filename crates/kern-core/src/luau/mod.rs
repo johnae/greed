@@ -6,6 +6,7 @@
 //! commands can run other commands and emit events freely.
 
 mod api;
+mod modules;
 mod testing;
 
 use std::cell::Cell;
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, Table, VmState};
+use mlua::{Function, Lua, VmState};
 use serde::Deserialize;
 
 pub use testing::{TestResult, run_tests};
@@ -23,6 +24,7 @@ pub use testing::{TestResult, run_tests};
 use crate::Editor;
 use crate::keymap::{Key, ParseError};
 use crate::registry::{PluginId, Registry};
+use modules::Modules;
 
 /// How long one call into Luau may run before it is stopped.
 const BUDGET: Duration = Duration::from_secs(2);
@@ -34,9 +36,11 @@ pub(crate) struct State {
     pub editor: Editor,
     pub registry: Registry<Function>,
     plugins: HashMap<PluginId, Plugin>,
-    envs: HashMap<PluginId, Table>,
+    /// The REPL's environment, kept so its globals persist.
+    repl: Option<Modules>,
 }
 
+#[derive(Clone)]
 enum Plugin {
     /// A plugin directory with a `plugin.toml`.
     Dir { dir: PathBuf, entry: String },
@@ -110,7 +114,7 @@ impl Host {
             editor,
             registry: Registry::default(),
             plugins: HashMap::new(),
-            envs: HashMap::new(),
+            repl: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -149,6 +153,10 @@ impl Host {
     /// Loads the plugin in `dir`, described by its `plugin.toml`.
     pub fn load_dir(&self, dir: &Path) -> Result<PluginId, HostError> {
         let path = dir.join("plugin.toml");
+        let dir = dir.canonicalize().map_err(|err| HostError::Manifest {
+            path: path.clone(),
+            message: err.to_string(),
+        })?;
         let manifest: Manifest = std::fs::read_to_string(&path)
             .map_err(|err| err.to_string())
             .and_then(|text| toml::from_str(&text).map_err(|err| err.to_string()))
@@ -158,7 +166,7 @@ impl Host {
             })?;
         let name: PluginId = manifest.name.into();
         let plugin = Plugin::Dir {
-            dir: dir.to_owned(),
+            dir,
             entry: manifest.entry,
         };
         self.install(&name, plugin)?;
@@ -195,19 +203,13 @@ impl Host {
     /// Evaluates Luau typed at the REPL. Expressions return their value as
     /// text; globals persist between calls.
     pub fn eval(&self, source: &str) -> Result<String, HostError> {
-        let env = api::plugin_env(&self.lua, REPL, None)?;
+        let modules = self.repl_modules()?;
         let expression = format!("return {source}");
         let chunk = match self.lua.load(&expression).into_function() {
             Ok(_) => expression.as_str(),
             Err(_) => source,
         };
-        let values: mlua::MultiValue = budgeted(&self.lua, || {
-            self.lua
-                .load(chunk)
-                .set_name("=repl")
-                .set_environment(env)
-                .eval()
-        })?;
+        let values = budgeted(&self.lua, || modules.eval(&self.lua, chunk, "=repl"))?;
         let parts: Vec<String> = values.iter().map(api::display).collect();
         Ok(parts.join("\t"))
     }
@@ -231,26 +233,29 @@ impl Host {
     }
 
     fn run_plugin(&self, name: &str) -> Result<(), HostError> {
-        let (source, chunk_name, dir) = match &state(&self.lua).plugins[name] {
+        let plugin = state(&self.lua).plugins[name].clone();
+        match plugin {
             Plugin::Dir { dir, entry } => {
-                let path = dir.join(entry);
-                let source = std::fs::read_to_string(&path).map_err(|err| HostError::Manifest {
-                    path: path.clone(),
-                    message: err.to_string(),
-                })?;
-                (source, format!("@{name}/{entry}"), Some(dir.clone()))
+                let file = dir.join(entry);
+                let modules = Modules::new(&self.lua, name, Some(dir), None)?;
+                budgeted(&self.lua, || modules.run_file(&self.lua, &file))?;
             }
-            Plugin::Inline(source) => (source.to_string(), format!("@{name}"), None),
-        };
-        let env = api::fresh_plugin_env(&self.lua, name, dir)?;
-        budgeted(&self.lua, || {
-            self.lua
-                .load(source)
-                .set_name(chunk_name)
-                .set_environment(env)
-                .exec()
-                .map_err(HostError::from)
-        })
+            Plugin::Inline(source) => {
+                let modules = Modules::new(&self.lua, name, None, None)?;
+                let chunk_name = format!("@{name}");
+                budgeted(&self.lua, || modules.eval(&self.lua, &source, &chunk_name))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn repl_modules(&self) -> Result<Modules, HostError> {
+        if let Some(modules) = &state(&self.lua).repl {
+            return Ok(modules.clone());
+        }
+        let modules = Modules::new(&self.lua, REPL, None, None)?;
+        state_mut(&self.lua).repl = Some(modules.clone());
+        Ok(modules)
     }
 }
 
