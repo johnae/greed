@@ -59,6 +59,7 @@ pub struct Editor {
     /// Edits made while a group is open become one undo step.
     undo_group: Option<u64>,
     next_group: u64,
+    quit_requested: bool,
 }
 
 impl Editor {
@@ -76,6 +77,7 @@ impl Editor {
             messages: Vec::new(),
             undo_group: None,
             next_group: 0,
+            quit_requested: false,
         }
     }
 
@@ -251,6 +253,15 @@ impl Editor {
             text.insert(pos, mark);
         }
         text
+    }
+
+    /// Asks whoever runs the editor to stop it.
+    pub fn request_quit(&mut self) {
+        self.quit_requested = true;
+    }
+
+    pub fn quit_requested(&self) -> bool {
+        self.quit_requested
     }
 
     /// Queues a message for the user.

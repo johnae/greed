@@ -6,6 +6,7 @@ local kern = require("@kern")
 
 require("@self/motions")
 require("@self/edit")
+require("@self/file")
 
 kern.keymap.bind("normal", {
 	h = "move-left",
@@ -46,6 +47,12 @@ kern.keymap.bind("insert", {
 	right = "move-right",
 	up = "move-up",
 	down = "move-down",
+})
+
+-- An empty layer applies in every mode.
+kern.keymap.bind({}, {
+	["ctrl-s"] = "save",
+	["ctrl-q"] = "quit",
 })
 
 kern.keymap.fallback("insert", "insert-char")

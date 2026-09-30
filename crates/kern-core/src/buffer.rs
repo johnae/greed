@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -57,6 +58,17 @@ impl Buffer {
 
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
+    }
+
+    /// Writes the text to the buffer's file.
+    pub fn save(&self) -> std::io::Result<()> {
+        let path = self
+            .path
+            .as_deref()
+            .ok_or_else(|| std::io::Error::other("this buffer has no file"))?;
+        let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
+        self.text.write_to(&mut file)?;
+        file.flush()
     }
 
     pub fn history(&self) -> &History {

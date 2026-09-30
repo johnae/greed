@@ -51,6 +51,8 @@ export type Buffer = {
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
 	--- together, as one undoable change, when it returns.
 	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
+	--- Writes the buffer to its file.
+	save: (self: Buffer) -> (),
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -131,6 +133,8 @@ export type Kern = {
 	echo: (...any) -> (),
 	--- The focused view.
 	view: () -> View,
+	--- Asks the editor to exit.
+	quit: () -> (),
 	keymap: Keymap,
 	mode: Mode,
 	option: Options,

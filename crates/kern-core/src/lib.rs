@@ -7,6 +7,7 @@ pub mod keymap;
 pub mod luau;
 pub mod registry;
 pub mod render;
+pub mod server;
 
 use std::fmt;
 

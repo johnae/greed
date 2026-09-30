@@ -142,6 +142,14 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
+    kern.set(
+        "quit",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).editor.request_quit();
+            Ok(())
+        })?,
+    )?;
+
     kern.set("keymap", keymap_module(lua, owner)?)?;
     kern.set("mode", mode_module(lua)?)?;
     kern.set("option", option_module(lua, owner)?)?;
@@ -489,6 +497,9 @@ impl UserData for BufferRef {
             })
         });
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
+        methods.add_method("save", |lua, this, ()| {
+            this.with_buffer(lua, |b| b.save().map_err(mlua::Error::external))
+        });
     }
 }
 
