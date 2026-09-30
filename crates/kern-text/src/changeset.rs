@@ -316,7 +316,7 @@ impl ChangeSet {
     }
 }
 
-fn is_char_boundary(rope: &Rope, byte: usize) -> bool {
+pub(crate) fn is_char_boundary(rope: &Rope, byte: usize) -> bool {
     rope.char_to_byte(rope.byte_to_char(byte)) == byte
 }
 

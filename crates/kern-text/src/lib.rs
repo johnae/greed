@@ -4,12 +4,14 @@
 
 mod changeset;
 mod selection;
+mod transaction;
 
 use std::fmt;
 
 pub use changeset::{Assoc, ChangeSet, Operation};
 pub use ropey::Rope;
 pub use selection::{Range, Selection};
+pub use transaction::{AgentId, Author, ClientId, Replica, Transaction, TxId, TxMeta};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
