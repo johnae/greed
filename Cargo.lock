@@ -81,6 +81,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kern-core"
+version = "0.1.0"
+dependencies = [
+ "kern-text",
+ "proptest",
+ "smallvec",
+]
+
+[[package]]
 name = "kern-text"
 version = "0.1.0"
 dependencies = [

@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.90"
 
 [workspace.dependencies]
+kern-text = { path = "crates/kern-text" }
 proptest = "1.11"
 ropey = "1.6"
 smallvec = { version = "1.16", features = ["union"] }

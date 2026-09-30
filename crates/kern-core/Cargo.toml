@@ -1,0 +1,16 @@
+[package]
+name = "kern-core"
+description = "Kern's editor core: buffers, history, registry, keymaps and the Luau host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kern-text.workspace = true
+smallvec.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

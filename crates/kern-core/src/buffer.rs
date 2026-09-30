@@ -1,0 +1,145 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use kern_text::{Author, Rope, Selection, Transaction, TxId, TxMeta};
+use smallvec::SmallVec;
+
+use crate::Error;
+use crate::history::{History, Step};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BufferId(pub u32);
+
+/// Open text, backed by a file or not.
+#[derive(Debug)]
+pub struct Buffer {
+    id: BufferId,
+    text: Rope,
+    kind: Arc<str>,
+    path: Option<PathBuf>,
+    history: History,
+    /// The latest transaction(s): the buffer's version. Empty until the first
+    /// edit.
+    version: SmallVec<[TxId; 1]>,
+}
+
+impl Buffer {
+    /// Creates a buffer. `kind` says what it is (`"file"`, `"terminal"`, …)
+    /// and picks its keymaps and event handlers.
+    pub fn new(id: BufferId, kind: impl Into<Arc<str>>, text: &str) -> Self {
+        Self {
+            id,
+            text: Rope::from_str(text),
+            kind: kind.into(),
+            path: None,
+            history: History::default(),
+            version: SmallVec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    pub fn id(&self) -> BufferId {
+        self.id
+    }
+
+    pub fn text(&self) -> &Rope {
+        &self.text
+    }
+
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn version(&self) -> &[TxId] {
+        &self.version
+    }
+
+    /// Applies a transaction made against the current version and records it
+    /// as an undo step. Returns the selection that follows it.
+    pub fn apply(&mut self, tx: Transaction, current: &Selection) -> Result<Selection, Error> {
+        self.check_version(&tx.meta)?;
+        let before = self.text.clone();
+        let after = tx.apply(&mut self.text, current)?;
+        let inverse = tx.changes.invert(&before)?;
+        self.version = SmallVec::from_buf([tx.meta.id]);
+        self.history
+            .commit(tx, inverse, current.clone(), after.clone());
+        Ok(after)
+    }
+
+    /// Undoes the current undo step as a new transaction with id `id`.
+    /// Returns the restored selection, or `None` if there is nothing to undo.
+    pub fn undo(
+        &mut self,
+        id: TxId,
+        author: Author,
+        current: &Selection,
+    ) -> Result<Option<Selection>, Error> {
+        let Some(step) = self.history.undo_step() else {
+            return Ok(None);
+        };
+        let selection = self.step(step, id, author, "undo", current)?;
+        self.history.move_up();
+        Ok(Some(selection))
+    }
+
+    /// Redoes the most recently undone step as a new transaction with id
+    /// `id`. Returns the restored selection, or `None` if there is nothing to
+    /// redo.
+    pub fn redo(
+        &mut self,
+        id: TxId,
+        author: Author,
+        current: &Selection,
+    ) -> Result<Option<Selection>, Error> {
+        let Some(step) = self.history.redo_step() else {
+            return Ok(None);
+        };
+        let selection = self.step(step, id, author, "redo", current)?;
+        self.history.move_down();
+        Ok(Some(selection))
+    }
+
+    fn step(
+        &mut self,
+        step: Step,
+        id: TxId,
+        author: Author,
+        cause: &str,
+        current: &Selection,
+    ) -> Result<Selection, Error> {
+        let tx = Transaction {
+            changes: step.changes,
+            selection: Some(step.selection),
+            meta: TxMeta::new(id, &self.version, author).with_cause(cause),
+        };
+        let selection = tx.apply(&mut self.text, current)?;
+        self.version = SmallVec::from_buf([id]);
+        self.history.record(tx);
+        Ok(selection)
+    }
+
+    fn check_version(&self, meta: &TxMeta) -> Result<(), Error> {
+        if meta.parents.as_slice() == self.version.as_slice() {
+            Ok(())
+        } else {
+            Err(Error::StaleVersion {
+                expected: self.version.to_vec(),
+                actual: meta.parents.to_vec(),
+            })
+        }
+    }
+}
