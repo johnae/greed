@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
   languages.rust = {
@@ -29,4 +29,7 @@
     };
     stylua.enable = true;
   };
+
+  # Run the hooks on commit, not every time the shell starts.
+  tasks."devenv:git-hooks:run".before = lib.mkForce [ ];
 }
