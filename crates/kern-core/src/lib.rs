@@ -1,6 +1,7 @@
 //! Kern's editor core: buffers, history, registry, keymaps and the Luau host.
 
 mod buffer;
+mod editor;
 mod history;
 pub mod keymap;
 pub mod registry;
@@ -10,6 +11,7 @@ use std::fmt;
 use kern_text::TxId;
 
 pub use buffer::{Buffer, BufferId};
+pub use editor::{Editor, KeyOutcome, View, ViewId};
 pub use history::History;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

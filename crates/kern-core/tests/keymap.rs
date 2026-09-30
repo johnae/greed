@@ -181,3 +181,16 @@ fn describe_lists_where_a_key_is_bound() {
         ]
     );
 }
+
+#[test]
+fn fallbacks_are_per_mode_and_owned() {
+    let mut km = Keymap::default();
+    km.set_fallback("insert", "insert-key", "core");
+    km.set_fallback("insert", "my-insert", "user/me");
+    assert_eq!(km.fallback("insert").map(|c| &**c), Some("my-insert"));
+    assert_eq!(km.fallback("normal"), None);
+    km.remove_owned_by("user/me");
+    assert_eq!(km.fallback("insert").map(|c| &**c), Some("insert-key"));
+    km.remove_owned_by("core");
+    assert_eq!(km.fallback("insert"), None);
+}

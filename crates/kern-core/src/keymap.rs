@@ -316,6 +316,9 @@ enum Node {
 #[derive(Debug, Default)]
 pub struct Keymap {
     layers: HashMap<Layer, HashMap<Key, Node>>,
+    /// Per mode, the command that handles a single unbound key (e.g. insert
+    /// mode inserting the character). Oldest first; the last is active.
+    fallbacks: HashMap<Arc<str>, Vec<Binding>>,
 }
 
 impl Keymap {
@@ -397,12 +400,36 @@ impl Keymap {
             .collect()
     }
 
+    /// Sets the command that handles an unbound key in `mode`.
+    pub fn set_fallback(
+        &mut self,
+        mode: &str,
+        command: impl Into<Arc<str>>,
+        owner: impl Into<PluginId>,
+    ) {
+        self.fallbacks
+            .entry(mode.into())
+            .or_default()
+            .push(Binding {
+                command: command.into(),
+                owner: owner.into(),
+            });
+    }
+
+    pub fn fallback(&self, mode: &str) -> Option<&Arc<str>> {
+        self.fallbacks.get(mode)?.last().map(|b| &b.command)
+    }
+
     /// Removes every binding `owner` made.
     pub fn remove_owned_by(&mut self, owner: &str) {
         for children in self.layers.values_mut() {
             prune(children, owner);
         }
         self.layers.retain(|_, children| !children.is_empty());
+        for bindings in self.fallbacks.values_mut() {
+            bindings.retain(|b| &*b.owner != owner);
+        }
+        self.fallbacks.retain(|_, bindings| !bindings.is_empty());
     }
 
     fn lookup(&self, layer: &Layer, keys: &[Key]) -> Option<&Node> {
