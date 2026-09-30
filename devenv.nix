@@ -6,19 +6,19 @@
     toolchainFile = ./rust-toolchain.toml;
   };
 
-  packages = with pkgs; [
+  packages = [
     # Rust workflow
-    cargo-nextest
-    cargo-insta
-    cargo-deny
-    bacon
+    pkgs.cargo-nextest
+    pkgs.cargo-insta
+    pkgs.cargo-deny
+    pkgs.bacon
 
     # Luau: runtime/analyzer, language server, formatter
-    luau
-    luau-lsp
-    stylua
+    pkgs.luau
+    pkgs.luau-lsp
+    pkgs.stylua
 
-    tree-sitter
+    pkgs.tree-sitter
   ];
 
   git-hooks.hooks = {
