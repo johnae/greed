@@ -9,9 +9,12 @@ rust-version = "1.90"
 
 [workspace.dependencies]
 kern-text = { path = "crates/kern-text" }
+mlua = { version = "0.12", features = ["luau"] }
 proptest = "1.11"
 ropey = "1.6"
+serde = { version = "1", features = ["derive"] }
 smallvec = { version = "1.16", features = ["union"] }
+toml = "1.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

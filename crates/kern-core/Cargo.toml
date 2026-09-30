@@ -7,7 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 kern-text.workspace = true
+mlua.workspace = true
+serde.workspace = true
 smallvec.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

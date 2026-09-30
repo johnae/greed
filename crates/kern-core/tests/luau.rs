@@ -1,0 +1,327 @@
+use std::time::Duration;
+
+use kern_core::luau::{Host, HostError};
+use kern_core::registry::Value;
+use kern_core::{Editor, ViewId};
+use kern_text::{Author, ClientId, Range, Selection};
+
+fn host(text: &str) -> Host {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", text, None);
+    Host::new(editor).unwrap()
+}
+
+fn text(host: &Host) -> String {
+    host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string())
+}
+
+fn selection(host: &Host) -> Selection {
+    host.with_editor(|ed| ed.view(ed.focus()).selection.clone())
+}
+
+fn focus(host: &Host) -> ViewId {
+    host.with_editor(Editor::focus)
+}
+
+const WRAP: &str = r#"
+local kern = require("kern")
+kern.command {
+  name = "wrap-in-some",
+  doc = "Wrap each selection in Some(...)",
+  run = function(ctx)
+    ctx.buffer:edit(ctx.view:selection(), function(e, range)
+      local from = math.min(range.anchor, range.head)
+      local to = math.max(range.anchor, range.head)
+      e:insert(from, "Some(")
+      e:insert(to, ")")
+    end)
+  end,
+}
+kern.keymap.bind("normal", { ["m s"] = "wrap-in-some" })
+"#;
+
+#[test]
+fn commands_edit_through_transactions() {
+    let h = host("let x = 1;");
+    h.load_str("wrap", WRAP).unwrap();
+    h.with_editor_mut(|ed| {
+        let v = ed.focus();
+        ed.view_mut(v).selection = Selection::single(8, 9);
+    });
+    h.press_keys("m s").unwrap();
+    assert_eq!(text(&h), "let x = Some(1);");
+    assert_eq!(selection(&h).primary(), Range::new(13, 14));
+
+    let author = h.with_editor(|ed| {
+        let buffer = ed.buffer(ed.view(ed.focus()).buffer);
+        buffer.history().log()[0].meta.author.clone()
+    });
+    assert_eq!(author, Author::User(ClientId(1)));
+
+    let view = focus(&h);
+    assert!(h.with_editor_mut(|ed| ed.undo(view)).unwrap());
+    assert_eq!(text(&h), "let x = 1;");
+}
+
+#[test]
+fn commands_record_where_they_were_defined() {
+    let h = host("");
+    h.load_str("wrap", WRAP).unwrap();
+    h.with_registry(|reg| {
+        let cmd = reg.command("wrap-in-some").unwrap();
+        assert_eq!(&*cmd.doc, "Wrap each selection in Some(...)");
+        assert_eq!(&*cmd.owner, "wrap");
+        let source = cmd.source.as_ref().unwrap();
+        assert_eq!(source.line, 3);
+        assert!(source.file.contains("wrap"), "{source:?}");
+    });
+}
+
+#[test]
+fn insert_mode_fallback_gets_the_typed_char() {
+    let h = host("");
+    h.load_str(
+        "insert",
+        r#"
+        local kern = require("kern")
+        kern.command { name = "insert-char", run = function(ctx)
+          local pos = ctx.view:selection().ranges[1].head
+          ctx.buffer:edit(nil, function(e) e:insert(pos, ctx.char) end)
+        end }
+        kern.command { name = "insert-mode", run = function() kern.mode.set("insert") end }
+        kern.keymap.bind("normal", { i = "insert-mode" })
+        kern.keymap.fallback("insert", "insert-char")
+        "#,
+    )
+    .unwrap();
+    h.press_keys("i h é y").unwrap();
+    assert_eq!(text(&h), "héy");
+    assert_eq!(selection(&h).primary(), Range::point(4));
+}
+
+#[test]
+fn plugins_have_separate_globals_and_a_read_only_stdlib() {
+    let h = host("");
+    h.load_str("a", "shared = 1").unwrap();
+    h.load_str("b", "assert(shared == nil, 'leaked')").unwrap();
+    let err = h.load_str("c", "string.len = nil").unwrap_err();
+    assert!(err.to_string().contains("readonly"), "{err}");
+}
+
+#[test]
+fn errors_name_the_plugin_and_line() {
+    let h = host("");
+    h.load_str(
+        "broken",
+        "local kern = require('kern')\nkern.command { name = 'boom', run = function()\n  error('nope')\nend }",
+    )
+    .unwrap();
+    let err = h.run("boom").unwrap_err().to_string();
+    assert!(err.contains("broken:3"), "{err}");
+    assert!(err.contains("nope"), "{err}");
+}
+
+#[test]
+fn runaway_code_is_stopped() {
+    let h = host("");
+    h.set_budget(Duration::from_millis(50));
+    let err = h.load_str("spin", "while true do end").unwrap_err();
+    assert!(err.to_string().contains("stopped after running"), "{err}");
+    // The host still works afterwards.
+    assert_eq!(h.eval("1 + 1").unwrap(), "2");
+}
+
+#[test]
+fn unknown_commands_are_reported() {
+    let h = host("");
+    assert!(matches!(h.run("nope"), Err(HostError::UnknownCommand(_))));
+    h.load_str(
+        "k",
+        "require('kern').keymap.bind('normal', { x = 'missing' })",
+    )
+    .unwrap();
+    assert!(matches!(
+        h.press_keys("x"),
+        Err(HostError::UnknownCommand(_))
+    ));
+}
+
+#[test]
+fn reloading_replaces_registrations() {
+    let h = host("");
+    h.load_str("p", WRAP).unwrap();
+    h.load_str(
+        "p",
+        "require('kern').command { name = 'other', run = function() end }",
+    )
+    .unwrap();
+    h.with_registry(|reg| {
+        assert!(reg.command("wrap-in-some").is_none());
+        assert!(reg.command("other").is_some());
+    });
+    h.with_editor(|ed| {
+        assert!(ed.keymap().fallback("normal").is_none());
+    });
+    h.reload("p").unwrap();
+    assert_eq!(h.with_registry(|reg| reg.definitions("other").len()), 1);
+    assert!(matches!(h.reload("nope"), Err(HostError::UnknownPlugin(_))));
+}
+
+#[test]
+fn plugin_directories_load_with_local_requires() {
+    let dir = std::env::temp_dir().join(format!("kern-plugin-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("plugin.toml"), "name = \"greeter\"\n").unwrap();
+    std::fs::write(dir.join("words.luau"), "return { hello = 'hi there' }\n").unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "local kern = require('kern')\nlocal words = require('./words')\nkern.command { name = 'greet', run = function() kern.echo(words.hello) end }\n",
+    )
+    .unwrap();
+
+    let h = host("");
+    let name = h.load_dir(&dir).unwrap();
+    assert_eq!(&*name, "greeter");
+    h.run("greet").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["hi there"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn eval_returns_values_and_keeps_globals() {
+    let h = host("hello");
+    assert_eq!(h.eval("x = 40").unwrap(), "");
+    assert_eq!(h.eval("x + 2").unwrap(), "42");
+    assert_eq!(
+        h.eval("require('kern').view():buffer():text()").unwrap(),
+        "hello"
+    );
+}
+
+#[test]
+fn mode_changes_emit_an_event() {
+    let h = host("");
+    h.load_str(
+        "watch",
+        r#"
+        local kern = require("kern")
+        kern.on("mode.changed", function(ev) kern.echo(ev.from .. "->" .. ev.to) end)
+        "#,
+    )
+    .unwrap();
+    h.eval("require('kern').mode.set('insert')").unwrap();
+    h.eval("require('kern').mode.set('insert')").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["normal->insert"]);
+}
+
+#[test]
+fn options_round_trip_through_luau() {
+    let h = host("");
+    h.load_str(
+        "opts",
+        "local o = require('kern').option\no.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }",
+    )
+    .unwrap();
+    assert_eq!(
+        h.eval("require('kern').option.get('tab-width')").unwrap(),
+        "4"
+    );
+    h.eval("require('kern').option.set('tab-width', 2)")
+        .unwrap();
+    assert_eq!(
+        h.with_registry(|reg| reg.option("tab-width").cloned()),
+        Some(Value::Int(2))
+    );
+    assert!(
+        h.eval("require('kern').option.set('tab-width', 'x')")
+            .is_err()
+    );
+}
+
+#[test]
+fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
+    let h = host("aé\nb\r\nlast");
+    let eval = |s: &str| {
+        h.eval(&format!(
+            "(function() local b = require('kern').view():buffer(); return {s} end)()"
+        ))
+        .unwrap()
+    };
+    assert_eq!(eval("b:len()"), "11");
+    assert_eq!(eval("b:line_count()"), "3");
+    assert_eq!(eval("b:line_of(4)"), "1");
+    assert_eq!(eval("b:line_start(2)"), "7");
+    assert_eq!(eval("b:line_end(0)"), "3");
+    assert_eq!(eval("b:line_end(1)"), "5");
+    assert_eq!(eval("b:line_end(2)"), "11");
+    assert_eq!(eval("b:char_at(1)"), "é");
+    assert_eq!(eval("b:next_char(1)"), "3");
+    assert_eq!(eval("b:prev_char(3)"), "1");
+    assert_eq!(eval("b:slice(0, 3)"), "aé");
+    assert!(
+        h.eval("require('kern').view():buffer():char_at(2)")
+            .is_err()
+    );
+    assert!(
+        h.eval("require('kern').view():buffer():slice(0, 99)")
+            .is_err()
+    );
+}
+
+#[test]
+fn selections_round_trip_and_are_validated() {
+    let h = host("hello world");
+    h.eval("require('kern').view():set_selection({ ranges = { { anchor = 0, head = 5 }, { anchor = 6, head = 11 } }, primary = 2 })")
+        .unwrap();
+    let sel = selection(&h);
+    assert_eq!(sel.ranges(), &[Range::new(0, 5), Range::new(6, 11)]);
+    assert_eq!(sel.primary(), Range::new(6, 11));
+    assert_eq!(
+        h.eval("require('kern').view():selection().primary")
+            .unwrap(),
+        "2"
+    );
+    assert!(
+        h.eval("require('kern').view():set_selection({ ranges = { { anchor = 0, head = 50 } } })")
+            .is_err()
+    );
+}
+
+#[test]
+fn overlapping_edits_are_rejected_without_changing_anything() {
+    let h = host("hello");
+    let err = h
+        .eval("require('kern').view():buffer():edit(nil, function(e) e:delete(0, 3) e:delete(2, 4) end)")
+        .unwrap_err();
+    assert!(err.to_string().contains("overlap"), "{err}");
+    assert_eq!(text(&h), "hello");
+}
+
+#[test]
+fn plugin_edits_are_attributed_to_the_plugin() {
+    let h = host("");
+    h.load_str(
+        "bot",
+        "require('kern').view():buffer():edit(nil, function(e) e:insert(0, 'hi') end)",
+    )
+    .unwrap();
+    let author = h.with_editor(|ed| {
+        ed.buffer(ed.view(ed.focus()).buffer).history().log()[0]
+            .meta
+            .author
+            .clone()
+    });
+    assert_eq!(author, Author::Plugin("bot".into()));
+}
+
+#[test]
+fn views_undo_and_redo() {
+    let h = host("");
+    h.eval("require('kern').view():buffer():edit(nil, function(e) e:insert(0, 'x') end)")
+        .unwrap();
+    assert_eq!(h.eval("require('kern').view():undo()").unwrap(), "true");
+    assert_eq!(text(&h), "");
+    assert_eq!(h.eval("require('kern').view():undo()").unwrap(), "false");
+    assert_eq!(h.eval("require('kern').view():redo()").unwrap(), "true");
+    assert_eq!(text(&h), "x");
+}
