@@ -8,6 +8,7 @@ pub mod luau;
 pub mod registry;
 pub mod render;
 pub mod server;
+pub mod syntax;
 
 use std::fmt;
 

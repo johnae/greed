@@ -111,6 +111,10 @@ impl Editor {
         &self.buffers[&id]
     }
 
+    pub fn buffers(&self) -> impl Iterator<Item = &Buffer> {
+        self.buffers.values()
+    }
+
     pub fn view(&self, id: ViewId) -> &View {
         &self.views[&id]
     }

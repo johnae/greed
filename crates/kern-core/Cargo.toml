@@ -6,11 +6,21 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+crossbeam-channel.workspace = true
 kern-text.workspace = true
 mlua.workspace = true
+ropey.workspace = true
 serde.workspace = true
 smallvec.workspace = true
+streaming-iterator.workspace = true
 toml.workspace = true
+tree-sitter.workspace = true
+tree-sitter-json.workspace = true
+tree-sitter-language.workspace = true
+tree-sitter-luau.workspace = true
+tree-sitter-md.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-toml-ng.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 

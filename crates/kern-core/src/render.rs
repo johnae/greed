@@ -7,12 +7,20 @@
 //! client supplies, so motions and scrolling agree with what's on screen.
 
 use std::borrow::Cow;
+use std::ops::Range;
+use std::sync::Arc;
 
 use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Editor, Scroll, View};
+use kern_text::Rope;
+
+use crate::syntax::Highlight;
+use crate::{BufferId, Editor, Scroll, View};
+
+/// Finds the highlights overlapping a byte range of a buffer.
+pub type Highlighter<'a> = dyn Fn(BufferId, &Rope, Range<usize>) -> Vec<Highlight> + 'a;
 
 /// How wide text is on screen.
 pub trait Measure {
@@ -53,6 +61,9 @@ pub enum Tag {
     Status,
     Mode,
     Message,
+    /// Syntax, named by a tree-sitter capture such as "keyword" or
+    /// "function.macro".
+    Syntax(Arc<str>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,7 +130,13 @@ impl<M: Measure> Renderer<M> {
 
     /// Lays out the focused view, scrolling it to keep the primary cursor
     /// visible.
-    pub fn frame(&self, editor: &mut Editor, size: Size, message: Option<&str>) -> Frame {
+    pub fn frame(
+        &self,
+        editor: &mut Editor,
+        size: Size,
+        message: Option<&str>,
+        highlighter: &Highlighter,
+    ) -> Frame {
         let view_id = editor.focus();
         let text_rows = usize::from(size.height.saturating_sub(1));
         let gutter = gutter_width(editor, editor.view(view_id));
@@ -130,6 +147,8 @@ impl<M: Measure> Renderer<M> {
 
         let view = editor.view(view_id);
         let text = editor.buffer(view.buffer).text();
+        let visible = visible_bytes(text, scroll, text_rows);
+        let syntax = paint(highlighter(view.buffer, text, visible.clone()), &visible);
         let head = view.selection.primary().head;
         let mut rows = Vec::with_capacity(usize::from(size.height));
         let mut cursor = None;
@@ -161,7 +180,14 @@ impl<M: Measure> Renderer<M> {
                             row: u16::try_from(rows.len()).unwrap_or(u16::MAX),
                         });
                     }
-                    let cell_tags = cell_tags(view, cell);
+                    let mut cell_tags = cell_tags(view, cell);
+                    if let Some(capture) = cell
+                        .byte
+                        .checked_sub(visible.start)
+                        .and_then(|i| syntax.get(i)?.clone())
+                    {
+                        cell_tags.insert(0, Tag::Syntax(capture));
+                    }
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push(&cell.text, cell_tags);
                     }
@@ -384,4 +410,32 @@ fn cell_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
         }
     }
     out
+}
+
+/// The bytes the rows from `scroll` can show: whole lines, at most one per
+/// row.
+fn visible_bytes(text: &Rope, scroll: Scroll, rows: usize) -> Range<usize> {
+    let end_line = (scroll.line + rows + 1).min(text.len_lines());
+    text.line_to_byte(scroll.line)..text.line_to_byte(end_line)
+}
+
+/// The capture that applies to each byte of `range`. Inner captures win over
+/// the ones around them, and for the same text the first capture wins, which
+/// is how tree-sitter highlight queries are written.
+fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc<str>>> {
+    highlights.sort_by_key(|h| (h.range.start, std::cmp::Reverse(h.range.end)));
+    let mut painted = vec![None; range.len()];
+    let mut previous: Option<Range<usize>> = None;
+    for highlight in highlights {
+        if previous.as_ref() == Some(&highlight.range) {
+            continue;
+        }
+        let start = highlight.range.start.clamp(range.start, range.end) - range.start;
+        let end = highlight.range.end.clamp(range.start, range.end) - range.start;
+        for byte in &mut painted[start..end] {
+            *byte = Some(highlight.capture.clone());
+        }
+        previous = Some(highlight.range);
+    }
+    painted
 }

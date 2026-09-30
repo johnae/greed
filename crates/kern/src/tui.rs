@@ -168,9 +168,27 @@ fn style(tags: &[Tag]) -> ContentStyle {
             Tag::Status => style.on(Color::DarkGrey).white(),
             Tag::Mode => style.on(Color::Blue).black().attribute(Attribute::Bold),
             Tag::Message => style.on(Color::DarkGrey).yellow(),
+            Tag::Syntax(capture) => syntax_style(style, capture),
         };
     }
     style
+}
+
+/// Colors for tree-sitter captures, chosen by the first part of the name
+/// ("function" for "function.macro").
+fn syntax_style(style: ContentStyle, capture: &str) -> ContentStyle {
+    if capture == "text.title" {
+        return style.blue().attribute(Attribute::Bold);
+    }
+    match capture.split('.').next().unwrap_or(capture) {
+        "keyword" | "conditional" | "repeat" | "include" | "exception" => style.magenta(),
+        "string" | "character" => style.green(),
+        "comment" => style.dark_grey().attribute(Attribute::Italic),
+        "function" | "method" | "constructor" => style.blue(),
+        "type" | "attribute" | "label" => style.yellow(),
+        "constant" | "number" | "boolean" | "float" | "escape" => style.cyan(),
+        _ => style,
+    }
 }
 
 #[cfg(test)]

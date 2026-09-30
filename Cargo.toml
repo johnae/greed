@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.90"
 
 [workspace.dependencies]
+crossbeam-channel = "0.5"
 crossterm = "0.29"
 kern-core = { path = "crates/kern-core" }
 kern-text = { path = "crates/kern-text" }
@@ -16,7 +17,15 @@ proptest = "1.11"
 ropey = "1.6"
 serde = { version = "1", features = ["derive"] }
 smallvec = { version = "1.16", features = ["union"] }
+streaming-iterator = "0.1"
 toml = "1.1"
+tree-sitter = "0.27"
+tree-sitter-json = "0.24"
+tree-sitter-language = "0.1"
+tree-sitter-luau = "1.2"
+tree-sitter-md = "0.5"
+tree-sitter-rust = "0.24"
+tree-sitter-toml-ng = "0.7"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 

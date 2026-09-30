@@ -11,7 +11,7 @@ fn editor(marked: &str) -> Editor {
 }
 
 fn frame(ed: &mut Editor, width: u16, height: u16) -> Frame {
-    Renderer::new(CellWidth).frame(ed, Size { width, height }, None)
+    Renderer::new(CellWidth).frame(ed, Size { width, height }, None, &|_, _, _| Vec::new())
 }
 
 /// The text of each row, without the status line.
@@ -141,6 +141,7 @@ fn the_status_line_shows_mode_file_and_position() {
             height: 3,
         },
         Some("saved"),
+        &|_, _, _| Vec::new(),
     );
     assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
     assert_eq!(f.mode, "normal");
@@ -160,4 +161,48 @@ fn long_paths_keep_their_end_on_the_status_line() {
     let status = f.rows.last().unwrap().text();
     assert_eq!(status, " NORMAL  …o/some/notes.md 1:1 ");
     assert_eq!(status.chars().count(), 30);
+}
+
+#[test]
+fn highlights_tag_text_with_inner_and_first_captures_winning() {
+    use kern_core::syntax::Highlight;
+    use std::sync::Arc;
+
+    let mut ed = editor("|let s = \"a\\n\";");
+    let h = |range: std::ops::Range<usize>, capture: &str| Highlight {
+        range,
+        capture: Arc::from(capture),
+    };
+    let highlights = vec![
+        h(8..13, "string"),
+        h(0..3, "keyword"),
+        h(0..3, "keyword.storage"),
+        h(10..12, "escape"),
+    ];
+    let f = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 30,
+            height: 2,
+        },
+        None,
+        &|_, _, _| highlights.clone(),
+    );
+    let syntax: Vec<(String, String)> = f.rows[0]
+        .spans
+        .iter()
+        .filter_map(|s| match s.tags.first() {
+            Some(Tag::Syntax(c)) => Some((s.text.clone(), c.to_string())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        syntax,
+        [
+            ("let".to_string(), "keyword".to_string()),
+            ("\"a".to_string(), "string".to_string()),
+            ("\\n".to_string(), "escape".to_string()),
+            ("\"".to_string(), "string".to_string()),
+        ]
+    );
 }
