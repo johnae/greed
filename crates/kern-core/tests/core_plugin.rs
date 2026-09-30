@@ -1,143 +1,50 @@
-//! Drives the default `core` plugin with real key presses.
-//!
-//! Buffers are written with markers: `|` is a range's head and `^` its
-//! anchor (omitted for cursors). `"^hello |world"` selects `hello `.
+//! Runs the default `core` plugin's Luau tests, and checks that the test
+//! harness reports failures usefully.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use kern_core::Editor;
-use kern_core::luau::Host;
-use kern_text::{ClientId, Range, Selection};
+use kern_core::luau::run_tests;
 
-fn parse(marked: &str) -> (String, Selection) {
-    let mut text = String::new();
-    let mut ranges = Vec::new();
-    let mut anchor = None;
-    for c in marked.chars() {
-        match c {
-            '^' => anchor = Some(text.len()),
-            '|' => {
-                ranges.push(Range::new(anchor.take().unwrap_or(text.len()), text.len()));
-            }
-            c => text.push(c),
-        }
-    }
-    (
-        text,
-        Selection::new(ranges, 0).expect("at least one cursor"),
+fn core() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core")
+}
+
+#[test]
+fn core_plugin_tests_pass() {
+    let results = run_tests(&[core()], &core()).unwrap();
+    assert!(results.len() >= 10, "found only {} tests", results.len());
+    let failures: Vec<String> = results
+        .iter()
+        .filter_map(|r| r.failure.as_ref().map(|f| format!("{}: {f}", r.name)))
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn failures_name_the_line_and_what_differed() {
+    let dir = std::env::temp_dir().join(format!("kern-test-harness-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/sample.luau"),
+        "test('passes', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('a|b')\nend)\n\
+         test('fails', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('ab|')\nend)\n\
+         test('errors', function(t)\n  t:run('no-such-command')\nend)\n",
     )
-}
+    .unwrap();
 
-fn editor(marked: &str) -> Host {
-    let (text, selection) = parse(marked);
-    let mut editor = Editor::new(ClientId(1));
-    editor.open("file", &text, None);
-    let host = Host::new(editor).unwrap();
-    host.load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core"))
-        .unwrap();
-    host.with_editor_mut(|ed| {
-        let v = ed.focus();
-        ed.view_mut(v).selection = selection;
-    });
-    host
-}
+    let results = run_tests(&[core()], &dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 
-#[track_caller]
-fn check(before: &str, keys: &str, after: &str) {
-    let host = editor(before);
-    host.press_keys(keys).unwrap();
-    assert_eq!(
-        host.with_editor(|ed| ed.marked_text(ed.focus())),
-        after,
-        "{before:?} + {keys:?}"
+    let summary: Vec<(&str, Option<&str>)> = results
+        .iter()
+        .map(|r| (r.name.as_str(), r.failure.as_deref()))
+        .collect();
+    assert_eq!(summary[0], ("passes", None));
+    assert_eq!(summary[1].0, "fails");
+    let failure = summary[1].1.unwrap();
+    assert!(
+        failure.contains("line 9: expected buffer \"ab|\", got \"a|b\""),
+        "{failure}"
     );
-}
-
-#[test]
-fn character_moves_stay_on_the_line() {
-    check("a|bc\ndef", "l l l", "abc|\ndef");
-    check("abc\nd|ef", "h h h", "abc\n|def");
-}
-
-#[test]
-fn line_moves_keep_the_column() {
-    check("ab|cd\nx\nwxyz", "j", "abcd\nx|\nwxyz");
-    check("ab|cd\nx\nwxyz", "j j", "abcd\nx\nwx|yz");
-    check("abcd\nwx|yz", "k", "ab|cd\nwxyz");
-    check("ab|cd", "k", "ab|cd");
-    check("é|é\néé", "j", "éé\né|é");
-}
-
-#[test]
-fn word_motions_select_what_they_move_over() {
-    check("|hello world", "w", "^hello |world");
-    check("|hello world", "w w", "hello ^world|");
-    check("|foo.bar", "w", "^foo|.bar");
-    check("|héllo wörld", "w", "^héllo |wörld");
-    check("hello wor|ld", "b", "hello |wor^ld");
-    check("hello |world", "b", "|hello ^world");
-    check("|hello world", "e", "^hello| world");
-    check("hello| world", "e", "hello^ world|");
-}
-
-#[test]
-fn line_and_buffer_jumps() {
-    check("ab|c\ndef", "g l", "abc|\ndef");
-    check("ab|c\ndef", "g h", "|abc\ndef");
-    check("abc\nde|f", "g g", "|abc\ndef");
-    check("a|bc\ndef", "g e", "abc\ndef|");
-}
-
-#[test]
-fn select_line_includes_the_line_break() {
-    check("a|bc\ndef", "x", "^abc\n|def");
-    check("abc\nd|ef", "x", "abc\n^def|");
-}
-
-#[test]
-fn collapse_and_flip() {
-    check("^hello |world", ";", "hello |world");
-    check("^hello |world", "alt-;", "|hello ^world");
-}
-
-#[test]
-fn typing_in_insert_mode() {
-    check("ab|c", "i x y esc", "abxy|c");
-    check("a|bc", "a Z", "abZ|c");
-    check("ab|c", "i backspace", "a|c");
-    check("ab|c", "i enter", "ab\n|c");
-    check("^hello |world", "i >", ">|hello world");
-}
-
-#[test]
-fn typing_at_every_cursor() {
-    check("a|b a|b", "i -", "a-|b a-|b");
-}
-
-#[test]
-fn delete_and_change() {
-    check("^hello |world", "d", "|world");
-    check("a|bc", "d", "a|c");
-    check("^hello |world", "c b y e space", "bye |world");
-}
-
-#[test]
-fn undo_and_redo() {
-    check("^hello |world", "d u", "^hello |world");
-    check("^hello |world", "d u U", "|world");
-}
-
-#[test]
-fn open_lines() {
-    check("a|bc\ndef", "o x", "abc\nx|\ndef");
-    check("abc\nd|ef", "O x", "abc\nx|\ndef");
-}
-
-#[test]
-fn an_insert_session_undoes_as_one_step() {
-    check("ab|c", "i x y z esc u", "ab|c");
-    check("^hello |world", "c b y e space esc u", "^hello |world");
-    // `o` moves the cursor to the line end before editing; undo restores that.
-    check("a|bc\ndef", "o x y esc u", "abc|\ndef");
-    check("ab|c", "i x esc i y esc u", "abx|c");
+    assert!(summary[2].1.unwrap().contains("no-such-command"));
 }

@@ -6,6 +6,7 @@
 //! commands can run other commands and emit events freely.
 
 mod api;
+mod testing;
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -17,9 +18,11 @@ use std::time::{Duration, Instant};
 use mlua::{Function, Lua, Table, VmState};
 use serde::Deserialize;
 
+pub use testing::{TestResult, run_tests};
+
+use crate::Editor;
 use crate::keymap::{Key, ParseError};
 use crate::registry::{PluginId, Registry};
-use crate::{Editor, KeyOutcome};
 
 /// How long one call into Luau may run before it is stopped.
 const BUDGET: Duration = Duration::from_secs(2);
@@ -217,13 +220,7 @@ impl Host {
     /// Feeds one key press through the keymap, running whatever it resolves
     /// to.
     pub fn press(&self, key: Key) -> Result<(), HostError> {
-        let outcome = state_mut(&self.lua).editor.press(key);
-        match outcome {
-            KeyOutcome::Command { name, keys } => {
-                budgeted(&self.lua, || api::run_command(&self.lua, &name, &keys))
-            }
-            KeyOutcome::Pending | KeyOutcome::Unbound(_) => Ok(()),
-        }
+        budgeted(&self.lua, || api::press(&self.lua, key))
     }
 
     /// Presses each key of a space-separated sequence, e.g. `"g g"`.

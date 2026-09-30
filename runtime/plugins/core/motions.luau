@@ -52,7 +52,7 @@ end
 -- Vertical moves aim for the column each cursor started from, so moving
 -- through a short line doesn't lose it. The goal columns are kept while
 -- nothing but vertical moves has touched the selection.
-local goal = { selection = nil :: any, columns = {} :: { number } }
+local goal = { view = nil :: number?, selection = nil :: any, columns = {} :: { number } }
 
 local function same_selection(a, b): boolean
 	if b == nil or #a.ranges ~= #b.ranges then
@@ -73,7 +73,7 @@ local function vertical(name, doc, delta)
 		run = function(ctx)
 			local sel = ctx.view:selection()
 			local buffer = ctx.buffer
-			if not same_selection(sel, goal.selection) then
+			if goal.view ~= ctx.view:id() or not same_selection(sel, goal.selection) then
 				goal.columns = {}
 				for i, range in sel.ranges do
 					goal.columns[i] = text.column(buffer, range.head)
@@ -85,6 +85,7 @@ local function vertical(name, doc, delta)
 				sel.ranges[i] = point(text.at_column(buffer, line, goal.columns[i]))
 			end
 			ctx.view:set_selection(sel)
+			goal.view = ctx.view:id()
 			goal.selection = ctx.view:selection()
 		end,
 	})

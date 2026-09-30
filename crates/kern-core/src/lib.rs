@@ -12,7 +12,7 @@ use std::fmt;
 use kern_text::TxId;
 
 pub use buffer::{Buffer, BufferId};
-pub use editor::{Editor, KeyOutcome, View, ViewId};
+pub use editor::{Editor, KeyOutcome, View, ViewId, parse_marked};
 pub use history::History;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

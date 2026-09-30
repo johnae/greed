@@ -13,7 +13,7 @@ use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, Value, V
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
-use crate::{Buffer, ViewId};
+use crate::{Buffer, KeyOutcome, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -105,6 +105,16 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
     }
     handler.call::<()>(ctx)?;
     Ok(())
+}
+
+/// Feeds one key press through the keymap, running whatever it resolves
+/// to.
+pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
+    let outcome = state_mut(lua).editor.press(key);
+    match outcome {
+        KeyOutcome::Command { name, keys } => run_command(lua, &name, &keys),
+        KeyOutcome::Pending | KeyOutcome::Unbound(_) => Ok(()),
+    }
 }
 
 /// Calls every handler for `event` with `payload`. All handlers run even if
@@ -375,7 +385,7 @@ pub(super) fn display(value: &Value) -> String {
     value.to_string().unwrap_or_else(|_| format!("{value:?}"))
 }
 
-fn into_lua(err: HostError) -> mlua::Error {
+pub(super) fn into_lua(err: HostError) -> mlua::Error {
     match err {
         HostError::Lua(err) => err,
         other => mlua::Error::external(other),
@@ -391,6 +401,7 @@ struct ViewRef {
 
 impl UserData for ViewRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("id", |_, this, ()| Ok(this.id.0));
         methods.add_method("selection", |lua, this, ()| {
             selection_to_lua(lua, &state(lua).editor.view(this.id).selection)
         });

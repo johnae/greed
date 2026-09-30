@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use kern_text::{Author, ChangeSet, ClientId, Replica, Selection, Transaction, TxId, TxMeta};
+use kern_text::{
+    Author, ChangeSet, ClientId, Range, Replica, Selection, Transaction, TxId, TxMeta,
+};
 
 use crate::keymap::{Key, Keymap, Resolution};
 use crate::{Buffer, BufferId, Error};
@@ -291,4 +293,21 @@ impl Editor {
             }
         }
     }
+}
+
+/// Parses text written with [`Editor::marked_text`]'s markers: `|` at each
+/// head and `^` before it at the anchor of a non-empty range. The first
+/// range is primary.
+pub fn parse_marked(marked: &str) -> Result<(String, Selection), kern_text::Error> {
+    let mut text = String::with_capacity(marked.len());
+    let mut ranges = Vec::new();
+    let mut anchor = None;
+    for c in marked.chars() {
+        match c {
+            '^' => anchor = Some(text.len()),
+            '|' => ranges.push(Range::new(anchor.take().unwrap_or(text.len()), text.len())),
+            c => text.push(c),
+        }
+    }
+    Ok((text, Selection::new(ranges, 0)?))
 }

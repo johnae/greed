@@ -1,15 +1,16 @@
 //! The `kern` command line. For now: a headless REPL for driving the editor
-//! core from a terminal, a script, or an agent.
+//! core from a terminal, a script, or an agent, and a test runner for
+//! plugins.
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use kern_core::Editor;
-use kern_core::luau::Host;
+use kern_core::luau::{Host, run_tests};
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern repl [FILE]";
+const USAGE: &str = "usage: kern repl [FILE]\n       kern test [PLUGIN_DIR]";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -26,6 +27,8 @@ fn main() -> ExitCode {
     let result = match args.as_slice() {
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
+        [cmd] if cmd == "test" => test(&core_plugin()),
+        [cmd, dir] if cmd == "test" => test(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -48,6 +51,10 @@ fn runtime_dir() -> PathBuf {
     )
 }
 
+fn core_plugin() -> PathBuf {
+    runtime_dir().join("plugins/core")
+}
+
 fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let text = match &file {
         Some(path) if path.exists() => std::fs::read_to_string(path)?,
@@ -56,7 +63,7 @@ fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", &text, file);
     let host = Host::new(editor)?;
-    host.load_dir(&runtime_dir().join("plugins/core"))?;
+    host.load_dir(&core_plugin())?;
 
     let interactive = io::stdin().is_terminal();
     if interactive {
@@ -127,4 +134,34 @@ fn write(host: &Host) -> Result<String, Box<dyn std::error::Error>> {
         std::fs::write(path, buffer.text().to_string())?;
         Ok(format!("wrote {}", path.display()))
     })
+}
+
+/// Runs a plugin's tests, with the core plugin loaded first so keymaps work.
+/// Fails if any test fails.
+fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let core = core_plugin().canonicalize()?;
+    let dir = dir.canonicalize()?;
+    let plugins = if dir == core {
+        vec![core]
+    } else {
+        vec![core, dir.clone()]
+    };
+    let results = run_tests(&plugins, &dir)?;
+    let mut file = None;
+    for result in &results {
+        if file != Some(&result.file) {
+            println!("{}", result.file.display());
+            file = Some(&result.file);
+        }
+        match &result.failure {
+            None => println!("  ok    {}", result.name),
+            Some(why) => println!("  FAIL  {}\n        {why}", result.name),
+        }
+    }
+    let failed = results.iter().filter(|r| r.failure.is_some()).count();
+    println!("{} passed, {failed} failed", results.len() - failed);
+    if failed > 0 {
+        return Err(format!("{failed} test(s) failed").into());
+    }
+    Ok(())
 }
