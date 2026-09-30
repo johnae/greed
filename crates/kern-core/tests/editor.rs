@@ -149,3 +149,31 @@ fn marked_text_shows_heads_and_anchors() {
         Selection::new([Range::new(0, 5), Range::point(8), Range::new(11, 9)], 0).unwrap();
     assert_eq!(ed.marked_text(v), "^hello| wo|r|ld^");
 }
+
+#[test]
+fn grouped_edits_undo_as_one_step() {
+    let mut ed = editor("");
+    let v = ed.focus();
+    let user = Author::User(ClientId(1));
+    let insert = |ed: &mut Editor, pos: usize, s: &str| {
+        let len = ed.buffer(ed.view(v).buffer).text().len_bytes();
+        let changes = ChangeSet::from_changes(len, [(pos, pos, Some(s))]).unwrap();
+        ed.apply(v, changes, user.clone(), None, None).unwrap();
+    };
+    insert(&mut ed, 0, "a");
+    ed.start_group();
+    insert(&mut ed, 1, "b");
+    ed.start_group();
+    insert(&mut ed, 2, "c");
+    ed.end_group();
+    insert(&mut ed, 3, "d");
+    ed.start_group();
+    insert(&mut ed, 4, "e");
+    ed.end_group();
+
+    let mut steps = Vec::new();
+    while ed.undo(v).unwrap() {
+        steps.push(text(&ed));
+    }
+    assert_eq!(steps, ["abcd", "abc", "a", ""]);
+}

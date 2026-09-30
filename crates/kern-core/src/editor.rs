@@ -45,6 +45,9 @@ pub struct Editor {
     keymap: Keymap,
     pending: Vec<Key>,
     messages: Vec<String>,
+    /// Edits made while a group is open become one undo step.
+    undo_group: Option<u64>,
+    next_group: u64,
 }
 
 impl Editor {
@@ -60,6 +63,8 @@ impl Editor {
             keymap: Keymap::default(),
             pending: Vec::new(),
             messages: Vec::new(),
+            undo_group: None,
+            next_group: 0,
         }
     }
 
@@ -122,6 +127,7 @@ impl Editor {
         let id = self.view(view).buffer;
         let buffer = self.buffers.get_mut(&id).expect("view's buffer exists");
         let mut meta = TxMeta::new(self.replica.next_id(), buffer.version(), author);
+        meta.group = self.undo_group;
         if let Some(cause) = cause {
             meta = meta.with_cause(cause);
         }
@@ -146,6 +152,19 @@ impl Editor {
     /// there was nothing to redo.
     pub fn redo(&mut self, view: ViewId) -> Result<bool, Error> {
         self.history_step(view, Buffer::redo)
+    }
+
+    /// Starts grouping edits into one undo step, e.g. for an insert mode
+    /// session. Does nothing if a group is already open.
+    pub fn start_group(&mut self) {
+        if self.undo_group.is_none() {
+            self.undo_group = Some(self.next_group);
+            self.next_group += 1;
+        }
+    }
+
+    pub fn end_group(&mut self) {
+        self.undo_group = None;
     }
 
     pub fn mode(&self) -> &str {

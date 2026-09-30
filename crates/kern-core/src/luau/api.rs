@@ -187,6 +187,7 @@ fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("keymap", keymap_module(lua, owner)?)?;
     kern.set("mode", mode_module(lua)?)?;
     kern.set("option", option_module(lua, owner)?)?;
+    kern.set("history", history_module(lua)?)?;
     Ok(kern)
 }
 
@@ -262,6 +263,25 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     Ok(mode)
+}
+
+fn history_module(lua: &Lua) -> LuaResult<Table> {
+    let history = lua.create_table()?;
+    history.set(
+        "start_group",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).editor.start_group();
+            Ok(())
+        })?,
+    )?;
+    history.set(
+        "end_group",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).editor.end_group();
+            Ok(())
+        })?,
+    )?;
+    Ok(history)
 }
 
 fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {

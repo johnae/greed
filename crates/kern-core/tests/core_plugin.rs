@@ -132,3 +132,12 @@ fn open_lines() {
     check("a|bc\ndef", "o x", "abc\nx|\ndef");
     check("abc\nd|ef", "O x", "abc\nx|\ndef");
 }
+
+#[test]
+fn an_insert_session_undoes_as_one_step() {
+    check("ab|c", "i x y z esc u", "ab|c");
+    check("^hello |world", "c b y e space esc u", "^hello |world");
+    // `o` moves the cursor to the line end before editing; undo restores that.
+    check("a|bc\ndef", "o x y esc u", "abc|\ndef");
+    check("ab|c", "i x esc i y esc u", "abx|c");
+}

@@ -13,10 +13,18 @@ local function to(range)
 	return math.max(range.anchor, range.head)
 end
 
+-- Everything typed in one insert session, plus the delete that `change` does
+-- before it, is undone as one step.
+local function enter_insert()
+	kern.history.start_group()
+	kern.mode.set("insert")
+end
+
 kern.command({
 	name = "normal-mode",
 	doc = "Switch to normal mode",
 	run = function()
+		kern.history.end_group()
 		kern.mode.set("normal")
 	end,
 })
@@ -28,7 +36,7 @@ kern.command({
 		each_range(ctx, function(_, range)
 			return point(from(range))
 		end)
-		kern.mode.set("insert")
+		enter_insert()
 	end,
 })
 
@@ -42,7 +50,7 @@ kern.command({
 			end
 			return point(math.min(buffer:len(), buffer:next_char(range.head)))
 		end)
-		kern.mode.set("insert")
+		enter_insert()
 	end,
 })
 
@@ -104,8 +112,9 @@ kern.command({
 	name = "change",
 	doc = "Delete each selection and switch to insert mode",
 	run = function(ctx)
+		kern.history.start_group()
 		delete_selections(ctx)
-		kern.mode.set("insert")
+		enter_insert()
 	end,
 })
 
@@ -113,11 +122,12 @@ kern.command({
 	name = "open-below",
 	doc = "Open a new line below each cursor and insert there",
 	run = function(ctx)
+		kern.history.start_group()
 		each_range(ctx, function(buffer, range)
 			return point(buffer:line_end(buffer:line_of(range.head)))
 		end)
 		insert_at_heads(ctx, "\n")
-		kern.mode.set("insert")
+		enter_insert()
 	end,
 })
 
@@ -125,6 +135,7 @@ kern.command({
 	name = "open-above",
 	doc = "Open a new line above each cursor and insert there",
 	run = function(ctx)
+		kern.history.start_group()
 		each_range(ctx, function(buffer, range)
 			return point(buffer:line_start(buffer:line_of(range.head)))
 		end)
@@ -132,7 +143,7 @@ kern.command({
 		each_range(ctx, function(buffer, range)
 			return point(buffer:prev_char(range.head))
 		end)
-		kern.mode.set("insert")
+		enter_insert()
 	end,
 })
 
