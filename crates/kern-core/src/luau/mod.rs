@@ -12,6 +12,7 @@ mod jobs;
 mod languages;
 mod lsp;
 mod modules;
+mod requests;
 mod tasks;
 mod testing;
 mod theme;
@@ -67,6 +68,9 @@ pub(crate) struct State {
     pub theme_owners: HashMap<Arc<str>, PluginId>,
     /// Work running on other threads.
     pub jobs: jobs::Jobs,
+    /// Requests from the session socket that plugins haven't answered yet.
+    pub requests: HashMap<u64, crate::control::Request>,
+    pub next_request: u64,
 }
 
 #[derive(Clone)]
@@ -165,6 +169,8 @@ impl Host {
             lsp_waiting: HashMap::new(),
             theme_owners: HashMap::new(),
             jobs: jobs::Jobs::default(),
+            requests: HashMap::new(),
+            next_request: 0,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -339,6 +345,14 @@ impl Host {
     pub fn finish_job(&self, done: FinishedJob) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             jobs::finish(&self.lua, done).map_err(HostError::from)
+        })
+    }
+
+    /// Passes a request from the session socket to the plugins that answer
+    /// them.
+    pub fn handle_request(&self, request: crate::control::Request) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            requests::handle(&self.lua, request).map_err(HostError::from)
         })
     }
 

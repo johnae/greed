@@ -251,6 +251,20 @@ export type BufferChanged = {
 	buffer: Buffer,
 }
 
+--- A request from the session socket, e.g. from `kern ctl` or an agent.
+--- Answer it with `kern.control.reply`.
+export type ControlRequest = {
+	id: number,
+	method: string,
+	params: any,
+}
+
+export type Control = {
+	--- Answers request `id` with `result`, or with an error `message`. Every
+	--- request needs exactly one answer.
+	reply: (id: number, result: any, message: string?) -> (),
+}
+
 export type CommandRun = {
 	--- The command about to run.
 	name: string,
@@ -451,6 +465,7 @@ export type Kern = {
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
+		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
@@ -512,6 +527,7 @@ export type Kern = {
 	clipboard: Clipboard,
 	lsp: Lsp,
 	fs: Fs,
+	control: Control,
 	plugin: Plugins,
 	theme: Theme,
 }

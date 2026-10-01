@@ -433,6 +433,7 @@ dependencies = [
  "crossterm",
  "kern-core",
  "kern-text",
+ "serde_json",
  "unicode-segmentation",
  "unicode-width",
 ]

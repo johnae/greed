@@ -18,7 +18,7 @@ use crate::{Buffer, BufferId, Editor};
 type LuaResult<T> = mlua::Result<T>;
 
 /// JSON from a server as Luau values: `null` becomes `nil`.
-fn to_lua(lua: &Lua, json: &serde_json::Value) -> LuaResult<Value> {
+pub(super) fn to_lua(lua: &Lua, json: &serde_json::Value) -> LuaResult<Value> {
     lua.to_value_with(
         json,
         SerializeOptions::new()

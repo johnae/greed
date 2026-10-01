@@ -5,14 +5,15 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod ctl;
 mod tui;
 
 use kern_core::Editor;
 use kern_core::luau::{Host, HostError, run_tests};
-use kern_core::server;
+use kern_core::{control, server};
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -32,6 +33,7 @@ fn main() -> ExitCode {
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => test(&core_plugin()),
         [cmd, name] if cmd == "new" => new_plugin(name),
+        [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
         [file] if !file.starts_with('-') => edit(Some(PathBuf::from(file))),
         _ => {
@@ -128,7 +130,13 @@ fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
 
 fn edit(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let text = read(file.as_deref())?;
-    tui::run(server::spawn(move || host(&text, file)))
+    // Without a socket the editor still works; only `kern ctl` and agents
+    // can't reach it.
+    let session = control::listen(&std::process::id().to_string()).ok();
+    tui::run(server::spawn_with_session(
+        move || host(&text, file),
+        session,
+    ))
 }
 
 fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {

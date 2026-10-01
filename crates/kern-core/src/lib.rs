@@ -1,6 +1,7 @@
 //! Kern's editor core: buffers, history, registry, keymaps and the Luau host.
 
 mod buffer;
+pub mod control;
 mod editor;
 mod filetypes;
 mod history;

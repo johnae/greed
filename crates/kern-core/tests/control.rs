@@ -1,0 +1,83 @@
+use kern_core::Editor;
+use kern_core::control::{self, Client};
+use kern_core::luau::Host;
+use kern_core::server::{self, Connection, Input};
+use kern_text::ClientId;
+use serde_json::json;
+
+/// A server answering requests on a session socket with `plugin`.
+fn start(name: &str, plugin: &'static str) -> (Connection, std::path::PathBuf, String) {
+    let session = control::listen(name).unwrap();
+    let socket = session.socket.clone();
+    let (_, token_file) = control::session_files(name);
+    let token = std::fs::read_to_string(token_file).unwrap();
+    let conn = server::spawn_with_session(
+        move || {
+            let mut editor = Editor::new(ClientId(1));
+            editor.open("file", "hello", None);
+            let host = Host::new(editor)?;
+            if !plugin.is_empty() {
+                host.load_str("answers", plugin)?;
+            }
+            Ok(host)
+        },
+        Some(session),
+    );
+    (conn, socket, token)
+}
+
+const ECHO: &str = r#"
+local kern = require("@kern")
+kern.on("control.request", function(req)
+  if req.method == "echo" then
+    kern.control.reply(req.id, { got = req.params, text = kern.view():buffer():text() })
+  elseif req.method == "later" then
+    kern.sleep(10)
+    kern.control.reply(req.id, "done")
+  else
+    kern.control.reply(req.id, nil, "unknown method " .. req.method)
+  end
+end)
+"#;
+
+fn name(test: &str) -> String {
+    format!("test-{test}-{}", std::process::id())
+}
+
+#[test]
+fn plugins_answer_requests_from_the_session_socket() {
+    let (conn, socket, token) = start(&name("echo"), ECHO);
+    let mut client = Client::connect(&socket, &token).unwrap();
+    assert_eq!(
+        client.call("echo", &json!({ "n": 1 })).unwrap(),
+        Ok(json!({ "got": { "n": 1 }, "text": "hello" }))
+    );
+    assert_eq!(
+        client.call("later", &json!(null)).unwrap(),
+        Ok(json!("done"))
+    );
+    assert_eq!(
+        client.call("nope", &json!(null)).unwrap(),
+        Err("unknown method nope".to_owned())
+    );
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+    assert!(!socket.exists(), "the socket goes when the editor stops");
+}
+
+#[test]
+fn connections_need_the_sessions_token() {
+    let (conn, socket, _) = start(&name("token"), ECHO);
+    let err = Client::connect(&socket, "wrong").err().unwrap();
+    assert!(err.to_string().contains("wrong token"), "{err}");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn requests_fail_clearly_when_no_plugin_answers() {
+    let (conn, socket, token) = start(&name("unanswered"), "");
+    let mut client = Client::connect(&socket, &token).unwrap();
+    let answer = client.call("echo", &json!(null)).unwrap();
+    assert!(answer.unwrap_err().contains("no plugin answers"));
+    conn.input.send(Input::Quit).unwrap();
+}

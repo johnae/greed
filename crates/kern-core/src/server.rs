@@ -13,6 +13,7 @@ use std::time::Instant;
 use crossbeam_channel::{Receiver, Sender, select};
 
 use crate::BufferId;
+use crate::control::Session;
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
@@ -50,10 +51,19 @@ pub fn spawn<F>(setup: F) -> Connection
 where
     F: FnOnce() -> Result<Host, HostError> + Send + 'static,
 {
+    spawn_with_session(setup, None)
+}
+
+/// Like [`spawn`], also answering requests that come in on `session`'s
+/// socket. The socket closes when the server stops.
+pub fn spawn_with_session<F>(setup: F, session: Option<Session>) -> Connection
+where
+    F: FnOnce() -> Result<Host, HostError> + Send + 'static,
+{
     let (input, inbox) = crossbeam_channel::unbounded();
     let (outbox, output) = crossbeam_channel::unbounded();
     let server = thread::spawn(move || {
-        let result = setup().map(|host| serve(&host, &inbox, &outbox));
+        let result = setup().map(|host| serve(&host, &inbox, &outbox, session.as_ref()));
         let _ = outbox.send(Output::Exit);
         result
     });
@@ -64,12 +74,13 @@ where
     }
 }
 
-fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
+fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>, session: Option<&Session>) {
     let renderer = Renderer::new(CellWidth);
     let mut syntax = Syntax::new();
     let mut size = None;
     let lsp_events = host.lsp_events();
     let finished_jobs = host.finished_jobs();
+    let requests = session.map_or_else(crossbeam_channel::never, |s| s.requests().clone());
     let mut message: Option<String> = None;
     loop {
         host.with_editor(|ed| syntax.update(ed));
@@ -108,6 +119,13 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
             recv(finished_jobs) -> done => {
                 if let Ok(done) = done
                     && let Err(err) = host.finish_job(done)
+                {
+                    message = Some(first_line(&err.to_string()));
+                }
+            }
+            recv(requests) -> request => {
+                if let Ok(request) = request
+                    && let Err(err) = host.handle_request(request)
                 {
                     message = Some(first_line(&err.to_string()));
                 }

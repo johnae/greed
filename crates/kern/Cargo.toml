@@ -9,6 +9,7 @@ rust-version.workspace = true
 crossterm.workspace = true
 kern-core.workspace = true
 kern-text.workspace = true
+serde_json.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 
