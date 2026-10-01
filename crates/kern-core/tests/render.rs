@@ -356,11 +356,12 @@ fn decorations_tag_their_text_and_lines_style_whole_rows() {
                 range: 4..7,
                 style: "picker.current".into(),
                 line: true,
+                ..Mark::default()
             },
             Mark {
                 range: 5..6,
                 style: "match".into(),
-                line: false,
+                ..Mark::default()
             },
         ],
     );
@@ -368,4 +369,87 @@ fn decorations_tag_their_text_and_lines_style_whole_rows() {
     assert_eq!(tagged(&f, &Tag::from("match")), ["w"]);
     assert!(f.rows[0].tags.is_empty());
     assert_eq!(f.rows[1].tags.as_slice(), [Tag::from("picker.current")]);
+}
+
+#[test]
+fn marks_add_text_that_isnt_in_the_buffer() {
+    use kern_core::Mark;
+    let mut ed = editor("let x = 1|;\nfoo()");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "hints",
+        vec![
+            Mark {
+                range: 5..5,
+                style: "hint".into(),
+                text: Some(": i32".into()),
+                ..Mark::default()
+            },
+            Mark {
+                range: 11..14,
+                style: "diagnostic.error".into(),
+                text: Some("not found".into()),
+                eol: true,
+                ..Mark::default()
+            },
+        ],
+    );
+    let f = frame(&mut ed, 30, 3);
+    assert_eq!(rows(&f), ["1 let x: i32 = 1;", "2 foo() not found"]);
+    assert_eq!(tagged(&f, &Tag::from("hint")), [": i32"]);
+    assert_eq!(
+        tagged(&f, &Tag::from("diagnostic.error")),
+        ["foo", " not found"]
+    );
+    // The cursor counts the inserted text's width but can't land in it.
+    assert_eq!(f.cursor, Some(Position { col: 16, row: 0 }));
+
+    // Text past the edge is cut off rather than wrapped.
+    let f = frame(&mut ed, 12, 6);
+    assert!(
+        rows(&f).contains(&"2 foo() not".to_string()),
+        "{:?}",
+        rows(&f)
+    );
+}
+
+#[test]
+fn signs_get_a_column_before_the_line_numbers() {
+    use kern_core::Mark;
+    let mut ed = editor("|a\nb\nc");
+    let buffer = ed.view(ed.focus()).buffer;
+    let f = frame(&mut ed, 20, 4);
+    assert_eq!(rows(&f), ["1 a", "2 b", "3 c"], "no column without signs");
+    ed.decorate(
+        buffer,
+        "lsp",
+        vec![Mark {
+            range: 2..3,
+            style: "diagnostic.error".into(),
+            sign: Some("E".into()),
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 20, 4);
+    assert_eq!(rows(&f), ["  1 a", "E 2 b", "  3 c"]);
+    assert_eq!(tagged(&f, &Tag::from("diagnostic.error")), ["E ", "b"]);
+}
+
+#[test]
+fn marks_can_draw_above_the_selection() {
+    use kern_core::Mark;
+    let mut ed = editor("^abc|");
+    let buffer = ed.view(ed.focus()).buffer;
+    let mark = |style: &str, above| Mark {
+        range: 0..3,
+        style: style.into(),
+        above,
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "x", vec![mark("under", false), mark("flash", true)]);
+    let f = frame(&mut ed, 20, 2);
+    let span = f.rows[0].spans.iter().find(|s| s.text == "abc").unwrap();
+    let names: Vec<&str> = span.tags.iter().map(Tag::name).collect();
+    assert_eq!(names, ["under", "ui.selection", "flash"]);
 }

@@ -423,7 +423,7 @@ fn decorations_follow_edits_and_are_replaced_per_namespace() {
     let mark = |from, to, style: &str| Mark {
         range: from..to,
         style: style.into(),
-        line: false,
+        ..Mark::default()
     };
     ed.decorate(buffer, "search", vec![mark(6, 11, "match")]);
     ed.decorate(buffer, "spell", vec![mark(0, 5, "spelling")]);

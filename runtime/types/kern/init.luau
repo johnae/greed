@@ -84,6 +84,15 @@ export type Mark = {
 	style: string,
 	--- Style every whole line the mark touches, not just its text.
 	line: boolean?,
+	--- Text to show that isn't in the buffer, like an inlay hint, before the
+	--- character at `from`. The cursor skips over it.
+	text: string?,
+	--- Show `text` after the end of the line instead, cut off at the edge.
+	eol: boolean?,
+	--- A symbol for the sign column next to the line numbers, e.g. "E".
+	sign: string?,
+	--- Draw over selections and cursors rather than under them.
+	above: boolean?,
 }
 
 --- A buffer shown on screen, with its own selection.

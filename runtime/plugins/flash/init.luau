@@ -40,7 +40,7 @@ kern.on("command.run", function(event: kern.CommandRun)
 	for _, range in view:selection().ranges do
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		if from < to then
-			table.insert(marks, { from = from, to = to, style = "ui.flash.now" })
+			table.insert(marks, { from = from, to = to, style = "ui.flash.now", above = true })
 		end
 	end
 	if #marks == 0 then

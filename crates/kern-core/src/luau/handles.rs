@@ -185,7 +185,7 @@ fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()>
 }
 
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
-/// `{ from, to, style, line }`.
+/// `{ from, to, style, line, text, eol, sign, above }`.
 fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("decorate", |lua, this, (ns, list): (String, Vec<Table>)| {
         this.with_buffer(lua, |_| Ok(()))?;
@@ -197,10 +197,17 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
                     )
                 })?;
+                let flag = |key: &str| -> LuaResult<bool> {
+                    Ok(t.get::<Option<bool>>(key)?.unwrap_or(false))
+                };
                 Ok(Mark {
                     range: t.get("from")?..t.get("to")?,
                     style: style.into(),
-                    line: t.get::<Option<bool>>("line")?.unwrap_or(false),
+                    line: flag("line")?,
+                    text: t.get::<Option<String>>("text")?.map(Into::into),
+                    eol: flag("eol")?,
+                    sign: t.get::<Option<String>>("sign")?.map(Into::into),
+                    above: flag("above")?,
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -216,6 +223,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             t.set("to", mark.range.end)?;
             t.set("style", &*mark.style)?;
             t.set("line", mark.line)?;
+            t.set("text", mark.text.as_deref())?;
+            t.set("eol", mark.eol)?;
+            t.set("sign", mark.sign.as_deref())?;
+            t.set("above", mark.above)?;
             list.push(t)?;
         }
         Ok(list)

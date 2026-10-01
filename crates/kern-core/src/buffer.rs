@@ -36,13 +36,22 @@ pub struct Buffer {
 
 /// Text drawn with a style, e.g. a search match. It moves with edits; text
 /// typed at either edge stays outside it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Mark {
     pub range: Range<usize>,
     /// A style name for the theme.
     pub style: Arc<str>,
     /// Style the whole of every line the mark touches, not just its text.
     pub line: bool,
+    /// Text shown that isn't in the buffer, like an inlay hint: at the start
+    /// of the range, or after the end of its line with `eol`.
+    pub text: Option<Arc<str>>,
+    pub eol: bool,
+    /// A symbol for the sign column, next to the line numbers.
+    pub sign: Option<Arc<str>>,
+    /// Draw over selections and cursors rather than under them, e.g. for a
+    /// flash that must show even on selected text.
+    pub above: bool,
 }
 
 impl Buffer {

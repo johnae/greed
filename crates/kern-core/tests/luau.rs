@@ -1148,3 +1148,18 @@ fn fuzzy_matches_say_where_they_matched() {
         "0"
     );
 }
+
+#[test]
+fn marks_carry_inserted_text_signs_and_order() {
+    let h = host("let x = 1");
+    let shown = h
+        .eval(
+            "local b = require('@kern').view():buffer()
+             b:decorate('lsp', { { from = 5, to = 5, style = 'hint', text = ': i32' },
+                                 { from = 0, to = 3, style = 'diagnostic.error', text = 'oops', eol = true, sign = 'E', above = true } })
+             local m = b:decorations('lsp')
+             return m[1].text .. '|' .. m[2].text .. '|' .. tostring(m[2].eol) .. '|' .. m[2].sign .. '|' .. tostring(m[2].above) .. '|' .. tostring(m[1].sign)",
+        )
+        .unwrap();
+    assert_eq!(shown, ": i32|oops|true|E|true|nil");
+}

@@ -232,6 +232,9 @@ struct Cell {
     width: usize,
     /// The space after the end of a line, where a cursor can sit.
     end_of_line: bool,
+    /// Text a mark shows that isn't in the buffer, with the mark's style.
+    /// The cursor never sits on it.
+    inserted: Option<Arc<str>>,
 }
 
 pub struct Renderer<M> {
@@ -308,10 +311,10 @@ impl<M: Measure> Renderer<M> {
         decorations: &dyn Decorations,
     ) -> (Vec<Row>, Option<Position>) {
         let text_rows = usize::from(area.height);
-        let gutter = if line_numbers {
+        let (gutter, signs) = if line_numbers {
             gutter_width(editor, editor.view(view_id))
         } else {
-            0
+            (0, false)
         };
         let text_width = usize::from(area.width).saturating_sub(gutter).max(1);
 
@@ -342,42 +345,44 @@ impl<M: Measure> Renderer<M> {
 
         'lines: for line in scroll.line..text.len_lines() {
             let skip = if line == scroll.line { scroll.row } else { 0 };
-            for (i, cells) in self
-                .layout(editor, view, line, text_width)
-                .into_iter()
-                .enumerate()
-                .skip(skip)
-            {
+            let layout = self.layout(editor, view, line, text_width);
+            let last = layout.len() - 1;
+            // The line's bytes; an empty last line still counts as one.
+            let start = text.line_to_byte(line);
+            let lines = start..text.line_to_byte(line + 1).max(start + 1);
+            let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
+            let line_gutter = Gutter {
+                width: gutter,
+                signs,
+                sign: styled
+                    .iter()
+                    .filter(on_line)
+                    .find(|m| m.sign.is_some())
+                    .copied(),
+                severity: worst(&marks, |r| r.start < lines.end && r.end >= lines.start),
+            };
+            for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
                     break 'lines;
                 }
-                let mut row = Row::default();
-                let (line_start, line_end) = (text.line_to_byte(line), text.line_to_byte(line + 1));
-                row.tags = styled
-                    .iter()
-                    .filter(|m| {
-                        m.line
-                            && m.range.start < line_end.max(line_start + 1)
-                            && m.range.end >= line_start
-                    })
-                    .map(|m| Tag::from(m.style.clone()))
-                    .collect();
+                let mut row = Row {
+                    tags: styled
+                        .iter()
+                        .filter(|m| m.line && on_line(m))
+                        .map(|m| Tag::from(m.style.clone()))
+                        .collect(),
+                    ..Row::default()
+                };
                 if line_numbers {
-                    let number = if i == 0 {
-                        format!("{:>w$} ", line + 1, w = gutter - 1)
-                    } else {
-                        " ".repeat(gutter)
-                    };
-                    let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::GUTTER];
-                    let start = text.line_to_byte(line);
-                    let end = text.line_to_byte(line + 1).max(start + 1);
-                    if let Some(severity) = worst(&marks, |r| r.start < end && r.end >= start) {
-                        tags.push(Tag::gutter_diagnostic(severity));
-                    }
-                    row.push(&number, tags);
+                    line_gutter.push(&mut row, (i == 0).then_some(line + 1));
                 }
                 let mut x = gutter;
                 for cell in &cells {
+                    if let Some(style) = &cell.inserted {
+                        row.push(&cell.text, smallvec![Tag::from(style.clone())]);
+                        x += cell.width;
+                        continue;
+                    }
                     if cell.byte == head {
                         let col = x.min(usize::from(area.width).saturating_sub(1));
                         cursor = Some(Position {
@@ -400,6 +405,10 @@ impl<M: Measure> Renderer<M> {
                     }
                     x += cell.width;
                 }
+                if i == last {
+                    let eol = styled.iter().filter(on_line).filter(|m| m.eol);
+                    self.push_eol_text(&mut row, usize::from(area.width).saturating_sub(x), eol);
+                }
                 rows.push(row);
             }
         }
@@ -407,27 +416,97 @@ impl<M: Measure> Renderer<M> {
         (rows, cursor)
     }
 
+    /// Adds each mark's text after the end of a line, a space before each,
+    /// cut off at `room` cells rather than wrapped.
+    fn push_eol_text<'a>(
+        &self,
+        row: &mut Row,
+        mut room: usize,
+        marks: impl Iterator<Item = &'a &'a Mark>,
+    ) {
+        for mark in marks {
+            let Some(text) = &mark.text else { continue };
+            let mut shown = String::new();
+            for g in std::iter::once(" ").chain(text.graphemes(true)) {
+                let w = self.measure.width(g);
+                if w > room {
+                    room = 0;
+                    break;
+                }
+                room -= w;
+                shown.push_str(g);
+            }
+            if !shown.is_empty() {
+                row.push(&shown, smallvec![Tag::from(mark.style.clone())]);
+            }
+        }
+    }
+
     /// Splits `line` into screen rows of at most `width` cells, breaking
     /// after whitespace where it can.
     fn layout(&self, editor: &Editor, view: &View, line: usize, width: usize) -> Vec<Vec<Cell>> {
-        let text = editor.buffer(view.buffer).text();
+        let buffer = editor.buffer(view.buffer);
+        let text = buffer.text();
         let start = text.line_to_byte(line);
         let content: Cow<str> = text.line(line).into();
         let content = content.trim_end_matches(['\n', '\r']);
+        let end = start + content.len();
 
-        let mut rows = vec![Vec::new()];
+        // Text from marks, shown before the character at its position.
+        let mut inserted: Vec<(&Mark, &str)> = buffer
+            .all_marks()
+            .filter(|m| !m.eol && (start..=end).contains(&m.range.start))
+            .filter_map(|m| Some((m, m.text.as_deref()?)))
+            .collect();
+        inserted.sort_by_key(|(m, _)| m.range.start);
+        let mut inserted = inserted.into_iter().peekable();
+
+        let mut cells = Vec::new();
         let mut x = 0;
-        // Where the current row may break: just after its last whitespace.
-        let mut last_break = 0;
-        for (offset, grapheme) in content.grapheme_indices(true) {
+        for (offset, grapheme) in content
+            .grapheme_indices(true)
+            .chain(std::iter::once((content.len(), "")))
+        {
+            let byte = start + offset;
+            while let Some((mark, extra)) = inserted.next_if(|(m, _)| m.range.start <= byte) {
+                for g in extra.graphemes(true) {
+                    let w = self.measure.width(g);
+                    cells.push(Cell {
+                        byte,
+                        text: g.to_owned(),
+                        width: w,
+                        end_of_line: false,
+                        inserted: Some(mark.style.clone()),
+                    });
+                    x += w;
+                }
+            }
+            if grapheme.is_empty() {
+                break;
+            }
             let (text, w) = if grapheme == "\t" {
                 let w = self.tab_width - x % self.tab_width;
                 (" ".repeat(w), w)
             } else {
                 (grapheme.to_owned(), self.measure.width(grapheme))
             };
+            cells.push(Cell {
+                byte,
+                text,
+                width: w,
+                end_of_line: false,
+                inserted: None,
+            });
+            x += w;
+        }
+
+        let mut rows = vec![Vec::new()];
+        let mut x = 0;
+        // Where the current row may break: just after its last whitespace.
+        let mut last_break = 0;
+        for cell in cells {
             let row = rows.last_mut().expect("at least one row");
-            if x + w > width && !row.is_empty() {
+            if x + cell.width > width && !row.is_empty() {
                 let carried = if last_break > 0 && last_break < row.len() {
                     row.split_off(last_break)
                 } else {
@@ -438,23 +517,20 @@ impl<M: Measure> Renderer<M> {
                 last_break = 0;
             }
             let row = rows.last_mut().expect("at least one row");
-            row.push(Cell {
-                byte: start + offset,
-                text,
-                width: w,
-                end_of_line: false,
-            });
-            x += w;
-            if grapheme.chars().all(char::is_whitespace) {
+            let breaks = cell.inserted.is_none() && cell.text.chars().all(char::is_whitespace);
+            x += cell.width;
+            row.push(cell);
+            if breaks {
                 last_break = row.len();
             }
         }
         if x < width {
             rows.last_mut().expect("at least one row").push(Cell {
-                byte: start + content.len(),
+                byte: end,
                 text: " ".to_owned(),
                 width: 1,
                 end_of_line: true,
+                inserted: None,
             });
         }
         rows
@@ -615,35 +691,75 @@ fn span(text: &str, tag: Tag) -> Span {
     }
 }
 
-/// Line numbers plus one space.
-fn gutter_width(editor: &Editor, view: &View) -> usize {
-    editor
-        .buffer(view.buffer)
-        .text()
-        .len_lines()
-        .to_string()
-        .len()
-        + 1
+/// The sign column, when any mark in the buffer has a sign.
+const SIGN_WIDTH: usize = 2;
+
+/// What goes in the gutter beside one buffer line.
+struct Gutter<'a> {
+    /// The whole gutter, sign column included.
+    width: usize,
+    signs: bool,
+    sign: Option<&'a Mark>,
+    /// The worst diagnostic on the line.
+    severity: Option<u8>,
+}
+
+impl Gutter<'_> {
+    /// Adds the gutter to one of the line's rows: the sign and number on its
+    /// first row (`number` is set), blanks on the rows it wraps onto.
+    fn push(&self, row: &mut Row, number: Option<usize>) {
+        if self.signs {
+            match self.sign.filter(|_| number.is_some()) {
+                Some(mark) => {
+                    let symbol = mark.sign.as_deref().unwrap_or_default();
+                    let text = format!("{symbol:<SIGN_WIDTH$}");
+                    row.push(&text, smallvec![Tag::GUTTER, Tag::from(mark.style.clone())]);
+                }
+                None => row.push(&" ".repeat(SIGN_WIDTH), smallvec![Tag::GUTTER]),
+            }
+        }
+        let width = self.width - if self.signs { SIGN_WIDTH } else { 0 };
+        let text = match number {
+            Some(n) => format!("{n:>w$} ", w = width - 1),
+            None => " ".repeat(width),
+        };
+        let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::GUTTER];
+        if let Some(severity) = self.severity {
+            tags.push(Tag::gutter_diagnostic(severity));
+        }
+        row.push(&text, tags);
+    }
+}
+
+/// The gutter's width: line numbers plus one space, after a sign column if
+/// any mark in the buffer has a sign. Also whether there is a sign column.
+fn gutter_width(editor: &Editor, view: &View) -> (usize, bool) {
+    let buffer = editor.buffer(view.buffer);
+    let numbers = buffer.text().len_lines().to_string().len() + 1;
+    let signs = buffer.all_marks().any(|m| m.sign.is_some());
+    (numbers + if signs { SIGN_WIDTH } else { 0 }, signs)
 }
 
 /// The tags for one cell, bottom first: its syntax capture, the marks on it,
-/// then selections and cursors.
+/// then selections and cursors, then marks drawn above them.
 fn cell_tags(
     view: &View,
     cell: &Cell,
     capture: Option<Arc<str>>,
     marks: &[&Mark],
 ) -> SmallVec<[Tag; 2]> {
+    let on_cell = |above: bool| {
+        marks
+            .iter()
+            .filter(move |m| {
+                !cell.end_of_line && !m.line && m.above == above && m.range.contains(&cell.byte)
+            })
+            .map(|m| Tag::from(m.style.clone()))
+    };
     let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
-    if !cell.end_of_line {
-        tags.extend(
-            marks
-                .iter()
-                .filter(|m| !m.line && m.range.contains(&cell.byte))
-                .map(|m| Tag::from(m.style.clone())),
-        );
-    }
+    tags.extend(on_cell(false));
     tags.extend(selection_tags(view, cell));
+    tags.extend(on_cell(true));
     tags
 }
 
