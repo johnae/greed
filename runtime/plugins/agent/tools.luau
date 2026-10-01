@@ -3,6 +3,7 @@
 local kern = require("@kern")
 local core = require("@core")
 local agent = require("./registry")
+local proposals = require("./proposals")
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
 	return { type = "object", properties = properties, required = required }
@@ -136,6 +137,27 @@ agent.tool({
 			end
 		end
 		return kern.json.array(list)
+	end,
+})
+
+agent.tool({
+	name = "propose",
+	description = "Propose changes to a file for the user to review in the editor. Each change "
+		.. "replaces old_text, which must appear exactly once in the file (quote enough "
+		.. "around it), with new_text. Waits for the user and says which changes they accepted",
+	input = object({
+		path = { type = "string" },
+		edits = {
+			type = "array",
+			items = object(
+				{ old_text = { type = "string" }, new_text = { type = "string" } },
+				{ "old_text", "new_text" }
+			),
+		},
+		reason = { type = "string", description = "One line on why, shown to the user" },
+	}, { "path", "edits" }),
+	run = function(args)
+		return proposals.propose(args.path, args.edits, args.reason)
 	end,
 })
 

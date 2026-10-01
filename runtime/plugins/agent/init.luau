@@ -4,11 +4,19 @@
 -- Requests come in on the session socket. registry.luau answers MCP's
 -- methods (initialize, tools/list, tools/call), so the tools are the same
 -- for an agent and for `kern ctl TOOL`. Add your own with
--- `require("@agent").tool { ... }`; tools.luau has the built-in ones.
+-- `require("@agent").tool { ... }`; tools.luau has the built-in ones, and
+-- proposals.luau the review of edits agents propose.
 
 local registry = require("@self/registry")
-
-export type Tool = registry.Tool
+local proposals = require("@self/proposals")
 require("@self/tools")
 
-return registry
+export type Tool = registry.Tool
+export type Edit = proposals.Edit
+
+return {
+	tool = registry.tool,
+	tools = registry.tools,
+	propose = proposals.propose,
+	pending = proposals.pending,
+}

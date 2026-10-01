@@ -26,7 +26,7 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
             let (_, view) = editor.open("file", text, Some("notes.md".into()));
             editor.view_mut(view).selection = Selection::single(4, 7);
             let host = Host::new(editor)?;
-            host.load_dirs(&[plugin("core"), plugin("agent")])?;
+            host.load_dirs(&[plugin("core"), plugin("picker"), plugin("agent")])?;
             Ok(host)
         },
         Some(session),
@@ -150,4 +150,34 @@ fn a_bridge_passes_lines_through_and_notifications_get_no_answer() {
     assert_eq!(answers[0]["id"], 1);
     assert_eq!(answers[1]["result"]["content"][0]["text"], "text");
     conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_proposal_waits_for_the_user_and_tells_the_agent_what_happened() {
+    let dir = std::env::temp_dir().join(format!("kern-propose-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "let x = 1;\n").unwrap();
+    let (conn, mut client) = start("propose", "");
+    let path = file.to_str().unwrap().to_owned();
+    call(&mut client, "open", &json!({ "path": path }));
+
+    let agent = std::thread::spawn(move || {
+        let edits = json!([{ "old_text": "1", "new_text": "2" }]);
+        call(
+            &mut client,
+            "propose",
+            &json!({ "path": path, "edits": edits }),
+        )
+    });
+    // Give the request time to arrive, then accept everything in the file.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    for key in kern_core::keymap::Key::parse_sequence("space o A").unwrap() {
+        conn.input.send(Input::Key(key)).unwrap();
+    }
+    let (answer, is_error) = agent.join().unwrap();
+    assert!(!is_error, "{answer}");
+    assert!(answer.starts_with("accepted 1 of 1 changes"), "{answer}");
+    conn.input.send(Input::Quit).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

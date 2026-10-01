@@ -4,6 +4,7 @@
 		"kern": "./types/kern",
 		"picker": "./plugins/picker",
 		"core": "./plugins/core",
-		"languages": "./plugins/languages"
+		"languages": "./plugins/languages",
+		"agent": "./plugins/agent"
 	}
 }
