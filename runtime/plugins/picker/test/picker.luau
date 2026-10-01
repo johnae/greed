@@ -257,3 +257,48 @@ test("the command palette shows each command's keys", function(t)
 	)
 	t:keys("esc")
 end)
+
+-- Types `text` into whatever has the keys, a character at a time.
+local function type_text(t: test.TestContext, text: string)
+	for _, char in string.split(text, "") do
+		t:keys(if char == " " then "space" else char)
+	end
+end
+
+test("space P offers recent projects, which open in their own session", function(t)
+	local core = require("@core")
+	local dir = t:tempdir({ [".git/HEAD"] = "" })
+	core.project.open(dir)
+	kern.project.close(kern.project.current().id)
+	assert(table.find(core.project.recent(), dir), "remembered")
+	t:buffer("|x")
+	t:keys("space P")
+	assert(
+		string.find(kern.view():buffer():text(), "(recent)", 1, true),
+		kern.view():buffer():text()
+	)
+	type_text(t, string.match(dir, "[^/]+$") :: string)
+	t:keys("enter")
+	local to = t:switched()
+	assert(to and to.path == dir, "went to its session")
+end)
+
+test("a folder typed into space P opens in its own session", function(t)
+	local dir = t:tempdir({ ["notes.md"] = "" })
+	t:buffer("|x")
+	t:keys("space P")
+	type_text(t, dir)
+	t:keys("enter")
+	local to = t:switched()
+	assert(to and to.path == dir, "went to the folder's session")
+end)
+
+test("a typed path that isn't a folder says so", function(t)
+	t:buffer("|x")
+	t:keys("space P")
+	type_text(t, "/no/such/folder")
+	t:keys("enter")
+	assert(t:switched() == nil)
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "no folder", 1, true), messages[#messages])
+end)

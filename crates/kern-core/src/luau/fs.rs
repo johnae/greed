@@ -9,6 +9,7 @@ use std::path::Path;
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
 
 use super::jobs::{self, Output};
+use super::state;
 use crate::search::{self, GrepOptions, LineMatch};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -102,6 +103,13 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "dirs",
         lua.create_function(|lua, ()| {
             let dirs = lua.create_table()?;
+            if let Some(root) = state(lua).dirs.clone() {
+                for (name, dir) in [("home", ""), ("config", "config"), ("cache", "cache")] {
+                    dirs.set(name, root.join(dir).to_string_lossy().trim_end_matches('/'))?;
+                }
+                return Ok(dirs);
+            }
+            dirs.set("home", std::env::var("HOME").ok())?;
             // Where the config was read from, which `kern ssh` points at the
             // copy of yours it brought along.
             let config = std::env::var("KERN_CONFIG_DIR")

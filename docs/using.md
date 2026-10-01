@@ -42,11 +42,17 @@ picker, project search and tree work within the shown one.
 | Keys | |
 |---|---|
 | `:project PATH` | Open the project `PATH` is in, or switch to it |
-| `space P` | Switch to another project: one open in this session, or another running session |
+| `space P` | Switch project: one open here, another running session, or a recent one; type a folder path to open it |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |
 | `:q` | Close the shown project and leave; on the last one, quit |
 | `:qa` | Quit every project |
+
+A recent project or a folder typed into `space P` opens in its own session,
+starting it if it isn't running, like `kern FOLDER` from a terminal.
+`:project PATH` opens a project in this session instead. `space P` works the
+same in the Helix and Vim styles; in edit mode, where space types, pick
+`pick-project` from the command palette (`ctrl-P`).
 
 ## Editing on another machine
 

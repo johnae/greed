@@ -50,10 +50,47 @@ function M.root(path: string?): string
 	return folder or kern.project.current().root
 end
 
+-- How many recent projects are remembered.
+local RECENT = 30
+
+local function recent_file(): string?
+	local cache = kern.fs.dirs().cache
+	return if cache then cache .. "/recent-projects" else nil
+end
+
+--- The roots of projects opened lately, newest first, from any session.
+function M.recent(): { string }
+	local file = recent_file()
+	local text = file and kern.fs.read(file)
+	local roots = {}
+	for _, line in string.split(text or "", "\n") do
+		if line ~= "" then
+			table.insert(roots, line)
+		end
+	end
+	return roots
+end
+
+-- Puts `root` at the top of the recent projects.
+local function remember(root: string)
+	local file = recent_file()
+	if file == nil then
+		return
+	end
+	local roots = { root }
+	for _, other in M.recent() do
+		if other ~= root and #roots < RECENT then
+			table.insert(roots, other)
+		end
+	end
+	kern.fs.write(file, table.concat(roots, "\n") .. "\n")
+end
+
 --- Shows the project `path` (a file or folder) is in, opening it if it
 --- isn't open yet. Returns its id.
 function M.open(path: string): number
 	local root = M.root(path)
+	remember(root)
 	for _, project in kern.project.list() do
 		if project.root == root then
 			kern.project.switch(project.id)

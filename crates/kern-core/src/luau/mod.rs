@@ -82,6 +82,9 @@ pub(crate) struct State {
     pub ide: Option<crate::ide::Ide>,
     /// The name of the session this editor is, when it is one.
     pub session_name: Option<String>,
+    /// A folder standing in for the home, config and cache folders, for
+    /// tests.
+    pub dirs: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -185,6 +188,7 @@ impl Host {
             request_sender: None,
             ide: None,
             session_name: None,
+            dirs: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),

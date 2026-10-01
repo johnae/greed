@@ -80,11 +80,25 @@ pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, Hos
 }
 
 fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", None);
     let host = Host::new(editor)?;
+    // Folders of the test's own, so plugins writing to the config or cache
+    // never touch the user's. They only exist once something writes there.
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dirs = std::env::temp_dir().join(format!("kern-home-{}-{n}", std::process::id()));
+    state_mut(&host.lua).dirs = Some(dirs);
     host.load_dirs(plugins)?;
     Ok(host)
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        if let Some(dirs) = &state(&self.lua).dirs {
+            let _ = std::fs::remove_dir_all(dirs);
+        }
+    }
 }
 
 impl Host {
@@ -169,8 +183,10 @@ impl UserData for TestContext {
         );
         methods.add_method(
             "tempdir",
-            |_, _, files: Option<HashMap<String, mlua::LuaString>>| {
-                tempdir(files.unwrap_or_default()).map_err(mlua::Error::external)
+            |lua, _, files: Option<HashMap<String, mlua::LuaString>>| {
+                // Inside the test's own folder, so it goes when the test ends.
+                let root = state(lua).dirs.clone().unwrap_or_else(std::env::temp_dir);
+                tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)
             },
         );
         methods.add_method("wait", |lua, _, ms: f64| {
@@ -275,11 +291,11 @@ fn test_body_line(lua: &Lua) -> Option<usize> {
     body.copied().flatten()
 }
 
-/// A new directory under the system's temporary one, holding `files`.
-fn tempdir(files: HashMap<String, mlua::LuaString>) -> std::io::Result<String> {
+/// A new directory under `root`, holding `files`.
+fn tempdir(root: &Path, files: HashMap<String, mlua::LuaString>) -> std::io::Result<String> {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("kern-test-{}-{n}", std::process::id()));
+    let dir = root.join(format!("tmp-{n}"));
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }

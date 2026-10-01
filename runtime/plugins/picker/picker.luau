@@ -31,6 +31,9 @@ export type Options = {
 	source: ((query: string) -> { Item })?,
 	--- Milliseconds without typing before `source` runs; 100 by default.
 	delay: number?,
+	--- Called with what was typed when enter is pressed and nothing matches,
+	--- e.g. to open a folder that isn't in the list.
+	fallback: ((query: string) -> ())?,
 }
 
 -- At most this many matches are shown.
@@ -51,6 +54,7 @@ type Open = {
 	keys: { [string]: (items: { Item }) -> () },
 	source: ((query: string) -> { Item })?,
 	delay: number,
+	fallback: ((query: string) -> ())?,
 	-- Goes up with each query, so a source's late answer can tell it's stale.
 	generation: number,
 	searching: boolean,
@@ -248,6 +252,8 @@ kern.command({
 		close()
 		if index then
 			o.choose(o.items[index])
+		elseif o.fallback and o.query and o.query ~= "" then
+			o.fallback(o.query)
 		end
 	end,
 })
@@ -324,6 +330,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		keys = options and options.keys or {},
 		source = options and options.source,
 		delay = options and options.delay or 100,
+		fallback = options and options.fallback,
 		generation = 0,
 		searching = false,
 		mode = kern.mode.get(),

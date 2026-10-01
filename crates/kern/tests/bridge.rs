@@ -8,6 +8,25 @@ use serde_json::{Value, json};
 
 const KERN: &str = env!("CARGO_BIN_EXE_kern");
 
+/// `kern` with folders of its own for sessions, config and cache, so these
+/// tests never see your editors or write to your folders.
+fn kern() -> Command {
+    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    for dir in ["run", "config", "cache", "claude"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    let mut command = Command::new(KERN);
+    command
+        .env("XDG_RUNTIME_DIR", root.join("run"))
+        .env("XDG_CONFIG_HOME", root.join("config"))
+        .env("XDG_CACHE_HOME", root.join("cache"))
+        .env("CLAUDE_CONFIG_DIR", root.join("claude"))
+        .env_remove("KERN_SESSION")
+        .env_remove("KERN_CONFIG_DIR")
+        .env_remove("KERN_NO_SESSION");
+    command
+}
+
 /// A `kern bridge` driven over pipes. Dropping it stops the bridge, so a
 /// failing test can't leave one behind holding the test run open.
 struct Bridge {
@@ -18,7 +37,7 @@ struct Bridge {
 
 impl Bridge {
     fn start(args: &[&str]) -> Bridge {
-        let mut command = Command::new(KERN);
+        let mut command = kern();
         command.arg("bridge").args(args);
         Bridge::spawn(command)
     }
@@ -141,7 +160,7 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     // The session takes a moment to start listening.
     let mut listed = String::new();
     for _ in 0..500 {
-        let out = Command::new(KERN).arg("ls").output().unwrap();
+        let out = kern().arg("ls").output().unwrap();
         listed = String::from_utf8(out.stdout).unwrap();
         if listed.lines().any(|line| line.starts_with(&name)) {
             break;
@@ -165,7 +184,7 @@ struct Server(Child);
 impl Server {
     fn start(args: &[&str]) -> Server {
         Server(
-            Command::new(KERN)
+            kern()
                 .arg("serve")
                 .args(args)
                 .stdin(Stdio::null())
@@ -205,7 +224,7 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     .unwrap();
     let file = temp_file("config", "text");
     let name = format!("bridge-config-{}", std::process::id());
-    let mut command = Command::new(KERN);
+    let mut command = kern();
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
         .env("KERN_CONFIG_DIR", &config);
@@ -214,7 +233,7 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     let status = rows.last().unwrap();
     assert!(status.contains("config from afar"), "{rows:?}");
     // The plugin in the config's plugins folder loaded too.
-    let listed = Command::new(KERN)
+    let listed = kern()
         .args([
             "ctl",
             "eval",
