@@ -9,6 +9,7 @@ use kern_text::{
     Author, ChangeSet, ClientId, Range, Replica, Selection, Transaction, TxId, TxMeta,
 };
 
+use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
 use crate::{Buffer, BufferId, Error, Mark};
@@ -135,6 +136,7 @@ pub struct Editor {
     clipboard: Vec<Vec<String>>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
+    file_types: FileTypes,
     theme: Arc<Theme>,
 }
 
@@ -159,6 +161,7 @@ impl Editor {
             quit_requested: false,
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
+            file_types: FileTypes::bundled(),
             theme: Arc::default(),
         }
     }
@@ -173,6 +176,7 @@ impl Editor {
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, kind, text);
         if let Some(path) = path {
+            buffer.set_detected(self.file_types.detect(&path));
             buffer = buffer.with_path(path);
         }
         self.buffers.insert(id, buffer);
@@ -198,7 +202,7 @@ impl Editor {
     }
 
     /// Sets the language `buffer` is in, or with `None` goes back to the one
-    /// its file extension implies.
+    /// its file name says.
     pub fn set_language(&mut self, buffer: BufferId, language: Option<Arc<str>>) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_language(language);
@@ -229,9 +233,25 @@ impl Editor {
             other => other?,
         };
         let id = BufferId(self.next_id());
-        self.buffers
-            .insert(id, Buffer::new(id, "file", &text).with_path(path));
+        let mut buffer = Buffer::new(id, "file", &text).with_path(path);
+        buffer.set_detected(self.file_types.detect(path));
+        self.buffers.insert(id, buffer);
         Ok(id)
+    }
+
+    /// Makes `extensions` and whole file `names` mean `language`, replacing
+    /// whatever it had, and redetects every open file.
+    pub fn set_file_type(&mut self, language: &str, extensions: &[String], names: &[String]) {
+        self.file_types.set(language, extensions, names);
+        for buffer in self.buffers.values_mut() {
+            let detected = buffer.path().and_then(|p| self.file_types.detect(p));
+            buffer.set_detected(detected);
+        }
+    }
+
+    /// The language of the file at `path`, by its name or extension.
+    pub fn file_type(&self, path: &Path) -> Option<Arc<str>> {
+        self.file_types.detect(path)
     }
 
     /// Shows `buffer` in `view`, starting at the top.
@@ -324,11 +344,14 @@ impl Editor {
 
     /// Writes the buffer to `path`, which becomes its file.
     pub fn save_as(&mut self, id: BufferId, path: &Path) -> std::io::Result<()> {
+        let detected = self.file_types.detect(path);
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
         let old = buffer.set_path(Some(path.to_path_buf()));
         let saved = buffer.save();
         if saved.is_err() {
             buffer.set_path(old);
+        } else {
+            buffer.set_detected(detected);
         }
         saved
     }

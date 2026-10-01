@@ -303,7 +303,9 @@ export type LspPosition = {
 export type Lsp = {
 	--- Sets the server for a language, e.g.
 	--- `{ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } }`.
-	server: (spec: { language: string, command: { string }, root_markers: { string }? }) -> (),
+	--- With `commands`, the first one whose program is installed runs, when
+	--- a file of the language first opens; with none installed, nothing does.
+	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }? }) -> (),
 	--- Sends a request to the buffer's server and waits for the answer.
 	--- Returns the result, or nil and the error. Works in commands and event
 	--- handlers.
@@ -433,8 +435,15 @@ export type Kern = {
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last
 	--- view showing it closes.
 	create_buffer: (kind: string, text: string?, opts: { readonly: boolean?, language: string? }?) -> Buffer,
-	--- The language of the file at `path`, going by its extension.
+	--- The language of the file at `path`, by its name or extension.
 	language_of: (path: string) -> string?,
+	--- Makes files with these extensions (without the dot) or exact names, like
+	--- "Makefile", be in `language`, replacing whatever it had before.
+	filetype: (language: string, spec: { extensions: { string }?, names: { string }? }) -> (),
+	--- The languages Kern has syntax highlighting for, sorted.
+	grammars: () -> { string },
+	--- Where `program` is on PATH, or nil if it isn't installed.
+	which: (program: string) -> string?,
 	--- Shows `buffer` in a view floating over the main one, and focuses it.
 	float: (buffer: Buffer, spec: FloatSpec?) -> View,
 	--- Every open buffer.

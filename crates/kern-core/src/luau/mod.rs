@@ -8,6 +8,7 @@
 mod api;
 mod fs;
 mod handles;
+mod languages;
 mod lsp;
 mod modules;
 mod tasks;

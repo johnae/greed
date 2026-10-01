@@ -1163,3 +1163,29 @@ fn marks_carry_inserted_text_signs_and_order() {
         .unwrap();
     assert_eq!(shown, ": i32|oops|true|E|true|nil");
 }
+
+#[test]
+fn plugins_set_file_types_and_find_programs() {
+    let h = host("");
+    assert_eq!(
+        h.eval("table.concat(require('@kern').grammars(), ',')")
+            .unwrap(),
+        "json,luau,markdown,rust,toml"
+    );
+    h.eval(
+        "require('@kern').filetype('python', { extensions = { 'py' }, names = { 'SConstruct' } })",
+    )
+    .unwrap();
+    assert_eq!(
+        h.eval("require('@kern').language_of('a/b.py'), require('@kern').language_of('SConstruct'), require('@kern').language_of('x.zz')")
+            .unwrap(),
+        "python\tpython\tnil"
+    );
+    assert_eq!(
+        h.eval(
+            "require('@kern').which('sh') ~= nil, require('@kern').which('no-such-program-kern')"
+        )
+        .unwrap(),
+        "true\tnil"
+    );
+}

@@ -72,14 +72,20 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             let strings = |key: &str| -> LuaResult<Vec<String>> {
                 Ok(spec.get::<Option<Vec<String>>>(key)?.unwrap_or_default())
             };
-            let config = ServerConfig {
-                language: spec.get("language")?,
-                command: strings("command")?,
-                root_markers: strings("root_markers")?,
-            };
-            if config.command.is_empty() {
+            // One `command`, or `commands` to try in order.
+            let mut commands = spec
+                .get::<Option<Vec<Vec<String>>>>("commands")?
+                .unwrap_or_default();
+            commands.insert(0, strings("command")?);
+            commands.retain(|c| !c.is_empty());
+            if commands.is_empty() {
                 return Err(mlua::Error::runtime("a language server needs a command"));
             }
+            let config = ServerConfig {
+                language: spec.get("language")?,
+                commands,
+                root_markers: strings("root_markers")?,
+            };
             state_mut(lua).lsp.configure(config);
             Ok(())
         })?,

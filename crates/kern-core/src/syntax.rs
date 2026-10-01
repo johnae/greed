@@ -54,7 +54,7 @@ impl Language {
 }
 
 /// The language of each file extension Kern knows.
-const EXTENSIONS: &[(&str, &str)] = &[
+pub(crate) const EXTENSIONS: &[(&str, &str)] = &[
     ("rs", "rust"),
     ("toml", "toml"),
     ("json", "json"),
@@ -63,6 +63,14 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("md", "markdown"),
     ("markdown", "markdown"),
 ];
+
+/// The languages Kern has grammars for, sorted.
+pub fn grammar_names() -> Vec<&'static str> {
+    let mut names: Vec<&str> = EXTENSIONS.iter().map(|(_, name)| *name).collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
 
 /// The language of the file at `path`, going by its extension.
 pub fn language_name(path: &Path) -> Option<&'static str> {

@@ -206,3 +206,38 @@ fn project_roots_come_from_markers_or_the_files_directory() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
+    use kern_core::lsp::ServerConfig;
+    let command = |parts: &[&str]| parts.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+    let config = ServerConfig {
+        language: "rust".into(),
+        commands: vec![
+            command(&["no-such-server-kern"]),
+            command(&["sh", "-c", "true"]),
+        ],
+        root_markers: Vec::new(),
+    };
+    assert_eq!(
+        config.installed_command(),
+        Some(&command(&["sh", "-c", "true"]))
+    );
+
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "fn main() {}", Some("main.rs".into()));
+    let mut lsp = Lsp::default();
+    lsp.configure(ServerConfig {
+        language: "rust".into(),
+        commands: vec![command(&["no-such-server-kern"])],
+        root_markers: Vec::new(),
+    });
+    assert!(
+        lsp.sync(&editor).is_empty(),
+        "nothing installed is not an error"
+    );
+    let err = lsp
+        .request(editor.buffers().next().unwrap(), "x", &Value::Null)
+        .unwrap_err();
+    assert!(err.to_string().contains("no language server"), "{err}");
+}

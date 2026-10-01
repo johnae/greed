@@ -2,6 +2,7 @@
 
 mod buffer;
 mod editor;
+mod filetypes;
 mod history;
 pub mod keymap;
 pub mod lsp;

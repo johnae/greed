@@ -15,7 +15,6 @@ use crossbeam_channel::{Receiver, Sender};
 use kern_text::Rope;
 use serde_json::{Value, json};
 
-use crate::syntax::language_name;
 use crate::{Buffer, BufferId, Editor};
 
 pub type ServerId = usize;
@@ -24,10 +23,37 @@ pub type ServerId = usize;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerConfig {
     pub language: String,
-    pub command: Vec<String>,
+    /// Commands to try, in order: the first whose program is installed runs.
+    pub commands: Vec<Vec<String>>,
     /// Files that mark a project's root, e.g. `Cargo.toml`. The server starts
     /// in the nearest directory above the first file that has one.
     pub root_markers: Vec<String>,
+}
+
+impl ServerConfig {
+    /// The first command whose program is installed.
+    pub fn installed_command(&self) -> Option<&Vec<String>> {
+        self.commands
+            .iter()
+            .find(|c| c.first().is_some_and(|program| which(program).is_some()))
+    }
+}
+
+/// Where `program` is: on `PATH`, or the path itself if it has a slash.
+pub fn which(program: &str) -> Option<PathBuf> {
+    if program.contains('/') {
+        let path = PathBuf::from(program);
+        return is_executable(&path).then_some(path);
+    }
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(program))
+        .find(|path| is_executable(path))
+}
+
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// Something a server sent.
@@ -216,7 +242,7 @@ impl Lsp {
         let Some(path) = buffer.path() else {
             return Ok(());
         };
-        let Some(language) = language_name(path) else {
+        let Some(language) = buffer.language() else {
             return Ok(());
         };
         let Some(server) = self.server_for(language, path)? else {
@@ -266,10 +292,14 @@ impl Lsp {
             return Ok(None);
         };
         let root = project_root(path, &config.root_markers);
-        let (program, args) = config
-            .command
-            .split_first()
-            .ok_or_else(|| LspError::NoServer(format!("{language} (empty command)")))?;
+        // Not having a server installed is normal, so it's not an error.
+        let Some((program, args)) = config
+            .installed_command()
+            .and_then(|command| command.split_first())
+        else {
+            self.failed.insert(language.to_owned());
+            return Ok(None);
+        };
         let mut child = Command::new(program)
             .args(args)
             .current_dir(&root)
@@ -349,7 +379,7 @@ impl Lsp {
     fn server_of(&self, buffer: &Buffer) -> Result<ServerId, LspError> {
         buffer
             .path()
-            .and_then(language_name)
+            .and(buffer.language())
             .and_then(|l| self.by_language.get(l).copied())
             .filter(|&id| self.servers[id].alive)
             .ok_or_else(|| LspError::NoServer(format!("buffer {}", buffer.id().0)))

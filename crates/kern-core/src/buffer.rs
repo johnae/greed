@@ -9,7 +9,6 @@ use smallvec::SmallVec;
 
 use crate::Error;
 use crate::history::{History, Step};
-use crate::syntax::language_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferId(pub u32);
@@ -28,8 +27,10 @@ pub struct Buffer {
     /// The version last loaded from or written to the file.
     saved: SmallVec<[TxId; 1]>,
     readonly: bool,
-    /// The language set for the buffer, overriding the one its path implies.
+    /// The language set for the buffer, overriding the detected one.
     language: Option<Arc<str>>,
+    /// The language its file name says, from the editor's file types.
+    detected: Option<Arc<str>>,
     /// Decorations by namespace. They move with edits.
     marks: BTreeMap<Arc<str>, Vec<Mark>>,
 }
@@ -68,6 +69,7 @@ impl Buffer {
             saved: SmallVec::new(),
             readonly: false,
             language: None,
+            detected: None,
             marks: BTreeMap::new(),
         }
     }
@@ -142,15 +144,17 @@ impl Buffer {
     }
 
     /// The language the text is in: the one set for the buffer, or the one
-    /// its file extension implies.
+    /// its file name says.
     pub fn language(&self) -> Option<&str> {
-        self.language
-            .as_deref()
-            .or_else(|| language_name(self.path.as_deref()?))
+        self.language.as_deref().or(self.detected.as_deref())
     }
 
     pub(crate) fn set_language(&mut self, language: Option<Arc<str>>) {
         self.language = language;
+    }
+
+    pub(crate) fn set_detected(&mut self, language: Option<Arc<str>>) {
+        self.detected = language;
     }
 
     /// Writes the text to the buffer's file.

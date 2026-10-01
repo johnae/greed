@@ -293,6 +293,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("clipboard", clipboard_module(lua)?)?;
     kern.set("lsp", super::lsp::module(lua)?)?;
     kern.set("fs", super::fs::module(lua)?)?;
+    super::languages::register(lua, kern)?;
     kern.set("plugin", plugin_module(lua)?)?;
     kern.set("theme", super::theme::module(lua, owner)?)
 }
@@ -803,11 +804,6 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         lua.create_function(|_, (query, text): (String, String)| {
             Ok(fuzzy_positions(&query, &text))
         })?,
-    )?;
-
-    kern.set(
-        "language_of",
-        lua.create_function(|_, path: String| Ok(crate::syntax::language_name(Path::new(&path))))?,
     )?;
 
     kern.set(
