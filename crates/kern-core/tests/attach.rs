@@ -5,7 +5,7 @@ use kern_core::Editor;
 use kern_core::control::{self, Attachment, Client};
 use kern_core::keymap::Key;
 use kern_core::luau::Host;
-use kern_core::render::Size;
+use kern_core::render::{Frame, Size};
 use kern_core::server::{self, Connection, Input, Output};
 use kern_text::ClientId;
 
@@ -37,11 +37,17 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
         },
         Some(session),
     );
-    let attach = move || Attached(Client::connect(&socket, &token).unwrap().attach().unwrap());
+    let attach = move || {
+        Attached(
+            Client::connect(&socket, &token).unwrap().attach().unwrap(),
+            None,
+        )
+    };
     (conn, attach)
 }
 
-struct Attached(Attachment);
+/// A client: its connection, and the frame it has so far.
+struct Attached(Attachment, Option<Frame>);
 
 impl Attached {
     fn send(&mut self, input: &Input) {
@@ -63,9 +69,11 @@ impl Attached {
     /// The first row of the next frame.
     fn first_row(&mut self) -> String {
         match self.next() {
-            Output::Frame(frame) => frame.rows[0].text(),
+            Output::Frame(frame) => self.1 = Some(frame),
+            Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame came first")),
             other => panic!("expected a frame, got {other:?}"),
         }
+        self.1.as_ref().unwrap().rows[0].text()
     }
 }
 
@@ -117,12 +125,32 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
     loop {
         match client.next() {
             Output::Detached => break,
-            Output::Frame(_) => {}
+            Output::Frame(_) | Output::Delta(_) => {}
             Output::Exit => panic!("the editor stopped"),
         }
     }
     let mut again = attach();
     again.send(&Input::Resize(SIZE));
     assert_eq!(again.first_row(), "1 Zhello", "the editor kept the edit");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn after_the_first_frame_clients_get_what_changed() {
+    let (conn, attach) = start("deltas");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    assert!(
+        matches!(client.next(), Output::Frame(_)),
+        "a whole frame first"
+    );
+    client.keys("i");
+    match client.next() {
+        Output::Delta(delta) => {
+            let rows: Vec<u16> = delta.rows.iter().map(|(i, _)| *i).collect();
+            assert_eq!(rows, [3], "only the status line changed: {rows:?}");
+        }
+        other => panic!("expected a delta, got {other:?}"),
+    }
     conn.input.send(Input::Quit).unwrap();
 }

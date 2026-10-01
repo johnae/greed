@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::BufferId;
 use crate::control::{Attachment, Session};
+use crate::delta::FrameDelta;
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
@@ -33,6 +34,8 @@ pub enum Input {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Output {
     Frame(Frame),
+    /// What changed since the last frame or delta this client got.
+    Delta(FrameDelta),
     /// The server has stopped; no more messages will come.
     Exit,
     /// The server goes on without this client: it detached, or another
@@ -85,6 +88,7 @@ where
             client: Some(Client {
                 output: outbox,
                 local: true,
+                last: None,
             }),
             inputs,
         };
@@ -102,8 +106,27 @@ where
 /// Where frames go.
 struct Client {
     output: Sender<Output>,
-    /// In the same process: when it goes, the editor goes with it.
+    /// In the same process: when it goes, the editor goes with it. It gets
+    /// whole frames, since nothing has to be sent anywhere.
     local: bool,
+    /// The last frame a remote client got, so the next can be sent as what
+    /// changed.
+    last: Option<Frame>,
+}
+
+impl Client {
+    /// What to send this client for `frame`, or `None` if nothing changed.
+    fn output_for(&mut self, frame: Frame) -> Option<Output> {
+        if self.local {
+            return Some(Output::Frame(frame));
+        }
+        let output = match &self.last {
+            None => Some(Output::Frame(frame.clone())),
+            Some(last) => FrameDelta::between(last, &frame).map(Output::Delta),
+        };
+        self.last = Some(frame);
+        output
+    }
 }
 
 struct Server<'a> {
@@ -250,6 +273,7 @@ impl Server<'_> {
         self.client = Some(Client {
             output,
             local: false,
+            last: None,
         });
     }
 
@@ -257,7 +281,7 @@ impl Server<'_> {
     /// its screen is. Returns false once the editor should stop, because
     /// the client in this process went away.
     fn draw(&mut self) -> bool {
-        let (Some(size), Some(client)) = (self.size, &self.client) else {
+        let (Some(size), Some(_)) = (self.size, &self.client) else {
             return true;
         };
         let host = self.host;
@@ -278,7 +302,13 @@ impl Server<'_> {
             diagnostics: host.diagnostic_marks(),
         };
         let frame = host.with_editor_mut(|ed| self.renderer.frame(ed, size, &status, &decorations));
-        if client.output.send(Output::Frame(frame)).is_ok() {
+        let Some(client) = &mut self.client else {
+            return true;
+        };
+        let Some(output) = client.output_for(frame) else {
+            return true;
+        };
+        if client.output.send(output).is_ok() {
             return true;
         }
         let local = client.local;

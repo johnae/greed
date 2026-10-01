@@ -55,7 +55,9 @@ without losing anything.
 Frames describe what to show by meaning, like "selection", "keyword" or
 "diagnostic.error", and carry the theme that maps those names to colors.
 A terminal and a GUI can draw the same frame, and theme entries can style
-each one differently.
+each one differently. An attached client gets a whole frame once, and after
+that only what changed: typing a character sends a row or two, and the
+theme goes along only when it changes.
 
 ## Plugins are contained
 

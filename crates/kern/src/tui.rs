@@ -46,9 +46,20 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
 
     let mut screen = Screen::default();
     let mut out = io::BufWriter::new(io::stdout());
+    // Deltas change the last whole frame into the next.
+    let mut current: Option<Frame> = None;
     let ended = loop {
         match output.recv() {
-            Ok(Output::Frame(frame)) => screen.draw(&mut out, &frame)?,
+            Ok(Output::Frame(frame)) => {
+                screen.draw(&mut out, &frame)?;
+                current = Some(frame);
+            }
+            Ok(Output::Delta(delta)) => {
+                if let Some(frame) = &mut current {
+                    delta.apply(frame);
+                    screen.draw(&mut out, frame)?;
+                }
+            }
             Ok(other) => break other,
             Err(_) => break Output::Exit,
         }
