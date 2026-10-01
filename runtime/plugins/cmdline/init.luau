@@ -1,4 +1,5 @@
--- The command line: press ":" and type a command, like in Vim or Helix.
+-- The command line: press ":" (alt-x in edit mode) and type a command, like
+-- in Vim or Helix.
 --
 -- Every command can be run by name (`:save`, `:pick-file`), and the short
 -- names Vim and Helix users know are aliases (`:w`, `:q`, `:wq`, `:e`).
@@ -367,6 +368,11 @@ kern.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 
 kern.keymap.bind("normal", {
 	[":"] = "command-line",
+})
+
+-- In edit mode ":" types, so the command line is on alt-x there.
+kern.keymap.bind("edit", {
+	["alt-x"] = "command-line",
 })
 
 return M
