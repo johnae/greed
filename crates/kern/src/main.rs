@@ -13,7 +13,7 @@ use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::{control, server};
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -34,6 +34,7 @@ fn main() -> ExitCode {
         [cmd] if cmd == "test" => test(&core_plugin()),
         [cmd, name] if cmd == "new" => new_plugin(name),
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
+        [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
         [file] if !file.starts_with('-') => edit(Some(PathBuf::from(file))),
         _ => {

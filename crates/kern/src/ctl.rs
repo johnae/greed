@@ -49,10 +49,23 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     &json!({ "name": tool, "arguments": arguments }),
                 )?
                 .map_err(io::Error::other)?;
-            match result {
-                Value::String(text) => println!("{text}"),
-                Value::Null => {}
-                other => println!("{}", serde_json::to_string_pretty(&other)?),
+            // An MCP result: text content, and whether the tool failed.
+            let text: String = result["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            if result["isError"].as_bool() == Some(true) {
+                return Err(text.into());
+            }
+            // Pretty-print JSON results; print anything else as it is.
+            match serde_json::from_str::<Value>(&text) {
+                Ok(json @ (Value::Object(_) | Value::Array(_))) => {
+                    println!("{}", serde_json::to_string_pretty(&json)?);
+                }
+                _ => println!("{text}"),
             }
             Ok(())
         }
@@ -120,4 +133,11 @@ fn connect() -> Result<Client, Box<dyn std::error::Error>> {
     let token = std::fs::read_to_string(&token_file)
         .map_err(|err| format!("can't read the token for session {name}: {err}"))?;
     Ok(Client::connect(&socket, token.trim())?)
+}
+
+/// `kern mcp`: an MCP server on stdin and stdout for the running editor, for
+/// agents like Claude Code (`claude mcp add kern -- kern mcp`).
+pub fn mcp() -> Result<(), Box<dyn std::error::Error>> {
+    connect()?.pipe(io::stdin().lock(), io::stdout())?;
+    Ok(())
 }

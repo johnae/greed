@@ -243,4 +243,36 @@ impl Client {
             None => Ok(response.get("result").cloned().unwrap_or(Value::Null)),
         })
     }
+
+    /// Copies JSON-RPC lines from `input` to the session, and the session's
+    /// answers to `output`, until `input` ends. This is all a bridge like
+    /// `kern mcp` needs: plugins speak the protocol.
+    pub fn pipe(
+        self,
+        input: impl BufRead,
+        mut output: impl Write + Send + 'static,
+    ) -> io::Result<()> {
+        let Client {
+            mut reader,
+            mut writer,
+            ..
+        } = self;
+        let answers = std::thread::spawn(move || -> io::Result<()> {
+            let mut line = String::new();
+            while reader.read_line(&mut line)? > 0 {
+                output.write_all(line.as_bytes())?;
+                output.flush()?;
+                line.clear();
+            }
+            Ok(())
+        });
+        for line in input.lines() {
+            writeln!(writer, "{}", line?)?;
+        }
+        // The session answers what's pending, then closes its end.
+        writer.shutdown(std::net::Shutdown::Write)?;
+        answers
+            .join()
+            .map_err(|_| io::Error::other("the thread copying answers panicked"))?
+    }
 }
