@@ -98,6 +98,8 @@ where
         if let Some(session) = &session {
             host.set_session_name(&session.name);
         }
+        let started = host.started();
+        server.report(started);
         server.run(&inbox, session.as_ref());
         server.send(Output::Exit);
         Ok(())

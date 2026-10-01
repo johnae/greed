@@ -273,13 +273,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("now", now)?;
     kern.set("next_key", tasks::next_key_function(lua)?)?;
 
-    kern.set(
-        "quit",
-        lua.create_function(|lua, ()| {
-            state_mut(lua).editor.request_quit();
-            Ok(())
-        })?,
-    )?;
+    kern.set("quit", quit_function(lua)?)?;
 
     kern.set(
         "eval",
@@ -1139,6 +1133,15 @@ fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
             view: None,
             author: Author::Plugin(owner.clone()),
         })
+    })
+}
+
+/// `kern.quit`, which tells plugins with "editor.quitting" first.
+fn quit_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, ()| {
+        emit(lua, "editor.quitting", &lua.create_table()?)?;
+        state_mut(lua).editor.request_quit();
+        Ok(())
     })
 }
 

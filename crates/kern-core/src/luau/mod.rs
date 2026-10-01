@@ -388,6 +388,16 @@ impl Host {
         })
     }
 
+    /// Tells plugins the editor is up and about to show itself, with
+    /// "editor.started": once per run, so reloading a plugin doesn't repeat
+    /// what it does then.
+    pub fn started(&self) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            api::emit(&self.lua, "editor.started", &payload).map_err(HostError::from)
+        })
+    }
+
     /// Tells plugins which session this editor is.
     pub fn set_session_name(&self, name: &str) {
         state_mut(&self.lua).session_name = Some(name.to_owned());

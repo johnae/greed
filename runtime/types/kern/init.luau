@@ -638,6 +638,8 @@ export type Kern = {
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
+		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())
+		& ((event: "editor.quitting", handler: (event: {}) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

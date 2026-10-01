@@ -6,6 +6,7 @@
 		"core": "./plugins/core",
 		"languages": "./plugins/languages",
 		"agent": "./plugins/agent",
-		"cmdline": "./plugins/cmdline"
+		"cmdline": "./plugins/cmdline",
+		"restore": "./plugins/restore"
 	}
 }

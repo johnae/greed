@@ -31,6 +31,12 @@ Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.
 
+A session that quits remembers its projects, their open files and where the
+cursor was, and opens them again the next time it starts. It writes this
+down when it quits and whenever you save a file, in the cache folder
+(`~/.cache/kern/sessions`). Starting with a file keeps that file shown. Turn
+it off with `kern.option.set("restore-session", false)`.
+
 ## Projects
 
 A project is a folder you work in: the nearest folder above a file that
