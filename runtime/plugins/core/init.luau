@@ -10,6 +10,7 @@ require("@self/edit")
 require("@self/file")
 require("@self/search")
 require("@self/select")
+require("@self/jump")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 
@@ -31,6 +32,7 @@ kern.keymap.bind("normal", {
 	["g l"] = "line-end",
 	["g g"] = "goto-start",
 	["g e"] = "goto-end",
+	["g w"] = "jump-to-word",
 	x = "select-line",
 	[";"] = "collapse",
 	["alt-;"] = "flip",

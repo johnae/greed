@@ -25,6 +25,7 @@ kern.theme.set({
 	["ui.menu.doc"] = { dim = true },
 	["ui.search.match"] = { bg = "yellow", fg = "black" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
+	["ui.jump.label"] = { fg = "red", bold = true },
 	["ui.health.found"] = { fg = "green" },
 	["ui.health.missing"] = { fg = "bright-black" },
 	["ui.panel.border"] = { fg = "bright-black" },
