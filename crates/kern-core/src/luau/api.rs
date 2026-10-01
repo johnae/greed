@@ -215,6 +215,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("option", option_module(lua, owner)?)?;
     kern.set("history", history_module(lua)?)?;
     kern.set("clipboard", clipboard_module(lua)?)?;
+    kern.set("lsp", super::lsp::module(lua)?)?;
     Ok(kern)
 }
 

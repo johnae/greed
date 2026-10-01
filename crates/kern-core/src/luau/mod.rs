@@ -7,6 +7,7 @@
 
 mod api;
 mod handles;
+mod lsp;
 mod modules;
 mod tasks;
 mod testing;
@@ -50,6 +51,11 @@ pub(crate) struct State {
     pub exports: HashMap<PluginId, Value>,
     /// Commands and handlers waiting on a timer or a reply.
     pub tasks: tasks::Tasks,
+    /// Language servers.
+    pub lsp: crate::lsp::Lsp,
+    /// The waiting command each pending request wakes, by server and
+    /// request id.
+    pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
 }
 
 #[derive(Clone)]
@@ -134,6 +140,8 @@ impl Host {
             sources: HashMap::new(),
             exports: HashMap::new(),
             tasks: tasks::Tasks::default(),
+            lsp: crate::lsp::Lsp::default(),
+            lsp_waiting: HashMap::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -310,6 +318,45 @@ impl Host {
         budgeted(&self.lua, || {
             tasks::fire_timers(&self.lua, now).map_err(HostError::from)
         })
+    }
+
+    /// Messages from language servers, to pass to [`Host::handle_lsp`].
+    pub fn lsp_events(&self) -> crossbeam_channel::Receiver<crate::lsp::Event> {
+        state(&self.lua).lsp.events().clone()
+    }
+
+    /// Handles a message from a language server.
+    pub fn handle_lsp(&self, event: crate::lsp::Event) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            lsp::handle(&self.lua, event).map_err(HostError::from)
+        })
+    }
+
+    /// Sends open buffers to their language servers, starting servers as
+    /// needed. Returns what went wrong, each problem once.
+    pub fn sync_lsp(&self) -> Vec<String> {
+        let state = &mut *state_mut(&self.lua);
+        state
+            .lsp
+            .sync(&state.editor)
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// Talks to a language server over `input` and `output` instead of
+    /// starting one; for tests.
+    pub fn connect_lsp(
+        &self,
+        language: &str,
+        input: Box<dyn std::io::Write + Send>,
+        output: impl std::io::Read + Send + 'static,
+    ) -> Result<(), HostError> {
+        state_mut(&self.lua)
+            .lsp
+            .connect(language, input, output, Path::new("."))
+            .map(drop)
+            .map_err(|err| HostError::Lua(mlua::Error::external(err)))
     }
 
     /// Runs a command as the user.

@@ -5,7 +5,7 @@
 //! language shows up. Each server has a reader thread that turns its output
 //! into [`Event`]s; the editor handles them on its own thread.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -165,6 +165,8 @@ pub struct Lsp {
     configs: Vec<ServerConfig>,
     servers: Vec<Server>,
     by_language: HashMap<String, ServerId>,
+    /// Languages whose server couldn't be started; not tried again.
+    failed: HashSet<String>,
     diagnostics: HashMap<BufferId, Vec<Diagnostic>>,
     events: Receiver<Event>,
     sender: Sender<Event>,
@@ -177,6 +179,7 @@ impl Default for Lsp {
             configs: Vec::new(),
             servers: Vec::new(),
             by_language: HashMap::new(),
+            failed: HashSet::new(),
             diagnostics: HashMap::new(),
             events,
             sender,
@@ -251,6 +254,9 @@ impl Lsp {
         if let Some(&id) = self.by_language.get(language) {
             return Ok(Some(id));
         }
+        if self.failed.contains(language) {
+            return Ok(None);
+        }
         let Some(config) = self
             .configs
             .iter()
@@ -271,7 +277,10 @@ impl Lsp {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|err| LspError::NoServer(format!("{language}: can't run {program}: {err}")))?;
+            .map_err(|err| {
+                self.failed.insert(language.to_owned());
+                LspError::NoServer(format!("{language}: can't run {program}: {err}"))
+            })?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let id = self.connect(language, Box::new(stdin), stdout, &root)?;

@@ -72,6 +72,7 @@ fn declared_api_exists() {
         ("Options", format!("{kern} check(kern.option)")),
         ("History", format!("{kern} check(kern.history)")),
         ("Clipboard", format!("{kern} check(kern.clipboard)")),
+        ("Lsp", format!("{kern} check(kern.lsp)")),
         ("View", format!("{kern} check(kern.view())")),
         ("Buffer", format!("{kern} check(kern.view():buffer())")),
         ("Edits", format!("{kern} kern.view():buffer():edit(check)")),
@@ -94,6 +95,7 @@ fn api_tables_are_fully_declared() {
         ("Options", "kern.option"),
         ("History", "kern.history"),
         ("Clipboard", "kern.clipboard"),
+        ("Lsp", "kern.lsp"),
     ];
     let h = host();
     for (name, expr) in cases {

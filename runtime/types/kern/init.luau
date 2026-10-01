@@ -207,6 +207,46 @@ export type Clipboard = {
 	history: () -> { { string } },
 }
 
+--- A problem a language server found.
+export type Diagnostic = {
+	from: number,
+	to: number,
+	--- 1 error, 2 warning, 3 information, 4 hint.
+	severity: number,
+	message: string,
+	source: string?,
+}
+
+--- A position as language servers count it.
+export type LspPosition = {
+	line: number,
+	character: number,
+}
+
+--- Language servers. Servers start the first time a file of their language
+--- is open.
+export type Lsp = {
+	--- Sets the server for a language, e.g.
+	--- `{ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } }`.
+	server: (spec: { language: string, command: { string }, root_markers: { string }? }) -> (),
+	--- Sends a request to the buffer's server and waits for the answer.
+	--- Returns the result, or nil and the error. Works in commands and event
+	--- handlers.
+	request: (buffer: Buffer, method: string, params: any) -> (any, any),
+	--- The buffer's file as a URI, for request parameters.
+	uri: (buffer: Buffer) -> string,
+	--- Byte offset `pos` as the buffer's server counts positions.
+	position: (buffer: Buffer, pos: number) -> LspPosition,
+	--- The byte offset of a server position.
+	offset: (buffer: Buffer, position: LspPosition) -> number,
+	--- The buffer's latest diagnostics.
+	diagnostics: (buffer: Buffer) -> { Diagnostic },
+}
+
+export type DiagnosticsChanged = {
+	buffer: Buffer,
+}
+
 export type ModeChanged = {
 	from: string,
 	to: string,
@@ -221,6 +261,7 @@ export type Kern = {
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
+		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
@@ -254,6 +295,7 @@ export type Kern = {
 	option: Options,
 	history: History,
 	clipboard: Clipboard,
+	lsp: Lsp,
 }
 
 return (nil :: any) :: Kern

@@ -64,9 +64,13 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
     let renderer = Renderer::new(CellWidth);
     let mut syntax = Syntax::new();
     let mut size = None;
+    let lsp_events = host.lsp_events();
     let mut message: Option<String> = None;
     loop {
         host.with_editor(|ed| syntax.update(ed));
+        if let Some(problem) = host.sync_lsp().pop() {
+            message = Some(problem);
+        }
         // Wake up in time for the next timer a command is waiting on.
         let timer = host
             .next_timer()
@@ -87,6 +91,13 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
             recv(syntax.results()) -> parsed => {
                 if let Ok(parsed) = parsed {
                     syntax.receive(parsed);
+                }
+            }
+            recv(lsp_events) -> event => {
+                if let Ok(event) = event
+                    && let Err(err) = host.handle_lsp(event)
+                {
+                    message = Some(first_line(&err.to_string()));
                 }
             }
             recv(timer) -> _ => {}

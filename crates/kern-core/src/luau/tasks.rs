@@ -23,7 +23,7 @@ pub(crate) struct Tasks {
 }
 
 impl Tasks {
-    fn token(&mut self) -> u64 {
+    pub(super) fn token(&mut self) -> u64 {
         self.next_token += 1;
         self.next_token
     }
