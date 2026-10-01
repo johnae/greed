@@ -1,0 +1,87 @@
+use kern_core::theme::{Color, Entry, Style, Surface, Theme, Underline};
+
+fn fg(color: Color) -> Style {
+    Style {
+        fg: Some(color),
+        ..Style::default()
+    }
+}
+
+#[test]
+fn colors_parse_from_names_and_hex() {
+    assert_eq!(Color::parse("red"), Some(Color::Ansi(1)));
+    assert_eq!(Color::parse("bright-red"), Some(Color::Ansi(9)));
+    assert_eq!(Color::parse("grey"), Some(Color::Ansi(8)));
+    assert_eq!(Color::parse("white"), Some(Color::Ansi(7)));
+    assert_eq!(Color::parse("#ff8000"), Some(Color::Rgb(255, 128, 0)));
+    assert_eq!(Color::parse("default"), Some(Color::Default));
+    assert_eq!(Color::parse("#ff80"), None);
+    assert_eq!(Color::parse("chartreuse"), None);
+}
+
+#[test]
+fn names_fall_back_to_their_parents() {
+    let mut theme = Theme::default();
+    theme.set("markup", Entry::new(fg(Color::Ansi(4))));
+    theme.set("markup.heading.1", Entry::new(fg(Color::Ansi(1))));
+    assert_eq!(
+        theme.style("markup.heading.1", Surface::Tui).fg,
+        Some(Color::Ansi(1))
+    );
+    assert_eq!(
+        theme.style("markup.heading.2", Surface::Tui).fg,
+        Some(Color::Ansi(4))
+    );
+    assert_eq!(
+        theme.style("markup.link", Surface::Tui).fg,
+        Some(Color::Ansi(4))
+    );
+    assert_eq!(theme.style("keyword", Surface::Tui), Style::default());
+}
+
+#[test]
+fn surfaces_override_the_shared_part() {
+    let mut theme = Theme::default();
+    let mut entry = Entry::new(Style {
+        fg: Some(Color::Ansi(2)),
+        bold: Some(true),
+        ..Style::default()
+    });
+    entry.tui = fg(Color::Ansi(10));
+    theme.set("string", entry);
+    let tui = theme.style("string", Surface::Tui);
+    assert_eq!((tui.fg, tui.bold), (Some(Color::Ansi(10)), Some(true)));
+    assert_eq!(theme.style("string", Surface::Gui).fg, Some(Color::Ansi(2)));
+}
+
+#[test]
+fn layered_styles_keep_what_the_top_one_leaves_unset() {
+    let base = Style {
+        fg: Some(Color::Ansi(7)),
+        bg: Some(Color::Ansi(0)),
+        ..Style::default()
+    };
+    let over = Style {
+        bg: Some(Color::Ansi(4)),
+        underline: Some(Underline::Curl),
+        underline_color: Some(Color::Ansi(1)),
+        ..Style::default()
+    };
+    let merged = base.patch(&over);
+    assert_eq!(merged.fg, Some(Color::Ansi(7)));
+    assert_eq!(merged.bg, Some(Color::Ansi(4)));
+    assert_eq!(merged.underline, Some(Underline::Curl));
+}
+
+#[test]
+fn an_empty_theme_still_shows_selections_and_the_status_line() {
+    let theme = Theme::default();
+    assert_eq!(
+        theme.style("ui.selection", Surface::Tui).reverse,
+        Some(true)
+    );
+    assert_eq!(
+        theme.style("ui.statusline", Surface::Tui).reverse,
+        Some(true)
+    );
+}

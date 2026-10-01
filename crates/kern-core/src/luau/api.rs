@@ -273,6 +273,12 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     workspace_functions(lua, &kern, owner)?;
+    submodules(lua, &kern, owner)?;
+    Ok(kern)
+}
+
+/// `kern.keymap`, `kern.mode` and the other tables in `kern`.
+fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("keymap", keymap_module(lua, owner)?)?;
     kern.set("mode", mode_module(lua)?)?;
     kern.set("option", option_module(lua, owner)?)?;
@@ -281,7 +287,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("lsp", super::lsp::module(lua)?)?;
     kern.set("fs", super::fs::module(lua)?)?;
     kern.set("plugin", plugin_module(lua)?)?;
-    Ok(kern)
+    kern.set("theme", super::theme::module(lua, owner)?)
 }
 
 fn plugin_module(lua: &Lua) -> LuaResult<Table> {
@@ -999,20 +1005,11 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
                     )));
                 }
             };
-            let tag = match style.as_deref() {
-                None | Some("status") => Tag::Status,
-                Some("mode") => Tag::Mode,
-                Some("message") => Tag::Message,
-                Some(other) => {
-                    return Err(mlua::Error::runtime(format!(
-                        "status line style must be \"status\", \"mode\" or \"message\", not {other:?}"
-                    )));
-                }
-            };
-            Ok(Span {
-                text,
-                tags: std::iter::once(tag).collect(),
-            })
+            let mut tags = smallvec::smallvec![Tag::STATUS];
+            if let Some(style) = style {
+                tags.push(Tag::from(style.as_str()));
+            }
+            Ok(Span { text, tags })
         })
         .collect()
 }

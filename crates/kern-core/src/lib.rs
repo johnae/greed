@@ -10,6 +10,7 @@ pub mod registry;
 pub mod render;
 pub mod server;
 pub mod syntax;
+pub mod theme;
 
 use std::fmt;
 

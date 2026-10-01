@@ -8,7 +8,7 @@ local kern = require("@kern")
 kern.statusline(function(s)
 	local middle: kern.StatusSegment
 	if s.message then
-		middle = { text = s.message, style = "message" }
+		middle = { text = s.message, style = "ui.statusline.message" }
 	else
 		local name = s.buffer:path() or "[scratch]"
 		if s.buffer:modified() then
@@ -37,8 +37,9 @@ kern.statusline(function(s)
 	local line = s.buffer:line_of(head)
 	local column = (utf8.len(s.buffer:slice(s.buffer:line_start(line), head)) or 0) + 1
 
+	local mode = { text = " " .. string.upper(s.mode) .. " ", style = "ui.statusline.mode" }
 	return {
-		left = { { text = " " .. string.upper(s.mode) .. " ", style = "mode" }, " ", middle },
+		left = { mode, " ", middle },
 		right = { problems, `{line + 1}:{column} ` },
 	}
 end)

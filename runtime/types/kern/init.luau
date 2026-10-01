@@ -220,8 +220,9 @@ export type KeysPending = {
 
 --- A piece of the status line: plain text, or text with a style.
 export type StatusSegment = string | {
-	text: string,
-	style: ("status" | "mode" | "message")?,
+	read text: string,
+	--- A style name, e.g. "ui.statusline.mode", drawn over "ui.statusline".
+	read style: string?,
 }
 
 --- What a status line function gets, for the main view.
@@ -330,6 +331,40 @@ export type Plugins = {
 	unload: (name: string) -> (),
 }
 
+--- How text looks. Colors are "red", "bright-blue" and the other 16
+--- terminal colors, "default", or "#rrggbb". Fields left out leave whatever
+--- is underneath, so styles layer.
+export type Style = {
+	fg: string?,
+	bg: string?,
+	--- true, or "line", "curl", "dotted", "dashed" or "double".
+	underline: (boolean | string)?,
+	underline_color: string?,
+	bold: boolean?,
+	italic: boolean?,
+	dim: boolean?,
+	reverse: boolean?,
+	strikethrough: boolean?,
+}
+
+--- A theme entry: a style for every surface, with changes for the terminal
+--- (`tui`) or a graphical client (`gui`).
+export type ThemeEntry = Style & {
+	tui: Style?,
+	gui: Style?,
+}
+
+--- What style names look like. Everything on screen has one: "ui.text",
+--- "ui.selection", "ui.statusline.mode", "ui.float.border", "keyword",
+--- "diagnostic.error", or a name a plugin made up. Names fall back to their
+--- parent, so "markup.heading.1" uses "markup.heading" if it has no entry.
+export type Theme = {
+	--- Sets entries by name, replacing any with the same name.
+	set: (entries: { [string]: ThemeEntry }) -> (),
+	--- The entry for exactly `name`, if there is one.
+	get: (name: string) -> ThemeEntry?,
+}
+
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
 	--- Runs a command by name, optionally with arguments, `force` and a count.
@@ -385,6 +420,7 @@ export type Kern = {
 	lsp: Lsp,
 	fs: Fs,
 	plugin: Plugins,
+	theme: Theme,
 }
 
 return (nil :: any) :: Kern

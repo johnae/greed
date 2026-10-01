@@ -6,13 +6,14 @@ use std::thread;
 
 use crossterm::cursor::{self, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::style::{Attribute, Color, ContentStyle, PrintStyledContent, ResetColor, Stylize};
+use crossterm::style::{Attribute, Color, ContentStyle, PrintStyledContent, ResetColor};
 use crossterm::terminal::{self, ClearType};
 use crossterm::{execute, queue};
 use kern_core::CursorShape;
 use kern_core::keymap::{Key, KeyCode, Mods};
 use kern_core::render::{Frame, Row, Size, Tag};
 use kern_core::server::{Connection, Input, Output};
+use kern_core::theme::{Color as ThemeColor, Style, Surface, Theme, Underline};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -188,12 +189,19 @@ impl Screen {
 }
 
 /// Lays the frame out as cells: the main view, then each floating view in a
-/// box on top.
+/// box on top, styled by the frame's theme.
 fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
+    let theme = &frame.theme;
+    let look = |tag: &Tag| theme.style(tag.name(), Surface::Tui);
     let width = usize::from(frame.size.width);
-    let mut grid = vec![vec![Cell::default(); width]; usize::from(frame.size.height)];
+    let text = look(&Tag::TEXT);
+    let blank = Cell {
+        text: " ".to_owned(),
+        style: terminal_style(text),
+    };
+    let mut grid = vec![vec![blank; width]; usize::from(frame.size.height)];
     for (line, row) in grid.iter_mut().zip(&frame.rows) {
-        put_row(line, 0, width, row);
+        put_row(line, 0, width, row, text, theme);
     }
     for float in &frame.floats {
         let r = float.rect;
@@ -203,7 +211,8 @@ fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
             usize::from(r.width),
             usize::from(r.height),
         );
-        let border = ContentStyle::new().dark_grey();
+        let body = text.patch(&look(&Tag::FLOAT));
+        let border = body.patch(&look(&Tag::FLOAT_BORDER));
         for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
             let (left, fill, right) = match dy {
                 d if d == y - 1 => ('┌', '─', '┐'),
@@ -215,37 +224,44 @@ fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
                 .chain(std::iter::once(right));
             for cell in line.iter_mut().skip(x - 1).take(w + 2) {
                 let c = cells.next().unwrap_or(' ');
-                let style = if c == ' ' {
-                    ContentStyle::new()
-                } else {
-                    border
-                };
+                let style = if c == ' ' { body } else { border };
                 *cell = Cell {
                     text: c.to_string(),
-                    style,
+                    style: terminal_style(style),
                 };
             }
         }
         if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1)) {
+            let style = terminal_style(border.patch(&look(&Tag::FLOAT_TITLE)));
             put(
                 top,
                 x + 1,
                 w.saturating_sub(2),
                 &format!(" {title} "),
-                border,
+                style,
             );
         }
         for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
-            put_row(line, x, w, row);
+            put_row(line, x, w, row, body, theme);
         }
     }
     grid
 }
 
-fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row) {
+/// Draws `row` over `base`, each span styled by its tags in order.
+fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, theme: &Theme) {
     let mut used = 0;
     for span in &row.spans {
-        used += put(line, x + used, width - used, &span.text, style(&span.tags));
+        let style = span.tags.iter().fold(base, |style, tag| {
+            style.patch(&theme.style(tag.name(), Surface::Tui))
+        });
+        used += put(
+            line,
+            x + used,
+            width - used,
+            &span.text,
+            terminal_style(style),
+        );
     }
 }
 
@@ -273,55 +289,61 @@ fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: ContentStyl
     used
 }
 
-/// The default theme.
-fn style(tags: &[Tag]) -> ContentStyle {
-    let mut style = ContentStyle::new();
-    for tag in tags {
-        style = match tag {
-            Tag::Gutter => style.dark_grey(),
-            Tag::Selection => style.on(Color::DarkBlue),
-            Tag::Cursor => style.reverse(),
-            Tag::Status => style.on(Color::DarkGrey).white(),
-            Tag::Mode => style.on(Color::Blue).black().attribute(Attribute::Bold),
-            Tag::Message => style.on(Color::DarkGrey).yellow(),
-            Tag::Syntax(capture) => syntax_style(style, capture),
-            Tag::Diagnostic(severity) => diagnostic_style(style, *severity),
-        };
+/// A theme style as the terminal draws it.
+fn terminal_style(style: Style) -> ContentStyle {
+    let mut out = ContentStyle::new();
+    out.foreground_color = style.fg.map(terminal_color);
+    out.background_color = style.bg.map(terminal_color);
+    out.underline_color = style.underline_color.map(terminal_color);
+    let flags = [
+        (style.bold, Attribute::Bold),
+        (style.italic, Attribute::Italic),
+        (style.dim, Attribute::Dim),
+        (style.reverse, Attribute::Reverse),
+        (style.strikethrough, Attribute::CrossedOut),
+    ];
+    for (on, attribute) in flags {
+        if on == Some(true) {
+            out.attributes.set(attribute);
+        }
     }
-    style
+    if let Some(underline) = style.underline {
+        out.attributes.set(match underline {
+            Underline::Line => Attribute::Underlined,
+            Underline::Curl => Attribute::Undercurled,
+            Underline::Dotted => Attribute::Underdotted,
+            Underline::Dashed => Attribute::Underdashed,
+            Underline::Double => Attribute::DoubleUnderlined,
+        });
+    }
+    out
 }
 
-/// Diagnostics: underlined in their color. On the gutter, which has no
-/// text worth underlining, the line number takes the color.
-fn diagnostic_style(style: ContentStyle, severity: u8) -> ContentStyle {
-    let color = match severity {
-        1 => Color::Red,
-        2 => Color::Yellow,
-        3 => Color::Blue,
-        _ => Color::Cyan,
-    };
-    if style.foreground_color == Some(Color::DarkGrey) {
-        return style.with(color);
-    }
-    let mut style = style.attribute(Attribute::Underlined);
-    style.underline_color = Some(color);
-    style
-}
-
-/// Colors for tree-sitter captures, chosen by the first part of the name
-/// ("function" for "function.macro").
-fn syntax_style(style: ContentStyle, capture: &str) -> ContentStyle {
-    if capture == "text.title" {
-        return style.blue().attribute(Attribute::Bold);
-    }
-    match capture.split('.').next().unwrap_or(capture) {
-        "keyword" | "conditional" | "repeat" | "include" | "exception" => style.magenta(),
-        "string" | "character" => style.green(),
-        "comment" => style.dark_grey().attribute(Attribute::Italic),
-        "function" | "method" | "constructor" => style.blue(),
-        "type" | "attribute" | "label" => style.yellow(),
-        "constant" | "number" | "boolean" | "float" | "escape" => style.cyan(),
-        _ => style,
+/// The 16 terminal colors are the terminal's own palette, so themes follow
+/// it.
+fn terminal_color(color: ThemeColor) -> Color {
+    const ANSI: [Color; 16] = [
+        Color::Black,
+        Color::DarkRed,
+        Color::DarkGreen,
+        Color::DarkYellow,
+        Color::DarkBlue,
+        Color::DarkMagenta,
+        Color::DarkCyan,
+        Color::Grey,
+        Color::DarkGrey,
+        Color::Red,
+        Color::Green,
+        Color::Yellow,
+        Color::Blue,
+        Color::Magenta,
+        Color::Cyan,
+        Color::White,
+    ];
+    match color {
+        ThemeColor::Default => Color::Reset,
+        ThemeColor::Ansi(n) => ANSI[usize::from(n % 16)],
+        ThemeColor::Rgb(r, g, b) => Color::Rgb { r, g, b },
     }
 }
 
@@ -381,6 +403,7 @@ mod tests {
             floats: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
+            theme: std::sync::Arc::default(),
         };
         let mut screen = Screen::default();
         let mut out = Vec::new();
@@ -417,6 +440,7 @@ mod tests {
             }],
             cursor: None,
             cursor_shape: CursorShape::Block,
+            theme: std::sync::Arc::default(),
         };
         let text: Vec<String> = compose(&frame)
             .iter()
@@ -441,5 +465,59 @@ mod tests {
                 tags: std::iter::empty().collect(),
             }],
         }
+    }
+
+    #[test]
+    fn cells_take_their_look_from_the_theme() {
+        use kern_core::render::Span;
+        use kern_core::theme::{Entry, Style};
+        let mut theme = Theme::default();
+        theme.set(
+            "keyword",
+            Entry {
+                style: Style {
+                    fg: Some(ThemeColor::Ansi(5)),
+                    bold: Some(true),
+                    ..Style::default()
+                },
+                tui: Style {
+                    fg: Some(ThemeColor::Ansi(13)),
+                    ..Style::default()
+                },
+                gui: Style::default(),
+            },
+        );
+        theme.set(
+            "ui.selection",
+            Entry::new(Style {
+                bg: Some(ThemeColor::Rgb(1, 2, 3)),
+                ..Style::default()
+            }),
+        );
+        let frame = Frame {
+            size: Size {
+                width: 4,
+                height: 1,
+            },
+            rows: vec![Row {
+                spans: vec![Span {
+                    text: "fn".into(),
+                    tags: [Tag::from("keyword.function"), Tag::SELECTION]
+                        .into_iter()
+                        .collect(),
+                }],
+            }],
+            floats: Vec::new(),
+            cursor: None,
+            cursor_shape: CursorShape::Block,
+            theme: std::sync::Arc::new(theme),
+        };
+        let cell = &compose(&frame)[0][0];
+        assert_eq!(cell.style.foreground_color, Some(Color::Magenta));
+        assert_eq!(
+            cell.style.background_color,
+            Some(Color::Rgb { r: 1, g: 2, b: 3 })
+        );
+        assert!(cell.style.attributes.has(Attribute::Bold));
     }
 }

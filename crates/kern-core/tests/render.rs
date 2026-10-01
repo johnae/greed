@@ -44,7 +44,7 @@ fn lines_get_numbers_and_empty_rows_stay_empty() {
     let mut ed = editor("|hello\nworld");
     let f = frame(&mut ed, 20, 4);
     assert_eq!(rows(&f), ["1 hello", "2 world", ""]);
-    assert_eq!(tagged(&f, &Tag::Gutter), ["1 ", "2 "]);
+    assert_eq!(tagged(&f, &Tag::GUTTER), ["1 ", "2 "]);
 }
 
 #[test]
@@ -84,8 +84,8 @@ fn wide_characters_and_tabs_take_their_width() {
 fn selections_and_cursors_are_tagged() {
     let mut ed = editor("^hello| wo|rld");
     let f = frame(&mut ed, 20, 2);
-    assert_eq!(tagged(&f, &Tag::Selection), ["hello"]);
-    assert_eq!(tagged(&f, &Tag::Cursor), ["r"]);
+    assert_eq!(tagged(&f, &Tag::SELECTION), ["hello"]);
+    assert_eq!(tagged(&f, &Tag::CURSOR), ["r"]);
     assert_eq!(f.cursor, Some(Position { col: 7, row: 0 }));
 }
 
@@ -140,7 +140,7 @@ fn the_status_line_shows_mode_file_and_position() {
     let f = frame(&mut ed, 24, 3);
     let status = f.rows.last().unwrap();
     assert_eq!(status.text(), " NORMAL  notes.md   2:2 ");
-    assert_eq!(tagged(&f, &Tag::Mode), [" NORMAL "]);
+    assert_eq!(tagged(&f, &Tag::MODE), [" NORMAL "]);
 
     let f = Renderer::new(CellWidth).frame(
         &mut ed,
@@ -203,9 +203,9 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
     let syntax: Vec<(String, String)> = f.rows[0]
         .spans
         .iter()
-        .filter_map(|s| match s.tags.first() {
-            Some(Tag::Syntax(c)) => Some((s.text.clone(), c.to_string())),
-            _ => None,
+        .filter_map(|s| {
+            let tag = s.tags.first().filter(|t| !t.name().starts_with("ui."))?;
+            Some((s.text.clone(), tag.name().to_owned()))
         })
         .collect();
     assert_eq!(
@@ -263,10 +263,10 @@ fn plugin_status_lines_are_padded_and_trimmed() {
     };
     let line = StatusLine {
         left: vec![
-            span(" N ", Tag::Mode),
-            span(" a/long/path/file.rs", Tag::Status),
+            span(" N ", Tag::MODE),
+            span(" a/long/path/file.rs", Tag::STATUS),
         ],
-        right: vec![span("3:4 ", Tag::Status)],
+        right: vec![span("3:4 ", Tag::STATUS)],
     };
     let render = |width| {
         let mut ed = editor("|x");
@@ -318,28 +318,27 @@ fn diagnostics_mark_their_text_and_line_number() {
             diagnostics: vec![(8..11, 2), (9..10, 1), (16..16, 3)],
         },
     );
-    let marked: Vec<(String, u8)> = f
+    let marked: Vec<(String, String)> = f
         .rows
         .iter()
         .flat_map(|r| &r.spans)
         .filter_map(|s| {
-            s.tags.iter().find_map(|t| match t {
-                Tag::Diagnostic(severity) => Some((s.text.clone(), *severity)),
-                _ => None,
-            })
+            s.tags
+                .iter()
+                .find(|t| t.name().contains("diagnostic."))
+                .map(|t| (s.text.clone(), t.name().to_owned()))
         })
         .collect();
     // The worst severity wins where marks overlap; empty marks cover one
-    // character.
-    assert_eq!(
-        marked,
-        [
-            ("1 ".to_string(), 1),
-            ("b".to_string(), 2),
-            ("a".to_string(), 1),
-            ("d".to_string(), 2),
-            ("3 ".to_string(), 3),
-            ("w".to_string(), 3),
-        ]
-    );
+    // character. Line numbers get the gutter's names.
+    let expected = [
+        ("1 ", "ui.gutter.diagnostic.error"),
+        ("b", "diagnostic.warning"),
+        ("a", "diagnostic.error"),
+        ("d", "diagnostic.warning"),
+        ("3 ", "ui.gutter.diagnostic.info"),
+        ("w", "diagnostic.info"),
+    ]
+    .map(|(text, name)| (text.to_owned(), name.to_owned()));
+    assert_eq!(marked, expected);
 }

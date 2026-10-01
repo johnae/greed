@@ -2,9 +2,10 @@
 //! color.
 //!
 //! A [`Frame`] is rows of text spans tagged with what they are (a selection,
-//! a cursor, the gutter, ...). Clients turn tags into styles, so a terminal
-//! and a GUI can share it. Layout happens here, against a [`Measure`] the
-//! client supplies, so motions and scrolling agree with what's on screen.
+//! a cursor, the gutter, ...). Clients turn tags into styles with the
+//! frame's theme, so a terminal and a GUI can share it. Layout happens here,
+//! against a [`Measure`] the client supplies, so motions and scrolling agree
+//! with what's on screen.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -17,6 +18,7 @@ use unicode_width::UnicodeWidthStr;
 use kern_text::Rope;
 
 use crate::syntax::Highlight;
+use crate::theme::Theme;
 use crate::{Anchor, BufferId, CursorShape, Editor, FloatOptions, Scroll, View, ViewId};
 
 /// Highlights and marks drawn over a buffer's text.
@@ -66,23 +68,82 @@ pub struct Position {
     pub row: u16,
 }
 
-/// What a span of text is.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Tag {
-    Gutter,
-    Selection,
+/// What a span of text is: a style name, which the theme turns into a look
+/// (see [`crate::theme`]). A span's tags layer in order, last on top.
+#[derive(Debug, Clone)]
+pub struct Tag(Name);
+
+#[derive(Debug, Clone)]
+enum Name {
+    Fixed(&'static str),
+    Shared(Arc<str>),
+}
+
+impl Tag {
+    pub const TEXT: Tag = Tag::fixed("ui.text");
+    pub const GUTTER: Tag = Tag::fixed("ui.gutter");
+    pub const SELECTION: Tag = Tag::fixed("ui.selection");
     /// A cursor other than the primary one; the primary cursor is
     /// [`Frame::cursor`].
-    Cursor,
-    Status,
-    Mode,
-    Message,
-    /// A diagnostic, by severity: 1 error, 2 warning, 3 information, 4 hint.
-    Diagnostic(u8),
-    /// Syntax, named by a tree-sitter capture such as "keyword" or
-    /// "function.macro".
-    Syntax(Arc<str>),
+    pub const CURSOR: Tag = Tag::fixed("ui.cursor");
+    pub const STATUS: Tag = Tag::fixed("ui.statusline");
+    pub const MODE: Tag = Tag::fixed("ui.statusline.mode");
+    pub const MESSAGE: Tag = Tag::fixed("ui.statusline.message");
+    pub const FLOAT: Tag = Tag::fixed("ui.float");
+    pub const FLOAT_BORDER: Tag = Tag::fixed("ui.float.border");
+    pub const FLOAT_TITLE: Tag = Tag::fixed("ui.float.title");
+
+    pub const fn fixed(name: &'static str) -> Self {
+        Tag(Name::Fixed(name))
+    }
+
+    /// A diagnostic, by severity: 1 error, 2 warning, 3 info, 4 hint.
+    pub fn diagnostic(severity: u8) -> Self {
+        Tag::fixed(match severity {
+            1 => "diagnostic.error",
+            2 => "diagnostic.warning",
+            3 => "diagnostic.info",
+            _ => "diagnostic.hint",
+        })
+    }
+
+    /// A line number on a line with a diagnostic of `severity`.
+    pub fn gutter_diagnostic(severity: u8) -> Self {
+        Tag::fixed(match severity {
+            1 => "ui.gutter.diagnostic.error",
+            2 => "ui.gutter.diagnostic.warning",
+            3 => "ui.gutter.diagnostic.info",
+            _ => "ui.gutter.diagnostic.hint",
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        match &self.0 {
+            Name::Fixed(name) => name,
+            Name::Shared(name) => name,
+        }
+    }
 }
+
+impl From<Arc<str>> for Tag {
+    fn from(name: Arc<str>) -> Self {
+        Tag(Name::Shared(name))
+    }
+}
+
+impl From<&str> for Tag {
+    fn from(name: &str) -> Self {
+        Tag(Name::Shared(name.into()))
+    }
+}
+
+impl PartialEq for Tag {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl Eq for Tag {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
@@ -123,6 +184,8 @@ pub struct Frame {
     /// Where the primary cursor is, if it's on screen.
     pub cursor: Option<Position>,
     pub cursor_shape: CursorShape,
+    /// What the tags look like.
+    pub theme: Arc<Theme>,
 }
 
 /// A floating view: its rows fill `rect`, and the client draws a border
@@ -228,6 +291,7 @@ impl<M: Measure> Renderer<M> {
             floats,
             cursor,
             cursor_shape: editor.cursor_shape(),
+            theme: editor.theme().clone(),
         }
     }
 
@@ -287,11 +351,11 @@ impl<M: Measure> Renderer<M> {
                     } else {
                         " ".repeat(gutter)
                     };
-                    let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::Gutter];
+                    let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::GUTTER];
                     let start = text.line_to_byte(line);
                     let end = text.line_to_byte(line + 1).max(start + 1);
                     if let Some(severity) = worst(&marks, |r| r.start < end && r.end >= start) {
-                        tags.push(Tag::Diagnostic(severity));
+                        tags.push(Tag::gutter_diagnostic(severity));
                     }
                     row.push(&number, tags);
                 }
@@ -310,12 +374,12 @@ impl<M: Measure> Renderer<M> {
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone())
                     {
-                        cell_tags.insert(0, Tag::Syntax(capture));
+                        cell_tags.insert(0, Tag::from(capture));
                     }
                     if let Some(severity) = worst(&marks, |r| {
                         r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte)
                     }) {
-                        cell_tags.push(Tag::Diagnostic(severity));
+                        cell_tags.push(Tag::diagnostic(severity));
                     }
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push(&cell.text, cell_tags);
@@ -482,21 +546,21 @@ impl<M: Measure> Renderer<M> {
         let line = text.byte_to_line(head);
         let column = text.byte_to_char(head) - text.line_to_char(line) + 1;
         let middle = match message {
-            Some(message) => span(message, Tag::Message),
+            Some(message) => span(message, Tag::MESSAGE),
             None => span(
                 &buffer
                     .path()
                     .map_or_else(|| "[scratch]".to_owned(), |p| p.display().to_string()),
-                Tag::Status,
+                Tag::STATUS,
             ),
         };
         StatusLine {
             left: vec![
-                span(&format!(" {} ", editor.mode().to_uppercase()), Tag::Mode),
-                span(" ", Tag::Status),
+                span(&format!(" {} ", editor.mode().to_uppercase()), Tag::MODE),
+                span(" ", Tag::STATUS),
                 middle,
             ],
-            right: vec![span(&format!("{}:{column} ", line + 1), Tag::Status)],
+            right: vec![span(&format!("{}:{column} ", line + 1), Tag::STATUS)],
         }
     }
 
@@ -522,7 +586,7 @@ impl<M: Measure> Renderer<M> {
         for s in &left {
             row.push(&s.text, s.tags.clone());
         }
-        row.push(&" ".repeat(padding), smallvec![Tag::Status]);
+        row.push(&" ".repeat(padding), smallvec![Tag::STATUS]);
         for s in &status.right {
             row.push(&s.text, s.tags.clone());
         }
@@ -554,10 +618,10 @@ fn cell_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
     let primary = view.selection.primary_index();
     for (i, range) in view.selection.ranges().iter().enumerate() {
         if !cell.end_of_line && range.from() <= cell.byte && cell.byte < range.to() {
-            out.push(Tag::Selection);
+            out.push(Tag::SELECTION);
         }
         if range.is_empty() && range.head == cell.byte && i != primary {
-            out.push(Tag::Cursor);
+            out.push(Tag::CURSOR);
         }
     }
     out

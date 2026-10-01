@@ -608,7 +608,7 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     assert_eq!(h.status_line(None, 80).unwrap(), None);
     h.load_str(
         "bar",
-        "require('@kern').statusline(function(s) return { left = { { text = s.mode, style = 'mode' } }, right = { s.message or '-' } } end)",
+        "require('@kern').statusline(function(s) return { left = { { text = s.mode, style = 'ui.statusline.mode' } }, right = { s.message or '-' } } end)",
     )
     .unwrap();
     let line = h.status_line(Some("hi"), 80).unwrap().unwrap();
@@ -621,10 +621,16 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     h.load_str("bar", "").unwrap();
     assert_eq!(h.status_line(None, 80).unwrap(), None);
 
-    h.load_str("bad", "require('@kern').statusline(function() return { left = { { text = 'x', style = 'loud' } } } end)")
+    // Any style name works; it's drawn over the status line's own style.
+    h.load_str("loud", "require('@kern').statusline(function() return { left = { { text = 'x', style = 'loud' } } } end)")
         .unwrap();
-    let err = h.status_line(None, 80).unwrap_err().to_string();
-    assert!(err.contains("style must be"), "{err}");
+    let line = h.status_line(None, 80).unwrap().unwrap();
+    let names: Vec<&str> = line.left[0]
+        .tags
+        .iter()
+        .map(kern_core::render::Tag::name)
+        .collect();
+    assert_eq!(names, ["ui.statusline", "loud"]);
 }
 
 #[test]
@@ -1030,4 +1036,55 @@ fn plugins_unload_unless_another_requires_them() {
     ));
     std::fs::remove_dir_all(&base).unwrap();
     std::fs::remove_dir_all(&user).unwrap();
+}
+
+#[test]
+fn plugins_set_the_theme() {
+    use kern_core::theme::{Color, Surface, Underline};
+    let h = host("");
+    h.load_str(
+        "colors",
+        "require('@kern').theme.set({
+           keyword = { fg = 'magenta', bold = true },
+           ['diagnostic.error'] = { underline = 'curl', underline_color = 'red' },
+           ['ui.selection'] = { bg = '#203040', tui = { bg = 'blue' } },
+         })",
+    )
+    .unwrap();
+    h.with_editor(|ed| {
+        let theme = ed.theme();
+        let keyword = theme.style("keyword.control", Surface::Tui);
+        assert_eq!(
+            (keyword.fg, keyword.bold),
+            (Some(Color::Ansi(5)), Some(true))
+        );
+        let error = theme.style("diagnostic.error", Surface::Tui);
+        assert_eq!(error.underline, Some(Underline::Curl));
+        assert_eq!(
+            theme.style("ui.selection", Surface::Tui).bg,
+            Some(Color::Ansi(4))
+        );
+        assert_eq!(
+            theme.style("ui.selection", Surface::Gui).bg,
+            Some(Color::Rgb(0x20, 0x30, 0x40))
+        );
+    });
+    assert_eq!(
+        h.eval("require('@kern').theme.get('keyword').fg").unwrap(),
+        "magenta"
+    );
+    let err = h
+        .eval("require('@kern').theme.set({ x = { fg = 'chartreuse' } })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("chartreuse"), "{err}");
+    let err = h
+        .eval("require('@kern').theme.set({ x = { colour = 'red' } })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("colour"), "{err}");
+
+    // A plugin's entries go when it does.
+    h.load_str("colors", "").unwrap();
+    assert!(h.with_editor(|ed| ed.theme().entry("keyword").is_none()));
 }

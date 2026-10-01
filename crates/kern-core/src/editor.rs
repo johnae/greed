@@ -10,6 +10,7 @@ use kern_text::{
 };
 
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
+use crate::theme::Theme;
 use crate::{Buffer, BufferId, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,6 +130,7 @@ pub struct Editor {
     clipboard: Vec<Vec<String>>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
+    theme: Arc<Theme>,
 }
 
 impl Editor {
@@ -152,6 +154,7 @@ impl Editor {
             quit_requested: false,
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
+            theme: Arc::default(),
         }
     }
 
@@ -445,6 +448,14 @@ impl Editor {
         self.pending.clear();
         self.count = None;
         true
+    }
+
+    pub fn theme(&self) -> &Arc<Theme> {
+        &self.theme
+    }
+
+    pub fn theme_mut(&mut self) -> &mut Theme {
+        Arc::make_mut(&mut self.theme)
     }
 
     pub fn set_cursor_shape(&mut self, mode: &str, shape: CursorShape) {
