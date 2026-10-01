@@ -8,6 +8,7 @@
 //! with what's on screen.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use unicode_width::UnicodeWidthStr;
 
 use kern_text::Rope;
 
+use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
@@ -211,6 +213,9 @@ pub struct Frame {
     pub panels: Vec<PanelFrame>,
     /// Floating views to draw over the rows, bottom first.
     pub floats: Vec<FloatFrame>,
+    /// Images to draw over the rows, after them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImagePlacement>,
     /// Where the primary cursor is, if it's on screen.
     pub cursor: Option<Position>,
     pub cursor_shape: CursorShape,
@@ -227,6 +232,19 @@ pub struct PanelFrame {
     pub separator: u16,
     pub title: Option<String>,
     pub rows: Vec<Row>,
+}
+
+/// Part of an image on screen: the image is `cols` by `rows` cells, and
+/// the part from its cell (`col`, `row`), `rect` wide and high, goes in
+/// `rect`. A client crops the image to that part and scales it to fit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImagePlacement {
+    pub id: ImageId,
+    pub rect: Rect,
+    pub col: u16,
+    pub row: u16,
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// A floating view: its rows fill `rect`, and the client draws a border
@@ -279,6 +297,8 @@ struct Cell {
 pub struct Renderer<M> {
     measure: M,
     pub tab_width: usize,
+    /// Images placed while laying out the frame being drawn.
+    images: RefCell<Vec<ImagePlacement>>,
 }
 
 impl<M: Measure> Renderer<M> {
@@ -286,6 +306,7 @@ impl<M: Measure> Renderer<M> {
         Self {
             measure,
             tab_width: 4,
+            images: RefCell::default(),
         }
     }
 
@@ -298,6 +319,7 @@ impl<M: Measure> Renderer<M> {
         status: &Status,
         decorations: &dyn Decorations,
     ) -> Frame {
+        self.images.borrow_mut().clear();
         let main = editor.main();
         let screen = Rect {
             x: 0,
@@ -325,6 +347,9 @@ impl<M: Measure> Renderer<M> {
             panel.rows = rows;
             panels.push(panel);
         }
+        // Images under a floating view are left out rather than drawn over
+        // it.
+        let mut images = self.images.take();
         let mut floats = Vec::new();
         for float in editor.floats().to_vec() {
             let rect = place(&float.options, screen, cursor);
@@ -338,6 +363,12 @@ impl<M: Measure> Renderer<M> {
                 rows,
             });
         }
+        images.retain(|image| {
+            !floats
+                .iter()
+                .any(|f| overlaps(image.rect, bordered(f.rect)))
+        });
+        images.extend(self.images.take());
 
         Frame {
             size,
@@ -345,9 +376,79 @@ impl<M: Measure> Renderer<M> {
             rows,
             panels,
             floats,
+            images,
             cursor,
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
+        }
+    }
+
+    /// Places the images `marks` show in `view`, cut to `text_area`, the
+    /// part of the screen its text takes. An image goes over whole cells
+    /// from its mark's start, whatever text is under it.
+    fn place_images(
+        &self,
+        editor: &Editor,
+        view: &View,
+        marks: &[&Mark],
+        text_area: Rect,
+        hidden: &[Range<usize>],
+    ) {
+        let text = editor.buffer(view.buffer).text();
+        let width = usize::from(text_area.width);
+        let rows_of = |lines: Range<usize>| -> i64 {
+            lines
+                .map(|l| self.line_rows(editor, view, l, width, hidden))
+                .sum::<usize>()
+                .try_into()
+                .unwrap_or(i64::MAX)
+        };
+        let scroll_row = i64::try_from(view.scroll.row).unwrap_or(0);
+        for (mark, image) in marks.iter().filter_map(|m| Some((m, m.image?))) {
+            if !editor.images().contains(image.id) {
+                continue;
+            }
+            let start = mark.range.start.min(text.len_bytes());
+            let line = text.byte_to_line(start);
+            // The screen row of the mark's line, counting from the top of the
+            // view, so negative above it.
+            let row = if line >= view.scroll.line {
+                rows_of(view.scroll.line..line)
+            } else {
+                -rows_of(line..view.scroll.line)
+            } - scroll_row;
+            let x = self
+                .layout(editor, view, line, width)
+                .first()
+                .map_or(0, |cells| {
+                    cells
+                        .iter()
+                        .take_while(|c| c.byte < start)
+                        .map(|c| c.width)
+                        .sum::<usize>()
+                });
+            let left = i64::try_from(x).unwrap_or(0) - i64::from(image.col);
+            let top = row - i64::from(image.row);
+            let (x0, y0) = (left.max(0), top.max(0));
+            let x1 = (left + i64::from(image.cols)).min(i64::from(text_area.width));
+            let y1 = (top + i64::from(image.rows)).min(i64::from(text_area.height));
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            let cell = |n: i64| u16::try_from(n).unwrap_or(u16::MAX);
+            self.images.borrow_mut().push(ImagePlacement {
+                id: image.id,
+                rect: Rect {
+                    x: text_area.x + cell(x0),
+                    y: text_area.y + cell(y0),
+                    width: cell(x1 - x0),
+                    height: cell(y1 - y0),
+                },
+                col: cell(x0 - left),
+                row: cell(y0 - top),
+                cols: image.cols,
+                rows: image.rows,
+            });
         }
     }
 
@@ -576,11 +677,10 @@ impl<M: Measure> Renderer<M> {
                 break 'lines;
             }
         }
+        let text_area = text_area(area, gutter, text_width);
+        self.place_images(editor, view, &styled, text_area, &hidden);
         let shown = shown_bytes(text, first_shown, last_shown);
-        let view = editor.view_mut(view_id);
-        view.visible = Some(shown);
-        view.size = Some((area.height, u16::try_from(text_width).unwrap_or(u16::MAX)));
-        view.area = Some(area);
+        editor.view_mut(view_id).drawn(shown, area, text_width);
         rows.resize_with(text_rows, Row::default);
         (rows, cursor)
     }
@@ -1143,6 +1243,30 @@ fn tab_title(editor: &Editor, pane: ViewId) -> String {
         Some(name) => name.to_string_lossy().into_owned(),
         None if buffer.kind() == "file" => "untitled".to_owned(),
         None => buffer.kind().to_owned(),
+    }
+}
+
+/// The part of a view's `area` its text takes, right of a `gutter` cells
+/// wide.
+fn text_area(area: Rect, gutter: usize, width: usize) -> Rect {
+    Rect {
+        x: area.x + u16::try_from(gutter).unwrap_or(0),
+        width: u16::try_from(width).unwrap_or(u16::MAX),
+        ..area
+    }
+}
+
+fn overlaps(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+/// `rect` with the one-cell border a client draws around a floating view.
+fn bordered(rect: Rect) -> Rect {
+    Rect {
+        x: rect.x.saturating_sub(1),
+        y: rect.y.saturating_sub(1),
+        width: rect.width + 2,
+        height: rect.height + 2,
     }
 }
 

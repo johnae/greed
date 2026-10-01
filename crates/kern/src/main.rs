@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod ctl;
+mod graphics;
 mod runtime;
 mod session;
 mod tui;

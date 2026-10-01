@@ -37,6 +37,21 @@ pub struct View {
     pub area: Option<crate::render::Rect>,
 }
 
+impl View {
+    /// Notes what drawing it showed: the bytes on screen, where it went, and
+    /// how wide its text was.
+    pub(crate) fn drawn(
+        &mut self,
+        shown: std::ops::Range<usize>,
+        area: crate::render::Rect,
+        text_width: usize,
+    ) {
+        self.visible = Some(shown);
+        self.size = Some((area.height, u16::try_from(text_width).unwrap_or(u16::MAX)));
+        self.area = Some(area);
+    }
+}
+
 /// The first thing a view shows: a buffer line, and how many of its wrapped
 /// rows are scrolled past.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -243,6 +258,11 @@ pub struct Editor {
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     file_types: FileTypes,
     theme: Arc<Theme>,
+    /// Images marks can show.
+    images: crate::image::Images,
+    /// How many pixels wide and high a cell is on the client's screen, for
+    /// sizing images.
+    cell_size: (u16, u16),
 }
 
 impl Editor {
@@ -272,6 +292,8 @@ impl Editor {
             cursor_shapes: HashMap::new(),
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
+            images: crate::image::Images::default(),
+            cell_size: (8, 16),
         }
     }
 
@@ -772,6 +794,26 @@ impl Editor {
 
     pub fn theme(&self) -> &Arc<Theme> {
         &self.theme
+    }
+
+    pub fn images(&self) -> &crate::image::Images {
+        &self.images
+    }
+
+    pub fn images_mut(&mut self) -> &mut crate::image::Images {
+        &mut self.images
+    }
+
+    /// A cell's width and height in pixels on the client's screen; 8 by 16
+    /// until a client says.
+    pub fn cell_size(&self) -> (u16, u16) {
+        self.cell_size
+    }
+
+    pub fn set_cell_size(&mut self, size: (u16, u16)) {
+        if size.0 > 0 && size.1 > 0 {
+            self.cell_size = size;
+        }
     }
 
     pub fn theme_mut(&mut self) -> &mut Theme {

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::CursorShape;
-use crate::render::{FloatFrame, Frame, PanelFrame, Position, Rect, Row, Size};
+use crate::render::{FloatFrame, Frame, ImagePlacement, PanelFrame, Position, Rect, Row, Size};
 use crate::theme::Theme;
 
 /// The parts of a frame that changed. Anything left out is as it was.
@@ -28,6 +28,8 @@ pub struct FrameDelta {
     pub panels: Option<Vec<PanelFrame>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floats: Option<Vec<FloatFrame>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ImagePlacement>>,
     /// The cursor, when it moved, appeared or went away.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<Option<Position>>,
@@ -63,6 +65,7 @@ impl FrameDelta {
             rows,
             panels: changed(&old.panels, &new.panels),
             floats: changed(&old.floats, &new.floats),
+            images: changed(&old.images, &new.images),
             cursor: changed(&old.cursor, &new.cursor),
             cursor_shape: changed(&old.cursor_shape, &new.cursor_shape),
             theme,
@@ -77,6 +80,7 @@ impl FrameDelta {
             && self.rows.is_empty()
             && self.panels.is_none()
             && self.floats.is_none()
+            && self.images.is_none()
             && self.cursor.is_none()
             && self.cursor_shape.is_none()
             && self.theme.is_none()
@@ -104,6 +108,9 @@ impl FrameDelta {
         }
         if let Some(floats) = self.floats {
             frame.floats = floats;
+        }
+        if let Some(images) = self.images {
+            frame.images = images;
         }
         if let Some(cursor) = self.cursor {
             frame.cursor = cursor;

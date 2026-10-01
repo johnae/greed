@@ -337,6 +337,14 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+## Images
+
+Kern shows images in terminals that speak the kitty graphics protocol:
+kitty, Ghostty, WezTerm and Konsole. It finds out from the variables those
+terminals set; `KERN_IMAGES=kitty` turns images on in another that speaks
+the protocol, and `KERN_IMAGES=none` turns them off. Elsewhere, the text
+under an image shows instead.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

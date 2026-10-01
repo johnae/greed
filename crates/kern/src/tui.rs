@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use crate::graphics::{self, Graphics};
 use crossbeam_channel::{Receiver, Sender};
 use crossterm::cursor::{self, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, KeyModifiers};
@@ -33,6 +34,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let terminal = Terminal::enter()?;
     let (width, height) = terminal::size()?;
     input.send(Input::Resize(Size { width, height }))?;
+    send_cell_size(input);
 
     // Keys are read until this run ends, so a run that follows (after a
     // switch to another session) gets them all.
@@ -50,7 +52,10 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                     Event::Key(key) if key.kind != KeyEventKind::Release => {
                         convert(key).map(Input::Key)
                     }
-                    Event::Resize(width, height) => Some(Input::Resize(Size { width, height })),
+                    Event::Resize(width, height) => {
+                        send_cell_size(&input);
+                        Some(Input::Resize(Size { width, height }))
+                    }
                     _ => None,
                 };
                 if message.is_some_and(|m| input.send(m).is_err()) {
@@ -60,12 +65,16 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
         })
     };
 
-    let mut screen = Screen::default();
+    let mut screen = Screen {
+        graphics: Graphics::new(graphics::detect()),
+        ..Screen::default()
+    };
     let mut out = io::BufWriter::new(io::stdout());
     // Deltas change the last whole frame into the next.
     let mut current: Option<Frame> = None;
     let ended = loop {
         match output.recv() {
+            Ok(Output::Image(image)) => screen.graphics.add(image),
             Ok(Output::Frame(frame)) => {
                 screen.draw(&mut out, &frame)?;
                 current = Some(frame);
@@ -84,6 +93,21 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let _ = keys.join();
     drop(terminal);
     Ok(ended)
+}
+
+/// Tells the server how big a cell is in pixels, if the terminal says, for
+/// sizing images.
+fn send_cell_size(input: &Sender<Input>) {
+    if let Ok(size) = terminal::window_size()
+        && size.columns > 0
+        && size.rows > 0
+        && size.width > 0
+    {
+        let _ = input.send(Input::CellSize(
+            size.width / size.columns,
+            size.height / size.rows,
+        ));
+    }
 }
 
 /// Converts a terminal key event into a kern key. Returns `None` for keys
@@ -186,6 +210,7 @@ impl Default for Cell {
 #[derive(Default)]
 struct Screen {
     grid: Vec<Vec<Cell>>,
+    graphics: Graphics,
 }
 
 impl Screen {
@@ -195,6 +220,7 @@ impl Screen {
             || self.grid.first().map(Vec::len) != grid.first().map(Vec::len)
         {
             self.grid.clear();
+            self.graphics.cleared();
             queue!(out, terminal::Clear(ClearType::All))?;
         }
         queue!(out, cursor::Hide)?;
@@ -220,6 +246,7 @@ impl Screen {
             )?;
         }
         self.grid = grid;
+        self.graphics.draw(out, &frame.images)?;
         if let Some(pos) = frame.cursor {
             let shape = match frame.cursor_shape {
                 CursorShape::Block => SetCursorStyle::SteadyBlock,
@@ -488,6 +515,7 @@ mod tests {
             panels: Vec::new(),
             rows: vec![Row::default(), plain(text)],
             floats: Vec::new(),
+            images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
@@ -527,6 +555,7 @@ mod tests {
                 title: Some("hi".into()),
                 rows: vec![plain("one"), plain("日本語")],
             }],
+            images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
@@ -589,6 +618,7 @@ mod tests {
                 rows: vec![plain("a/"), plain("b")],
             }],
             floats: Vec::new(),
+            images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
@@ -664,6 +694,7 @@ mod tests {
                 tags: [Tag::from("current")].into_iter().collect(),
             }],
             floats: Vec::new(),
+            images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::new(theme),

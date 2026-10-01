@@ -16,9 +16,10 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::{emit, float_options};
 use super::{state, state_mut};
+use crate::image::ImageId;
 use crate::layout::Direction;
 use crate::search::{self, Direction as SearchDirection};
-use crate::{Buffer, BufferId, Mark, Scroll, View, ViewId};
+use crate::{Buffer, BufferId, Mark, MarkImage, Scroll, View, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -408,6 +409,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         .into_iter()
                         .map(Into::into)
                         .collect(),
+                    image: t
+                        .get::<Option<Table>>("image")?
+                        .map(|i| mark_image_from_lua(&i))
+                        .transpose()?,
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -434,10 +439,30 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 let lines: Vec<&str> = mark.lines.iter().map(|l| &**l).collect();
                 t.set("lines", lines)?;
             }
+            if let Some(image) = mark.image {
+                let i = lua.create_table()?;
+                i.set("id", image.id.0)?;
+                i.set("cols", image.cols)?;
+                i.set("rows", image.rows)?;
+                i.set("col", image.col)?;
+                i.set("row", image.row)?;
+                t.set("image", i)?;
+            }
             list.push(t)?;
         }
         Ok(list)
     });
+}
+
+/// `{ id, cols, rows, col?, row? }`.
+fn mark_image_from_lua(t: &Table) -> LuaResult<MarkImage> {
+    Ok(MarkImage {
+        id: ImageId(t.get("id")?),
+        cols: t.get::<u16>("cols")?.max(1),
+        rows: t.get::<u16>("rows")?.max(1),
+        col: t.get::<Option<u16>>("col")?.unwrap_or(0),
+        row: t.get::<Option<u16>>("row")?.unwrap_or(0),
+    })
 }
 
 /// Whether the buffer is read-only, and its language.

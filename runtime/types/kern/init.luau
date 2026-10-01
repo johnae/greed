@@ -126,6 +126,11 @@ export type Mark = {
 	--- Lines shown under the last line that aren't in the buffer, like
 	--- backlinks. The cursor never goes on them.
 	lines: { string }?,
+	--- An image (from `kern.image`) drawn over `cols` by `rows` cells right
+	--- of and below `from`, whatever text is there. `col` and `row` say
+	--- which of its cells is at `from`, for an image cut off at the top or
+	--- left. Shown in terminals that can show images.
+	image: { id: number, cols: number, rows: number, col: number?, row: number? }?,
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -432,6 +437,20 @@ export type Projects = {
 	--- Closes project `id` with its views and the buffers opened in it. The
 	--- last project can't be closed; false then.
 	close: (id: number) -> boolean,
+}
+
+--- Images for marks to show. Each is kept until forgotten.
+export type Images = {
+	--- Reads a PNG, JPEG or GIF file. Returns the image's id, or nil and why
+	--- not.
+	load: (path: string) -> (number?, string?),
+	--- The same, from the file's bytes.
+	decode: (bytes: string) -> (number?, string?),
+	--- Its width and height in pixels.
+	size: (id: number) -> (number?, number?),
+	--- How many cells it covers at its own size on the attached screen.
+	cells: (id: number) -> (number?, number?),
+	forget: (id: number) -> (),
 }
 
 --- A tab of the shown project: panes laid out side by side and one above
@@ -805,6 +824,7 @@ export type Kern = {
 	keys: Keys,
 	process: Process,
 	terminal: Terminals,
+	image: Images,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

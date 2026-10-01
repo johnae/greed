@@ -70,6 +70,20 @@ pub struct Mark {
     /// Lines shown under the range's last line that aren't in the buffer,
     /// like a list of backlinks. The cursor never goes on them.
     pub lines: Vec<Arc<str>>,
+    /// An image drawn over the text from the start of the range.
+    pub image: Option<MarkImage>,
+}
+
+/// An image over a block of cells: `cols` by `rows`, right of and below
+/// the mark's start. `col` and `row` say which of the image's cells is at
+/// the start, so an image whose top or left was cut off still lines up.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarkImage {
+    pub id: crate::image::ImageId,
+    pub cols: u16,
+    pub rows: u16,
+    pub col: u16,
+    pub row: u16,
 }
 
 impl Buffer {

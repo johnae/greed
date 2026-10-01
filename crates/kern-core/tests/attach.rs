@@ -21,8 +21,9 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
     let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
     let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
+    let png = picture();
     let conn = server::spawn_with_session(
-        || {
+        move || {
             let mut editor = Editor::new(ClientId(1));
             editor.open("file", "hello", None);
             let host = Host::new(editor)?;
@@ -34,6 +35,20 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
                 "local kern = require('@kern')
                  kern.command({ name = 'go', run = function() kern.session.switch({ name = 'elsewhere' }) end })
                  kern.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go' })",
+            )?;
+            // ctrl-p shows a 2 by 1 pixel image over the first two cells.
+            host.load_str(
+                "picture",
+                &format!(
+                    "local kern = require('@kern')
+                     kern.command({{ name = 'picture', run = function(ctx)
+                         local id = assert(kern.image.load('{png}'))
+                         ctx.buffer:decorate('pic', {{ {{ from = 0, to = 1, style = 'x',
+                             image = {{ id = id, cols = 2, rows = 1 }} }} }})
+                     end }})
+                     kern.keymap.bind('normal', {{ ['ctrl-p'] = 'picture' }})",
+                    png = png.display()
+                ),
             )?;
             Ok(host)
         },
@@ -127,7 +142,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
     loop {
         match client.next() {
             Output::Detached => break,
-            Output::Frame(_) | Output::Delta(_) => {}
+            Output::Frame(_) | Output::Delta(_) | Output::Image(_) => {}
             other @ (Output::Exit | Output::Switch(_)) => {
                 panic!("expected a detach, got {other:?}")
             }
@@ -195,7 +210,7 @@ fn a_session_can_send_its_client_to_another_session() {
                 assert_eq!(to.path, None);
                 break;
             }
-            Output::Frame(_) | Output::Delta(_) => {}
+            Output::Frame(_) | Output::Delta(_) | Output::Image(_) => {}
             other => panic!("expected a switch, got {other:?}"),
         }
     }
@@ -204,4 +219,38 @@ fn a_session_can_send_its_client_to_another_session() {
     again.send(&Input::Resize(SIZE));
     again.first_row();
     conn.input.send(Input::Quit).unwrap();
+}
+
+/// A tiny PNG in a file for the picture command; the image test removes it.
+fn picture() -> std::path::PathBuf {
+    let image = kern_core::image::Image::from_pixels(2, 1, 3, &[255, 0, 0, 0, 0, 255]).unwrap();
+    let path = std::env::temp_dir().join(format!("kern-attach-{}.png", std::process::id()));
+    std::fs::write(&path, &image.png).unwrap();
+    path
+}
+
+#[test]
+fn an_image_is_sent_once_before_the_frame_that_shows_it() {
+    let (conn, attach) = start("image");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-p");
+    let Output::Image(image) = client.next() else {
+        panic!("expected the image first");
+    };
+    assert_eq!((image.width, image.height), (2, 1));
+    match client.next() {
+        Output::Delta(delta) => {
+            let images = delta.images.expect("the frame places it");
+            assert_eq!(images.len(), 1);
+            assert_eq!(images[0].id, image.id);
+        }
+        other => panic!("expected a delta, got {other:?}"),
+    }
+    // Drawn again, it isn't sent again.
+    client.keys("l");
+    assert!(matches!(client.next(), Output::Delta(_)));
+    conn.input.send(Input::Quit).unwrap();
+    let _ = std::fs::remove_file(picture());
 }

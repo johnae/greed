@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64 = "0.22"
 crossbeam-channel.workspace = true
 crossterm.workspace = true
 kern-core.workspace = true

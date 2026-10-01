@@ -106,7 +106,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>) -> Result<(), Error> {
                 println!("detached; kern attach {name} comes back");
                 return Ok(());
             }
-            Output::Exit | Output::Frame(_) | Output::Delta(_) => return Ok(()),
+            Output::Exit | Output::Frame(_) | Output::Delta(_) | Output::Image(_) => return Ok(()),
         }
     }
 }
@@ -258,7 +258,7 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
                 println!("detached; kern ssh {host} comes back");
                 return Ok(());
             }
-            Output::Exit | Output::Frame(_) | Output::Delta(_) => return Ok(()),
+            Output::Exit | Output::Frame(_) | Output::Delta(_) | Output::Image(_) => return Ok(()),
         }
     }
 }

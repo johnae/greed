@@ -4,7 +4,7 @@
 //! Clients send input and get back frames, over channels in the same
 //! process or as JSON lines over a session socket.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::control::{Attachment, Session};
 use crate::delta::FrameDelta;
+use crate::image::{Image, ImageId};
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
@@ -27,6 +28,8 @@ use kern_text::Rope;
 pub enum Input {
     Key(Key),
     Resize(Size),
+    /// How many pixels wide and high a cell is on the client's screen.
+    CellSize(u16, u16),
     Quit,
 }
 
@@ -44,6 +47,31 @@ pub enum Output {
     /// The client should attach to another session instead; this one goes on
     /// without it.
     Switch(SwitchTo),
+    /// An image frames will place, sent once before the first frame that
+    /// does.
+    Image(ImageData),
+}
+
+/// An image as it goes to a client: PNG, in base64, which is how terminal
+/// image protocols take it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageData {
+    pub id: ImageId,
+    pub width: u32,
+    pub height: u32,
+    pub png: String,
+}
+
+impl From<&Image> for ImageData {
+    fn from(image: &Image) -> Self {
+        use base64::Engine;
+        Self {
+            id: image.id,
+            width: image.width,
+            height: image.height,
+            png: base64::engine::general_purpose::STANDARD.encode(&image.png),
+        }
+    }
 }
 
 /// A client's end of the connection to a running server.
@@ -92,6 +120,7 @@ where
                 output: outbox,
                 local: true,
                 last: None,
+                images: HashSet::new(),
             }),
             inputs,
         };
@@ -120,6 +149,8 @@ struct Client {
     /// The last frame a remote client got, so the next can be sent as what
     /// changed.
     last: Option<Frame>,
+    /// The images whose data it has.
+    images: HashSet<ImageId>,
 }
 
 impl Client {
@@ -177,6 +208,9 @@ impl Server<'_> {
                                 self.report(pressed);
                             }
                             Input::Resize(new) => self.size = Some(new),
+                            Input::CellSize(w, h) => {
+                                self.host.with_editor_mut(|ed| ed.set_cell_size((w, h)));
+                            }
                             Input::Quit => return,
                         }
                     }
@@ -310,6 +344,7 @@ impl Server<'_> {
             output,
             local: false,
             last: None,
+            images: HashSet::new(),
         });
         let attached = self.host.client_attached(open.as_deref());
         self.report(attached);
@@ -346,10 +381,23 @@ impl Server<'_> {
         let Some(client) = &mut self.client else {
             return true;
         };
+        // The data of images this client hasn't had yet goes first.
+        let images: Vec<_> = frame
+            .images
+            .iter()
+            .filter(|p| client.images.insert(p.id))
+            .filter_map(|p| host.with_editor(|ed| ed.images().get(p.id).cloned()))
+            .collect();
+        let sent = images.iter().all(|image| {
+            client
+                .output
+                .send(Output::Image(ImageData::from(&**image)))
+                .is_ok()
+        });
         let Some(output) = client.output_for(frame) else {
             return true;
         };
-        if client.output.send(output).is_ok() {
+        if sent && client.output.send(output).is_ok() {
             return true;
         }
         let local = client.local;

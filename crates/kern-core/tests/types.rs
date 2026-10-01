@@ -105,6 +105,7 @@ fn api_tables_are_fully_declared() {
         ("Lsp", "kern.lsp"),
         ("Terminals", "kern.terminal"),
         ("Tabs", "kern.tab"),
+        ("Images", "kern.image"),
     ];
     let h = host();
     for (name, expr) in cases {

@@ -823,3 +823,69 @@ fn more_than_one_tab_shows_the_tabs_above() {
     );
     assert_eq!(rows(&frame(&mut ed, 30, 4))[1].trim_end(), "one");
 }
+
+#[test]
+fn image_marks_place_their_image_cut_to_the_view() {
+    use kern_core::image::Image;
+    use kern_core::render::{ImagePlacement, Rect};
+    use kern_core::{Mark, MarkImage};
+    use std::sync::Arc;
+
+    let text: String = (0..20)
+        .map(|i| format!("line {i}\n"))
+        .collect::<Vec<_>>()
+        .concat();
+    let mut ed = editor(&format!("|{text}"));
+    let buffer = ed.view(ed.main()).buffer;
+    ed.set_line_numbers(buffer, false);
+    let image = Image::from_pixels(4, 3, 3, &[0; 36]).unwrap();
+    let id = ed.images_mut().insert(Arc::new(image));
+    // An image 4 cells wide and 3 high from line 1, column 2.
+    let start = "line 0\n".len() + 2;
+    ed.decorate(
+        buffer,
+        "pictures",
+        vec![Mark {
+            range: start..start + "line 1\nline 2\nline".len(),
+            style: "image".into(),
+            image: Some(MarkImage {
+                id,
+                cols: 4,
+                rows: 3,
+                col: 0,
+                row: 0,
+            }),
+            ..Mark::default()
+        }],
+    );
+    let placed = |ed: &mut Editor| frame(ed, 20, 6).images;
+    let rect = |x, y, width, height| Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+    assert_eq!(
+        placed(&mut ed),
+        [ImagePlacement {
+            id,
+            rect: rect(2, 1, 4, 3),
+            col: 0,
+            row: 0,
+            cols: 4,
+            rows: 3
+        }]
+    );
+    // Scrolled down to line 2, the image loses its first row.
+    let main = ed.main();
+    let line = |n: usize| (0..n).map(|i| format!("line {i}\n").len()).sum::<usize>();
+    ed.view_mut(main).selection = kern_text::Selection::point(line(4));
+    ed.view_mut(main).scroll = Scroll { line: 2, row: 0 };
+    let shown = placed(&mut ed);
+    assert_eq!(shown.len(), 1);
+    assert_eq!((shown[0].rect, shown[0].row), (rect(2, 0, 4, 2), 1));
+    // Scrolled past it, it's gone; an image nobody has is never placed.
+    ed.view_mut(main).selection = kern_text::Selection::point(line(7));
+    ed.view_mut(main).scroll = Scroll { line: 5, row: 0 };
+    assert_eq!(placed(&mut ed), []);
+}
