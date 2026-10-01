@@ -8,6 +8,7 @@
 
 use kern_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef};
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::emit;
 use super::{state, state_mut};
@@ -234,6 +235,12 @@ impl UserData for BufferRef {
                 Ok(t.char_to_byte(i.saturating_sub(1)))
             })
         });
+        methods.add_method("sentence", |lua, this, pos: usize| {
+            this.with_text(lua, |t| {
+                check_pos(t, pos)?;
+                Ok(sentence_at(t, pos))
+            })
+        });
         methods.add_method("kind", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.kind().to_owned()))
         });
@@ -363,4 +370,33 @@ fn char_index(text: &Rope, pos: usize) -> LuaResult<usize> {
         )));
     }
     Ok(i)
+}
+
+/// The sentence around byte `pos`, without the spaces after it. Sentences
+/// don't cross blank lines, so only the paragraph around `pos` is examined.
+fn sentence_at(text: &Rope, pos: usize) -> (usize, usize) {
+    let blank = |line: usize| text.line(line).chars().all(char::is_whitespace);
+    let line = text.byte_to_line(pos);
+    let mut first = line;
+    while first > 0 && !blank(first - 1) {
+        first -= 1;
+    }
+    let mut last = line;
+    while last + 1 < text.len_lines() && !blank(last + 1) {
+        last += 1;
+    }
+    let start = text.line_to_byte(first);
+    let end = text.line_to_byte(last + 1);
+    let paragraph = text.byte_slice(start..end).to_string();
+
+    let mut found = (pos, pos);
+    for (offset, sentence) in paragraph.split_sentence_bound_indices() {
+        let from = start + offset;
+        let to = from + sentence.trim_end().len();
+        found = (from, to);
+        if pos < from + sentence.len() {
+            break;
+        }
+    }
+    found
 }

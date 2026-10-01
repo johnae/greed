@@ -89,3 +89,8 @@ fn describe_plugin_tests_pass() {
 fn edit_mode_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("edit-mode")], &plugin("edit-mode"));
 }
+
+#[test]
+fn prose_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("prose")], &plugin("prose"));
+}

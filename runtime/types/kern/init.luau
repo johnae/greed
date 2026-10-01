@@ -47,6 +47,9 @@ export type Buffer = {
 	char_at: (self: Buffer, pos: number) -> string?,
 	next_char: (self: Buffer, pos: number) -> number,
 	prev_char: (self: Buffer, pos: number) -> number,
+	--- The start and end of the sentence around `pos`, without the spaces
+	--- after it. Sentences end at blank lines.
+	sentence: (self: Buffer, pos: number) -> (number, number),
 	--- What the buffer is: "file", "terminal", ...
 	kind: (self: Buffer) -> string,
 	path: (self: Buffer) -> string?,

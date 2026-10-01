@@ -1,0 +1,2 @@
+name = "prose"
+requires = ["core"]
