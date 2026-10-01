@@ -520,6 +520,88 @@ fn files_skip_hidden_and_ignored_ones() {
     assert_eq!(listed, "README.md,plugin.toml,src/main.rs");
 }
 
+/// Evaluates `source` with `DIR` set to `dir`.
+fn eval_in(h: &Host, dir: &std::path::Path, source: &str) -> String {
+    h.eval(&format!(
+        "local kern = require('@kern')\nlocal DIR = {:?}\n{source}",
+        dir.to_str().unwrap()
+    ))
+    .unwrap()
+}
+
+#[test]
+fn directories_list_folders_first_and_skip_hidden_and_ignored_entries() {
+    let dir = plugin_dir(
+        "fs-list",
+        &[
+            ("src/main.rs", ""),
+            ("README.md", ""),
+            ("b.txt", ""),
+            (".hidden", ""),
+            ("target/out", ""),
+            (".gitignore", "target/\n"),
+        ],
+    );
+    let h = host("");
+    let names = |opts: &str| {
+        eval_in(
+            &h,
+            &dir,
+            &format!(
+                "local out = {{}}
+                 for _, e in kern.fs.list(DIR{opts}) do
+                   table.insert(out, if e.dir then e.name .. '/' else e.name)
+                 end
+                 return table.concat(out, ',')"
+            ),
+        )
+    };
+    assert_eq!(names(""), "src/,b.txt,plugin.toml,README.md");
+    assert_eq!(
+        names(", { hidden = true, ignored = true }"),
+        "src/,target/,.gitignore,.hidden,b.txt,plugin.toml,README.md"
+    );
+    let missing = eval_in(
+        &h,
+        &dir,
+        "local list, err = kern.fs.list(DIR .. '/nope') return tostring(list) .. ' ' .. tostring(err ~= nil)",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(missing, "nil true");
+}
+
+#[test]
+fn files_read_whole_or_up_to_a_limit() {
+    let dir = plugin_dir("fs-read", &[("a.txt", "héllo\nworld\n")]);
+    let h = host("");
+    let read = |args: &str| {
+        eval_in(
+            &h,
+            &dir,
+            &format!("local text, err = kern.fs.read(DIR .. '/a.txt'{args}) return text or err"),
+        )
+    };
+    assert_eq!(read(""), "héllo\nworld\n");
+    // A limit inside "é" stops before it rather than splitting it.
+    assert_eq!(read(", 2"), "h");
+    assert_eq!(read(", 3"), "hé");
+    let missing = eval_in(
+        &h,
+        &dir,
+        "local text, err = kern.fs.read(DIR .. '/nope') return tostring(text) .. ' ' .. err",
+    );
+    assert!(missing.starts_with("nil "), "{missing}");
+
+    let stat = eval_in(
+        &h,
+        &dir,
+        "local f, d = kern.fs.stat(DIR .. '/a.txt'), kern.fs.stat(DIR)
+         return f.kind .. ' ' .. f.size .. ' ' .. d.kind .. ' ' .. tostring(kern.fs.stat(DIR .. '/nope'))",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(stat, "file 13 dir nil");
+}
+
 #[test]
 fn status_lines_come_from_the_plugin_that_set_them() {
     let h = host("abc");

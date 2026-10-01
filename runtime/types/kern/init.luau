@@ -257,6 +257,28 @@ export type ModeChanged = {
 	to: string,
 }
 
+export type DirEntry = {
+	name: string,
+	dir: boolean,
+}
+
+export type FileInfo = {
+	kind: "file" | "dir" | "other",
+	--- Size in bytes; 0 for a directory.
+	size: number,
+}
+
+--- Reading the file system. Failures return nil and a message.
+export type Fs = {
+	--- The entries directly in `dir`, folders first, then by name. Hidden
+	--- entries and ones `.gitignore` excludes are left out unless asked for.
+	list: (dir: string, opts: { hidden: boolean?, ignored: boolean? }?) -> ({ DirEntry }?, string?),
+	--- The file's text, or its first `limit` bytes.
+	read: (path: string, limit: number?) -> (string?, string?),
+	--- What's at `path`, or nil if nothing is.
+	stat: (path: string) -> FileInfo?,
+}
+
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
 	--- Runs a command by name.
@@ -304,6 +326,7 @@ export type Kern = {
 	history: History,
 	clipboard: Clipboard,
 	lsp: Lsp,
+	fs: Fs,
 }
 
 return (nil :: any) :: Kern
