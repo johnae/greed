@@ -110,3 +110,8 @@ fn vim_example_tests_pass() {
 fn theme_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("theme")], &plugin("theme"));
 }
+
+#[test]
+fn flash_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("flash")], &plugin("flash"));
+}

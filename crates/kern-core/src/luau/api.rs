@@ -242,7 +242,14 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    kern.set("sleep", tasks::sleep_function(lua)?)?;
+    let sleep = tasks::sleep_function(lua)?;
+    let now = tasks::now_function(lua)?;
+    kern.set(
+        "animate",
+        tasks::animate_function(lua, now.clone(), sleep.clone())?,
+    )?;
+    kern.set("sleep", sleep)?;
+    kern.set("now", now)?;
     kern.set("next_key", tasks::next_key_function(lua)?)?;
 
     kern.set(

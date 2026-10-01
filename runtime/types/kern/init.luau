@@ -404,6 +404,13 @@ export type Kern = {
 	--- Waits `ms` milliseconds without blocking the editor. Works in commands
 	--- and event handlers.
 	sleep: (ms: number) -> (),
+	--- Milliseconds on the editor's clock, for timing animations. While a
+	--- timer wakes code, it reads the time the timer was due.
+	now: () -> number,
+	--- Calls `step(t)` about once a frame for `ms` milliseconds, with `t`
+	--- going from 0 to 1, e.g. to fade a theme color or move a decoration.
+	--- Works in commands and event handlers.
+	animate: (ms: number, step: (t: number) -> ()) -> (),
 	--- Waits for the next key press and returns its name, e.g. "g" or "ctrl-s".
 	--- The key doesn't run anything. Works in commands and event handlers.
 	next_key: () -> string,

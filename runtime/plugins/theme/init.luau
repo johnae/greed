@@ -23,6 +23,7 @@ kern.theme.set({
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },
+	["ui.flash"] = { bg = "yellow", fg = "black" },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

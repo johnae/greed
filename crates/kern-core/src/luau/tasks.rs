@@ -15,17 +15,44 @@ use super::{state, state_mut};
 type LuaResult<T> = mlua::Result<T>;
 
 /// Parked coroutines and the timers some of them wait on.
-#[derive(Default)]
 pub(crate) struct Tasks {
     next_token: u64,
     waiting: HashMap<u64, Thread>,
     timers: Vec<(Instant, u64)>,
+    /// What `kern.now` counts from.
+    epoch: Instant,
+    /// While timers fire, when they were due. Code they wake sees that as
+    /// the time, so timing doesn't drift and tests can step through it.
+    firing: Option<Instant>,
+    /// The latest time timers fired at.
+    latest: Instant,
+}
+
+impl Default for Tasks {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            next_token: 0,
+            waiting: HashMap::new(),
+            timers: Vec::new(),
+            epoch: now,
+            firing: None,
+            latest: now,
+        }
+    }
 }
 
 impl Tasks {
     pub(super) fn token(&mut self) -> u64 {
         self.next_token += 1;
         self.next_token
+    }
+
+    /// The editor's clock: when the firing timers were due, otherwise now.
+    /// It never goes back, even after tests step past the real time.
+    pub(super) fn now(&self) -> Instant {
+        self.firing
+            .unwrap_or_else(|| Instant::now().max(self.latest))
     }
 }
 
@@ -64,7 +91,8 @@ pub(super) fn wake(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult
 fn start_timer(lua: &Lua, delay: Duration) -> u64 {
     let mut state = state_mut(lua);
     let token = state.tasks.token();
-    state.tasks.timers.push((Instant::now() + delay, token));
+    let at = state.tasks.now() + delay;
+    state.tasks.timers.push((at, token));
     token
 }
 
@@ -81,6 +109,8 @@ pub(super) fn fire_timers(lua: &Lua, now: Instant) -> LuaResult<()> {
         let (mut due, later): (Vec<_>, Vec<_>) =
             state.tasks.timers.drain(..).partition(|(at, _)| *at <= now);
         state.tasks.timers = later;
+        state.tasks.firing = Some(now);
+        state.tasks.latest = state.tasks.latest.max(now);
         due.sort();
         due.into_iter().map(|(_, token)| token).collect()
     };
@@ -90,7 +120,56 @@ pub(super) fn fire_timers(lua: &Lua, now: Instant) -> LuaResult<()> {
             first_error.get_or_insert(err);
         }
     }
+    state_mut(lua).tasks.firing = None;
     first_error.map_or(Ok(()), Err)
+}
+
+/// Lets time pass until `until`: fires each timer when it's due, in order,
+/// including timers the woken code starts. For tests.
+pub(super) fn advance(lua: &Lua, until: Instant) -> LuaResult<()> {
+    // Bounded, so code that sleeps for 0 in a loop can't hang a test.
+    for _ in 0..100_000 {
+        match next_timer(lua) {
+            Some(at) if at <= until => fire_timers(lua, at)?,
+            _ => break,
+        }
+    }
+    Ok(())
+}
+
+/// `kern.now()`: milliseconds on the editor's clock.
+pub(super) fn now_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, ()| {
+        let tasks = &state(lua).tasks;
+        Ok(tasks.now().duration_since(tasks.epoch).as_secs_f64() * 1000.0)
+    })
+}
+
+/// `kern.animate(ms, step)`: calls `step(t)` about once a frame for `ms`
+/// milliseconds, with `t` going from 0 to 1.
+pub(super) fn animate_function(lua: &Lua, now: Function, sleep: Function) -> LuaResult<Function> {
+    lua.load(
+        r#"
+        local now, sleep = ...
+        return function(ms, step)
+            if not coroutine.isyieldable() then
+                error("kern.animate can only be used in a command or event handler", 2)
+            end
+            local start = now()
+            local t = if ms > 0 then 0 else 1
+            while true do
+                step(t)
+                if t >= 1 then
+                    return
+                end
+                sleep(16)
+                t = math.min(1, (now() - start) / ms)
+            end
+        end
+        "#,
+    )
+    .set_name("=kern.animate")
+    .call((now, sleep))
 }
 
 /// `kern.sleep(ms)`: waits without blocking the editor.
