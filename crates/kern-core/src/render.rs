@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -58,13 +59,13 @@ impl Measure for CellWidth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Size {
     pub width: u16,
     pub height: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Position {
     pub col: u16,
     pub row: u16,
@@ -150,14 +151,27 @@ impl PartialEq for Tag {
 
 impl Eq for Tag {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Tags travel to clients as their names.
+impl Serialize for Tag {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Tag {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Tag::from(Arc::<str>::deserialize(deserializer)?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
     pub text: String,
     pub tags: SmallVec<[Tag; 2]>,
 }
 
 /// One screen row.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Row {
     pub spans: Vec<Span>,
     /// Styles for the whole row, under its spans and across its empty end.
@@ -180,7 +194,7 @@ impl Row {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Frame {
     pub size: Size,
     /// Where the main view's rows go; panels take the rest of the width.
@@ -201,7 +215,7 @@ pub struct Frame {
 /// A panel: its rows fill `rect`. The client draws a line down column
 /// `separator`, between the panel and the main view, and the title (if any)
 /// on the row above `rect`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PanelFrame {
     pub rect: Rect,
     pub separator: u16,
@@ -211,14 +225,14 @@ pub struct PanelFrame {
 
 /// A floating view: its rows fill `rect`, and the client draws a border
 /// around it, one cell wide.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FloatFrame {
     pub rect: Rect,
     pub title: Option<String>,
     pub rows: Vec<Row>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: u16,
     pub y: u16,

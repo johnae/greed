@@ -65,6 +65,7 @@ pub struct Session {
     token_file: PathBuf,
     requests: Receiver<Request>,
     sender: Sender<Request>,
+    attachments: Receiver<Attachment>,
 }
 
 impl Session {
@@ -77,6 +78,11 @@ impl Session {
     /// so they arrive with the socket's.
     pub fn sender(&self) -> &Sender<Request> {
         &self.sender
+    }
+
+    /// Connections that asked to attach, newest last.
+    pub fn attachments(&self) -> &Receiver<Attachment> {
+        &self.attachments
     }
 }
 
@@ -95,11 +101,10 @@ pub fn listen(name: &str) -> io::Result<Session> {
         .recursive(true)
         .mode(0o700)
         .create(&dir)?;
+    // Editors that crashed leave sockets behind, which would also stop a
+    // new one with the same name from binding.
+    prune(&dir);
     let (socket, token_file) = session_files(name);
-    // A socket left by an editor that crashed would stop the bind.
-    if socket.exists() && UnixStream::connect(&socket).is_err() {
-        std::fs::remove_file(&socket)?;
-    }
     let listener = UnixListener::bind(&socket)?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     let token = new_token()?;
@@ -113,11 +118,13 @@ pub fn listen(name: &str) -> io::Result<Session> {
 
     let (sender, requests) = crossbeam_channel::unbounded();
     let incoming = sender.clone();
+    let (attach, attachments) = crossbeam_channel::unbounded();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let sender = incoming.clone();
+            let attach = attach.clone();
             let token = token.clone();
-            std::thread::spawn(move || serve_connection(stream, &token, &sender));
+            std::thread::spawn(move || serve_connection(stream, &token, &sender, &attach));
         }
     });
     Ok(Session {
@@ -126,7 +133,24 @@ pub fn listen(name: &str) -> io::Result<Session> {
         token_file,
         requests,
         sender,
+        attachments,
     })
+}
+
+/// Removes what sessions that are no longer running left behind: sockets
+/// nothing answers on, with their tokens and logs.
+fn prune(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if path.extension().is_some_and(|ext| ext == "sock") && UnixStream::connect(&path).is_err()
+        {
+            for ext in ["sock", "token", "log"] {
+                let _ = std::fs::remove_file(path.with_extension(ext));
+            }
+        }
+    }
 }
 
 /// 32 random hex digits from the system's random source.
@@ -139,18 +163,43 @@ pub(crate) fn new_token() -> io::Result<String> {
     }))
 }
 
-/// Answers one connection's requests until it closes.
-fn serve_connection(stream: UnixStream, token: &str, requests: &Sender<Request>) {
+/// A connection that asked to attach, for the server to send frames to and
+/// read input from: one JSON message per line each way.
+pub struct Attachment {
+    pub reader: BufReader<UnixStream>,
+    pub writer: UnixStream,
+}
+
+/// Answers one connection's requests until it closes, or hands it to the
+/// server as an [`Attachment`] once it asks to attach.
+fn serve_connection(
+    stream: UnixStream,
+    token: &str,
+    requests: &Sender<Request>,
+    attachments: &Sender<Attachment>,
+) {
     let Ok(mut writer) = stream.try_clone() else {
         return;
     };
+    let mut reader = BufReader::new(stream);
     let mut authed = false;
-    for line in BufReader::new(stream).lines() {
-        let Ok(line) = line else { return };
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+            return;
+        }
         if line.trim().is_empty() {
             continue;
         }
         let response = match serde_json::from_str::<Value>(&line) {
+            Ok(message) if authed && message["method"] == "attach" => {
+                let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": true });
+                if writeln!(writer, "{ok}").is_ok() {
+                    let _ = attachments.send(Attachment { reader, writer });
+                }
+                return;
+            }
             Ok(message) => answer(&message, token, &mut authed, requests),
             Err(err) => Some(error_response(&Value::Null, -32700, &err.to_string())),
         };
@@ -254,6 +303,17 @@ impl Client {
                 .unwrap_or("unknown error")
                 .to_owned()),
             None => Ok(response.get("result").cloned().unwrap_or(Value::Null)),
+        })
+    }
+
+    /// Attaches to the editor: from now on the connection carries input
+    /// one way and frames the other, one JSON message per line.
+    pub fn attach(mut self) -> io::Result<Attachment> {
+        self.call("attach", &Value::Null)?
+            .map_err(io::Error::other)?;
+        Ok(Attachment {
+            reader: self.reader,
+            writer: self.writer,
         })
     }
 

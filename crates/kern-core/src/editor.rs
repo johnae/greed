@@ -117,7 +117,7 @@ pub struct Panel {
 }
 
 /// How the cursor looks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CursorShape {
     #[default]
     Block,
@@ -164,6 +164,8 @@ pub struct Editor {
     undo_group: Option<u64>,
     next_group: u64,
     quit_requested: bool,
+    /// The attached client asked to leave, with the editor running on.
+    detach_requested: bool,
     /// Copied text, oldest first. Each entry holds one piece per selection.
     clipboard: Vec<Vec<String>>,
     /// The cursor shape of each mode; modes not listed get a block.
@@ -192,6 +194,7 @@ impl Editor {
             undo_group: None,
             next_group: 0,
             quit_requested: false,
+            detach_requested: false,
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
             file_types: FileTypes::bundled(),
@@ -687,6 +690,17 @@ impl Editor {
 
     pub fn quit_requested(&self) -> bool {
         self.quit_requested
+    }
+
+    /// Asks whoever runs the editor to let the attached client go and keep
+    /// running without it.
+    pub fn request_detach(&mut self) {
+        self.detach_requested = true;
+    }
+
+    /// Whether a detach was asked for since the last call.
+    pub fn take_detach_request(&mut self) -> bool {
+        std::mem::take(&mut self.detach_requested)
     }
 
     /// Queues a message for the user.

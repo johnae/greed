@@ -93,7 +93,7 @@ fn arguments(args: &[String]) -> Result<Value, Box<dyn std::error::Error>> {
 }
 
 /// The names of the sessions whose editors are still running.
-fn live_sessions() -> io::Result<Vec<String>> {
+pub fn live_sessions() -> io::Result<Vec<String>> {
     let mut names = Vec::new();
     let entries = match std::fs::read_dir(control::sessions_dir()) {
         Ok(entries) => entries,
@@ -115,9 +115,18 @@ fn live_sessions() -> io::Result<Vec<String>> {
 
 /// A connection to `$KERN_SESSION`, or to the only running editor.
 fn connect() -> Result<Client, Box<dyn std::error::Error>> {
-    let name = match std::env::var("KERN_SESSION") {
-        Ok(name) => name,
-        Err(_) => match live_sessions()?.as_slice() {
+    connect_to(None)
+}
+
+/// A connection to the session called `name`, or without one to
+/// `$KERN_SESSION` or the only running editor.
+pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Error>> {
+    let name = match name
+        .map(str::to_owned)
+        .or_else(|| std::env::var("KERN_SESSION").ok())
+    {
+        Some(name) => name,
+        None => match live_sessions()?.as_slice() {
             [only] => only.clone(),
             [] => return Err("no editor is running".into()),
             several => {

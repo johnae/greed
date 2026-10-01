@@ -653,3 +653,17 @@ fn collect_bindings(
         prefix.pop();
     }
 }
+
+// Keys travel between clients and the server as their names, e.g. "ctrl-s".
+impl serde::Serialize for Key {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Key {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Key::parse(&name).map_err(serde::de::Error::custom)
+    }
+}

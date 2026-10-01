@@ -81,3 +81,16 @@ fn requests_fail_clearly_when_no_plugin_answers() {
     assert!(answer.unwrap_err().contains("no plugin answers"));
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn starting_a_session_clears_what_crashed_ones_left() {
+    let stale = name("stale");
+    let (socket, token) = control::session_files(&stale);
+    std::fs::create_dir_all(control::sessions_dir()).unwrap();
+    // A socket nothing listens on any more, as a crash leaves it.
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+    std::fs::write(&token, "x").unwrap();
+    let session = control::listen(&name("fresh")).unwrap();
+    assert!(!socket.exists() && !token.exists());
+    drop(session);
+}

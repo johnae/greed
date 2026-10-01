@@ -27,7 +27,7 @@ fn next(conn: &Connection) -> Output {
 fn frame(conn: &Connection) -> Frame {
     match next(conn) {
         Output::Frame(frame) => frame,
-        Output::Exit => panic!("server exited"),
+        other => panic!("expected a frame, got {other:?}"),
     }
 }
 

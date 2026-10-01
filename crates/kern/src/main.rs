@@ -6,16 +6,17 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod ctl;
+mod session;
 mod tui;
 
 use crossbeam_channel::Sender;
 use kern_core::Editor;
-use kern_core::control::{self, Request};
+use kern_core::control::Request;
 use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -31,6 +32,16 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
         [] => edit(None),
+        [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
+            session::serve(name, rest.first().map(PathBuf::from))
+        }
+        [cmd, rest @ ..] if cmd == "serve" => session::serve(
+            &std::process::id().to_string(),
+            rest.first().map(PathBuf::from),
+        ),
+        [cmd] if cmd == "attach" => session::attach(None),
+        [cmd, name] if cmd == "attach" => session::attach(Some(name)),
+        [cmd] if cmd == "ls" => ctl::run(&["sessions".to_owned()]),
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => test(&core_plugin()),
@@ -140,16 +151,22 @@ fn host(
     Ok(host)
 }
 
+/// The editor: in a background session this terminal attaches to, or with
+/// `KERN_NO_SESSION` set, in this process.
 fn edit(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var_os("KERN_NO_SESSION").is_some() {
+        return edit_here(file);
+    }
+    session::start(file.as_deref())
+}
+
+/// The editor in this process, for when a background session can't start.
+fn edit_here(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let text = read(file.as_deref())?;
-    // Without a socket the editor still works; only `kern ctl` and agents
-    // can't reach it.
-    let session = control::listen(&std::process::id().to_string()).ok();
-    let requests = session.as_ref().map(|s| s.sender().clone());
-    tui::run(server::spawn_with_session(
-        move || host(&text, file, requests),
-        session,
-    ))
+    let conn = server::spawn(move || host(&text, file, None));
+    tui::run(&conn.input, &conn.output)?;
+    conn.server.join().map_err(|_| "the editor crashed")??;
+    Ok(())
 }
 
 fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {

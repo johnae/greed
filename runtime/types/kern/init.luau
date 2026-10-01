@@ -500,6 +500,9 @@ export type Kern = {
 	view: () -> View,
 	--- Asks the editor to exit.
 	quit: () -> (),
+	--- Lets the attached terminal go and keeps the editor running in the
+	--- background, for `kern attach` to come back to.
+	detach: () -> (),
 	--- Waits `ms` milliseconds without blocking the editor. Works in commands
 	--- and event handlers.
 	sleep: (ms: number) -> (),

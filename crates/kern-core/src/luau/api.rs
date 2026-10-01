@@ -309,6 +309,13 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("json", super::json::module(lua)?)?;
     kern.set("diff", super::diff::diff_function(lua)?)?;
     kern.set("signal", tasks::signal_function(lua)?)?;
+    kern.set(
+        "detach",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).editor.request_detach();
+            Ok(())
+        })?,
+    )?;
     super::languages::register(lua, kern)?;
     kern.set("plugin", plugin_module(lua)?)?;
     kern.set("theme", super::theme::module(lua, owner)?)

@@ -4,6 +4,7 @@
 use std::io::{self, Write};
 use std::thread;
 
+use crossbeam_channel::{Receiver, Sender};
 use crossterm::cursor::{self, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::style::{Attribute, Color, ContentStyle, PrintStyledContent, ResetColor};
@@ -12,20 +13,22 @@ use crossterm::{execute, queue};
 use kern_core::CursorShape;
 use kern_core::keymap::{Key, KeyCode, Mods};
 use kern_core::render::{Frame, Row, Size, Tag};
-use kern_core::server::{Connection, Input, Output};
+use kern_core::server::{Input, Output};
 use kern_core::theme::{Color as ThemeColor, Style, Surface, Theme, Underline};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 type Error = Box<dyn std::error::Error>;
 
-/// Runs the terminal client until the server exits.
-pub fn run(conn: Connection) -> Result<(), Error> {
+/// Runs the terminal client until the server exits or lets it go, sending
+/// keys and sizes to `input` and drawing the frames from `output`. Returns
+/// how it ended.
+pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, Error> {
     let terminal = Terminal::enter()?;
     let (width, height) = terminal::size()?;
-    conn.input.send(Input::Resize(Size { width, height }))?;
+    input.send(Input::Resize(Size { width, height }))?;
 
-    let input = conn.input.clone();
+    let input = input.clone();
     thread::spawn(move || {
         while let Ok(event) = event::read() {
             let message = match event {
@@ -43,12 +46,15 @@ pub fn run(conn: Connection) -> Result<(), Error> {
 
     let mut screen = Screen::default();
     let mut out = io::BufWriter::new(io::stdout());
-    while let Ok(Output::Frame(frame)) = conn.output.recv() {
-        screen.draw(&mut out, &frame)?;
-    }
+    let ended = loop {
+        match output.recv() {
+            Ok(Output::Frame(frame)) => screen.draw(&mut out, &frame)?,
+            Ok(other) => break other,
+            Err(_) => break Output::Exit,
+        }
+    };
     drop(terminal);
-    conn.server.join().map_err(|_| "the editor crashed")??;
-    Ok(())
+    Ok(ended)
 }
 
 /// Converts a terminal key event into a kern key. Returns `None` for keys

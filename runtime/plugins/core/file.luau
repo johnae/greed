@@ -58,6 +58,14 @@ kern.command({
 })
 
 kern.command({
+	name = "detach",
+	doc = "Leave the editor running in the background; kern attach comes back",
+	run = function()
+		kern.detach()
+	end,
+})
+
+kern.command({
 	name = "quit",
 	doc = "Exit the editor, unless files have unsaved changes (force exits anyway)",
 	run = function(ctx)

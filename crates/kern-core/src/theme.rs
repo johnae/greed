@@ -24,7 +24,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Color {
     /// The terminal's or window's own foreground or background.
     Default,
@@ -62,7 +64,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Underline {
     Line,
     Curl,
@@ -86,7 +88,7 @@ impl Underline {
 
 /// How text looks. Fields left as `None` leave whatever is underneath, so
 /// styles layer: a selection's background over a keyword's color.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Style {
     pub fg: Option<Color>,
     pub bg: Option<Color>,
@@ -125,7 +127,7 @@ pub enum Surface {
 }
 
 /// One theme entry: a style every surface uses, and changes for each.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub style: Style,
     pub tui: Style,
@@ -148,7 +150,7 @@ impl Entry {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Theme {
     entries: HashMap<Arc<str>, Entry>,
 }
