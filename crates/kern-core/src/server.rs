@@ -69,6 +69,7 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
     let mut syntax = Syntax::new();
     let mut size = None;
     let lsp_events = host.lsp_events();
+    let finished_jobs = host.finished_jobs();
     let mut message: Option<String> = None;
     loop {
         host.with_editor(|ed| syntax.update(ed));
@@ -100,6 +101,13 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
             recv(lsp_events) -> event => {
                 if let Ok(event) = event
                     && let Err(err) = host.handle_lsp(event)
+                {
+                    message = Some(first_line(&err.to_string()));
+                }
+            }
+            recv(finished_jobs) -> done => {
+                if let Ok(done) = done
+                    && let Err(err) = host.finish_job(done)
                 {
                     message = Some(first_line(&err.to_string()));
                 }

@@ -23,6 +23,18 @@ pub(super) fn run_command(lua: &Lua, name: &str) -> Result<(), HostError> {
     invoke(lua, name, Invocation::default())
 }
 
+/// Runs a command with arguments, as from the command line.
+pub(super) fn run_command_with(lua: &Lua, name: &str, args: Vec<String>) -> Result<(), HostError> {
+    invoke(
+        lua,
+        name,
+        Invocation {
+            args,
+            ..Invocation::default()
+        },
+    )
+}
+
 /// How a command was asked to run.
 #[derive(Default)]
 struct Invocation<'a> {

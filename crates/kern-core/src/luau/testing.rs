@@ -30,8 +30,7 @@ use kern_text::ClientId;
 use mlua::{Function, Lua, UserData, UserDataMethods};
 
 use super::modules::Modules;
-use super::tasks;
-use super::{Host, HostError, api, budgeted, state, state_mut};
+use super::{Host, HostError, api, budgeted, jobs, state, state_mut, tasks};
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
 
@@ -156,12 +155,18 @@ impl UserData for TestContext {
         methods.add_method("keys", |lua, _, keys: String| {
             for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
                 api::press(lua, key).map_err(api::into_lua)?;
+                jobs::settle(lua)?;
             }
             Ok(())
         });
-        methods.add_method("run", |lua, _, command: String| {
-            api::run_command(lua, &command).map_err(api::into_lua)
-        });
+        methods.add_method(
+            "run",
+            |lua, _, (command, args): (String, Option<Vec<String>>)| {
+                api::run_command_with(lua, &command, args.unwrap_or_default())
+                    .map_err(api::into_lua)?;
+                jobs::settle(lua)
+            },
+        );
         methods.add_method(
             "tempdir",
             |_, _, files: Option<HashMap<String, mlua::LuaString>>| {
@@ -170,7 +175,9 @@ impl UserData for TestContext {
         );
         methods.add_method("wait", |lua, _, ms: f64| {
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
-            tasks::advance(lua, later)
+            jobs::settle(lua)?;
+            tasks::advance(lua, later)?;
+            jobs::settle(lua)
         });
         methods.add_method("marked", |lua, _, ()| Ok(focused_marked_text(lua)));
         methods.add_method("floats", |lua, _, ()| {

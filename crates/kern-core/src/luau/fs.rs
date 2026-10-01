@@ -6,8 +6,9 @@ use std::cmp::Ordering;
 use std::io::Read;
 use std::path::Path;
 
-use mlua::{IntoLuaMulti, Lua, MultiValue, Table};
+use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
 
+use super::jobs::{self, Output};
 use crate::search::{self, GrepOptions, LineMatch};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -93,38 +94,67 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
 
-    fs.set(
-        "grep",
-        lua.create_function(
-            |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
-                let get = |key: &str| -> LuaResult<Option<mlua::Value>> {
-                    opts.as_ref().map_or(Ok(None), |o| o.get(key))
-                };
-                let flag = |key: &str| -> LuaResult<bool> {
-                    Ok(get(key)?.and_then(|v| v.as_boolean()).unwrap_or(false))
-                };
-                let options = GrepOptions {
-                    hidden: flag("hidden")?,
-                    ignored: flag("ignored")?,
-                    limit: get("limit")?
-                        .and_then(|v| v.as_usize())
-                        .unwrap_or(DEFAULT_GREP_LIMIT),
-                };
-                let dir = dir.unwrap_or_else(|| ".".to_owned());
-                match search::grep(Path::new(&dir), &pattern, options) {
-                    Ok(lines) => grep_to_lua(lua, lines)?.into_lua_multi(lua),
-                    Err(err) => failure(lua, err),
-                }
-            },
-        )?,
-    )?;
+    fs.set("grep", grep_function(lua)?)?;
     Ok(fs)
+}
+
+/// `kern.fs.grep`, which waits for a background search when it can, so a
+/// command searching a big project doesn't hold up the editor, and
+/// searches right away anywhere else.
+fn grep_function(lua: &Lua) -> LuaResult<Function> {
+    let now = lua.create_function(
+        |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
+            let (dir, options) = grep_args(dir, opts.as_ref())?;
+            match search::grep(Path::new(&dir), &pattern, options) {
+                Ok(lines) => grep_to_lua(lua, lines)?.into_lua_multi(lua),
+                Err(err) => failure(lua, err),
+            }
+        },
+    )?;
+    let start = lua.create_function(
+        |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
+            let (dir, options) = grep_args(dir, opts.as_ref())?;
+            Ok(jobs::start(lua, move || {
+                Output::Grep(search::grep(Path::new(&dir), &pattern, options))
+            }))
+        },
+    )?;
+    lua.load(
+        r"
+        local now, start = ...
+        return function(...)
+            if coroutine.isyieldable() then
+                return coroutine.yield(start(...))
+            end
+            return now(...)
+        end
+        ",
+    )
+    .set_name("=kern.fs.grep")
+    .call((now, start))
+}
+
+/// The directory and options from `kern.fs.grep`'s arguments.
+fn grep_args(dir: Option<String>, opts: Option<&Table>) -> LuaResult<(String, GrepOptions)> {
+    let get =
+        |key: &str| -> LuaResult<Option<mlua::Value>> { opts.map_or(Ok(None), |o| o.get(key)) };
+    let flag = |key: &str| -> LuaResult<bool> {
+        Ok(get(key)?.and_then(|v| v.as_boolean()).unwrap_or(false))
+    };
+    let options = GrepOptions {
+        hidden: flag("hidden")?,
+        ignored: flag("ignored")?,
+        limit: get("limit")?
+            .and_then(|v| v.as_usize())
+            .unwrap_or(DEFAULT_GREP_LIMIT),
+    };
+    Ok((dir.unwrap_or_else(|| ".".to_owned()), options))
 }
 
 /// How many matching lines `kern.fs.grep` returns unless told otherwise.
 const DEFAULT_GREP_LIMIT: usize = 10_000;
 
-fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> {
+pub(super) fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> {
     let list = lua.create_table()?;
     for found in lines {
         let entry = lua.create_table()?;

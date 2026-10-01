@@ -8,6 +8,7 @@
 mod api;
 mod fs;
 mod handles;
+mod jobs;
 mod languages;
 mod lsp;
 mod modules;
@@ -25,6 +26,7 @@ use std::time::{Duration, Instant};
 use mlua::{Function, Lua, Value, VmState};
 use serde::Deserialize;
 
+pub use jobs::Done as FinishedJob;
 pub use testing::{TestResult, run_tests};
 
 use crate::keymap::{Key, ParseError};
@@ -63,6 +65,8 @@ pub(crate) struct State {
     pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
     /// The plugin that set each theme entry, so it goes with the plugin.
     pub theme_owners: HashMap<Arc<str>, PluginId>,
+    /// Work running on other threads.
+    pub jobs: jobs::Jobs,
 }
 
 #[derive(Clone)]
@@ -160,6 +164,7 @@ impl Host {
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
             theme_owners: HashMap::new(),
+            jobs: jobs::Jobs::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -322,6 +327,18 @@ impl Host {
     pub fn fire_timers(&self, now: Instant) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             tasks::fire_timers(&self.lua, now).map_err(HostError::from)
+        })
+    }
+
+    /// Jobs that finished on other threads, to pass to [`Host::finish_job`].
+    pub fn finished_jobs(&self) -> crossbeam_channel::Receiver<FinishedJob> {
+        state(&self.lua).jobs.finished().clone()
+    }
+
+    /// Wakes the command waiting on a finished job.
+    pub fn finish_job(&self, done: FinishedJob) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            jobs::finish(&self.lua, done).map_err(HostError::from)
         })
     }
 

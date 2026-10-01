@@ -9,7 +9,9 @@ export type TestContext = {
 	buffer: (self: TestContext, marked: string) -> (),
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),
-	run: (self: TestContext, command: string) -> (),
+	--- Runs a command, with arguments as from the command line, and waits
+	--- for any background work it starts.
+	run: (self: TestContext, command: string, args: { string }?) -> (),
 	--- Lets `ms` milliseconds pass for commands waiting on kern.sleep.
 	wait: (self: TestContext, ms: number) -> (),
 	--- A new, empty directory holding `files` (paths in it, to their text).
