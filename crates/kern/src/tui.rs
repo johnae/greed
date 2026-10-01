@@ -165,19 +165,40 @@ fn convert_mouse(event: MouseEvent) -> Mouse {
     }
 }
 
+/// Whether the terminal sends keys in the kitty keyboard protocol, which
+/// tells apart keys that otherwise send the same bytes (`tab` and `ctrl-i`,
+/// `enter` and `shift-enter`) and `esc` from the start of a sequence.
+static KITTY_KEYS: AtomicBool = AtomicBool::new(false);
+
+/// Whether to ask for the kitty keyboard protocol: unless `$KERN_KEYS` is
+/// "legacy".
+fn kitty_keys_wanted() -> bool {
+    std::env::var("KERN_KEYS").map_or(true, |v| v != "legacy")
+}
+
 /// Converts a terminal key event into a kern key. Returns `None` for keys
 /// kern doesn't know.
 pub fn convert(event: KeyEvent) -> Option<Key> {
     let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
     let code = match event.code {
-        // Terminals send ctrl-\ ] ^ _ as the bytes crossterm reads as
-        // ctrl-4 to ctrl-7.
-        TermKey::Char(c @ '4'..='7') if ctrl => KeyCode::Char(match c {
-            '4' => '\\',
-            '5' => ']',
-            '6' => '^',
-            _ => '_',
-        }),
+        // Without the kitty protocol, terminals send ctrl-\ ] ^ _ as the
+        // bytes crossterm reads as ctrl-4 to ctrl-7.
+        TermKey::Char(c @ '4'..='7') if ctrl && !KITTY_KEYS.load(Ordering::Relaxed) => {
+            KeyCode::Char(match c {
+                '4' => '\\',
+                '5' => ']',
+                '6' => '^',
+                _ => '_',
+            })
+        }
+        // ... and with it, shifted letters as the letter with shift held.
+        TermKey::Char(c) if event.modifiers.contains(KeyModifiers::SHIFT) => {
+            let mut upper = c.to_uppercase();
+            KeyCode::Char(match (upper.next(), upper.next()) {
+                (Some(u), None) => u,
+                _ => c,
+            })
+        }
         TermKey::Char(c) => KeyCode::Char(c),
         TermKey::Enter => KeyCode::Enter,
         TermKey::Esc => KeyCode::Esc,
@@ -228,6 +249,15 @@ impl Terminal {
         if mouse_wanted() {
             execute!(io::stdout(), event::EnableMouseCapture)?;
         }
+        if kitty_keys_wanted() && terminal::supports_keyboard_enhancement().unwrap_or(false) {
+            execute!(
+                io::stdout(),
+                event::PushKeyboardEnhancementFlags(
+                    event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                )
+            )?;
+            KITTY_KEYS.store(true, Ordering::Relaxed);
+        }
         Ok(Self)
     }
 }
@@ -239,6 +269,9 @@ impl Drop for Terminal {
 }
 
 fn restore() {
+    if KITTY_KEYS.swap(false, Ordering::Relaxed) {
+        let _ = execute!(io::stdout(), event::PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(
         io::stdout(),
         SetCursorStyle::DefaultUserShape,
@@ -536,6 +569,15 @@ mod tests {
         assert_eq!(
             key(TermKey::Char('s'), KeyModifiers::CONTROL).as_deref(),
             Some("ctrl-s")
+        );
+        // Terminals speaking the kitty protocol send the unshifted letter.
+        assert_eq!(
+            key(
+                TermKey::Char('a'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            )
+            .as_deref(),
+            Some("ctrl-A")
         );
         assert_eq!(
             key(TermKey::Char(';'), KeyModifiers::ALT).as_deref(),

@@ -191,6 +191,7 @@ impl Terminal {
         };
         let config = Config {
             scrolling_history: OVERFLOW,
+            kitty_keyboard: true,
             ..Config::default()
         };
         let size = Size::new(options.rows, options.cols);
@@ -274,10 +275,8 @@ impl Terminal {
 
     /// Sends `key` the way a terminal encodes it for the program's modes.
     pub fn key(&self, key: Key) {
-        let app_cursor = lock(&self.shared.term)
-            .mode()
-            .contains(TermMode::APP_CURSOR);
-        let bytes = encode_key(key, app_cursor);
+        let mode = *lock(&self.shared.term).mode();
+        let bytes = encode_key(key, mode);
         if !bytes.is_empty() {
             self.write(bytes);
         }
@@ -618,9 +617,13 @@ fn indexed(i: u8) -> Color {
     }
 }
 
-/// The bytes a terminal sends for `key`, as xterm does. With `app_cursor`
-/// the program asked for arrows in application mode.
-fn encode_key(key: Key, app_cursor: bool) -> Vec<u8> {
+/// The bytes a terminal sends for `key` under the program's `mode`: in the
+/// kitty protocol if it asked for that, otherwise as xterm does.
+fn encode_key(key: Key, mode: TermMode) -> Vec<u8> {
+    if let Some(bytes) = encode_kitty_key(key, mode) {
+        return bytes;
+    }
+    let app_cursor = mode.contains(TermMode::APP_CURSOR);
     let ctrl = key.mods.contains(Mods::CTRL);
     let alt = key.mods.contains(Mods::ALT);
     let shift = key.mods.contains(Mods::SHIFT);
@@ -677,6 +680,49 @@ fn encode_key(key: Key, app_cursor: bool) -> Vec<u8> {
     } else {
         bytes
     }
+}
+
+/// `key` in the kitty keyboard protocol, for a program that turned it on,
+/// or `None` where it's sent as xterm sends it. Only presses are sent, and
+/// a shifted symbol is reported as itself: which key types it depends on
+/// the keyboard layout, which keys don't carry.
+fn encode_kitty_key(key: Key, mode: TermMode) -> Option<Vec<u8>> {
+    if !mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL) {
+        return None;
+    }
+    let all = mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC);
+    let ctrl = key.mods.contains(Mods::CTRL);
+    let alt = key.mods.contains(Mods::ALT);
+    let (code, shifted) = match key.code {
+        KeyCode::Char(c) => {
+            let lower = c.to_lowercase().next().filter(|l| *l != c);
+            (u32::from(lower.unwrap_or(c)), lower.map(|_| c))
+        }
+        KeyCode::Enter => (13, None),
+        KeyCode::Tab => (9, None),
+        KeyCode::Backspace => (127, None),
+        KeyCode::Esc => (27, None),
+        _ => return None,
+    };
+    let shift = key.mods.contains(Mods::SHIFT) || shifted.is_some();
+    let m = 1 + u8::from(shift) + 2 * u8::from(alt) + 4 * u8::from(ctrl);
+    let types_text = matches!(key.code, KeyCode::Char(_)) && !ctrl && !alt;
+    let plain = key.code != KeyCode::Esc && (m == 1 || types_text);
+    if plain && !all {
+        return None;
+    }
+    let alternate = shifted
+        .filter(|_| mode.contains(TermMode::REPORT_ALTERNATE_KEYS))
+        .map(|c| format!(":{}", u32::from(c)))
+        .unwrap_or_default();
+    let rest = match key.code {
+        KeyCode::Char(c) if types_text && mode.contains(TermMode::REPORT_ASSOCIATED_TEXT) => {
+            format!(";{m};{}", u32::from(c))
+        }
+        _ if m > 1 => format!(";{m}"),
+        _ => String::new(),
+    };
+    Some(format!("\x1b[{code}{alternate}{rest}u").into_bytes())
 }
 
 /// The bytes a terminal reports `mouse` with, in the encoding the program
@@ -809,14 +855,14 @@ mod tests {
 
     #[test]
     fn keys_are_sent_as_xterm_sends_them() {
-        let sent = |name: &str| encode_key(key(name), false);
+        let sent = |name: &str| encode_key(key(name), TermMode::empty());
         assert_eq!(sent("a"), b"a");
         assert_eq!(sent("ctrl-c"), [3]);
         assert_eq!(sent("alt-b"), b"\x1bb");
         assert_eq!(sent("enter"), b"\r");
         assert_eq!(sent("backspace"), [0x7f]);
         assert_eq!(sent("up"), b"\x1b[A");
-        assert_eq!(encode_key(key("up"), true), b"\x1bOA");
+        assert_eq!(encode_key(key("up"), TermMode::APP_CURSOR), b"\x1bOA");
         assert_eq!(sent("ctrl-right"), b"\x1b[1;5C");
         assert_eq!(sent("shift-tab"), b"\x1b[Z");
         assert_eq!(sent("delete"), b"\x1b[3~");
@@ -825,6 +871,37 @@ mod tests {
         assert_eq!(sent("f12"), b"\x1b[24~");
         assert_eq!(sent("ctrl-space"), [0]);
         assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn keys_are_sent_as_kitty_sends_them_to_programs_that_ask() {
+        let sent = |name: &str, mode| String::from_utf8(encode_key(key(name), mode)).unwrap();
+        let plain = TermMode::DISAMBIGUATE_ESC_CODES;
+        // Text stays text; keys that collide with others get their own.
+        assert_eq!(sent("a", plain), "a");
+        assert_eq!(sent("A", plain), "A");
+        assert_eq!(sent("enter", plain), "\r");
+        assert_eq!(sent("esc", plain), "\x1b[27u");
+        assert_eq!(sent("ctrl-c", plain), "\x1b[99;5u");
+        assert_eq!(sent("ctrl-i", plain), "\x1b[105;5u");
+        assert_eq!(sent("alt-b", plain), "\x1b[98;3u");
+        assert_eq!(sent("ctrl-space", plain), "\x1b[32;5u");
+        assert_eq!(sent("shift-enter", plain), "\x1b[13;2u");
+        assert_eq!(sent("shift-tab", plain), "\x1b[9;2u");
+        assert_eq!(sent("ctrl-backspace", plain), "\x1b[127;5u");
+        assert_eq!(sent("ctrl-up", plain), "\x1b[1;5A");
+        assert_eq!(sent("f5", plain), "\x1b[15~");
+        // Every key, with the shifted key and the text it types if asked.
+        let all = plain | TermMode::REPORT_ALL_KEYS_AS_ESC;
+        assert_eq!(sent("a", all), "\x1b[97u");
+        assert_eq!(sent("A", all), "\x1b[97;2u");
+        assert_eq!(sent("enter", all), "\x1b[13u");
+        let alternate = all | TermMode::REPORT_ALTERNATE_KEYS;
+        assert_eq!(sent("A", alternate), "\x1b[97:65;2u");
+        assert_eq!(sent("ctrl-a", alternate), "\x1b[97;5u");
+        let text = all | TermMode::REPORT_ASSOCIATED_TEXT;
+        assert_eq!(sent("A", text), "\x1b[97;2;65u");
+        assert_eq!(sent("ctrl-a", text), "\x1b[97;5u");
     }
 
     #[test]

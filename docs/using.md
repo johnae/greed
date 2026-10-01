@@ -317,6 +317,13 @@ can read what went wrong. A terminal keeps running while you look at other
 files, and while you're detached. `:set terminal-shell "fish -l"` changes
 what new terminals run.
 
+Programs that ask for the kitty keyboard protocol (Helix, Neovim, fish,
+recent shells) get it, so they can tell `tab` from `ctrl-i` or `enter` from
+`shift-enter`. For those keys to reach Kern in the first place your own
+terminal needs the protocol too (kitty, WezTerm, foot, Ghostty, Alacritty
+and iTerm2 have it); Kern asks for it when it starts. `KERN_KEYS=legacy`
+turns that off.
+
 Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
 URLs written in the output open too. They open with `xdg-open` (`open` on
 macOS), or whatever `:set link-opener firefox` names.

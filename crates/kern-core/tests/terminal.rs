@@ -322,3 +322,15 @@ fn links_programs_print_are_kept_with_where_they_go() {
     assert_eq!(&row.text[link.from..link.to], "the site");
     assert_eq!(&*link.uri, "https://example.com");
 }
+
+#[test]
+fn programs_can_ask_for_keys_as_kitty_sends_them() {
+    // Turns the protocol on and asks which flags are on; the answer comes
+    // back as input, which `cat -v` shows along with the keys after it.
+    let script = "stty raw -echo; printf '\\033[>1u\\033[?u'; cat -v";
+    let (terminal, _events) = start(&["sh", "-c", script], 3, 40);
+    until(&terminal, |screen| screen.rows[0].text.contains("^[[?1u"));
+    terminal.key(Key::parse("ctrl-c").unwrap());
+    let screen = until(&terminal, |screen| screen.rows[0].text.contains("[99;5u"));
+    assert_eq!(screen.rows[0].text, "^[[?1u^[[99;5u", "{:?}", text(&screen));
+}

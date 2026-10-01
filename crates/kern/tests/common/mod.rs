@@ -96,6 +96,9 @@ impl World {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         self.env(&mut command);
+        // `script` doesn't answer the query for kitty keys, which would cost
+        // its timeout at every start.
+        command.env("KERN_KEYS", "legacy");
         command.envs(env.iter().copied());
         let mut child = command.spawn().unwrap();
         let mut keys = child.stdin.take().unwrap();
