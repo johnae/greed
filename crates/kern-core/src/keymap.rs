@@ -460,6 +460,18 @@ impl Keymap {
         found
     }
 
+    /// Every key sequence, in every layer, whose active binding runs
+    /// `command`.
+    pub fn bindings_for(&self, command: &str) -> Vec<(Layer, Vec<Key>)> {
+        let mut found = Vec::new();
+        for (layer, children) in &self.layers {
+            collect_bindings(children, command, &mut Vec::new(), &mut |keys| {
+                found.push((layer.clone(), keys));
+            });
+        }
+        found
+    }
+
     /// Removes every binding `owner` made.
     pub fn remove_owned_by(&mut self, owner: &str) {
         for children in self.layers.values_mut() {
@@ -503,4 +515,26 @@ fn format_keys(keys: &[Key]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Calls `found` with every sequence under `children` (after `prefix`) whose
+/// active binding runs `command`.
+fn collect_bindings(
+    children: &HashMap<Key, Node>,
+    command: &str,
+    prefix: &mut Vec<Key>,
+    found: &mut impl FnMut(Vec<Key>),
+) {
+    for (key, node) in children {
+        prefix.push(*key);
+        match node {
+            Node::Command(bindings) => {
+                if bindings.last().is_some_and(|b| &*b.command == command) {
+                    found(prefix.clone());
+                }
+            }
+            Node::Prefix(next) => collect_bindings(next, command, prefix, found),
+        }
+        prefix.pop();
+    }
 }

@@ -80,9 +80,7 @@ fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", None);
     let host = Host::new(editor)?;
-    for plugin in plugins {
-        host.load_dir(plugin)?;
-    }
+    host.load_dirs(plugins)?;
     Ok(host)
 }
 

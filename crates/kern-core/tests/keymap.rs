@@ -230,3 +230,35 @@ fn continuations_list_what_can_follow_a_prefix() {
     );
     assert!(km.continuations("normal", "file", &keys("x")).is_empty());
 }
+
+#[test]
+fn bindings_for_a_command_are_found_in_every_layer() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("normal"), &keys("g g"), "goto-start", "core")
+        .unwrap();
+    km.bind(
+        Layer::mode("insert"),
+        &keys("ctrl-home"),
+        "goto-start",
+        "core",
+    )
+    .unwrap();
+    km.bind(Layer::mode("normal"), &keys("w"), "next-word", "core")
+        .unwrap();
+    km.bind(Layer::mode("normal"), &keys("x"), "goto-start", "core")
+        .unwrap();
+    km.bind(Layer::mode("normal"), &keys("x"), "other", "user/me")
+        .unwrap();
+
+    let mut found: Vec<String> = km
+        .bindings_for("goto-start")
+        .into_iter()
+        .map(|(layer, keys)| {
+            let keys: Vec<String> = keys.iter().map(ToString::to_string).collect();
+            format!("{layer}: {}", keys.join(" "))
+        })
+        .collect();
+    found.sort();
+    // "x" was rebound, so it no longer runs goto-start.
+    assert_eq!(found, ["insert: ctrl-home", "normal: g g"]);
+}

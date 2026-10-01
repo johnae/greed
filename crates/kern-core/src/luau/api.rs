@@ -246,6 +246,22 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     keymap.set(
+        "find",
+        lua.create_function(|lua, command: String| {
+            let mut found = state(lua).editor.keymap().bindings_for(&command);
+            found.sort_by_key(|(layer, keys)| (layer.to_string(), keys_text(keys)));
+            let list = lua.create_table()?;
+            for (layer, keys) in found {
+                let entry = lua.create_table()?;
+                entry.set("layer", layer.to_string())?;
+                entry.set("keys", keys_text(&keys))?;
+                list.push(entry)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+
+    keymap.set(
         "next",
         lua.create_function(|lua, keys: Option<String>| {
             let prefix = match keys.as_deref().map(str::trim) {
@@ -403,17 +419,29 @@ fn option_to_lua(lua: &Lua, value: OptionValue) -> LuaResult<Value> {
     })
 }
 
-/// Where the Luau code calling into Rust is.
+/// Where the Luau code calling into Rust was written: the outermost call in
+/// the calling file, so a command defined through a helper points at the
+/// helper's call rather than inside the helper.
 fn caller(lua: &Lua) -> Option<Source> {
-    lua.inspect_stack(1, |debug| {
-        let file = debug.source().short_src?.into_owned();
-        let line = u32::try_from(debug.current_line()?).ok()?;
-        Some(Source {
-            file: file.into(),
-            line,
+    let frame = |level| {
+        lua.inspect_stack(level, |debug| {
+            let file = debug.source().short_src?.into_owned();
+            let line = u32::try_from(debug.current_line()?).ok()?;
+            Some((file, line))
         })
+        .flatten()
+    };
+    let (file, mut line) = frame(1)?;
+    for level in 2.. {
+        match frame(level) {
+            Some((outer, outer_line)) if outer == file => line = outer_line,
+            _ => break,
+        }
+    }
+    Some(Source {
+        file: file.into(),
+        line,
     })
-    .flatten()
 }
 
 /// A value as text, falling back to its debug form when `tostring` fails.
@@ -497,11 +525,19 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         "commands",
         lua.create_function(|lua, ()| {
             let list = lua.create_table()?;
-            for command in state(lua).registry.commands() {
+            let state = state(lua);
+            for command in state.registry.commands() {
                 let entry = lua.create_table()?;
                 entry.set("name", &*command.name)?;
                 entry.set("doc", &*command.doc)?;
                 entry.set("owner", &*command.owner)?;
+                if let Some(source) = &command.source {
+                    entry.set("source", format!("{}:{}", source.file, source.line))?;
+                    if let Some(path) = state.sources.get(&*source.file) {
+                        entry.set("path", path.to_string_lossy().as_ref())?;
+                        entry.set("line", source.line)?;
+                    }
+                }
                 list.push(entry)?;
             }
             Ok(list)

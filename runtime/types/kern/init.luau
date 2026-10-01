@@ -108,6 +108,9 @@ export type Keymap = {
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
 	--- the command each runs. Keys without a command start longer sequences.
 	next: (keys: string?) -> { { key: string, command: string? } },
+	--- Every key sequence that runs `command`, and the layer it's bound in
+	--- (a mode name, or "global").
+	find: (command: string) -> { { layer: string, keys: string } },
 }
 
 export type Mode = {
@@ -146,6 +149,11 @@ export type CommandInfo = {
 	doc: string,
 	--- The plugin that defined it.
 	owner: string,
+	--- Where it was defined, e.g. "core/motions.luau:120".
+	source: string?,
+	--- The file and line it was defined on, when that file is on disk.
+	path: string?,
+	line: number?,
 }
 
 export type BufferChanged = {

@@ -1,6 +1,7 @@
 {
 	"languageMode": "strict",
 	"aliases": {
-		"kern": "./types/kern"
+		"kern": "./types/kern",
+		"picker": "./plugins/picker"
 	}
 }

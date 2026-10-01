@@ -76,3 +76,11 @@ fn statusline_plugin_tests_pass() {
 fn hints_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("hints")], &plugin("hints"));
 }
+
+#[test]
+fn describe_plugin_tests_pass() {
+    assert_all_pass(
+        &[core(), plugin("picker"), plugin("describe")],
+        &plugin("describe"),
+    );
+}

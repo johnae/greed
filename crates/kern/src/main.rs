@@ -82,12 +82,10 @@ fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, file);
     let host = Host::new(editor)?;
-    for plugin in plugins().map_err(|err| HostError::Manifest {
+    host.load_dirs(&plugins().map_err(|err| HostError::Manifest {
         path: runtime_dir().join("plugins"),
         message: err.to_string(),
-    })? {
-        host.load_dir(&plugin)?;
-    }
+    })?)?;
     Ok(host)
 }
 

@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, Lua, VmState};
+use mlua::{Function, Lua, Value, VmState};
 use serde::Deserialize;
 
 pub use testing::{TestResult, run_tests};
@@ -42,6 +42,11 @@ pub(crate) struct State {
     repl: Option<Modules>,
     /// The function that builds the status line, and the plugin that set it.
     pub statusline: Option<(PluginId, Function)>,
+    /// The file behind each chunk name, so definitions can point at their
+    /// source.
+    pub sources: HashMap<String, PathBuf>,
+    /// What each plugin's entry file returned, for `require("@name")`.
+    pub exports: HashMap<PluginId, Value>,
 }
 
 #[derive(Clone)]
@@ -57,6 +62,9 @@ struct Manifest {
     name: String,
     #[serde(default = "default_entry")]
     entry: String,
+    /// Plugins this one uses through `require("@name")`; they load first.
+    #[serde(default)]
+    requires: Vec<String>,
 }
 
 fn default_entry() -> String {
@@ -120,6 +128,8 @@ impl Host {
             plugins: HashMap::new(),
             repl: None,
             statusline: None,
+            sources: HashMap::new(),
+            exports: HashMap::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -157,18 +167,17 @@ impl Host {
 
     /// Loads the plugin in `dir`, described by its `plugin.toml`.
     pub fn load_dir(&self, dir: &Path) -> Result<PluginId, HostError> {
-        let path = dir.join("plugin.toml");
-        let dir = dir.canonicalize().map_err(|err| HostError::Manifest {
-            path: path.clone(),
-            message: err.to_string(),
-        })?;
-        let manifest: Manifest = std::fs::read_to_string(&path)
-            .map_err(|err| err.to_string())
-            .and_then(|text| toml::from_str(&text).map_err(|err| err.to_string()))
-            .map_err(|message| HostError::Manifest {
-                path: path.clone(),
-                message,
-            })?;
+        let (dir, manifest) = read_manifest(dir)?;
+        if let Some(missing) = manifest
+            .requires
+            .iter()
+            .find(|r| !state(&self.lua).plugins.contains_key(r.as_str()))
+        {
+            return Err(HostError::Manifest {
+                path: dir.join("plugin.toml"),
+                message: format!("requires plugin {missing:?}, which isn't loaded"),
+            });
+        }
         let name: PluginId = manifest.name.into();
         let plugin = Plugin::Dir {
             dir,
@@ -176,6 +185,37 @@ impl Host {
         };
         self.install(&name, plugin)?;
         Ok(name)
+    }
+
+    /// Loads several plugin directories, each after the plugins it requires.
+    pub fn load_dirs(&self, dirs: &[PathBuf]) -> Result<Vec<PluginId>, HostError> {
+        let mut pending = dirs
+            .iter()
+            .map(|dir| read_manifest(dir))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut loaded = Vec::new();
+        while !pending.is_empty() {
+            let ready = pending.iter().position(|(_, manifest)| {
+                let plugins = &state(&self.lua).plugins;
+                manifest
+                    .requires
+                    .iter()
+                    .all(|r| plugins.contains_key(r.as_str()))
+            });
+            let Some(ready) = ready else {
+                let (dir, manifest) = &pending[0];
+                return Err(HostError::Manifest {
+                    path: dir.join("plugin.toml"),
+                    message: format!(
+                        "requires {}, which can't be loaded (missing, or requires each other)",
+                        manifest.requires.join(", ")
+                    ),
+                });
+            };
+            let (dir, _) = pending.remove(ready);
+            loaded.push(self.load_dir(&dir)?);
+        }
+        Ok(loaded)
     }
 
     /// Loads a plugin from source, e.g. a config file or a test.
@@ -257,18 +297,20 @@ impl Host {
 
     fn run_plugin(&self, name: &str) -> Result<(), HostError> {
         let plugin = state(&self.lua).plugins[name].clone();
-        match plugin {
+        let export = match plugin {
             Plugin::Dir { dir, entry } => {
                 let file = dir.join(entry);
                 let modules = Modules::new(&self.lua, name, Some(dir), None)?;
-                budgeted(&self.lua, || modules.run_file(&self.lua, &file))?;
+                budgeted(&self.lua, || modules.run_file(&self.lua, &file))?
             }
             Plugin::Inline(source) => {
                 let modules = Modules::new(&self.lua, name, None, None)?;
                 let chunk_name = format!("@{name}");
-                budgeted(&self.lua, || modules.eval(&self.lua, &source, &chunk_name))?;
+                let values = budgeted(&self.lua, || modules.eval(&self.lua, &source, &chunk_name))?;
+                values.into_iter().next().unwrap_or(Value::Nil)
             }
-        }
+        };
+        state_mut(&self.lua).exports.insert(name.into(), export);
         Ok(())
     }
 
@@ -280,6 +322,19 @@ impl Host {
         state_mut(&self.lua).repl = Some(modules.clone());
         Ok(modules)
     }
+}
+
+/// A plugin's canonical directory and its `plugin.toml`.
+fn read_manifest(dir: &Path) -> Result<(PathBuf, Manifest), HostError> {
+    let path = dir.join("plugin.toml");
+    let fail = |message: String| HostError::Manifest {
+        path: path.clone(),
+        message,
+    };
+    let dir = dir.canonicalize().map_err(|err| fail(err.to_string()))?;
+    let text = std::fs::read_to_string(&path).map_err(|err| fail(err.to_string()))?;
+    let manifest = toml::from_str(&text).map_err(|err| fail(err.to_string()))?;
+    Ok((dir, manifest))
 }
 
 pub(crate) fn state(lua: &Lua) -> mlua::AppDataRef<'_, State> {

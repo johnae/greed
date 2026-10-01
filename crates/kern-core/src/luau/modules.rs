@@ -13,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 
 use mlua::{Function, Lua, Table, Value};
 
-use super::api;
+use super::{api, state, state_mut};
 use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
@@ -55,9 +55,9 @@ impl Modules {
         })
     }
 
-    /// Runs a file of this plugin for its effects.
-    pub fn run_file(&self, lua: &Lua, file: &Path) -> LuaResult<()> {
-        self.load_file(lua, file).map(drop)
+    /// Runs a file of this plugin, returning what it returns.
+    pub fn run_file(&self, lua: &Lua, file: &Path) -> LuaResult<Value> {
+        self.load_file(lua, file)
     }
 
     /// Evaluates inline source, returning its values.
@@ -76,8 +76,10 @@ impl Modules {
             .as_deref()
             .and_then(|root| file.strip_prefix(root).ok())
             .unwrap_or(file);
+        let name = format!("{}/{}", self.owner, relative.display());
+        state_mut(lua).sources.insert(name.clone(), file.to_owned());
         lua.load(source)
-            .set_name(format!("@{}/{}", self.owner, relative.display()))
+            .set_name(format!("@{name}"))
             .set_environment(self.file_env(lua, Some(file))?)
             .eval()
     }
@@ -111,6 +113,13 @@ impl Modules {
                 });
             }
             _ => {}
+        }
+        if let Some(plugin) = name.strip_prefix('@').filter(|n| !n.starts_with("self/")) {
+            return state(lua).exports.get(plugin).cloned().ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "can't require {name:?}: add {plugin:?} to `requires` in plugin.toml"
+                ))
+            });
         }
         let path = self.resolve(from, name)?;
         let key = path.to_string_lossy();

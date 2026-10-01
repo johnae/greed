@@ -544,3 +544,50 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     let err = h.status_line(None, 80).unwrap_err().to_string();
     assert!(err.contains("style must be"), "{err}");
 }
+
+#[test]
+fn plugins_require_the_plugins_they_declare() {
+    let lib = plugin_dir(
+        "lib",
+        &[(
+            "init.luau",
+            "return { greet = function() return 'hi from lib' end }",
+        )],
+    );
+    let app = plugin_dir(
+        "app",
+        &[(
+            "init.luau",
+            "require('@kern').echo(require('@lib').greet())",
+        )],
+    );
+    std::fs::write(
+        app.join("plugin.toml"),
+        "name = \"app\"\nrequires = [\"lib\"]\n",
+    )
+    .unwrap();
+
+    // Given in the wrong order, they still load dependencies first.
+    let h = host("");
+    let loaded = h.load_dirs(&[app.clone(), lib.clone()]).unwrap();
+    assert_eq!(
+        loaded.iter().map(|n| &**n).collect::<Vec<_>>(),
+        ["lib", "app"]
+    );
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["hi from lib"]);
+
+    let err = host("")
+        .load_dirs(std::slice::from_ref(&app))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("requires lib"), "{err}");
+    let err = host("").load_dir(&app).unwrap_err().to_string();
+    assert!(err.contains("requires plugin \"lib\""), "{err}");
+
+    let undeclared = plugin_dir("undeclared", &[("init.luau", "require('@lib')")]);
+    let h = host("");
+    h.load_dir(&undeclared).unwrap_err();
+    std::fs::remove_dir_all(&undeclared).unwrap();
+    std::fs::remove_dir_all(&app).unwrap();
+    std::fs::remove_dir_all(&lib).unwrap();
+}
