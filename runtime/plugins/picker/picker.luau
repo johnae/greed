@@ -19,6 +19,8 @@ type Open = {
 	matches: { number },
 	current: number,
 	choose: (item: Item) -> (),
+	-- The mode to go back to when the picker closes.
+	mode: string,
 }
 
 local open: Open? = nil
@@ -65,10 +67,10 @@ end)
 
 local function close()
 	if open then
-		local view = open.view
+		local view, mode = open.view, open.mode
 		open = nil
 		view:close()
-		kern.mode.set("normal")
+		kern.mode.set(mode)
 	end
 end
 
@@ -137,6 +139,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> ())
 		matches = {},
 		current = 1,
 		choose = choose,
+		mode = kern.mode.get(),
 	}
 	open = o
 	kern.mode.set("insert")

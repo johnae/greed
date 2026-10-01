@@ -265,3 +265,21 @@ fn floats_can_leave_focus_where_it_was() {
     assert_eq!(ed.focus(), main);
     assert_eq!(ed.floats().len(), 1);
 }
+
+#[test]
+fn the_clipboard_keeps_recent_copies() {
+    let mut ed = editor("");
+    assert_eq!(ed.clipboard(), None);
+    ed.copy(vec!["a".into()]);
+    ed.copy(vec!["b".into(), "c".into()]);
+    assert_eq!(
+        ed.clipboard(),
+        Some(&["b".to_string(), "c".to_string()][..])
+    );
+    for i in 0..30 {
+        ed.copy(vec![i.to_string()]);
+    }
+    let history: Vec<&[String]> = ed.clipboard_history().collect();
+    assert_eq!(history.len(), 20);
+    assert_eq!(history[0], ["29".to_string()]);
+}

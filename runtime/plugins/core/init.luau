@@ -37,6 +37,9 @@ kern.keymap.bind("normal", {
 	c = "change",
 	u = "undo",
 	U = "redo",
+	y = "copy",
+	p = "paste-after",
+	P = "paste-before",
 })
 
 kern.keymap.bind("insert", {

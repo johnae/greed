@@ -1,4 +1,5 @@
--- Modes and editing commands: insert, append, delete, change, undo.
+-- Modes and editing commands: insert, append, delete, change, undo, copy,
+-- paste.
 
 local kern = require("@kern")
 local motions = require("./motions")
@@ -166,6 +167,81 @@ kern.command({
 	doc = "Redo the last undone change",
 	run = function(ctx)
 		ctx.view:redo()
+	end,
+})
+
+-- Copies the text of each selection, one piece per selection.
+local function copy_selections(ctx: kern.Context): boolean
+	local pieces = {}
+	for _, range in ctx.view:selection().ranges do
+		if range.anchor ~= range.head then
+			table.insert(pieces, ctx.buffer:slice(from(range), to(range)))
+		end
+	end
+	if #pieces == 0 then
+		kern.echo("nothing selected")
+		return false
+	end
+	kern.clipboard.set(pieces)
+	return true
+end
+
+-- Pastes the latest copy before or after each selection, and selects what
+-- was pasted. With as many pieces as selections, each selection gets its
+-- own piece.
+local function paste(ctx: kern.Context, after: boolean)
+	local pieces = kern.clipboard.get()
+	if pieces == nil then
+		return
+	end
+	local selection = ctx.view:selection()
+	local one_each = #pieces == #selection.ranges
+	local joined = table.concat(pieces, "\n")
+	ctx.buffer:edit(function(e)
+		-- Text inserted earlier in the buffer shifts the later selections.
+		local shift = 0
+		for i, range in selection.ranges do
+			local text = if one_each then pieces[i] else joined
+			local at = if after then to(range) else from(range)
+			e:insert(at, text)
+			selection.ranges[i] = { anchor = at + shift, head = at + shift + #text }
+			shift += #text
+		end
+		e:select(selection)
+	end)
+end
+
+kern.command({
+	name = "copy",
+	doc = "Copy each selection to the clipboard",
+	run = function(ctx)
+		copy_selections(ctx)
+	end,
+})
+
+kern.command({
+	name = "cut",
+	doc = "Copy each selection to the clipboard and delete it",
+	run = function(ctx)
+		if copy_selections(ctx) then
+			delete_selections(ctx)
+		end
+	end,
+})
+
+kern.command({
+	name = "paste-after",
+	doc = "Paste after each selection",
+	run = function(ctx)
+		paste(ctx, true)
+	end,
+})
+
+kern.command({
+	name = "paste-before",
+	doc = "Paste before each selection",
+	run = function(ctx)
+		paste(ctx, false)
 	end,
 })
 

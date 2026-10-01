@@ -208,6 +208,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("mode", mode_module(lua)?)?;
     kern.set("option", option_module(lua, owner)?)?;
     kern.set("history", history_module(lua)?)?;
+    kern.set("clipboard", clipboard_module(lua)?)?;
     Ok(kern)
 }
 
@@ -325,6 +326,42 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     Ok(mode)
+}
+
+fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
+    let clipboard = lua.create_table()?;
+    clipboard.set(
+        "set",
+        lua.create_function(|lua, pieces: Value| {
+            let pieces = match pieces {
+                Value::String(s) => vec![s.to_str()?.to_owned()],
+                Value::Table(t) => t.sequence_values::<String>().collect::<LuaResult<_>>()?,
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "the clipboard takes a string or a list of strings, not {}",
+                        other.type_name()
+                    )));
+                }
+            };
+            state_mut(lua).editor.copy(pieces);
+            Ok(())
+        })?,
+    )?;
+    clipboard.set(
+        "get",
+        lua.create_function(|lua, ()| Ok(state(lua).editor.clipboard().map(<[String]>::to_vec)))?,
+    )?;
+    clipboard.set(
+        "history",
+        lua.create_function(|lua, ()| {
+            Ok(state(lua)
+                .editor
+                .clipboard_history()
+                .map(<[String]>::to_vec)
+                .collect::<Vec<_>>())
+        })?,
+    )?;
+    Ok(clipboard)
 }
 
 fn history_module(lua: &Lua) -> LuaResult<Table> {

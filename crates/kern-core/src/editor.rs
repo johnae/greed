@@ -109,6 +109,8 @@ pub struct Editor {
     undo_group: Option<u64>,
     next_group: u64,
     quit_requested: bool,
+    /// Copied text, oldest first. Each entry holds one piece per selection.
+    clipboard: Vec<Vec<String>>,
 }
 
 impl Editor {
@@ -129,6 +131,7 @@ impl Editor {
             undo_group: None,
             next_group: 0,
             quit_requested: false,
+            clipboard: Vec::new(),
         }
     }
 
@@ -434,6 +437,26 @@ impl Editor {
             text.insert(pos, mark);
         }
         text
+    }
+
+    /// How many copies the clipboard remembers.
+    const CLIPBOARD_HISTORY: usize = 20;
+
+    /// Puts text on the clipboard: one piece per selection it came from.
+    pub fn copy(&mut self, pieces: Vec<String>) {
+        self.clipboard.push(pieces);
+        let extra = self.clipboard.len().saturating_sub(Self::CLIPBOARD_HISTORY);
+        self.clipboard.drain(..extra);
+    }
+
+    /// The latest copy, if any.
+    pub fn clipboard(&self) -> Option<&[String]> {
+        self.clipboard.last().map(Vec::as_slice)
+    }
+
+    /// Every remembered copy, newest first.
+    pub fn clipboard_history(&self) -> impl Iterator<Item = &[String]> {
+        self.clipboard.iter().rev().map(Vec::as_slice)
     }
 
     /// Asks whoever runs the editor to stop it.

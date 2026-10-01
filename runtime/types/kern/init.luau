@@ -189,6 +189,16 @@ export type StatusParts = {
 	right: { StatusSegment }?,
 }
 
+--- Copied text. Each copy holds one piece per selection it came from, so
+--- pasting into the same number of selections puts each piece back.
+export type Clipboard = {
+	set: (pieces: string | { string }) -> (),
+	--- The latest copy.
+	get: () -> { string }?,
+	--- Recent copies, newest first.
+	history: () -> { { string } },
+}
+
 export type ModeChanged = {
 	from: string,
 	to: string,
@@ -231,6 +241,7 @@ export type Kern = {
 	mode: Mode,
 	option: Options,
 	history: History,
+	clipboard: Clipboard,
 }
 
 return (nil :: any) :: Kern
