@@ -9,6 +9,7 @@ pub mod lsp;
 pub mod luau;
 pub mod registry;
 pub mod render;
+pub mod search;
 pub mod server;
 pub mod syntax;
 pub mod theme;

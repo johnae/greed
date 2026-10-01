@@ -1224,3 +1224,35 @@ fn plugins_open_panels_beside_the_main_view() {
         .to_string();
     assert!(err.contains("left"), "{err}");
 }
+
+#[test]
+fn plugins_search_buffers_with_regexes() {
+    let h = host("a1 b2 c3");
+    let eval = |code: &str| {
+        h.eval(&format!(
+            "local b = require('@kern').view():buffer()\n{code}"
+        ))
+        .unwrap()
+    };
+    assert_eq!(eval("return b:find('%d'), b:find('\\\\d')"), "nil\t1\t2");
+    assert_eq!(eval("return b:find('\\\\d', 3)"), "4\t5");
+    assert_eq!(
+        eval("return b:find('\\\\d', 3, { backward = true })"),
+        "1\t2"
+    );
+    assert_eq!(eval("return b:find('\\\\d', 8)"), "nil");
+    assert_eq!(eval("return b:find('\\\\d', 8, { wrap = true })"), "1\t2");
+    assert_eq!(
+        eval(
+            "local out = {}
+             for _, m in b:find_all('[a-z]\\\\d') do table.insert(out, m.from .. '-' .. m.to) end
+             return table.concat(out, ',')"
+        ),
+        "0-2,3-5,6-8"
+    );
+    assert_eq!(eval("return #b:find_all('\\\\d', 2, 5)"), "1");
+    let bad = eval(
+        "local ok, err = b:find('('); local all, err2 = b:find_all('['); return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. tostring(all) .. ' ' .. tostring(err2 ~= nil)",
+    );
+    assert_eq!(bad, "nil true nil true");
+}

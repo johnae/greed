@@ -74,6 +74,14 @@ export type Buffer = {
 	decorate: (self: Buffer, ns: string, marks: { Mark }) -> (),
 	--- The marks in namespace `ns`, where they are now.
 	decorations: (self: Buffer, ns: string) -> { Mark },
+	--- The first match of the regex `pattern` starting at or after `from`
+	--- (default 0), or with `backward` the last one starting before it; `wrap`
+	--- goes round the other end. Returns its start and end, nil when nothing
+	--- matches, or nil and the error for a bad pattern.
+	find: (self: Buffer, pattern: string, from: number?, opts: { backward: boolean?, wrap: boolean? }?) -> (number?, any),
+	--- Every match of the regex `pattern` between `from` and `to` (default:
+	--- the whole buffer), or nil and the error for a bad pattern.
+	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
 }
 
 --- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.

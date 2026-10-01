@@ -11,6 +11,7 @@ ignore.workspace = true
 kern-text.workspace = true
 mlua.workspace = true
 nucleo-matcher.workspace = true
+regex-cursor.workspace = true
 ropey.workspace = true
 serde.workspace = true
 serde_json.workspace = true

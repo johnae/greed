@@ -9,11 +9,14 @@
 use std::path::Path;
 
 use kern_text::{Author, ChangeSet, Range, Rope, Selection};
-use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef};
+use mlua::{
+    Function, IntoLuaMulti, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef, Value,
+};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::{emit, float_options};
 use super::{state, state_mut};
+use crate::search::{self, Direction};
 use crate::{Buffer, BufferId, Mark, View, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -184,6 +187,65 @@ fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()>
     emit(lua, "buffer.changed", &payload)
 }
 
+/// `buffer:find(pattern, from, { backward, wrap })` and
+/// `buffer:find_all(pattern, from, to)`. A bad pattern gives nil and the
+/// error, since a search prompt sees half-typed patterns all the time.
+fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method(
+        "find",
+        |lua, this, (pattern, from, opts): (String, Option<usize>, Option<Table>)| {
+            let flag = |key: &str| -> LuaResult<bool> {
+                Ok(match &opts {
+                    Some(opts) => opts.get::<Option<bool>>(key)?.unwrap_or(false),
+                    None => false,
+                })
+            };
+            let direction = if flag("backward")? {
+                Direction::Backward
+            } else {
+                Direction::Forward
+            };
+            let wrap = flag("wrap")?;
+            let found = this.with_text(lua, |text| {
+                Ok(search::find(
+                    text,
+                    &pattern,
+                    from.unwrap_or(0),
+                    direction,
+                    wrap,
+                ))
+            })?;
+            match found {
+                Ok(Some(m)) => (m.start, m.end).into_lua_multi(lua),
+                Ok(None) => Value::Nil.into_lua_multi(lua),
+                Err(err) => (Value::Nil, err.to_string()).into_lua_multi(lua),
+            }
+        },
+    );
+    methods.add_method(
+        "find_all",
+        |lua, this, (pattern, from, to): (String, Option<usize>, Option<usize>)| {
+            let found = this.with_text(lua, |text| {
+                let to = to.unwrap_or(text.len_bytes());
+                Ok(search::find_all(text, &pattern, from.unwrap_or(0)..to))
+            })?;
+            match found {
+                Ok(matches) => {
+                    let list = lua.create_table()?;
+                    for m in matches {
+                        let t = lua.create_table()?;
+                        t.set("from", m.start)?;
+                        t.set("to", m.end)?;
+                        list.push(t)?;
+                    }
+                    list.into_lua_multi(lua)
+                }
+                Err(err) => (Value::Nil, err.to_string()).into_lua_multi(lua),
+            }
+        },
+    );
+}
+
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
 /// `{ from, to, style, line, text, eol, sign, above }`.
 fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
@@ -334,6 +396,7 @@ impl UserData for BufferRef {
         });
         add_setting_methods(methods);
         add_decoration_methods(methods);
+        add_search_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.with_buffer(lua, |_| Ok(()))?;
