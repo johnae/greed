@@ -292,6 +292,28 @@ require("@kern").option.set("notes-folder", "~/Documents/notes")
 Agents can read and write your notes and todos too; see
 [Agents](agents.md).
 
+## Terminals
+
+`:terminal` opens your shell in the project's folder, and `:terminal
+COMMAND` runs a program instead, e.g. `:terminal cargo test`. Every key
+goes to the program, including ones the editor would otherwise take, like
+`ctrl-q`.
+
+| Keys | |
+|---|---|
+| `space t` | Switch to a terminal, or open a new one |
+| `ctrl-\` | Stop typing into the program, to move around its output |
+| `i`, `a`, `enter` | Type into it again |
+| `p` | Paste the latest copy into the program |
+| `:terminal-close` | End the program and close the terminal |
+
+Out of the terminal, its output is text like any other: select it, search
+it, copy it. Lines that scroll off the top stay above the screen, up to
+`terminal-scrollback` lines (10000). When the program ends well its
+terminal closes; when it fails, the output stays with how it ended, so you
+can read what went wrong. A terminal keeps running while you look at other
+files, and while you're detached.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

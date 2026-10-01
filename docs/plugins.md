@@ -174,7 +174,7 @@ end)
 
 `kern test DIR` runs a plugin's tests, each in a fresh editor with the
 default plugins loaded. `t:wait(ms)` moves the clock forward for code that
-sleeps, `t:until(check)` waits for real until `check()` is true (for a
+sleeps, `t:wait_for(check)` waits for real until `check()` is true (for a
 program's output), and `t:tempdir(files)` makes a folder of files to work
 on.
 

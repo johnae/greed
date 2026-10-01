@@ -236,7 +236,7 @@ impl UserData for TestContext {
             tasks::advance(lua, later)?;
             jobs::settle(lua)
         });
-        methods.add_method("until", |lua, _, (done, ms): (Function, Option<f64>)| {
+        methods.add_method("wait_for", |lua, _, (done, ms): (Function, Option<f64>)| {
             wait_until(
                 lua,
                 &done,

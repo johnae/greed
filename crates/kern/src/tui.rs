@@ -89,7 +89,16 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
 /// Converts a terminal key event into a kern key. Returns `None` for keys
 /// kern doesn't know.
 pub fn convert(event: KeyEvent) -> Option<Key> {
+    let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
     let code = match event.code {
+        // Terminals send ctrl-\ ] ^ _ as the bytes crossterm reads as
+        // ctrl-4 to ctrl-7.
+        TermKey::Char(c @ '4'..='7') if ctrl => KeyCode::Char(match c {
+            '4' => '\\',
+            '5' => ']',
+            '6' => '^',
+            _ => '_',
+        }),
         TermKey::Char(c) => KeyCode::Char(c),
         TermKey::Enter => KeyCode::Enter,
         TermKey::Esc => KeyCode::Esc,
@@ -110,7 +119,7 @@ pub fn convert(event: KeyEvent) -> Option<Key> {
     };
     let m = event.modifiers;
     let mut mods = Mods::NONE;
-    if m.contains(KeyModifiers::CONTROL) {
+    if ctrl {
         mods = mods | Mods::CTRL;
     }
     if m.contains(KeyModifiers::ALT) {
@@ -456,6 +465,14 @@ mod tests {
         assert_eq!(
             key(TermKey::F(5), KeyModifiers::NONE).as_deref(),
             Some("f5")
+        );
+        assert_eq!(
+            key(TermKey::Char('4'), KeyModifiers::CONTROL).as_deref(),
+            Some("ctrl-\\")
+        );
+        assert_eq!(
+            key(TermKey::Char('4'), KeyModifiers::NONE).as_deref(),
+            Some("4")
         );
         assert_eq!(key(TermKey::CapsLock, KeyModifiers::NONE), None);
     }
