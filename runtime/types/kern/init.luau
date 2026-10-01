@@ -53,6 +53,8 @@ export type Buffer = {
 	--- What the buffer is: "file", "terminal", ...
 	kind: (self: Buffer) -> string,
 	path: (self: Buffer) -> string?,
+	--- The id of the project it was opened in.
+	project: (self: Buffer) -> number?,
 	--- True if only plugins can change the text: edits from keys and undo
 	--- are refused.
 	readonly: (self: Buffer) -> boolean,
@@ -267,6 +269,28 @@ export type Signal = {
 	wait: () -> any,
 	--- Sends `value` to whoever waits. Only the first send counts.
 	send: (value: any) -> (),
+}
+
+--- A project: a folder with its own main view and panels.
+export type ProjectInfo = {
+	id: number,
+	root: string,
+	--- Whether it's the one shown.
+	current: boolean,
+}
+
+export type Projects = {
+	--- Every open project, in the order they were opened.
+	list: () -> { ProjectInfo },
+	current: () -> ProjectInfo,
+	--- Opens a project rooted at `root`, with an empty main view, and shows
+	--- it. Returns its id.
+	open: (root: string) -> number,
+	--- Shows project `id`. False if there is none.
+	switch: (id: number) -> boolean,
+	--- Closes project `id` with its views and the buffers opened in it. The
+	--- last project can't be closed; false then.
+	close: (id: number) -> boolean,
 }
 
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an
@@ -586,6 +610,7 @@ export type Kern = {
 	fs: Fs,
 	control: Control,
 	json: Json,
+	project: Projects,
 	plugin: Plugins,
 	theme: Theme,
 }

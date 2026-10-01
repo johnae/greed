@@ -401,6 +401,10 @@ impl UserData for BufferRef {
         methods.add_method("kind", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.kind().to_owned()))
         });
+        methods.add_method("project", |lua, this, ()| {
+            this.with_buffer(lua, |_| Ok(()))?;
+            Ok(state(lua).editor.buffer_project(this.buffer).map(|id| id.0))
+        });
         methods.add_method("path", |lua, this, ()| {
             this.with_buffer(lua, |b| {
                 Ok(b.path().map(|p| p.to_string_lossy().into_owned()))

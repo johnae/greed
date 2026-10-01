@@ -1404,3 +1404,37 @@ fn diffs_come_back_as_line_changes() {
         "2\t4\tB\n"
     );
 }
+
+#[test]
+fn plugins_open_switch_and_close_projects() {
+    let h = host("first");
+    let eval = |code: &str| {
+        h.eval(&format!("local kern = require('@kern')\n{code}"))
+            .unwrap()
+    };
+    let first = eval("return kern.project.current().id");
+    let second = eval("return kern.project.open('/work/other')");
+    assert_eq!(
+        eval("local p = kern.project.current() return p.root, p.current, #kern.project.list()"),
+        "/work/other\ttrue\t2"
+    );
+    assert_eq!(
+        eval("return kern.view():buffer():project() == kern.project.current().id"),
+        "true",
+        "the new project's empty buffer is its own"
+    );
+    assert_eq!(
+        eval(&format!("return kern.project.switch({first})")),
+        "true"
+    );
+    assert_eq!(eval("return kern.view():buffer():text()"), "first");
+    assert_eq!(
+        eval(&format!("return kern.project.close({second})")),
+        "true"
+    );
+    assert_eq!(
+        eval(&format!("return kern.project.close({first})")),
+        "false",
+        "the last one stays"
+    );
+}

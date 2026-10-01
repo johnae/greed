@@ -25,7 +25,7 @@ use kern_text::TxId;
 pub use buffer::{Buffer, BufferId, Mark};
 pub use editor::{
     Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, Panel, PanelOptions,
-    Scroll, Side, View, ViewId, parse_marked,
+    Project, ProjectId, Scroll, Side, View, ViewId, parse_marked,
 };
 pub use history::History;
 

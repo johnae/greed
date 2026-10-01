@@ -516,3 +516,130 @@ fn file_types_come_from_a_table_plugins_can_change() {
     ed.set_file_type("rust", &["rs".into()], &[]);
     assert_eq!(ed.buffer(rust).language(), Some("text"));
 }
+
+fn panel_options() -> kern_core::PanelOptions {
+    kern_core::PanelOptions {
+        side: kern_core::Side::Left,
+        width: kern_core::Extent::Cells(10),
+        title: None,
+        focus: false,
+    }
+}
+
+#[test]
+fn the_first_view_starts_a_project() {
+    let ed = editor("text");
+    assert_eq!(ed.projects().len(), 1);
+    assert_eq!(ed.current_project().main(), ed.main());
+}
+
+#[test]
+fn projects_each_have_a_main_view_and_panels() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let first_main = ed.main();
+    let tree = ed.create_buffer("tree", "");
+    ed.panel(tree, panel_options());
+
+    let second = ed.open_project("/elsewhere".into());
+    assert_eq!(ed.current_project().id(), second);
+    assert_eq!(
+        ed.current_project().root(),
+        std::path::Path::new("/elsewhere")
+    );
+    assert_ne!(ed.main(), first_main, "a project has its own main view");
+    assert_eq!(ed.focus(), ed.main());
+    assert!(ed.panels().is_empty(), "panels stay with their project");
+
+    assert!(ed.switch_project(first));
+    assert_eq!(ed.main(), first_main);
+    assert_eq!(ed.focus(), first_main);
+    assert_eq!(ed.panels().len(), 1);
+    assert!(!ed.switch_project(kern_core::ProjectId(999)));
+}
+
+#[test]
+fn buffers_belong_to_the_project_they_were_opened_in() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let in_first = ed.create_buffer("file", "a");
+    let second = ed.open_project("/other".into());
+    let in_second = ed.create_buffer("file", "b");
+    assert_eq!(ed.buffer_project(in_first), Some(first));
+    assert_eq!(ed.buffer_project(in_second), Some(second));
+}
+
+#[test]
+fn closing_a_project_takes_its_views_and_buffers_but_not_the_last_one() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let second = ed.open_project("/other".into());
+    let second_main = ed.main();
+    let buffer = ed.create_buffer("file", "only here");
+    ed.show(second_main, buffer);
+    let tree = ed.create_buffer("tree", "");
+    let panel = ed.panel(tree, panel_options());
+
+    assert!(ed.close_project(second));
+    assert_eq!(
+        ed.current_project().id(),
+        first,
+        "another project takes over"
+    );
+    assert!(ed.find_view(second_main).is_none() && ed.find_view(panel).is_none());
+    assert!(
+        !ed.buffers().any(|b| b.id() == buffer),
+        "its buffers go too"
+    );
+    assert!(!ed.close_project(first), "the last project stays");
+}
+
+#[test]
+fn the_main_view_of_any_project_can_not_be_closed() {
+    let mut ed = editor("first");
+    let first_main = ed.main();
+    ed.open_project("/other".into());
+    assert!(
+        !ed.close(first_main),
+        "even when it isn't the current project's"
+    );
+}
+
+#[test]
+fn closing_the_shown_project_shows_the_next_one_or_else_the_one_before() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let second = ed.open_project("/b".into());
+    let third = ed.open_project("/c".into());
+    assert!(ed.switch_project(second));
+    assert!(ed.close_project(second));
+    assert_eq!(ed.current_project().id(), third, "the next one");
+    assert!(ed.close_project(third));
+    assert_eq!(
+        ed.current_project().id(),
+        first,
+        "the one before, at the end"
+    );
+    assert_eq!(ed.focus(), ed.main());
+}
+
+#[test]
+fn closing_a_project_that_isnt_shown_keeps_the_shown_one() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let second = ed.open_project("/b".into());
+    assert!(ed.close_project(first));
+    assert_eq!(ed.current_project().id(), second);
+}
+
+#[test]
+fn files_opened_belong_to_the_shown_project() {
+    let dir = std::env::temp_dir().join(format!("kern-project-file-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), "a").unwrap();
+    let mut ed = editor("");
+    let project = ed.open_project(dir.clone());
+    let buffer = ed.open_file(&dir.join("a.txt")).unwrap();
+    assert_eq!(ed.buffer_project(buffer), Some(project));
+    std::fs::remove_dir_all(&dir).unwrap();
+}

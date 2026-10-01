@@ -116,6 +116,35 @@ pub struct Panel {
     pub options: PanelOptions,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProjectId(pub u32);
+
+/// A folder being worked on: its own main view and panels. Buffers opened
+/// while it's current belong to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Project {
+    id: ProjectId,
+    root: PathBuf,
+    main: ViewId,
+    /// Views beside the main one, outermost first on each side.
+    panels: Vec<Panel>,
+}
+
+impl Project {
+    pub fn id(&self) -> ProjectId {
+        self.id
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The view that fills the screen while this project is shown.
+    pub fn main(&self) -> ViewId {
+        self.main
+    }
+}
+
 /// How the cursor looks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CursorShape {
@@ -146,12 +175,15 @@ pub struct Editor {
     replica: Replica,
     buffers: BTreeMap<BufferId, Buffer>,
     views: BTreeMap<ViewId, View>,
-    /// The view that fills the screen; floating views sit on top of it.
-    main: ViewId,
+    /// Open projects, each with its own main view and panels. Empty until the
+    /// first view opens.
+    projects: Vec<Project>,
+    /// Which of `projects` is shown.
+    current: usize,
+    /// The project each buffer was opened in.
+    buffer_projects: HashMap<BufferId, ProjectId>,
     /// Floating views, bottom first.
     floats: Vec<Float>,
-    /// Views beside the main one, outermost first on each side.
-    panels: Vec<Panel>,
     focus: ViewId,
     next_id: u32,
     mode: Arc<str>,
@@ -181,9 +213,10 @@ impl Editor {
             replica: Replica::new(client.0),
             buffers: BTreeMap::new(),
             views: BTreeMap::new(),
-            main: ViewId(0),
+            projects: Vec::new(),
+            current: 0,
+            buffer_projects: HashMap::new(),
             floats: Vec::new(),
-            panels: Vec::new(),
             focus: ViewId(0),
             next_id: 1,
             mode: "normal".into(),
@@ -207,7 +240,8 @@ impl Editor {
     }
 
     /// Opens a buffer in a new view and focuses it. The first view opened
-    /// becomes the main view.
+    /// becomes the main view of the first project, rooted in the current
+    /// directory.
     pub fn open(&mut self, kind: &str, text: &str, path: Option<PathBuf>) -> (BufferId, ViewId) {
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, kind, text);
@@ -215,19 +249,113 @@ impl Editor {
             buffer.set_detected(self.file_types.detect(&path));
             buffer = buffer.with_path(path);
         }
-        self.buffers.insert(id, buffer);
         let view = self.add_view(id, Selection::point(0));
-        if self.views.len() == 1 {
-            self.main = view;
+        if self.projects.is_empty() {
+            let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            self.add_project(root, view);
         }
+        self.insert_buffer(buffer);
         (id, view)
     }
 
     /// Creates a buffer without showing it.
     pub fn create_buffer(&mut self, kind: &str, text: &str) -> BufferId {
         let id = BufferId(self.next_id());
-        self.buffers.insert(id, Buffer::new(id, kind, text));
+        self.insert_buffer(Buffer::new(id, kind, text));
         id
+    }
+
+    /// Adds `buffer`, belonging to the current project.
+    fn insert_buffer(&mut self, buffer: Buffer) {
+        if let Some(project) = self.projects.get(self.current) {
+            self.buffer_projects.insert(buffer.id(), project.id);
+        }
+        self.buffers.insert(buffer.id(), buffer);
+    }
+
+    fn add_project(&mut self, root: PathBuf, main: ViewId) -> ProjectId {
+        let id = ProjectId(self.next_id());
+        self.projects.push(Project {
+            id,
+            root,
+            main,
+            panels: Vec::new(),
+        });
+        self.current = self.projects.len() - 1;
+        id
+    }
+
+    /// Opens a project at `root` with an empty main view, and shows it.
+    pub fn open_project(&mut self, root: PathBuf) -> ProjectId {
+        let id = BufferId(self.next_id());
+        let view = self.add_view(id, Selection::point(0));
+        let project = self.add_project(root, view);
+        self.insert_buffer(Buffer::new(id, "file", ""));
+        project
+    }
+
+    /// Shows the project `id`. Returns false if there is no such project.
+    pub fn switch_project(&mut self, id: ProjectId) -> bool {
+        let Some(index) = self.projects.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        self.current = index;
+        self.focus = self.projects[index].main;
+        true
+    }
+
+    /// Closes project `id`: its views, and the buffers opened in it. The
+    /// last project can't be closed; returns false for it.
+    pub fn close_project(&mut self, id: ProjectId) -> bool {
+        let Some(index) = self.projects.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        if self.projects.len() == 1 {
+            return false;
+        }
+        let project = self.projects.remove(index);
+        for view in std::iter::once(project.main).chain(project.panels.iter().map(|p| p.view)) {
+            self.views.remove(&view);
+        }
+        let owned: Vec<BufferId> = self
+            .buffer_projects
+            .iter()
+            .filter(|(_, owner)| **owner == id)
+            .map(|(buffer, _)| *buffer)
+            .collect();
+        for buffer in owned {
+            if !self.views.values().any(|v| v.buffer == buffer) {
+                self.buffers.remove(&buffer);
+                self.buffer_projects.remove(&buffer);
+            }
+        }
+        // The same project stays current unless it was the one closed; then
+        // the one after it takes over, or the one before at the end.
+        if index < self.current {
+            self.current -= 1;
+        }
+        self.current = self.current.min(self.projects.len() - 1);
+        self.focus = self.projects[self.current].main;
+        true
+    }
+
+    /// Open projects, in the order they were opened.
+    pub fn projects(&self) -> &[Project] {
+        &self.projects
+    }
+
+    /// The project shown. Panics before the first view opens.
+    pub fn current_project(&self) -> &Project {
+        &self.projects[self.current]
+    }
+
+    fn current_project_mut(&mut self) -> &mut Project {
+        &mut self.projects[self.current]
+    }
+
+    /// The project `buffer` was opened in.
+    pub fn buffer_project(&self, buffer: BufferId) -> Option<ProjectId> {
+        self.buffer_projects.get(&buffer).copied()
     }
 
     /// Makes `buffer` read-only, so only plugins can change it, or editable.
@@ -271,7 +399,7 @@ impl Editor {
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, "file", &text).with_path(path);
         buffer.set_detected(self.file_types.detect(path));
-        self.buffers.insert(id, buffer);
+        self.insert_buffer(buffer);
         Ok(id)
     }
 
@@ -330,13 +458,15 @@ impl Editor {
         if !options.focus {
             self.focus = previous;
         }
-        self.panels.push(Panel { view, options });
+        self.current_project_mut()
+            .panels
+            .push(Panel { view, options });
         view
     }
 
     /// Panels, outermost first on each side.
     pub fn panels(&self) -> &[Panel] {
-        &self.panels
+        &self.current_project().panels
     }
 
     /// How `view` is shown, if it's a floating view.
@@ -360,14 +490,14 @@ impl Editor {
     }
 
     pub fn main(&self) -> ViewId {
-        self.main
+        self.current_project().main
     }
 
     /// Closes a view. Focus moves to the top floating view, or the main view.
     /// A buffer without a file goes away with its last view. Returns false
     /// for the main view, which can't be closed.
     pub fn close(&mut self, view: ViewId) -> bool {
-        if view == self.main {
+        if self.projects.iter().any(|p| p.main == view) {
             return false;
         }
         let Some(closed) = self.views.remove(&view) else {
@@ -380,11 +510,13 @@ impl Editor {
             .map(|f| f.return_to)
             .filter(|v| self.views.contains_key(v));
         self.floats.retain(|f| f.view != view);
-        self.panels.retain(|p| p.view != view);
+        for project in &mut self.projects {
+            project.panels.retain(|p| p.view != view);
+        }
         if self.focus == view {
             self.focus = return_to
                 .or_else(|| self.floats.last().map(|f| f.view))
-                .unwrap_or(self.main);
+                .unwrap_or(self.current_project().main);
         }
         self.drop_if_unused(closed.buffer);
         true
