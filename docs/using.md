@@ -19,6 +19,22 @@ Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.
 
+## Projects
+
+A project is a folder you work in: the nearest folder above a file that
+holds `.jj` or `.git`, or the folder itself if none does. One editor can
+have several projects open, each with its own files, main view and panels
+(the file tree, search results), and the file picker, project search and
+tree all work within the shown project.
+
+| Keys | |
+|---|---|
+| `:project PATH` | Open the project `PATH` is in, or switch to it |
+| `space P` | Switch between open projects |
+| `:project-close` | Close the shown project |
+| `:q` | Close the shown project and leave; on the last one, quit |
+| `:qa` | Quit every project |
+
 ## Editing on another machine
 
 ```bash

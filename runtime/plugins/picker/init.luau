@@ -30,6 +30,7 @@ kern.keymap.bind("normal", {
 	["space f"] = "pick-file",
 	["space b"] = "pick-buffer",
 	["space ?"] = "command-palette",
+	["space P"] = "pick-project",
 })
 
 return picker

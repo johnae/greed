@@ -7,6 +7,7 @@
 -- config.
 
 local kern = require("@kern")
+local core = require("@core")
 
 type Node = {
 	path: string,
@@ -25,7 +26,8 @@ type Tree = {
 	nodes: { Node },
 }
 
-local tree: Tree? = nil
+-- Each project has its own tree, in its own panel.
+local trees: { [number]: Tree } = {}
 
 local function join(dir: string, name: string): string
 	return if dir == "." then name else dir .. "/" .. name
@@ -89,21 +91,33 @@ end
 
 local M = {}
 
+-- The tree shown in the current project, if it has one.
+local function shown(): Tree?
+	return trees[kern.project.current().id]
+end
+
 function M.close()
-	if tree then
-		tree.view:close()
-		tree = nil
+	local project = kern.project.current().id
+	local t = trees[project]
+	if t then
+		t.view:close()
+		trees[project] = nil
 	end
 end
 
---- Opens the tree on `root` (default: the current directory) and focuses it.
+--- Opens the tree on `root` (default: the project's root) and focuses it.
 function M.open(root: string?)
 	M.close()
-	local dir = root or "."
+	local dir = root or core.project.root()
+	-- Paths under the starting directory stay relative, so files opened
+	-- from the tree and from the file picker are the same buffer.
+	if dir == kern.fs.cwd() then
+		dir = "."
+	end
 	local buffer = kern.create_buffer("tree", "", { readonly = true })
 	local view = kern.panel(buffer, { title = if dir == "." then "Files" else dir, width = 32 })
 	local t: Tree = { view = view, buffer = buffer, root = dir, expanded = {}, nodes = {} }
-	tree = t
+	trees[kern.project.current().id] = t
 	render(t)
 end
 
@@ -111,13 +125,14 @@ kern.command({
 	name = "tree",
 	doc = "Open the file tree, move to it, or close it if you're in it",
 	run = function()
-		if tree == nil then
+		local t = shown()
+		if t == nil then
 			M.open()
-		elseif kern.view():id() == tree.view:id() then
+		elseif kern.view():id() == t.view:id() then
 			M.close()
 		else
-			tree.view:focus()
-			render(tree)
+			t.view:focus()
+			render(t)
 		end
 	end,
 })
@@ -126,7 +141,7 @@ kern.command({
 	name = "tree-open",
 	doc = "Open the file on the cursor, or fold or unfold the folder",
 	run = function()
-		local t = tree
+		local t = shown()
 		local node = t and current(t)
 		if t == nil or node == nil then
 			return
@@ -144,7 +159,7 @@ kern.command({
 	name = "tree-fold",
 	doc = "Fold the folder on the cursor, or the one it's in",
 	run = function()
-		local t = tree
+		local t = shown()
 		local node = t and current(t)
 		if t == nil or node == nil then
 			return
@@ -166,8 +181,9 @@ kern.command({
 	name = "tree-refresh",
 	doc = "Read the tree from the disk again",
 	run = function()
-		if tree then
-			render(tree)
+		local t = shown()
+		if t then
+			render(t)
 		end
 	end,
 })

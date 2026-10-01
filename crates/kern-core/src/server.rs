@@ -214,6 +214,11 @@ impl Server<'_> {
                 .host
                 .with_editor_mut(crate::Editor::take_detach_request)
             {
+                // A client in this process has nowhere to detach to: the
+                // editor ends with it.
+                if self.client.as_ref().is_some_and(|c| c.local) {
+                    return;
+                }
                 self.detach();
             }
             if !self.draw() {

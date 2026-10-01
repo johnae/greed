@@ -1,5 +1,5 @@
--- The pickers Kern ships with: files in the project, open buffers and
--- commands.
+-- The pickers Kern ships with: files in the project, open buffers, projects
+-- and commands.
 
 local kern = require("@kern")
 local picker = require("./picker")
@@ -59,6 +59,21 @@ kern.command({
 		picker.pick("Buffers", items, function(item)
 			kern.open(item.value)
 		end, { preview = buffer_preview })
+	end,
+})
+
+kern.command({
+	name = "pick-project",
+	doc = "Switch to another open project",
+	run = function()
+		local items = {}
+		for _, p in kern.project.list() do
+			local label = if p.current then `{p.root}  (shown)` else p.root
+			table.insert(items, { label = label, value = p.id })
+		end
+		picker.pick("Projects", items, function(item)
+			kern.project.switch(item.value)
+		end)
 	end,
 })
 

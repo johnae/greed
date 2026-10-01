@@ -29,8 +29,8 @@ type Results = {
 -- The results shown in panels, by buffer id.
 local results: { [number]: Results } = {}
 
--- The results panel, while it's open.
-local panel: kern.View? = nil
+-- Each project's results panel, while it's open.
+local panels: { [number]: kern.View } = {}
 
 local function key(path: string, line: number): string
 	return `{path}:{line + 1}`
@@ -83,7 +83,8 @@ local function show(pattern: string, root: string, found: Found)
 	local buffer = kern.create_buffer("grep", table.concat(lines, "\n"))
 	buffer:decorate("grep", marks)
 	results[buffer:id()] = r
-	local current = panel
+	local project = kern.project.current().id
+	local current = panels[project]
 	local ok, old = pcall(function()
 		return (current :: kern.View):buffer()
 	end)
@@ -92,7 +93,7 @@ local function show(pattern: string, root: string, found: Found)
 		current:show(buffer)
 		current:focus()
 	else
-		panel = kern.panel(buffer, { side = "right", width = "45%", title = "Search" })
+		panels[project] = kern.panel(buffer, { side = "right", width = "45%", title = "Search" })
 	end
 	kern.echo(`{#found} lines match {pattern} - :w writes your edits back`)
 end
@@ -302,8 +303,9 @@ kern.command({
 	name = "grep-close",
 	doc = "Close the search results",
 	run = function()
-		local view = panel
-		panel = nil
+		local project = kern.project.current().id
+		local view = panels[project]
+		panels[project] = nil
 		if view then
 			pcall(function()
 				results[view:buffer():id()] = nil

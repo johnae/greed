@@ -71,6 +71,12 @@ with the text.
 it, `kern.create_buffer(kind, text)` makes a scratch buffer, and
 `buffer:find`, `buffer:find_all` and `kern.fs.grep` search with regexes.
 
+The editor can have several projects open. `kern.project.current()` is
+the one shown, with its `root`; `kern.project.open`, `switch` and `close`
+manage them, and `buffer:project()` says which one a buffer belongs to.
+Panels belong to the project they were opened in, so a plugin that keeps
+one (like a results panel) should keep one per project.
+
 ## Showing things
 
 - Decorations style text without changing it, and move with edits:
