@@ -7,16 +7,12 @@
 --   space d   pick a problem in this file
 --   ] d / [ d next / previous problem
 --
--- Servers start the first time a file of their language is open. Change
--- them from your config with `kern.lsp.server`.
+-- Servers start the first time a file of their language is open, if one is
+-- installed; the languages plugin says which (see `:health`).
 
 local kern = require("@kern")
 local picker = require("@picker")
 local marks = require("@self/marks")
-
-kern.lsp.server({ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } })
-kern.lsp.server({ language = "luau", command = { "luau-lsp", "lsp" }, root_markers = { ".luaurc" } })
-kern.lsp.server({ language = "markdown", command = { "harper-ls", "--stdio" } })
 
 local function head(view: kern.View): number
 	local selection = view:selection()

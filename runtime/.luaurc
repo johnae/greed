@@ -3,6 +3,7 @@
 	"aliases": {
 		"kern": "./types/kern",
 		"picker": "./plugins/picker",
-		"core": "./plugins/core"
+		"core": "./plugins/core",
+		"languages": "./plugins/languages"
 	}
 }

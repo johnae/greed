@@ -24,6 +24,8 @@ kern.theme.set({
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
+	["ui.health.found"] = { fg = "green" },
+	["ui.health.missing"] = { fg = "bright-black" },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

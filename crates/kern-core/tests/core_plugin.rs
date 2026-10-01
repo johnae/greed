@@ -120,3 +120,8 @@ fn flash_plugin_tests_pass() {
 fn lsp_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("picker"), plugin("lsp")], &plugin("lsp"));
 }
+
+#[test]
+fn languages_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("languages")], &plugin("languages"));
+}

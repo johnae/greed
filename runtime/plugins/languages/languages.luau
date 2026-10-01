@@ -1,0 +1,162 @@
+-- The languages Kern knows: which files are in each, the language servers to
+-- try (the first one installed runs), the files that mark a project's root,
+-- and how comments and indentation look. Kern has syntax highlighting for
+-- some of them; `:health` shows which.
+
+export type Language = {
+	extensions: { string }?,
+	--- Whole file names, like "Makefile".
+	names: { string }?,
+	--- Files that mark a project's root, e.g. "Cargo.toml".
+	roots: { string }?,
+	--- Commands to start a language server, tried in order.
+	servers: { { string } }?,
+	--- What starts a line comment.
+	comment: string?,
+	--- Spaces per indent level; leave out to indent with tabs.
+	indent: number?,
+}
+
+local languages: { [string]: Language } = {
+	bash = {
+		extensions = { "sh", "bash" },
+		names = { ".bashrc", ".bash_profile" },
+		servers = { { "bash-language-server", "start" } },
+		comment = "#",
+		indent = 2,
+	},
+	c = {
+		extensions = { "c", "h" },
+		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
+		servers = { { "clangd" } },
+		comment = "//",
+		indent = 4,
+	},
+	cpp = {
+		extensions = { "cpp", "cc", "cxx", "hpp", "hh", "hxx" },
+		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
+		servers = { { "clangd" } },
+		comment = "//",
+		indent = 4,
+	},
+	css = {
+		extensions = { "css", "scss" },
+		servers = { { "vscode-css-language-server", "--stdio" } },
+		indent = 2,
+	},
+	go = {
+		extensions = { "go" },
+		roots = { "go.mod" },
+		servers = { { "gopls" } },
+		comment = "//",
+	},
+	haskell = {
+		extensions = { "hs" },
+		roots = { "stack.yaml", "cabal.project", "package.yaml" },
+		servers = { { "haskell-language-server-wrapper", "--lsp" } },
+		comment = "--",
+		indent = 2,
+	},
+	html = {
+		extensions = { "html", "htm" },
+		servers = { { "vscode-html-language-server", "--stdio" } },
+		indent = 2,
+	},
+	java = {
+		extensions = { "java" },
+		roots = { "pom.xml", "build.gradle", "build.gradle.kts" },
+		servers = { { "jdtls" } },
+		comment = "//",
+		indent = 4,
+	},
+	javascript = {
+		extensions = { "js", "mjs", "cjs", "jsx" },
+		roots = { "package.json" },
+		servers = { { "typescript-language-server", "--stdio" } },
+		comment = "//",
+		indent = 2,
+	},
+	json = {
+		extensions = { "json" },
+		servers = { { "vscode-json-language-server", "--stdio" } },
+		indent = 2,
+	},
+	luau = {
+		extensions = { "luau", "lua" },
+		roots = { ".luaurc" },
+		servers = { { "luau-lsp", "lsp" } },
+		comment = "--",
+	},
+	make = {
+		names = { "Makefile", "makefile", "GNUmakefile" },
+		extensions = { "mk" },
+		comment = "#",
+	},
+	markdown = {
+		extensions = { "md", "markdown" },
+		servers = { { "harper-ls", "--stdio" }, { "marksman", "server" } },
+		indent = 2,
+	},
+	nix = {
+		extensions = { "nix" },
+		roots = { "flake.nix" },
+		servers = { { "nil" }, { "nixd" } },
+		comment = "#",
+		indent = 2,
+	},
+	python = {
+		extensions = { "py", "pyi" },
+		roots = { "pyproject.toml", "setup.py", "requirements.txt" },
+		servers = {
+			{ "basedpyright-langserver", "--stdio" },
+			{ "pyright-langserver", "--stdio" },
+			{ "pylsp" },
+		},
+		comment = "#",
+		indent = 4,
+	},
+	ruby = {
+		extensions = { "rb" },
+		names = { "Gemfile", "Rakefile" },
+		roots = { "Gemfile" },
+		servers = { { "ruby-lsp" }, { "solargraph", "stdio" } },
+		comment = "#",
+		indent = 2,
+	},
+	rust = {
+		extensions = { "rs" },
+		roots = { "Cargo.toml" },
+		servers = { { "rust-analyzer" } },
+		comment = "//",
+		indent = 4,
+	},
+	toml = {
+		extensions = { "toml" },
+		names = { "Cargo.lock" },
+		servers = { { "taplo", "lsp", "stdio" } },
+		comment = "#",
+		indent = 2,
+	},
+	typescript = {
+		extensions = { "ts", "mts", "cts", "tsx" },
+		roots = { "tsconfig.json", "package.json" },
+		servers = { { "typescript-language-server", "--stdio" } },
+		comment = "//",
+		indent = 2,
+	},
+	yaml = {
+		extensions = { "yaml", "yml" },
+		servers = { { "yaml-language-server", "--stdio" } },
+		comment = "#",
+		indent = 2,
+	},
+	zig = {
+		extensions = { "zig" },
+		roots = { "build.zig" },
+		servers = { { "zls" } },
+		comment = "//",
+		indent = 4,
+	},
+}
+
+return languages
