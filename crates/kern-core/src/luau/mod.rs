@@ -371,7 +371,7 @@ impl Host {
 
     /// Runs a command as the user.
     pub fn run(&self, name: &str) -> Result<(), HostError> {
-        budgeted(&self.lua, || api::run_command(&self.lua, name, &[]))
+        budgeted(&self.lua, || api::run_command(&self.lua, name))
     }
 
     /// Feeds one key press through the keymap, running whatever it resolves

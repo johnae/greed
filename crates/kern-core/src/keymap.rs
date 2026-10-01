@@ -343,6 +343,9 @@ pub struct Keymap {
     /// Per mode, the command that handles a single unbound key (e.g. insert
     /// mode inserting the character). Oldest first; the last is active.
     fallbacks: HashMap<Arc<str>, Vec<Binding>>,
+    /// Modes where digits before a key sequence are a count, and which
+    /// plugins turned that on.
+    counts: HashMap<Arc<str>, Vec<PluginId>>,
 }
 
 impl Keymap {
@@ -469,6 +472,19 @@ impl Keymap {
         self.fallbacks.get(mode)?.last().map(|b| &b.command)
     }
 
+    /// Makes digits typed before a key sequence in `mode` a count for the
+    /// command it runs.
+    pub fn enable_counts(&mut self, mode: &str, owner: impl Into<PluginId>) {
+        self.counts
+            .entry(mode.into())
+            .or_default()
+            .push(owner.into());
+    }
+
+    pub fn counts(&self, mode: &str) -> bool {
+        self.counts.contains_key(mode)
+    }
+
     /// The keys that can follow `prefix` in `mode` for a buffer of `kind`, and
     /// what each does, sorted by key. A more specific layer hides the same
     /// key in a less specific one.
@@ -529,6 +545,10 @@ impl Keymap {
             bindings.retain(|b| &*b.owner != owner);
         }
         self.fallbacks.retain(|_, bindings| !bindings.is_empty());
+        for owners in self.counts.values_mut() {
+            owners.retain(|o| &**o != owner);
+        }
+        self.counts.retain(|_, owners| !owners.is_empty());
     }
 
     fn lookup(&self, layer: &Layer, keys: &[Key]) -> Option<&Node> {

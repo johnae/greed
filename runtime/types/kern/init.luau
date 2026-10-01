@@ -104,6 +104,8 @@ export type Context = {
 	--- Go ahead even if the command would normally refuse, like `:q!`
 	--- quitting with unsaved changes.
 	force: boolean,
+	--- The number typed before the keys, in modes with counts on.
+	count: number?,
 }
 
 --- An argument a command takes, for completion and help.
@@ -138,6 +140,9 @@ export type Keymap = {
 	--- Hides everything bound in `layer` so far, to start it over. Bindings
 	--- made afterwards, by any plugin, apply as usual.
 	clear: (layer: string | Layer) -> (),
+	--- Makes digits typed before a key sequence in `mode` a count, which the
+	--- command gets as `ctx.count`. A leading 0 stays a key.
+	counts: (mode: string) -> (),
 	--- The command that handles a single unbound key in `mode`.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
@@ -318,8 +323,8 @@ export type Fs = {
 
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
-	--- Runs a command by name, optionally with arguments and `force`.
-	run: (name: string, opts: { args: { string }?, force: boolean? }?) -> (),
+	--- Runs a command by name, optionally with arguments, `force` and a count.
+	run: (name: string, opts: { args: { string }?, force: boolean?, count: number? }?) -> (),
 	--- Runs Luau code in a scratch environment whose globals persist, like a
 	--- REPL. Returns true and the values as text (tab-separated), or false
 	--- and the error.

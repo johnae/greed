@@ -974,3 +974,18 @@ fn plugins_unbind_keys_and_clear_layers() {
     h.load_str("vim", "").unwrap();
     assert_eq!(resolve("g g"), "goto-start\tfalse");
 }
+
+#[test]
+fn commands_get_the_count_typed_before_them() {
+    let h = host("");
+    h.load_str(
+        "counter",
+        "local kern = require('@kern')
+         kern.keymap.counts('normal')
+         kern.command { name = 'show', run = function(ctx) kern.echo(tostring(ctx.count)) end }
+         kern.keymap.bind('normal', { s = 'show' })",
+    )
+    .unwrap();
+    h.press_keys("2 5 s s").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["25", "nil"]);
+}

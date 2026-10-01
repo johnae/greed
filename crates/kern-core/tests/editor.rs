@@ -97,6 +97,7 @@ fn keys_resolve_through_pending_sequences() {
         KeyOutcome::Command {
             name: "goto-start".into(),
             keys: keys("g g"),
+            count: None,
         }
     );
     assert_eq!(ed.press(Key::char('g')), KeyOutcome::Pending);
@@ -122,6 +123,7 @@ fn unbound_single_keys_go_to_the_mode_fallback() {
         KeyOutcome::Command {
             name: "insert-key".into(),
             keys: keys("a"),
+            count: None,
         }
     );
     // Only lone keys fall back; a broken sequence is just unbound.
@@ -362,4 +364,52 @@ fn each_mode_has_a_cursor_shape() {
     assert_eq!(ed.cursor_shape(), CursorShape::Bar);
     ed.set_mode("visual");
     assert_eq!(ed.cursor_shape(), CursorShape::Block);
+}
+
+#[test]
+fn counts_before_a_command_reach_it() {
+    let mut ed = editor("");
+    let normal = Layer::mode("normal");
+    ed.keymap_mut()
+        .bind(normal.clone(), &keys("j"), "down", "core")
+        .unwrap();
+    ed.keymap_mut()
+        .bind(normal.clone(), &keys("0"), "line-start", "core")
+        .unwrap();
+    ed.keymap_mut()
+        .bind(normal, &keys("g g"), "top", "core")
+        .unwrap();
+    let press = |ed: &mut Editor, s: &str| {
+        let mut outcome = None;
+        for key in keys(s) {
+            outcome = Some(ed.press(key));
+        }
+        outcome.unwrap()
+    };
+    let command = |name: &str, keys_: &str, count: Option<u32>| KeyOutcome::Command {
+        name: name.into(),
+        keys: keys(keys_),
+        count,
+    };
+
+    // Without counts turned on, digits are plain keys.
+    assert_eq!(press(&mut ed, "3"), KeyOutcome::Unbound(keys("3")));
+
+    ed.keymap_mut().enable_counts("normal", "core");
+    assert_eq!(press(&mut ed, "1 2 j"), command("down", "j", Some(12)));
+    assert_eq!(press(&mut ed, "j"), command("down", "j", None));
+    // A leading 0 is a key; after a digit it's part of the count.
+    assert_eq!(press(&mut ed, "0"), command("line-start", "0", None));
+    assert_eq!(press(&mut ed, "1 0 j"), command("down", "j", Some(10)));
+    assert_eq!(press(&mut ed, "5 g g"), command("top", "g g", Some(5)));
+    // An unbound key or a mode change drops the count.
+    press(&mut ed, "4 z");
+    assert_eq!(press(&mut ed, "j"), command("down", "j", None));
+    press(&mut ed, "4");
+    ed.set_mode("insert");
+    ed.set_mode("normal");
+    assert_eq!(press(&mut ed, "j"), command("down", "j", None));
+
+    ed.keymap_mut().remove_owned_by("core");
+    assert_eq!(press(&mut ed, "3"), KeyOutcome::Unbound(keys("3")));
 }

@@ -18,22 +18,33 @@ use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome};
 
 type LuaResult<T> = mlua::Result<T>;
 
-/// Runs a command as the user, with `keys` as the sequence that triggered
-/// it.
-pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), HostError> {
-    invoke(lua, name, keys, Vec::new(), false)
+/// Runs a command as the user.
+pub(super) fn run_command(lua: &Lua, name: &str) -> Result<(), HostError> {
+    invoke(lua, name, Invocation::default())
 }
 
-/// Runs a command as the user with arguments, as from the command line.
-/// `force` asks it to go ahead even if it would normally refuse, like
-/// quitting with unsaved changes.
-fn invoke(
-    lua: &Lua,
-    name: &str,
-    keys: &[Key],
+/// How a command was asked to run.
+#[derive(Default)]
+struct Invocation<'a> {
+    /// The keys that ran it.
+    keys: &'a [Key],
+    /// Arguments, as from the command line.
     args: Vec<String>,
+    /// Go ahead even if it would normally refuse, like quitting with unsaved
+    /// changes.
     force: bool,
-) -> Result<(), HostError> {
+    /// The number typed before the keys.
+    count: Option<u32>,
+}
+
+/// Runs a command as the user.
+fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
+    let Invocation {
+        keys,
+        args,
+        force,
+        count,
+    } = how;
     let (handler, author, view, buffer) = {
         let state = state(lua);
         let command = state
@@ -70,6 +81,7 @@ fn invoke(
     }
     ctx.set("args", args)?;
     ctx.set("force", force)?;
+    ctx.set("count", count)?;
     if let [
         Key {
             code: KeyCode::Char(c),
@@ -104,11 +116,19 @@ pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
             keys_pending(lua, &pending)?;
             Ok(())
         }
-        KeyOutcome::Command { name, keys } => {
+        KeyOutcome::Command { name, keys, count } => {
             if keys.len() > 1 {
                 keys_pending(lua, "")?;
             }
-            run_command(lua, &name, &keys)
+            invoke(
+                lua,
+                &name,
+                Invocation {
+                    keys: &keys,
+                    count,
+                    ..Invocation::default()
+                },
+            )
         }
         KeyOutcome::Unbound(keys) => {
             if keys.len() > 1 {
@@ -177,14 +197,16 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set(
         "run",
         lua.create_function(|lua, (name, opts): (String, Option<Table>)| {
-            let (args, force) = match opts {
-                Some(opts) => (
-                    opts.get::<Option<Vec<String>>>("args")?.unwrap_or_default(),
-                    opts.get::<Option<bool>>("force")?.unwrap_or(false),
-                ),
-                None => (Vec::new(), false),
+            let how = match opts {
+                Some(opts) => Invocation {
+                    args: opts.get::<Option<Vec<String>>>("args")?.unwrap_or_default(),
+                    force: opts.get::<Option<bool>>("force")?.unwrap_or(false),
+                    count: opts.get("count")?,
+                    ..Invocation::default()
+                },
+                None => Invocation::default(),
             };
-            invoke(lua, &name, &[], args, force).map_err(into_lua)
+            invoke(lua, &name, how).map_err(into_lua)
         })?,
     )?;
 
@@ -276,7 +298,7 @@ fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     }
 }
 
-/// `kern.keymap.unbind` and `kern.keymap.clear`.
+/// `kern.keymap.unbind`, `kern.keymap.clear` and `kern.keymap.counts`.
 fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     keymap.set(
@@ -301,6 +323,18 @@ fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult
         lua.create_function(move |lua, layer: Value| {
             let layer = layer_from_lua(layer)?;
             state_mut(lua).editor.keymap_mut().clear(layer, o.clone());
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
+        "counts",
+        lua.create_function(move |lua, mode: String| {
+            state_mut(lua)
+                .editor
+                .keymap_mut()
+                .enable_counts(&mode, o.clone());
             Ok(())
         })?,
     )

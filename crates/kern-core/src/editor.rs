@@ -9,7 +9,7 @@ use kern_text::{
     Author, ChangeSet, ClientId, Range, Replica, Selection, Transaction, TxId, TxMeta,
 };
 
-use crate::keymap::{Key, Keymap, Resolution};
+use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::{Buffer, BufferId, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -90,8 +90,13 @@ pub enum CursorShape {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyOutcome {
-    /// Run this command. `keys` is the sequence that triggered it.
-    Command { name: Arc<str>, keys: Vec<Key> },
+    /// Run this command. `keys` is the sequence that triggered it, and
+    /// `count` the number typed before it, in modes with counts.
+    Command {
+        name: Arc<str>,
+        keys: Vec<Key>,
+        count: Option<u32>,
+    },
     /// Waiting for more keys.
     Pending,
     /// Nothing is bound to this sequence.
@@ -113,6 +118,8 @@ pub struct Editor {
     mode: Arc<str>,
     keymap: Keymap,
     pending: Vec<Key>,
+    /// A count typed before the pending keys.
+    count: Option<u32>,
     messages: Vec<String>,
     /// Edits made while a group is open become one undo step.
     undo_group: Option<u64>,
@@ -138,6 +145,7 @@ impl Editor {
             mode: "normal".into(),
             keymap: Keymap::default(),
             pending: Vec::new(),
+            count: None,
             messages: Vec::new(),
             undo_group: None,
             next_group: 0,
@@ -435,6 +443,7 @@ impl Editor {
         }
         self.mode = mode.into();
         self.pending.clear();
+        self.count = None;
         true
     }
 
@@ -466,6 +475,15 @@ impl Editor {
     /// Feeds a key press into the keymap for the current mode and focused
     /// buffer.
     pub fn press(&mut self, key: Key) -> KeyOutcome {
+        if let Some(digit) = self.count_digit(key) {
+            self.count = Some(
+                self.count
+                    .unwrap_or(0)
+                    .saturating_mul(10)
+                    .saturating_add(digit),
+            );
+            return KeyOutcome::Pending;
+        }
         self.pending.push(key);
         let kind = self.buffer(self.view(self.focus).buffer).kind();
         match self.keymap.resolve(&self.mode, kind, &self.pending) {
@@ -473,18 +491,35 @@ impl Editor {
             Resolution::Command(name) => KeyOutcome::Command {
                 name,
                 keys: std::mem::take(&mut self.pending),
+                count: self.count.take(),
             },
             Resolution::Unbound => {
                 let keys = std::mem::take(&mut self.pending);
+                let count = self.count.take();
                 match self.keymap.fallback(&self.mode) {
                     Some(name) if keys.len() == 1 => KeyOutcome::Command {
                         name: name.clone(),
                         keys,
+                        count,
                     },
                     _ => KeyOutcome::Unbound(keys),
                 }
             }
         }
+    }
+
+    /// The digit `key` adds to a count: counts are on in this mode, no
+    /// sequence has started, and it's a plain digit (0 only after another).
+    fn count_digit(&self, key: Key) -> Option<u32> {
+        let KeyCode::Char(c) = key.code else {
+            return None;
+        };
+        let digit = c.to_digit(10)?;
+        let counting = key.mods == Mods::NONE
+            && self.pending.is_empty()
+            && (digit != 0 || self.count.is_some())
+            && self.keymap.counts(&self.mode);
+        counting.then_some(digit)
     }
 
     /// The text of `view`'s buffer with its selection marked: `|` at each

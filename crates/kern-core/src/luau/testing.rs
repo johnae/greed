@@ -158,7 +158,7 @@ impl UserData for TestContext {
             Ok(())
         });
         methods.add_method("run", |lua, _, command: String| {
-            api::run_command(lua, &command, &[]).map_err(api::into_lua)
+            api::run_command(lua, &command).map_err(api::into_lua)
         });
         methods.add_method("wait", |lua, _, ms: f64| {
             let later = Instant::now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
