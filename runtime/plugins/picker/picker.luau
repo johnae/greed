@@ -8,6 +8,21 @@ export type Item = {
 	value: any,
 }
 
+--- What to show beside the picker for the current item.
+export type Preview = {
+	text: string,
+	--- The language to highlight it as, e.g. from `kern.language_of(path)`.
+	language: string?,
+	--- A 0-based line to scroll to.
+	line: number?,
+}
+
+export type Options = {
+	--- Shows a preview of the current item beside the list. Returning nil
+	--- leaves the preview empty.
+	preview: ((item: Item) -> Preview?)?,
+}
+
 -- At most this many matches are shown.
 local LIMIT = 200
 
@@ -22,7 +37,35 @@ type Open = {
 	choose: (item: Item) -> (),
 	-- The mode to go back to when the picker closes.
 	mode: string,
+	preview: ((item: Item) -> Preview?)?,
+	preview_view: kern.View?,
+	-- The item the preview shows.
+	previewed: Item?,
 }
+
+-- Shows the current item in the preview, if it changed.
+local function update_preview(o: Open)
+	local view, preview = o.preview_view, o.preview
+	if view == nil or preview == nil then
+		return
+	end
+	local index = o.matches[o.current]
+	local item = if index then o.items[index] else nil
+	if item == o.previewed then
+		return
+	end
+	o.previewed = item
+	local shown = if item then preview(item) else nil
+	local text = if shown then shown.text else ""
+	view:show(kern.create_buffer("preview", text, { readonly = true, language = shown and shown.language }))
+	view:configure({ title = if shown then (item :: Item).label else "" })
+	if shown and shown.line then
+		local buffer = view:buffer()
+		local line = math.clamp(shown.line, 0, buffer:line_count() - 1)
+		local at = buffer:line_start(line)
+		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	end
+end
 
 local open: Open? = nil
 
@@ -51,6 +94,7 @@ local function render(o: Open)
 		e:select(selection)
 	end)
 	o.buffer:decorate("picker", marks)
+	update_preview(o)
 end
 
 -- Filters the items again if the query changed.
@@ -73,9 +117,12 @@ end)
 
 local function close()
 	if open then
-		local view, mode = open.view, open.mode
+		local view, mode, preview = open.view, open.mode, open.preview_view
 		open = nil
 		view:close()
+		if preview then
+			preview:close()
+		end
 		kern.mode.set(mode)
 	end
 end
@@ -128,15 +175,26 @@ kern.command({
 
 local M = {}
 
--- Opens a picker over `items`. `choose` gets the item picked with enter.
-function M.pick(title: string, items: { Item }, choose: (item: Item) -> ())
+-- Opens a picker over `items`. `choose` gets the item picked with enter;
+-- `options.preview` shows the current item beside the list.
+function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), options: Options?)
 	close()
 	local labels = {}
 	for i, item in items do
 		labels[i] = item.label
 	end
+	local preview = options and options.preview
+	-- With a preview, the list takes the left half and the preview the right.
+	local preview_view = if preview
+		then kern.float(
+			kern.create_buffer("preview", "", { readonly = true }),
+			{ x = "50%", width = "46%", height = "70%", focus = false }
+		)
+		else nil
 	local buffer = kern.create_buffer("picker")
-	local view = kern.float(buffer, { title = title, width = "60%", height = "60%" })
+	local view = if preview
+		then kern.float(buffer, { title = title, x = "4%", width = "46%", height = "70%" })
+		else kern.float(buffer, { title = title, width = "60%", height = "60%" })
 	local o: Open = {
 		buffer = buffer,
 		view = view,
@@ -145,6 +203,8 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> ())
 		matches = {},
 		current = 1,
 		choose = choose,
+		preview = preview,
+		preview_view = preview_view,
 		mode = kern.mode.get(),
 	}
 	open = o

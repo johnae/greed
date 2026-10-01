@@ -62,3 +62,23 @@ test("esc closes the picker without choosing", function(t)
 	t:expect_mode("normal")
 	t:expect("a|bc")
 end)
+
+test("a preview shows the current item beside the list", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	local items = { { label = "one", value = "first" }, { label = "two", value = "second" } }
+	picker.pick("Things", items, function() end, {
+		preview = function(item)
+			return { text = item.value .. " body" }
+		end,
+	})
+	-- Bottom first: the preview, then the list on top of it.
+	local floats = t:floats()
+	assert(#floats == 2 and floats[1] == "first body", tostring(floats[1]))
+	t:keys("down")
+	assert(t:floats()[1] == "second body", t:floats()[1])
+	t:keys("t w o")
+	assert(t:floats()[1] == "second body", "the match stays previewed")
+	t:keys("esc")
+	assert(#t:floats() == 0, "both close")
+end)

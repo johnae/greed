@@ -3,6 +3,31 @@
 local kern = require("@kern")
 local picker = require("./picker")
 
+-- At most this much of a file is read for its preview.
+local PREVIEW_BYTES = 64 * 1024
+
+-- A file's start, highlighted in its language.
+local function file_preview(item: picker.Item): picker.Preview?
+	local text = kern.fs.read(item.value, PREVIEW_BYTES)
+	if text == nil then
+		return nil
+	end
+	if string.find(text, "\0", 1, true) then
+		return { text = "(binary file)" }
+	end
+	return { text = text, language = kern.language_of(item.value) }
+end
+
+-- An open buffer's text as it is now, saved or not.
+local function buffer_preview(item: picker.Item): picker.Preview?
+	for _, buffer in kern.buffers() do
+		if buffer:path() == item.value then
+			return { text = buffer:text(), language = buffer:language() }
+		end
+	end
+	return nil
+end
+
 kern.command({
 	name = "pick-file",
 	doc = "Open a file from the current directory, skipping ignored files",
@@ -13,7 +38,7 @@ kern.command({
 		end
 		picker.pick("Files", items, function(item)
 			kern.open(item.value)
-		end)
+		end, { preview = file_preview })
 	end,
 })
 
@@ -30,7 +55,7 @@ kern.command({
 		end
 		picker.pick("Buffers", items, function(item)
 			kern.open(item.value)
-		end)
+		end, { preview = buffer_preview })
 	end,
 })
 

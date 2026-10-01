@@ -201,9 +201,14 @@ kern.command({
 			kern.echo("no problems")
 			return
 		end
+		local text, language = buffer:text(), buffer:language()
 		picker.pick("Problems", items, function(item)
 			move_to(view, item.value)
-		end)
+		end, {
+			preview = function(item)
+				return { text = text, language = language, line = buffer:line_of(item.value) }
+			end,
+		})
 	end,
 })
 
