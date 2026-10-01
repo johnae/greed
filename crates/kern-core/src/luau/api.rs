@@ -319,6 +319,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("project", super::projects::module(lua)?)?;
     kern.set("session", super::sessions::module(lua)?)?;
     kern.set("keys", keys_module(lua)?)?;
+    kern.set("process", super::process::module(lua)?)?;
     kern.set("diff", super::diff::diff_function(lua)?)?;
     kern.set("signal", tasks::signal_function(lua)?)?;
     kern.set(

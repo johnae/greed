@@ -236,6 +236,18 @@ export type Keys = {
 	feed: (keys: string) -> (),
 }
 
+--- Running other programs.
+export type Process = {
+	--- Runs `command` (the program, then its arguments), with `stdin` as its
+	--- input and `cwd` as its folder, and returns how it exited and what it
+	--- printed; nil and the error if it couldn't start. In a command it waits
+	--- without holding up the editor.
+	run: (
+		command: { string },
+		opts: { stdin: string?, cwd: string? }?
+	) -> ({ code: number?, stdout: string, stderr: string }?, string?),
+}
+
 export type History = {
 	--- Edits until `end_group` become one undo step.
 	start_group: () -> (),
@@ -637,6 +649,7 @@ export type Kern = {
 	--- The key doesn't run anything. Works in commands and event handlers.
 	next_key: () -> string,
 	keys: Keys,
+	process: Process,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

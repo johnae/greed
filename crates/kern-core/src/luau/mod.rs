@@ -15,6 +15,7 @@ mod languages;
 mod lsp;
 mod modules;
 mod plugin;
+mod process;
 mod projects;
 mod requests;
 mod sessions;

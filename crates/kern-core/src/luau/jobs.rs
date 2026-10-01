@@ -3,7 +3,7 @@
 //! waits for `kern.sleep`, and is woken with the result when it's done.
 
 use crossbeam_channel::{Receiver, Sender};
-use mlua::{Lua, Value};
+use mlua::{Function, Lua, Value};
 
 use super::{fs, state, state_mut, tasks};
 use crate::search::{BadPattern, LineMatch};
@@ -14,6 +14,7 @@ type LuaResult<T> = mlua::Result<T>;
 pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
     Check(super::plugin::Check),
+    Process(std::io::Result<super::process::Finished>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -60,6 +61,30 @@ pub(super) fn start(lua: &Lua, work: impl FnOnce() -> Output + Send + 'static) -
     token
 }
 
+/// A Luau function named `name` that calls `start` and waits for the job it
+/// returns when the caller can yield (in a command), and calls `now` anywhere
+/// else.
+pub(super) fn now_or_job(
+    lua: &Lua,
+    name: &str,
+    now: Function,
+    start: Function,
+) -> LuaResult<Function> {
+    lua.load(
+        r"
+        local now, start = ...
+        return function(...)
+            if coroutine.isyieldable() then
+                return coroutine.yield(start(...))
+            end
+            return now(...)
+        end
+        ",
+    )
+    .set_name(format!("={name}"))
+    .call((now, start))
+}
+
 /// Wakes the command waiting on a finished job with its result.
 pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     state_mut(lua).jobs.running -= 1;
@@ -67,6 +92,9 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Grep(Ok(lines)) => tasks::wake(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::wake(lua, done.token, (Value::Nil, err.to_string())),
         Output::Check(check) => tasks::wake(lua, done.token, super::plugin::to_lua(lua, check)?),
+        Output::Process(result) => {
+            tasks::wake(lua, done.token, super::process::to_lua(lua, result)?)
+        }
     }
 }
 

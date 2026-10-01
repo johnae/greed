@@ -145,19 +145,7 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
             }))
         },
     )?;
-    lua.load(
-        r"
-        local now, start = ...
-        return function(...)
-            if coroutine.isyieldable() then
-                return coroutine.yield(start(...))
-            end
-            return now(...)
-        end
-        ",
-    )
-    .set_name("=kern.fs.grep")
-    .call((now, start))
+    jobs::now_or_job(lua, "kern.fs.grep", now, start)
 }
 
 /// The directory and options from `kern.fs.grep`'s arguments.
