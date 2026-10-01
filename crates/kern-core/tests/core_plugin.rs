@@ -71,3 +71,8 @@ fn failures_name_the_line_and_what_differed() {
 fn statusline_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("statusline")], &plugin("statusline"));
 }
+
+#[test]
+fn hints_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("hints")], &plugin("hints"));
+}

@@ -105,6 +105,9 @@ export type Keymap = {
 	bind: (layer: string | Layer, bindings: { [string]: string }) -> (),
 	--- The command that handles a single unbound key in `mode`.
 	fallback: (mode: string, command: string) -> (),
+	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
+	--- the command each runs. Keys without a command start longer sequences.
+	next: (keys: string?) -> { { key: string, command: string? } },
 }
 
 export type Mode = {
@@ -134,6 +137,8 @@ export type FloatSpec = {
 	width: (number | string)?,
 	height: (number | string)?,
 	anchor: ("center" | "top" | "bottom")?,
+	--- Whether the view takes focus. Defaults to true.
+	focus: boolean?,
 }
 
 export type CommandInfo = {
@@ -145,6 +150,11 @@ export type CommandInfo = {
 
 export type BufferChanged = {
 	buffer: Buffer,
+}
+
+export type KeysPending = {
+	--- The unfinished key sequence, e.g. "space"; "" once it's finished.
+	keys: string,
 }
 
 --- A piece of the status line: plain text, or text with a style.
@@ -183,6 +193,7 @@ export type Kern = {
 	--- Calls `handler` every time `event` happens.
 	on: ((event: "mode.changed", handler: (event: ModeChanged) -> ()) -> ())
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
+		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

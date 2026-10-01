@@ -228,6 +228,7 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
             width: Extent::Cells(12),
             height: Extent::Cells(4),
             anchor: Anchor::Center,
+            focus: true,
         },
     );
     let f = frame(&mut ed, 20, 9);

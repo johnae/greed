@@ -194,3 +194,39 @@ fn fallbacks_are_per_mode_and_owned() {
     km.remove_owned_by("core");
     assert_eq!(km.fallback("insert"), None);
 }
+
+#[test]
+fn continuations_list_what_can_follow_a_prefix() {
+    use kern_core::keymap::Next;
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("normal"), &keys("space f"), "files", "core")
+        .unwrap();
+    km.bind(Layer::mode("normal"), &keys("space w v"), "split", "core")
+        .unwrap();
+    km.bind(Layer::global(), &keys("space f"), "shadowed", "core")
+        .unwrap();
+    km.bind(Layer::global(), &keys("space q"), "quit", "core")
+        .unwrap();
+    km.bind(
+        Layer::mode("insert"),
+        &keys("space x"),
+        "other-mode",
+        "core",
+    )
+    .unwrap();
+
+    let next: Vec<(String, Next)> = km
+        .continuations("normal", "file", &keys("space"))
+        .into_iter()
+        .map(|(k, n)| (k.to_string(), n))
+        .collect();
+    assert_eq!(
+        next,
+        [
+            ("f".to_string(), Next::Command("files".into())),
+            ("q".to_string(), Next::Command("quit".into())),
+            ("w".to_string(), Next::Prefix),
+        ]
+    );
+    assert!(km.continuations("normal", "file", &keys("x")).is_empty());
+}

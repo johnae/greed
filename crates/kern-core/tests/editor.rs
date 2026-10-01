@@ -184,6 +184,7 @@ fn float_options() -> kern_core::FloatOptions {
         width: kern_core::Extent::Percent(50),
         height: kern_core::Extent::Cells(5),
         anchor: kern_core::Anchor::Center,
+        focus: true,
     }
 }
 
@@ -247,4 +248,20 @@ fn extents_resolve_against_the_screen() {
     assert_eq!(Extent::Cells(100).resolve(80), 80);
     assert_eq!(Extent::Percent(50).resolve(81), 40);
     assert_eq!(Extent::Percent(150).resolve(80), 80);
+}
+
+#[test]
+fn floats_can_leave_focus_where_it_was() {
+    let mut ed = editor("");
+    let main = ed.main();
+    let hints = ed.create_buffer("hints", "");
+    ed.float(
+        hints,
+        kern_core::FloatOptions {
+            focus: false,
+            ..float_options()
+        },
+    );
+    assert_eq!(ed.focus(), main);
+    assert_eq!(ed.floats().len(), 1);
 }

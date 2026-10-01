@@ -1,0 +1,21 @@
+local test = require("@kern/test")
+
+test("a prefix key shows what can follow it", function(t)
+	t:buffer("|abc")
+	t:keys("g")
+	local floats = t:floats()
+	assert(#floats == 1, "one hint window")
+	assert(string.find(floats[1], "g        Move to the start of the buffer", 1, true), floats[1])
+	assert(string.find(floats[1], "e        Move to the end of the buffer", 1, true), floats[1])
+	t:expect("|abc")
+end)
+
+test("hints go away when the sequence ends", function(t)
+	t:buffer("ab|c")
+	t:keys("g g")
+	assert(#t:floats() == 0, "no hint window left")
+	t:expect("|abc")
+
+	t:keys("g x")
+	assert(#t:floats() == 0, "an unbound sequence also hides them")
+end)

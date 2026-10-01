@@ -68,6 +68,8 @@ pub struct FloatOptions {
     pub width: Extent,
     pub height: Extent,
     pub anchor: Anchor,
+    /// Whether the view takes focus when it's shown.
+    pub focus: bool,
 }
 
 /// A view floating over the main one.
@@ -183,10 +185,14 @@ impl Editor {
         self.drop_if_unused(old);
     }
 
-    /// Shows `buffer` in a new view floating over the main one, and focuses
-    /// it.
+    /// Shows `buffer` in a new view floating over the main one, focusing it
+    /// if `options.focus` says so.
     pub fn float(&mut self, buffer: BufferId, options: FloatOptions) -> ViewId {
+        let previous = self.focus;
         let view = self.add_view(buffer, Selection::point(0));
+        if !options.focus {
+            self.focus = previous;
+        }
         self.floats.push(Float { view, options });
         view
     }

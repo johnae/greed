@@ -11,7 +11,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 use super::handles::{BufferRef, ViewRef};
 use super::{HostError, state, state_mut};
-use crate::keymap::{Key, KeyCode, Layer, Mods};
+use crate::keymap::{Key, KeyCode, Layer, Mods, Next};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Span, StatusLine, Tag};
 use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
@@ -53,8 +53,7 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
         },
     )?;
     if !keys.is_empty() {
-        let text: Vec<String> = keys.iter().map(ToString::to_string).collect();
-        ctx.set("keys", text.join(" "))?;
+        ctx.set("keys", keys_text(keys))?;
     }
     if let [
         Key {
@@ -76,9 +75,38 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
     let outcome = state_mut(lua).editor.press(key);
     match outcome {
-        KeyOutcome::Command { name, keys } => run_command(lua, &name, &keys),
-        KeyOutcome::Pending | KeyOutcome::Unbound(_) => Ok(()),
+        KeyOutcome::Pending => {
+            let pending = keys_text(state(lua).editor.pending());
+            keys_pending(lua, &pending)?;
+            Ok(())
+        }
+        KeyOutcome::Command { name, keys } => {
+            if keys.len() > 1 {
+                keys_pending(lua, "")?;
+            }
+            run_command(lua, &name, &keys)
+        }
+        KeyOutcome::Unbound(keys) => {
+            if keys.len() > 1 {
+                keys_pending(lua, "")?;
+            }
+            Ok(())
+        }
     }
+}
+
+/// Emits "keys.pending" with the unfinished key sequence, or "" once it ends.
+fn keys_pending(lua: &Lua, keys: &str) -> LuaResult<()> {
+    let payload = lua.create_table()?;
+    payload.set("keys", keys)?;
+    emit(lua, "keys.pending", &payload)
+}
+
+fn keys_text(keys: &[Key]) -> String {
+    keys.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Calls every handler for `event` with `payload`. All handlers run even if
@@ -214,6 +242,32 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     .map_err(mlua::Error::external)?;
             }
             Ok(())
+        })?,
+    )?;
+
+    keymap.set(
+        "next",
+        lua.create_function(|lua, keys: Option<String>| {
+            let prefix = match keys.as_deref().map(str::trim) {
+                None | Some("") => Vec::new(),
+                Some(keys) => Key::parse_sequence(keys).map_err(mlua::Error::external)?,
+            };
+            let next = {
+                let state = state(lua);
+                let editor = &state.editor;
+                let kind = editor.buffer(editor.view(editor.focus()).buffer).kind();
+                editor.keymap().continuations(editor.mode(), kind, &prefix)
+            };
+            let list = lua.create_table()?;
+            for (key, next) in next {
+                let entry = lua.create_table()?;
+                entry.set("key", key.to_string())?;
+                if let Next::Command(command) = next {
+                    entry.set("command", &*command)?;
+                }
+                list.push(entry)?;
+            }
+            Ok(list)
         })?,
     )?;
 
@@ -544,6 +598,7 @@ fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
             width: DEFAULT_FLOAT_SIZE,
             height: DEFAULT_FLOAT_SIZE,
             anchor: Anchor::Center,
+            focus: true,
         });
     };
     let anchor = match spec.get::<Option<String>>("anchor")?.as_deref() {
@@ -561,6 +616,7 @@ fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
         width: extent(spec.get("width")?)?,
         height: extent(spec.get("height")?)?,
         anchor,
+        focus: spec.get::<Option<bool>>("focus")?.unwrap_or(true),
     })
 }
 

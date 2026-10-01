@@ -292,6 +292,14 @@ impl fmt::Display for BindError {
 
 impl std::error::Error for BindError {}
 
+/// What a key does after a prefix, from [`Keymap::continuations`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Next {
+    Command(Arc<str>),
+    /// The key starts a longer sequence.
+    Prefix,
+}
+
 /// A binding found by [`Keymap::describe`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -418,6 +426,38 @@ impl Keymap {
 
     pub fn fallback(&self, mode: &str) -> Option<&Arc<str>> {
         self.fallbacks.get(mode)?.last().map(|b| &b.command)
+    }
+
+    /// The keys that can follow `prefix` in `mode` for a buffer of `kind`, and
+    /// what each does, sorted by key. A more specific layer hides the same
+    /// key in a less specific one.
+    pub fn continuations(&self, mode: &str, kind: &str, prefix: &[Key]) -> Vec<(Key, Next)> {
+        let mut found = Vec::new();
+        for layer in Layer::lookup_order(mode, kind) {
+            let children = if prefix.is_empty() {
+                self.layers.get(&layer)
+            } else {
+                match self.lookup(&layer, prefix) {
+                    Some(Node::Prefix(children)) => Some(children),
+                    Some(Node::Command(_)) | None => None,
+                }
+            };
+            for (key, node) in children.into_iter().flatten() {
+                if found.iter().any(|(k, _)| k == key) {
+                    continue;
+                }
+                let next = match node {
+                    Node::Command(bindings) => {
+                        let active = bindings.last().expect("empty bindings are pruned");
+                        Next::Command(active.command.clone())
+                    }
+                    Node::Prefix(_) => Next::Prefix,
+                };
+                found.push((*key, next));
+            }
+        }
+        found.sort_by_key(|(key, _)| key.to_string());
+        found
     }
 
     /// Removes every binding `owner` made.
