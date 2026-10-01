@@ -151,3 +151,99 @@ test("a picker's own keys don't take over the same keys in later pickers", funct
 	t:keys("ctrl-n enter")
 	assert(got == 2, "ctrl-n moves down again in a picker without its own")
 end)
+
+-- The items in the open picker, without the query line.
+local function items(): { string }
+	local lines = string.split(kern.view():buffer():text(), "\n")
+	local out = {}
+	for i = 2, #lines do
+		if lines[i] ~= "" then
+			table.insert(out, string.sub(lines[i], 2))
+		end
+	end
+	return out
+end
+
+test("space f lists the project's files, leaving ignored ones out, and opens one", function(t)
+	local dir = t:tempdir({
+		[".git/HEAD"] = "",
+		[".gitignore"] = "skip.txt\n",
+		["a.txt"] = "alpha",
+		["src/b.txt"] = "beta",
+		["bin.dat"] = "\0\1\2",
+		["skip.txt"] = "",
+	})
+	kern.run("project", { args = { dir } })
+	t:buffer("|x")
+	t:keys("space f")
+	local listed = items()
+	table.sort(listed)
+	assert(table.concat(listed, " ") == "a.txt bin.dat src/b.txt", table.concat(listed, " "))
+	t:keys("b i n")
+	assert(table.find(t:floats(), "(binary file)"), "binary files aren't shown")
+	t:keys("esc")
+	t:keys("space f s r c")
+	assert(table.find(t:floats(), "beta"), "the preview shows the file")
+	t:keys("enter")
+	assert(kern.view():buffer():path() == dir .. "/src/b.txt", kern.view():buffer():path())
+	assert(kern.view():buffer():text() == "beta")
+end)
+
+test("space b lists the open files and previews them as they are now", function(t)
+	local dir = t:tempdir({ ["one.txt"] = "first", ["two.txt"] = "second" })
+	kern.open(dir .. "/one.txt")
+	t:keys("i n e w space esc")
+	kern.open(dir .. "/two.txt")
+	t:keys("space b o n e")
+	assert(table.find(t:floats(), "new first"), "unsaved text in the preview")
+	t:keys("enter")
+	assert(kern.view():buffer():path() == dir .. "/one.txt")
+end)
+
+test(
+	"moving past either end wraps round, and the picker returns to the mode it came from",
+	function(t)
+		local picker = require("@picker")
+		local got = nil
+		local list = {
+			{ label = "aa", value = 1 },
+			{ label = "bb", value = 2 },
+			{ label = "cc", value = 3 },
+		}
+		t:buffer("|x")
+		kern.mode.set("edit")
+		picker.pick("Wrap", list, function(item)
+			got = item.value
+		end)
+		t:keys("up enter")
+		assert(got == 3, "up from the first is the last")
+		t:expect_mode("edit")
+		picker.pick("Wrap", list, function(item)
+			got = item.value
+		end)
+		t:keys("down down down enter")
+		assert(got == 1, "down from the last is the first")
+	end
+)
+
+test("a source that fails shows nothing instead of breaking the picker", function(t)
+	local picker = require("@picker")
+	kern.command({
+		name = "pick-broken",
+		run = function()
+			picker.pick("Broken", {}, function() end, {
+				delay = 1,
+				source = function(): { any }
+					error("no")
+				end,
+			})
+		end,
+	})
+	t:buffer("|x")
+	t:run("pick-broken")
+	t:keys("a")
+	t:wait(20)
+	assert(#items() == 0, "nothing listed")
+	t:keys("esc")
+	t:expect_mode("normal")
+end)

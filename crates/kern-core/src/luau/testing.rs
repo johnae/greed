@@ -201,6 +201,19 @@ impl UserData for TestContext {
         methods.add_method("quitting", |lua, _, ()| {
             Ok(state(lua).editor.quit_requested())
         });
+        methods.add_method("detached", |lua, _, ()| {
+            Ok(state_mut(lua).editor.take_detach_request())
+        });
+        methods.add_method("switched", |lua, _, ()| {
+            let to = state_mut(lua).editor.take_switch_request();
+            to.map(|to| {
+                let table = lua.create_table()?;
+                table.set("session", to.session)?;
+                table.set("path", to.path)?;
+                Ok::<_, mlua::Error>(table)
+            })
+            .transpose()
+        });
         methods.add_method("messages", |lua, _, ()| {
             Ok(state_mut(lua).editor.take_messages())
         });

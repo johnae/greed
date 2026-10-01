@@ -148,3 +148,83 @@ test(":set parses the value, and text can have spaces", function(t)
 		t:run("set", { "tab-width" })
 	end), "a value is needed")
 end)
+
+test(":w, :wq and :qa are the usual commands", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	kern.open(dir .. "/a.txt")
+	t:keys("i 1 esc : w enter")
+	assert(kern.fs.read(dir .. "/a.txt") == "1a")
+	t:keys("i 2 esc : w q enter")
+	assert(kern.fs.read(dir .. "/a.txt") == "12a" and t:quitting())
+end)
+
+test("shift-tab goes back through the matches, and wraps round", function(t)
+	t:buffer("|abc")
+	t:keys(": g o t o -")
+	t:keys("tab")
+	local first = prompt(t)
+	t:keys("tab shift-tab")
+	assert(prompt(t) == first, prompt(t))
+	t:keys("shift-tab")
+	assert(
+		prompt(t) ~= first and string.sub(prompt(t), 1, 6) == ":goto-",
+		"wrapped to the last: " .. prompt(t)
+	)
+	t:keys("ctrl-c")
+	t:expect_mode("normal")
+end)
+
+test("other plugins add completers and aliases", function(t)
+	local cmdline = require("@cmdline")
+	cmdline.completer("branch", function()
+		return { { text = "main" }, { text = "dev" } }
+	end)
+	local got = nil
+	kern.command({
+		name = "checkout",
+		args = { { name = "branch", complete = "branch" } },
+		run = function(ctx)
+			got = ctx.args[1]
+		end,
+	})
+	cmdline.alias("co", "checkout")
+	t:buffer("|abc")
+	t:keys(": c o space d")
+	t:keys("tab enter")
+	assert(got == "dev", tostring(got))
+end)
+
+test("files complete one folder at a time", function(t)
+	local dir = t:tempdir({ ["src/main.rs"] = "", ["src/lib.rs"] = "" })
+	t:buffer("|abc")
+	kern.run("command-line")
+	for _, key in string.split(`e {dir}/s`, "") do
+		t:keys(if key == " " then "space" else key)
+	end
+	t:keys("tab")
+	assert(prompt(t) == `:e {dir}/src/`, prompt(t))
+	t:keys("m tab")
+	assert(prompt(t) == `:e {dir}/src/main.rs`, prompt(t))
+	t:keys("esc")
+end)
+
+test("history skips blank lines and repeats", function(t)
+	t:buffer("|abc")
+	t:keys(": = space 6 enter : = space 7 enter : = space 7 enter : space enter")
+	t:keys(": up")
+	assert(prompt(t) == ":= 7", "the blank line isn't kept: " .. prompt(t))
+	t:keys("up")
+	assert(prompt(t) == ":= 6", "nor the repeat: " .. prompt(t))
+	t:keys("esc")
+end)
+
+test(":lua with an error says what went wrong, and := shows nil", function(t)
+	t:buffer("|abc")
+	local err = fails(function()
+		t:keys(": l u a space e r r o r ( ' b a d ' ) enter")
+	end)
+	assert(string.find(err, "bad", 1, true), err)
+	t:keys(": = space n i l enter")
+	local messages = t:messages()
+	assert(messages[#messages] == "nil", tostring(messages[#messages]))
+end)

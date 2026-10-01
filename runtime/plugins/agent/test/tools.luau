@@ -1,0 +1,88 @@
+local test = require("@kern/test")
+local kern = require("@kern")
+local agent = require("@agent")
+
+-- Runs the socket tool `name` with `args`.
+local function run(name: string, args: { [string]: any }?): any
+	for _, tool in agent.tools() do
+		if tool.name == name then
+			return tool.run(args or {})
+		end
+	end
+	error(`no tool {name}`)
+end
+
+test("read falls back to the disk for files that aren't open", function(t)
+	local dir = t:tempdir({ ["closed.txt"] = "a\nb\nc" })
+	t:buffer("|x")
+	assert(run("read", { path = dir .. "/closed.txt" }) == "a\nb\nc")
+	assert(run("read", { path = dir .. "/closed.txt", from_line = 2, to_line = 3 }) == "b\nc")
+	assert(
+		run("read", { path = dir .. "/closed.txt", from_line = 3, to_line = 1 }) == "",
+		"an empty range"
+	)
+	assert(not pcall(run, "read", { path = dir .. "/missing.txt" }), "a missing file fails")
+end)
+
+test("buffers lists open files and which have changes", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b" })
+	kern.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	kern.open(dir .. "/b.txt")
+	local modified = {}
+	for _, entry in run("buffers") do
+		modified[entry.path] = entry.modified
+	end
+	assert(modified[dir .. "/a.txt"] == true and modified[dir .. "/b.txt"] == false)
+end)
+
+test("open goes to a line, kept inside the file", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree" })
+	t:buffer("|x")
+	assert(run("open", { path = dir .. "/a.txt", line = 2 }) == `opened {dir}/a.txt`)
+	t:expect("one\n|two\nthree")
+	run("open", { path = dir .. "/a.txt", line = 99 })
+	t:expect("one\ntwo\n|three")
+end)
+
+test("project and diagnostics answer about the editor", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "", ["a.txt"] = "" })
+	kern.run("project", { args = { dir } })
+	t:buffer("|x")
+	assert(run("project") == dir, tostring(run("project")))
+	assert(#run("diagnostics", { path = dir .. "/not-open.txt" }) == 0)
+end)
+
+test("eval returns what the code returns, and fails with its error", function(t)
+	t:buffer("|x")
+	assert(run("eval", { code = "return 6 * 7" }) == "42")
+	local ok, err = pcall(run, "eval", { code = "error('broken')" })
+	assert(not ok and string.find(tostring(err), "broken", 1, true), tostring(err))
+end)
+
+test("tool names are checked, and a tool with the same name replaces the old one", function(t)
+	assert(not pcall(agent.tool, { name = "bad name", description = "", run = function() end }))
+	agent.tool({
+		name = "twice",
+		description = "first",
+		run = function()
+			return 1
+		end,
+	})
+	agent.tool({
+		name = "twice",
+		description = "second",
+		run = function()
+			return 2
+		end,
+	})
+	assert(run("twice") == 2)
+	local ide = {}
+	for _, tool in agent.tools("ide") do
+		table.insert(ide, tool.name)
+	end
+	assert(
+		table.find(ide, "openDiff") and not table.find(ide, "twice"),
+		"each client has its own tools"
+	)
+end)

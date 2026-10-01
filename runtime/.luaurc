@@ -5,6 +5,7 @@
 		"picker": "./plugins/picker",
 		"core": "./plugins/core",
 		"languages": "./plugins/languages",
-		"agent": "./plugins/agent"
+		"agent": "./plugins/agent",
+		"cmdline": "./plugins/cmdline"
 	}
 }

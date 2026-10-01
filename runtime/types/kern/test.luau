@@ -25,6 +25,11 @@ export type TestContext = {
 	status: (self: TestContext) -> (string?, string?),
 	--- True once something asked the editor to exit.
 	quitting: (self: TestContext) -> boolean,
+	--- True if something asked to let the client go since the last call.
+	detached: (self: TestContext) -> boolean,
+	--- Where something asked to send the client since the last call, if
+	--- anywhere.
+	switched: (self: TestContext) -> { session: string?, path: string? }?,
 	--- Messages shown since the last call, oldest first.
 	messages: (self: TestContext) -> { string },
 	--- Fails unless the buffer, with markers, is `marked`.
