@@ -94,3 +94,10 @@ fn starting_a_session_clears_what_crashed_ones_left() {
     assert!(!socket.exists() && !token.exists());
     drop(session);
 }
+
+#[test]
+fn a_session_name_too_long_for_a_socket_is_refused_clearly() {
+    let name = "x".repeat(200);
+    let err = control::listen(&name).err().expect("refused");
+    assert!(err.to_string().contains("too long"), "{err}");
+}

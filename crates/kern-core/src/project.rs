@@ -4,6 +4,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// The longest session name made from a folder name, with room for a
+/// number after it.
+const MAX_NAME: usize = 32;
+
 /// Files or folders that mark a project's root.
 pub const MARKERS: [&str; 2] = [".jj", ".git"];
 
@@ -33,7 +37,9 @@ pub fn session_name(root: &Path, taken: &[String]) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    let base = base.trim_matches('-');
+    // Session names end up in socket paths, which are short on Unix.
+    let base: String = base.trim_matches('-').chars().take(MAX_NAME - 3).collect();
+    let base = base.trim_end_matches('-');
     let base = if base.is_empty() { "kern" } else { base };
     std::iter::once(base.to_owned())
         // One more name than are taken: at least one of them is free.

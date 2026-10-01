@@ -23,3 +23,14 @@ fn session_names_come_from_the_folder_and_dont_clash() {
     assert_eq!(session_name(Path::new("/src/my notes"), &[]), "my-notes");
     assert_eq!(session_name(Path::new("/"), &[]), "kern");
 }
+
+#[test]
+fn long_folder_names_make_short_session_names() {
+    let long = "a-project-folder-with-a-very-long-name-indeed-really";
+    let name = session_name(&Path::new("/src").join(long), &[]);
+    assert!(name.len() <= 32, "{name}");
+    assert!(long.starts_with(&name));
+    let taken = vec![name.clone()];
+    let second = session_name(&Path::new("/src").join(long), &taken);
+    assert!(second.len() <= 32 && second != name, "{second}");
+}

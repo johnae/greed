@@ -62,6 +62,9 @@ impl Request {
     }
 }
 
+/// The longest socket path that fits in a Unix socket address.
+const MAX_SOCKET_PATH: usize = 100;
+
 /// Where sessions keep their sockets: `$XDG_RUNTIME_DIR/kern`, or a folder
 /// for the user in the temporary directory.
 pub fn sessions_dir() -> PathBuf {
@@ -181,6 +184,14 @@ pub fn listen(name: &str) -> io::Result<Session> {
     // new one with the same name from binding.
     prune(&dir);
     let (socket, token_file) = session_files(name);
+    // Unix socket paths have to fit in about a hundred bytes.
+    if socket.as_os_str().len() > MAX_SOCKET_PATH {
+        return Err(io::Error::other(format!(
+            "the session's socket path is too long: {}; use a shorter name or set \
+             XDG_RUNTIME_DIR to a shorter folder",
+            socket.display()
+        )));
+    }
     let listener = UnixListener::bind(&socket)?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
     let token = new_token()?;

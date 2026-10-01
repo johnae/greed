@@ -11,6 +11,9 @@
     pkgs.cargo-nextest
     pkgs.cargo-insta
     pkgs.cargo-deny
+    pkgs.cargo-llvm-cov
+    # `script`, which the terminal tests run kern under
+    pkgs.util-linux
     pkgs.bacon
 
     # Luau: runtime/analyzer, language server, formatter
