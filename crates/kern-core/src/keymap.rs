@@ -308,6 +308,20 @@ pub struct Found {
     pub owner: PluginId,
 }
 
+/// What happened to a layer, in order. The layer's trie is these replayed.
+#[derive(Debug, Clone)]
+enum Op {
+    Bind(Vec<Key>, Arc<str>),
+    Unbind(Vec<Key>),
+    Clear,
+}
+
+#[derive(Debug, Clone)]
+struct Entry {
+    owner: PluginId,
+    op: Op,
+}
+
 #[derive(Debug, Clone)]
 struct Binding {
     command: Arc<str>,
@@ -316,13 +330,15 @@ struct Binding {
 
 #[derive(Debug)]
 enum Node {
-    /// Every binding of this exact sequence, oldest first. The last is active.
-    Command(Vec<Binding>),
+    Command(Binding),
     Prefix(HashMap<Key, Node>),
 }
 
 #[derive(Debug, Default)]
 pub struct Keymap {
+    /// Every change to each layer, oldest first.
+    log: HashMap<Layer, Vec<Entry>>,
+    /// Each layer's bindings: its log replayed.
     layers: HashMap<Layer, HashMap<Key, Node>>,
     /// Per mode, the command that handles a single unbound key (e.g. insert
     /// mode inserting the character). Oldest first; the last is active.
@@ -330,8 +346,9 @@ pub struct Keymap {
 }
 
 impl Keymap {
-    /// Binds a key sequence to a command. Rebinding a sequence keeps the old
-    /// binding underneath, restored if the new owner is removed.
+    /// Binds a key sequence to a command. A newer binding wins over older
+    /// ones it conflicts with, which come back if its owner is removed.
+    /// Conflicting with the owner's own bindings is an error.
     pub fn bind(
         &mut self,
         layer: Layer,
@@ -339,34 +356,62 @@ impl Keymap {
         command: impl Into<Arc<str>>,
         owner: impl Into<PluginId>,
     ) -> Result<(), BindError> {
-        let Some((last, prefix)) = keys.split_last() else {
+        if keys.is_empty() {
             return Err(BindError::Empty);
-        };
-        let conflict = || BindError::Conflict {
-            keys: format_keys(keys),
-        };
-        let mut children = self.layers.entry(layer).or_default();
-        for key in prefix {
-            match children
-                .entry(*key)
-                .or_insert_with(|| Node::Prefix(HashMap::new()))
-            {
-                Node::Prefix(next) => children = next,
-                Node::Command(_) => return Err(conflict()),
+        }
+        let owner = owner.into();
+        if let Some(children) = self.layers.get(&layer)
+            && conflicts(children, keys, &owner)
+        {
+            return Err(BindError::Conflict {
+                keys: format_keys(keys),
+            });
+        }
+        self.record(layer, owner, Op::Bind(keys.to_vec(), command.into()));
+        Ok(())
+    }
+
+    /// Hides whatever `keys` runs in `layer`, until `owner` is removed.
+    pub fn unbind(&mut self, layer: Layer, keys: &[Key], owner: impl Into<PluginId>) {
+        self.record(layer, owner.into(), Op::Unbind(keys.to_vec()));
+    }
+
+    /// Hides every binding in `layer` so far, until `owner` is removed.
+    /// Bindings made afterwards apply as usual.
+    pub fn clear(&mut self, layer: Layer, owner: impl Into<PluginId>) {
+        self.record(layer, owner.into(), Op::Clear);
+    }
+
+    fn record(&mut self, layer: Layer, owner: PluginId, op: Op) {
+        self.log
+            .entry(layer.clone())
+            .or_default()
+            .push(Entry { owner, op });
+        self.replay(layer);
+    }
+
+    /// Rebuilds `layer`'s trie from its log.
+    fn replay(&mut self, layer: Layer) {
+        let mut children = HashMap::new();
+        for entry in self.log.get(&layer).into_iter().flatten() {
+            match &entry.op {
+                Op::Bind(keys, command) => insert(
+                    &mut children,
+                    keys,
+                    Binding {
+                        command: command.clone(),
+                        owner: entry.owner.clone(),
+                    },
+                ),
+                Op::Unbind(keys) => remove(&mut children, keys),
+                Op::Clear => children.clear(),
             }
         }
-        let binding = Binding {
-            command: command.into(),
-            owner: owner.into(),
-        };
-        match children
-            .entry(*last)
-            .or_insert_with(|| Node::Command(Vec::new()))
-        {
-            Node::Command(bindings) => bindings.push(binding),
-            Node::Prefix(_) => return Err(conflict()),
+        if children.is_empty() {
+            self.layers.remove(&layer);
+        } else {
+            self.layers.insert(layer, children);
         }
-        Ok(())
     }
 
     /// Resolves a key sequence in `mode` for a buffer of `kind`.
@@ -374,8 +419,7 @@ impl Keymap {
         let mut pending = false;
         for layer in Layer::lookup_order(mode, kind) {
             match self.lookup(&layer, keys) {
-                Some(Node::Command(bindings)) => {
-                    let active = bindings.last().expect("empty bindings are pruned");
+                Some(Node::Command(active)) => {
                     return Resolution::Command(active.command.clone());
                 }
                 Some(Node::Prefix(_)) => pending = true,
@@ -395,14 +439,11 @@ impl Keymap {
         Layer::lookup_order(mode, kind)
             .into_iter()
             .filter_map(|layer| match self.lookup(&layer, keys) {
-                Some(Node::Command(bindings)) => {
-                    let active = bindings.last().expect("empty bindings are pruned");
-                    Some(Found {
-                        layer,
-                        command: active.command.clone(),
-                        owner: active.owner.clone(),
-                    })
-                }
+                Some(Node::Command(active)) => Some(Found {
+                    layer,
+                    command: active.command.clone(),
+                    owner: active.owner.clone(),
+                }),
                 Some(Node::Prefix(_)) | None => None,
             })
             .collect()
@@ -447,10 +488,7 @@ impl Keymap {
                     continue;
                 }
                 let next = match node {
-                    Node::Command(bindings) => {
-                        let active = bindings.last().expect("empty bindings are pruned");
-                        Next::Command(active.command.clone())
-                    }
+                    Node::Command(active) => Next::Command(active.command.clone()),
                     Node::Prefix(_) => Next::Prefix,
                 };
                 found.push((*key, next));
@@ -472,12 +510,21 @@ impl Keymap {
         found
     }
 
-    /// Removes every binding `owner` made.
+    /// Removes everything `owner` did.
     pub fn remove_owned_by(&mut self, owner: &str) {
-        for children in self.layers.values_mut() {
-            prune(children, owner);
+        let changed: Vec<Layer> = self
+            .log
+            .iter_mut()
+            .filter_map(|(layer, entries)| {
+                let before = entries.len();
+                entries.retain(|e| &*e.owner != owner);
+                (entries.len() != before).then(|| layer.clone())
+            })
+            .collect();
+        self.log.retain(|_, entries| !entries.is_empty());
+        for layer in changed {
+            self.replay(layer);
         }
-        self.layers.retain(|_, children| !children.is_empty());
         for bindings in self.fallbacks.values_mut() {
             bindings.retain(|b| &*b.owner != owner);
         }
@@ -497,17 +544,65 @@ impl Keymap {
     }
 }
 
-fn prune(children: &mut HashMap<Key, Node>, owner: &str) {
-    children.retain(|_, node| match node {
-        Node::Command(bindings) => {
-            bindings.retain(|b| &*b.owner != owner);
-            !bindings.is_empty()
+/// Whether binding `keys` would replace one of `owner`'s own bindings: a
+/// shorter sequence it bound, or longer ones starting with `keys`.
+fn conflicts(children: &HashMap<Key, Node>, keys: &[Key], owner: &str) -> bool {
+    let (last, prefix) = keys.split_last().expect("keys aren't empty");
+    let mut children = children;
+    for key in prefix {
+        match children.get(key) {
+            Some(Node::Prefix(next)) => children = next,
+            Some(Node::Command(b)) => return &*b.owner == owner,
+            None => return false,
         }
-        Node::Prefix(next) => {
-            prune(next, owner);
-            !next.is_empty()
+    }
+    match children.get(last) {
+        Some(Node::Prefix(next)) => owns_any(next, owner),
+        Some(Node::Command(_)) | None => false,
+    }
+}
+
+fn owns_any(children: &HashMap<Key, Node>, owner: &str) -> bool {
+    children.values().any(|node| match node {
+        Node::Command(b) => &*b.owner == owner,
+        Node::Prefix(next) => owns_any(next, owner),
+    })
+}
+
+/// Binds `keys`, replacing whatever it conflicts with.
+fn insert(children: &mut HashMap<Key, Node>, keys: &[Key], binding: Binding) {
+    let (last, prefix) = keys.split_last().expect("keys aren't empty");
+    let mut children = children;
+    for key in prefix {
+        let node = children
+            .entry(*key)
+            .or_insert_with(|| Node::Prefix(HashMap::new()));
+        if matches!(node, Node::Command(_)) {
+            *node = Node::Prefix(HashMap::new());
         }
-    });
+        let Node::Prefix(next) = node else {
+            unreachable!("made a prefix above")
+        };
+        children = next;
+    }
+    children.insert(*last, Node::Command(binding));
+}
+
+/// Removes `keys` and everything after it, and prefixes left empty.
+fn remove(children: &mut HashMap<Key, Node>, keys: &[Key]) {
+    let Some((first, rest)) = keys.split_first() else {
+        return;
+    };
+    if rest.is_empty() {
+        children.remove(first);
+        return;
+    }
+    if let Some(Node::Prefix(next)) = children.get_mut(first) {
+        remove(next, rest);
+        if next.is_empty() {
+            children.remove(first);
+        }
+    }
 }
 
 fn format_keys(keys: &[Key]) -> String {
@@ -528,8 +623,8 @@ fn collect_bindings(
     for (key, node) in children {
         prefix.push(*key);
         match node {
-            Node::Command(bindings) => {
-                if bindings.last().is_some_and(|b| &*b.command == command) {
+            Node::Command(binding) => {
+                if &*binding.command == command {
                     found(prefix.clone());
                 }
             }

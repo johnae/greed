@@ -262,3 +262,105 @@ fn bindings_for_a_command_are_found_in_every_layer() {
     // "x" was rebound, so it no longer runs goto-start.
     assert_eq!(found, ["insert: ctrl-home", "normal: g g"]);
 }
+
+#[test]
+fn newer_bindings_from_another_plugin_replace_conflicting_ones() {
+    let mut km = Keymap::default();
+    let normal = Layer::mode("normal");
+    km.bind(normal.clone(), &keys("d"), "delete", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("d d"), "delete-line", "vim")
+        .unwrap();
+    assert_eq!(
+        km.resolve("normal", "file", &keys("d")),
+        Resolution::Pending
+    );
+    assert_eq!(
+        km.resolve("normal", "file", &keys("d d")),
+        Resolution::Command("delete-line".into())
+    );
+    km.bind(normal.clone(), &keys("d"), "delete-again", "user/me")
+        .unwrap();
+    assert_eq!(
+        km.resolve("normal", "file", &keys("d")),
+        Resolution::Command("delete-again".into())
+    );
+
+    km.remove_owned_by("user/me");
+    km.remove_owned_by("vim");
+    assert_eq!(
+        km.resolve("normal", "file", &keys("d")),
+        Resolution::Command("delete".into())
+    );
+}
+
+#[test]
+fn unbinding_hides_a_key_until_its_owner_goes() {
+    let mut km = Keymap::default();
+    let normal = Layer::mode("normal");
+    km.bind(normal.clone(), &keys("w"), "next-word", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("g g"), "goto-start", "core")
+        .unwrap();
+    km.unbind(normal.clone(), &keys("w"), "user/me");
+    km.unbind(normal.clone(), &keys("g"), "user/me");
+    assert_eq!(
+        km.resolve("normal", "file", &keys("w")),
+        Resolution::Unbound
+    );
+    assert_eq!(
+        km.resolve("normal", "file", &keys("g")),
+        Resolution::Unbound
+    );
+    assert!(km.bindings_for("next-word").is_empty());
+
+    km.remove_owned_by("user/me");
+    assert_eq!(
+        km.resolve("normal", "file", &keys("w")),
+        Resolution::Command("next-word".into())
+    );
+    assert_eq!(
+        km.resolve("normal", "file", &keys("g g")),
+        Resolution::Command("goto-start".into())
+    );
+}
+
+#[test]
+fn clearing_a_layer_hides_what_was_bound_before() {
+    let mut km = Keymap::default();
+    let normal = Layer::mode("normal");
+    km.bind(normal.clone(), &keys("w"), "next-word", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("x"), "select-line", "core")
+        .unwrap();
+    km.bind(Layer::global(), &keys("ctrl-s"), "save", "core")
+        .unwrap();
+    km.clear(normal.clone(), "vim");
+    km.bind(normal.clone(), &keys("w"), "vim-word", "vim")
+        .unwrap();
+    km.bind(normal.clone(), &keys("x"), "delete-char", "user/me")
+        .unwrap();
+    assert_eq!(
+        km.resolve("normal", "file", &keys("w")),
+        Resolution::Command("vim-word".into())
+    );
+    assert_eq!(
+        km.resolve("normal", "file", &keys("x")),
+        Resolution::Command("delete-char".into())
+    );
+    // Other layers are untouched.
+    assert_eq!(
+        km.resolve("normal", "file", &keys("ctrl-s")),
+        Resolution::Command("save".into())
+    );
+
+    km.remove_owned_by("vim");
+    assert_eq!(
+        km.resolve("normal", "file", &keys("w")),
+        Resolution::Command("next-word".into())
+    );
+    assert_eq!(
+        km.resolve("normal", "file", &keys("x")),
+        Resolution::Command("delete-char".into())
+    );
+}

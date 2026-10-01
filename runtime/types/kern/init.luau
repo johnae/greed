@@ -132,6 +132,12 @@ export type Keymap = {
 	--- Binds key sequences to command names, e.g. `{ ["g g"] = "goto-start" }`.
 	--- `layer` is a mode name or a `Layer`.
 	bind: (layer: string | Layer, bindings: { [string]: string }) -> (),
+	--- Hides what each key sequence runs in `layer`, e.g. `{ "w", "g g" }`.
+	--- Removing (or reloading) the plugin that unbound them brings them back.
+	unbind: (layer: string | Layer, keys: { string }) -> (),
+	--- Hides everything bound in `layer` so far, to start it over. Bindings
+	--- made afterwards, by any plugin, apply as usual.
+	clear: (layer: string | Layer) -> (),
 	--- The command that handles a single unbound key in `mode`.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and

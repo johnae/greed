@@ -261,6 +261,51 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     Ok(kern)
 }
 
+/// A mode name, or `{ mode = ..., kind = ... }`.
+fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
+    match layer {
+        Value::String(mode) => Ok(Layer::mode(&mode.to_str()?)),
+        Value::Table(t) => Ok(Layer {
+            mode: t.get::<Option<String>>("mode")?.map(Into::into),
+            kind: t.get::<Option<String>>("kind")?.map(Into::into),
+        }),
+        other => Err(mlua::Error::runtime(format!(
+            "keymap layer must be a mode name or {{ mode = ..., kind = ... }}, not {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// `kern.keymap.unbind` and `kern.keymap.clear`.
+fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    keymap.set(
+        "unbind",
+        lua.create_function(move |lua, (layer, sequences): (Value, Vec<String>)| {
+            let layer = layer_from_lua(layer)?;
+            let mut state = state_mut(lua);
+            for keys in sequences {
+                let parsed = Key::parse_sequence(&keys).map_err(mlua::Error::external)?;
+                state
+                    .editor
+                    .keymap_mut()
+                    .unbind(layer.clone(), &parsed, o.clone());
+            }
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
+        "clear",
+        lua.create_function(move |lua, layer: Value| {
+            let layer = layer_from_lua(layer)?;
+            state_mut(lua).editor.keymap_mut().clear(layer, o.clone());
+            Ok(())
+        })?,
+    )
+}
+
 fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let keymap = lua.create_table()?;
 
@@ -268,19 +313,7 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     keymap.set(
         "bind",
         lua.create_function(move |lua, (layer, map): (Value, Table)| {
-            let layer = match layer {
-                Value::String(mode) => Layer::mode(&mode.to_str()?),
-                Value::Table(t) => Layer {
-                    mode: t.get::<Option<String>>("mode")?.map(Into::into),
-                    kind: t.get::<Option<String>>("kind")?.map(Into::into),
-                },
-                other => {
-                    return Err(mlua::Error::runtime(format!(
-                        "keymap layer must be a mode name or {{ mode = ..., kind = ... }}, not {}",
-                        other.type_name()
-                    )));
-                }
-            };
+            let layer = layer_from_lua(layer)?;
             let mut state = state_mut(lua);
             for pair in map.pairs::<String, String>() {
                 let (keys, command) = pair?;
@@ -294,6 +327,8 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             Ok(())
         })?,
     )?;
+
+    unbinding_functions(lua, &keymap, owner)?;
 
     keymap.set(
         "resolve",

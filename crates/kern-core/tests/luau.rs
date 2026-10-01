@@ -936,3 +936,41 @@ fn plugins_set_the_cursor_shape_per_mode() {
         .to_string();
     assert!(err.contains("block"), "{err}");
 }
+
+#[test]
+fn plugins_unbind_keys_and_clear_layers() {
+    let h = host("");
+    h.load_str(
+        "base",
+        "local kern = require('@kern')
+         kern.keymap.bind('normal', { w = 'next-word', x = 'select-line', ['g g'] = 'goto-start' })",
+    )
+    .unwrap();
+    h.load_str(
+        "mine",
+        "local kern = require('@kern')
+         kern.keymap.unbind('normal', { 'w' })
+         kern.keymap.clear({ mode = 'insert' })",
+    )
+    .unwrap();
+    let resolve = |keys: &str| {
+        h.eval(&format!("require('@kern').keymap.resolve({keys:?})"))
+            .unwrap()
+    };
+    assert_eq!(resolve("w"), "nil\tfalse");
+    assert_eq!(resolve("x"), "select-line\tfalse");
+
+    h.load_str(
+        "vim",
+        "local kern = require('@kern')
+         kern.keymap.clear('normal')
+         kern.keymap.bind('normal', { ['d d'] = 'delete-line' })",
+    )
+    .unwrap();
+    assert_eq!(resolve("x"), "nil\tfalse");
+    assert_eq!(resolve("d"), "nil\ttrue");
+    assert_eq!(resolve("g g"), "nil\tfalse");
+
+    h.load_str("vim", "").unwrap();
+    assert_eq!(resolve("g g"), "goto-start\tfalse");
+}
