@@ -117,10 +117,29 @@ local function vertical(name: string, doc: string, delta: number, keep_anchor: b
 					goal.columns[i] = text.column(buffer, range.head)
 				end
 			end
+			-- Folded lines are stepped over, like the one line they look like.
+			local hidden = ctx.view:hidden_lines()
+			local function is_hidden(line: number): boolean
+				for _, lines in hidden do
+					if line >= lines.from and line <= lines.to then
+						return true
+					end
+				end
+				return false
+			end
+			local last_line = buffer:line_count() - 1
 			for i, range in sel.ranges do
-				local last_line = buffer:line_count() - 1
-				local line =
-					math.clamp(buffer:line_of(range.head) + delta * (ctx.count or 1), 0, last_line)
+				local line = buffer:line_of(range.head)
+				for _ = 1, ctx.count or 1 do
+					local next = line + delta
+					while next >= 0 and next <= last_line and is_hidden(next) do
+						next += delta
+					end
+					if next < 0 or next > last_line then
+						break
+					end
+					line = next
+				end
 				local head = text.at_column(buffer, line, goal.columns[i])
 				sel.ranges[i] = { anchor = if keep_anchor then range.anchor else head, head = head }
 			end

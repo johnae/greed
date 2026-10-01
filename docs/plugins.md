@@ -86,7 +86,9 @@ one (like a results panel) should keep one per project.
   `buffer:decorate("my-plugin", { { from = 0, to = 5, style = "diagnostic.error" } })`.
   A mark can style whole lines, add virtual text inside or after a line,
   put a sign in the gutter, or draw text over the buffer's (like jump
-  labels).
+  labels). It can also hide text (`conceal`, like a link's brackets, shown
+  again on the cursor's line), fold lines away under the first one (`fold`),
+  or show lines that aren't in the buffer under its own (`lines`).
 - Floats show a buffer over the main view, and panels beside it:
   `kern.float(buffer, { title = "Info", width = "60%" })`,
   `kern.panel(buffer, { side = "right", width = 40 })`.

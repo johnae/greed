@@ -57,6 +57,15 @@ pub struct Mark {
     /// Draw `text` over the characters from the start of the range, like a
     /// jump label, instead of inserting it.
     pub overlay: bool,
+    /// Hide the range's text, showing `text` (if any) in its place, except on
+    /// lines a cursor is on, e.g. the brackets of a `[[link]]`.
+    pub conceal: bool,
+    /// Hide the lines after the range's first line, up to its last, unless a
+    /// cursor is in them, e.g. a section folded under its heading.
+    pub fold: bool,
+    /// Lines shown under the range's last line that aren't in the buffer,
+    /// like a list of backlinks. The cursor never goes on them.
+    pub lines: Vec<Arc<str>>,
 }
 
 impl Buffer {

@@ -106,6 +106,15 @@ export type Mark = {
 	--- Draw `text` over the characters from `from` instead of inserting it,
 	--- like a jump label. The text doesn't move.
 	overlay: boolean?,
+	--- Hide the text, showing `text` (if any) in its place, except on lines
+	--- a cursor is on, e.g. the brackets of a `[[link]]`.
+	conceal: boolean?,
+	--- Hide the lines after the first one, up to the last, unless a cursor is
+	--- in them, like a section folded under its heading.
+	fold: boolean?,
+	--- Lines shown under the last line that aren't in the buffer, like
+	--- backlinks. The cursor never goes on them.
+	lines: { string }?,
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -116,6 +125,8 @@ export type View = {
 	--- The start and end of the text on screen when the view was last
 	--- drawn, or of the whole buffer before that.
 	visible: (self: View) -> (number, number),
+	--- The lines folds hide, 0-based and inclusive.
+	hidden_lines: (self: View) -> { { from: number, to: number } },
 	--- The 0-based line at the top of the view.
 	scroll: (self: View) -> number,
 	--- Scrolls so `line` is at the top. Drawing scrolls again if the primary

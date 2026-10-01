@@ -633,3 +633,97 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
         "above the cursor: {rect:?}"
     );
 }
+
+/// Each row's text without the gutter (line numbers and signs).
+fn body(frame: &Frame) -> Vec<String> {
+    rows(frame)
+        .iter()
+        .map(|row| {
+            let row = row.trim_start();
+            let row = row.trim_start_matches(|c: char| c.is_ascii_digit());
+            row.strip_prefix(' ').unwrap_or(row).to_owned()
+        })
+        .collect()
+}
+#[test]
+fn concealed_text_is_hidden_except_on_lines_with_a_cursor() {
+    use kern_core::Mark;
+    let mut ed = editor("|top\na **b** [[note]]");
+    let buffer = ed.view(ed.main()).buffer;
+    let hide = |from, to, text: Option<&str>| Mark {
+        range: from..to,
+        style: "markup".into(),
+        conceal: true,
+        text: text.map(Into::into),
+        ..Mark::default()
+    };
+    // "a **b** [[note]]" starts at byte 4.
+    ed.decorate(
+        buffer,
+        "md",
+        vec![
+            hide(6, 8, None),
+            hide(9, 11, None),
+            hide(12, 20, Some("note")),
+        ],
+    );
+    assert_eq!(body(&frame(&mut ed, 20, 3))[1], "a b note");
+
+    let main = ed.main();
+    ed.view_mut(main).selection = kern_text::Selection::point(5);
+    assert_eq!(
+        body(&frame(&mut ed, 30, 3))[1],
+        "a **b** [[note]]",
+        "the cursor's line shows everything"
+    );
+}
+
+#[test]
+fn folded_lines_are_hidden_until_a_cursor_goes_in() {
+    use kern_core::Mark;
+    let mut ed = editor("# A\none\ntwo\n# B|");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "fold",
+        vec![Mark {
+            range: 0..11,
+            style: "fold".into(),
+            fold: true,
+            ..Mark::default()
+        }],
+    );
+    assert_eq!(body(&frame(&mut ed, 20, 5))[..3], ["# A", "# B", ""]);
+
+    let main = ed.main();
+    ed.view_mut(main).selection = kern_text::Selection::point(5);
+    assert_eq!(
+        body(&frame(&mut ed, 20, 5))[..4],
+        ["# A", "one", "two", "# B"],
+        "a cursor inside opens it"
+    );
+}
+
+#[test]
+fn virtual_lines_show_under_their_line_and_count_when_scrolling() {
+    use kern_core::Mark;
+    let mut ed = editor("a\nb\nc\nd|");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "notes",
+        vec![Mark {
+            range: 0..1,
+            style: "note".into(),
+            lines: vec!["x".into(), "y".into()],
+            ..Mark::default()
+        }],
+    );
+    assert_eq!(
+        body(&frame(&mut ed, 20, 7))[..6],
+        ["a", "x", "y", "b", "c", "d"]
+    );
+    // On a short screen the cursor's line stays in view.
+    let f = frame(&mut ed, 20, 4);
+    assert!(body(&f).contains(&"d".to_owned()), "{:?}", body(&f));
+}

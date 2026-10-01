@@ -84,6 +84,21 @@ impl UserData for ViewRef {
             let visible = view.visible.clone().unwrap_or(0..len);
             Ok((visible.start.min(len), visible.end.min(len)))
         });
+        methods.add_method("hidden_lines", |lua, this, ()| {
+            let state = state(lua);
+            let view = state
+                .editor
+                .find_view(this.id)
+                .ok_or_else(|| mlua::Error::runtime("this view was closed"))?;
+            let list = lua.create_table()?;
+            for lines in crate::render::hidden_lines(&state.editor, view) {
+                let range = lua.create_table()?;
+                range.set("from", lines.start)?;
+                range.set("to", lines.end - 1)?;
+                list.push(range)?;
+            }
+            Ok(list)
+        });
         methods.add_method("scroll", |lua, this, ()| {
             this.with_view(lua, |v| Ok(v.scroll.line))
         });
@@ -335,6 +350,14 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     sign: t.get::<Option<String>>("sign")?.map(Into::into),
                     above: flag("above")?,
                     overlay: flag("overlay")?,
+                    conceal: flag("conceal")?,
+                    fold: flag("fold")?,
+                    lines: t
+                        .get::<Option<Vec<String>>>("lines")?
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -355,6 +378,12 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             t.set("sign", mark.sign.as_deref())?;
             t.set("above", mark.above)?;
             t.set("overlay", mark.overlay)?;
+            t.set("conceal", mark.conceal)?;
+            t.set("fold", mark.fold)?;
+            if !mark.lines.is_empty() {
+                let lines: Vec<&str> = mark.lines.iter().map(|l| &**l).collect();
+                t.set("lines", lines)?;
+            }
             list.push(t)?;
         }
         Ok(list)

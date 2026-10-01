@@ -368,7 +368,8 @@ impl<M: Measure> Renderer<M> {
 
         let view = editor.view(view_id);
         let text = editor.buffer(view.buffer).text();
-        let visible = visible_bytes(text, scroll, text_rows);
+        let hidden = hidden_lines(editor, view);
+        let visible = visible_bytes(text, scroll, text_rows, &hidden);
         let syntax = paint(
             decorations.highlights(view.buffer, text, visible.clone()),
             &visible,
@@ -380,6 +381,9 @@ impl<M: Measure> Renderer<M> {
         let (mut first_shown, mut last_shown) = (None, None);
 
         'lines: for line in scroll.line..text.len_lines() {
+            if is_hidden(&hidden, line) {
+                continue;
+            }
             let skip = if line == scroll.line { scroll.row } else { 0 };
             let layout = self.layout(editor, view, line, text_width);
             let last = layout.len() - 1;
@@ -387,16 +391,7 @@ impl<M: Measure> Renderer<M> {
             let start = text.line_to_byte(line);
             let lines = start..text.line_to_byte(line + 1).max(start + 1);
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
-            let line_gutter = Gutter {
-                width: gutter,
-                signs,
-                sign: styled
-                    .iter()
-                    .filter(on_line)
-                    .find(|m| m.sign.is_some())
-                    .copied(),
-                severity: worst(&marks, |r| r.start < lines.end && r.end >= lines.start),
-            };
+            let line_gutter = Gutter::for_line(gutter, signs, &styled, &marks, &lines);
             let mut overlay = Overlay::default();
             for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
@@ -448,6 +443,12 @@ impl<M: Measure> Renderer<M> {
                 }
                 rows.push(row);
             }
+            let room = usize::from(area.width).saturating_sub(gutter);
+            let lines = virtual_lines(editor, view, line);
+            let gutter = line_numbers.then_some(&line_gutter);
+            if !self.push_virtual_lines(&mut rows, text_rows, lines, gutter, room) {
+                break 'lines;
+            }
         }
         let shown = shown_bytes(text, first_shown, last_shown);
         editor.view_mut(view_id).visible = Some(shown);
@@ -491,10 +492,12 @@ impl<M: Measure> Renderer<M> {
         let content = content.trim_end_matches(['\n', '\r']);
         let end = start + content.len();
 
+        let (revealed, concealed) = concealed(buffer, view, line, start..end);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
             .all_marks()
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
+            .filter(|m| !m.conceal || !revealed)
             .filter_map(|m| Some((m, m.text.as_deref()?)))
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
@@ -522,6 +525,9 @@ impl<M: Measure> Renderer<M> {
             }
             if grapheme.is_empty() {
                 break;
+            }
+            if concealed.iter().any(|m| m.range.contains(&byte)) {
+                continue;
             }
             let (text, w) = if grapheme == "\t" {
                 let w = self.tab_width - x % self.tab_width;
@@ -605,12 +611,13 @@ impl<M: Measure> Renderer<M> {
         }
 
         // Is the cursor within `height` rows of the current scroll?
+        let hidden = hidden_lines(editor, view);
         let mut seen = 0;
         for l in current.line..=cursor.line {
             let rows = if l == cursor.line {
                 cursor.row + 1
             } else {
-                self.layout(editor, view, l, width).len()
+                self.line_rows(editor, view, l, width, &hidden)
             };
             let skip = if l == current.line { current.row } else { 0 };
             seen += rows.saturating_sub(skip);
@@ -622,27 +629,105 @@ impl<M: Measure> Renderer<M> {
             return current;
         }
 
-        // Scroll so the cursor's row is the last one on screen.
-        let mut top = cursor;
-        let mut above = height - 1;
-        while above > 0 {
-            if top.row >= above {
-                top.row -= above;
-                break;
+        // Scroll so the cursor's row is the last one on screen: take whole
+        // lines above it while they fit, then as many rows of the next one
+        // as are left, after its virtual lines.
+        if cursor.row >= height - 1 {
+            return Scroll {
+                line: cursor.line,
+                row: cursor.row - (height - 1),
+            };
+        }
+        let mut top = Scroll {
+            line: cursor.line,
+            row: 0,
+        };
+        let mut above = height - 1 - cursor.row;
+        let mut l = cursor.line;
+        while above > 0 && l > 0 {
+            l -= 1;
+            if is_hidden(&hidden, l) {
+                continue;
             }
-            above -= top.row + 1;
-            if top.line == 0 {
-                top.row = 0;
-                break;
+            let layout = self.layout(editor, view, l, width).len();
+            let total = layout + virtual_lines(editor, view, l).count();
+            if total <= above {
+                above -= total;
+                top = Scroll { line: l, row: 0 };
+                continue;
             }
-            top.line -= 1;
-            top.row = self.layout(editor, view, top.line, width).len() - 1;
+            let room = above.saturating_sub(total - layout);
+            if room > 0 {
+                top = Scroll {
+                    line: l,
+                    row: layout - room,
+                };
+            }
+            break;
         }
         top
     }
 
+    /// How many screen rows `line` takes: none when a fold hides it, or its
+    /// wrapped rows and the virtual lines under it.
+    fn line_rows(
+        &self,
+        editor: &Editor,
+        view: &View,
+        line: usize,
+        width: usize,
+        hidden: &[Range<usize>],
+    ) -> usize {
+        if is_hidden(hidden, line) {
+            return 0;
+        }
+        self.layout(editor, view, line, width).len() + virtual_lines(editor, view, line).count()
+    }
+
     fn text_width(&self, text: &str) -> usize {
         text.graphemes(true).map(|g| self.measure.width(g)).sum()
+    }
+
+    /// Adds virtual lines to `rows`, each cut to `room` cells after a blank
+    /// gutter. Returns false if `rows` filled up to `limit` first.
+    fn push_virtual_lines<'a>(
+        &self,
+        rows: &mut Vec<Row>,
+        limit: usize,
+        lines: impl Iterator<Item = (&'a Mark, &'a str)>,
+        gutter: Option<&Gutter>,
+        room: usize,
+    ) -> bool {
+        for (mark, text) in lines {
+            if rows.len() == limit {
+                return false;
+            }
+            let mut row = Row::default();
+            if let Some(gutter) = gutter {
+                gutter.push(&mut row, None);
+            }
+            row.push(
+                &self.keep_start(text, room),
+                smallvec![Tag::from(mark.style.clone())],
+            );
+            rows.push(row);
+        }
+        true
+    }
+
+    /// As much of `text` as fits in `room` cells.
+    fn keep_start(&self, text: &str, room: usize) -> String {
+        let mut kept = String::new();
+        let mut used = 0;
+        for g in text.graphemes(true) {
+            let w = self.measure.width(g);
+            if used + w > room {
+                break;
+            }
+            used += w;
+            kept.push_str(g);
+        }
+        kept
     }
 
     /// `text` if it fits in `room` cells, or as much of its end as fits after
@@ -778,7 +863,28 @@ struct Gutter<'a> {
     severity: Option<u8>,
 }
 
-impl Gutter<'_> {
+impl<'a> Gutter<'a> {
+    /// The gutter for the line spanning `lines`: the first mark with a sign
+    /// on it, and its worst diagnostic.
+    fn for_line(
+        width: usize,
+        signs: bool,
+        styled: &[&'a Mark],
+        diagnostics: &[(Range<usize>, u8)],
+        lines: &Range<usize>,
+    ) -> Self {
+        let touches = |r: &Range<usize>| r.start < lines.end && r.end >= lines.start;
+        Gutter {
+            width,
+            signs,
+            sign: styled
+                .iter()
+                .find(|m| m.sign.is_some() && touches(&m.range))
+                .copied(),
+            severity: worst(diagnostics, touches),
+        }
+    }
+
     /// Adds the gutter to one of the line's rows: the sign and number on its
     /// first row (`number` is set), blanks on the rows it wraps onto.
     fn push(&self, row: &mut Row, number: Option<usize>) {
@@ -859,9 +965,19 @@ fn selection_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
 }
 
 /// The bytes the rows from `scroll` can show: whole lines, at most one per
-/// row.
-fn visible_bytes(text: &Rope, scroll: Scroll, rows: usize) -> Range<usize> {
-    let end_line = (scroll.line + rows + 1).min(text.len_lines());
+/// row, and more for the lines folds hide, which take no rows.
+fn visible_bytes(
+    text: &Rope,
+    scroll: Scroll,
+    rows: usize,
+    hidden: &[Range<usize>],
+) -> Range<usize> {
+    let folded: usize = hidden
+        .iter()
+        .filter(|h| h.end > scroll.line)
+        .map(ExactSizeIterator::len)
+        .sum();
+    let end_line = (scroll.line + rows + folded + 1).min(text.len_lines());
     text.line_to_byte(scroll.line)..text.line_to_byte(end_line)
 }
 
@@ -1026,4 +1142,72 @@ fn shown_bytes(text: &Rope, first: Option<usize>, last: Option<usize>) -> Range<
     last.map_or(first..first, |last| {
         first..text.char_to_byte(text.byte_to_char(last) + 1)
     })
+}
+
+/// The lines folds hide in `view`: each fold's lines after its first, unless
+/// a cursor is in them.
+pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
+    let buffer = editor.buffer(view.buffer);
+    let text = buffer.text();
+    let cursors: Vec<usize> = cursor_lines(text, view).collect();
+    buffer
+        .all_marks()
+        .filter(|m| m.fold)
+        .filter_map(|m| {
+            let first = text.byte_to_line(m.range.start.min(text.len_bytes()));
+            let hidden = first + 1..last_line(text, &m.range) + 1;
+            (!hidden.is_empty() && !cursors.iter().any(|c| hidden.contains(c))).then_some(hidden)
+        })
+        .collect()
+}
+
+/// The virtual lines shown under `line`, with the mark each comes from.
+fn virtual_lines<'a>(
+    editor: &'a Editor,
+    view: &View,
+    line: usize,
+) -> impl Iterator<Item = (&'a Mark, &'a str)> {
+    let buffer = editor.buffer(view.buffer);
+    let text = buffer.text();
+    buffer
+        .all_marks()
+        .filter(move |m| !m.lines.is_empty() && last_line(text, &m.range) == line)
+        .flat_map(|m| m.lines.iter().map(move |l| (m, &**l)))
+}
+
+/// Whether a cursor is on `line`, which shows concealed text, and otherwise
+/// the marks concealing parts of it (`bytes`).
+fn concealed<'a>(
+    buffer: &'a crate::Buffer,
+    view: &View,
+    line: usize,
+    bytes: Range<usize>,
+) -> (bool, Vec<&'a Mark>) {
+    if cursor_lines(buffer.text(), view).any(|l| l == line) {
+        return (true, Vec::new());
+    }
+    let marks = buffer
+        .all_marks()
+        .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
+        .collect();
+    (false, marks)
+}
+
+/// The lines `view`'s cursors are on.
+fn cursor_lines<'a>(text: &'a Rope, view: &'a View) -> impl Iterator<Item = usize> + 'a {
+    let len = text.len_bytes();
+    view.selection
+        .ranges()
+        .iter()
+        .map(move |r| text.byte_to_line(r.head.min(len)))
+}
+
+/// The line `range` ends on, not counting a line it ends at the start of.
+fn last_line(text: &Rope, range: &Range<usize>) -> usize {
+    let last = range.end.saturating_sub(1).max(range.start);
+    text.byte_to_line(last.min(text.len_bytes()))
+}
+
+fn is_hidden(hidden: &[Range<usize>], line: usize) -> bool {
+    hidden.iter().any(|h| h.contains(&line))
 }
