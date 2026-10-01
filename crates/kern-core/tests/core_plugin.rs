@@ -84,3 +84,8 @@ fn describe_plugin_tests_pass() {
         &plugin("describe"),
     );
 }
+
+#[test]
+fn edit_mode_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("edit-mode")], &plugin("edit-mode"));
+}
