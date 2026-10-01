@@ -30,7 +30,7 @@ tree-sitter-toml-ng.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 url.workspace = true
-alacritty_terminal = "0.26"
+alacritty_terminal = { path = "../../vendor/alacritty_terminal" }
 portable-pty = "0.9"
 
 [dev-dependencies]

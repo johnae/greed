@@ -1,0 +1,22 @@
+# alacritty_terminal 0.26.0, vendored for Kern; see src/lib.rs for what
+# changed.
+[package]
+name = "alacritty_terminal"
+version = "0.26.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "Apache-2.0"
+description = "Library for writing terminal emulators"
+publish = false
+
+[dependencies]
+base64 = "0.22.0"
+bitflags = "2.4.1"
+log = "0.4"
+regex-automata = "0.4.3"
+unicode-width = "0.2.0"
+vte = { version = "0.15.0", default-features = false, features = ["std", "ansi"] }
+
+# Off: Kern sends frames, not terminal state, so nothing needs it.
+[features]
+serde = []
