@@ -5,6 +5,8 @@ local kern = require("@kern")
 
 export type Options = {
 	title: string,
+	--- What it starts with, the cursor at its end.
+	text: string?,
 	--- Called with the text as it's typed.
 	on_change: ((text: string) -> ())?,
 	on_submit: (text: string) -> (),
@@ -81,11 +83,13 @@ function M.open(options: Options)
 	if open then
 		kern.run("prompt-cancel")
 	end
-	local buffer = kern.create_buffer("prompt", "")
+	local text = options.text or ""
+	local buffer = kern.create_buffer("prompt", text)
 	local view =
 		kern.float(buffer, { title = options.title, width = "100%", height = 3, anchor = "bottom" })
 	open = { view = view, buffer = buffer, options = options, mode = kern.mode.get() }
 	kern.mode.set("insert")
+	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })
 end
 
 return M

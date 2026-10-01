@@ -76,6 +76,8 @@ pub(crate) struct State {
     /// The waiting command each pending request wakes, by server and
     /// request id.
     pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
+    /// What answers each kind of request from servers, and its plugin.
+    pub lsp_handlers: HashMap<String, (PluginId, Function)>,
     /// The plugin that set each theme entry, so it goes with the plugin.
     pub theme_owners: HashMap<Arc<str>, PluginId>,
     /// Work running on other threads.
@@ -193,6 +195,7 @@ impl Host {
             recording: None,
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
+            lsp_handlers: HashMap::new(),
             theme_owners: HashMap::new(),
             jobs: jobs::Jobs::default(),
             requests: HashMap::new(),
@@ -654,6 +657,7 @@ fn unregister(lua: &Lua, name: &str) {
     let state = &mut *state;
     state.registry.remove_owned_by(name);
     state.terminals.remove_owned_by(name);
+    state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
     state.editor.keymap_mut().remove_owned_by(name);
     state.theme_owners.retain(|entry, owner| {
         let owned = &**owner == name;

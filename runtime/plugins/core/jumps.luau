@@ -23,6 +23,8 @@ for _, name in
 		"pick-file",
 		"pick-buffer",
 		"goto-definition",
+		"goto-references",
+		"pick-problem",
 		"next-diagnostic",
 		"prev-diagnostic",
 		"pick-diagnostic",

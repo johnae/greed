@@ -13,6 +13,7 @@ use mlua::{Function, Lua, LuaSerdeExt, Table, UserDataRef, Value};
 use super::handles::BufferRef;
 use super::{api, state, state_mut, tasks};
 use crate::lsp::{self, Event, Handled, ServerConfig};
+use crate::registry::PluginId;
 use crate::{Buffer, BufferId, Editor};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -46,8 +47,41 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
             tasks::wake(lua, token, (result, error))
         }
         Handled::Diagnostics(buffer) => diagnostics_changed(lua, buffer),
+        Handled::Request {
+            server,
+            id,
+            method,
+            params,
+        } => answer(lua, server, &id, &method, &params),
         Handled::Nothing => Ok(()),
     }
+}
+
+/// Answers a request from a server with the handler a plugin set for it,
+/// or with null when there's none.
+fn answer(
+    lua: &Lua,
+    server: lsp::ServerId,
+    id: &serde_json::Value,
+    method: &str,
+    params: &serde_json::Value,
+) -> LuaResult<()> {
+    let handler = state(lua)
+        .lsp_handlers
+        .get(method)
+        .map(|(_, handler)| handler.clone());
+    let result = match handler {
+        Some(handler) => match handler.call::<Value>(to_lua(lua, params)?) {
+            Ok(value) => lua.from_value(value)?,
+            Err(err) => {
+                state_mut(lua).editor.echo(format!("{method}: {err}"));
+                serde_json::Value::Null
+            }
+        },
+        None => serde_json::Value::Null,
+    };
+    state_mut(lua).lsp.respond(server, id, &result);
+    Ok(())
 }
 
 fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {
@@ -63,9 +97,60 @@ fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {
     api::emit(lua, "lsp.diagnostics", &payload)
 }
 
-pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let lsp = lua.create_table()?;
+    add_server_side(lua, &lsp, owner)?;
+    add_documents(lua, &lsp)?;
+    Ok(lsp)
+}
 
+/// What servers ask, can do and found: `on_request`, `capabilities` and
+/// `problems`.
+fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    lsp.set(
+        "on_request",
+        lua.create_function(move |lua, (method, handler): (String, Function)| {
+            state_mut(lua)
+                .lsp_handlers
+                .insert(method, (o.clone(), handler));
+            Ok(())
+        })?,
+    )?;
+
+    lsp.set(
+        "capabilities",
+        lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
+            let state = state(lua);
+            let b = buffer_ref(&state.editor, &buffer)?;
+            match state.lsp.capabilities(b) {
+                Ok(capabilities) => to_lua(lua, capabilities),
+                Err(_) => Ok(Value::Nil),
+            }
+        })?,
+    )?;
+
+    lsp.set(
+        "problems",
+        lua.create_function(|lua, ()| {
+            let list = lua.create_table()?;
+            for p in state(lua).lsp.problems() {
+                let entry = lua.create_table()?;
+                entry.set("uri", p.uri.as_str())?;
+                entry.set("range", to_lua(lua, &p.range)?)?;
+                entry.set("severity", p.severity)?;
+                entry.set("message", p.message.as_str())?;
+                entry.set("source", p.source.as_deref())?;
+                list.push(entry)?;
+            }
+            Ok(list)
+        })?,
+    )
+}
+
+/// Servers and the documents they're about: setting servers up, requests,
+/// positions and diagnostics.
+fn add_documents(lua: &Lua, lsp: &Table) -> LuaResult<()> {
     lsp.set(
         "server",
         lua.create_function(|lua, spec: Table| {
@@ -171,8 +256,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             }
             Ok(list)
         })?,
-    )?;
-    Ok(lsp)
+    )
 }
 
 fn buffer_ref<'a>(editor: &'a Editor, buffer: &BufferRef) -> LuaResult<&'a Buffer> {

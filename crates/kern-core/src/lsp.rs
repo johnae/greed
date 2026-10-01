@@ -93,7 +93,27 @@ pub enum Handled {
     },
     /// New diagnostics arrived for this buffer.
     Diagnostics(BufferId),
+    /// The server asked something the editor doesn't answer itself; answer
+    /// with [`Lsp::respond`].
+    Request {
+        server: ServerId,
+        id: Value,
+        method: String,
+        params: Value,
+    },
     Nothing,
+}
+
+/// A problem a server reported in any file, open or not, as the server sent
+/// it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Problem {
+    pub uri: String,
+    /// The LSP range: `{ start, end }` positions.
+    pub range: Value,
+    pub severity: u8,
+    pub message: String,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,6 +165,8 @@ struct Server {
     ready: bool,
     alive: bool,
     encoding: Encoding,
+    /// What the server said it can do, in its answer to `initialize`.
+    capabilities: Value,
     /// Messages to send once the server has answered `initialize`.
     queued: Vec<Value>,
     /// The version of each open document the server has.
@@ -194,6 +216,8 @@ pub struct Lsp {
     /// Languages whose server couldn't be started; not tried again.
     failed: HashSet<String>,
     diagnostics: HashMap<BufferId, Vec<Diagnostic>>,
+    /// Every file's latest problems, by URI, including files not open.
+    problems: HashMap<String, Vec<Problem>>,
     events: Receiver<Event>,
     sender: Sender<Event>,
 }
@@ -207,6 +231,7 @@ impl Default for Lsp {
             by_language: HashMap::new(),
             failed: HashSet::new(),
             diagnostics: HashMap::new(),
+            problems: HashMap::new(),
             events,
             sender,
         }
@@ -350,6 +375,7 @@ impl Lsp {
             ready: false,
             alive: true,
             encoding: Encoding::Utf16,
+            capabilities: Value::Null,
             queued: Vec::new(),
             documents: HashMap::new(),
         };
@@ -359,14 +385,7 @@ impl Lsp {
                 "processId": std::process::id(),
                 "rootUri": file_uri(root),
                 "clientInfo": { "name": "kern" },
-                "capabilities": {
-                    "general": { "positionEncodings": ["utf-8", "utf-16"] },
-                    "textDocument": {
-                        "hover": { "contentFormat": ["plaintext", "markdown"] },
-                        "publishDiagnostics": {},
-                        "synchronization": { "didSave": false },
-                    },
-                },
+                "capabilities": client_capabilities(),
             }),
         )?;
         self.servers.push(server);
@@ -418,19 +437,22 @@ impl Lsp {
                 id,
                 method,
                 params,
-            } => {
-                // Answer what we must; nothing here needs a real answer yet.
-                let result = match method.as_str() {
-                    "workspace/configuration" => {
-                        let count = params["items"].as_array().map_or(0, Vec::len);
-                        Value::Array(vec![Value::Null; count])
-                    }
-                    _ => Value::Null,
-                };
-                let _ = self.servers[server]
-                    .send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }));
+            } if method == "workspace/configuration" => {
+                let count = params["items"].as_array().map_or(0, Vec::len);
+                self.respond(server, &id, &Value::Array(vec![Value::Null; count]));
                 Handled::Nothing
             }
+            Event::Request {
+                server,
+                id,
+                method,
+                params,
+            } => Handled::Request {
+                server,
+                id,
+                method,
+                params,
+            },
             Event::Exited { server } => {
                 let server = &mut self.servers[server];
                 server.alive = false;
@@ -440,13 +462,23 @@ impl Lsp {
         }
     }
 
+    /// Answers request `id` from `server`.
+    pub fn respond(&mut self, server: ServerId, id: &Value, result: &Value) {
+        let _ = self.servers[server].send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }));
+    }
+
+    /// What `buffer`'s server said it can do, e.g. `renameProvider`.
+    pub fn capabilities(&self, buffer: &Buffer) -> Result<&Value, LspError> {
+        Ok(&self.servers[self.server_of(buffer)?].capabilities)
+    }
+
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {
         let server = &mut self.servers[server];
-        if result
-            .and_then(|r| r["capabilities"]["positionEncoding"].as_str())
-            .is_some_and(|e| e == "utf-8")
-        {
-            server.encoding = Encoding::Utf8;
+        if let Some(capabilities) = result.map(|r| &r["capabilities"]) {
+            if capabilities["positionEncoding"].as_str() == Some("utf-8") {
+                server.encoding = Encoding::Utf8;
+            }
+            server.capabilities = capabilities.clone();
         }
         server.ready = true;
         let _ = server.notify("initialized", &json!({}));
@@ -457,28 +489,43 @@ impl Lsp {
 
     fn store_diagnostics(&mut self, server: ServerId, params: &Value, editor: &Editor) -> Handled {
         let encoding = self.servers[server].encoding;
-        let Some(buffer) = params["uri"].as_str().and_then(|uri| {
-            editor
-                .buffers()
-                .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
-        }) else {
+        let Some(uri) = params["uri"].as_str() else {
+            return Handled::Nothing;
+        };
+        let reported = params["diagnostics"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        let problems: Vec<Problem> = reported
+            .iter()
+            .map(|d| Problem {
+                uri: uri.to_owned(),
+                range: d["range"].clone(),
+                severity: severity(d),
+                message: d["message"].as_str().unwrap_or_default().to_owned(),
+                source: d["source"].as_str().map(str::to_owned),
+            })
+            .collect();
+        if problems.is_empty() {
+            self.problems.remove(uri);
+        } else {
+            self.problems.insert(uri.to_owned(), problems);
+        }
+        let Some(buffer) = editor
+            .buffers()
+            .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
+        else {
             return Handled::Nothing;
         };
         let text = buffer.text();
-        let diagnostics = params["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
+        let diagnostics = reported
+            .iter()
             .filter_map(|d| {
                 let from = offset(text, &d["range"]["start"], encoding)?;
                 let to = offset(text, &d["range"]["end"], encoding)?;
                 Some(Diagnostic {
                     from,
                     to: to.max(from),
-                    severity: d["severity"]
-                        .as_u64()
-                        .and_then(|s| u8::try_from(s).ok())
-                        .unwrap_or(1),
+                    severity: severity(d),
                     message: d["message"].as_str().unwrap_or_default().to_owned(),
                     source: d["source"].as_str().map(str::to_owned),
                 })
@@ -493,6 +540,11 @@ impl Lsp {
         self.diagnostics.iter().map(|(id, d)| (*id, d.as_slice()))
     }
 
+    /// Every file's latest problems, open or not.
+    pub fn problems(&self) -> impl Iterator<Item = &Problem> {
+        self.problems.values().flatten()
+    }
+
     pub fn diagnostics(&self, buffer: BufferId) -> &[Diagnostic] {
         self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
     }
@@ -501,6 +553,52 @@ impl Lsp {
     pub fn encoding(&self, buffer: &Buffer) -> Result<Encoding, LspError> {
         Ok(self.servers[self.server_of(buffer)?].encoding)
     }
+}
+
+/// A diagnostic's severity, an error when the server doesn't say.
+fn severity(diagnostic: &Value) -> u8 {
+    diagnostic["severity"]
+        .as_u64()
+        .and_then(|s| u8::try_from(s).ok())
+        .unwrap_or(1)
+}
+
+/// What the editor tells servers it can do. Plugins build the features on
+/// top: rename, references, code actions and signature help in the lsp
+/// plugin, and edits from servers through `workspace/applyEdit` handlers.
+fn client_capabilities() -> Value {
+    json!({
+        "general": { "positionEncodings": ["utf-8", "utf-16"] },
+        "workspace": {
+            "applyEdit": true,
+            "workspaceEdit": { "documentChanges": true },
+            "configuration": true,
+        },
+        "textDocument": {
+            "hover": { "contentFormat": ["plaintext", "markdown"] },
+            "publishDiagnostics": {},
+            "synchronization": { "didSave": false },
+            "definition": {},
+            "references": {},
+            "rename": { "prepareSupport": true },
+            "codeAction": {
+                "codeActionLiteralSupport": { "codeActionKind": { "valueSet": [
+                    "", "quickfix", "refactor", "refactor.extract", "refactor.inline",
+                    "refactor.rewrite", "source", "source.organizeImports",
+                ] } },
+                "isPreferredSupport": true,
+                "dataSupport": true,
+                "resolveSupport": { "properties": ["edit"] },
+            },
+            "signatureHelp": {
+                "signatureInformation": {
+                    "documentationFormat": ["plaintext", "markdown"],
+                    "parameterInformation": { "labelOffsetSupport": true },
+                    "activeParameterSupport": true,
+                },
+            },
+        },
+    })
 }
 
 /// `file://` URI for a path.

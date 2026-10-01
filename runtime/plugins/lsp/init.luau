@@ -1,10 +1,15 @@
--- Language servers: hover, go to definition and diagnostics. Lines with
--- problems get a sign, and the worst problem's message shows after the line
--- (turn that off with `:set diagnostic-messages false`).
+-- Language servers: hover, definitions, references, rename, code actions
+-- and diagnostics. Lines with problems get a sign, and the worst problem's
+-- message shows after the line (turn that off with
+-- `:set diagnostic-messages false`).
 --
 --   space k   show what's under the cursor, with any problems there
 --   g d       go to the definition
+--   g r       pick a place it's used
+--   space r   rename it everywhere
+--   space a   pick a fix or refactor
 --   space d   pick a problem in this file
+--   space D   pick a problem in any file
 --   ] d / [ d next / previous problem
 --
 -- Servers start the first time a file of their language is open, if one is
@@ -12,43 +17,14 @@
 
 local kern = require("@kern")
 local picker = require("@picker")
+local common = require("@self/common")
 local marks = require("@self/marks")
 require("@self/completion")
+require("@self/edits")
+require("@self/places")
+require("@self/actions")
 
-local function head(view: kern.View): number
-	local selection = view:selection()
-	return selection.ranges[selection.primary].head
-end
-
-local function move_to(view: kern.View, pos: number)
-	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
-end
-
--- Parameters for requests about the position at `pos`.
-local function at(buffer: kern.Buffer, pos: number)
-	return {
-		textDocument = { uri = kern.lsp.uri(buffer) },
-		position = kern.lsp.position(buffer, pos),
-	}
-end
-
--- Asks the buffer's server about the position at `pos`. Returns whether it got
--- an answer, then the result, or nil and the error. Without a server it
--- says so.
-local function ask(buffer: kern.Buffer, method: string, pos: number): (boolean, any, any)
-	if buffer:path() == nil then
-		kern.echo("no language server for this buffer")
-		return false
-	end
-	local ok, result, err = pcall(function()
-		return kern.lsp.request(buffer, method, at(buffer, pos))
-	end)
-	if not ok then
-		kern.echo(tostring(result))
-		return false
-	end
-	return true, result, err
-end
+local head, move_to, ask, describe = common.head, common.move_to, common.ask, common.describe
 
 -- Hover contents come as a string, a { value } table, or a list of those.
 local function hover_text(contents: any): string
@@ -76,12 +52,6 @@ local function without_fences(text: string): string
 		end
 	end
 	return table.concat(kept, "\n")
-end
-
-local SEVERITY = { "error", "warning", "info", "hint" }
-
-local function describe(d: kern.Diagnostic): string
-	return `{SEVERITY[d.severity] or "problem"}: {d.message}`
 end
 
 local shown: kern.View? = nil
@@ -153,9 +123,7 @@ kern.command({
 			kern.echo(`can't open {uri}`)
 			return
 		end
-		kern.open(path)
-		local view = kern.view()
-		move_to(view, kern.lsp.offset(view:buffer(), range.start))
+		common.open_at(path, range.start)
 	end,
 })
 

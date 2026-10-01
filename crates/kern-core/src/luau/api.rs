@@ -306,7 +306,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("option", option_module(lua, owner)?)?;
     kern.set("history", history_module(lua)?)?;
     kern.set("clipboard", clipboard_module(lua)?)?;
-    kern.set("lsp", super::lsp::module(lua)?)?;
+    kern.set("lsp", super::lsp::module(lua, owner)?)?;
     kern.set("fs", super::fs::module(lua)?)?;
     kern.set("control", super::requests::module(lua)?)?;
     kern.set("json", super::json::module(lua)?)?;

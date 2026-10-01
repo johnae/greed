@@ -902,8 +902,8 @@ end)
 -- Keys --------------------------------------------------------------------
 
 -- Keys other plugins put in normal mode that work the same here: the
--- space-leader keys, the command line, search, and going to definitions
--- and problems. Plugins loaded later get them too.
+-- space-leader keys, the command line, search, and going to definitions,
+-- references and problems. Plugins loaded later get them too.
 kern.keymap.inherit("vim", "normal", {
 	"space",
 	":",
@@ -912,6 +912,7 @@ kern.keymap.inherit("vim", "normal", {
 	"n",
 	"N",
 	"g d",
+	"g r",
 	"]",
 	"[",
 	"ctrl-f",

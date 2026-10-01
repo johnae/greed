@@ -370,3 +370,101 @@ fn without_a_formatter_the_language_server_formats() {
     pump(&h, |h| main_text(h).starts_with("// formatted\n"));
     assert_eq!(main_text(&h), "// formatted\nlet x = bad;");
 }
+
+/// The items of the open picker, if there is one.
+fn picker_items(h: &Host) -> Option<Vec<String>> {
+    h.with_editor(|ed| {
+        ed.floats().iter().find_map(|f| {
+            let buffer = ed.buffer(ed.view(f.view).buffer);
+            (buffer.kind() == "picker").then(|| {
+                buffer
+                    .text()
+                    .to_string()
+                    .lines()
+                    .skip(1)
+                    .map(|l| l.trim().to_owned())
+                    .collect()
+            })
+        })
+    })
+}
+
+#[test]
+fn rename_starts_from_the_name_and_changes_it_where_the_server_says() {
+    let h = with_plugin();
+    move_cursor(&h, 9);
+    press_and_wait(&h, "space r", |h| {
+        h.with_editor(|ed| {
+            ed.floats()
+                .iter()
+                .any(|f| ed.buffer(ed.view(f.view).buffer).kind() == "prompt")
+        })
+    });
+    let prompt = h.with_editor(|ed| {
+        let float = ed.floats()[0].view;
+        ed.buffer(ed.view(float).buffer).text().to_string()
+    });
+    assert_eq!(prompt, "bad", "it starts from the server's name");
+    press_and_wait(&h, "backspace backspace backspace g o o d enter", |h| {
+        main_text(h) == "let x = good;"
+    });
+}
+
+#[test]
+fn references_are_listed_and_taken_to() {
+    let h = with_plugin();
+    move_cursor(&h, 9);
+    press_and_wait(&h, "g r", |h| picker_items(h).is_some());
+    let items = picker_items(&h).unwrap();
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert!(
+        items.iter().all(|i| i.ends_with("main.rs:1: let x = bad;")),
+        "{items:?}"
+    );
+    h.press_keys("enter").unwrap();
+    assert_eq!(cursor(&h), 4, "the first, in order");
+}
+
+#[test]
+fn code_actions_apply_edits_run_commands_and_resolve() {
+    let h = with_plugin();
+    move_cursor(&h, 9);
+    press_and_wait(&h, "space a", |h| picker_items(h).is_some());
+    let items = picker_items(&h).unwrap();
+    assert_eq!(
+        items,
+        ["Make it good (1 known)", "Shout", "Add a comment"],
+        "the preferred one first; the problem here goes along"
+    );
+    h.press_keys("enter").unwrap();
+    assert_eq!(main_text(&h), "let x = good;");
+
+    // A command: the server sends the edit back to apply.
+    press_and_wait(&h, "space a", |h| picker_items(h).is_some());
+    press_and_wait(&h, "s h o u t enter", |h| main_text(h) == "LET x = good;");
+
+    // An action without its edit yet: it's asked for.
+    press_and_wait(&h, "space a", |h| picker_items(h).is_some());
+    press_and_wait(&h, "c o m m e n t enter", |h| {
+        main_text(h) == "// resolved\nLET x = good;"
+    });
+}
+
+#[test]
+fn the_problems_list_has_files_that_are_not_open() {
+    let h = with_plugin();
+    pump(&h, |h| {
+        h.eval("return #require('@kern').lsp.problems()").unwrap() == "2"
+    });
+    h.press_keys("space D").unwrap();
+    let items = picker_items(&h).unwrap();
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert!(
+        items[0].ends_with("main.rs:1: error: bad word"),
+        "errors first: {items:?}"
+    );
+    assert!(
+        items[1].ends_with("other.rs:3: warning: unused thing"),
+        "{items:?}"
+    );
+}

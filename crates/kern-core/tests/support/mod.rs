@@ -29,10 +29,17 @@ fn write(writer: &mut impl Write, message: &Value) {
     writer.flush().unwrap();
 }
 
+/// Where "bad" is in "let x = bad;".
+fn word_range() -> Value {
+    json!({ "start": { "line": 0, "character": 8 }, "end": { "line": 0, "character": 11 } })
+}
+
 /// A tiny language server: reports every "bad" as an error, answers hover
 /// with the position it was asked about, and logs every method it gets.
 fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel::Sender<String>) {
     let mut input = BufReader::new(input);
+    // The document opened last.
+    let mut opened = Value::Null;
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -43,7 +50,12 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
         match method.as_str() {
             "initialize" => write(
                 &mut output,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": { "positionEncoding": "utf-8" } } }),
+                &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {
+                    "positionEncoding": "utf-8",
+                    "renameProvider": { "prepareProvider": true },
+                    "codeActionProvider": { "resolveProvider": true },
+                    "referencesProvider": true,
+                } } }),
             ),
             "initialized" => write(
                 &mut output,
@@ -51,25 +63,25 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
             ),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 let doc = &message["params"]["textDocument"];
-                let text = doc["text"]
-                    .as_str()
-                    .or_else(|| message["params"]["contentChanges"][0]["text"].as_str())
-                    .unwrap_or_default();
-                let diagnostics: Vec<Value> = text
-                    .lines()
-                    .enumerate()
-                    .flat_map(|(line, content)| {
-                        content.match_indices("bad").map(move |(col, _)| {
-                            json!({
-                                "range": { "start": { "line": line, "character": col }, "end": { "line": line, "character": col + 3 } },
-                                "severity": 1, "message": "bad word", "source": "fake",
-                            })
-                        })
-                    })
-                    .collect();
+                opened = doc["uri"].clone();
+                publish_diagnostics(&mut output, &message["params"]);
+            }
+            // Shouting asks the editor to apply an edit, as servers do for
+            // commands, then answers.
+            "workspace/executeCommand" => {
+                let uri = message["params"]["arguments"][0].clone();
                 write(
                     &mut output,
-                    &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": doc["uri"], "diagnostics": diagnostics } }),
+                    &json!({ "jsonrpc": "2.0", "id": "apply", "method": "workspace/applyEdit", "params": { "edit": {
+                        "documentChanges": [{
+                            "textDocument": { "uri": uri, "version": null },
+                            "edits": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 3 } }, "newText": "LET" }],
+                        }],
+                    } } }),
+                );
+                write(
+                    &mut output,
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
                 );
             }
             "textDocument/hover" => {
@@ -98,23 +110,8 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "result": {
                     "uri": message["params"]["textDocument"]["uri"],
-                    "range": { "start": { "line": 0, "character": 8 }, "end": { "line": 0, "character": 11 } },
+                    "range": word_range(),
                 } }),
-            ),
-            "textDocument/completion" => write(
-                &mut output,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": { "isIncomplete": false, "items": [
-                    { "label": "bad_thing", "kind": 3, "detail": "fn()" },
-                    { "label": "badge", "kind": 6 },
-                    { "label": "other", "kind": 6 },
-                    { "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 },
-                ] } }),
-            ),
-            "textDocument/formatting" => write(
-                &mut output,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": [
-                    { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// formatted\n" },
-                ] }),
             ),
             "fail" => write(
                 &mut output,
@@ -125,9 +122,100 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
             ),
             "exit" => return,
-            _ => {}
+            other => {
+                if let Some(result) = answer(other, &message["params"], &opened) {
+                    write(
+                        &mut output,
+                        &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    );
+                }
+            }
         }
     }
+}
+
+/// Reports every "bad" in the document as an error, and a warning in a
+/// file next to it that isn't open.
+fn publish_diagnostics(output: &mut impl Write, params: &Value) {
+    let doc = &params["textDocument"];
+    let text = doc["text"]
+        .as_str()
+        .or_else(|| params["contentChanges"][0]["text"].as_str())
+        .unwrap_or_default();
+    let diagnostics: Vec<Value> = text
+        .lines()
+        .enumerate()
+        .flat_map(|(line, content)| {
+            content.match_indices("bad").map(move |(col, _)| {
+                json!({
+                    "range": { "start": { "line": line, "character": col }, "end": { "line": line, "character": col + 3 } },
+                    "severity": 1, "message": "bad word", "source": "fake",
+                })
+            })
+        })
+        .collect();
+    write(
+        output,
+        &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": doc["uri"], "diagnostics": diagnostics } }),
+    );
+    let other = doc["uri"]
+        .as_str()
+        .unwrap_or_default()
+        .replace("main.rs", "other.rs");
+    write(
+        output,
+        &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": other, "diagnostics": [{
+            "range": { "start": { "line": 2, "character": 0 }, "end": { "line": 2, "character": 5 } },
+            "severity": 2, "message": "unused thing",
+        }] } }),
+    );
+}
+
+/// Answers that are only a result: completion, formatting, and changing
+/// "bad" with rename, references and code actions.
+/// `opened` is the document opened last.
+fn answer(method: &str, params: &Value, opened: &Value) -> Option<Value> {
+    let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+    let answer = match method {
+        "textDocument/completion" => json!({ "isIncomplete": false, "items": [
+            { "label": "bad_thing", "kind": 3, "detail": "fn()" },
+            { "label": "badge", "kind": 6 },
+            { "label": "other", "kind": 6 },
+            { "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 },
+        ] }),
+        "textDocument/formatting" => json!([
+            { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// formatted\n" },
+        ]),
+        "textDocument/prepareRename" => json!({ "range": word_range(), "placeholder": "bad" }),
+        "textDocument/rename" => json!({ "changes": {
+            uri: [{ "range": word_range(), "newText": params["newName"] }],
+        } }),
+        "textDocument/references" => {
+            let x = json!({ "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 5 } });
+            json!([{ "uri": uri, "range": word_range() }, { "uri": uri, "range": x }])
+        }
+        "textDocument/codeAction" => {
+            let known = params["context"]["diagnostics"]
+                .as_array()
+                .map_or(0, Vec::len);
+            json!([
+                { "title": "Shout", "command": { "title": "Shout", "command": "shout", "arguments": [uri] } },
+                { "title": format!("Make it good ({known} known)"), "kind": "quickfix", "isPreferred": true,
+                  "edit": { "changes": { uri: [{ "range": word_range(), "newText": "good" }] } } },
+                { "title": "Add a comment", "data": 7 },
+            ])
+        }
+        "codeAction/resolve" => {
+            let mut action = params.clone();
+            action["edit"] = json!({ "documentChanges": [{
+                "textDocument": { "uri": opened, "version": null },
+                "edits": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// resolved\n" }],
+            }] });
+            action
+        }
+        _ => return None,
+    };
+    Some(answer)
 }
 
 /// Starts the fake server on a thread. Returns the pipe ends for the client

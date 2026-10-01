@@ -687,6 +687,23 @@ export type Lsp = {
 	offset: (buffer: Buffer, position: LspPosition) -> number,
 	--- The buffer's latest diagnostics.
 	diagnostics: (buffer: Buffer) -> { Diagnostic },
+	--- Every file's latest problems, including files that aren't open, with
+	--- ranges as the server sent them.
+	problems: () -> { LspProblem },
+	--- What the buffer's server said it can do (its `ServerCapabilities`),
+	--- or nil without a running server.
+	capabilities: (buffer: Buffer) -> any,
+	--- Answers requests of `method` from servers, e.g. "workspace/applyEdit",
+	--- with what `handler` returns. It can't wait for anything.
+	on_request: (method: string, handler: (params: any) -> any) -> (),
+}
+
+export type LspProblem = {
+	uri: string,
+	range: { start: LspPosition, ["end"]: LspPosition },
+	severity: number,
+	message: string,
+	source: string?,
 }
 
 export type DiagnosticsChanged = {

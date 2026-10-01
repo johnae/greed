@@ -209,8 +209,16 @@ and whether it was found.
 |---|---|
 | `space k` | What's under the cursor, with any problems there |
 | `g d` | Go to the definition |
+| `g r` | Pick a place it's used, with a preview |
+| `space r` | Rename it everywhere it's used |
+| `space a` | Pick a fix or refactor for the cursor or selection |
 | `space d` | Pick a problem in this file |
+| `space D` | Pick a problem in any file the server checked, open or not |
 | `] d` `[ d` | Next and previous problem |
+
+A rename or code action that changes other files opens them without showing
+them and leaves them unsaved, so you can look the change over (`space b`)
+and undo it before saving.
 
 Completions show as you type, in a menu at the cursor, once typing pauses
 after a letter or a `.`. The menu narrows as you keep typing.

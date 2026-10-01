@@ -126,6 +126,10 @@ Commands and event handlers can wait without freezing the editor:
 `kern.animate(ms, step)` calls `step(t)` once a frame, which is all the
 flash on copy is.
 
+Language servers ask things too: `kern.lsp.on_request(method, handler)`
+answers a server's request, e.g. `workspace/applyEdit`, with what the
+handler returns.
+
 ## Events and options
 
 `kern.on(event, handler)` runs a handler on `buffer.changed`,
