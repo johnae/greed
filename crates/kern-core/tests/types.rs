@@ -124,19 +124,15 @@ fn runtime_passes_strict_type_checking() {
     }
     let mut files = Vec::new();
     collect_luau(&runtime(), &mut files);
-    // luau-analyze 0.737 sometimes aborts with a heap error on cross-plugin
-    // requires. A crash isn't a type error, so run it again.
-    let run = || {
-        Command::new("luau-analyze")
-            .current_dir(runtime())
-            .args(&files)
-            .output()
-            .unwrap()
-    };
-    let output = (0..3)
-        .map(|_| run())
-        .find(|output| output.status.code().is_some())
-        .expect("luau-analyze crashed three times in a row");
+    // One thread: luau-analyze checks modules in parallel, and its worker
+    // threads race on a shared module name string in Luau's Frontend, which
+    // corrupts the heap now and then (still the case in 0.740).
+    let output = Command::new("luau-analyze")
+        .arg("-j1")
+        .current_dir(runtime())
+        .args(&files)
+        .output()
+        .unwrap();
     assert!(
         output.status.success(),
         "{}{}",
