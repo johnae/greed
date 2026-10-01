@@ -1,0 +1,93 @@
+//! Finding the runtime: the default plugins and the Luau types.
+
+use std::io;
+use std::path::{Path, PathBuf};
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/runtime.rs"));
+}
+
+/// Where the runtime is, in the first of these places that has one:
+/// `$KERN_RUNTIME`, a folder chosen at build time (`KERN_RUNTIME_DIR`, for
+/// packagers), `share/kern/runtime` beside the binary's folder, the source
+/// tree it was built from, and last the copy built into the binary,
+/// unpacked into the cache.
+pub fn dir() -> io::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("KERN_RUNTIME") {
+        return Ok(PathBuf::from(dir));
+    }
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.parent()?.join("share/kern/runtime")));
+    let candidates = option_env!("KERN_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(installed)
+        .chain([Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime")]);
+    for dir in candidates {
+        if dir.join("plugins/core").is_dir() {
+            return Ok(dir);
+        }
+    }
+    let cache = cache_dir()
+        .ok_or_else(|| io::Error::other("no cache folder to unpack the runtime into"))?;
+    unpack(&cache)
+}
+
+/// Kern's cache folder: `$XDG_CACHE_HOME/kern` or `~/.cache/kern`.
+fn cache_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+    Some(base.join("kern"))
+}
+
+/// Unpacks the built-in runtime into `cache` once per version of it, and
+/// returns its folder. It's written beside and renamed into place, so a
+/// second kern starting at the same time never sees half of it.
+fn unpack(cache: &Path) -> io::Result<PathBuf> {
+    let dir = cache.join(format!("runtime-{}", embedded::HASH));
+    if dir.is_dir() {
+        return Ok(dir);
+    }
+    let partial = cache.join(format!("runtime-{}.{}", embedded::HASH, std::process::id()));
+    let written = embedded::FILES.iter().try_for_each(|(path, bytes)| {
+        let path = partial.join(path);
+        std::fs::create_dir_all(path.parent().unwrap_or(&partial))?;
+        std::fs::write(path, bytes)
+    });
+    if let Err(err) = written.and_then(|()| std::fs::rename(&partial, &dir)) {
+        let _ = std::fs::remove_dir_all(&partial);
+        // Another kern may have got there first.
+        if !dir.is_dir() {
+            return Err(err);
+        }
+    }
+    Ok(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unpacks_the_built_in_runtime_once() {
+        let cache = std::env::temp_dir().join(format!("kern-runtime-test-{}", std::process::id()));
+        let dir = unpack(&cache).unwrap();
+        assert!(dir.join("plugins/core/plugin.toml").is_file());
+        assert!(dir.join("types/kern/init.luau").is_file());
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core/init.luau");
+        assert_eq!(
+            std::fs::read(dir.join("plugins/core/init.luau")).unwrap(),
+            std::fs::read(source).unwrap()
+        );
+
+        std::fs::write(dir.join("marker"), "").unwrap();
+        assert_eq!(unpack(&cache).unwrap(), dir);
+        assert!(dir.join("marker").exists(), "an unpacked runtime is reused");
+        let entries = std::fs::read_dir(&cache).unwrap().count();
+        assert_eq!(entries, 1, "nothing partial is left behind");
+        std::fs::remove_dir_all(cache).unwrap();
+    }
+}

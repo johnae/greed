@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod ctl;
+mod runtime;
 mod session;
 mod tui;
 
@@ -52,7 +53,9 @@ fn main() -> ExitCode {
         }
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
-        [cmd] if cmd == "test" => test(&core_plugin()),
+        [cmd] if cmd == "test" => runtime::dir()
+            .map_err(Into::into)
+            .and_then(|dir| test(&dir.join("plugins/core"))),
         [cmd, name] if cmd == "new" => new_plugin(name),
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
@@ -70,18 +73,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-/// Where the default plugins live: `$KERN_RUNTIME`, or the source tree.
-fn runtime_dir() -> PathBuf {
-    std::env::var_os("KERN_RUNTIME").map_or_else(
-        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime"),
-        PathBuf::from,
-    )
-}
-
-fn core_plugin() -> PathBuf {
-    runtime_dir().join("plugins/core")
 }
 
 /// Kern's config directory on this machine: `$KERN_CONFIG_DIR`, or `kern` in
@@ -114,7 +105,7 @@ fn config_file() -> Option<PathBuf> {
 /// the ones in the config `kern ssh` brought, then this machine's own, which
 /// replace brought ones of the same name.
 fn plugins() -> io::Result<Vec<PathBuf>> {
-    let mut dirs = plugin_dirs(&runtime_dir().join("plugins"))?;
+    let mut dirs = plugin_dirs(&runtime::dir()?.join("plugins"))?;
     dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
     let own = user_plugins(config_dir())?;
     let brought = user_plugins(brought_dir())?;
@@ -171,7 +162,7 @@ fn host(
         host.set_request_sender(requests);
     }
     host.load_dirs(&plugins().map_err(|err| HostError::Manifest {
-        path: runtime_dir().join("plugins"),
+        path: PathBuf::from("plugins"),
         message: err.to_string(),
     })?)?;
     // The brought config first, so this machine's own has the last word.
@@ -402,7 +393,7 @@ const LUAURC: &str = r#"{
 fn set_up_type_checking() -> io::Result<()> {
     let link = Path::new(".kern-types");
     if link.symlink_metadata().is_err() {
-        std::os::unix::fs::symlink(runtime_dir().canonicalize()?.join("types"), link)?;
+        std::os::unix::fs::symlink(runtime::dir()?.canonicalize()?.join("types"), link)?;
         println!("linked .kern-types to Kern's type definitions");
     }
     let config = Path::new(".luaurc");

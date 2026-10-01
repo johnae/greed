@@ -72,9 +72,12 @@ cargo build --release
 ./target/release/kern README.md
 ```
 
-It finds its default plugins next to the source; set `KERN_RUNTIME` to a
-copy of `runtime/` to run it from elsewhere. `luau-analyze` is optional and
-used for type checking plugins.
+To install it, `cargo install --path crates/kern`, or with Nix,
+`nix-build` here or `pkgs.callPackage ./nix/package.nix { }` in your own
+configuration. The default plugins are built into the binary, so it runs
+from anywhere. To use your own copy of them, point `KERN_RUNTIME` at a
+folder shaped like `runtime/`. `luau-analyze` is optional and used for type
+checking plugins.
 
 ## Documentation
 
