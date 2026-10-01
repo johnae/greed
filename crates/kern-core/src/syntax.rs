@@ -24,7 +24,6 @@ pub const MAX_BYTES: usize = 4 * 1024 * 1024;
 /// A grammar and the query that picks out what to highlight.
 pub struct Language {
     pub name: &'static str,
-    extensions: &'static [&'static str],
     grammar: tree_sitter::Language,
     highlights: Query,
     /// The query's capture names, e.g. "keyword" or "function.macro".
@@ -34,7 +33,6 @@ pub struct Language {
 impl Language {
     fn new(
         name: &'static str,
-        extensions: &'static [&'static str],
         grammar: tree_sitter_language::LanguageFn,
         highlights: &str,
     ) -> Self {
@@ -48,7 +46,6 @@ impl Language {
             .collect();
         Self {
             name,
-            extensions,
             grammar,
             highlights,
             captures,
@@ -56,36 +53,51 @@ impl Language {
     }
 }
 
+/// The language of each file extension Kern knows.
+const EXTENSIONS: &[(&str, &str)] = &[
+    ("rs", "rust"),
+    ("toml", "toml"),
+    ("json", "json"),
+    ("luau", "luau"),
+    ("lua", "luau"),
+    ("md", "markdown"),
+    ("markdown", "markdown"),
+];
+
+/// The language of the file at `path`, going by its extension.
+pub fn language_name(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?;
+    EXTENSIONS
+        .iter()
+        .find(|(e, _)| *e == extension)
+        .map(|(_, name)| *name)
+}
+
 /// The languages Kern knows out of the box.
 fn builtin() -> Vec<Arc<Language>> {
     [
         Language::new(
             "rust",
-            &["rs"],
             tree_sitter_rust::LANGUAGE,
             tree_sitter_rust::HIGHLIGHTS_QUERY,
         ),
         Language::new(
             "toml",
-            &["toml"],
             tree_sitter_toml_ng::LANGUAGE,
             tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
         ),
         Language::new(
             "json",
-            &["json"],
             tree_sitter_json::LANGUAGE,
             tree_sitter_json::HIGHLIGHTS_QUERY,
         ),
         Language::new(
             "luau",
-            &["luau", "lua"],
             tree_sitter_luau::LANGUAGE,
             tree_sitter_luau::HIGHLIGHTS_QUERY,
         ),
         Language::new(
             "markdown",
-            &["md", "markdown"],
             tree_sitter_md::LANGUAGE,
             tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
         ),
@@ -159,11 +171,8 @@ impl Syntax {
     }
 
     pub fn language_for(&self, path: &Path) -> Option<Arc<Language>> {
-        let extension = path.extension()?.to_str()?;
-        self.languages
-            .iter()
-            .find(|l| l.extensions.contains(&extension))
-            .cloned()
+        let name = language_name(path)?;
+        self.languages.iter().find(|l| l.name == name).cloned()
     }
 
     /// Sends buffers that changed since their last parse to the worker.

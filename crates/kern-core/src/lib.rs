@@ -4,6 +4,7 @@ mod buffer;
 mod editor;
 mod history;
 pub mod keymap;
+pub mod lsp;
 pub mod luau;
 pub mod registry;
 pub mod render;
