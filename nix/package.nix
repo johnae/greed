@@ -1,6 +1,7 @@
 # Kern as a Nix package: `pkgs.callPackage ./nix/package.nix { }`.
 {
   lib,
+  stdenv,
   rustPlatform,
 }:
 
@@ -15,10 +16,17 @@ rustPlatform.buildRustPackage {
       ../Cargo.lock
       ../crates
       ../runtime
+      ../vendor
     ];
   };
 
   cargoLock.lockFile = ../Cargo.lock;
+
+  # A static binary is linked without PIE: the static C++ library Luau
+  # links against isn't built position-independent.
+  env = lib.optionalAttrs stdenv.hostPlatform.isStatic {
+    RUSTFLAGS = "-C relocation-model=static";
+  };
   cargoBuildFlags = [ "--package" "kern" ];
 
   # The runtime is built into the binary too; installing it lets editors
