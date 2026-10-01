@@ -129,9 +129,23 @@ A number before a motion repeats it: `3 j`, `2 w`.
 | `C` `alt-C` | Add a selection on the line below or above |
 | `,` `alt-,` | Keep only the primary selection, or drop it |
 | `(` `)` | Make the previous or next selection primary |
+| `v` | Select mode: moves extend the selection, `n` `N` add the next match as another selection |
 
 With several selections, everything you type or delete happens at each one.
-`%`, then `s foo`, then `c bar` replaces every `foo` in the file.
+`%`, then `s foo`, then `c bar` replaces every `foo` in the file. `s` with
+nothing typed uses the last search, so `*` on a word, then `% s enter`,
+selects every place it appears.
+
+**Text objects and surround**
+
+| Keys | |
+|---|---|
+| `m i w` `m a w` | The word, or the word and the space after it (`W` for WORDs) |
+| `m i (` `m a (` | Inside or around the brackets; also `[` `{` `<` |
+| `m i "` `m a "` | Inside or around the quotes; also `'` and `` ` `` |
+| `m s (` | Wrap each selection in brackets, quotes, or any character |
+| `m d (` | Take away the brackets or quotes around each selection |
+| `m r ( [` | Swap them for others |
 
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
 edit` switch to those; [Editing styles](editing-styles.md) explains each.

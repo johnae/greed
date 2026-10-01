@@ -251,7 +251,13 @@ local function find_char(
 	return if till then buffer:next_char(at) else at
 end
 
-local function find_command(name: string, doc: string, forward: boolean, till: boolean)
+local function find_command(
+	name: string,
+	doc: string,
+	forward: boolean,
+	till: boolean,
+	keep_anchor: boolean?
+)
 	kern.command({
 		name = name,
 		doc = doc,
@@ -262,7 +268,8 @@ local function find_command(name: string, doc: string, forward: boolean, till: b
 			end
 			each_range(ctx, function(buffer, range)
 				local to = find_char(buffer, range.head, char, forward, till, ctx.count or 1)
-				return if to then { anchor = range.head, head = to } else range
+				local anchor = if keep_anchor then range.anchor else range.head
+				return if to then { anchor = anchor, head = to } else range
 			end)
 		end,
 	})
@@ -277,6 +284,54 @@ find_command(
 	false,
 	true
 )
+find_command(
+	"extend-find-next-char",
+	"Extend to and including the next character typed",
+	true,
+	false,
+	true
+)
+find_command("extend-till-next-char", "Extend up to the next character typed", true, true, true)
+find_command(
+	"extend-find-prev-char",
+	"Extend back to the previous character typed",
+	false,
+	false,
+	true
+)
+find_command(
+	"extend-till-prev-char",
+	"Extend back to just after the previous character typed",
+	false,
+	true,
+	true
+)
+
+extend("extend-word-end", "Extend the selection to the end of the word", text.word_end)
+extend("extend-big-word-right", "Extend the selection to the next WORD", text.next_big_word_start)
+extend(
+	"extend-big-word-left",
+	"Extend the selection to the previous WORD",
+	text.prev_big_word_start
+)
+extend("extend-big-word-end", "Extend the selection to the end of the WORD", text.big_word_end)
+extend(
+	"extend-first-non-blank",
+	"Extend the selection to the first character that isn't a space",
+	text.first_non_blank
+)
+
+kern.command({
+	name = "extend-goto-line",
+	doc = "Extend the selection to the line given as a count, or the last line",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local line = math.clamp((ctx.count or buffer:line_count()) - 1, 0, buffer:line_count() - 1)
+		each_range(ctx, function(_, range)
+			return { anchor = range.anchor, head = buffer:line_start(line) }
+		end)
+	end,
+})
 
 kern.command({
 	name = "match-bracket",

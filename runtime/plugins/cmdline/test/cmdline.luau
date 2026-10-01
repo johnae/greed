@@ -167,7 +167,7 @@ test("shift-tab goes back through the matches, and wraps round", function(t)
 	assert(prompt(t) == first, prompt(t))
 	t:keys("shift-tab")
 	assert(
-		prompt(t) ~= first and string.sub(prompt(t), 1, 6) == ":goto-",
+		prompt(t) ~= first and string.find(prompt(t), "goto", 1, true) ~= nil,
 		"wrapped to the last: " .. prompt(t)
 	)
 	t:keys("ctrl-c")

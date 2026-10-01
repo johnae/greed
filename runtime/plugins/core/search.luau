@@ -30,13 +30,27 @@ local function after(buffer: kern.Buffer, range: kern.Range): number
 	return if to > from then to else buffer:next_char(from)
 end
 
+-- The match of `pattern` after `range` (or before it, going back), round
+-- the ends.
+local function next_match(
+	buffer: kern.Buffer,
+	pattern: string,
+	range: kern.Range,
+	back: boolean
+): (number?, number?)
+	local start = if back then span(range) else after(buffer, range)
+	local from, to = buffer:find(smart_case(pattern), start, { backward = back, wrap = true })
+	if from == nil then
+		return nil, nil
+	end
+	return from, to
+end
+
 -- Selects the match of `pattern` after `range` (or before it, going back),
 -- round the ends. Returns whether there was one.
 local function jump(view: kern.View, pattern: string, range: kern.Range, back: boolean): boolean
-	local buffer = view:buffer()
-	local start = if back then span(range) else after(buffer, range)
-	local from, to = buffer:find(smart_case(pattern), start, { backward = back, wrap = true })
-	if from then
+	local from, to = next_match(view:buffer(), pattern, range, back)
+	if from and to then
 		view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 		return true
 	end
@@ -91,6 +105,38 @@ local function search(ctx: kern.Context, back: boolean)
 	})
 end
 
+-- Adds the next match of the last search as a selection of its own, and
+-- makes it the primary one.
+local function add_next(ctx: kern.Context, reverse: boolean)
+	if last == nil then
+		kern.echo("nothing searched for yet")
+		return
+	end
+	local selection = ctx.view:selection()
+	local from, to = next_match(ctx.buffer, last, primary(ctx.view), backward ~= reverse)
+	if from == nil or to == nil then
+		kern.echo(`no match for {last}`)
+		return
+	end
+	for _, range in selection.ranges do
+		local a, b = span(range)
+		if a < to and from < b then
+			kern.echo("no more matches")
+			return
+		end
+	end
+	table.insert(selection.ranges, { anchor = from, head = to })
+	table.sort(selection.ranges, function(a: kern.Range, b: kern.Range)
+		return span(a) < span(b)
+	end)
+	for i, range in selection.ranges do
+		if span(range) == from then
+			selection.primary = i
+		end
+	end
+	ctx.view:set_selection(selection)
+end
+
 -- Goes to the next match of the last search, the same way it went (or the
 -- other way, with `reverse`).
 local function again(ctx: kern.Context, reverse: boolean)
@@ -136,6 +182,22 @@ kern.command({
 })
 
 kern.command({
+	name = "search-next-add",
+	doc = "Add the next match of the last search as another selection",
+	run = function(ctx)
+		add_next(ctx, false)
+	end,
+})
+
+kern.command({
+	name = "search-prev-add",
+	doc = "Add the previous match of the last search as another selection",
+	run = function(ctx)
+		add_next(ctx, true)
+	end,
+})
+
+kern.command({
 	name = "search-selection",
 	doc = "Search for the selected text",
 	run = function(ctx)
@@ -153,4 +215,8 @@ kern.command({
 
 return {
 	smart_case = smart_case,
+	--- The last pattern searched for, if any.
+	last = function(): string?
+		return last
+	end,
 }

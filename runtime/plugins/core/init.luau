@@ -12,6 +12,8 @@ local search = require("@self/search")
 require("@self/select")
 require("@self/jump")
 require("@self/scroll")
+local objects = require("@self/objects")
+require("@self/select_mode")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
@@ -46,6 +48,7 @@ kern.keymap.bind("normal", {
 	F = "find-prev-char",
 	T = "till-prev-char",
 	["m m"] = "match-bracket",
+	v = "select-mode",
 	["alt-d"] = "delete-without-copy",
 	["alt-c"] = "change-without-copy",
 	r = "replace-char",
@@ -116,6 +119,7 @@ kern.keymap.bind({}, {
 	["ctrl-q"] = "quit",
 })
 
+kern.keymap.bind("normal", objects.keys)
 kern.keymap.counts("normal")
 kern.keymap.fallback("insert", "insert-char")
 kern.mode.cursor("insert", "bar")

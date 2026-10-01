@@ -59,7 +59,10 @@ local function with_regex(ctx: kern.Context, title: string, apply: (Ranges, stri
 	prompt.open({
 		title = title,
 		on_change = preview,
-		on_submit = preview,
+		-- Nothing typed means the last search, so `*` then `s` works.
+		on_submit = function(pattern)
+			preview(if pattern == "" then search.last() or "" else pattern)
+		end,
 		on_cancel = function()
 			view:set_selection(origin)
 		end,
