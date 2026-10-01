@@ -365,6 +365,31 @@ export type Fs = {
 	read: (path: string, limit: number?) -> (string?, string?),
 	--- What's at `path`, or nil if nothing is.
 	stat: (path: string) -> FileInfo?,
+	--- Replaces the file's contents with `text`, creating it if needed.
+	write: (path: string, text: string) -> (boolean?, string?),
+	--- The directory Kern was started in.
+	cwd: () -> string,
+	--- The lines matching the regex `pattern` in the text files under `dir`
+	--- (default: the current directory), sorted by path and line. Hidden
+	--- and ignored files are skipped unless asked for; `limit` (default
+	--- 10000) caps the lines returned. A bad pattern gives nil and why.
+	grep: (
+		pattern: string,
+		dir: string?,
+		opts: { hidden: boolean?, ignored: boolean?, limit: number? }?
+	) -> ({ GrepLine }?, string?),
+}
+
+--- A line `kern.fs.grep` found.
+export type GrepLine = {
+	--- Relative to the directory searched.
+	path: string,
+	--- 0-based.
+	line: number,
+	--- The line, without its line break.
+	text: string,
+	--- Byte offsets of the matches in `text`.
+	matches: { { from: number, to: number } },
 }
 
 export type Plugins = {

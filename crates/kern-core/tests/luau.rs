@@ -603,6 +603,69 @@ fn files_read_whole_or_up_to_a_limit() {
 }
 
 #[test]
+fn grep_finds_matching_lines_in_files_that_arent_ignored() {
+    let dir = plugin_dir(
+        "fs-grep",
+        &[
+            ("src/main.rs", "fn main() {\n    let x = foo(foo);\n}\n"),
+            ("b.txt", "no match\nfoo\r\n"),
+            ("bin.dat", "foo\0"),
+            ("target/out", "foo\n"),
+            (".gitignore", "target/\n"),
+        ],
+    );
+    let h = host("");
+    let grep = |args: &str| {
+        eval_in(
+            &h,
+            &dir,
+            &format!(
+                "local found, err = kern.fs.grep({args})
+                 if not found then return err end
+                 local out = {{}}
+                 for _, m in found do
+                   local spans = {{}}
+                   for _, r in m.matches do table.insert(spans, r.from .. '-' .. r.to) end
+                   table.insert(out, `{{m.path}}:{{m.line}}:{{m.text}}:{{table.concat(spans, ' ')}}`)
+                 end
+                 return table.concat(out, ',')"
+            ),
+        )
+    };
+    assert_eq!(
+        grep("'foo', DIR"),
+        "b.txt:1:foo:0-3,src/main.rs:1:    let x = foo(foo);:12-15 16-19"
+    );
+    assert_eq!(grep("'foo', DIR, { limit = 1 }").split(',').count(), 1);
+    assert_eq!(
+        grep("'foo', DIR, { ignored = true }")
+            .matches("target/out")
+            .count(),
+        1
+    );
+    let bad = grep("'(', DIR");
+    assert!(bad.contains("unclosed"), "{bad}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn files_can_be_written_and_the_working_directory_read() {
+    let dir = plugin_dir("fs-write", &[("a.txt", "")]);
+    let h = host("");
+    let written = eval_in(
+        &h,
+        &dir,
+        "local ok = kern.fs.write(DIR .. '/new.txt', 'hi\\n')
+         local _, err = kern.fs.write(DIR .. '/missing/x.txt', '')
+         return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. kern.fs.read(DIR .. '/new.txt')",
+    );
+    let cwd = eval_in(&h, &dir, "return kern.fs.cwd()");
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(written, "true true hi\n");
+    assert_eq!(cwd, std::env::current_dir().unwrap().to_str().unwrap());
+}
+
+#[test]
 fn status_lines_come_from_the_plugin_that_set_them() {
     let h = host("abc");
     assert_eq!(h.status_line(None, 80).unwrap(), None);

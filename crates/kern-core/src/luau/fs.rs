@@ -1,4 +1,4 @@
-//! `kern.fs`: reading the file system, for file trees, previews and the
+//! `kern.fs`: the file system, for file trees, previews, project search and the
 //! like. Failures return `nil` and a message, since a missing file is
 //! usually something to show rather than a bug.
 
@@ -7,6 +7,8 @@ use std::io::Read;
 use std::path::Path;
 
 use mlua::{IntoLuaMulti, Lua, MultiValue, Table};
+
+use crate::search::{self, GrepOptions, LineMatch};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -72,7 +74,74 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             Ok(Some(stat))
         })?,
     )?;
+
+    fs.set(
+        "write",
+        lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
+            match std::fs::write(&path, text.as_bytes()) {
+                Ok(()) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't write {path}: {err}")),
+            }
+        })?,
+    )?;
+
+    fs.set(
+        "cwd",
+        lua.create_function(|_, ()| {
+            Ok(std::env::current_dir()
+                .map_or_else(|_| ".".to_owned(), |dir| dir.to_string_lossy().into_owned()))
+        })?,
+    )?;
+
+    fs.set(
+        "grep",
+        lua.create_function(
+            |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
+                let get = |key: &str| -> LuaResult<Option<mlua::Value>> {
+                    opts.as_ref().map_or(Ok(None), |o| o.get(key))
+                };
+                let flag = |key: &str| -> LuaResult<bool> {
+                    Ok(get(key)?.and_then(|v| v.as_boolean()).unwrap_or(false))
+                };
+                let options = GrepOptions {
+                    hidden: flag("hidden")?,
+                    ignored: flag("ignored")?,
+                    limit: get("limit")?
+                        .and_then(|v| v.as_usize())
+                        .unwrap_or(DEFAULT_GREP_LIMIT),
+                };
+                let dir = dir.unwrap_or_else(|| ".".to_owned());
+                match search::grep(Path::new(&dir), &pattern, options) {
+                    Ok(lines) => grep_to_lua(lua, lines)?.into_lua_multi(lua),
+                    Err(err) => failure(lua, err),
+                }
+            },
+        )?,
+    )?;
     Ok(fs)
+}
+
+/// How many matching lines `kern.fs.grep` returns unless told otherwise.
+const DEFAULT_GREP_LIMIT: usize = 10_000;
+
+fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> {
+    let list = lua.create_table()?;
+    for found in lines {
+        let entry = lua.create_table()?;
+        entry.set("path", found.path)?;
+        entry.set("line", found.line)?;
+        entry.set("text", found.text)?;
+        let matches = lua.create_table()?;
+        for m in found.matches {
+            let range = lua.create_table()?;
+            range.set("from", m.start)?;
+            range.set("to", m.end)?;
+            matches.push(range)?;
+        }
+        entry.set("matches", matches)?;
+        list.push(entry)?;
+    }
+    Ok(list)
 }
 
 /// The entries directly in `dir` as `(name, is_dir)`: folders first, then
