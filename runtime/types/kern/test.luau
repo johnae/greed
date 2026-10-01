@@ -12,6 +12,9 @@ export type TestContext = {
 	run: (self: TestContext, command: string) -> (),
 	--- Lets `ms` milliseconds pass for commands waiting on kern.sleep.
 	wait: (self: TestContext, ms: number) -> (),
+	--- A new, empty directory holding `files` (paths in it, to their text).
+	--- Folders in the paths are created.
+	tempdir: (self: TestContext, files: { [string]: string }?) -> string,
 	--- The buffer with markers.
 	marked: (self: TestContext) -> string,
 	--- The text of each floating view, bottom first.

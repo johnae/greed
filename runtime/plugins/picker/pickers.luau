@@ -1,7 +1,9 @@
--- The pickers Kern ships with: files, open buffers and commands.
+-- The pickers Kern ships with: files in the project, open buffers and
+-- commands.
 
 local kern = require("@kern")
 local picker = require("./picker")
+local project = require("@core").project
 
 -- At most this much of a file is read for its preview.
 local PREVIEW_BYTES = 64 * 1024
@@ -30,11 +32,12 @@ end
 
 kern.command({
 	name = "pick-file",
-	doc = "Open a file from the current directory, skipping ignored files",
+	doc = "Open a file in the project, skipping ignored files",
 	run = function()
+		local root = project.root()
 		local items = {}
-		for _, path in kern.files() do
-			table.insert(items, { label = path, value = path })
+		for _, path in kern.files(root) do
+			table.insert(items, { label = path, value = project.path(root, path) })
 		end
 		picker.pick("Files", items, function(item)
 			kern.open(item.value)
@@ -65,7 +68,10 @@ kern.command({
 	run = function()
 		local items = {}
 		for _, command in kern.commands() do
-			table.insert(items, { label = command.name .. "  " .. command.doc, value = command.name })
+			table.insert(
+				items,
+				{ label = command.name .. "  " .. command.doc, value = command.name }
+			)
 		end
 		picker.pick("Commands", items, function(item)
 			kern.run(item.value)

@@ -20,8 +20,10 @@
 //! of a non-empty range.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use kern_text::ClientId;
@@ -160,6 +162,12 @@ impl UserData for TestContext {
         methods.add_method("run", |lua, _, command: String| {
             api::run_command(lua, &command).map_err(api::into_lua)
         });
+        methods.add_method(
+            "tempdir",
+            |_, _, files: Option<HashMap<String, mlua::LuaString>>| {
+                tempdir(files.unwrap_or_default()).map_err(mlua::Error::external)
+            },
+        );
         methods.add_method("wait", |lua, _, ms: f64| {
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
             tasks::advance(lua, later)
@@ -231,4 +239,23 @@ fn test_body_line(lua: &Lua) -> Option<usize> {
         .checked_sub(2)
         .map_or(lines.first(), |i| lines.get(i));
     body.copied().flatten()
+}
+
+/// A new directory under the system's temporary one, holding `files`.
+fn tempdir(files: HashMap<String, mlua::LuaString>) -> std::io::Result<String> {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("kern-test-{}-{n}", std::process::id()));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)?;
+    }
+    std::fs::create_dir_all(&dir)?;
+    for (path, text) in files {
+        let path = dir.join(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, text.as_bytes())?;
+    }
+    Ok(dir.to_string_lossy().into_owned())
 }

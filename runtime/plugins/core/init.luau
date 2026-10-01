@@ -13,6 +13,7 @@ require("@self/select")
 require("@self/jump")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
+local project = require("@self/project")
 
 kern.keymap.bind("normal", {
 	h = "move-left",
@@ -91,4 +92,5 @@ return {
 	motions = motions,
 	menu = menu,
 	prompt = prompt,
+	project = project,
 }
