@@ -6,6 +6,8 @@
 //! A range is `{ anchor = n, head = n }`; a selection is
 //! `{ ranges = { range, ... }, primary = i }` with a 1-based `primary`.
 
+use std::path::Path;
+
 use kern_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef};
 use unicode_segmentation::UnicodeSegmentation;
@@ -283,12 +285,14 @@ impl UserData for BufferRef {
         });
         add_setting_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
-        methods.add_method("save", |lua, this, ()| {
+        methods.add_method("save", |lua, this, path: Option<String>| {
             this.with_buffer(lua, |_| Ok(()))?;
-            state_mut(lua)
-                .editor
-                .save(this.buffer)
-                .map_err(mlua::Error::external)
+            let mut state = state_mut(lua);
+            match path {
+                Some(path) => state.editor.save_as(this.buffer, Path::new(&path)),
+                None => state.editor.save(this.buffer),
+            }
+            .map_err(mlua::Error::external)
         });
         methods.add_method("modified", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))

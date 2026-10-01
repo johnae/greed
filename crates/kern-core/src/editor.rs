@@ -281,6 +281,17 @@ impl Editor {
         self.buffers.get_mut(&id).expect("buffer exists").save()
     }
 
+    /// Writes the buffer to `path`, which becomes its file.
+    pub fn save_as(&mut self, id: BufferId, path: &Path) -> std::io::Result<()> {
+        let buffer = self.buffers.get_mut(&id).expect("buffer exists");
+        let old = buffer.set_path(Some(path.to_path_buf()));
+        let saved = buffer.save();
+        if saved.is_err() {
+            buffer.set_path(old);
+        }
+        saved
+    }
+
     /// The buffer with `id`, if it still exists.
     pub fn find_buffer(&self, id: BufferId) -> Option<&Buffer> {
         self.buffers.get(&id)

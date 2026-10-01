@@ -65,8 +65,8 @@ export type Buffer = {
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
 	--- together, as one undoable change, when it returns.
 	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
-	--- Writes the buffer to its file.
-	save: (self: Buffer) -> (),
+	--- Writes the buffer to its file, or to `path`, which becomes its file.
+	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.
 	modified: (self: Buffer) -> boolean,
 }

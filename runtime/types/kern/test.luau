@@ -18,6 +18,8 @@ export type TestContext = {
 	floats: (self: TestContext) -> { string },
 	--- The left and right sides of the status line a plugin builds, as text.
 	status: (self: TestContext) -> (string?, string?),
+	--- True once something asked the editor to exit.
+	quitting: (self: TestContext) -> boolean,
 	--- Messages shown since the last call, oldest first.
 	messages: (self: TestContext) -> { string },
 	--- Fails unless the buffer, with markers, is `marked`.

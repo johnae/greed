@@ -335,3 +335,20 @@ fn buffers_take_their_language_from_the_file_unless_given_one() {
     ed.set_language(file, None);
     assert_eq!(ed.buffer(file).language(), Some("rust"));
 }
+
+#[test]
+fn buffers_save_to_a_new_path_and_keep_it() {
+    let dir = std::env::temp_dir().join(format!("kern-save-as-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ed = editor("fn main() {}");
+    let buffer = ed.view(ed.focus()).buffer;
+    assert!(ed.save(buffer).is_err(), "no file yet");
+
+    let path = dir.join("main.rs");
+    ed.save_as(buffer, &path).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "fn main() {}");
+    assert_eq!(ed.buffer(buffer).path(), Some(path.as_path()));
+    assert_eq!(ed.buffer(buffer).language(), Some("rust"));
+    assert!(!ed.buffer(buffer).is_modified());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

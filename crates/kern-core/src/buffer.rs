@@ -69,6 +69,11 @@ impl Buffer {
         self.path.as_deref()
     }
 
+    /// Sets the buffer's file, returning the previous one.
+    pub(crate) fn set_path(&mut self, path: Option<PathBuf>) -> Option<PathBuf> {
+        std::mem::replace(&mut self.path, path)
+    }
+
     /// Whether only plugins can change the text.
     pub fn is_readonly(&self) -> bool {
         self.readonly
