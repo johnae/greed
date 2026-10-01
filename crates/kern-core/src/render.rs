@@ -811,12 +811,19 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
 fn place(options: &FloatOptions, area: Rect) -> Rect {
     let outer_width = options.width.resolve(area.width).max(3);
     let outer_height = options.height.resolve(area.height).max(3);
-    let x = area.width.saturating_sub(outer_width) / 2;
-    let y = match options.anchor {
-        Anchor::Top => 0,
-        Anchor::Center => area.height.saturating_sub(outer_height) / 2,
-        Anchor::Bottom => area.height.saturating_sub(outer_height),
-    };
+    // Whatever the position, the box stays on screen.
+    let x = match options.x {
+        Some(x) => x.resolve(area.width),
+        None => area.width.saturating_sub(outer_width) / 2,
+    }
+    .min(area.width.saturating_sub(outer_width));
+    let y = match (options.y, options.anchor) {
+        (Some(y), _) => y.resolve(area.height),
+        (None, Anchor::Top) => 0,
+        (None, Anchor::Center) => area.height.saturating_sub(outer_height) / 2,
+        (None, Anchor::Bottom) => area.height.saturating_sub(outer_height),
+    }
+    .min(area.height.saturating_sub(outer_height));
     Rect {
         x: area.x + x + 1,
         y: area.y + y + 1,

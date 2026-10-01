@@ -915,10 +915,13 @@ pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
     height: DEFAULT_FLOAT_SIZE,
     anchor: Anchor::Center,
     focus: true,
+    x: None,
+    y: None,
 };
 
-/// Reads `{ title, width, height, anchor, focus }` onto `base`; fields left
-/// out keep their value in `base`. Sizes are cells, or a string like "60%".
+/// Reads `{ title, width, height, anchor, focus, x, y }` onto `base`;
+/// fields left out keep their value in `base`. Sizes are cells, or a string
+/// like "60%".
 pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResult<FloatOptions> {
     let Some(spec) = spec else {
         return Ok(base);
@@ -943,6 +946,8 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         height: extent(spec.get("height")?)?.unwrap_or(base.height),
         anchor,
         focus: spec.get::<Option<bool>>("focus")?.unwrap_or(base.focus),
+        x: extent(spec.get("x")?)?.or(base.x),
+        y: extent(spec.get("y")?)?.or(base.y),
     })
 }
 

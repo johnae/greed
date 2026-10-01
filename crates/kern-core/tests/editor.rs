@@ -187,6 +187,8 @@ fn float_options() -> kern_core::FloatOptions {
         height: kern_core::Extent::Cells(5),
         anchor: kern_core::Anchor::Center,
         focus: true,
+        x: None,
+        y: None,
     }
 }
 

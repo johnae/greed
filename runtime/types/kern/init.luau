@@ -213,6 +213,11 @@ export type FloatSpec = {
 	anchor: ("center" | "top" | "bottom")?,
 	--- Whether the view takes focus. Defaults to true.
 	focus: boolean?,
+	--- Where the outside of the border goes, from the screen's left and top
+	--- edges, in cells or like "50%". Left out, the float centers across and
+	--- follows `anchor` up and down. It's always kept on screen.
+	x: (number | string)?,
+	y: (number | string)?,
 }
 
 export type CommandInfo = {

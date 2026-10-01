@@ -232,6 +232,8 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
             height: Extent::Cells(4),
             anchor: Anchor::Center,
             focus: true,
+            x: None,
+            y: None,
         },
     );
     let f = frame(&mut ed, 20, 9);
@@ -452,4 +454,40 @@ fn marks_can_draw_above_the_selection() {
     let span = f.rows[0].spans.iter().find(|s| s.text == "abc").unwrap();
     let names: Vec<&str> = span.tags.iter().map(Tag::name).collect();
     assert_eq!(names, ["under", "ui.selection", "flash"]);
+}
+
+#[test]
+fn floats_can_be_placed_side_by_side() {
+    use kern_core::{Anchor, Extent, FloatOptions};
+    let mut ed = editor("|main");
+    let float = |x: Option<Extent>, y: Option<Extent>| FloatOptions {
+        title: None,
+        width: Extent::Percent(50),
+        height: Extent::Cells(4),
+        anchor: Anchor::Center,
+        focus: false,
+        x,
+        y,
+    };
+    let left = ed.create_buffer("picker", "a");
+    let right = ed.create_buffer("preview", "b");
+    ed.float(left, float(Some(Extent::Cells(0)), Some(Extent::Cells(1))));
+    ed.float(
+        right,
+        float(Some(Extent::Percent(50)), Some(Extent::Cells(1))),
+    );
+    let f = frame(&mut ed, 20, 9);
+    let rects: Vec<_> = f
+        .floats
+        .iter()
+        .map(|f| (f.rect.x, f.rect.y, f.rect.width, f.rect.height))
+        .collect();
+    // Positions are of the outside of the border, which is one cell wide.
+    assert_eq!(rects, [(1, 2, 8, 2), (11, 2, 8, 2)]);
+
+    // A box that would hang off the edge is moved back on screen.
+    let edge = ed.create_buffer("x", "c");
+    ed.float(edge, float(Some(Extent::Cells(18)), None));
+    let f = frame(&mut ed, 20, 9);
+    assert_eq!(f.floats[2].rect.x, 11);
 }

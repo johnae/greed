@@ -71,6 +71,11 @@ pub struct FloatOptions {
     pub anchor: Anchor,
     /// Whether the view takes focus when it's shown.
     pub focus: bool,
+    /// Where the outside of the border goes, from the left and top of the
+    /// screen. Either one left out follows `anchor` (or centers, across).
+    pub x: Option<Extent>,
+    /// See `x`.
+    pub y: Option<Extent>,
 }
 
 /// A view floating over the main one.

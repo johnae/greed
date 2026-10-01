@@ -231,7 +231,9 @@ fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
                 };
             }
         }
-        if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1)) {
+        if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1))
+            && !title.is_empty()
+        {
             let style = terminal_style(border.patch(&look(&Tag::FLOAT_TITLE)));
             put(
                 top,
