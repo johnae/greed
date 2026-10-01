@@ -86,6 +86,9 @@ pub struct FloatOptions {
 pub struct Float {
     pub view: ViewId,
     pub options: FloatOptions,
+    /// The view that had focus when this one opened, which gets it back
+    /// when this one closes.
+    pub(crate) return_to: ViewId,
 }
 
 /// Which edge of the screen a panel is on.
@@ -303,7 +306,11 @@ impl Editor {
         if !options.focus {
             self.focus = previous;
         }
-        self.floats.push(Float { view, options });
+        self.floats.push(Float {
+            view,
+            options,
+            return_to: previous,
+        });
         view
     }
 
@@ -363,10 +370,18 @@ impl Editor {
         let Some(closed) = self.views.remove(&view) else {
             return false;
         };
+        let return_to = self
+            .floats
+            .iter()
+            .find(|f| f.view == view)
+            .map(|f| f.return_to)
+            .filter(|v| self.views.contains_key(v));
         self.floats.retain(|f| f.view != view);
         self.panels.retain(|p| p.view != view);
         if self.focus == view {
-            self.focus = self.floats.last().map_or(self.main, |f| f.view);
+            self.focus = return_to
+                .or_else(|| self.floats.last().map(|f| f.view))
+                .unwrap_or(self.main);
         }
         self.drop_if_unused(closed.buffer);
         true

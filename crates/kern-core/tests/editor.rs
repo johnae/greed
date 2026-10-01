@@ -271,6 +271,35 @@ fn floats_can_leave_focus_where_it_was() {
 }
 
 #[test]
+fn closing_a_float_gives_focus_back_to_the_view_that_had_it() {
+    use kern_core::{Extent, PanelOptions, Side};
+    let mut ed = editor("");
+    let results = ed.create_buffer("grep", "");
+    let panel = ed.panel(
+        results,
+        PanelOptions {
+            side: Side::Right,
+            width: Extent::Cells(20),
+            title: None,
+            focus: true,
+        },
+    );
+    let prompt = ed.create_buffer("prompt", "");
+    let float = ed.float(prompt, float_options());
+    assert_eq!(ed.focus(), float);
+    ed.close(float);
+    assert_eq!(ed.focus(), panel);
+
+    // If that view went away in the meantime, it goes to the top float left,
+    // or with none, the main view.
+    let prompt = ed.create_buffer("prompt", "");
+    let float = ed.float(prompt, float_options());
+    ed.close(panel);
+    ed.close(float);
+    assert_eq!(ed.focus(), ed.main());
+}
+
+#[test]
 fn the_clipboard_keeps_recent_copies() {
     let mut ed = editor("");
     assert_eq!(ed.clipboard(), None);
