@@ -64,7 +64,12 @@ pub(crate) struct State {
 #[derive(Clone)]
 enum Plugin {
     /// A plugin directory with a `plugin.toml`.
-    Dir { dir: PathBuf, entry: String },
+    Dir {
+        dir: PathBuf,
+        entry: String,
+        /// Plugins it requires, which can't be unloaded while it's loaded.
+        requires: Vec<String>,
+    },
     /// Source passed in directly: config, tests, the REPL.
     Inline(Arc<str>),
 }
@@ -95,6 +100,7 @@ pub enum HostError {
     Manifest { path: PathBuf, message: String },
     UnknownCommand(Arc<str>),
     UnknownPlugin(Arc<str>),
+    Required { plugin: Arc<str>, by: Arc<str> },
     Keys(ParseError),
 }
 
@@ -107,6 +113,9 @@ impl fmt::Display for HostError {
             }
             HostError::UnknownCommand(name) => write!(f, "there is no command called {name:?}"),
             HostError::UnknownPlugin(name) => write!(f, "there is no plugin called {name:?}"),
+            HostError::Required { plugin, by } => {
+                write!(f, "can't unload {plugin:?}: {by:?} requires it")
+            }
             HostError::Keys(err) => err.fmt(f),
         }
     }
@@ -198,6 +207,7 @@ impl Host {
         let plugin = Plugin::Dir {
             dir,
             entry: manifest.entry,
+            requires: manifest.requires,
         };
         self.install(&name, plugin)?;
         Ok(name)
@@ -249,6 +259,7 @@ impl Host {
         let plugin = Plugin::Dir {
             dir: dir.to_owned(),
             entry: entry.to_string_lossy().into_owned(),
+            requires: Vec::new(),
         };
         self.install(name, plugin)
     }
@@ -263,28 +274,21 @@ impl Host {
         if !state(&self.lua).plugins.contains_key(name) {
             return Err(HostError::UnknownPlugin(name.into()));
         }
-        self.unregister(name);
+        unregister(&self.lua, name);
         self.run_plugin(name)
+    }
+
+    /// Removes a plugin and everything it registered. Fails while a loaded
+    /// plugin requires it.
+    pub fn unload(&self, name: &str) -> Result<(), HostError> {
+        unload(&self.lua, name)
     }
 
     /// Adds or replaces a plugin and runs it.
     fn install(&self, name: &str, plugin: Plugin) -> Result<(), HostError> {
-        self.unregister(name);
+        unregister(&self.lua, name);
         state_mut(&self.lua).plugins.insert(name.into(), plugin);
         self.run_plugin(name)
-    }
-
-    fn unregister(&self, name: &str) {
-        let mut state = state_mut(&self.lua);
-        state.registry.remove_owned_by(name);
-        state.editor.keymap_mut().remove_owned_by(name);
-        if state
-            .statusline
-            .as_ref()
-            .is_some_and(|(owner, _)| &**owner == name)
-        {
-            state.statusline = None;
-        }
     }
 
     /// Evaluates Luau typed at the REPL. Expressions return their value as
@@ -390,7 +394,7 @@ impl Host {
     fn run_plugin(&self, name: &str) -> Result<(), HostError> {
         let plugin = state(&self.lua).plugins[name].clone();
         let export = match plugin {
-            Plugin::Dir { dir, entry } => {
+            Plugin::Dir { dir, entry, .. } => {
                 let file = dir.join(entry);
                 let modules = Modules::new(&self.lua, name, Some(dir), None)?;
                 budgeted(&self.lua, || modules.run_file(&self.lua, &file))?
@@ -405,6 +409,52 @@ impl Host {
         state_mut(&self.lua).exports.insert(name.into(), export);
         Ok(())
     }
+}
+
+/// Removes everything plugin `name` registered.
+fn unregister(lua: &Lua, name: &str) {
+    let mut state = state_mut(lua);
+    state.registry.remove_owned_by(name);
+    state.editor.keymap_mut().remove_owned_by(name);
+    if state
+        .statusline
+        .as_ref()
+        .is_some_and(|(owner, _)| &**owner == name)
+    {
+        state.statusline = None;
+    }
+}
+
+/// Removes plugin `name` and everything it registered, unless a loaded
+/// plugin requires it.
+pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
+    {
+        let state = state(lua);
+        if !state.plugins.contains_key(name) {
+            return Err(HostError::UnknownPlugin(name.into()));
+        }
+        let requirer = state.plugins.iter().find(|(_, plugin)| {
+            matches!(plugin, Plugin::Dir { requires, .. } if requires.iter().any(|r| r == name))
+        });
+        if let Some((by, _)) = requirer {
+            return Err(HostError::Required {
+                plugin: name.into(),
+                by: by.clone(),
+            });
+        }
+    }
+    unregister(lua, name);
+    let mut state = state_mut(lua);
+    state.plugins.remove(name);
+    state.exports.remove(name);
+    Ok(())
+}
+
+/// The names of the loaded plugins, sorted.
+pub(crate) fn plugin_names(lua: &Lua) -> Vec<String> {
+    let mut names: Vec<String> = state(lua).plugins.keys().map(ToString::to_string).collect();
+    names.sort();
+    names
 }
 
 /// Evaluates Luau in the REPL's environment, where globals persist between

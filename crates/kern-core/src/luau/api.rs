@@ -280,7 +280,21 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     kern.set("clipboard", clipboard_module(lua)?)?;
     kern.set("lsp", super::lsp::module(lua)?)?;
     kern.set("fs", super::fs::module(lua)?)?;
+    kern.set("plugin", plugin_module(lua)?)?;
     Ok(kern)
+}
+
+fn plugin_module(lua: &Lua) -> LuaResult<Table> {
+    let plugin = lua.create_table()?;
+    plugin.set(
+        "list",
+        lua.create_function(|lua, ()| Ok(super::plugin_names(lua)))?,
+    )?;
+    plugin.set(
+        "unload",
+        lua.create_function(|lua, name: String| super::unload(lua, &name).map_err(into_lua))?,
+    )?;
+    Ok(plugin)
 }
 
 /// A mode name, or `{ mode = ..., kind = ... }`.

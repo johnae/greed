@@ -321,6 +321,15 @@ export type Fs = {
 	stat: (path: string) -> FileInfo?,
 }
 
+export type Plugins = {
+	--- The names of the loaded plugins, sorted.
+	list: () -> { string },
+	--- Removes a plugin and everything it registered: commands, keys,
+	--- options and event handlers. Fails while another loaded plugin
+	--- requires it. To turn off a default plugin, call this from your config.
+	unload: (name: string) -> (),
+}
+
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
 	--- Runs a command by name, optionally with arguments, `force` and a count.
@@ -375,6 +384,7 @@ export type Kern = {
 	clipboard: Clipboard,
 	lsp: Lsp,
 	fs: Fs,
+	plugin: Plugins,
 }
 
 return (nil :: any) :: Kern

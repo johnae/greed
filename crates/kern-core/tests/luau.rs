@@ -989,3 +989,45 @@ fn commands_get_the_count_typed_before_them() {
     h.press_keys("2 5 s s").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["25", "nil"]);
 }
+
+#[test]
+fn plugins_unload_unless_another_requires_them() {
+    let base = plugin_dir(
+        "unload-base",
+        &[(
+            "init.luau",
+            "local kern = require('@kern')
+             kern.command { name = 'hello', run = function() kern.echo('hi') end }
+             kern.keymap.bind('normal', { h = 'hello' })
+             return {}",
+        )],
+    );
+    let user = plugin_dir("unload-user", &[("init.luau", "return {}")]);
+    std::fs::write(
+        user.join("plugin.toml"),
+        "name = \"unload-user\"\nrequires = [\"unload-base\"]\n",
+    )
+    .unwrap();
+    let h = host("");
+    h.load_dir(&base).unwrap();
+    h.load_dir(&user).unwrap();
+    assert_eq!(
+        h.eval("table.concat(require('@kern').plugin.list(), ',')")
+            .unwrap(),
+        "unload-base,unload-user"
+    );
+
+    let err = h.unload("unload-base").unwrap_err().to_string();
+    assert!(err.contains("unload-user"), "{err}");
+    h.eval("require('@kern').plugin.unload('unload-user')")
+        .unwrap();
+    h.unload("unload-base").unwrap();
+    assert!(h.with_registry(|reg| reg.command("hello").is_none()));
+    assert!(h.press_keys("h").is_ok(), "the key does nothing now");
+    assert!(matches!(
+        h.unload("unload-base"),
+        Err(HostError::UnknownPlugin(_))
+    ));
+    std::fs::remove_dir_all(&base).unwrap();
+    std::fs::remove_dir_all(&user).unwrap();
+}
