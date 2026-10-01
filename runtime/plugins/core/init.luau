@@ -14,6 +14,8 @@ require("@self/jump")
 require("@self/scroll")
 local objects = require("@self/objects")
 require("@self/select_mode")
+local comment = require("@self/comment")
+local jumps = require("@self/jumps")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
@@ -49,6 +51,10 @@ kern.keymap.bind("normal", {
 	T = "till-prev-char",
 	["m m"] = "match-bracket",
 	v = "select-mode",
+	["ctrl-c"] = "toggle-comment",
+	["ctrl-o"] = "jump-back",
+	["ctrl-i"] = "jump-forward",
+	tab = "jump-forward",
 	["alt-d"] = "delete-without-copy",
 	["alt-c"] = "change-without-copy",
 	r = "replace-char",
@@ -134,4 +140,6 @@ return {
 	search = search,
 	project = project,
 	style = style,
+	comment = comment,
+	jumps = jumps,
 }

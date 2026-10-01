@@ -11,6 +11,7 @@
 
 local kern = require("@kern")
 local defaults = require("@self/languages")
+local comment = require("@core").comment
 
 export type Language = defaults.Language
 
@@ -19,6 +20,7 @@ local languages: { [string]: Language } = {}
 -- Tells the editor about a language's files and servers.
 local function apply(name: string, language: Language)
 	kern.filetype(name, { extensions = language.extensions, names = language.names })
+	comment.set(name, language.comment)
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })

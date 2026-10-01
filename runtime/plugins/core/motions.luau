@@ -388,6 +388,52 @@ kern.command({
 	end,
 })
 
+-- The lines each selection touches, each once, in order.
+function M.selected_lines(ctx: kern.Context): { number }
+	local buffer = ctx.buffer
+	local seen, lines = {}, {}
+	for _, range in ctx.view:selection().ranges do
+		local to = math.max(range.anchor, range.head)
+		local first, last = buffer:line_of(math.min(range.anchor, range.head)), buffer:line_of(to)
+		-- A selection ending at a line's start, like `x` makes, stops before it.
+		if last > first and to == buffer:line_start(last) then
+			last -= 1
+		end
+		for line = first, last do
+			if not seen[line] then
+				seen[line] = true
+				table.insert(lines, line)
+			end
+		end
+	end
+	table.sort(lines)
+	return lines
+end
+
+-- Inserts `text` at each of `points`, moving the selections along so that
+-- ones that began at a point keep the new text inside them.
+function M.insert_at(ctx: kern.Context, points: { number }, text: string)
+	local function moved(pos: number): number
+		local before = 0
+		for _, p in points do
+			if p < pos then
+				before += 1
+			end
+		end
+		return pos + before * #text
+	end
+	local selection = ctx.view:selection()
+	for i, range in selection.ranges do
+		selection.ranges[i] = { anchor = moved(range.anchor), head = moved(range.head) }
+	end
+	ctx.buffer:edit(function(e)
+		for _, p in points do
+			e:insert(p, text)
+		end
+		e:select(selection)
+	end)
+end
+
 M.each_range = each_range
 M.point = point
 return M

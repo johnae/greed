@@ -1,0 +1,28 @@
+local test = require("@kern/test")
+local kern = require("@kern")
+local core = require("@core")
+
+local function check(t: test.TestContext, before: string, keys: string, after: string)
+	t:buffer(before)
+	kern.view():buffer():set_language("lua")
+	t:keys(keys)
+	t:expect(after)
+end
+
+test("ctrl-c comments the lines, or uncomments them if they all are", function(t)
+	core.comment.set("lua", "--")
+	check(t, "a|b\ncd", "ctrl-c", "-- a|b\ncd")
+	check(t, "-- a|b\ncd", "ctrl-c", "a|b\ncd")
+	check(t, "  ^if x\n    y|\n  end", "ctrl-c", "  ^-- if x\n  --   y|\n  end")
+	check(t, "^-- a\nb|", "ctrl-c", "^-- -- a\n-- b|")
+	check(t, "^-- a\n\n-- b|", "ctrl-c", "^a\n\nb|")
+end)
+
+test("a language without a comment says so", function(t)
+	t:buffer("|abc")
+	kern.view():buffer():set_language(nil)
+	t:keys("ctrl-c")
+	t:expect("|abc")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "comment", 1, true), messages[#messages])
+end)

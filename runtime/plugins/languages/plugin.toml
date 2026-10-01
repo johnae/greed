@@ -1,1 +1,2 @@
 name = "languages"
+requires = ["core"]

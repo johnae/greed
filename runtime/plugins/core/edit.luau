@@ -353,27 +353,6 @@ kern.command({
 	end,
 })
 
--- The lines each selection touches, each once, in order.
-local function selected_lines(ctx: kern.Context): { number }
-	local buffer = ctx.buffer
-	local seen, lines = {}, {}
-	for _, range in ctx.view:selection().ranges do
-		local first, last = buffer:line_of(from(range)), buffer:line_of(to(range))
-		-- A selection ending at a line's start, like `x` makes, stops before it.
-		if last > first and to(range) == buffer:line_start(last) then
-			last -= 1
-		end
-		for line = first, last do
-			if not seen[line] then
-				seen[line] = true
-				table.insert(lines, line)
-			end
-		end
-	end
-	table.sort(lines)
-	return lines
-end
-
 kern.command({
 	name = "indent",
 	doc = "Indent the lines of each selection",
@@ -381,31 +360,12 @@ kern.command({
 		local unit = kern.option.get("indent") :: string
 		local buffer = ctx.buffer
 		local starts = {}
-		for _, line in selected_lines(ctx) do
+		for _, line in motions.selected_lines(ctx) do
 			if buffer:line_end(line) > buffer:line_start(line) then
 				table.insert(starts, buffer:line_start(line))
 			end
 		end
-		-- Selections that began at a line's start keep its new indent.
-		local function moved(pos: number): number
-			local before = 0
-			for _, start in starts do
-				if start < pos then
-					before += 1
-				end
-			end
-			return pos + before * #unit
-		end
-		local selection = ctx.view:selection()
-		for i, range in selection.ranges do
-			selection.ranges[i] = { anchor = moved(range.anchor), head = moved(range.head) }
-		end
-		buffer:edit(function(e)
-			for _, start in starts do
-				e:insert(start, unit)
-			end
-			e:select(selection)
-		end)
+		motions.insert_at(ctx, starts, unit)
 	end,
 })
 
@@ -423,7 +383,7 @@ kern.command({
 		local width = #(kern.option.get("indent") :: string)
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
-			for _, line in selected_lines(ctx) do
+			for _, line in motions.selected_lines(ctx) do
 				local start = buffer:line_start(line)
 				local lead = leading_blanks(buffer, line)
 				local take = if string.sub(lead, 1, 1) == "\t" then 1 else math.min(#lead, width)

@@ -97,6 +97,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `ctrl-f` `ctrl-b` | A screen down or up (also `pagedown` `pageup`) |
 | `ctrl-d` `ctrl-u` | Half a screen down or up |
 | `z z` | Put the cursor's line in the middle of the screen |
+| `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again |
 
 **Changing**
 
@@ -112,6 +113,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
 | `>` `<` | Indent or dedent the lines (the `indent` option sets by what) |
 | `J` | Join lines with one space |
+| `ctrl-c` | Comment the lines, or uncomment them |
 | `y` `p` `P` | Copy, paste after, paste before |
 | `u` `U` | Undo, redo |
 | `esc` | Back to normal mode |
