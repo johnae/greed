@@ -142,7 +142,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
     loop {
         match client.next() {
             Output::Detached => break,
-            Output::Frame(_) | Output::Delta(_) | Output::Image(_) => {}
+            Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) => {}
             other @ (Output::Exit | Output::Switch(_)) => {
                 panic!("expected a detach, got {other:?}")
             }
@@ -210,7 +210,7 @@ fn a_session_can_send_its_client_to_another_session() {
                 assert_eq!(to.path, None);
                 break;
             }
-            Output::Frame(_) | Output::Delta(_) | Output::Image(_) => {}
+            Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) => {}
             other => panic!("expected a switch, got {other:?}"),
         }
     }
@@ -253,4 +253,24 @@ fn an_image_is_sent_once_before_the_frame_that_shows_it() {
     assert!(matches!(client.next(), Output::Delta(_)));
     conn.input.send(Input::Quit).unwrap();
     let _ = std::fs::remove_file(picture());
+}
+
+#[test]
+fn copies_go_to_the_client_for_the_system_clipboard() {
+    let (conn, attach) = start("clipboard");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("x y");
+    loop {
+        match client.next() {
+            Output::Clipboard(text) => {
+                assert_eq!(text, "hello");
+                break;
+            }
+            Output::Frame(_) | Output::Delta(_) => {}
+            other => panic!("expected the copy, got {other:?}"),
+        }
+    }
+    conn.input.send(Input::Quit).unwrap();
 }

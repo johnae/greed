@@ -21,7 +21,7 @@ use crate::luau::{Host, HostError};
 use crate::mouse::Mouse;
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
 use crate::syntax::{Highlight, Syntax};
-use crate::{BufferId, SwitchTo};
+use crate::{BufferId, Editor, SwitchTo};
 use kern_text::Rope;
 
 /// A message from a client to the server.
@@ -49,6 +49,8 @@ pub enum Output {
     /// The client should attach to another session instead; this one goes on
     /// without it.
     Switch(SwitchTo),
+    /// Text Kern copied, for the client to put on the system clipboard.
+    Clipboard(String),
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
@@ -398,6 +400,9 @@ impl Server<'_> {
         let Some(client) = &mut self.client else {
             return true;
         };
+        if let Some(text) = host.with_editor_mut(Editor::take_copied) {
+            let _ = client.output.send(Output::Clipboard(text));
+        }
         // The data of images this client hasn't had yet goes first.
         let images: Vec<_> = frame
             .images

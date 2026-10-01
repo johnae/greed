@@ -80,6 +80,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let ended = loop {
         match output.recv() {
             Ok(Output::Image(image)) => screen.graphics.add(image),
+            Ok(Output::Clipboard(text)) => copy_to_system(&mut out, &text)?,
             Ok(Output::Frame(frame)) => {
                 screen.draw(&mut out, &frame)?;
                 current = Some(frame);
@@ -113,6 +114,22 @@ fn send_cell_size(input: &Sender<Input>) {
             size.height / size.rows,
         ));
     }
+}
+
+/// Puts `text` on the system clipboard through the terminal (OSC 52),
+/// which works over ssh too, unless `$KERN_CLIPBOARD` is "off".
+fn copy_to_system(out: &mut impl Write, text: &str) -> io::Result<()> {
+    if std::env::var("KERN_CLIPBOARD").is_ok_and(|v| v == "off") {
+        return Ok(());
+    }
+    write!(out, "{}", osc52(text))?;
+    out.flush()
+}
+
+fn osc52(text: &str) -> String {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    format!("\x1b]52;c;{encoded}\x07")
 }
 
 /// Whether to take the mouse from the terminal: unless `$KERN_MOUSE` is
@@ -499,6 +516,11 @@ mod tests {
 
     fn key(code: TermKey, mods: KeyModifiers) -> Option<String> {
         convert(KeyEvent::new(code, mods)).map(|k| k.to_string())
+    }
+
+    #[test]
+    fn copies_go_to_the_system_clipboard_as_osc_52() {
+        assert_eq!(osc52("hi"), "\x1b]52;c;aGk=\x07");
     }
 
     #[test]

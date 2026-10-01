@@ -338,6 +338,15 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+## Clipboard
+
+What you copy goes on your system clipboard too, through your terminal
+(OSC 52), so it works over `kern ssh` and in tmux with `set-clipboard on`.
+Most terminals allow it; some ask first or need it turned on (iTerm2:
+"Applications in terminal may access clipboard"). `KERN_CLIPBOARD=off`
+keeps copies inside Kern. A program in a Kern terminal that copies the same
+way puts the text on Kern's clipboard, so `p` pastes it.
+
 ## Mouse
 
 A click puts the cursor where you click and focuses that pane, dragging

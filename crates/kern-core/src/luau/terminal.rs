@@ -92,8 +92,16 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
         }
     };
     // Events can arrive after the plugin closed it.
-    if !state(lua).terminals.open.contains_key(&id) {
-        return Ok(());
+    let copied = {
+        let state = state(lua);
+        let Some((terminal, _)) = state.terminals.open.get(&id) else {
+            return Ok(());
+        };
+        terminal.take_copied()
+    };
+    // What a program copies goes on the clipboard, as any copy does.
+    if let Some(text) = copied {
+        state_mut(lua).editor.copy(vec![text]);
     }
     payload.set("terminal", TerminalRef(id))?;
     emit(lua, name, &payload)

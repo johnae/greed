@@ -181,3 +181,11 @@ test("a program that asks for the mouse gets it", function(t)
 	t:mouse("press", 4, 2)
 	shows(t, "^[[<0;5;3M")
 end)
+
+test("what a program copies goes on the clipboard", function(t)
+	-- "copied" in base64, as OSC 52 carries it.
+	t:run("terminal", { "sh", "-c", "printf '\\033]52;c;Y29waWVk\\007done'; exit 1" })
+	shows(t, "done")
+	local copy = kern.clipboard.get()
+	assert(copy and copy[1] == "copied", copy and copy[1])
+end)

@@ -112,6 +112,7 @@ pub struct Terminal {
     master: Box<dyn MasterPty + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     title: Arc<Mutex<Option<String>>>,
+    copied: Arc<Mutex<Option<String>>>,
     exit: Arc<Mutex<Option<u32>>>,
 }
 
@@ -173,9 +174,11 @@ impl Terminal {
             })?;
 
         let title = Arc::new(Mutex::new(None));
+        let copied = Arc::new(Mutex::new(None));
         let listener = Listener {
             input: input.clone(),
             title: title.clone(),
+            copied: copied.clone(),
         };
         let config = Config {
             scrolling_history: OVERFLOW,
@@ -209,6 +212,7 @@ impl Terminal {
             master: pair.master,
             killer,
             title,
+            copied,
             exit,
         })
     }
@@ -322,6 +326,12 @@ impl Terminal {
             .placed
             .get(&id.0)
             .map(|placed| placed.image.clone())
+    }
+
+    /// What the program copied (OSC 52) since this was last asked, if
+    /// anything.
+    pub fn take_copied(&self) -> Option<String> {
+        lock(&self.copied).take()
     }
 
     /// What the program called the window, if it did.
@@ -713,6 +723,8 @@ fn control(c: char) -> Vec<u8> {
 struct Listener {
     input: Sender<Vec<u8>>,
     title: Arc<Mutex<Option<String>>>,
+    /// What the program last copied (OSC 52), until it's taken.
+    copied: Arc<Mutex<Option<String>>>,
 }
 
 impl EventListener for Listener {
@@ -723,6 +735,7 @@ impl EventListener for Listener {
             }
             TermEvent::Title(title) => *lock(&self.title) = Some(title),
             TermEvent::ResetTitle => *lock(&self.title) = None,
+            TermEvent::ClipboardStore(_, text) => *lock(&self.copied) = Some(text),
             _ => {}
         }
     }

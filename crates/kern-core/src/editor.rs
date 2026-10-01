@@ -254,6 +254,8 @@ pub struct Editor {
     switch_requested: Option<SwitchTo>,
     /// Copied text, oldest first. Each entry holds one piece per selection.
     clipboard: Vec<Vec<String>>,
+    /// The latest copy, until the client has been told.
+    copied: Option<String>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     file_types: FileTypes,
@@ -289,6 +291,7 @@ impl Editor {
             detach_requested: false,
             switch_requested: None,
             clipboard: Vec::new(),
+            copied: None,
             cursor_shapes: HashMap::new(),
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
@@ -922,9 +925,16 @@ impl Editor {
 
     /// Puts text on the clipboard: one piece per selection it came from.
     pub fn copy(&mut self, pieces: Vec<String>) {
+        self.copied = Some(pieces.join("\n"));
         self.clipboard.push(pieces);
         let extra = self.clipboard.len().saturating_sub(Self::CLIPBOARD_HISTORY);
         self.clipboard.drain(..extra);
+    }
+
+    /// The latest copy, once, as one text, for the client to put on the
+    /// system clipboard.
+    pub fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
     }
 
     /// The latest copy, if any.
