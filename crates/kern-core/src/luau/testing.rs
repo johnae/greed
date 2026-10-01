@@ -183,6 +183,9 @@ impl UserData for TestContext {
                 (Some(join(&l.left)), Some(join(&l.right)))
             }))
         });
+        methods.add_method("messages", |lua, _, ()| {
+            Ok(state_mut(lua).editor.take_messages())
+        });
         methods.add_method("expect", |lua, _, expected: String| {
             check(lua, "buffer", &expected, &focused_marked_text(lua))
         });

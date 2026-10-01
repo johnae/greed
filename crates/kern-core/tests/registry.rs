@@ -6,6 +6,7 @@ fn cmd(name: &str, owner: &str, handler: &'static str) -> Command<&'static str> 
     Command {
         name: name.into(),
         doc: format!("{name} from {owner}").into(),
+        args: Vec::new(),
         owner: owner.into(),
         source: Some(Source {
             file: format!("{owner}/init.luau").into(),

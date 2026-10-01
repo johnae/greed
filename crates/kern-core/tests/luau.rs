@@ -797,3 +797,67 @@ fn plugins_make_read_only_buffers_in_a_language() {
         "rust\tnil"
     );
 }
+
+#[test]
+fn commands_get_arguments_and_force() {
+    let h = host("");
+    h.load_str(
+        "greeter",
+        r#"
+        local kern = require("@kern")
+        kern.command {
+          name = "greet",
+          doc = "Say hello",
+          args = { { name = "who", doc = "Who to greet", complete = "buffer" } },
+          run = function(ctx)
+            kern.echo(table.concat(ctx.args, "+") .. " " .. tostring(ctx.force))
+          end,
+        }
+        kern.keymap.bind("normal", { g = "greet" })
+        "#,
+    )
+    .unwrap();
+    h.eval("require('@kern').run('greet', { args = { 'a', 'b' }, force = true })")
+        .unwrap();
+    h.press_keys("g").unwrap();
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages),
+        ["a+b true", " false"]
+    );
+    let args = h
+        .eval(
+            "local a = require('@kern').commands()[1].args[1]
+             return a.name .. ' ' .. a.doc .. ' ' .. a.complete",
+        )
+        .unwrap();
+    assert_eq!(args, "who Who to greet buffer");
+}
+
+#[test]
+fn plugins_evaluate_code_in_a_shared_scratch_environment() {
+    let h = host("");
+    h.load_str(
+        "calc",
+        r#"
+        local kern = require("@kern")
+        kern.command { name = "calc", run = function(ctx)
+          local ok, result = kern.eval(ctx.args[1])
+          kern.echo(tostring(ok) .. ":" .. result)
+        end }
+        "#,
+    )
+    .unwrap();
+    let calc = |code: &str| {
+        h.eval(&format!(
+            "require('@kern').run('calc', {{ args = {{ {code:?} }} }})"
+        ))
+        .unwrap();
+        h.with_editor_mut(Editor::take_messages).pop().unwrap()
+    };
+    assert_eq!(calc("x = 41"), "true:");
+    assert_eq!(calc("x + 1"), "true:42");
+    assert_eq!(calc("1, 'two'"), "true:1\ttwo");
+    let err = calc("error('nope')");
+    assert!(err.starts_with("false:") && err.contains("nope"), "{err}");
+    assert!(calc("1 +").starts_with("false:"));
+}

@@ -290,15 +290,7 @@ impl Host {
     /// Evaluates Luau typed at the REPL. Expressions return their value as
     /// text; globals persist between calls.
     pub fn eval(&self, source: &str) -> Result<String, HostError> {
-        let modules = self.repl_modules()?;
-        let expression = format!("return {source}");
-        let chunk = match self.lua.load(&expression).into_function() {
-            Ok(_) => expression.as_str(),
-            Err(_) => source,
-        };
-        let values = budgeted(&self.lua, || modules.eval(&self.lua, chunk, "=repl"))?;
-        let parts: Vec<String> = values.iter().map(api::display).collect();
-        Ok(parts.join("\t"))
+        Ok(budgeted(&self.lua, || eval_repl(&self.lua, source))?)
     }
 
     /// The status line a plugin builds, or `None` if no plugin builds one.
@@ -413,15 +405,28 @@ impl Host {
         state_mut(&self.lua).exports.insert(name.into(), export);
         Ok(())
     }
+}
 
-    fn repl_modules(&self) -> Result<Modules, HostError> {
-        if let Some(modules) = &state(&self.lua).repl {
-            return Ok(modules.clone());
-        }
-        let modules = Modules::new(&self.lua, REPL, None, None)?;
-        state_mut(&self.lua).repl = Some(modules.clone());
-        Ok(modules)
-    }
+/// Evaluates Luau in the REPL's environment, where globals persist between
+/// calls. Expressions return their values as text, separated by tabs.
+pub(crate) fn eval_repl(lua: &Lua, source: &str) -> mlua::Result<String> {
+    // Bound first so the state borrow ends before `state_mut`.
+    let cached = state(lua).repl.clone();
+    let modules = if let Some(modules) = cached {
+        modules
+    } else {
+        let modules = Modules::new(lua, REPL, None, None)?;
+        state_mut(lua).repl = Some(modules.clone());
+        modules
+    };
+    let expression = format!("return {source}");
+    let chunk = match lua.load(&expression).into_function() {
+        Ok(_) => expression.as_str(),
+        Err(_) => source,
+    };
+    let values = modules.eval(lua, chunk, "=repl")?;
+    let parts: Vec<String> = values.iter().map(api::display).collect();
+    Ok(parts.join("\t"))
 }
 
 /// A plugin's canonical directory and its `plugin.toml`.

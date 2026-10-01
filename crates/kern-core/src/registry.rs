@@ -20,10 +20,21 @@ pub struct Source {
     pub line: u32,
 }
 
+/// An argument a command takes, for completion and help.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Arg {
+    pub name: Arc<str>,
+    pub doc: Arc<str>,
+    /// What completes it, e.g. "file"; the command line decides what each
+    /// name means.
+    pub complete: Option<Arc<str>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Command<H> {
     pub name: Arc<str>,
     pub doc: Arc<str>,
+    pub args: Vec<Arg>,
     pub owner: PluginId,
     pub source: Option<Source>,
     pub handler: H,

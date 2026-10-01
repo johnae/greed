@@ -13,7 +13,7 @@ use super::handles::{BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
-use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
+use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Span, StatusLine, Tag};
 use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
 
@@ -22,6 +22,19 @@ type LuaResult<T> = mlua::Result<T>;
 /// Runs a command as the user, with `keys` as the sequence that triggered
 /// it.
 pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), HostError> {
+    invoke(lua, name, keys, Vec::new(), false)
+}
+
+/// Runs a command as the user with arguments, as from the command line.
+/// `force` asks it to go ahead even if it would normally refuse, like
+/// quitting with unsaved changes.
+fn invoke(
+    lua: &Lua,
+    name: &str,
+    keys: &[Key],
+    args: Vec<String>,
+    force: bool,
+) -> Result<(), HostError> {
     let (handler, author, view, buffer) = {
         let state = state(lua);
         let command = state
@@ -56,6 +69,8 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
     if !keys.is_empty() {
         ctx.set("keys", keys_text(keys))?;
     }
+    ctx.set("args", args)?;
+    ctx.set("force", force)?;
     if let [
         Key {
             code: KeyCode::Char(c),
@@ -150,6 +165,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     .get::<Option<String>>("doc")?
                     .unwrap_or_default()
                     .into(),
+                args: command_args(spec.get("args")?)?,
                 owner: o.clone(),
                 source: caller(lua),
                 handler: spec.get::<Function>("run")?,
@@ -161,7 +177,16 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     kern.set(
         "run",
-        lua.create_function(|lua, name: String| run_command(lua, &name, &[]).map_err(into_lua))?,
+        lua.create_function(|lua, (name, opts): (String, Option<Table>)| {
+            let (args, force) = match opts {
+                Some(opts) => (
+                    opts.get::<Option<Vec<String>>>("args")?.unwrap_or_default(),
+                    opts.get::<Option<bool>>("force")?.unwrap_or(false),
+                ),
+                None => (Vec::new(), false),
+            };
+            invoke(lua, &name, &[], args, force).map_err(into_lua)
+        })?,
     )?;
 
     let o = owner.clone();
@@ -204,6 +229,16 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(|lua, ()| {
             state_mut(lua).editor.request_quit();
             Ok(())
+        })?,
+    )?;
+
+    kern.set(
+        "eval",
+        lua.create_function(|lua, source: String| {
+            Ok(match super::eval_repl(lua, &source) {
+                Ok(values) => (true, values),
+                Err(err) => (false, err.to_string()),
+            })
         })?,
     )?;
 
@@ -486,6 +521,23 @@ fn option_to_lua(lua: &Lua, value: OptionValue) -> LuaResult<Value> {
     })
 }
 
+/// Reads a command's `args = { { name, doc, complete } }`.
+fn command_args(spec: Option<Table>) -> LuaResult<Vec<Arg>> {
+    let Some(spec) = spec else {
+        return Ok(Vec::new());
+    };
+    spec.sequence_values::<Table>()
+        .map(|arg| {
+            let arg = arg?;
+            Ok(Arg {
+                name: arg.get::<String>("name")?.into(),
+                doc: arg.get::<Option<String>>("doc")?.unwrap_or_default().into(),
+                complete: arg.get::<Option<String>>("complete")?.map(Into::into),
+            })
+        })
+        .collect()
+}
+
 /// Where the Luau code calling into Rust was written: the outermost call in
 /// the calling file, so a command defined through a helper points at the
 /// helper's call rather than inside the helper.
@@ -585,6 +637,15 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
                 entry.set("name", &*command.name)?;
                 entry.set("doc", &*command.doc)?;
                 entry.set("owner", &*command.owner)?;
+                let args = lua.create_table()?;
+                for arg in &command.args {
+                    let spec = lua.create_table()?;
+                    spec.set("name", &*arg.name)?;
+                    spec.set("doc", &*arg.doc)?;
+                    spec.set("complete", arg.complete.as_deref())?;
+                    args.push(spec)?;
+                }
+                entry.set("args", args)?;
                 if let Some(source) = &command.source {
                     entry.set("source", format!("{}:{}", source.file, source.line))?;
                     if let Some(path) = state.sources.get(&*source.file) {

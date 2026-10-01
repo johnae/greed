@@ -96,12 +96,26 @@ export type Context = {
 	keys: string?,
 	--- The character typed, when a single printable key ran the command.
 	char: string?,
+	--- Arguments, e.g. from the command line; empty when a key ran it.
+	args: { string },
+	--- Go ahead even if the command would normally refuse, like `:q!`
+	--- quitting with unsaved changes.
+	force: boolean,
+}
+
+--- An argument a command takes, for completion and help.
+export type ArgSpec = {
+	name: string,
+	doc: string?,
+	--- What completes it, e.g. "file", "command", "option" or "buffer".
+	complete: string?,
 }
 
 export type CommandSpec = {
 	--- Plain words with dashes, e.g. "select-line".
 	name: string,
 	doc: string?,
+	args: { ArgSpec }?,
 	run: (ctx: Context) -> (),
 }
 
@@ -162,6 +176,7 @@ export type FloatSpec = {
 export type CommandInfo = {
 	name: string,
 	doc: string,
+	args: { ArgSpec },
 	--- The plugin that defined it.
 	owner: string,
 	--- Where it was defined, e.g. "core/motions.luau:120".
@@ -290,8 +305,12 @@ export type Fs = {
 
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
-	--- Runs a command by name.
-	run: (name: string) -> (),
+	--- Runs a command by name, optionally with arguments and `force`.
+	run: (name: string, opts: { args: { string }?, force: boolean? }?) -> (),
+	--- Runs Luau code in a scratch environment whose globals persist, like a
+	--- REPL. Returns true and the values as text (tab-separated), or false
+	--- and the error.
+	eval: (source: string) -> (boolean, string),
 	--- Calls `handler` every time `event` happens.
 	on: ((event: "mode.changed", handler: (event: ModeChanged) -> ()) -> ())
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
