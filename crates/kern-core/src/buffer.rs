@@ -38,6 +38,7 @@ pub struct Buffer {
 /// Text drawn with a style, e.g. a search match. It moves with edits; text
 /// typed at either edge stays outside it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[expect(clippy::struct_excessive_bools, reason = "flags set from Luau")]
 pub struct Mark {
     pub range: Range<usize>,
     /// A style name for the theme.
@@ -53,6 +54,9 @@ pub struct Mark {
     /// Draw over selections and cursors rather than under them, e.g. for a
     /// flash that must show even on selected text.
     pub above: bool,
+    /// Draw `text` over the characters from the start of the range, like a
+    /// jump label, instead of inserting it.
+    pub overlay: bool,
 }
 
 impl Buffer {

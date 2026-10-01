@@ -247,7 +247,7 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
 }
 
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
-/// `{ from, to, style, line, text, eol, sign, above }`.
+/// `{ from, to, style, line, text, eol, sign, above, overlay }`.
 fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("decorate", |lua, this, (ns, list): (String, Vec<Table>)| {
         this.with_buffer(lua, |_| Ok(()))?;
@@ -270,6 +270,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     eol: flag("eol")?,
                     sign: t.get::<Option<String>>("sign")?.map(Into::into),
                     above: flag("above")?,
+                    overlay: flag("overlay")?,
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -289,6 +290,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             t.set("eol", mark.eol)?;
             t.set("sign", mark.sign.as_deref())?;
             t.set("above", mark.above)?;
+            t.set("overlay", mark.overlay)?;
             list.push(t)?;
         }
         Ok(list)

@@ -556,3 +556,23 @@ fn right_panels_sit_after_the_main_view() {
     // The focused panel has the cursor.
     assert_eq!(f.cursor, Some(Position { col: 30, row: 0 }));
 }
+
+#[test]
+fn overlay_marks_draw_over_the_text_without_moving_it() {
+    use kern_core::Mark;
+    let mut ed = editor("hello |world\nfoo");
+    let buffer = ed.view(ed.focus()).buffer;
+    let label = |at: usize, text: &str| Mark {
+        range: at..at,
+        style: "jump.label".into(),
+        text: Some(text.into()),
+        overlay: true,
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "jump", vec![label(6, "ab"), label(12, "c")]);
+    let f = frame(&mut ed, 20, 3);
+    assert_eq!(rows(&f), ["1 hello abrld", "2 coo"]);
+    assert_eq!(tagged(&f, &Tag::from("jump.label")), ["ab", "c"]);
+    // The cursor is where it was; the text didn't move.
+    assert_eq!(f.cursor, Some(Position { col: 8, row: 0 }));
+}

@@ -101,6 +101,9 @@ export type Mark = {
 	sign: string?,
 	--- Draw over selections and cursors rather than under them.
 	above: boolean?,
+	--- Draw `text` over the characters from `from` instead of inserting it,
+	--- like a jump label. The text doesn't move.
+	overlay: boolean?,
 }
 
 --- A buffer shown on screen, with its own selection.

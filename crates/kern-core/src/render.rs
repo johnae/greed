@@ -392,6 +392,7 @@ impl<M: Measure> Renderer<M> {
                     .copied(),
                 severity: worst(&marks, |r| r.start < lines.end && r.end >= lines.start),
             };
+            let mut overlay = Overlay::default();
             for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
                     break 'lines;
@@ -415,22 +416,18 @@ impl<M: Measure> Renderer<M> {
                         continue;
                     }
                     if cell.byte == head {
-                        let col = x.min(usize::from(area.width).saturating_sub(1));
-                        cursor = Some(Position {
-                            col: area.x + u16::try_from(col).unwrap_or(u16::MAX),
-                            row: area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX),
-                        });
+                        cursor = Some(screen_position(area, x, rows.len()));
+                    }
+                    if let Some((text, tag)) = overlay.over(&styled, cell) {
+                        row.push(&text, smallvec![tag]);
+                        x += cell.width;
+                        continue;
                     }
                     let capture = cell
                         .byte
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone());
-                    let mut cell_tags = cell_tags(view, cell, capture, &styled);
-                    if let Some(severity) = worst(&marks, |r| {
-                        r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte)
-                    }) {
-                        cell_tags.push(Tag::diagnostic(severity));
-                    }
+                    let cell_tags = cell_tags(view, cell, capture, &styled, &marks);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push(&cell.text, cell_tags);
                     }
@@ -486,7 +483,7 @@ impl<M: Measure> Renderer<M> {
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
             .all_marks()
-            .filter(|m| !m.eol && (start..=end).contains(&m.range.start))
+            .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
@@ -722,6 +719,41 @@ fn span(text: &str, tag: Tag) -> Span {
     }
 }
 
+/// Overlay text still to draw, one grapheme per cell it covers.
+#[derive(Default)]
+struct Overlay {
+    /// What's left, last grapheme first.
+    left: Vec<String>,
+    style: Option<Arc<str>>,
+}
+
+impl Overlay {
+    /// What to draw instead of `cell`, if an overlay covers it: one starting
+    /// there among `marks`, or one carried on from earlier cells.
+    fn over(&mut self, marks: &[&Mark], cell: &Cell) -> Option<(String, Tag)> {
+        if let Some(mark) = marks
+            .iter()
+            .find(|m| m.overlay && m.range.start == cell.byte)
+        {
+            let text = mark.text.as_deref().unwrap_or_default();
+            self.left = text.graphemes(true).rev().map(str::to_owned).collect();
+            self.style = Some(mark.style.clone());
+        }
+        let grapheme = self.left.pop()?;
+        Some((grapheme, Tag::from(self.style.clone()?)))
+    }
+}
+
+/// Where column `x` of row `row` in `area` is on screen, kept inside the
+/// area so a cursor past the end of a full row still shows.
+fn screen_position(area: Rect, x: usize, row: usize) -> Position {
+    let col = x.min(usize::from(area.width).saturating_sub(1));
+    Position {
+        col: area.x + u16::try_from(col).unwrap_or(u16::MAX),
+        row: area.y + u16::try_from(row).unwrap_or(u16::MAX),
+    }
+}
+
 /// The sign column, when any mark in the buffer has a sign.
 const SIGN_WIDTH: usize = 2;
 
@@ -778,6 +810,7 @@ fn cell_tags(
     cell: &Cell,
     capture: Option<Arc<str>>,
     marks: &[&Mark],
+    diagnostics: &[(Range<usize>, u8)],
 ) -> SmallVec<[Tag; 2]> {
     let on_cell = |above: bool| {
         marks
@@ -791,6 +824,11 @@ fn cell_tags(
     tags.extend(on_cell(false));
     tags.extend(selection_tags(view, cell));
     tags.extend(on_cell(true));
+    let at_cell =
+        |r: &Range<usize>| r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte);
+    if let Some(severity) = worst(diagnostics, at_cell) {
+        tags.push(Tag::diagnostic(severity));
+    }
     tags
 }
 
