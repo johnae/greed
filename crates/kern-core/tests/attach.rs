@@ -31,7 +31,9 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
             )?;
             host.load_str(
                 "keys",
-                "require('@kern').keymap.bind('normal', { ['ctrl-d'] = 'detach' })",
+                "local kern = require('@kern')
+                 kern.command({ name = 'go', run = function() kern.session.switch({ name = 'elsewhere' }) end })
+                 kern.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go' })",
             )?;
             Ok(host)
         },
@@ -126,7 +128,9 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
         match client.next() {
             Output::Detached => break,
             Output::Frame(_) | Output::Delta(_) => {}
-            Output::Exit => panic!("the editor stopped"),
+            other @ (Output::Exit | Output::Switch(_)) => {
+                panic!("expected a detach, got {other:?}")
+            }
         }
     }
     let mut again = attach();
@@ -174,5 +178,30 @@ fn clients_speaking_another_protocol_are_refused_clearly() {
         .unwrap()
         .unwrap();
     assert_eq!(hello["protocol"], control::PROTOCOL);
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_session_can_send_its_client_to_another_session() {
+    let (conn, attach) = start("switch");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-o");
+    loop {
+        match client.next() {
+            Output::Switch(to) => {
+                assert_eq!(to.session.as_deref(), Some("elsewhere"));
+                assert_eq!(to.path, None);
+                break;
+            }
+            Output::Frame(_) | Output::Delta(_) => {}
+            other => panic!("expected a switch, got {other:?}"),
+        }
+    }
+    // The session lets the client go, like a detach, and keeps running.
+    let mut again = attach();
+    again.send(&Input::Resize(SIZE));
+    again.first_row();
     conn.input.send(Input::Quit).unwrap();
 }

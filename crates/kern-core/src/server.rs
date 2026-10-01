@@ -13,13 +13,13 @@ use std::time::Instant;
 use crossbeam_channel::{Receiver, Sender, select};
 use serde::{Deserialize, Serialize};
 
-use crate::BufferId;
 use crate::control::{Attachment, Session};
 use crate::delta::FrameDelta;
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
 use crate::syntax::{Highlight, Syntax};
+use crate::{BufferId, SwitchTo};
 use kern_text::Rope;
 
 /// A message from a client to the server.
@@ -41,6 +41,9 @@ pub enum Output {
     /// The server goes on without this client: it detached, or another
     /// client attached.
     Detached,
+    /// The client should attach to another session instead; this one goes on
+    /// without it.
+    Switch(SwitchTo),
 }
 
 /// A client's end of the connection to a running server.
@@ -92,6 +95,9 @@ where
             }),
             inputs,
         };
+        if let Some(session) = &session {
+            host.set_session_name(&session.name);
+        }
         server.run(&inbox, session.as_ref());
         server.send(Output::Exit);
         Ok(())
@@ -210,6 +216,18 @@ impl Server<'_> {
             if self.host.with_editor(crate::Editor::quit_requested) {
                 return;
             }
+            if let Some(to) = self
+                .host
+                .with_editor_mut(crate::Editor::take_switch_request)
+            {
+                // A client in this process can't go anywhere else.
+                if self.client.as_ref().is_some_and(|c| c.local) {
+                    return;
+                }
+                self.send(Output::Switch(to));
+                self.client = None;
+                self.size = None;
+            }
             if self
                 .host
                 .with_editor_mut(crate::Editor::take_detach_request)
@@ -270,7 +288,7 @@ impl Server<'_> {
         let (output, outgoing) = crossbeam_channel::unbounded::<Output>();
         thread::spawn(move || {
             for message in outgoing {
-                let last = matches!(message, Output::Exit | Output::Detached);
+                let last = matches!(message, Output::Exit | Output::Detached | Output::Switch(_));
                 let Ok(line) = serde_json::to_string(&message) else {
                     continue;
                 };

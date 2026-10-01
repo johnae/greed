@@ -2,7 +2,10 @@
 //! draws the frames it sends back.
 
 use std::io::{self, Write};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use crossterm::cursor::{self, SetCursorStyle};
@@ -20,6 +23,9 @@ use unicode_width::UnicodeWidthStr;
 
 type Error = Box<dyn std::error::Error>;
 
+/// How often the key reader checks whether its run is over.
+const KEY_POLL: Duration = Duration::from_millis(50);
+
 /// Runs the terminal client until the server exits or lets it go, sending
 /// keys and sizes to `input` and drawing the frames from `output`. Returns
 /// how it ended.
@@ -28,21 +34,31 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let (width, height) = terminal::size()?;
     input.send(Input::Resize(Size { width, height }))?;
 
-    let input = input.clone();
-    thread::spawn(move || {
-        while let Ok(event) = event::read() {
-            let message = match event {
-                Event::Key(key) if key.kind != KeyEventKind::Release => {
-                    convert(key).map(Input::Key)
+    // Keys are read until this run ends, so a run that follows (after a
+    // switch to another session) gets them all.
+    let reading = Arc::new(AtomicBool::new(true));
+    let keys = {
+        let input = input.clone();
+        let reading = reading.clone();
+        thread::spawn(move || {
+            while reading.load(Ordering::Relaxed) {
+                if !event::poll(KEY_POLL).unwrap_or(false) {
+                    continue;
                 }
-                Event::Resize(width, height) => Some(Input::Resize(Size { width, height })),
-                _ => None,
-            };
-            if message.is_some_and(|m| input.send(m).is_err()) {
-                break;
+                let Ok(event) = event::read() else { break };
+                let message = match event {
+                    Event::Key(key) if key.kind != KeyEventKind::Release => {
+                        convert(key).map(Input::Key)
+                    }
+                    Event::Resize(width, height) => Some(Input::Resize(Size { width, height })),
+                    _ => None,
+                };
+                if message.is_some_and(|m| input.send(m).is_err()) {
+                    break;
+                }
             }
-        }
-    });
+        })
+    };
 
     let mut screen = Screen::default();
     let mut out = io::BufWriter::new(io::stdout());
@@ -64,6 +80,8 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
             Err(_) => break Output::Exit,
         }
     };
+    reading.store(false, Ordering::Relaxed);
+    let _ = keys.join();
     drop(terminal);
     Ok(ended)
 }

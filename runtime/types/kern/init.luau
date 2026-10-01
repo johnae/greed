@@ -293,6 +293,26 @@ export type Projects = {
 	close: (id: number) -> boolean,
 }
 
+--- A session running on this machine: an editor process of its own.
+export type SessionInfo = {
+	name: string,
+	--- The project it was started for.
+	root: string?,
+	--- Whether it's this session.
+	current: boolean,
+}
+
+export type Sessions = {
+	--- The sessions running on this machine, by name.
+	list: () -> { SessionInfo },
+	--- This session's name, when the editor runs as one.
+	current: () -> string?,
+	--- Sends the attached client to the session `name`, or to the session for
+	--- the project `path` is in (opening it there), starting it if it isn't
+	--- running. This session goes on without the client.
+	switch: (to: { name: string?, path: string? }) -> (),
+}
+
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an
 --- empty table is an object unless it came from `array`.
 export type Json = {
@@ -618,6 +638,7 @@ export type Kern = {
 	control: Control,
 	json: Json,
 	project: Projects,
+	session: Sessions,
 	plugin: Plugins,
 	theme: Theme,
 }

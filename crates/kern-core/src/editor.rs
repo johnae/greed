@@ -145,6 +145,17 @@ impl Project {
     }
 }
 
+/// Another session for a client to go to: a session by name, or the session
+/// of the project a path is in (opening the path), started if it isn't
+/// running.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SwitchTo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
 /// How the cursor looks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CursorShape {
@@ -198,6 +209,8 @@ pub struct Editor {
     quit_requested: bool,
     /// The attached client asked to leave, with the editor running on.
     detach_requested: bool,
+    /// Where the attached client was asked to go instead of this session.
+    switch_requested: Option<SwitchTo>,
     /// Copied text, oldest first. Each entry holds one piece per selection.
     clipboard: Vec<Vec<String>>,
     /// The cursor shape of each mode; modes not listed get a block.
@@ -228,6 +241,7 @@ impl Editor {
             next_group: 0,
             quit_requested: false,
             detach_requested: false,
+            switch_requested: None,
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
             file_types: FileTypes::bundled(),
@@ -836,6 +850,17 @@ impl Editor {
     /// Whether a detach was asked for since the last call.
     pub fn take_detach_request(&mut self) -> bool {
         std::mem::take(&mut self.detach_requested)
+    }
+
+    /// Asks whoever runs the editor to send the attached client to another
+    /// session, which lets it go from this one.
+    pub fn request_switch(&mut self, to: SwitchTo) {
+        self.switch_requested = Some(to);
+    }
+
+    /// Where a switch was asked to go since the last call, if one was.
+    pub fn take_switch_request(&mut self) -> Option<SwitchTo> {
+        self.switch_requested.take()
     }
 
     /// Queues a message for the user.

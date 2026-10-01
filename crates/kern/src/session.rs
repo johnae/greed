@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use kern_core::SwitchTo;
 use kern_core::control::{self, Attachment};
 use kern_core::project;
 use kern_core::server::{self, Input, Output};
@@ -75,12 +76,58 @@ fn log_path(name: &str) -> PathBuf {
 /// `kern attach`: shows the session called `name` (or the only one running)
 /// in this terminal until it quits or lets this terminal go.
 pub fn attach(name: Option<&str>) -> Result<(), Error> {
-    let Attachment { reader, writer, .. } = ctl::connect_to(name)?.attach()?;
-    if let Output::Detached = show(reader, writer)? {
-        let name = name.map_or_else(String::new, |name| format!(" {name}"));
-        println!("detached; kern attach{name} comes back");
+    let name = match name
+        .map(str::to_owned)
+        .or_else(|| std::env::var("KERN_SESSION").ok())
+    {
+        Some(name) => name,
+        None => match ctl::live_sessions()?.as_slice() {
+            [only] => only.clone(),
+            [] => return Err("no editor is running".into()),
+            several => {
+                return Err(
+                    format!("several are running ({}); name one", several.join(", ")).into(),
+                );
+            }
+        },
+    };
+    follow(name, None)
+}
+
+/// Shows the session called `name` in this terminal, asking it to open
+/// `open`, and follows the client to any session it switches to, until a
+/// session quits or lets the terminal go.
+fn follow(mut name: String, mut open: Option<PathBuf>) -> Result<(), Error> {
+    loop {
+        let Attachment { reader, writer, .. } =
+            ctl::connect_to(Some(&name))?.attach_opening(open.as_deref())?;
+        match show(reader, writer)? {
+            Output::Switch(to) => (name, open) = resolve(&to)?,
+            Output::Detached => {
+                println!("detached; kern attach {name} comes back");
+                return Ok(());
+            }
+            Output::Exit | Output::Frame(_) | Output::Delta(_) => return Ok(()),
+        }
     }
-    Ok(())
+}
+
+/// The session `to` points at, started if it isn't running, and what to
+/// ask it to open.
+fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
+    if let Some(name) = &to.session {
+        if !ctl::live_sessions()?.contains(name) {
+            spawn_server(name, None)?;
+        }
+        return Ok((name.clone(), None));
+    }
+    let (name, running, target) = find_session(None, to.path.as_deref().map(Path::new))?;
+    if running {
+        Ok((name, Some(target)))
+    } else {
+        spawn_server(&name, Some(&target))?;
+        Ok((name, None))
+    }
 }
 
 /// Shows an attached session in this terminal: input goes to `writer` and
@@ -153,24 +200,14 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
 pub fn start(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
     // A running session opens what was asked for; a new one starts with it.
-    let (open, mut child) = if running {
-        (path.map(|_| target.as_path()), None)
+    let open = if running {
+        path.map(|_| target)
     } else {
-        let child = spawn_server(&name, Some(&target))
+        spawn_server(&name, Some(&target))
             .map_err(|err| format!("{err} (KERN_NO_SESSION=1 runs it in this terminal)"))?;
-        (None, Some(child))
+        None
     };
-    let Attachment { reader, writer, .. } = ctl::connect_to(Some(&name))?.attach_opening(open)?;
-    match show(reader, writer)? {
-        Output::Exit => {
-            if let Some(child) = &mut child {
-                child.wait()?;
-            }
-        }
-        Output::Detached => println!("detached; kern attach {name} comes back"),
-        Output::Frame(_) | Output::Delta(_) => {}
-    }
-    Ok(())
+    follow(name, open)
 }
 
 /// `kern bridge`, run on the machine a session is on: connects this
@@ -202,12 +239,33 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 /// over ssh, starting one if none is running. `$KERN_SSH` replaces the ssh
 /// command and `$KERN_REMOTE` the kern on the other end.
 pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Error> {
+    let mut to = SwitchTo {
+        session: name.map(str::to_owned),
+        path: file.map(str::to_owned),
+    };
+    loop {
+        match ssh_once(host, &to)? {
+            // The bridge on the other end finds (or starts) the session to
+            // switch to; a new connection is the simplest way to ask it.
+            Output::Switch(next) => to = next,
+            Output::Detached => {
+                println!("detached; kern ssh {host} comes back");
+                return Ok(());
+            }
+            Output::Exit | Output::Frame(_) | Output::Delta(_) => return Ok(()),
+        }
+    }
+}
+
+/// Shows the session `to` points at on `host` until it ends, lets go or
+/// switches; returns which.
+fn ssh_once(host: &str, to: &SwitchTo) -> Result<Output, Error> {
     let remote_kern = std::env::var("KERN_REMOTE").unwrap_or_else(|_| "kern".to_owned());
     let mut remote = vec![remote_kern, "bridge".to_owned()];
-    if let Some(name) = name {
-        remote.extend(["--session".to_owned(), name.to_owned()]);
+    if let Some(name) = &to.session {
+        remote.extend(["--session".to_owned(), name.clone()]);
     }
-    remote.extend(file.map(str::to_owned));
+    remote.extend(to.path.clone());
     // ssh joins its arguments into one command line for the remote shell.
     let line = remote
         .iter()
@@ -229,10 +287,7 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
     // and the bridge there goes when its input does.
     let _ = child.kill();
     let _ = child.wait();
-    if let Output::Detached = ended {
-        println!("detached; kern ssh {host} comes back");
-    }
-    Ok(())
+    Ok(ended)
 }
 
 /// Asks to attach over `reader` and `writer`, already connected to a

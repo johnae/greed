@@ -50,10 +50,14 @@ impl Bridge {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "attach",
-            "params": { "protocol": 1 },
+            "params": { "protocol": kern_core::control::PROTOCOL },
         }));
         let hello = self.next();
-        assert_eq!(hello["result"]["protocol"], 1, "{hello}");
+        assert_eq!(
+            hello["result"]["protocol"],
+            kern_core::control::PROTOCOL,
+            "{hello}"
+        );
         self.send(&json!({ "Resize": { "width": 40, "height": 5 } }));
         let frame = self.next();
         frame["Frame"]["rows"]
@@ -104,17 +108,12 @@ fn the_bridge_starts_a_session_when_none_is_running_and_attaches() {
 fn the_bridge_attaches_to_a_running_session() {
     let file = temp_file("running", "already open");
     let name = format!("bridge-running-{}", std::process::id());
-    let mut server = Command::new(KERN)
-        .args(["serve", "--session", &name, file.to_str().unwrap()])
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
+    let _server = Server::start(&["--session", &name, file.to_str().unwrap()]);
     let mut bridge = Bridge::start(&["--session", &name]);
     // The session may still be starting; the bridge waits for it.
     let rows = bridge.attach();
     assert!(rows[0].contains("already open"), "{rows:?}");
     bridge.quit();
-    let _ = server.wait();
     std::fs::remove_file(file).unwrap();
 }
 
@@ -125,11 +124,7 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     std::fs::create_dir_all(project.join("src")).unwrap();
     std::fs::write(project.join("README.md"), "top").unwrap();
     std::fs::write(project.join("src/lib.rs"), "deep inside").unwrap();
-    let mut server = Command::new(KERN)
-        .args(["serve", project.to_str().unwrap()])
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
+    let _server = Server::start(&[project.to_str().unwrap()]);
     let name = format!("kern-proj-{}", std::process::id());
     // The session takes a moment to start listening.
     let mut listed = String::new();
@@ -148,6 +143,31 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     let rows = bridge.attach();
     assert!(rows[0].contains("deep inside"), "{rows:?}");
     bridge.quit();
-    let _ = server.wait();
     std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A `kern serve` started by a test, stopped when the test ends even if it
+/// fails, so a session left behind can't hold the test run open.
+struct Server(Child);
+
+impl Server {
+    fn start(args: &[&str]) -> Server {
+        Server(
+            Command::new(KERN)
+                .arg("serve")
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }

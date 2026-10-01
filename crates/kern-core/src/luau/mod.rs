@@ -17,6 +17,7 @@ mod modules;
 mod plugin;
 mod projects;
 mod requests;
+mod sessions;
 mod tasks;
 mod testing;
 mod theme;
@@ -79,6 +80,8 @@ pub(crate) struct State {
     pub request_sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
     /// Claude Code's IDE connection, once a plugin starts it.
     pub ide: Option<crate::ide::Ide>,
+    /// The name of the session this editor is, when it is one.
+    pub session_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -181,6 +184,7 @@ impl Host {
             next_request: 0,
             request_sender: None,
             ide: None,
+            session_name: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -347,6 +351,11 @@ impl Host {
             payload.set("path", open)?;
             api::emit(&self.lua, "client.attached", &payload).map_err(HostError::from)
         })
+    }
+
+    /// Tells plugins which session this editor is.
+    pub fn set_session_name(&self, name: &str) {
+        state_mut(&self.lua).session_name = Some(name.to_owned());
     }
 
     /// Passes a request from the session socket to the plugins that answer
