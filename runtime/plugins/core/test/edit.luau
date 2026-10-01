@@ -70,3 +70,21 @@ test("copying nothing says so", function(t)
 	t:keys("y")
 	t:expect("a|b")
 end)
+
+test("commands that wait finish when time passes", function(t)
+	local kern = require("@kern")
+	kern.command({
+		name = "slow-insert",
+		run = function(ctx)
+			kern.sleep(100)
+			ctx.buffer:edit(function(e)
+				e:insert(0, "done ")
+			end)
+		end,
+	})
+	t:buffer("|x")
+	t:run("slow-insert")
+	t:expect("|x")
+	t:wait(100)
+	t:expect("done |x")
+end)

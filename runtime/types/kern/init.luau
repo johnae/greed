@@ -228,6 +228,9 @@ export type Kern = {
 	view: () -> View,
 	--- Asks the editor to exit.
 	quit: () -> (),
+	--- Waits `ms` milliseconds without blocking the editor. Works in commands
+	--- and event handlers.
+	sleep: (ms: number) -> (),
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last

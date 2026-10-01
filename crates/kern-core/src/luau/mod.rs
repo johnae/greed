@@ -8,6 +8,7 @@
 mod api;
 mod handles;
 mod modules;
+mod tasks;
 mod testing;
 
 use std::cell::Cell;
@@ -47,6 +48,8 @@ pub(crate) struct State {
     pub sources: HashMap<String, PathBuf>,
     /// What each plugin's entry file returned, for `require("@name")`.
     pub exports: HashMap<PluginId, Value>,
+    /// Commands and handlers waiting on a timer or a reply.
+    pub tasks: tasks::Tasks,
 }
 
 #[derive(Clone)]
@@ -130,6 +133,7 @@ impl Host {
             statusline: None,
             sources: HashMap::new(),
             exports: HashMap::new(),
+            tasks: tasks::Tasks::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -293,6 +297,18 @@ impl Host {
     ) -> Result<Option<StatusLine>, HostError> {
         budgeted(&self.lua, || {
             api::status_line(&self.lua, message, width).map_err(HostError::from)
+        })
+    }
+
+    /// When the next timer a command is waiting on is due.
+    pub fn next_timer(&self) -> Option<Instant> {
+        tasks::next_timer(&self.lua)
+    }
+
+    /// Resumes commands waiting on timers that are due by `now`.
+    pub fn fire_timers(&self, now: Instant) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            tasks::fire_timers(&self.lua, now).map_err(HostError::from)
         })
     }
 

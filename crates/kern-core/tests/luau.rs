@@ -621,3 +621,50 @@ fn a_single_file_loads_as_a_plugin_with_local_requires() {
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["from helpers"]);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+const SLEEPY: &str = r#"
+local kern = require("@kern")
+kern.command { name = "later", run = function(ctx)
+  kern.echo("before")
+  kern.sleep(500)
+  kern.echo("after")
+  ctx.buffer:edit(function(e) e:insert(0, "!") end)
+end }
+"#;
+
+#[test]
+fn commands_can_wait_without_blocking() {
+    let h = host("");
+    h.load_str("sleepy", SLEEPY).unwrap();
+    h.run("later").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["before"]);
+    assert!(h.next_timer().is_some());
+
+    // Not due yet: nothing happens.
+    h.fire_timers(std::time::Instant::now()).unwrap();
+    assert!(h.with_editor_mut(Editor::take_messages).is_empty());
+
+    h.fire_timers(std::time::Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["after"]);
+    assert_eq!(text(&h), "!");
+    assert!(h.next_timer().is_none());
+}
+
+#[test]
+fn waiting_only_works_inside_commands() {
+    let h = host("");
+    let err = h.eval("require('@kern').sleep(1)").unwrap_err().to_string();
+    assert!(err.contains("can only be used in a command"), "{err}");
+
+    h.load_str(
+        "raw",
+        "require('@kern').command { name = 'raw', run = function() coroutine.yield() end }",
+    )
+    .unwrap();
+    let err = h.run("raw").unwrap_err().to_string();
+    assert!(
+        err.contains("can only wait through kern functions"),
+        "{err}"
+    );
+}

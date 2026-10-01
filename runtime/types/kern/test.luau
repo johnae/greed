@@ -10,6 +10,8 @@ export type TestContext = {
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),
 	run: (self: TestContext, command: string) -> (),
+	--- Lets `ms` milliseconds pass for commands waiting on kern.sleep.
+	wait: (self: TestContext, ms: number) -> (),
 	--- The buffer with markers.
 	marked: (self: TestContext) -> string,
 	--- The text of each floating view, bottom first.

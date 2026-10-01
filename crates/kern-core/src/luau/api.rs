@@ -10,6 +10,7 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 use super::handles::{BufferRef, ViewRef};
+use super::tasks;
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
@@ -69,7 +70,7 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
     let event = lua.create_table()?;
     event.set("name", name)?;
     emit(lua, "command.run", &event)?;
-    handler.call::<()>(ctx)?;
+    tasks::spawn(lua, handler, ctx)?;
     Ok(())
 }
 
@@ -123,7 +124,7 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
         .collect();
     let mut first_error = None;
     for handler in handlers {
-        if let Err(err) = handler.call::<()>(payload.clone()) {
+        if let Err(err) = tasks::spawn(lua, handler, payload.clone()) {
             first_error.get_or_insert(err);
         }
     }
@@ -188,6 +189,8 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             })
         })?,
     )?;
+
+    kern.set("sleep", tasks::sleep_function(lua)?)?;
 
     kern.set(
         "quit",

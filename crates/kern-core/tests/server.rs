@@ -133,3 +133,29 @@ fn setup_errors_are_returned() {
     let err = conn.server.join().unwrap().unwrap_err();
     assert!(err.to_string().contains("nope"), "{err}");
 }
+
+#[test]
+fn the_server_wakes_up_for_timers() {
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor)?;
+        host.load_str(
+            "sleepy",
+            "local kern = require('@kern')\nkern.command { name = 'later', run = function(ctx) kern.sleep(20) ctx.buffer:edit(function(e) e:insert(0, 'woke') end) end }\nkern.keymap.bind('normal', { z = 'later' })",
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    keys(&conn, "z");
+    let mut f = frame(&conn);
+    while f.rows[0].text() != "1 woke" {
+        f = frame(&conn);
+    }
+}

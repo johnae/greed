@@ -6,6 +6,7 @@
 //! without changing either side.
 
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender, select};
 
@@ -66,6 +67,10 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
     let mut message: Option<String> = None;
     loop {
         host.with_editor(|ed| syntax.update(ed));
+        // Wake up in time for the next timer a command is waiting on.
+        let timer = host
+            .next_timer()
+            .map_or_else(crossbeam_channel::never, crossbeam_channel::at);
         select! {
             recv(inbox) -> first => {
                 let Ok(first) = first else { return };
@@ -84,6 +89,10 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
                     syntax.receive(parsed);
                 }
             }
+            recv(timer) -> _ => {}
+        }
+        if let Err(err) = host.fire_timers(Instant::now()) {
+            message = Some(first_line(&err.to_string()));
         }
         if let Some(latest) = host.with_editor_mut(|ed| ed.take_messages().pop()) {
             message = Some(latest);

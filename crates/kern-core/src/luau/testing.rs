@@ -22,11 +22,13 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use kern_text::ClientId;
 use mlua::{Function, Lua, UserData, UserDataMethods};
 
 use super::modules::Modules;
+use super::tasks;
 use super::{Host, HostError, api, budgeted, state, state_mut};
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
@@ -157,6 +159,10 @@ impl UserData for TestContext {
         });
         methods.add_method("run", |lua, _, command: String| {
             api::run_command(lua, &command, &[]).map_err(api::into_lua)
+        });
+        methods.add_method("wait", |lua, _, ms: f64| {
+            let later = Instant::now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
+            tasks::fire_timers(lua, later)
         });
         methods.add_method("marked", |lua, _, ()| Ok(focused_marked_text(lua)));
         methods.add_method("floats", |lua, _, ()| {
