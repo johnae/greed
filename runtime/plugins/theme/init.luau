@@ -23,6 +23,7 @@ kern.theme.set({
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },
+	["ui.search.match"] = { bg = "yellow", fg = "black" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
 	["ui.health.found"] = { fg = "green" },
 	["ui.health.missing"] = { fg = "bright-black" },

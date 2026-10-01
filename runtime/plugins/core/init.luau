@@ -8,7 +8,9 @@ local text = require("@self/text")
 local motions = require("@self/motions")
 require("@self/edit")
 require("@self/file")
+require("@self/search")
 local menu = require("@self/menu")
+local prompt = require("@self/prompt")
 
 kern.keymap.bind("normal", {
 	h = "move-left",
@@ -42,6 +44,11 @@ kern.keymap.bind("normal", {
 	y = "copy",
 	p = "paste-after",
 	P = "paste-before",
+	["/"] = "search",
+	["?"] = "search-back",
+	n = "search-next",
+	N = "search-prev",
+	["*"] = "search-selection",
 })
 
 kern.keymap.bind("insert", {
@@ -68,4 +75,5 @@ return {
 	text = text,
 	motions = motions,
 	menu = menu,
+	prompt = prompt,
 }
