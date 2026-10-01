@@ -26,6 +26,10 @@ kern.theme.set({
 	["ui.flash"] = { bg = "yellow", fg = "black" },
 	["ui.health.found"] = { fg = "green" },
 	["ui.health.missing"] = { fg = "bright-black" },
+	["ui.panel.border"] = { fg = "bright-black" },
+	["ui.panel.title"] = { bold = true },
+	["ui.tree.directory"] = { fg = "blue", bold = true },
+	["ui.tree.open"] = { bg = "bright-black" },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

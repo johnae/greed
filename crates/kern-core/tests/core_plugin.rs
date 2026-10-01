@@ -125,3 +125,8 @@ fn lsp_plugin_tests_pass() {
 fn languages_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("languages")], &plugin("languages"));
 }
+
+#[test]
+fn tree_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("tree")], &plugin("tree"));
+}
