@@ -9,6 +9,7 @@ local motions = require("@self/motions")
 require("@self/edit")
 require("@self/file")
 require("@self/search")
+require("@self/select")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 
@@ -49,6 +50,18 @@ kern.keymap.bind("normal", {
 	n = "search-next",
 	N = "search-prev",
 	["*"] = "search-selection",
+	["%"] = "select-all",
+	s = "select-regex",
+	S = "split-regex",
+	["alt-s"] = "split-lines",
+	K = "keep-matching",
+	["alt-K"] = "remove-matching",
+	C = "copy-selection-down",
+	["alt-C"] = "copy-selection-up",
+	[","] = "keep-primary",
+	["alt-,"] = "remove-primary",
+	["("] = "rotate-primary-back",
+	[")"] = "rotate-primary",
 })
 
 kern.keymap.bind("insert", {

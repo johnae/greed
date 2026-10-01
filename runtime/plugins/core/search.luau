@@ -136,4 +136,6 @@ kern.command({
 	end,
 })
 
-return {}
+return {
+	smart_case = smart_case,
+}
