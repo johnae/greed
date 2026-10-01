@@ -474,10 +474,15 @@ pub fn uri_path(uri: &str) -> Option<PathBuf> {
     url::Url::parse(uri).ok()?.to_file_path().ok()
 }
 
-fn project_root(path: &Path, markers: &[String]) -> PathBuf {
-    let dir = path
-        .parent()
-        .map_or_else(|| PathBuf::from("."), Path::to_owned);
+/// Where a server for the file at `path` runs: the nearest directory with one
+/// of `markers`, or the file's own directory.
+pub fn project_root(path: &Path, markers: &[String]) -> PathBuf {
+    // A bare file name like "notes.md" has an empty parent: the current
+    // directory.
+    let dir = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_owned(),
+        _ => PathBuf::from("."),
+    };
     let dir = std::path::absolute(&dir).unwrap_or(dir);
     dir.ancestors()
         .find(|d| markers.iter().any(|m| d.join(m).exists()))

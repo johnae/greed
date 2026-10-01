@@ -182,3 +182,27 @@ fn positions_count_in_the_servers_encoding() {
     assert_eq!(at(0, 99, Encoding::Utf16), Some(8));
     assert_eq!(at(9, 0, Encoding::Utf16), Some(10));
 }
+
+#[test]
+fn project_roots_come_from_markers_or_the_files_directory() {
+    use kern_core::lsp::project_root;
+    let dir = std::env::temp_dir().join(format!("kern-root-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("crate/src")).unwrap();
+    std::fs::write(dir.join("crate/Cargo.toml"), "").unwrap();
+
+    let markers = vec!["Cargo.toml".to_string()];
+    assert_eq!(
+        project_root(&dir.join("crate/src/main.rs"), &markers),
+        dir.join("crate")
+    );
+    assert_eq!(
+        project_root(&dir.join("crate/src/main.rs"), &[]),
+        dir.join("crate/src")
+    );
+    // A bare file name is in the current directory.
+    assert_eq!(
+        project_root(Path::new("notes.md"), &[]),
+        std::env::current_dir().unwrap()
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
