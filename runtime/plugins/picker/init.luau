@@ -1,8 +1,8 @@
 -- Pickers: type to narrow a list down, then choose an item.
 --
 -- A picker is one floating buffer. Its first line is what you type; the
--- lines below are the items that match, best first, with "> " marking the
--- current one. Move with up/down (or ctrl-n/ctrl-p), choose with enter,
+-- lines below are the items that match, best first, with the current one
+-- highlighted. Move with up/down (or ctrl-n/ctrl-p), choose with enter,
 -- close with esc.
 --
 -- Other plugins open one with `require("@self/picker").pick(...)`; see

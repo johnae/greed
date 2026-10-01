@@ -25,6 +25,7 @@
 local kern = require("@kern")
 local parse = require("@self/parse")
 local complete = require("@self/complete")
+local menu = require("@core").menu
 
 -- At most this many matches are shown.
 local SHOWN = 8
@@ -63,6 +64,8 @@ type Open = {
 	-- The text after ":", as last seen.
 	text: string,
 	candidates: { complete.Candidate },
+	-- The word the candidates were found for.
+	word: string,
 	-- The match tab last filled in, or 0.
 	current: number,
 	-- Where the word tab fills in starts, while going through matches.
@@ -85,13 +88,21 @@ local function render(o: Open, to_end: boolean?)
 	local start = prompt_start(o)
 	local column = o.view:selection().ranges[1].head - start
 	local lines = {}
+	local marks: { kern.Mark } = {}
+	local from = 0
 	for i, candidate in o.candidates do
 		if i > SHOWN then
 			break
 		end
-		local mark = if i == o.current then "> " else "  "
-		local doc = if candidate.doc and candidate.doc ~= "" then "  " .. candidate.doc else ""
-		table.insert(lines, mark .. candidate.text .. doc)
+		local line = " " .. candidate.text
+		if candidate.doc and candidate.doc ~= "" then
+			line ..= "  "
+			table.insert(marks, { from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" })
+			line ..= candidate.doc
+		end
+		menu.mark_row(marks, from, line, i == o.current, kern.fuzzy_positions(o.word, candidate.text), 1)
+		table.insert(lines, line)
+		from += #line + 1
 	end
 	table.insert(lines, ":" .. o.text)
 	local text = table.concat(lines, "\n")
@@ -101,6 +112,7 @@ local function render(o: Open, to_end: boolean?)
 		e:replace(0, o.buffer:len(), text)
 		e:select({ ranges = { { anchor = head, head = head } }, primary = 1 })
 	end)
+	o.buffer:decorate("cmdline", marks)
 	-- Two rows of border.
 	o.view:configure({ height = #lines + 2 })
 end
@@ -116,7 +128,7 @@ end
 
 local function update(o: Open, text: string)
 	o.text = text
-	o.candidates = complete.candidates(text, first_words(), resolve)
+	o.candidates, o.word = complete.candidates(text, first_words(), resolve)
 	o.current = 0
 	o.word_start = nil
 end
@@ -198,6 +210,7 @@ kern.command({
 			mode = kern.mode.get(),
 			text = "",
 			candidates = {},
+			word = "",
 			current = 0,
 			history_index = 0,
 		}

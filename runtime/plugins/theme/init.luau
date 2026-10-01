@@ -20,6 +20,9 @@ kern.theme.set({
 	["ui.statusline.message"] = { fg = "bright-yellow" },
 	["ui.float.border"] = { fg = "bright-black" },
 	["ui.float.title"] = { fg = "white", bold = true },
+	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
+	["ui.menu.match"] = { fg = "yellow", bold = true },
+	["ui.menu.doc"] = { dim = true },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

@@ -1,6 +1,7 @@
 -- The picker itself: a floating buffer, kept in sync with what's typed.
 
 local kern = require("@kern")
+local menu = require("@core").menu
 
 export type Item = {
 	label: string,
@@ -33,18 +34,23 @@ end
 -- cursor where it is in the query.
 local function render(o: Open)
 	local lines = {}
+	local marks: { kern.Mark } = {}
+	local from = o.buffer:line_end(0) + 1
 	for i, index in o.matches do
 		if i > LIMIT then
 			break
 		end
-		local mark = if i == o.current then "> " else "  "
-		table.insert(lines, mark .. o.labels[index])
+		local line = " " .. o.labels[index]
+		menu.mark_row(marks, from, line, i == o.current, kern.fuzzy_positions(o.query or "", o.labels[index]), 1)
+		table.insert(lines, line)
+		from += #line + 1
 	end
 	local selection = o.view:selection()
 	o.buffer:edit(function(e)
 		e:replace(o.buffer:line_end(0), o.buffer:len(), "\n" .. table.concat(lines, "\n"))
 		e:select(selection)
 	end)
+	o.buffer:decorate("picker", marks)
 end
 
 -- Filters the items again if the query changed.

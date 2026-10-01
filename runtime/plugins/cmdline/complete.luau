@@ -84,16 +84,16 @@ M.register("file", function(word)
 	return items
 end)
 
--- Candidates for the last word of `line`. `first` lists what the first
--- word can be; `resolve` turns it into a command name.
-function M.candidates(line: string, first: { Candidate }, resolve: (name: string) -> string): { Candidate }
+-- Candidates for the last word of `line`, and that word. `first` lists
+-- what the first word can be; `resolve` turns it into a command name.
+function M.candidates(line: string, first: { Candidate }, resolve: (name: string) -> string): ({ Candidate }, string)
 	local typed = string.match(line, "^%s*(.*)$") or ""
 	if not string.find(typed, "%s") then
-		return rank(typed, first)
+		return rank(typed, first), typed
 	end
 	local parsed = parse.parse(typed)
 	if parsed == nil then
-		return {}
+		return {}, ""
 	end
 	local name = resolve(parsed.name)
 	local index, word = #parsed.args, parsed.args[#parsed.args] or ""
@@ -104,10 +104,10 @@ function M.candidates(line: string, first: { Candidate }, resolve: (name: string
 		if command.name == name then
 			local spec = command.args[index]
 			local completer = spec and spec.complete and completers[spec.complete]
-			return if completer then rank(word, completer(word)) else {}
+			return (if completer then rank(word, completer(word)) else {}), word
 		end
 	end
-	return {}
+	return {}, ""
 end
 
 return M

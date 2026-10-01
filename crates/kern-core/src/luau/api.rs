@@ -791,6 +791,12 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         "fuzzy",
         lua.create_function(|_, (query, items): (String, Vec<String>)| Ok(fuzzy(&query, &items)))?,
     )?;
+    kern.set(
+        "fuzzy_positions",
+        lua.create_function(|_, (query, text): (String, String)| {
+            Ok(fuzzy_positions(&query, &text))
+        })?,
+    )?;
 
     kern.set(
         "language_of",
@@ -831,6 +837,28 @@ fn create_buffer_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
             })
         },
     )
+}
+
+/// The byte offsets of the characters in `text` that `query` matches, in
+/// order; empty if it doesn't match.
+fn fuzzy_positions(query: &str, text: &str) -> Vec<usize> {
+    let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
+    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+    let mut buf = Vec::new();
+    let mut indices = Vec::new();
+    if pattern
+        .indices(Utf32Str::new(text, &mut buf), &mut matcher, &mut indices)
+        .is_none()
+    {
+        return Vec::new();
+    }
+    indices.sort_unstable();
+    indices.dedup();
+    let offsets: Vec<usize> = text.char_indices().map(|(offset, _)| offset).collect();
+    indices
+        .iter()
+        .filter_map(|&i| offsets.get(usize::try_from(i).ok()?).copied())
+        .collect()
 }
 
 /// The 1-based indices of `items` matching `query`, best match first.

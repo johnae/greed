@@ -8,6 +8,7 @@ local text = require("@self/text")
 local motions = require("@self/motions")
 require("@self/edit")
 require("@self/file")
+local menu = require("@self/menu")
 
 kern.keymap.bind("normal", {
 	h = "move-left",
@@ -66,4 +67,5 @@ kern.mode.cursor("insert", "bar")
 return {
 	text = text,
 	motions = motions,
+	menu = menu,
 }

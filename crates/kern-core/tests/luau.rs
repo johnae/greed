@@ -1127,3 +1127,24 @@ fn plugins_decorate_buffers() {
         "0"
     );
 }
+
+#[test]
+fn fuzzy_matches_say_where_they_matched() {
+    let h = host("");
+    assert_eq!(
+        h.eval("table.concat(require('@kern').fuzzy_positions('mrs', 'src/main.rs'), ',')")
+            .unwrap(),
+        "4,9,10"
+    );
+    // Byte offsets, so multibyte characters before a match count fully.
+    assert_eq!(
+        h.eval("table.concat(require('@kern').fuzzy_positions('b', 'éb'), ',')")
+            .unwrap(),
+        "2"
+    );
+    assert_eq!(
+        h.eval("#require('@kern').fuzzy_positions('zz', 'abc')")
+            .unwrap(),
+        "0"
+    );
+}

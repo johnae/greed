@@ -424,6 +424,9 @@ export type Kern = {
 	commands: () -> { CommandInfo },
 	--- The 1-based indices of `items` that match `query`, best first.
 	fuzzy: (query: string, items: { string }) -> { number },
+	--- The byte offsets of the characters in `text` that `query` matches,
+	--- for highlighting them; empty if it doesn't match.
+	fuzzy_positions: (query: string, text: string) -> { number },
 	--- Files under `dir` (default: the current directory), skipping hidden
 	--- and ignored files.
 	files: (dir: string?) -> { string },
