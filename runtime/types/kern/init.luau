@@ -259,6 +259,69 @@ export type Process = {
 	) -> ({ code: number?, stdout: string, stderr: string }?, string?),
 }
 
+--- A line of a terminal: its text, and the parts with a style of their own
+--- (byte offsets, 0-based, `to` exclusive), styled with inline names like
+--- "=fg:red bold".
+export type TerminalRow = {
+	text: string,
+	spans: { { from: number, to: number, style: string } },
+}
+
+--- What a terminal shows.
+export type TerminalScreen = {
+	rows: { TerminalRow },
+	--- The cursor's row (0-based) and byte offset in it, unless the program
+	--- hid it.
+	cursor: { row: number, col: number }?,
+	--- Whether a full screen program, like an editor or a pager, is showing.
+	alternate: boolean,
+}
+
+--- A program running in a terminal.
+export type Terminal = {
+	id: (self: Terminal) -> number,
+	screen: (self: Terminal) -> TerminalScreen,
+	--- The lines that scrolled off the top, from line `from` (counting from
+	--- the terminal's first line) on, or from the oldest one kept. `first` is
+	--- the number of the first line returned.
+	scrollback: (self: Terminal, from: number?) -> { first: number, rows: { TerminalRow } },
+	--- Sends text to the program as if typed.
+	write: (self: Terminal, text: string) -> (),
+	--- Sends a key, e.g. "ctrl-c" or "up", as a terminal encodes it.
+	key: (self: Terminal, name: string) -> (),
+	--- Sends pasted text, marked as a paste if the program asked for that.
+	paste: (self: Terminal, text: string) -> (),
+	resize: (self: Terminal, rows: number, cols: number) -> (),
+	--- What the program called its window, if it did.
+	title: (self: Terminal) -> string?,
+	--- The program's exit code, once it has ended.
+	exit_code: (self: Terminal) -> number?,
+	--- Asks the program to end.
+	kill: (self: Terminal) -> (),
+	--- Ends the program and lets the terminal go; its handle stops working.
+	close: (self: Terminal) -> (),
+}
+
+--- Programs in terminals. A terminal belongs to the plugin that started it.
+export type Terminals = {
+	--- Starts `command` (the program, then its arguments; the user's shell
+	--- without) in a terminal of `rows` by `cols`. Its output arrives as
+	--- "terminal.output" events and its end as "terminal.exited".
+	--- `scrollback` lines are kept above the screen (default 10000).
+	spawn: (spec: { command: { string }?, cwd: string?, env: { [string]: string }?, rows: number, cols: number, scrollback: number? }) -> Terminal,
+}
+
+--- A terminal printed something; read it with `terminal:screen()`.
+export type TerminalOutput = {
+	terminal: Terminal,
+}
+
+--- The program in a terminal ended.
+export type TerminalExited = {
+	terminal: Terminal,
+	code: number,
+}
+
 export type History = {
 	--- Edits until `end_group` become one undo step.
 	start_group: () -> (),
@@ -640,6 +703,8 @@ export type Kern = {
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())
 		& ((event: "editor.quitting", handler: (event: {}) -> ()) -> ())
+		& ((event: "terminal.output", handler: (event: TerminalOutput) -> ()) -> ())
+		& ((event: "terminal.exited", handler: (event: TerminalExited) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
@@ -665,6 +730,7 @@ export type Kern = {
 	next_key: () -> string,
 	keys: Keys,
 	process: Process,
+	terminal: Terminals,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

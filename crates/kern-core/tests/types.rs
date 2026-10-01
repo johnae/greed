@@ -76,6 +76,13 @@ fn declared_api_exists() {
         ("View", format!("{kern} check(kern.view())")),
         ("Buffer", format!("{kern} check(kern.view():buffer())")),
         ("Edits", format!("{kern} kern.view():buffer():edit(check)")),
+        (
+            "Terminal",
+            format!(
+                "{kern} local t = kern.terminal.spawn({{ command = {{ 'true' }}, rows = 2, cols = 10 }}) \
+                 check(t) t:close()"
+            ),
+        ),
     ];
     let h = host();
     for (name, setup) in cases {
@@ -96,6 +103,7 @@ fn api_tables_are_fully_declared() {
         ("History", "kern.history"),
         ("Clipboard", "kern.clipboard"),
         ("Lsp", "kern.lsp"),
+        ("Terminals", "kern.terminal"),
     ];
     let h = host();
     for (name, expr) in cases {

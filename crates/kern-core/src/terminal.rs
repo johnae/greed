@@ -1,0 +1,643 @@
+//! Terminals: a program running in a pseudo terminal, its output kept as a
+//! grid of styled cells by alacritty's emulator. The terminal plugin shows
+//! the grid in a buffer and sends keys; this holds the parts that need
+//! threads and speed.
+//!
+//! Lines that scroll off the top move out of the emulator into a scrollback
+//! of our own, numbered from the first line the terminal ever had, so the
+//! plugin can ask for just the lines it hasn't shown yet.
+
+use std::collections::VecDeque;
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use alacritty_terminal::event::{Event as TermEvent, EventListener};
+use alacritty_terminal::grid::{Dimensions, Row as GridRow};
+use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::term::cell::{Cell, Flags};
+use alacritty_terminal::term::{Config, Term, TermMode};
+use alacritty_terminal::vte::ansi::{Color as TermColor, NamedColor, Processor, Rgb};
+use crossbeam_channel::Sender;
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
+
+use crate::keymap::{Key, KeyCode, Mods};
+use crate::theme::{Color, Style, Underline};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TerminalId(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    /// There's new output. Sent once until the screen is next read.
+    Output(TerminalId),
+    /// The program ended, with its exit code.
+    Exited(TerminalId, u32),
+}
+
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// The program and its arguments; without, the user's shell.
+    pub command: Option<Vec<String>>,
+    pub cwd: Option<PathBuf>,
+    pub env: Vec<(String, String)>,
+    pub rows: u16,
+    pub cols: u16,
+    /// How many lines that scrolled off the top are kept.
+    pub scrollback: usize,
+}
+
+/// A line of the grid: its text, and the parts of it with a style of their
+/// own as byte ranges.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Row {
+    pub text: String,
+    pub spans: Vec<Span>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub from: usize,
+    pub to: usize,
+    /// An inline style name, e.g. `=fg:red bold`.
+    pub style: Arc<str>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Screen {
+    pub rows: Vec<Row>,
+    /// The cursor's row and byte offset in it, unless the program hid it.
+    pub cursor: Option<(usize, usize)>,
+    /// Whether a full screen program, like an editor or a pager, is showing.
+    pub alternate: bool,
+}
+
+/// Lines of scrollback: `rows[0]` is line `first`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scrollback {
+    pub first: u64,
+    pub rows: Vec<Row>,
+}
+
+/// How many lines may scroll off in one read before they move to the
+/// scrollback. More than a read can hold.
+const OVERFLOW: usize = 100_000;
+
+pub struct Terminal {
+    shared: Arc<Shared>,
+    input: Sender<Vec<u8>>,
+    master: Box<dyn MasterPty + Send>,
+    killer: Box<dyn ChildKiller + Send + Sync>,
+    title: Arc<Mutex<Option<String>>>,
+    exit: Arc<Mutex<Option<u32>>>,
+}
+
+struct Shared {
+    term: Mutex<Term<Listener>>,
+    scrollback: Mutex<Lines>,
+    unread: AtomicBool,
+}
+
+struct Lines {
+    first: u64,
+    rows: VecDeque<Row>,
+    limit: usize,
+}
+
+impl Lines {
+    fn push(&mut self, row: Row) {
+        self.rows.push_back(row);
+        while self.rows.len() > self.limit {
+            self.rows.pop_front();
+            self.first += 1;
+        }
+    }
+}
+
+impl Terminal {
+    /// Starts `options.command` in a new pseudo terminal. Output and the
+    /// program's end arrive on `events`.
+    pub fn spawn(id: TerminalId, options: &Options, events: Sender<Event>) -> io::Result<Self> {
+        let pair = portable_pty::native_pty_system()
+            .openpty(pty_size(options.rows, options.cols))
+            .map_err(io::Error::other)?;
+        let mut child = pair
+            .slave
+            .spawn_command(command(options))
+            .map_err(io::Error::other)?;
+        drop(pair.slave);
+        let killer = child.clone_killer();
+        let reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
+        let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
+
+        let (input, inputs) = crossbeam_channel::unbounded::<Vec<u8>>();
+        std::thread::Builder::new()
+            .name("kern-terminal-in".into())
+            .spawn(move || {
+                for bytes in inputs {
+                    if writer
+                        .write_all(&bytes)
+                        .and_then(|()| writer.flush())
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })?;
+
+        let title = Arc::new(Mutex::new(None));
+        let listener = Listener {
+            input: input.clone(),
+            title: title.clone(),
+        };
+        let config = Config {
+            scrolling_history: OVERFLOW,
+            ..Config::default()
+        };
+        let size = Size::new(options.rows, options.cols);
+        let shared = Arc::new(Shared {
+            term: Mutex::new(Term::new(config, &size, listener)),
+            scrollback: Mutex::new(Lines {
+                first: 0,
+                rows: VecDeque::new(),
+                limit: options.scrollback,
+            }),
+            unread: AtomicBool::new(false),
+        });
+        let exit = Arc::new(Mutex::new(None));
+        let (pumped, ended) = (shared.clone(), exit.clone());
+        std::thread::Builder::new()
+            .name("kern-terminal-out".into())
+            .spawn(move || {
+                pump(&pumped, reader, id, &events);
+                let code = child.wait().map_or(1, |status| status.exit_code());
+                *lock(&ended) = Some(code);
+                let _ = events.send(Event::Exited(id, code));
+            })?;
+        Ok(Terminal {
+            shared,
+            input,
+            master: pair.master,
+            killer,
+            title,
+            exit,
+        })
+    }
+
+    /// The visible grid and the cursor.
+    pub fn screen(&self) -> Screen {
+        self.shared.unread.store(false, Ordering::Release);
+        let term = lock(&self.shared.term);
+        let grid = term.grid();
+        let mode = *term.mode();
+        let point = grid.cursor.point;
+        let mut cursor = None;
+        let rows = (0..grid.screen_lines())
+            .map(|r| {
+                let line = Line(i32::try_from(r).unwrap_or(i32::MAX));
+                let at = (mode.contains(TermMode::SHOW_CURSOR) && point.line == line)
+                    .then_some(point.column.0);
+                let (row, offset) = row(&grid[line], grid.columns(), at);
+                if at.is_some() {
+                    cursor = Some((r, offset));
+                }
+                row
+            })
+            .collect();
+        Screen {
+            rows,
+            cursor,
+            alternate: mode.contains(TermMode::ALT_SCREEN),
+        }
+    }
+
+    /// The scrollback from line `from` on, or from the oldest line still
+    /// kept if `from` is gone.
+    pub fn scrollback(&self, from: u64) -> Scrollback {
+        let lines = lock(&self.shared.scrollback);
+        let skip = usize::try_from(from.saturating_sub(lines.first)).unwrap_or(usize::MAX);
+        Scrollback {
+            first: lines
+                .first
+                .max(from.min(lines.first + lines.rows.len() as u64)),
+            rows: lines.rows.iter().skip(skip).cloned().collect(),
+        }
+    }
+
+    /// Sends `bytes` to the program as if typed.
+    pub fn write(&self, bytes: Vec<u8>) {
+        let _ = self.input.send(bytes);
+    }
+
+    /// Sends `key` the way a terminal encodes it for the program's modes.
+    pub fn key(&self, key: Key) {
+        let app_cursor = lock(&self.shared.term)
+            .mode()
+            .contains(TermMode::APP_CURSOR);
+        let bytes = encode_key(key, app_cursor);
+        if !bytes.is_empty() {
+            self.write(bytes);
+        }
+    }
+
+    /// Sends pasted text, marked as a paste when the program asked for that.
+    pub fn paste(&self, text: &str) {
+        let bracketed = lock(&self.shared.term)
+            .mode()
+            .contains(TermMode::BRACKETED_PASTE);
+        let bytes = if bracketed {
+            format!("\x1b[200~{}\x1b[201~", text.replace('\x1b', ""))
+        } else {
+            text.replace("\r\n", "\r").replace('\n', "\r")
+        };
+        self.write(bytes.into_bytes());
+    }
+
+    pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
+        let (rows, cols) = (rows.max(1), cols.max(1));
+        self.master
+            .resize(pty_size(rows, cols))
+            .map_err(io::Error::other)?;
+        lock(&self.shared.term).resize(Size::new(rows, cols));
+        self.shared.unread.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    /// What the program called the window, if it did.
+    pub fn title(&self) -> Option<String> {
+        lock(&self.title).clone()
+    }
+
+    /// The program's exit code, once it has ended.
+    pub fn exit_code(&self) -> Option<u32> {
+        *lock(&self.exit)
+    }
+
+    pub fn kill(&mut self) {
+        let _ = self.killer.kill();
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
+fn command(options: &Options) -> CommandBuilder {
+    let mut command = match options.command.as_deref() {
+        Some([program, args @ ..]) => {
+            let mut command = CommandBuilder::new(program);
+            command.args(args);
+            command
+        }
+        _ => CommandBuilder::new_default_prog(),
+    };
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    if let Some(cwd) = &options.cwd {
+        command.cwd(cwd);
+    }
+    for (key, value) in &options.env {
+        command.env(key, value);
+    }
+    command
+}
+
+fn pty_size(rows: u16, cols: u16) -> PtySize {
+    PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+/// Feeds the program's output to the emulator until it ends.
+fn pump(shared: &Shared, mut reader: Box<dyn Read + Send>, id: TerminalId, events: &Sender<Event>) {
+    let mut processor: Processor = Processor::new();
+    let mut buf = vec![0; 64 * 1024];
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            // EIO once the program and everything it started have gone.
+            Err(_) => return,
+        };
+        {
+            let mut term = lock(&shared.term);
+            processor.advance(&mut *term, &buf[..n]);
+            keep_scrollback(&mut term, &mut lock(&shared.scrollback));
+        }
+        if !shared.unread.swap(true, Ordering::AcqRel) {
+            let _ = events.send(Event::Output(id));
+        }
+    }
+}
+
+/// Moves the lines that scrolled off the emulator's screen into `lines`.
+fn keep_scrollback(term: &mut Term<Listener>, lines: &mut Lines) {
+    let grid = term.grid();
+    let history = grid.history_size();
+    if history == 0 {
+        return;
+    }
+    let cols = grid.columns();
+    for back in (1..=history).rev() {
+        let line = Line(-i32::try_from(back).unwrap_or(i32::MAX));
+        lines.push(row(&grid[line], cols, None).0);
+    }
+    term.grid_mut().clear_history();
+}
+
+/// The text and styles of `cells`, without trailing blanks, and the byte
+/// offset of column `cursor`, which the text reaches when given.
+fn row(cells: &GridRow<Cell>, cols: usize, cursor: Option<usize>) -> (Row, usize) {
+    let blank = |cell: &Cell| {
+        cell.c == ' '
+            && cell.bg == TermColor::Named(NamedColor::Background)
+            && !cell
+                .flags
+                .intersects(Flags::INVERSE | Flags::ALL_UNDERLINES)
+    };
+    let end = (0..cols)
+        .rev()
+        .find(|&c| !blank(&cells[Column(c)]))
+        .map_or(0, |c| c + 1)
+        .max(cursor.unwrap_or(0));
+    let mut row = Row::default();
+    let mut offset = 0;
+    let mut run: Option<(Style, usize)> = None;
+    for c in 0..end {
+        if Some(c) == cursor {
+            offset = row.text.len();
+        }
+        let cell = &cells[Column(c)];
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+        let style = cell_style(cell);
+        if run.as_ref().is_none_or(|(s, _)| *s != style) {
+            finish_run(&mut row, run.take());
+            run = Some((style, row.text.len()));
+        }
+        row.text.push(if cell.flags.contains(Flags::HIDDEN) {
+            ' '
+        } else {
+            cell.c
+        });
+        row.text.extend(cell.zerowidth().unwrap_or_default());
+    }
+    finish_run(&mut row, run);
+    if cursor == Some(end) {
+        offset = row.text.len();
+    }
+    (row, offset)
+}
+
+fn finish_run(row: &mut Row, run: Option<(Style, usize)>) {
+    if let Some((style, from)) = run
+        && style != Style::default()
+    {
+        row.spans.push(Span {
+            from,
+            to: row.text.len(),
+            style: style.inline_name().into(),
+        });
+    }
+}
+
+fn cell_style(cell: &Cell) -> Style {
+    let flag = |f: Flags| cell.flags.contains(f).then_some(true);
+    let underline = [
+        (Flags::UNDERLINE, Underline::Line),
+        (Flags::DOUBLE_UNDERLINE, Underline::Double),
+        (Flags::UNDERCURL, Underline::Curl),
+        (Flags::DOTTED_UNDERLINE, Underline::Dotted),
+        (Flags::DASHED_UNDERLINE, Underline::Dashed),
+    ]
+    .into_iter()
+    .find_map(|(f, kind)| cell.flags.contains(f).then_some(kind));
+    Style {
+        fg: color(cell.fg),
+        bg: color(cell.bg),
+        underline,
+        underline_color: cell.underline_color().and_then(color),
+        bold: flag(Flags::BOLD),
+        italic: flag(Flags::ITALIC),
+        dim: flag(Flags::DIM),
+        reverse: flag(Flags::INVERSE),
+        strikethrough: flag(Flags::STRIKEOUT),
+    }
+}
+
+/// A terminal color as a theme color; the default colors are left out so
+/// the editor's own show.
+fn color(color: TermColor) -> Option<Color> {
+    match color {
+        TermColor::Spec(Rgb { r, g, b }) => Some(Color::Rgb(r, g, b)),
+        TermColor::Indexed(i) => Some(indexed(i)),
+        TermColor::Named(named) => {
+            let n = named as usize;
+            let dim = NamedColor::DimBlack as usize;
+            match n {
+                0..16 => u8::try_from(n).ok().map(Color::Ansi),
+                _ if (dim..dim + 8).contains(&n) => u8::try_from(n - dim).ok().map(Color::Ansi),
+                _ => None,
+            }
+        }
+    }
+}
+
+/// One of the 256 colors: the 16 terminal colors, a 6x6x6 cube, then 24
+/// greys.
+fn indexed(i: u8) -> Color {
+    match i {
+        0..16 => Color::Ansi(i),
+        16..232 => {
+            let level = |v: u8| if v == 0 { 0 } else { 55 + v * 40 };
+            let i = i - 16;
+            Color::Rgb(level(i / 36), level(i / 6 % 6), level(i % 6))
+        }
+        _ => {
+            let grey = 8 + (i - 232) * 10;
+            Color::Rgb(grey, grey, grey)
+        }
+    }
+}
+
+/// The bytes a terminal sends for `key`, as xterm does. With `app_cursor`
+/// the program asked for arrows in application mode.
+fn encode_key(key: Key, app_cursor: bool) -> Vec<u8> {
+    let ctrl = key.mods.contains(Mods::CTRL);
+    let alt = key.mods.contains(Mods::ALT);
+    let shift = key.mods.contains(Mods::SHIFT);
+    let m = 1 + u8::from(shift) + 2 * u8::from(alt) + 4 * u8::from(ctrl);
+    let letter = |end: char, app: bool| {
+        if m > 1 {
+            format!("\x1b[1;{m}{end}")
+        } else if app {
+            format!("\x1bO{end}")
+        } else {
+            format!("\x1b[{end}")
+        }
+        .into_bytes()
+    };
+    let tilde = |n: u8| {
+        if m > 1 {
+            format!("\x1b[{n};{m}~")
+        } else {
+            format!("\x1b[{n}~")
+        }
+        .into_bytes()
+    };
+    let bytes: Vec<u8> = match key.code {
+        KeyCode::Up => return letter('A', app_cursor),
+        KeyCode::Down => return letter('B', app_cursor),
+        KeyCode::Right => return letter('C', app_cursor),
+        KeyCode::Left => return letter('D', app_cursor),
+        KeyCode::Home => return letter('H', app_cursor),
+        KeyCode::End => return letter('F', app_cursor),
+        KeyCode::Insert => return tilde(2),
+        KeyCode::Delete => return tilde(3),
+        KeyCode::PageUp => return tilde(5),
+        KeyCode::PageDown => return tilde(6),
+        KeyCode::F(n @ 1..=4) => return letter(char::from(b"PQRS"[usize::from(n - 1)]), true),
+        KeyCode::F(n) => {
+            return match n {
+                5 => tilde(15),
+                6..=10 => tilde(n + 11),
+                11 | 12 => tilde(n + 12),
+                _ => Vec::new(),
+            };
+        }
+        KeyCode::Enter => b"\r".to_vec(),
+        KeyCode::Tab if shift => return b"\x1b[Z".to_vec(),
+        KeyCode::Tab => b"\t".to_vec(),
+        KeyCode::Backspace if ctrl => b"\x08".to_vec(),
+        KeyCode::Backspace => b"\x7f".to_vec(),
+        KeyCode::Esc => b"\x1b".to_vec(),
+        KeyCode::Char(c) if ctrl => control(c),
+        KeyCode::Char(c) => c.to_string().into_bytes(),
+    };
+    if alt {
+        [b"\x1b".as_slice(), &bytes].concat()
+    } else {
+        bytes
+    }
+}
+
+/// What ctrl and `c` send: a control character where there is one.
+fn control(c: char) -> Vec<u8> {
+    let byte = match c.to_ascii_lowercase() {
+        ' ' | '@' | '2' => 0,
+        c @ 'a'..='z' => c as u8 - b'a' + 1,
+        '[' | '3' => 27,
+        '\\' | '4' => 28,
+        ']' | '5' => 29,
+        '^' | '6' => 30,
+        '_' | '-' | '/' | '7' => 31,
+        '?' | '8' => 127,
+        _ => return c.to_string().into_bytes(),
+    };
+    vec![byte]
+}
+
+/// Answers the emulator's requests to write to the program, and keeps the
+/// window title.
+struct Listener {
+    input: Sender<Vec<u8>>,
+    title: Arc<Mutex<Option<String>>>,
+}
+
+impl EventListener for Listener {
+    fn send_event(&self, event: TermEvent) {
+        match event {
+            TermEvent::PtyWrite(text) => {
+                let _ = self.input.send(text.into_bytes());
+            }
+            TermEvent::Title(title) => *lock(&self.title) = Some(title),
+            TermEvent::ResetTitle => *lock(&self.title) = None,
+            _ => {}
+        }
+    }
+}
+
+struct Size {
+    rows: usize,
+    cols: usize,
+}
+
+impl Size {
+    fn new(rows: u16, cols: u16) -> Self {
+        Size {
+            rows: usize::from(rows.max(1)),
+            cols: usize::from(cols.max(1)),
+        }
+    }
+}
+
+impl Dimensions for Size {
+    fn total_lines(&self) -> usize {
+        self.rows
+    }
+
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+
+    fn columns(&self) -> usize {
+        self.cols
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(name: &str) -> Key {
+        Key::parse(name).unwrap()
+    }
+
+    #[test]
+    fn keys_are_sent_as_xterm_sends_them() {
+        let sent = |name: &str| encode_key(key(name), false);
+        assert_eq!(sent("a"), b"a");
+        assert_eq!(sent("ctrl-c"), [3]);
+        assert_eq!(sent("alt-b"), b"\x1bb");
+        assert_eq!(sent("enter"), b"\r");
+        assert_eq!(sent("backspace"), [0x7f]);
+        assert_eq!(sent("up"), b"\x1b[A");
+        assert_eq!(encode_key(key("up"), true), b"\x1bOA");
+        assert_eq!(sent("ctrl-right"), b"\x1b[1;5C");
+        assert_eq!(sent("shift-tab"), b"\x1b[Z");
+        assert_eq!(sent("delete"), b"\x1b[3~");
+        assert_eq!(sent("f1"), b"\x1bOP");
+        assert_eq!(sent("f5"), b"\x1b[15~");
+        assert_eq!(sent("f12"), b"\x1b[24~");
+        assert_eq!(sent("ctrl-space"), [0]);
+        assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn the_256_colors_are_the_usual_ones() {
+        assert_eq!(indexed(1), Color::Ansi(1));
+        assert_eq!(indexed(16), Color::Rgb(0, 0, 0));
+        assert_eq!(indexed(196), Color::Rgb(255, 0, 0));
+        assert_eq!(indexed(255), Color::Rgb(238, 238, 238));
+        assert_eq!(color(TermColor::Named(NamedColor::Foreground)), None);
+        assert_eq!(
+            color(TermColor::Named(NamedColor::BrightRed)),
+            Some(Color::Ansi(9))
+        );
+    }
+}

@@ -14,6 +14,9 @@ export type TestContext = {
 	run: (self: TestContext, command: string, args: { string }?) -> (),
 	--- Lets `ms` milliseconds pass for commands waiting on kern.sleep.
 	wait: (self: TestContext, ms: number) -> (),
+	--- Waits, for real, until `done` returns true, passing on terminal
+	--- output as it comes; fails after `ms` milliseconds (default 5000).
+	["until"]: (self: TestContext, done: () -> boolean, ms: number?) -> (),
 	--- A new, empty directory holding `files` (paths in it, to their text).
 	--- Folders in the paths are created.
 	tempdir: (self: TestContext, files: { [string]: string }?) -> string,

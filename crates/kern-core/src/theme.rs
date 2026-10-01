@@ -8,6 +8,8 @@
 //!
 //! Names are dotted and fall back to their parents: `markup.heading.1`
 //! uses `markup.heading` if the theme has no entry for it, then `markup`.
+//! A name starting with `=` is a style itself, e.g. `=fg:red bold`, and
+//! skips the theme: a terminal's colors come from the program in it.
 //!
 //! The core's own names:
 //!
@@ -22,6 +24,7 @@
 //! - tree-sitter captures for syntax, e.g. `keyword` or `function.macro`
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -73,6 +76,17 @@ pub enum Underline {
     Double,
 }
 
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Color::Default => f.write_str("default"),
+            Color::Ansi(n) if n < 8 => f.write_str(ANSI[usize::from(n)]),
+            Color::Ansi(n) => write!(f, "bright-{}", ANSI[usize::from(n % 8)]),
+            Color::Rgb(r, g, b) => write!(f, "#{r:02x}{g:02x}{b:02x}"),
+        }
+    }
+}
+
 impl Underline {
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
@@ -83,6 +97,16 @@ impl Underline {
             "double" => Underline::Double,
             _ => return None,
         })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Underline::Line => "line",
+            Underline::Curl => "curl",
+            Underline::Dotted => "dotted",
+            Underline::Dashed => "dashed",
+            Underline::Double => "double",
+        }
     }
 }
 
@@ -116,6 +140,61 @@ impl Style {
             reverse: over.reverse.or(self.reverse),
             strikethrough: over.strikethrough.or(self.strikethrough),
         }
+    }
+
+    /// A name that spells out this style, e.g. `=fg:red bg:#202020 bold`,
+    /// for text whose look comes from elsewhere than the theme, like a
+    /// program's output in a terminal.
+    pub fn inline_name(&self) -> String {
+        let mut words = Vec::new();
+        for (key, color) in [
+            ("fg", self.fg),
+            ("bg", self.bg),
+            ("underline_color", self.underline_color),
+        ] {
+            if let Some(color) = color {
+                words.push(format!("{key}:{color}"));
+            }
+        }
+        if let Some(underline) = self.underline {
+            words.push(format!("underline:{}", underline.name()));
+        }
+        for (key, on) in [
+            ("bold", self.bold),
+            ("italic", self.italic),
+            ("dim", self.dim),
+            ("reverse", self.reverse),
+            ("strikethrough", self.strikethrough),
+        ] {
+            if on == Some(true) {
+                words.push(key.to_owned());
+            }
+        }
+        format!("={}", words.join(" "))
+    }
+
+    /// The style an inline name spells out, given without its `=`. Words it
+    /// doesn't know are skipped.
+    pub fn from_inline(spec: &str) -> Style {
+        let mut style = Style::default();
+        for word in spec.split_whitespace() {
+            match word.split_once(':') {
+                Some(("fg", color)) => style.fg = Color::parse(color),
+                Some(("bg", color)) => style.bg = Color::parse(color),
+                Some(("underline_color", color)) => style.underline_color = Color::parse(color),
+                Some(("underline", kind)) => style.underline = Underline::parse(kind),
+                Some(_) => {}
+                None => match word {
+                    "bold" => style.bold = Some(true),
+                    "italic" => style.italic = Some(true),
+                    "dim" => style.dim = Some(true),
+                    "reverse" => style.reverse = Some(true),
+                    "strikethrough" => style.strikethrough = Some(true),
+                    _ => {}
+                },
+            }
+        }
+        style
     }
 }
 
@@ -172,6 +251,9 @@ impl Theme {
     /// parent's. Without either, a few core names keep a plain look so the
     /// editor stays usable with no theme at all.
     pub fn style(&self, name: &str, surface: Surface) -> Style {
+        if let Some(spec) = name.strip_prefix('=') {
+            return Style::from_inline(spec);
+        }
         if let Some(entry) = lineage(name).find_map(|n| self.entries.get(n)) {
             return entry.on(surface);
         }
@@ -191,4 +273,34 @@ const PLAIN_REVERSED: [&str; 3] = ["ui.selection", "ui.cursor", "ui.statusline"]
 /// `name`, then each parent: "a.b.c", "a.b", "a".
 fn lineage(name: &str) -> impl Iterator<Item = &str> {
     std::iter::successors(Some(name), |n| n.rsplit_once('.').map(|(parent, _)| parent))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inline_names_spell_out_their_style_and_skip_the_theme() {
+        let style = Style {
+            fg: Some(Color::Ansi(9)),
+            bg: Some(Color::Rgb(0x20, 0x20, 0x20)),
+            underline: Some(Underline::Curl),
+            bold: Some(true),
+            reverse: Some(true),
+            ..Style::default()
+        };
+        let name = style.inline_name();
+        assert_eq!(
+            name,
+            "=fg:bright-red bg:#202020 underline:curl bold reverse"
+        );
+        let mut theme = Theme::default();
+        theme.set(name.clone(), Entry::new(Style::default()));
+        assert_eq!(theme.style(&name, Surface::Tui), style);
+        assert_eq!(Style::default().inline_name(), "=");
+        assert_eq!(
+            Style::from_inline("fg:nope wobbly italic").italic,
+            Some(true)
+        );
+    }
 }

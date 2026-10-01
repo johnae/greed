@@ -1,0 +1,186 @@
+//! `kern.terminal`: programs running in terminals, for the terminal plugin
+//! to show in buffers. Output arrives as "terminal.output" events, and the
+//! end of the program as "terminal.exited". A terminal belongs to the
+//! plugin that started it and ends with it.
+
+use std::collections::HashMap;
+
+use crossbeam_channel::{Receiver, Sender};
+use mlua::{Lua, Table, UserData, UserDataMethods};
+
+use super::api::emit;
+use super::{state, state_mut};
+use crate::keymap::Key;
+use crate::registry::PluginId;
+use crate::terminal::{Event, Options, Row, Terminal, TerminalId};
+
+type LuaResult<T> = mlua::Result<T>;
+
+/// Lines kept above the screen when the plugin doesn't say.
+const SCROLLBACK: usize = 10_000;
+
+pub struct Terminals {
+    open: HashMap<u64, (Terminal, PluginId)>,
+    next: u64,
+    sender: Sender<Event>,
+    pub events: Receiver<Event>,
+}
+
+impl Default for Terminals {
+    fn default() -> Self {
+        let (sender, events) = crossbeam_channel::unbounded();
+        Self {
+            open: HashMap::new(),
+            next: 1,
+            sender,
+            events,
+        }
+    }
+}
+
+impl Terminals {
+    /// Ends the terminals plugin `name` started.
+    pub fn remove_owned_by(&mut self, name: &str) {
+        self.open.retain(|_, (_, owner)| &**owner != name);
+    }
+}
+
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
+    let terminal = lua.create_table()?;
+    let owner = owner.clone();
+    terminal.set(
+        "spawn",
+        lua.create_function(move |lua, spec: Table| {
+            let options = Options {
+                command: spec.get("command")?,
+                cwd: spec.get::<Option<String>>("cwd")?.map(Into::into),
+                env: spec
+                    .get::<Option<HashMap<String, String>>>("env")?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                rows: spec.get("rows")?,
+                cols: spec.get("cols")?,
+                scrollback: spec
+                    .get::<Option<usize>>("scrollback")?
+                    .unwrap_or(SCROLLBACK),
+            };
+            let mut state = state_mut(lua);
+            let terminals = &mut state.terminals;
+            let id = terminals.next;
+            let terminal = Terminal::spawn(TerminalId(id), &options, terminals.sender.clone())
+                .map_err(|err| mlua::Error::runtime(format!("can't start the terminal: {err}")))?;
+            terminals.next += 1;
+            terminals.open.insert(id, (terminal, owner.clone()));
+            Ok(TerminalRef(id))
+        })?,
+    )?;
+    Ok(terminal)
+}
+
+/// Tells plugins about output or a program ending.
+pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
+    let payload = lua.create_table()?;
+    let (name, id) = match event {
+        Event::Output(TerminalId(id)) => ("terminal.output", id),
+        Event::Exited(TerminalId(id), code) => {
+            payload.set("code", code)?;
+            ("terminal.exited", id)
+        }
+    };
+    // Events can arrive after the plugin closed it.
+    if !state(lua).terminals.open.contains_key(&id) {
+        return Ok(());
+    }
+    payload.set("terminal", TerminalRef(id))?;
+    emit(lua, name, &payload)
+}
+
+/// A terminal, for Luau.
+#[derive(Clone, Copy)]
+struct TerminalRef(u64);
+
+impl TerminalRef {
+    fn with<T>(self, lua: &Lua, f: impl FnOnce(&mut Terminal) -> T) -> LuaResult<T> {
+        let mut state = state_mut(lua);
+        let (terminal, _) = state
+            .terminals
+            .open
+            .get_mut(&self.0)
+            .ok_or_else(|| mlua::Error::runtime("this terminal was closed"))?;
+        Ok(f(terminal))
+    }
+}
+
+fn row_to_lua(lua: &Lua, row: Row) -> LuaResult<Table> {
+    let t = lua.create_table()?;
+    t.set("text", row.text)?;
+    let spans = lua.create_table()?;
+    for span in row.spans {
+        let s = lua.create_table()?;
+        s.set("from", span.from)?;
+        s.set("to", span.to)?;
+        s.set("style", &*span.style)?;
+        spans.push(s)?;
+    }
+    t.set("spans", spans)?;
+    Ok(t)
+}
+
+fn rows_to_lua(lua: &Lua, rows: Vec<Row>) -> LuaResult<Table> {
+    let t = lua.create_table_with_capacity(rows.len(), 0)?;
+    for row in rows {
+        t.push(row_to_lua(lua, row)?)?;
+    }
+    Ok(t)
+}
+
+impl UserData for TerminalRef {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("id", |_, this, ()| Ok(this.0));
+        methods.add_method("screen", |lua, this, ()| {
+            let screen = this.with(lua, |t| t.screen())?;
+            let t = lua.create_table()?;
+            t.set("rows", rows_to_lua(lua, screen.rows)?)?;
+            if let Some((row, col)) = screen.cursor {
+                let cursor = lua.create_table()?;
+                cursor.set("row", row)?;
+                cursor.set("col", col)?;
+                t.set("cursor", cursor)?;
+            }
+            t.set("alternate", screen.alternate)?;
+            Ok(t)
+        });
+        methods.add_method("scrollback", |lua, this, from: Option<u64>| {
+            let scrollback = this.with(lua, |t| t.scrollback(from.unwrap_or(0)))?;
+            let t = lua.create_table()?;
+            t.set("first", scrollback.first)?;
+            t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
+            Ok(t)
+        });
+        methods.add_method("write", |lua, this, text: mlua::LuaString| {
+            let bytes = text.as_bytes().to_vec();
+            this.with(lua, |t| t.write(bytes))
+        });
+        methods.add_method("key", |lua, this, name: String| {
+            let key = Key::parse(&name).map_err(mlua::Error::external)?;
+            this.with(lua, |t| t.key(key))
+        });
+        methods.add_method("paste", |lua, this, text: String| {
+            this.with(lua, |t| t.paste(&text))
+        });
+        methods.add_method("resize", |lua, this, (rows, cols): (u16, u16)| {
+            this.with(lua, |t| t.resize(rows, cols))?
+                .map_err(mlua::Error::external)
+        });
+        methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));
+        methods.add_method("exit_code", |lua, this, ()| {
+            this.with(lua, |t| t.exit_code())
+        });
+        methods.add_method("kill", |lua, this, ()| this.with(lua, Terminal::kill));
+        methods.add_method("close", |lua, this, ()| {
+            state_mut(lua).terminals.open.remove(&this.0);
+            Ok(())
+        });
+    }
+}

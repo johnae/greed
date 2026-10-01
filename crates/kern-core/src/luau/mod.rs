@@ -20,6 +20,7 @@ mod projects;
 mod requests;
 mod sessions;
 mod tasks;
+mod terminal;
 mod testing;
 mod theme;
 
@@ -88,6 +89,8 @@ pub(crate) struct State {
     /// A folder standing in for the home, config and cache folders, for
     /// tests.
     pub dirs: Option<PathBuf>,
+    /// Programs running in terminals.
+    pub terminals: terminal::Terminals,
 }
 
 #[derive(Clone)]
@@ -193,6 +196,7 @@ impl Host {
             ide: None,
             session_name: None,
             dirs: None,
+            terminals: terminal::Terminals::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -416,6 +420,19 @@ impl Host {
         state(&self.lua).lsp.events().clone()
     }
 
+    /// Output and endings from terminals, to pass to
+    /// [`Host::handle_terminal`].
+    pub fn terminal_events(&self) -> crossbeam_channel::Receiver<crate::terminal::Event> {
+        state(&self.lua).terminals.events.clone()
+    }
+
+    /// Tells plugins about a terminal's output or its program ending.
+    pub fn handle_terminal(&self, event: crate::terminal::Event) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            terminal::handle(&self.lua, event).map_err(HostError::from)
+        })
+    }
+
     /// Handles a message from a language server.
     pub fn handle_lsp(&self, event: crate::lsp::Event) -> Result<(), HostError> {
         budgeted(&self.lua, || {
@@ -561,6 +578,7 @@ fn unregister(lua: &Lua, name: &str) {
     let mut state = state_mut(lua);
     let state = &mut *state;
     state.registry.remove_owned_by(name);
+    state.terminals.remove_owned_by(name);
     state.editor.keymap_mut().remove_owned_by(name);
     state.theme_owners.retain(|entry, owner| {
         let owned = &**owner == name;

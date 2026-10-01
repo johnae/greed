@@ -24,13 +24,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kern_text::ClientId;
 use mlua::{Function, Lua, UserData, UserDataMethods};
 
 use super::modules::Modules;
-use super::{Host, HostError, api, budgeted, jobs, state, state_mut, tasks};
+use super::{Host, HostError, api, budgeted, deadline, jobs, state, state_mut, tasks, terminal};
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
 
@@ -140,6 +140,46 @@ impl Host {
     }
 }
 
+/// Delivers terminal events and finishes jobs until `done` returns true, for
+/// tests of things that happen in real time, like a program's output. Time
+/// spent waiting doesn't count against the test's budget.
+fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
+    const STEP: Duration = Duration::from_millis(10);
+    let start = Instant::now();
+    let events = state(lua).terminals.events.clone();
+    loop {
+        for event in events.try_iter() {
+            terminal::handle(lua, event)?;
+        }
+        jobs::settle(lua)?;
+        if done.call::<bool>(())? {
+            return Ok(());
+        }
+        if start.elapsed() > limit {
+            return Err(mlua::Error::runtime(format!(
+                "gave up waiting after {limit:?}"
+            )));
+        }
+        std::thread::sleep(STEP);
+        let deadline = deadline(lua);
+        if let Some(at) = deadline.at.get() {
+            deadline.at.set(Some(at + STEP));
+        }
+    }
+}
+
+/// The rows of a frame drawn at this size, as text.
+fn draw(lua: &Lua, width: u16, height: u16) -> Vec<String> {
+    use crate::render::{CellWidth, Plain, Renderer, Size, Status};
+    let frame = Renderer::new(CellWidth).frame(
+        &mut state_mut(lua).editor,
+        Size { width, height },
+        &Status::Default { message: None },
+        &Plain,
+    );
+    frame.rows.iter().map(crate::render::Row::text).collect()
+}
+
 /// The error without mlua's "runtime error:" prefix and its stack traceback,
 /// which only shows Rust frames.
 fn failure_message(err: &HostError) -> String {
@@ -195,6 +235,13 @@ impl UserData for TestContext {
             tasks::advance(lua, later)?;
             jobs::settle(lua)
         });
+        methods.add_method("until", |lua, _, (done, ms): (Function, Option<f64>)| {
+            wait_until(
+                lua,
+                &done,
+                Duration::from_secs_f64(ms.unwrap_or(5000.0).max(0.0) / 1000.0),
+            )
+        });
         methods.add_method("marked", |lua, _, ()| Ok(focused_marked_text(lua)));
         methods.add_method("floats", |lua, _, ()| {
             let state = state(lua);
@@ -215,18 +262,7 @@ impl UserData for TestContext {
             }))
         });
         methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
-            use crate::render::{CellWidth, Plain, Renderer, Size, Status};
-            let frame = Renderer::new(CellWidth).frame(
-                &mut state_mut(lua).editor,
-                Size { width, height },
-                &Status::Default { message: None },
-                &Plain,
-            );
-            Ok(frame
-                .rows
-                .iter()
-                .map(crate::render::Row::text)
-                .collect::<Vec<_>>())
+            Ok(draw(lua, width, height))
         });
         methods.add_method("quitting", |lua, _, ()| {
             Ok(state(lua).editor.quit_requested())

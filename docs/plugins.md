@@ -121,6 +121,17 @@ just before it quits.
 `kern.option.define({ name, doc, default })` adds an option users set with
 `kern.option.set` or `:set`.
 
+## Programs and terminals
+
+`kern.process.run(command, opts)` runs a program to the end and returns
+what it printed. `kern.terminal.spawn({ command, rows, cols })` starts one
+in a terminal: `terminal.output` events say there's something new to read
+with `terminal:screen()` and `terminal:scrollback(from)`, and
+`terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,
+cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
+which you can use in your own marks too. A terminal ends with the plugin
+that started it.
+
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up in Claude Code (through
@@ -157,7 +168,9 @@ end)
 
 `kern test DIR` runs a plugin's tests, each in a fresh editor with the
 default plugins loaded. `t:wait(ms)` moves the clock forward for code that
-sleeps, and `t:tempdir(files)` makes a folder of files to work on.
+sleeps, `t:until(check)` waits for real until `check()` is true (for a
+program's output), and `t:tempdir(files)` makes a folder of files to work
+on.
 
 ## Types
 

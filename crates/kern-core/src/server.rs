@@ -153,6 +153,7 @@ impl Server<'_> {
     fn run(&mut self, inbox: &Receiver<Input>, session: Option<&Session>) {
         let lsp_events = self.host.lsp_events();
         let finished_jobs = self.host.finished_jobs();
+        let terminal_events = self.host.terminal_events();
         let requests = session.map_or_else(crossbeam_channel::never, |s| s.requests().clone());
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
@@ -188,6 +189,12 @@ impl Server<'_> {
                 recv(lsp_events) -> event => {
                     if let Ok(event) = event {
                         let handled = self.host.handle_lsp(event);
+                        self.report(handled);
+                    }
+                }
+                recv(terminal_events) -> event => {
+                    if let Ok(event) = event {
+                        let handled = self.host.handle_terminal(event);
                         self.report(handled);
                     }
                 }

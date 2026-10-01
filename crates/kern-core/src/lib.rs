@@ -17,6 +17,7 @@ pub mod render;
 pub mod search;
 pub mod server;
 pub mod syntax;
+pub mod terminal;
 pub mod theme;
 
 use std::fmt;

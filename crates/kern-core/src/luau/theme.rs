@@ -11,7 +11,7 @@ use mlua::{Lua, Table, Value};
 
 use super::{state, state_mut};
 use crate::registry::PluginId;
-use crate::theme::{ANSI, Color, Entry, Style, Underline};
+use crate::theme::{Color, Entry, Style, Underline};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -132,30 +132,15 @@ fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
     })
 }
 
-fn color_name(color: Color) -> String {
-    match color {
-        Color::Default => "default".to_owned(),
-        Color::Ansi(n) if n < 8 => ANSI[usize::from(n)].to_owned(),
-        Color::Ansi(n) => format!("bright-{}", ANSI[usize::from(n % 8)]),
-        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
-    }
-}
-
 fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     let t = lua.create_table()?;
-    t.set("fg", style.fg.map(color_name))?;
-    t.set("bg", style.bg.map(color_name))?;
-    t.set("underline_color", style.underline_color.map(color_name))?;
+    t.set("fg", style.fg.map(|c| c.to_string()))?;
+    t.set("bg", style.bg.map(|c| c.to_string()))?;
     t.set(
-        "underline",
-        style.underline.map(|u| match u {
-            Underline::Line => "line",
-            Underline::Curl => "curl",
-            Underline::Dotted => "dotted",
-            Underline::Dashed => "dashed",
-            Underline::Double => "double",
-        }),
+        "underline_color",
+        style.underline_color.map(|c| c.to_string()),
     )?;
+    t.set("underline", style.underline.map(Underline::name))?;
     t.set("bold", style.bold)?;
     t.set("italic", style.italic)?;
     t.set("dim", style.dim)?;
