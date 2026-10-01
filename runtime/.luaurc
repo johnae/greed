@@ -2,6 +2,7 @@
 	"languageMode": "strict",
 	"aliases": {
 		"kern": "./types/kern",
-		"picker": "./plugins/picker"
+		"picker": "./plugins/picker",
+		"core": "./plugins/core"
 	}
 }

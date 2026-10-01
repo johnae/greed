@@ -160,6 +160,11 @@ export type BufferChanged = {
 	buffer: Buffer,
 }
 
+export type CommandRun = {
+	--- The command about to run.
+	name: string,
+}
+
 export type KeysPending = {
 	--- The unfinished key sequence, e.g. "space"; "" once it's finished.
 	keys: string,
@@ -212,6 +217,7 @@ export type Kern = {
 	on: ((event: "mode.changed", handler: (event: ModeChanged) -> ()) -> ())
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
+		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

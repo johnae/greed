@@ -218,6 +218,25 @@ impl Host {
         Ok(loaded)
     }
 
+    /// Loads a single file as a plugin called `name`, e.g. the user's
+    /// config. It requires files next to it as any plugin file does: "@self/x"
+    /// from an init.luau, "./x" otherwise.
+    pub fn load_file(&self, name: &str, path: &Path) -> Result<(), HostError> {
+        let fail = |message: String| HostError::Manifest {
+            path: path.to_owned(),
+            message,
+        };
+        let path = path.canonicalize().map_err(|err| fail(err.to_string()))?;
+        let (Some(dir), Some(entry)) = (path.parent(), path.file_name()) else {
+            return Err(fail("not a file".to_owned()));
+        };
+        let plugin = Plugin::Dir {
+            dir: dir.to_owned(),
+            entry: entry.to_string_lossy().into_owned(),
+        };
+        self.install(name, plugin)
+    }
+
     /// Loads a plugin from source, e.g. a config file or a test.
     pub fn load_str(&self, name: &str, source: &str) -> Result<(), HostError> {
         self.install(name, Plugin::Inline(source.into()))

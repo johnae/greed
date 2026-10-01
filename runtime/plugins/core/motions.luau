@@ -43,6 +43,20 @@ local function move(name: string, doc: string, target: Target)
 	})
 end
 
+-- Registers a command that moves each head to `target(buffer, head)` and
+-- keeps the anchor where it is, growing or shrinking the selection.
+local function extend(name: string, doc: string, target: Target)
+	kern.command({
+		name = name,
+		doc = doc,
+		run = function(ctx)
+			each_range(ctx, function(buffer, range)
+				return { anchor = range.anchor, head = target(buffer, range.head) }
+			end)
+		end,
+	})
+end
+
 -- Registers a command that selects from each head to `target(buffer, head)`.
 local function select_to(name: string, doc: string, target: Target)
 	kern.command({
@@ -75,7 +89,7 @@ local function same_selection(a: Selection, b: Selection?): boolean
 	return true
 end
 
-local function vertical(name: string, doc: string, delta: number)
+local function vertical(name: string, doc: string, delta: number, keep_anchor: boolean)
 	kern.command({
 		name = name,
 		doc = doc,
@@ -92,7 +106,8 @@ local function vertical(name: string, doc: string, delta: number)
 			for i, range in sel.ranges do
 				local last_line = buffer:line_count() - 1
 				local line = math.clamp(buffer:line_of(range.head) + delta, 0, last_line)
-				sel.ranges[i] = point(text.at_column(buffer, line, goal.columns[i]))
+				local head = text.at_column(buffer, line, goal.columns[i])
+				sel.ranges[i] = { anchor = if keep_anchor then range.anchor else head, head = head }
 			end
 			ctx.view:set_selection(sel)
 			goal.view = ctx.view:id()
@@ -102,32 +117,52 @@ local function vertical(name: string, doc: string, delta: number)
 	})
 end
 
-move("move-left", "Move one character left", function(buffer, head)
+local function left(buffer: Buffer, head: number): number
 	return math.max(buffer:line_start(buffer:line_of(head)), buffer:prev_char(head))
-end)
+end
 
-move("move-right", "Move one character right", function(buffer, head)
+local function right(buffer: Buffer, head: number): number
 	return math.min(buffer:line_end(buffer:line_of(head)), buffer:next_char(head))
-end)
+end
 
-vertical("move-up", "Move one line up", -1)
-vertical("move-down", "Move one line down", 1)
-
-move("line-start", "Move to the start of the line", function(buffer, head)
+local function line_start(buffer: Buffer, head: number): number
 	return buffer:line_start(buffer:line_of(head))
-end)
+end
 
-move("line-end", "Move to the end of the line", function(buffer, head)
+local function line_end(buffer: Buffer, head: number): number
 	return buffer:line_end(buffer:line_of(head))
-end)
+end
 
-move("goto-start", "Move to the start of the buffer", function()
+local function buffer_start(): number
 	return 0
-end)
+end
 
-move("goto-end", "Move to the end of the buffer", function(buffer)
+local function buffer_end(buffer: Buffer): number
 	return buffer:len()
-end)
+end
+
+move("move-left", "Move one character left", left)
+move("move-right", "Move one character right", right)
+vertical("move-up", "Move one line up", -1, false)
+vertical("move-down", "Move one line down", 1, false)
+move("line-start", "Move to the start of the line", line_start)
+move("line-end", "Move to the end of the line", line_end)
+move("goto-start", "Move to the start of the buffer", buffer_start)
+move("goto-end", "Move to the end of the buffer", buffer_end)
+move("move-word-right", "Move to the start of the next word", text.next_word_start)
+move("move-word-left", "Move to the start of the previous word", text.prev_word_start)
+
+-- The same moves, keeping the anchor: shift-arrows in most editors.
+extend("extend-left", "Extend the selection one character left", left)
+extend("extend-right", "Extend the selection one character right", right)
+vertical("extend-up", "Extend the selection one line up", -1, true)
+vertical("extend-down", "Extend the selection one line down", 1, true)
+extend("extend-line-start", "Extend the selection to the start of the line", line_start)
+extend("extend-line-end", "Extend the selection to the end of the line", line_end)
+extend("extend-start", "Extend the selection to the start of the buffer", buffer_start)
+extend("extend-end", "Extend the selection to the end of the buffer", buffer_end)
+extend("extend-word-right", "Extend the selection to the next word", text.next_word_start)
+extend("extend-word-left", "Extend the selection to the previous word", text.prev_word_start)
 
 select_to("next-word", "Select to the start of the next word", text.next_word_start)
 select_to("prev-word", "Select to the start of the previous word", text.prev_word_start)
@@ -146,6 +181,14 @@ kern.command({
 			end
 			return { anchor = buffer:line_start(first), head = stop }
 		end)
+	end,
+})
+
+kern.command({
+	name = "select-all",
+	doc = "Select the whole buffer",
+	run = function(ctx)
+		ctx.view:set_selection({ ranges = { { anchor = 0, head = ctx.buffer:len() } }, primary = 1 })
 	end,
 })
 

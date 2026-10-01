@@ -59,6 +59,18 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
+/// The user's config: `$KERN_CONFIG`, or `kern/init.luau` in the config
+/// directory (`$XDG_CONFIG_HOME`, or `~/.config`).
+fn config_file() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("KERN_CONFIG") {
+        return Some(PathBuf::from(path));
+    }
+    let dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    Some(dir.join("kern/init.luau"))
+}
+
 /// The default plugins: core first, then the rest by name.
 fn plugins() -> io::Result<Vec<PathBuf>> {
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(runtime_dir().join("plugins"))?
@@ -86,6 +98,11 @@ fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
         path: runtime_dir().join("plugins"),
         message: err.to_string(),
     })?)?;
+    if let Some(config) = config_file().filter(|path| path.is_file())
+        && let Err(err) = host.load_file("user/config", &config)
+    {
+        host.with_editor_mut(|ed| ed.echo(format!("config: {err}")));
+    }
     Ok(host)
 }
 

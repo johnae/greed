@@ -591,3 +591,33 @@ fn plugins_require_the_plugins_they_declare() {
     std::fs::remove_dir_all(&app).unwrap();
     std::fs::remove_dir_all(&lib).unwrap();
 }
+
+#[test]
+fn running_a_command_is_announced() {
+    let h = host("");
+    h.load_str(
+        "log",
+        "local kern = require('@kern')\nkern.command { name = 'noop', run = function() end }\nkern.on('command.run', function(ev) kern.echo('ran ' .. ev.name) end)",
+    )
+    .unwrap();
+    h.run("noop").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["ran noop"]);
+}
+
+#[test]
+fn a_single_file_loads_as_a_plugin_with_local_requires() {
+    let dir = plugin_dir(
+        "config",
+        &[
+            (
+                "init.luau",
+                "require('@kern').echo(require('@self/helpers').name)",
+            ),
+            ("helpers.luau", "return { name = 'from helpers' }"),
+        ],
+    );
+    let h = host("");
+    h.load_file("user/config", &dir.join("init.luau")).unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["from helpers"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

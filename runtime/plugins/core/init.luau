@@ -4,7 +4,8 @@
 
 local kern = require("@kern")
 
-require("@self/motions")
+local text = require("@self/text")
+local motions = require("@self/motions")
 require("@self/edit")
 require("@self/file")
 
@@ -59,3 +60,9 @@ kern.keymap.bind({}, {
 })
 
 kern.keymap.fallback("insert", "insert-char")
+
+-- Other plugins can use these with `require("@core")`.
+return {
+	text = text,
+	motions = motions,
+}

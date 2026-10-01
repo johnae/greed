@@ -122,11 +122,19 @@ fn runtime_passes_strict_type_checking() {
     }
     let mut files = Vec::new();
     collect_luau(&runtime(), &mut files);
-    let output = Command::new("luau-analyze")
-        .current_dir(runtime())
-        .args(&files)
-        .output()
-        .unwrap();
+    // luau-analyze 0.737 sometimes aborts with a heap error on cross-plugin
+    // requires. A crash isn't a type error, so run it again.
+    let run = || {
+        Command::new("luau-analyze")
+            .current_dir(runtime())
+            .args(&files)
+            .output()
+            .unwrap()
+    };
+    let output = (0..3)
+        .map(|_| run())
+        .find(|output| output.status.code().is_some())
+        .expect("luau-analyze crashed three times in a row");
     assert!(
         output.status.success(),
         "{}{}",

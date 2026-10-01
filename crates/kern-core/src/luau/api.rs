@@ -66,6 +66,9 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
     {
         ctx.set("char", c.to_string())?;
     }
+    let event = lua.create_table()?;
+    event.set("name", name)?;
+    emit(lua, "command.run", &event)?;
     handler.call::<()>(ctx)?;
     Ok(())
 }
