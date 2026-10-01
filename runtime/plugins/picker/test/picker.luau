@@ -130,3 +130,24 @@ test("space P switches between the projects open here", function(t)
 	t:keys("enter")
 	assert(kern.project.current().id == first, "back in the first project")
 end)
+
+test("a picker's own keys don't take over the same keys in later pickers", function(t)
+	local picker = require("@picker")
+	local items = { { label = "one", value = 1 }, { label = "two", value = 2 } }
+	local got = nil
+	t:buffer("|abc")
+	picker.pick("First", items, function() end, {
+		keys = {
+			["ctrl-n"] = function(list)
+				got = #list
+			end,
+		},
+	})
+	t:keys("ctrl-n")
+	assert(got == 2, "the picker's key gets the matches")
+	picker.pick("Second", items, function(item)
+		got = item.value
+	end)
+	t:keys("ctrl-n enter")
+	assert(got == 2, "ctrl-n moves down again in a picker without its own")
+end)

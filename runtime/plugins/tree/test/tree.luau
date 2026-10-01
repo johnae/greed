@@ -6,21 +6,25 @@ local function lines(): { string }
 	return string.split(kern.view():buffer():text(), "\n")
 end
 
--- The first folder in the current directory, which the tests open.
-local function first_dir(): string
-	for _, entry in kern.fs.list(".") or {} do
-		if entry.dir then
-			return entry.name
-		end
-	end
-	error("the tests need a folder in the current directory")
+-- A project of its own for the test, with a folder and files in it, as the
+-- current one. Returns its folder.
+local function project(t: any): string
+	local dir = t:tempdir({
+		[".git/HEAD"] = "",
+		["src/main.rs"] = "fn main() {}",
+		["src/lib.rs"] = "",
+		["notes.md"] = "",
+	})
+	kern.run("project", { args = { dir } })
+	t:buffer("|x")
+	return dir
 end
 
 test("space e opens the tree in a panel, folders first", function(t)
-	t:buffer("|x")
+	project(t)
 	t:keys("space e")
 	assert(kern.view():buffer():kind() == "tree", "focused")
-	local dir = first_dir()
+	local dir = "src"
 	assert(lines()[1] == "▸ " .. dir .. "/", lines()[1])
 	-- Typing in it is refused.
 	assert(not pcall(function()
@@ -31,14 +35,15 @@ test("space e opens the tree in a panel, folders first", function(t)
 end)
 
 test("enter unfolds and folds a folder, h folds from inside it", function(t)
-	t:buffer("|x")
+	project(t)
 	t:keys("space e")
-	local dir = first_dir()
+	local dir = "src"
 	t:keys("enter")
 	assert(lines()[1] == "▾ " .. dir .. "/", lines()[1])
-	local children = kern.fs.list(dir) or {}
-	assert(#children > 0, "the folder has something in it")
-	assert(string.sub(lines()[2], 1, 2) == "  ", "children are indented: " .. lines()[2])
+	assert(
+		string.match(lines()[2], "^%s+lib%.rs$") and string.match(lines()[3], "^%s+main%.rs$"),
+		lines()[2]
+	)
 	t:keys("j h")
 	assert(lines()[1] == "▸ " .. dir .. "/", "h folds the parent")
 	t:keys("enter enter")
@@ -80,4 +85,35 @@ test("a tree closed some other way opens again", function(t)
 	t:keys("space e")
 	assert(kern.view():buffer():kind() == "tree", "a new tree")
 	t:keys("space e")
+end)
+
+-- The text of the line the tree marks as the open file, if any.
+local function marked_open(): string?
+	local buffer = kern.view():buffer()
+	for _, mark in buffer:decorations("tree") do
+		if mark.style == "ui.tree.open" then
+			return buffer:slice(mark.from, mark.to)
+		end
+	end
+	return nil
+end
+
+test("enter on a file opens it in the main view, and the tree marks it", function(t)
+	project(t)
+	t:keys("space e")
+	assert(table.concat(lines(), "|") == "▸ src/|  notes.md", "hidden files are left out")
+	t:keys("j enter")
+	local path = kern.view():buffer():path() or ""
+	assert(kern.view():buffer():kind() == "file" and string.sub(path, -8) == "notes.md", path)
+	t:keys("space e")
+	assert(marked_open() == "  notes.md", tostring(marked_open()))
+	t:keys("q")
+end)
+
+test("the tree marks the file you came from", function(t)
+	local dir = project(t)
+	kern.open(dir .. "/notes.md")
+	t:keys("space e")
+	assert(marked_open() == "  notes.md", tostring(marked_open()))
+	t:keys("q")
 end)

@@ -100,4 +100,29 @@ function M.at_column(buffer: Buffer, line: number, column: number): number
 	return p
 end
 
+-- The line break the buffer uses: "\r\n" if its first line ends in one.
+function M.line_break(buffer: Buffer): string
+	if buffer:line_count() > 1 and buffer:char_at(buffer:line_end(0)) == "\r" then
+		return "\r\n"
+	end
+	return "\n"
+end
+
+-- The start of the character before `pos`, counting "\r\n" as one.
+function M.before(buffer: Buffer, pos: number): number
+	local prev = buffer:prev_char(pos)
+	if prev > 0 and buffer:char_at(prev) == "\n" and buffer:char_at(prev - 1) == "\r" then
+		return prev - 1
+	end
+	return prev
+end
+
+-- The end of the character at `pos`, counting "\r\n" as one.
+function M.after(buffer: Buffer, pos: number): number
+	if buffer:char_at(pos) == "\r" and buffer:char_at(pos + 1) == "\n" then
+		return pos + 2
+	end
+	return buffer:next_char(pos)
+end
+
 return M

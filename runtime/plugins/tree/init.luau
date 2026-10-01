@@ -24,10 +24,19 @@ type Tree = {
 	expanded: { [string]: boolean },
 	-- One node per line.
 	nodes: { Node },
+	-- The file shown when the tree was last outside focus, as an absolute path.
+	open: string?,
 }
 
 -- Each project has its own tree, in its own panel.
 local trees: { [number]: Tree } = {}
+
+local function absolute(path: string?): string?
+	if path == nil or string.sub(path, 1, 1) == "/" then
+		return path
+	end
+	return `{kern.fs.cwd()}/{path}`
+end
 
 local function join(dir: string, name: string): string
 	return if dir == "." then name else dir .. "/" .. name
@@ -59,7 +68,10 @@ local function render(t: Tree, keep: string?)
 
 	local lines, marks = {}, {}
 	local pos, cursor = 0, 0
-	local open = kern.view() ~= t.view and kern.view():buffer():path() or nil
+	-- Outside the tree, the file shown is the one to mark.
+	if kern.view():id() ~= t.view:id() then
+		t.open = absolute(kern.view():buffer():path())
+	end
 	for _, node in t.nodes do
 		local icon = if not node.dir then "  " elseif t.expanded[node.path] then "▾ " else "▸ "
 		local prefix = string.rep("  ", node.depth) .. icon
@@ -70,7 +82,7 @@ local function render(t: Tree, keep: string?)
 				{ from = pos + #prefix, to = pos + #line, style = "ui.tree.directory" }
 			)
 		end
-		if node.path == open then
+		if t.open and absolute(node.path) == t.open then
 			table.insert(
 				marks,
 				{ from = pos, to = pos + #line, style = "ui.tree.open", line = true }
@@ -122,9 +134,11 @@ function M.open(root: string?)
 	if dir == kern.fs.cwd() then
 		dir = "."
 	end
+	local open = absolute(kern.view():buffer():path())
 	local buffer = kern.create_buffer("tree", "", { readonly = true })
 	local view = kern.panel(buffer, { title = if dir == "." then "Files" else dir, width = 32 })
-	local t: Tree = { view = view, buffer = buffer, root = dir, expanded = {}, nodes = {} }
+	local t: Tree =
+		{ view = view, buffer = buffer, root = dir, expanded = {}, nodes = {}, open = open }
 	trees[kern.project.current().id] = t
 	render(t)
 end
@@ -139,8 +153,8 @@ kern.command({
 		elseif kern.view():id() == t.view:id() then
 			M.close()
 		else
-			t.view:focus()
 			render(t)
+			t.view:focus()
 		end
 	end,
 })

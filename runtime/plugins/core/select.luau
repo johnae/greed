@@ -184,7 +184,7 @@ command("split-regex", "Split the selections at every match of a regex", functio
 end)
 
 command("split-lines", "Split the selections into lines", function(ctx)
-	set(ctx.view, split(ctx.buffer, ctx.view:selection().ranges, "\\n"))
+	set(ctx.view, split(ctx.buffer, ctx.view:selection().ranges, "\\r?\\n"))
 end)
 
 command("keep-matching", "Keep the selections that match a regex", function(ctx)

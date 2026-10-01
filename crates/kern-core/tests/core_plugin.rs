@@ -1,6 +1,7 @@
 //! Runs the default `core` plugin's Luau tests, and checks that the test
 //! harness reports failures usefully.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use kern_core::luau::run_tests;
@@ -87,7 +88,10 @@ fn describe_plugin_tests_pass() {
 
 #[test]
 fn edit_mode_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("edit-mode")], &plugin("edit-mode"));
+    assert_all_pass(
+        &[core(), plugin("picker"), plugin("edit-mode")],
+        &plugin("edit-mode"),
+    );
 }
 
 #[test]
@@ -154,4 +158,66 @@ fn every_default_plugin_passes_its_tests_with_the_others_loaded() {
             "{expected} ran: {ran:?}"
         );
     }
+}
+
+/// The `"ui.…"` names in the default plugins' code, outside their tests.
+fn ui_names(dir: &Path, names: &mut BTreeSet<String>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            if path.file_name() != Some("test".as_ref()) {
+                ui_names(&path, names);
+            }
+        } else if path.extension() == Some("luau".as_ref()) {
+            let text = std::fs::read_to_string(&path).unwrap();
+            for piece in text.split("\"ui.").skip(1) {
+                let name: String = piece
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || *c == '.')
+                    .collect();
+                if piece[name.len()..].starts_with('"') {
+                    names.insert(format!("ui.{name}"));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn every_style_name_the_plugins_use_is_in_the_theme() {
+    let mut names = BTreeSet::new();
+    ui_names(&plugin(""), &mut names);
+    // Set while flashing, and looked up with a fallback.
+    names.remove("ui.flash.now");
+    names.remove("ui.text");
+    names.extend(["diff.plus", "diff.minus"].map(String::from));
+    for severity in ["error", "warning", "info", "hint"] {
+        names.insert(format!("diagnostic.sign.{severity}"));
+        names.insert(format!("diagnostic.message.{severity}"));
+    }
+    assert!(names.len() > 20, "found the names: {names:?}");
+
+    let host = kern_core::luau::Host::new(kern_core::Editor::new(kern_text::ClientId(1))).unwrap();
+    host.load_dirs(&[core(), plugin("theme")]).unwrap();
+    let missing: Vec<&String> = names
+        .iter()
+        .filter(|name| {
+            // An entry for the name or one of its parents.
+            let mut parts: Vec<&str> = name.split('.').collect();
+            while !parts.is_empty() {
+                let found = host
+                    .eval(&format!(
+                        "require('@kern').theme.get({:?}) ~= nil",
+                        parts.join(".")
+                    ))
+                    .unwrap();
+                if found == "true" {
+                    return false;
+                }
+                parts.pop();
+            }
+            true
+        })
+        .collect();
+    assert!(missing.is_empty(), "no theme entry for {missing:?}");
 }

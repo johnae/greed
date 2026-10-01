@@ -50,3 +50,28 @@ test(":style edit makes edit mode the one to come back to", function(t)
 	kern.option.set("editing-style", "helix")
 	t:expect_mode("normal")
 end)
+
+test("ctrl-p, ctrl-b and ctrl-P open the pickers", function(t)
+	for _, key in { "ctrl-p", "ctrl-b", "ctrl-P" } do
+		t:buffer("|abc")
+		kern.mode.set("edit")
+		t:keys(key)
+		assert(kern.view():buffer():kind() == "picker", key)
+		t:keys("esc")
+		t:expect_mode("edit")
+	end
+end)
+
+test("enter, backspace and delete keep CRLF line breaks whole", function(t)
+	t:buffer("a|b\r\ncd")
+	kern.mode.set("edit")
+	t:keys("enter")
+	assert(kern.view():buffer():text() == "a\r\nb\r\ncd")
+	t:keys("backspace backspace")
+	assert(
+		kern.view():buffer():text() == "b\r\ncd",
+		string.format("%q", kern.view():buffer():text())
+	)
+	t:keys("end delete")
+	assert(kern.view():buffer():text() == "bcd", string.format("%q", kern.view():buffer():text()))
+end)

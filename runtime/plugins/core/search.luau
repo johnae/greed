@@ -70,8 +70,18 @@ local function search(ctx: kern.Context, back: boolean)
 		end,
 		on_submit = function(pattern)
 			buffer:decorate("search", {})
-			if pattern ~= "" then
-				last, backward = pattern, back
+			if pattern == "" then
+				return
+			end
+			-- Nil and the error for a bad pattern.
+			local found, err = buffer:find(smart_case(pattern))
+			if found == nil and err then
+				kern.echo(`bad pattern {pattern}: {err}`)
+				return
+			end
+			last, backward = pattern, back
+			if found == nil then
+				kern.echo(`no match for {pattern}`)
 			end
 		end,
 		on_cancel = function()
@@ -134,8 +144,9 @@ kern.command({
 			kern.echo("nothing selected to search for")
 			return
 		end
-		-- As plain text, not a regex.
-		last, backward = (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0")), false
+		-- As plain text, not a regex, and in the same case.
+		last, backward =
+			"(?-i)" .. (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0")), false
 		kern.echo(`searching for {text}`)
 	end,
 })

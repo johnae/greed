@@ -17,14 +17,7 @@ export type Options = picker.Options
 
 require("@self/pickers")
 
-kern.keymap.bind({ mode = "insert", kind = "picker" }, {
-	down = "picker-next",
-	up = "picker-prev",
-	["ctrl-n"] = "picker-next",
-	["ctrl-p"] = "picker-prev",
-	enter = "picker-choose",
-	esc = "picker-close",
-})
+kern.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 
 kern.keymap.bind("normal", {
 	["space f"] = "pick-file",

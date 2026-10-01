@@ -4,6 +4,7 @@
 local kern = require("@kern")
 local motions = require("./motions")
 local style = require("./style")
+local text = require("./text")
 
 local each_range, point = motions.each_range, motions.point
 
@@ -79,7 +80,7 @@ kern.command({
 	name = "insert-newline",
 	doc = "Insert a line break at each cursor",
 	run = function(ctx)
-		insert_at_heads(ctx, "\n")
+		insert_at_heads(ctx, text.line_break(ctx.buffer))
 	end,
 })
 
@@ -90,7 +91,7 @@ kern.command({
 		ctx.buffer:edit(function(e)
 			for _, range in ctx.view:selection().ranges do
 				if range.head > 0 then
-					e:delete(ctx.buffer:prev_char(range.head), range.head)
+					e:delete(text.before(ctx.buffer, range.head), range.head)
 				end
 			end
 		end)
@@ -104,7 +105,7 @@ local function delete_selections(ctx: kern.Context)
 			if range.anchor ~= range.head then
 				e:delete(from(range), to(range))
 			elseif range.head < ctx.buffer:len() then
-				e:delete(range.head, ctx.buffer:next_char(range.head))
+				e:delete(range.head, text.after(ctx.buffer, range.head))
 			end
 		end
 	end)
@@ -134,7 +135,7 @@ kern.command({
 		each_range(ctx, function(buffer, range)
 			return point(buffer:line_end(buffer:line_of(range.head)))
 		end)
-		insert_at_heads(ctx, "\n")
+		insert_at_heads(ctx, text.line_break(ctx.buffer))
 		enter_insert()
 	end,
 })
@@ -147,9 +148,9 @@ kern.command({
 		each_range(ctx, function(buffer, range)
 			return point(buffer:line_start(buffer:line_of(range.head)))
 		end)
-		insert_at_heads(ctx, "\n")
+		insert_at_heads(ctx, text.line_break(ctx.buffer))
 		each_range(ctx, function(buffer, range)
-			return point(buffer:prev_char(range.head))
+			return point(text.before(buffer, range.head))
 		end)
 		enter_insert()
 	end,

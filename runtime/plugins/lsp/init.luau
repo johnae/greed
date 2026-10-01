@@ -31,6 +31,24 @@ local function at(buffer: kern.Buffer, pos: number)
 	}
 end
 
+-- Asks the buffer's server about the position at `pos`. Returns whether it got
+-- an answer, then the result, or nil and the error. Without a server it
+-- says so.
+local function ask(buffer: kern.Buffer, method: string, pos: number): (boolean, any, any)
+	if buffer:path() == nil then
+		kern.echo("no language server for this buffer")
+		return false
+	end
+	local ok, result, err = pcall(function()
+		return kern.lsp.request(buffer, method, at(buffer, pos))
+	end)
+	if not ok then
+		kern.echo(tostring(result))
+		return false
+	end
+	return true, result, err
+end
+
 -- Hover contents come as a string, a { value } table, or a list of those.
 local function hover_text(contents: any): string
 	if type(contents) == "string" then
@@ -92,7 +110,10 @@ kern.command({
 				table.insert(parts, describe(d))
 			end
 		end
-		local result = kern.lsp.request(ctx.buffer, "textDocument/hover", at(ctx.buffer, pos))
+		local ok, result = ask(ctx.buffer, "textDocument/hover", pos)
+		if not ok and #parts == 0 then
+			return
+		end
 		local text = if result and result.contents
 			then without_fences(hover_text(result.contents))
 			else ""
@@ -111,9 +132,10 @@ kern.command({
 	name = "goto-definition",
 	doc = "Go to where the thing under the cursor is defined",
 	run = function(ctx)
-		local result, err =
-			kern.lsp.request(ctx.buffer, "textDocument/definition", at(ctx.buffer, head(ctx.view)))
-		if err then
+		local ok, result, err = ask(ctx.buffer, "textDocument/definition", head(ctx.view))
+		if not ok then
+			return
+		elseif err then
 			kern.echo(`definition: {err.message}`)
 			return
 		end

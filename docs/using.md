@@ -130,7 +130,7 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 |---|---|
 | `/` `?` | Search forward or back as you type |
 | `n` `N` | Next and previous match |
-| `*` | Search for the selected text |
+| `*` | Search for the selected text, exactly as written |
 | `space /` | Search the whole project as you type |
 
 Patterns are regexes; ones written in lowercase ignore case.

@@ -210,6 +210,16 @@ local function move(delta: number)
 	end
 end
 
+-- The keys every picker has.
+local KEYS: { [string]: string } = {
+	down = "picker-next",
+	up = "picker-prev",
+	["ctrl-n"] = "picker-next",
+	["ctrl-p"] = "picker-prev",
+	enter = "picker-choose",
+	esc = "picker-close",
+}
+
 kern.command({
 	name = "picker-next",
 	doc = "Move to the next item in the picker",
@@ -253,8 +263,15 @@ kern.command({
 	doc = "Run what the open picker does for the key pressed",
 	run = function(ctx)
 		local o = open
-		local action = o and ctx.keys and o.keys[ctx.keys]
+		local key = ctx.keys or ""
+		local action = o and o.keys[key]
 		if o == nil or action == nil then
+			-- Another picker bound this key; in this one it does what it
+			-- usually does.
+			local usual = KEYS[key]
+			if usual then
+				kern.run(usual)
+			end
 			return
 		end
 		local items = {}
@@ -270,6 +287,8 @@ kern.command({
 local bound: { [string]: boolean } = {}
 
 local M = {}
+
+M.KEYS = KEYS
 
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
 -- `options.preview` shows the current item beside the list, and

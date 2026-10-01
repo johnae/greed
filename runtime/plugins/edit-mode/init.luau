@@ -8,6 +8,7 @@
 --     require("@kern").option.set("editing-style", "edit")
 
 local kern = require("@kern")
+local text = require("@core").text
 
 -- Commands that type. Typing in a row is undone in one step; any other
 -- command ends the step.
@@ -67,9 +68,9 @@ local function erase(ctx: kern.Context, forward: boolean)
 			if range.anchor ~= range.head then
 				e:delete(from(range), to(range))
 			elseif forward and range.head < ctx.buffer:len() then
-				e:delete(range.head, ctx.buffer:next_char(range.head))
+				e:delete(range.head, text.after(ctx.buffer, range.head))
 			elseif not forward and range.head > 0 then
-				e:delete(ctx.buffer:prev_char(range.head), range.head)
+				e:delete(text.before(ctx.buffer, range.head), range.head)
 			end
 		end
 	end)
@@ -89,7 +90,7 @@ kern.command({
 	name = "type-newline",
 	doc = "Type a line break, replacing any selection",
 	run = function(ctx)
-		type_text(ctx, "\n")
+		type_text(ctx, text.line_break(ctx.buffer))
 	end,
 })
 
