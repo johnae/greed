@@ -68,11 +68,12 @@ keeps running, and `kern ssh HOST` comes back to it.
 
 Your config comes along: `kern ssh` copies `~/.config/kern` (your
 `init.luau` and plugins) to the other machine first, and a session it
-starts there uses that copy, so the editor works the way you set it up.
-A session that was already running keeps the config it started with.
-`KERN_SSH_CONFIG=0` leaves your config at home. Plugins an agent installs
-while you're in a remote session go into that copy, which the next
-`kern ssh` replaces, so keep the ones you want in your own config.
+starts there runs that copy, so the editor works the way you set it up.
+The other machine's own `~/.config/kern` runs after it and wins, and
+`kern ssh` never touches it. Changes you make there, or an agent makes, or
+plugins an agent installs, stay on that machine across connections. A
+session that was already running keeps the config it started with.
+`KERN_SSH_CONFIG=0` leaves your config at home.
 
 Kern has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
@@ -214,6 +215,21 @@ follow.
 
 Your config is `~/.config/kern/init.luau`, plain Luau with the full plugin
 API. Your own plugins go in `~/.config/kern/plugins/NAME/`.
+
+Config runs in layers, each after the one before, so later ones win:
+
+1. The default plugins.
+2. The config `kern ssh` brought from your machine, in a session on
+   another one.
+3. This machine's own config, `~/.config/kern`.
+4. The project's own config, `.kern/init.luau` in the project, once you
+   trust it.
+
+A project's config is code from whoever wrote the repository, so it doesn't
+run until you say so: opening a project that has one tells you, and
+`:trust` runs it, now and whenever the project opens again. Trusted
+projects are listed in `~/.cache/kern/trusted-projects`; take a line out
+to stop trusting one.
 
 ```luau
 local kern = require("@kern")

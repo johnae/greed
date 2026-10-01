@@ -248,3 +248,130 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     std::fs::remove_dir_all(&config).unwrap();
     std::fs::remove_file(file).unwrap();
 }
+
+/// Writes a plugin called `name` into `dir/plugins` that adds `command`.
+fn plugin(dir: &std::path::Path, name: &str, command: &str) {
+    let path = dir.join("plugins").join(name);
+    std::fs::create_dir_all(&path).unwrap();
+    std::fs::write(path.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
+    std::fs::write(
+        path.join("init.luau"),
+        format!("require('@kern').command({{ name = '{command}', run = function() end }})\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
+    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    let own = root.join("config/kern");
+    let brought = std::env::temp_dir().join(format!("kern-brought-{}", std::process::id()));
+    for dir in [&own, &brought] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(
+        brought.join("init.luau"),
+        "local o = require('@kern').option\no.set('indent', 'AAAA')\no.set('jump-label-alphabet', 'xy')\n",
+    )
+    .unwrap();
+    std::fs::write(
+        own.join("init.luau"),
+        "require('@kern').option.set('indent', 'BB')\n",
+    )
+    .unwrap();
+    plugin(&brought, "only-brought", "from-brought");
+    plugin(&brought, "both", "both-brought");
+    plugin(&own, "both", "both-own");
+
+    let file = temp_file("layers", "text");
+    let name = format!("bridge-layers-{}", std::process::id());
+    let mut command = kern();
+    command
+        .args(["bridge", "--session", &name, file.to_str().unwrap()])
+        .env("KERN_SSH_CONFIG_DIR", &brought);
+    let mut bridge = Bridge::spawn(command);
+    bridge.attach();
+    let eval = |code: &str| {
+        let out = kern()
+            .args(["ctl", "eval", &format!("code={code}")])
+            .env("KERN_SESSION", &name)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+    assert_eq!(
+        eval("return require('@kern').option.get('indent')"),
+        "BB",
+        "the machine's own config runs last"
+    );
+    assert_eq!(
+        eval("return require('@kern').option.get('jump-label-alphabet')"),
+        "xy",
+        "the brought one still runs"
+    );
+    let commands = eval(
+        "local n = {} for _, c in require('@kern').commands() do table.insert(n, c.name) end return table.concat(n, ',')",
+    );
+    assert!(
+        commands.contains("from-brought"),
+        "brought plugins load: {commands}"
+    );
+    assert!(
+        commands.contains("both-own") && !commands.contains("both-brought"),
+        "the own plugin of the same name wins: {commands}"
+    );
+    assert_eq!(
+        eval("return require('@kern').fs.dirs().config"),
+        own.to_str().unwrap(),
+        "agents install into the machine's own config"
+    );
+    bridge.quit();
+    std::fs::remove_dir_all(&brought).unwrap();
+    std::fs::remove_dir_all(&own).unwrap();
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn a_trusted_projects_own_config_runs_when_its_session_starts() {
+    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    let project = std::env::temp_dir().join(format!("kern-trusted-{}", std::process::id()));
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::create_dir_all(project.join(".kern")).unwrap();
+    std::fs::write(
+        project.join(".kern/init.luau"),
+        "require('@kern').option.set('indent', 'FROM-PROJECT')\n",
+    )
+    .unwrap();
+    std::fs::write(project.join("a.txt"), "text").unwrap();
+    std::fs::create_dir_all(root.join("cache/kern")).unwrap();
+    std::fs::write(
+        root.join("cache/kern/trusted-projects"),
+        format!("{}\n", project.display()),
+    )
+    .unwrap();
+    let name = format!("bridge-trusted-{}", std::process::id());
+    let mut command = kern();
+    command.args([
+        "bridge",
+        "--session",
+        &name,
+        project.join("a.txt").to_str().unwrap(),
+    ]);
+    let mut bridge = Bridge::spawn(command);
+    bridge.attach();
+    let out = kern()
+        .args([
+            "ctl",
+            "eval",
+            "code=return require('@kern').option.get('indent')",
+        ])
+        .env("KERN_SESSION", &name)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap().trim(),
+        "FROM-PROJECT"
+    );
+    bridge.quit();
+    std::fs::remove_dir_all(&project).unwrap();
+}

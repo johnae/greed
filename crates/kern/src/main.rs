@@ -84,10 +84,9 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
-/// Kern's config directory: `$KERN_CONFIG_DIR`, or `kern` in the user's
-/// config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
+/// Kern's config directory on this machine: `$KERN_CONFIG_DIR`, or `kern` in
+/// the user's config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
 fn config_dir() -> Option<PathBuf> {
-    // `kern ssh` sets this to the copy of your config it brought along.
     if let Some(dir) = std::env::var_os("KERN_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
     }
@@ -95,6 +94,12 @@ fn config_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     Some(dir.join("kern"))
+}
+
+/// The copy of your config `kern ssh` brought from another machine, when
+/// this session runs on the far end of one.
+fn brought_dir() -> Option<PathBuf> {
+    std::env::var_os("KERN_SSH_CONFIG_DIR").map(PathBuf::from)
 }
 
 /// The user's config: `$KERN_CONFIG`, or `init.luau` in the config directory.
@@ -106,19 +111,33 @@ fn config_file() -> Option<PathBuf> {
 }
 
 /// The plugins to load: the default ones (core first, then by name), then
-/// the user's from the `plugins` directory next to their config.
+/// the ones in the config `kern ssh` brought, then this machine's own, which
+/// replace brought ones of the same name.
 fn plugins() -> io::Result<Vec<PathBuf>> {
     let mut dirs = plugin_dirs(&runtime_dir().join("plugins"))?;
     dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
-    if let Some(user) = config_dir()
+    let own = user_plugins(config_dir())?;
+    let brought = user_plugins(brought_dir())?;
+    dirs.extend(
+        brought
+            .into_iter()
+            .filter(|b| !own.iter().any(|o| o.file_name() == b.file_name())),
+    );
+    dirs.extend(own);
+    Ok(dirs)
+}
+
+/// The plugins in the `plugins` folder of the config in `dir`, by name.
+fn user_plugins(dir: Option<PathBuf>) -> io::Result<Vec<PathBuf>> {
+    let Some(dir) = dir
         .map(|dir| dir.join("plugins"))
         .filter(|dir| dir.is_dir())
-    {
-        let mut user = plugin_dirs(&user)?;
-        user.sort();
-        dirs.extend(user);
-    }
-    Ok(dirs)
+    else {
+        return Ok(Vec::new());
+    };
+    let mut found = plugin_dirs(&dir)?;
+    found.sort();
+    Ok(found)
 }
 
 /// The directories in `dir` that hold a plugin.
@@ -155,10 +174,24 @@ fn host(
         path: runtime_dir().join("plugins"),
         message: err.to_string(),
     })?)?;
-    if let Some(config) = config_file().filter(|path| path.is_file())
-        && let Err(err) = host.load_file("user/config", &config)
-    {
-        host.with_editor_mut(|ed| ed.echo(format!("config: {err}")));
+    // The brought config first, so this machine's own has the last word.
+    let configs = [
+        (
+            "user/brought-config",
+            brought_dir().map(|dir| dir.join("init.luau")),
+        ),
+        ("user/config", config_file()),
+    ];
+    for (name, config) in configs {
+        if let Some(config) = config.filter(|path| path.is_file())
+            && let Err(err) = host.load_file(name, &config)
+        {
+            host.with_editor_mut(|ed| ed.echo(format!("config: {err}")));
+        }
+    }
+    // Last, the project's own config, which core runs if you trusted it.
+    if let Err(err) = host.run("project-config") {
+        host.with_editor_mut(|ed| ed.echo(format!("project config: {err}")));
     }
     Ok(host)
 }

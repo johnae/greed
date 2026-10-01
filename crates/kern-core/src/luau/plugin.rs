@@ -36,10 +36,13 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     plugin.set(
         "load",
-        lua.create_function(|lua, dir: String| {
-            load_dir(lua, Path::new(&dir))
-                .map(|name| name.to_string())
-                .map_err(api::into_lua)
+        lua.create_function(|lua, (dir, name): (String, Option<String>)| {
+            match name {
+                Some(name) => super::load_dir_as(lua, Path::new(&dir), &name),
+                None => load_dir(lua, Path::new(&dir)),
+            }
+            .map(|name| name.to_string())
+            .map_err(api::into_lua)
         })?,
     )?;
     plugin.set(

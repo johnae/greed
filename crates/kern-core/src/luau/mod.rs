@@ -446,6 +446,29 @@ impl Host {
 /// loaded plugin of the same name.
 pub(crate) fn load_dir(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
     let (dir, manifest) = read_manifest(dir)?;
+    load_manifest(lua, dir, manifest)
+}
+
+/// Loads the folder `dir` as a plugin called `name`, with `init.luau` as its
+/// entry, unless it has a `plugin.toml` saying otherwise. For config that
+/// isn't a packaged plugin, like a project's `.kern` folder.
+pub(crate) fn load_dir_as(lua: &Lua, dir: &Path, name: &str) -> Result<PluginId, HostError> {
+    if dir.join("plugin.toml").is_file() {
+        return load_dir(lua, dir);
+    }
+    let dir = dir.canonicalize().map_err(|err| HostError::Manifest {
+        path: dir.to_owned(),
+        message: err.to_string(),
+    })?;
+    let manifest = Manifest {
+        name: name.to_owned(),
+        entry: default_entry(),
+        requires: Vec::new(),
+    };
+    load_manifest(lua, dir, manifest)
+}
+
+fn load_manifest(lua: &Lua, dir: PathBuf, manifest: Manifest) -> Result<PluginId, HostError> {
     if let Some(missing) = manifest
         .requires
         .iter()

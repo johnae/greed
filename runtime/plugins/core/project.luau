@@ -53,14 +53,14 @@ end
 -- How many recent projects are remembered.
 local RECENT = 30
 
-local function recent_file(): string?
+-- A list of folders kept in the cache, one per line, as `name`.
+local function list_file(name: string): string?
 	local cache = kern.fs.dirs().cache
-	return if cache then cache .. "/recent-projects" else nil
+	return if cache then `{cache}/{name}` else nil
 end
 
---- The roots of projects opened lately, newest first, from any session.
-function M.recent(): { string }
-	local file = recent_file()
+local function read_list(name: string): { string }
+	local file = list_file(name)
 	local text = file and kern.fs.read(file)
 	local roots = {}
 	for _, line in string.split(text or "", "\n") do
@@ -71,19 +71,51 @@ function M.recent(): { string }
 	return roots
 end
 
--- Puts `root` at the top of the recent projects.
-local function remember(root: string)
-	local file = recent_file()
+-- Puts `root` first in list `name`, keeping at most `limit`.
+local function add_to_list(name: string, root: string, limit: number)
+	local file = list_file(name)
 	if file == nil then
 		return
 	end
 	local roots = { root }
-	for _, other in M.recent() do
-		if other ~= root and #roots < RECENT then
+	for _, other in read_list(name) do
+		if other ~= root and #roots < limit then
 			table.insert(roots, other)
 		end
 	end
 	kern.fs.write(file, table.concat(roots, "\n") .. "\n")
+end
+
+--- The roots of projects opened lately, newest first, from any session.
+function M.recent(): { string }
+	return read_list("recent-projects")
+end
+
+local function remember(root: string)
+	add_to_list("recent-projects", root, RECENT)
+end
+
+--- The roots of projects whose own config (`.kern/init.luau`) you trusted.
+function M.trusted(): { string }
+	return read_list("trusted-projects")
+end
+
+-- Runs the config in project `root`'s `.kern` folder if it has one and it's
+-- trusted, or says how to trust it.
+local function run_config(root: string)
+	local dir = `{root}/.kern`
+	if kern.fs.stat(`{dir}/init.luau`) == nil then
+		return
+	end
+	if not table.find(M.trusted(), root) then
+		kern.echo(`{root} has its own Kern config in .kern/ - :trust runs it`)
+		return
+	end
+	local name = string.match(root, "([^/]+)$") or root
+	local ok, err = pcall(kern.plugin.load, dir, `project/{name}`)
+	if not ok then
+		kern.echo(`project config: {err}`)
+	end
 end
 
 --- Shows the project `path` (a file or folder) is in, opening it if it
@@ -97,7 +129,9 @@ function M.open(path: string): number
 			return project.id
 		end
 	end
-	return kern.project.open(root)
+	local id = kern.project.open(root)
+	run_config(root)
+	return id
 end
 
 --- The files in the shown project that have unsaved changes.
@@ -168,6 +202,27 @@ kern.command({
 			end
 		end
 		kern.session.switch({ path = to })
+	end,
+})
+
+kern.command({
+	name = "trust",
+	doc = "Trust the shown project's own config in .kern/, and run it now and whenever it opens",
+	run = function()
+		local root = kern.project.current().root
+		if kern.fs.stat(`{root}/.kern/init.luau`) == nil then
+			error(`{root} has no .kern/init.luau to trust`, 0)
+		end
+		add_to_list("trusted-projects", root, math.huge)
+		run_config(root)
+	end,
+})
+
+kern.command({
+	name = "project-config",
+	doc = "Run the shown project's own config in .kern/, if you trusted it",
+	run = function()
+		run_config(kern.project.current().root)
 	end,
 })
 

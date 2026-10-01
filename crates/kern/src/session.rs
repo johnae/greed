@@ -346,7 +346,7 @@ fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
         .join(" ");
     match config {
         // Double quotes, so the remote shell fills in $HOME.
-        Some(dir) => format!("KERN_CONFIG_DIR=\"{dir}\" {command}"),
+        Some(dir) => format!("KERN_SSH_CONFIG_DIR=\"{dir}\" {command}"),
         None => command,
     }
 }
@@ -418,7 +418,7 @@ mod tests {
         };
         assert_eq!(
             bridge_command("kern", &to, Some("$HOME/.cache/kern/config-from-box")),
-            r#"KERN_CONFIG_DIR="$HOME/.cache/kern/config-from-box" 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
+            r#"KERN_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo {
             session: None,

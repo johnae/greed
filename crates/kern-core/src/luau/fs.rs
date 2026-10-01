@@ -110,8 +110,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                 return Ok(dirs);
             }
             dirs.set("home", std::env::var("HOME").ok())?;
-            // Where the config was read from, which `kern ssh` points at the
-            // copy of yours it brought along.
+            // This machine's own config, where plugins agents write go.
             let config = std::env::var("KERN_CONFIG_DIR")
                 .ok()
                 .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));

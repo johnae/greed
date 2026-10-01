@@ -100,3 +100,36 @@ test(":project needs a path, and the only project can't be closed", function(t)
 	end)
 	assert(not ok and string.find(tostring(err), "only project", 1, true), tostring(err))
 end)
+
+test("a project's own config runs once you trust it, and from then on", function(t)
+	local core = require("@core")
+	local dir = t:tempdir({
+		[".git/HEAD"] = "",
+		[".kern/init.luau"] = "require('@kern').option.set('indent', 'PROJECT')\n",
+	})
+	t:buffer("|x")
+	kern.run("project", { args = { dir } })
+	assert(kern.option.get("indent") ~= "PROJECT", "not before it's trusted")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], ":trust", 1, true), messages[#messages])
+	t:run("trust")
+	assert(kern.option.get("indent") == "PROJECT", "trusting runs it")
+	assert(table.find(core.project.trusted(), dir), "and remembers")
+	kern.option.set("indent", "    ")
+	kern.project.close(kern.project.current().id)
+	kern.run("project", { args = { dir } })
+	assert(
+		kern.option.get("indent") == "PROJECT",
+		"trusted projects run their config when they open"
+	)
+end)
+
+test("a project without its own config has nothing to trust", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "" })
+	t:buffer("|x")
+	kern.run("project", { args = { dir } })
+	local ok, err = pcall(function()
+		t:run("trust")
+	end)
+	assert(not ok and string.find(tostring(err), ".kern", 1, true), tostring(err))
+end)

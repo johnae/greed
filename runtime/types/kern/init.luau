@@ -533,8 +533,10 @@ export type Plugins = {
 	--- options and event handlers. Fails while another loaded plugin
 	--- requires it. To turn off a default plugin, call this from your config.
 	unload: (name: string) -> (),
-	--- Loads (or reloads) the plugin in `dir` and returns its name.
-	load: (dir: string) -> string,
+	--- Loads (or reloads) the plugin in `dir` and returns its name. With
+	--- `name`, a folder without a plugin.toml loads too, with init.luau as
+	--- its entry.
+	load: (dir: string, name: string?) -> string,
 	--- The folder of each plugin loaded from one, by name.
 	dirs: () -> { [string]: string },
 	--- Checks the plugin in `dir` without loading it: strict types against
