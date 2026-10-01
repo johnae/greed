@@ -18,6 +18,9 @@
     pkgs.luau-lsp
     pkgs.stylua
 
+    # Spelling and grammar for prose, through the lsp plugin
+    pkgs.harper
+
     pkgs.tree-sitter
   ];
 
