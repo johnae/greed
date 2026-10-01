@@ -114,6 +114,9 @@ export type Keymap = {
 	--- Every key sequence that runs `command`, and the layer it's bound in
 	--- (a mode name, or "global").
 	find: (command: string) -> { { layer: string, keys: string } },
+	--- What `keys` runs in the current mode: the command, or nil and whether
+	--- more keys could still finish a sequence.
+	resolve: (keys: string) -> (string?, boolean),
 }
 
 export type Mode = {
@@ -274,6 +277,9 @@ export type Kern = {
 	--- Waits `ms` milliseconds without blocking the editor. Works in commands
 	--- and event handlers.
 	sleep: (ms: number) -> (),
+	--- Waits for the next key press and returns its name, e.g. "g" or "ctrl-s".
+	--- The key doesn't run anything. Works in commands and event handlers.
+	next_key: () -> string,
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last

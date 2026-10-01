@@ -12,7 +12,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use super::handles::{BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
-use crate::keymap::{Key, KeyCode, Layer, Mods, Next};
+use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Span, StatusLine, Tag};
 use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
@@ -77,6 +77,12 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
 /// Feeds one key press through the keymap, running whatever it resolves
 /// to.
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
+    // A command waiting on kern.next_key gets the key instead of the keymap.
+    let waiter = state_mut(lua).key_waiter.take();
+    if let Some(token) = waiter {
+        tasks::wake(lua, token, key.to_string())?;
+        return Ok(());
+    }
     let outcome = state_mut(lua).editor.press(key);
     match outcome {
         KeyOutcome::Pending => {
@@ -191,6 +197,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     kern.set("sleep", tasks::sleep_function(lua)?)?;
+    kern.set("next_key", tasks::next_key_function(lua)?)?;
 
     kern.set(
         "quit",
@@ -250,6 +257,21 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     .map_err(mlua::Error::external)?;
             }
             Ok(())
+        })?,
+    )?;
+
+    keymap.set(
+        "resolve",
+        lua.create_function(|lua, keys: String| {
+            let keys = Key::parse_sequence(&keys).map_err(mlua::Error::external)?;
+            let state = state(lua);
+            let editor = &state.editor;
+            let kind = editor.buffer(editor.view(editor.focus()).buffer).kind();
+            Ok(match editor.keymap().resolve(editor.mode(), kind, &keys) {
+                Resolution::Command(command) => (Some(command.to_string()), false),
+                Resolution::Pending => (None, true),
+                Resolution::Unbound => (None, false),
+            })
         })?,
     )?;
 

@@ -113,3 +113,27 @@ pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
     .set_name("=kern.sleep")
     .call(start)
 }
+
+/// `kern.next_key()`: waits for the next key press and returns its name,
+/// e.g. "g" or "ctrl-s". The key doesn't go through the keymap.
+pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
+    let start = lua.create_function(|lua, ()| {
+        let mut state = state_mut(lua);
+        let token = state.tasks.token();
+        state.key_waiter = Some(token);
+        Ok(token)
+    })?;
+    lua.load(
+        r#"
+        local start = ...
+        return function()
+            if not coroutine.isyieldable() then
+                error("kern.next_key can only be used in a command or event handler", 2)
+            end
+            return coroutine.yield(start())
+        end
+        "#,
+    )
+    .set_name("=kern.next_key")
+    .call(start)
+}

@@ -1,6 +1,9 @@
--- Help: look up a command to see what it does, which keys run it and where
--- it's defined. In the help window, enter jumps to the definition and esc
--- (or q) closes it.
+-- Help: look up a command, or press a key, to see what it does, which keys
+-- run it and where it's defined. In the help window, enter jumps to the
+-- definition and esc (or q) closes it.
+--
+--   space h c   describe a command
+--   space h k   describe a key
 
 local kern = require("@kern")
 local picker = require("@picker")
@@ -61,6 +64,33 @@ kern.command({
 })
 
 kern.command({
+	name = "describe-key",
+	doc = "Press keys to see what command they run",
+	run = function()
+		kern.echo("press a key to describe")
+		local keys = ""
+		while true do
+			local key = kern.next_key()
+			keys = if keys == "" then key else `{keys} {key}`
+			local name, pending = kern.keymap.resolve(keys)
+			if name then
+				for _, command in kern.commands() do
+					if command.name == name then
+						show(command)
+						return
+					end
+				end
+				kern.echo(`{keys} runs {name}, which doesn't exist`)
+				return
+			elseif not pending then
+				kern.echo(`{keys} isn't bound to anything`)
+				return
+			end
+		end
+	end,
+})
+
+kern.command({
 	name = "help-close",
 	doc = "Close the help window",
 	run = close,
@@ -88,4 +118,7 @@ kern.keymap.bind({ mode = "normal", kind = "help" }, {
 	enter = "help-goto",
 })
 
-kern.keymap.bind("normal", { ["space h"] = "describe-command" })
+kern.keymap.bind("normal", {
+	["space h c"] = "describe-command",
+	["space h k"] = "describe-key",
+})

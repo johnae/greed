@@ -51,6 +51,8 @@ pub(crate) struct State {
     pub exports: HashMap<PluginId, Value>,
     /// Commands and handlers waiting on a timer or a reply.
     pub tasks: tasks::Tasks,
+    /// The command waiting for the next key press, if any.
+    pub key_waiter: Option<u64>,
     /// Language servers.
     pub lsp: crate::lsp::Lsp,
     /// The waiting command each pending request wakes, by server and
@@ -140,6 +142,7 @@ impl Host {
             sources: HashMap::new(),
             exports: HashMap::new(),
             tasks: tasks::Tasks::default(),
+            key_waiter: None,
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
         });
