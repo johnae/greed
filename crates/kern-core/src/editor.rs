@@ -63,6 +63,9 @@ pub enum Anchor {
     Center,
     Top,
     Bottom,
+    /// Just below the focused view's cursor, or above it when there's no
+    /// room below, like a completion menu.
+    Cursor,
 }
 
 /// How a floating view is shown.

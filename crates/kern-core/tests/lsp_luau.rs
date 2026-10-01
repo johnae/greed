@@ -271,3 +271,89 @@ fn the_status_line_counts_errors_and_warnings() {
     assert!(right.starts_with("E1 "), "{right}");
     assert!(!right.contains('W'), "no warnings: {right}");
 }
+
+/// The lines of the completion menu, if it's open.
+fn completion_menu(h: &Host) -> Option<Vec<String>> {
+    h.with_editor(|ed| {
+        ed.floats().iter().find_map(|f| {
+            let buffer = ed.buffer(ed.view(f.view).buffer);
+            (buffer.kind() == "completion").then(|| {
+                buffer
+                    .text()
+                    .to_string()
+                    .lines()
+                    .map(str::trim)
+                    .map(str::to_owned)
+                    .collect()
+            })
+        })
+    })
+}
+
+fn main_text(h: &Host) -> String {
+    h.with_editor(|ed| ed.buffer(ed.view(ed.main()).buffer).text().to_string())
+}
+
+/// Lets the typing pause run out, then waits for the server's answer.
+fn pause_and_wait(h: &Host) {
+    while let Some(due) = h.next_timer() {
+        h.fire_timers(due).unwrap();
+    }
+    pump(h, |h| completion_menu(h).is_some());
+}
+
+#[test]
+fn completions_show_as_you_type_and_narrow_as_you_go() {
+    let h = with_plugin();
+    move_cursor(&h, 12);
+    h.press_keys("i space b a").unwrap();
+    pause_and_wait(&h);
+    let menu = completion_menu(&h).unwrap();
+    assert!(
+        menu.iter()
+            .any(|l| l.starts_with("bad_thing") && l.ends_with("fn()")),
+        "items show their detail: {menu:?}"
+    );
+    assert!(menu.iter().any(|l| l == "badge"), "{menu:?}");
+    assert!(
+        !menu.iter().any(|l| l.starts_with("other")),
+        "only what matches: {menu:?}"
+    );
+    h.press_keys("d g").unwrap();
+    assert_eq!(
+        completion_menu(&h).unwrap()[0],
+        "badge",
+        "typing narrows it"
+    );
+    h.press_keys("enter").unwrap();
+    assert_eq!(main_text(&h), "let x = bad; badge");
+    assert!(completion_menu(&h).is_none(), "taking one closes the menu");
+    assert_eq!(h.with_editor(|ed| ed.mode().to_owned()), "insert");
+}
+
+#[test]
+fn tab_moves_through_completions_and_esc_closes_them_and_insert_mode() {
+    let h = with_plugin();
+    move_cursor(&h, 12);
+    h.press_keys("i space s n").unwrap();
+    pause_and_wait(&h);
+    h.press_keys("enter").unwrap();
+    assert_eq!(
+        main_text(&h),
+        "let x = bad; snip(x)",
+        "snippets go in as plain text"
+    );
+
+    h.press_keys("space b").unwrap();
+    pause_and_wait(&h);
+    let first = completion_menu(&h).unwrap()[0].clone();
+    h.press_keys("tab shift-tab tab").unwrap();
+    h.press_keys("esc").unwrap();
+    assert!(completion_menu(&h).is_none());
+    assert_eq!(
+        h.with_editor(|ed| ed.mode().to_owned()),
+        "normal",
+        "esc also leaves insert"
+    );
+    assert!(main_text(&h).ends_with(" b"), "nothing was put in: {first}");
+}

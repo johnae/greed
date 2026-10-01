@@ -1011,9 +1011,10 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         Some("center") => Anchor::Center,
         Some("top") => Anchor::Top,
         Some("bottom") => Anchor::Bottom,
+        Some("cursor") => Anchor::Cursor,
         Some(other) => {
             return Err(mlua::Error::runtime(format!(
-                "anchor must be \"center\", \"top\" or \"bottom\", not {other:?}"
+                "anchor must be \"center\", \"top\", \"bottom\" or \"cursor\", not {other:?}"
             )));
         }
     };

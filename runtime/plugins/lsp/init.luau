@@ -13,6 +13,7 @@
 local kern = require("@kern")
 local picker = require("@picker")
 local marks = require("@self/marks")
+require("@self/completion")
 
 local function head(view: kern.View): number
 	local selection = view:selection()

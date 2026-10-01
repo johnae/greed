@@ -597,3 +597,39 @@ fn overlay_marks_draw_over_the_text_without_moving_it() {
     // The cursor is where it was; the text didn't move.
     assert_eq!(f.cursor, Some(Position { col: 8, row: 0 }));
 }
+
+#[test]
+fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
+    use kern_core::{Anchor, Extent, FloatOptions};
+    let options = FloatOptions {
+        title: None,
+        width: Extent::Cells(8),
+        height: Extent::Cells(4),
+        anchor: Anchor::Cursor,
+        focus: false,
+        x: None,
+        y: None,
+    };
+    let mut ed = editor("ab|c\nd");
+    let cursor = frame(&mut ed, 30, 10)
+        .cursor
+        .expect("the cursor is on screen");
+    let menu = ed.create_buffer("menu", "item");
+    ed.float(menu, options.clone());
+    let f = frame(&mut ed, 30, 10);
+    let rect = f.floats[0].rect;
+    // The list's text starts under the cursor, on the row below it.
+    assert_eq!((rect.x, rect.y), (cursor.col, cursor.row + 2), "{rect:?}");
+    assert_eq!(f.cursor, Some(cursor), "the cursor stays in the text");
+
+    let mut ed = editor("a\nb\nc\nd\ne\nf\ng\nh|");
+    let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
+    let menu = ed.create_buffer("menu", "item");
+    ed.float(menu, options);
+    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    assert_eq!(
+        rect.y + rect.height + 1,
+        cursor.row,
+        "above the cursor: {rect:?}"
+    );
+}

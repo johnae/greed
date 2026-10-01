@@ -206,6 +206,20 @@ and whether it was found.
 | `space d` | Pick a problem in this file |
 | `] d` `[ d` | Next and previous problem |
 
+Completions show as you type, in a menu at the cursor, once typing pauses
+after a letter or a `.`. The menu narrows as you keep typing.
+
+| Keys | |
+|---|---|
+| `tab` `ctrl-n` `down` | Next completion |
+| `shift-tab` `ctrl-p` `up` | Previous completion |
+| `enter` | Put the current one in |
+| `esc` | Close the menu (and leave insert mode) |
+| `ctrl-space` | Ask for completions now |
+
+`:set completion-delay 300` waits longer before asking; `0` stops asking
+while you type, leaving `ctrl-space`.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

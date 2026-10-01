@@ -62,8 +62,15 @@ function M.home(): string
 	return current().mode
 end
 
+--- Modes shown as another mode, e.g. a completion menu's mode as the
+--- typing mode it came from: `core.style.shown_as["completion-insert"] = "insert"`.
+M.shown_as = {} :: { [string]: string }
+
 --- What the status line shows for `mode`.
 function M.label(mode: string): string
+	if M.shown_as[mode] then
+		return M.label(M.shown_as[mode])
+	end
 	for _, style in styles do
 		local label = style.labels and style.labels[mode]
 		if label then

@@ -101,6 +101,15 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     "range": { "start": { "line": 0, "character": 8 }, "end": { "line": 0, "character": 11 } },
                 } }),
             ),
+            "textDocument/completion" => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": { "isIncomplete": false, "items": [
+                    { "label": "bad_thing", "kind": 3, "detail": "fn()" },
+                    { "label": "badge", "kind": 6 },
+                    { "label": "other", "kind": 6 },
+                    { "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 },
+                ] } }),
+            ),
             "fail" => write(
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "nope" } }),

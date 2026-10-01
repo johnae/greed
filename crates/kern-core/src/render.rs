@@ -321,7 +321,7 @@ impl<M: Measure> Renderer<M> {
         }
         let mut floats = Vec::new();
         for float in editor.floats().to_vec() {
-            let rect = place(&float.options, screen);
+            let rect = place(&float.options, screen, cursor);
             let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, decorations);
             if editor.focus() == float.view {
                 cursor = float_cursor;
@@ -939,10 +939,33 @@ fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFra
 }
 
 /// Where a floating view's rows go within `area`, leaving a cell around them
-/// for the border.
-fn place(options: &FloatOptions, area: Rect) -> Rect {
+/// for the border. `cursor` is where the focused view's cursor is, for
+/// floats anchored to it.
+fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     let outer_width = options.width.resolve(area.width).max(3);
     let outer_height = options.height.resolve(area.height).max(3);
+    if options.anchor == Anchor::Cursor
+        && let Some(cursor) = cursor
+    {
+        // The text inside starts under the cursor, on the row below it, or
+        // ends on the row above it when it doesn't fit below.
+        let below = cursor.row + 1;
+        let y = if below + outer_height <= area.y + area.height {
+            below
+        } else {
+            cursor.row.saturating_sub(outer_height)
+        };
+        let x = cursor
+            .col
+            .saturating_sub(1)
+            .min((area.x + area.width).saturating_sub(outer_width));
+        return Rect {
+            x: x + 1,
+            y: y + 1,
+            width: outer_width - 2,
+            height: outer_height - 2,
+        };
+    }
     // Whatever the position, the box stays on screen.
     let x = match options.x {
         Some(x) => x.resolve(area.width),
@@ -952,7 +975,8 @@ fn place(options: &FloatOptions, area: Rect) -> Rect {
     let y = match (options.y, options.anchor) {
         (Some(y), _) => y.resolve(area.height),
         (None, Anchor::Top) => 0,
-        (None, Anchor::Center) => area.height.saturating_sub(outer_height) / 2,
+        // With no cursor on screen, a cursor float centers.
+        (None, Anchor::Center | Anchor::Cursor) => area.height.saturating_sub(outer_height) / 2,
         (None, Anchor::Bottom) => area.height.saturating_sub(outer_height),
     }
     .min(area.height.saturating_sub(outer_height));
