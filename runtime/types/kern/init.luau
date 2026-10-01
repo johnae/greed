@@ -259,6 +259,16 @@ export type ControlRequest = {
 	params: any,
 }
 
+--- JSON. Tables with keys 1..n become arrays, other tables objects; an
+--- empty table is an object unless it came from `array`.
+export type Json = {
+	encode: (value: any) -> string,
+	--- The value, or nil and why the text isn't JSON. `null` becomes nil.
+	decode: (text: string) -> (any, string?),
+	--- Marks `items` (or a new table) to encode as an array even when empty.
+	array: <T>(items: { T }?) -> { T },
+}
+
 export type Control = {
 	--- Answers request `id` with `result`, or with an error `message`. Every
 	--- request needs exactly one answer.
@@ -528,6 +538,7 @@ export type Kern = {
 	lsp: Lsp,
 	fs: Fs,
 	control: Control,
+	json: Json,
 	plugin: Plugins,
 	theme: Theme,
 }

@@ -1319,3 +1319,26 @@ fn plugins_search_buffers_with_regexes() {
     );
     assert_eq!(bad, "nil true nil true");
 }
+
+#[test]
+fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
+    let h = host("");
+    let eval = |code: &str| {
+        h.eval(&format!("local kern = require('@kern')\n{code}"))
+            .unwrap()
+    };
+    assert_eq!(
+        eval(
+            "return kern.json.encode({ a = 1, list = { 'x', true }, empty = {}, none = kern.json.array() })"
+        ),
+        r#"{"a":1,"empty":{},"list":["x",true],"none":[]}"#
+    );
+    assert_eq!(
+        eval("local v = kern.json.decode('{\"a\":[1,2],\"b\":null}') return v.a[2], v.b"),
+        "2\tnil"
+    );
+    assert_eq!(
+        eval("local v, err = kern.json.decode('{') return v, err ~= nil"),
+        "nil\ttrue"
+    );
+}

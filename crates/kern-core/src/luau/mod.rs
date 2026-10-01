@@ -9,6 +9,7 @@ mod api;
 mod fs;
 mod handles;
 mod jobs;
+mod json;
 mod languages;
 mod lsp;
 mod modules;
