@@ -312,7 +312,30 @@ it, copy it. Lines that scroll off the top stay above the screen, up to
 `terminal-scrollback` lines (10000). When the program ends well its
 terminal closes; when it fails, the output stays with how it ended, so you
 can read what went wrong. A terminal keeps running while you look at other
-files, and while you're detached.
+files, and while you're detached. `:set terminal-shell "fish -l"` changes
+what new terminals run.
+
+## Panes and tabs
+
+Split the screen between files and terminals, the way a terminal
+multiplexer does, and keep tabs of layouts. Everything stays running in the
+session, so after `:detach` and `kern attach` (or over `kern ssh`) the
+panes, tabs and terminals are where you left them.
+
+| Keys | |
+|---|---|
+| `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane on that side (and on to the next tab) |
+| `alt-n` | A terminal in a new pane |
+| `alt-f` | A floating terminal, shown and hidden |
+| `alt-=` `alt--` | More room for the pane, or less |
+| `alt-[` `alt-]`, `alt-1`... | Tabs |
+| `alt-p`, `alt-t` | The pane and tab modes, for everything else |
+| `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix |
+
+The `alt` keys work everywhere, including inside terminals. Moving to a
+terminal pane types into it; moving to a file goes back to normal mode.
+Entering the pane or tab mode shows its keys at the bottom. All the keys,
+and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
 ## The command line
 

@@ -1135,13 +1135,15 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
 const MIN_MAIN_WIDTH: u16 = 10;
 
 /// What a tab is called when it has no name: the file name of what its
-/// active pane shows, or the kind of buffer.
+/// active pane shows, "untitled" for a file not saved yet, or the kind of
+/// buffer, like "terminal".
 fn tab_title(editor: &Editor, pane: ViewId) -> String {
     let buffer = editor.buffer(editor.view(pane).buffer);
-    buffer.path().and_then(|p| p.file_name()).map_or_else(
-        || buffer.kind().to_owned(),
-        |n| n.to_string_lossy().into_owned(),
-    )
+    match buffer.path().and_then(|p| p.file_name()) {
+        Some(name) => name.to_string_lossy().into_owned(),
+        None if buffer.kind() == "file" => "untitled".to_owned(),
+        None => buffer.kind().to_owned(),
+    }
 }
 
 /// Where panels go: each one takes its width from its side of `screen`,

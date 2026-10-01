@@ -59,6 +59,52 @@ kern.keymap.unbind("normal", { "U", "g w" })
 kern.keymap.clear("normal")
 ```
 
+## Panes, tabs and terminals
+
+These follow [zellij](https://zellij.dev): `alt` keys that work
+everywhere, in every editing style and while typing into a terminal, and
+two modes where single keys act until `esc`.
+
+| Keys | |
+|---|---|
+| `alt-h` `alt-j` `alt-k` `alt-l` (or `alt` and an arrow) | Move to the pane on that side; left and right go on to the next tab at the edge |
+| `alt-n` | A terminal in a new pane, on the pane's longer side |
+| `alt-f` | Show the floating terminal, or hide it (it keeps running) |
+| `alt-=` `alt--` | Give the pane more room, or less |
+| `alt-[` `alt-]`, `alt-1` to `alt-9` | The tab before or after, or tab N |
+| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `w` float, `H J K L` move an edge, `= -` resize, `esc` done |
+| `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
+
+In normal mode (Helix and Vim), `ctrl-w` and `space w` start the window
+keys from Vim and Helix: `v` and `s` split, `h j k l` move, `w` the next
+pane, `q` close, `o` close the others, `t` a terminal, `z` zoom. In the Vim
+style, `g t` and `g T` change tabs.
+
+All of these are ordinary bindings to commands (`pane-left`,
+`pane-terminal`, `tab-next`, ...), so they change like any other:
+
+```luau
+local kern = require("@kern")
+
+-- alt-n is something else in my shell
+kern.keymap.unbind({}, { "alt-n" })
+kern.keymap.unbind("terminal", { "alt-n" })
+
+-- Split with space | and space -
+kern.keymap.bind("normal", {
+	["space |"] = "pane-split-right",
+	["space -"] = "pane-split-down",
+})
+
+-- The pane mode on ctrl-p, in terminals too, as in zellij
+kern.keymap.bind({}, { ["ctrl-p"] = "pane-mode" })
+kern.keymap.bind("terminal", { ["ctrl-p"] = "pane-mode" })
+```
+
+The terminal's mode takes every key, so the `alt` keys are bound in the
+`terminal` layer too; unbind a key there as well to let it through to the
+program. `require("@panes").keys` holds the defaults, by layer.
+
 ## Modes and layers
 
 Bindings live in layers. Most belong to a mode:
@@ -68,6 +114,8 @@ Bindings live in layers. Most belong to a mode:
 | `normal`, `insert` | The Helix style |
 | `edit` | Edit mode |
 | `vim`, `vim-insert`, `vim-visual` | The Vim style |
+| `terminal` | Typing into a terminal (takes every key) |
+| `pane`, `tab` | The pane and tab modes |
 
 A layer can also be limited to one kind of buffer, so a key does
 something different in the file tree or a picker than in a file:

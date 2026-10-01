@@ -7,6 +7,8 @@
 		"languages": "./plugins/languages",
 		"agent": "./plugins/agent",
 		"cmdline": "./plugins/cmdline",
-		"restore": "./plugins/restore"
+		"restore": "./plugins/restore",
+		"terminal": "./plugins/terminal",
+		"panes": "./plugins/panes"
 	}
 }

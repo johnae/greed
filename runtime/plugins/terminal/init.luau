@@ -16,6 +16,21 @@ kern.option.define({
 	default = 10000,
 })
 
+kern.option.define({
+	name = "terminal-shell",
+	doc = 'What a new terminal runs, e.g. "fish -l"; empty for your $SHELL',
+	default = "",
+})
+
+-- The terminal-shell option as a command line, or nil for $SHELL.
+local function shell(): { string }?
+	local words = {}
+	for word in string.gmatch(kern.option.get("terminal-shell") :: string, "%S+") do
+		table.insert(words, word)
+	end
+	return if #words > 0 then words else nil
+end
+
 local MODE = "terminal"
 
 type Term = {
@@ -33,6 +48,9 @@ type Term = {
 	chunk: number,
 	-- What the main view showed before, to go back to when it closes.
 	previous: kern.Buffer?,
+	-- Whether its views were opened for it (a pane, a float), so they close
+	-- with it.
+	owns: boolean,
 	-- What it runs, as typed.
 	command: string,
 }
@@ -96,20 +114,25 @@ local function trim(term: Term)
 	end
 end
 
--- Puts the cursor where the program's is, and keeps the screen in view
--- while typing into it or when already at the bottom.
+-- Puts the cursor where the program's is in each view showing the
+-- terminal, and keeps the screen in view: always in views without focus,
+-- and in the focused one while typing into it or already at the bottom.
 local function follow(term: Term, screen: kern.TerminalScreen, before: number)
-	if not shown(term) then
-		return
-	end
-	local view = kern.view()
+	local focused = kern.view():id()
 	local typing = kern.mode.get() == MODE
-	if typing and screen.cursor then
-		local pos = term.buffer:line_start(term.history + screen.cursor.row) + screen.cursor.col
-		view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
-	end
-	if typing or view:scroll() >= before then
-		view:set_scroll(term.history)
+	local buffer = term.buffer
+	for _, view in buffer:views() do
+		-- Drawing scrolls to the cursor, so a view that follows has its
+		-- cursor put on the screen too, unless you're reading the output.
+		if view:id() ~= focused or typing then
+			local pos = if screen.cursor
+				then buffer:line_start(term.history + screen.cursor.row) + screen.cursor.col
+				else buffer:line_start(term.history)
+			view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+			view:set_scroll(term.history)
+		elseif view:scroll() >= before then
+			view:set_scroll(term.history)
+		end
 	end
 end
 
@@ -143,45 +166,93 @@ function M.update(term: Term)
 	follow(term, screen, before)
 end
 
---- Lets the terminal go: ends its program, and shows what the main view
---- showed before in the views showing it.
+--- Types into the terminal `view` shows, if it shows one that's running.
+function M.enter(view: kern.View)
+	local term = term_of(view:buffer())
+	if term and term.terminal:exit_code() == nil then
+		kern.mode.set(MODE)
+		M.update(term)
+	end
+end
+
+--- Goes into the right mode for `view`: typing into a terminal, or out of
+--- the terminal mode for anything else.
+function M.settle(view: kern.View)
+	if term_of(view:buffer()) then
+		M.enter(view)
+	elseif kern.mode.get() == MODE then
+		kern.mode.set(core.style.home())
+	end
+end
+
+--- Lets the terminal go: ends its program and stops showing it. Panes and
+--- floats opened for it close; a view it took over shows what it showed
+--- before.
 function M.close(term: Term)
 	terms[term.buffer:id()] = nil
 	term.terminal:close()
-	if shown(term) then
-		if kern.mode.get() == MODE then
-			kern.mode.set(core.style.home())
-		end
-		local view = kern.view()
-		local ok = term.previous and pcall(view.show, view, term.previous)
-		if not ok then
-			view:show(kern.create_buffer("file", ""))
+	for _, view in term.buffer:views() do
+		if not (term.owns and view:close()) then
+			local ok = term.previous and pcall(view.show, view, term.previous)
+			if not ok then
+				view:show(kern.create_buffer("file", ""))
+			end
 		end
 	end
 	term.buffer:set_kept(false)
+	M.settle(kern.view())
 end
 
---- Opens a terminal running `command` (the user's shell without) in the
---- main view, and types into it.
-function M.open(command: { string }?): Term
-	local view = kern.view()
-	local previous = view:buffer()
+--- Ends the terminal in `buffer` if nothing shows it any more, e.g. after
+--- its pane was closed.
+function M.forget(buffer: kern.Buffer)
+	local term = term_of(buffer)
+	if term and #buffer:views() == 0 then
+		M.close(term)
+	end
+end
+
+local FLOAT: kern.FloatSpec = { title = "terminal", width = "80%", height = "80%" }
+
+export type OpenOptions = {
+	--- Open it in a new pane on this side of `from` (the focused view by
+	--- default), rather than in the focused view.
+	split: ("left" | "right" | "up" | "down")?,
+	from: kern.View?,
+	--- Open it floating over the panes.
+	float: boolean?,
+}
+
+--- Opens a terminal running `command` (the user's shell without) and
+--- types into it: in the focused view, a new pane or a float.
+function M.open(command: { string }?, options: OpenOptions?): Term
+	local opts: OpenOptions = options or {}
 	local buffer = kern.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
+	local view, previous
+	if opts.float then
+		view = kern.float(buffer, FLOAT)
+	elseif opts.split then
+		view = (opts.from or kern.view()):split(opts.split, buffer)
+	else
+		view = kern.view()
+		previous = view:buffer()
+		view:show(buffer)
+	end
+	-- A new view hasn't been drawn yet; it says its size once it is.
 	local rows, cols = view:size()
 	local limit = kern.option.get("terminal-scrollback") :: number
-	local given = if command and #command > 0 then command else nil
-	local terminal = kern.terminal.spawn({
-		command = given,
-		cwd = kern.project.current().root,
-		rows = rows or 24,
-		cols = cols or 80,
-		scrollback = limit,
-	})
+	local given = if command and #command > 0 then command else shell()
 	local term: Term = {
-		terminal = terminal,
+		terminal = kern.terminal.spawn({
+			command = given,
+			cwd = kern.project.current().root,
+			rows = rows or 24,
+			cols = cols or 80,
+			scrollback = limit,
+		}),
 		buffer = buffer,
 		history = 0,
 		next = 0,
@@ -189,12 +260,34 @@ function M.open(command: { string }?): Term
 		chunks = {},
 		chunk = 0,
 		previous = previous,
+		owns = previous == nil,
 		command = if given then table.concat(given, " ") else "shell",
 	}
 	terms[buffer:id()] = term
-	view:show(buffer)
-	kern.mode.set(MODE)
+	M.enter(view)
 	return term
+end
+
+-- The floating terminal of each project, by project id.
+local floats: { [number]: Term } = {}
+
+--- Shows the project's floating terminal, starting it the first time, or
+--- hides it, leaving it running.
+function M.toggle_float()
+	local project = kern.project.current().id
+	local term = floats[project]
+	if term == nil or terms[term.buffer:id()] == nil then
+		floats[project] = M.open(nil, { float = true })
+		return
+	end
+	for _, view in term.buffer:views() do
+		if not view:is_pane() then
+			view:close()
+			M.settle(kern.view())
+			return
+		end
+	end
+	M.enter(kern.float(term.buffer, FLOAT))
 end
 
 local function find(terminal: kern.Terminal): Term?
@@ -306,15 +399,13 @@ kern.command({
 
 --- Shows `term` in the main view and types into it.
 function M.show(term: Term)
+	local view = kern.view()
 	if not shown(term) then
-		local view = kern.view()
 		term.previous = view:buffer()
+		term.owns = false
 		view:show(term.buffer)
 	end
-	if term.terminal:exit_code() == nil then
-		kern.mode.set(MODE)
-		M.update(term)
-	end
+	M.enter(view)
 end
 
 kern.command({
