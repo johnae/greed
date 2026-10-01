@@ -24,6 +24,13 @@ export type Options = {
 	--- More keys for this picker, e.g. `["ctrl-e"] = ...`. Each closes the
 	--- picker and gets the items matching what was typed, best first.
 	keys: { [string]: (items: { Item }) -> () }?,
+	--- Asks for the items as the query changes, instead of filtering a fixed
+	--- list, for searches too big to list up front. It runs `delay` ms after
+	--- typing stops and can wait, e.g. on `kern.fs.grep`; answers for a query
+	--- that has since changed are dropped. `items` can be empty then.
+	source: ((query: string) -> { Item })?,
+	--- Milliseconds without typing before `source` runs; 100 by default.
+	delay: number?,
 }
 
 -- At most this many matches are shown.
@@ -42,6 +49,11 @@ type Open = {
 	mode: string,
 	preview: ((item: Item) -> Preview?)?,
 	keys: { [string]: (items: { Item }) -> () },
+	source: ((query: string) -> { Item })?,
+	delay: number,
+	-- Goes up with each query, so a source's late answer can tell it's stale.
+	generation: number,
+	searching: boolean,
 	preview_view: kern.View?,
 	-- The item the preview shows.
 	previewed: Item?,
@@ -99,7 +111,7 @@ local function render(o: Open)
 			from,
 			line,
 			i == o.current,
-			kern.fuzzy_positions(o.query or "", o.labels[index]),
+			if o.source then {} else kern.fuzzy_positions(o.query or "", o.labels[index]),
 			1
 		)
 		table.insert(lines, line)
@@ -114,16 +126,62 @@ local function render(o: Open)
 	update_preview(o)
 end
 
--- Filters the items again if the query changed.
+-- Puts `items` in the list, as a source's answer.
+local function set_items(o: Open, items: { Item })
+	o.items = items
+	o.labels = {}
+	o.matches = {}
+	for i, item in items do
+		o.labels[i] = item.label
+		o.matches[i] = i
+	end
+	o.current = 1
+	render(o)
+end
+
+-- Asks the source for items until the answer is for the latest query.
+-- Typing while it works makes it go again; answers in between are dropped.
+local function search(o: Open, source: (query: string) -> { Item })
+	o.searching = true
+	while open == o do
+		local generation = o.generation
+		local ok, items = pcall(source, o.query or "")
+		if open ~= o then
+			break
+		end
+		if generation == o.generation then
+			set_items(o, if ok then items else {})
+			break
+		end
+	end
+	o.searching = false
+end
+
+-- Filters the items again if the query changed, or with a source, asks it
+-- once typing pauses.
 local function refresh(o: Open)
 	local q = query(o)
 	if q == o.query then
 		return
 	end
 	o.query = q
-	o.matches = kern.fuzzy(q, o.labels)
-	o.current = 1
-	render(o)
+	local source = o.source
+	if source == nil then
+		o.matches = kern.fuzzy(q, o.labels)
+		o.current = 1
+		render(o)
+		return
+	end
+	o.generation += 1
+	local generation = o.generation
+	if q == "" then
+		set_items(o, {})
+		return
+	end
+	kern.sleep(o.delay)
+	if open == o and generation == o.generation and not o.searching then
+		search(o, source)
+	end
 end
 
 kern.on("buffer.changed", function(event: kern.BufferChanged)
@@ -214,7 +272,8 @@ local bound: { [string]: boolean } = {}
 local M = {}
 
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
--- `options.preview` shows the current item beside the list.
+-- `options.preview` shows the current item beside the list, and
+-- `options.source` makes the items follow the query.
 function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), options: Options?)
 	close()
 	local labels = {}
@@ -244,6 +303,10 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		preview = preview,
 		preview_view = preview_view,
 		keys = options and options.keys or {},
+		source = options and options.source,
+		delay = options and options.delay or 100,
+		generation = 0,
+		searching = false,
 		mode = kern.mode.get(),
 	}
 	for key in o.keys do

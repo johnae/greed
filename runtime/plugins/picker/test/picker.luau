@@ -82,3 +82,40 @@ test("a preview shows the current item beside the list", function(t)
 	t:keys("esc")
 	assert(#t:floats() == 0, "both close")
 end)
+
+test("a source follows the query once typing pauses, keeping only the latest answer", function(t)
+	local picker = require("@picker")
+	local asked = {}
+	kern.command({
+		name = "pick-live",
+		run = function()
+			picker.pick("Live", {}, function() end, {
+				source = function(query)
+					table.insert(asked, query)
+					kern.sleep(50)
+					return { { label = query .. "!", value = query } }
+				end,
+			})
+		end,
+	})
+	t:buffer("|x")
+	t:run("pick-live")
+	t:keys("a b")
+	t:wait(100)
+	assert(table.concat(asked, ",") == "ab", "asked once typing paused")
+	t:wait(50)
+	assert(string.find(kern.view():buffer():text(), " ab!", 1, true), kern.view():buffer():text())
+	t:keys("c")
+	t:wait(100)
+	-- Typing while the source works for "abc": its answer is dropped and it's
+	-- asked again for "abcd".
+	t:keys("d")
+	t:wait(60)
+	assert(
+		not string.find(kern.view():buffer():text(), "abc!", 1, true),
+		"the stale answer isn't shown"
+	)
+	t:wait(100)
+	assert(table.concat(asked, ",") == "ab,abc,abcd", table.concat(asked, ","))
+	assert(string.find(kern.view():buffer():text(), " abcd!", 1, true), kern.view():buffer():text())
+end)

@@ -11,6 +11,10 @@
 local kern = require("@kern")
 local picker = require("@self/picker")
 
+export type Item = picker.Item
+export type Preview = picker.Preview
+export type Options = picker.Options
+
 require("@self/pickers")
 
 kern.keymap.bind({ mode = "insert", kind = "picker" }, {

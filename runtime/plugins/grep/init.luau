@@ -1,6 +1,6 @@
 -- Search the whole project, and replace by editing what was found.
 --
---   space /             search the project for a regex and pick a match
+--   space /             search the project for a regex as you type
 --   ctrl-e              in that picker: put the matches in a results panel
 --   :grep PATTERN DIR?  put the matches in a results panel straight away
 --
@@ -214,47 +214,51 @@ end
 
 core.file.on_save("grep", write_back)
 
+-- At most this many lines are listed while searching as you type; :grep
+-- lists everything.
+local LIVE_LIMIT = 1000
+
 kern.command({
 	name = "search-project",
-	doc = "Search the project for a regex and go to a match",
+	doc = "Search the project for a regex as you type, and go to a match",
 	run = function()
 		local root = core.project.root()
-		core.prompt.open({
-			title = "search project",
-			on_submit = function(pattern)
-				if pattern == "" then
-					return
+		local pattern = ""
+		local function lines(query: string): { picker.Item }
+			pattern = query
+			-- A half-typed pattern that doesn't parse yet finds nothing.
+			local found = kern.fs.grep(core.search.smart_case(query), root, { limit = LIVE_LIMIT })
+				or {}
+			local items = {}
+			for _, f in found do
+				local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`
+				table.insert(items, { label = label, value = f })
+			end
+			return items
+		end
+		picker.pick("Search", {}, function(item)
+			local f = item.value :: kern.GrepLine
+			go_to(root, f.path, f.line, f.matches[1].from)
+		end, {
+			source = lines,
+			preview = function(item)
+				local f = item.value :: kern.GrepLine
+				local path = core.project.path(root, f.path)
+				local text = kern.fs.read(path)
+				if text == nil then
+					return nil
 				end
-				local found = grep(pattern, root)
-				local items = {}
-				for _, f in found do
-					local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`
-					table.insert(items, { label = label, value = f })
-				end
-				picker.pick(`Search: {pattern}`, items, function(item)
-					local f = item.value :: kern.GrepLine
-					go_to(root, f.path, f.line, f.matches[1].from)
-				end, {
-					preview = function(item)
-						local f = item.value :: kern.GrepLine
-						local path = core.project.path(root, f.path)
-						local text = kern.fs.read(path)
-						if text == nil then
-							return nil
-						end
-						return { text = text, language = kern.language_of(path), line = f.line }
-					end,
-					keys = {
-						["ctrl-e"] = function(picked)
-							local subset = {}
-							for _, item in picked do
-								table.insert(subset, item.value)
-							end
-							show(pattern, root, subset)
-						end,
-					},
-				})
+				return { text = text, language = kern.language_of(path), line = f.line }
 			end,
+			keys = {
+				["ctrl-e"] = function(picked)
+					local found = {}
+					for _, item in picked do
+						table.insert(found, item.value)
+					end
+					show(pattern, root, found)
+				end,
+			},
 		})
 	end,
 })
