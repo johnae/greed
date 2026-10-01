@@ -30,14 +30,25 @@ local function point(pos: number): Range
 	return { anchor = pos, head = pos }
 end
 
+-- `target` applied `count` times (once without a count).
+local function repeated(target: Target, count: number?): Target
+	return function(buffer, head)
+		for _ = 1, count or 1 do
+			head = target(buffer, head)
+		end
+		return head
+	end
+end
+
 -- Registers a command that moves each cursor to `target(buffer, head)`.
 local function move(name: string, doc: string, target: Target)
 	kern.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
+			local to = repeated(target, ctx.count)
 			each_range(ctx, function(buffer, range)
-				return point(target(buffer, range.head))
+				return point(to(buffer, range.head))
 			end)
 		end,
 	})
@@ -50,8 +61,9 @@ local function extend(name: string, doc: string, target: Target)
 		name = name,
 		doc = doc,
 		run = function(ctx)
+			local to = repeated(target, ctx.count)
 			each_range(ctx, function(buffer, range)
-				return { anchor = range.anchor, head = target(buffer, range.head) }
+				return { anchor = range.anchor, head = to(buffer, range.head) }
 			end)
 		end,
 	})
@@ -63,8 +75,10 @@ local function select_to(name: string, doc: string, target: Target)
 		name = name,
 		doc = doc,
 		run = function(ctx)
+			local skip = repeated(target, (ctx.count or 1) - 1)
 			each_range(ctx, function(buffer, range)
-				return { anchor = range.head, head = target(buffer, range.head) }
+				local head = skip(buffer, range.head)
+				return { anchor = head, head = target(buffer, head) }
 			end)
 		end,
 	})
@@ -105,7 +119,8 @@ local function vertical(name: string, doc: string, delta: number, keep_anchor: b
 			end
 			for i, range in sel.ranges do
 				local last_line = buffer:line_count() - 1
-				local line = math.clamp(buffer:line_of(range.head) + delta, 0, last_line)
+				local line =
+					math.clamp(buffer:line_of(range.head) + delta * (ctx.count or 1), 0, last_line)
 				local head = text.at_column(buffer, line, goal.columns[i])
 				sel.ranges[i] = { anchor = if keep_anchor then range.anchor else head, head = head }
 			end
@@ -147,7 +162,6 @@ vertical("move-up", "Move one line up", -1, false)
 vertical("move-down", "Move one line down", 1, false)
 move("line-start", "Move to the start of the line", line_start)
 move("line-end", "Move to the end of the line", line_end)
-move("goto-start", "Move to the start of the buffer", buffer_start)
 move("goto-end", "Move to the end of the buffer", buffer_end)
 move("move-word-right", "Move to the start of the next word", text.next_word_start)
 move("move-word-left", "Move to the start of the previous word", text.prev_word_start)
@@ -167,6 +181,113 @@ extend("extend-word-left", "Extend the selection to the previous word", text.pre
 select_to("next-word", "Select to the start of the next word", text.next_word_start)
 select_to("prev-word", "Select to the start of the previous word", text.prev_word_start)
 select_to("word-end", "Select to the end of the word", text.word_end)
+select_to(
+	"next-big-word",
+	"Select to the start of the next WORD (punctuation included)",
+	text.next_big_word_start
+)
+select_to("prev-big-word", "Select to the start of the previous WORD", text.prev_big_word_start)
+select_to("big-word-end", "Select to the end of the WORD", text.big_word_end)
+move(
+	"first-non-blank",
+	"Move to the first character on the line that isn't a space",
+	text.first_non_blank
+)
+
+-- Moves every cursor to the start of 1-based `line`, kept inside the buffer.
+local function goto_line(ctx: kern.Context, line: number)
+	local buffer = ctx.buffer
+	local at = buffer:line_start(math.clamp(line - 1, 0, buffer:line_count() - 1))
+	ctx.view:set_selection({ ranges = { point(at) }, primary = 1 })
+end
+
+kern.command({
+	name = "goto-start",
+	doc = "Move to the start of the buffer, or with a count, to that line",
+	run = function(ctx)
+		goto_line(ctx, ctx.count or 1)
+	end,
+})
+
+kern.command({
+	name = "goto-line",
+	doc = "Move to the line given as a count, or the last line",
+	run = function(ctx)
+		goto_line(ctx, ctx.count or ctx.buffer:line_count())
+	end,
+})
+
+-- Where the `count`-th `char` after (or before) `head` on its line is, or
+-- nil. With `till`, the place next to it instead.
+local function find_char(
+	buffer: Buffer,
+	head: number,
+	char: string,
+	forward: boolean,
+	till: boolean,
+	count: number
+): number?
+	local line = buffer:line_of(head)
+	local start, stop = buffer:line_start(line), buffer:line_end(line)
+	local at = head
+	for _ = 1, count do
+		repeat
+			if forward then
+				at = buffer:next_char(at)
+				if at >= stop then
+					return nil
+				end
+			else
+				if at <= start then
+					return nil
+				end
+				at = buffer:prev_char(at)
+			end
+		until buffer:char_at(at) == char
+	end
+	if forward then
+		return if till then at else buffer:next_char(at)
+	end
+	return if till then buffer:next_char(at) else at
+end
+
+local function find_command(name: string, doc: string, forward: boolean, till: boolean)
+	kern.command({
+		name = name,
+		doc = doc,
+		run = function(ctx)
+			local char = kern.next_key()
+			if utf8.len(char) ~= 1 then
+				return
+			end
+			each_range(ctx, function(buffer, range)
+				local to = find_char(buffer, range.head, char, forward, till, ctx.count or 1)
+				return if to then { anchor = range.head, head = to } else range
+			end)
+		end,
+	})
+end
+
+find_command("find-next-char", "Select up to and including the next character typed", true, false)
+find_command("till-next-char", "Select up to the next character typed", true, true)
+find_command("find-prev-char", "Select back to the previous character typed", false, false)
+find_command(
+	"till-prev-char",
+	"Select back to just after the previous character typed",
+	false,
+	true
+)
+
+kern.command({
+	name = "match-bracket",
+	doc = "Move to the matching bracket, or the closing one of the pair around the cursor",
+	run = function(ctx)
+		each_range(ctx, function(buffer, range)
+			local to = text.matching_bracket(buffer, range.head)
+			return if to then point(to) else range
+		end)
+	end,
+})
 
 kern.command({
 	name = "select-line",

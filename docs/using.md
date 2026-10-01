@@ -84,9 +84,13 @@ There is always a selection; a cursor is a selection one character wide.
 |---|---|
 | `h j k l`, arrows | Move |
 | `w` `b` `e` | Select to the next word, previous word, word end |
+| `W` `B` `E` | The same for WORDs, which include punctuation (`a.b`) |
+| `f` `t` + a character | Select to the next one on the line, or up to it; `F` `T` go back |
 | `x` | Select the line |
 | `g g` `g e` | Start and end of the file |
-| `g h` `g l` | Start and end of the line |
+| `G`, `5 G` | The last line, or line 5 |
+| `g h` `g l` `g s` | Start and end of the line, first character that isn't a space |
+| `m m` | The matching bracket |
 | `g w` | Label every word on screen; type a label to jump there |
 | `;` `alt-;` | Collapse the selection to the cursor, swap its ends |
 | `%` | Select the whole file |
@@ -100,10 +104,19 @@ There is always a selection; a cursor is a selection one character wide.
 |---|---|
 | `i` `a` | Insert before or after the selection |
 | `o` `O` | Open a line below or above |
-| `d` `c` | Delete, or delete and insert |
+| `I` `A` | Insert at the start or end of the line |
+| `d` `c` | Delete, or delete and insert, copying what was deleted |
+| `alt-d` `alt-c` | The same without copying |
+| `r` + a character | Replace every selected character with it |
+| `R` | Replace the selections with what was copied |
+| `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
+| `>` `<` | Indent or dedent the lines (the `indent` option sets by what) |
+| `J` | Join lines with one space |
 | `y` `p` `P` | Copy, paste after, paste before |
 | `u` `U` | Undo, redo |
 | `esc` | Back to normal mode |
+
+A number before a motion repeats it: `3 j`, `2 w`.
 
 **Many selections**
 

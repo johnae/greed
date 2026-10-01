@@ -75,6 +75,106 @@ function M.word_end(buffer: Buffer, pos: number): number
 	end)
 end
 
+-- WORDs are runs of anything but blanks, punctuation included.
+local function non_blank(class: string?): boolean
+	return not blank(class)
+end
+
+function M.next_big_word_start(buffer: Buffer, pos: number): number
+	pos = skip_forward(buffer, pos, non_blank)
+	return skip_forward(buffer, pos, blank)
+end
+
+function M.prev_big_word_start(buffer: Buffer, pos: number): number
+	while pos > 0 and blank(class_at(buffer, buffer:prev_char(pos))) do
+		pos = buffer:prev_char(pos)
+	end
+	while pos > 0 and non_blank(class_at(buffer, buffer:prev_char(pos))) do
+		pos = buffer:prev_char(pos)
+	end
+	return pos
+end
+
+function M.big_word_end(buffer: Buffer, pos: number): number
+	pos = skip_forward(buffer, pos, blank)
+	return skip_forward(buffer, pos, non_blank)
+end
+
+-- The first character on `pos`'s line that isn't a space or tab.
+function M.first_non_blank(buffer: Buffer, pos: number): number
+	local line = buffer:line_of(pos)
+	local at, stop = buffer:line_start(line), buffer:line_end(line)
+	while at < stop and class_at(buffer, at) == "space" do
+		at = buffer:next_char(at)
+	end
+	return at
+end
+
+local PAIRS = { ["("] = ")", ["["] = "]", ["{"] = "}", ["<"] = ">" }
+local OPENERS = { [")"] = "(", ["]"] = "[", ["}"] = "{", [">"] = "<" }
+
+-- Scans from the bracket `this` at `pos` for the `other` that balances it.
+local function balance(
+	buffer: Buffer,
+	pos: number,
+	this: string,
+	other: string,
+	forward: boolean
+): number?
+	local depth, at = 0, pos
+	while true do
+		local c = buffer:char_at(at)
+		if c == this then
+			depth += 1
+		elseif c == other then
+			depth -= 1
+			if depth == 0 then
+				return at
+			end
+		end
+		if forward then
+			at = buffer:next_char(at)
+			if at >= buffer:len() then
+				return nil
+			end
+		else
+			if at == 0 then
+				return nil
+			end
+			at = buffer:prev_char(at)
+		end
+	end
+end
+
+-- The bracket matching the one at `pos`, or if `pos` isn't on a bracket,
+-- the closing bracket of the pair around it. Nil if there is none.
+function M.matching_bracket(buffer: Buffer, pos: number): number?
+	local ch = buffer:char_at(pos)
+	if ch and PAIRS[ch] then
+		return balance(buffer, pos, ch, PAIRS[ch], true)
+	end
+	if ch and OPENERS[ch] then
+		return balance(buffer, pos, ch, OPENERS[ch], false)
+	end
+	-- Inside a pair: find the nearest unclosed opener before `pos`.
+	local depth: { [string]: number } = {}
+	local at = pos
+	while at > 0 do
+		at = buffer:prev_char(at)
+		local c = buffer:char_at(at) :: string
+		if OPENERS[c] then
+			depth[c] = (depth[c] or 0) + 1
+		elseif PAIRS[c] then
+			local closer = PAIRS[c]
+			if (depth[closer] or 0) == 0 then
+				return balance(buffer, at, c, closer, true)
+			end
+			depth[closer] -= 1
+		end
+	end
+	return nil
+end
+
 -- How many characters `pos` is from the start of its line.
 function M.column(buffer: Buffer, pos: number): number
 	local p = buffer:line_start(buffer:line_of(pos))

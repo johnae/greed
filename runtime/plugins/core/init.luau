@@ -36,6 +36,28 @@ kern.keymap.bind("normal", {
 	["g g"] = "goto-start",
 	["g e"] = "goto-end",
 	["g w"] = "jump-to-word",
+	G = "goto-line",
+	["g s"] = "first-non-blank",
+	W = "next-big-word",
+	B = "prev-big-word",
+	E = "big-word-end",
+	f = "find-next-char",
+	t = "till-next-char",
+	F = "find-prev-char",
+	T = "till-prev-char",
+	["m m"] = "match-bracket",
+	["alt-d"] = "delete-without-copy",
+	["alt-c"] = "change-without-copy",
+	r = "replace-char",
+	R = "replace-with-copy",
+	["~"] = "switch-case",
+	["`"] = "lowercase",
+	["alt-`"] = "uppercase",
+	[">"] = "indent",
+	["<"] = "dedent",
+	J = "join-lines",
+	I = "insert-line-start",
+	A = "append-line-end",
 	["ctrl-f"] = "page-down",
 	["ctrl-b"] = "page-up",
 	["ctrl-d"] = "half-page-down",
@@ -94,6 +116,7 @@ kern.keymap.bind({}, {
 	["ctrl-q"] = "quit",
 })
 
+kern.keymap.counts("normal")
 kern.keymap.fallback("insert", "insert-char")
 kern.mode.cursor("insert", "bar")
 

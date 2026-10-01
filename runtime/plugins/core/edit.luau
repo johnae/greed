@@ -112,22 +112,6 @@ local function delete_selections(ctx: kern.Context)
 end
 
 kern.command({
-	name = "delete",
-	doc = "Delete each selection",
-	run = delete_selections,
-})
-
-kern.command({
-	name = "change",
-	doc = "Delete each selection and switch to insert mode",
-	run = function(ctx)
-		kern.history.start_group()
-		delete_selections(ctx)
-		enter_insert()
-	end,
-})
-
-kern.command({
 	name = "open-below",
 	doc = "Open a new line below each cursor and insert there",
 	run = function(ctx)
@@ -173,7 +157,7 @@ kern.command({
 })
 
 -- Copies the text of each selection, one piece per selection.
-local function copy_selections(ctx: kern.Context): boolean
+local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 	local pieces = {}
 	for _, range in ctx.view:selection().ranges do
 		if range.anchor ~= range.head then
@@ -181,7 +165,9 @@ local function copy_selections(ctx: kern.Context): boolean
 		end
 	end
 	if #pieces == 0 then
-		kern.echo("nothing selected")
+		if not quiet then
+			kern.echo("nothing selected")
+		end
 		return false
 	end
 	kern.clipboard.set(pieces)
@@ -244,6 +230,272 @@ kern.command({
 	doc = "Paste before each selection",
 	run = function(ctx)
 		paste(ctx, false)
+	end,
+})
+
+kern.command({
+	name = "delete",
+	doc = "Copy each selection and delete it",
+	run = function(ctx)
+		copy_selections(ctx, true)
+		delete_selections(ctx)
+	end,
+})
+
+kern.command({
+	name = "delete-without-copy",
+	doc = "Delete each selection, leaving the clipboard alone",
+	run = delete_selections,
+})
+
+kern.command({
+	name = "change",
+	doc = "Copy each selection, delete it and switch to insert mode",
+	run = function(ctx)
+		kern.history.start_group()
+		copy_selections(ctx, true)
+		delete_selections(ctx)
+		enter_insert()
+	end,
+})
+
+kern.command({
+	name = "change-without-copy",
+	doc = "Delete each selection and switch to insert mode, leaving the clipboard alone",
+	run = function(ctx)
+		kern.history.start_group()
+		delete_selections(ctx)
+		enter_insert()
+	end,
+})
+
+kern.option.define({
+	name = "indent",
+	doc = "What > adds at the start of a line: spaces or a tab",
+	default = "    ",
+})
+
+-- Replaces the text of each selection (or the character under each cursor)
+-- with `change(text)`, keeping the selections around the new text.
+local function transform(ctx: kern.Context, change: (string) -> string)
+	local buffer = ctx.buffer
+	local selection = ctx.view:selection()
+	buffer:edit(function(e)
+		local shift = 0
+		for i, range in selection.ranges do
+			local a, b = from(range), to(range)
+			if a == b then
+				b = text.after(buffer, a)
+			end
+			local new = change(buffer:slice(a, b))
+			e:replace(a, b, new)
+			local grow = #new - (b - a)
+			local anchor, head = range.anchor + shift, range.head + shift
+			if range.anchor ~= range.head then
+				if range.anchor > range.head then
+					anchor += grow
+				else
+					head += grow
+				end
+			end
+			selection.ranges[i] = { anchor = anchor, head = head }
+			shift += grow
+		end
+		e:select(selection)
+	end)
+end
+
+kern.command({
+	name = "replace-char",
+	doc = "Replace every selected character with the next one typed",
+	run = function(ctx)
+		local char = kern.next_key()
+		if utf8.len(char) ~= 1 then
+			return
+		end
+		transform(ctx, function(s)
+			return (
+				string.gsub(s, utf8.charpattern, function(c)
+					return if c == "\n" or c == "\r" then c else char
+				end)
+			)
+		end)
+	end,
+})
+
+kern.command({
+	name = "switch-case",
+	doc = "Switch the case of each selected letter",
+	run = function(ctx)
+		transform(ctx, function(s)
+			return (
+				string.gsub(s, "%a", function(c)
+					return if string.match(c, "%l") then string.upper(c) else string.lower(c)
+				end)
+			)
+		end)
+	end,
+})
+
+kern.command({
+	name = "lowercase",
+	doc = "Make the selections lowercase",
+	run = function(ctx)
+		transform(ctx, string.lower)
+	end,
+})
+
+kern.command({
+	name = "uppercase",
+	doc = "Make the selections uppercase",
+	run = function(ctx)
+		transform(ctx, string.upper)
+	end,
+})
+
+-- The lines each selection touches, each once, in order.
+local function selected_lines(ctx: kern.Context): { number }
+	local buffer = ctx.buffer
+	local seen, lines = {}, {}
+	for _, range in ctx.view:selection().ranges do
+		local first, last = buffer:line_of(from(range)), buffer:line_of(to(range))
+		-- A selection ending at a line's start, like `x` makes, stops before it.
+		if last > first and to(range) == buffer:line_start(last) then
+			last -= 1
+		end
+		for line = first, last do
+			if not seen[line] then
+				seen[line] = true
+				table.insert(lines, line)
+			end
+		end
+	end
+	table.sort(lines)
+	return lines
+end
+
+kern.command({
+	name = "indent",
+	doc = "Indent the lines of each selection",
+	run = function(ctx)
+		local unit = kern.option.get("indent") :: string
+		local buffer = ctx.buffer
+		local starts = {}
+		for _, line in selected_lines(ctx) do
+			if buffer:line_end(line) > buffer:line_start(line) then
+				table.insert(starts, buffer:line_start(line))
+			end
+		end
+		-- Selections that began at a line's start keep its new indent.
+		local function moved(pos: number): number
+			local before = 0
+			for _, start in starts do
+				if start < pos then
+					before += 1
+				end
+			end
+			return pos + before * #unit
+		end
+		local selection = ctx.view:selection()
+		for i, range in selection.ranges do
+			selection.ranges[i] = { anchor = moved(range.anchor), head = moved(range.head) }
+		end
+		buffer:edit(function(e)
+			for _, start in starts do
+				e:insert(start, unit)
+			end
+			e:select(selection)
+		end)
+	end,
+})
+
+local function leading_blanks(buffer: kern.Buffer, line: number): string
+	return string.match(
+			buffer:slice(buffer:line_start(line), buffer:line_end(line)),
+			"^[ \t]*"
+		) :: string
+end
+
+kern.command({
+	name = "dedent",
+	doc = "Take one level of indent off the lines of each selection",
+	run = function(ctx)
+		local width = #(kern.option.get("indent") :: string)
+		local buffer = ctx.buffer
+		buffer:edit(function(e)
+			for _, line in selected_lines(ctx) do
+				local start = buffer:line_start(line)
+				local lead = leading_blanks(buffer, line)
+				local take = if string.sub(lead, 1, 1) == "\t" then 1 else math.min(#lead, width)
+				if take > 0 then
+					e:delete(start, start + take)
+				end
+			end
+		end)
+	end,
+})
+
+kern.command({
+	name = "join-lines",
+	doc = "Join the next line onto each cursor's, or the lines of each selection, with one space",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local joins = {}
+		for _, range in ctx.view:selection().ranges do
+			local first, last = buffer:line_of(from(range)), buffer:line_of(to(range))
+			for line = first, math.max(last - 1, first) do
+				if line + 1 < buffer:line_count() then
+					joins[line] = true
+				end
+			end
+		end
+		buffer:edit(function(e)
+			for line in joins do
+				local stop = buffer:line_end(line)
+				local next_start = buffer:line_start(line + 1)
+				e:replace(stop, next_start + #leading_blanks(buffer, line + 1), " ")
+			end
+		end)
+	end,
+})
+
+kern.command({
+	name = "insert-line-start",
+	doc = "Insert at the start of each line, after its indent",
+	run = function(ctx)
+		each_range(ctx, function(buffer, range)
+			return point(text.first_non_blank(buffer, range.head))
+		end)
+		enter_insert()
+	end,
+})
+
+kern.command({
+	name = "append-line-end",
+	doc = "Insert at the end of each line",
+	run = function(ctx)
+		each_range(ctx, function(buffer, range)
+			return point(buffer:line_end(buffer:line_of(range.head)))
+		end)
+		enter_insert()
+	end,
+})
+
+kern.command({
+	name = "replace-with-copy",
+	doc = "Replace each selection with what was copied",
+	run = function(ctx)
+		local pieces = kern.clipboard.get()
+		if pieces == nil then
+			return
+		end
+		local count = #ctx.view:selection().ranges
+		local joined = table.concat(pieces, "\n")
+		local i = 0
+		transform(ctx, function()
+			i += 1
+			return if #pieces == count then pieces[i] else joined
+		end)
 	end,
 })
 
