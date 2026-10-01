@@ -4,11 +4,18 @@
 -- with the 16 terminal colors it shows briefly and goes. Either way it's a
 -- decoration and a theme entry changing over time, which is all an
 -- animation is.
+--
+-- To change how long it lasts, set "flash-duration" from your config:
+--
+--     require("@kern").option.set("flash-duration", 150)
 
 local kern = require("@kern")
 
--- How long the flash lasts, in milliseconds.
-local DURATION = 300
+kern.option.define({
+	name = "flash-duration",
+	doc = "How long copied text flashes, in milliseconds",
+	default = 300,
+})
 
 -- Each flash gets a number, so an older one finishing doesn't clear a newer.
 local latest = 0
@@ -48,6 +55,7 @@ kern.on("command.run", function(event: kern.CommandRun)
 	end
 	latest += 1
 	local mine = latest
+	local duration = kern.option.get("flash-duration") :: number
 	local buffer = view:buffer()
 	local flash = kern.theme.get("ui.flash") or { bg = "yellow", fg = "black" }
 	local text = kern.theme.get("ui.text")
@@ -56,13 +64,13 @@ kern.on("command.run", function(event: kern.CommandRun)
 	local from_bg = flash.bg and rgb(flash.bg)
 	local to_bg = rgb(text and text.bg or "#000000")
 	if from_bg and to_bg then
-		kern.animate(DURATION, function(t)
+		kern.animate(duration, function(t)
 			if latest == mine then
 				kern.theme.set({ ["ui.flash.now"] = { bg = mix(from_bg, to_bg, t), fg = flash.fg } })
 			end
 		end)
 	else
-		kern.sleep(DURATION)
+		kern.sleep(duration)
 	end
 	if latest == mine then
 		buffer:decorate("flash", {})

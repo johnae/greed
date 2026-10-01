@@ -134,6 +134,8 @@ pub(super) fn advance(lua: &Lua, until: Instant) -> LuaResult<()> {
             _ => break,
         }
     }
+    let tasks = &mut state_mut(lua).tasks;
+    tasks.latest = tasks.latest.max(until);
     Ok(())
 }
 
