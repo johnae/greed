@@ -649,19 +649,20 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
 }
 
 #[test]
-fn files_can_be_written_and_the_working_directory_read() {
+fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
     let dir = plugin_dir("fs-write", &[("a.txt", "")]);
     let h = host("");
     let written = eval_in(
         &h,
         &dir,
         "local ok = kern.fs.write(DIR .. '/new.txt', 'hi\\n')
-         local _, err = kern.fs.write(DIR .. '/missing/x.txt', '')
-         return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. kern.fs.read(DIR .. '/new.txt')",
+         local nested = kern.fs.write(DIR .. '/new/deeper/x.txt', '')
+         local _, err = kern.fs.write(DIR .. '/a.txt/x.txt', '')
+         return tostring(ok) .. ' ' .. tostring(nested) .. ' ' .. tostring(err ~= nil) .. ' ' .. kern.fs.read(DIR .. '/new.txt')",
     );
     let cwd = eval_in(&h, &dir, "return kern.fs.cwd()");
     std::fs::remove_dir_all(&dir).unwrap();
-    assert_eq!(written, "true true hi\n");
+    assert_eq!(written, "true true true hi\n");
     assert_eq!(cwd, std::env::current_dir().unwrap().to_str().unwrap());
 }
 

@@ -406,10 +406,13 @@ export type Fs = {
 	read: (path: string, limit: number?) -> (string?, string?),
 	--- What's at `path`, or nil if nothing is.
 	stat: (path: string) -> FileInfo?,
-	--- Replaces the file's contents with `text`, creating it if needed.
+	--- Replaces the file's contents with `text`, creating it and its folders
+	--- if needed.
 	write: (path: string, text: string) -> (boolean?, string?),
 	--- The directory Kern was started in.
 	cwd: () -> string,
+	--- Kern's config folder (where init.luau and plugins/ go) and cache folder.
+	dirs: () -> { config: string?, cache: string? },
 	--- The lines matching the regex `pattern` in the text files under `dir`
 	--- (default: the current directory), sorted by path and line. In a
 	--- command it searches in the background and waits, like kern.sleep.
@@ -435,6 +438,13 @@ export type GrepLine = {
 	matches: { { from: number, to: number } },
 }
 
+--- What `kern.plugin.check` found. `types.skipped` says why types weren't
+--- checked; `tests.error` why the tests couldn't run.
+export type PluginCheck = {
+	types: { ok: boolean?, output: string?, skipped: string? },
+	tests: { passed: number?, failed: { { file: string, name: string, message: string } }?, error: string? },
+}
+
 export type Plugins = {
 	--- The names of the loaded plugins, sorted.
 	list: () -> { string },
@@ -442,6 +452,14 @@ export type Plugins = {
 	--- options and event handlers. Fails while another loaded plugin
 	--- requires it. To turn off a default plugin, call this from your config.
 	unload: (name: string) -> (),
+	--- Loads (or reloads) the plugin in `dir` and returns its name.
+	load: (dir: string) -> string,
+	--- The folder of each plugin loaded from one, by name.
+	dirs: () -> { [string]: string },
+	--- Checks the plugin in `dir` without loading it: strict types against
+	--- Kern's API (if luau-analyze is installed), then its tests with the
+	--- loaded plugins. Waits, like kern.sleep, while it runs.
+	check: (dir: string) -> PluginCheck,
 }
 
 --- How text looks. Colors are "red", "bright-blue" and the other 16

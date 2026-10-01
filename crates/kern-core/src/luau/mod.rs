@@ -14,6 +14,7 @@ mod json;
 mod languages;
 mod lsp;
 mod modules;
+mod plugin;
 mod requests;
 mod tasks;
 mod testing;
@@ -216,25 +217,7 @@ impl Host {
 
     /// Loads the plugin in `dir`, described by its `plugin.toml`.
     pub fn load_dir(&self, dir: &Path) -> Result<PluginId, HostError> {
-        let (dir, manifest) = read_manifest(dir)?;
-        if let Some(missing) = manifest
-            .requires
-            .iter()
-            .find(|r| !state(&self.lua).plugins.contains_key(r.as_str()))
-        {
-            return Err(HostError::Manifest {
-                path: dir.join("plugin.toml"),
-                message: format!("requires plugin {missing:?}, which isn't loaded"),
-            });
-        }
-        let name: PluginId = manifest.name.into();
-        let plugin = Plugin::Dir {
-            dir,
-            entry: manifest.entry,
-            requires: manifest.requires,
-        };
-        self.install(&name, plugin)?;
-        Ok(name)
+        load_dir(&self.lua, dir)
     }
 
     /// Loads several plugin directories, each after the plugins it requires.
@@ -285,12 +268,12 @@ impl Host {
             entry: entry.to_string_lossy().into_owned(),
             requires: Vec::new(),
         };
-        self.install(name, plugin)
+        install(&self.lua, name, plugin)
     }
 
     /// Loads a plugin from source, e.g. a config file or a test.
     pub fn load_str(&self, name: &str, source: &str) -> Result<(), HostError> {
-        self.install(name, Plugin::Inline(source.into()))
+        install(&self.lua, name, Plugin::Inline(source.into()))
     }
 
     /// Removes everything a plugin registered and runs it again.
@@ -299,20 +282,13 @@ impl Host {
             return Err(HostError::UnknownPlugin(name.into()));
         }
         unregister(&self.lua, name);
-        self.run_plugin(name)
+        run_plugin(&self.lua, name)
     }
 
     /// Removes a plugin and everything it registered. Fails while a loaded
     /// plugin requires it.
     pub fn unload(&self, name: &str) -> Result<(), HostError> {
         unload(&self.lua, name)
-    }
-
-    /// Adds or replaces a plugin and runs it.
-    fn install(&self, name: &str, plugin: Plugin) -> Result<(), HostError> {
-        unregister(&self.lua, name);
-        state_mut(&self.lua).plugins.insert(name.into(), plugin);
-        self.run_plugin(name)
     }
 
     /// Evaluates Luau typed at the REPL. Expressions return their value as
@@ -440,25 +416,56 @@ impl Host {
             .into_iter()
             .try_for_each(|key| self.press(key))
     }
+}
 
-    fn run_plugin(&self, name: &str) -> Result<(), HostError> {
-        let plugin = state(&self.lua).plugins[name].clone();
-        let export = match plugin {
-            Plugin::Dir { dir, entry, .. } => {
-                let file = dir.join(entry);
-                let modules = Modules::new(&self.lua, name, Some(dir), None)?;
-                budgeted(&self.lua, || modules.run_file(&self.lua, &file))?
-            }
-            Plugin::Inline(source) => {
-                let modules = Modules::new(&self.lua, name, None, None)?;
-                let chunk_name = format!("@{name}");
-                let values = budgeted(&self.lua, || modules.eval(&self.lua, &source, &chunk_name))?;
-                values.into_iter().next().unwrap_or(Value::Nil)
-            }
-        };
-        state_mut(&self.lua).exports.insert(name.into(), export);
-        Ok(())
+/// Loads the plugin in `dir`, described by its `plugin.toml`, replacing a
+/// loaded plugin of the same name.
+pub(crate) fn load_dir(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
+    let (dir, manifest) = read_manifest(dir)?;
+    if let Some(missing) = manifest
+        .requires
+        .iter()
+        .find(|r| !state(lua).plugins.contains_key(r.as_str()))
+    {
+        return Err(HostError::Manifest {
+            path: dir.join("plugin.toml"),
+            message: format!("requires plugin {missing:?}, which isn't loaded"),
+        });
     }
+    let name: PluginId = manifest.name.into();
+    let plugin = Plugin::Dir {
+        dir,
+        entry: manifest.entry,
+        requires: manifest.requires,
+    };
+    install(lua, &name, plugin)?;
+    Ok(name)
+}
+
+/// Adds or replaces a plugin and runs it.
+fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
+    unregister(lua, name);
+    state_mut(lua).plugins.insert(name.into(), plugin);
+    run_plugin(lua, name)
+}
+
+fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
+    let plugin = state(lua).plugins[name].clone();
+    let export = match plugin {
+        Plugin::Dir { dir, entry, .. } => {
+            let file = dir.join(entry);
+            let modules = Modules::new(lua, name, Some(dir), None)?;
+            budgeted(lua, || modules.run_file(lua, &file))?
+        }
+        Plugin::Inline(source) => {
+            let modules = Modules::new(lua, name, None, None)?;
+            let chunk_name = format!("@{name}");
+            let values = budgeted(lua, || modules.eval(lua, &source, &chunk_name))?;
+            values.into_iter().next().unwrap_or(Value::Nil)
+        }
+    };
+    state_mut(lua).exports.insert(name.into(), export);
+    Ok(())
 }
 
 /// Removes everything plugin `name` registered.
@@ -579,4 +586,21 @@ fn budgeted<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
 
 fn deadline(lua: &Lua) -> mlua::AppDataRef<'_, Deadline> {
     lua.app_data_ref().expect("deadline is set")
+}
+
+/// The directory of every plugin loaded from one, by name.
+pub(crate) fn plugin_dirs(lua: &Lua) -> Vec<(PluginId, PathBuf)> {
+    state(lua)
+        .plugins
+        .iter()
+        .filter_map(|(name, plugin)| match plugin {
+            Plugin::Dir { dir, .. } => Some((name.clone(), dir.clone())),
+            Plugin::Inline(_) => None,
+        })
+        .collect()
+}
+
+/// The name in `dir`'s `plugin.toml`.
+pub(crate) fn plugin_name(dir: &Path) -> Result<String, HostError> {
+    Ok(read_manifest(dir)?.1.name)
 }

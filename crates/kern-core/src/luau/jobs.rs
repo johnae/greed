@@ -13,6 +13,7 @@ type LuaResult<T> = mlua::Result<T>;
 /// What a finished job produced.
 pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
+    Check(super::plugin::Check),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -65,6 +66,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     match done.output {
         Output::Grep(Ok(lines)) => tasks::wake(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::wake(lua, done.token, (Value::Nil, err.to_string())),
+        Output::Check(check) => tasks::wake(lua, done.token, super::plugin::to_lua(lua, check)?),
     }
 }
 

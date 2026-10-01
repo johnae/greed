@@ -317,21 +317,8 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
         })?,
     )?;
     super::languages::register(lua, kern)?;
-    kern.set("plugin", plugin_module(lua)?)?;
+    kern.set("plugin", super::plugin::module(lua)?)?;
     kern.set("theme", super::theme::module(lua, owner)?)
-}
-
-fn plugin_module(lua: &Lua) -> LuaResult<Table> {
-    let plugin = lua.create_table()?;
-    plugin.set(
-        "list",
-        lua.create_function(|lua, ()| Ok(super::plugin_names(lua)))?,
-    )?;
-    plugin.set(
-        "unload",
-        lua.create_function(|lua, name: String| super::unload(lua, &name).map_err(into_lua))?,
-    )?;
-    Ok(plugin)
 }
 
 /// A mode name, or `{ mode = ..., kind = ... }`.

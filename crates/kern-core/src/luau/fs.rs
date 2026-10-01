@@ -79,7 +79,11 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     fs.set(
         "write",
         lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
-            match std::fs::write(&path, text.as_bytes()) {
+            let written = Path::new(&path)
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&path, text.as_bytes()));
+            match written {
                 Ok(()) => true.into_lua_multi(lua),
                 Err(err) => failure(lua, format!("can't write {path}: {err}")),
             }
@@ -91,6 +95,16 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|_, ()| {
             Ok(std::env::current_dir()
                 .map_or_else(|_| ".".to_owned(), |dir| dir.to_string_lossy().into_owned()))
+        })?,
+    )?;
+
+    fs.set(
+        "dirs",
+        lua.create_function(|lua, ()| {
+            let dirs = lua.create_table()?;
+            dirs.set("config", user_dir("XDG_CONFIG_HOME", ".config"))?;
+            dirs.set("cache", user_dir("XDG_CACHE_HOME", ".cache"))?;
+            Ok(dirs)
         })?,
     )?;
 
@@ -224,4 +238,12 @@ fn read(path: &Path, limit: Option<usize>) -> std::io::Result<String> {
         bytes.truncate(err.valid_up_to());
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Kern's folder under `$var`, or under `fallback` in the home directory.
+fn user_dir(var: &str, fallback: &str) -> Option<String> {
+    let base = std::env::var_os(var)
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(fallback)))?;
+    Some(base.join("kern").to_string_lossy().into_owned())
 }
