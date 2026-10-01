@@ -6,6 +6,7 @@
 //! commands can run other commands and emit events freely.
 
 mod api;
+mod diff;
 mod fs;
 mod handles;
 mod jobs;

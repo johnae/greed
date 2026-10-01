@@ -1391,3 +1391,15 @@ fn files_load_into_buffers_without_being_shown() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(loaded, "from disk true main");
 }
+
+#[test]
+fn diffs_come_back_as_line_changes() {
+    let h = host("");
+    assert_eq!(
+        h.eval(
+            "local c = require('@kern').diff('a\\nb\\n', 'a\\nB\\n')[1] return c.from, c.to, c.text"
+        )
+        .unwrap(),
+        "2\t4\tB\n"
+    );
+}

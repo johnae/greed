@@ -533,6 +533,9 @@ export type Kern = {
 	open: (path: string) -> (),
 	--- The buffer for the file at `path`, opening it without showing it.
 	load: (path: string) -> Buffer,
+	--- The changes that turn `old` into `new`, whole lines at a time: each
+	--- replaces `from`..`to` (byte offsets into `old`) with `text`. Sorted.
+	diff: (old: string, new: string) -> { { from: number, to: number, text: string } },
 	--- Every command, sorted by name.
 	commands: () -> { CommandInfo },
 	--- The 1-based indices of `items` that match `query`, best first.

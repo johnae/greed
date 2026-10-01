@@ -2,6 +2,7 @@
 
 mod buffer;
 pub mod control;
+pub mod diff;
 mod editor;
 mod filetypes;
 mod history;
