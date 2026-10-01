@@ -18,6 +18,8 @@ type LuaResult<T> = mlua::Result<T>;
 pub(crate) struct Tasks {
     next_token: u64,
     waiting: HashMap<u64, Thread>,
+    /// Values sent to signals nobody waits on yet.
+    sent: HashMap<u64, Value>,
     timers: Vec<(Instant, u64)>,
     /// What `kern.now` counts from.
     epoch: Instant,
@@ -34,6 +36,7 @@ impl Default for Tasks {
         Self {
             next_token: 0,
             waiting: HashMap::new(),
+            sent: HashMap::new(),
             timers: Vec::new(),
             epoch: now,
             firing: None,
@@ -217,4 +220,54 @@ pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
     )
     .set_name("=kern.next_key")
     .call(start)
+}
+
+/// `kern.signal()`: a one-shot value one piece of code waits for and
+/// another sends, e.g. a tool waiting for the user to review an edit. A
+/// value sent before anyone waits is kept for the first wait.
+pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
+    let new = lua.create_function(|lua, ()| Ok(state_mut(lua).tasks.token()))?;
+    let send = lua.create_function(|lua, (token, value): (u64, Value)| {
+        if state(lua).tasks.waiting.contains_key(&token) {
+            wake(lua, token, value)
+        } else {
+            state_mut(lua).tasks.sent.entry(token).or_insert(value);
+            Ok(())
+        }
+    })?;
+    let take = lua.create_function(|lua, token: u64| {
+        Ok(match state_mut(lua).tasks.sent.remove(&token) {
+            Some(value) => (true, value),
+            None => (false, Value::Nil),
+        })
+    })?;
+    lua.load(
+        r#"
+        local new, send, take = ...
+        return function()
+            local token = new()
+            local sent = false
+            return {
+                wait = function()
+                    local ready, value = take(token)
+                    if ready then
+                        return value
+                    end
+                    if not coroutine.isyieldable() then
+                        error("a signal can only be waited on in a command or event handler", 2)
+                    end
+                    return coroutine.yield(token)
+                end,
+                send = function(value)
+                    if not sent then
+                        sent = true
+                        send(token, value)
+                    end
+                end,
+            }
+        end
+        "#,
+    )
+    .set_name("=kern.signal")
+    .call((new, send, take))
 }

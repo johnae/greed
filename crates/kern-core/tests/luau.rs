@@ -1342,3 +1342,52 @@ fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
         "nil\ttrue"
     );
 }
+
+#[test]
+fn signals_wake_whoever_waits_with_the_value_sent() {
+    let h = host("");
+    h.load_str(
+        "signals",
+        r#"
+        local kern = require("@kern")
+        local signal = nil
+        kern.command { name = "wait", run = function()
+          signal = kern.signal()
+          kern.echo("got " .. signal.wait())
+        end }
+        kern.command { name = "send", run = function()
+          signal.send("yes")
+          signal.send("ignored")
+        end }
+        kern.command { name = "early", run = function()
+          local s = kern.signal()
+          s.send(42)
+          kern.echo("early " .. s.wait())
+        end }
+        "#,
+    )
+    .unwrap();
+    h.run("wait").unwrap();
+    assert!(
+        h.with_editor_mut(Editor::take_messages).is_empty(),
+        "still waiting"
+    );
+    h.run("send").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["got yes"]);
+    h.run("early").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["early 42"]);
+}
+
+#[test]
+fn files_load_into_buffers_without_being_shown() {
+    let dir = plugin_dir("load", &[("a.txt", "from disk")]);
+    let h = host("main");
+    let loaded = eval_in(
+        &h,
+        &dir,
+        "local b = kern.load(DIR .. '/a.txt')
+         return b:text() .. ' ' .. tostring(kern.load(DIR .. '/a.txt'):id() == b:id()) .. ' ' .. kern.view():buffer():text()",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(loaded, "from disk true main");
+}

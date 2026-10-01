@@ -259,6 +259,13 @@ export type ControlRequest = {
 	params: any,
 }
 
+export type Signal = {
+	--- Waits until a value is sent, and returns it.
+	wait: () -> any,
+	--- Sends `value` to whoever waits. Only the first send counts.
+	send: (value: any) -> (),
+}
+
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an
 --- empty table is an object unless it came from `array`.
 export type Json = {
@@ -496,6 +503,10 @@ export type Kern = {
 	--- Waits for the next key press and returns its name, e.g. "g" or "ctrl-s".
 	--- The key doesn't run anything. Works in commands and event handlers.
 	next_key: () -> string,
+	--- A one-shot value that one piece of code waits for and another sends,
+	--- e.g. a tool waiting for the user's review. `wait` works in commands and
+	--- event handlers; a value sent before anyone waits is kept for them.
+	signal: () -> Signal,
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last
@@ -520,6 +531,8 @@ export type Kern = {
 	buffers: () -> { Buffer },
 	--- Opens a file in the main view.
 	open: (path: string) -> (),
+	--- The buffer for the file at `path`, opening it without showing it.
+	load: (path: string) -> Buffer,
 	--- Every command, sorted by name.
 	commands: () -> { CommandInfo },
 	--- The 1-based indices of `items` that match `query`, best first.

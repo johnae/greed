@@ -307,6 +307,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("fs", super::fs::module(lua)?)?;
     kern.set("control", super::requests::module(lua)?)?;
     kern.set("json", super::json::module(lua)?)?;
+    kern.set("signal", tasks::signal_function(lua)?)?;
     super::languages::register(lua, kern)?;
     kern.set("plugin", plugin_module(lua)?)?;
     kern.set("theme", super::theme::module(lua, owner)?)
@@ -762,6 +763,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
             Ok(list)
         })?,
     )?;
+    kern.set("load", load_function(lua, owner)?)?;
 
     kern.set(
         "open",
@@ -1099,4 +1101,20 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
             Ok(Span { text, tags })
         })
         .collect()
+}
+
+/// `kern.load(path)`: the buffer for a file, opened without being shown.
+fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
+    lua.create_function(move |lua, path: String| {
+        let buffer = state_mut(lua)
+            .editor
+            .open_file(Path::new(&path))
+            .map_err(|err| mlua::Error::runtime(format!("can't open {path}: {err}")))?;
+        Ok(BufferRef {
+            buffer,
+            view: None,
+            author: Author::Plugin(owner.clone()),
+        })
+    })
 }
