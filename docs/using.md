@@ -90,6 +90,9 @@ There is always a selection; a cursor is a selection one character wide.
 | `g w` | Label every word on screen; type a label to jump there |
 | `;` `alt-;` | Collapse the selection to the cursor, swap its ends |
 | `%` | Select the whole file |
+| `ctrl-f` `ctrl-b` | A screen down or up (also `pagedown` `pageup`) |
+| `ctrl-d` `ctrl-u` | Half a screen down or up |
+| `z z` | Put the cursor's line in the middle of the screen |
 
 **Changing**
 
@@ -198,6 +201,8 @@ require("@languages").set("python", { servers = { { "pylsp" } } })
 -- Turn off a default plugin
 kern.plugin.unload("hints")
 ```
+
+[Keys](keys.md) covers key names, modes and taking keys away.
 
 Theme names fall back to their parent, so `keyword.control` uses `keyword`
 unless it has its own entry. The default theme uses the terminal's 16

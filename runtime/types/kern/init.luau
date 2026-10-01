@@ -116,6 +116,11 @@ export type View = {
 	--- The start and end of the text on screen when the view was last
 	--- drawn, or of the whole buffer before that.
 	visible: (self: View) -> (number, number),
+	--- The 0-based line at the top of the view.
+	scroll: (self: View) -> number,
+	--- Scrolls so `line` is at the top. Drawing scrolls again if the primary
+	--- cursor would be off screen, so move it first.
+	set_scroll: (self: View, line: number) -> (),
 	buffer: (self: View) -> Buffer,
 	--- Shows another buffer in this view.
 	show: (self: View, buffer: Buffer) -> (),

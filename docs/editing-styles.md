@@ -62,6 +62,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `i a I A o O` | Insert |
 | `u` `ctrl-r` | Undo, redo |
 | `v` | Visual mode |
+| `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `z z` | Page and half page down and up, center the view |
 | `.` | Repeat the last change that didn't type text |
 
 Why it's here: Vim's keys are in a lot of people's hands, and switching
@@ -81,6 +82,7 @@ the keys are the ones most editors use.
 | Keys | |
 |---|---|
 | arrows, `home` `end`, `ctrl-left` `ctrl-right` | Move |
+| `pageup` `pagedown` | A screen up or down |
 | `shift` + any of those | Select |
 | `ctrl-a` | Select all |
 | `ctrl-c` `ctrl-x` `ctrl-v` | Copy, cut, paste |

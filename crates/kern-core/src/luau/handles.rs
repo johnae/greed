@@ -17,7 +17,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::api::{emit, float_options};
 use super::{state, state_mut};
 use crate::search::{self, Direction};
-use crate::{Buffer, BufferId, Mark, View, ViewId};
+use crate::{Buffer, BufferId, Mark, Scroll, View, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -83,6 +83,24 @@ impl UserData for ViewRef {
             let len = state.editor.buffer(view.buffer).text().len_bytes();
             let visible = view.visible.clone().unwrap_or(0..len);
             Ok((visible.start.min(len), visible.end.min(len)))
+        });
+        methods.add_method("scroll", |lua, this, ()| {
+            this.with_view(lua, |v| Ok(v.scroll.line))
+        });
+        methods.add_method("set_scroll", |lua, this, line: usize| {
+            let buffer = this.buffer(lua)?;
+            let mut state = state_mut(lua);
+            let last = state
+                .editor
+                .buffer(buffer)
+                .text()
+                .len_lines()
+                .saturating_sub(1);
+            state.editor.view_mut(this.id).scroll = Scroll {
+                line: line.min(last),
+                row: 0,
+            };
+            Ok(())
         });
         methods.add_method("buffer", |lua, this, ()| {
             Ok(BufferRef {

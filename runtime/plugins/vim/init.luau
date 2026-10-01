@@ -619,7 +619,25 @@ end)
 -- Keys other plugins put in normal mode that work the same here: the
 -- space-leader keys, the command line, search, and going to definitions
 -- and problems. Plugins loaded later get them too.
-kern.keymap.inherit("vim", "normal", { "space", ":", "/", "?", "n", "N", "*", "g d", "]", "[" })
+kern.keymap.inherit("vim", "normal", {
+	"space",
+	":",
+	"/",
+	"?",
+	"n",
+	"N",
+	"*",
+	"g d",
+	"]",
+	"[",
+	"ctrl-f",
+	"ctrl-b",
+	"ctrl-d",
+	"ctrl-u",
+	"pagedown",
+	"pageup",
+	"z z",
+})
 -- Insert mode as everyone has it, except that esc comes back here.
 kern.keymap.inherit("vim-insert", "insert")
 kern.keymap.fallback("vim-insert", "insert-char")

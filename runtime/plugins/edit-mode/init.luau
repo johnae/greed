@@ -145,6 +145,8 @@ kern.keymap.bind("edit", {
 	["ctrl-right"] = "move-word-right",
 	["ctrl-home"] = "goto-start",
 	["ctrl-end"] = "goto-end",
+	pagedown = "page-down",
+	pageup = "page-up",
 	["shift-left"] = "extend-left",
 	["shift-right"] = "extend-right",
 	["shift-up"] = "extend-up",

@@ -23,6 +23,9 @@ export type TestContext = {
 	floats: (self: TestContext) -> { string },
 	--- The left and right sides of the status line a plugin builds, as text.
 	status: (self: TestContext) -> (string?, string?),
+	--- Lays the editor out on a `width` by `height` screen, as a client would
+	--- draw it, and returns the rows as text, the status line last.
+	draw: (self: TestContext, width: number, height: number) -> { string },
 	--- True once something asked the editor to exit.
 	quitting: (self: TestContext) -> boolean,
 	--- True if something asked to let the client go since the last call.

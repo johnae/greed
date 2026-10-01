@@ -198,6 +198,20 @@ impl UserData for TestContext {
                 (Some(join(&l.left)), Some(join(&l.right)))
             }))
         });
+        methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
+            use crate::render::{CellWidth, Plain, Renderer, Size, Status};
+            let frame = Renderer::new(CellWidth).frame(
+                &mut state_mut(lua).editor,
+                Size { width, height },
+                &Status::Default { message: None },
+                &Plain,
+            );
+            Ok(frame
+                .rows
+                .iter()
+                .map(crate::render::Row::text)
+                .collect::<Vec<_>>())
+        });
         methods.add_method("quitting", |lua, _, ()| {
             Ok(state(lua).editor.quit_requested())
         });

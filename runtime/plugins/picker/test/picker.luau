@@ -247,3 +247,13 @@ test("a source that fails shows nothing instead of breaking the picker", functio
 	t:keys("esc")
 	t:expect_mode("normal")
 end)
+
+test("the command palette shows each command's keys", function(t)
+	t:buffer("|abc")
+	t:keys("space ? g o t o - e n d")
+	assert(
+		string.find(kern.view():buffer():text(), "goto-end  (g e)", 1, true),
+		kern.view():buffer():text()
+	)
+	t:keys("esc")
+end)

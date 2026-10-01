@@ -11,6 +11,7 @@ local file = require("@self/file")
 local search = require("@self/search")
 require("@self/select")
 require("@self/jump")
+require("@self/scroll")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
@@ -35,6 +36,13 @@ kern.keymap.bind("normal", {
 	["g g"] = "goto-start",
 	["g e"] = "goto-end",
 	["g w"] = "jump-to-word",
+	["ctrl-f"] = "page-down",
+	["ctrl-b"] = "page-up",
+	["ctrl-d"] = "half-page-down",
+	["ctrl-u"] = "half-page-up",
+	pagedown = "page-down",
+	pageup = "page-up",
+	["z z"] = "center-view",
 	x = "select-line",
 	[";"] = "collapse",
 	["alt-;"] = "flip",
@@ -70,6 +78,8 @@ kern.keymap.bind("normal", {
 
 kern.keymap.bind("insert", {
 	esc = "normal-mode",
+	pagedown = "page-down",
+	pageup = "page-up",
 	enter = "insert-newline",
 	backspace = "delete-back",
 	left = "move-left",

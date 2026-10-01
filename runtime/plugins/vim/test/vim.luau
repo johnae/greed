@@ -181,3 +181,18 @@ test(":style switches between Helix, edit mode and Vim", function(t)
 	kern.option.set("editing-style", "helix")
 	t:expect_mode("normal")
 end)
+
+test("ctrl-f, ctrl-b, ctrl-d and ctrl-u page through the file", function(t)
+	local lines = {}
+	for i = 0, 49 do
+		table.insert(lines, `line {i}`)
+	end
+	buffer(t, "|" .. table.concat(lines, "\n"))
+	t:draw(40, 11)
+	t:keys("ctrl-f")
+	assert(kern.view():scroll() == 10, tostring(kern.view():scroll()))
+	t:draw(40, 11)
+	t:keys("ctrl-u")
+	assert(kern.view():scroll() == 5, tostring(kern.view():scroll()))
+	t:expect_mode("vim")
+end)

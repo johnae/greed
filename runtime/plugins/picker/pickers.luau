@@ -102,12 +102,21 @@ kern.command({
 	name = "command-palette",
 	doc = "Run any command by name",
 	run = function()
+		-- Keys that run each command in the mode the palette opened from.
+		local mode = kern.mode.get()
 		local items = {}
 		for _, command in kern.commands() do
-			table.insert(
-				items,
-				{ label = command.name .. "  " .. command.doc, value = command.name }
-			)
+			local keys = {}
+			for _, binding in kern.keymap.find(command.name) do
+				if binding.layer == mode or binding.layer == "global" then
+					table.insert(keys, binding.keys)
+				end
+			end
+			local label = command.name
+			if #keys > 0 then
+				label ..= `  ({table.concat(keys, ", ")})`
+			end
+			table.insert(items, { label = `{label}  {command.doc}`, value = command.name })
 		end
 		picker.pick("Commands", items, function(item)
 			kern.run(item.value)

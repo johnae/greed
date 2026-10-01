@@ -75,3 +75,17 @@ test("enter, backspace and delete keep CRLF line breaks whole", function(t)
 	t:keys("end delete")
 	assert(kern.view():buffer():text() == "bcd", string.format("%q", kern.view():buffer():text()))
 end)
+
+test("page down and page up move a screen", function(t)
+	local lines = {}
+	for i = 0, 49 do
+		table.insert(lines, `line {i}`)
+	end
+	t:buffer("|" .. table.concat(lines, "\n"))
+	kern.mode.set("edit")
+	t:draw(40, 11)
+	t:keys("pagedown")
+	assert(kern.view():scroll() == 10, tostring(kern.view():scroll()))
+	t:keys("pageup")
+	assert(kern.view():scroll() == 0)
+end)
