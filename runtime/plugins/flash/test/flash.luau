@@ -44,7 +44,10 @@ test("with hex colors the flash fades towards the text's background", function(t
 	assert(bg() == "#ffff00", "starts at the flash color, got " .. tostring(bg()))
 	t:wait(150)
 	local middle = bg()
-	assert(middle ~= "#ffff00" and middle ~= "#000000", "halfway it's in between, got " .. tostring(middle))
+	assert(
+		middle ~= "#ffff00" and middle ~= "#000000",
+		"halfway it's in between, got " .. tostring(middle)
+	)
 	t:wait(500)
 	assert(bg() == "#000000", "ends at the background, got " .. tostring(bg()))
 end)
@@ -58,4 +61,49 @@ test("flash-duration sets how long the flash lasts", function(t)
 	assert(#buffer:decorations("flash") == 1, "still showing halfway")
 	t:wait(60)
 	assert(#buffer:decorations("flash") == 0, "gone after 100ms")
+end)
+
+test("a second copy soon after keeps its flash when the first one's ends", function(t)
+	kern.option.set("flash-duration", 300)
+	t:buffer("^one| two")
+	local buffer = kern.view():buffer()
+	t:keys("y")
+	t:wait(100)
+	t:keys("e y")
+	t:wait(250)
+	local marks = buffer:decorations("flash")
+	assert(
+		#marks == 1 and buffer:slice(marks[1].from, marks[1].to) == " two",
+		"the newer flash stays"
+	)
+	t:wait(200)
+	assert(#buffer:decorations("flash") == 0, "and goes when its own time is up")
+end)
+
+test("every selection copied flashes", function(t)
+	t:buffer("^ab| ^cd| ef")
+	t:keys("y")
+	assert(#kern.view():buffer():decorations("flash") == 2)
+end)
+
+test("with named colors the flash shows, then goes, without fading", function(t)
+	kern.theme.set({ ["ui.flash"] = { bg = "yellow", fg = "black" } })
+	t:buffer("^hello| world")
+	t:keys("y")
+	local now = kern.theme.get("ui.flash.now") :: kern.ThemeEntry
+	assert(now.bg == "yellow", tostring(now.bg))
+	t:wait(150)
+	assert((kern.theme.get("ui.flash.now") :: kern.ThemeEntry).bg == "yellow", "no fading")
+	t:wait(400)
+	assert(#kern.view():buffer():decorations("flash") == 0)
+end)
+
+test("a buffer that goes away while flashing doesn't cause an error", function(t)
+	t:buffer("^hello| world")
+	t:keys("y")
+	t:buffer("|other")
+	t:wait(1000)
+	for _, message in t:messages() do
+		assert(not string.find(message, "closed", 1, true), message)
+	end
 end)

@@ -72,8 +72,9 @@ kern.on("command.run", function(event: kern.CommandRun)
 	else
 		kern.sleep(duration)
 	end
+	-- The buffer may have gone away while it flashed.
 	if latest == mine then
-		buffer:decorate("flash", {})
+		pcall(buffer.decorate, buffer, "flash", {})
 	end
 end)
 

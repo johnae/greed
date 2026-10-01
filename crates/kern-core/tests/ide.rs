@@ -306,3 +306,39 @@ fn wait_for_proposal(label: &str) {
     }
     panic!("no proposal showed up");
 }
+
+#[test]
+fn a_rejected_diff_leaves_the_file_alone_and_says_so() {
+    let work = std::env::temp_dir().join(format!("kern-ide-reject-work-{}", std::process::id()));
+    std::fs::create_dir_all(&work).unwrap();
+    let file = work.join("a.txt");
+    std::fs::write(&file, "one\ntwo\n").unwrap();
+    let (conn, dir) = start_agent("reject", &file);
+    let (port, lock) = lock(&dir);
+    let mut socket = connect(port, lock["authToken"].as_str().unwrap()).unwrap();
+    let path = file.to_str().unwrap();
+    call(
+        &mut socket,
+        1,
+        "openDiff",
+        &json!({
+            "old_file_path": path,
+            "new_file_path": path,
+            "new_file_contents": "one\nTWO\nthree\n",
+            "tab_name": "edit a.txt",
+        }),
+    );
+    wait_for_proposal("reject");
+    for key in kern_core::keymap::Key::parse_sequence("space o R").unwrap() {
+        conn.input.send(Input::Key(key)).unwrap();
+    }
+    let answer = response(&mut socket, 1);
+    let content = &answer["result"]["content"];
+    assert_eq!(content[0]["text"], "DIFF_REJECTED", "{answer}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\ntwo\n");
+
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&work).unwrap();
+}

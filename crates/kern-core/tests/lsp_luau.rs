@@ -258,3 +258,16 @@ fn empty_answers_from_the_server_say_so_instead_of_failing() {
         "no empty window"
     );
 }
+
+#[test]
+fn the_status_line_counts_errors_and_warnings() {
+    let h = with_plugin();
+    h.load_dirs(&[plugin("statusline")]).unwrap();
+    let line = h
+        .status_line(None, 80)
+        .unwrap()
+        .expect("the plugin builds one");
+    let right: String = line.right.iter().map(|s| s.text.as_str()).collect();
+    assert!(right.starts_with("E1 "), "{right}");
+    assert!(!right.contains('W'), "no warnings: {right}");
+}

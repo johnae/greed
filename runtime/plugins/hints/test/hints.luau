@@ -1,4 +1,5 @@
 local test = require("@kern/test")
+local kern = require("@kern")
 
 test("a prefix key shows what can follow it", function(t)
 	t:buffer("|abc")
@@ -18,4 +19,35 @@ test("hints go away when the sequence ends", function(t)
 
 	t:keys("g x")
 	assert(#t:floats() == 0, "an unbound sequence also hides them")
+end)
+
+test(
+	"keys that start longer sequences say more, and commands without a doc show their name",
+	function(t)
+		kern.command({ name = "hint-test-nodoc", run = function() end })
+		kern.keymap.bind("normal", { ["g q"] = "hint-test-nodoc" })
+		t:buffer("|abc")
+		t:keys("m")
+		assert(string.find(t:floats()[1], "i        more...", 1, true), t:floats()[1])
+		t:keys("esc g")
+		assert(string.find(t:floats()[1], "q        hint-test-nodoc", 1, true), t:floats()[1])
+	end
+)
+
+test("long key names keep the descriptions lined up", function(t)
+	kern.keymap.bind("normal", { ["g ctrl-shift-home"] = "goto-start" })
+	t:buffer("|abc")
+	t:keys("g")
+	local columns = {}
+	for _, line in string.split(t:floats()[1], "\n") do
+		local key, rest = string.match(line, "^(%S+)(%s+)")
+		if key and rest then
+			columns[#key + #rest] = true
+		end
+	end
+	local count = 0
+	for _ in columns do
+		count += 1
+	end
+	assert(count == 1, "every description starts in the same column")
 end)

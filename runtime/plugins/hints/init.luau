@@ -33,9 +33,16 @@ kern.on("keys.pending", function(event: kern.KeysPending)
 	for _, command in kern.commands() do
 		docs[command.name] = command.doc
 	end
+	local nexts = kern.keymap.next(event.keys)
+	-- Descriptions start in one column, after the longest key name.
+	local width = 8
+	for _, next in nexts do
+		width = math.max(width, #next.key)
+	end
 	local lines = {}
-	for _, next in kern.keymap.next(event.keys) do
-		table.insert(lines, string.format("%-8s %s", next.key, describe(next.command, docs)))
+	for _, next in nexts do
+		local key = next.key .. string.rep(" ", width - #next.key)
+		table.insert(lines, `{key} {describe(next.command, docs)}`)
 	end
 	if #lines == 0 then
 		return
