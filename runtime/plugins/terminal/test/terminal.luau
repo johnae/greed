@@ -142,3 +142,13 @@ test("images a program shows become image marks over their cells", function(t)
 	-- shows.
 	assert(buffer:line_of(images[1].to) == buffer:line_of(images[1].from) + 1)
 end)
+
+test("ctrl-space reaches the space keys from inside a terminal", function(t)
+	t:run("terminal", { "cat" })
+	assert(kern.mode.get() == "terminal")
+	t:keys("ctrl-space")
+	assert(kern.mode.get() == "normal")
+	local _, more = kern.keymap.resolve("space")
+	assert(more, "space is pending")
+	t:keys("esc i ctrl-d")
+end)

@@ -105,6 +105,16 @@ The terminal's mode takes every key, so the `alt` keys are bound in the
 `terminal` layer too; unbind a key there as well to let it through to the
 program. `require("@panes").keys` holds the defaults, by layer.
 
+In a terminal, keys go to the program except those bound in the
+`terminal` layer: `ctrl-\` to stop typing into it, `ctrl-space` to stop
+and press `space` (so `ctrl-space f` finds a file), and the `alt` keys
+above. Bind more there the same way:
+
+```luau
+-- ctrl-o finds a file without leaving the terminal first
+kern.keymap.bind("terminal", { ["ctrl-o"] = "pick-file" })
+```
+
 ## Modes and layers
 
 Bindings live in layers. Most belong to a mode:

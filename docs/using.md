@@ -303,6 +303,7 @@ goes to the program, including ones the editor would otherwise take, like
 |---|---|
 | `space t` | Switch to a terminal, or open a new one |
 | `ctrl-\` | Stop typing into the program, to move around its output |
+| `ctrl-space` | The same, then `space`: `ctrl-space f` finds a file from inside a terminal |
 | `i`, `a`, `enter` | Type into it again |
 | `p` | Paste the latest copy into the program |
 | `:terminal-close` | End the program and close the terminal |

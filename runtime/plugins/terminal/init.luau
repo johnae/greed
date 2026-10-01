@@ -407,6 +407,18 @@ kern.command({
 })
 
 kern.command({
+	name = "terminal-leader",
+	doc = "Stop typing into the terminal and press space, for the keys after it",
+	run = function()
+		kern.mode.set(core.style.home())
+		-- Styles without space keys (edit mode) just stop typing into it.
+		if #kern.keymap.next("space") > 0 then
+			kern.keys.feed("space")
+		end
+	end,
+})
+
+kern.command({
 	name = "terminal-paste",
 	doc = "Paste the latest copy into the terminal's program",
 	run = function(ctx)
@@ -468,7 +480,7 @@ kern.command({
 kern.keymap.bind("normal", { ["space t"] = "pick-terminal" })
 kern.keymap.isolate(MODE)
 kern.keymap.fallback(MODE, "terminal-key")
-kern.keymap.bind(MODE, { ["ctrl-\\"] = "terminal-leave" })
+kern.keymap.bind(MODE, { ["ctrl-\\"] = "terminal-leave", ["ctrl-space"] = "terminal-leader" })
 kern.mode.cursor(MODE, "block")
 for _, mode in { "normal", "vim" } do
 	kern.keymap.bind({ mode = mode, kind = "terminal" }, {
