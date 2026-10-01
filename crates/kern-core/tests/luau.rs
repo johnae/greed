@@ -394,3 +394,128 @@ fn bad_requires_explain_themselves() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(err.contains("@self is for init.luau"), "{err}");
 }
+
+#[test]
+fn scratch_buffers_float_and_go_away_when_closed() {
+    let h = host("main");
+    h.eval("b = require('@kern').create_buffer('picker', 'one\\ntwo')")
+        .unwrap();
+    h.eval("v = require('@kern').float(b, { title = 'Pick', width = 30, height = '50%' })")
+        .unwrap();
+    assert_eq!(
+        h.eval("require('@kern').view():buffer():kind()").unwrap(),
+        "picker"
+    );
+    h.with_editor(|ed| {
+        let float = &ed.floats()[0];
+        assert_eq!(float.options.title.as_deref(), Some("Pick"));
+        assert_eq!(float.options.width, kern_core::Extent::Cells(30));
+        assert_eq!(float.options.height, kern_core::Extent::Percent(50));
+    });
+    assert_eq!(h.eval("v:close()").unwrap(), "true");
+    assert_eq!(
+        h.eval("require('@kern').view():buffer():text()").unwrap(),
+        "main"
+    );
+    let err = h.eval("b:text()").unwrap_err().to_string();
+    assert!(err.contains("this buffer was closed"), "{err}");
+    let err = h.eval("v:selection()").unwrap_err().to_string();
+    assert!(err.contains("this view was closed"), "{err}");
+    assert!(
+        h.eval("require('@kern').float(require('@kern').create_buffer('x'), { anchor = 'left' })")
+            .is_err()
+    );
+}
+
+#[test]
+fn edits_and_undo_announce_buffer_changes() {
+    let h = host("");
+    h.load_str(
+        "watch",
+        "local kern = require('@kern')\nkern.on('buffer.changed', function(ev) kern.echo('changed ' .. ev.buffer:text()) end)",
+    )
+    .unwrap();
+    h.eval("require('@kern').view():buffer():edit(function(e) e:insert(0, 'x') end)")
+        .unwrap();
+    h.eval("require('@kern').view():undo()").unwrap();
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages),
+        ["changed x", "changed "]
+    );
+}
+
+#[test]
+fn buffers_off_screen_can_be_edited() {
+    let h = host("");
+    h.eval("s = require('@kern').create_buffer('scratch', 'abc')")
+        .unwrap();
+    h.eval("s:edit(function(e) e:insert(3, 'd') end)").unwrap();
+    assert_eq!(h.eval("s:text()").unwrap(), "abcd");
+    assert_eq!(h.eval("#require('@kern').buffers()").unwrap(), "2");
+}
+
+#[test]
+fn open_shows_a_file_in_the_main_view() {
+    let dir = plugin_dir("open-files", &[("notes.md", "# Notes")]);
+    let h = host("start");
+    h.eval("b = require('@kern').create_buffer('picker')")
+        .unwrap();
+    h.eval("require('@kern').float(b)").unwrap();
+    let path = dir.join("notes.md");
+    h.eval(&format!(
+        "require('@kern').open({:?})",
+        path.to_str().unwrap()
+    ))
+    .unwrap();
+    assert_eq!(h.with_editor(Editor::focus), h.with_editor(Editor::main));
+    assert_eq!(text(&h), "# Notes");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn commands_are_listed_with_docs_and_owners() {
+    let h = host("");
+    h.load_str("mine", WRAP).unwrap();
+    let listed = h
+        .eval("(function() local c = require('@kern').commands()[1] return c.name .. '|' .. c.doc .. '|' .. c.owner end)()")
+        .unwrap();
+    assert_eq!(listed, "wrap-in-some|Wrap each selection in Some(...)|mine");
+}
+
+#[test]
+fn fuzzy_matching_ranks_best_first() {
+    let h = host("");
+    let ranked = |q: &str| {
+        h.eval(&format!(
+            "table.concat(require('@kern').fuzzy({q:?}, {{ 'README.md', 'src/main.rs', 'Cargo.toml', 'src/lib.rs' }}), ',')"
+        ))
+        .unwrap()
+    };
+    assert_eq!(ranked("main"), "2");
+    assert_eq!(ranked("src"), "2,4");
+    assert_eq!(ranked(""), "1,2,3,4");
+    assert_eq!(ranked("zzz"), "");
+}
+
+#[test]
+fn files_skip_hidden_and_ignored_ones() {
+    let dir = plugin_dir(
+        "list-files",
+        &[
+            ("src/main.rs", ""),
+            ("README.md", ""),
+            (".hidden", ""),
+            ("target/out", ""),
+            (".gitignore", "target/\n"),
+        ],
+    );
+    let h = host("");
+    let listed = h
+        .eval(&format!(
+            "table.concat(require('@kern').files({:?}), ',')",
+            dir.to_str().unwrap()
+        ))
+        .unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(listed, "README.md,plugin.toml,src/main.rs");
+}

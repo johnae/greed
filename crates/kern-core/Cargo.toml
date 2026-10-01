@@ -7,8 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 crossbeam-channel.workspace = true
+ignore.workspace = true
 kern-text.workspace = true
 mlua.workspace = true
+nucleo-matcher.workspace = true
 ropey.workspace = true
 serde.workspace = true
 smallvec.workspace = true

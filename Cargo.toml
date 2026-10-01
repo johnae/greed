@@ -12,7 +12,9 @@ crossbeam-channel = "0.5"
 crossterm = "0.29"
 kern-core = { path = "crates/kern-core" }
 kern-text = { path = "crates/kern-text" }
+ignore = "0.4"
 mlua = { version = "0.12", features = ["luau", "error-send"] }
+nucleo-matcher = "0.3"
 proptest = "1.11"
 ropey = "1.6"
 serde = { version = "1", features = ["derive"] }

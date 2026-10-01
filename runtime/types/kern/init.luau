@@ -31,6 +31,7 @@ export type Edits = {
 
 --- Open text, backed by a file or not.
 export type Buffer = {
+	id: (self: Buffer) -> number,
 	--- Length in bytes.
 	len: (self: Buffer) -> number,
 	text: (self: Buffer) -> string,
@@ -61,6 +62,12 @@ export type View = {
 	selection: (self: View) -> Selection,
 	set_selection: (self: View, selection: Selection) -> (),
 	buffer: (self: View) -> Buffer,
+	--- Shows another buffer in this view.
+	show: (self: View, buffer: Buffer) -> (),
+	--- Focuses this view, so keys go to it.
+	focus: (self: View) -> (),
+	--- Closes the view. The main view can't be closed; returns false for it.
+	close: (self: View) -> boolean,
 	--- Undoes the last change. Returns false if there was nothing to undo.
 	undo: (self: View) -> boolean,
 	redo: (self: View) -> boolean,
@@ -117,6 +124,26 @@ export type History = {
 	end_group: () -> (),
 }
 
+--- How a floating view looks. Sizes are cells, or a string like "60%";
+--- both default to "60%".
+export type FloatSpec = {
+	title: string?,
+	width: (number | string)?,
+	height: (number | string)?,
+	anchor: ("center" | "top" | "bottom")?,
+}
+
+export type CommandInfo = {
+	name: string,
+	doc: string,
+	--- The plugin that defined it.
+	owner: string,
+}
+
+export type BufferChanged = {
+	buffer: Buffer,
+}
+
 export type ModeChanged = {
 	from: string,
 	to: string,
@@ -128,6 +155,7 @@ export type Kern = {
 	run: (name: string) -> (),
 	--- Calls `handler` every time `event` happens.
 	on: ((event: "mode.changed", handler: (event: ModeChanged) -> ()) -> ())
+		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
@@ -135,6 +163,22 @@ export type Kern = {
 	view: () -> View,
 	--- Asks the editor to exit.
 	quit: () -> (),
+	--- A new buffer that isn't shown anywhere yet. It goes away when the last
+	--- view showing it closes.
+	create_buffer: (kind: string, text: string?) -> Buffer,
+	--- Shows `buffer` in a view floating over the main one, and focuses it.
+	float: (buffer: Buffer, spec: FloatSpec?) -> View,
+	--- Every open buffer.
+	buffers: () -> { Buffer },
+	--- Opens a file in the main view.
+	open: (path: string) -> (),
+	--- Every command, sorted by name.
+	commands: () -> { CommandInfo },
+	--- The 1-based indices of `items` that match `query`, best first.
+	fuzzy: (query: string, items: { string }) -> { number },
+	--- Files under `dir` (default: the current directory), skipping hidden
+	--- and ignored files.
+	files: (dir: string?) -> { string },
 	keymap: Keymap,
 	mode: Mode,
 	option: Options,

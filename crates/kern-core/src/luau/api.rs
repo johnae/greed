@@ -1,31 +1,39 @@
-//! The `kern` module plugins get from `require("@kern")`, and the buffer and
-//! view handles passed to commands.
-//!
-//! Positions are 0-based byte offsets and lines are 0-based, matching LSP.
-//! A range is `{ anchor = n, head = n }`; a selection is
-//! `{ ranges = { range, ... }, primary = i }` with a 1-based `primary`.
+//! The `kern` module plugins get from `require("@kern")`, and running
+//! commands and emitting events.
 
-use kern_text::{Author, ChangeSet, Range, Rope, Selection};
-use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, Value, Variadic};
+use std::path::Path;
+use std::sync::Arc;
 
+use kern_text::Author;
+use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
+use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
+
+use super::handles::{BufferRef, ViewRef};
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
-use crate::{Buffer, KeyOutcome, ViewId};
+use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
 
 type LuaResult<T> = mlua::Result<T>;
 
 /// Runs a command as the user, with `keys` as the sequence that triggered
 /// it.
 pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), HostError> {
-    let (handler, author, view) = {
+    let (handler, author, view, buffer) = {
         let state = state(lua);
         let command = state
             .registry
             .command(name)
             .ok_or_else(|| HostError::UnknownCommand(name.into()))?;
         let author = Author::User(state.editor.client());
-        (command.handler.clone(), author, state.editor.focus())
+        let view = state.editor.focus();
+        (
+            command.handler.clone(),
+            author,
+            view,
+            state.editor.view(view).buffer,
+        )
     };
     let ctx = lua.create_table()?;
     ctx.set(
@@ -35,7 +43,14 @@ pub(super) fn run_command(lua: &Lua, name: &str, keys: &[Key]) -> Result<(), Hos
             author: author.clone(),
         },
     )?;
-    ctx.set("buffer", BufferRef { view, author })?;
+    ctx.set(
+        "buffer",
+        BufferRef {
+            buffer,
+            view: Some(view),
+            author,
+        },
+    )?;
     if !keys.is_empty() {
         let text: Vec<String> = keys.iter().map(ToString::to_string).collect();
         ctx.set("keys", text.join(" "))?;
@@ -67,7 +82,7 @@ pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
 
 /// Calls every handler for `event` with `payload`. All handlers run even if
 /// one fails; the first error is returned.
-fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
+pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
     let handlers: Vec<Function> = state(lua)
         .registry
         .handlers(event)
@@ -150,6 +165,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
+    workspace_functions(lua, &kern, owner)?;
     kern.set("keymap", keymap_module(lua, owner)?)?;
     kern.set("mode", mode_module(lua)?)?;
     kern.set("option", option_module(lua, owner)?)?;
@@ -348,266 +364,192 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
     }
 }
 
-/// A view, as seen by a command or plugin. Edits made through it are
-/// attributed to `author`.
-struct ViewRef {
-    id: ViewId,
-    author: Author,
-}
-
-impl UserData for ViewRef {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.id.0));
-        methods.add_method("selection", |lua, this, ()| {
-            selection_to_lua(lua, &state(lua).editor.view(this.id).selection)
-        });
-        methods.add_method("set_selection", |lua, this, t: Table| {
-            let selection = selection_from_lua(&t)?;
-            let mut state = state_mut(lua);
-            let buffer = state.editor.view(this.id).buffer;
-            check_selection(state.editor.buffer(buffer).text(), &selection)?;
-            state.editor.view_mut(this.id).selection = selection;
-            Ok(())
-        });
-        methods.add_method("buffer", |_, this, ()| {
+/// Buffers, floating views, files and commands: what pickers and other UI
+/// plugins are built from.
+fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    kern.set(
+        "create_buffer",
+        lua.create_function(move |lua, (kind, text): (String, Option<String>)| {
+            let buffer = state_mut(lua)
+                .editor
+                .create_buffer(&kind, text.as_deref().unwrap_or_default());
             Ok(BufferRef {
-                view: this.id,
-                author: this.author.clone(),
+                buffer,
+                view: None,
+                author: Author::Plugin(o.clone()),
             })
-        });
-        methods.add_method("undo", |lua, this, ()| {
-            state_mut(lua)
-                .editor
-                .undo(this.id)
-                .map_err(mlua::Error::external)
-        });
-        methods.add_method("redo", |lua, this, ()| {
-            state_mut(lua)
-                .editor
-                .redo(this.id)
-                .map_err(mlua::Error::external)
-        });
-    }
-}
+        })?,
+    )?;
 
-/// The buffer shown in a view. Edits map that view's selection.
-struct BufferRef {
-    view: ViewId,
-    author: Author,
-}
-
-impl BufferRef {
-    fn with_buffer<R>(&self, lua: &Lua, f: impl FnOnce(&Buffer) -> LuaResult<R>) -> LuaResult<R> {
-        let state = state(lua);
-        let id = state.editor.view(self.view).buffer;
-        f(state.editor.buffer(id))
-    }
-
-    fn with_text<R>(&self, lua: &Lua, f: impl FnOnce(&Rope) -> LuaResult<R>) -> LuaResult<R> {
-        self.with_buffer(lua, |buffer| f(buffer.text()))
-    }
-
-    /// Calls `f` with an edit collector, then applies everything it collected
-    /// as one transaction.
-    fn edit(&self, lua: &Lua, f: &Function) -> LuaResult<()> {
-        let edits = lua.create_userdata(Edits::default())?;
-        f.call::<()>(&edits)?;
-        let Edits {
-            mut changes,
-            selection,
-        } = edits.take()?;
-        changes.sort_by_key(|(from, to, _)| (*from, *to));
-        let len = self.with_text(lua, |t| Ok(t.len_bytes()))?;
-        let changes = ChangeSet::from_changes(len, changes).map_err(mlua::Error::external)?;
-        state_mut(lua)
-            .editor
-            .apply(self.view, changes, self.author.clone(), None, selection)
-            .map_err(mlua::Error::external)
-    }
-}
-
-impl UserData for BufferRef {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("len", |lua, this, ()| {
-            this.with_text(lua, |t| Ok(t.len_bytes()))
-        });
-        methods.add_method("text", |lua, this, ()| {
-            this.with_text(lua, |t| Ok(t.to_string()))
-        });
-        methods.add_method("slice", |lua, this, (from, to): (usize, usize)| {
-            this.with_text(lua, |t| {
-                let (from, to) = (char_index(t, from)?, char_index(t, to)?);
-                if from > to {
-                    return Err(mlua::Error::runtime("slice start is after its end"));
-                }
-                Ok(t.slice(from..to).to_string())
-            })
-        });
-        methods.add_method("line_count", |lua, this, ()| {
-            this.with_text(lua, |t| Ok(t.len_lines()))
-        });
-        methods.add_method("line_of", |lua, this, pos: usize| {
-            this.with_text(lua, |t| {
-                check_pos(t, pos)?;
-                Ok(t.byte_to_line(pos))
-            })
-        });
-        methods.add_method("line_start", |lua, this, line: usize| {
-            this.with_text(lua, |t| {
-                check_line(t, line)?;
-                Ok(t.line_to_byte(line))
-            })
-        });
-        methods.add_method("line_end", |lua, this, line: usize| {
-            this.with_text(lua, |t| {
-                check_line(t, line)?;
-                let slice = t.line(line);
-                let newline = match (slice.len_chars(), slice.chars().last()) {
-                    (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
-                    (_, Some('\n')) => 1,
-                    _ => 0,
-                };
-                Ok(t.line_to_byte(line) + slice.len_bytes() - newline)
-            })
-        });
-        methods.add_method("char_at", |lua, this, pos: usize| {
-            this.with_text(lua, |t| {
-                let i = char_index(t, pos)?;
-                Ok((i < t.len_chars()).then(|| t.char(i).to_string()))
-            })
-        });
-        methods.add_method("next_char", |lua, this, pos: usize| {
-            this.with_text(lua, |t| {
-                let i = char_index(t, pos)?;
-                Ok(t.char_to_byte((i + 1).min(t.len_chars())))
-            })
-        });
-        methods.add_method("prev_char", |lua, this, pos: usize| {
-            this.with_text(lua, |t| {
-                let i = char_index(t, pos)?;
-                Ok(t.char_to_byte(i.saturating_sub(1)))
-            })
-        });
-        methods.add_method("kind", |lua, this, ()| {
-            this.with_buffer(lua, |b| Ok(b.kind().to_owned()))
-        });
-        methods.add_method("path", |lua, this, ()| {
-            this.with_buffer(lua, |b| {
-                Ok(b.path().map(|p| p.to_string_lossy().into_owned()))
-            })
-        });
-        methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
-        methods.add_method("save", |lua, this, ()| {
-            this.with_buffer(lua, |b| b.save().map_err(mlua::Error::external))
-        });
-    }
-}
-
-/// Collects edits made inside `buffer:edit`.
-#[derive(Default)]
-struct Edits {
-    changes: Vec<(usize, usize, Option<String>)>,
-    selection: Option<Selection>,
-}
-
-impl UserData for Edits {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method_mut("insert", |_, this, (pos, text): (usize, String)| {
-            this.changes.push((pos, pos, Some(text)));
-            Ok(())
-        });
-        methods.add_method_mut("delete", |_, this, (from, to): (usize, usize)| {
-            this.changes.push((from, to, None));
-            Ok(())
-        });
-        methods.add_method_mut(
-            "replace",
-            |_, this, (from, to, text): (usize, usize, String)| {
-                this.changes.push((from, to, Some(text)));
-                Ok(())
+    let o = owner.clone();
+    kern.set(
+        "float",
+        lua.create_function(
+            move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
+                let options = float_options(spec)?;
+                buffer.with_buffer(lua, |_| Ok(()))?;
+                Ok(ViewRef {
+                    id: state_mut(lua).editor.float(buffer.buffer, options),
+                    author: Author::Plugin(o.clone()),
+                })
             },
-        );
-        methods.add_method_mut("select", |_, this, t: Table| {
-            this.selection = Some(selection_from_lua(&t)?);
+        )?,
+    )?;
+
+    let o = owner.clone();
+    kern.set(
+        "buffers",
+        lua.create_function(move |lua, ()| {
+            let ids: Vec<_> = state(lua).editor.buffers().map(crate::Buffer::id).collect();
+            let list = lua.create_table()?;
+            for buffer in ids {
+                list.push(BufferRef {
+                    buffer,
+                    view: None,
+                    author: Author::Plugin(o.clone()),
+                })?;
+            }
+            Ok(list)
+        })?,
+    )?;
+
+    kern.set(
+        "open",
+        lua.create_function(|lua, path: String| {
+            let mut state = state_mut(lua);
+            let buffer = state
+                .editor
+                .open_file(Path::new(&path))
+                .map_err(|err| mlua::Error::runtime(format!("can't open {path}: {err}")))?;
+            let main = state.editor.main();
+            state.editor.show(main, buffer);
+            state.editor.set_focus(main);
             Ok(())
-        });
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(format!("edits({})", this.changes.len()))
-        });
-    }
+        })?,
+    )?;
+
+    kern.set(
+        "commands",
+        lua.create_function(|lua, ()| {
+            let list = lua.create_table()?;
+            for command in state(lua).registry.commands() {
+                let entry = lua.create_table()?;
+                entry.set("name", &*command.name)?;
+                entry.set("doc", &*command.doc)?;
+                entry.set("owner", &*command.owner)?;
+                list.push(entry)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+
+    kern.set(
+        "fuzzy",
+        lua.create_function(|_, (query, items): (String, Vec<String>)| Ok(fuzzy(&query, &items)))?,
+    )?;
+
+    kern.set(
+        "files",
+        lua.create_function(|_, dir: Option<String>| {
+            Ok(files(Path::new(dir.as_deref().unwrap_or("."))))
+        })?,
+    )?;
+    Ok(())
 }
 
-fn range_to_lua(lua: &Lua, range: Range) -> LuaResult<Table> {
-    let t = lua.create_table()?;
-    t.set("anchor", range.anchor)?;
-    t.set("head", range.head)?;
-    Ok(t)
-}
-
-fn selection_to_lua(lua: &Lua, selection: &Selection) -> LuaResult<Table> {
-    let ranges = lua.create_table()?;
-    for range in selection.ranges() {
-        ranges.push(range_to_lua(lua, *range)?)?;
-    }
-    let t = lua.create_table()?;
-    t.set("ranges", ranges)?;
-    t.set("primary", selection.primary_index() + 1)?;
-    Ok(t)
-}
-
-fn selection_from_lua(t: &Table) -> LuaResult<Selection> {
-    let ranges = t
-        .get::<Table>("ranges")?
-        .sequence_values::<Table>()
-        .map(|r| {
-            let r = r?;
-            Ok(Range::new(r.get("anchor")?, r.get("head")?))
-        })
-        .collect::<LuaResult<Vec<Range>>>()?;
-    let primary = t
-        .get::<Option<usize>>("primary")?
-        .unwrap_or(1)
-        .saturating_sub(1);
-    Selection::new(ranges, primary).map_err(mlua::Error::external)
-}
-
-fn check_selection(text: &Rope, selection: &Selection) -> LuaResult<()> {
-    selection
-        .ranges()
+/// The 1-based indices of `items` matching `query`, best match first.
+fn fuzzy(query: &str, items: &[String]) -> Vec<usize> {
+    let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
+    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+    let mut buf = Vec::new();
+    let mut scored: Vec<(usize, u32)> = items
         .iter()
-        .flat_map(|r| [r.anchor, r.head])
-        .try_for_each(|pos| char_index(text, pos).map(drop))
+        .enumerate()
+        .filter_map(|(i, item)| {
+            let score = pattern.score(Utf32Str::new(item, &mut buf), &mut matcher)?;
+            Some((i + 1, score))
+        })
+        .collect();
+    scored.sort_by_key(|&(i, score)| (std::cmp::Reverse(score), i));
+    scored.into_iter().map(|(i, _)| i).collect()
 }
 
-fn check_pos(text: &Rope, pos: usize) -> LuaResult<()> {
-    if pos > text.len_bytes() {
-        return Err(mlua::Error::runtime(format!(
-            "position {pos} is past the end of the buffer ({} bytes)",
-            text.len_bytes()
-        )));
-    }
-    Ok(())
+/// At most this many files are listed.
+const MAX_FILES: usize = 100_000;
+
+/// Files under `dir`, relative to it and sorted, skipping hidden files and
+/// anything `.gitignore` excludes.
+fn files(dir: &Path) -> Vec<String> {
+    let mut files: Vec<String> = ignore::WalkBuilder::new(dir)
+        .require_git(false)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+        .filter_map(|entry| {
+            let path = entry.path().strip_prefix(dir).ok()?;
+            Some(path.to_string_lossy().into_owned())
+        })
+        .take(MAX_FILES)
+        .collect();
+    files.sort();
+    files
 }
 
-fn check_line(text: &Rope, line: usize) -> LuaResult<()> {
-    if line >= text.len_lines() {
-        return Err(mlua::Error::runtime(format!(
-            "line {line} is past the end of the buffer ({} lines)",
-            text.len_lines()
-        )));
-    }
-    Ok(())
-}
+const DEFAULT_FLOAT_SIZE: Extent = Extent::Percent(60);
 
-/// The char index of byte `pos`, which must be in bounds and on a char
-/// boundary.
-fn char_index(text: &Rope, pos: usize) -> LuaResult<usize> {
-    check_pos(text, pos)?;
-    let i = text.byte_to_char(pos);
-    if text.char_to_byte(i) != pos {
-        return Err(mlua::Error::runtime(format!(
-            "position {pos} is inside a character"
-        )));
-    }
-    Ok(i)
+/// Reads `{ title, width, height, anchor }`. Sizes are cells, or a string
+/// like "60%".
+fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
+    let extent = |value: Value| -> LuaResult<Extent> {
+        match value {
+            Value::Nil => Ok(DEFAULT_FLOAT_SIZE),
+            Value::Integer(n) => Ok(Extent::Cells(u16::try_from(n).unwrap_or(u16::MAX))),
+            Value::Number(n) if n >= 0.0 =>
+            {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "clamped below"
+                )]
+                Ok(Extent::Cells(n.min(f64::from(u16::MAX)) as u16))
+            }
+            Value::String(s) => s
+                .to_str()?
+                .strip_suffix('%')
+                .and_then(|p| p.trim().parse().ok())
+                .map(Extent::Percent)
+                .ok_or_else(|| {
+                    mlua::Error::runtime("sizes are a number of cells or a string like \"60%\"")
+                }),
+            other => Err(mlua::Error::runtime(format!(
+                "sizes are a number of cells or a string like \"60%\", not {}",
+                other.type_name()
+            ))),
+        }
+    };
+    let Some(spec) = spec else {
+        return Ok(FloatOptions {
+            title: None,
+            width: DEFAULT_FLOAT_SIZE,
+            height: DEFAULT_FLOAT_SIZE,
+            anchor: Anchor::Center,
+        });
+    };
+    let anchor = match spec.get::<Option<String>>("anchor")?.as_deref() {
+        None | Some("center") => Anchor::Center,
+        Some("top") => Anchor::Top,
+        Some("bottom") => Anchor::Bottom,
+        Some(other) => {
+            return Err(mlua::Error::runtime(format!(
+                "anchor must be \"center\", \"top\" or \"bottom\", not {other:?}"
+            )));
+        }
+    };
+    Ok(FloatOptions {
+        title: spec.get::<Option<String>>("title")?.map(Arc::from),
+        width: extent(spec.get("width")?)?,
+        height: extent(spec.get("height")?)?,
+        anchor,
+    })
 }

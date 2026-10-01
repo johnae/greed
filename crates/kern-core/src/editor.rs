@@ -232,6 +232,16 @@ impl Editor {
         &self.buffers[&id]
     }
 
+    /// The buffer with `id`, if it still exists.
+    pub fn find_buffer(&self, id: BufferId) -> Option<&Buffer> {
+        self.buffers.get(&id)
+    }
+
+    /// The view with `id`, if it's still open.
+    pub fn find_view(&self, id: ViewId) -> Option<&View> {
+        self.views.get(&id)
+    }
+
     pub fn buffers(&self) -> impl Iterator<Item = &Buffer> {
         self.buffers.values()
     }
@@ -265,21 +275,43 @@ impl Editor {
         selection: Option<Selection>,
     ) -> Result<(), Error> {
         let id = self.view(view).buffer;
+        let tx = Transaction {
+            changes,
+            selection,
+            meta: self.meta(id, author, cause),
+        };
         let buffer = self.buffers.get_mut(&id).expect("view's buffer exists");
-        let mut meta = TxMeta::new(self.replica.next_id(), buffer.version(), author);
+        let after = buffer.apply(tx, &self.views[&view].selection)?;
+        self.view_mut(view).selection = after;
+        self.map_views(id, Some(view));
+        Ok(())
+    }
+
+    /// Applies a change to a buffer, whether or not it's on screen. Every
+    /// view of it is mapped through the change.
+    pub fn apply_to_buffer(
+        &mut self,
+        id: BufferId,
+        changes: ChangeSet,
+        author: Author,
+        cause: Option<&str>,
+    ) -> Result<(), Error> {
+        let tx = Transaction::new(changes, self.meta(id, author, cause));
+        let buffer = self.buffers.get_mut(&id).expect("buffer exists");
+        buffer.apply(tx, &Selection::point(0))?;
+        self.map_views(id, None);
+        Ok(())
+    }
+
+    /// Metadata for the next transaction on `buffer`.
+    fn meta(&mut self, buffer: BufferId, author: Author, cause: Option<&str>) -> TxMeta {
+        let version = self.buffers[&buffer].version();
+        let mut meta = TxMeta::new(self.replica.next_id(), version, author);
         meta.group = self.undo_group;
         if let Some(cause) = cause {
             meta = meta.with_cause(cause);
         }
-        let tx = Transaction {
-            changes,
-            selection,
-            meta,
-        };
-        let after = buffer.apply(tx, &self.views[&view].selection)?;
-        self.view_mut(view).selection = after;
-        self.map_other_views(view);
-        Ok(())
+        meta
     }
 
     /// Undoes the last change in `view`'s buffer. Returns false if there was
@@ -436,14 +468,13 @@ impl Editor {
             return Ok(false);
         };
         self.view_mut(view).selection = selection;
-        self.map_other_views(view);
+        self.map_views(self.view(view).buffer, Some(view));
         Ok(true)
     }
 
-    /// Maps the selections of other views on `view`'s buffer through the
-    /// buffer's latest transaction.
-    fn map_other_views(&mut self, view: ViewId) {
-        let buffer = self.view(view).buffer;
+    /// Maps the selections of views on `buffer`, other than `except`, through
+    /// the buffer's latest transaction.
+    fn map_views(&mut self, buffer: BufferId, except: Option<ViewId>) {
         let changes = &self.buffers[&buffer]
             .history()
             .log()
@@ -451,7 +482,7 @@ impl Editor {
             .expect("a transaction was just applied")
             .changes;
         for (id, other) in &mut self.views {
-            if *id != view && other.buffer == buffer {
+            if Some(*id) != except && other.buffer == buffer {
                 other.selection = other.selection.map(changes);
             }
         }
