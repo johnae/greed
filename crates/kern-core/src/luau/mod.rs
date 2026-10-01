@@ -339,6 +339,16 @@ impl Host {
         state_mut(&self.lua).request_sender = Some(sender);
     }
 
+    /// Tells plugins a client attached, with the file or folder it asked to
+    /// open, if any.
+    pub fn client_attached(&self, open: Option<&str>) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            payload.set("path", open)?;
+            api::emit(&self.lua, "client.attached", &payload).map_err(HostError::from)
+        })
+    }
+
     /// Passes a request from the session socket to the plugins that answer
     /// them.
     pub fn handle_request(&self, request: crate::control::Request) -> Result<(), HostError> {

@@ -316,6 +316,12 @@ export type Control = {
 	notify: (method: string, params: any) -> (),
 }
 
+--- A client attached, e.g. `kern FILE` in a session that was running.
+export type ClientAttached = {
+	--- The file or folder it asked to open, if any.
+	path: string?,
+}
+
 export type CommandRun = {
 	--- The command about to run.
 	name: string,
@@ -535,6 +541,7 @@ export type Kern = {
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
+		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

@@ -250,7 +250,11 @@ impl Server<'_> {
     /// Makes `attachment` the client, after telling the one before it.
     fn attach(&mut self, attachment: Attachment) {
         self.detach();
-        let Attachment { reader, mut writer } = attachment;
+        let Attachment {
+            reader,
+            mut writer,
+            open,
+        } = attachment;
         let inputs = self.inputs.clone();
         thread::spawn(move || {
             for line in reader.lines() {
@@ -280,6 +284,8 @@ impl Server<'_> {
             local: false,
             last: None,
         });
+        let attached = self.host.client_attached(open.as_deref());
+        self.report(attached);
     }
 
     /// Sends the client a frame, if there is a client that has said how big

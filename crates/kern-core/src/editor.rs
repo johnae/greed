@@ -389,6 +389,9 @@ impl Editor {
     /// The buffer for the file at `path`: the open one, or a new buffer
     /// with the file's text (empty if the file doesn't exist yet).
     pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {
+        // Files are known by their absolute path, so one opened as
+        // "src/a.rs" and as "/home/me/src/a.rs" is the same buffer.
+        let path = &std::path::absolute(path)?;
         if let Some(buffer) = self.buffers.values().find(|b| b.path() == Some(path)) {
             return Ok(buffer.id());
         }

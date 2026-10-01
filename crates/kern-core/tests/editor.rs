@@ -643,3 +643,18 @@ fn files_opened_belong_to_the_shown_project() {
     assert_eq!(ed.buffer_project(buffer), Some(project));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_file_is_one_buffer_however_its_path_is_written() {
+    let cwd = std::env::current_dir().unwrap();
+    let mut ed = editor("");
+    let relative = ed.open_file(std::path::Path::new("Cargo.toml")).unwrap();
+    let absolute = ed.open_file(&cwd.join("Cargo.toml")).unwrap();
+    let dotted = ed.open_file(std::path::Path::new("./Cargo.toml")).unwrap();
+    assert_eq!(relative, absolute);
+    assert_eq!(relative, dotted);
+    assert_eq!(
+        ed.buffer(relative).path(),
+        Some(cwd.join("Cargo.toml").as_path())
+    );
+}

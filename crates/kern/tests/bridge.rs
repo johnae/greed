@@ -117,3 +117,37 @@ fn the_bridge_attaches_to_a_running_session() {
     let _ = server.wait();
     std::fs::remove_file(file).unwrap();
 }
+
+#[test]
+fn sessions_are_named_after_their_project_and_found_by_it() {
+    let project = std::env::temp_dir().join(format!("kern-proj-{}", std::process::id()));
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(project.join("README.md"), "top").unwrap();
+    std::fs::write(project.join("src/lib.rs"), "deep inside").unwrap();
+    let mut server = Command::new(KERN)
+        .args(["serve", project.to_str().unwrap()])
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let name = format!("kern-proj-{}", std::process::id());
+    // The session takes a moment to start listening.
+    let mut listed = String::new();
+    for _ in 0..250 {
+        let out = Command::new(KERN).arg("ls").output().unwrap();
+        listed = String::from_utf8(out.stdout).unwrap();
+        if listed.lines().any(|line| line.starts_with(&name)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(listed.contains(project.to_str().unwrap()), "{listed}");
+
+    // A path deep inside the project finds the same session and opens there.
+    let mut bridge = Bridge::start(&[project.join("src/lib.rs").to_str().unwrap()]);
+    let rows = bridge.attach();
+    assert!(rows[0].contains("deep inside"), "{rows:?}");
+    bridge.quit();
+    let _ = server.wait();
+    std::fs::remove_dir_all(&project).unwrap();
+}

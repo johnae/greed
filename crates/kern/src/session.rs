@@ -3,12 +3,13 @@
 //! `kern` starts one in the background and attaches, and `kern ssh` shows a
 //! session on another machine through `kern bridge` running there.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use kern_core::control::{self, Attachment};
+use kern_core::project;
 use kern_core::server::{self, Input, Output};
 use serde_json::{Value, json};
 
@@ -20,9 +21,15 @@ type Error = Box<dyn std::error::Error>;
 const STARTUP: Duration = Duration::from_secs(5);
 
 /// `kern serve`: runs the editor with no terminal until something quits it.
-pub fn serve(name: &str, file: Option<PathBuf>) -> Result<(), Error> {
+pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
+    let target = absolute(path)?;
+    let root = project::root_of(&target);
+    // The session works from its project's root, so paths in it are short.
+    std::env::set_current_dir(&root)?;
+    let file = target.is_file().then_some(target);
     let text = read(file.as_deref())?;
     let session = control::listen(name)?;
+    session.describe(&root)?;
     let requests = session.sender().clone();
     let conn = server::spawn_with_session(move || host(&text, file, Some(requests)), Some(session));
     // Nothing is drawn until a client attaches and says how big it is.
@@ -33,6 +40,33 @@ pub fn serve(name: &str, file: Option<PathBuf>) -> Result<(), Error> {
     Ok(())
 }
 
+/// `path` made absolute, or the current directory.
+fn absolute(path: Option<&Path>) -> Result<PathBuf, Error> {
+    let cwd = std::env::current_dir()?;
+    Ok(match path {
+        Some(path) => cwd.join(path),
+        None => cwd,
+    })
+}
+
+/// Which session `path` (or the current directory) belongs to: `name` if
+/// given, else the one running for its project, else a new name for that
+/// project. Returns the name, whether it's running, and the path.
+fn find_session(name: Option<&str>, path: Option<&Path>) -> Result<(String, bool, PathBuf), Error> {
+    let target = absolute(path)?;
+    let running = control::sessions()?;
+    if let Some(name) = name {
+        let is_running = running.iter().any(|s| s.name == name);
+        return Ok((name.to_owned(), is_running, target));
+    }
+    let root = project::root_of(&target);
+    if let Some(session) = running.iter().find(|s| s.root.as_ref() == Some(&root)) {
+        return Ok((session.name.clone(), true, target));
+    }
+    let names: Vec<String> = running.into_iter().map(|s| s.name).collect();
+    Ok((project::session_name(&root, &names), false, target))
+}
+
 /// Where a background session's output goes.
 fn log_path(name: &str) -> PathBuf {
     control::sessions_dir().join(format!("{name}.log"))
@@ -41,7 +75,7 @@ fn log_path(name: &str) -> PathBuf {
 /// `kern attach`: shows the session called `name` (or the only one running)
 /// in this terminal until it quits or lets this terminal go.
 pub fn attach(name: Option<&str>) -> Result<(), Error> {
-    let Attachment { reader, writer } = ctl::connect_to(name)?.attach()?;
+    let Attachment { reader, writer, .. } = ctl::connect_to(name)?.attach()?;
     if let Output::Detached = show(reader, writer)? {
         let name = name.map_or_else(String::new, |name| format!(" {name}"));
         println!("detached; kern attach{name} comes back");
@@ -114,16 +148,24 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
     Ok(child)
 }
 
-/// Plain `kern`: starts a session in the background, named after this
-/// process, and attaches to it.
-pub fn start(file: Option<&Path>) -> Result<(), Error> {
-    let name = std::process::id().to_string();
-    let mut child = spawn_server(&name, file)
-        .map_err(|err| format!("{err} (KERN_NO_SESSION=1 runs it in this terminal)"))?;
-    let Attachment { reader, writer } = ctl::connect_to(Some(&name))?.attach()?;
+/// Plain `kern`: attaches to the session for `path`'s project (or the one
+/// called `name`), starting it in the background if it isn't running.
+pub fn start(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
+    let (name, running, target) = find_session(name, path)?;
+    // A running session opens what was asked for; a new one starts with it.
+    let (open, mut child) = if running {
+        (path.map(|_| target.as_path()), None)
+    } else {
+        let child = spawn_server(&name, Some(&target))
+            .map_err(|err| format!("{err} (KERN_NO_SESSION=1 runs it in this terminal)"))?;
+        (None, Some(child))
+    };
+    let Attachment { reader, writer, .. } = ctl::connect_to(Some(&name))?.attach_opening(open)?;
     match show(reader, writer)? {
         Output::Exit => {
-            child.wait()?;
+            if let Some(child) = &mut child {
+                child.wait()?;
+            }
         }
         Output::Detached => println!("detached; kern attach {name} comes back"),
         Output::Frame(_) | Output::Delta(_) => {}
@@ -132,27 +174,27 @@ pub fn start(file: Option<&Path>) -> Result<(), Error> {
 }
 
 /// `kern bridge`, run on the machine a session is on: connects this
-/// process's input and output to the session called `name`, or to the only
-/// one running. Without one it starts a session, opening `file`. What comes
+/// process's input and output to the session called `name`, or to the one
+/// for `path`'s project, starting it if it isn't running. What comes
 /// through is passed on as it is; the client on the other end attaches.
-pub fn bridge(name: Option<&str>, file: Option<&Path>) -> Result<(), Error> {
-    let running = ctl::live_sessions()?;
-    let name = match (name, running.as_slice()) {
-        (Some(name), _) => name.to_owned(),
-        (None, [only]) => only.clone(),
-        (None, []) => std::process::id().to_string(),
-        (None, several) => {
-            return Err(format!(
-                "several sessions are running ({}); name one with --session",
-                several.join(", ")
-            )
-            .into());
+pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
+    let (name, running, target) = find_session(name, path)?;
+    let mut input: Box<dyn BufRead> = Box::new(std::io::stdin().lock());
+    if running {
+        if path.is_some() {
+            // The client attaches through us; ask the session to open the
+            // path along the way, since only this end knows what it means.
+            let mut first = String::new();
+            input.read_line(&mut first)?;
+            let mut attach: Value = serde_json::from_str(&first)?;
+            attach["params"]["open"] = Value::from(target.to_string_lossy());
+            let first = format!("{attach}\n");
+            input = Box::new(std::io::Cursor::new(first.into_bytes()).chain(input));
         }
-    };
-    if !running.contains(&name) {
-        spawn_server(&name, file)?;
+    } else {
+        spawn_server(&name, Some(&target))?;
     }
-    ctl::connect_to(Some(&name))?.pipe(std::io::stdin().lock(), std::io::stdout())?;
+    ctl::connect_to(Some(&name))?.pipe(input, std::io::stdout())?;
     Ok(())
 }
 
@@ -219,4 +261,14 @@ fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), E
 /// `arg` quoted for a POSIX shell.
 fn quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
+}
+
+/// `kern serve` without a name: the session for `path`'s project, named
+/// after it.
+pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
+    let (name, running, _) = find_session(None, path)?;
+    if running {
+        return Err(format!("the session {name} is already running for that project").into());
+    }
+    serve(&name, path)
 }

@@ -6,14 +6,21 @@
 your terminal attaches to it, so closing the terminal (or typing `:detach`)
 leaves everything as it was: open files, undo history, language servers.
 
+Each project gets its own session, named after its folder. Running `kern`
+anywhere in a project attaches to that project's session if it's running
+(opening the file you named), or starts it. Projects in separate sessions
+don't affect each other: a slow plugin or a crash in one leaves the others
+alone.
+
 | Command | What it does |
 |---|---|
-| `kern [FILE]` | Start a session and attach to it |
+| `kern [FILE or FOLDER]` | Attach to the project's session, or start it |
+| `kern --session NAME [PATH]` | Attach to or start a session with this name, e.g. a second one for a project |
 | `:detach` | Leave the session running |
 | `kern attach [NAME]` | Attach to a session; the only one if there's one |
-| `kern ls` | List running sessions |
-| `kern serve [FILE]` | Run a session with no terminal |
-| `:q` | Quit the session (`:q!` with unsaved changes) |
+| `kern ls` | List running sessions and their projects |
+| `kern serve [PATH]` | Run a project's session with no terminal |
+| `:q` | Close the shown project and leave; on the last one, quit the session |
 
 Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
@@ -22,10 +29,10 @@ the editor directly in the terminal.
 ## Projects
 
 A project is a folder you work in: the nearest folder above a file that
-holds `.jj` or `.git`, or the folder itself if none does. One editor can
-have several projects open, each with its own files, main view and panels
-(the file tree, search results), and the file picker, project search and
-tree all work within the shown project.
+holds `.jj` or `.git`, or the folder itself if none does. A session can also
+hold several projects, for ones you work on together: each has its own
+files, main view and panels (the file tree, search results), and the file
+picker, project search and tree work within the shown one.
 
 | Keys | |
 |---|---|
@@ -121,9 +128,6 @@ found in a panel. You can edit the lines in that panel with any of the
 editing keys above, and `:w` writes the changes back to their files. Lines
 that changed since the search are left alone and reported. `:grep PATTERN`
 fills the panel directly.
-
-The project is the nearest folder above the current file that holds `.jj`
-or `.git`, or the folder Kern started in.
 
 ## Files and buffers
 

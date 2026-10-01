@@ -2,7 +2,6 @@
 //! socket. Every tool a plugin offers agents is a subcommand here too.
 
 use std::io;
-use std::os::unix::net::UnixStream;
 
 use kern_core::control::{self, Client};
 use serde_json::{Map, Value, json};
@@ -17,8 +16,12 @@ The session is $KERN_SESSION, or the only editor running.";
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
         [cmd] if cmd == "sessions" => {
-            for name in live_sessions()? {
-                println!("{name}");
+            for session in control::sessions()? {
+                let root = session
+                    .root
+                    .map(|r| r.display().to_string())
+                    .unwrap_or_default();
+                println!("{:<20} {root}", session.name);
             }
             Ok(())
         }
@@ -94,23 +97,7 @@ fn arguments(args: &[String]) -> Result<Value, Box<dyn std::error::Error>> {
 
 /// The names of the sessions whose editors are still running.
 pub fn live_sessions() -> io::Result<Vec<String>> {
-    let mut names = Vec::new();
-    let entries = match std::fs::read_dir(control::sessions_dir()) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(names),
-        Err(err) => return Err(err),
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "sock")
-            && UnixStream::connect(&path).is_ok()
-            && let Some(name) = path.file_stem()
-        {
-            names.push(name.to_string_lossy().into_owned());
-        }
-    }
-    names.sort();
-    Ok(names)
+    Ok(control::sessions()?.into_iter().map(|s| s.name).collect())
 }
 
 /// A connection to `$KERN_SESSION`, or to the only running editor.

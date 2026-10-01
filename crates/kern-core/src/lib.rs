@@ -11,6 +11,7 @@ pub mod ide;
 pub mod keymap;
 pub mod lsp;
 pub mod luau;
+pub mod project;
 pub mod registry;
 pub mod render;
 pub mod search;

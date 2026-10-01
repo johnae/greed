@@ -112,11 +112,61 @@ impl Session {
     }
 }
 
+impl Session {
+    /// Writes down which project this session is for, so `kern` in that
+    /// project finds it and the switcher can list it.
+    pub fn describe(&self, root: &Path) -> io::Result<()> {
+        let info = json!({ "pid": std::process::id(), "root": root });
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(self.socket.with_extension("json"))?
+            .write_all(info.to_string().as_bytes())
+    }
+}
+
 impl Drop for Session {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket);
         let _ = std::fs::remove_file(&self.token_file);
+        let _ = std::fs::remove_file(self.socket.with_extension("json"));
     }
+}
+
+/// A running session, as `kern ls` and the switcher see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionInfo {
+    pub name: String,
+    /// The project it was started for, if it said.
+    pub root: Option<PathBuf>,
+}
+
+/// The sessions running on this machine, by name.
+pub fn sessions() -> io::Result<Vec<SessionInfo>> {
+    let entries = match std::fs::read_dir(sessions_dir()) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+    let mut found: Vec<SessionInfo> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "sock") && UnixStream::connect(path).is_ok()
+        })
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            let root = std::fs::read_to_string(path.with_extension("json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                .and_then(|info| info["root"].as_str().map(PathBuf::from));
+            Some(SessionInfo { name, root })
+        })
+        .collect();
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(found)
 }
 
 /// Starts listening as the session called `name`, writing a fresh token
@@ -172,7 +222,7 @@ fn prune(dir: &Path) {
     for path in entries.flatten().map(|entry| entry.path()) {
         if path.extension().is_some_and(|ext| ext == "sock") && UnixStream::connect(&path).is_err()
         {
-            for ext in ["sock", "token", "log"] {
+            for ext in ["sock", "token", "log", "json"] {
                 let _ = std::fs::remove_file(path.with_extension(ext));
             }
         }
@@ -194,6 +244,8 @@ pub(crate) fn new_token() -> io::Result<String> {
 pub struct Attachment {
     pub reader: BufReader<UnixStream>,
     pub writer: UnixStream,
+    /// A file or folder the client asked to open, e.g. from `kern FILE`.
+    pub open: Option<String>,
 }
 
 /// Answers one connection's requests until it closes, or hands it to the
@@ -228,7 +280,12 @@ fn serve_connection(
                 }
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
                 if writeln!(writer, "{ok}").is_ok() {
-                    let _ = attachments.send(Attachment { reader, writer });
+                    let open = message["params"]["open"].as_str().map(str::to_owned);
+                    let _ = attachments.send(Attachment {
+                        reader,
+                        writer,
+                        open,
+                    });
                 }
                 return;
             }
@@ -340,12 +397,21 @@ impl Client {
 
     /// Attaches to the editor: from now on the connection carries input
     /// one way and frames the other, one JSON message per line.
-    pub fn attach(mut self) -> io::Result<Attachment> {
-        self.call("attach", &handshake())?
-            .map_err(io::Error::other)?;
+    pub fn attach(self) -> io::Result<Attachment> {
+        self.attach_opening(None)
+    }
+
+    /// Like [`Client::attach`], asking the session to open `path` too.
+    pub fn attach_opening(mut self, path: Option<&Path>) -> io::Result<Attachment> {
+        let mut params = handshake();
+        if let Some(path) = path {
+            params["open"] = Value::from(path.to_string_lossy());
+        }
+        self.call("attach", &params)?.map_err(io::Error::other)?;
         Ok(Attachment {
             reader: self.reader,
             writer: self.writer,
+            open: None,
         })
     }
 

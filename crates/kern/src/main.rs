@@ -31,14 +31,14 @@ Type Luau to evaluate it, or one of:
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
-        [] => edit(None),
-        [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
-            session::serve(name, rest.first().map(PathBuf::from))
+        [] => edit(None, None),
+        [flag, name, rest @ ..] if flag == "--session" => {
+            edit(Some(name), rest.first().map(PathBuf::from))
         }
-        [cmd, rest @ ..] if cmd == "serve" => session::serve(
-            &std::process::id().to_string(),
-            rest.first().map(PathBuf::from),
-        ),
+        [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
+            session::serve(name, rest.first().map(Path::new))
+        }
+        [cmd, rest @ ..] if cmd == "serve" => session::serve_project(rest.first().map(Path::new)),
         [cmd] if cmd == "attach" => session::attach(None),
         [cmd, name] if cmd == "attach" => session::attach(Some(name)),
         [cmd] if cmd == "ls" => ctl::run(&["sessions".to_owned()]),
@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
-        [file] if !file.starts_with('-') => edit(Some(PathBuf::from(file))),
+        [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file))),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -161,11 +161,11 @@ fn host(
 
 /// The editor: in a background session this terminal attaches to, or with
 /// `KERN_NO_SESSION` set, in this process.
-fn edit(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+fn edit(name: Option<&str>, path: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("KERN_NO_SESSION").is_some() {
-        return edit_here(file);
+        return edit_here(path.filter(|p| !p.is_dir()));
     }
-    session::start(file.as_deref())
+    session::start(name, path.as_deref())
 }
 
 /// The editor in this process, for when a background session can't start.

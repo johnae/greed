@@ -11,6 +11,11 @@ kern.statusline(function(s)
 		middle = { text = s.message, style = "ui.statusline.message" }
 	else
 		local name = s.buffer:path() or "[scratch]"
+		-- Files in the project show from its root.
+		local root = kern.project.current().root .. "/"
+		if string.sub(name, 1, #root) == root then
+			name = string.sub(name, #root + 1)
+		end
 		if s.buffer:modified() then
 			name ..= " [+]"
 		end

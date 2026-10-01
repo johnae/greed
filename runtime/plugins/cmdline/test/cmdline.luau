@@ -70,7 +70,8 @@ end)
 test("arguments reach the command", function(t)
 	t:buffer("|abc")
 	t:keys(": e space n o t e s . m d enter")
-	assert(kern.view():buffer():path() == "notes.md", tostring(kern.view():buffer():path()))
+	local path = kern.view():buffer():path() or ""
+	assert(string.sub(path, -9) == "/notes.md", path)
 end)
 
 test("lua runs code and = shows values", function(t)

@@ -114,4 +114,18 @@ kern.command({
 	end,
 })
 
+-- `kern FILE` or `kern FOLDER` in a session that's already running: show
+-- that project, and the file if it's one.
+kern.on("client.attached", function(event: kern.ClientAttached)
+	local path = event.path
+	if path == nil then
+		return
+	end
+	M.open(path)
+	local info = kern.fs.stat(path)
+	if info == nil or info.kind == "file" then
+		kern.open(path)
+	end
+end)
+
 return M
