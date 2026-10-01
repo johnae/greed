@@ -345,6 +345,11 @@ terminals set; `KERN_IMAGES=kitty` turns images on in another that speaks
 the protocol, and `KERN_IMAGES=none` turns them off. Elsewhere, the text
 under an image shows instead.
 
+Programs in Kern's terminals can show images too, with the same kitty
+protocol or iTerm2's: `kitten icat picture.png`, `imgcat`, chafa's and
+yazi's previews. They scroll with the output, and text written over them
+takes their place, as in any terminal.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

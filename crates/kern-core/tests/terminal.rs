@@ -15,6 +15,7 @@ fn start(command: &[&str], rows: u16, cols: u16) -> (Terminal, Receiver<Event>) 
         rows,
         cols,
         scrollback: 1000,
+        cell: (10, 20),
     };
     let terminal = Terminal::spawn(TerminalId(1), &options, events).unwrap();
     (terminal, received)
@@ -125,6 +126,7 @@ fn only_so_much_scrollback_is_kept() {
         rows: 5,
         cols: 20,
         scrollback: 10,
+        cell: (10, 20),
     };
     let terminal = Terminal::spawn(TerminalId(1), &options, events).unwrap();
     exited(&received);
@@ -137,7 +139,7 @@ fn only_so_much_scrollback_is_kept() {
 #[test]
 fn resizing_tells_the_program() {
     let (terminal, _events) = start(&["sh", "-c", "read x; stty size"], 5, 40);
-    terminal.resize(12, 60).unwrap();
+    terminal.resize(12, 60, (10, 20)).unwrap();
     terminal.write(b"\r".to_vec());
     until(&terminal, |s| {
         s.rows.len() == 12 && text(s).contains(&"12 60")
@@ -156,6 +158,83 @@ fn the_title_programs_set_is_kept() {
     let (terminal, events) = start(&["printf", "\\033]0;building\\007"], 3, 20);
     exited(&events);
     assert_eq!(terminal.title().as_deref(), Some("building"));
+}
+
+/// A red and a blue pixel, as kitty's raw RGB in base64.
+const PIXELS: &str = "/wAAAAD/";
+
+/// A 1 by 1 PNG, in base64.
+const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/// An image run on a row: (byte, column, row, columns, rows).
+type Run = (usize, u16, u16, u16, u16);
+
+/// Each row's images.
+fn images(rows: &[kern_core::terminal::Row]) -> Vec<Vec<Run>> {
+    rows.iter()
+        .map(|row| {
+            row.images
+                .iter()
+                .map(|i| (i.from, i.col, i.row, i.cols, i.rows))
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn kitty_images_cover_cells_and_the_cursor_moves_past_them() {
+    let shown = format!("\\033_Ga=T,f=24,s=2,v=1,c=4,r=2,q=2;{PIXELS}\\033\\\\after");
+    let (terminal, events) = start(&["printf", &shown], 4, 20);
+    exited(&events);
+    let screen = terminal.screen();
+    assert_eq!(
+        images(&screen.rows)[..2],
+        [vec![(0, 0, 0, 4, 2)], vec![(0, 0, 1, 4, 2)]]
+    );
+    assert_eq!(text(&screen)[..2], ["    ", "    after"]);
+    let id = screen.rows[0].images[0].id;
+    let image = terminal.image(id).expect("the image is there to show");
+    assert_eq!((image.width, image.height), (2, 1));
+}
+
+#[test]
+fn text_written_over_an_image_takes_its_place() {
+    let shown = format!("\\033_Ga=T,f=24,s=2,v=1,c=4,r=1,q=2;{PIXELS}\\033\\\\\\rxy");
+    let (terminal, events) = start(&["printf", &shown], 3, 20);
+    exited(&events);
+    let screen = terminal.screen();
+    assert_eq!(screen.rows[0].text, "xy  ");
+    assert_eq!(images(&screen.rows)[0], [(2, 2, 0, 4, 1)]);
+}
+
+#[test]
+fn images_scroll_into_the_scrollback_with_their_rows() {
+    let shown = format!("\\033_Ga=T,f=24,s=2,v=1,c=2,r=2,q=2;{PIXELS}\\033\\\\\\n1\\n2\\n3\\n");
+    let (terminal, events) = start(&["printf", &shown], 3, 20);
+    exited(&events);
+    let scrollback = terminal.scrollback(0);
+    assert_eq!(
+        images(&scrollback.rows)[..2],
+        [vec![(0, 0, 0, 2, 2)], vec![(0, 0, 1, 2, 2)]]
+    );
+}
+
+#[test]
+fn kitty_can_delete_images_again() {
+    let shown = format!(
+        "\\033_Ga=T,f=24,s=2,v=1,c=2,r=1,i=5,q=2;{PIXELS}\\033\\\\\\033_Ga=d,d=i,i=5,q=2\\033\\\\"
+    );
+    let (terminal, events) = start(&["printf", &shown], 3, 20);
+    exited(&events);
+    assert_eq!(images(&terminal.screen().rows)[0], []);
+}
+
+#[test]
+fn iterm_images_are_sized_in_cells_or_by_their_pixels() {
+    let shown = format!("\\033]1337;File=inline=1;width=3;height=2:{PNG}\\a");
+    let (terminal, events) = start(&["printf", &shown], 4, 20);
+    exited(&events);
+    assert_eq!(images(&terminal.screen().rows)[0], [(0, 0, 0, 3, 2)]);
 }
 
 mod from_luau {

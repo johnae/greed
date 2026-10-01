@@ -10,6 +10,7 @@ use mlua::{Lua, Table, UserData, UserDataMethods};
 
 use super::api::emit;
 use super::{state, state_mut};
+use crate::image::ImageId;
 use crate::keymap::Key;
 use crate::registry::PluginId;
 use crate::terminal::{Event, Options, Row, Terminal, TerminalId};
@@ -64,6 +65,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 scrollback: spec
                     .get::<Option<usize>>("scrollback")?
                     .unwrap_or(SCROLLBACK),
+                cell: state(lua).editor.cell_size(),
             };
             let mut state = state_mut(lua);
             let terminals = &mut state.terminals;
@@ -124,7 +126,43 @@ fn row_to_lua(lua: &Lua, row: Row) -> LuaResult<Table> {
         spans.push(s)?;
     }
     t.set("spans", spans)?;
+    let images = lua.create_table()?;
+    for image in row.images {
+        let i = lua.create_table()?;
+        i.set("from", image.from)?;
+        i.set("id", image.id.0)?;
+        i.set("col", image.col)?;
+        i.set("row", image.row)?;
+        i.set("cols", image.cols)?;
+        i.set("rows", image.rows)?;
+        images.push(i)?;
+    }
+    t.set("images", images)?;
     Ok(t)
+}
+
+/// Gives the editor the images `rows` show that it doesn't have yet, so
+/// marks can show them.
+fn share_images(lua: &Lua, terminal: TerminalRef, rows: &[Row]) -> LuaResult<()> {
+    let missing: Vec<ImageId> = {
+        let state = state(lua);
+        rows.iter()
+            .flat_map(|row| &row.images)
+            .map(|image| image.id)
+            .filter(|id| !state.editor.images().contains(*id))
+            .collect()
+    };
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let found: Vec<_> = terminal.with(lua, |t| {
+        missing.iter().filter_map(|id| t.image(*id)).collect()
+    })?;
+    let mut state = state_mut(lua);
+    for image in found {
+        state.editor.images_mut().insert(image);
+    }
+    Ok(())
 }
 
 fn rows_to_lua(lua: &Lua, rows: Vec<Row>) -> LuaResult<Table> {
@@ -140,6 +178,7 @@ impl UserData for TerminalRef {
         methods.add_method("id", |_, this, ()| Ok(this.0));
         methods.add_method("screen", |lua, this, ()| {
             let screen = this.with(lua, |t| t.screen())?;
+            share_images(lua, *this, &screen.rows)?;
             let t = lua.create_table()?;
             t.set("rows", rows_to_lua(lua, screen.rows)?)?;
             if let Some((row, col)) = screen.cursor {
@@ -153,6 +192,7 @@ impl UserData for TerminalRef {
         });
         methods.add_method("scrollback", |lua, this, from: Option<u64>| {
             let scrollback = this.with(lua, |t| t.scrollback(from.unwrap_or(0)))?;
+            share_images(lua, *this, &scrollback.rows)?;
             let t = lua.create_table()?;
             t.set("first", scrollback.first)?;
             t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
@@ -170,7 +210,8 @@ impl UserData for TerminalRef {
             this.with(lua, |t| t.paste(&text))
         });
         methods.add_method("resize", |lua, this, (rows, cols): (u16, u16)| {
-            this.with(lua, |t| t.resize(rows, cols))?
+            let cell = state(lua).editor.cell_size();
+            this.with(lua, |t| t.resize(rows, cols, cell))?
                 .map_err(mlua::Error::external)
         });
         methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));

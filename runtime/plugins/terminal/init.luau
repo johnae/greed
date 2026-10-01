@@ -53,6 +53,8 @@ type Term = {
 	owns: boolean,
 	-- What it runs, as typed.
 	command: string,
+	-- Images with a mark above the screen.
+	images: { [number]: boolean },
 }
 
 local M = {}
@@ -75,9 +77,18 @@ function M.terminal(buffer: kern.Buffer): kern.Terminal?
 	return term and term.terminal
 end
 
--- Styles for `rows`, which start at line `line` of the buffer.
-local function marks(buffer: kern.Buffer, rows: { kern.TerminalRow }, line: number): { kern.Mark }
+-- Styles and images for `rows`, which start at line `line` of the buffer.
+-- An image gets one mark, where its first row in the buffer is, reaching
+-- to its last so it's drawn whenever any of it shows; `marked` holds the
+-- images that have one already.
+local function marks(
+	buffer: kern.Buffer,
+	rows: { kern.TerminalRow },
+	line: number,
+	marked: { [number]: boolean }
+): { kern.Mark }
 	local list = {}
+	local last = buffer:line_count() - 1
 	for i, row in rows do
 		local start = buffer:line_start(line + i - 1)
 		for _, span in row.spans do
@@ -85,6 +96,24 @@ local function marks(buffer: kern.Buffer, rows: { kern.TerminalRow }, line: numb
 				list,
 				{ from = start + span.from, to = start + span.to, style = span.style }
 			)
+		end
+		for _, image in row.images do
+			if not marked[image.id] then
+				marked[image.id] = true
+				local bottom = math.min(line + i - 1 + image.rows - image.row - 1, last)
+				table.insert(list, {
+					from = start + image.from,
+					to = math.max(start + image.from, buffer:line_start(bottom)),
+					style = "terminal.image",
+					image = {
+						id = image.id,
+						cols = image.cols,
+						rows = image.rows,
+						col = image.col,
+						row = image.row,
+					},
+				})
+			end
 		end
 	end
 	return list
@@ -158,11 +187,13 @@ function M.update(term: Term)
 	if #scrolled.rows > 0 then
 		term.chunk += 1
 		local ns = `terminal.lines.{term.chunk}`
-		buffer:decorate(ns, marks(buffer, scrolled.rows, before))
+		buffer:decorate(ns, marks(buffer, scrolled.rows, before, term.images))
 		table.insert(term.chunks, { ns = ns, lines = #scrolled.rows })
 	end
 	trim(term)
-	buffer:decorate("terminal.screen", marks(buffer, screen.rows, term.history))
+	-- The screen is new each time; images above it keep their marks.
+	local marked = table.clone(term.images)
+	buffer:decorate("terminal.screen", marks(buffer, screen.rows, term.history, marked))
 	follow(term, screen, before)
 end
 
@@ -262,6 +293,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		previous = previous,
 		owns = previous == nil,
 		command = if given then table.concat(given, " ") else "shell",
+		images = {},
 	}
 	terms[buffer:id()] = term
 	M.enter(view)

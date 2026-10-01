@@ -117,3 +117,28 @@ test("space t switches back to a terminal, or opens a new one", function(t)
 	assert(kern.mode.get() == "terminal")
 	t:keys("ctrl-d")
 end)
+
+test("images a program shows become image marks over their cells", function(t)
+	local pixels = "/wAAAAD/"
+	t:run("terminal", {
+		"sh",
+		"-c",
+		`printf '\\033_Ga=T,f=24,s=2,v=1,c=4,r=2,q=2;{pixels}\\033\\\\after'; exit 1`,
+	})
+	local buffer = kern.view():buffer()
+	shows(t, "after")
+	local images: { kern.Mark } = {}
+	for _, mark in buffer:decorations("terminal.screen") do
+		if mark.image then
+			table.insert(images, mark)
+		end
+	end
+	assert(#images == 1, `one mark for the image, not one a row: {#images}`)
+	local image = assert(images[1].image)
+	assert(image.cols == 4 and image.rows == 2 and image.row == 0, `{image.cols}x{image.rows}`)
+	local width, height = kern.image.size(image.id)
+	assert(width == 2 and height == 1, `{width}x{height}`)
+	-- The mark reaches the image's last row, so it's drawn while any of it
+	-- shows.
+	assert(buffer:line_of(images[1].to) == buffer:line_of(images[1].from) + 1)
+end)

@@ -16,14 +16,19 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use alacritty_terminal::event::{Event as TermEvent, EventListener};
 use alacritty_terminal::grid::{Dimensions, Row as GridRow};
 use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::{Cell, Flags};
+use alacritty_terminal::term::cell::{Cell, Flags, ImagePiece};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as TermColor, NamedColor, Processor, Rgb};
 use crossbeam_channel::Sender;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 
+use crate::image::{Image, ImageId};
 use crate::keymap::{Key, KeyCode, Mods};
 use crate::theme::{Color, Style, Underline};
+
+mod graphics;
+
+use graphics::{Graphics, Piece, Splitter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TerminalId(pub u64);
@@ -46,6 +51,8 @@ pub struct Options {
     pub cols: u16,
     /// How many lines that scrolled off the top are kept.
     pub scrollback: usize,
+    /// A cell's width and height in pixels, for sizing images.
+    pub cell: (u16, u16),
 }
 
 /// A line of the grid: its text, and the parts of it with a style of their
@@ -54,6 +61,20 @@ pub struct Options {
 pub struct Row {
     pub text: String,
     pub spans: Vec<Span>,
+    /// The images on it, as runs of cells.
+    pub images: Vec<RowImage>,
+}
+
+/// Part of an image on a row: from byte `from`, its cells from (`col`,
+/// `row`) on, of an image `cols` by `rows` cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowImage {
+    pub from: usize,
+    pub id: ImageId,
+    pub col: u16,
+    pub row: u16,
+    pub cols: u16,
+    pub rows: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,8 +116,12 @@ pub struct Terminal {
 
 struct Shared {
     term: Mutex<Term<Listener>>,
+    /// Locked after `term` when both are.
+    graphics: Mutex<Graphics>,
     scrollback: Mutex<Lines>,
     unread: AtomicBool,
+    /// A cell's size in pixels on the client's screen.
+    cell: Mutex<(u16, u16)>,
 }
 
 struct Lines {
@@ -120,7 +145,7 @@ impl Terminal {
     /// program's end arrive on `events`.
     pub fn spawn(id: TerminalId, options: &Options, events: Sender<Event>) -> io::Result<Self> {
         let pair = portable_pty::native_pty_system()
-            .openpty(pty_size(options.rows, options.cols))
+            .openpty(pty_size(options.rows, options.cols, options.cell))
             .map_err(io::Error::other)?;
         let mut child = pair
             .slave
@@ -163,14 +188,16 @@ impl Terminal {
                 rows: VecDeque::new(),
                 limit: options.scrollback,
             }),
+            graphics: Mutex::new(Graphics::default()),
             unread: AtomicBool::new(false),
+            cell: Mutex::new(options.cell),
         });
         let exit = Arc::new(Mutex::new(None));
-        let (pumped, ended) = (shared.clone(), exit.clone());
+        let (pumped, ended, replies) = (shared.clone(), exit.clone(), input.clone());
         std::thread::Builder::new()
             .name("kern-terminal-out".into())
             .spawn(move || {
-                pump(&pumped, reader, id, &events);
+                pump(&pumped, reader, id, &events, &replies);
                 let code = child.wait().map_or(1, |status| status.exit_code());
                 *lock(&ended) = Some(code);
                 let _ = events.send(Event::Exited(id, code));
@@ -189,6 +216,7 @@ impl Terminal {
     pub fn screen(&self) -> Screen {
         self.shared.unread.store(false, Ordering::Release);
         let term = lock(&self.shared.term);
+        let graphics = lock(&self.shared.graphics);
         let grid = term.grid();
         let mode = *term.mode();
         let point = grid.cursor.point;
@@ -198,7 +226,7 @@ impl Terminal {
                 let line = Line(i32::try_from(r).unwrap_or(i32::MAX));
                 let at = (mode.contains(TermMode::SHOW_CURSOR) && point.line == line)
                     .then_some(point.column.0);
-                let (row, offset) = row(&grid[line], grid.columns(), at);
+                let (row, offset) = row(&grid[line], grid.columns(), at, &graphics);
                 if at.is_some() {
                     cursor = Some((r, offset));
                 }
@@ -254,14 +282,24 @@ impl Terminal {
         self.write(bytes.into_bytes());
     }
 
-    pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
+    /// Changes the size in cells, and the size of a cell in pixels.
+    pub fn resize(&self, rows: u16, cols: u16, cell: (u16, u16)) -> io::Result<()> {
         let (rows, cols) = (rows.max(1), cols.max(1));
+        *lock(&self.shared.cell) = cell;
         self.master
-            .resize(pty_size(rows, cols))
+            .resize(pty_size(rows, cols, cell))
             .map_err(io::Error::other)?;
         lock(&self.shared.term).resize(Size::new(rows, cols));
         self.shared.unread.store(false, Ordering::Release);
         Ok(())
+    }
+
+    /// The image placed with id `id`, which rows name.
+    pub fn image(&self, id: ImageId) -> Option<Arc<Image>> {
+        lock(&self.shared.graphics)
+            .placed
+            .get(&id.0)
+            .map(|placed| placed.image.clone())
     }
 
     /// What the program called the window, if it did.
@@ -305,18 +343,28 @@ fn command(options: &Options) -> CommandBuilder {
     command
 }
 
-fn pty_size(rows: u16, cols: u16) -> PtySize {
+/// The size programs see, in cells and in pixels, which image tools ask
+/// for to size what they send.
+fn pty_size(rows: u16, cols: u16, cell: (u16, u16)) -> PtySize {
     PtySize {
         rows,
         cols,
-        pixel_width: 0,
-        pixel_height: 0,
+        pixel_width: cols.saturating_mul(cell.0),
+        pixel_height: rows.saturating_mul(cell.1),
     }
 }
 
-/// Feeds the program's output to the emulator until it ends.
-fn pump(shared: &Shared, mut reader: Box<dyn Read + Send>, id: TerminalId, events: &Sender<Event>) {
+/// Feeds the program's output to the emulator until it ends, with images
+/// cut out and placed, and the replies they call for sent to `replies`.
+fn pump(
+    shared: &Shared,
+    mut reader: Box<dyn Read + Send>,
+    id: TerminalId,
+    events: &Sender<Event>,
+    replies: &Sender<Vec<u8>>,
+) {
     let mut processor: Processor = Processor::new();
+    let mut splitter = Splitter::default();
     let mut buf = vec![0; 64 * 1024];
     loop {
         let n = match reader.read(&mut buf) {
@@ -328,8 +376,18 @@ fn pump(shared: &Shared, mut reader: Box<dyn Read + Send>, id: TerminalId, event
         };
         {
             let mut term = lock(&shared.term);
-            processor.advance(&mut *term, &buf[..n]);
-            keep_scrollback(&mut term, &mut lock(&shared.scrollback));
+            let mut graphics = lock(&shared.graphics);
+            let cell = *lock(&shared.cell);
+            splitter.split(&buf[..n], |piece| match piece {
+                Piece::Bytes(bytes) => processor.advance(&mut *term, bytes),
+                Piece::Kitty(command) => {
+                    if let Some(reply) = graphics.kitty(&command, &mut term, cell) {
+                        let _ = replies.send(reply.into_bytes());
+                    }
+                }
+                Piece::Iterm(command) => graphics.iterm(&command, &mut term, cell),
+            });
+            keep_scrollback(&mut term, &graphics, &mut lock(&shared.scrollback));
         }
         if !shared.unread.swap(true, Ordering::AcqRel) {
             let _ = events.send(Event::Output(id));
@@ -338,7 +396,7 @@ fn pump(shared: &Shared, mut reader: Box<dyn Read + Send>, id: TerminalId, event
 }
 
 /// Moves the lines that scrolled off the emulator's screen into `lines`.
-fn keep_scrollback(term: &mut Term<Listener>, lines: &mut Lines) {
+fn keep_scrollback(term: &mut Term<Listener>, graphics: &Graphics, lines: &mut Lines) {
     let grid = term.grid();
     let history = grid.history_size();
     if history == 0 {
@@ -347,20 +405,26 @@ fn keep_scrollback(term: &mut Term<Listener>, lines: &mut Lines) {
     let cols = grid.columns();
     for back in (1..=history).rev() {
         let line = Line(-i32::try_from(back).unwrap_or(i32::MAX));
-        lines.push(row(&grid[line], cols, None).0);
+        lines.push(row(&grid[line], cols, None, graphics).0);
     }
     term.grid_mut().clear_history();
 }
 
 /// The text and styles of `cells`, without trailing blanks, and the byte
 /// offset of column `cursor`, which the text reaches when given.
-fn row(cells: &GridRow<Cell>, cols: usize, cursor: Option<usize>) -> (Row, usize) {
+fn row(
+    cells: &GridRow<Cell>,
+    cols: usize,
+    cursor: Option<usize>,
+    graphics: &Graphics,
+) -> (Row, usize) {
     let blank = |cell: &Cell| {
         cell.c == ' '
             && cell.bg == TermColor::Named(NamedColor::Background)
             && !cell
                 .flags
                 .intersects(Flags::INVERSE | Flags::ALL_UNDERLINES)
+            && cell.image().is_none()
     };
     let end = (0..cols)
         .rev()
@@ -386,6 +450,9 @@ fn row(cells: &GridRow<Cell>, cols: usize, cursor: Option<usize>) -> (Row, usize
             finish_run(&mut row, run.take());
             run = Some((style, row.text.len()));
         }
+        if let Some(piece) = cell.image() {
+            add_image(&mut row, piece, graphics);
+        }
         row.text.push(if cell.flags.contains(Flags::HIDDEN) {
             ' '
         } else {
@@ -398,6 +465,28 @@ fn row(cells: &GridRow<Cell>, cols: usize, cursor: Option<usize>) -> (Row, usize
         offset = row.text.len();
     }
     (row, offset)
+}
+
+/// Adds the image cell about to be written to the end of `row`, to the
+/// run before it if it carries on from there.
+fn add_image(row: &mut Row, piece: ImagePiece, graphics: &Graphics) {
+    let Some(placed) = graphics.placed.get(&piece.id) else {
+        return;
+    };
+    let width = |image: &RowImage| u16::try_from(row.text.len() - image.from).unwrap_or(u16::MAX);
+    let carries_on = row.images.last().is_some_and(|last| {
+        last.id.0 == piece.id && last.row == piece.row && last.col + width(last) == piece.col
+    });
+    if !carries_on {
+        row.images.push(RowImage {
+            from: row.text.len(),
+            id: ImageId(piece.id),
+            col: piece.col,
+            row: piece.row,
+            cols: placed.cols,
+            rows: placed.rows,
+        });
+    }
 }
 
 fn finish_run(row: &mut Row, run: Option<(Style, usize)>) {

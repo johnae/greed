@@ -126,6 +126,19 @@ pub struct CellExtra {
     zerowidth: Vec<char>,
     underline_color: Option<Color>,
     hyperlink: Option<Hyperlink>,
+    image: Option<ImagePiece>,
+}
+
+/// Kern: the part of an image a cell shows. Writing over the cell or
+/// erasing it drops it, and it moves with its row, so images behave like
+/// text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ImagePiece {
+    /// Which placement of which image, as the embedder numbers them.
+    pub id: u64,
+    /// Which of the image's cells this is, from its top left.
+    pub col: u16,
+    pub row: u16,
 }
 
 /// Content and attributes of a single cell in the terminal grid.
@@ -180,10 +193,9 @@ impl Cell {
     pub fn set_underline_color(&mut self, color: Option<Color>) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
-            && self
-                .extra
-                .as_ref()
-                .is_none_or(|extra| extra.zerowidth.is_empty() && extra.hyperlink.is_none())
+            && self.extra.as_ref().is_none_or(|extra| {
+                extra.zerowidth.is_empty() && extra.hyperlink.is_none() && extra.image.is_none()
+            })
         {
             self.extra = None;
         } else {
@@ -201,10 +213,11 @@ impl Cell {
     /// Set hyperlink.
     pub fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         let should_drop = hyperlink.is_none()
-            && self
-                .extra
-                .as_ref()
-                .is_none_or(|extra| extra.zerowidth.is_empty() && extra.underline_color.is_none());
+            && self.extra.as_ref().is_none_or(|extra| {
+                extra.zerowidth.is_empty()
+                    && extra.underline_color.is_none()
+                    && extra.image.is_none()
+            });
 
         if should_drop {
             self.extra = None;
@@ -212,6 +225,21 @@ impl Cell {
             let extra = self.extra.get_or_insert(Default::default());
             Arc::make_mut(extra).hyperlink = hyperlink;
         }
+    }
+
+    /// Kern: the part of an image this cell shows.
+    #[inline]
+    pub fn image(&self) -> Option<ImagePiece> {
+        self.extra.as_ref()?.image
+    }
+
+    /// Kern: shows part of an image in this cell, or no image.
+    pub fn set_image(&mut self, image: Option<ImagePiece>) {
+        if image.is_none() && self.extra.is_none() {
+            return;
+        }
+        let extra = self.extra.get_or_insert(Default::default());
+        Arc::make_mut(extra).image = image;
     }
 
     /// Hyperlink stored in this cell.

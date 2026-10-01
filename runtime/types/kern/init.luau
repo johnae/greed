@@ -301,6 +301,10 @@ export type Process = {
 export type TerminalRow = {
 	text: string,
 	spans: { { from: number, to: number, style: string } },
+	--- Images on the row, as runs of cells from byte `from`: from the image's
+	--- cell (`col`, `row`) on, of an image `cols` by `rows` cells. `id` is a
+	--- `kern.image` id, for a mark's `image`.
+	images: { { from: number, id: number, col: number, row: number, cols: number, rows: number } },
 }
 
 --- What a terminal shows.
