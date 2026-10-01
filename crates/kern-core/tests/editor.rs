@@ -177,3 +177,74 @@ fn grouped_edits_undo_as_one_step() {
     }
     assert_eq!(steps, ["abcd", "abc", "a", ""]);
 }
+
+fn float_options() -> kern_core::FloatOptions {
+    kern_core::FloatOptions {
+        title: Some("pick".into()),
+        width: kern_core::Extent::Percent(50),
+        height: kern_core::Extent::Cells(5),
+        anchor: kern_core::Anchor::Center,
+    }
+}
+
+#[test]
+fn floating_views_take_focus_and_give_it_back() {
+    let mut ed = editor("main text");
+    let main = ed.main();
+    let list = ed.create_buffer("picker", "a\nb");
+    let prompt = ed.create_buffer("prompt", "");
+    let v1 = ed.float(list, float_options());
+    let v2 = ed.float(prompt, float_options());
+    assert_eq!(ed.focus(), v2);
+    assert_eq!(
+        ed.floats().iter().map(|f| f.view).collect::<Vec<_>>(),
+        [v1, v2]
+    );
+
+    assert!(ed.close(v2));
+    assert_eq!(ed.focus(), v1);
+    assert!(ed.close(v1));
+    assert_eq!(ed.focus(), main);
+    assert!(!ed.close(main));
+    assert!(ed.floats().is_empty());
+}
+
+#[test]
+fn scratch_buffers_go_away_with_their_last_view() {
+    let mut ed = editor("");
+    let scratch = ed.create_buffer("picker", "x");
+    let view = ed.float(scratch, float_options());
+    assert!(ed.buffers().any(|b| b.id() == scratch));
+    ed.close(view);
+    assert!(!ed.buffers().any(|b| b.id() == scratch));
+}
+
+#[test]
+fn files_open_once_and_show_in_a_view() {
+    let dir = std::env::temp_dir().join(format!("kern-open-file-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.txt");
+    std::fs::write(&path, "from disk").unwrap();
+
+    let mut ed = editor("");
+    let first = ed.open_file(&path).unwrap();
+    let again = ed.open_file(&path).unwrap();
+    assert_eq!(first, again);
+    let main = ed.main();
+    ed.show(main, first);
+    assert_eq!(text(&ed), "from disk");
+    assert_eq!(ed.view(main).selection, Selection::point(0));
+
+    let missing = ed.open_file(&dir.join("new.txt")).unwrap();
+    assert_eq!(ed.buffer(missing).text().len_bytes(), 0);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn extents_resolve_against_the_screen() {
+    use kern_core::Extent;
+    assert_eq!(Extent::Cells(10).resolve(80), 10);
+    assert_eq!(Extent::Cells(100).resolve(80), 80);
+    assert_eq!(Extent::Percent(50).resolve(81), 40);
+    assert_eq!(Extent::Percent(150).resolve(80), 80);
+}

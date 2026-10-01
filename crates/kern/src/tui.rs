@@ -12,6 +12,8 @@ use crossterm::{execute, queue};
 use kern_core::keymap::{Key, KeyCode, Mods};
 use kern_core::render::{Frame, Row, Size, Tag};
 use kern_core::server::{Connection, Input, Output};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -118,33 +120,60 @@ fn restore() {
     let _ = terminal::disable_raw_mode();
 }
 
+/// One terminal cell. The second cell of a wide character has empty text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Cell {
+    text: String,
+    style: ContentStyle,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            text: " ".to_owned(),
+            style: ContentStyle::new(),
+        }
+    }
+}
+
 /// What's on the terminal now, so only changed rows are redrawn.
 #[derive(Default)]
 struct Screen {
-    rows: Vec<Row>,
+    grid: Vec<Vec<Cell>>,
 }
 
 impl Screen {
     fn draw(&mut self, out: &mut impl Write, frame: &Frame) -> io::Result<()> {
-        if self.rows.len() != frame.rows.len() {
-            self.rows.clear();
+        let grid = compose(frame);
+        if self.grid.len() != grid.len()
+            || self.grid.first().map(Vec::len) != grid.first().map(Vec::len)
+        {
+            self.grid.clear();
             queue!(out, terminal::Clear(ClearType::All))?;
         }
         queue!(out, cursor::Hide)?;
-        for (y, row) in frame.rows.iter().enumerate() {
-            if self.rows.get(y) == Some(row) {
+        for (y, row) in grid.iter().enumerate() {
+            if self.grid.get(y) == Some(row) {
                 continue;
             }
             queue!(out, cursor::MoveTo(0, u16::try_from(y).unwrap_or(u16::MAX)))?;
-            for span in &row.spans {
-                queue!(
-                    out,
-                    PrintStyledContent(style(&span.tags).apply(span.text.as_str()))
-                )?;
+            let mut run = String::new();
+            let mut run_style = ContentStyle::new();
+            for cell in row.iter().filter(|c| !c.text.is_empty()) {
+                if cell.style != run_style && !run.is_empty() {
+                    queue!(out, PrintStyledContent(run_style.apply(run.as_str())))?;
+                    run.clear();
+                }
+                run_style = cell.style;
+                run.push_str(&cell.text);
             }
-            queue!(out, ResetColor, terminal::Clear(ClearType::UntilNewLine))?;
+            queue!(
+                out,
+                PrintStyledContent(run_style.apply(run.as_str())),
+                ResetColor
+            )?;
         }
-        self.rows.clone_from(&frame.rows);
+        self.grid = grid;
         if let Some(pos) = frame.cursor {
             let shape = if frame.mode == "insert" {
                 SetCursorStyle::SteadyBar
@@ -155,6 +184,92 @@ impl Screen {
         }
         out.flush()
     }
+}
+
+/// Lays the frame out as cells: the main view, then each floating view in a
+/// box on top.
+fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
+    let width = usize::from(frame.size.width);
+    let mut grid = vec![vec![Cell::default(); width]; usize::from(frame.size.height)];
+    for (line, row) in grid.iter_mut().zip(&frame.rows) {
+        put_row(line, 0, width, row);
+    }
+    for float in &frame.floats {
+        let r = float.rect;
+        let (x, y, w, h) = (
+            usize::from(r.x),
+            usize::from(r.y),
+            usize::from(r.width),
+            usize::from(r.height),
+        );
+        let border = ContentStyle::new().dark_grey();
+        for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
+            let (left, fill, right) = match dy {
+                d if d == y - 1 => ('┌', '─', '┐'),
+                d if d == y + h => ('└', '─', '┘'),
+                _ => ('│', ' ', '│'),
+            };
+            let mut cells = std::iter::once(left)
+                .chain(std::iter::repeat_n(fill, w))
+                .chain(std::iter::once(right));
+            for cell in line.iter_mut().skip(x - 1).take(w + 2) {
+                let c = cells.next().unwrap_or(' ');
+                let style = if c == ' ' {
+                    ContentStyle::new()
+                } else {
+                    border
+                };
+                *cell = Cell {
+                    text: c.to_string(),
+                    style,
+                };
+            }
+        }
+        if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1)) {
+            put(
+                top,
+                x + 1,
+                w.saturating_sub(2),
+                &format!(" {title} "),
+                border,
+            );
+        }
+        for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
+            put_row(line, x, w, row);
+        }
+    }
+    grid
+}
+
+fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row) {
+    let mut used = 0;
+    for span in &row.spans {
+        used += put(line, x + used, width - used, &span.text, style(&span.tags));
+    }
+}
+
+/// Writes `text` into `line` from cell `x`, within `width` cells. Returns how
+/// many cells it used.
+fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: ContentStyle) -> usize {
+    let mut used = 0;
+    for grapheme in text.graphemes(true) {
+        let w = grapheme.width().max(1);
+        if used + w > width || x + used + w > line.len() {
+            break;
+        }
+        line[x + used] = Cell {
+            text: grapheme.to_owned(),
+            style,
+        };
+        for extra in 1..w {
+            line[x + used + extra] = Cell {
+                text: String::new(),
+                style,
+            };
+        }
+        used += w;
+    }
+    used
 }
 
 /// The default theme.
@@ -244,6 +359,7 @@ mod tests {
                 height: 2,
             },
             rows: vec![Row::default(), plain(text)],
+            floats: Vec::new(),
             cursor: None,
             mode: "normal".into(),
         };
@@ -259,6 +375,44 @@ mod tests {
         out.clear();
         screen.draw(&mut out, &frame("two")).unwrap();
         assert!(String::from_utf8_lossy(&out).contains("two"));
+    }
+
+    #[test]
+    fn floats_are_drawn_in_a_box_over_the_rows() {
+        use kern_core::render::{FloatFrame, Rect};
+        let frame = Frame {
+            size: Size {
+                width: 12,
+                height: 5,
+            },
+            rows: vec![plain("abcdefghijkl"); 5],
+            floats: vec![FloatFrame {
+                rect: Rect {
+                    x: 2,
+                    y: 1,
+                    width: 6,
+                    height: 2,
+                },
+                title: Some("hi".into()),
+                rows: vec![plain("one"), plain("日本語")],
+            }],
+            cursor: None,
+            mode: "normal".into(),
+        };
+        let text: Vec<String> = compose(&frame)
+            .iter()
+            .map(|row| row.iter().map(|c| c.text.as_str()).collect())
+            .collect();
+        assert_eq!(
+            text,
+            [
+                "a┌─ hi ─┐jkl",
+                "a│one   │jkl",
+                "a│日本語│jkl",
+                "a└──────┘jkl",
+                "abcdefghijkl",
+            ]
+        );
     }
 
     fn plain(text: &str) -> Row {

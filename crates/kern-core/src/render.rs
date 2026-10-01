@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 use kern_text::Rope;
 
 use crate::syntax::Highlight;
-use crate::{BufferId, Editor, Scroll, View};
+use crate::{Anchor, BufferId, Editor, FloatOptions, Scroll, View, ViewId};
 
 /// Finds the highlights overlapping a byte range of a buffer.
 pub type Highlighter<'a> = dyn Fn(BufferId, &Rope, Range<usize>) -> Vec<Highlight> + 'a;
@@ -97,11 +97,31 @@ impl Row {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pub size: Size,
-    /// Exactly `size.height` rows; the last is the status line.
+    /// The main view: exactly `size.height` rows, the last being the status
+    /// line.
     pub rows: Vec<Row>,
+    /// Floating views to draw over the rows, bottom first.
+    pub floats: Vec<FloatFrame>,
     /// Where the primary cursor is, if it's on screen.
     pub cursor: Option<Position>,
     pub mode: String,
+}
+
+/// A floating view: its rows fill `rect`, and the client draws a border
+/// around it, one cell wide.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FloatFrame {
+    pub rect: Rect,
+    pub title: Option<String>,
+    pub rows: Vec<Row>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
 /// One grapheme placed on screen.
@@ -137,10 +157,57 @@ impl<M: Measure> Renderer<M> {
         message: Option<&str>,
         highlighter: &Highlighter,
     ) -> Frame {
-        let view_id = editor.focus();
-        let text_rows = usize::from(size.height.saturating_sub(1));
-        let gutter = gutter_width(editor, editor.view(view_id));
-        let text_width = usize::from(size.width).saturating_sub(gutter).max(1);
+        let main = editor.main();
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height.saturating_sub(1),
+        };
+        let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, highlighter);
+        rows.push(self.status(editor, editor.view(main), size, message));
+
+        let mut cursor = main_cursor.filter(|_| editor.focus() == main);
+        let mut floats = Vec::new();
+        for float in editor.floats().to_vec() {
+            let rect = place(&float.options, area);
+            let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, highlighter);
+            if editor.focus() == float.view {
+                cursor = float_cursor;
+            }
+            floats.push(FloatFrame {
+                rect,
+                title: float.options.title.as_deref().map(str::to_owned),
+                rows,
+            });
+        }
+
+        Frame {
+            size,
+            rows,
+            floats,
+            cursor,
+            mode: editor.mode().to_owned(),
+        }
+    }
+
+    /// Lays out one view to fill `area`, scrolling it to keep its primary
+    /// cursor visible. Returns its rows and where that cursor is on screen.
+    fn view_rows(
+        &self,
+        editor: &mut Editor,
+        view_id: ViewId,
+        area: Rect,
+        line_numbers: bool,
+        highlighter: &Highlighter,
+    ) -> (Vec<Row>, Option<Position>) {
+        let text_rows = usize::from(area.height);
+        let gutter = if line_numbers {
+            gutter_width(editor, editor.view(view_id))
+        } else {
+            0
+        };
+        let text_width = usize::from(area.width).saturating_sub(gutter).max(1);
 
         let scroll = self.scroll_to_cursor(editor, editor.view(view_id), text_width, text_rows);
         editor.view_mut(view_id).scroll = scroll;
@@ -150,7 +217,7 @@ impl<M: Measure> Renderer<M> {
         let visible = visible_bytes(text, scroll, text_rows);
         let syntax = paint(highlighter(view.buffer, text, visible.clone()), &visible);
         let head = view.selection.primary().head;
-        let mut rows = Vec::with_capacity(usize::from(size.height));
+        let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
 
         'lines: for line in scroll.line..text.len_lines() {
@@ -165,19 +232,21 @@ impl<M: Measure> Renderer<M> {
                     break 'lines;
                 }
                 let mut row = Row::default();
-                let number = if i == 0 {
-                    format!("{:>w$} ", line + 1, w = gutter - 1)
-                } else {
-                    " ".repeat(gutter)
-                };
-                row.push(&number, smallvec![Tag::Gutter]);
+                if line_numbers {
+                    let number = if i == 0 {
+                        format!("{:>w$} ", line + 1, w = gutter - 1)
+                    } else {
+                        " ".repeat(gutter)
+                    };
+                    row.push(&number, smallvec![Tag::Gutter]);
+                }
                 let mut x = gutter;
                 for cell in &cells {
                     if cell.byte == head {
+                        let col = x.min(usize::from(area.width).saturating_sub(1));
                         cursor = Some(Position {
-                            col: u16::try_from(x.min(usize::from(size.width) - 1))
-                                .unwrap_or(u16::MAX),
-                            row: u16::try_from(rows.len()).unwrap_or(u16::MAX),
+                            col: area.x + u16::try_from(col).unwrap_or(u16::MAX),
+                            row: area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX),
                         });
                     }
                     let mut cell_tags = cell_tags(view, cell);
@@ -197,14 +266,7 @@ impl<M: Measure> Renderer<M> {
             }
         }
         rows.resize_with(text_rows, Row::default);
-        rows.push(self.status(editor, view, size, message));
-
-        Frame {
-            size,
-            rows,
-            cursor,
-            mode: editor.mode().to_owned(),
-        }
+        (rows, cursor)
     }
 
     /// Splits `line` into screen rows of at most `width` cells, breaking
@@ -438,4 +500,23 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
         previous = Some(highlight.range);
     }
     painted
+}
+
+/// Where a floating view's rows go within `area`, leaving a cell around them
+/// for the border.
+fn place(options: &FloatOptions, area: Rect) -> Rect {
+    let outer_width = options.width.resolve(area.width).max(3);
+    let outer_height = options.height.resolve(area.height).max(3);
+    let x = area.width.saturating_sub(outer_width) / 2;
+    let y = match options.anchor {
+        Anchor::Top => 0,
+        Anchor::Center => area.height.saturating_sub(outer_height) / 2,
+        Anchor::Bottom => area.height.saturating_sub(outer_height),
+    };
+    Rect {
+        x: area.x + x + 1,
+        y: area.y + y + 1,
+        width: outer_width - 2,
+        height: outer_height - 2,
+    }
 }

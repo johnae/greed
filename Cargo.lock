@@ -250,6 +250,8 @@ dependencies = [
  "crossterm",
  "kern-core",
  "kern-text",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

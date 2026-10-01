@@ -2,7 +2,7 @@
 //! the keymap. Everything here is plain Rust; the Luau host drives it.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_text::{
@@ -34,6 +34,49 @@ pub struct Scroll {
     pub row: usize,
 }
 
+/// A size given in cells, or as a percentage of the screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Extent {
+    Cells(u16),
+    Percent(u16),
+}
+
+impl Extent {
+    /// The size in cells, out of `total`.
+    pub fn resolve(self, total: u16) -> u16 {
+        match self {
+            Extent::Cells(n) => n.min(total),
+            Extent::Percent(p) => {
+                u16::try_from(u32::from(total) * u32::from(p.min(100)) / 100).unwrap_or(total)
+            }
+        }
+    }
+}
+
+/// Where on the screen a floating view goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Anchor {
+    Center,
+    Top,
+    Bottom,
+}
+
+/// How a floating view is shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FloatOptions {
+    pub title: Option<Arc<str>>,
+    pub width: Extent,
+    pub height: Extent,
+    pub anchor: Anchor,
+}
+
+/// A view floating over the main one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Float {
+    pub view: ViewId,
+    pub options: FloatOptions,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyOutcome {
     /// Run this command. `keys` is the sequence that triggered it.
@@ -50,6 +93,10 @@ pub struct Editor {
     replica: Replica,
     buffers: BTreeMap<BufferId, Buffer>,
     views: BTreeMap<ViewId, View>,
+    /// The view that fills the screen; floating views sit on top of it.
+    main: ViewId,
+    /// Floating views, bottom first.
+    floats: Vec<Float>,
     focus: ViewId,
     next_id: u32,
     mode: Arc<str>,
@@ -69,6 +116,8 @@ impl Editor {
             replica: Replica::new(client.0),
             buffers: BTreeMap::new(),
             views: BTreeMap::new(),
+            main: ViewId(0),
+            floats: Vec::new(),
             focus: ViewId(0),
             next_id: 1,
             mode: "normal".into(),
@@ -85,7 +134,8 @@ impl Editor {
         self.client
     }
 
-    /// Opens a buffer in a new view and focuses it.
+    /// Opens a buffer in a new view and focuses it. The first view opened
+    /// becomes the main view.
     pub fn open(&mut self, kind: &str, text: &str, path: Option<PathBuf>) -> (BufferId, ViewId) {
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, kind, text);
@@ -94,7 +144,78 @@ impl Editor {
         }
         self.buffers.insert(id, buffer);
         let view = self.add_view(id, Selection::point(0));
+        if self.views.len() == 1 {
+            self.main = view;
+        }
         (id, view)
+    }
+
+    /// Creates a buffer without showing it.
+    pub fn create_buffer(&mut self, kind: &str, text: &str) -> BufferId {
+        let id = BufferId(self.next_id());
+        self.buffers.insert(id, Buffer::new(id, kind, text));
+        id
+    }
+
+    /// The buffer for the file at `path`: the open one, or a new buffer
+    /// with the file's text (empty if the file doesn't exist yet).
+    pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {
+        if let Some(buffer) = self.buffers.values().find(|b| b.path() == Some(path)) {
+            return Ok(buffer.id());
+        }
+        let text = match std::fs::read_to_string(path) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            other => other?,
+        };
+        let id = BufferId(self.next_id());
+        self.buffers
+            .insert(id, Buffer::new(id, "file", &text).with_path(path));
+        Ok(id)
+    }
+
+    /// Shows `buffer` in `view`, starting at the top.
+    pub fn show(&mut self, view: ViewId, buffer: BufferId) {
+        let old = self.view(view).buffer;
+        let view = self.view_mut(view);
+        view.buffer = buffer;
+        view.selection = Selection::point(0);
+        view.scroll = Scroll::default();
+        self.drop_if_unused(old);
+    }
+
+    /// Shows `buffer` in a new view floating over the main one, and focuses
+    /// it.
+    pub fn float(&mut self, buffer: BufferId, options: FloatOptions) -> ViewId {
+        let view = self.add_view(buffer, Selection::point(0));
+        self.floats.push(Float { view, options });
+        view
+    }
+
+    /// Floating views, bottom first.
+    pub fn floats(&self) -> &[Float] {
+        &self.floats
+    }
+
+    pub fn main(&self) -> ViewId {
+        self.main
+    }
+
+    /// Closes a view. Focus moves to the top floating view, or the main view.
+    /// A buffer without a file goes away with its last view. Returns false
+    /// for the main view, which can't be closed.
+    pub fn close(&mut self, view: ViewId) -> bool {
+        if view == self.main {
+            return false;
+        }
+        let Some(closed) = self.views.remove(&view) else {
+            return false;
+        };
+        self.floats.retain(|f| f.view != view);
+        if self.focus == view {
+            self.focus = self.floats.last().map_or(self.main, |f| f.view);
+        }
+        self.drop_if_unused(closed.buffer);
+        true
     }
 
     /// Opens a second view of the same buffer, with the same selection, and
@@ -295,6 +416,15 @@ impl Editor {
         );
         self.focus = id;
         id
+    }
+
+    /// Removes a buffer that has no file and no view left.
+    fn drop_if_unused(&mut self, buffer: BufferId) {
+        let unused = self.buffers[&buffer].path().is_none()
+            && !self.views.values().any(|v| v.buffer == buffer);
+        if unused {
+            self.buffers.remove(&buffer);
+        }
     }
 
     fn history_step(&mut self, view: ViewId, step: HistoryStep) -> Result<bool, Error> {

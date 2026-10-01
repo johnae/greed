@@ -206,3 +206,38 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
         ]
     );
 }
+
+#[test]
+fn floating_views_get_a_box_and_the_cursor_when_focused() {
+    use kern_core::{Anchor, Extent, FloatOptions};
+    let mut ed = editor("|main");
+    let list = ed.create_buffer("picker", "one\ntwo");
+    ed.float(
+        list,
+        FloatOptions {
+            title: Some("Files".into()),
+            width: Extent::Cells(12),
+            height: Extent::Cells(4),
+            anchor: Anchor::Center,
+        },
+    );
+    let f = frame(&mut ed, 20, 9);
+    assert_eq!(f.floats.len(), 1);
+    let float = &f.floats[0];
+    // 12x4 outside the border, centred in the 20x8 above the status line.
+    assert_eq!(
+        (
+            float.rect.x,
+            float.rect.y,
+            float.rect.width,
+            float.rect.height
+        ),
+        (5, 3, 10, 2)
+    );
+    assert_eq!(float.title.as_deref(), Some("Files"));
+    let rows: Vec<String> = float.rows.iter().map(Row::text).collect();
+    assert_eq!(rows, ["one", "two"]);
+    assert_eq!(f.cursor, Some(Position { col: 5, row: 3 }));
+    // The main view still renders underneath, with its status line.
+    assert_eq!(f.rows[0].text(), "1 main");
+}
