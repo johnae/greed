@@ -99,6 +99,13 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
 
     lsp.set(
+        "path",
+        lua.create_function(|_, uri: String| {
+            Ok(lsp::uri_path(&uri).map(|p| p.to_string_lossy().into_owned()))
+        })?,
+    )?;
+
+    lsp.set(
         "position",
         lua.create_function(|lua, (buffer, pos): (UserDataRef<BufferRef>, usize)| {
             let json = {

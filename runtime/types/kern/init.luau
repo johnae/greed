@@ -235,6 +235,8 @@ export type Lsp = {
 	request: (buffer: Buffer, method: string, params: any) -> (any, any),
 	--- The buffer's file as a URI, for request parameters.
 	uri: (buffer: Buffer) -> string,
+	--- The file path in a `file://` URI.
+	path: (uri: string) -> string?,
 	--- Byte offset `pos` as the buffer's server counts positions.
 	position: (buffer: Buffer, pos: number) -> LspPosition,
 	--- The byte offset of a server position.

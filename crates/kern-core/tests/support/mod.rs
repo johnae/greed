@@ -80,6 +80,13 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     &json!({ "jsonrpc": "2.0", "id": id, "result": { "contents": text } }),
                 );
             }
+            "textDocument/definition" => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": {
+                    "uri": message["params"]["textDocument"]["uri"],
+                    "range": { "start": { "line": 0, "character": 8 }, "end": { "line": 0, "character": 11 } },
+                } }),
+            ),
             "fail" => write(
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "nope" } }),

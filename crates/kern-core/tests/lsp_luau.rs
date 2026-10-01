@@ -109,3 +109,78 @@ fn server_settings_need_a_command() {
         .to_string();
     assert!(err.contains("needs a command"), "{err}");
 }
+
+fn plugin(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../runtime/plugins")
+        .join(name)
+}
+
+/// A host with the default lsp plugin loaded and the fake server connected.
+fn with_plugin() -> Host {
+    let h = host();
+    h.load_dirs(&[plugin("core"), plugin("picker"), plugin("lsp")])
+        .unwrap();
+    h.sync_lsp();
+    // Wait for the first diagnostics.
+    pump(&h, |h| h.diagnostic_marks().values().any(|d| !d.is_empty()));
+    h
+}
+
+fn cursor(h: &Host) -> usize {
+    h.with_editor(|ed| ed.view(ed.main()).selection.primary().head)
+}
+
+fn move_cursor(h: &Host, pos: usize) {
+    h.with_editor_mut(|ed| {
+        let main = ed.main();
+        ed.view_mut(main).selection = kern_text::Selection::point(pos);
+    });
+}
+
+/// Presses keys, then handles server events until `done`.
+fn press_and_wait(h: &Host, keys: &str, done: impl FnMut(&Host) -> bool) {
+    h.press_keys(keys).unwrap();
+    pump(h, done);
+}
+
+#[test]
+fn the_lsp_plugin_shows_hover_text() {
+    let h = with_plugin();
+    move_cursor(&h, 4);
+    press_and_wait(&h, "space k", |h| {
+        h.with_editor(|ed| !ed.floats().is_empty())
+    });
+    let text = h.with_editor(|ed| {
+        let float = ed.floats()[0].view;
+        ed.buffer(ed.view(float).buffer).text().to_string()
+    });
+    assert_eq!(text, "hover at 0:4");
+    h.press_keys("esc").unwrap();
+    assert!(h.with_editor(|ed| ed.floats().is_empty()));
+}
+
+#[test]
+fn the_lsp_plugin_goes_to_definitions_and_problems() {
+    let h = with_plugin();
+    press_and_wait(&h, "g d", |h| cursor(h) == 8);
+
+    move_cursor(&h, 0);
+    h.press_keys("] d").unwrap();
+    assert_eq!(cursor(&h), 8);
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages)
+            .last()
+            .map(String::as_str),
+        Some("error: bad word")
+    );
+    h.press_keys("] d").unwrap();
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages)
+            .last()
+            .map(String::as_str),
+        Some("no more problems")
+    );
+    h.press_keys("[ d").unwrap();
+    assert_eq!(cursor(&h), 8);
+}
