@@ -12,6 +12,7 @@ use super::api::emit;
 use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::keymap::Key;
+use crate::mouse::{Mouse, MouseKind};
 use crate::registry::PluginId;
 use crate::terminal::{Event, Options, Row, Terminal, TerminalId};
 
@@ -214,6 +215,32 @@ impl UserData for TerminalRef {
             this.with(lua, |t| t.resize(rows, cols, cell))?
                 .map_err(mlua::Error::external)
         });
+        methods.add_method("wants_mouse", |lua, this, ()| {
+            this.with(lua, |t| t.wants_mouse())
+        });
+        methods.add_method(
+            "mouse",
+            |lua, this, (kind, col, row, which, mods): (String, u16, u16, Option<String>, Option<Table>)| {
+                let kind = MouseKind::parse(&kind, which.as_deref()).ok_or_else(|| {
+                    mlua::Error::runtime(format!("{kind:?} {which:?} isn't a mouse event"))
+                })?;
+                let held = |key: &str| -> LuaResult<bool> {
+                    match &mods {
+                        Some(m) => Ok(m.get::<Option<bool>>(key)?.unwrap_or(false)),
+                        None => Ok(false),
+                    }
+                };
+                let mouse = Mouse {
+                    kind,
+                    col,
+                    row,
+                    ctrl: held("ctrl")?,
+                    alt: held("alt")?,
+                    shift: held("shift")?,
+                };
+                this.with(lua, |t| t.mouse(mouse))
+            },
+        );
         methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));
         methods.add_method("exit_code", |lua, this, ()| {
             this.with(lua, |t| t.exit_code())

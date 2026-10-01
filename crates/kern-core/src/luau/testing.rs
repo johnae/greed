@@ -168,6 +168,40 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
     }
 }
 
+/// Does what a client sends for the mouse at (`col`, `row`), against the
+/// last frame drawn: `kind` is "press", "release", "drag", "move" or
+/// "scroll", with a button (default "left") or a scroll direction.
+fn mouse(lua: &Lua, kind: &str, col: u16, row: u16, which: Option<&str>) -> mlua::Result<()> {
+    use crate::mouse::{Mouse, MouseKind};
+    use crate::render::{CellWidth, Renderer};
+    let kind = MouseKind::parse(kind, which)
+        .ok_or_else(|| mlua::Error::runtime(format!("{kind:?} {which:?} isn't a mouse event")))?;
+    let event = Mouse {
+        kind,
+        col,
+        row,
+        ctrl: false,
+        alt: false,
+        shift: false,
+    };
+    let hit = Renderer::new(CellWidth).hit(&state(lua).editor, col, row);
+    super::mouse_event(lua, event, hit)?;
+    jobs::settle(lua)
+}
+
+/// `t:draw` and `t:mouse`: what a client would see and send.
+fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
+    methods.add_method(
+        "mouse",
+        |lua, _, (kind, col, row, which): (String, u16, u16, Option<String>)| {
+            mouse(lua, &kind, col, row, which.as_deref())
+        },
+    );
+    methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
+        draw(lua, width, height)
+    });
+}
+
 /// The rows of a frame drawn at this size, as text.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
     use crate::render::{CellWidth, Plain, Renderer, Size, Status};
@@ -262,9 +296,7 @@ impl UserData for TestContext {
                 (Some(join(&l.left)), Some(join(&l.right)))
             }))
         });
-        methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
-            draw(lua, width, height)
-        });
+        add_screen_methods(methods);
         methods.add_method("quitting", |lua, _, ()| {
             Ok(state(lua).editor.quit_requested())
         });

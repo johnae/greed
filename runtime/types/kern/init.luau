@@ -332,6 +332,12 @@ export type Terminal = {
 	--- Sends pasted text, marked as a paste if the program asked for that.
 	paste: (self: Terminal, text: string) -> (),
 	resize: (self: Terminal, rows: number, cols: number) -> (),
+	--- Whether the program asked for mouse events, as editors and htop do.
+	wants_mouse: (self: Terminal) -> boolean,
+	--- Sends a mouse event at the program's screen cell (`col`, `row`),
+	--- 0-based, if it asked for that kind: `kind` as in a MouseEvent, with
+	--- a button or a scroll direction. Returns whether it was sent.
+	mouse: (self: Terminal, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> boolean,
 	--- What the program called its window, if it did.
 	title: (self: Terminal) -> string?,
 	--- The program's exit code, once it has ended.
@@ -544,6 +550,31 @@ export type ClientAttached = {
 --- compared with `view:id()`.
 export type ViewClosed = {
 	view: number,
+}
+
+--- What the mouse did, and what was under it.
+export type MouseEvent = {
+	kind: "press" | "release" | "drag" | "move" | "scroll",
+	--- For a press, release or drag.
+	button: ("left" | "middle" | "right")?,
+	--- For a scroll.
+	dir: ("up" | "down" | "left" | "right")?,
+	--- The screen cell, from the top left.
+	col: number,
+	row: number,
+	ctrl: boolean,
+	alt: boolean,
+	shift: boolean,
+	--- The view under it, if any.
+	view: View?,
+	--- The place in the view's buffer under it: the character there, or the
+	--- end of the line past it.
+	pos: number?,
+	--- The cell in the view's text, from its top left, right of the gutter.
+	x: number?,
+	y: number?,
+	--- The tab whose name it's over, in the tab line.
+	tab: number?,
 }
 
 --- A view was drawn with room for a different number of rows or columns
@@ -796,6 +827,7 @@ export type Kern = {
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
+		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())

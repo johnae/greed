@@ -19,6 +19,9 @@ use unicode_width::UnicodeWidthStr;
 
 use kern_text::Rope;
 
+mod hit;
+pub use hit::Hit;
+
 use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
@@ -560,14 +563,11 @@ impl<M: Measure> Renderer<M> {
         };
         let shown = editor.current_tab().id();
         for (i, tab) in editor.tabs().iter().enumerate() {
-            let name = tab
-                .name()
-                .map_or_else(|| tab_title(editor, tab.active()), str::to_owned);
             let mut tags = smallvec![Tag::TABLINE];
             if tab.id() == shown {
                 tags.push(Tag::TABLINE_ACTIVE);
             }
-            row.push(&format!(" {} {name} ", i + 1), tags);
+            row.push(&tab_label(editor, i, tab), tags);
         }
         row
     }
@@ -1233,6 +1233,14 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
 
 /// The main view keeps at least this many columns; panels shrink to leave it.
 const MIN_MAIN_WIDTH: u16 = 10;
+
+/// How tab `i` (0-based) shows in the tab line: its number and name.
+fn tab_label(editor: &Editor, i: usize, tab: &crate::Tab) -> String {
+    let name = tab
+        .name()
+        .map_or_else(|| tab_title(editor, tab.active()), str::to_owned);
+    format!(" {} {name} ", i + 1)
+}
 
 /// What a tab is called when it has no name: the file name of what its
 /// active pane shows, "untitled" for a file not saved yet, or the kind of

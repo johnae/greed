@@ -18,6 +18,7 @@ use crate::delta::FrameDelta;
 use crate::image::{Image, ImageId};
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
+use crate::mouse::Mouse;
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
 use crate::syntax::{Highlight, Syntax};
 use crate::{BufferId, SwitchTo};
@@ -28,6 +29,7 @@ use kern_text::Rope;
 pub enum Input {
     Key(Key),
     Resize(Size),
+    Mouse(Mouse),
     /// How many pixels wide and high a cell is on the client's screen.
     CellSize(u16, u16),
     Quit,
@@ -202,16 +204,8 @@ impl Server<'_> {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
                     for input in std::iter::once(first).chain(inbox.try_iter()) {
-                        match input {
-                            Input::Key(key) => {
-                                let pressed = self.host.press(key);
-                                self.report(pressed);
-                            }
-                            Input::Resize(new) => self.size = Some(new),
-                            Input::CellSize(w, h) => {
-                                self.host.with_editor_mut(|ed| ed.set_cell_size((w, h)));
-                            }
-                            Input::Quit => return,
+                        if !self.input(&input) {
+                            return;
                         }
                     }
                 }
@@ -286,6 +280,29 @@ impl Server<'_> {
                 return;
             }
         }
+    }
+
+    /// Handles one message from the client. False when it asked to quit.
+    fn input(&mut self, input: &Input) -> bool {
+        match *input {
+            Input::Key(key) => {
+                let pressed = self.host.press(key);
+                self.report(pressed);
+            }
+            Input::Resize(new) => self.size = Some(new),
+            Input::Mouse(mouse) => {
+                let hit = self
+                    .host
+                    .with_editor(|ed| self.renderer.hit(ed, mouse.col, mouse.row));
+                let handled = self.host.mouse(mouse, hit);
+                self.report(handled);
+            }
+            Input::CellSize(w, h) => {
+                self.host.with_editor_mut(|ed| ed.set_cell_size((w, h)));
+            }
+            Input::Quit => return false,
+        }
+        true
     }
 
     /// Shows what went wrong, if anything did, on the status line.

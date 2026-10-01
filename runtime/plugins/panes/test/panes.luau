@@ -173,3 +173,13 @@ test("keys can be taken away or changed", function(t)
 	t:keys("space |")
 	assert(count() == 2)
 end)
+
+test("clicking a tab in the tab line shows it", function(t)
+	t:buffer("|hello")
+	t:keys("alt-t n")
+	t:draw(40, 10)
+	assert(kern.tab.list()[2].current)
+	-- " 1 untitled " starts at column 0 of the tab line, the top row.
+	t:mouse("press", 2, 0)
+	assert(kern.tab.list()[1].current)
+end)

@@ -55,6 +55,8 @@ type Term = {
 	command: string,
 	-- Images with a mark above the screen.
 	images: { [number]: boolean },
+	-- Whether a full screen program is showing, as of the last update.
+	alternate: boolean,
 }
 
 local M = {}
@@ -194,6 +196,7 @@ function M.update(term: Term)
 	-- The screen is new each time; images above it keep their marks.
 	local marked = table.clone(term.images)
 	buffer:decorate("terminal.screen", marks(buffer, screen.rows, term.history, marked))
+	term.alternate = screen.alternate
 	follow(term, screen, before)
 end
 
@@ -294,6 +297,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		owns = previous == nil,
 		command = if given then table.concat(given, " ") else "shell",
 		images = {},
+		alternate = false,
 	}
 	terms[buffer:id()] = term
 	M.enter(view)
@@ -478,6 +482,90 @@ kern.command({
 })
 
 kern.keymap.bind("normal", { ["space t"] = "pick-terminal" })
+
+-- The mouse in a terminal. A program that asked for it gets it. Otherwise
+-- the wheel scrolls back through the output, as tmux does: up stops typing
+-- into the program, and back at the bottom types into it again. In a full
+-- screen program the wheel sends arrow keys instead, as xterm does. A
+-- click types into the program, and a drag selects output to copy.
+local dragged = false
+local held: number? = nil
+
+local function on_mouse(event: kern.MouseEvent): boolean
+	local view = assert(event.view)
+	local term = term_of(view:buffer())
+	if term == nil then
+		return false
+	end
+	local running = term.terminal:exit_code() == nil
+	local row = view:scroll() + (event.y or 0) - term.history
+	if running and row >= 0 and term.terminal:wants_mouse() then
+		if event.kind == "press" then
+			view:focus()
+			M.enter(view)
+		end
+		term.terminal:mouse(event.kind, event.x or 0, row, event.button or event.dir, {
+			ctrl = event.ctrl,
+			alt = event.alt,
+			shift = event.shift,
+		})
+		return true
+	end
+	if event.kind == "scroll" then
+		local up = event.dir == "up"
+		if running and term.alternate then
+			for _ = 1, core.mouse.lines do
+				term.terminal:key(if up then "up" else "down")
+			end
+			return true
+		end
+		view:focus()
+		if up and kern.mode.get() == MODE then
+			kern.mode.set(core.style.home())
+		end
+		core.mouse.scroll(view, if up then -core.mouse.lines else core.mouse.lines)
+		if not up and running and view:scroll() >= term.history then
+			M.enter(view)
+		end
+		return true
+	end
+	if event.kind == "press" and event.button == "left" then
+		view:focus()
+		kern.mode.set(core.style.home())
+		dragged, held = false, event.pos
+		if event.pos then
+			view:set_selection({
+				ranges = { { anchor = event.pos, head = event.pos } },
+				primary = 1,
+			})
+		end
+	elseif event.kind == "drag" and held and event.pos then
+		dragged = true
+		view:set_selection({ ranges = { { anchor = held, head = event.pos } }, primary = 1 })
+	elseif event.kind == "release" then
+		if not dragged and held and running then
+			M.enter(view)
+		end
+		held = nil
+	end
+	return true
+end
+
+core.mouse.claim("terminal", on_mouse)
+
+-- Clicking away from a terminal stops typing into it.
+kern.on("mouse", function(event: kern.MouseEvent)
+	local view = event.view
+	if
+		event.kind == "press"
+		and view
+		and not term_of(view:buffer())
+		and kern.mode.get() == MODE
+	then
+		kern.mode.set(core.style.home())
+	end
+end)
+
 kern.keymap.isolate(MODE)
 kern.keymap.fallback(MODE, "terminal-key")
 kern.keymap.bind(MODE, { ["ctrl-\\"] = "terminal-leave", ["ctrl-space"] = "terminal-leader" })

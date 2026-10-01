@@ -13,6 +13,7 @@ pub mod keymap;
 pub mod layout;
 pub mod lsp;
 pub mod luau;
+pub mod mouse;
 pub mod project;
 pub mod registry;
 pub mod render;

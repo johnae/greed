@@ -24,6 +24,7 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use crate::image::{Image, ImageId};
 use crate::keymap::{Key, KeyCode, Mods};
+use crate::mouse::{Button, Mouse, MouseKind};
 use crate::theme::{Color, Style, Underline};
 
 mod graphics;
@@ -266,6 +267,27 @@ impl Terminal {
         let bytes = encode_key(key, app_cursor);
         if !bytes.is_empty() {
             self.write(bytes);
+        }
+    }
+
+    /// Whether the program asked for mouse events, as editors and `htop` do.
+    pub fn wants_mouse(&self) -> bool {
+        lock(&self.shared.term)
+            .mode()
+            .intersects(TermMode::MOUSE_MODE)
+    }
+
+    /// Sends `mouse` to the program, its `col` and `row` a cell of the
+    /// program's screen, if it asked for that kind of event. Returns whether
+    /// it did.
+    pub fn mouse(&self, mouse: Mouse) -> bool {
+        let mode = *lock(&self.shared.term).mode();
+        match encode_mouse(mouse, mode) {
+            Some(bytes) => {
+                self.write(bytes);
+                true
+            }
+            None => false,
         }
     }
 
@@ -621,6 +643,55 @@ fn encode_key(key: Key, app_cursor: bool) -> Vec<u8> {
     }
 }
 
+/// The bytes a terminal reports `mouse` with, in the encoding the program
+/// asked for (SGR, UTF-8 or the original), or `None` if it didn't ask for
+/// that kind of event.
+fn encode_mouse(mouse: Mouse, mode: TermMode) -> Option<Vec<u8>> {
+    if !mode.intersects(TermMode::MOUSE_MODE) {
+        return None;
+    }
+    let sgr = mode.contains(TermMode::SGR_MOUSE);
+    let button = |b: Button| match b {
+        Button::Left => 0,
+        Button::Middle => 1,
+        Button::Right => 2,
+    };
+    let base: u32 = match mouse.kind {
+        MouseKind::Press(b) => button(b),
+        MouseKind::Release(b) if sgr => button(b),
+        MouseKind::Release(_) => 3,
+        MouseKind::Drag(b) if mode.intersects(TermMode::MOUSE_DRAG | TermMode::MOUSE_MOTION) => {
+            32 + button(b)
+        }
+        MouseKind::Move if mode.contains(TermMode::MOUSE_MOTION) => 35,
+        MouseKind::Drag(_) | MouseKind::Move => return None,
+        MouseKind::ScrollUp => 64,
+        MouseKind::ScrollDown => 65,
+        MouseKind::ScrollLeft => 66,
+        MouseKind::ScrollRight => 67,
+    };
+    let code =
+        base + 4 * u32::from(mouse.shift) + 8 * u32::from(mouse.alt) + 16 * u32::from(mouse.ctrl);
+    let (x, y) = (u32::from(mouse.col) + 1, u32::from(mouse.row) + 1);
+    if sgr {
+        let end = if matches!(mouse.kind, MouseKind::Release(_)) {
+            'm'
+        } else {
+            'M'
+        };
+        return Some(format!("\x1b[<{code};{x};{y}{end}").into_bytes());
+    }
+    let mut bytes = b"\x1b[M".to_vec();
+    for n in [code, x, y] {
+        if mode.contains(TermMode::UTF8_MOUSE) {
+            bytes.extend(char::from_u32(32 + n)?.to_string().bytes());
+        } else {
+            bytes.push(u8::try_from(32 + n).ok()?);
+        }
+    }
+    Some(bytes)
+}
+
 /// What ctrl and `c` send: a control character where there is one.
 fn control(c: char) -> Vec<u8> {
     let byte = match c.to_ascii_lowercase() {
@@ -715,6 +786,36 @@ mod tests {
         assert_eq!(sent("f12"), b"\x1b[24~");
         assert_eq!(sent("ctrl-space"), [0]);
         assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn the_mouse_is_reported_as_the_program_asked() {
+        let at = |kind| Mouse {
+            kind,
+            col: 4,
+            row: 2,
+            ctrl: false,
+            alt: false,
+            shift: false,
+        };
+        let press = at(MouseKind::Press(Button::Left));
+        assert_eq!(encode_mouse(press, TermMode::empty()), None, "not asked");
+        let sgr = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        assert_eq!(encode_mouse(press, sgr).unwrap(), b"\x1b[<0;5;3M");
+        let release = at(MouseKind::Release(Button::Left));
+        assert_eq!(encode_mouse(release, sgr).unwrap(), b"\x1b[<0;5;3m");
+        let scroll = at(MouseKind::ScrollDown);
+        assert_eq!(encode_mouse(scroll, sgr).unwrap(), b"\x1b[<65;5;3M");
+        // Drags only when asked for them; the original encoding adds 32.
+        let drag = at(MouseKind::Drag(Button::Left));
+        assert_eq!(encode_mouse(drag, sgr), None);
+        let legacy = TermMode::MOUSE_DRAG;
+        assert_eq!(encode_mouse(drag, legacy).unwrap(), b"\x1b[M@%#");
+        let ctrl = Mouse {
+            ctrl: true,
+            ..press
+        };
+        assert_eq!(encode_mouse(ctrl, sgr).unwrap(), b"\x1b[<16;5;3M");
     }
 
     #[test]

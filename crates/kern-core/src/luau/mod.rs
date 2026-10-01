@@ -40,8 +40,9 @@ pub use jobs::Done as FinishedJob;
 pub use testing::{TestResult, run_tests};
 
 use crate::keymap::{Key, ParseError};
+use crate::mouse::{Button, Mouse};
 use crate::registry::{PluginId, Registry};
-use crate::render::StatusLine;
+use crate::render::{Hit, StatusLine};
 use crate::{BufferId, Editor};
 use modules::Modules;
 
@@ -407,6 +408,13 @@ impl Host {
         })
     }
 
+    /// Tells plugins what the mouse did, with "mouse", and what was under it.
+    pub fn mouse(&self, mouse: Mouse, hit: Hit) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            mouse_event(&self.lua, mouse, hit).map_err(HostError::from)
+        })
+    }
+
     /// Tells plugins which session this editor is.
     pub fn set_session_name(&self, name: &str) {
         state_mut(&self.lua).session_name = Some(name.to_owned());
@@ -584,6 +592,30 @@ fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
     };
     state_mut(lua).exports.insert(name.into(), export);
     Ok(())
+}
+
+/// Emits "mouse": `kind`, `button` or `dir`, the screen cell, and what's
+/// there: a `view`, the `pos` in its buffer and the cell in its text (`x`,
+/// `y`), or a `tab`.
+fn mouse_event(lua: &Lua, mouse: Mouse, hit: Hit) -> mlua::Result<()> {
+    let payload = lua.create_table()?;
+    payload.set("kind", mouse.kind.name())?;
+    payload.set("button", mouse.kind.button().map(Button::name))?;
+    payload.set("dir", mouse.kind.direction())?;
+    payload.set("col", mouse.col)?;
+    payload.set("row", mouse.row)?;
+    payload.set("ctrl", mouse.ctrl)?;
+    payload.set("alt", mouse.alt)?;
+    payload.set("shift", mouse.shift)?;
+    if let Some(view) = hit.view {
+        let author = kern_text::Author::User(state(lua).editor.client());
+        payload.set("view", handles::ViewRef { id: view, author })?;
+        payload.set("pos", hit.pos)?;
+        payload.set("x", hit.x)?;
+        payload.set("y", hit.y)?;
+    }
+    payload.set("tab", hit.tab.map(|t| t.0))?;
+    api::emit(lua, "mouse", &payload)
 }
 
 /// Emits "view.resized" for each view drawn at a new size.

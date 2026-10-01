@@ -30,6 +30,11 @@ export type TestContext = {
 	--- draw it, and returns the rows as text, the status line last. Views
 	--- drawn at a new size send "view.resized".
 	draw: (self: TestContext, width: number, height: number) -> { string },
+	--- Does what a client sends for the mouse at screen cell (`col`, `row`),
+	--- against the last `draw`: `kind` is "press", "release", "drag",
+	--- "move" or "scroll", `which` a button (default "left") or a scroll
+	--- direction.
+	mouse: (self: TestContext, kind: string, col: number, row: number, which: string?) -> (),
 	--- True once something asked the editor to exit.
 	quitting: (self: TestContext) -> boolean,
 	--- True if something asked to let the client go since the last call.

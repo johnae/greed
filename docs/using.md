@@ -338,6 +338,21 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+## Mouse
+
+A click puts the cursor where you click and focuses that pane, dragging
+selects, and the wheel scrolls whatever's under it. Clicking a tab in the
+tab line shows it.
+
+In a terminal, a program that asks for the mouse (vim, htop, less with
+`--mouse`) gets it. Otherwise the wheel scrolls back through the output,
+which stops typing into the program, and scrolling back down to the bottom
+types into it again; in a full screen program the wheel sends arrow keys. A
+click types into the program, and a drag selects output to copy with `y`.
+
+Most terminals still select text their own way while you hold shift.
+`KERN_MOUSE=off` leaves the mouse to your terminal.
+
 ## Images
 
 Kern shows images in terminals that speak the kitty graphics protocol:

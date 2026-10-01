@@ -10,12 +10,16 @@ use std::time::Duration;
 use crate::graphics::{self, Graphics};
 use crossbeam_channel::{Receiver, Sender};
 use crossterm::cursor::{self, SetCursorStyle};
-use crossterm::event::{self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
+};
 use crossterm::style::{Attribute, Color, ContentStyle, PrintStyledContent, ResetColor};
 use crossterm::terminal::{self, ClearType};
 use crossterm::{execute, queue};
 use kern_core::CursorShape;
 use kern_core::keymap::{Key, KeyCode, Mods};
+use kern_core::mouse::{Button, Mouse, MouseKind};
 use kern_core::render::{Frame, Row, Size, Tag};
 use kern_core::server::{Input, Output};
 use kern_core::theme::{Color as ThemeColor, Style, Surface, Theme, Underline};
@@ -52,6 +56,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                     Event::Key(key) if key.kind != KeyEventKind::Release => {
                         convert(key).map(Input::Key)
                     }
+                    Event::Mouse(mouse) => Some(Input::Mouse(convert_mouse(mouse))),
                     Event::Resize(width, height) => {
                         send_cell_size(&input);
                         Some(Input::Resize(Size { width, height }))
@@ -107,6 +112,39 @@ fn send_cell_size(input: &Sender<Input>) {
             size.width / size.columns,
             size.height / size.rows,
         ));
+    }
+}
+
+/// Whether to take the mouse from the terminal: unless `$KERN_MOUSE` is
+/// "off". Most terminals still select their own way with shift held.
+fn mouse_wanted() -> bool {
+    std::env::var("KERN_MOUSE").map_or(true, |v| v != "off")
+}
+
+/// Converts a terminal mouse event into a kern one.
+fn convert_mouse(event: MouseEvent) -> Mouse {
+    let button = |b: MouseButton| match b {
+        MouseButton::Left => Button::Left,
+        MouseButton::Right => Button::Right,
+        MouseButton::Middle => Button::Middle,
+    };
+    let kind = match event.kind {
+        MouseEventKind::Down(b) => MouseKind::Press(button(b)),
+        MouseEventKind::Up(b) => MouseKind::Release(button(b)),
+        MouseEventKind::Drag(b) => MouseKind::Drag(button(b)),
+        MouseEventKind::Moved => MouseKind::Move,
+        MouseEventKind::ScrollUp => MouseKind::ScrollUp,
+        MouseEventKind::ScrollDown => MouseKind::ScrollDown,
+        MouseEventKind::ScrollLeft => MouseKind::ScrollLeft,
+        MouseEventKind::ScrollRight => MouseKind::ScrollRight,
+    };
+    Mouse {
+        kind,
+        col: event.column,
+        row: event.row,
+        ctrl: event.modifiers.contains(KeyModifiers::CONTROL),
+        alt: event.modifiers.contains(KeyModifiers::ALT),
+        shift: event.modifiers.contains(KeyModifiers::SHIFT),
     }
 }
 
@@ -170,6 +208,9 @@ impl Terminal {
         }));
         terminal::enable_raw_mode()?;
         execute!(io::stdout(), terminal::EnterAlternateScreen)?;
+        if mouse_wanted() {
+            execute!(io::stdout(), event::EnableMouseCapture)?;
+        }
         Ok(Self)
     }
 }
@@ -185,6 +226,7 @@ fn restore() {
         io::stdout(),
         SetCursorStyle::DefaultUserShape,
         cursor::Show,
+        event::DisableMouseCapture,
         terminal::LeaveAlternateScreen
     );
     let _ = terminal::disable_raw_mode();

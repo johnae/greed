@@ -547,4 +547,12 @@ end
 
 bind()
 
+-- Clicking a tab in the tab line shows it.
+kern.on("mouse", function(event: kern.MouseEvent)
+	if event.kind == "press" and event.tab then
+		kern.tab.switch(event.tab)
+		settle(kern.view())
+	end
+end)
+
 return M

@@ -55,6 +55,11 @@ impl Tab {
         self.active
     }
 
+    /// Where its panes went when it was last drawn.
+    pub fn area(&self) -> Option<Rect> {
+        self.area
+    }
+
     pub fn zoomed(&self) -> bool {
         self.zoomed
     }

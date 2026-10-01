@@ -21,6 +21,7 @@ local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
 local style = require("@self/style")
+local mouse = require("@self/mouse")
 
 kern.keymap.bind("normal", {
 	h = "move-left",
@@ -144,6 +145,7 @@ return {
 	search = search,
 	project = project,
 	style = style,
+	mouse = mouse,
 	comment = comment,
 	jumps = jumps,
 	objects = objects,

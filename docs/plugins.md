@@ -132,7 +132,10 @@ flash on copy is.
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
 `view.closed` (for plugins holding on to a panel), `option.changed`,
 `buffer.opened`, `buffer.saved`, `view.resized` (with the rows and
-columns `view:size()` also gives) and more. `editor.started` comes once, when
+columns `view:size()` also gives), `mouse` (what the mouse did, the view
+and buffer position under it, or a tab) and more. A plugin with buffers of
+its own kind can take their mouse events first with
+`require("@core").mouse.claim(kind, handler)`. `editor.started` comes once, when
 the editor is up with every plugin and config loaded, and `editor.quitting`
 just before it quits.
 `kern.option.define({ name, doc, default })` adds an option users set with
