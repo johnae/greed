@@ -169,7 +169,7 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
 }
 
 /// The rows of a frame drawn at this size, as text.
-fn draw(lua: &Lua, width: u16, height: u16) -> Vec<String> {
+fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
     use crate::render::{CellWidth, Plain, Renderer, Size, Status};
     let frame = Renderer::new(CellWidth).frame(
         &mut state_mut(lua).editor,
@@ -177,7 +177,8 @@ fn draw(lua: &Lua, width: u16, height: u16) -> Vec<String> {
         &Status::Default { message: None },
         &Plain,
     );
-    frame.rows.iter().map(crate::render::Row::text).collect()
+    super::report_resizes(lua)?;
+    Ok(frame.rows.iter().map(crate::render::Row::text).collect())
 }
 
 /// The error without mlua's "runtime error:" prefix and its stack traceback,
@@ -262,7 +263,7 @@ impl UserData for TestContext {
             }))
         });
         methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
-            Ok(draw(lua, width, height))
+            draw(lua, width, height)
         });
         methods.add_method("quitting", |lua, _, ()| {
             Ok(state(lua).editor.quit_requested())

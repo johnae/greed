@@ -28,6 +28,8 @@ pub struct View {
     pub scroll: Scroll,
     /// The bytes on screen when the view was last drawn; None before that.
     pub visible: Option<std::ops::Range<usize>>,
+    /// The rows and columns of text it had room for when last drawn.
+    pub size: Option<(u16, u16)>,
 }
 
 /// The first thing a view shows: a buffer line, and how many of its wrapped
@@ -387,6 +389,23 @@ impl Editor {
         }
     }
 
+    /// Shows or hides line numbers beside `buffer` in the main view.
+    pub fn set_line_numbers(&mut self, buffer: BufferId, on: bool) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_line_numbers(on);
+        }
+    }
+
+    /// Keeps `buffer` open while nothing shows it, like a terminal you'll
+    /// come back to, or lets it go then again (right away if nothing shows
+    /// it now).
+    pub fn set_kept(&mut self, buffer: BufferId, kept: bool) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_kept(kept);
+            self.drop_if_unused(buffer);
+        }
+    }
+
     /// Sets the language `buffer` is in, or with `None` goes back to the one
     /// its file name says.
     pub fn set_language(&mut self, buffer: BufferId, language: Option<Arc<str>>) {
@@ -592,6 +611,13 @@ impl Editor {
 
     pub fn buffers(&self) -> impl Iterator<Item = &Buffer> {
         self.buffers.values()
+    }
+
+    /// Each open view that has been drawn, with its rows and columns.
+    pub fn view_sizes(&self) -> impl Iterator<Item = (ViewId, (u16, u16))> + '_ {
+        self.views
+            .iter()
+            .filter_map(|(id, view)| Some((*id, view.size?)))
     }
 
     pub fn view(&self, id: ViewId) -> &View {
@@ -900,6 +926,7 @@ impl Editor {
                 selection,
                 scroll: Scroll::default(),
                 visible: None,
+                size: None,
             },
         );
         self.focus = id;
@@ -908,8 +935,9 @@ impl Editor {
 
     /// Removes a buffer that has no file and no view left.
     fn drop_if_unused(&mut self, buffer: BufferId) {
-        let unused = self.buffers[&buffer].path().is_none()
-            && !self.views.values().any(|v| v.buffer == buffer);
+        let b = &self.buffers[&buffer];
+        let unused =
+            b.path().is_none() && !b.is_kept() && !self.views.values().any(|v| v.buffer == buffer);
         if unused {
             self.buffers.remove(&buffer);
         }

@@ -59,6 +59,15 @@ export type Buffer = {
 	--- are refused.
 	readonly: (self: Buffer) -> boolean,
 	set_readonly: (self: Buffer, readonly: boolean) -> (),
+	--- Whether the main view shows line numbers beside it (the default).
+	line_numbers: (self: Buffer) -> boolean,
+	set_line_numbers: (self: Buffer, on: boolean) -> (),
+	--- Whether it stays open while nothing shows it, though it has no file.
+	kept: (self: Buffer) -> boolean,
+	--- Keeps it open while nothing shows it, like a terminal to come back
+	--- to; with false it goes once nothing shows it (right away if nothing
+	--- does now).
+	set_kept: (self: Buffer, kept: boolean) -> (),
 	--- The language the text is highlighted as, e.g. "rust".
 	language: (self: Buffer) -> string?,
 	--- Sets the language, or with nil goes back to the one the file's
@@ -125,6 +134,9 @@ export type View = {
 	--- The start and end of the text on screen when the view was last
 	--- drawn, or of the whole buffer before that.
 	visible: (self: View) -> (number, number),
+	--- The rows and columns of text it had room for when last drawn; nil
+	--- before it's drawn. "view.resized" says when they change.
+	size: (self: View) -> (number?, number?),
 	--- The lines folds hide, 0-based and inclusive.
 	hidden_lines: (self: View) -> { { from: number, to: number } },
 	--- The 0-based line at the top of the view.
@@ -458,6 +470,14 @@ export type ViewClosed = {
 	view: number,
 }
 
+--- A view was drawn with room for a different number of rows or columns
+--- of text than before.
+export type ViewResized = {
+	view: View,
+	rows: number,
+	cols: number,
+}
+
 --- An option was set, with `kern.option.set` or `:set`.
 export type OptionChanged = {
 	name: string,
@@ -699,6 +719,7 @@ export type Kern = {
 		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
+		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())

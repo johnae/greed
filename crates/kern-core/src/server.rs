@@ -340,6 +340,9 @@ impl Server<'_> {
             diagnostics: host.diagnostic_marks(),
         };
         let frame = host.with_editor_mut(|ed| self.renderer.frame(ed, size, &status, &decorations));
+        if let Err(err) = host.report_resizes() {
+            self.message = Some(first_line(&err.to_string()));
+        }
         let Some(client) = &mut self.client else {
             return true;
         };

@@ -27,6 +27,10 @@ pub struct Buffer {
     /// The version last loaded from or written to the file.
     saved: SmallVec<[TxId; 1]>,
     readonly: bool,
+    /// Whether the main view shows line numbers beside it.
+    line_numbers: bool,
+    /// Kept open while nothing shows it, though it has no file.
+    kept: bool,
     /// The language set for the buffer, overriding the detected one.
     language: Option<Arc<str>>,
     /// The language its file name says, from the editor's file types.
@@ -81,6 +85,8 @@ impl Buffer {
             version: SmallVec::new(),
             saved: SmallVec::new(),
             readonly: false,
+            line_numbers: true,
+            kept: false,
             language: None,
             detected: None,
             marks: BTreeMap::new(),
@@ -154,6 +160,23 @@ impl Buffer {
 
     pub(crate) fn set_readonly(&mut self, readonly: bool) {
         self.readonly = readonly;
+    }
+
+    pub fn line_numbers(&self) -> bool {
+        self.line_numbers
+    }
+
+    pub(crate) fn set_line_numbers(&mut self, on: bool) {
+        self.line_numbers = on;
+    }
+
+    /// Whether it stays open while nothing shows it, though it has no file.
+    pub fn is_kept(&self) -> bool {
+        self.kept
+    }
+
+    pub(crate) fn set_kept(&mut self, kept: bool) {
+        self.kept = kept;
     }
 
     /// The language the text is in: the one set for the buffer, or the one

@@ -27,7 +27,8 @@ export type TestContext = {
 	--- The left and right sides of the status line a plugin builds, as text.
 	status: (self: TestContext) -> (string?, string?),
 	--- Lays the editor out on a `width` by `height` screen, as a client would
-	--- draw it, and returns the rows as text, the status line last.
+	--- draw it, and returns the rows as text, the status line last. Views
+	--- drawn at a new size send "view.resized".
 	draw: (self: TestContext, width: number, height: number) -> { string },
 	--- True once something asked the editor to exit.
 	quitting: (self: TestContext) -> boolean,

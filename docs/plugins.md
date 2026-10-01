@@ -73,6 +73,8 @@ with the text.
 `kern.open(path)` shows a file, `kern.load(path)` opens one without showing
 it, `kern.create_buffer(kind, text)` makes a scratch buffer, and
 `buffer:find`, `buffer:find_all` and `kern.fs.grep` search with regexes.
+A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
+keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
 The editor can have several projects open. `kern.project.current()` is
 the one shown, with its `root`; `kern.project.open`, `switch` and `close`
@@ -115,7 +117,8 @@ flash on copy is.
 `kern.on(event, handler)` runs a handler on `buffer.changed`,
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
 `view.closed` (for plugins holding on to a panel), `option.changed`,
-`buffer.opened`, `buffer.saved` and more. `editor.started` comes once, when
+`buffer.opened`, `buffer.saved`, `view.resized` (with the rows and
+columns `view:size()` also gives) and more. `editor.started` comes once, when
 the editor is up with every plugin and config loaded, and `editor.quitting`
 just before it quits.
 `kern.option.define({ name, doc, default })` adds an option users set with

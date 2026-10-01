@@ -1454,3 +1454,62 @@ fn files_open_before_plugins_load_are_announced_once_they_have() {
     let messages = host.with_editor_mut(Editor::take_messages);
     assert_eq!(messages, ["opened notes.md"], "only buffers with files");
 }
+
+#[test]
+fn kept_buffers_stay_open_while_nothing_shows_them() {
+    let h = host("");
+    h.eval(
+        r#"
+        local kern = require("@kern")
+        kept = kern.create_buffer("terminal", "shell")
+        kept:set_kept(true)
+        kern.view():show(kept)
+        kern.view():show(kern.create_buffer("scratch", ""))
+        "#,
+    )
+    .unwrap();
+    assert_eq!(h.eval("kept:text()").unwrap(), "shell");
+    assert_eq!(h.eval("kept:kept()").unwrap(), "true");
+    h.eval("kept:set_kept(false)").unwrap();
+    let err = h.eval("kept:text()").unwrap_err().to_string();
+    assert!(err.contains("closed"), "{err}");
+}
+
+#[test]
+fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
+    use kern_core::render::{CellWidth, Plain, Renderer, Size, Status};
+    let h = host("text");
+    h.load_str(
+        "sizes",
+        r#"
+        local kern = require("@kern")
+        local seen = {}
+        kern.on("view.resized", function(e)
+            table.insert(seen, `{e.rows}x{e.cols}`)
+            local rows, cols = e.view:size()
+            assert(rows == e.rows and cols == e.cols)
+        end)
+        return seen
+        "#,
+    )
+    .unwrap();
+    let draw = |width, height| {
+        h.with_editor_mut(|ed| {
+            Renderer::new(CellWidth).frame(
+                ed,
+                Size { width, height },
+                &Status::Default { message: None },
+                &Plain,
+            );
+        });
+        h.report_resizes().unwrap();
+    };
+    draw(40, 10);
+    draw(40, 10);
+    draw(50, 10);
+    // The main view has a gutter of two cells for its line numbers.
+    assert_eq!(
+        h.eval("table.concat(require('@sizes'), ' ')").unwrap(),
+        "9x38 9x48"
+    );
+}

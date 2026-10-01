@@ -300,7 +300,8 @@ impl<M: Measure> Renderer<M> {
             height: size.height.saturating_sub(1),
         };
         let (area, placed) = layout_panels(editor.panels(), screen);
-        let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, decorations);
+        let numbers = editor.buffer(editor.view(main).buffer).line_numbers();
+        let (mut rows, main_cursor) = self.view_rows(editor, main, area, numbers, decorations);
         let status = match status {
             Status::Default { message } => {
                 Self::default_status(editor, editor.view(main), *message)
@@ -451,7 +452,9 @@ impl<M: Measure> Renderer<M> {
             }
         }
         let shown = shown_bytes(text, first_shown, last_shown);
-        editor.view_mut(view_id).visible = Some(shown);
+        let view = editor.view_mut(view_id);
+        view.visible = Some(shown);
+        view.size = Some((area.height, u16::try_from(text_width).unwrap_or(u16::MAX)));
         rows.resize_with(text_rows, Row::default);
         (rows, cursor)
     }

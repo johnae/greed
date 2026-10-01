@@ -91,6 +91,8 @@ pub(crate) struct State {
     pub dirs: Option<PathBuf>,
     /// Programs running in terminals.
     pub terminals: terminal::Terminals,
+    /// Each view's size as last told to plugins with "view.resized".
+    pub view_sizes: HashMap<crate::ViewId, (u16, u16)>,
 }
 
 #[derive(Clone)]
@@ -197,6 +199,7 @@ impl Host {
             session_name: None,
             dirs: None,
             terminals: terminal::Terminals::default(),
+            view_sizes: HashMap::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -420,6 +423,14 @@ impl Host {
         state(&self.lua).lsp.events().clone()
     }
 
+    /// Tells plugins about views drawn at a new size since the last call,
+    /// with "view.resized". Call it after drawing a frame.
+    pub fn report_resizes(&self) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            report_resizes(&self.lua).map_err(HostError::from)
+        })
+    }
+
     /// Output and endings from terminals, to pass to
     /// [`Host::handle_terminal`].
     pub fn terminal_events(&self) -> crossbeam_channel::Receiver<crate::terminal::Event> {
@@ -570,6 +581,36 @@ fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
         }
     };
     state_mut(lua).exports.insert(name.into(), export);
+    Ok(())
+}
+
+/// Emits "view.resized" for each view drawn at a new size.
+fn report_resizes(lua: &Lua) -> mlua::Result<()> {
+    let changed: Vec<_> = {
+        let state = &mut *state_mut(lua);
+        let sizes: HashMap<_, _> = state.editor.view_sizes().collect();
+        let changed = sizes
+            .iter()
+            .filter(|(id, size)| state.view_sizes.get(id) != Some(size))
+            .map(|(id, size)| (*id, *size))
+            .collect();
+        state.view_sizes = sizes;
+        changed
+    };
+    let author = kern_text::Author::User(state(lua).editor.client());
+    for (id, (rows, cols)) in changed {
+        let payload = lua.create_table()?;
+        payload.set(
+            "view",
+            handles::ViewRef {
+                id,
+                author: author.clone(),
+            },
+        )?;
+        payload.set("rows", rows)?;
+        payload.set("cols", cols)?;
+        api::emit(lua, "view.resized", &payload)?;
+    }
     Ok(())
 }
 

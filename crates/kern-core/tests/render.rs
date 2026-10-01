@@ -727,3 +727,24 @@ fn virtual_lines_show_under_their_line_and_count_when_scrolling() {
     let f = frame(&mut ed, 20, 4);
     assert!(body(&f).contains(&"d".to_owned()), "{:?}", body(&f));
 }
+
+#[test]
+fn a_buffer_can_go_without_line_numbers() {
+    let mut ed = editor("|one\ntwo");
+    let buffer = ed.view(ed.main()).buffer;
+    assert_eq!(rows(&frame(&mut ed, 12, 3))[0], "1 one");
+    ed.set_line_numbers(buffer, false);
+    assert_eq!(rows(&frame(&mut ed, 12, 3))[0], "one");
+}
+
+#[test]
+fn views_remember_the_room_they_had() {
+    let mut ed = editor("|one");
+    let main = ed.main();
+    assert_eq!(ed.view(main).size, None);
+    let buffer = ed.view(main).buffer;
+    ed.set_line_numbers(buffer, false);
+    frame(&mut ed, 30, 10);
+    // The status line takes a row.
+    assert_eq!(ed.view(main).size, Some((9, 30)));
+}

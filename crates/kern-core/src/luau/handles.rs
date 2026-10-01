@@ -74,6 +74,9 @@ impl UserData for ViewRef {
             state.editor.view_mut(this.id).selection = selection;
             Ok(())
         });
+        methods.add_method("size", |lua, this, ()| {
+            this.with_view(lua, |v| Ok(v.size.unzip()))
+        });
         methods.add_method("visible", |lua, this, ()| {
             let state = state(lua);
             let view = state
@@ -398,6 +401,22 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("set_readonly", |lua, this, readonly: bool| {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.set_readonly(this.buffer, readonly);
+        Ok(())
+    });
+    methods.add_method("line_numbers", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.line_numbers()))
+    });
+    methods.add_method("set_line_numbers", |lua, this, on: bool| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_line_numbers(this.buffer, on);
+        Ok(())
+    });
+    methods.add_method("kept", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.is_kept()))
+    });
+    methods.add_method("set_kept", |lua, this, kept: bool| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_kept(this.buffer, kept);
         Ok(())
     });
     methods.add_method("language", |lua, this, ()| {
