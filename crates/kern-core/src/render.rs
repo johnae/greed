@@ -359,20 +359,11 @@ impl<M: Measure> Renderer<M> {
             decorations.highlights(view.buffer, text, visible.clone()),
             &visible,
         );
-        let marks: Vec<_> = decorations
-            .diagnostics(view.buffer)
-            .iter()
-            .filter(|(range, _)| range.start <= visible.end && range.end >= visible.start)
-            .cloned()
-            .collect();
-        let styled: Vec<&Mark> = editor
-            .buffer(view.buffer)
-            .all_marks()
-            .filter(|m| m.range.start <= visible.end && m.range.end >= visible.start)
-            .collect();
+        let (marks, styled) = marks_in(editor, view.buffer, decorations, &visible);
         let head = view.selection.primary().head;
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
+        let (mut first_shown, mut last_shown) = (None, None);
 
         'lines: for line in scroll.line..text.len_lines() {
             let skip = if line == scroll.line { scroll.row } else { 0 };
@@ -415,6 +406,10 @@ impl<M: Measure> Renderer<M> {
                         x += cell.width;
                         continue;
                     }
+                    first_shown = first_shown.or(Some(cell.byte));
+                    if !cell.end_of_line {
+                        last_shown = Some(cell.byte);
+                    }
                     if cell.byte == head {
                         cursor = Some(screen_position(area, x, rows.len()));
                     }
@@ -440,6 +435,8 @@ impl<M: Measure> Renderer<M> {
                 rows.push(row);
             }
         }
+        let shown = shown_bytes(text, first_shown, last_shown);
+        editor.view_mut(view_id).visible = Some(shown);
         rows.resize_with(text_rows, Row::default);
         (rows, cursor)
     }
@@ -960,4 +957,35 @@ fn worst(marks: &[(Range<usize>, u8)], matches: impl Fn(&Range<usize>) -> bool) 
         .filter(|(r, _)| matches(r))
         .map(|(_, s)| *s)
         .min()
+}
+
+/// The diagnostics and marks of `buffer` that touch `visible`.
+fn marks_in<'a>(
+    editor: &'a Editor,
+    buffer: BufferId,
+    decorations: &dyn Decorations,
+    visible: &Range<usize>,
+) -> (Vec<(Range<usize>, u8)>, Vec<&'a Mark>) {
+    let touches = |range: &Range<usize>| range.start <= visible.end && range.end >= visible.start;
+    let diagnostics = decorations
+        .diagnostics(buffer)
+        .iter()
+        .filter(|(range, _)| touches(range))
+        .cloned()
+        .collect();
+    let marks = editor
+        .buffer(buffer)
+        .all_marks()
+        .filter(|m| touches(&m.range))
+        .collect();
+    (diagnostics, marks)
+}
+
+/// The bytes from the `first` drawn to just past the `last` character drawn
+/// (empty when nothing was).
+fn shown_bytes(text: &Rope, first: Option<usize>, last: Option<usize>) -> Range<usize> {
+    let first = first.unwrap_or(0);
+    last.map_or(first..first, |last| {
+        first..text.char_to_byte(text.byte_to_char(last) + 1)
+    })
 }

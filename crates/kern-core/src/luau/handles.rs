@@ -74,6 +74,16 @@ impl UserData for ViewRef {
             state.editor.view_mut(this.id).selection = selection;
             Ok(())
         });
+        methods.add_method("visible", |lua, this, ()| {
+            let state = state(lua);
+            let view = state
+                .editor
+                .find_view(this.id)
+                .ok_or_else(|| mlua::Error::runtime("this view was closed"))?;
+            let len = state.editor.buffer(view.buffer).text().len_bytes();
+            let visible = view.visible.clone().unwrap_or(0..len);
+            Ok((visible.start.min(len), visible.end.min(len)))
+        });
         methods.add_method("buffer", |lua, this, ()| {
             Ok(BufferRef {
                 buffer: this.buffer(lua)?,

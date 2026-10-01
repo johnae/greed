@@ -26,6 +26,8 @@ pub struct View {
     pub buffer: BufferId,
     pub selection: Selection,
     pub scroll: Scroll,
+    /// The bytes on screen when the view was last drawn; None before that.
+    pub visible: Option<std::ops::Range<usize>>,
 }
 
 /// The first thing a view shows: a buffer line, and how many of its wrapped
@@ -289,6 +291,7 @@ impl Editor {
         view.buffer = buffer;
         view.selection = Selection::point(0);
         view.scroll = Scroll::default();
+        view.visible = None;
         self.drop_if_unused(old);
     }
 
@@ -694,6 +697,7 @@ impl Editor {
                 buffer,
                 selection,
                 scroll: Scroll::default(),
+                visible: None,
             },
         );
         self.focus = id;

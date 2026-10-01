@@ -126,6 +126,27 @@ fn the_view_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
+fn views_remember_which_bytes_they_showed() {
+    let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    let view = ed.focus();
+    assert_eq!(ed.view(view).visible, None);
+
+    frame(&mut ed, 20, 5);
+    let shown = "line 0\nline 1\nline 2\nline 3".len();
+    assert_eq!(ed.view(view).visible, Some(0..shown));
+
+    // Wrapped rows leave room for fewer lines.
+    let mut ed = editor("|aaaa bbbb cccc dddd\nx\ny\nz");
+    let view = ed.focus();
+    frame(&mut ed, 12, 5);
+    assert_eq!(
+        ed.view(view).visible,
+        Some(0.."aaaa bbbb cccc dddd\nx\ny".len())
+    );
+}
+
+#[test]
 fn scrolling_counts_wrapped_rows() {
     let mut ed = editor("aaaa bbbb cccc dddd\n|x");
     let f = frame(&mut ed, 8, 3);
