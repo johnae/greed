@@ -115,3 +115,8 @@ fn theme_plugin_tests_pass() {
 fn flash_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("flash")], &plugin("flash"));
 }
+
+#[test]
+fn lsp_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("picker"), plugin("lsp")], &plugin("lsp"));
+}

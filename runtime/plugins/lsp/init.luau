@@ -1,4 +1,6 @@
--- Language servers: hover, go to definition and diagnostics.
+-- Language servers: hover, go to definition and diagnostics. Lines with
+-- problems get a sign, and the worst problem's message shows after the line
+-- (turn that off with `:set diagnostic-messages false`).
 --
 --   space k   show what's under the cursor, with any problems there
 --   g d       go to the definition
@@ -10,6 +12,7 @@
 
 local kern = require("@kern")
 local picker = require("@picker")
+local marks = require("@self/marks")
 
 kern.lsp.server({ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } })
 kern.lsp.server({ language = "luau", command = { "luau-lsp", "lsp" }, root_markers = { ".luaurc" } })
@@ -218,3 +221,16 @@ kern.keymap.bind("normal", {
 	["] d"] = "next-diagnostic",
 	["[ d"] = "prev-diagnostic",
 })
+
+kern.option.define({
+	name = "diagnostic-messages",
+	doc = "Show each line's worst problem after the end of the line",
+	default = true,
+})
+
+-- Signs beside lines with problems, and their messages after the line.
+kern.on("lsp.diagnostics", function(event: kern.DiagnosticsChanged)
+	local buffer = event.buffer
+	local messages = kern.option.get("diagnostic-messages") == true
+	buffer:decorate("lsp", marks.diagnostic_marks(buffer, kern.lsp.diagnostics(buffer), messages))
+end)

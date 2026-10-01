@@ -184,3 +184,40 @@ fn the_lsp_plugin_goes_to_definitions_and_problems() {
     h.press_keys("[ d").unwrap();
     assert_eq!(cursor(&h), 8);
 }
+
+#[test]
+fn the_lsp_plugin_marks_problems_with_signs_and_messages() {
+    use kern_core::render::{CellWidth, Plain, Renderer, Size, Status};
+    let h = with_plugin();
+    let marks: Vec<(Option<String>, Option<String>)> = h.with_editor(|ed| {
+        ed.buffer(ed.view(ed.main()).buffer)
+            .marks("lsp")
+            .iter()
+            .map(|m| {
+                (
+                    m.sign.as_deref().map(str::to_owned),
+                    m.text.as_deref().map(str::to_owned),
+                )
+            })
+            .collect()
+    });
+    assert_eq!(
+        marks,
+        [
+            (Some("E".to_owned()), None),
+            (None, Some("bad word".to_owned()))
+        ]
+    );
+    let row = h.with_editor_mut(|ed| {
+        let size = Size {
+            width: 40,
+            height: 2,
+        };
+        let status = Status::Default { message: None };
+        Renderer::new(CellWidth)
+            .frame(ed, size, &status, &Plain)
+            .rows[0]
+            .text()
+    });
+    assert_eq!(row, "E 1 let x = bad; bad word");
+}
