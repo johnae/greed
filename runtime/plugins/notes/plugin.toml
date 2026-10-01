@@ -1,0 +1,2 @@
+name = "notes"
+requires = ["core", "picker", "agent"]

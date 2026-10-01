@@ -193,6 +193,11 @@ fn host(
     if let Err(err) = host.run("project-config") {
         host.with_editor_mut(|ed| ed.echo(format!("project config: {err}")));
     }
+    // The file opened at the start was opened before plugins were there to
+    // hear it.
+    if let Err(err) = host.announce_open_files() {
+        host.with_editor_mut(|ed| ed.echo(err.to_string()));
+    }
     Ok(host)
 }
 

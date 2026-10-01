@@ -253,6 +253,39 @@ require("@kern").option.set("format-on-save", false)
 A formatter gets the text on its input and prints it formatted; `{path}` in
 its command stands for the file's path.
 
+## Notes
+
+Notes are Markdown files in a folder (`~/notes` unless you set
+`notes-folder`), so git or Syncthing can carry them between machines and to
+your phone. Link one to another with `[[name]]`, or `[[name|other words]]`
+to show other words.
+
+| Keys | |
+|---|---|
+| `space n d` | Today's note, in `daily/` |
+| `space n c` | Add a todo to `inbox.md`, from wherever you are |
+| `space n a` | The agenda: open todos from every note, soonest due first |
+| `space n f` | Find a note; a name that isn't one yet makes it |
+| `space n /` | Search every note as you type |
+| `space n x` | Tick a todo or untick it; a plain line becomes one |
+| `g d` | Follow the link under the cursor, making the note if it's new |
+| `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
+
+A todo is a list item with a box, `- [ ] call the bank`, and
+`due:2026-10-03` anywhere in it gives it a date for the agenda. In a note,
+links show without their brackets (except on the cursor's line) and the
+notes linking to it are listed at its end. Other Markdown files, like a
+project's README, look as they always do; `:set notes-everywhere true`
+treats every Markdown file as a note, and `:set notes-conceal false` shows
+the brackets.
+
+```luau
+require("@kern").option.set("notes-folder", "~/Documents/notes")
+```
+
+Agents can read and write your notes and todos too; see
+[Agents](agents.md).
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

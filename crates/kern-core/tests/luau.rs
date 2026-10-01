@@ -1438,3 +1438,19 @@ fn plugins_open_switch_and_close_projects() {
         "the last one stays"
     );
 }
+
+#[test]
+fn files_open_before_plugins_load_are_announced_once_they_have() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "text", Some("notes.md".into()));
+    editor.create_buffer("scratch", "not a file");
+    let host = Host::new(editor).unwrap();
+    host.load_str(
+        "listen",
+        "local kern = require('@kern')\nkern.on('buffer.opened', function(e) kern.echo('opened ' .. e.buffer:path()) end)",
+    )
+    .unwrap();
+    host.announce_open_files().unwrap();
+    let messages = host.with_editor_mut(Editor::take_messages);
+    assert_eq!(messages, ["opened notes.md"], "only buffers with files");
+}

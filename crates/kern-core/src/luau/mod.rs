@@ -351,6 +351,33 @@ impl Host {
         state_mut(&self.lua).request_sender = Some(sender);
     }
 
+    /// Tells plugins about the files opened before they loaded, as
+    /// "buffer.opened" events, once they and the config have.
+    pub fn announce_open_files(&self) -> Result<(), HostError> {
+        let buffers: Vec<_> = state(&self.lua)
+            .editor
+            .buffers()
+            .filter(|b| b.path().is_some())
+            .map(crate::Buffer::id)
+            .collect();
+        budgeted(&self.lua, || {
+            let author = kern_text::Author::User(state(&self.lua).editor.client());
+            for buffer in buffers {
+                let payload = self.lua.create_table()?;
+                payload.set(
+                    "buffer",
+                    handles::BufferRef {
+                        buffer,
+                        view: None,
+                        author: author.clone(),
+                    },
+                )?;
+                api::emit(&self.lua, "buffer.opened", &payload)?;
+            }
+            Ok(())
+        })
+    }
+
     /// Tells plugins a client attached, with the file or folder it asked to
     /// open, if any.
     pub fn client_attached(&self, open: Option<&str>) -> Result<(), HostError> {

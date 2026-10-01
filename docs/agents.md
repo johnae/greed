@@ -40,6 +40,8 @@ claude mcp add kern -- kern mcp
 | `project` | The project's root folder |
 | `eval` | Run Luau inside the editor |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
+| `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
+| `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
 
 `eval` can do anything a plugin can. Leave it out of an agent's allowed
 tools if you don't want that.
