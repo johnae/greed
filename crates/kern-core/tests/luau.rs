@@ -861,3 +861,58 @@ fn plugins_evaluate_code_in_a_shared_scratch_environment() {
     assert!(err.starts_with("false:") && err.contains("nope"), "{err}");
     assert!(calc("1 +").starts_with("false:"));
 }
+
+#[test]
+fn floats_change_size_and_title_after_they_open() {
+    let h = host("main");
+    h.eval("b = require('@kern').create_buffer('prompt', '')")
+        .unwrap();
+    h.eval("v = require('@kern').float(b, { title = 'Run', width = 30, height = 3, anchor = 'bottom' })")
+        .unwrap();
+    h.eval("v:configure({ height = 8, title = 'Run (2)' })")
+        .unwrap();
+    h.with_editor(|ed| {
+        let float = &ed.floats()[0];
+        assert_eq!(float.options.title.as_deref(), Some("Run (2)"));
+        assert_eq!(float.options.height, kern_core::Extent::Cells(8));
+        // Fields left out keep their values.
+        assert_eq!(float.options.width, kern_core::Extent::Cells(30));
+        assert_eq!(float.options.anchor, kern_core::Anchor::Bottom);
+    });
+    let err = h
+        .eval("require('@kern').view():configure({ height = 2 })")
+        .err();
+    assert!(err.is_none(), "the float is focused");
+    h.eval("v:close()").unwrap();
+    let err = h
+        .eval("require('@kern').view():configure({ height = 2 })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("floating"), "{err}");
+}
+
+#[test]
+fn options_are_listed_with_their_docs_and_values() {
+    let h = host("");
+    h.load_str(
+        "opts",
+        "local o = require('@kern').option
+         o.define { name = 'wrap', doc = 'Wrap long lines', default = true }
+         o.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }
+         o.set('tab-width', 2)",
+    )
+    .unwrap();
+    let listed = h
+        .eval(
+            "local out = {}
+             for _, o in require('@kern').option.list() do
+               table.insert(out, o.name .. '=' .. tostring(o.value) .. ' (' .. o.doc .. ')')
+             end
+             return table.concat(out, ', ')",
+        )
+        .unwrap();
+    assert_eq!(
+        listed,
+        "tab-width=2 (Spaces per tab), wrap=true (Wrap long lines)"
+    );
+}

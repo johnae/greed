@@ -187,6 +187,11 @@ impl<H> Registry<H> {
         self.options.get(name).map(|slot| &slot.value)
     }
 
+    /// Every option and its current value, in no particular order.
+    pub fn options(&self) -> impl Iterator<Item = (&OptionDef, &Value)> {
+        self.options.values().map(|slot| (&slot.def, &slot.value))
+    }
+
     pub fn option_def(&self, name: &str) -> Option<&OptionDef> {
         self.options.get(name).map(|slot| &slot.def)
     }

@@ -10,7 +10,7 @@ use kern_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef};
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::api::emit;
+use super::api::{emit, float_options};
 use super::{state, state_mut};
 use crate::{Buffer, BufferId, View, ViewId};
 
@@ -89,6 +89,16 @@ impl UserData for ViewRef {
         });
         methods.add_method("close", |lua, this, ()| {
             Ok(state_mut(lua).editor.close(this.id))
+        });
+        methods.add_method("configure", |lua, this, spec: Table| {
+            let current = state(lua)
+                .editor
+                .float_options(this.id)
+                .cloned()
+                .ok_or_else(|| mlua::Error::runtime("only floating views can be configured"))?;
+            let options = float_options(current, Some(spec))?;
+            state_mut(lua).editor.configure_float(this.id, options);
+            Ok(())
         });
         methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
         methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));

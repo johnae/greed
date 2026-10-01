@@ -83,6 +83,9 @@ export type View = {
 	focus: (self: View) -> (),
 	--- Closes the view. The main view can't be closed; returns false for it.
 	close: (self: View) -> boolean,
+	--- Changes how a floating view is shown; fields left out stay as they
+	--- are. Fails for views that aren't floating.
+	configure: (self: View, spec: FloatSpec) -> (),
 	--- Undoes the last change. Returns false if there was nothing to undo.
 	undo: (self: View) -> boolean,
 	redo: (self: View) -> boolean,
@@ -154,6 +157,8 @@ export type Options = {
 	define: (spec: { name: string, doc: string?, default: OptionValue }) -> (),
 	get: (name: string) -> OptionValue?,
 	set: (name: string, value: OptionValue) -> (),
+	--- Every option, sorted by name.
+	list: () -> { { name: string, doc: string, value: OptionValue } },
 }
 
 export type History = {

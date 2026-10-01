@@ -2,7 +2,6 @@
 //! commands and emitting events.
 
 use std::path::Path;
-use std::sync::Arc;
 
 use kern_text::Author;
 use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
@@ -485,6 +484,29 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 .map_err(mlua::Error::external)
         })?,
     )?;
+    option.set(
+        "list",
+        lua.create_function(|lua, ()| {
+            let mut options: Vec<_> = {
+                let state = state(lua);
+                state
+                    .registry
+                    .options()
+                    .map(|(def, value)| (def.name.clone(), def.doc.clone(), value.clone()))
+                    .collect()
+            };
+            options.sort_by(|a, b| a.0.cmp(&b.0));
+            let list = lua.create_table()?;
+            for (name, doc, value) in options {
+                let entry = lua.create_table()?;
+                entry.set("name", &*name)?;
+                entry.set("doc", &*doc)?;
+                entry.set("value", option_to_lua(lua, value)?)?;
+                list.push(entry)?;
+            }
+            Ok(list)
+        })?,
+    )?;
     Ok(option)
 }
 
@@ -585,7 +607,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         "float",
         lua.create_function(
             move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
-                let options = float_options(spec)?;
+                let options = float_options(DEFAULT_FLOAT, spec)?;
                 buffer.with_buffer(lua, |_| Ok(()))?;
                 Ok(ViewRef {
                     id: state_mut(lua).editor.float(buffer.buffer, options),
@@ -745,47 +767,24 @@ fn files(dir: &Path) -> Vec<String> {
 
 const DEFAULT_FLOAT_SIZE: Extent = Extent::Percent(60);
 
-/// Reads `{ title, width, height, anchor }`. Sizes are cells, or a string
-/// like "60%".
-fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
-    let extent = |value: Value| -> LuaResult<Extent> {
-        match value {
-            Value::Nil => Ok(DEFAULT_FLOAT_SIZE),
-            Value::Integer(n) => Ok(Extent::Cells(u16::try_from(n).unwrap_or(u16::MAX))),
-            Value::Number(n) if n >= 0.0 =>
-            {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "clamped below"
-                )]
-                Ok(Extent::Cells(n.min(f64::from(u16::MAX)) as u16))
-            }
-            Value::String(s) => s
-                .to_str()?
-                .strip_suffix('%')
-                .and_then(|p| p.trim().parse().ok())
-                .map(Extent::Percent)
-                .ok_or_else(|| {
-                    mlua::Error::runtime("sizes are a number of cells or a string like \"60%\"")
-                }),
-            other => Err(mlua::Error::runtime(format!(
-                "sizes are a number of cells or a string like \"60%\", not {}",
-                other.type_name()
-            ))),
-        }
-    };
+/// How a float looks when its spec leaves everything out.
+pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
+    title: None,
+    width: DEFAULT_FLOAT_SIZE,
+    height: DEFAULT_FLOAT_SIZE,
+    anchor: Anchor::Center,
+    focus: true,
+};
+
+/// Reads `{ title, width, height, anchor, focus }` onto `base`; fields left
+/// out keep their value in `base`. Sizes are cells, or a string like "60%".
+pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResult<FloatOptions> {
     let Some(spec) = spec else {
-        return Ok(FloatOptions {
-            title: None,
-            width: DEFAULT_FLOAT_SIZE,
-            height: DEFAULT_FLOAT_SIZE,
-            anchor: Anchor::Center,
-            focus: true,
-        });
+        return Ok(base);
     };
     let anchor = match spec.get::<Option<String>>("anchor")?.as_deref() {
-        None | Some("center") => Anchor::Center,
+        None => base.anchor,
+        Some("center") => Anchor::Center,
         Some("top") => Anchor::Top,
         Some("bottom") => Anchor::Bottom,
         Some(other) => {
@@ -795,12 +794,44 @@ fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
         }
     };
     Ok(FloatOptions {
-        title: spec.get::<Option<String>>("title")?.map(Arc::from),
-        width: extent(spec.get("width")?)?,
-        height: extent(spec.get("height")?)?,
+        title: spec
+            .get::<Option<String>>("title")?
+            .map(Into::into)
+            .or(base.title),
+        width: extent(spec.get("width")?)?.unwrap_or(base.width),
+        height: extent(spec.get("height")?)?.unwrap_or(base.height),
         anchor,
-        focus: spec.get::<Option<bool>>("focus")?.unwrap_or(true),
+        focus: spec.get::<Option<bool>>("focus")?.unwrap_or(base.focus),
     })
+}
+
+/// A size: a number of cells, or a string like "60%".
+fn extent(value: Value) -> LuaResult<Option<Extent>> {
+    match value {
+        Value::Nil => Ok(None),
+        Value::Integer(n) => Ok(Some(Extent::Cells(u16::try_from(n).unwrap_or(u16::MAX)))),
+        Value::Number(n) if n >= 0.0 =>
+        {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "clamped below"
+            )]
+            Ok(Some(Extent::Cells(n.min(f64::from(u16::MAX)) as u16)))
+        }
+        Value::String(s) => s
+            .to_str()?
+            .strip_suffix('%')
+            .and_then(|p| p.trim().parse().ok())
+            .map(|p| Some(Extent::Percent(p)))
+            .ok_or_else(|| {
+                mlua::Error::runtime("sizes are a number of cells or a string like \"60%\"")
+            }),
+        other => Err(mlua::Error::runtime(format!(
+            "sizes are a number of cells or a string like \"60%\", not {}",
+            other.type_name()
+        ))),
+    }
 }
 
 /// Calls the plugin's status line function, if one is set. It gets

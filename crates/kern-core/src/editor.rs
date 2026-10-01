@@ -220,6 +220,26 @@ impl Editor {
         &self.floats
     }
 
+    /// How `view` is shown, if it's a floating view.
+    pub fn float_options(&self, view: ViewId) -> Option<&FloatOptions> {
+        self.floats
+            .iter()
+            .find(|f| f.view == view)
+            .map(|f| &f.options)
+    }
+
+    /// Changes how a floating view is shown. Returns false if `view` isn't
+    /// floating.
+    pub fn configure_float(&mut self, view: ViewId, options: FloatOptions) -> bool {
+        match self.floats.iter_mut().find(|f| f.view == view) {
+            Some(float) => {
+                float.options = options;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn main(&self) -> ViewId {
         self.main
     }
