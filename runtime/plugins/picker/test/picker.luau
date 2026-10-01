@@ -119,3 +119,14 @@ test("a source follows the query once typing pauses, keeping only the latest ans
 	assert(table.concat(asked, ",") == "ab,abc,abcd", table.concat(asked, ","))
 	assert(string.find(kern.view():buffer():text(), " abcd!", 1, true), kern.view():buffer():text())
 end)
+
+test("space P switches between the projects open here", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "" })
+	t:buffer("|x")
+	local first = kern.project.current().id
+	kern.project.open(dir)
+	t:keys("space P")
+	-- Projects come first, in the order they were opened.
+	t:keys("enter")
+	assert(kern.project.current().id == first, "back in the first project")
+end)

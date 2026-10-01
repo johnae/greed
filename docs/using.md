@@ -22,6 +22,11 @@ alone.
 | `kern serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the shown project and leave; on the last one, quit the session |
 
+Switching to another session (`space P`, `:session`) moves your terminal
+there and leaves the session you were in running. Over `kern ssh` it
+reconnects through a new ssh connection, which is close to instant with
+ssh connection sharing (`ControlMaster`).
+
 Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.
@@ -37,7 +42,8 @@ picker, project search and tree work within the shown one.
 | Keys | |
 |---|---|
 | `:project PATH` | Open the project `PATH` is in, or switch to it |
-| `space P` | Switch between open projects |
+| `space P` | Switch to another project: one open in this session, or another running session |
+| `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |
 | `:q` | Close the shown project and leave; on the last one, quit |
 | `:qa` | Quit every project |

@@ -1,7 +1,8 @@
 -- Projects: the folders being worked on. The editor can have several open,
 -- each with its own main view and panels; `:project PATH` opens one (or
--- switches to it), `:project-close` closes the shown one, and `space P`
--- picks between them.
+-- switches to it), `:project-close` closes the shown one, `:session` goes to
+-- another session (each runs in its own process), and `space P` picks
+-- between projects and sessions.
 --
 -- A project's root is the nearest folder, from a file up, holding one of
 -- `markers`. Change them from your config, e.g. to stop at Rust workspaces:
@@ -111,6 +112,25 @@ kern.command({
 		if not kern.project.close(kern.project.current().id) then
 			error("this is the only project open; :q quits", 0)
 		end
+	end,
+})
+
+kern.command({
+	name = "session",
+	doc = "Go to another session: a running one by name, or a project's (started if needed)",
+	args = { { name = "to", doc = "A session's name, or a folder or file", complete = "file" } },
+	run = function(ctx)
+		local to = ctx.args[1]
+		if to == nil then
+			error("session needs a name or a path; space P picks one", 0)
+		end
+		for _, session in kern.session.list() do
+			if session.name == to then
+				kern.session.switch({ name = to })
+				return
+			end
+		end
+		kern.session.switch({ path = to })
 	end,
 })
 

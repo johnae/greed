@@ -62,17 +62,38 @@ kern.command({
 	end,
 })
 
+-- "~/src/kern" for a folder in the home directory, since that's how
+-- people say it.
+local function short(path: string): string
+	local home = kern.fs.dirs().config
+	home = home and string.match(home, "^(.*)/%.config/kern$")
+	if home and string.sub(path, 1, #home + 1) == home .. "/" then
+		return "~" .. string.sub(path, #home + 1)
+	end
+	return path
+end
+
 kern.command({
 	name = "pick-project",
-	doc = "Switch to another open project",
+	doc = "Switch to another project: one open here, or another running session",
 	run = function()
 		local items = {}
 		for _, p in kern.project.list() do
-			local label = if p.current then `{p.root}  (shown)` else p.root
-			table.insert(items, { label = label, value = p.id })
+			local label = short(p.root) .. if p.current then "  (shown)" else ""
+			table.insert(items, { label = label, value = { project = p.id } })
+		end
+		for _, s in kern.session.list() do
+			if not s.current then
+				local label = `{if s.root then short(s.root) else s.name}  (session {s.name})`
+				table.insert(items, { label = label, value = { session = s.name } })
+			end
 		end
 		picker.pick("Projects", items, function(item)
-			kern.project.switch(item.value)
+			if item.value.project then
+				kern.project.switch(item.value.project)
+			else
+				kern.session.switch({ name = item.value.session })
+			end
 		end)
 	end,
 })
