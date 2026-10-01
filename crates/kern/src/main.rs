@@ -84,9 +84,13 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
-/// Kern's directory in the user's config directory (`$XDG_CONFIG_HOME`, or
-/// `~/.config`).
+/// Kern's config directory: `$KERN_CONFIG_DIR`, or `kern` in the user's
+/// config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
 fn config_dir() -> Option<PathBuf> {
+    // `kern ssh` sets this to the copy of your config it brought along.
+    if let Some(dir) = std::env::var_os("KERN_CONFIG_DIR") {
+        return Some(PathBuf::from(dir));
+    }
     let dir = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;

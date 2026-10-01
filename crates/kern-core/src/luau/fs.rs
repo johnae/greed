@@ -102,7 +102,12 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "dirs",
         lua.create_function(|lua, ()| {
             let dirs = lua.create_table()?;
-            dirs.set("config", user_dir("XDG_CONFIG_HOME", ".config"))?;
+            // Where the config was read from, which `kern ssh` points at the
+            // copy of yours it brought along.
+            let config = std::env::var("KERN_CONFIG_DIR")
+                .ok()
+                .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));
+            dirs.set("config", config)?;
             dirs.set("cache", user_dir("XDG_CACHE_HOME", ".cache"))?;
             Ok(dirs)
         })?,

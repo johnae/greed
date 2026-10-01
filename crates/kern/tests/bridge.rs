@@ -8,22 +8,29 @@ use serde_json::{Value, json};
 
 const KERN: &str = env!("CARGO_BIN_EXE_kern");
 
+/// A `kern bridge` driven over pipes. Dropping it stops the bridge, so a
+/// failing test can't leave one behind holding the test run open.
 struct Bridge {
     child: Child,
-    input: ChildStdin,
+    input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
 }
 
 impl Bridge {
     fn start(args: &[&str]) -> Bridge {
-        let mut child = Command::new(KERN)
-            .arg("bridge")
-            .args(args)
+        let mut command = Command::new(KERN);
+        command.arg("bridge").args(args);
+        Bridge::spawn(command)
+    }
+
+    fn spawn(mut command: Command) -> Bridge {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        let input = child.stdin.take().unwrap();
+        let input = child.stdin.take();
         let output = BufReader::new(child.stdout.take().unwrap());
         Bridge {
             child,
@@ -33,8 +40,9 @@ impl Bridge {
     }
 
     fn send(&mut self, message: &Value) {
-        writeln!(self.input, "{message}").unwrap();
-        self.input.flush().unwrap();
+        let input = self.input.as_mut().unwrap();
+        writeln!(input, "{message}").unwrap();
+        input.flush().unwrap();
     }
 
     fn next(&mut self) -> Value {
@@ -79,11 +87,15 @@ impl Bridge {
         self.send(&json!("Quit"));
         // The bridge ends once its input does, the way it does when ssh
         // disconnects.
-        let Bridge {
-            mut child, input, ..
-        } = self;
-        drop(input);
-        let _ = child.wait();
+        self.input = None;
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for Bridge {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -170,4 +182,50 @@ impl Drop for Server {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+#[test]
+fn a_session_loads_the_config_kern_config_dir_points_at() {
+    let config = std::env::temp_dir().join(format!("kern-config-from-afar-{}", std::process::id()));
+    std::fs::create_dir_all(config.join("plugins/hello")).unwrap();
+    std::fs::write(
+        config.join("init.luau"),
+        "require('@kern').echo('config from afar')\n",
+    )
+    .unwrap();
+    std::fs::write(
+        config.join("plugins/hello/plugin.toml"),
+        "name = \"hello\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        config.join("plugins/hello/init.luau"),
+        "require('@kern').command({ name = 'hello-from-afar', run = function() end })\n",
+    )
+    .unwrap();
+    let file = temp_file("config", "text");
+    let name = format!("bridge-config-{}", std::process::id());
+    let mut command = Command::new(KERN);
+    command
+        .args(["bridge", "--session", &name, file.to_str().unwrap()])
+        .env("KERN_CONFIG_DIR", &config);
+    let mut bridge = Bridge::spawn(command);
+    let rows = bridge.attach();
+    let status = rows.last().unwrap();
+    assert!(status.contains("config from afar"), "{rows:?}");
+    // The plugin in the config's plugins folder loaded too.
+    let listed = Command::new(KERN)
+        .args([
+            "ctl",
+            "eval",
+            "code=return table.concat(require('@kern').plugin.list(), ',')",
+        ])
+        .env("KERN_SESSION", &name)
+        .output()
+        .unwrap();
+    let listed = String::from_utf8(listed.stdout).unwrap();
+    assert!(listed.contains("hello"), "{listed}");
+    bridge.quit();
+    std::fs::remove_dir_all(&config).unwrap();
+    std::fs::remove_file(file).unwrap();
 }

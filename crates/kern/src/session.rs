@@ -239,12 +239,19 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 /// over ssh, starting one if none is running. `$KERN_SSH` replaces the ssh
 /// command and `$KERN_REMOTE` the kern on the other end.
 pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Error> {
+    let config = match send_config(host) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("kern: couldn't bring your config to {host}, going on without it: {err}");
+            None
+        }
+    };
     let mut to = SwitchTo {
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
     };
     loop {
-        match ssh_once(host, &to)? {
+        match ssh_once(host, &to, config.as_deref())? {
             // The bridge on the other end finds (or starts) the session to
             // switch to; a new connection is the simplest way to ask it.
             Output::Switch(next) => to = next,
@@ -259,21 +266,10 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
 
 /// Shows the session `to` points at on `host` until it ends, lets go or
 /// switches; returns which.
-fn ssh_once(host: &str, to: &SwitchTo) -> Result<Output, Error> {
+fn ssh_once(host: &str, to: &SwitchTo, config: Option<&str>) -> Result<Output, Error> {
     let remote_kern = std::env::var("KERN_REMOTE").unwrap_or_else(|_| "kern".to_owned());
-    let mut remote = vec![remote_kern, "bridge".to_owned()];
-    if let Some(name) = &to.session {
-        remote.extend(["--session".to_owned(), name.clone()]);
-    }
-    remote.extend(to.path.clone());
-    // ssh joins its arguments into one command line for the remote shell.
-    let line = remote
-        .iter()
-        .map(|arg| quote(arg))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let ssh = std::env::var("KERN_SSH").unwrap_or_else(|_| "ssh".to_owned());
-    let mut child = Command::new(ssh)
+    let line = bridge_command(&remote_kern, to, config);
+    let mut child = ssh_command()
         .args(["-T", host, &line])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -313,6 +309,11 @@ fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), E
     Ok(())
 }
 
+/// The ssh command, which `$KERN_SSH` replaces.
+fn ssh_command() -> Command {
+    Command::new(std::env::var("KERN_SSH").unwrap_or_else(|_| "ssh".to_owned()))
+}
+
 /// `arg` quoted for a POSIX shell.
 fn quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
@@ -326,4 +327,106 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
         return Err(format!("the session {name} is already running for that project").into());
     }
     serve(&name, path)
+}
+
+/// The command line that runs `kern bridge` on the other machine for `to`,
+/// with the config `kern ssh` brought along in `config` (a folder, which
+/// may use `$HOME`).
+fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
+    let mut args = vec![kern.to_owned(), "bridge".to_owned()];
+    if let Some(name) = &to.session {
+        args.extend(["--session".to_owned(), name.clone()]);
+    }
+    args.extend(to.path.clone());
+    // ssh joins its arguments into one command line for the remote shell.
+    let command = args
+        .iter()
+        .map(|arg| quote(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
+    match config {
+        // Double quotes, so the remote shell fills in $HOME.
+        Some(dir) => format!("KERN_CONFIG_DIR=\"{dir}\" {command}"),
+        None => command,
+    }
+}
+
+/// Copies your config (init.luau and plugins) to `host` with tar over ssh,
+/// into a folder named after this machine, and returns that folder as the
+/// remote shell should write it. Nothing to copy, or `$KERN_SSH_CONFIG` set
+/// to 0, gives `None`.
+fn send_config(host: &str) -> Result<Option<String>, Error> {
+    let Some(local) = crate::config_dir().filter(|dir| dir.is_dir()) else {
+        return Ok(None);
+    };
+    if std::env::var("KERN_SSH_CONFIG").is_ok_and(|v| v == "0") {
+        return Ok(None);
+    }
+    let dir = format!("$HOME/.cache/kern/config-from-{}", this_machine());
+    let mut tar = Command::new("tar")
+        .arg("-C")
+        .arg(&local)
+        .args(["-cf", "-", "."])
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let packed = tar.stdout.take().ok_or("tar has no output")?;
+    // A fresh copy each time, so plugins you removed go from there too.
+    let unpack = format!("rm -rf \"{dir}\" && mkdir -p \"{dir}\" && tar -C \"{dir}\" -xf -");
+    let status = ssh_command()
+        .args(["-T", host, &unpack])
+        .stdin(packed)
+        .status()?;
+    tar.wait()?;
+    if !status.success() {
+        return Err(format!("unpacking it there failed ({status})").into());
+    }
+    Ok(Some(dir))
+}
+
+/// This machine's name, in characters that are safe in a folder name.
+fn this_machine() -> String {
+    let name = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .or_else(|_| std::fs::read_to_string("/etc/hostname"))
+        .unwrap_or_default();
+    let name: String = name
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if name.is_empty() {
+        "local".to_owned()
+    } else {
+        name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bridge_command_quotes_paths_and_brings_the_config() {
+        let to = SwitchTo {
+            session: Some("kern".to_owned()),
+            path: Some("it's here.rs".to_owned()),
+        };
+        assert_eq!(
+            bridge_command("kern", &to, Some("$HOME/.cache/kern/config-from-box")),
+            r#"KERN_CONFIG_DIR="$HOME/.cache/kern/config-from-box" 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
+        );
+        let plain = SwitchTo {
+            session: None,
+            path: None,
+        };
+        assert_eq!(
+            bridge_command("/opt/kern", &plain, None),
+            "'/opt/kern' 'bridge'"
+        );
+    }
 }

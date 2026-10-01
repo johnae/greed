@@ -60,6 +60,14 @@ search and agents all run on that machine, and only keys and screen updates
 cross the network. If the connection drops or you `:detach`, the session
 keeps running, and `kern ssh HOST` comes back to it.
 
+Your config comes along: `kern ssh` copies `~/.config/kern` (your
+`init.luau` and plugins) to the other machine first, and a session it
+starts there uses that copy, so the editor works the way you set it up.
+A session that was already running keeps the config it started with.
+`KERN_SSH_CONFIG=0` leaves your config at home. Plugins an agent installs
+while you're in a remote session go into that copy, which the next
+`kern ssh` replaces, so keep the ones you want in your own config.
+
 Kern has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
 fail with a clear message. `KERN_REMOTE` sets the path of `kern` on the

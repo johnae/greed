@@ -461,7 +461,8 @@ export type Fs = {
 	write: (path: string, text: string) -> (boolean?, string?),
 	--- The directory Kern was started in.
 	cwd: () -> string,
-	--- Kern's config folder (where init.luau and plugins/ go) and cache folder.
+	--- Kern's config folder (where init.luau and plugins/ were read from) and
+	--- cache folder.
 	dirs: () -> { config: string?, cache: string? },
 	--- The lines matching the regex `pattern` in the text files under `dir`
 	--- (default: the current directory), sorted by path and line. In a
