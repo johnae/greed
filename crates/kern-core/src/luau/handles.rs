@@ -172,6 +172,28 @@ fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()>
     emit(lua, "buffer.changed", &payload)
 }
 
+/// Whether the buffer is read-only, and its language.
+fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("readonly", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.is_readonly()))
+    });
+    methods.add_method("set_readonly", |lua, this, readonly: bool| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_readonly(this.buffer, readonly);
+        Ok(())
+    });
+    methods.add_method("language", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.language().map(str::to_owned)))
+    });
+    methods.add_method("set_language", |lua, this, language: Option<String>| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua)
+            .editor
+            .set_language(this.buffer, language.map(Into::into));
+        Ok(())
+    });
+}
+
 impl UserData for BufferRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, ()| Ok(this.buffer.0));
@@ -249,6 +271,7 @@ impl UserData for BufferRef {
                 Ok(b.path().map(|p| p.to_string_lossy().into_owned()))
             })
         });
+        add_setting_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, ()| {
             this.with_buffer(lua, |_| Ok(()))?;

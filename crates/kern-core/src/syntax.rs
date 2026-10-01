@@ -171,7 +171,10 @@ impl Syntax {
     }
 
     pub fn language_for(&self, path: &Path) -> Option<Arc<Language>> {
-        let name = language_name(path)?;
+        self.language_named(language_name(path)?)
+    }
+
+    fn language_named(&self, name: &str) -> Option<Arc<Language>> {
         self.languages.iter().find(|l| l.name == name).cloned()
     }
 
@@ -179,8 +182,17 @@ impl Syntax {
     pub fn update(&mut self, editor: &Editor) {
         for buffer in editor.buffers() {
             let id = buffer.id();
-            if !self.buffers.contains_key(&id) {
-                let Some(language) = buffer.path().and_then(|p| self.language_for(p)) else {
+            let Some(name) = buffer.language() else {
+                self.buffers.remove(&id);
+                continue;
+            };
+            if self
+                .buffers
+                .get(&id)
+                .is_none_or(|s| s.language.name != name)
+            {
+                let Some(language) = self.language_named(name) else {
+                    self.buffers.remove(&id);
                     continue;
                 };
                 self.buffers.insert(

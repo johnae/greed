@@ -750,3 +750,50 @@ fn waiting_only_works_inside_commands() {
         "{err}"
     );
 }
+
+#[test]
+fn plugins_make_read_only_buffers_in_a_language() {
+    let h = host("");
+    h.load_str(
+        "viewer",
+        r#"
+        local kern = require("@kern")
+        local buffer = kern.create_buffer("preview", "fn main() {}", { readonly = true, language = "rust" })
+        kern.float(buffer)
+        kern.command { name = "type-x", run = function(ctx)
+          ctx.buffer:edit(function(e) e:insert(0, "x") end)
+        end }
+        kern.command { name = "comment-out", run = function()
+          buffer:edit(function(e) e:insert(0, "// ") end)
+        end }
+        kern.command { name = "describe", run = function()
+          kern.echo(tostring(buffer:readonly()) .. " " .. tostring(buffer:language()))
+        end }
+        kern.command { name = "unlock", run = function()
+          buffer:set_readonly(false)
+          buffer:set_language(nil)
+        end }
+        "#,
+    )
+    .unwrap();
+    let err = h.run("type-x").unwrap_err().to_string();
+    assert!(err.contains("read-only"), "{err}");
+    h.run("comment-out").unwrap();
+    assert_eq!(text(&h), "// fn main() {}");
+    h.run("describe").unwrap();
+    h.run("unlock").unwrap();
+    h.run("describe").unwrap();
+    h.run("type-x").unwrap();
+    assert_eq!(text(&h), "x// fn main() {}");
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages),
+        ["true rust", "false nil"]
+    );
+    assert_eq!(
+        h.eval(
+            "require('@kern').language_of('src/a.rs'), require('@kern').language_of('Makefile')"
+        )
+        .unwrap(),
+        "rust\tnil"
+    );
+}

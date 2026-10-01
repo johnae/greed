@@ -53,6 +53,15 @@ export type Buffer = {
 	--- What the buffer is: "file", "terminal", ...
 	kind: (self: Buffer) -> string,
 	path: (self: Buffer) -> string?,
+	--- True if only plugins can change the text: edits from keys and undo
+	--- are refused.
+	readonly: (self: Buffer) -> boolean,
+	set_readonly: (self: Buffer, readonly: boolean) -> (),
+	--- The language the text is highlighted as, e.g. "rust".
+	language: (self: Buffer) -> string?,
+	--- Sets the language, or with nil goes back to the one the file's
+	--- extension implies.
+	set_language: (self: Buffer, language: string?) -> (),
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
 	--- together, as one undoable change, when it returns.
 	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
@@ -306,7 +315,9 @@ export type Kern = {
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last
 	--- view showing it closes.
-	create_buffer: (kind: string, text: string?) -> Buffer,
+	create_buffer: (kind: string, text: string?, opts: { readonly: boolean?, language: string? }?) -> Buffer,
+	--- The language of the file at `path`, going by its extension.
+	language_of: (path: string) -> string?,
 	--- Shows `buffer` in a view floating over the main one, and focuses it.
 	float: (buffer: Buffer, spec: FloatSpec?) -> View,
 	--- Every open buffer.

@@ -283,3 +283,55 @@ fn the_clipboard_keeps_recent_copies() {
     assert_eq!(history.len(), 20);
     assert_eq!(history[0], ["29".to_string()]);
 }
+
+#[test]
+fn read_only_buffers_refuse_the_users_edits_but_not_plugins() {
+    let mut ed = editor("");
+    let tree = ed.create_buffer("tree", "a");
+    let view = ed.float(tree, float_options());
+    ed.set_readonly(tree, true);
+    assert!(ed.buffer(tree).is_readonly());
+
+    let insert = || ChangeSet::from_changes(1, [(0, 0, Some("x"))]).unwrap();
+    let user = Author::User(ClientId(1));
+    let err = ed
+        .apply(view, insert(), user.clone(), None, None)
+        .unwrap_err();
+    assert!(err.to_string().contains("read-only"), "{err}");
+    let err = ed
+        .apply_to_buffer(tree, insert(), user.clone(), None, None)
+        .unwrap_err();
+    assert!(err.to_string().contains("read-only"), "{err}");
+
+    let plugin = Author::Plugin("tree".into());
+    ed.apply(view, insert(), plugin, None, None).unwrap();
+    assert_eq!(ed.buffer(tree).text().to_string(), "xa");
+    // Undo is the user's, so it's refused too.
+    assert!(ed.undo(view).is_err());
+
+    ed.set_readonly(tree, false);
+    ed.apply(
+        view,
+        ChangeSet::from_changes(2, [(2, 2, Some("!"))]).unwrap(),
+        user,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(ed.buffer(tree).text().to_string(), "xa!");
+}
+
+#[test]
+fn buffers_take_their_language_from_the_file_unless_given_one() {
+    let mut ed = Editor::new(ClientId(1));
+    let (file, _) = ed.open("file", "", Some("main.rs".into()));
+    assert_eq!(ed.buffer(file).language(), Some("rust"));
+    let preview = ed.create_buffer("preview", "fn main() {}");
+    assert_eq!(ed.buffer(preview).language(), None);
+    ed.set_language(preview, Some("rust".into()));
+    assert_eq!(ed.buffer(preview).language(), Some("rust"));
+    ed.set_language(file, Some("markdown".into()));
+    assert_eq!(ed.buffer(file).language(), Some("markdown"));
+    ed.set_language(file, None);
+    assert_eq!(ed.buffer(file).language(), Some("rust"));
+}

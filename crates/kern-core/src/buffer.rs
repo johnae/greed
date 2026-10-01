@@ -7,6 +7,7 @@ use smallvec::SmallVec;
 
 use crate::Error;
 use crate::history::{History, Step};
+use crate::syntax::language_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferId(pub u32);
@@ -24,6 +25,9 @@ pub struct Buffer {
     version: SmallVec<[TxId; 1]>,
     /// The version last loaded from or written to the file.
     saved: SmallVec<[TxId; 1]>,
+    readonly: bool,
+    /// The language set for the buffer, overriding the one its path implies.
+    language: Option<Arc<str>>,
 }
 
 impl Buffer {
@@ -38,6 +42,8 @@ impl Buffer {
             history: History::default(),
             version: SmallVec::new(),
             saved: SmallVec::new(),
+            readonly: false,
+            language: None,
         }
     }
 
@@ -61,6 +67,27 @@ impl Buffer {
 
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
+    }
+
+    /// Whether only plugins can change the text.
+    pub fn is_readonly(&self) -> bool {
+        self.readonly
+    }
+
+    pub(crate) fn set_readonly(&mut self, readonly: bool) {
+        self.readonly = readonly;
+    }
+
+    /// The language the text is in: the one set for the buffer, or the one
+    /// its file extension implies.
+    pub fn language(&self) -> Option<&str> {
+        self.language
+            .as_deref()
+            .or_else(|| language_name(self.path.as_deref()?))
+    }
+
+    pub(crate) fn set_language(&mut self, language: Option<Arc<str>>) {
+        self.language = language;
     }
 
     /// Writes the text to the buffer's file.
@@ -92,6 +119,7 @@ impl Buffer {
     /// Applies a transaction made against the current version and records it
     /// as an undo step. Returns the selection that follows it.
     pub fn apply(&mut self, tx: Transaction, current: &Selection) -> Result<Selection, Error> {
+        self.check_author(&tx.meta.author)?;
         self.check_version(&tx.meta)?;
         let before = self.text.clone();
         let after = tx.apply(&mut self.text, current)?;
@@ -143,6 +171,7 @@ impl Buffer {
         cause: &str,
         current: &Selection,
     ) -> Result<Selection, Error> {
+        self.check_author(&author)?;
         let tx = Transaction {
             changes: step.changes,
             selection: Some(step.selection),
@@ -152,6 +181,13 @@ impl Buffer {
         self.version = SmallVec::from_buf([id]);
         self.history.record(tx);
         Ok(selection)
+    }
+
+    fn check_author(&self, author: &Author) -> Result<(), Error> {
+        if self.readonly && !matches!(author, Author::Plugin(_)) {
+            return Err(Error::ReadOnly);
+        }
+        Ok(())
     }
 
     fn check_version(&self, meta: &TxMeta) -> Result<(), Error> {

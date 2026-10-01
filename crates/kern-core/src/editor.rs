@@ -162,6 +162,21 @@ impl Editor {
         id
     }
 
+    /// Makes `buffer` read-only, so only plugins can change it, or editable.
+    pub fn set_readonly(&mut self, buffer: BufferId, readonly: bool) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_readonly(readonly);
+        }
+    }
+
+    /// Sets the language `buffer` is in, or with `None` goes back to the one
+    /// its file extension implies.
+    pub fn set_language(&mut self, buffer: BufferId, language: Option<Arc<str>>) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_language(language);
+        }
+    }
+
     /// The buffer for the file at `path`: the open one, or a new buffer
     /// with the file's text (empty if the file doesn't exist yet).
     pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {

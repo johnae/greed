@@ -110,3 +110,25 @@ fn buffers_without_a_language_or_too_big_are_skipped() {
         );
     }
 }
+
+#[test]
+fn buffers_without_files_highlight_in_the_language_they_are_given() {
+    let mut ed = Editor::new(ClientId(1));
+    ed.open("file", "", None);
+    let preview = ed.create_buffer("preview", "fn main() {}");
+    let mut syntax = Syntax::new();
+    syntax.update(&ed);
+    let text = ed.buffer(preview).text().clone();
+    assert!(syntax.highlights(preview, &text, 0..12).is_empty());
+
+    ed.set_language(preview, Some("rust".into()));
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let all = syntax.highlights(preview, &text, 0..12);
+    assert!(captured(&all, 0..2).contains(&"keyword"), "{all:?}");
+
+    // Switching to a language Kern doesn't know drops the highlights.
+    ed.set_language(preview, Some("klingon".into()));
+    syntax.update(&ed);
+    assert!(syntax.highlights(preview, &text, 0..12).is_empty());
+}

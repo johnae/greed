@@ -526,20 +526,7 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
 /// Buffers, floating views, files and commands: what pickers and other UI
 /// plugins are built from.
 fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
-    let o = owner.clone();
-    kern.set(
-        "create_buffer",
-        lua.create_function(move |lua, (kind, text): (String, Option<String>)| {
-            let buffer = state_mut(lua)
-                .editor
-                .create_buffer(&kind, text.as_deref().unwrap_or_default());
-            Ok(BufferRef {
-                buffer,
-                view: None,
-                author: Author::Plugin(o.clone()),
-            })
-        })?,
-    )?;
+    kern.set("create_buffer", create_buffer_function(lua, owner)?)?;
 
     let o = owner.clone();
     kern.set(
@@ -617,12 +604,44 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
     )?;
 
     kern.set(
+        "language_of",
+        lua.create_function(|_, path: String| Ok(crate::syntax::language_name(Path::new(&path))))?,
+    )?;
+
+    kern.set(
         "files",
         lua.create_function(|_, dir: Option<String>| {
             Ok(files(Path::new(dir.as_deref().unwrap_or("."))))
         })?,
     )?;
     Ok(())
+}
+
+/// `kern.create_buffer(kind, text, { readonly, language })`.
+fn create_buffer_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
+    lua.create_function(
+        move |lua, (kind, text, opts): (String, Option<String>, Option<Table>)| {
+            let (readonly, language) = match opts {
+                Some(opts) => (
+                    opts.get::<Option<bool>>("readonly")?.unwrap_or(false),
+                    opts.get::<Option<String>>("language")?,
+                ),
+                None => (false, None),
+            };
+            let mut state = state_mut(lua);
+            let buffer = state
+                .editor
+                .create_buffer(&kind, text.as_deref().unwrap_or_default());
+            state.editor.set_readonly(buffer, readonly);
+            state.editor.set_language(buffer, language.map(Into::into));
+            Ok(BufferRef {
+                buffer,
+                view: None,
+                author: Author::Plugin(owner.clone()),
+            })
+        },
+    )
 }
 
 /// The 1-based indices of `items` matching `query`, best match first.

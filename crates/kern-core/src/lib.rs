@@ -29,6 +29,8 @@ pub enum Error {
         expected: Vec<TxId>,
         actual: Vec<TxId>,
     },
+    /// Only plugins can change a read-only buffer.
+    ReadOnly,
 }
 
 impl fmt::Display for Error {
@@ -39,6 +41,7 @@ impl fmt::Display for Error {
                 f,
                 "edit was made against version {actual:?}, but the buffer is at {expected:?}"
             ),
+            Error::ReadOnly => f.write_str("this buffer is read-only"),
         }
     }
 }
@@ -47,7 +50,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Text(err) => Some(err),
-            Error::StaleVersion { .. } => None,
+            Error::StaleVersion { .. } | Error::ReadOnly => None,
         }
     }
 }
