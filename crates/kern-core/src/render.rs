@@ -19,7 +19,9 @@ use kern_text::Rope;
 
 use crate::syntax::Highlight;
 use crate::theme::Theme;
-use crate::{Anchor, BufferId, CursorShape, Editor, FloatOptions, Mark, Scroll, View, ViewId};
+use crate::{
+    Anchor, BufferId, CursorShape, Editor, FloatOptions, Mark, Panel, Scroll, Side, View, ViewId,
+};
 
 /// Highlights and marks drawn over a buffer's text.
 pub trait Decorations {
@@ -92,6 +94,9 @@ impl Tag {
     pub const FLOAT: Tag = Tag::fixed("ui.float");
     pub const FLOAT_BORDER: Tag = Tag::fixed("ui.float.border");
     pub const FLOAT_TITLE: Tag = Tag::fixed("ui.float.title");
+    pub const PANEL: Tag = Tag::fixed("ui.panel");
+    pub const PANEL_BORDER: Tag = Tag::fixed("ui.panel.border");
+    pub const PANEL_TITLE: Tag = Tag::fixed("ui.panel.title");
 
     pub const fn fixed(name: &'static str) -> Self {
         Tag(Name::Fixed(name))
@@ -178,9 +183,12 @@ impl Row {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pub size: Size,
-    /// The main view: exactly `size.height` rows, the last being the status
-    /// line.
+    /// Where the main view's rows go; panels take the rest of the width.
+    pub main: Rect,
+    /// The main view's rows, then the status line, which spans the screen.
     pub rows: Vec<Row>,
+    /// Panels beside the main view.
+    pub panels: Vec<PanelFrame>,
     /// Floating views to draw over the rows, bottom first.
     pub floats: Vec<FloatFrame>,
     /// Where the primary cursor is, if it's on screen.
@@ -188,6 +196,17 @@ pub struct Frame {
     pub cursor_shape: CursorShape,
     /// What the tags look like.
     pub theme: Arc<Theme>,
+}
+
+/// A panel: its rows fill `rect`. The client draws a line down column
+/// `separator`, between the panel and the main view, and the title (if any)
+/// on the row above `rect`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelFrame {
+    pub rect: Rect,
+    pub separator: u16,
+    pub title: Option<String>,
+    pub rows: Vec<Row>,
 }
 
 /// A floating view: its rows fill `rect`, and the client draws a border
@@ -260,12 +279,13 @@ impl<M: Measure> Renderer<M> {
         decorations: &dyn Decorations,
     ) -> Frame {
         let main = editor.main();
-        let area = Rect {
+        let screen = Rect {
             x: 0,
             y: 0,
             width: size.width,
             height: size.height.saturating_sub(1),
         };
+        let (area, placed) = layout_panels(editor.panels(), screen);
         let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, decorations);
         let status = match status {
             Status::Default { message } => {
@@ -276,9 +296,18 @@ impl<M: Measure> Renderer<M> {
         rows.push(self.status_row(&status, usize::from(size.width)));
 
         let mut cursor = main_cursor.filter(|_| editor.focus() == main);
+        let mut panels = Vec::new();
+        for (view, mut panel) in placed {
+            let (rows, panel_cursor) = self.view_rows(editor, view, panel.rect, false, decorations);
+            if editor.focus() == view {
+                cursor = panel_cursor;
+            }
+            panel.rows = rows;
+            panels.push(panel);
+        }
         let mut floats = Vec::new();
         for float in editor.floats().to_vec() {
-            let rect = place(&float.options, area);
+            let rect = place(&float.options, screen);
             let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, decorations);
             if editor.focus() == float.view {
                 cursor = float_cursor;
@@ -292,7 +321,9 @@ impl<M: Measure> Renderer<M> {
 
         Frame {
             size,
+            main: area,
             rows,
+            panels,
             floats,
             cursor,
             cursor_shape: editor.cursor_shape(),
@@ -804,6 +835,58 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
         previous = Some(highlight.range);
     }
     painted
+}
+
+/// The main view keeps at least this many columns; panels shrink to leave it.
+const MIN_MAIN_WIDTH: u16 = 10;
+
+/// Where panels go: each one takes its width from its side of `screen`,
+/// plus a column for the line between it and the main view, and a row for
+/// its title if it has one. Returns the main view's area and, for each
+/// panel shown, its view and its frame, still without rows.
+fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFrame)>) {
+    let mut left = screen.x;
+    let mut right = screen.x + screen.width;
+    let mut placed = Vec::new();
+    for panel in panels {
+        let room = (right - left).saturating_sub(MIN_MAIN_WIDTH + 1);
+        let width = panel.options.width.resolve(screen.width).min(room);
+        if width == 0 {
+            continue;
+        }
+        let (x, separator) = match panel.options.side {
+            Side::Left => {
+                let x = left;
+                left += width + 1;
+                (x, x + width)
+            }
+            Side::Right => {
+                right -= width + 1;
+                (right + 1, right)
+            }
+        };
+        let title_rows = u16::from(panel.options.title.is_some());
+        let rect = Rect {
+            x,
+            y: screen.y + title_rows,
+            width,
+            height: screen.height.saturating_sub(title_rows),
+        };
+        let frame = PanelFrame {
+            rect,
+            separator,
+            title: panel.options.title.as_deref().map(str::to_owned),
+            rows: Vec::new(),
+        };
+        placed.push((panel.view, frame));
+    }
+    let main = Rect {
+        x: left,
+        y: screen.y,
+        width: right - left,
+        height: screen.height,
+    };
+    (main, placed)
 }
 
 /// Where a floating view's rows go within `area`, leaving a cell around them

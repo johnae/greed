@@ -15,6 +15,7 @@
 //!   `ui.selection`, `ui.cursor` (cursors other than the primary one)
 //! - `ui.statusline`, `ui.statusline.mode`, `ui.statusline.message`
 //! - `ui.float`, `ui.float.border`, `ui.float.title`
+//! - `ui.panel`, `ui.panel.border` (the line beside it), `ui.panel.title`
 //! - `ui.menu.selected`, `ui.menu.match`, `ui.menu.doc`: lists like the
 //!   picker's, drawn by plugins
 //! - `diagnostic.<severity>`: `error`, `warning`, `info` or `hint`

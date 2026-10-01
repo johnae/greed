@@ -86,6 +86,31 @@ pub struct Float {
     pub options: FloatOptions,
 }
 
+/// Which edge of the screen a panel is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+/// How a panel is shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelOptions {
+    pub side: Side,
+    pub width: Extent,
+    /// Shown on the panel's first row.
+    pub title: Option<Arc<str>>,
+    /// Whether the view takes focus when it's shown.
+    pub focus: bool,
+}
+
+/// A view beside the main one, which gives up the room.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Panel {
+    pub view: ViewId,
+    pub options: PanelOptions,
+}
+
 /// How the cursor looks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CursorShape {
@@ -120,6 +145,8 @@ pub struct Editor {
     main: ViewId,
     /// Floating views, bottom first.
     floats: Vec<Float>,
+    /// Views beside the main one, outermost first on each side.
+    panels: Vec<Panel>,
     focus: ViewId,
     next_id: u32,
     mode: Arc<str>,
@@ -149,6 +176,7 @@ impl Editor {
             views: BTreeMap::new(),
             main: ViewId(0),
             floats: Vec::new(),
+            panels: Vec::new(),
             focus: ViewId(0),
             next_id: 1,
             mode: "normal".into(),
@@ -281,6 +309,23 @@ impl Editor {
         &self.floats
     }
 
+    /// Shows `buffer` in a new panel beside the main view, focusing it if
+    /// `options.focus` says so. Later panels go inside earlier ones.
+    pub fn panel(&mut self, buffer: BufferId, options: PanelOptions) -> ViewId {
+        let previous = self.focus;
+        let view = self.add_view(buffer, Selection::point(0));
+        if !options.focus {
+            self.focus = previous;
+        }
+        self.panels.push(Panel { view, options });
+        view
+    }
+
+    /// Panels, outermost first on each side.
+    pub fn panels(&self) -> &[Panel] {
+        &self.panels
+    }
+
     /// How `view` is shown, if it's a floating view.
     pub fn float_options(&self, view: ViewId) -> Option<&FloatOptions> {
         self.floats
@@ -316,6 +361,7 @@ impl Editor {
             return false;
         };
         self.floats.retain(|f| f.view != view);
+        self.panels.retain(|p| p.view != view);
         if self.focus == view {
             self.focus = self.floats.last().map_or(self.main, |f| f.view);
         }

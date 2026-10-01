@@ -1189,3 +1189,38 @@ fn plugins_set_file_types_and_find_programs() {
         "true\tnil"
     );
 }
+
+#[test]
+fn plugins_open_panels_beside_the_main_view() {
+    use kern_core::{Extent, Side};
+    let h = host("main");
+    h.eval("b = require('@kern').create_buffer('tree', 'src/')")
+        .unwrap();
+    h.eval("p = require('@kern').panel(b, { side = 'right', width = '30%', title = 'Files', focus = false })")
+        .unwrap();
+    h.with_editor(|ed| {
+        let panel = &ed.panels()[0];
+        assert_eq!(panel.options.side, Side::Right);
+        assert_eq!(panel.options.width, Extent::Percent(30));
+        assert_eq!(panel.options.title.as_deref(), Some("Files"));
+        assert_eq!(ed.focus(), ed.main(), "focus stays");
+    });
+    // Defaults: the left side, 30 cells, focused.
+    h.eval("q = require('@kern').panel(require('@kern').create_buffer('x', ''))")
+        .unwrap();
+    h.with_editor(|ed| {
+        let panel = &ed.panels()[1];
+        assert_eq!(
+            (panel.options.side, panel.options.width),
+            (Side::Left, Extent::Cells(30))
+        );
+        assert_eq!(ed.focus(), panel.view);
+    });
+    assert_eq!(h.eval("p:close(), q:close()").unwrap(), "true\ttrue");
+    assert!(h.with_editor(|ed| ed.panels().is_empty()));
+    let err = h
+        .eval("require('@kern').panel(require('@kern').create_buffer('x', ''), { side = 'top' })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("left"), "{err}");
+}

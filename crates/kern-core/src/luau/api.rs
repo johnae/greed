@@ -14,7 +14,7 @@ use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Span, StatusLine, Tag};
-use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome};
+use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, PanelOptions, Side};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -715,6 +715,7 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
 /// plugins are built from.
 fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("create_buffer", create_buffer_function(lua, owner)?)?;
+    kern.set("panel", panel_function(lua, owner)?)?;
 
     let o = owner.clone();
     kern.set(
@@ -813,6 +814,42 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         })?,
     )?;
     Ok(())
+}
+
+/// `kern.panel(buffer, { side, width, title, focus })`: a view beside the
+/// main one. It's on the left, 30 cells wide and focused unless the spec says
+/// otherwise.
+fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
+    lua.create_function(
+        move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
+            buffer.with_buffer(lua, |_| Ok(()))?;
+            let mut options = PanelOptions {
+                side: Side::Left,
+                width: Extent::Cells(30),
+                title: None,
+                focus: true,
+            };
+            if let Some(spec) = spec {
+                options.side = match spec.get::<Option<String>>("side")?.as_deref() {
+                    None | Some("left") => Side::Left,
+                    Some("right") => Side::Right,
+                    Some(other) => {
+                        return Err(mlua::Error::runtime(format!(
+                            "a panel's side is \"left\" or \"right\", not {other:?}"
+                        )));
+                    }
+                };
+                options.width = extent(spec.get("width")?)?.unwrap_or(options.width);
+                options.title = spec.get::<Option<String>>("title")?.map(Into::into);
+                options.focus = spec.get::<Option<bool>>("focus")?.unwrap_or(options.focus);
+            }
+            Ok(ViewRef {
+                id: state_mut(lua).editor.panel(buffer.buffer, options),
+                author: Author::Plugin(owner.clone()),
+            })
+        },
+    )
 }
 
 /// `kern.create_buffer(kind, text, { readonly, language })`.

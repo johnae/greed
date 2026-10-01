@@ -200,8 +200,30 @@ fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
         style: terminal_style(text),
     };
     let mut grid = vec![vec![blank; width]; usize::from(frame.size.height)];
-    for (line, row) in grid.iter_mut().zip(&frame.rows) {
-        put_row(line, 0, width, row, text, theme);
+    if let Some((status, rows)) = frame.rows.split_last() {
+        let (x, w) = (usize::from(frame.main.x), usize::from(frame.main.width));
+        for (line, row) in grid.iter_mut().zip(rows) {
+            put_row(line, x, w, row, text, theme);
+        }
+        if let Some(line) = grid.get_mut(rows.len()) {
+            put_row(line, 0, width, status, text, theme);
+        }
+    }
+    let panel = text.patch(&look(&Tag::PANEL));
+    let separator = terminal_style(panel.patch(&look(&Tag::PANEL_BORDER)));
+    for p in &frame.panels {
+        let (x, w) = (usize::from(p.rect.x), usize::from(p.rect.width));
+        let top = usize::from(p.rect.y) - usize::from(p.title.is_some());
+        for line in grid.iter_mut().skip(top).take(frame.rows.len() - 1 - top) {
+            put(line, usize::from(p.separator), 1, "│", separator);
+        }
+        if let (Some(title), Some(line)) = (&p.title, grid.get_mut(top)) {
+            let style = terminal_style(panel.patch(&look(&Tag::PANEL_TITLE)));
+            put(line, x, w, &format!("{title:<w$}"), style);
+        }
+        for (line, row) in grid.iter_mut().skip(usize::from(p.rect.y)).zip(&p.rows) {
+            put_row(line, x, w, row, panel, theme);
+        }
     }
     for float in &frame.floats {
         let r = float.rect;
@@ -410,6 +432,8 @@ mod tests {
                 width: 10,
                 height: 2,
             },
+            main: main_rect(10, 1),
+            panels: Vec::new(),
             rows: vec![Row::default(), plain(text)],
             floats: Vec::new(),
             cursor: None,
@@ -438,6 +462,8 @@ mod tests {
                 width: 12,
                 height: 5,
             },
+            main: main_rect(12, 4),
+            panels: Vec::new(),
             rows: vec![plain("abcdefghijkl"); 5],
             floats: vec![FloatFrame {
                 rect: Rect {
@@ -466,6 +492,62 @@ mod tests {
                 "a└──────┘jkl",
                 "abcdefghijkl",
             ]
+        );
+    }
+
+    /// The main view's area when there are no panels.
+    fn main_rect(width: u16, height: u16) -> kern_core::render::Rect {
+        kern_core::render::Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn panels_get_a_line_beside_them_and_a_title() {
+        use kern_core::render::{PanelFrame, Rect};
+        let frame = Frame {
+            size: Size {
+                width: 10,
+                height: 4,
+            },
+            main: Rect {
+                x: 5,
+                y: 0,
+                width: 5,
+                height: 3,
+            },
+            rows: vec![
+                plain("main"),
+                Row::default(),
+                Row::default(),
+                plain("status"),
+            ],
+            panels: vec![PanelFrame {
+                rect: Rect {
+                    x: 0,
+                    y: 1,
+                    width: 4,
+                    height: 2,
+                },
+                separator: 4,
+                title: Some("Tree".into()),
+                rows: vec![plain("a/"), plain("b")],
+            }],
+            floats: Vec::new(),
+            cursor: None,
+            cursor_shape: CursorShape::Block,
+            theme: std::sync::Arc::default(),
+        };
+        let text: Vec<String> = compose(&frame)
+            .iter()
+            .map(|row| row.iter().map(|c| c.text.as_str()).collect())
+            .collect();
+        assert_eq!(
+            text,
+            ["Tree│main ", "a/  │     ", "b   │     ", "status    "]
         );
     }
 
@@ -518,6 +600,8 @@ mod tests {
                 width: 4,
                 height: 1,
             },
+            main: main_rect(4, 0),
+            panels: Vec::new(),
             rows: vec![Row {
                 spans: vec![Span {
                     text: "fn".into(),

@@ -446,6 +446,10 @@ export type Kern = {
 	which: (program: string) -> string?,
 	--- Shows `buffer` in a view floating over the main one, and focuses it.
 	float: (buffer: Buffer, spec: FloatSpec?) -> View,
+	--- Shows `buffer` in a panel beside the main view, which gives up the
+	--- room. Defaults: the left side, 30 cells wide, focused. Close it with
+	--- `view:close()`.
+	panel: (buffer: Buffer, spec: { side: ("left" | "right")?, width: (number | string)?, title: string?, focus: boolean? }?) -> View,
 	--- Every open buffer.
 	buffers: () -> { Buffer },
 	--- Opens a file in the main view.

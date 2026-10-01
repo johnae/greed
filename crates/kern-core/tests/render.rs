@@ -491,3 +491,68 @@ fn floats_can_be_placed_side_by_side() {
     let f = frame(&mut ed, 20, 9);
     assert_eq!(f.floats[2].rect.x, 11);
 }
+
+#[test]
+fn panels_take_room_from_the_main_view() {
+    use kern_core::{Extent, PanelOptions, Side};
+    let mut ed = editor("hello|");
+    let main = ed.main();
+    let tree = ed.create_buffer("tree", "src/\nREADME.md");
+    let panel = ed.panel(
+        tree,
+        PanelOptions {
+            side: Side::Left,
+            width: Extent::Cells(8),
+            title: Some("Files".into()),
+            focus: false,
+        },
+    );
+    let f = frame(&mut ed, 30, 5);
+    // The panel is 8 wide, then a separator column, then the main view.
+    assert_eq!(f.panels.len(), 1);
+    let p = &f.panels[0];
+    assert_eq!(
+        (p.rect.x, p.rect.y, p.rect.width, p.rect.height),
+        (0, 1, 8, 3)
+    );
+    assert_eq!(p.separator, 8);
+    assert_eq!(p.title.as_deref(), Some("Files"));
+    assert_eq!(p.rows[0].text(), "src/");
+    assert_eq!((f.main.x, f.main.width, f.main.height), (9, 21, 4));
+    assert_eq!(f.rows[0].text(), "1 hello");
+    // The cursor sits in the main view, after the panel.
+    assert_eq!(f.cursor, Some(Position { col: 9 + 7, row: 0 }));
+    // The status line still spans the screen.
+    assert_eq!(f.rows.last().unwrap().text().chars().count(), 30);
+
+    ed.set_focus(panel);
+    assert_eq!(ed.focus(), panel);
+    assert!(ed.close(panel));
+    assert_eq!(ed.focus(), main);
+    let f = frame(&mut ed, 30, 5);
+    assert!(f.panels.is_empty());
+    assert_eq!((f.main.x, f.main.width), (0, 30));
+}
+
+#[test]
+fn right_panels_sit_after_the_main_view() {
+    use kern_core::{Extent, PanelOptions, Side};
+    let mut ed = editor("|x");
+    let b = ed.create_buffer("outline", "fn main");
+    ed.panel(
+        b,
+        PanelOptions {
+            side: Side::Right,
+            width: Extent::Percent(25),
+            title: None,
+            focus: true,
+        },
+    );
+    let f = frame(&mut ed, 40, 4);
+    let p = &f.panels[0];
+    assert_eq!((p.rect.x, p.rect.y, p.rect.width), (30, 0, 10));
+    assert_eq!(p.separator, 29);
+    assert_eq!((f.main.x, f.main.width), (0, 29));
+    // The focused panel has the cursor.
+    assert_eq!(f.cursor, Some(Position { col: 30, row: 0 }));
+}
