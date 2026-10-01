@@ -154,3 +154,25 @@ fn after_the_first_frame_clients_get_what_changed() {
     }
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn clients_speaking_another_protocol_are_refused_clearly() {
+    let name = format!("attach-protocol-{}", std::process::id());
+    let session = control::listen(&name).unwrap();
+    let socket = session.socket.clone();
+    let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
+    let conn = server::spawn_with_session(|| Host::new(Editor::new(ClientId(1))), Some(session));
+    let mut old = Client::connect(&socket, &token).unwrap();
+    let refused = old
+        .call("attach", &serde_json::json!({ "protocol": 999 }))
+        .unwrap()
+        .unwrap_err();
+    assert!(refused.contains("protocol 999"), "{refused}");
+    let mut current = Client::connect(&socket, &token).unwrap();
+    let hello = current
+        .call("attach", &control::handshake())
+        .unwrap()
+        .unwrap();
+    assert_eq!(hello["protocol"], control::PROTOCOL);
+    conn.input.send(Input::Quit).unwrap();
+}

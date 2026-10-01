@@ -16,7 +16,7 @@ use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -42,6 +42,14 @@ fn main() -> ExitCode {
         [cmd] if cmd == "attach" => session::attach(None),
         [cmd, name] if cmd == "attach" => session::attach(Some(name)),
         [cmd] if cmd == "ls" => ctl::run(&["sessions".to_owned()]),
+        [cmd, rest @ ..] if cmd == "bridge" => {
+            let (name, file) = session_and_file(rest);
+            session::bridge(name, file.map(Path::new))
+        }
+        [cmd, host, rest @ ..] if cmd == "ssh" => {
+            let (name, file) = session_and_file(rest);
+            session::ssh(host, name, file)
+        }
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => test(&core_plugin()),
@@ -365,4 +373,14 @@ fn set_up_type_checking() -> io::Result<()> {
         println!("created .luaurc for type checking");
     }
     Ok(())
+}
+
+/// `[--session NAME] [FILE]` from the end of a command line.
+fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>) {
+    match args {
+        [flag, name, rest @ ..] if flag == "--session" => {
+            (Some(name.as_str()), rest.first().map(String::as_str))
+        }
+        rest => (None, rest.first().map(String::as_str)),
+    }
 }

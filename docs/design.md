@@ -50,7 +50,10 @@ one client: it sends keys and draws the frames it gets back. `kern ctl`,
 the same way.
 
 Because the session owns the state, a terminal can detach and reattach
-without losing anything.
+without losing anything, and `kern ssh` attaches a terminal on one machine
+to a session on another. A client says which protocol it speaks when it
+attaches, and the session refuses clients it can't talk to instead of
+misreading them.
 
 Frames describe what to show by meaning, like "selection", "keyword" or
 "diagnostic.error", and carry the theme that maps those names to colors.

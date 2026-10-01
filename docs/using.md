@@ -19,6 +19,23 @@ Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.
 
+## Editing on another machine
+
+```bash
+kern ssh build-box src/main.rs
+```
+
+`kern ssh HOST [--session NAME] [FILE]` shows a session running on another
+machine, starting one there if none is running. Files, language servers,
+search and agents all run on that machine, and only keys and screen updates
+cross the network. If the connection drops or you `:detach`, the session
+keeps running, and `kern ssh HOST` comes back to it.
+
+Kern has to be installed on both machines. The two ends check that they
+speak the same protocol and say so if they don't, so mismatched versions
+fail with a clear message. `KERN_REMOTE` sets the path of `kern` on the
+other machine, and `KERN_SSH` the ssh command to use.
+
 ## Editing
 
 Kern edits the way Helix does: you select text, then say what to do with it.

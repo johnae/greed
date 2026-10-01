@@ -16,6 +16,32 @@ use std::path::{Path, PathBuf};
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 
+/// The version of what attached clients and sessions send each other:
+/// input, frames and deltas. It goes up when a change would break an older
+/// client or session; new optional fields don't need it, since fields a
+/// side doesn't know are ignored. Clients say which protocol they speak
+/// when they attach, and a session refuses one that doesn't match.
+pub const PROTOCOL: u32 = 1;
+
+/// What each side says about itself when a client attaches: the protocol it
+/// speaks and the kern version.
+pub fn handshake() -> Value {
+    json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })
+}
+
+/// Why a client speaking protocol `theirs` can't attach.
+fn mismatch(theirs: Option<u64>) -> String {
+    let theirs = theirs.map_or_else(
+        || "an older protocol".to_owned(),
+        |p| format!("protocol {p}"),
+    );
+    format!(
+        "this session runs kern {} and speaks protocol {PROTOCOL}, the client speaks {theirs}; \
+         use the same kern version on both ends",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
 /// A request from a connection, for the editor thread to answer through
 /// [`Request::respond`].
 #[derive(Debug)]
@@ -194,7 +220,13 @@ fn serve_connection(
         }
         let response = match serde_json::from_str::<Value>(&line) {
             Ok(message) if authed && message["method"] == "attach" => {
-                let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": true });
+                let theirs = message["params"]["protocol"].as_u64();
+                if theirs != Some(u64::from(PROTOCOL)) {
+                    let refused = error_response(&message["id"], -32001, &mismatch(theirs));
+                    let _ = writeln!(writer, "{refused}");
+                    return;
+                }
+                let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
                 if writeln!(writer, "{ok}").is_ok() {
                     let _ = attachments.send(Attachment { reader, writer });
                 }
@@ -309,7 +341,7 @@ impl Client {
     /// Attaches to the editor: from now on the connection carries input
     /// one way and frames the other, one JSON message per line.
     pub fn attach(mut self) -> io::Result<Attachment> {
-        self.call("attach", &Value::Null)?
+        self.call("attach", &handshake())?
             .map_err(io::Error::other)?;
         Ok(Attachment {
             reader: self.reader,
