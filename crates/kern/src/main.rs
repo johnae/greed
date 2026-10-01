@@ -12,7 +12,7 @@ use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -31,6 +31,7 @@ fn main() -> ExitCode {
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => test(&core_plugin()),
+        [cmd, name] if cmd == "new" => new_plugin(name),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
         [file] if !file.starts_with('-') => edit(Some(PathBuf::from(file))),
         _ => {
@@ -59,26 +60,45 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
-/// The user's config: `$KERN_CONFIG`, or `kern/init.luau` in the config
-/// directory (`$XDG_CONFIG_HOME`, or `~/.config`).
-fn config_file() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("KERN_CONFIG") {
-        return Some(PathBuf::from(path));
-    }
+/// Kern's directory in the user's config directory (`$XDG_CONFIG_HOME`, or
+/// `~/.config`).
+fn config_dir() -> Option<PathBuf> {
     let dir = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(dir.join("kern/init.luau"))
+    Some(dir.join("kern"))
 }
 
-/// The default plugins: core first, then the rest by name.
+/// The user's config: `$KERN_CONFIG`, or `init.luau` in the config directory.
+fn config_file() -> Option<PathBuf> {
+    match std::env::var_os("KERN_CONFIG") {
+        Some(path) => Some(PathBuf::from(path)),
+        None => Some(config_dir()?.join("init.luau")),
+    }
+}
+
+/// The plugins to load: the default ones (core first, then by name), then
+/// the user's from the `plugins` directory next to their config.
 fn plugins() -> io::Result<Vec<PathBuf>> {
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(runtime_dir().join("plugins"))?
+    let mut dirs = plugin_dirs(&runtime_dir().join("plugins"))?;
+    dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
+    if let Some(user) = config_dir()
+        .map(|dir| dir.join("plugins"))
+        .filter(|dir| dir.is_dir())
+    {
+        let mut user = plugin_dirs(&user)?;
+        user.sort();
+        dirs.extend(user);
+    }
+    Ok(dirs)
+}
+
+/// The directories in `dir` that hold a plugin.
+fn plugin_dirs(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    Ok(std::fs::read_dir(dir)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|path| path.join("plugin.toml").is_file())
-        .collect();
-    dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
-    Ok(dirs)
+        .collect())
 }
 
 /// The text of `file`, or nothing if there is no file yet.
@@ -212,6 +232,99 @@ fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("{} passed, {failed} failed", results.len() - failed);
     if failed > 0 {
         return Err(format!("{failed} test(s) failed").into());
+    }
+    Ok(())
+}
+
+const NEW_MANIFEST: &str = "name = \"NAME\"\n";
+
+const NEW_INIT: &str = r#"-- NAME: say what this plugin does here.
+--
+-- Run `kern test .` in this directory to run its tests. To use it, put this
+-- directory in the `plugins` directory next to your config
+-- (~/.config/kern/plugins/NAME).
+
+local kern = require("@kern")
+
+kern.command({
+	name = "NAME-greet",
+	doc = "Insert a greeting at each cursor",
+	run = function(ctx)
+		ctx.buffer:edit(function(e)
+			for _, range in ctx.view:selection().ranges do
+				e:insert(range.head, "hello")
+			end
+		end)
+	end,
+})
+
+-- Bind it to keys like this:
+-- kern.keymap.bind("normal", { ["space x"] = "NAME-greet" })
+"#;
+
+const NEW_TEST: &str = r#"local test = require("@kern/test")
+
+test("greet inserts a greeting", function(t)
+	t:buffer("|!")
+	t:run("NAME-greet")
+	t:expect("hello|!")
+end)
+"#;
+
+/// Scaffolds a plugin in a new directory called `name`.
+fn new_plugin(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let valid = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !valid {
+        return Err(format!("{name:?} isn't a plugin name: use letters, digits, - and _").into());
+    }
+    let dir = Path::new(name);
+    if dir.exists() {
+        return Err(format!("{name} already exists").into());
+    }
+    std::fs::create_dir_all(dir.join("test"))?;
+    for (file, text) in [
+        ("plugin.toml", NEW_MANIFEST),
+        ("init.luau", NEW_INIT),
+        ("test/greet.luau", NEW_TEST),
+    ] {
+        std::fs::write(dir.join(file), text.replace("NAME", name))?;
+    }
+    println!("created {name}/: plugin.toml, init.luau, test/greet.luau");
+    set_up_type_checking()?;
+    println!("run `kern test {name}` to try it");
+    Ok(())
+}
+
+const LUAURC: &str = r#"{
+	"languageMode": "strict",
+	"aliases": {
+		"kern": "./.kern-types/kern"
+	}
+}
+"#;
+
+/// Lets luau-analyze and luau-lsp find Kern's types for plugins in the
+/// current directory: a `.luaurc` aliasing `@kern` to a `.kern-types` link.
+/// They have to live here, above the plugins, because an `init.luau` looks
+/// for its config from its directory's parent, and alias paths can't leave
+/// the config's directory. Leaves existing files alone.
+fn set_up_type_checking() -> io::Result<()> {
+    let link = Path::new(".kern-types");
+    if link.symlink_metadata().is_err() {
+        std::os::unix::fs::symlink(runtime_dir().canonicalize()?.join("types"), link)?;
+        println!("linked .kern-types to Kern's type definitions");
+    }
+    let config = Path::new(".luaurc");
+    if config.exists() {
+        if !std::fs::read_to_string(config)?.contains("\"kern\"") {
+            println!("note: add \"kern\": \"./.kern-types/kern\" to the aliases in .luaurc");
+        }
+    } else {
+        std::fs::write(config, LUAURC)?;
+        println!("created .luaurc for type checking");
     }
     Ok(())
 }
