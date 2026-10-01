@@ -6,6 +6,7 @@ pub mod diff;
 mod editor;
 mod filetypes;
 mod history;
+pub mod ide;
 pub mod keymap;
 pub mod lsp;
 pub mod luau;

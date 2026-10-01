@@ -20,9 +20,12 @@ use serde_json::{Value, json};
 /// [`Request::respond`].
 #[derive(Debug)]
 pub struct Request {
+    /// Who asked: "socket" for the session socket, "ide" for Claude Code's
+    /// IDE connection.
+    pub client: &'static str,
     pub method: String,
     pub params: Value,
-    reply: Sender<Result<Value, String>>,
+    pub(crate) reply: Sender<Result<Value, String>>,
 }
 
 impl Request {
@@ -61,12 +64,19 @@ pub struct Session {
     pub socket: PathBuf,
     token_file: PathBuf,
     requests: Receiver<Request>,
+    sender: Sender<Request>,
 }
 
 impl Session {
     /// Requests from every connection, in the order they arrive.
     pub fn requests(&self) -> &Receiver<Request> {
         &self.requests
+    }
+
+    /// Where other transports, like the IDE connection, send their requests
+    /// so they arrive with the socket's.
+    pub fn sender(&self) -> &Sender<Request> {
+        &self.sender
     }
 }
 
@@ -102,9 +112,10 @@ pub fn listen(name: &str) -> io::Result<Session> {
         .write_all(token.as_bytes())?;
 
     let (sender, requests) = crossbeam_channel::unbounded();
+    let incoming = sender.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            let sender = sender.clone();
+            let sender = incoming.clone();
             let token = token.clone();
             std::thread::spawn(move || serve_connection(stream, &token, &sender));
         }
@@ -114,11 +125,12 @@ pub fn listen(name: &str) -> io::Result<Session> {
         socket,
         token_file,
         requests,
+        sender,
     })
 }
 
 /// 32 random hex digits from the system's random source.
-fn new_token() -> io::Result<String> {
+pub(crate) fn new_token() -> io::Result<String> {
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     Ok(bytes.iter().fold(String::new(), |mut hex, b| {
@@ -179,6 +191,7 @@ fn answer(
     }
     let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
+        client: "socket",
         method: method.to_owned(),
         params,
         reply,

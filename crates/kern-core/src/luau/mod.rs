@@ -73,6 +73,10 @@ pub(crate) struct State {
     /// Requests from the session socket that plugins haven't answered yet.
     pub requests: HashMap<u64, crate::control::Request>,
     pub next_request: u64,
+    /// Where requests from other transports go, when there is a session.
+    pub request_sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
+    /// Claude Code's IDE connection, once a plugin starts it.
+    pub ide: Option<crate::ide::Ide>,
 }
 
 #[derive(Clone)]
@@ -173,6 +177,8 @@ impl Host {
             jobs: jobs::Jobs::default(),
             requests: HashMap::new(),
             next_request: 0,
+            request_sender: None,
+            ide: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -348,6 +354,12 @@ impl Host {
         budgeted(&self.lua, || {
             jobs::finish(&self.lua, done).map_err(HostError::from)
         })
+    }
+
+    /// Lets plugins start transports, like the IDE connection, whose
+    /// requests arrive with the session socket's.
+    pub fn set_request_sender(&self, sender: crossbeam_channel::Sender<crate::control::Request>) {
+        state_mut(&self.lua).request_sender = Some(sender);
     }
 
     /// Passes a request from the session socket to the plugins that answer

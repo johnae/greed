@@ -255,6 +255,9 @@ export type BufferChanged = {
 --- Answer it with `kern.control.reply`.
 export type ControlRequest = {
 	id: number,
+	--- "socket" for the session socket (kern ctl, kern mcp), "ide" for Claude
+	--- Code's IDE connection.
+	client: string,
 	method: string,
 	params: any,
 }
@@ -280,6 +283,13 @@ export type Control = {
 	--- Answers request `id` with `result`, or with an error `message`. Every
 	--- request needs exactly one answer.
 	reply: (id: number, result: any, message: string?) -> (),
+	--- Lets Claude Code find this editor with /ide: listens on a localhost
+	--- WebSocket and writes a lock file naming `folders` as open, in `lock_dir`
+	--- (default ~/.claude/ide). Its requests come with client "ide". Returns
+	--- the port; calling it again replaces the connection.
+	serve_ide: (folders: { string }, lock_dir: string?) -> number,
+	--- Sends a notification, e.g. "selection_changed", to Claude Code.
+	notify: (method: string, params: any) -> (),
 }
 
 export type CommandRun = {

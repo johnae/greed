@@ -8,9 +8,11 @@ use std::process::ExitCode;
 mod ctl;
 mod tui;
 
+use crossbeam_channel::Sender;
 use kern_core::Editor;
+use kern_core::control::{self, Request};
 use kern_core::luau::{Host, HostError, run_tests};
-use kern_core::{control, server};
+use kern_core::server;
 use kern_text::ClientId;
 
 const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio";
@@ -113,10 +115,19 @@ fn read(file: Option<&Path>) -> io::Result<String> {
 }
 
 /// An editor with `text` open and the default plugins loaded.
-fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
+fn host(
+    text: &str,
+    file: Option<PathBuf>,
+    requests: Option<Sender<Request>>,
+) -> Result<Host, HostError> {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, file);
     let host = Host::new(editor)?;
+    // Before plugins load, so they can start transports like the IDE
+    // connection.
+    if let Some(requests) = requests {
+        host.set_request_sender(requests);
+    }
     host.load_dirs(&plugins().map_err(|err| HostError::Manifest {
         path: runtime_dir().join("plugins"),
         message: err.to_string(),
@@ -134,14 +145,15 @@ fn edit(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     // Without a socket the editor still works; only `kern ctl` and agents
     // can't reach it.
     let session = control::listen(&std::process::id().to_string()).ok();
+    let requests = session.as_ref().map(|s| s.sender().clone());
     tui::run(server::spawn_with_session(
-        move || host(&text, file),
+        move || host(&text, file, requests),
         session,
     ))
 }
 
 fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    let host = host(&read(file.as_deref())?, file)?;
+    let host = host(&read(file.as_deref())?, file, None)?;
 
     let interactive = io::stdin().is_terminal();
     if interactive {

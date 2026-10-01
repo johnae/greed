@@ -4,10 +4,14 @@
 //! `kern.control.reply(id, nil, message)`. It can wait first, so a request
 //! can take as long as it needs, e.g. for the user to review an edit.
 
+use std::path::PathBuf;
+
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 
 use super::{api, lsp, state, state_mut};
+
 use crate::control::Request;
+use crate::ide;
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -20,6 +24,7 @@ pub(super) fn handle(lua: &Lua, request: Request) -> LuaResult<()> {
         return Ok(());
     }
     let payload = lua.create_table()?;
+    payload.set("client", request.client)?;
     payload.set("method", request.method.as_str())?;
     payload.set("params", lsp::to_lua(lua, &request.params)?)?;
     let id = {
@@ -48,6 +53,36 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                 None => Ok(lua.from_value::<serde_json::Value>(result)?),
             };
             request.respond(answer);
+            Ok(())
+        })?,
+    )?;
+    control.set(
+        "serve_ide",
+        lua.create_function(|lua, (folders, dir): (Vec<String>, Option<String>)| {
+            let sender = state(lua).request_sender.clone().ok_or_else(|| {
+                mlua::Error::runtime("Claude Code can only connect to an editor with a session")
+            })?;
+            let dir = dir
+                .map(PathBuf::from)
+                .or_else(ide::lock_dir)
+                .ok_or_else(|| {
+                    mlua::Error::runtime("can't tell where Claude Code looks for editors")
+                })?;
+            // A new connection replaces the old one, and its lock file.
+            state_mut(lua).ide = None;
+            let ide = ide::listen(&dir, &folders, sender).map_err(mlua::Error::external)?;
+            let port = ide.port;
+            state_mut(lua).ide = Some(ide);
+            Ok(port)
+        })?,
+    )?;
+    control.set(
+        "notify",
+        lua.create_function(|lua, (method, params): (String, Value)| {
+            let params: serde_json::Value = lua.from_value(params)?;
+            if let Some(ide) = &state(lua).ide {
+                ide.notify(&method, &params);
+            }
             Ok(())
         })?,
     )?;
