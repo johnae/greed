@@ -1,0 +1,123 @@
+local test = require("@kern/test")
+local kern = require("@kern")
+local parse = require("../parse")
+
+-- The command line's prompt, from the float showing it.
+local function prompt(t: test.TestContext): string
+	local floats = t:floats()
+	local text = floats[#floats]
+	return string.match(text, "[^\n]*$") :: string
+end
+
+local function fails(f: () -> ()): string
+	local ok, err = pcall(f)
+	assert(not ok, "expected an error")
+	return tostring(err)
+end
+
+test("colon opens the command line and enter runs a command", function(t)
+	t:buffer("|abc")
+	t:keys(":")
+	t:expect_mode("insert")
+	assert(prompt(t) == ":", prompt(t))
+	t:keys("g o t o - e n d enter")
+	t:expect_mode("normal")
+	t:expect("abc|")
+	assert(#t:floats() == 0, "closed")
+end)
+
+test("vim and helix short names work, and ! forces", function(t)
+	t:buffer("|abc")
+	t:keys("i x esc")
+	local err = fails(function()
+		t:keys(": q enter")
+	end)
+	assert(string.find(err, "unsaved changes", 1, true), err)
+	assert(not t:quitting(), "refused")
+	t:keys(": q ! enter")
+	assert(t:quitting(), "forced")
+end)
+
+test("unknown commands say so", function(t)
+	t:buffer("|abc")
+	local err = fails(function()
+		t:keys(": n o p e enter")
+	end)
+	assert(string.find(err, "no command called nope", 1, true), err)
+end)
+
+test("matches show above the prompt and tab fills them in", function(t)
+	t:buffer("|abc")
+	t:keys(": g o t o - e")
+	local floats = t:floats()
+	assert(string.find(floats[#floats], "goto-end  ", 1, true), floats[#floats])
+	t:keys("tab")
+	assert(prompt(t) == ":goto-end", prompt(t))
+	t:keys("enter")
+	t:expect("abc|")
+end)
+
+test("arguments complete by what the command takes", function(t)
+	kern.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
+	t:buffer("|abc")
+	t:keys(": s e t space t a b")
+	t:keys("tab")
+	assert(prompt(t) == ":set tab-width", prompt(t))
+	t:keys("space 2 enter")
+	assert(kern.option.get("tab-width") == 2, tostring(kern.option.get("tab-width")))
+end)
+
+test("arguments reach the command", function(t)
+	t:buffer("|abc")
+	t:keys(": e space n o t e s . m d enter")
+	assert(kern.view():buffer():path() == "notes.md", tostring(kern.view():buffer():path()))
+end)
+
+test("lua runs code and = shows values", function(t)
+	t:buffer("|abc")
+	t:keys(": l u a space x space = space 4 0 enter")
+	t:keys(": = space x space + space 2 enter")
+	local messages = t:messages()
+	assert(messages[#messages] == "42", table.concat(messages, ", "))
+end)
+
+test("up and down step through earlier lines starting with what's typed", function(t)
+	t:buffer("|abc")
+	t:keys(": = space 1 enter")
+	t:keys(": g o t o - e n d enter")
+	t:keys(": = space 2 enter")
+	t:keys(": =")
+	t:keys("up")
+	assert(prompt(t) == ":= 2", prompt(t))
+	t:keys("up")
+	assert(prompt(t) == ":= 1", prompt(t))
+	t:keys("down down")
+	assert(prompt(t) == ":=", prompt(t))
+	t:keys("esc")
+end)
+
+test("esc and backspace on an empty prompt close it", function(t)
+	t:buffer("a|bc")
+	t:keys(": esc")
+	t:expect_mode("normal")
+	assert(#t:floats() == 0, "esc closed")
+	t:keys(": backspace")
+	t:expect_mode("normal")
+	assert(#t:floats() == 0, "backspace closed")
+	t:expect("a|bc")
+end)
+
+test("words split at spaces, except quoted or escaped ones", function()
+	local function words(line: string): string
+		return table.concat(parse.words(line), "|")
+	end
+	assert(words("open  a b") == "open|a|b", words("open  a b"))
+	assert(words('open "a b" c') == "open|a b|c", words('open "a b" c'))
+	assert(words("open a\\ b") == "open|a b", words("open a\\ b"))
+	assert(words("open ''") == "open|", words("open ''"))
+	assert(parse.words(parse.quote('say "hi"'))[1] == 'say "hi"', parse.quote('say "hi"'))
+
+	local parsed = parse.parse("q! now") :: parse.Parsed
+	assert(parsed.name == "q" and parsed.force and parsed.args[1] == "now", "parsed")
+	assert(parse.parse("   ") == nil, "blank")
+end)

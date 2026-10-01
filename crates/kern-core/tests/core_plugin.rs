@@ -94,3 +94,8 @@ fn edit_mode_plugin_tests_pass() {
 fn prose_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("prose")], &plugin("prose"));
 }
+
+#[test]
+fn cmdline_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("cmdline")], &plugin("cmdline"));
+}
