@@ -21,6 +21,9 @@ export type Options = {
 	--- Shows a preview of the current item beside the list. Returning nil
 	--- leaves the preview empty.
 	preview: ((item: Item) -> Preview?)?,
+	--- More keys for this picker, e.g. `["ctrl-e"] = ...`. Each closes the
+	--- picker and gets the items matching what was typed, best first.
+	keys: { [string]: (items: { Item }) -> () }?,
 }
 
 -- At most this many matches are shown.
@@ -38,6 +41,7 @@ type Open = {
 	-- The mode to go back to when the picker closes.
 	mode: string,
 	preview: ((item: Item) -> Preview?)?,
+	keys: { [string]: (items: { Item }) -> () },
 	preview_view: kern.View?,
 	-- The item the preview shows.
 	previewed: Item?,
@@ -57,7 +61,13 @@ local function update_preview(o: Open)
 	o.previewed = item
 	local shown = if item then preview(item) else nil
 	local text = if shown then shown.text else ""
-	view:show(kern.create_buffer("preview", text, { readonly = true, language = shown and shown.language }))
+	view:show(
+		kern.create_buffer(
+			"preview",
+			text,
+			{ readonly = true, language = shown and shown.language }
+		)
+	)
 	view:configure({ title = if shown then (item :: Item).label else "" })
 	if shown and shown.line then
 		local buffer = view:buffer()
@@ -84,7 +94,14 @@ local function render(o: Open)
 			break
 		end
 		local line = " " .. o.labels[index]
-		menu.mark_row(marks, from, line, i == o.current, kern.fuzzy_positions(o.query or "", o.labels[index]), 1)
+		menu.mark_row(
+			marks,
+			from,
+			line,
+			i == o.current,
+			kern.fuzzy_positions(o.query or "", o.labels[index]),
+			1
+		)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -173,6 +190,27 @@ kern.command({
 	run = close,
 })
 
+kern.command({
+	name = "picker-key",
+	doc = "Run what the open picker does for the key pressed",
+	run = function(ctx)
+		local o = open
+		local action = o and ctx.keys and o.keys[ctx.keys]
+		if o == nil or action == nil then
+			return
+		end
+		local items = {}
+		for _, index in o.matches do
+			table.insert(items, o.items[index])
+		end
+		close()
+		action(items)
+	end,
+})
+
+-- The keys bound to picker-key so far, for any picker.
+local bound: { [string]: boolean } = {}
+
 local M = {}
 
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
@@ -205,8 +243,15 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		choose = choose,
 		preview = preview,
 		preview_view = preview_view,
+		keys = options and options.keys or {},
 		mode = kern.mode.get(),
 	}
+	for key in o.keys do
+		if not bound[key] then
+			bound[key] = true
+			kern.keymap.bind({ mode = "insert", kind = "picker" }, { [key] = "picker-key" })
+		end
+	end
 	open = o
 	kern.mode.set("insert")
 	refresh(o)

@@ -7,8 +7,8 @@ local kern = require("@kern")
 local text = require("@self/text")
 local motions = require("@self/motions")
 require("@self/edit")
-require("@self/file")
-require("@self/search")
+local file = require("@self/file")
+local search = require("@self/search")
 require("@self/select")
 require("@self/jump")
 local menu = require("@self/menu")
@@ -92,5 +92,7 @@ return {
 	motions = motions,
 	menu = menu,
 	prompt = prompt,
+	file = file,
+	search = search,
 	project = project,
 }

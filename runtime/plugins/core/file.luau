@@ -2,7 +2,23 @@
 
 local kern = require("@kern")
 
+local M = {}
+
+-- How buffers that aren't files save, by kind.
+local savers: { [string]: (buffer: kern.Buffer) -> () } = {}
+
+--- Makes :w on buffers of `kind` call `save` rather than write a file,
+--- e.g. for a list of search results that writes its edits back.
+function M.on_save(kind: string, save: (buffer: kern.Buffer) -> ())
+	savers[kind] = save
+end
+
 local function save(buffer: kern.Buffer, path: string?)
+	local saver = savers[buffer:kind()]
+	if saver and path == nil then
+		saver(buffer)
+		return
+	end
 	buffer:save(path)
 	kern.echo("wrote " .. (buffer:path() or "?"))
 end
@@ -19,14 +35,23 @@ local function check_unsaved(force: boolean)
 		end
 	end
 	if #unsaved > 0 then
-		error("unsaved changes in " .. table.concat(unsaved, ", ") .. " - :w saves, :q! quits anyway", 0)
+		error(
+			"unsaved changes in " .. table.concat(unsaved, ", ") .. " - :w saves, :q! quits anyway",
+			0
+		)
 	end
 end
 
 kern.command({
 	name = "save",
 	doc = "Write the buffer to its file, or to a new one",
-	args = { { name = "path", doc = "Where to write it; it becomes the buffer's file", complete = "file" } },
+	args = {
+		{
+			name = "path",
+			doc = "Where to write it; it becomes the buffer's file",
+			complete = "file",
+		},
+	},
 	run = function(ctx)
 		save(ctx.buffer, ctx.args[1])
 	end,
@@ -54,7 +79,13 @@ kern.command({
 kern.command({
 	name = "open",
 	doc = "Open a file in the main view",
-	args = { { name = "path", doc = "The file to open; a new one is created when saved", complete = "file" } },
+	args = {
+		{
+			name = "path",
+			doc = "The file to open; a new one is created when saved",
+			complete = "file",
+		},
+	},
 	run = function(ctx)
 		local path = ctx.args[1]
 		if path == nil then
@@ -64,4 +95,4 @@ kern.command({
 	end,
 })
 
-return {}
+return M
