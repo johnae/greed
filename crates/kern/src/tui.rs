@@ -9,6 +9,7 @@ use crossterm::event::{self, Event, KeyCode as TermKey, KeyEvent, KeyEventKind, 
 use crossterm::style::{Attribute, Color, ContentStyle, PrintStyledContent, ResetColor, Stylize};
 use crossterm::terminal::{self, ClearType};
 use crossterm::{execute, queue};
+use kern_core::CursorShape;
 use kern_core::keymap::{Key, KeyCode, Mods};
 use kern_core::render::{Frame, Row, Size, Tag};
 use kern_core::server::{Connection, Input, Output};
@@ -175,10 +176,10 @@ impl Screen {
         }
         self.grid = grid;
         if let Some(pos) = frame.cursor {
-            let shape = if frame.mode == "insert" {
-                SetCursorStyle::SteadyBar
-            } else {
-                SetCursorStyle::SteadyBlock
+            let shape = match frame.cursor_shape {
+                CursorShape::Block => SetCursorStyle::SteadyBlock,
+                CursorShape::Bar => SetCursorStyle::SteadyBar,
+                CursorShape::Underline => SetCursorStyle::SteadyUnderScore,
             };
             queue!(out, cursor::MoveTo(pos.col, pos.row), shape, cursor::Show)?;
         }
@@ -379,7 +380,7 @@ mod tests {
             rows: vec![Row::default(), plain(text)],
             floats: Vec::new(),
             cursor: None,
-            mode: "normal".into(),
+            cursor_shape: CursorShape::Block,
         };
         let mut screen = Screen::default();
         let mut out = Vec::new();
@@ -415,7 +416,7 @@ mod tests {
                 rows: vec![plain("one"), plain("日本語")],
             }],
             cursor: None,
-            mode: "normal".into(),
+            cursor_shape: CursorShape::Block,
         };
         let text: Vec<String> = compose(&frame)
             .iter()

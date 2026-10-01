@@ -149,6 +149,8 @@ export type Mode = {
 	get: () -> string,
 	--- Switches mode, emitting "mode.changed" if it changed.
 	set: (name: string) -> (),
+	--- How the cursor looks in `mode`; modes without a shape get a block.
+	cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
 }
 
 export type OptionValue = boolean | number | string

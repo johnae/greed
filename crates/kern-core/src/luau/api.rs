@@ -14,7 +14,7 @@ use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Span, StatusLine, Tag};
-use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
+use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -387,6 +387,23 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             payload.set("from", from)?;
             payload.set("to", name)?;
             emit(lua, "mode.changed", &payload)
+        })?,
+    )?;
+    mode.set(
+        "cursor",
+        lua.create_function(|lua, (name, shape): (String, String)| {
+            let shape = match shape.as_str() {
+                "block" => CursorShape::Block,
+                "bar" => CursorShape::Bar,
+                "underline" => CursorShape::Underline,
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "cursor shapes are \"block\", \"bar\" or \"underline\", not {other:?}"
+                    )));
+                }
+            };
+            state_mut(lua).editor.set_cursor_shape(&name, shape);
+            Ok(())
         })?,
     )?;
     Ok(mode)

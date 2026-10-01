@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 use kern_text::Rope;
 
 use crate::syntax::Highlight;
-use crate::{Anchor, BufferId, Editor, FloatOptions, Scroll, View, ViewId};
+use crate::{Anchor, BufferId, CursorShape, Editor, FloatOptions, Scroll, View, ViewId};
 
 /// Highlights and marks drawn over a buffer's text.
 pub trait Decorations {
@@ -122,7 +122,7 @@ pub struct Frame {
     pub floats: Vec<FloatFrame>,
     /// Where the primary cursor is, if it's on screen.
     pub cursor: Option<Position>,
-    pub mode: String,
+    pub cursor_shape: CursorShape,
 }
 
 /// A floating view: its rows fill `rect`, and the client draws a border
@@ -227,7 +227,7 @@ impl<M: Measure> Renderer<M> {
             rows,
             floats,
             cursor,
-            mode: editor.mode().to_owned(),
+            cursor_shape: editor.cursor_shape(),
         }
     }
 

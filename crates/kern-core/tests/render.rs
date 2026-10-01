@@ -154,7 +154,6 @@ fn the_status_line_shows_mode_file_and_position() {
         &Plain,
     );
     assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
-    assert_eq!(f.mode, "normal");
 }
 
 #[test]

@@ -17,7 +17,8 @@ use kern_text::TxId;
 
 pub use buffer::{Buffer, BufferId};
 pub use editor::{
-    Anchor, Editor, Extent, Float, FloatOptions, KeyOutcome, Scroll, View, ViewId, parse_marked,
+    Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, Scroll, View, ViewId,
+    parse_marked,
 };
 pub use history::History;
 

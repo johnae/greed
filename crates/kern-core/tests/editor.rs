@@ -1,5 +1,5 @@
 use kern_core::keymap::{Key, Layer};
-use kern_core::{Editor, KeyOutcome};
+use kern_core::{CursorShape, Editor, KeyOutcome};
 use kern_text::{AgentId, Author, ChangeSet, ClientId, Range, Selection};
 
 fn editor(text: &str) -> Editor {
@@ -351,4 +351,15 @@ fn buffers_save_to_a_new_path_and_keep_it() {
     assert_eq!(ed.buffer(buffer).language(), Some("rust"));
     assert!(!ed.buffer(buffer).is_modified());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn each_mode_has_a_cursor_shape() {
+    let mut ed = editor("");
+    assert_eq!(ed.cursor_shape(), CursorShape::Block);
+    ed.set_cursor_shape("insert", CursorShape::Bar);
+    ed.set_mode("insert");
+    assert_eq!(ed.cursor_shape(), CursorShape::Bar);
+    ed.set_mode("visual");
+    assert_eq!(ed.cursor_shape(), CursorShape::Block);
 }

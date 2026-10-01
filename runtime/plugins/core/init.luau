@@ -60,6 +60,7 @@ kern.keymap.bind({}, {
 })
 
 kern.keymap.fallback("insert", "insert-char")
+kern.mode.cursor("insert", "bar")
 
 -- Other plugins can use these with `require("@core")`.
 return {

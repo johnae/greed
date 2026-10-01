@@ -916,3 +916,23 @@ fn options_are_listed_with_their_docs_and_values() {
         "tab-width=2 (Spaces per tab), wrap=true (Wrap long lines)"
     );
 }
+
+#[test]
+fn plugins_set_the_cursor_shape_per_mode() {
+    let h = host("");
+    h.eval("require('@kern').mode.cursor('edit', 'bar')")
+        .unwrap();
+    h.eval("require('@kern').mode.cursor('replace', 'underline')")
+        .unwrap();
+    h.with_editor_mut(|ed| {
+        ed.set_mode("edit");
+        assert_eq!(ed.cursor_shape(), kern_core::CursorShape::Bar);
+        ed.set_mode("replace");
+        assert_eq!(ed.cursor_shape(), kern_core::CursorShape::Underline);
+    });
+    let err = h
+        .eval("require('@kern').mode.cursor('edit', 'blob')")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("block"), "{err}");
+}

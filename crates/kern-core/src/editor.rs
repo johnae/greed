@@ -1,7 +1,7 @@
 //! The editor's authoritative state: buffers, views, the current mode and
 //! the keymap. Everything here is plain Rust; the Luau host drives it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -79,6 +79,15 @@ pub struct Float {
     pub options: FloatOptions,
 }
 
+/// How the cursor looks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CursorShape {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyOutcome {
     /// Run this command. `keys` is the sequence that triggered it.
@@ -111,6 +120,8 @@ pub struct Editor {
     quit_requested: bool,
     /// Copied text, oldest first. Each entry holds one piece per selection.
     clipboard: Vec<Vec<String>>,
+    /// The cursor shape of each mode; modes not listed get a block.
+    cursor_shapes: HashMap<Arc<str>, CursorShape>,
 }
 
 impl Editor {
@@ -132,6 +143,7 @@ impl Editor {
             next_group: 0,
             quit_requested: false,
             clipboard: Vec::new(),
+            cursor_shapes: HashMap::new(),
         }
     }
 
@@ -424,6 +436,18 @@ impl Editor {
         self.mode = mode.into();
         self.pending.clear();
         true
+    }
+
+    pub fn set_cursor_shape(&mut self, mode: &str, shape: CursorShape) {
+        self.cursor_shapes.insert(mode.into(), shape);
+    }
+
+    /// The cursor shape for the current mode.
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shapes
+            .get(&self.mode)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn keymap(&self) -> &Keymap {

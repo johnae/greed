@@ -171,3 +171,4 @@ kern.keymap.bind("edit", {
 })
 
 kern.keymap.fallback("edit", "type-char")
+kern.mode.cursor("edit", "bar")

@@ -55,7 +55,7 @@ fn renders_after_resize_and_after_input() {
     while f.rows[0].text() != "1 >hello" {
         f = frame(&conn);
     }
-    assert_eq!(f.mode, "normal");
+    assert_eq!(f.cursor_shape, kern_core::CursorShape::Block);
 }
 
 #[test]
