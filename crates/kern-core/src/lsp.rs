@@ -221,6 +221,17 @@ impl Lsp {
         self.configs.push(config);
     }
 
+    /// Stops starting a server for `language`. One already running keeps
+    /// running.
+    pub fn remove(&mut self, language: &str) {
+        self.configs.retain(|c| c.language != language);
+    }
+
+    /// How each language's server starts.
+    pub fn configs(&self) -> &[ServerConfig] {
+        &self.configs
+    }
+
     /// Messages from servers, to pass to [`Lsp::handle`].
     pub fn events(&self) -> &Receiver<Event> {
         &self.events

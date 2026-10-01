@@ -18,6 +18,10 @@ local picker = require("@picker")
 
 type Found = { kern.GrepLine }
 
+-- A line to write back: what it read when found, what it should read, and
+-- whether it was written.
+type Change = { old: string, new: string, applied: boolean? }
+
 type Results = {
 	root: string,
 	-- Each line's text when it was found, or last written, by "path:line".
@@ -31,6 +35,14 @@ local results: { [number]: Results } = {}
 
 -- Each project's results panel, while it's open.
 local panels: { [number]: kern.View } = {}
+
+kern.on("view.closed", function(event)
+	for project, view in panels do
+		if view:id() == event.view then
+			panels[project] = nil
+		end
+	end
+end)
 
 local function key(path: string, line: number): string
 	return `{path}:{line + 1}`
@@ -85,11 +97,8 @@ local function show(pattern: string, root: string, found: Found)
 	results[buffer:id()] = r
 	local project = kern.project.current().id
 	local current = panels[project]
-	local ok, old = pcall(function()
-		return (current :: kern.View):buffer()
-	end)
-	if current and ok then
-		results[old:id()] = nil
+	if current then
+		results[current:buffer():id()] = nil
 		current:show(buffer)
 		current:focus()
 	else
@@ -101,10 +110,7 @@ end
 -- `text` with the lines in `changes` (by 0-based line) replaced where they
 -- still read as they did. Returns the new text and how many lines changed
 -- and were skipped.
-local function replace_lines(
-	text: string,
-	changes: { [number]: { old: string, new: string } }
-): (string, number, number)
+local function replace_lines(text: string, changes: { [number]: Change }): (string, number, number)
 	local out, changed, skipped = {}, 0, 0
 	local pos, line = 1, 0
 	while true do
@@ -115,6 +121,7 @@ local function replace_lines(
 		local change = changes[line]
 		if change and content == change.old then
 			content = change.new
+			change.applied = true
 			changed += 1
 		elseif change then
 			skipped += 1
@@ -132,7 +139,7 @@ end
 -- they did. Returns how many changed and were skipped.
 local function replace_in_buffer(
 	buffer: kern.Buffer,
-	changes: { [number]: { old: string, new: string } }
+	changes: { [number]: Change }
 ): (number, number)
 	local changed, skipped = 0, 0
 	buffer:edit(function(e)
@@ -140,6 +147,7 @@ local function replace_in_buffer(
 			local start = if line < buffer:line_count() then buffer:line_start(line) else nil
 			if start and buffer:slice(start, buffer:line_end(line)) == change.old then
 				e:replace(start, buffer:line_end(line), change.new)
+				change.applied = true
 				changed += 1
 			else
 				skipped += 1
@@ -157,7 +165,7 @@ local function write_back(buffer: kern.Buffer)
 	if r == nil then
 		return
 	end
-	local by_path: { [string]: { [number]: { old: string, new: string } } } = {}
+	local by_path: { [string]: { [number]: Change } } = {}
 	for i = 0, buffer:line_count() - 1 do
 		local text = buffer:slice(buffer:line_start(i), buffer:line_end(i))
 		local path, number, new = string.match(text, "^(.-):(%d+): (.*)$")
@@ -177,8 +185,10 @@ local function write_back(buffer: kern.Buffer)
 	local files, lines, skipped = 0, 0, 0
 	for path, changes in by_path do
 		local full = core.project.path(r.root, path)
+		-- Open buffers are known by absolute path.
+		local absolute = if string.sub(full, 1, 1) == "/" then full else `{kern.fs.cwd()}/{full}`
 		local changed, missed
-		local target = open[full]
+		local target = open[absolute]
 		if target then
 			local unsaved = target:modified()
 			changed, missed = replace_in_buffer(target, changes)
@@ -199,8 +209,12 @@ local function write_back(buffer: kern.Buffer)
 				end
 			end
 		end
+		-- Lines skipped because they changed meanwhile stay as found, so the
+		-- next save tries them again.
 		for line, change in changes do
-			r.original[key(path, line)] = change.new
+			if change.applied then
+				r.original[key(path, line)] = change.new
+			end
 		end
 		files += if changed > 0 then 1 else 0
 		lines += changed
@@ -307,10 +321,8 @@ kern.command({
 		local view = panels[project]
 		panels[project] = nil
 		if view then
-			pcall(function()
-				results[view:buffer():id()] = nil
-				view:close()
-			end)
+			results[view:buffer():id()] = nil
+			view:close()
 		end
 	end,
 })

@@ -91,6 +91,25 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
 
+    lsp.set(
+        "remove",
+        lua.create_function(|lua, language: String| {
+            state_mut(lua).lsp.remove(&language);
+            Ok(())
+        })?,
+    )?;
+
+    lsp.set(
+        "servers",
+        lua.create_function(|lua, ()| {
+            let servers = lua.create_table()?;
+            for config in state(lua).lsp.configs() {
+                servers.set(config.language.as_str(), config.commands.clone())?;
+            }
+            Ok(servers)
+        })?,
+    )?;
+
     lsp.set("request", request_function(lua)?)?;
 
     lsp.set(

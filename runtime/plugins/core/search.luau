@@ -130,6 +130,10 @@ kern.command({
 	doc = "Search for the selected text",
 	run = function(ctx)
 		local text = ctx.buffer:slice(span(primary(ctx.view)))
+		if text == "" then
+			kern.echo("nothing selected to search for")
+			return
+		end
 		-- As plain text, not a regex.
 		last, backward = (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0")), false
 		kern.echo(`searching for {text}`)

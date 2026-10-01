@@ -33,4 +33,7 @@ test("markdown sections", function(t)
 	check(t, text, "m i h", "# Top\nintro\n## A\n^a text\n|## B\nb text\n")
 	check(t, text, "m a h", "# Top\nintro\n^## A\na text\n|## B\nb text\n")
 	check(t, "# Top\nin|tro\n## A\n", "m a h", "^# Top\nintro\n## A\n|")
+	check(t, "in|tro\n# A\nbody\n", "m i h", "^intro\n|# A\nbody\n")
+	local fenced = "# A\nte|xt\n```sh\n# a comment\n```\nmore\n# B\n"
+	check(t, fenced, "m i h", "# A\n^text\n```sh\n# a comment\n```\nmore\n|# B\n")
 end)

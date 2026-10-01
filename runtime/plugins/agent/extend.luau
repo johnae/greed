@@ -150,6 +150,12 @@ local function finish(accepted: boolean)
 	r.done.send(accepted)
 end
 
+kern.on("view.closed", function(event)
+	if review and review.view:id() == event.view then
+		finish(false)
+	end
+end)
+
 --- Shows the latest try of plugin `name` for review, and installs and
 --- loads it if the user accepts. Returns what happened, in words.
 function M.install(name: string): string

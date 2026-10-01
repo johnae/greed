@@ -36,3 +36,12 @@ test(":health lists each language with its highlighting and servers", function(t
 	t:keys("q")
 	assert(#t:floats() == 0, "q closes it")
 end)
+
+test("set with no servers stops starting one", function()
+	local before = (languages.get("python") :: languages.Language).servers
+	languages.set("python", { servers = { { "pylsp" } } })
+	assert(kern.lsp.servers().python[1][1] == "pylsp", "set")
+	languages.set("python", { servers = {} })
+	assert(kern.lsp.servers().python == nil, "removed")
+	languages.set("python", { servers = before })
+end)

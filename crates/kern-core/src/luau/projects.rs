@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use mlua::{Lua, Table};
 
+use super::handles::view_closed;
 use super::{state, state_mut};
 use crate::{Project, ProjectId};
 
@@ -55,7 +56,23 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     project.set(
         "close",
-        lua.create_function(|lua, id: u32| Ok(state_mut(lua).editor.close_project(ProjectId(id))))?,
+        lua.create_function(|lua, id: u32| {
+            let id = ProjectId(id);
+            let views: Vec<_> = state(lua)
+                .editor
+                .projects()
+                .iter()
+                .find(|p| p.id() == id)
+                .map(|p| p.views().collect())
+                .unwrap_or_default();
+            let closed = state_mut(lua).editor.close_project(id);
+            if closed {
+                for view in views {
+                    view_closed(lua, view)?;
+                }
+            }
+            Ok(closed)
+        })?,
     )?;
     Ok(project)
 }

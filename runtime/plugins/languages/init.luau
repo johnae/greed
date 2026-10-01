@@ -22,6 +22,8 @@ local function apply(name: string, language: Language)
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })
+	else
+		kern.lsp.remove(name)
 	end
 end
 

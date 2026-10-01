@@ -103,7 +103,11 @@ impl UserData for ViewRef {
             Ok(())
         });
         methods.add_method("close", |lua, this, ()| {
-            Ok(state_mut(lua).editor.close(this.id))
+            let closed = state_mut(lua).editor.close(this.id);
+            if closed {
+                view_closed(lua, this.id)?;
+            }
+            Ok(closed)
         });
         methods.add_method("configure", |lua, this, spec: Table| {
             let current = state(lua)
@@ -181,6 +185,14 @@ impl BufferRef {
         drop(state);
         buffer_changed(lua, self.buffer, &self.author)
     }
+}
+
+/// Emits "view.closed" with the id of `view`, so plugins holding it can let
+/// go.
+pub(super) fn view_closed(lua: &Lua, view: ViewId) -> LuaResult<()> {
+    let payload = lua.create_table()?;
+    payload.set("view", view.0)?;
+    emit(lua, "view.closed", &payload)
 }
 
 /// Emits "buffer.changed" for `buffer`.

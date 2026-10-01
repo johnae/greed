@@ -189,20 +189,22 @@ fn the_lsp_plugin_goes_to_definitions_and_problems() {
 fn the_lsp_plugin_marks_problems_with_signs_and_messages() {
     use kern_core::render::{CellWidth, Plain, Renderer, Size, Status};
     let h = with_plugin();
-    let marks: Vec<(Option<String>, Option<String>)> = h.with_editor(|ed| {
-        ed.buffer(ed.view(ed.main()).buffer)
-            .marks("lsp")
-            .iter()
-            .map(|m| {
-                (
-                    m.sign.as_deref().map(str::to_owned),
-                    m.text.as_deref().map(str::to_owned),
-                )
-            })
-            .collect()
-    });
+    let marks = |h: &Host| -> Vec<(Option<String>, Option<String>)> {
+        h.with_editor(|ed| {
+            ed.buffer(ed.view(ed.main()).buffer)
+                .marks("lsp")
+                .iter()
+                .map(|m| {
+                    (
+                        m.sign.as_deref().map(str::to_owned),
+                        m.text.as_deref().map(str::to_owned),
+                    )
+                })
+                .collect()
+        })
+    };
     assert_eq!(
-        marks,
+        marks(&h),
         [
             (Some("E".to_owned()), None),
             (None, Some("bad word".to_owned()))
@@ -220,4 +222,39 @@ fn the_lsp_plugin_marks_problems_with_signs_and_messages() {
             .text()
     });
     assert_eq!(row, "E 1 let x = bad; bad word");
+
+    h.eval("require('@kern').option.set('diagnostic-messages', false)")
+        .unwrap();
+    assert_eq!(
+        marks(&h),
+        [(Some("E".to_owned()), None)],
+        "turning messages off takes them away at once"
+    );
+}
+
+#[test]
+fn empty_answers_from_the_server_say_so_instead_of_failing() {
+    let h = with_plugin();
+    let said = |h: &Host| h.with_editor_mut(Editor::take_messages);
+    // The end of the line: past the "bad word" problem, where the server
+    // has nothing to say.
+    move_cursor(&h, 12);
+    press_and_wait(&h, "g d", |h| h.with_editor(|ed| !ed.messages().is_empty()));
+    assert_eq!(
+        said(&h).last().map(String::as_str),
+        Some("no definition found")
+    );
+    assert_eq!(cursor(&h), 12, "it stays where it was");
+
+    press_and_wait(&h, "space k", |h| {
+        h.with_editor(|ed| !ed.messages().is_empty())
+    });
+    assert_eq!(
+        said(&h).last().map(String::as_str),
+        Some("nothing to show here")
+    );
+    assert!(
+        h.with_editor(|ed| ed.floats().is_empty()),
+        "no empty window"
+    );
 }

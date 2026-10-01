@@ -603,11 +603,14 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set(
         "set",
         lua.create_function(|lua, (name, value): (String, Value)| {
-            let value = option_value(value)?;
             state_mut(lua)
                 .registry
-                .set_option(&name, value)
-                .map_err(mlua::Error::external)
+                .set_option(&name, option_value(value.clone())?)
+                .map_err(mlua::Error::external)?;
+            let payload = lua.create_table()?;
+            payload.set("name", name)?;
+            payload.set("value", value)?;
+            emit(lua, "option.changed", &payload)
         })?,
     )?;
     option.set(

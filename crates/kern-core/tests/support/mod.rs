@@ -74,10 +74,24 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
             }
             "textDocument/hover" => {
                 let p = &message["params"]["position"];
-                let text = format!("hover at {}:{}", p["line"], p["character"]);
+                // Past column 10 there is nothing to say, as servers often answer.
+                let text = if p["character"].as_u64() > Some(10) {
+                    String::new()
+                } else {
+                    format!("hover at {}:{}", p["line"], p["character"])
+                };
                 write(
                     &mut output,
                     &json!({ "jsonrpc": "2.0", "id": id, "result": { "contents": text } }),
+                );
+            }
+            // Past column 10 there's no definition: an empty list, as servers answer.
+            "textDocument/definition"
+                if message["params"]["position"]["character"].as_u64() > Some(10) =>
+            {
+                write(
+                    &mut output,
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": [] }),
                 );
             }
             "textDocument/definition" => write(

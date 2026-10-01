@@ -96,6 +96,14 @@ local function shown(): Tree?
 	return trees[kern.project.current().id]
 end
 
+kern.on("view.closed", function(event)
+	for project, t in trees do
+		if t.view:id() == event.view then
+			trees[project] = nil
+		end
+	end
+end)
+
 function M.close()
 	local project = kern.project.current().id
 	local t = trees[project]

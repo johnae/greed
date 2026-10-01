@@ -267,10 +267,15 @@ kern.command({
 			error("this buffer has no file to mention", 0)
 		end
 		local from, to = primary_range(ctx.view)
+		-- A selection ending at a line's start, like `x` makes, ends on the
+		-- line before.
+		local last = if to > from and to == ctx.buffer:line_start(ctx.buffer:line_of(to))
+			then ctx.buffer:line_of(ctx.buffer:prev_char(to))
+			else ctx.buffer:line_of(to)
 		kern.control.notify("at_mentioned", {
 			filePath = absolute(path),
 			lineStart = ctx.buffer:line_of(from),
-			lineEnd = ctx.buffer:line_of(to),
+			lineEnd = last,
 		})
 	end,
 })

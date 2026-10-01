@@ -75,27 +75,52 @@ local function select_sentence(buffer: Buffer, range: Range, around: boolean): R
 	return { anchor = from, head = if around then skip_spaces(buffer, to) else to }
 end
 
--- The number of #s if `line` is a Markdown heading.
-local function heading_level(buffer: Buffer, line: number): number?
-	local hashes = string.match(line_text(buffer, line), "^(#+)%s")
-	return if hashes then #hashes else nil
+-- Heading levels (the number of #s) by line, leaving out lines in fenced code.
+local function headings(buffer: Buffer): { [number]: number }
+	local found = {}
+	local fence: string? = nil
+	for line = 0, buffer:line_count() - 1 do
+		local text = line_text(buffer, line)
+		local marker = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
+		if fence then
+			if
+				marker
+				and string.sub(marker, 1, 1) == string.sub(fence, 1, 1)
+				and #marker >= #fence
+			then
+				fence = nil
+			end
+		elseif marker then
+			fence = marker
+		else
+			local hashes = string.match(text, "^(#+)%s")
+			if hashes then
+				found[line] = #hashes
+			end
+		end
+	end
+	return found
 end
 
 local function select_section(buffer: Buffer, range: Range, around: boolean): Range
+	local levels = headings(buffer)
 	local heading = buffer:line_of(range.head)
-	while heading > 0 and heading_level(buffer, heading) == nil do
+	while heading > 0 and levels[heading] == nil do
 		heading -= 1
 	end
-	local level = heading_level(buffer, heading) or 0
+	local level = levels[heading]
 	local stop = buffer:len()
 	for line = heading + 1, buffer:line_count() - 1 do
-		local other = heading_level(buffer, line)
-		if other and other <= level then
+		local other = levels[line]
+		-- With no heading above, the section ends at the first one.
+		if other and (level == nil or other <= level) then
 			stop = buffer:line_start(line)
 			break
 		end
 	end
-	local start = if around or level == 0 then buffer:line_start(heading) else after_line(buffer, heading)
+	local start = if around or level == nil
+		then buffer:line_start(heading)
+		else after_line(buffer, heading)
 	return { anchor = start, head = stop }
 end
 
@@ -145,7 +170,12 @@ local function prev_sentence(buffer: Buffer, head: number): number
 end
 
 -- Registers "select-NAME" and "select-NAME-around".
-local function text_object(name: string, doc: string, around_doc: string, select: (Buffer, Range, boolean) -> Range)
+local function text_object(
+	name: string,
+	doc: string,
+	around_doc: string,
+	select: (Buffer, Range, boolean) -> Range
+)
 	for _, around in { false, true } do
 		kern.command({
 			name = if around then `select-{name}-around` else `select-{name}`,
@@ -171,8 +201,18 @@ local function motion(name: string, doc: string, target: (Buffer, number) -> num
 	})
 end
 
-text_object("paragraph", "Select the paragraph", "Select the paragraph and the blank lines after it", select_paragraph)
-text_object("sentence", "Select the sentence", "Select the sentence and the spaces after it", select_sentence)
+text_object(
+	"paragraph",
+	"Select the paragraph",
+	"Select the paragraph and the blank lines after it",
+	select_paragraph
+)
+text_object(
+	"sentence",
+	"Select the sentence",
+	"Select the sentence and the spaces after it",
+	select_sentence
+)
 text_object(
 	"section",
 	"Select the text under the Markdown heading",

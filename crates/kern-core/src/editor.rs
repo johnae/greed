@@ -143,6 +143,11 @@ impl Project {
     pub fn main(&self) -> ViewId {
         self.main
     }
+
+    /// The main view and the panels.
+    pub fn views(&self) -> impl Iterator<Item = ViewId> + '_ {
+        std::iter::once(self.main).chain(self.panels.iter().map(|p| p.view))
+    }
 }
 
 /// Another session for a client to go to: a session by name, or the session
@@ -328,7 +333,7 @@ impl Editor {
             return false;
         }
         let project = self.projects.remove(index);
-        for view in std::iter::once(project.main).chain(project.panels.iter().map(|p| p.view)) {
+        for view in project.views() {
             self.views.remove(&view);
         }
         let owned: Vec<BufferId> = self
@@ -870,6 +875,11 @@ impl Editor {
 
     pub fn take_messages(&mut self) -> Vec<String> {
         std::mem::take(&mut self.messages)
+    }
+
+    /// The messages queued since they were last taken.
+    pub fn messages(&self) -> &[String] {
+        &self.messages
     }
 
     fn next_id(&mut self) -> u32 {

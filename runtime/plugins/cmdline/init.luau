@@ -322,8 +322,10 @@ kern.command({
 		{ name = "value", doc = "true, false, a number or text" },
 	},
 	run = function(ctx)
-		local name, value = ctx.args[1], ctx.args[2]
-		if name == nil or value == nil then
+		local name = ctx.args[1]
+		-- Text values can have spaces.
+		local value = table.concat(ctx.args, " ", 2)
+		if name == nil or value == "" then
 			error("set needs an option and a value, e.g. :set tab-width 2", 0)
 		end
 		local parsed: kern.OptionValue = if value == "true"

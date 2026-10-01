@@ -70,10 +70,19 @@ kern.command({
 	name = "jump-to-word",
 	doc = "Label the words on screen and select the one whose label is typed",
 	run = function(ctx)
+		if #letters() == 0 then
+			kern.echo("jump-label-alphabet is empty")
+			return
+		end
 		local selection = ctx.view:selection()
 		local found = targets(ctx.view, selection.ranges[selection.primary].head)
+		if #found == 0 then
+			kern.echo("no words to jump to")
+			return
+		end
+		-- Two keys, whatever their length in bytes.
 		local typed = ""
-		while #typed < 2 do
+		for _ = 1, 2 do
 			show(ctx.buffer, found, typed)
 			typed ..= kern.next_key()
 		end

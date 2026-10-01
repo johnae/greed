@@ -93,8 +93,11 @@ kern.command({
 			end
 		end
 		local result = kern.lsp.request(ctx.buffer, "textDocument/hover", at(ctx.buffer, pos))
-		if result and result.contents then
-			table.insert(parts, without_fences(hover_text(result.contents)))
+		local text = if result and result.contents
+			then without_fences(hover_text(result.contents))
+			else ""
+		if string.match(text, "%S") then
+			table.insert(parts, text)
 		end
 		if #parts == 0 then
 			kern.echo("nothing to show here")
@@ -108,14 +111,15 @@ kern.command({
 	name = "goto-definition",
 	doc = "Go to where the thing under the cursor is defined",
 	run = function(ctx)
-		local result, err = kern.lsp.request(ctx.buffer, "textDocument/definition", at(ctx.buffer, head(ctx.view)))
+		local result, err =
+			kern.lsp.request(ctx.buffer, "textDocument/definition", at(ctx.buffer, head(ctx.view)))
 		if err then
 			kern.echo(`definition: {err.message}`)
 			return
 		end
-		-- A location, a list of locations, or a list of links.
+		-- A location, a list of locations or links (maybe empty), or nothing.
 		local target = if result and result[1] then result[1] else result
-		if target == nil then
+		if target == nil or (target.uri == nil and target.targetUri == nil) then
 			kern.echo("no definition found")
 			return
 		end
@@ -230,8 +234,19 @@ kern.option.define({
 })
 
 -- Signs beside lines with problems, and their messages after the line.
-kern.on("lsp.diagnostics", function(event: kern.DiagnosticsChanged)
-	local buffer = event.buffer
+local function mark_problems(buffer: kern.Buffer)
 	local messages = kern.option.get("diagnostic-messages") == true
 	buffer:decorate("lsp", marks.diagnostic_marks(buffer, kern.lsp.diagnostics(buffer), messages))
+end
+
+kern.on("lsp.diagnostics", function(event: kern.DiagnosticsChanged)
+	mark_problems(event.buffer)
+end)
+
+kern.on("option.changed", function(event)
+	if event.name == "diagnostic-messages" then
+		for _, buffer in kern.buffers() do
+			mark_problems(buffer)
+		end
+	end
 end)

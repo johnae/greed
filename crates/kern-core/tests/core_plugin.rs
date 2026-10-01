@@ -130,3 +130,29 @@ fn languages_plugin_tests_pass() {
 fn tree_plugin_tests_pass() {
     assert_all_pass(&[core(), plugin("tree")], &plugin("tree"));
 }
+
+/// Every default plugin's tests, with all the default plugins loaded the
+/// way `kern test` runs them, so a plugin added later can't be missed here.
+#[test]
+fn every_default_plugin_passes_its_tests_with_the_others_loaded() {
+    let root = core().parent().unwrap().to_owned();
+    let mut all: Vec<PathBuf> = std::fs::read_dir(&root)
+        .unwrap()
+        .filter_map(|entry| Some(entry.ok()?.path()))
+        .filter(|dir| dir.join("plugin.toml").is_file())
+        .collect();
+    all.sort();
+    let mut ran = Vec::new();
+    for dir in &all {
+        if dir.join("test").is_dir() {
+            assert_all_pass(&all, dir);
+            ran.push(dir.file_name().unwrap().to_string_lossy().into_owned());
+        }
+    }
+    for expected in ["agent", "core", "grep", "picker"] {
+        assert!(
+            ran.iter().any(|name| name == expected),
+            "{expected} ran: {ran:?}"
+        );
+    }
+}

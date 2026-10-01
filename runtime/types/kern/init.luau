@@ -342,6 +342,18 @@ export type ClientAttached = {
 	path: string?,
 }
 
+--- A view was closed. Its handle no longer works, but its id can be
+--- compared with `view:id()`.
+export type ViewClosed = {
+	view: number,
+}
+
+--- An option was set, with `kern.option.set` or `:set`.
+export type OptionChanged = {
+	name: string,
+	value: OptionValue,
+}
+
 export type CommandRun = {
 	--- The command about to run.
 	name: string,
@@ -411,6 +423,10 @@ export type Lsp = {
 	--- With `commands`, the first one whose program is installed runs, when
 	--- a file of the language first opens; with none installed, nothing does.
 	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }? }) -> (),
+	--- Stops starting a server for a language; one running keeps running.
+	remove: (language: string) -> (),
+	--- The commands set for each language's server, by language.
+	servers: () -> { [string]: { { string } } },
 	--- Sends a request to the buffer's server and waits for the answer.
 	--- Returns the result, or nil and the error. Works in commands and event
 	--- handlers.
@@ -563,6 +579,8 @@ export type Kern = {
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
+		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
+		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

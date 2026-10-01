@@ -237,3 +237,50 @@ fn claude_codes_diffs_become_proposals_and_come_back_saved() {
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::remove_dir_all(&work).unwrap();
 }
+
+/// The next notification called `method`, skipping others.
+fn notification(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, method: &str) -> Value {
+    loop {
+        let message = next(socket);
+        if message["method"] == method {
+            return message["params"].clone();
+        }
+    }
+}
+
+#[test]
+fn mentioning_whole_lines_names_just_those_lines() {
+    let work = std::env::temp_dir().join(format!("kern-ide-mention-work-{}", std::process::id()));
+    std::fs::create_dir_all(&work).unwrap();
+    let file = work.join("a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
+    let (conn, dir) = start_agent("mention", &file);
+    let (port, lock) = lock(&dir);
+    let mut socket = connect(port, lock["authToken"].as_str().unwrap()).unwrap();
+
+    let press = |keys: &str| {
+        for key in kern_core::keymap::Key::parse_sequence(keys).unwrap() {
+            conn.input.send(Input::Key(key)).unwrap();
+        }
+    };
+    press("j x space o m");
+    let one = notification(&mut socket, "at_mentioned");
+    assert_eq!(
+        (&one["lineStart"], &one["lineEnd"]),
+        (&json!(1), &json!(1)),
+        "{one}"
+    );
+    press("x space o m");
+    let two = notification(&mut socket, "at_mentioned");
+    assert_eq!(
+        (&two["lineStart"], &two["lineEnd"]),
+        (&json!(1), &json!(2)),
+        "{two}"
+    );
+    assert_eq!(two["filePath"], file.to_str().unwrap());
+
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&work).unwrap();
+}
