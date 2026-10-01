@@ -1,8 +1,11 @@
--- Vim-style editing, written only against the plugin API, as an example of
--- reshaping the editor from Luau. It starts normal mode over with Vim's
--- keys, adds a visual mode, and keeps your space-leader keys and ":".
+-- Vim-style editing, written only against the plugin API. It has modes of
+-- its own (vim, vim-insert and vim-visual), so it sits beside Helix's
+-- normal mode instead of replacing it, and borrows the space-leader keys,
+-- ":", search and the language server keys from normal mode.
 --
--- To use it, copy this directory to ~/.config/kern/plugins/vim.
+-- Switch to it with `:style vim`, or put this in ~/.config/kern/init.luau:
+--
+--     require("@kern").option.set("editing-style", "vim")
 --
 -- What's here: counts, h j k l w b e 0 ^ $ gg G f t F T, the operators
 -- d c y with any of those motions (and dd cc yy, iw aw), x X D C s S,
@@ -185,7 +188,9 @@ local function find_char(forward: boolean, before: boolean): Motion
 		local at = pos
 		for _ = 1, count do
 			repeat
-				at = if forward then buffer:next_char(at) else (if at > start then buffer:prev_char(at) else -1)
+				at = if forward
+					then buffer:next_char(at)
+					else (if at > start then buffer:prev_char(at) else -1)
 			until at < 0 or at >= finish or buffer:char_at(at) == char
 			if at < 0 or at >= finish then
 				return nil, "inclusive"
@@ -262,7 +267,12 @@ motions["g g"] = goto_line(true)
 -- Ranges ------------------------------------------------------------------
 
 -- The text a motion covers from `pos`, as `from, to, linewise`.
-local function motion_range(buffer: Buffer, pos: number, target: number, kind: Kind): (number, number, boolean)
+local function motion_range(
+	buffer: Buffer,
+	pos: number,
+	target: number,
+	kind: Kind
+): (number, number, boolean)
 	local from, to = math.min(pos, target), math.max(pos, target)
 	if kind == "inclusive" then
 		to = math.min(buffer:next_char(to), buffer:len())
@@ -306,7 +316,7 @@ end
 
 local function enter_insert(ctx: kern.Context, pos: number)
 	ctx.view:set_selection(point(pos))
-	kern.mode.set("insert")
+	kern.mode.set("vim-insert")
 end
 
 -- Applies operator `op` ("d", "c" or "y") to `from`..`to`.
@@ -322,8 +332,11 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 		kern.history.start_group()
 		if linewise then
 			-- Changing lines keeps one empty line to type on.
-			local first = buffer:line_of(if from > 0 and buffer:char_at(from) == "\n" then buffer:next_char(from) else from)
-			from, to = buffer:line_start(first), buffer:line_end(buffer:line_of(math.max(to - 1, from)))
+			local first = buffer:line_of(
+				if from > 0 and buffer:char_at(from) == "\n" then buffer:next_char(from) else from
+			)
+			from, to =
+				buffer:line_start(first), buffer:line_end(buffer:line_of(math.max(to - 1, from)))
 		end
 	end
 	local start, finish = from, to :: number
@@ -334,7 +347,9 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 	if op == "c" then
 		enter_insert(ctx, from)
 	elseif linewise then
-		ctx.view:set_selection(point(first_non_blank(buffer, buffer:line_of(math.min(from + 1, buffer:len())))))
+		ctx.view:set_selection(
+			point(first_non_blank(buffer, buffer:line_of(math.min(from + 1, buffer:len()))))
+		)
 	else
 		ctx.view:set_selection(point(on_char(buffer, from)))
 	end
@@ -359,7 +374,12 @@ local function operate(ctx: kern.Context, op: string)
 	local from: number, to: number, linewise: boolean
 	if key == op then
 		local line = buffer:line_of(pos)
-		from, to, linewise = motion_range(buffer, pos, buffer:line_start(math.min(line + count - 1, buffer:line_count() - 1)), "line")
+		from, to, linewise = motion_range(
+			buffer,
+			pos,
+			buffer:line_start(math.min(line + count - 1, buffer:line_count() - 1)),
+			"line"
+		)
 	elseif key == "i" or key == "a" then
 		if kern.next_key() ~= "w" then
 			return
@@ -378,7 +398,11 @@ local function operate(ctx: kern.Context, op: string)
 		if motion == nil then
 			return
 		end
-		local target, kind = motion(buffer, pos, if inner_count or ctx.count then count else (if key == "G" then 0 else 1))
+		local target, kind = motion(
+			buffer,
+			pos,
+			if inner_count or ctx.count then count else (if key == "G" then 0 else 1)
+		)
 		if target == nil then
 			return
 		end
@@ -408,8 +432,11 @@ for key, motion in motions do
 		if target == nil then
 			return
 		end
-		if kern.mode.get() == "visual" then
-			ctx.view:set_selection({ ranges = { { anchor = range.anchor, head = target } }, primary = 1 })
+		if kern.mode.get() == "vim-visual" then
+			ctx.view:set_selection({
+				ranges = { { anchor = range.anchor, head = target } },
+				primary = 1,
+			})
 		else
 			ctx.view:set_selection(point(on_char(ctx.buffer, target)))
 		end
@@ -418,10 +445,10 @@ end
 
 for _, op in { "d", "c", "y" } do
 	command("operator-" .. op, "Vim operator " .. op .. ", followed by a motion", function(ctx)
-		if kern.mode.get() == "visual" then
+		if kern.mode.get() == "vim-visual" then
 			local range = ctx.view:selection().ranges[1]
 			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-			kern.mode.set("normal")
+			kern.mode.set("vim")
 			apply(ctx, op, from, math.min(ctx.buffer:next_char(to), ctx.buffer:len()), false)
 			return
 		end
@@ -473,21 +500,36 @@ local function paste(ctx: kern.Context, after: boolean)
 	if register.linewise then
 		local line = buffer:line_of(pos)
 		if after then
-			at = if line + 1 < buffer:line_count() then buffer:line_start(line + 1) else buffer:len()
-			if at == buffer:len() and string.sub(text, -1) == "\n" and buffer:char_at(at - 1) ~= "\n" then
+			at = if line + 1 < buffer:line_count()
+				then buffer:line_start(line + 1)
+				else buffer:len()
+			if
+				at == buffer:len()
+				and string.sub(text, -1) == "\n"
+				and buffer:char_at(at - 1) ~= "\n"
+			then
 				text = "\n" .. string.sub(text, 1, -2)
 			end
 		else
 			at = buffer:line_start(line)
 		end
 	else
-		at = if after then math.min(buffer:next_char(pos), buffer:line_end(buffer:line_of(pos))) else pos
+		at = if after
+			then math.min(buffer:next_char(pos), buffer:line_end(buffer:line_of(pos)))
+			else pos
 	end
 	buffer:edit(function(e)
 		e:insert(at, text)
 	end)
 	if register.linewise then
-		ctx.view:set_selection(point(first_non_blank(buffer, buffer:line_of(if string.sub(text, 1, 1) == "\n" then at + 1 else at))))
+		ctx.view:set_selection(
+			point(
+				first_non_blank(
+					buffer,
+					buffer:line_of(if string.sub(text, 1, 1) == "\n" then at + 1 else at)
+				)
+			)
+		)
 	else
 		ctx.view:set_selection(point(buffer:prev_char(at + #text)))
 	end
@@ -537,8 +579,8 @@ end)
 
 command("normal", "Back to normal mode", function(ctx)
 	kern.history.end_group()
-	local was_insert = kern.mode.get() == "insert"
-	kern.mode.set("normal")
+	local was_insert = kern.mode.get() == "vim-insert"
+	kern.mode.set("vim")
 	local buffer, pos = ctx.buffer, cursor(ctx)
 	local _, start = line_bounds(buffer, pos)
 	-- Leaving insert mode steps back onto the last character typed.
@@ -550,7 +592,7 @@ end)
 
 command("visual", "Select characters, starting here", function(ctx)
 	ctx.view:set_selection(point(cursor(ctx)))
-	kern.mode.set("visual")
+	kern.mode.set("vim-visual")
 end)
 
 command("undo", "Undo", function(ctx)
@@ -574,21 +616,14 @@ end)
 
 -- Keys --------------------------------------------------------------------
 
--- Keys other plugins put in normal mode that should survive: the
--- space-leader keys and the command line.
-local kept: { [string]: string } = {}
-for _, next in kern.keymap.next("space") do
-	if next.command then
-		kept["space " .. next.key] = next.command
-	end
-end
-local colon = kern.keymap.resolve(":")
-if colon then
-	kept[":"] = colon
-end
-
-kern.keymap.clear("normal")
-kern.keymap.bind("normal", kept)
+-- Keys other plugins put in normal mode that work the same here: the
+-- space-leader keys, the command line, search, and going to definitions
+-- and problems. Plugins loaded later get them too.
+kern.keymap.inherit("vim", "normal", { "space", ":", "/", "?", "n", "N", "*", "g d", "]", "[" })
+-- Insert mode as everyone has it, except that esc comes back here.
+kern.keymap.inherit("vim-insert", "insert")
+kern.keymap.fallback("vim-insert", "insert-char")
+kern.mode.cursor("vim-insert", "bar")
 
 local keys: { [string]: string } = {
 	d = "vim-operator-d",
@@ -625,10 +660,18 @@ for key in motions do
 	keys[key] = "vim-motion-" .. string.gsub(key, " ", "")
 	visual[key] = keys[key]
 end
-kern.keymap.bind("normal", keys)
-kern.keymap.bind("visual", visual)
-kern.keymap.bind("insert", { esc = "vim-normal" })
-kern.keymap.counts("normal")
-kern.keymap.counts("visual")
+kern.keymap.bind("vim", keys)
+kern.keymap.bind("vim-visual", visual)
+kern.keymap.bind("vim-insert", { esc = "vim-normal" })
+kern.keymap.counts("vim")
+kern.keymap.counts("vim-visual")
+
+require("@core").style.define({
+	name = "vim",
+	doc = "Vim's operators and motions, with a visual mode",
+	mode = "vim",
+	labels = { vim = "normal", ["vim-insert"] = "insert", ["vim-visual"] = "visual" },
+	plugin = "vim",
+})
 
 return {}

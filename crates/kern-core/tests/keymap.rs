@@ -364,3 +364,37 @@ fn clearing_a_layer_hides_what_was_bound_before() {
         Resolution::Command("delete-char".into())
     );
 }
+
+#[test]
+fn a_mode_can_fall_back_to_another_under_some_prefixes() {
+    use kern_core::keymap::Next;
+    let command = |km: &Keymap, mode: &str, k: &str| match km.resolve(mode, "file", &keys(k)) {
+        Resolution::Command(c) => Some(c.to_string()),
+        Resolution::Pending | Resolution::Unbound => None,
+    };
+    let mut km = Keymap::default();
+    for (k, c) in [("space f", "files"), ("w", "next-word"), ("g d", "definition"), ("g g", "start")] {
+        km.bind(Layer::mode("normal"), &keys(k), c, "core").unwrap();
+    }
+    km.bind(Layer::mode("vim"), &keys("w"), "vim-word", "vim")
+        .unwrap();
+    km.inherit("vim", "normal", vec![keys("space"), keys("g d")], "vim");
+
+    assert_eq!(command(&km, "vim", "space f").as_deref(), Some("files"));
+    assert_eq!(command(&km, "vim", "g d").as_deref(), Some("definition"));
+    assert_eq!(command(&km, "vim", "w").as_deref(), Some("vim-word"), "its own come first");
+    assert_eq!(command(&km, "vim", "g g"), None, "outside the prefixes");
+    let after_g: Vec<(String, Next)> = km
+        .continuations("vim", "file", &keys("g"))
+        .into_iter()
+        .map(|(k, n)| (k.to_string(), n))
+        .collect();
+    assert_eq!(after_g, [("d".to_string(), Next::Command("definition".into()))]);
+
+    km.inherit("all", "normal", Vec::new(), "other");
+    assert_eq!(command(&km, "all", "g g").as_deref(), Some("start"), "no prefixes: everything");
+
+    km.remove_owned_by("vim");
+    assert_eq!(command(&km, "vim", "space f"), None, "gone with its owner");
+    assert_eq!(command(&km, "all", "w").as_deref(), Some("next-word"));
+}

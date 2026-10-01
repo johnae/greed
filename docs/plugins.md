@@ -48,7 +48,10 @@ was typed, and `ctx.char` for keys that type a character. Keymaps are bound
 per mode, or per kind of buffer with `{ mode = "normal", kind = "tree" }`.
 Bindings made later win, and `kern.keymap.unbind` and `kern.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
-name, and `kern.mode.set("visual")` makes one.
+name, and `kern.mode.set("visual")` makes one. `kern.keymap.inherit(mode,
+"normal", { "space", ":" })` lets a new mode use some of normal mode's
+keys, which is how a whole editing style is built; see [Editing
+styles](editing-styles.md#making-your-own).
 
 ## Buffers, views and edits
 

@@ -183,6 +183,10 @@ export type Keymap = {
 	--- Makes digits typed before a key sequence in `mode` a count, which the
 	--- command gets as `ctx.count`. A leading 0 stays a key.
 	counts: (mode: string) -> (),
+	--- Makes `mode` fall back to `parent`'s keys for sequences starting with
+	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
+	--- them. Keys bound in `mode` itself come first.
+	inherit: (mode: string, parent: string, prefixes: { string }?) -> (),
 	--- The command that handles a single unbound key in `mode`.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
@@ -352,6 +356,11 @@ export type ViewClosed = {
 export type OptionChanged = {
 	name: string,
 	value: OptionValue,
+}
+
+--- A plugin was unloaded, and everything it registered removed.
+export type PluginUnloaded = {
+	name: string,
 }
 
 export type CommandRun = {
@@ -581,6 +590,7 @@ export type Kern = {
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
+		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
 	--- Shows a message to the user.
 	echo: (...any) -> (),

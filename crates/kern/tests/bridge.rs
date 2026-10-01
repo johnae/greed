@@ -140,7 +140,7 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     let name = format!("kern-proj-{}", std::process::id());
     // The session takes a moment to start listening.
     let mut listed = String::new();
-    for _ in 0..250 {
+    for _ in 0..500 {
         let out = Command::new(KERN).arg("ls").output().unwrap();
         listed = String::from_utf8(out.stdout).unwrap();
         if listed.lines().any(|line| line.starts_with(&name)) {

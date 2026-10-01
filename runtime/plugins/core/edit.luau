@@ -3,6 +3,7 @@
 
 local kern = require("@kern")
 local motions = require("./motions")
+local style = require("./style")
 
 local each_range, point = motions.each_range, motions.point
 
@@ -23,10 +24,10 @@ end
 
 kern.command({
 	name = "normal-mode",
-	doc = "Switch to normal mode",
+	doc = "Back to the editing style's own mode (normal, in Helix's)",
 	run = function()
 		kern.history.end_group()
-		kern.mode.set("normal")
+		kern.mode.set(style.home())
 	end,
 })
 

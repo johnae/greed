@@ -101,9 +101,8 @@ fn cmdline_plugin_tests_pass() {
 }
 
 #[test]
-fn vim_example_tests_pass() {
-    let vim = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/examples/vim");
-    assert_all_pass(&[core(), vim.clone()], &vim);
+fn vim_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("vim")], &plugin("vim"));
 }
 
 #[test]

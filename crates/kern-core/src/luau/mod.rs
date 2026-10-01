@@ -529,9 +529,14 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
         }
     }
     unregister(lua, name);
-    let mut state = state_mut(lua);
-    state.plugins.remove(name);
-    state.exports.remove(name);
+    {
+        let mut state = state_mut(lua);
+        state.plugins.remove(name);
+        state.exports.remove(name);
+    }
+    let payload = lua.create_table()?;
+    payload.set("name", name)?;
+    api::emit(lua, "plugin.unloaded", &payload)?;
     Ok(())
 }
 

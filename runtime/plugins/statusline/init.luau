@@ -4,6 +4,7 @@
 -- set wins.
 
 local kern = require("@kern")
+local style = require("@core").style
 
 kern.statusline(function(s)
 	local middle: kern.StatusSegment
@@ -42,7 +43,8 @@ kern.statusline(function(s)
 	local line = s.buffer:line_of(head)
 	local column = (utf8.len(s.buffer:slice(s.buffer:line_start(line), head)) or 0) + 1
 
-	local mode = { text = " " .. string.upper(s.mode) .. " ", style = "ui.statusline.mode" }
+	local mode =
+		{ text = " " .. string.upper(style.label(s.mode)) .. " ", style = "ui.statusline.mode" }
 	return {
 		left = { mode, " ", middle },
 		right = { problems, `{line + 1}:{column} ` },

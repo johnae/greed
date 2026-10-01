@@ -338,7 +338,8 @@ fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     }
 }
 
-/// `kern.keymap.unbind`, `kern.keymap.clear` and `kern.keymap.counts`.
+/// `kern.keymap.unbind`, `kern.keymap.clear`, `kern.keymap.counts` and
+/// `kern.keymap.inherit`.
 fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     keymap.set(
@@ -377,6 +378,26 @@ fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult
                 .enable_counts(&mode, o.clone());
             Ok(())
         })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
+        "inherit",
+        lua.create_function(
+            move |lua, (mode, parent, prefixes): (String, String, Option<Vec<String>>)| {
+                let prefixes = prefixes
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|p| Key::parse_sequence(p))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(mlua::Error::external)?;
+                state_mut(lua)
+                    .editor
+                    .keymap_mut()
+                    .inherit(&mode, &parent, prefixes, o.clone());
+                Ok(())
+            },
+        )?,
     )
 }
 

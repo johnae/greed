@@ -25,7 +25,8 @@
 local kern = require("@kern")
 local parse = require("@self/parse")
 local complete = require("@self/complete")
-local menu = require("@core").menu
+local core = require("@core")
+local menu = core.menu
 
 -- At most this many matches are shown.
 local SHOWN = 8
@@ -313,6 +314,14 @@ kern.command({
 		step(1)
 	end,
 })
+
+complete.register("editing-style", function()
+	local items = {}
+	for _, style in core.style.list() do
+		table.insert(items, { text = style.name, doc = style.doc })
+	end
+	return items
+end)
 
 kern.command({
 	name = "set",

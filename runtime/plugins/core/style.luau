@@ -1,0 +1,137 @@
+-- Editing styles: which mode you come back to when you're done typing or
+-- picking something. Helix's style (this plugin) comes back to "normal";
+-- edit mode and Vim are styles of their own, each with its own modes, so
+-- switching between them leaves the others' keys alone.
+--
+--     :style vim
+--     require("@kern").option.set("editing-style", "edit")
+
+local kern = require("@kern")
+
+export type Style = {
+	name: string,
+	doc: string,
+	--- The mode the style starts in and comes back to.
+	mode: string,
+	--- What the status line calls the style's modes, e.g. { vim = "normal" }.
+	labels: { [string]: string }?,
+	--- The plugin it comes from; unloading that plugin removes the style.
+	plugin: string?,
+}
+
+local styles: { [string]: Style } = {}
+
+kern.option.define({
+	name = "editing-style",
+	doc = "How editing works: helix, edit or vim (see :style)",
+	default = "helix",
+})
+
+-- The style in use: the option's, or Helix's if that style isn't known.
+local function current(): Style
+	return styles[kern.option.get("editing-style") :: string] or styles.helix
+end
+
+local M = {}
+
+--- Adds a style. If the user already chose it, it starts now.
+function M.define(style: Style)
+	styles[style.name] = style
+	if kern.option.get("editing-style") == style.name then
+		kern.mode.set(style.mode)
+	end
+end
+
+--- The styles, sorted by name.
+function M.list(): { Style }
+	local list = {}
+	for _, style in styles do
+		table.insert(list, style)
+	end
+	table.sort(list, function(a: Style, b: Style)
+		return a.name < b.name
+	end)
+	return list
+end
+
+--- The style in use.
+M.current = current
+
+--- The mode to come back to, e.g. when leaving insert mode.
+function M.home(): string
+	return current().mode
+end
+
+--- What the status line shows for `mode`.
+function M.label(mode: string): string
+	for _, style in styles do
+		local label = style.labels and style.labels[mode]
+		if label then
+			return label
+		end
+	end
+	return mode
+end
+
+--- Switches to style `name`.
+function M.set(name: string)
+	if styles[name] == nil then
+		error(`no editing style called {name}; there's {table.concat(M.names(), ", ")}`, 0)
+	end
+	kern.option.set("editing-style", name)
+end
+
+function M.names(): { string }
+	local names = {}
+	for _, style in M.list() do
+		table.insert(names, style.name)
+	end
+	return names
+end
+
+kern.on("option.changed", function(event)
+	if event.name ~= "editing-style" then
+		return
+	end
+	if styles[event.value :: string] == nil then
+		kern.echo(`no editing style called {event.value}; using {current().name}`)
+	end
+	kern.history.end_group()
+	kern.mode.set(M.home())
+end)
+
+-- A style goes with its plugin, and Helix's takes over if it was in use.
+kern.on("plugin.unloaded", function(event)
+	local using = current()
+	for name, style in styles do
+		if style.plugin == event.name then
+			styles[name] = nil
+		end
+	end
+	if current() ~= using then
+		kern.mode.set(M.home())
+	end
+end)
+
+kern.command({
+	name = "style",
+	doc = "Switch editing style: helix, edit or vim",
+	args = { { name = "style", doc = "The style", complete = "editing-style" } },
+	run = function(ctx)
+		local name = ctx.args[1]
+		if name == nil then
+			kern.echo(`editing style: {current().name} (there's {table.concat(M.names(), ", ")})`)
+			return
+		end
+		M.set(name)
+		kern.echo(`editing style: {name}`)
+	end,
+})
+
+M.define({
+	name = "helix",
+	doc = "Select, then act on the selection (Helix, Kakoune)",
+	mode = "normal",
+})
+
+return M

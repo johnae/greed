@@ -236,17 +236,6 @@ impl Layer {
             kind: Some(kind.into()),
         }
     }
-
-    /// The layers that apply in `mode` for a buffer of `kind`, most specific
-    /// first.
-    fn lookup_order(mode: &str, kind: &str) -> [Self; 4] {
-        [
-            Self::mode_kind(mode, kind),
-            Self::mode(mode),
-            Self::kind(kind),
-            Self::global(),
-        ]
-    }
 }
 
 impl fmt::Display for Layer {
@@ -328,6 +317,26 @@ struct Binding {
     owner: PluginId,
 }
 
+/// A mode falling back to another mode's bindings.
+#[derive(Debug)]
+struct Inherit {
+    parent: Arc<str>,
+    /// Only sequences starting with one of these; all of them if empty.
+    prefixes: Vec<Vec<Key>>,
+    owner: PluginId,
+}
+
+impl Inherit {
+    /// Whether `keys`, typed in full or in part, fall under the prefixes.
+    fn covers(&self, keys: &[Key]) -> bool {
+        self.prefixes.is_empty()
+            || self
+                .prefixes
+                .iter()
+                .any(|p| keys.starts_with(p) || p.starts_with(keys))
+    }
+}
+
 #[derive(Debug)]
 enum Node {
     Command(Binding),
@@ -346,6 +355,8 @@ pub struct Keymap {
     /// Modes where digits before a key sequence are a count, and which
     /// plugins turned that on.
     counts: HashMap<Arc<str>, Vec<PluginId>>,
+    /// Per mode, the modes it falls back to, in the order they were added.
+    inherits: HashMap<Arc<str>, Vec<Inherit>>,
 }
 
 impl Keymap {
@@ -417,10 +428,52 @@ impl Keymap {
         }
     }
 
+    /// Makes `mode` fall back to `parent`'s bindings for key sequences
+    /// starting with one of `prefixes` (any sequence if there are none),
+    /// until `owner` is removed. Bindings of `mode` itself come first.
+    pub fn inherit(
+        &mut self,
+        mode: &str,
+        parent: &str,
+        prefixes: Vec<Vec<Key>>,
+        owner: impl Into<PluginId>,
+    ) {
+        self.inherits.entry(mode.into()).or_default().push(Inherit {
+            parent: parent.into(),
+            prefixes,
+            owner: owner.into(),
+        });
+    }
+
+    /// The layers that apply in `mode` for a buffer of `kind`, most specific
+    /// first, each with the inheritance that brought it in, if any.
+    fn lookup_order(&self, mode: &str, kind: &str) -> Vec<(Layer, Option<&Inherit>)> {
+        let mut order = vec![
+            (Layer::mode_kind(mode, kind), None),
+            (Layer::mode(mode), None),
+        ];
+        for inherit in self.inherits.get(mode).into_iter().flatten() {
+            order.push((Layer::mode_kind(&inherit.parent, kind), Some(inherit)));
+            order.push((Layer::mode(&inherit.parent), Some(inherit)));
+        }
+        order.push((Layer::kind(kind), None));
+        order.push((Layer::global(), None));
+        order
+    }
+
+    /// The layers that apply to `keys` in `mode` for a buffer of `kind`.
+    fn layers_for(&self, mode: &str, kind: &str, keys: &[Key]) -> Vec<Layer> {
+        self.lookup_order(mode, kind)
+            .into_iter()
+            .filter(|(_, inherit)| inherit.is_none_or(|i| i.covers(keys)))
+            .map(|(layer, _)| layer)
+            .collect()
+    }
+
     /// Resolves a key sequence in `mode` for a buffer of `kind`.
     pub fn resolve(&self, mode: &str, kind: &str, keys: &[Key]) -> Resolution {
         let mut pending = false;
-        for layer in Layer::lookup_order(mode, kind) {
+        for layer in self.layers_for(mode, kind, keys) {
             match self.lookup(&layer, keys) {
                 Some(Node::Command(active)) => {
                     return Resolution::Command(active.command.clone());
@@ -439,7 +492,7 @@ impl Keymap {
     /// Every layer where `keys` is bound, most specific first, with the
     /// active binding in each.
     pub fn describe(&self, mode: &str, kind: &str, keys: &[Key]) -> Vec<Found> {
-        Layer::lookup_order(mode, kind)
+        self.layers_for(mode, kind, keys)
             .into_iter()
             .filter_map(|layer| match self.lookup(&layer, keys) {
                 Some(Node::Command(active)) => Some(Found {
@@ -490,7 +543,8 @@ impl Keymap {
     /// key in a less specific one.
     pub fn continuations(&self, mode: &str, kind: &str, prefix: &[Key]) -> Vec<(Key, Next)> {
         let mut found = Vec::new();
-        for layer in Layer::lookup_order(mode, kind) {
+        let mut keys = prefix.to_vec();
+        for (layer, inherit) in self.lookup_order(mode, kind) {
             let children = if prefix.is_empty() {
                 self.layers.get(&layer)
             } else {
@@ -501,6 +555,12 @@ impl Keymap {
             };
             for (key, node) in children.into_iter().flatten() {
                 if found.iter().any(|(k, _)| k == key) {
+                    continue;
+                }
+                keys.push(*key);
+                let covered = inherit.is_none_or(|i| i.covers(&keys));
+                keys.pop();
+                if !covered {
                     continue;
                 }
                 let next = match node {
@@ -549,6 +609,10 @@ impl Keymap {
             owners.retain(|o| &**o != owner);
         }
         self.counts.retain(|_, owners| !owners.is_empty());
+        for inherits in self.inherits.values_mut() {
+            inherits.retain(|i| &*i.owner != owner);
+        }
+        self.inherits.retain(|_, inherits| !inherits.is_empty());
     }
 
     fn lookup(&self, layer: &Layer, keys: &[Key]) -> Option<&Node> {

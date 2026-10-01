@@ -2,9 +2,10 @@
 -- inserts text (replacing any selection), arrows move, shift+arrows select,
 -- and the usual ctrl shortcuts do the usual things.
 --
--- To use it all the time, put this in ~/.config/kern/init.luau:
+-- Switch to it with `:style edit`, or to use it all the time, put this in
+-- ~/.config/kern/init.luau:
 --
---     require("@kern").mode.set("edit")
+--     require("@kern").option.set("editing-style", "edit")
 
 local kern = require("@kern")
 
@@ -172,3 +173,10 @@ kern.keymap.bind("edit", {
 
 kern.keymap.fallback("edit", "type-char")
 kern.mode.cursor("edit", "bar")
+
+require("@core").style.define({
+	name = "edit",
+	doc = "No modes: typing inserts, shift and the arrows select (most editors)",
+	mode = "edit",
+	plugin = "edit-mode",
+})

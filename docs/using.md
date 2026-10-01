@@ -117,10 +117,8 @@ There is always a selection; a cursor is a selection one character wide.
 With several selections, everything you type or delete happens at each one.
 `%`, then `s foo`, then `c bar` replaces every `foo` in the file.
 
-If you'd rather not use modes, edit mode works like most editors: typing
-inserts, shift and the arrows select, ctrl-c copies. Put
-`require("@kern").mode.set("edit")` in your config to start in it. A
-Vim-style mode is in `runtime/examples/vim`.
+If you'd rather edit like Vim, or without modes, `:style vim` and `:style
+edit` switch to those; [Editing styles](editing-styles.md) explains each.
 
 **Prose**: `m i p`, `m i s` and `m i h` select a paragraph, sentence or
 Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
