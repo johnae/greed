@@ -1,0 +1,279 @@
+-- Version control: signs beside lines added (+), changed (~) and removed
+-- (-) since the last commit, with jj, or git where there's no .jj.
+--
+--   ] g / [ g   next / previous change
+--   space g r   put the change under the cursor back the way it was
+--   space g b   who last changed this line, and when
+--
+-- With jj the comparison is with the working copy's parent (@-), so the
+-- signs show what the change you're working on does to the file.
+
+local kern = require("@kern")
+
+kern.option.define({
+	name = "vcs-signs",
+	doc = "Show signs beside lines changed since the last commit",
+	default = true,
+})
+
+type Repo = { kind: "jj" | "git", root: string }
+
+-- A change since the last commit, in the buffer as it is now: where it is,
+-- and what was there before.
+type Change = { from: number, to: number, old: string, kind: "+" | "~" | "-" }
+
+-- What each buffer's file was at the last commit, by buffer id; false for
+-- files outside a repository.
+local bases: { [number]: string | false } = {}
+-- Goes up with each edit, so only the latest edit's redraw runs.
+local generation = 0
+
+local function parent(path: string): string?
+	return string.match(path, "^(.*)/[^/]*$")
+end
+
+-- The repository `path` is in, if any.
+local function repo_of(path: string): Repo?
+	local dir = parent(path)
+	while dir and dir ~= "" do
+		if kern.fs.stat(dir .. "/.jj") then
+			return { kind = "jj", root = dir }
+		elseif kern.fs.stat(dir .. "/.git") then
+			return { kind = "git", root = dir }
+		end
+		dir = parent(dir)
+	end
+	return nil
+end
+
+local function absolute(path: string): string
+	return if string.sub(path, 1, 1) == "/" then path else `{kern.fs.cwd()}/{path}`
+end
+
+-- The repository `buffer`'s file is in, and the file's path from its root.
+local function locate(buffer: kern.Buffer): (Repo?, string?)
+	local path = buffer:path()
+	local repo = path and repo_of(absolute(path))
+	if path == nil or repo == nil then
+		return nil, nil
+	end
+	return repo, string.sub(absolute(path), #repo.root + 2)
+end
+
+-- Runs a jj or git command in `repo`'s root and returns what it printed, or
+-- nil if it failed.
+local function vcs(repo: Repo, args: { string }): string?
+	local command: { string } = { repo.kind }
+	if repo.kind == "jj" then
+		-- Reading only: don't snapshot the working copy as a side effect.
+		table.insert(command, "--ignore-working-copy")
+	end
+	for _, arg in args do
+		table.insert(command, arg)
+	end
+	local done = kern.process.run(command, { cwd = repo.root })
+	return if done and done.code == 0 then done.stdout else nil
+end
+
+-- The file at the last commit: its text, "" if it's new, or false outside a
+-- repository.
+local function fetch_base(buffer: kern.Buffer): string | false
+	local repo, relative = locate(buffer)
+	if repo == nil or relative == nil then
+		return false
+	end
+	local text = if repo.kind == "jj"
+		then vcs(repo, { "file", "show", "-r", "@-", "--", `root-file:"{relative}"` })
+		else vcs(repo, { "show", `HEAD:{relative}` })
+	return text or ""
+end
+
+-- The changes since the last commit, in order.
+local function changes(buffer: kern.Buffer): { Change }
+	local base = bases[buffer:id()]
+	if not base then
+		return {}
+	end
+	local out: { Change } = {}
+	-- Hunks are in the old text; `shift` turns their places into the new one's.
+	local shift = 0
+	for _, hunk in kern.diff(base, buffer:text()) do
+		local from = hunk.from + shift
+		local old = string.sub(base, hunk.from + 1, hunk.to)
+		local kind: "+" | "~" | "-" = if old == "" then "+" elseif hunk.text == "" then "-" else "~"
+		table.insert(out, { from = from, to = from + #hunk.text, old = old, kind = kind })
+		shift += #hunk.text - #old
+	end
+	return out
+end
+
+-- The first and last lines a change covers; a removal covers the line it
+-- was removed from.
+local function lines_of(buffer: kern.Buffer, change: Change): (number, number)
+	local first = buffer:line_of(math.min(change.from, buffer:len()))
+	local last = if change.to > change.from then buffer:line_of(change.to - 1) else first
+	return first, last
+end
+
+local STYLE: { [string]: string } =
+	{ ["+"] = "diff.plus", ["~"] = "diff.delta", ["-"] = "diff.minus" }
+
+local function mark(buffer: kern.Buffer)
+	local marks: { kern.Mark } = {}
+	if kern.option.get("vcs-signs") == true then
+		for _, change in changes(buffer) do
+			local first, last = lines_of(buffer, change)
+			for line = first, last do
+				local start = buffer:line_start(line)
+				table.insert(marks, {
+					from = start,
+					to = buffer:line_end(line),
+					style = STYLE[change.kind],
+					sign = change.kind,
+				})
+			end
+		end
+	end
+	buffer:decorate("vcs", marks)
+end
+
+local function refresh(buffer: kern.Buffer)
+	bases[buffer:id()] = fetch_base(buffer)
+	mark(buffer)
+end
+
+kern.on("buffer.opened", function(event: kern.BufferChanged)
+	refresh(event.buffer)
+end)
+
+-- Saving may follow a commit made elsewhere, so the base is read again.
+kern.on("buffer.saved", function(event: kern.BufferChanged)
+	refresh(event.buffer)
+end)
+
+kern.on("buffer.changed", function(event: kern.BufferChanged)
+	local buffer = event.buffer
+	if not bases[buffer:id()] then
+		return
+	end
+	generation += 1
+	local mine = generation
+	kern.sleep(100)
+	if mine == generation then
+		pcall(mark, buffer)
+	end
+end)
+
+kern.on("option.changed", function(event)
+	if event.name == "vcs-signs" then
+		for _, buffer in kern.buffers() do
+			if bases[buffer:id()] then
+				mark(buffer)
+			end
+		end
+	end
+end)
+
+local function head(view: kern.View): number
+	local selection = view:selection()
+	return selection.ranges[selection.primary].head
+end
+
+local function goto_change(ctx: kern.Context, forward: boolean)
+	local buffer = ctx.buffer
+	local line = buffer:line_of(head(ctx.view))
+	local found = changes(buffer)
+	local target: number? = nil
+	if forward then
+		for _, change in found do
+			local first = lines_of(buffer, change)
+			if first > line then
+				target = first
+				break
+			end
+		end
+	else
+		for i = #found, 1, -1 do
+			local first = lines_of(buffer, found[i])
+			if first < line then
+				target = first
+				break
+			end
+		end
+	end
+	if target == nil then
+		kern.echo("no more changes")
+		return
+	end
+	local at = buffer:line_start(target)
+	ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+end
+
+kern.command({
+	name = "next-change",
+	doc = "Go to the next change since the last commit",
+	run = function(ctx)
+		goto_change(ctx, true)
+	end,
+})
+
+kern.command({
+	name = "prev-change",
+	doc = "Go to the previous change since the last commit",
+	run = function(ctx)
+		goto_change(ctx, false)
+	end,
+})
+
+kern.command({
+	name = "revert-change",
+	doc = "Put the change under the cursor back the way it was at the last commit",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local line = buffer:line_of(head(ctx.view))
+		for _, change in changes(buffer) do
+			local first, last = lines_of(buffer, change)
+			if first <= line and line <= last then
+				buffer:edit(function(e)
+					e:replace(change.from, change.to, change.old)
+				end)
+				return
+			end
+		end
+		kern.echo("no change here")
+	end,
+})
+
+kern.command({
+	name = "blame-line",
+	doc = "Show who last changed the line under the cursor, and when",
+	run = function(ctx)
+		local repo, relative = locate(ctx.buffer)
+		if repo == nil or relative == nil then
+			kern.echo("this file isn't in a repository")
+			return
+		end
+		local line = ctx.buffer:line_of(head(ctx.view)) + 1
+		local out = if repo.kind == "jj"
+			then vcs(repo, { "file", "annotate", "-r", "@", "--", `root-file:"{relative}"` })
+			else vcs(repo, { "blame", "-L", `{line},{line}`, "--", relative })
+		if out == nil then
+			kern.echo("no history for this line")
+			return
+		end
+		local text: string = if repo.kind == "jj"
+			then string.split(out :: string, "\n")[line] or ""
+			else out :: string
+		-- Just the who and when, not the line's text again.
+		kern.echo(string.match(text, "^[^)]*%)") or string.match(text, "^[^:]*") or "")
+	end,
+})
+
+kern.keymap.bind("normal", {
+	["] g"] = "next-change",
+	["[ g"] = "prev-change",
+	["space g r"] = "revert-change",
+	["space g b"] = "blame-line",
+})
+
+return {}

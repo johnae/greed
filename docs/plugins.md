@@ -112,7 +112,8 @@ flash on copy is.
 
 `kern.on(event, handler)` runs a handler on `buffer.changed`,
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
-`view.closed` (for plugins holding on to a panel), `option.changed` and more.
+`view.closed` (for plugins holding on to a panel), `option.changed`,
+`buffer.opened`, `buffer.saved` and more.
 `kern.option.define({ name, doc, default })` adds an option users set with
 `kern.option.set` or `:set`.
 

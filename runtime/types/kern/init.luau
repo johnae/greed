@@ -622,6 +622,8 @@ export type Kern = {
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
+		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
+		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())

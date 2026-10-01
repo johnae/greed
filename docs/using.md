@@ -220,6 +220,20 @@ after a letter or a `.`. The menu narrows as you keep typing.
 `:set completion-delay 300` waits longer before asking; `0` stops asking
 while you type, leaving `ctrl-space`.
 
+## Version control
+
+In a jj or git repository, lines added (`+`), changed (`~`) and removed
+(`-`) since the last commit get a sign beside them. With jj that's against
+the working copy's parent, so the signs show what your current change does.
+
+| Keys | |
+|---|---|
+| `] g` `[ g` | Next and previous change |
+| `space g r` | Put the change under the cursor back the way it was |
+| `space g b` | Who last changed this line, and when |
+
+`:set vcs-signs false` hides the signs.
+
 ## Formatting
 
 Saving a file formats it, and `:format` does it without saving. Kern uses

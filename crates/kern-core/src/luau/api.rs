@@ -799,17 +799,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
 
     kern.set(
         "open",
-        lua.create_function(|lua, path: String| {
-            let mut state = state_mut(lua);
-            let buffer = state
-                .editor
-                .open_file(Path::new(&path))
-                .map_err(|err| mlua::Error::runtime(format!("can't open {path}: {err}")))?;
-            let main = state.editor.main();
-            state.editor.show(main, buffer);
-            state.editor.set_focus(main);
-            Ok(())
-        })?,
+        lua.create_function(|lua, path: String| open_file(lua, &path))?,
     )?;
 
     kern.set(
@@ -1185,4 +1175,29 @@ fn keys_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     Ok(keys)
+}
+
+/// `kern.open`: shows the file at `path` in the main view, opening it if it
+/// isn't open, and tells plugins with "buffer.opened".
+fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
+    let mut state = state_mut(lua);
+    let buffer = state
+        .editor
+        .open_file(Path::new(path))
+        .map_err(|err| mlua::Error::runtime(format!("can't open {path}: {err}")))?;
+    let main = state.editor.main();
+    state.editor.show(main, buffer);
+    state.editor.set_focus(main);
+    let author = Author::User(state.editor.client());
+    drop(state);
+    let payload = lua.create_table()?;
+    payload.set(
+        "buffer",
+        BufferRef {
+            buffer,
+            view: None,
+            author,
+        },
+    )?;
+    emit(lua, "buffer.opened", &payload)
 }

@@ -164,6 +164,30 @@ impl BufferRef {
         f(buffer)
     }
 
+    /// Writes the buffer to its file, or to `path`, then tells plugins with
+    /// "buffer.saved".
+    fn save(&self, lua: &Lua, path: Option<String>) -> LuaResult<()> {
+        self.with_buffer(lua, |_| Ok(()))?;
+        {
+            let mut state = state_mut(lua);
+            match path {
+                Some(path) => state.editor.save_as(self.buffer, Path::new(&path)),
+                None => state.editor.save(self.buffer),
+            }
+            .map_err(mlua::Error::external)?;
+        }
+        let payload = lua.create_table()?;
+        payload.set(
+            "buffer",
+            BufferRef {
+                buffer: self.buffer,
+                view: None,
+                author: self.author.clone(),
+            },
+        )?;
+        emit(lua, "buffer.saved", &payload)
+    }
+
     fn with_text<R>(&self, lua: &Lua, f: impl FnOnce(&Rope) -> LuaResult<R>) -> LuaResult<R> {
         self.with_buffer(lua, |buffer| f(buffer.text()))
     }
@@ -445,13 +469,7 @@ impl UserData for BufferRef {
         add_search_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, path: Option<String>| {
-            this.with_buffer(lua, |_| Ok(()))?;
-            let mut state = state_mut(lua);
-            match path {
-                Some(path) => state.editor.save_as(this.buffer, Path::new(&path)),
-                None => state.editor.save(this.buffer),
-            }
-            .map_err(mlua::Error::external)
+            this.save(lua, path)
         });
         methods.add_method("modified", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))

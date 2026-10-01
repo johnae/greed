@@ -27,6 +27,7 @@ kern.theme.set({
 	["ui.grep.location"] = { fg = "cyan" },
 	["diff.plus"] = { fg = "green" },
 	["diff.minus"] = { fg = "red", strikethrough = true },
+	["diff.delta"] = { fg = "yellow" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
 	["ui.jump.label"] = { fg = "red", bold = true },
 	["ui.health.found"] = { fg = "green" },
