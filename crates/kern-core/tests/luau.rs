@@ -1088,3 +1088,42 @@ fn plugins_set_the_theme() {
     h.load_str("colors", "").unwrap();
     assert!(h.with_editor(|ed| ed.theme().entry("keyword").is_none()));
 }
+
+#[test]
+fn plugins_decorate_buffers() {
+    let h = host("hello world");
+    h.eval(
+        "local b = require('@kern').view():buffer()
+         b:decorate('search', { { from = 6, to = 11, style = 'match' }, { from = 0, to = 0, style = 'current', line = true } })",
+    )
+    .unwrap();
+    h.with_editor(|ed| {
+        let marks = ed.buffer(ed.view(ed.focus()).buffer).marks("search");
+        assert_eq!(marks.len(), 2);
+        assert_eq!(
+            (marks[0].range.clone(), &*marks[0].style, marks[0].line),
+            (6..11, "match", false)
+        );
+        assert!(marks[1].line);
+    });
+    assert_eq!(
+        h.eval(
+            "local m = require('@kern').view():buffer():decorations('search')[1]
+             return m.from .. ' ' .. m.to .. ' ' .. m.style .. ' ' .. tostring(m.line)"
+        )
+        .unwrap(),
+        "6 11 match false"
+    );
+    let err = h
+        .eval("require('@kern').view():buffer():decorate('x', { { from = 0, to = 1 } })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("style"), "{err}");
+    h.eval("require('@kern').view():buffer():decorate('search', {})")
+        .unwrap();
+    assert_eq!(
+        h.eval("#require('@kern').view():buffer():decorations('search')")
+            .unwrap(),
+        "0"
+    );
+}

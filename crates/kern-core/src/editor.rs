@@ -11,7 +11,7 @@ use kern_text::{
 
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error};
+use crate::{Buffer, BufferId, Error, Mark};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewId(pub u32);
@@ -198,6 +198,19 @@ impl Editor {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_language(language);
         }
+    }
+
+    /// Replaces `buffer`'s marks in namespace `ns`, clamping them to its text.
+    pub fn decorate(&mut self, buffer: BufferId, ns: &str, mut marks: Vec<Mark>) {
+        let Some(b) = self.buffers.get_mut(&buffer) else {
+            return;
+        };
+        let len = b.text().len_bytes();
+        for mark in &mut marks {
+            let end = mark.range.end.min(len);
+            mark.range = mark.range.start.min(end)..end;
+        }
+        b.set_marks(ns, marks);
     }
 
     /// The buffer for the file at `path`: the open one, or a new buffer

@@ -248,13 +248,18 @@ fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
     grid
 }
 
-/// Draws `row` over `base`, each span styled by its tags in order.
+/// Draws `row` over `base`, each span styled by the row's tags and then its
+/// own, in order. A row with tags of its own fills its whole width.
 fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, theme: &Theme) {
+    let layer = |style: Style, tags: &[Tag]| {
+        tags.iter().fold(style, |style, tag| {
+            style.patch(&theme.style(tag.name(), Surface::Tui))
+        })
+    };
+    let base = layer(base, &row.tags);
     let mut used = 0;
     for span in &row.spans {
-        let style = span.tags.iter().fold(base, |style, tag| {
-            style.patch(&theme.style(tag.name(), Surface::Tui))
-        });
+        let style = layer(base, &span.tags);
         used += put(
             line,
             x + used,
@@ -262,6 +267,10 @@ fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, th
             &span.text,
             terminal_style(style),
         );
+    }
+    if !row.tags.is_empty() {
+        let fill = " ".repeat(width - used);
+        put(line, x + used, width - used, &fill, terminal_style(base));
     }
 }
 
@@ -464,6 +473,7 @@ mod tests {
                 text: text.into(),
                 tags: std::iter::empty().collect(),
             }],
+            ..Row::default()
         }
     }
 
@@ -494,6 +504,13 @@ mod tests {
                 ..Style::default()
             }),
         );
+        theme.set(
+            "current",
+            Entry::new(Style {
+                bg: Some(ThemeColor::Ansi(8)),
+                ..Style::default()
+            }),
+        );
         let frame = Frame {
             size: Size {
                 width: 4,
@@ -506,6 +523,7 @@ mod tests {
                         .into_iter()
                         .collect(),
                 }],
+                tags: [Tag::from("current")].into_iter().collect(),
             }],
             floats: Vec::new(),
             cursor: None,
@@ -519,5 +537,8 @@ mod tests {
             Some(Color::Rgb { r: 1, g: 2, b: 3 })
         );
         assert!(cell.style.attributes.has(Attribute::Bold));
+        // The row's own style fills past its text.
+        let end = &compose(&frame)[0][3];
+        assert_eq!(end.style.background_color, Some(Color::DarkGrey));
     }
 }

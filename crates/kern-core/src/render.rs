@@ -19,7 +19,7 @@ use kern_text::Rope;
 
 use crate::syntax::Highlight;
 use crate::theme::Theme;
-use crate::{Anchor, BufferId, CursorShape, Editor, FloatOptions, Scroll, View, ViewId};
+use crate::{Anchor, BufferId, CursorShape, Editor, FloatOptions, Mark, Scroll, View, ViewId};
 
 /// Highlights and marks drawn over a buffer's text.
 pub trait Decorations {
@@ -155,6 +155,8 @@ pub struct Span {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Row {
     pub spans: Vec<Span>,
+    /// Styles for the whole row, under its spans and across its empty end.
+    pub tags: SmallVec<[Tag; 1]>,
 }
 
 impl Row {
@@ -329,6 +331,11 @@ impl<M: Measure> Renderer<M> {
             .filter(|(range, _)| range.start <= visible.end && range.end >= visible.start)
             .cloned()
             .collect();
+        let styled: Vec<&Mark> = editor
+            .buffer(view.buffer)
+            .all_marks()
+            .filter(|m| m.range.start <= visible.end && m.range.end >= visible.start)
+            .collect();
         let head = view.selection.primary().head;
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
@@ -345,6 +352,16 @@ impl<M: Measure> Renderer<M> {
                     break 'lines;
                 }
                 let mut row = Row::default();
+                let (line_start, line_end) = (text.line_to_byte(line), text.line_to_byte(line + 1));
+                row.tags = styled
+                    .iter()
+                    .filter(|m| {
+                        m.line
+                            && m.range.start < line_end.max(line_start + 1)
+                            && m.range.end >= line_start
+                    })
+                    .map(|m| Tag::from(m.style.clone()))
+                    .collect();
                 if line_numbers {
                     let number = if i == 0 {
                         format!("{:>w$} ", line + 1, w = gutter - 1)
@@ -368,14 +385,11 @@ impl<M: Measure> Renderer<M> {
                             row: area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX),
                         });
                     }
-                    let mut cell_tags = cell_tags(view, cell);
-                    if let Some(capture) = cell
+                    let capture = cell
                         .byte
                         .checked_sub(visible.start)
-                        .and_then(|i| syntax.get(i)?.clone())
-                    {
-                        cell_tags.insert(0, Tag::from(capture));
-                    }
+                        .and_then(|i| syntax.get(i)?.clone());
+                    let mut cell_tags = cell_tags(view, cell, capture, &styled);
                     if let Some(severity) = worst(&marks, |r| {
                         r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte)
                     }) {
@@ -612,8 +626,29 @@ fn gutter_width(editor: &Editor, view: &View) -> usize {
         + 1
 }
 
+/// The tags for one cell, bottom first: its syntax capture, the marks on it,
+/// then selections and cursors.
+fn cell_tags(
+    view: &View,
+    cell: &Cell,
+    capture: Option<Arc<str>>,
+    marks: &[&Mark],
+) -> SmallVec<[Tag; 2]> {
+    let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
+    if !cell.end_of_line {
+        tags.extend(
+            marks
+                .iter()
+                .filter(|m| !m.line && m.range.contains(&cell.byte))
+                .map(|m| Tag::from(m.style.clone())),
+        );
+    }
+    tags.extend(selection_tags(view, cell));
+    tags
+}
+
 /// Selection and cursor tags for one cell.
-fn cell_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
+fn selection_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
     let mut out = SmallVec::new();
     let primary = view.selection.primary_index();
     for (i, range) in view.selection.ranges().iter().enumerate() {

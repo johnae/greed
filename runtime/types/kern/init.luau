@@ -69,6 +69,21 @@ export type Buffer = {
 	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.
 	modified: (self: Buffer) -> boolean,
+	--- Replaces the marks in namespace `ns` (pick one per plugin feature,
+	--- e.g. "search"). Marks move with edits; `{}` clears them.
+	decorate: (self: Buffer, ns: string, marks: { Mark }) -> (),
+	--- The marks in namespace `ns`, where they are now.
+	decorations: (self: Buffer, ns: string) -> { Mark },
+}
+
+--- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.
+--- Text typed at either edge stays outside it.
+export type Mark = {
+	from: number,
+	to: number,
+	style: string,
+	--- Style every whole line the mark touches, not just its text.
+	line: boolean?,
 }
 
 --- A buffer shown on screen, with its own selection.

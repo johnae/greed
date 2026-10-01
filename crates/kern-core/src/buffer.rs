@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 use std::io::Write;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use kern_text::{Author, Rope, Selection, Transaction, TxId, TxMeta};
+use kern_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId, TxMeta};
 use smallvec::SmallVec;
 
 use crate::Error;
@@ -28,6 +30,19 @@ pub struct Buffer {
     readonly: bool,
     /// The language set for the buffer, overriding the one its path implies.
     language: Option<Arc<str>>,
+    /// Decorations by namespace. They move with edits.
+    marks: BTreeMap<Arc<str>, Vec<Mark>>,
+}
+
+/// Text drawn with a style, e.g. a search match. It moves with edits; text
+/// typed at either edge stays outside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mark {
+    pub range: Range<usize>,
+    /// A style name for the theme.
+    pub style: Arc<str>,
+    /// Style the whole of every line the mark touches, not just its text.
+    pub line: bool,
 }
 
 impl Buffer {
@@ -44,7 +59,41 @@ impl Buffer {
             saved: SmallVec::new(),
             readonly: false,
             language: None,
+            marks: BTreeMap::new(),
         }
+    }
+
+    /// The marks in namespace `ns`.
+    pub fn marks(&self, ns: &str) -> &[Mark] {
+        self.marks.get(ns).map_or(&[], Vec::as_slice)
+    }
+
+    /// Every mark, by namespace.
+    pub fn all_marks(&self) -> impl Iterator<Item = &Mark> {
+        self.marks.values().flatten()
+    }
+
+    /// Replaces the marks in namespace `ns`.
+    pub(crate) fn set_marks(&mut self, ns: &str, marks: Vec<Mark>) {
+        if marks.is_empty() {
+            self.marks.remove(ns);
+        } else {
+            self.marks.insert(ns.into(), marks);
+        }
+    }
+
+    /// Moves every mark through `changes`, dropping marks whose text went.
+    fn map_marks(&mut self, changes: &ChangeSet) {
+        for marks in self.marks.values_mut() {
+            marks.retain_mut(|mark| {
+                let was_empty = mark.range.is_empty();
+                let start = changes.map_pos(mark.range.start, Assoc::After);
+                let end = changes.map_pos(mark.range.end, Assoc::Before);
+                mark.range = start..end.max(start);
+                was_empty || start < end
+            });
+        }
+        self.marks.retain(|_, marks| !marks.is_empty());
     }
 
     #[must_use]
@@ -129,6 +178,7 @@ impl Buffer {
         let before = self.text.clone();
         let after = tx.apply(&mut self.text, current)?;
         let inverse = tx.changes.invert(&before)?;
+        self.map_marks(&tx.changes);
         self.version = SmallVec::from_buf([tx.meta.id]);
         self.history
             .commit(tx, inverse, current.clone(), after.clone());
@@ -183,6 +233,7 @@ impl Buffer {
             meta: TxMeta::new(id, &self.version, author).with_cause(cause),
         };
         let selection = tx.apply(&mut self.text, current)?;
+        self.map_marks(&tx.changes);
         self.version = SmallVec::from_buf([id]);
         self.history.record(tx);
         Ok(selection)

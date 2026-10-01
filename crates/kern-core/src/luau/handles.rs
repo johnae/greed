@@ -14,7 +14,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::{emit, float_options};
 use super::{state, state_mut};
-use crate::{Buffer, BufferId, View, ViewId};
+use crate::{Buffer, BufferId, Mark, View, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -184,6 +184,44 @@ fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()>
     emit(lua, "buffer.changed", &payload)
 }
 
+/// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
+/// `{ from, to, style, line }`.
+fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("decorate", |lua, this, (ns, list): (String, Vec<Table>)| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        let marks = list
+            .iter()
+            .map(|t| {
+                let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
+                    mlua::Error::runtime(
+                        "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
+                    )
+                })?;
+                Ok(Mark {
+                    range: t.get("from")?..t.get("to")?,
+                    style: style.into(),
+                    line: t.get::<Option<bool>>("line")?.unwrap_or(false),
+                })
+            })
+            .collect::<LuaResult<Vec<_>>>()?;
+        state_mut(lua).editor.decorate(this.buffer, &ns, marks);
+        Ok(())
+    });
+    methods.add_method("decorations", |lua, this, ns: String| {
+        let marks = this.with_buffer(lua, |b| Ok(b.marks(&ns).to_vec()))?;
+        let list = lua.create_table()?;
+        for mark in marks {
+            let t = lua.create_table()?;
+            t.set("from", mark.range.start)?;
+            t.set("to", mark.range.end)?;
+            t.set("style", &*mark.style)?;
+            t.set("line", mark.line)?;
+            list.push(t)?;
+        }
+        Ok(list)
+    });
+}
+
 /// Whether the buffer is read-only, and its language.
 fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("readonly", |lua, this, ()| {
@@ -284,6 +322,7 @@ impl UserData for BufferRef {
             })
         });
         add_setting_methods(methods);
+        add_decoration_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.with_buffer(lua, |_| Ok(()))?;

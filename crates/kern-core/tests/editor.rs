@@ -413,3 +413,44 @@ fn counts_before_a_command_reach_it() {
     ed.keymap_mut().remove_owned_by("core");
     assert_eq!(press(&mut ed, "3"), KeyOutcome::Unbound(keys("3")));
 }
+
+#[test]
+fn decorations_follow_edits_and_are_replaced_per_namespace() {
+    use kern_core::Mark;
+    let mut ed = editor("hello world");
+    let view = ed.focus();
+    let buffer = ed.view(view).buffer;
+    let mark = |from, to, style: &str| Mark {
+        range: from..to,
+        style: style.into(),
+        line: false,
+    };
+    ed.decorate(buffer, "search", vec![mark(6, 11, "match")]);
+    ed.decorate(buffer, "spell", vec![mark(0, 5, "spelling")]);
+    let ranges = |ed: &Editor, ns: &str| -> Vec<(usize, usize)> {
+        ed.buffer(buffer)
+            .marks(ns)
+            .iter()
+            .map(|m| (m.range.start, m.range.end))
+            .collect()
+    };
+    let user = Author::User(ClientId(1));
+    let edit = |ed: &mut Editor, len, change: (usize, usize, Option<&str>)| {
+        let changes = ChangeSet::from_changes(len, [change]).unwrap();
+        ed.apply(view, changes, user.clone(), None, None).unwrap();
+    };
+
+    edit(&mut ed, 11, (0, 0, Some(">> ")));
+    assert_eq!(ranges(&ed, "search"), [(9, 14)]);
+    // Text typed at either edge stays outside the mark.
+    edit(&mut ed, 14, (9, 9, Some("_")));
+    edit(&mut ed, 15, (15, 15, Some("!")));
+    assert_eq!(ranges(&ed, "search"), [(10, 15)]);
+    // A mark whose text is deleted goes away.
+    edit(&mut ed, 16, (9, 16, None));
+    assert!(ranges(&ed, "search").is_empty());
+    assert_eq!(ranges(&ed, "spell"), [(3, 8)]);
+
+    ed.decorate(buffer, "spell", Vec::new());
+    assert!(ranges(&ed, "spell").is_empty());
+}

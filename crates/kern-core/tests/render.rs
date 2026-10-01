@@ -342,3 +342,30 @@ fn diagnostics_mark_their_text_and_line_number() {
     .map(|(text, name)| (text.to_owned(), name.to_owned()));
     assert_eq!(marked, expected);
 }
+
+#[test]
+fn decorations_tag_their_text_and_lines_style_whole_rows() {
+    use kern_core::Mark;
+    let mut ed = editor("|one\ntwo");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "picker",
+        vec![
+            Mark {
+                range: 4..7,
+                style: "picker.current".into(),
+                line: true,
+            },
+            Mark {
+                range: 5..6,
+                style: "match".into(),
+                line: false,
+            },
+        ],
+    );
+    let f = frame(&mut ed, 20, 3);
+    assert_eq!(tagged(&f, &Tag::from("match")), ["w"]);
+    assert!(f.rows[0].tags.is_empty());
+    assert_eq!(f.rows[1].tags.as_slice(), [Tag::from("picker.current")]);
+}

@@ -16,7 +16,7 @@ use std::fmt;
 
 use kern_text::TxId;
 
-pub use buffer::{Buffer, BufferId};
+pub use buffer::{Buffer, BufferId, Mark};
 pub use editor::{
     Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, Scroll, View, ViewId,
     parse_marked,
