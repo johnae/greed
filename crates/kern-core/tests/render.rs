@@ -1,4 +1,6 @@
-use kern_core::render::{CellWidth, Frame, Position, Renderer, Row, Size, Tag};
+use kern_core::render::{
+    CellWidth, Frame, Position, Renderer, Row, Size, Span, Status, StatusLine, Tag,
+};
 use kern_core::{Editor, Scroll, parse_marked};
 use kern_text::ClientId;
 
@@ -11,7 +13,12 @@ fn editor(marked: &str) -> Editor {
 }
 
 fn frame(ed: &mut Editor, width: u16, height: u16) -> Frame {
-    Renderer::new(CellWidth).frame(ed, Size { width, height }, None, &|_, _, _| Vec::new())
+    Renderer::new(CellWidth).frame(
+        ed,
+        Size { width, height },
+        &Status::Default { message: None },
+        &|_, _, _| Vec::new(),
+    )
 }
 
 /// The text of each row, without the status line.
@@ -140,7 +147,9 @@ fn the_status_line_shows_mode_file_and_position() {
             width: 24,
             height: 3,
         },
-        Some("saved"),
+        &Status::Default {
+            message: Some("saved"),
+        },
         &|_, _, _| Vec::new(),
     );
     assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
@@ -185,7 +194,7 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
             width: 30,
             height: 2,
         },
-        None,
+        &Status::Default { message: None },
         &|_, _, _| highlights.clone(),
     );
     let syntax: Vec<(String, String)> = f.rows[0]
@@ -240,4 +249,31 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
     assert_eq!(f.cursor, Some(Position { col: 5, row: 3 }));
     // The main view still renders underneath, with its status line.
     assert_eq!(f.rows[0].text(), "1 main");
+}
+
+#[test]
+fn plugin_status_lines_are_padded_and_trimmed() {
+    let span = |text: &str, tag: Tag| Span {
+        text: text.into(),
+        tags: [tag].into_iter().collect(),
+    };
+    let line = StatusLine {
+        left: vec![
+            span(" N ", Tag::Mode),
+            span(" a/long/path/file.rs", Tag::Status),
+        ],
+        right: vec![span("3:4 ", Tag::Status)],
+    };
+    let render = |width| {
+        let mut ed = editor("|x");
+        let f = Renderer::new(CellWidth).frame(
+            &mut ed,
+            Size { width, height: 2 },
+            &Status::Line(line.clone()),
+            &|_, _, _| Vec::new(),
+        );
+        f.rows.last().unwrap().text()
+    };
+    assert_eq!(render(32), " N  a/long/path/file.rs     3:4 ");
+    assert_eq!(render(20), " N …ath/file.rs 3:4 ");
 }

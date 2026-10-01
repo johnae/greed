@@ -161,6 +161,15 @@ impl UserData for TestContext {
             api::run_command(lua, &command, &[]).map_err(api::into_lua)
         });
         methods.add_method("marked", |lua, _, ()| Ok(focused_marked_text(lua)));
+        methods.add_method("status", |lua, _, ()| {
+            let join = |spans: &[crate::render::Span]| {
+                spans.iter().map(|s| s.text.as_str()).collect::<String>()
+            };
+            let line = api::status_line(lua, None, 200)?;
+            Ok(line.map_or((None, None), |l| {
+                (Some(join(&l.left)), Some(join(&l.right)))
+            }))
+        });
         methods.add_method("expect", |lua, _, expected: String| {
             check(lua, "buffer", &expected, &focused_marked_text(lua))
         });

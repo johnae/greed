@@ -244,7 +244,14 @@ impl UserData for BufferRef {
         });
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, ()| {
-            this.with_buffer(lua, |b| b.save().map_err(mlua::Error::external))
+            this.with_buffer(lua, |_| Ok(()))?;
+            state_mut(lua)
+                .editor
+                .save(this.buffer)
+                .map_err(mlua::Error::external)
+        });
+        methods.add_method("modified", |lua, this, ()| {
+            this.with_buffer(lua, |b| Ok(b.is_modified()))
         });
     }
 }

@@ -1,0 +1,15 @@
+local test = require("@kern/test")
+
+test("shows the mode, the file and the position", function(t)
+	t:buffer("ab\nçd|e")
+	local left, right = t:status()
+	assert(left == " NORMAL  [scratch]", left)
+	assert(right == "2:3 ", right)
+end)
+
+test("marks changed buffers and follows the mode", function(t)
+	t:buffer("|abc")
+	t:keys("i x")
+	local left = t:status()
+	assert(left == " INSERT  [scratch] [+]", left)
+end)

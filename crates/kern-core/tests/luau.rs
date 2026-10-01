@@ -519,3 +519,28 @@ fn files_skip_hidden_and_ignored_ones() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(listed, "README.md,plugin.toml,src/main.rs");
 }
+
+#[test]
+fn status_lines_come_from_the_plugin_that_set_them() {
+    let h = host("abc");
+    assert_eq!(h.status_line(None, 80).unwrap(), None);
+    h.load_str(
+        "bar",
+        "require('@kern').statusline(function(s) return { left = { { text = s.mode, style = 'mode' } }, right = { s.message or '-' } } end)",
+    )
+    .unwrap();
+    let line = h.status_line(Some("hi"), 80).unwrap().unwrap();
+    let text = |spans: &[kern_core::render::Span]| {
+        spans.iter().map(|s| s.text.clone()).collect::<String>()
+    };
+    assert_eq!(text(&line.left), "normal");
+    assert_eq!(text(&line.right), "hi");
+
+    h.load_str("bar", "").unwrap();
+    assert_eq!(h.status_line(None, 80).unwrap(), None);
+
+    h.load_str("bad", "require('@kern').statusline(function() return { left = { { text = 'x', style = 'loud' } } } end)")
+        .unwrap();
+    let err = h.status_line(None, 80).unwrap_err().to_string();
+    assert!(err.contains("style must be"), "{err}");
+}

@@ -22,6 +22,8 @@ pub struct Buffer {
     /// The latest transaction(s): the buffer's version. Empty until the first
     /// edit.
     version: SmallVec<[TxId; 1]>,
+    /// The version last loaded from or written to the file.
+    saved: SmallVec<[TxId; 1]>,
 }
 
 impl Buffer {
@@ -35,6 +37,7 @@ impl Buffer {
             path: None,
             history: History::default(),
             version: SmallVec::new(),
+            saved: SmallVec::new(),
         }
     }
 
@@ -61,18 +64,25 @@ impl Buffer {
     }
 
     /// Writes the text to the buffer's file.
-    pub fn save(&self) -> std::io::Result<()> {
+    pub fn save(&mut self) -> std::io::Result<()> {
         let path = self
             .path
             .as_deref()
             .ok_or_else(|| std::io::Error::other("this buffer has no file"))?;
         let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
         self.text.write_to(&mut file)?;
-        file.flush()
+        file.flush()?;
+        self.saved = self.version.clone();
+        Ok(())
     }
 
     pub fn history(&self) -> &History {
         &self.history
+    }
+
+    /// True if the text changed since it was loaded or last saved.
+    pub fn is_modified(&self) -> bool {
+        self.version != self.saved
     }
 
     pub fn version(&self) -> &[TxId] {

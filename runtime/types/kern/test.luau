@@ -12,6 +12,8 @@ export type TestContext = {
 	run: (self: TestContext, command: string) -> (),
 	--- The buffer with markers.
 	marked: (self: TestContext) -> string,
+	--- The left and right sides of the status line a plugin builds, as text.
+	status: (self: TestContext) -> (string?, string?),
 	--- Fails unless the buffer, with markers, is `marked`.
 	expect: (self: TestContext, marked: string) -> (),
 	expect_mode: (self: TestContext, mode: string) -> (),

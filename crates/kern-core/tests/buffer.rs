@@ -229,3 +229,18 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn buffers_know_whether_they_changed_since_saving() {
+    let path = std::env::temp_dir().join(format!("kern-modified-{}.txt", std::process::id()));
+    let mut f = Fixture::new("");
+    f.buffer = Buffer::new(BufferId(1), "file", "").with_path(&path);
+    assert!(!f.buffer.is_modified());
+    f.edit(0, 0, "x");
+    assert!(f.buffer.is_modified());
+    f.buffer.save().unwrap();
+    assert!(!f.buffer.is_modified());
+    f.edit(1, 1, "y");
+    assert!(f.buffer.is_modified());
+    std::fs::remove_file(&path).unwrap();
+}

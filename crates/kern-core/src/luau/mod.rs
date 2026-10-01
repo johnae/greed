@@ -25,6 +25,7 @@ pub use testing::{TestResult, run_tests};
 use crate::Editor;
 use crate::keymap::{Key, ParseError};
 use crate::registry::{PluginId, Registry};
+use crate::render::StatusLine;
 use modules::Modules;
 
 /// How long one call into Luau may run before it is stopped.
@@ -39,6 +40,8 @@ pub(crate) struct State {
     plugins: HashMap<PluginId, Plugin>,
     /// The REPL's environment, kept so its globals persist.
     repl: Option<Modules>,
+    /// The function that builds the status line, and the plugin that set it.
+    pub statusline: Option<(PluginId, Function)>,
 }
 
 #[derive(Clone)]
@@ -116,6 +119,7 @@ impl Host {
             registry: Registry::default(),
             plugins: HashMap::new(),
             repl: None,
+            statusline: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -199,6 +203,13 @@ impl Host {
         let mut state = state_mut(&self.lua);
         state.registry.remove_owned_by(name);
         state.editor.keymap_mut().remove_owned_by(name);
+        if state
+            .statusline
+            .as_ref()
+            .is_some_and(|(owner, _)| &**owner == name)
+        {
+            state.statusline = None;
+        }
     }
 
     /// Evaluates Luau typed at the REPL. Expressions return their value as
@@ -213,6 +224,17 @@ impl Host {
         let values = budgeted(&self.lua, || modules.eval(&self.lua, chunk, "=repl"))?;
         let parts: Vec<String> = values.iter().map(api::display).collect();
         Ok(parts.join("\t"))
+    }
+
+    /// The status line a plugin builds, or `None` if no plugin builds one.
+    pub fn status_line(
+        &self,
+        message: Option<&str>,
+        width: u16,
+    ) -> Result<Option<StatusLine>, HostError> {
+        budgeted(&self.lua, || {
+            api::status_line(&self.lua, message, width).map_err(HostError::from)
+        })
     }
 
     /// Runs a command as the user.

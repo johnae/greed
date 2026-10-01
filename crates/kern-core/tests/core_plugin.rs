@@ -66,3 +66,8 @@ fn failures_name_the_line_and_what_differed() {
     );
     assert!(summary[2].1.unwrap().contains("no-such-command"));
 }
+
+#[test]
+fn statusline_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("statusline")], &plugin("statusline"));
+}

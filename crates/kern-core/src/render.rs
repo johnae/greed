@@ -124,6 +124,22 @@ pub struct Rect {
     pub height: u16,
 }
 
+/// A status line: segments on the left and on the right, with the space
+/// between them padded.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatusLine {
+    pub left: Vec<Span>,
+    pub right: Vec<Span>,
+}
+
+/// What goes on the status line.
+pub enum Status<'a> {
+    /// The built-in line, showing `message` in place of the file name.
+    Default { message: Option<&'a str> },
+    /// A line a plugin built.
+    Line(StatusLine),
+}
+
 /// One grapheme placed on screen.
 #[derive(Debug, Clone)]
 struct Cell {
@@ -154,7 +170,7 @@ impl<M: Measure> Renderer<M> {
         &self,
         editor: &mut Editor,
         size: Size,
-        message: Option<&str>,
+        status: &Status,
         highlighter: &Highlighter,
     ) -> Frame {
         let main = editor.main();
@@ -165,7 +181,13 @@ impl<M: Measure> Renderer<M> {
             height: size.height.saturating_sub(1),
         };
         let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, highlighter);
-        rows.push(self.status(editor, editor.view(main), size, message));
+        let status = match status {
+            Status::Default { message } => {
+                Self::default_status(editor, editor.view(main), *message)
+            }
+            Status::Line(line) => line.clone(),
+        };
+        rows.push(self.status_row(&status, usize::from(size.width)));
 
         let mut cursor = main_cursor.filter(|_| editor.focus() == main);
         let mut floats = Vec::new();
@@ -414,37 +436,66 @@ impl<M: Measure> Renderer<M> {
         format!("…{}", &text[start..])
     }
 
-    fn status(&self, editor: &Editor, view: &View, size: Size, message: Option<&str>) -> Row {
+    /// The built-in status line: mode, file or message, and position.
+    fn default_status(editor: &Editor, view: &View, message: Option<&str>) -> StatusLine {
         let buffer = editor.buffer(view.buffer);
         let text = buffer.text();
         let head = view.selection.primary().head;
         let line = text.byte_to_line(head);
         let column = text.byte_to_char(head) - text.line_to_char(line) + 1;
-
-        let mode = format!(" {} ", editor.mode().to_uppercase());
-        let (middle, middle_tag) = match message {
-            Some(message) => (message.to_owned(), Tag::Message),
-            None => (
-                buffer
+        let middle = match message {
+            Some(message) => span(message, Tag::Message),
+            None => span(
+                &buffer
                     .path()
                     .map_or_else(|| "[scratch]".to_owned(), |p| p.display().to_string()),
                 Tag::Status,
             ),
         };
-        let position = format!("{}:{column} ", line + 1);
-        let room = usize::from(size.width)
-            .saturating_sub(self.text_width(&mode) + 2 + self.text_width(&position));
-        let middle = self.keep_end(&middle, room);
-        // At least one space between the middle and the position.
-        let padding = " ".repeat(room - self.text_width(&middle) + 1);
+        StatusLine {
+            left: vec![
+                span(&format!(" {} ", editor.mode().to_uppercase()), Tag::Mode),
+                span(" ", Tag::Status),
+                middle,
+            ],
+            right: vec![span(&format!("{}:{column} ", line + 1), Tag::Status)],
+        }
+    }
+
+    /// Lays out a status line across `width` cells. If it doesn't fit, the
+    /// last segment on the left keeps only its end.
+    fn status_row(&self, status: &StatusLine, width: usize) -> Row {
+        let widths = |spans: &[Span]| {
+            spans
+                .iter()
+                .map(|s| self.text_width(&s.text))
+                .sum::<usize>()
+        };
+        let mut left = status.left.clone();
+        let right = widths(&status.right);
+        if let Some((last, rest)) = left.split_last_mut() {
+            // Leave at least one space between the two sides.
+            let room = width.saturating_sub(widths(rest) + right + 1);
+            last.text = self.keep_end(&last.text, room);
+        }
+        let padding = width.saturating_sub(widths(&left) + right);
 
         let mut row = Row::default();
-        row.push(&mode, smallvec![Tag::Mode]);
-        row.push(" ", smallvec![Tag::Status]);
-        row.push(&middle, smallvec![middle_tag]);
-        row.push(&padding, smallvec![Tag::Status]);
-        row.push(&position, smallvec![Tag::Status]);
+        for s in &left {
+            row.push(&s.text, s.tags.clone());
+        }
+        row.push(&" ".repeat(padding), smallvec![Tag::Status]);
+        for s in &status.right {
+            row.push(&s.text, s.tags.clone());
+        }
         row
+    }
+}
+
+fn span(text: &str, tag: Tag) -> Span {
+    Span {
+        text: text.to_owned(),
+        tags: smallvec![tag],
     }
 }
 

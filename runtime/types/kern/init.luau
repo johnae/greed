@@ -55,6 +55,8 @@ export type Buffer = {
 	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
 	--- Writes the buffer to its file.
 	save: (self: Buffer) -> (),
+	--- True if the text changed since it was opened or last saved.
+	modified: (self: Buffer) -> boolean,
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -145,6 +147,30 @@ export type BufferChanged = {
 	buffer: Buffer,
 }
 
+--- A piece of the status line: plain text, or text with a style.
+export type StatusSegment = string | {
+	text: string,
+	style: ("status" | "mode" | "message")?,
+}
+
+--- What a status line function gets, for the main view.
+export type StatusContext = {
+	view: View,
+	buffer: Buffer,
+	mode: string,
+	--- The latest message or error, if there is one to show.
+	message: string?,
+	--- The width of the screen in cells.
+	width: number,
+}
+
+--- Segments for each side. The space between is padded; if the line is too
+--- long, the last segment on the left keeps only its end.
+export type StatusParts = {
+	left: { StatusSegment }?,
+	right: { StatusSegment }?,
+}
+
 export type ModeChanged = {
 	from: string,
 	to: string,
@@ -164,6 +190,8 @@ export type Kern = {
 	view: () -> View,
 	--- Asks the editor to exit.
 	quit: () -> (),
+	--- Sets the function that builds the status line. It runs for every frame.
+	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last
 	--- view showing it closes.
 	create_buffer: (kind: string, text: string?) -> Buffer,

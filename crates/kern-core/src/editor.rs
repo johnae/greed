@@ -232,6 +232,11 @@ impl Editor {
         &self.buffers[&id]
     }
 
+    /// Writes a buffer to its file.
+    pub fn save(&mut self, id: BufferId) -> std::io::Result<()> {
+        self.buffers.get_mut(&id).expect("buffer exists").save()
+    }
+
     /// The buffer with `id`, if it still exists.
     pub fn find_buffer(&self, id: BufferId) -> Option<&Buffer> {
         self.buffers.get(&id)

@@ -11,7 +11,7 @@ use crossbeam_channel::{Receiver, Sender, select};
 
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
-use crate::render::{CellWidth, Frame, Renderer, Size};
+use crate::render::{CellWidth, Frame, Renderer, Size, Status};
 use crate::syntax::Syntax;
 
 /// A message from a client to the server.
@@ -92,9 +92,20 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
             return;
         }
         let Some(size) = size else { continue };
+        let status = match host.status_line(message.as_deref(), size.width) {
+            Ok(Some(line)) => Status::Line(line),
+            Ok(None) => Status::Default {
+                message: message.as_deref(),
+            },
+            Err(err) => {
+                message = Some(format!("status line: {}", first_line(&err.to_string())));
+                Status::Default {
+                    message: message.as_deref(),
+                }
+            }
+        };
         let highlighter = |buffer, text: &_, range| syntax.highlights(buffer, text, range);
-        let frame =
-            host.with_editor_mut(|ed| renderer.frame(ed, size, message.as_deref(), &highlighter));
+        let frame = host.with_editor_mut(|ed| renderer.frame(ed, size, &status, &highlighter));
         if outbox.send(Output::Frame(frame)).is_err() {
             return;
         }

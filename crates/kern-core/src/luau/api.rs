@@ -13,6 +13,7 @@ use super::handles::{BufferRef, ViewRef};
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods};
 use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
+use crate::render::{Span, StatusLine, Tag};
 use crate::{Anchor, Extent, FloatOptions, KeyOutcome};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -161,6 +162,15 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         "quit",
         lua.create_function(|lua, ()| {
             state_mut(lua).editor.request_quit();
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    kern.set(
+        "statusline",
+        lua.create_function(move |lua, build: Function| {
+            state_mut(lua).statusline = Some((o.clone(), build));
             Ok(())
         })?,
     )?;
@@ -552,4 +562,87 @@ fn float_options(spec: Option<Table>) -> LuaResult<FloatOptions> {
         height: extent(spec.get("height")?)?,
         anchor,
     })
+}
+
+/// Calls the plugin's status line function, if one is set. It gets
+/// `{ view, buffer, mode, message, width }` for the main view and returns
+/// `{ left = segments, right = segments }`, where a segment is a string or
+/// `{ text = ..., style = "mode" | "message" | "status" }`.
+pub(super) fn status_line(
+    lua: &Lua,
+    message: Option<&str>,
+    width: u16,
+) -> LuaResult<Option<StatusLine>> {
+    let (build, view, buffer, mode, author) = {
+        let state = state(lua);
+        let Some((owner, build)) = &state.statusline else {
+            return Ok(None);
+        };
+        let view = state.editor.main();
+        (
+            build.clone(),
+            view,
+            state.editor.view(view).buffer,
+            state.editor.mode().to_owned(),
+            Author::Plugin(owner.clone()),
+        )
+    };
+    let ctx = lua.create_table()?;
+    ctx.set(
+        "view",
+        ViewRef {
+            id: view,
+            author: author.clone(),
+        },
+    )?;
+    ctx.set(
+        "buffer",
+        BufferRef {
+            buffer,
+            view: Some(view),
+            author,
+        },
+    )?;
+    ctx.set("mode", mode)?;
+    ctx.set("message", message)?;
+    ctx.set("width", width)?;
+    let line: Table = build.call(ctx)?;
+    Ok(Some(StatusLine {
+        left: segments(line.get("left")?)?,
+        right: segments(line.get("right")?)?,
+    }))
+}
+
+fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
+    let Some(list) = list else {
+        return Ok(Vec::new());
+    };
+    list.sequence_values::<Value>()
+        .map(|segment| {
+            let (text, style) = match segment? {
+                Value::String(s) => (s.to_str()?.to_owned(), None),
+                Value::Table(t) => (t.get::<String>("text")?, t.get::<Option<String>>("style")?),
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "status line segments are strings or {{ text = ..., style = ... }}, not {}",
+                        other.type_name()
+                    )));
+                }
+            };
+            let tag = match style.as_deref() {
+                None | Some("status") => Tag::Status,
+                Some("mode") => Tag::Mode,
+                Some("message") => Tag::Message,
+                Some(other) => {
+                    return Err(mlua::Error::runtime(format!(
+                        "status line style must be \"status\", \"mode\" or \"message\", not {other:?}"
+                    )));
+                }
+            };
+            Ok(Span {
+                text,
+                tags: std::iter::once(tag).collect(),
+            })
+        })
+        .collect()
 }
