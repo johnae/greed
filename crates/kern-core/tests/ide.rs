@@ -113,3 +113,127 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// The default plugins with the agent's IDE tools, the lock file in a
+/// temporary directory, and `file` open.
+fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
+    let name = format!("ide-{label}-{}", std::process::id());
+    let dir = std::env::temp_dir().join(format!("kern-{name}"));
+    let session = control::listen(&name).unwrap();
+    let requests = session.sender().clone();
+    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    let start = format!(
+        "require('@kern').control.serve_ide({{ '/project' }}, {:?})",
+        dir.to_str().unwrap()
+    );
+    let file = file.to_owned();
+    let conn = server::spawn_with_session(
+        move || {
+            let mut editor = Editor::new(ClientId(1));
+            editor.open("file", &std::fs::read_to_string(&file).unwrap(), Some(file));
+            let host = Host::new(editor)?;
+            host.load_dirs(&[
+                plugins.join("core"),
+                plugins.join("picker"),
+                plugins.join("agent"),
+            ])?;
+            // Only now, so the agent plugin's own start (into ~/.claude/ide)
+            // finds no session and this test's start is the one that counts.
+            host.set_request_sender(requests);
+            host.load_str("start", &start)?;
+            Ok(host)
+        },
+        Some(session),
+    );
+    (conn, dir)
+}
+
+/// The response to request `id`, skipping notifications.
+fn response(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, id: u64) -> Value {
+    loop {
+        let message = next(socket);
+        if message["id"] == id {
+            return message;
+        }
+    }
+}
+
+fn call(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, id: u64, tool: &str, arguments: &Value) {
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": { "name": tool, "arguments": arguments },
+    });
+    socket.send(Message::text(request.to_string())).unwrap();
+}
+
+#[test]
+fn claude_codes_diffs_become_proposals_and_come_back_saved() {
+    let work = std::env::temp_dir().join(format!("kern-ide-work-{}", std::process::id()));
+    std::fs::create_dir_all(&work).unwrap();
+    let file = work.join("a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
+    let (conn, dir) = start_agent("diff", &file);
+    let (port, lock) = lock(&dir);
+    let mut socket = connect(port, lock["authToken"].as_str().unwrap()).unwrap();
+
+    let list = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+    socket.send(Message::text(list.to_string())).unwrap();
+    let tools = response(&mut socket, 1);
+    let names: Vec<&str> = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"openDiff") && names.contains(&"getDiagnostics"),
+        "{names:?}"
+    );
+    assert!(
+        !names.contains(&"propose"),
+        "the IDE gets its own tools: {names:?}"
+    );
+
+    let path = file.to_str().unwrap();
+    call(
+        &mut socket,
+        2,
+        "openDiff",
+        &json!({
+            "old_file_path": path,
+            "new_file_path": path,
+            "new_file_contents": "one\nTWO\nthree\n",
+            "tab_name": "edit a.txt",
+        }),
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    for key in kern_core::keymap::Key::parse_sequence("space o A").unwrap() {
+        conn.input.send(Input::Key(key)).unwrap();
+    }
+    let saved = response(&mut socket, 2);
+    let content = &saved["result"]["content"];
+    assert_eq!(content[0]["text"], "FILE_SAVED", "{saved}");
+    assert_eq!(content[1]["text"], "one\nTWO\nthree\n");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\nTWO\nthree\n");
+
+    call(
+        &mut socket,
+        3,
+        "checkDocumentDirty",
+        &json!({ "filePath": path }),
+    );
+    let dirty: Value = serde_json::from_str(
+        response(&mut socket, 3)["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(dirty["isDirty"], false, "saved after accepting");
+
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&work).unwrap();
+}

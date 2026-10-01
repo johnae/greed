@@ -10,6 +10,7 @@
 local registry = require("@self/registry")
 local proposals = require("@self/proposals")
 require("@self/tools")
+require("@self/ide")
 
 export type Tool = registry.Tool
 export type Edit = proposals.Edit

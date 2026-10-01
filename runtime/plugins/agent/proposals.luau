@@ -32,7 +32,10 @@ type Proposal = {
 	hunks: { Hunk },
 	-- The undecided hunks, in the order they appear in the file.
 	pending: { Hunk },
+	-- Gets the proposal back once every hunk is decided.
 	done: kern.Signal,
+	-- What Claude Code calls the diff, so it can withdraw it.
+	tab: string?,
 }
 
 local proposals: { Proposal } = {}
@@ -117,7 +120,7 @@ local function decide(p: Proposal, chosen: (at: kern.Mark) -> boolean, accept: b
 		if index then
 			table.remove(proposals, index)
 		end
-		p.done.send(summary(p))
+		p.done.send(p)
 	end
 end
 
@@ -276,6 +279,34 @@ kern.keymap.bind("normal", {
 	["space o o"] = "proposals",
 })
 
+-- Shows `hunks` (at `at`, and in file order as `pending`) for review, and
+-- waits until every one is decided.
+local function start(
+	path: string,
+	buffer: kern.Buffer,
+	pending: { Hunk },
+	hunks: { Hunk },
+	at: { Span },
+	reason: string?,
+	tab: string?
+): Proposal
+	local p: Proposal = {
+		path = path,
+		buffer = buffer,
+		hunks = hunks,
+		pending = pending,
+		done = kern.signal(),
+		tab = tab,
+	}
+	table.insert(proposals, p)
+	for i, hunk in hunks do
+		draw(p, hunk, at[i])
+	end
+	local why = if reason then `: {reason}` else ""
+	kern.echo(`an agent proposes {#hunks} changes to {path}{why} - space o o to review`)
+	return p.done.wait()
+end
+
 local M = {}
 
 export type Edit = { old_text: string, new_text: string }
@@ -323,20 +354,55 @@ function M.propose(path: string, edits: { Edit }, reason: string?): string
 		end
 		pending[n] = hunks[i]
 	end
-	local p: Proposal = {
-		path = full,
-		buffer = buffer,
-		hunks = hunks,
-		pending = pending,
-		done = kern.signal(),
-	}
-	table.insert(proposals, p)
-	for i, hunk in hunks do
-		draw(p, hunk, at[i])
+	return summary(start(full, buffer, pending, hunks, at, reason, nil))
+end
+
+--- Proposes `changes` (byte ranges of `buffer` and their new text, sorted
+--- and apart, as `kern.diff` gives them), then waits for the user. Returns
+--- how many they accepted and rejected.
+function M.propose_changes(
+	buffer: kern.Buffer,
+	path: string,
+	changes: { { from: number, to: number, text: string } },
+	reason: string?,
+	tab: string?
+): { accepted: number, rejected: number }
+	local hunks: { Hunk }, at: { Span } = {}, {}
+	for _, change in changes do
+		next_id += 1
+		local old = buffer:slice(change.from, change.to)
+		table.insert(hunks, { id = next_id, old = old, new = change.text, status = "pending" })
+		table.insert(at, { from = change.from, to = change.to })
 	end
-	local why = if reason then `: {reason}` else ""
-	kern.echo(`an agent proposes {#hunks} changes to {path}{why} - space o o to review`)
-	return p.done.wait()
+	local p = start(path, buffer, table.clone(hunks), hunks, at, reason, tab)
+	local accepted = 0
+	for _, hunk in p.hunks do
+		accepted += if hunk.status == "accepted" then 1 else 0
+	end
+	return { accepted = accepted, rejected = #p.hunks - accepted }
+end
+
+--- Rejects what's left of the proposal Claude Code called `tab`, e.g.
+--- because it gave up waiting.
+function M.withdraw(tab: string)
+	for _, p in table.clone(proposals) do
+		if p.tab == tab then
+			decide(p, everything, false)
+		end
+	end
+end
+
+--- Rejects what's left of every proposal Claude Code made. Returns how many
+--- there were.
+function M.withdraw_all(): number
+	local n = 0
+	for _, p in table.clone(proposals) do
+		if p.tab then
+			n += 1
+			decide(p, everything, false)
+		end
+	end
+	return n
 end
 
 --- How many proposed changes are waiting, across all files.

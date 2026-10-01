@@ -9,12 +9,17 @@ export type Tool = {
 	description: string,
 	--- A JSON Schema for the arguments: `{ type = "object", properties = {...} }`.
 	input: { [string]: any }?,
+	--- Who sees it: "socket" (`kern ctl`, `kern mcp`; the default) or "ide"
+	--- (Claude Code's IDE connection, which expects its own set of tools).
+	client: string?,
 	--- Does the work. It can wait, e.g. for the user. A string result goes
-	--- to the agent as is; anything else as JSON. Errors go back as errors.
+	--- to the agent as is, a table with `content` as an MCP result, anything
+	--- else as JSON. Errors go back as errors.
 	run: (args: { [string]: any }) -> any,
 }
 
-local tools: { [string]: Tool } = {}
+-- The tools offered, by client and name.
+local tools: { [string]: { [string]: Tool } } = {}
 
 local M = {}
 
@@ -22,13 +27,15 @@ local M = {}
 --- replaced.
 function M.tool(spec: Tool)
 	assert(string.match(spec.name, "^[%w_%-]+$"), "tool names are letters, digits, _ and -")
-	tools[spec.name] = spec
+	local client = spec.client or "socket"
+	tools[client] = tools[client] or {}
+	tools[client][spec.name] = spec
 end
 
---- The tools offered, sorted by name.
-function M.tools(): { Tool }
+--- The tools offered to `client` (default "socket"), sorted by name.
+function M.tools(client: string?): { Tool }
 	local list = {}
-	for _, tool in tools do
+	for _, tool in tools[client or "socket"] or {} do
 		table.insert(list, tool)
 	end
 	table.sort(list, function(a: Tool, b: Tool)
@@ -42,8 +49,8 @@ local function text_result(text: string, is_error: boolean)
 end
 
 -- Runs a tool for tools/call and wraps what it returns the way MCP wants.
-local function call(params: { name: string, arguments: { [string]: any }? })
-	local tool = tools[params.name]
+local function call(params: { name: string, arguments: { [string]: any }? }, client: string)
+	local tool = (tools[client] or {})[params.name]
 	if tool == nil then
 		return text_result(`there is no tool called {params.name}`, true)
 	end
@@ -54,10 +61,13 @@ local function call(params: { name: string, arguments: { [string]: any }? })
 	if type(result) == "string" then
 		return text_result(result, false)
 	end
+	if type(result) == "table" and result.content then
+		return result
+	end
 	return text_result(kern.json.encode(result), false)
 end
 
-local methods: { [string]: (params: any) -> any } = {
+local methods: { [string]: (params: any, client: string) -> any } = {
 	initialize = function(params)
 		return {
 			protocolVersion = params and params.protocolVersion or "2025-06-18",
@@ -68,9 +78,9 @@ local methods: { [string]: (params: any) -> any } = {
 	ping = function()
 		return {}
 	end,
-	["tools/list"] = function()
+	["tools/list"] = function(_, client)
 		local list = {}
-		for _, tool in M.tools() do
+		for _, tool in M.tools(client) do
 			table.insert(list, {
 				name = tool.name,
 				description = tool.description,
@@ -91,7 +101,7 @@ kern.on("control.request", function(request: kern.ControlRequest)
 	elseif method == nil then
 		kern.control.reply(request.id, nil, `unknown method {request.method}`)
 	else
-		local ok, result = pcall(method, request.params)
+		local ok, result = pcall(method, request.params, request.client)
 		if ok then
 			kern.control.reply(request.id, result)
 		else
