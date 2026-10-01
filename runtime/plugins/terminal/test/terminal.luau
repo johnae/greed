@@ -189,3 +189,73 @@ test("what a program copies goes on the clipboard", function(t)
 	local copy = kern.clipboard.get()
 	assert(copy and copy[1] == "copied", copy and copy[1])
 end)
+
+-- Points the link-opener option at a script that writes what it opens to
+-- a file, and returns the file.
+local function record_opens(t: test.TestContext): string
+	local dir = t:tempdir({ ["open.sh"] = 'printf %s "$1" > "$(dirname "$0")/opened"\n' })
+	kern.option.set("link-opener", `sh {dir}/open.sh`)
+	return `{dir}/opened`
+end
+
+local function opened(t: test.TestContext, file: string): string?
+	local found: string?
+	t:wait_for(function()
+		found = kern.fs.read(file)
+		return found ~= nil
+	end)
+	return found
+end
+
+test("links a program prints are underlined and g x opens them", function(t)
+	local file = record_opens(t)
+	t:run("terminal", {
+		"sh",
+		"-c",
+		"printf 'see \\033]8;;https://example.com/a\\033\\\\the site\\033]8;;\\033\\\\'; exit 1",
+	})
+	shows(t, "see the site")
+	local buffer = kern.view():buffer()
+	local link
+	for _, mark in buffer:decorations("terminal.screen") do
+		if mark.style == "markup.link" then
+			link = mark
+		end
+	end
+	assert(link and buffer:slice(link.from, link.to) == "the site")
+	t:wait_for(function()
+		return kern.mode.get() == "normal"
+	end)
+	kern.view():set_selection({ ranges = { { anchor = 6, head = 6 } }, primary = 1 })
+	t:keys("g x")
+	assert(opened(t, file) == "https://example.com/a")
+end)
+
+test("g x opens a URL written in the output", function(t)
+	local file = record_opens(t)
+	t:run("terminal", { "sh", "-c", "echo 'go to https://example.com/b.'; exit 1" })
+	shows(t, "go to")
+	t:wait_for(function()
+		return kern.mode.get() == "normal"
+	end)
+	kern.view():set_selection({ ranges = { { anchor = 12, head = 12 } }, primary = 1 })
+	t:keys("g x")
+	assert(opened(t, file) == "https://example.com/b")
+end)
+
+test("links keep working after they scroll off the screen", function(t)
+	local file = record_opens(t)
+	t:draw(40, 8)
+	t:run("terminal", {
+		"sh",
+		"-c",
+		"printf '\\033]8;;https://example.com/c\\033\\\\up here\\033]8;;\\033\\\\\\n'; seq 1 30; exit 1",
+	})
+	shows(t, "\n30")
+	t:wait_for(function()
+		return kern.mode.get() == "normal"
+	end)
+	kern.view():set_selection({ ranges = { { anchor = 2, head = 2 } }, primary = 1 })
+	t:keys("g x")
+	assert(opened(t, file) == "https://example.com/c")
+end)

@@ -309,3 +309,16 @@ mod from_luau {
         assert!(err.contains("closed"), "{err}");
     }
 }
+
+#[test]
+fn links_programs_print_are_kept_with_where_they_go() {
+    let shown = "see \\033]8;;https://example.com\\033\\\\the site\\033]8;;\\033\\\\ now";
+    let (terminal, events) = start(&["printf", shown], 3, 40);
+    exited(&events);
+    let row = &terminal.screen().rows[0];
+    assert_eq!(row.text, "see the site now");
+    assert_eq!(row.links.len(), 1);
+    let link = &row.links[0];
+    assert_eq!(&row.text[link.from..link.to], "the site");
+    assert_eq!(&*link.uri, "https://example.com");
+}

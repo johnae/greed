@@ -306,6 +306,7 @@ goes to the program, including ones the editor would otherwise take, like
 | `ctrl-space` | The same, then `space`: `ctrl-space f` finds a file from inside a terminal |
 | `i`, `a`, `enter` | Type into it again |
 | `p` | Paste the latest copy into the program |
+| `g x`, `ctrl-click` | Open the link under the cursor (or the mouse) |
 | `:terminal-close` | End the program and close the terminal |
 
 Out of the terminal, its output is text like any other: select it, search
@@ -315,6 +316,10 @@ terminal closes; when it fails, the output stays with how it ended, so you
 can read what went wrong. A terminal keeps running while you look at other
 files, and while you're detached. `:set terminal-shell "fish -l"` changes
 what new terminals run.
+
+Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
+URLs written in the output open too. They open with `xdg-open` (`open` on
+macOS), or whatever `:set link-opener firefox` names.
 
 ## Panes and tabs
 

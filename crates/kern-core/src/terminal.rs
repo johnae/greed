@@ -64,6 +64,15 @@ pub struct Row {
     pub spans: Vec<Span>,
     /// The images on it, as runs of cells.
     pub images: Vec<RowImage>,
+    /// The links on it (OSC 8): byte ranges and where they go.
+    pub links: Vec<RowLink>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowLink {
+    pub from: usize,
+    pub to: usize,
+    pub uri: Arc<str>,
 }
 
 /// Part of an image on a row: from byte `from`, its cells from (`col`,
@@ -485,12 +494,16 @@ fn row(
         if let Some(piece) = cell.image() {
             add_image(&mut row, piece, graphics);
         }
+        let start = row.text.len();
         row.text.push(if cell.flags.contains(Flags::HIDDEN) {
             ' '
         } else {
             cell.c
         });
         row.text.extend(cell.zerowidth().unwrap_or_default());
+        if let Some(link) = cell.hyperlink() {
+            add_link(&mut row, start, link.uri());
+        }
     }
     finish_run(&mut row, run);
     if cursor == Some(end) {
@@ -518,6 +531,19 @@ fn add_image(row: &mut Row, piece: ImagePiece, graphics: &Graphics) {
             cols: placed.cols,
             rows: placed.rows,
         });
+    }
+}
+
+/// Adds the cell just written, from byte `start`, to the link run before it
+/// if it carries on with the same link, or starts a new one.
+fn add_link(row: &mut Row, start: usize, uri: &str) {
+    match row.links.last_mut() {
+        Some(last) if last.to == start && &*last.uri == uri => last.to = row.text.len(),
+        _ => row.links.push(RowLink {
+            from: start,
+            to: row.text.len(),
+            uri: uri.into(),
+        }),
     }
 }
 

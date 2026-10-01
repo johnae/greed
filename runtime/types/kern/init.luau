@@ -305,7 +305,11 @@ export type TerminalRow = {
 	--- cell (`col`, `row`) on, of an image `cols` by `rows` cells. `id` is a
 	--- `kern.image` id, for a mark's `image`.
 	images: { { from: number, id: number, col: number, row: number, cols: number, rows: number } },
+	--- Links the program printed (OSC 8), as byte ranges and where they go.
+	links: { TerminalLink },
 }
+
+export type TerminalLink = { from: number, to: number, uri: string }
 
 --- What a terminal shows.
 export type TerminalScreen = {

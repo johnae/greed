@@ -147,6 +147,15 @@ fn row_to_lua(lua: &Lua, row: Row) -> LuaResult<Table> {
         images.push(i)?;
     }
     t.set("images", images)?;
+    let links = lua.create_table()?;
+    for link in row.links {
+        let l = lua.create_table()?;
+        l.set("from", link.from)?;
+        l.set("to", link.to)?;
+        l.set("uri", &*link.uri)?;
+        links.push(l)?;
+    }
+    t.set("links", links)?;
     Ok(t)
 }
 

@@ -22,6 +22,12 @@ kern.option.define({
 	default = "",
 })
 
+kern.option.define({
+	name = "link-opener",
+	doc = 'What opens a link, e.g. "firefox"; empty for xdg-open, or open on macOS',
+	default = "",
+})
+
 -- The terminal-shell option as a command line, or nil for $SHELL.
 local function shell(): { string }?
 	local words = {}
@@ -57,6 +63,12 @@ type Term = {
 	images: { [number]: boolean },
 	-- Whether a full screen program is showing, as of the last update.
 	alternate: boolean,
+	-- Links programs printed (OSC 8): above the screen by scrollback line,
+	-- counting from the first ever, and on the screen by row.
+	links: { [number]: { kern.TerminalLink } },
+	screen_links: { [number]: { kern.TerminalLink } },
+	-- Scrollback lines trimmed from the top of the buffer.
+	dropped: number,
 }
 
 local M = {}
@@ -99,6 +111,12 @@ local function marks(
 				{ from = start + span.from, to = start + span.to, style = span.style }
 			)
 		end
+		for _, link in row.links do
+			table.insert(
+				list,
+				{ from = start + link.from, to = start + link.to, style = "markup.link" }
+			)
+		end
 		for _, image in row.images do
 			if not marked[image.id] then
 				marked[image.id] = true
@@ -133,6 +151,10 @@ local function trim(term: Term)
 		e:delete(0, buffer:line_start(extra))
 	end)
 	term.history -= extra
+	for line = term.dropped, term.dropped + extra - 1 do
+		term.links[line] = nil
+	end
+	term.dropped += extra
 	while extra > 0 and #term.chunks > 0 do
 		local oldest = term.chunks[1]
 		if oldest.lines > extra then
@@ -184,6 +206,17 @@ function M.update(term: Term)
 	buffer:edit(function(e)
 		e:replace(from, buffer:len(), table.concat(lines, "\n"))
 	end)
+	for i, row in scrolled.rows do
+		if #row.links > 0 then
+			term.links[term.dropped + before + i - 1] = row.links
+		end
+	end
+	term.screen_links = {}
+	for i, row in screen.rows do
+		if #row.links > 0 then
+			term.screen_links[i - 1] = row.links
+		end
+	end
 	term.next = scrolled.first + #scrolled.rows
 	term.history += #scrolled.rows
 	if #scrolled.rows > 0 then
@@ -298,6 +331,9 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		command = if given then table.concat(given, " ") else "shell",
 		images = {},
 		alternate = false,
+		links = {},
+		screen_links = {},
+		dropped = 0,
 	}
 	terms[buffer:id()] = term
 	M.enter(view)
@@ -445,6 +481,68 @@ kern.command({
 	end,
 })
 
+-- A URL written out in text, for links programs didn't mark.
+local URL = [=[(https?|ftp|file)://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]]=]
+
+--- Where the link at `pos` in `buffer` goes: one a terminal's program
+--- printed, or a URL written there.
+function M.link_at(buffer: kern.Buffer, pos: number): string?
+	local line = buffer:line_of(pos)
+	local start = buffer:line_start(line)
+	local term = term_of(buffer)
+	if term then
+		local links = if line < term.history
+			then term.links[term.dropped + line]
+			else term.screen_links[line - term.history]
+		for _, link in links or {} do
+			if pos >= start + link.from and pos < start + link.to then
+				return link.uri
+			end
+		end
+	end
+	for _, found in buffer:find_all(URL, start, buffer:line_end(line)) or {} do
+		if pos >= found.from and pos < found.to then
+			return buffer:slice(found.from, found.to)
+		end
+	end
+	return nil
+end
+
+--- Opens `uri` with the link-opener option, or the system's opener.
+function M.open_link(uri: string)
+	local given = kern.option.get("link-opener") :: string
+	local done, err
+	if given ~= "" then
+		local command = string.split(given, " ")
+		table.insert(command, uri)
+		done, err = kern.process.run(command)
+	else
+		done, err = kern.process.run({ "xdg-open", uri })
+		if done == nil then
+			done, err = kern.process.run({ "open", uri })
+		end
+	end
+	if done == nil then
+		kern.echo(`can't open {uri}: {err}`)
+	elseif done.code ~= 0 then
+		kern.echo(`can't open {uri}: {done.stderr}`)
+	end
+end
+
+kern.command({
+	name = "open-link",
+	doc = "Open the link under the cursor",
+	run = function(ctx)
+		local selection = ctx.view:selection()
+		local uri = M.link_at(ctx.buffer, selection.ranges[selection.primary].head)
+		if uri then
+			M.open_link(uri)
+		else
+			kern.echo("no link here")
+		end
+	end,
+})
+
 --- Shows `term` in the main view and types into it.
 function M.show(term: Term)
 	local view = kern.view()
@@ -529,6 +627,13 @@ local function on_mouse(event: kern.MouseEvent): boolean
 		end
 		return true
 	end
+	if event.kind == "press" and event.button == "left" and event.ctrl and event.pos then
+		local uri = M.link_at(view:buffer(), event.pos)
+		if uri then
+			M.open_link(uri)
+			return true
+		end
+	end
 	if event.kind == "press" and event.button == "left" then
 		view:focus()
 		kern.mode.set(core.style.home())
@@ -576,6 +681,7 @@ for _, mode in { "normal", "vim" } do
 		a = "terminal-input",
 		enter = "terminal-input",
 		p = "terminal-paste",
+		["g x"] = "open-link",
 	})
 end
 kern.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })
