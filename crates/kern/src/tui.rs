@@ -284,8 +284,26 @@ fn style(tags: &[Tag]) -> ContentStyle {
             Tag::Mode => style.on(Color::Blue).black().attribute(Attribute::Bold),
             Tag::Message => style.on(Color::DarkGrey).yellow(),
             Tag::Syntax(capture) => syntax_style(style, capture),
+            Tag::Diagnostic(severity) => diagnostic_style(style, *severity),
         };
     }
+    style
+}
+
+/// Diagnostics: underlined in their color. On the gutter, which has no
+/// text worth underlining, the line number takes the color.
+fn diagnostic_style(style: ContentStyle, severity: u8) -> ContentStyle {
+    let color = match severity {
+        1 => Color::Red,
+        2 => Color::Yellow,
+        3 => Color::Blue,
+        _ => Color::Cyan,
+    };
+    if style.foreground_color == Some(Color::DarkGrey) {
+        return style.with(color);
+    }
+    let mut style = style.attribute(Attribute::Underlined);
+    style.underline_color = Some(color);
     style
 }
 

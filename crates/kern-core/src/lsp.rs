@@ -447,6 +447,11 @@ impl Lsp {
         Handled::Diagnostics(buffer.id())
     }
 
+    /// Every buffer's latest diagnostics.
+    pub fn all_diagnostics(&self) -> impl Iterator<Item = (BufferId, &[Diagnostic])> {
+        self.diagnostics.iter().map(|(id, d)| (*id, d.as_slice()))
+    }
+
     pub fn diagnostics(&self, buffer: BufferId) -> &[Diagnostic] {
         self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
     }

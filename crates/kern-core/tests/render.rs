@@ -1,5 +1,6 @@
 use kern_core::render::{
-    CellWidth, Frame, Position, Renderer, Row, Size, Span, Status, StatusLine, Tag,
+    CellWidth, Decorations, Frame, Plain, Position, Renderer, Row, Size, Span, Status, StatusLine,
+    Tag,
 };
 use kern_core::{Editor, Scroll, parse_marked};
 use kern_text::ClientId;
@@ -17,7 +18,7 @@ fn frame(ed: &mut Editor, width: u16, height: u16) -> Frame {
         ed,
         Size { width, height },
         &Status::Default { message: None },
-        &|_, _, _| Vec::new(),
+        &Plain,
     )
 }
 
@@ -150,7 +151,7 @@ fn the_status_line_shows_mode_file_and_position() {
         &Status::Default {
             message: Some("saved"),
         },
-        &|_, _, _| Vec::new(),
+        &Plain,
     );
     assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
     assert_eq!(f.mode, "normal");
@@ -195,7 +196,10 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
             height: 2,
         },
         &Status::Default { message: None },
-        &|_, _, _| highlights.clone(),
+        &Fixed {
+            highlights: highlights.clone(),
+            diagnostics: Vec::new(),
+        },
     );
     let syntax: Vec<(String, String)> = f.rows[0]
         .spans
@@ -271,10 +275,72 @@ fn plugin_status_lines_are_padded_and_trimmed() {
             &mut ed,
             Size { width, height: 2 },
             &Status::Line(line.clone()),
-            &|_, _, _| Vec::new(),
+            &Plain,
         );
         f.rows.last().unwrap().text()
     };
     assert_eq!(render(32), " N  a/long/path/file.rs     3:4 ");
     assert_eq!(render(20), " N …ath/file.rs 3:4 ");
+}
+
+/// Decorations given up front, for tests.
+struct Fixed {
+    highlights: Vec<kern_core::syntax::Highlight>,
+    diagnostics: Vec<(std::ops::Range<usize>, u8)>,
+}
+
+impl Decorations for Fixed {
+    fn highlights(
+        &self,
+        _: kern_core::BufferId,
+        _: &kern_text::Rope,
+        _: std::ops::Range<usize>,
+    ) -> Vec<kern_core::syntax::Highlight> {
+        self.highlights.clone()
+    }
+
+    fn diagnostics(&self, _: kern_core::BufferId) -> &[(std::ops::Range<usize>, u8)] {
+        &self.diagnostics
+    }
+}
+
+#[test]
+fn diagnostics_mark_their_text_and_line_number() {
+    let mut ed = editor("|let x = bad;\nok\nworse");
+    let f = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 30,
+            height: 4,
+        },
+        &Status::Default { message: None },
+        &Fixed {
+            highlights: Vec::new(),
+            diagnostics: vec![(8..11, 2), (9..10, 1), (16..16, 3)],
+        },
+    );
+    let marked: Vec<(String, u8)> = f
+        .rows
+        .iter()
+        .flat_map(|r| &r.spans)
+        .filter_map(|s| {
+            s.tags.iter().find_map(|t| match t {
+                Tag::Diagnostic(severity) => Some((s.text.clone(), *severity)),
+                _ => None,
+            })
+        })
+        .collect();
+    // The worst severity wins where marks overlap; empty marks cover one
+    // character.
+    assert_eq!(
+        marked,
+        [
+            ("1 ".to_string(), 1),
+            ("b".to_string(), 2),
+            ("a".to_string(), 1),
+            ("d".to_string(), 2),
+            ("3 ".to_string(), 3),
+            ("w".to_string(), 3),
+        ]
+    );
 }

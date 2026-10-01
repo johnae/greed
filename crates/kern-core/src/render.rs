@@ -19,8 +19,24 @@ use kern_text::Rope;
 use crate::syntax::Highlight;
 use crate::{Anchor, BufferId, Editor, FloatOptions, Scroll, View, ViewId};
 
-/// Finds the highlights overlapping a byte range of a buffer.
-pub type Highlighter<'a> = dyn Fn(BufferId, &Rope, Range<usize>) -> Vec<Highlight> + 'a;
+/// Highlights and marks drawn over a buffer's text.
+pub trait Decorations {
+    /// Syntax highlights overlapping `range` of `buffer`.
+    fn highlights(&self, _buffer: BufferId, _text: &Rope, _range: Range<usize>) -> Vec<Highlight> {
+        Vec::new()
+    }
+
+    /// Diagnostics in `buffer`: a byte range and a severity, 1 (error) to 4
+    /// (hint).
+    fn diagnostics(&self, _buffer: BufferId) -> &[(Range<usize>, u8)] {
+        &[]
+    }
+}
+
+/// No highlights or marks.
+pub struct Plain;
+
+impl Decorations for Plain {}
 
 /// How wide text is on screen.
 pub trait Measure {
@@ -61,6 +77,8 @@ pub enum Tag {
     Status,
     Mode,
     Message,
+    /// A diagnostic, by severity: 1 error, 2 warning, 3 information, 4 hint.
+    Diagnostic(u8),
     /// Syntax, named by a tree-sitter capture such as "keyword" or
     /// "function.macro".
     Syntax(Arc<str>),
@@ -171,7 +189,7 @@ impl<M: Measure> Renderer<M> {
         editor: &mut Editor,
         size: Size,
         status: &Status,
-        highlighter: &Highlighter,
+        decorations: &dyn Decorations,
     ) -> Frame {
         let main = editor.main();
         let area = Rect {
@@ -180,7 +198,7 @@ impl<M: Measure> Renderer<M> {
             width: size.width,
             height: size.height.saturating_sub(1),
         };
-        let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, highlighter);
+        let (mut rows, main_cursor) = self.view_rows(editor, main, area, true, decorations);
         let status = match status {
             Status::Default { message } => {
                 Self::default_status(editor, editor.view(main), *message)
@@ -193,7 +211,7 @@ impl<M: Measure> Renderer<M> {
         let mut floats = Vec::new();
         for float in editor.floats().to_vec() {
             let rect = place(&float.options, area);
-            let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, highlighter);
+            let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, decorations);
             if editor.focus() == float.view {
                 cursor = float_cursor;
             }
@@ -221,7 +239,7 @@ impl<M: Measure> Renderer<M> {
         view_id: ViewId,
         area: Rect,
         line_numbers: bool,
-        highlighter: &Highlighter,
+        decorations: &dyn Decorations,
     ) -> (Vec<Row>, Option<Position>) {
         let text_rows = usize::from(area.height);
         let gutter = if line_numbers {
@@ -237,7 +255,16 @@ impl<M: Measure> Renderer<M> {
         let view = editor.view(view_id);
         let text = editor.buffer(view.buffer).text();
         let visible = visible_bytes(text, scroll, text_rows);
-        let syntax = paint(highlighter(view.buffer, text, visible.clone()), &visible);
+        let syntax = paint(
+            decorations.highlights(view.buffer, text, visible.clone()),
+            &visible,
+        );
+        let marks: Vec<_> = decorations
+            .diagnostics(view.buffer)
+            .iter()
+            .filter(|(range, _)| range.start <= visible.end && range.end >= visible.start)
+            .cloned()
+            .collect();
         let head = view.selection.primary().head;
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
@@ -260,7 +287,13 @@ impl<M: Measure> Renderer<M> {
                     } else {
                         " ".repeat(gutter)
                     };
-                    row.push(&number, smallvec![Tag::Gutter]);
+                    let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::Gutter];
+                    let start = text.line_to_byte(line);
+                    let end = text.line_to_byte(line + 1).max(start + 1);
+                    if let Some(severity) = worst(&marks, |r| r.start < end && r.end >= start) {
+                        tags.push(Tag::Diagnostic(severity));
+                    }
+                    row.push(&number, tags);
                 }
                 let mut x = gutter;
                 for cell in &cells {
@@ -278,6 +311,11 @@ impl<M: Measure> Renderer<M> {
                         .and_then(|i| syntax.get(i)?.clone())
                     {
                         cell_tags.insert(0, Tag::Syntax(capture));
+                    }
+                    if let Some(severity) = worst(&marks, |r| {
+                        r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte)
+                    }) {
+                        cell_tags.push(Tag::Diagnostic(severity));
                     }
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push(&cell.text, cell_tags);
@@ -570,4 +608,13 @@ fn place(options: &FloatOptions, area: Rect) -> Rect {
         width: outer_width - 2,
         height: outer_height - 2,
     }
+}
+
+/// The most severe mark (lowest number) whose range matches.
+fn worst(marks: &[(Range<usize>, u8)], matches: impl Fn(&Range<usize>) -> bool) -> Option<u8> {
+    marks
+        .iter()
+        .filter(|(r, _)| matches(r))
+        .map(|(_, s)| *s)
+        .min()
 }

@@ -5,15 +5,19 @@
 //! same process and messages go over channels; a socket can replace them
 //! without changing either side.
 
+use std::collections::HashMap;
+use std::ops::Range;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender, select};
 
+use crate::BufferId;
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
-use crate::render::{CellWidth, Frame, Renderer, Size, Status};
-use crate::syntax::Syntax;
+use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
+use crate::syntax::{Highlight, Syntax};
+use kern_text::Rope;
 
 /// A message from a client to the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,8 +128,11 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
                 }
             }
         };
-        let highlighter = |buffer, text: &_, range| syntax.highlights(buffer, text, range);
-        let frame = host.with_editor_mut(|ed| renderer.frame(ed, size, &status, &highlighter));
+        let decorations = Shown {
+            syntax: &syntax,
+            diagnostics: host.diagnostic_marks(),
+        };
+        let frame = host.with_editor_mut(|ed| renderer.frame(ed, size, &status, &decorations));
         if outbox.send(Output::Frame(frame)).is_err() {
             return;
         }
@@ -134,4 +141,20 @@ fn serve(host: &Host, inbox: &Receiver<Input>, outbox: &Sender<Output>) {
 
 fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or_default().to_owned()
+}
+
+/// What's drawn over buffer text: syntax highlighting and diagnostics.
+struct Shown<'a> {
+    syntax: &'a Syntax,
+    diagnostics: HashMap<BufferId, Vec<(Range<usize>, u8)>>,
+}
+
+impl Decorations for Shown<'_> {
+    fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
+        self.syntax.highlights(buffer, text, range)
+    }
+
+    fn diagnostics(&self, buffer: BufferId) -> &[(Range<usize>, u8)] {
+        self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
+    }
 }
