@@ -69,6 +69,9 @@ character, and `v` starts a visual mode for selecting by hand.
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `z z` | Page and half page down and up, center the view |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
 | `.` | Repeat the last change that didn't type text |
+| `q` + a letter, `q` | Record a macro into that register, stop |
+| `@` + a letter, `@ @` | Play a macro, play the last one again |
+| `"` + a letter | Use that register for the next yank, delete or paste |
 
 Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
@@ -76,8 +79,9 @@ go: the Vim style is plain Luau against the same API any plugin uses, with
 its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`)
 beside Helix's.
 
-It isn't all of Vim. Registers, macros, marks, ex ranges and visual block
-mode are missing. Search (`/ ? n N`) is Kern's, which selects the match.
+It isn't all of Vim. Marks, ex ranges, visual block mode and the special
+registers (`"+`, `".`, `"0`) are missing. Search (`/ ? n N`) is Kern's, which
+selects the match.
 
 ## Edit
 

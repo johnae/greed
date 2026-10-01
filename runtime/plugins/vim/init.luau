@@ -11,8 +11,8 @@
 -- What's here: counts, h j k l w b e 0 ^ $ gg G f t F T %, the operators
 -- d c y > < gc with any of those motions or a text object (iw aW i( a"
 -- ip ...) and doubled for whole lines (dd >> gcc), x X D C s S, r ~ J,
--- p P, i a I A o O, u ctrl-r, v V, * #, and . to repeat the last change
--- that didn't type text.
+-- p P, i a I A o O, u ctrl-r, v V, * #, q@ macros, "a registers, and . to
+-- repeat the last change that didn't type text.
 
 local kern = require("@kern")
 local core = require("@core")
@@ -28,6 +28,8 @@ type Motion = (buffer: Buffer, pos: number, count: number) -> (number?, Kind)
 
 -- What `y` and `d` last took, and whether it was whole lines.
 local register = { text = "", linewise = false }
+-- What "a y and the like put in named registers.
+local named: { [string]: { text: string, linewise: boolean } } = {}
 
 -- Repeats the last change for ".", with the count given to it.
 local last_change: ((ctx: kern.Context, count: number?) -> ())? = nil
@@ -427,10 +429,24 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 		on_lines(ctx, line_command, from, to)
 		return
 	end
-	register = { text = buffer:slice(from, to), linewise = linewise }
-	kern.clipboard.set(register.text)
+	local taken = { text = buffer:slice(from, to), linewise = linewise }
+	-- Into the register picked with ", or the unnamed one and the clipboard.
+	local name = core.registers.take()
+	if name then
+		named[name] = taken
+		core.registers.set(name, { taken.text })
+	else
+		register = taken
+		kern.clipboard.set(taken.text)
+	end
 	if op == "y" then
-		ctx.view:set_selection(point(on_char(buffer, from)))
+		-- Whole lines at the end start with the line break before them.
+		local at = if linewise
+				and to == buffer:len()
+				and buffer:char_at(from) == "\n"
+			then from + 1
+			else from
+		ctx.view:set_selection(point(on_char(buffer, at)))
 		return
 	end
 	if op == "c" then
@@ -622,10 +638,19 @@ command("change-line", "Change the whole line", function(ctx)
 end)
 
 local function paste(ctx: kern.Context, after: boolean)
+	local name = core.registers.take()
+	local from = register
+	if name then
+		-- Text another style copied into it has no line information.
+		local pieces = core.registers.get(name)
+		from = named[name]
+			or (pieces and { text = table.concat(pieces, "\n"), linewise = false })
+			or { text = "", linewise = false }
+	end
 	local buffer, pos = ctx.buffer, cursor(ctx)
-	local text = string.rep(register.text, ctx.count or 1)
+	local text = string.rep(from.text, ctx.count or 1)
 	local at: number
-	if register.linewise then
+	if from.linewise then
 		local line = buffer:line_of(pos)
 		if after then
 			at = if line + 1 < buffer:line_count()
@@ -649,7 +674,7 @@ local function paste(ctx: kern.Context, after: boolean)
 	buffer:edit(function(e)
 		e:insert(at, text)
 	end)
-	if register.linewise then
+	if from.linewise then
 		ctx.view:set_selection(
 			point(
 				first_non_blank(
@@ -722,6 +747,36 @@ command("visual", "Select characters, starting here", function(ctx)
 	ctx.view:set_selection(point(cursor(ctx)))
 	kern.mode.set("vim-visual")
 end)
+
+-- The register the last macro played from, for @@.
+local last_macro: string? = nil
+
+command("macro", "Record a macro into the register typed next, or stop recording", function(ctx)
+	if core.registers.recording() then
+		core.registers.toggle_recording("", ctx.keys)
+		return
+	end
+	local name = kern.next_key()
+	if utf8.len(name) == 1 then
+		core.registers.toggle_recording(name)
+	end
+end)
+
+command(
+	"play-macro",
+	"Play the macro in the register typed next; @@ plays the last one again",
+	function(ctx)
+		local name = kern.next_key()
+		if name == "@" then
+			name = last_macro or ""
+		end
+		if utf8.len(name) ~= 1 then
+			return
+		end
+		last_macro = name
+		core.registers.play(name, ctx.count)
+	end
+)
 
 command("visual-line", "Select whole lines, starting with this one", function(ctx)
 	visual_line = ctx.buffer:line_of(cursor(ctx))
@@ -903,6 +958,9 @@ local keys: { [string]: string } = {
 	["g c"] = "vim-operator-gc",
 	["*"] = "vim-search-word",
 	["#"] = "vim-search-word-back",
+	q = "vim-macro",
+	["@"] = "vim-play-macro",
+	['"'] = "select-register",
 	u = "vim-undo",
 	["ctrl-r"] = "vim-redo",
 	["."] = "vim-repeat",

@@ -16,6 +16,7 @@ local objects = require("@self/objects")
 require("@self/select_mode")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
+local registers = require("@self/registers")
 local menu = require("@self/menu")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
@@ -52,6 +53,9 @@ kern.keymap.bind("normal", {
 	["m m"] = "match-bracket",
 	v = "select-mode",
 	["ctrl-c"] = "toggle-comment",
+	['"'] = "select-register",
+	Q = "record-macro",
+	q = "play-macro",
 	["ctrl-o"] = "jump-back",
 	["ctrl-i"] = "jump-forward",
 	tab = "jump-forward",
@@ -143,4 +147,5 @@ return {
 	comment = comment,
 	jumps = jumps,
 	objects = objects,
+	registers = registers,
 }

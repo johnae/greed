@@ -223,6 +223,19 @@ export type Options = {
 	list: () -> { { name: string, doc: string, value: OptionValue } },
 }
 
+--- Recording what's typed and feeding keys back, for macros.
+export type Keys = {
+	--- Starts keeping every key typed, until `stop`.
+	record: () -> (),
+	--- Stops recording and returns the keys typed, e.g. `{ "i", "x", "esc" }`,
+	--- or nil if nothing was recording.
+	stop: () -> { string }?,
+	recording: () -> boolean,
+	--- Presses the keys of a space-separated sequence as if they were
+	--- typed, without recording them.
+	feed: (keys: string) -> (),
+}
+
 export type History = {
 	--- Edits until `end_group` become one undo step.
 	start_group: () -> (),
@@ -621,6 +634,7 @@ export type Kern = {
 	--- Waits for the next key press and returns its name, e.g. "g" or "ctrl-s".
 	--- The key doesn't run anything. Works in commands and event handlers.
 	next_key: () -> string,
+	keys: Keys,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

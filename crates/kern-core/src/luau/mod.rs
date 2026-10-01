@@ -64,6 +64,8 @@ pub(crate) struct State {
     pub tasks: tasks::Tasks,
     /// The command waiting for the next key press, if any.
     pub key_waiter: Option<u64>,
+    /// The keys typed since `kern.keys.record()`, while recording.
+    pub recording: Option<Vec<Key>>,
     /// Language servers.
     pub lsp: crate::lsp::Lsp,
     /// The waiting command each pending request wakes, by server and
@@ -179,6 +181,7 @@ impl Host {
             exports: HashMap::new(),
             tasks: tasks::Tasks::default(),
             key_waiter: None,
+            recording: None,
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
             theme_owners: HashMap::new(),

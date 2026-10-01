@@ -112,9 +112,18 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
     Ok(())
 }
 
-/// Feeds one key press through the keymap, running whatever it resolves
-/// to.
+/// A key typed by the user: kept if keys are being recorded, then fed
+/// through the keymap.
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
+    if let Some(keys) = &mut state_mut(lua).recording {
+        keys.push(key);
+    }
+    press_key(lua, key)
+}
+
+/// Feeds one key press through the keymap, running whatever it resolves
+/// to, without recording it.
+fn press_key(lua: &Lua, key: Key) -> Result<(), HostError> {
     // A command waiting on kern.next_key gets the key instead of the keymap.
     let waiter = state_mut(lua).key_waiter.take();
     if let Some(token) = waiter {
@@ -309,6 +318,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("json", super::json::module(lua)?)?;
     kern.set("project", super::projects::module(lua)?)?;
     kern.set("session", super::sessions::module(lua)?)?;
+    kern.set("keys", keys_module(lua)?)?;
     kern.set("diff", super::diff::diff_function(lua)?)?;
     kern.set("signal", tasks::signal_function(lua)?)?;
     kern.set(
@@ -1138,4 +1148,39 @@ fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
             author: Author::Plugin(owner.clone()),
         })
     })
+}
+
+/// `kern.keys`: recording what's typed and feeding keys back, for macros.
+fn keys_module(lua: &Lua) -> LuaResult<Table> {
+    let keys = lua.create_table()?;
+    keys.set(
+        "record",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).recording = Some(Vec::new());
+            Ok(())
+        })?,
+    )?;
+    keys.set(
+        "stop",
+        lua.create_function(|lua, ()| {
+            Ok(state_mut(lua)
+                .recording
+                .take()
+                .map(|keys| keys.iter().map(ToString::to_string).collect::<Vec<_>>()))
+        })?,
+    )?;
+    keys.set(
+        "recording",
+        lua.create_function(|lua, ()| Ok(state(lua).recording.is_some()))?,
+    )?;
+    keys.set(
+        "feed",
+        lua.create_function(|lua, sequence: String| {
+            for key in Key::parse_sequence(&sequence).map_err(mlua::Error::external)? {
+                press_key(lua, key).map_err(into_lua)?;
+            }
+            Ok(())
+        })?,
+    )?;
+    Ok(keys)
 }

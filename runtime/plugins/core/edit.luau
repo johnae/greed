@@ -3,6 +3,7 @@
 
 local kern = require("@kern")
 local motions = require("./motions")
+local registers = require("./registers")
 local style = require("./style")
 local text = require("./text")
 
@@ -170,7 +171,7 @@ local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 		end
 		return false
 	end
-	kern.clipboard.set(pieces)
+	registers.copy(pieces)
 	return true
 end
 
@@ -178,7 +179,7 @@ end
 -- was pasted. With as many pieces as selections, each selection gets its
 -- own piece.
 local function paste(ctx: kern.Context, after: boolean)
-	local pieces = kern.clipboard.get()
+	local pieces = registers.paste()
 	if pieces == nil then
 		return
 	end
@@ -445,7 +446,7 @@ kern.command({
 	name = "replace-with-copy",
 	doc = "Replace each selection with what was copied",
 	run = function(ctx)
-		local pieces = kern.clipboard.get()
+		local pieces = registers.paste()
 		if pieces == nil then
 			return
 		end

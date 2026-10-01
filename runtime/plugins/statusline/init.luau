@@ -4,7 +4,8 @@
 -- set wins.
 
 local kern = require("@kern")
-local style = require("@core").style
+local core = require("@core")
+local style = core.style
 
 kern.statusline(function(s)
 	local middle: kern.StatusSegment
@@ -45,8 +46,13 @@ kern.statusline(function(s)
 
 	local mode =
 		{ text = " " .. string.upper(style.label(s.mode)) .. " ", style = "ui.statusline.mode" }
+	local left: { any } = { mode, " ", middle }
+	local macro = core.registers.recording()
+	if macro then
+		table.insert(left, 2, { text = ` recording @{macro} `, style = "ui.statusline.message" })
+	end
 	return {
-		left = { mode, " ", middle },
+		left = left,
 		right = { problems, `{line + 1}:{column} ` },
 	}
 end)

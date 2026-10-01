@@ -122,6 +122,8 @@ There is always a selection; a cursor is a selection one character wide.
 | `J` | Join lines with one space |
 | `ctrl-c` | Comment the lines, or uncomment them |
 | `y` `p` `P` | Copy, paste after, paste before |
+| `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
+| `Q` `q` | Start or stop recording a macro, play it (`3 q` three times) |
 | `u` `U` | Undo, redo |
 | `esc` | Back to normal mode |
 
