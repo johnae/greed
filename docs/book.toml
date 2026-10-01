@@ -1,0 +1,7 @@
+# Builds the docs as a website with mdBook: `mdbook build docs`.
+[book]
+title = "Kern"
+src = "."
+
+[build]
+build-dir = "../target/book"

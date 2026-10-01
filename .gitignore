@@ -9,3 +9,6 @@ devenv.local.yaml
 
 # rust
 /target
+
+# local notes for Claude Code
+/.claude/CLAUDE.md
