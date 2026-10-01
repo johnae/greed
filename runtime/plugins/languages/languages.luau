@@ -15,10 +15,15 @@ export type Language = {
 	comment: string?,
 	--- Spaces per indent level; leave out to indent with tabs.
 	indent: number?,
+	--- A program that formats the file: it gets the text on its input and
+	--- prints it formatted. "{path}" in it stands for the file's path.
+	--- Without one, the language server formats, as rust-analyzer does.
+	formatter: { string }?,
 }
 
 local languages: { [string]: Language } = {
 	bash = {
+		formatter = { "shfmt" },
 		extensions = { "sh", "bash" },
 		names = { ".bashrc", ".bash_profile" },
 		servers = { { "bash-language-server", "start" } },
@@ -26,6 +31,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	c = {
+		formatter = { "clang-format", "--assume-filename={path}" },
 		extensions = { "c", "h" },
 		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
 		servers = { { "clangd" } },
@@ -33,6 +39,7 @@ local languages: { [string]: Language } = {
 		indent = 4,
 	},
 	cpp = {
+		formatter = { "clang-format", "--assume-filename={path}" },
 		extensions = { "cpp", "cc", "cxx", "hpp", "hh", "hxx" },
 		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
 		servers = { { "clangd" } },
@@ -40,11 +47,13 @@ local languages: { [string]: Language } = {
 		indent = 4,
 	},
 	css = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "css", "scss" },
 		servers = { { "vscode-css-language-server", "--stdio" } },
 		indent = 2,
 	},
 	go = {
+		formatter = { "gofmt" },
 		extensions = { "go" },
 		roots = { "go.mod" },
 		servers = { { "gopls" } },
@@ -58,6 +67,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	html = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "html", "htm" },
 		servers = { { "vscode-html-language-server", "--stdio" } },
 		indent = 2,
@@ -70,6 +80,7 @@ local languages: { [string]: Language } = {
 		indent = 4,
 	},
 	javascript = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "js", "mjs", "cjs", "jsx" },
 		roots = { "package.json" },
 		servers = { { "typescript-language-server", "--stdio" } },
@@ -77,11 +88,13 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	json = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "json" },
 		servers = { { "vscode-json-language-server", "--stdio" } },
 		indent = 2,
 	},
 	luau = {
+		formatter = { "stylua", "-" },
 		extensions = { "luau", "lua" },
 		roots = { ".luaurc" },
 		servers = { { "luau-lsp", "lsp" } },
@@ -98,6 +111,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	nix = {
+		formatter = { "nixfmt" },
 		extensions = { "nix" },
 		roots = { "flake.nix" },
 		servers = { { "nil" }, { "nixd" } },
@@ -105,6 +119,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	python = {
+		formatter = { "ruff", "format", "-" },
 		extensions = { "py", "pyi" },
 		roots = { "pyproject.toml", "setup.py", "requirements.txt" },
 		servers = {
@@ -131,6 +146,7 @@ local languages: { [string]: Language } = {
 		indent = 4,
 	},
 	toml = {
+		formatter = { "taplo", "format", "-" },
 		extensions = { "toml" },
 		names = { "Cargo.lock" },
 		servers = { { "taplo", "lsp", "stdio" } },
@@ -138,6 +154,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	typescript = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "ts", "mts", "cts", "tsx" },
 		roots = { "tsconfig.json", "package.json" },
 		servers = { { "typescript-language-server", "--stdio" } },
@@ -145,12 +162,14 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	yaml = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "yaml", "yml" },
 		servers = { { "yaml-language-server", "--stdio" } },
 		comment = "#",
 		indent = 2,
 	},
 	zig = {
+		formatter = { "zig", "fmt", "--stdin" },
 		extensions = { "zig" },
 		roots = { "build.zig" },
 		servers = { { "zls" } },

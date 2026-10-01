@@ -220,6 +220,25 @@ after a letter or a `.`. The menu narrows as you keep typing.
 `:set completion-delay 300` waits longer before asking; `0` stops asking
 while you type, leaving `ctrl-space`.
 
+## Formatting
+
+Saving a file formats it, and `:format` does it without saving. Kern uses
+the language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
+`prettier`, `shfmt`, ...) and otherwise asks the language server, which is
+how Rust gets `rustfmt` through rust-analyzer. Only what the formatter
+changed is replaced, so your cursor stays put.
+
+```luau
+-- A different formatter for a language
+require("@languages").set("python", { formatter = { "black", "-q", "-" } })
+
+-- No formatting on save
+require("@kern").option.set("format-on-save", false)
+```
+
+A formatter gets the text on its input and prints it formatted; `{path}` in
+its command stands for the file's path.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

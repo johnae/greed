@@ -110,6 +110,12 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     { "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 },
                 ] } }),
             ),
+            "textDocument/formatting" => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": [
+                    { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// formatted\n" },
+                ] }),
+            ),
             "fail" => write(
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "nope" } }),

@@ -14,11 +14,28 @@ function M.on_save(kind: string, save: (buffer: kern.Buffer) -> ())
 	savers[kind] = save
 end
 
+-- What runs on a file's buffer just before it's written, like a formatter,
+-- by name.
+local before_save: { [string]: (buffer: kern.Buffer) -> () } = {}
+
+--- Makes `hook` run on each file's buffer just before it's written,
+--- replacing any hook called `name`. An error in it is shown, and the file
+--- is written anyway.
+function M.before_save(name: string, hook: (buffer: kern.Buffer) -> ())
+	before_save[name] = hook
+end
+
 local function save(buffer: kern.Buffer, path: string?)
 	local saver = savers[buffer:kind()]
 	if saver and path == nil then
 		saver(buffer)
 		return
+	end
+	for _, hook in before_save do
+		local ok, err = pcall(hook, buffer)
+		if not ok then
+			kern.echo(tostring(err))
+		end
 	end
 	buffer:save(path)
 	kern.echo("wrote " .. (buffer:path() or "?"))

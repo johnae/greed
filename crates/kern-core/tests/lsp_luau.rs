@@ -357,3 +357,16 @@ fn tab_moves_through_completions_and_esc_closes_them_and_insert_mode() {
     );
     assert!(main_text(&h).ends_with(" b"), "nothing was put in: {first}");
 }
+
+#[test]
+fn without_a_formatter_the_language_server_formats() {
+    let h = with_plugin();
+    h.load_dirs(&[plugin("languages"), plugin("format")])
+        .unwrap();
+    // No formatter program for Rust here, so the server's turn.
+    h.eval("require('@languages').set('rust', { formatter = {} })")
+        .unwrap();
+    h.run("format").unwrap();
+    pump(&h, |h| main_text(h).starts_with("// formatted\n"));
+    assert_eq!(main_text(&h), "// formatted\nlet x = bad;");
+}
