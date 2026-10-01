@@ -59,6 +59,16 @@ fn core_plugin() -> PathBuf {
     runtime_dir().join("plugins/core")
 }
 
+/// The default plugins: core first, then the rest by name.
+fn plugins() -> io::Result<Vec<PathBuf>> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(runtime_dir().join("plugins"))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.join("plugin.toml").is_file())
+        .collect();
+    dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
+    Ok(dirs)
+}
+
 /// The text of `file`, or nothing if there is no file yet.
 fn read(file: Option<&Path>) -> io::Result<String> {
     match file {
@@ -67,12 +77,17 @@ fn read(file: Option<&Path>) -> io::Result<String> {
     }
 }
 
-/// An editor with `text` open and the core plugin loaded.
+/// An editor with `text` open and the default plugins loaded.
 fn host(text: &str, file: Option<PathBuf>) -> Result<Host, HostError> {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, file);
     let host = Host::new(editor)?;
-    host.load_dir(&core_plugin())?;
+    for plugin in plugins().map_err(|err| HostError::Manifest {
+        path: runtime_dir().join("plugins"),
+        message: err.to_string(),
+    })? {
+        host.load_dir(&plugin)?;
+    }
     Ok(host)
 }
 
@@ -155,16 +170,17 @@ fn write(host: &Host) -> Result<String, Box<dyn std::error::Error>> {
     })
 }
 
-/// Runs a plugin's tests, with the core plugin loaded first so keymaps work.
+/// Runs a plugin's tests, with the default plugins loaded so keymaps work.
 /// Fails if any test fails.
 fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let core = core_plugin().canonicalize()?;
     let dir = dir.canonicalize()?;
-    let plugins = if dir == core {
-        vec![core]
-    } else {
-        vec![core, dir.clone()]
-    };
+    let mut plugins = plugins()?
+        .iter()
+        .map(|p| p.canonicalize())
+        .collect::<io::Result<Vec<_>>>()?;
+    if !plugins.contains(&dir) {
+        plugins.push(dir.clone());
+    }
     let results = run_tests(&plugins, &dir)?;
     let mut file = None;
     for result in &results {

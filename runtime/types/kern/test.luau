@@ -5,7 +5,7 @@
 --- and `^` at the anchor of a selection. "^hello |world" selects "hello ".
 
 export type TestContext = {
-	--- Opens a fresh buffer in normal mode.
+	--- Shows a fresh buffer in the main view, in normal mode.
 	buffer: (self: TestContext, marked: string) -> (),
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),

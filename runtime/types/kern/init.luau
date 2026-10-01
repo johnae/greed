@@ -24,7 +24,8 @@ export type Edits = {
 	insert: (self: Edits, pos: number, text: string) -> (),
 	delete: (self: Edits, from: number, to: number) -> (),
 	replace: (self: Edits, from: number, to: number, text: string) -> (),
-	--- Sets the selection after the edit. Without this, the current
+	--- Sets the selection after the edit (of every view showing the buffer,
+	--- when the buffer didn't come from a view). Without this, the current
 	--- selection is moved along with the text.
 	select: (self: Edits, selection: Selection) -> (),
 }

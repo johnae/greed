@@ -6,18 +6,36 @@ use std::path::{Path, PathBuf};
 use kern_core::luau::run_tests;
 
 fn core() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core")
+    plugin("core")
 }
 
-#[test]
-fn core_plugin_tests_pass() {
-    let results = run_tests(&[core()], &core()).unwrap();
-    assert!(results.len() >= 10, "found only {} tests", results.len());
+fn plugin(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../runtime/plugins")
+        .join(name)
+}
+
+/// Runs the tests in `dir`, failing on any failure, and returns how many ran.
+fn assert_all_pass(plugins: &[PathBuf], dir: &Path) -> usize {
+    let results = run_tests(plugins, dir).unwrap();
+    assert!(!results.is_empty(), "no tests found in {}", dir.display());
     let failures: Vec<String> = results
         .iter()
         .filter_map(|r| r.failure.as_ref().map(|f| format!("{}: {f}", r.name)))
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    results.len()
+}
+
+#[test]
+fn picker_plugin_tests_pass() {
+    assert_all_pass(&[core(), plugin("picker")], &plugin("picker"));
+}
+
+#[test]
+fn core_plugin_tests_pass() {
+    let count = assert_all_pass(&[core()], &core());
+    assert!(count >= 10, "found only {count} tests");
 }
 
 #[test]

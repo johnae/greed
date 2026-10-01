@@ -142,8 +142,11 @@ impl UserData for TestContext {
         methods.add_method("buffer", |lua, _, marked: String| {
             let (text, selection) = parse_marked(&marked).map_err(mlua::Error::external)?;
             let mut state = state_mut(lua);
-            let (_, view) = state.editor.open("file", &text, None);
-            state.editor.view_mut(view).selection = selection;
+            let buffer = state.editor.create_buffer("file", &text);
+            let main = state.editor.main();
+            state.editor.show(main, buffer);
+            state.editor.view_mut(main).selection = selection;
+            state.editor.set_focus(main);
             state.editor.set_mode("normal");
             state.editor.end_group();
             Ok(())

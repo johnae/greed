@@ -288,18 +288,31 @@ impl Editor {
     }
 
     /// Applies a change to a buffer, whether or not it's on screen. Every
-    /// view of it is mapped through the change.
+    /// view of it gets `selection`, or is mapped through the change if
+    /// `None`.
     pub fn apply_to_buffer(
         &mut self,
         id: BufferId,
         changes: ChangeSet,
         author: Author,
         cause: Option<&str>,
+        selection: Option<Selection>,
     ) -> Result<(), Error> {
-        let tx = Transaction::new(changes, self.meta(id, author, cause));
+        let explicit = selection.is_some();
+        let tx = Transaction {
+            changes,
+            selection,
+            meta: self.meta(id, author, cause),
+        };
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
-        buffer.apply(tx, &Selection::point(0))?;
-        self.map_views(id, None);
+        let after = buffer.apply(tx, &Selection::point(0))?;
+        if explicit {
+            for view in self.views.values_mut().filter(|v| v.buffer == id) {
+                view.selection = after.clone();
+            }
+        } else {
+            self.map_views(id, None);
+        }
         Ok(())
     }
 

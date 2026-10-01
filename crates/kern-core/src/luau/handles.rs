@@ -143,9 +143,13 @@ impl BufferRef {
             Some(view) => state
                 .editor
                 .apply(view, changes, self.author.clone(), None, selection),
-            None => state
-                .editor
-                .apply_to_buffer(self.buffer, changes, self.author.clone(), None),
+            None => state.editor.apply_to_buffer(
+                self.buffer,
+                changes,
+                self.author.clone(),
+                None,
+                selection,
+            ),
         }
         .map_err(mlua::Error::external)?;
         drop(state);
