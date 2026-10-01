@@ -28,7 +28,7 @@ end)
 fn start(label: &str) -> (Connection, PathBuf) {
     let name = format!("ide-{label}-{}", std::process::id());
     let dir = std::env::temp_dir().join(format!("kern-{name}"));
-    let session = control::listen(&name).unwrap();
+    let session = control::listen(&name, None).unwrap();
     let requests = session.sender().clone();
     let plugin = PLUGIN.replace("LOCK_DIR", &format!("{:?}", dir.to_str().unwrap()));
     let conn = server::spawn_with_session(
@@ -119,7 +119,7 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
 fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
     let name = format!("ide-{label}-{}", std::process::id());
     let dir = std::env::temp_dir().join(format!("kern-{name}"));
-    let session = control::listen(&name).unwrap();
+    let session = control::listen(&name, None).unwrap();
     let requests = session.sender().clone();
     let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
     let start = format!(
@@ -208,7 +208,7 @@ fn claude_codes_diffs_become_proposals_and_come_back_saved() {
             "tab_name": "edit a.txt",
         }),
     );
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_proposal("diff");
     for key in kern_core::keymap::Key::parse_sequence("space o A").unwrap() {
         conn.input.send(Input::Key(key)).unwrap();
     }
@@ -283,4 +283,26 @@ fn mentioning_whole_lines_names_just_those_lines() {
     conn.server.join().unwrap().unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::remove_dir_all(&work).unwrap();
+}
+
+/// Waits until the editor started by `start_agent(label, ..)` has a proposal
+/// waiting for the user, asking over its session socket.
+fn wait_for_proposal(label: &str) {
+    let name = format!("ide-{label}-{}", std::process::id());
+    let (socket, token) = control::session_files(&name);
+    let token = std::fs::read_to_string(token).unwrap();
+    let mut client = control::Client::connect(&socket, &token).unwrap();
+    let ask = json!({
+        "name": "eval",
+        "arguments": { "code": "return require('@agent').pending()" },
+    });
+    for _ in 0..250 {
+        let answer = client.call("tools/call", &ask).unwrap().unwrap();
+        assert_eq!(answer["isError"], false, "{answer}");
+        if answer["content"][0]["text"] != "0" {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("no proposal showed up");
 }

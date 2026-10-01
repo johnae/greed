@@ -7,7 +7,7 @@ use serde_json::json;
 
 /// A server answering requests on a session socket with `plugin`.
 fn start(name: &str, plugin: &'static str) -> (Connection, std::path::PathBuf, String) {
-    let session = control::listen(name).unwrap();
+    let session = control::listen(name, None).unwrap();
     let socket = session.socket.clone();
     let (_, token_file) = control::session_files(name);
     let token = std::fs::read_to_string(token_file).unwrap();
@@ -90,7 +90,7 @@ fn starting_a_session_clears_what_crashed_ones_left() {
     // A socket nothing listens on any more, as a crash leaves it.
     drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
     std::fs::write(&token, "x").unwrap();
-    let session = control::listen(&name("fresh")).unwrap();
+    let session = control::listen(&name("fresh"), None).unwrap();
     assert!(!socket.exists() && !token.exists());
     drop(session);
 }
@@ -98,6 +98,21 @@ fn starting_a_session_clears_what_crashed_ones_left() {
 #[test]
 fn a_session_name_too_long_for_a_socket_is_refused_clearly() {
     let name = "x".repeat(200);
-    let err = control::listen(&name).err().expect("refused");
+    let err = control::listen(&name, None).err().expect("refused");
     assert!(err.to_string().contains("too long"), "{err}");
+}
+
+#[test]
+fn a_session_says_which_project_it_is_for_as_soon_as_it_listens() {
+    let name = format!("described-{}", std::process::id());
+    let root = std::path::Path::new("/some/project");
+    let session = control::listen(&name, Some(root)).unwrap();
+    let found = control::sessions().unwrap();
+    let info = found.iter().find(|s| s.name == name).expect("listed");
+    assert_eq!(info.root.as_deref(), Some(root));
+    drop(session);
+    assert!(
+        !control::sessions().unwrap().iter().any(|s| s.name == name),
+        "gone with the session"
+    );
 }

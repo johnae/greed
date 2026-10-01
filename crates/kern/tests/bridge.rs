@@ -155,19 +155,23 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     std::fs::create_dir_all(project.join("src")).unwrap();
     std::fs::write(project.join("README.md"), "top").unwrap();
     std::fs::write(project.join("src/lib.rs"), "deep inside").unwrap();
-    let _server = Server::start(&[project.to_str().unwrap()]);
+    let root = project.to_str().unwrap();
+    let _server = Server::start(&[root]);
     let name = format!("kern-proj-{}", std::process::id());
     // The session takes a moment to start listening.
     let mut listed = String::new();
     for _ in 0..500 {
         let out = kern().arg("ls").output().unwrap();
         listed = String::from_utf8(out.stdout).unwrap();
-        if listed.lines().any(|line| line.starts_with(&name)) {
+        if listed
+            .lines()
+            .any(|line| line.starts_with(&name) && line.contains(root))
+        {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    assert!(listed.contains(project.to_str().unwrap()), "{listed}");
+    assert!(listed.contains(root), "{listed}");
 
     // A path deep inside the project finds the same session and opens there.
     let mut bridge = Bridge::start(&[project.join("src/lib.rs").to_str().unwrap()]);

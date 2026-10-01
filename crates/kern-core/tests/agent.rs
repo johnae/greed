@@ -17,7 +17,7 @@ fn plugin(name: &str) -> PathBuf {
 /// client connected to its session.
 fn start(label: &str, text: &'static str) -> (Connection, Client) {
     let name = format!("agent-{label}-{}", std::process::id());
-    let session = control::listen(&name).unwrap();
+    let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
     let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
     let conn = server::spawn_with_session(

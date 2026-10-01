@@ -29,8 +29,7 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     std::env::set_current_dir(&root)?;
     let file = target.is_file().then_some(target);
     let text = read(file.as_deref())?;
-    let session = control::listen(name)?;
-    session.describe(&root)?;
+    let session = control::listen(name, Some(&root))?;
     let requests = session.sender().clone();
     let conn = server::spawn_with_session(move || host(&text, file, Some(requests)), Some(session));
     // Nothing is drawn until a client attaches and says how big it is.

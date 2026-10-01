@@ -18,7 +18,7 @@ const SIZE: Size = Size {
 /// to attach to it.
 fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
     let name = format!("attach-{label}-{}", std::process::id());
-    let session = control::listen(&name).unwrap();
+    let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
     let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
     let conn = server::spawn_with_session(
@@ -162,7 +162,7 @@ fn after_the_first_frame_clients_get_what_changed() {
 #[test]
 fn clients_speaking_another_protocol_are_refused_clearly() {
     let name = format!("attach-protocol-{}", std::process::id());
-    let session = control::listen(&name).unwrap();
+    let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
     let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
     let conn = server::spawn_with_session(|| Host::new(Editor::new(ClientId(1))), Some(session));

@@ -115,19 +115,17 @@ impl Session {
     }
 }
 
-impl Session {
-    /// Writes down which project this session is for, so `kern` in that
-    /// project finds it and the switcher can list it.
-    pub fn describe(&self, root: &Path) -> io::Result<()> {
-        let info = json!({ "pid": std::process::id(), "root": root });
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(self.socket.with_extension("json"))?
-            .write_all(info.to_string().as_bytes())
-    }
+/// Writes down which project the session at `socket` is for, so `kern` in
+/// that project finds it and the switcher can list it.
+fn describe(socket: &Path, root: &Path) -> io::Result<()> {
+    let info = json!({ "pid": std::process::id(), "root": root });
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(socket.with_extension("json"))?
+        .write_all(info.to_string().as_bytes())
 }
 
 impl Drop for Session {
@@ -173,8 +171,9 @@ pub fn sessions() -> io::Result<Vec<SessionInfo>> {
 }
 
 /// Starts listening as the session called `name`, writing a fresh token
-/// next to the socket.
-pub fn listen(name: &str) -> io::Result<Session> {
+/// next to the socket, and which project it's for (`root`) before anyone can
+/// find it.
+pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
     let dir = sessions_dir();
     std::fs::DirBuilder::new()
         .recursive(true)
@@ -191,6 +190,12 @@ pub fn listen(name: &str) -> io::Result<Session> {
              XDG_RUNTIME_DIR to a shorter folder",
             socket.display()
         )));
+    }
+    // A live session already there keeps its description; binding fails below.
+    if let Some(root) = root
+        && !socket.exists()
+    {
+        describe(&socket, root)?;
     }
     let listener = UnixListener::bind(&socket)?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
