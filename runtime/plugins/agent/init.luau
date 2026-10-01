@@ -11,6 +11,7 @@ local registry = require("@self/registry")
 local proposals = require("@self/proposals")
 require("@self/tools")
 require("@self/ide")
+local extend = require("@self/extend")
 
 export type Tool = registry.Tool
 export type Edit = proposals.Edit
@@ -20,4 +21,7 @@ return {
 	tools = registry.tools,
 	propose = proposals.propose,
 	pending = proposals.pending,
+	try = extend.try,
+	install = extend.install,
+	dirs = extend.dirs,
 }
