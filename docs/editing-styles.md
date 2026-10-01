@@ -54,25 +54,30 @@ character, and `v` starts a visual mode for selecting by hand.
 
 | Keys | |
 |---|---|
-| `h j k l` `w b e` `0 ^ $` `g g` `G` | Move, with counts: `3 w` |
+| `h j k l` `w b e` `0 ^ $` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket |
 | `f t F T` + a character | To the next or previous character on the line |
-| `d c y` + a motion, `d d` `c c` `y y` | Delete, change or copy, `i w` `a w` for words |
+| `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
+| `i w` `a w` `i W` `i (` `a "` `i p` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs |
+| `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |
 | `x X D C s S` | The usual shortcuts for deleting and changing |
+| `r` `~` `J` | Replace a character, switch case, join lines |
 | `p P` | Paste after or before |
 | `i a I A o O` | Insert |
 | `u` `ctrl-r` | Undo, redo |
-| `v` | Visual mode |
+| `v` `V` | Visual mode, by character or by line; `i`/`a` there select a text object |
+| `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `z z` | Page and half page down and up, center the view |
+| `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
 | `.` | Repeat the last change that didn't type text |
 
 Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
 go: the Vim style is plain Luau against the same API any plugin uses, with
-its own modes (`vim`, `vim-insert`, `vim-visual`) beside Helix's.
+its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`)
+beside Helix's.
 
-It isn't all of Vim. Registers, macros, marks, ex ranges and text objects
-beyond words are missing. Search (`/ ? n N *`) is Kern's, which selects
-the match.
+It isn't all of Vim. Registers, macros, marks, ex ranges and visual block
+mode are missing. Search (`/ ? n N`) is Kern's, which selects the match.
 
 ## Edit
 

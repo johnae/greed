@@ -142,4 +142,5 @@ return {
 	style = style,
 	comment = comment,
 	jumps = jumps,
+	objects = objects,
 }

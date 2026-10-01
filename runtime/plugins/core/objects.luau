@@ -267,4 +267,8 @@ M.keys["m s"] = "surround-add"
 M.keys["m d"] = "surround-delete"
 M.keys["m r"] = "surround-replace"
 
+--- Where the pair for `char` (a bracket or quote) around `pos` is: the
+--- opener and the closer, or nil.
+M.around = around
+
 return M
