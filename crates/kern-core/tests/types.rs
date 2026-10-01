@@ -104,6 +104,7 @@ fn api_tables_are_fully_declared() {
         ("Clipboard", "kern.clipboard"),
         ("Lsp", "kern.lsp"),
         ("Terminals", "kern.terminal"),
+        ("Tabs", "kern.tab"),
     ];
     let h = host();
     for (name, expr) in cases {

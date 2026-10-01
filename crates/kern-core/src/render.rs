@@ -98,6 +98,12 @@ impl Tag {
     pub const PANEL: Tag = Tag::fixed("ui.panel");
     pub const PANEL_BORDER: Tag = Tag::fixed("ui.panel.border");
     pub const PANEL_TITLE: Tag = Tag::fixed("ui.panel.title");
+    /// The line between two panes.
+    pub const PANE_BORDER: Tag = Tag::fixed("ui.pane.border");
+    /// Under every row of a pane other than the active one.
+    pub const PANE_INACTIVE: Tag = Tag::fixed("ui.pane.inactive");
+    pub const TABLINE: Tag = Tag::fixed("ui.tabline");
+    pub const TABLINE_ACTIVE: Tag = Tag::fixed("ui.tabline.active");
 
     pub const fn fixed(name: &'static str) -> Self {
         Tag(Name::Fixed(name))
@@ -300,8 +306,7 @@ impl<M: Measure> Renderer<M> {
             height: size.height.saturating_sub(1),
         };
         let (area, placed) = layout_panels(editor.panels(), screen);
-        let numbers = editor.buffer(editor.view(main).buffer).line_numbers();
-        let (mut rows, main_cursor) = self.view_rows(editor, main, area, numbers, decorations);
+        let (mut rows, main_cursor) = self.pane_rows(editor, area, decorations);
         let status = match status {
             Status::Default { message } => {
                 Self::default_status(editor, editor.view(main), *message)
@@ -310,7 +315,7 @@ impl<M: Measure> Renderer<M> {
         };
         rows.push(self.status_row(&status, usize::from(size.width)));
 
-        let mut cursor = main_cursor.filter(|_| editor.focus() == main);
+        let mut cursor = main_cursor;
         let mut panels = Vec::new();
         for (view, mut panel) in placed {
             let (rows, panel_cursor) = self.view_rows(editor, view, panel.rect, false, decorations);
@@ -344,6 +349,126 @@ impl<M: Measure> Renderer<M> {
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
         }
+    }
+
+    /// Lays out the shown tab's panes in `area`, with lines between them
+    /// and the tabs above when there's more than one. Returns the rows and
+    /// where the focused pane's cursor is, if a pane has focus.
+    fn pane_rows(
+        &self,
+        editor: &mut Editor,
+        area: Rect,
+        decorations: &dyn Decorations,
+    ) -> (Vec<Row>, Option<Position>) {
+        let tabline = (editor.tabs().len() > 1).then(|| Self::tabline(editor));
+        let panes_area = match tabline {
+            Some(_) => Rect {
+                y: area.y + 1,
+                height: area.height.saturating_sub(1),
+                ..area
+            },
+            None => area,
+        };
+        editor.set_tab_area(panes_area);
+        let (panes, lines) = editor.current_tab().place(panes_area);
+        let active = editor.current_tab().active();
+        let mut cursor = None;
+        let mut drawn = Vec::with_capacity(panes.len());
+        for (view, rect) in panes {
+            let numbers = editor.buffer(editor.view(view).buffer).line_numbers();
+            let (rows, pane_cursor) = self.view_rows(editor, view, rect, numbers, decorations);
+            if editor.focus() == view {
+                cursor = pane_cursor;
+            }
+            drawn.push((view, rect, rows));
+        }
+        if tabline.is_none() && drawn.len() == 1 {
+            let (_, _, rows) = drawn.pop().expect("one pane");
+            return (rows, cursor);
+        }
+        // Each screen row, as the pieces on it from left to right.
+        let mut pieces: Vec<Vec<(u16, u16, Row)>> = vec![Vec::new(); usize::from(area.height)];
+        let index = |y: u16| usize::from(y - area.y);
+        if let Some(tabline) = tabline {
+            pieces[0].push((area.x, area.width, tabline));
+        }
+        for (view, rect, rows) in drawn {
+            for (i, mut row) in rows.into_iter().enumerate() {
+                if view != active {
+                    row.tags.insert(0, Tag::PANE_INACTIVE);
+                }
+                pieces[index(rect.y) + i].push((rect.x, rect.width, row));
+            }
+        }
+        let border = |text: String| Row {
+            spans: vec![Span {
+                text,
+                tags: smallvec![Tag::PANE_BORDER],
+            }],
+            tags: SmallVec::new(),
+        };
+        for line in lines {
+            if line.down {
+                for y in line.y..line.y + line.len {
+                    pieces[index(y)].push((line.x, 1, border("│".to_owned())));
+                }
+            } else {
+                let text = "─".repeat(usize::from(line.len));
+                pieces[index(line.y)].push((line.x, line.len, border(text)));
+            }
+        }
+        let rows = pieces
+            .into_iter()
+            .map(|mut row_pieces| {
+                row_pieces.sort_by_key(|(x, _, _)| *x);
+                let mut row = Row::default();
+                let mut at = area.x;
+                for (x, width, piece) in row_pieces {
+                    if x > at {
+                        row.push(&" ".repeat(usize::from(x - at)), SmallVec::new());
+                    }
+                    self.append(&mut row, piece, usize::from(width));
+                    at = x + width;
+                }
+                row
+            })
+            .collect();
+        (rows, cursor)
+    }
+
+    /// Adds `piece` to the end of `row`, padded to `width` cells, with its
+    /// row-wide tags on each of its spans so they stay within its width.
+    fn append(&self, row: &mut Row, piece: Row, width: usize) {
+        let mut used = 0;
+        for span in piece.spans {
+            used += self.text_width(&span.text);
+            let tags = piece.tags.iter().chain(&span.tags).cloned().collect();
+            row.push(&span.text, tags);
+        }
+        if used < width {
+            row.push(&" ".repeat(width - used), piece.tags.into_iter().collect());
+        }
+    }
+
+    /// The row of tabs above the panes: each tab's number and name, the
+    /// shown one marked.
+    fn tabline(editor: &Editor) -> Row {
+        let mut row = Row {
+            tags: smallvec![Tag::TABLINE],
+            ..Row::default()
+        };
+        let shown = editor.current_tab().id();
+        for (i, tab) in editor.tabs().iter().enumerate() {
+            let name = tab
+                .name()
+                .map_or_else(|| tab_title(editor, tab.active()), str::to_owned);
+            let mut tags = smallvec![Tag::TABLINE];
+            if tab.id() == shown {
+                tags.push(Tag::TABLINE_ACTIVE);
+            }
+            row.push(&format!(" {} {name} ", i + 1), tags);
+        }
+        row
     }
 
     /// Lays out one view to fill `area`, scrolling it to keep its primary
@@ -455,6 +580,7 @@ impl<M: Measure> Renderer<M> {
         let view = editor.view_mut(view_id);
         view.visible = Some(shown);
         view.size = Some((area.height, u16::try_from(text_width).unwrap_or(u16::MAX)));
+        view.area = Some(area);
         rows.resize_with(text_rows, Row::default);
         (rows, cursor)
     }
@@ -1007,6 +1133,16 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
 
 /// The main view keeps at least this many columns; panels shrink to leave it.
 const MIN_MAIN_WIDTH: u16 = 10;
+
+/// What a tab is called when it has no name: the file name of what its
+/// active pane shows, or the kind of buffer.
+fn tab_title(editor: &Editor, pane: ViewId) -> String {
+    let buffer = editor.buffer(editor.view(pane).buffer);
+    buffer.path().and_then(|p| p.file_name()).map_or_else(
+        || buffer.kind().to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
 
 /// Where panels go: each one takes its width from its side of `screen`,
 /// plus a column for the line between it and the main view, and a row for

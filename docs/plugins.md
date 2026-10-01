@@ -85,6 +85,13 @@ manage them, and `buffer:project()` says which one a buffer belongs to.
 Panels belong to the project they were opened in, so a plugin that keeps
 one (like a results panel) should keep one per project.
 
+Each project has tabs (`kern.tab.list`, `new`, `switch`, `close`,
+`rename`), and each tab has panes laid out side by side and one above
+another. `view:split("right", buffer)` opens a pane, `view:neighbor("left")`
+finds the one beside it, `view:resize("down", 2)` moves its edge, and
+`view:close()` closes it. `kern.view()` is the focused view, and the
+shown tab's active pane is where `kern.open` opens files.
+
 ## Showing things
 
 - Decorations style text without changing it, and move with edits:

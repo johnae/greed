@@ -311,6 +311,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("control", super::requests::module(lua)?)?;
     kern.set("json", super::json::module(lua)?)?;
     kern.set("project", super::projects::module(lua)?)?;
+    kern.set("tab", super::tabs::module(lua, owner)?)?;
     kern.set("session", super::sessions::module(lua)?)?;
     kern.set("keys", keys_module(lua)?)?;
     kern.set("process", super::process::module(lua)?)?;

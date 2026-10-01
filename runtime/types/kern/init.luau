@@ -62,6 +62,8 @@ export type Buffer = {
 	--- Whether the main view shows line numbers beside it (the default).
 	line_numbers: (self: Buffer) -> boolean,
 	set_line_numbers: (self: Buffer, on: boolean) -> (),
+	--- The views showing it.
+	views: (self: Buffer) -> { View },
 	--- Whether it stays open while nothing shows it, though it has no file.
 	kept: (self: Buffer) -> boolean,
 	--- Keeps it open while nothing shows it, like a terminal to come back
@@ -149,11 +151,24 @@ export type View = {
 	show: (self: View, buffer: Buffer) -> (),
 	--- Focuses this view, so keys go to it.
 	focus: (self: View) -> (),
-	--- Closes the view. The main view can't be closed; returns false for it.
+	--- Closes the view. Closing a tab's last pane closes the tab; the
+	--- project's last pane can't be closed, and returns false.
 	close: (self: View) -> boolean,
 	--- Changes how a floating view is shown; fields left out stay as they
 	--- are. Fails for views that aren't floating.
 	configure: (self: View, spec: FloatSpec) -> (),
+	--- Whether it's a pane of a tab, rather than a panel or a floating view.
+	is_pane: (self: View) -> boolean,
+	--- Opens a pane beside this one on its `dir` side, showing `buffer`, or
+	--- this view's buffer as it shows it, and focuses it. Fails if this
+	--- view isn't a pane.
+	split: (self: View, dir: "left" | "right" | "up" | "down", buffer: Buffer?) -> View,
+	--- The pane next to this one on its `dir` side, as last drawn: of
+	--- several, the one active most recently.
+	neighbor: (self: View, dir: "left" | "right" | "up" | "down") -> View?,
+	--- Moves this pane's edge on its `dir` side by `cells` (negative to
+	--- shrink). False when no pane is on that side.
+	resize: (self: View, dir: "left" | "right" | "up" | "down", cells: number) -> boolean,
 	--- Undoes the last change. Returns false if there was nothing to undo.
 	undo: (self: View) -> boolean,
 	redo: (self: View) -> boolean,
@@ -417,6 +432,40 @@ export type Projects = {
 	--- Closes project `id` with its views and the buffers opened in it. The
 	--- last project can't be closed; false then.
 	close: (id: number) -> boolean,
+}
+
+--- A tab of the shown project: panes laid out side by side and one above
+--- another.
+export type TabInfo = {
+	id: number,
+	--- The name it was given, if any.
+	name: string?,
+	--- Whether it's the one shown.
+	current: boolean,
+	--- Whether only its active pane is shown.
+	zoomed: boolean,
+	--- Its panes, left to right and top to bottom.
+	panes: { View },
+	--- The pane keys go to while it's shown.
+	active: View,
+}
+
+export type Tabs = {
+	--- The shown project's tabs, in order.
+	list: () -> { TabInfo },
+	current: () -> TabInfo,
+	--- Opens a tab after the shown one, with a pane showing `buffer` (or an
+	--- empty buffer), and shows it. Returns its id.
+	new: (buffer: Buffer?) -> number,
+	--- Shows tab `id`. False if there's no such tab.
+	switch: (id: number) -> boolean,
+	--- Closes tab `id` and its panes. The last tab can't be closed; false
+	--- then.
+	close: (id: number) -> boolean,
+	--- Names tab `id`; nil or "" names it after what it shows again.
+	rename: (id: number, name: string?) -> boolean,
+	--- Shows only the active pane of the shown tab, or all of them again.
+	set_zoomed: (zoomed: boolean) -> (),
 }
 
 --- A session running on this machine: an editor process of its own.
@@ -809,6 +858,7 @@ export type Kern = {
 	control: Control,
 	json: Json,
 	project: Projects,
+	tab: Tabs,
 	session: Sessions,
 	plugin: Plugins,
 	theme: Theme,

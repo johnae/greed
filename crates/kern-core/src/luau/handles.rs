@@ -16,7 +16,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::{emit, float_options};
 use super::{state, state_mut};
-use crate::search::{self, Direction};
+use crate::layout::Direction;
+use crate::search::{self, Direction as SearchDirection};
 use crate::{Buffer, BufferId, Mark, Scroll, View, ViewId};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -40,6 +41,14 @@ impl ViewRef {
 
     fn buffer(&self, lua: &Lua) -> LuaResult<BufferId> {
         self.with_view(lua, |v| Ok(v.buffer))
+    }
+
+    /// A handle to view `id` with the same author.
+    fn other(&self, id: ViewId) -> ViewRef {
+        ViewRef {
+            id,
+            author: self.author.clone(),
+        }
     }
 
     /// Undoes or redoes in this view, then tells plugins the buffer changed.
@@ -155,6 +164,7 @@ impl UserData for ViewRef {
             state_mut(lua).editor.configure_float(this.id, options);
             Ok(())
         });
+        add_pane_methods(methods);
         methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
         methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
     }
@@ -247,6 +257,43 @@ impl BufferRef {
     }
 }
 
+/// Splitting panes, moving between them and resizing them.
+fn add_pane_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    methods.add_method("is_pane", |lua, this, ()| {
+        Ok(state(lua).editor.is_pane(this.id))
+    });
+    methods.add_method(
+        "split",
+        |lua, this, (dir, buffer): (String, Option<UserDataRef<BufferRef>>)| {
+            let dir = direction(&dir)?;
+            let buffer = buffer
+                .map(|b| b.with_buffer(lua, |_| Ok(b.buffer)))
+                .transpose()?;
+            let new = state_mut(lua).editor.split_pane(this.id, dir, buffer);
+            new.map(|id| this.other(id))
+                .ok_or_else(|| mlua::Error::runtime("only panes can be split"))
+        },
+    );
+    methods.add_method("neighbor", |lua, this, dir: String| {
+        let dir = direction(&dir)?;
+        let neighbor = state(lua).editor.neighbor(this.id, dir);
+        Ok(neighbor.map(|id| this.other(id)))
+    });
+    methods.add_method("resize", |lua, this, (dir, cells): (String, i32)| {
+        let dir = direction(&dir)?;
+        Ok(state_mut(lua).editor.resize_pane(this.id, dir, cells))
+    });
+}
+
+/// "left", "right", "up" or "down".
+fn direction(name: &str) -> LuaResult<Direction> {
+    Direction::parse(name).ok_or_else(|| {
+        mlua::Error::runtime(format!(
+            "{name:?} isn't a direction: use \"left\", \"right\", \"up\" or \"down\""
+        ))
+    })
+}
+
 /// Emits "view.closed" with the id of `view`, so plugins holding it can let
 /// go.
 pub(super) fn view_closed(lua: &Lua, view: ViewId) -> LuaResult<()> {
@@ -283,9 +330,9 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 })
             };
             let direction = if flag("backward")? {
-                Direction::Backward
+                SearchDirection::Backward
             } else {
-                Direction::Forward
+                SearchDirection::Forward
             };
             let wrap = flag("wrap")?;
             let found = this.with_text(lua, |text| {
@@ -410,6 +457,17 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.set_line_numbers(this.buffer, on);
         Ok(())
+    });
+    methods.add_method("views", |lua, this, ()| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        let list = lua.create_table()?;
+        for id in state(lua).editor.views_of(this.buffer) {
+            list.push(ViewRef {
+                id,
+                author: this.author.clone(),
+            })?;
+        }
+        Ok(list)
     });
     methods.add_method("kept", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.is_kept()))

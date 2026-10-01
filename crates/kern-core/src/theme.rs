@@ -18,6 +18,8 @@
 //! - `ui.statusline`, `ui.statusline.mode`, `ui.statusline.message`
 //! - `ui.float`, `ui.float.border`, `ui.float.title`
 //! - `ui.panel`, `ui.panel.border` (the line beside it), `ui.panel.title`
+//! - `ui.pane.border` (the lines between panes), `ui.pane.inactive` (under
+//!   every pane but the active one), `ui.tabline`, `ui.tabline.active`
 //! - `ui.menu.selected`, `ui.menu.match`, `ui.menu.doc`: lists like the
 //!   picker's, drawn by plugins
 //! - `diagnostic.<severity>`: `error`, `warning`, `info` or `hint`

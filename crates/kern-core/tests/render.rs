@@ -748,3 +748,78 @@ fn views_remember_the_room_they_had() {
     // The status line takes a row.
     assert_eq!(ed.view(main).size, Some((9, 30)));
 }
+
+#[test]
+fn panes_share_the_screen_with_a_line_between() {
+    use kern_core::layout::Direction;
+    let mut ed = editor("|left\ntwo");
+    let main = ed.main();
+    let buffer = ed.view(main).buffer;
+    ed.set_line_numbers(buffer, false);
+    let other = ed.create_buffer("scratch", "right");
+    ed.set_line_numbers(other, false);
+    let right = ed.split_pane(main, Direction::Right, Some(other)).unwrap();
+    assert_eq!(ed.main(), right, "the new pane is active");
+    let f = frame(&mut ed, 21, 4);
+    assert_eq!(
+        rows(&f),
+        [
+            "left      │right     ",
+            "two       │          ",
+            "          │          "
+        ]
+    );
+    let below = ed.split_pane(right, Direction::Down, None).unwrap();
+    let f = frame(&mut ed, 21, 6);
+    assert_eq!(
+        rows(&f),
+        [
+            "left      │right     ",
+            "two       │          ",
+            "          │──────────",
+            "          │right     ",
+            "          │          ",
+        ]
+    );
+    // The cursor is in the focused pane.
+    assert_eq!(f.cursor, Some(Position { col: 11, row: 3 }));
+    assert_eq!(ed.view(below).area.map(|a| (a.x, a.y)), Some((11, 3)));
+}
+
+#[test]
+fn a_zoomed_tab_shows_only_its_active_pane() {
+    use kern_core::layout::Direction;
+    let mut ed = editor("|one");
+    let main = ed.main();
+    let buffer = ed.view(main).buffer;
+    ed.set_line_numbers(buffer, false);
+    ed.split_pane(main, Direction::Right, None);
+    ed.set_zoomed(true);
+    assert_eq!(rows(&frame(&mut ed, 12, 2)), ["one"]);
+}
+
+#[test]
+fn more_than_one_tab_shows_the_tabs_above() {
+    let mut ed = editor("|one");
+    let main = ed.main();
+    let buffer = ed.view(main).buffer;
+    ed.set_line_numbers(buffer, false);
+    let first = ed.current_tab().id();
+    ed.new_tab(Some(buffer));
+    let f = frame(&mut ed, 30, 4);
+    assert_eq!(rows(&f)[0], " 1 notes.md  2 notes.md       ");
+    let active: Vec<_> = f.rows[0]
+        .spans
+        .iter()
+        .filter(|s| s.tags.contains(&Tag::TABLINE_ACTIVE))
+        .map(|s| s.text.as_str())
+        .collect();
+    assert_eq!(active, [" 2 notes.md "]);
+    ed.rename_tab(first, Some("work".into()));
+    ed.switch_tab(first);
+    assert_eq!(
+        rows(&frame(&mut ed, 30, 4))[0],
+        " 1 work  2 notes.md           "
+    );
+    assert_eq!(rows(&frame(&mut ed, 30, 4))[1].trim_end(), "one");
+}

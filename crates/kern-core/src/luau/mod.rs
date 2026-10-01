@@ -19,6 +19,7 @@ mod process;
 mod projects;
 mod requests;
 mod sessions;
+mod tabs;
 mod tasks;
 mod terminal;
 mod testing;

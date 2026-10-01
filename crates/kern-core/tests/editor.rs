@@ -683,3 +683,104 @@ fn isolated_modes_use_only_their_own_keys() {
     ed.keymap_mut().remove_owned_by("term");
     assert_eq!(ed.press(keys("ctrl-s")[0]), command("save", "ctrl-s"));
 }
+
+mod panes {
+    use kern_core::layout::Direction;
+    use kern_core::render::{CellWidth, Plain, Renderer, Size, Status};
+    use kern_core::{Editor, ViewId};
+
+    fn draw(ed: &mut Editor, width: u16, height: u16) {
+        Renderer::new(CellWidth).frame(
+            ed,
+            Size { width, height },
+            &Status::Default { message: None },
+            &Plain,
+        );
+    }
+
+    /// Three panes: `a` on the left, `b` above `c` on the right.
+    fn three() -> (Editor, ViewId, ViewId, ViewId) {
+        let mut ed = super::editor("text");
+        let a = ed.main();
+        let b = ed.split_pane(a, Direction::Right, None).unwrap();
+        let c = ed.split_pane(b, Direction::Down, None).unwrap();
+        draw(&mut ed, 41, 11);
+        (ed, a, b, c)
+    }
+
+    #[test]
+    fn moving_between_panes_goes_back_where_it_came_from() {
+        let (mut ed, a, b, c) = three();
+        assert_eq!(ed.neighbor(a, Direction::Left), None);
+        assert_eq!(ed.neighbor(c, Direction::Up), Some(b));
+        // c was active last, so going right from a picks c over b.
+        assert_eq!(ed.neighbor(a, Direction::Right), Some(c));
+        ed.set_focus(b);
+        assert_eq!(ed.neighbor(a, Direction::Right), Some(b));
+        assert_eq!(ed.neighbor(b, Direction::Left), Some(a));
+    }
+
+    #[test]
+    fn closing_a_pane_makes_the_last_active_one_active() {
+        let (mut ed, a, b, c) = three();
+        ed.set_focus(a);
+        ed.set_focus(c);
+        assert!(ed.close(c));
+        assert_eq!(ed.main(), a);
+        assert_eq!(ed.focus(), a);
+        assert_eq!(ed.current_tab().panes(), [a, b]);
+        assert!(ed.close(a));
+        assert!(!ed.close(b), "the last pane stays");
+    }
+
+    #[test]
+    fn closing_a_tabs_last_pane_closes_the_tab() {
+        let mut ed = super::editor("text");
+        let first = ed.current_tab().id();
+        let main = ed.main();
+        let second = ed.new_tab(None);
+        assert_eq!(ed.tabs().len(), 2);
+        assert!(ed.close(ed.main()));
+        assert_eq!(ed.tabs().len(), 1);
+        assert_eq!(ed.current_tab().id(), first);
+        assert_eq!(ed.focus(), main);
+        assert!(!ed.switch_tab(second));
+    }
+
+    #[test]
+    fn closing_a_tab_closes_its_panes_and_shows_a_neighbor() {
+        let mut ed = super::editor("text");
+        let main = ed.main();
+        let tab = ed.new_tab(None);
+        let pane = ed.main();
+        let other = ed.split_pane(pane, Direction::Down, None).unwrap();
+        assert_eq!(ed.close_tab(tab), Some(vec![pane, other]));
+        assert_eq!(ed.focus(), main);
+        assert!(ed.find_view(pane).is_none());
+        assert_eq!(
+            ed.close_tab(ed.current_tab().id()),
+            None,
+            "the last tab stays"
+        );
+    }
+
+    #[test]
+    fn focusing_a_pane_in_another_tab_shows_that_tab() {
+        let mut ed = super::editor("text");
+        let main = ed.main();
+        let first = ed.current_tab().id();
+        ed.new_tab(None);
+        ed.set_focus(main);
+        assert_eq!(ed.current_tab().id(), first);
+    }
+
+    #[test]
+    fn resizing_moves_the_line_between_panes() {
+        let (mut ed, a, b, _) = three();
+        assert!(ed.resize_pane(a, Direction::Right, 5));
+        draw(&mut ed, 41, 11);
+        assert_eq!(ed.view(a).area.map(|r| r.width), Some(25));
+        assert_eq!(ed.view(b).area.map(|r| r.width), Some(15));
+        assert!(!ed.resize_pane(a, Direction::Left, 5));
+    }
+}

@@ -14,6 +14,9 @@ use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
 use crate::{Buffer, BufferId, Error, Mark};
 
+mod panes;
+pub use panes::{Tab, TabId};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewId(pub u32);
 
@@ -30,6 +33,8 @@ pub struct View {
     pub visible: Option<std::ops::Range<usize>>,
     /// The rows and columns of text it had room for when last drawn.
     pub size: Option<(u16, u16)>,
+    /// Where it was last drawn, gutter included.
+    pub area: Option<crate::render::Rect>,
 }
 
 /// The first thing a view shows: a buffer line, and how many of its wrapped
@@ -124,14 +129,17 @@ pub struct Panel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProjectId(pub u32);
 
-/// A folder being worked on: its own main view and panels. Buffers opened
+/// A folder being worked on: its tabs of panes, and panels. Buffers opened
 /// while it's current belong to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     id: ProjectId,
     root: PathBuf,
-    main: ViewId,
-    /// Views beside the main one, outermost first on each side.
+    /// Never empty.
+    tabs: Vec<Tab>,
+    /// Which of `tabs` is shown.
+    tab: usize,
+    /// Views beside the panes, outermost first on each side.
     panels: Vec<Panel>,
 }
 
@@ -144,14 +152,22 @@ impl Project {
         &self.root
     }
 
-    /// The view that fills the screen while this project is shown.
+    /// The active pane of the shown tab: where files open, and what the
+    /// status line describes.
     pub fn main(&self) -> ViewId {
-        self.main
+        self.tabs[self.tab].active()
     }
 
-    /// The main view and the panels.
+    pub fn tabs(&self) -> &[Tab] {
+        &self.tabs
+    }
+
+    /// Every pane of every tab, then the panels.
     pub fn views(&self) -> impl Iterator<Item = ViewId> + '_ {
-        std::iter::once(self.main).chain(self.panels.iter().map(|p| p.view))
+        self.tabs
+            .iter()
+            .flat_map(Tab::panes)
+            .chain(self.panels.iter().map(|p| p.view))
     }
 }
 
@@ -299,10 +315,12 @@ impl Editor {
 
     fn add_project(&mut self, root: PathBuf, main: ViewId) -> ProjectId {
         let id = ProjectId(self.next_id());
+        let tab = Tab::new(TabId(self.next_id()), main);
         self.projects.push(Project {
             id,
             root,
-            main,
+            tabs: vec![tab],
+            tab: 0,
             panels: Vec::new(),
         });
         self.current = self.projects.len() - 1;
@@ -324,7 +342,7 @@ impl Editor {
             return false;
         };
         self.current = index;
-        self.focus = self.projects[index].main;
+        self.focus = self.projects[index].main();
         true
     }
 
@@ -359,7 +377,7 @@ impl Editor {
             self.current -= 1;
         }
         self.current = self.current.min(self.projects.len() - 1);
-        self.focus = self.projects[self.current].main;
+        self.focus = self.projects[self.current].main();
         true
     }
 
@@ -534,14 +552,15 @@ impl Editor {
     }
 
     pub fn main(&self) -> ViewId {
-        self.current_project().main
+        self.current_project().main()
     }
 
     /// Closes a view. Focus moves to the top floating view, or the main view.
-    /// A buffer without a file goes away with its last view. Returns false
-    /// for the main view, which can't be closed.
+    /// A buffer without a file goes away with its last view. Closing a tab's
+    /// last pane closes the tab. Returns false for the project's last pane,
+    /// which can't be closed.
     pub fn close(&mut self, view: ViewId) -> bool {
-        if self.projects.iter().any(|p| p.main == view) {
+        if !self.views.contains_key(&view) || !self.remove_pane(view) {
             return false;
         }
         let Some(closed) = self.views.remove(&view) else {
@@ -560,7 +579,7 @@ impl Editor {
         if self.focus == view {
             self.focus = return_to
                 .or_else(|| self.floats.last().map(|f| f.view))
-                .unwrap_or(self.current_project().main);
+                .unwrap_or(self.current_project().main());
         }
         self.drop_if_unused(closed.buffer);
         true
@@ -613,6 +632,15 @@ impl Editor {
         self.buffers.values()
     }
 
+    /// The views showing `buffer`.
+    pub fn views_of(&self, buffer: BufferId) -> Vec<ViewId> {
+        self.views
+            .iter()
+            .filter(|(_, view)| view.buffer == buffer)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Each open view that has been drawn, with its rows and columns.
     pub fn view_sizes(&self) -> impl Iterator<Item = (ViewId, (u16, u16))> + '_ {
         self.views
@@ -635,6 +663,7 @@ impl Editor {
     pub fn set_focus(&mut self, view: ViewId) {
         assert!(self.views.contains_key(&view), "no view {view:?}");
         self.focus = view;
+        self.activate(view);
     }
 
     /// Applies a change to the buffer shown in `view`. The view's selection
@@ -927,6 +956,7 @@ impl Editor {
                 scroll: Scroll::default(),
                 visible: None,
                 size: None,
+                area: None,
             },
         );
         self.focus = id;
