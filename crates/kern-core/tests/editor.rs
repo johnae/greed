@@ -658,3 +658,28 @@ fn a_file_is_one_buffer_however_its_path_is_written() {
         Some(cwd.join("Cargo.toml").as_path())
     );
 }
+
+#[test]
+fn isolated_modes_use_only_their_own_keys() {
+    let mut ed = editor("");
+    ed.keymap_mut()
+        .bind(Layer::global(), &keys("ctrl-s"), "save", "core")
+        .unwrap();
+    ed.keymap_mut()
+        .bind(Layer::mode("terminal"), &keys("ctrl-\\"), "leave", "term")
+        .unwrap();
+    ed.keymap_mut().set_fallback("terminal", "send", "term");
+    ed.set_mode("terminal");
+    let command = |name: &str, keys_: &str| KeyOutcome::Command {
+        name: name.into(),
+        keys: keys(keys_),
+        count: None,
+    };
+    assert_eq!(ed.press(keys("ctrl-s")[0]), command("save", "ctrl-s"));
+    ed.keymap_mut().isolate("terminal", "term");
+    assert_eq!(ed.press(keys("ctrl-s")[0]), command("send", "ctrl-s"));
+    assert_eq!(ed.press(keys("ctrl-\\")[0]), command("leave", "ctrl-\\"));
+    // It goes with the plugin that asked for it.
+    ed.keymap_mut().remove_owned_by("term");
+    assert_eq!(ed.press(keys("ctrl-s")[0]), command("save", "ctrl-s"));
+}

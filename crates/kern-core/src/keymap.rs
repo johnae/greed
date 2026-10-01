@@ -355,6 +355,8 @@ pub struct Keymap {
     /// Modes where digits before a key sequence are a count, and which
     /// plugins turned that on.
     counts: HashMap<Arc<str>, Vec<PluginId>>,
+    /// Modes that use only their own keys, and which plugins made them so.
+    isolated: HashMap<Arc<str>, Vec<PluginId>>,
     /// Per mode, the modes it falls back to, in the order they were added.
     inherits: HashMap<Arc<str>, Vec<Inherit>>,
 }
@@ -452,6 +454,9 @@ impl Keymap {
             (Layer::mode_kind(mode, kind), None),
             (Layer::mode(mode), None),
         ];
+        if self.isolated.contains_key(mode) {
+            return order;
+        }
         for inherit in self.inherits.get(mode).into_iter().flatten() {
             order.push((Layer::mode_kind(&inherit.parent, kind), Some(inherit)));
             order.push((Layer::mode(&inherit.parent), Some(inherit)));
@@ -538,6 +543,16 @@ impl Keymap {
         self.counts.contains_key(mode)
     }
 
+    /// Makes `mode` use only the keys bound in it, ignoring inherited modes
+    /// and the layers for every mode or a buffer kind, e.g. for a terminal
+    /// that takes every key.
+    pub fn isolate(&mut self, mode: &str, owner: impl Into<PluginId>) {
+        self.isolated
+            .entry(mode.into())
+            .or_default()
+            .push(owner.into());
+    }
+
     /// The keys that can follow `prefix` in `mode` for a buffer of `kind`, and
     /// what each does, sorted by key. A more specific layer hides the same
     /// key in a less specific one.
@@ -609,6 +624,10 @@ impl Keymap {
             owners.retain(|o| &**o != owner);
         }
         self.counts.retain(|_, owners| !owners.is_empty());
+        for owners in self.isolated.values_mut() {
+            owners.retain(|o| &**o != owner);
+        }
+        self.isolated.retain(|_, owners| !owners.is_empty());
         for inherits in self.inherits.values_mut() {
             inherits.retain(|i| &*i.owner != owner);
         }

@@ -211,6 +211,10 @@ export type Keymap = {
 	--- Makes digits typed before a key sequence in `mode` a count, which the
 	--- command gets as `ctx.count`. A leading 0 stays a key.
 	counts: (mode: string) -> (),
+	--- Makes `mode` use only keys bound in it (and its fallback), skipping
+	--- inherited ones and those bound for every mode or for a buffer kind,
+	--- e.g. for a terminal that takes every key.
+	isolate: (mode: string) -> (),
 	--- Makes `mode` fall back to `parent`'s keys for sequences starting with
 	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
 	--- them. Keys bound in `mode` itself come first.

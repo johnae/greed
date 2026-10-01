@@ -388,6 +388,15 @@ fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult
 
     let o = owner.clone();
     keymap.set(
+        "isolate",
+        lua.create_function(move |lua, mode: String| {
+            state_mut(lua).editor.keymap_mut().isolate(&mode, o.clone());
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
         "inherit",
         lua.create_function(
             move |lua, (mode, parent, prefixes): (String, String, Option<Vec<String>>)| {

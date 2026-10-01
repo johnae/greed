@@ -51,7 +51,10 @@ take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `kern.mode.set("visual")` makes one. `kern.keymap.inherit(mode,
 "normal", { "space", ":" })` lets a new mode use some of normal mode's
 keys, which is how a whole editing style is built; see [Editing
-styles](editing-styles.md#making-your-own).
+styles](editing-styles.md#making-your-own). `kern.keymap.fallback(mode,
+command)` runs a command for any single key nothing else takes, and
+`kern.keymap.isolate(mode)` keeps keys bound for every mode out of one,
+the way a terminal takes every key.
 
 ## Buffers, views and edits
 
