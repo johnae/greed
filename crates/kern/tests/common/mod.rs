@@ -49,6 +49,7 @@ impl World {
             .env("XDG_CACHE_HOME", self.root.join("cache"))
             .env("CLAUDE_CONFIG_DIR", self.root.join("claude"))
             .env_remove("KERN_SESSION")
+            .env_remove("KERN_TERMINAL")
             .env_remove("KERN_CONFIG_DIR")
             .env_remove("KERN_NO_SESSION");
     }

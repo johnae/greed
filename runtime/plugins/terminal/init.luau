@@ -325,11 +325,20 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local rows, cols = view:size()
 	local limit = kern.option.get("terminal-scrollback") :: number
 	local given = if command and #command > 0 then command else shell()
+	-- Programs in it can tell which session they're in: `kern FILE` opens
+	-- the file here instead of starting another editor inside this one,
+	-- and `kern ctl` talks to this session.
+	local env = table.clone(M.env)
+	local session = kern.session.current()
+	if session then
+		env.KERN_TERMINAL = session
+		env.KERN_SESSION = session
+	end
 	local spawned, started = pcall(function()
 		return kern.terminal.spawn({
 			command = given,
 			cwd = kern.project.current().root,
-			env = M.env,
+			env = env,
 			rows = rows or 24,
 			cols = cols or 80,
 			scrollback = limit,

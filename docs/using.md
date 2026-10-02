@@ -27,6 +27,11 @@ there and leaves the session you were in running. Over `kern ssh` it
 reconnects through a new ssh connection, which is close to instant with
 ssh connection sharing (`ControlMaster`).
 
+In one of Kern's own terminals, `kern FILE` opens the file in that session
+and returns, rather than starting an editor inside the editor, and
+`kern ctl` talks to that session. Programs there can tell from
+`$KERN_TERMINAL`, which names the session.
+
 Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.

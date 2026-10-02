@@ -90,7 +90,51 @@ pub fn attach(name: Option<&str>) -> Result<(), Error> {
             }
         },
     };
+    if inside().as_deref() == Some(name.as_str()) {
+        return Err(format!(
+            "this terminal is in session {name}; attaching to it here would show it inside itself"
+        )
+        .into());
+    }
     follow(name, None)
+}
+
+/// The session whose terminal this runs in (`$KERN_TERMINAL`), if it's
+/// still running.
+pub fn inside() -> Option<String> {
+    let name = std::env::var("KERN_TERMINAL")
+        .ok()
+        .filter(|name| !name.is_empty())?;
+    ctl::live_sessions().ok()?.contains(&name).then_some(name)
+}
+
+/// `kern [FILE]` in a terminal of session `name`: opens the file in that
+/// session instead of starting another editor inside it.
+pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
+    let Some(path) = path else {
+        return Err(format!(
+            "this terminal is in Kern already (session {name}); kern FILE opens a file there"
+        )
+        .into());
+    };
+    let path = absolute(Some(path))?;
+    if path.is_dir() {
+        return Err(format!(
+            "this terminal is in Kern already (session {name}); :session {} goes to that folder's project",
+            path.display()
+        )
+        .into());
+    }
+    let result = ctl::connect_to(Some(name))?
+        .call(
+            "tools/call",
+            &json!({ "name": "open", "arguments": { "path": path } }),
+        )?
+        .map_err(std::io::Error::other)?;
+    if result["isError"].as_bool() == Some(true) {
+        return Err(format!("couldn't open {}: {}", path.display(), result["content"]).into());
+    }
+    Ok(())
 }
 
 /// Shows the session called `name` in this terminal, asking it to open

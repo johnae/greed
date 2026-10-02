@@ -209,3 +209,46 @@ fn without_sessions_the_editor_runs_in_the_terminal_and_quits_with_it() {
     assert!(out.contains("local text"), "drawn in this terminal");
     assert!(none_running(&world), "no session was started");
 }
+
+#[test]
+fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
+    let Some(world) = World::new("inside") else {
+        return;
+    };
+    let project = world.project("app", &[("a.txt", "first"), ("b.txt", "second")]);
+    world.terminal(
+        &project,
+        "a.txt",
+        &[],
+        &[
+            Step::Until("the session", running),
+            Step::Pause(300),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    // As a program in one of the session's terminals runs it.
+    let inside = |args: &[&str]| {
+        let mut command = std::process::Command::new(KERN);
+        command
+            .args(args)
+            .current_dir(&project)
+            .stdin(std::process::Stdio::null());
+        world.env(&mut command);
+        command.env("KERN_TERMINAL", "app").output().unwrap()
+    };
+    let opened = inside(&["b.txt"]);
+    assert!(opened.status.success(), "{opened:?}");
+    assert_eq!(
+        world.eval("app", "return require('@kern').view():buffer():text()"),
+        "second"
+    );
+    let bare = inside(&[]);
+    assert!(!bare.status.success());
+    assert!(
+        String::from_utf8_lossy(&bare.stderr).contains("in Kern already"),
+        "{bare:?}"
+    );
+    let attach = inside(&["attach", "app"]);
+    assert!(!attach.status.success(), "no session inside itself");
+    world.eval("app", "require('@kern').quit()");
+}

@@ -199,6 +199,11 @@ fn edit(name: Option<&str>, path: Option<PathBuf>) -> Result<(), Box<dyn std::er
     if std::env::var_os("KERN_NO_SESSION").is_some() {
         return edit_here(path.filter(|p| !p.is_dir()));
     }
+    if let Some(inside) = session::inside()
+        && name.is_none_or(|name| name == inside)
+    {
+        return session::open_inside(&inside, path.as_deref());
+    }
     session::start(name, path.as_deref())
 }
 
