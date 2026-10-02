@@ -50,7 +50,8 @@ tools if you don't want that.
 
 `propose` takes a file and a list of edits, each replacing some exact text
 with new text. The old text is struck through in the buffer and the new
-text shows after it. Nothing changes until you decide:
+text shows after it; when whole lines change, as in Claude Code's diffs,
+the new lines show under the old ones. Nothing changes until you decide:
 
 | Keys | |
 |---|---|

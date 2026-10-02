@@ -1,6 +1,7 @@
 -- Edits an agent proposes, shown in the buffer for review before they
--- apply. The old text is marked and the new text shows after it; nothing
--- changes until you accept.
+-- apply. The old text is marked and the new text shows after it, or as
+-- lines under it when whole lines change; nothing changes until you
+-- accept.
 --
 --   ] o  [ o   the next or previous proposed change
 --   space o a  accept the changes your selections touch
@@ -52,13 +53,41 @@ local function position(p: Proposal, hunk: Hunk): kern.Mark?
 	return p.buffer:decorations(ns(hunk))[1]
 end
 
+-- The line to show the hunk's new lines under, when it replaces whole
+-- lines with whole lines (as diffs from Claude Code do): its last old
+-- line, or the line before where the new ones go in.
+local function line_above(buffer: kern.Buffer, hunk: Hunk, at: Span): number?
+	local function line_start(pos: number): boolean
+		return pos == 0 or buffer:slice(pos - 1, pos) == "\n"
+	end
+	if not (line_start(at.from) and line_start(at.to) and string.sub(hunk.new, -1) == "\n") then
+		return nil
+	elseif at.to > at.from then
+		return buffer:line_of(at.to - 1)
+	elseif at.from > 0 then
+		return buffer:line_of(at.from - 1)
+	end
+	return nil
+end
+
 local function draw(p: Proposal, hunk: Hunk, at: Span)
-	p.buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
-	local shown = string.gsub(hunk.new, "\n", "⏎")
-	p.buffer:decorate(
-		ns(hunk) .. "-text",
-		{ { from = at.to, to = at.to, style = "diff.plus", text = shown } }
-	)
+	local buffer = p.buffer
+	buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
+	local line = line_above(buffer, hunk, at)
+	if line then
+		local start = buffer:line_start(line)
+		local lines = string.split(string.sub(hunk.new, 1, -2), "\n")
+		buffer:decorate(
+			ns(hunk) .. "-text",
+			{ { from = start, to = start, style = "diff.plus", lines = lines } }
+		)
+	else
+		local shown = string.gsub(hunk.new, "\n", "⏎")
+		buffer:decorate(
+			ns(hunk) .. "-text",
+			{ { from = at.to, to = at.to, style = "diff.plus", text = shown } }
+		)
+	end
 end
 
 local function clear(p: Proposal, hunk: Hunk)

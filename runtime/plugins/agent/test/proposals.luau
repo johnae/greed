@@ -71,3 +71,22 @@ test("old text has to be there exactly once, and changes can't overlap", functio
 	assert(string.find(overlap, "overlaps", 1, true), overlap)
 	assert(agent.pending() == 0, "nothing is left proposed")
 end)
+
+test("new whole lines show as lines under the ones they replace", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
+	local path = dir .. "/a.txt"
+	kern.open(path)
+	kern.view():buffer():set_line_numbers(false)
+	propose(t, path, { { old_text = "two\n", new_text = "2\nzwei\n" } })
+	local rows = t:draw(20, 8)
+	assert(rows[1] == "one", rows[1])
+	assert(rows[2] == "two", "the old line stays, marked: " .. rows[2])
+	assert(rows[3] == "2" and rows[4] == "zwei", `then the new ones: {rows[3]} / {rows[4]}`)
+	assert(rows[5] == "three", rows[5])
+
+	-- Inside a line, the new text shows after the old.
+	t:keys("space o R")
+	propose(t, path, { { old_text = "thr", new_text = "3" } })
+	rows = t:draw(20, 8)
+	assert(rows[3] == "thr3ee", rows[3])
+end)
