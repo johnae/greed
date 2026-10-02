@@ -64,6 +64,24 @@ function M.current(): string
 	return current
 end
 
+-- `under` with the fields `over` gives changed, the surfaces' too.
+local function patch(under: kern.ThemeEntry?, over: kern.ThemeEntry): kern.ThemeEntry
+	local out: { [string]: any } = table.clone(under or {}) :: any
+	for key, value in over :: { [string]: any } do
+		local surface = out[key]
+		if type(value) == "table" and type(surface) == "table" then
+			local merged = table.clone(surface)
+			for k, v in value do
+				merged[k] = v
+			end
+			out[key] = merged
+		else
+			out[key] = value
+		end
+	end
+	return out :: any
+end
+
 -- The styles of theme `name`, with what it inherits under them.
 local function styles(name: string, seen: { [string]: boolean }): Styles
 	local theme = themes[name]
@@ -76,11 +94,11 @@ local function styles(name: string, seen: { [string]: boolean }): Styles
 	local out: Styles = if theme.inherits then styles(theme.inherits, seen) else {}
 	if theme.palette then
 		for style, entry in palette.styles(theme.palette) do
-			out[style] = entry
+			out[style] = patch(out[style], entry)
 		end
 	end
 	for style, entry in theme.styles or {} do
-		out[style] = entry
+		out[style] = patch(out[style], entry)
 	end
 	return out
 end

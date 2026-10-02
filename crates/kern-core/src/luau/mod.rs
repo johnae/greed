@@ -80,8 +80,9 @@ pub(crate) struct State {
     pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
     /// What answers each kind of request from servers, and its plugin.
     pub lsp_handlers: HashMap<String, (PluginId, Function)>,
-    /// The plugin that set each theme entry, so it goes with the plugin.
-    pub theme_owners: HashMap<Arc<str>, PluginId>,
+    /// The theme entries plugins set, each with the plugin that set it last,
+    /// so it goes with the plugin. Each patches the base theme's entry.
+    pub theme_set: HashMap<Arc<str>, (PluginId, crate::theme::Entry)>,
     /// The theme under the entries plugins set with `kern.theme.set`, from
     /// `kern.theme.base`, and the plugin that set it.
     pub theme_base: Option<(PluginId, HashMap<Arc<str>, crate::theme::Entry>)>,
@@ -210,7 +211,7 @@ impl Host {
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
             lsp_handlers: HashMap::new(),
-            theme_owners: HashMap::new(),
+            theme_set: HashMap::new(),
             theme_base: None,
             jobs: jobs::Jobs::default(),
             requests: HashMap::new(),
@@ -754,20 +755,21 @@ fn unregister(lua: &Lua, name: &str) {
     state.terminals.remove_owned_by(name);
     state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
     state.editor.keymap_mut().remove_owned_by(name);
-    if let Some((_, base)) = state.theme_base.take_if(|(owner, _)| &**owner == name) {
-        theme::remove_base(state, &base);
-    }
-    state.theme_owners.retain(|entry, owner| {
+    let mut restyled: Vec<Arc<str>> = state
+        .theme_base
+        .take_if(|(owner, _)| &**owner == name)
+        .map(|(_, base)| base.into_keys().collect())
+        .unwrap_or_default();
+    state.theme_set.retain(|entry, (owner, _)| {
         let owned = &**owner == name;
         if owned {
-            // What the base theme says comes back.
-            match state.theme_base.as_ref().and_then(|(_, b)| b.get(entry)) {
-                Some(under) => state.editor.theme_mut().set(entry.clone(), under.clone()),
-                None => state.editor.theme_mut().remove(entry),
-            }
+            restyled.push(entry.clone());
         }
         !owned
     });
+    for entry in &restyled {
+        theme::refresh(state, entry);
+    }
     if state
         .statusline
         .as_ref()

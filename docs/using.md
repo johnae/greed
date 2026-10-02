@@ -671,10 +671,13 @@ theme.define("mine", {
 ```
 
 `kern.theme.set` changes single names on top of whichever theme is in use,
-and those changes stay when you switch themes. Names fall back to their
-parent, so `keyword.control` uses `keyword` unless it has its own entry;
-[Highlighting](highlighting.md) lists them. `#rrggbb` colors work in
-terminals that support them, which is nearly all.
+and those changes stay when you switch themes. Each changes only the fields
+it gives: `kern.theme.set({ comment = { italic = false } })` keeps the
+theme's comment color. A theme's own `styles` work the same way on what it
+inherits. Names fall back to their parent, so `keyword.control` uses
+`keyword` unless it has its own entry; [Highlighting](highlighting.md) lists
+them. `#rrggbb` colors work in terminals that support them, which is nearly
+all.
 
 ### Highlighting and syntax queries
 

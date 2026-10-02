@@ -1164,7 +1164,7 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
     h.load_str(
         "themes",
         "local kern = require('@kern')
-         kern.theme.base({ keyword = { fg = 'red' }, comment = { fg = 'blue' } })
+         kern.theme.base({ keyword = { fg = 'red' }, comment = { fg = 'blue', italic = true } })
          kern.command({ name = 'switch', run = function()
            kern.theme.base({ keyword = { fg = 'yellow' }, string = { fg = 'cyan' } })
          end })",
@@ -1172,11 +1172,20 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
     .unwrap();
     h.load_str(
         "mine",
-        "require('@kern').theme.set({ keyword = { fg = 'green' } })",
+        "require('@kern').theme.set({ keyword = { fg = 'green' }, comment = { italic = false } })",
     )
     .unwrap();
     assert_eq!(fg("keyword").unwrap(), "green", "set wins over the base");
-    assert_eq!(fg("comment").unwrap(), "blue");
+    assert_eq!(
+        fg("comment").unwrap(),
+        "blue",
+        "fields set leave the base's other fields"
+    );
+    assert_eq!(
+        h.eval("return require('@kern').theme.get('comment').italic")
+            .unwrap(),
+        "false"
+    );
 
     // Another base replaces the whole of the last one.
     h.run("switch").unwrap();

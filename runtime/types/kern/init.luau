@@ -947,7 +947,8 @@ export type Syntax = {
 --- "diagnostic.error", or a name a plugin made up. Names fall back to their
 --- parent, so "markup.heading.1" uses "markup.heading" if it has no entry.
 export type Theme = {
-	--- Sets entries by name, replacing any with the same name.
+	--- Sets entries by name. Each changes only the fields it gives of the
+	--- theme's entry underneath, and replaces what was set for that name before.
 	set: (entries: { [string]: ThemeEntry }) -> (),
 	--- Replaces the base theme, the entries under those set with `set`: a
 	--- theme plugin calls it to switch themes without touching what your

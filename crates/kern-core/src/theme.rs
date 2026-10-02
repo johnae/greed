@@ -223,6 +223,16 @@ impl Entry {
         }
     }
 
+    /// This entry with the fields `over` gives changed, surface by surface.
+    #[must_use]
+    pub fn patch(&self, over: &Entry) -> Entry {
+        Entry {
+            style: self.style.patch(&over.style),
+            tui: self.tui.patch(&over.tui),
+            gui: self.gui.patch(&over.gui),
+        }
+    }
+
     fn on(&self, surface: Surface) -> Style {
         self.style.patch(match surface {
             Surface::Tui => &self.tui,

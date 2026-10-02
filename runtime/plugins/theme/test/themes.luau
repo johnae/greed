@@ -72,3 +72,14 @@ test("your own themes start from a palette or another theme", function()
 	assert(not pcall(theme.use, "loop"), "a theme can't inherit from itself")
 	theme.use("default")
 end)
+
+test("a theme's styles and your own entries change only the fields they give", function()
+	theme.define("plain-comments", { inherits = "nord", styles = { comment = { italic = false } } })
+	theme.use("plain-comments")
+	local comment = kern.theme.get("comment") :: kern.ThemeEntry
+	assert(comment.fg == "#616e88" and comment.italic == false, "nord's color stays")
+	kern.theme.set({ keyword = { bold = true } })
+	local keyword = kern.theme.get("keyword") :: kern.ThemeEntry
+	assert(keyword.fg == "#81a1c1" and keyword.bold == true, "the theme's color stays")
+	theme.use("default")
+end)

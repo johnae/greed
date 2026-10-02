@@ -28,8 +28,8 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let parsed = entries_from_lua(&entries)?;
             let mut state = state_mut(lua);
             for (name, entry) in parsed {
-                state.theme_owners.insert(name.clone(), o.clone());
-                state.editor.theme_mut().set(name, entry);
+                state.theme_set.insert(name.clone(), (o.clone(), entry));
+                refresh(&mut state, &name);
             }
             Ok(())
         })?,
@@ -41,17 +41,13 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(move |lua, entries: Table| {
             let parsed: HashMap<_, _> = entries_from_lua(&entries)?.into_iter().collect();
             let mut state = state_mut(lua);
-            let state = &mut *state;
-            // Entries set with `set` stay on top.
-            if let Some((_, old)) = state.theme_base.take() {
-                remove_base(state, &old);
+            let mut names: Vec<Arc<str>> = parsed.keys().cloned().collect();
+            if let Some((_, old)) = state.theme_base.replace((o.clone(), parsed)) {
+                names.extend(old.into_keys());
             }
-            for (name, entry) in &parsed {
-                if !state.theme_owners.contains_key(name) {
-                    state.editor.theme_mut().set(name.clone(), entry.clone());
-                }
+            for name in &names {
+                refresh(&mut state, name);
             }
-            state.theme_base = Some((o.clone(), parsed));
             Ok(())
         })?,
     )?;
@@ -73,12 +69,18 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     Ok(theme)
 }
 
-/// Removes the entries of a base theme that no `set` entry covers.
-pub(super) fn remove_base(state: &mut State, base: &HashMap<Arc<str>, Entry>) {
-    for name in base.keys() {
-        if !state.theme_owners.contains_key(name) {
-            state.editor.theme_mut().remove(name);
-        }
+/// Gives the editor's theme what `name` looks like now: the base theme's
+/// entry with what plugins set patched over it.
+pub(super) fn refresh(state: &mut State, name: &Arc<str>) {
+    let base = state.theme_base.as_ref().and_then(|(_, b)| b.get(name));
+    let set = state.theme_set.get(name).map(|(_, entry)| entry);
+    let entry = match (base, set) {
+        (Some(base), Some(set)) => Some(base.patch(set)),
+        (base, set) => base.or(set).cloned(),
+    };
+    match entry {
+        Some(entry) => state.editor.theme_mut().set(name.clone(), entry),
+        None => state.editor.theme_mut().remove(name),
     }
 }
 
