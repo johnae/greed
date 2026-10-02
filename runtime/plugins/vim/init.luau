@@ -727,13 +727,8 @@ end)
 
 local function open_line(ctx: kern.Context, below: boolean)
 	kern.history.start_group()
-	local buffer = ctx.buffer
-	local line = buffer:line_of(cursor(ctx))
-	local at = if below then buffer:line_end(line) else buffer:line_start(line)
-	buffer:edit(function(e)
-		e:insert(at, "\n")
-	end)
-	enter_insert(ctx, if below then at + 1 else at)
+	core.indent.open(ctx.view, below)
+	enter_insert(ctx, cursor(ctx))
 end
 command("open-below", "Open a line below and insert", function(ctx)
 	open_line(ctx, true)

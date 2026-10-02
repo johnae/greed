@@ -187,20 +187,25 @@ test("queries from other editors get Kern's names, and catch-alls go last", func
 	)
 end)
 
-test("each bundled folds query compiles with its grammar", function()
+test("each bundled folds and indents query compiles with its grammar", function()
 	languages.load_queries()
 	for _, name in kern.grammars() do
-		local source = kern.syntax.query(name, "folds")
-		if source then
-			local buffer = kern.create_buffer("file", "")
-			buffer:set_language(name)
-			local ok, err = pcall(function()
-				return buffer:query(source)
-			end)
-			assert(ok, `{name}: {err}`)
+		for _, kind in { "folds", "indents" } do
+			local source = kern.syntax.query(name, kind)
+			if source then
+				local buffer = kern.create_buffer("file", "")
+				buffer:set_language(name)
+				local ok, err = pcall(function()
+					return buffer:query(source)
+				end)
+				assert(ok, `{name} {kind}: {err}`)
+			end
 		end
 	end
-	assert(kern.syntax.query("nix", "folds"), "nix has one")
+	assert(
+		kern.syntax.query("nix", "folds") and kern.syntax.query("nix", "indents"),
+		"nix has both"
+	)
 end)
 
 test("z a folds the smallest block the folds query finds around the cursor", function(t)
@@ -213,4 +218,63 @@ test("z a folds the smallest block the folds query finds around the cursor", fun
 	t:keys("z a k z a")
 	hidden = kern.view():hidden_lines()
 	assert(#hidden == 1 and hidden[1].from == 1 and hidden[1].to == 4, "the function")
+end)
+
+-- A buffer in `language` with `text`, then `keys`, expecting `after`.
+local function typed(
+	t: test.TestContext,
+	language: string,
+	text: string,
+	keys: string,
+	after: string
+)
+	t:buffer(text)
+	kern.view():buffer():set_language(language)
+	t:keys(keys)
+	t:expect(after)
+end
+
+test("new lines in Rust go a level in inside a block, and } lines up", function(t)
+	languages.load_queries()
+	typed(t, "rust", "fn a() {|}", "i enter", "fn a() {\n    |\n}")
+	typed(
+		t,
+		"rust",
+		"fn a() {\n    let x = 1;|\n}",
+		"i enter",
+		"fn a() {\n    let x = 1;\n    |\n}"
+	)
+	typed(t, "rust", "fn a() {\n    f(|)\n}", "i enter", "fn a() {\n    f(\n        |\n    )\n}")
+	typed(t, "rust", "impl A {\n    fn b() {}|\n}", "o", "impl A {\n    fn b() {}\n    |\n}")
+end)
+
+test("new lines in Nix use its two spaces, inside sets, lists and let", function(t)
+	languages.load_queries()
+	typed(t, "nix", "{\n  a = [|];\n}", "i enter", "{\n  a = [\n    |\n  ];\n}")
+	typed(t, "nix", "let|\nin x", "i enter", "let\n  |\nin x")
+	typed(t, "nix", "let\n  a = 1;|\nin x", "i enter", "let\n  a = 1;\n  |\nin x")
+	typed(t, "nix", "let\n  a = 1;\n  |in x", "i enter", "let\n  a = 1;\n\n|in x")
+end)
+
+test("new lines in Luau indent with tabs inside functions and ifs", function(t)
+	languages.load_queries()
+	typed(t, "luau", "local function f()|\nend", "i enter", "local function f()\n\t|\nend")
+	typed(t, "luau", "if x then\n\ty()|\nend", "i enter", "if x then\n\ty()\n\t|\nend")
+	typed(t, "luau", "if x then\n\ty()|end", "i enter", "if x then\n\ty()\n|end")
+end)
+
+test("Python and YAML go a level in after a colon", function(t)
+	typed(t, "python", "def f():|", "a enter", "def f():\n    |")
+	typed(t, "yaml", "a:|", "a enter", "a:\n  |")
+	typed(t, "python", "x = 1|", "a enter", "x = 1\n|")
+end)
+
+test("> and < use the language's indent", function(t)
+	t:buffer("|a")
+	kern.view():buffer():set_language("go")
+	t:keys(">")
+	t:expect("|\ta")
+	kern.view():buffer():set_language("nix")
+	t:keys("< >")
+	t:expect("|  a")
 end)

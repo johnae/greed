@@ -160,7 +160,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `r` + a character | Replace every selected character with it |
 | `R` | Replace the selections with what was copied |
 | `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
-| `>` `<` | Indent or dedent the lines (the `indent` option sets by what) |
+| `>` `<` | Indent or dedent the lines by one level of the language's indent |
 | `J` | Join lines with one space |
 | `ctrl-c` | Comment the lines, or uncomment them |
 | `y` `p` `P` | Copy, paste after, paste before |
@@ -170,6 +170,15 @@ There is always a selection; a cursor is a selection one character wide.
 | `esc` | Back to normal mode |
 
 A number before a motion repeats it: `3 j`, `2 w`.
+
+New lines from `enter`, `o` and `O` start at the indent the code calls
+for: a level in inside a block, bracket or `let`, and lined up with the
+block's first line before its `}` or `end`. Between a pair of brackets,
+`enter` puts the closing one on a line of its own. Languages without a
+grammar keep the line's indent, one level more after an opening bracket
+(or a `:` in Python and YAML). Each language has its own indent, like two
+spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
+{ indent = 4 })`; the `indent` option is for files in no language.
 
 **Many selections**
 
@@ -629,7 +638,9 @@ What gets highlighted, and what counts as a function for `m i f`, comes
 from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where
 KIND is `highlights`, `injections` (languages inside others, like the code
 blocks in Markdown, which are highlighted in their own language),
-`textobjects` or `folds` (the blocks `z a` folds, captured as `@fold`).
+`textobjects`, `folds` (the blocks `z a` folds, captured as `@fold`) or
+`indents` (nodes whose lines go a level in, `@indent`, and closing tokens
+that line up with their block's first line, `@outdent`).
 Kern reads them from every plugin and from `~/.config/kern/queries`, so a
 file there replaces Kern's own. To add to it instead, start the file with
 `; extends`:

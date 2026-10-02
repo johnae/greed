@@ -111,7 +111,10 @@ Folding uses a language's `folds` query, or indentation without one. To
 fold a language another way, give core a provider that returns the first
 and last line of the block around a line:
 `require("@core").folds.providers.org = function(buffer, line) ... end`.
-Notes folds Markdown sections this way.
+Notes folds Markdown sections this way. New lines' indent works the same
+way, with the `indents` query and `require("@core").indent.providers`,
+whose functions get the buffer and the place a line break goes in and
+return the new line's indent.
 
 The editor can have several projects open. `kern.project.current()` is
 the one shown, with its `root`; `kern.project.open`, `switch` and `close`

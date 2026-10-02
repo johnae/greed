@@ -9,6 +9,7 @@
 
 local kern = require("@kern")
 local text = require("@core").text
+local indent = require("@core").indent
 
 -- Commands that type. Typing in a row is undone in one step; any other
 -- command ends the step.
@@ -88,9 +89,16 @@ kern.command({
 
 kern.command({
 	name = "type-newline",
-	doc = "Type a line break, replacing any selection",
+	doc = "Type a line break, replacing any selection, and start the new line at its indent",
 	run = function(ctx)
-		type_text(ctx, text.line_break(ctx.buffer))
+		kern.history.start_group()
+		for _, range in ctx.view:selection().ranges do
+			if range.anchor ~= range.head then
+				type_text(ctx, "")
+				break
+			end
+		end
+		indent.break_lines(ctx.view)
 	end,
 })
 

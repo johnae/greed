@@ -15,6 +15,9 @@ export type Language = {
 	comment: string?,
 	--- Spaces per indent level; leave out to indent with tabs.
 	indent: number?,
+	--- For a language without an indents query: a Luau pattern for what a
+	--- line ends with when the next one goes a level in, e.g. "[%(%[{:]".
+	indent_after: string?,
 	--- A program that formats the file: it gets the text on its input and
 	--- prints it formatted. "{path}" in it stands for the file's path.
 	--- Without one, the language server formats, as rust-analyzer does.
@@ -138,6 +141,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	python = {
+		indent_after = "[%(%[{:]",
 		formatter = { "ruff", "format", "-" },
 		extensions = { "py", "pyi" },
 		roots = { "pyproject.toml", "setup.py", "requirements.txt" },
@@ -197,6 +201,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	yaml = {
+		indent_after = "[%(%[{:]",
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "yaml", "yml" },
 		servers = { { "yaml-language-server", "--stdio" } },

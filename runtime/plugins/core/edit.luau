@@ -2,6 +2,7 @@
 -- paste.
 
 local kern = require("@kern")
+local indent = require("./indent")
 local motions = require("./motions")
 local registers = require("./registers")
 local style = require("./style")
@@ -79,9 +80,9 @@ kern.command({
 
 kern.command({
 	name = "insert-newline",
-	doc = "Insert a line break at each cursor",
+	doc = "Insert a line break at each cursor, starting the new line at its indent",
 	run = function(ctx)
-		insert_at_heads(ctx, text.line_break(ctx.buffer))
+		indent.break_lines(ctx.view)
 	end,
 })
 
@@ -117,10 +118,7 @@ kern.command({
 	doc = "Open a new line below each cursor and insert there",
 	run = function(ctx)
 		kern.history.start_group()
-		each_range(ctx, function(buffer, range)
-			return point(buffer:line_end(buffer:line_of(range.head)))
-		end)
-		insert_at_heads(ctx, text.line_break(ctx.buffer))
+		indent.open(ctx.view, true)
 		enter_insert()
 	end,
 })
@@ -130,13 +128,7 @@ kern.command({
 	doc = "Open a new line above each cursor and insert there",
 	run = function(ctx)
 		kern.history.start_group()
-		each_range(ctx, function(buffer, range)
-			return point(buffer:line_start(buffer:line_of(range.head)))
-		end)
-		insert_at_heads(ctx, text.line_break(ctx.buffer))
-		each_range(ctx, function(buffer, range)
-			return point(text.before(buffer, range.head))
-		end)
+		indent.open(ctx.view, false)
 		enter_insert()
 	end,
 })
@@ -272,7 +264,7 @@ kern.command({
 
 kern.option.define({
 	name = "indent",
-	doc = "What > adds at the start of a line: spaces or a tab",
+	doc = "One level of indent, spaces or a tab, in languages that don't set their own",
 	default = "    ",
 })
 
@@ -358,7 +350,7 @@ kern.command({
 	name = "indent",
 	doc = "Indent the lines of each selection",
 	run = function(ctx)
-		local unit = kern.option.get("indent") :: string
+		local unit = indent.unit(ctx.buffer)
 		local buffer = ctx.buffer
 		local starts = {}
 		for _, line in motions.selected_lines(ctx) do
@@ -370,23 +362,16 @@ kern.command({
 	end,
 })
 
-local function leading_blanks(buffer: kern.Buffer, line: number): string
-	return string.match(
-			buffer:slice(buffer:line_start(line), buffer:line_end(line)),
-			"^[ \t]*"
-		) :: string
-end
-
 kern.command({
 	name = "dedent",
 	doc = "Take one level of indent off the lines of each selection",
 	run = function(ctx)
-		local width = #(kern.option.get("indent") :: string)
+		local width = #indent.unit(ctx.buffer)
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
 			for _, line in motions.selected_lines(ctx) do
 				local start = buffer:line_start(line)
-				local lead = leading_blanks(buffer, line)
+				local lead = indent.of(buffer, line)
 				local take = if string.sub(lead, 1, 1) == "\t" then 1 else math.min(#lead, width)
 				if take > 0 then
 					e:delete(start, start + take)
@@ -414,7 +399,7 @@ kern.command({
 			for line in joins do
 				local stop = buffer:line_end(line)
 				local next_start = buffer:line_start(line + 1)
-				e:replace(stop, next_start + #leading_blanks(buffer, line + 1), " ")
+				e:replace(stop, next_start + #indent.of(buffer, line + 1), " ")
 			end
 		end)
 	end,

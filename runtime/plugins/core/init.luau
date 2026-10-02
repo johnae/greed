@@ -24,6 +24,7 @@ local project = require("@self/project")
 local style = require("@self/style")
 local mouse = require("@self/mouse")
 local buttons = require("@self/buttons")
+local indent = require("@self/indent")
 local folds = require("@self/folds")
 
 kern.keymap.bind("normal", {
@@ -153,6 +154,7 @@ return {
 	style = style,
 	mouse = mouse,
 	buttons = buttons,
+	indent = indent,
 	folds = folds,
 	comment = comment,
 	jumps = jumps,

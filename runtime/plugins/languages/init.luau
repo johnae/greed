@@ -12,6 +12,7 @@
 local kern = require("@kern")
 local defaults = require("@self/languages")
 local comment = require("@core").comment
+local indent = require("@core").indent
 local query_files = require("@self/query_files")
 local grammars = require("@self/grammars")
 
@@ -23,6 +24,10 @@ local languages: { [string]: Language } = {}
 local function apply(name: string, language: Language)
 	kern.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
+	indent.units[name] = if language.indent then string.rep(" ", language.indent) else "\t"
+	indent.providers[name] = if language.indent_after
+		then indent.by_line(language.indent_after)
+		else nil
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })

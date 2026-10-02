@@ -107,7 +107,7 @@ local function server_format(buffer: kern.Buffer): boolean
 	if buffer:path() == nil then
 		return false
 	end
-	local indent = kern.option.get("indent") :: string
+	local indent = require("@core").indent.unit(buffer)
 	local ok, edits = pcall(kern.lsp.request, buffer, "textDocument/formatting", {
 		textDocument = { uri = kern.lsp.uri(buffer) },
 		options = {
