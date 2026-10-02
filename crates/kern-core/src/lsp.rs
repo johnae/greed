@@ -393,8 +393,9 @@ impl Lsp {
         Ok(id)
     }
 
-    /// Sends a request about `buffer` to its language's server. Returns the
-    /// server and the request's id, which the response will carry.
+    /// Sends a request about `buffer` to its language's server, after the
+    /// buffer's latest text, so an edit made just before is seen. Returns
+    /// the server and the request's id, which the response will carry.
     pub fn request(
         &mut self,
         buffer: &Buffer,
@@ -402,6 +403,7 @@ impl Lsp {
         params: &Value,
     ) -> Result<(ServerId, i64), LspError> {
         let server = self.server_of(buffer)?;
+        self.sync_buffer(buffer)?;
         let id = self.servers[server].request(method, params)?;
         Ok((server, id))
     }

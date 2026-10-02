@@ -385,8 +385,9 @@ export type FloatSpec = {
 	width: (number | string)?,
 	height: (number | string)?,
 	--- "cursor" opens it just below the cursor (or above, near the bottom),
-	--- like a completion menu.
-	anchor: ("center" | "top" | "bottom" | "cursor")?,
+	--- like a completion menu; "above-cursor" prefers above, like signature
+	--- help.
+	anchor: ("center" | "top" | "bottom" | "cursor" | "above-cursor")?,
 	--- Whether the view takes focus. Defaults to true.
 	focus: boolean?,
 	--- Where the outside of the border goes, from the screen's left and top

@@ -468,3 +468,40 @@ fn the_problems_list_has_files_that_are_not_open() {
         "{items:?}"
     );
 }
+
+/// The signature help window's text and the part picked out, if it's open.
+fn signature(h: &Host) -> Option<(String, String)> {
+    h.with_editor(|ed| {
+        ed.floats().iter().find_map(|f| {
+            let buffer = ed.buffer(ed.view(f.view).buffer);
+            (buffer.kind() == "signature").then(|| {
+                let text = buffer.text().to_string();
+                let active = buffer
+                    .marks("signature")
+                    .first()
+                    .map(|m| text[m.range.clone()].to_owned())
+                    .unwrap_or_default();
+                (text, active)
+            })
+        })
+    })
+}
+
+#[test]
+fn signature_help_follows_the_parameter_being_typed_and_closes_after_the_call() {
+    let h = with_plugin();
+    move_cursor(&h, 12);
+    press_and_wait(&h, "i space a d d (", |h| signature(h).is_some());
+    assert_eq!(
+        signature(&h).unwrap(),
+        ("fn add(a: i32, b: i32)".to_owned(), "a: i32".to_owned())
+    );
+    press_and_wait(&h, "1 ,", |h| {
+        signature(h).is_some_and(|(_, active)| active == "b: i32")
+    });
+    press_and_wait(&h, "space 2 )", |h| signature(h).is_none());
+
+    press_and_wait(&h, "space f (", |h| signature(h).is_some());
+    h.press_keys("esc").unwrap();
+    assert!(signature(&h).is_none(), "leaving insert mode closes it");
+}

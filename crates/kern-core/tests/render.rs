@@ -634,6 +634,33 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
     );
 }
 
+#[test]
+fn a_float_anchored_above_the_cursor_opens_above_it_or_below_near_the_top() {
+    use kern_core::{Anchor, Extent, FloatOptions};
+    let options = FloatOptions {
+        title: None,
+        width: Extent::Cells(8),
+        height: Extent::Cells(3),
+        anchor: Anchor::AboveCursor,
+        focus: false,
+        x: None,
+        y: None,
+    };
+    let mut ed = editor("a\nb\nc\nd\ne|");
+    let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
+    let help = ed.create_buffer("signature", "fn f()");
+    ed.float(help, options.clone());
+    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    assert_eq!(rect.y + rect.height + 1, cursor.row, "above: {rect:?}");
+
+    let mut ed = editor("ab|c\nd");
+    let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
+    let help = ed.create_buffer("signature", "fn f()");
+    ed.float(help, options);
+    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    assert_eq!(rect.y, cursor.row + 2, "no room above, so below: {rect:?}");
+}
+
 /// Each row's text without the gutter (line numbers and signs).
 fn body(frame: &Frame) -> Vec<String> {
     rows(frame)

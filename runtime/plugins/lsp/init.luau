@@ -23,6 +23,7 @@ require("@self/completion")
 require("@self/edits")
 require("@self/places")
 require("@self/actions")
+require("@self/signature")
 
 local head, move_to, ask, describe = common.head, common.move_to, common.ask, common.describe
 

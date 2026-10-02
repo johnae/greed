@@ -29,6 +29,55 @@ fn write(writer: &mut impl Write, message: &Value) {
     writer.flush().unwrap();
 }
 
+/// The document the client opened or changed last.
+#[derive(Default)]
+struct Opened {
+    uri: Value,
+    text: String,
+}
+
+impl From<&Value> for Opened {
+    /// From `didOpen` or `didChange` parameters, with the whole text.
+    fn from(params: &Value) -> Self {
+        let text = params["textDocument"]["text"]
+            .as_str()
+            .or_else(|| params["contentChanges"][0]["text"].as_str())
+            .unwrap_or_default();
+        Opened {
+            uri: params["textDocument"]["uri"].clone(),
+            text: text.to_owned(),
+        }
+    }
+}
+
+/// Signature help for `add(a, b)`: the parameter being typed, or nothing
+/// outside a call, from the text before `position`.
+fn signature_help(doc: &Opened, position: &Value) -> Value {
+    let at = |key: &str| {
+        position[key]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or_default()
+    };
+    let line = doc.text.lines().nth(at("line")).unwrap_or_default();
+    let before = &line[..at("character").min(line.len())];
+    let Some(call) = before.rfind('(') else {
+        return Value::Null;
+    };
+    if before[call..].contains(')') {
+        return Value::Null;
+    }
+    let active = before[call..].matches(',').count();
+    json!({
+        "signatures": [{ "label": "fn add(a: i32, b: i32)", "parameters": [
+            { "label": [7, 13] },
+            { "label": "b: i32" },
+        ] }],
+        "activeSignature": 0,
+        "activeParameter": active,
+    })
+}
+
 /// Where "bad" is in "let x = bad;".
 fn word_range() -> Value {
     json!({ "start": { "line": 0, "character": 8 }, "end": { "line": 0, "character": 11 } })
@@ -38,8 +87,7 @@ fn word_range() -> Value {
 /// with the position it was asked about, and logs every method it gets.
 fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel::Sender<String>) {
     let mut input = BufReader::new(input);
-    // The document opened last.
-    let mut opened = Value::Null;
+    let mut opened = Opened::default();
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -55,6 +103,7 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     "renameProvider": { "prepareProvider": true },
                     "codeActionProvider": { "resolveProvider": true },
                     "referencesProvider": true,
+                    "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
                 } } }),
             ),
             "initialized" => write(
@@ -62,9 +111,8 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [{}, {}] } }),
             ),
             "textDocument/didOpen" | "textDocument/didChange" => {
-                let doc = &message["params"]["textDocument"];
-                opened = doc["uri"].clone();
-                publish_diagnostics(&mut output, &message["params"]);
+                opened = Opened::from(&message["params"]);
+                publish_diagnostics(&mut output, &opened);
             }
             // Shouting asks the editor to apply an edit, as servers do for
             // commands, then answers.
@@ -136,13 +184,9 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
 
 /// Reports every "bad" in the document as an error, and a warning in a
 /// file next to it that isn't open.
-fn publish_diagnostics(output: &mut impl Write, params: &Value) {
-    let doc = &params["textDocument"];
-    let text = doc["text"]
-        .as_str()
-        .or_else(|| params["contentChanges"][0]["text"].as_str())
-        .unwrap_or_default();
-    let diagnostics: Vec<Value> = text
+fn publish_diagnostics(output: &mut impl Write, doc: &Opened) {
+    let diagnostics: Vec<Value> = doc
+        .text
         .lines()
         .enumerate()
         .flat_map(|(line, content)| {
@@ -156,9 +200,10 @@ fn publish_diagnostics(output: &mut impl Write, params: &Value) {
         .collect();
     write(
         output,
-        &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": doc["uri"], "diagnostics": diagnostics } }),
+        &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": doc.uri, "diagnostics": diagnostics } }),
     );
-    let other = doc["uri"]
+    let other = doc
+        .uri
         .as_str()
         .unwrap_or_default()
         .replace("main.rs", "other.rs");
@@ -173,8 +218,8 @@ fn publish_diagnostics(output: &mut impl Write, params: &Value) {
 
 /// Answers that are only a result: completion, formatting, and changing
 /// "bad" with rename, references and code actions.
-/// `opened` is the document opened last.
-fn answer(method: &str, params: &Value, opened: &Value) -> Option<Value> {
+/// `opened` is the document opened or changed last.
+fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
     let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
     let answer = match method {
         "textDocument/completion" => json!({ "isIncomplete": false, "items": [
@@ -186,6 +231,7 @@ fn answer(method: &str, params: &Value, opened: &Value) -> Option<Value> {
         "textDocument/formatting" => json!([
             { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// formatted\n" },
         ]),
+        "textDocument/signatureHelp" => signature_help(opened, &params["position"]),
         "textDocument/prepareRename" => json!({ "range": word_range(), "placeholder": "bad" }),
         "textDocument/rename" => json!({ "changes": {
             uri: [{ "range": word_range(), "newText": params["newName"] }],
@@ -208,7 +254,7 @@ fn answer(method: &str, params: &Value, opened: &Value) -> Option<Value> {
         "codeAction/resolve" => {
             let mut action = params.clone();
             action["edit"] = json!({ "documentChanges": [{
-                "textDocument": { "uri": opened, "version": null },
+                "textDocument": { "uri": opened.uri, "version": null },
                 "edits": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// resolved\n" }],
             }] });
             action

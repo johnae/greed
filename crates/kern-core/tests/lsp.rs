@@ -241,3 +241,31 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         .unwrap_err();
     assert!(err.to_string().contains("no language server"), "{err}");
 }
+
+#[test]
+fn a_request_goes_after_the_edit_made_just_before_it() {
+    let mut s = setup("ok");
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.methods();
+    let view = s.editor.focus();
+    let changes = kern_text::ChangeSet::from_changes(2, [(2, 2, Some("("))]).unwrap();
+    s.editor
+        .apply(
+            view,
+            changes,
+            kern_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    let buffer = s.editor.buffers().next().unwrap();
+    let params = json!({ "textDocument": { "uri": file_uri(&s.path) }, "position": { "line": 0, "character": 3 } });
+    s.lsp
+        .request(buffer, "textDocument/hover", &params)
+        .unwrap();
+    let methods = s.methods();
+    let change = methods.iter().position(|m| m == "textDocument/didChange");
+    let hover = methods.iter().position(|m| m == "textDocument/hover");
+    assert!(change.is_some() && change < hover, "{methods:?}");
+}

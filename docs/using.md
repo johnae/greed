@@ -234,6 +234,12 @@ after a letter or a `.`. The menu narrows as you keep typing.
 `:set completion-delay 300` waits longer before asking; `0` stops asking
 while you type, leaving `ctrl-space`.
 
+Typing `(` or `,` in a call shows what the function takes, above the
+cursor, with the parameter you're on picked out. It follows along as you
+type and closes when the call does or you leave insert mode. To ask for it
+with a key, bind `signature-help` in insert mode, e.g.
+`kern.keymap.bind("insert", { ["ctrl-k"] = "signature-help" })`.
+
 ## Version control
 
 In a jj or git repository, lines added (`+`), changed (`~`) and removed

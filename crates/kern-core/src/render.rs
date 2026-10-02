@@ -1333,16 +1333,21 @@ fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFra
 fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     let outer_width = options.width.resolve(area.width).max(3);
     let outer_height = options.height.resolve(area.height).max(3);
-    if options.anchor == Anchor::Cursor
+    if matches!(options.anchor, Anchor::Cursor | Anchor::AboveCursor)
         && let Some(cursor) = cursor
     {
         // The text inside starts under the cursor, on the row below it, or
-        // ends on the row above it when it doesn't fit below.
+        // ends on the row above it, whichever the anchor prefers and fits.
         let below = cursor.row + 1;
-        let y = if below + outer_height <= area.y + area.height {
-            below
-        } else {
-            cursor.row.saturating_sub(outer_height)
+        let fits_below = below + outer_height <= area.y + area.height;
+        let above = cursor
+            .row
+            .checked_sub(outer_height)
+            .filter(|&y| y >= area.y);
+        let y = match (options.anchor, above) {
+            (Anchor::AboveCursor, Some(above)) => above,
+            _ if fits_below => below,
+            _ => cursor.row.saturating_sub(outer_height),
         };
         let x = cursor
             .col
@@ -1365,7 +1370,9 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
         (Some(y), _) => y.resolve(area.height),
         (None, Anchor::Top) => 0,
         // With no cursor on screen, a cursor float centers.
-        (None, Anchor::Center | Anchor::Cursor) => area.height.saturating_sub(outer_height) / 2,
+        (None, Anchor::Center | Anchor::Cursor | Anchor::AboveCursor) => {
+            area.height.saturating_sub(outer_height) / 2
+        }
         (None, Anchor::Bottom) => area.height.saturating_sub(outer_height),
     }
     .min(area.height.saturating_sub(outer_height));
