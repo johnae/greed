@@ -31,10 +31,12 @@ pub struct Layer {
     pub tree: Tree,
 }
 
-/// The language a code block or setting names: a language's own name, or a
-/// file extension, like "rs" or "lua".
+/// The language a code block, setting or comment names: a language's own
+/// name, or a file extension, like "rs" or "lua". A comment's markers don't
+/// count, so `/* lua */` and `# bash` name Lua and Bash.
 fn find<'a>(injections: &'a Injections, name: &str) -> Option<&'a Arc<Language>> {
-    let name = name.trim().to_ascii_lowercase();
+    let markers = ['#', '/', '*', '-', ';', ' ', '\t'];
+    let name = name.trim_matches(markers).to_ascii_lowercase();
     let name = EXTENSIONS
         .iter()
         .find(|(extension, _)| *extension == name)
@@ -71,13 +73,23 @@ fn content_ranges(node: Node, include_children: bool) -> Vec<tree_sitter::Range>
     ranges
 }
 
-/// What one match of an injections query asks for: the language and the
-/// text to parse as it.
+/// What one match of an injections query asks for.
+struct Injection<'t> {
+    language: String,
+    content: Node<'t>,
+    include_children: bool,
+    /// Parsed together with the other matches of the same pattern, like the
+    /// pieces of a Nix string around its `${...}`s.
+    combined: bool,
+}
+
+/// The injection `m` asks for, if it names both a language and the text to
+/// parse as it.
 fn injection<'t>(
     query: &Query,
     m: &tree_sitter::QueryMatch<'_, 't>,
     text: &Rope,
-) -> Option<(String, Node<'t>, bool)> {
+) -> Option<Injection<'t>> {
     let names = query.capture_names();
     let mut language = None;
     let mut content = None;
@@ -91,15 +103,21 @@ fn injection<'t>(
             _ => {}
         }
     }
-    let mut include_children = false;
+    let (mut include_children, mut combined) = (false, false);
     for property in query.property_settings(m.pattern_index) {
         match (&*property.key, &property.value) {
             ("injection.language", Some(value)) => language = Some(value.to_string()),
             ("injection.include-children", _) => include_children = true,
+            ("injection.combined", _) => combined = true,
             _ => {}
         }
     }
-    Some((language?, content?, include_children))
+    Some(Injection {
+        language: language?,
+        content: content?,
+        include_children,
+        combined,
+    })
 }
 
 /// The layers inside `tree`, a parse of `text` as `language`, and the
@@ -131,15 +149,32 @@ fn inject(
     if depth >= MAX_DEPTH {
         return;
     }
-    let mut wanted = Vec::new();
+    let mut wanted: Vec<(Arc<Language>, Vec<tree_sitter::Range>)> = Vec::new();
+    // Where in `wanted` each combined pattern's layer is, by pattern and
+    // language.
+    let mut combined: HashMap<(usize, &'static str), usize> = HashMap::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, tree.root_node(), RopeText(text));
     while let Some(m) = matches.next() {
-        if let Some((name, node, include_children)) = injection(query, m, text)
-            && let Some(inner) = find(injections, &name)
-        {
-            wanted.push((inner.clone(), content_ranges(node, include_children)));
+        let Some(asked) = injection(query, m, text) else {
+            continue;
+        };
+        let Some(inner) = find(injections, &asked.language) else {
+            continue;
+        };
+        let ranges = content_ranges(asked.content, asked.include_children);
+        if asked.combined {
+            let key = (m.pattern_index, inner.name);
+            if let Some(&at) = combined.get(&key) {
+                wanted[at].1.extend(ranges);
+                continue;
+            }
+            combined.insert(key, wanted.len());
         }
+        wanted.push((inner.clone(), ranges));
+    }
+    for (_, ranges) in &mut wanted {
+        ranges.sort_by_key(|r| r.start_byte);
     }
     for (inner, ranges) in wanted {
         if found.len() >= MAX_LAYERS {

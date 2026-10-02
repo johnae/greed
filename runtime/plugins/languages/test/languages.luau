@@ -57,7 +57,7 @@ end)
 test("the bundled query files load, each working with its grammar", function()
 	local problems = languages.load_queries()
 	assert(#problems == 0, table.concat(problems, "\n"))
-	for _, name in { "rust", "luau", "json", "toml", "markdown" } do
+	for _, name in { "rust", "luau", "json", "toml", "markdown", "nix", "bash" } do
 		assert(kern.syntax.query(name, "textobjects"), `{name} has no textobjects query`)
 	end
 end)

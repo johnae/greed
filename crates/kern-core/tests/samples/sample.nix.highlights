@@ -1,0 +1,167 @@
+# A package
+^^^^^^^^^^^ comment
+{ lib, stdenv, fetchurl, enable ? true }:
+^ punctuation.bracket
+  ^^^ variable.parameter
+  ^^^ variable.other.member
+  ^^^ variable
+     ^ punctuation.delimiter
+       ^^^^^^ variable.parameter
+       ^^^^^^ variable.other.member
+       ^^^^^^ variable
+             ^ punctuation.delimiter
+               ^^^^^^^^ variable.parameter
+               ^^^^^^^^ variable.other.member
+               ^^^^^^^^ variable
+                       ^ punctuation.delimiter
+                         ^^^^^^ variable.parameter
+                         ^^^^^^ variable.other.member
+                         ^^^^^^ variable
+                                ^ punctuation.delimiter
+                                  ^^^^ constant.builtin.boolean
+                                  ^^^^ variable
+                                  ^^^^ variable.other.member
+                                  ^^^^ variable
+                                       ^ punctuation.bracket
+
+let
+^^^ keyword
+  version = "1.2";
+  ^^^^^^^ variable.other.member
+  ^^^^^^^ variable
+          ^ punctuation.delimiter
+            ^^^^^ string
+                 ^ punctuation.delimiter
+  src = ./src;
+  ^^^ variable.other.member
+  ^^^ variable
+      ^ punctuation.delimiter
+        ^^^^^ string.special.path
+             ^ punctuation.delimiter
+in
+^^ keyword
+stdenv.mkDerivation rec {
+^^^^^^ variable
+^^^^^^ variable.other.member
+^^^^^^ variable
+      ^ punctuation.delimiter
+       ^^^^^^^^^^^^ variable.other.member
+       ^^^^^^^^^^^^ function
+       ^^^^^^^^^^^^ variable.other.member
+       ^^^^^^^^^^^^ variable
+                    ^^^ keyword
+                        ^ punctuation.bracket
+  pname = "kern";
+  ^^^^^ variable.other.member
+  ^^^^^ variable
+        ^ punctuation.delimiter
+          ^^^^^^ string
+                ^ punctuation.delimiter
+  inherit version src;
+  ^^^^^^^ keyword
+          ^^^^^^^ variable.other.member
+          ^^^^^^^ variable
+                  ^^^ variable.other.member
+                  ^^^ variable
+                     ^ punctuation.delimiter
+  doCheck = if enable then false else null;
+  ^^^^^^^ variable.other.member
+  ^^^^^^^ variable
+          ^ punctuation.delimiter
+            ^^ keyword.control.conditional
+               ^^^^^^ variable
+               ^^^^^^ variable.other.member
+               ^^^^^^ variable
+                      ^^^^ keyword.control.conditional
+                           ^^^^^ constant.builtin.boolean
+                           ^^^^^ variable
+                           ^^^^^ variable.other.member
+                           ^^^^^ variable
+                                 ^^^^ keyword.control.conditional
+                                      ^^^^ constant.builtin
+                                      ^^^^ variable
+                                      ^^^^ variable.other.member
+                                      ^^^^ variable
+                                          ^ punctuation.delimiter
+  buildPhase = ''
+  ^^^^^^^^^^ variable.other.member
+  ^^^^^^^^^^ variable
+             ^ punctuation.delimiter
+               ^^+ string
+    make -j$NIX_BUILD_CORES PREFIX=${placeholder "out"}
+    ^^^^ function
+           ^ punctuation.special
+            ^^^^^^^^^^^^^^^ variable
+                                   ^^ punctuation.special
+                                     ^^^^^^^^^^^ function
+                                     ^^^^^^^^^^^ function.builtin
+                                     ^^^^^^^^^^^ variable
+                                     ^^^^^^^^^^^ variable.other.member
+                                     ^^^^^^^^^^^ variable
+                                                 ^^^^^ string
+                                                      ^ punctuation.bracket
+                                                      ^ punctuation.special
+    echo "done" > log
+    ^^^^ function
+         ^^^^^^ string
+                ^ operator
+  '';
+    ^ punctuation.delimiter
+  meta.homepage = https://kern.dev;
+  ^^^^^^^^^^^^^ variable.other.member
+  ^^^^ variable.other.member
+  ^^^^ variable
+      ^ punctuation.delimiter
+       ^^^^^^^^ variable.other.member
+       ^^^^^^^^ variable
+                ^ punctuation.delimiter
+                  ^^^^^^^^^^^^^^^^ string.special.url
+                                  ^ punctuation.delimiter
+  check = /* bash */ ''
+  ^^^^^ variable.other.member
+  ^^^^^ variable
+        ^ punctuation.delimiter
+          ^^^^^^^^^^ comment
+                     ^^+ string
+    test -x $out/bin/kern
+    ^^^^ function
+         ^^ variable.parameter
+            ^ punctuation.special
+             ^^^ variable
+  '';
+    ^ punctuation.delimiter
+  passthru.tests = builtins.map (x: x + 1) [ 1 2 ];
+  ^^^^^^^^^^^^^^ variable.other.member
+  ^^^^^^^^ variable.other.member
+  ^^^^^^^^ variable
+          ^ punctuation.delimiter
+           ^^^^^ variable.other.member
+           ^^^^^ variable
+                 ^ punctuation.delimiter
+                   ^^^^^^^^ variable.builtin
+                   ^^^^^^^^ variable
+                   ^^^^^^^^ variable.other.member
+                   ^^^^^^^^ variable
+                           ^ punctuation.delimiter
+                            ^^^ function.builtin
+                            ^^^ variable.other.member
+                            ^^^ function
+                            ^^^ variable.other.member
+                            ^^^ variable
+                                ^ punctuation.bracket
+                                 ^ variable.parameter
+                                 ^ variable.other.member
+                                 ^ variable
+                                    ^ variable
+                                    ^ variable.other.member
+                                    ^ variable
+                                      ^ operator
+                                        ^ constant.numeric
+                                         ^ punctuation.bracket
+                                           ^ punctuation.bracket
+                                             ^ constant.numeric
+                                               ^ constant.numeric
+                                                 ^ punctuation.bracket
+                                                  ^ punctuation.delimiter
+}
+^ punctuation.bracket

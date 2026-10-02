@@ -130,6 +130,16 @@ fn markdown_with_its_inline_text_and_code_blocks() {
     check("sample.md");
 }
 
+#[test]
+fn nix_with_shell_in_its_build_phases() {
+    check("sample.nix");
+}
+
+#[test]
+fn bash() {
+    check("sample.sh");
+}
+
 /// The names docs/highlighting.md lists, from its tables.
 fn documented() -> BTreeSet<String> {
     let docs = std::fs::read_to_string(root().join("docs/highlighting.md")).unwrap();

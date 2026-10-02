@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+^^^^^^^^^^^^^^^^^^^ comment
+# Build it
+^^^^^^^^^^ comment
+set -euo pipefail
+^^^ function
+    ^^^^ variable.parameter
+
+build() {
+^^^^^ function
+     ^ punctuation.bracket
+      ^ punctuation.bracket
+        ^ punctuation.bracket
+  local target="${1:-all}"
+  ^^^^^ keyword.storage
+        ^^^^^^ variable
+              ^ operator
+               ^^^^^^^^^^^ string
+                ^^ punctuation.special
+                  ^ variable
+                        ^ punctuation.special
+                        ^ punctuation.bracket
+  if [[ -f Makefile ]]; then
+  ^^ keyword.control.conditional
+     ^^ punctuation.bracket
+        ^^ operator
+                    ^^ punctuation.bracket
+                      ^ punctuation.delimiter
+                        ^^^^ keyword.control.conditional
+    make -j4 "$target" 2>&1 | tee build.log
+    ^^^^ function
+         ^^^ variable.parameter
+             ^^^^^^^^^ string
+              ^ punctuation.special
+               ^^^^^^ variable
+                       ^ constant.numeric
+                          ^ constant.numeric
+                            ^ operator
+                              ^^^ function
+  fi
+  ^^ keyword.control.conditional
+}
+^ punctuation.bracket
+
+for dir in src tests; do
+^^^ keyword.control.repeat
+    ^^^ variable
+        ^^ keyword.operator
+                    ^ punctuation.delimiter
+                      ^^ keyword.control.repeat
+  echo "building $dir: $(date)"
+  ^^^^ function
+       ^^^^^^^^^^^^^^^^^^^^^^^^ string
+                 ^ punctuation.special
+                  ^^^ variable
+                       ^^ punctuation.special
+                         ^^^^ function
+                             ^ punctuation.special
+                             ^ punctuation.bracket
+done
+^^^^ keyword.control.repeat
+build release
+^^^^^ function

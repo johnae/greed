@@ -79,6 +79,9 @@ pub(crate) const EXTENSIONS: &[(&str, &str)] = &[
     ("lua", "luau"),
     ("md", "markdown"),
     ("markdown", "markdown"),
+    ("nix", "nix"),
+    ("sh", "bash"),
+    ("bash", "bash"),
 ];
 
 /// The languages Kern has grammars for, sorted.
@@ -130,6 +133,18 @@ fn builtin() -> Vec<Arc<Language>> {
             tree_sitter_md::LANGUAGE,
             tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
             Some(tree_sitter_md::INJECTION_QUERY_BLOCK),
+        ),
+        Language::new(
+            "nix",
+            tree_sitter_nix::LANGUAGE,
+            tree_sitter_nix::HIGHLIGHTS_QUERY,
+            Some(tree_sitter_nix::INJECTIONS_QUERY),
+        ),
+        Language::new(
+            "bash",
+            tree_sitter_bash::LANGUAGE,
+            tree_sitter_bash::HIGHLIGHT_QUERY,
+            None,
         ),
         // Markdown's text within blocks: emphasis, links, code spans. Only
         // ever injected, never a file's own language.
