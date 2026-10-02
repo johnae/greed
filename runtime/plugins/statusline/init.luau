@@ -184,15 +184,18 @@ type Glow = { t: number, shape: Shape }
 -- The pieces light is going through.
 local glows: { [string]: Glow } = {}
 
--- The color lit letters glow towards on the background `back`: the theme's
--- glow if it stands apart enough, or else white or black, whichever stands
--- apart more.
-local function glow_for(back: { number }): { number }
-	local glow = effects.rgb(color("ui.glow", "fg"))
-	if glow and effects.contrast(glow, back) >= 0.35 then
+-- The color letters of the color `fore` glow towards: the theme's glow if
+-- it's far enough from them to see the change, or else white or black,
+-- whichever is the way the glow lies (dark letters on a light pill light up
+-- rather than go black).
+local function glow_for(fore: { number }): { number }
+	local glow = effects.rgb(color("ui.glow", "fg")) or { 255, 255, 255 }
+	if effects.distance(glow, fore) >= 60 then
 		return glow
 	end
-	return if effects.lightness(back) < 0.5 then { 255, 255, 255 } else { 0, 0, 0 }
+	return if effects.lightness(glow) >= effects.lightness(fore)
+		then { 255, 255, 255 }
+		else { 0, 0, 0 }
 end
 
 -- `text` in the style `look` as one segment per character, each lit as the
@@ -204,7 +207,7 @@ local function lit(text: string, look: string, glow: Glow, out: { kern.StatusSeg
 	if fore == nil or back == nil then
 		return false
 	end
-	local target = glow_for(back)
+	local target = glow_for(fore)
 	local entry = kern.theme.get(look)
 	local rest = ` bg:{background}{if entry and entry.bold then " bold" else ""}`
 	local chars = {}

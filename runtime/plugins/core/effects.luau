@@ -43,10 +43,10 @@ function M.lightness(color: { number }): number
 	return (0.2126 * color[1] + 0.7152 * color[2] + 0.0722 * color[3]) / 255
 end
 
---- How far from `a` to `b` in lightness, the bigger the more they stand
---- apart.
-function M.contrast(a: { number }, b: { number }): number
-	return math.abs(M.lightness(a) - M.lightness(b))
+--- How far apart two colors are, from 0 (the same) to about 441 (black and
+--- white).
+function M.distance(a: { number }, b: { number }): number
+	return math.sqrt((a[1] - b[1]) ^ 2 + (a[2] - b[2]) ^ 2 + (a[3] - b[3]) ^ 2)
 end
 
 -- How many characters either side of a wave's middle light up.

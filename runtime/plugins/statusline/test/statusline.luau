@@ -177,3 +177,38 @@ test("a new mode glows from the middle of its name", function(t)
 	t:wait(500)
 	kern.option.set("effects", false)
 end)
+
+test("dark letters on a light pill light up too", function(t)
+	-- Nord's mode pill: dark letters on light green, with a near white glow.
+	kern.theme.set({
+		["ui.statusline"] = { fg = "#e5e9f0", bg = "#3b4252" },
+		["ui.statusline.mode"] = { fg = "#2e3440", bg = "#a3be8c" },
+		["ui.glow"] = { fg = "#f3f5f8" },
+	})
+	kern.option.set("effects", true)
+	t:buffer("|abc")
+	t:keys("i")
+	t:wait(60)
+	local statusline = require("@statusline")
+	local ctx = { view = kern.view(), buffer = kern.view():buffer(), mode = "insert", width = 80 }
+	local brightest = 0
+	for _, segment in statusline.build(ctx :: any).left or {} do
+		local r, g, b = string.match(
+			type(segment) == "table" and segment.style or "",
+			"^=fg:#(%x%x)(%x%x)(%x%x)"
+		)
+		if r then
+			brightest = math.max(
+				brightest,
+				(tonumber(r, 16) :: number)
+					+ (tonumber(g, 16) :: number)
+					+ tonumber(b, 16) :: number
+			)
+		end
+	end
+	-- #2e3440 adds up to 162; lit letters move well past it, towards the glow.
+	assert(brightest > 400, "the letters got brighter: " .. brightest)
+	t:keys("esc")
+	t:wait(500)
+	kern.option.set("effects", false)
+end)
