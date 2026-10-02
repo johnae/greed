@@ -4,11 +4,15 @@
 --   ] g / [ g   next / previous change
 --   space g r   put the change under the cursor back the way it was
 --   space g b   who last changed this line, and when
+--   space g s   every change since the last commit, in one multibuffer
 --
 -- With jj the comparison is with the working copy's parent (@-), so the
 -- signs show what the change you're working on does to the file.
 
 local kern = require("@kern")
+local multibuffer = require("@multibuffer")
+
+local M = {}
 
 kern.option.define({
 	name = "vcs-signs",
@@ -61,10 +65,11 @@ local function locate(buffer: kern.Buffer): (Repo?, string?)
 end
 
 -- Runs a jj or git command in `repo`'s root and returns what it printed, or
--- nil if it failed.
-local function vcs(repo: Repo, args: { string }): string?
+-- nil if it failed. jj doesn't look at the files on disk unless `snapshot`
+-- says to, for commands that only read what's committed.
+local function vcs(repo: Repo, args: { string }, snapshot: boolean?): string?
 	local command: { string } = { repo.kind }
-	if repo.kind == "jj" then
+	if repo.kind == "jj" and not snapshot then
 		-- Reading only: don't snapshot the working copy as a side effect.
 		table.insert(command, "--ignore-working-copy")
 	end
@@ -75,6 +80,14 @@ local function vcs(repo: Repo, args: { string }): string?
 	return if done and done.code == 0 then done.stdout else nil
 end
 
+-- The file at `relative` in `repo` as of the last commit, or "" if it's new.
+local function base_text(repo: Repo, relative: string): string
+	local text = if repo.kind == "jj"
+		then vcs(repo, { "file", "show", "-r", "@-", "--", `root-file:"{relative}"` })
+		else vcs(repo, { "show", `HEAD:{relative}` })
+	return text or ""
+end
+
 -- The file at the last commit: its text, "" if it's new, or false outside a
 -- repository.
 local function fetch_base(buffer: kern.Buffer): string | false
@@ -82,10 +95,7 @@ local function fetch_base(buffer: kern.Buffer): string | false
 	if repo == nil or relative == nil then
 		return false
 	end
-	local text = if repo.kind == "jj"
-		then vcs(repo, { "file", "show", "-r", "@-", "--", `root-file:"{relative}"` })
-		else vcs(repo, { "show", `HEAD:{relative}` })
-	return text or ""
+	return base_text(repo, relative)
 end
 
 -- The changes since the last commit, in order.
@@ -230,14 +240,34 @@ kern.command({
 	name = "revert-change",
 	doc = "Put the change under the cursor back the way it was at the last commit",
 	run = function(ctx)
-		local buffer = ctx.buffer
-		local line = buffer:line_of(head(ctx.view))
+		local buffer, line = ctx.buffer, ctx.buffer:line_of(head(ctx.view))
+		local in_changes_view = buffer:kind() == "multibuffer"
+		-- In the changes view, the change in the file under the cursor.
+		if in_changes_view then
+			local path, at = multibuffer.location(buffer, head(ctx.view))
+			if path == nil then
+				kern.echo("no change here")
+				return
+			end
+			buffer, line = kern.load(path), at
+			-- Just loaded, it may not know its committed text yet.
+			if bases[buffer:id()] == nil then
+				refresh(buffer)
+			end
+		end
 		for _, change in changes(buffer) do
 			local first, last = lines_of(buffer, change)
+			-- Removed lines show under the line before where they were.
+			if change.kind == "-" then
+				first = math.max(first - 1, 0)
+			end
 			if first <= line and line <= last then
 				buffer:edit(function(e)
 					e:replace(change.from, change.to, change.old)
 				end)
+				if in_changes_view then
+					M.show_changes()
+				end
 				return
 			end
 		end
@@ -270,11 +300,159 @@ kern.command({
 	end,
 })
 
+-- Every change since the last commit, in one multibuffer -------------------
+
+-- The files changed since the last commit in `repo`, by path from its
+-- root; deleted ones are left out, having nothing to show.
+local function changed_files(repo: Repo): { string }
+	local files = {}
+	if repo.kind == "jj" then
+		for line in string.gmatch(vcs(repo, { "diff", "--summary" }, true) or "", "[^\n]+") do
+			local kind, path = string.match(line, "^(%a) (.+)$")
+			if kind and path and kind ~= "D" then
+				-- A rename shows as "R dir/{old => new}"; the file is the new name.
+				table.insert(files, (string.gsub(path, "{[^}]* => ([^}]*)}", "%1")))
+			end
+		end
+	else
+		for line in string.gmatch(vcs(repo, { "status", "--porcelain", "-uall" }) or "", "[^\n]+") do
+			local state, path = string.sub(line, 1, 2), string.sub(line, 4)
+			if not string.find(state, "D", 1, true) then
+				table.insert(files, string.match(path, " %-> (.+)$") or path)
+			end
+		end
+	end
+	table.sort(files)
+	return files
+end
+
+-- Where each line of `text` starts, in order, so a byte offset's line can
+-- be found.
+local function line_starts(text: string): { number }
+	local starts = { 0 }
+	for at in string.gmatch(text, "\n()") do
+		table.insert(starts, (at :: number) - 1)
+	end
+	return starts
+end
+
+-- The 0-based line `pos` is on, from `starts`.
+local function line_at(starts: { number }, pos: number): number
+	local low, high = 1, #starts
+	while low < high do
+		local mid = (low + high + 1) // 2
+		if starts[mid] <= pos then
+			low = mid
+		else
+			high = mid - 1
+		end
+	end
+	return low - 1
+end
+
+-- An excerpt for each change from `base` to `text`, the file at `path`:
+-- lines added are marked, and lines removed show where they were.
+local function excerpts_of(
+	path: string,
+	label: string,
+	base: string,
+	text: string
+): { multibuffer.Excerpt }
+	local out: { multibuffer.Excerpt } = {}
+	local starts = line_starts(text)
+	-- Hunks are in the old text; `shift` turns their places into the new one's.
+	local shift = 0
+	for _, hunk in kern.diff(base, text) do
+		local from = hunk.from + shift
+		local old = string.sub(base, hunk.from + 1, hunk.to)
+		shift += #hunk.text - #old
+		local removed = string.split(old, "\n")
+		if removed[#removed] == "" then
+			table.remove(removed)
+		end
+		local first = line_at(starts, from)
+		local last = if hunk.text ~= "" then line_at(starts, from + #hunk.text - 1) else first
+		local marks: { multibuffer.Mark } = {}
+		local added = if hunk.text ~= "" then last - first + 1 else 0
+		for line = first, first + added - 1 do
+			table.insert(
+				marks,
+				{ line = line, from = 0, to = 0, style = "diff.plus", whole = true }
+			)
+		end
+		if #removed > 0 then
+			-- Under the line before where they were; at the top, under the first.
+			local under = math.max(first - 1, 0)
+			table.insert(
+				marks,
+				{ line = under, from = 0, to = 0, style = "diff.minus", lines = removed }
+			)
+			first = under
+		end
+		table.insert(out, {
+			path = path,
+			from = first,
+			to = last,
+			label = label,
+			note = `+{added} -{#removed}`,
+			marks = marks,
+		})
+	end
+	return out
+end
+
+-- `n` of `word`, with an "s" for more than one.
+local function count(n: number, word: string): string
+	return `{n} {word}{if n == 1 then "" else "s"}`
+end
+
+--- Shows every change since the last commit in the repository the project
+--- is in, as a multibuffer: edit it to change the files, `space g r` puts
+--- the change under the cursor back.
+function M.show_changes()
+	local repo = repo_of(kern.project.current().root .. "/.")
+	if repo == nil then
+		error("the project isn't in a repository", 0)
+	end
+	local excerpts: { multibuffer.Excerpt } = {}
+	local files = changed_files(repo)
+	for _, relative in files do
+		local path = `{repo.root}/{relative}`
+		local open = nil
+		for _, buffer in kern.buffers() do
+			if buffer:path() and absolute(buffer:path() :: string) == path then
+				open = buffer
+			end
+		end
+		local text = if open then open:text() else kern.fs.read(path)
+		if text then
+			for _, excerpt in excerpts_of(path, relative, base_text(repo, relative), text) do
+				table.insert(excerpts, excerpt)
+			end
+		end
+	end
+	if #excerpts == 0 then
+		kern.echo(`nothing changed since {if repo.kind == "jj" then "@-" else "HEAD"}`)
+		return
+	end
+	local against = if repo.kind == "jj" then "the working copy's parent" else "HEAD"
+	local summary = `{count(#excerpts, "change")} in {count(#files, "file")} since {against}`
+	local view = multibuffer.open(excerpts, { summary = summary, context = 2 })
+	multibuffer.show(view, "Changes")
+end
+
+kern.command({
+	name = "changes",
+	doc = "Show every change since the last commit in one buffer, to read, edit or put back",
+	run = M.show_changes,
+})
+
 kern.keymap.bind("normal", {
+	["space g s"] = "changes",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
 	["space g r"] = "revert-change",
 	["space g b"] = "blame-line",
 })
 
-return {}
+return M

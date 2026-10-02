@@ -57,7 +57,7 @@ local function show(pattern: string, root: string, found: Found)
 	end
 	local excerpts: { multibuffer.Excerpt } = {}
 	for _, f in found do
-		local marks = {}
+		local marks: { multibuffer.Mark } = {}
 		for _, m in f.matches do
 			table.insert(
 				marks,

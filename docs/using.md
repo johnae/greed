@@ -342,8 +342,16 @@ the working copy's parent, so the signs show what your current change does.
 | `] g` `[ g` | Next and previous change |
 | `space g r` | Put the change under the cursor back the way it was |
 | `space g b` | Who last changed this line, and when |
+| `space g s` (`:changes`) | Every change in the project, in one buffer |
 
 `:set vcs-signs false` hides the signs.
+
+`space g s` shows each change since the last commit, in every file, with a
+couple of lines around it: added lines in green, and removed ones in red
+where they were, under each file's name. It's a multibuffer like the
+project search's results, so you can edit the changes there and `:w`
+saves the files; `space g r` on a change puts it back, and `enter` goes to
+it in its file. New files show whole, and deleted ones are left out.
 
 ## Formatting
 

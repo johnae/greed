@@ -30,8 +30,19 @@ export type Excerpt = {
 	--- line has.
 	note: string?,
 	--- Parts to draw in a style, by 0-based line in the file and byte
-	--- columns, like the matches of a search.
-	marks: { { line: number, from: number, to: number, style: string } }?,
+	--- columns, like the matches of a search. `whole` styles the whole line,
+	--- and `lines` shows lines that aren't in the file under it, like ones
+	--- a change removed.
+	marks: { Mark }?,
+}
+
+export type Mark = {
+	line: number,
+	from: number,
+	to: number,
+	style: string,
+	whole: boolean?,
+	lines: { string }?,
 }
 
 export type Options = {
@@ -353,13 +364,16 @@ function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
 				starts[line] = at
 				at += #lines[line + 1]
 			end
-			for _, m in excerpt.marks :: { any } do
+			for _, m in excerpt.marks :: { Mark } do
 				local start = starts[m.line]
 				if start then
-					table.insert(
-						found,
-						{ from = start + m.from, to = start + m.to, style = m.style }
-					)
+					table.insert(found, {
+						from = start + m.from,
+						to = start + m.to,
+						style = m.style,
+						line = m.whole,
+						lines = m.lines,
+					})
 				end
 			end
 			table.insert(pieces, shown)

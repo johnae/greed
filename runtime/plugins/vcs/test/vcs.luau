@@ -105,3 +105,88 @@ test("space g b says who last changed the line", function(t)
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "(t ", 1, true), messages[#messages])
 end)
+
+-- The changes view, once shown.
+local function changes_view(): kern.Buffer?
+	for _, buffer in kern.buffers() do
+		if buffer:kind() == "multibuffer" then
+			return buffer
+		end
+	end
+	return nil
+end
+
+test(
+	"space g s shows every change since the last commit, removed lines where they were",
+	function(t)
+		local dir = repo(t, {
+			["a.txt"] = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
+			["b.txt"] = "keep\n",
+		})
+		kern.project.open(dir)
+		kern.fs.write(dir .. "/a.txt", "one\nTWO\nthree\nfour\nfive\nseven\n")
+		kern.fs.write(dir .. "/c.txt", "brand new\n")
+		t:buffer("|x")
+		t:run("changes")
+		local view = changes_view() :: kern.Buffer
+		assert(view, "the changes view is open")
+		local text = view:text()
+		assert(string.find(text, "^3 changes in 2 files since HEAD\n"), text)
+		assert(string.find(text, "TWO", 1, true) and string.find(text, "brand new", 1, true), text)
+		assert(not string.find(text, "keep", 1, true), "unchanged files stay out")
+		local removed = {}
+		for _, mark in view:decorations("multibuffer.found") do
+			for _, line in mark.lines or {} do
+				table.insert(removed, line)
+			end
+		end
+		table.sort(removed)
+		assert(
+			table.concat(removed, ",") == "six,two",
+			"removed lines show: " .. table.concat(removed, ",")
+		)
+
+		-- space g r puts the change under the cursor back, and the view follows.
+		local at = (string.find(text, "TWO", 1, true) :: number) - 1
+		kern.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		t:keys("space g r")
+		local file = kern.load(dir .. "/a.txt")
+		assert(string.find(file:text(), "\ntwo\n", 1, true), file:text())
+		local now = changes_view() :: kern.Buffer
+		assert(string.find(now:text(), "^2 changes in 2 files", 1), now:text())
+	end
+)
+
+test("with nothing changed, it says so", function(t)
+	local dir = repo(t, { ["a.txt"] = "one\n" })
+	kern.project.open(dir)
+	t:buffer("|x")
+	t:run("changes")
+	local messages = t:messages()
+	assert(messages[#messages] == "nothing changed since HEAD", messages[#messages])
+end)
+
+test("with jj, the changes view shows the working copy's changes against its parent", function(t)
+	if kern.which("jj") == nil then
+		return
+	end
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n", ["old.txt"] = "going\n" })
+	local function jj(...: string)
+		local done = kern.process.run(
+			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+	end
+	jj("git", "init")
+	jj("commit", "-m", "first")
+	kern.fs.write(dir .. "/a.txt", "one\ntwo\nthree\n")
+	kern.process.run({ "rm", dir .. "/old.txt" })
+	kern.project.open(dir)
+	t:buffer("|x")
+	t:run("changes")
+	local view = changes_view() :: kern.Buffer
+	local text = view:text()
+	assert(string.find(text, "^1 change in 1 file since the working copy's parent\n"), text)
+	assert(string.find(text, "three", 1, true), text)
+end)
