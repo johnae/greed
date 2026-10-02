@@ -385,6 +385,7 @@ for name, command in defaults do
 	M.alias(name, command)
 end
 
+core.style.kind_modes.cmdline = "insert"
 kern.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 	enter = "command-line-run",
 	esc = "command-line-close",

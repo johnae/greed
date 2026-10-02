@@ -406,3 +406,31 @@ test("layouts can be saved for any project, and a missing one says so", function
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "no layout called", 1, true), messages[#messages])
 end)
+
+test("a picker under a floating terminal takes typing again once the terminal hides", function(t)
+	cat()
+	t:buffer("|hello")
+	local picker = require("@picker")
+	local chosen = nil
+	picker.pick(
+		"Things",
+		{ { label = "one", value = 1 }, { label = "two", value = 2 } },
+		function(item)
+			chosen = item.value
+		end
+	)
+	t:keys("alt-f")
+	assert(kern.mode.get() == "terminal")
+	t:keys("alt-f")
+	assert(kern.view():buffer():kind() == "picker", "back on the picker")
+	assert(kern.mode.get() == "insert", "typing into it: " .. kern.mode.get())
+	t:keys("t w enter")
+	assert(chosen == 2, "it still picks")
+
+	-- Even left in normal mode, esc closes it.
+	picker.pick("Things", { { label = "one", value = 1 } }, function() end)
+	kern.mode.set("normal")
+	t:keys("esc")
+	assert(#t:floats() == 0, "closed")
+	t:keys("alt-f ctrl-d")
+end)

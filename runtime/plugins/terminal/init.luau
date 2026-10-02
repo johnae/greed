@@ -257,7 +257,7 @@ function M.settle(view: kern.View)
 	if term_of(view:buffer()) then
 		M.enter(view)
 	elseif kern.mode.get() == MODE then
-		kern.mode.set(core.style.home())
+		kern.mode.set(core.style.home_for(view))
 	end
 end
 

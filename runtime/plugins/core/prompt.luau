@@ -2,6 +2,7 @@
 -- commands that ask for a bit of text. Enter accepts, esc cancels.
 
 local kern = require("@kern")
+local style = require("./style")
 
 export type Options = {
 	title: string,
@@ -70,6 +71,7 @@ kern.command({
 	end,
 })
 
+style.kind_modes.prompt = "insert"
 kern.keymap.bind({ mode = "insert", kind = "prompt" }, {
 	enter = "prompt-submit",
 	esc = "prompt-cancel",

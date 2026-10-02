@@ -30,6 +30,12 @@ core.buttons.choose = function(buttons, press)
 end
 
 kern.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
+-- A picker takes typing; if something leaves it in another mode, esc still
+-- closes it.
+core.style.kind_modes.picker = "insert"
+for _, mode in { "normal", "vim", "edit" } do
+	kern.keymap.bind({ mode = mode, kind = "picker" }, { esc = "picker-close" })
+end
 
 kern.keymap.bind("normal", {
 	["space f"] = "pick-file",

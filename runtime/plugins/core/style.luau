@@ -62,6 +62,16 @@ function M.home(): string
 	return current().mode
 end
 
+--- The mode buffers of a kind are used in, when it isn't the style's own,
+--- e.g. `core.style.kind_modes.picker = "insert"`: a picker you come back
+--- to after a float over it closes takes typing again.
+M.kind_modes = {} :: { [string]: string }
+
+--- The mode to be in with `view` focused: its buffer kind's, or `home()`.
+function M.home_for(view: kern.View): string
+	return M.kind_modes[view:buffer():kind()] or M.home()
+end
+
 --- Modes shown as another mode, e.g. a completion menu's mode as the
 --- typing mode it came from: `core.style.shown_as["completion-insert"] = "insert"`.
 M.shown_as = {} :: { [string]: string }
