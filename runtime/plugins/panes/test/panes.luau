@@ -356,3 +356,53 @@ test("the frame goes along a whole edge of the tab, and esc puts things back", f
 	local new = kern.view()
 	assert(shape() == `column({new:id()} row({id[1]} {id[2]}))`, `across the top: {shape()}`)
 end)
+
+test("a tab saved as a layout opens again with the same files and terminals", function(t)
+	cat()
+	local core = require("@core")
+	local dir = t:tempdir({ [".git/HEAD"] = "", ["a.txt"] = "first", ["b.txt"] = "second" })
+	core.project.open(dir)
+	kern.open(`{dir}/a.txt`)
+	local a = kern.view()
+	a:split("right", kern.load(`{dir}/b.txt`))
+	panes.terminal_pane("down")
+	t:keys("ctrl-\\")
+	local before = shape()
+
+	t:run("layout-save", { "dev" })
+	local saved = kern.fs.read(`{dir}/.kern/layouts/dev.json`)
+	assert(saved and string.find(saved, '"b.txt"', 1, true), saved)
+	assert(table.find(panes.saved.names(), "dev"), "listed")
+
+	local tabs = #kern.tab.list()
+	t:run("layout-open", { "dev" })
+	assert(#kern.tab.list() == tabs + 1, "a tab of its own")
+	local opened = kern.tab.current().panes
+	assert(#opened == 3, tostring(#opened))
+	local kinds = {}
+	for _, pane in opened do
+		local buffer = pane:buffer()
+		table.insert(
+			kinds,
+			buffer:path() and string.match(buffer:path() :: string, "[^/]+$") or buffer:kind()
+		)
+	end
+	table.sort(kinds)
+	assert(table.concat(kinds, ",") == "a.txt,b.txt,terminal", table.concat(kinds, ","))
+	-- The same shape, with these panes.
+	local function outline(s: string): string
+		return (string.gsub(s, "%d+", "_"))
+	end
+	assert(outline(shape()) == outline(before), `{shape()} vs {before}`)
+	assert(panes.layouts.current() == "manual", "arranged as saved")
+end)
+
+test("layouts can be saved for any project, and a missing one says so", function(t)
+	t:buffer("|hello")
+	t:run("layout-save-mine", { "solo" })
+	local config = kern.fs.dirs().config
+	assert(config and kern.fs.read(`{config}/layouts/solo.json`), "in your config")
+	t:run("layout-open", { "nothing-here" })
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "no layout called", 1, true), messages[#messages])
+end)

@@ -59,6 +59,8 @@ type Term = {
 	owns: boolean,
 	-- What it runs, as typed.
 	command: string,
+	-- The command it was asked to run, or nil for your shell.
+	asked: { string }?,
 	-- Images with a mark above the screen.
 	images: { [number]: boolean },
 	-- Whether a full screen program is showing, as of the last update.
@@ -89,6 +91,13 @@ end
 function M.terminal(buffer: kern.Buffer): kern.Terminal?
 	local term = term_of(buffer)
 	return term and term.terminal
+end
+
+--- What the terminal in `buffer` was asked to run: its command, or nil for
+--- your shell (and for a buffer that isn't a terminal).
+function M.asked(buffer: kern.Buffer): { string }?
+	local term = term_of(buffer)
+	return term and term.asked and table.clone(term.asked)
 end
 
 -- Styles and images for `rows`, which start at line `line` of the buffer.
@@ -348,6 +357,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		previous = previous,
 		owns = previous == nil,
 		command = if given then table.concat(given, " ") else "shell",
+		asked = if command and #command > 0 then table.clone(command) else nil,
 		images = {},
 		alternate = false,
 		links = {},

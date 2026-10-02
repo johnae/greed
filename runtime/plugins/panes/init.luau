@@ -27,6 +27,9 @@ local M = {}
 --- How tabs arrange their panes (see layouts.luau).
 M.layouts = layouts
 
+--- Layouts saved to open again (see saved.luau).
+M.saved = require("@self/saved")
+
 type Direction = "left" | "right" | "up" | "down"
 
 local OPPOSITE: { [Direction]: Direction } =
@@ -496,6 +499,60 @@ kern.command({
 	args = { { name = "n", doc = "The tab's number, from 1" } },
 	run = function(ctx)
 		M.go_to_tab(tonumber(ctx.args[1] or ctx.keys and string.match(ctx.keys, "%d+$") or "") or 1)
+	end,
+})
+
+-- Saves the tab as the layout named in `args`, or asks for a name.
+local function save_layout(args: { string }, mine: boolean)
+	local function save(name: string)
+		local file, err = M.saved.save(name, mine)
+		kern.echo(if file then `saved layout {name} in {file}` else `can't save it: {err}`)
+	end
+	if args[1] then
+		save(args[1])
+	else
+		core.prompt.open({ title = "Save layout as", on_submit = save })
+	end
+end
+
+kern.command({
+	name = "layout-save",
+	doc = "Save this tab's panes, and what they show, as a layout of the project",
+	args = { { name = "name", doc = "What to call it" } },
+	run = function(ctx)
+		save_layout(ctx.args, false)
+	end,
+})
+
+kern.command({
+	name = "layout-save-mine",
+	doc = "Save this tab's panes, and what they show, as a layout for any project",
+	args = { { name = "name", doc = "What to call it" } },
+	run = function(ctx)
+		save_layout(ctx.args, true)
+	end,
+})
+
+kern.command({
+	name = "layout-open",
+	doc = "Open a saved layout as a new tab",
+	args = { { name = "name", doc = "The layout" } },
+	run = function(ctx)
+		if ctx.args[1] then
+			M.saved.open(ctx.args[1])
+			return
+		end
+		local items = {}
+		for _, name in M.saved.names() do
+			table.insert(items, { label = name, value = name })
+		end
+		if #items == 0 then
+			kern.echo("no saved layouts yet; :layout-save NAME saves this tab")
+			return
+		end
+		picker.pick("Saved layouts", items, function(item)
+			M.saved.open(item.value)
+		end)
 	end,
 })
 

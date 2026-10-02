@@ -412,6 +412,17 @@ which at the bottom. A tab's panes keep an order, and that's what you change:
 along, and `alt-p [` and `]` give main less room or more. Resizing a pane
 by hand switches the tab to `manual`, keeping the shape it had.
 
+`:layout-save NAME` saves the tab as it is: its panes, their sizes, and what
+each shows, a file (relative to the project) or a terminal and what it runs.
+It goes in the project, in `.kern/layouts/`, so it can be shared with the
+rest of the repository; `:layout-save-mine NAME` keeps it in your config,
+for any project. `:layout-open` picks one and opens it as a new tab. A
+project can open one by itself from its `.kern/init.luau`:
+
+```luau
+require("@panes").saved.open("dev", { here = true })
+```
+
 `:set pane-layout main-stack` sets the layout new tabs start with. A layout
 is a Luau function from the panes, in order, to how they're arranged, so
 you can write your own:
