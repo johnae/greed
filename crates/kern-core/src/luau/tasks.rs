@@ -5,6 +5,7 @@
 //! that token, such as a timer firing, and is then resumed with the result.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mlua::thread::ThreadStatus;
@@ -28,6 +29,9 @@ pub(crate) struct Tasks {
     firing: Option<Instant>,
     /// The latest time timers fired at.
     latest: Instant,
+    /// Why each running coroutine edits: the command it runs for, or what
+    /// was running when it started. Set as the editor's cause while it runs.
+    causes: HashMap<usize, Arc<str>>,
 }
 
 impl Default for Tasks {
@@ -41,6 +45,7 @@ impl Default for Tasks {
             epoch: now,
             firing: None,
             latest: now,
+            causes: HashMap::new(),
         }
     }
 }
@@ -62,14 +67,58 @@ impl Tasks {
 /// Runs `f` as a coroutine. If it waits, it's parked until its token
 /// resolves.
 pub(super) fn spawn(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> LuaResult<()> {
-    resume(lua, lua.create_thread(f)?, args)
+    spawn_for(lua, f, args, None)
+}
+
+/// Runs `f` as a coroutine whose edits are made for `cause` (by default,
+/// whatever the code starting it edits for).
+pub(super) fn spawn_for(
+    lua: &Lua,
+    f: Function,
+    args: impl IntoLuaMulti,
+    cause: Option<Arc<str>>,
+) -> LuaResult<()> {
+    let thread = lua.create_thread(f)?;
+    {
+        let state = &mut *state_mut(lua);
+        if let Some(cause) = cause.or_else(|| state.editor.cause().cloned()) {
+            state.tasks.causes.insert(key(&thread), cause);
+        }
+    }
+    resume(lua, thread, args)
+}
+
+/// Sets why the running code edits, for the rest of its coroutine too.
+pub(super) fn set_cause(lua: &Lua, cause: Option<Arc<str>>) {
+    let thread = key(&lua.current_thread());
+    let state = &mut *state_mut(lua);
+    match &cause {
+        Some(cause) => state.tasks.causes.insert(thread, cause.clone()),
+        None => state.tasks.causes.remove(&thread),
+    };
+    state.editor.set_cause(cause);
+}
+
+fn key(thread: &Thread) -> usize {
+    thread.to_pointer() as usize
 }
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
-    let yielded: Value = thread.resume(args)?;
+    let outer = {
+        let state = &mut *state_mut(lua);
+        let cause = state.tasks.causes.get(&key(&thread)).cloned();
+        let outer = state.editor.cause().cloned();
+        state.editor.set_cause(cause);
+        outer
+    };
+    let yielded = thread.resume::<Value>(args);
+    state_mut(lua).editor.set_cause(outer);
     if thread.status() != ThreadStatus::Resumable {
+        state_mut(lua).tasks.causes.remove(&key(&thread));
+        yielded?;
         return Ok(());
     }
+    let yielded = yielded?;
     let token = match yielded {
         Value::Integer(n) => u64::try_from(n).ok(),
         _ => None,

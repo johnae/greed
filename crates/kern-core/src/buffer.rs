@@ -329,10 +329,11 @@ impl Buffer {
             selection: Some(step.selection),
             meta: TxMeta::new(id, &self.version, author).with_cause(cause),
         };
+        let inverse = tx.changes.invert(&self.text)?;
         let selection = tx.apply(&mut self.text, current)?;
         self.map_marks(&tx.changes);
         self.version = SmallVec::from_buf([id]);
-        self.history.record(tx);
+        self.history.record(tx, inverse);
         Ok(selection)
     }
 

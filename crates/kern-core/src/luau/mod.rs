@@ -9,6 +9,7 @@ mod api;
 mod diff;
 mod fs;
 mod handles;
+mod history;
 mod images;
 mod jobs;
 mod json;

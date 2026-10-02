@@ -12,7 +12,7 @@ use kern_text::{
 use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error, Mark};
+use crate::{Buffer, BufferId, Error, GroupState, Mark};
 
 mod panes;
 pub use panes::{Tab, TabId};
@@ -250,6 +250,9 @@ pub struct Editor {
     /// Edits made while a group is open become one undo step.
     undo_group: Option<u64>,
     next_group: u64,
+    /// Why edits are being made, e.g. the command running, when the edit
+    /// itself doesn't say.
+    cause: Option<Arc<str>>,
     quit_requested: bool,
     /// The attached client asked to leave, with the editor running on.
     detach_requested: bool,
@@ -290,6 +293,7 @@ impl Editor {
             messages: Vec::new(),
             undo_group: None,
             next_group: 0,
+            cause: None,
             quit_requested: false,
             detach_requested: false,
             switch_requested: None,
@@ -757,7 +761,7 @@ impl Editor {
         let version = self.buffers[&buffer].version();
         let mut meta = TxMeta::new(self.replica.next_id(), version, author);
         meta.group = self.undo_group;
-        if let Some(cause) = cause {
+        if let Some(cause) = cause.or(self.cause.as_deref()) {
             meta = meta.with_cause(cause);
         }
         meta
@@ -779,13 +783,67 @@ impl Editor {
     /// session. Does nothing if a group is already open.
     pub fn start_group(&mut self) {
         if self.undo_group.is_none() {
-            self.undo_group = Some(self.next_group);
-            self.next_group += 1;
+            self.undo_group = Some(self.new_group());
         }
     }
 
     pub fn end_group(&mut self) {
         self.undo_group = None;
+    }
+
+    /// A group id nothing has used yet.
+    pub fn new_group(&mut self) -> u64 {
+        let group = self.next_group;
+        self.next_group += 1;
+        group
+    }
+
+    /// The group edits go into now, if one is open.
+    pub fn group(&self) -> Option<u64> {
+        self.undo_group
+    }
+
+    /// Puts the edits that follow into `group`, which can be one used
+    /// before, or into none.
+    pub fn set_group(&mut self, group: Option<u64>) {
+        self.undo_group = group;
+    }
+
+    /// Sets why the edits that follow are made, for those that don't say.
+    pub fn set_cause(&mut self, cause: Option<Arc<str>>) {
+        self.cause = cause;
+    }
+
+    pub fn cause(&self) -> Option<&Arc<str>> {
+        self.cause.as_ref()
+    }
+
+    /// Undoes `group` in every buffer it touched, as `author`. Returns the
+    /// buffers that changed: none if the group was already undone or never
+    /// used. Changes nothing if a buffer had something done on top of it.
+    pub fn undo_group(&mut self, group: u64, author: &Author) -> Result<Vec<BufferId>, Error> {
+        let mut current = Vec::new();
+        for (id, buffer) in &self.buffers {
+            match buffer.history().group_state(group) {
+                GroupState::Buried => return Err(Error::GroupChanged),
+                GroupState::Current
+                    if buffer.is_readonly() && !matches!(author, Author::Plugin(_)) =>
+                {
+                    return Err(Error::ReadOnly);
+                }
+                GroupState::Current => current.push(*id),
+                GroupState::Absent | GroupState::Undone => {}
+            }
+        }
+        for &id in &current {
+            let tx_id = self.replica.next_id();
+            let buffer = self.buffers.get_mut(&id).expect("buffer exists");
+            // Views keep their places, moved along with the text, rather than
+            // jumping to wherever the group's edits were made from.
+            buffer.undo(tx_id, author.clone(), &Selection::point(0))?;
+            self.map_views(id, None);
+        }
+        Ok(current)
     }
 
     pub fn mode(&self) -> &str {

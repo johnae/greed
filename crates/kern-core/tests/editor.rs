@@ -784,3 +784,59 @@ mod panes {
         assert!(!ed.resize_pane(a, Direction::Left, 5));
     }
 }
+
+#[test]
+fn a_group_undoes_across_buffers_as_one_step() {
+    let mut ed = editor("main");
+    let other = ed.create_buffer("file", "other");
+    let main = ed.view(ed.focus()).buffer;
+    let user = Author::User(ClientId(1));
+    let append = |ed: &mut Editor, buffer, s: &str| {
+        let len = ed.buffer(buffer).text().len_bytes();
+        let changes = ChangeSet::from_changes(len, [(len, len, Some(s))]).unwrap();
+        ed.apply_to_buffer(buffer, changes, user.clone(), None, None)
+            .unwrap();
+    };
+    let group = ed.new_group();
+    ed.set_group(Some(group));
+    assert_eq!(ed.group(), Some(group));
+    append(&mut ed, main, "!");
+    append(&mut ed, other, "!");
+    ed.set_group(None);
+    assert_eq!(ed.undo_group(group, &user).unwrap(), [main, other]);
+    assert_eq!(ed.buffer(main).text().to_string(), "main");
+    assert_eq!(ed.buffer(other).text().to_string(), "other");
+    assert!(
+        ed.undo_group(group, &user).unwrap().is_empty(),
+        "already undone"
+    );
+
+    // Something on top of the group in one buffer stops the whole undo.
+    let group = ed.new_group();
+    ed.set_group(Some(group));
+    append(&mut ed, main, "?");
+    append(&mut ed, other, "?");
+    ed.set_group(None);
+    append(&mut ed, other, "later");
+    assert!(matches!(
+        ed.undo_group(group, &user),
+        Err(kern_core::Error::GroupChanged)
+    ));
+    assert_eq!(ed.buffer(main).text().to_string(), "main?");
+}
+
+#[test]
+fn edits_carry_the_cause_they_were_made_for() {
+    let mut ed = editor("");
+    let v = ed.focus();
+    let user = Author::User(ClientId(1));
+    ed.set_cause(Some("format".into()));
+    let changes = ChangeSet::from_changes(0, [(0, 0, Some("x"))]).unwrap();
+    ed.apply(v, changes, user.clone(), None, None).unwrap();
+    ed.set_cause(None);
+    let changes = ChangeSet::from_changes(1, [(1, 1, Some("y"))]).unwrap();
+    ed.apply(v, changes, user, Some("paste"), None).unwrap();
+    let log = ed.buffer(ed.view(v).buffer).history().log();
+    assert_eq!(log[0].meta.cause.as_deref(), Some("format"));
+    assert_eq!(log[1].meta.cause.as_deref(), Some("paste"));
+}

@@ -5,11 +5,14 @@
 //! new transactions (with cause `"undo"` / `"redo"`) and move a pointer in
 //! the tree.
 
-use kern_text::{Author, ChangeSet, Selection, Transaction};
+use kern_text::{Author, ChangeSet, Rope, Selection, Transaction, TxId};
 
 #[derive(Debug)]
 pub struct History {
     log: Vec<Transaction>,
+    /// The inverse of each transaction in the log, so earlier texts can be
+    /// rebuilt.
+    inverses: Vec<ChangeSet>,
     /// Undo tree. Node 0 is the root: the buffer as it was loaded.
     nodes: Vec<Node>,
     current: usize,
@@ -28,6 +31,19 @@ struct Node {
     group: Option<u64>,
 }
 
+/// Where a group stands in a buffer's undo tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupState {
+    /// Nothing in the buffer was done in the group.
+    Absent,
+    /// The group is the latest undo step, so undo would take it back.
+    Current,
+    /// The group is in the text, but something else was done on top of it.
+    Buried,
+    /// The group was undone.
+    Undone,
+}
+
 /// A change set to apply for an undo or redo, and the selection to restore.
 pub(crate) struct Step {
     pub changes: ChangeSet,
@@ -38,6 +54,7 @@ impl Default for History {
     fn default() -> Self {
         Self {
             log: Vec::new(),
+            inverses: Vec::new(),
             nodes: vec![Node {
                 parent: 0,
                 children: Vec::new(),
@@ -60,6 +77,39 @@ impl History {
 
     pub fn by_author<'a>(&'a self, author: &'a Author) -> impl Iterator<Item = &'a Transaction> {
         self.log.iter().filter(move |tx| &tx.meta.author == author)
+    }
+
+    /// The text as it was before transaction `id`, given the text now; `None`
+    /// if `id` isn't in the log.
+    pub fn text_before(&self, now: &Rope, id: TxId) -> Option<Rope> {
+        let index = self.log.iter().rposition(|tx| tx.meta.id == id)?;
+        let mut text = now.clone();
+        for inverse in self.inverses[index..].iter().rev() {
+            inverse
+                .apply(&mut text)
+                .expect("each inverse fits the text after its transaction");
+        }
+        Some(text)
+    }
+
+    /// Where `group` stands: whether undo would take it back now.
+    pub fn group_state(&self, group: u64) -> GroupState {
+        let group = Some(group);
+        if self.current != 0 && self.nodes[self.current].group == group {
+            return GroupState::Current;
+        }
+        let mut node = self.current;
+        while node != 0 {
+            node = self.nodes[node].parent;
+            if node != 0 && self.nodes[node].group == group {
+                return GroupState::Buried;
+            }
+        }
+        if self.nodes.iter().skip(1).any(|n| n.group == group) {
+            GroupState::Undone
+        } else {
+            GroupState::Absent
+        }
     }
 
     pub fn can_undo(&self) -> bool {
@@ -89,6 +139,7 @@ impl History {
                 .compose(tx.changes.clone())
                 .expect("transaction applied on top of this node");
             node.inverse = inverse
+                .clone()
                 .compose(std::mem::take(&mut node.inverse))
                 .expect("inverse applies before this node's inverse");
             node.after = after;
@@ -98,20 +149,21 @@ impl History {
                 parent: self.current,
                 children: Vec::new(),
                 changes: tx.changes.clone(),
-                inverse,
+                inverse: inverse.clone(),
                 before,
                 after,
                 group,
             });
             self.current = index;
         }
-        self.log.push(tx);
+        self.record(tx, inverse);
     }
 
     /// Records an undo or redo transaction in the log without touching the
     /// tree.
-    pub(crate) fn record(&mut self, tx: Transaction) {
+    pub(crate) fn record(&mut self, tx: Transaction, inverse: ChangeSet) {
         self.log.push(tx);
+        self.inverses.push(inverse);
     }
 
     pub(crate) fn undo_step(&self) -> Option<Step> {

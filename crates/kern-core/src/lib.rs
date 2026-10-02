@@ -32,7 +32,7 @@ pub use editor::{
     Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, Panel, PanelOptions,
     Project, ProjectId, Scroll, Side, SwitchTo, Tab, TabId, View, ViewId, parse_marked,
 };
-pub use history::History;
+pub use history::{GroupState, History};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -46,6 +46,8 @@ pub enum Error {
     ReadOnly,
     /// A buffer can't close while a view shows it.
     Shown,
+    /// A group can't be undone: something was done on top of it since.
+    GroupChanged,
 }
 
 impl fmt::Display for Error {
@@ -58,6 +60,9 @@ impl fmt::Display for Error {
             ),
             Error::ReadOnly => f.write_str("this buffer is read-only"),
             Error::Shown => f.write_str("a view still shows this buffer"),
+            Error::GroupChanged => {
+                f.write_str("it was changed since; undo what came after it first")
+            }
         }
     }
 }
@@ -66,7 +71,9 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Text(err) => Some(err),
-            Error::StaleVersion { .. } | Error::ReadOnly | Error::Shown => None,
+            Error::StaleVersion { .. } | Error::ReadOnly | Error::Shown | Error::GroupChanged => {
+                None
+            }
         }
     }
 }

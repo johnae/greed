@@ -322,7 +322,7 @@ pub(super) fn view_closed(lua: &Lua, view: ViewId) -> LuaResult<()> {
 }
 
 /// Emits "buffer.changed" for `buffer`.
-fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()> {
+pub(super) fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()> {
     let payload = lua.create_table()?;
     payload.set(
         "buffer",
@@ -629,33 +629,7 @@ impl UserData for BufferRef {
                 Ok(t.slice(from..to).to_string())
             })
         });
-        methods.add_method("line_count", |lua, this, ()| {
-            this.with_text(lua, |t| Ok(t.len_lines()))
-        });
-        methods.add_method("line_of", |lua, this, pos: usize| {
-            this.with_text(lua, |t| {
-                check_pos(t, pos)?;
-                Ok(t.byte_to_line(pos))
-            })
-        });
-        methods.add_method("line_start", |lua, this, line: usize| {
-            this.with_text(lua, |t| {
-                check_line(t, line)?;
-                Ok(t.line_to_byte(line))
-            })
-        });
-        methods.add_method("line_end", |lua, this, line: usize| {
-            this.with_text(lua, |t| {
-                check_line(t, line)?;
-                let slice = t.line(line);
-                let newline = match (slice.len_chars(), slice.chars().last()) {
-                    (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
-                    (_, Some('\n')) => 1,
-                    _ => 0,
-                };
-                Ok(t.line_to_byte(line) + slice.len_bytes() - newline)
-            })
-        });
+        add_line_methods(methods);
         methods.add_method("char_at", |lua, this, pos: usize| {
             this.with_text(lua, |t| {
                 let i = char_index(t, pos)?;
@@ -696,6 +670,7 @@ impl UserData for BufferRef {
         add_decoration_methods(methods);
         add_search_methods(methods);
         super::syntax::add_methods(methods);
+        super::history::add_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.save(lua, path)
@@ -714,6 +689,38 @@ impl UserData for BufferRef {
             emit(lua, "buffer.closed", &payload)
         });
     }
+}
+
+/// `buffer:line_count()`, `line_of(pos)`, `line_start(line)` and
+/// `line_end(line)`.
+fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("line_count", |lua, this, ()| {
+        this.with_text(lua, |t| Ok(t.len_lines()))
+    });
+    methods.add_method("line_of", |lua, this, pos: usize| {
+        this.with_text(lua, |t| {
+            check_pos(t, pos)?;
+            Ok(t.byte_to_line(pos))
+        })
+    });
+    methods.add_method("line_start", |lua, this, line: usize| {
+        this.with_text(lua, |t| {
+            check_line(t, line)?;
+            Ok(t.line_to_byte(line))
+        })
+    });
+    methods.add_method("line_end", |lua, this, line: usize| {
+        this.with_text(lua, |t| {
+            check_line(t, line)?;
+            let slice = t.line(line);
+            let newline = match (slice.len_chars(), slice.chars().last()) {
+                (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
+                (_, Some('\n')) => 1,
+                _ => 0,
+            };
+            Ok(t.line_to_byte(line) + slice.len_bytes() - newline)
+        })
+    });
 }
 
 /// Collects edits made inside `buffer:edit`.

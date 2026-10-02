@@ -244,3 +244,35 @@ fn buffers_know_whether_they_changed_since_saving() {
     assert!(f.buffer.is_modified());
     std::fs::remove_file(&path).unwrap();
 }
+
+#[test]
+fn text_before_a_transaction_comes_back_from_the_log() {
+    let mut f = Fixture::new("one");
+    let a = f.edit(3, 3, " two");
+    let b = f.edit(0, 3, "ONE");
+    f.undo();
+    let history = f.buffer.history();
+    let before = |id| {
+        history
+            .text_before(f.buffer.text(), id)
+            .map(|t| t.to_string())
+    };
+    assert_eq!(before(a).as_deref(), Some("one"));
+    assert_eq!(before(b).as_deref(), Some("one two"));
+    let missing = TxId { replica: 9, seq: 9 };
+    assert_eq!(before(missing), None);
+}
+
+#[test]
+fn a_group_is_current_buried_or_undone() {
+    use kern_core::GroupState;
+    let mut f = Fixture::new("");
+    assert_eq!(f.buffer.history().group_state(1), GroupState::Absent);
+    f.edit_by(0, 0, "a", USER, Some(1));
+    assert_eq!(f.buffer.history().group_state(1), GroupState::Current);
+    f.edit(1, 1, "b");
+    assert_eq!(f.buffer.history().group_state(1), GroupState::Buried);
+    f.undo();
+    f.undo();
+    assert_eq!(f.buffer.history().group_state(1), GroupState::Undone);
+}

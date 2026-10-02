@@ -112,6 +112,13 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
+	--- The transactions applied to it, newest first: by `author` ("user", "plugin",
+	--- "agent" or "external"), `plugin`, `cause` (the command that made them, "undo",
+	--- ...), `group`, made at or after `since` (seconds, like `time`), at most `limit`.
+	history: (self: Buffer, filter: HistoryFilter?) -> { HistoryEntry },
+	--- The text as it was before transaction `id`, or nil if the buffer has none by
+	--- that id.
+	text_before: (self: Buffer, id: number) -> string?,
 }
 
 --- A node in a buffer's syntax tree, from `buffer:tree()`, `buffer:node_at()` or
@@ -425,10 +432,50 @@ export type TerminalExited = {
 	code: number,
 }
 
+--- A transaction applied to a buffer, from `buffer:history()`.
+export type HistoryEntry = {
+	id: number,
+	author: "user" | "plugin" | "agent" | "external",
+	--- The plugin, for edits a plugin made.
+	plugin: string?,
+	--- Why: the command it was made for, "undo", "redo", ...
+	cause: string?,
+	--- The undo group it was made in.
+	group: number?,
+	--- When, in seconds since 1970.
+	time: number,
+	--- What it replaced, in the text before it, in order.
+	changes: { { from: number, to: number, text: string } },
+}
+
+export type HistoryFilter = {
+	author: string?,
+	plugin: string?,
+	cause: string?,
+	group: number?,
+	since: number?,
+	limit: number?,
+}
+
 export type History = {
 	--- Edits until `end_group` become one undo step.
 	start_group: () -> (),
 	end_group: () -> (),
+	--- A group id nothing has used yet, for `set_group`.
+	new_group: () -> number,
+	--- The group edits go into now, if any.
+	group: () -> number?,
+	--- Puts the edits that follow, in every buffer, into `group` (one used before
+	--- carries on), or with nil into none. Edits in a group undo as one step.
+	set_group: (group: number?) -> (),
+	--- Why edits are being made: by default the command running.
+	cause: () -> string?,
+	--- Sets why the edits that follow are made, for the rest of this command.
+	set_cause: (cause: string?) -> (),
+	--- Undoes `group` in every buffer it changed, as one step. Returns how many
+	--- buffers changed (0 if it was undone already), or nil and why not, when
+	--- something was done on top of it since.
+	undo_group: (group: number) -> (number?, string?),
 }
 
 --- How a floating view looks. Sizes are cells, or a string like "60%";

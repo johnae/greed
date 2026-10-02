@@ -79,6 +79,37 @@ it, `kern.create_buffer(kind, text)` makes a scratch buffer, and
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
+### History
+
+Every edit is recorded with who made it and why. `buffer:history()` lists
+the transactions, newest first, each with its `author` (`"user"`,
+`"plugin"`, `"agent"` or `"external"`), `cause` (the command it was made
+for), `time`, `group` and `changes`. Filter by any of those, or with
+`since` and `limit`:
+
+```luau
+-- What did the user just change?
+for _, tx in buffer:history({ author = "user", limit = 5 }) do
+	print(tx.cause, tx.changes[1].text)
+end
+local before = buffer:text_before(tx.id)
+```
+
+A command's edits carry its name as their cause; `kern.history.set_cause`
+names them otherwise. To make edits in several buffers undo as one step,
+put them in a group:
+
+```luau
+local group = kern.history.new_group()
+kern.history.set_group(group)
+-- ... edit any buffers ...
+kern.history.set_group(nil)
+kern.history.undo_group(group) -- every buffer back, or nil and why not
+```
+
+Undoing a group refuses, and changes nothing, when something was done on
+top of it in one of the buffers since.
+
 ### Syntax trees
 
 Buffers in a language with a tree-sitter grammar have a syntax tree.

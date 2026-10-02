@@ -8,7 +8,7 @@ use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
-use super::handles::{BufferRef, ViewRef};
+use super::handles::{self, BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
@@ -108,7 +108,7 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
     let event = lua.create_table()?;
     event.set("name", name)?;
     emit(lua, "command.run", &event)?;
-    tasks::spawn(lua, handler, ctx)?;
+    tasks::spawn_for(lua, handler, ctx, Some(name.into()))?;
     Ok(())
 }
 
@@ -607,6 +607,48 @@ fn history_module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|lua, ()| {
             state_mut(lua).editor.end_group();
             Ok(())
+        })?,
+    )?;
+    history.set(
+        "new_group",
+        lua.create_function(|lua, ()| Ok(state_mut(lua).editor.new_group()))?,
+    )?;
+    history.set(
+        "group",
+        lua.create_function(|lua, ()| Ok(state(lua).editor.group()))?,
+    )?;
+    history.set(
+        "set_group",
+        lua.create_function(|lua, group: Option<u64>| {
+            state_mut(lua).editor.set_group(group);
+            Ok(())
+        })?,
+    )?;
+    history.set(
+        "cause",
+        lua.create_function(|lua, ()| Ok(state(lua).editor.cause().map(ToString::to_string)))?,
+    )?;
+    history.set(
+        "set_cause",
+        lua.create_function(|lua, cause: Option<String>| {
+            tasks::set_cause(lua, cause.map(Into::into));
+            Ok(())
+        })?,
+    )?;
+    history.set(
+        "undo_group",
+        lua.create_function(|lua, group: u64| {
+            let author = Author::User(state(lua).editor.client());
+            let undone = state_mut(lua).editor.undo_group(group, &author);
+            match undone {
+                Ok(buffers) => {
+                    for &buffer in &buffers {
+                        handles::buffer_changed(lua, buffer, &author)?;
+                    }
+                    Ok((Some(buffers.len()), None))
+                }
+                Err(err) => Ok((None, Some(err.to_string()))),
+            }
         })?,
     )?;
     Ok(history)
