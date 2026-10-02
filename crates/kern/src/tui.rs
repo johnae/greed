@@ -320,22 +320,7 @@ impl Screen {
             if self.grid.get(y) == Some(row) {
                 continue;
             }
-            queue!(out, cursor::MoveTo(0, u16::try_from(y).unwrap_or(u16::MAX)))?;
-            let mut run = String::new();
-            let mut run_style = ContentStyle::new();
-            for cell in row.iter().filter(|c| !c.text.is_empty()) {
-                if cell.style != run_style && !run.is_empty() {
-                    queue!(out, PrintStyledContent(run_style.apply(run.as_str())))?;
-                    run.clear();
-                }
-                run_style = cell.style;
-                run.push_str(&cell.text);
-            }
-            queue!(
-                out,
-                PrintStyledContent(run_style.apply(run.as_str())),
-                ResetColor
-            )?;
+            write_row(out, u16::try_from(y).unwrap_or(u16::MAX), row)?;
         }
         self.grid = grid;
         self.graphics.draw(out, &frame.images)?;
@@ -461,6 +446,68 @@ fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, th
     }
 }
 
+/// Whether terminals may disagree about how many cells `grapheme` takes:
+/// emoji, sequences with a variation selector or joiner, symbols some draw
+/// wide, and private-use icons like Nerd Font glyphs.
+fn uncertain_width(grapheme: &str) -> bool {
+    grapheme.chars().count() > 1
+        || grapheme.chars().any(|c| {
+            matches!(u32::from(c),
+                0x2300..=0x23FF | 0x2600..=0x27BF | 0x2B00..=0x2BFF
+                | 0xE000..=0xF8FF | 0x1F000..=0x1FAFF | 0xF0000..)
+        })
+        || grapheme.width() > 1
+}
+
+/// Writes row `y` of the screen. Text goes out in runs of one style, except
+/// that after a grapheme of uncertain width the cursor is put where the
+/// next cell starts, with the grapheme's cells blanked first, so a terminal
+/// drawing it narrower or wider than Kern counted doesn't shift the rest of
+/// the row (like a float's border).
+fn write_row(out: &mut impl Write, y: u16, row: &[Cell]) -> io::Result<()> {
+    queue!(out, cursor::MoveTo(0, y))?;
+    let mut run = String::new();
+    let mut run_style = ContentStyle::new();
+    for (x, cell) in row.iter().enumerate() {
+        if cell.text.is_empty() {
+            continue;
+        }
+        if !uncertain_width(&cell.text) {
+            if cell.style != run_style && !run.is_empty() {
+                queue!(out, PrintStyledContent(run_style.apply(run.as_str())))?;
+                run.clear();
+            }
+            run_style = cell.style;
+            run.push_str(&cell.text);
+            continue;
+        }
+        queue!(out, PrintStyledContent(run_style.apply(run.as_str())))?;
+        run.clear();
+        let cells = 1 + row[x + 1..]
+            .iter()
+            .take_while(|c| c.text.is_empty())
+            .count();
+        let (at, next) = (cursor_col(x), cursor_col(x + cells));
+        queue!(
+            out,
+            cursor::MoveTo(at, y),
+            PrintStyledContent(cell.style.apply(" ".repeat(cells))),
+            cursor::MoveTo(at, y),
+            PrintStyledContent(cell.style.apply(cell.text.as_str())),
+            cursor::MoveTo(next, y),
+        )?;
+    }
+    queue!(
+        out,
+        PrintStyledContent(run_style.apply(run.as_str())),
+        ResetColor
+    )
+}
+
+fn cursor_col(x: usize) -> u16 {
+    u16::try_from(x).unwrap_or(u16::MAX)
+}
+
 /// Writes `text` into `line` from cell `x`, within `width` cells. Returns how
 /// many cells it used.
 fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: ContentStyle) -> usize {
@@ -546,6 +593,44 @@ fn terminal_color(color: ThemeColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A row of plain cells for `text`, as `put` lays it out.
+    fn cells(text: &str, width: usize) -> Vec<Cell> {
+        let mut line = vec![Cell::default(); width];
+        put(&mut line, 0, width, text, ContentStyle::new());
+        line
+    }
+
+    fn written(row: &[Cell]) -> String {
+        let mut out = Vec::new();
+        write_row(&mut out, 3, row).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn after_a_grapheme_of_uncertain_width_the_cursor_goes_where_the_next_cell_is() {
+        // "❄️" is two cells to Kern; a terminal drawing it as one would
+        // shift "x|" left without the move after it.
+        let out = written(&cells("a❄\u{fe0f}x|", 6));
+        // Cursor positions are 1-based: row 4, column 2 is cell 1.
+        let blank_then_draw = "\u{1b}[4;2H  \u{1b}[4;2H❄\u{fe0f}\u{1b}[4;4H";
+        assert!(out.contains(blank_then_draw), "{out:?}");
+        let moved = out.find(blank_then_draw).unwrap() + blank_then_draw.len();
+        assert!(
+            out[moved..].contains("x|"),
+            "the rest follows the move: {out:?}"
+        );
+    }
+
+    #[test]
+    fn plain_text_and_box_drawing_go_out_in_one_run() {
+        let out = written(&cells("ab │ é", 6));
+        assert_eq!(
+            out.matches("\u{1b}[4;").count(),
+            1,
+            "only the row's start: {out:?}"
+        );
+    }
 
     fn key(code: TermKey, mods: KeyModifiers) -> Option<String> {
         convert(KeyEvent::new(code, mods)).map(|k| k.to_string())
