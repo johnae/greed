@@ -180,6 +180,11 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
     if let Some(file) = file {
         command.arg(file);
     }
+    // Commands over ssh may come without it; the session and the programs
+    // in its terminals should have what a login has.
+    if let Some(dir) = control::runtime_dir() {
+        command.env("XDG_RUNTIME_DIR", dir);
+    }
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
         .stdin(Stdio::null())

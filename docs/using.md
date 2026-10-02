@@ -83,7 +83,9 @@ session that was already running keeps the config it started with.
 
 Your login shell on the other machine can be anything (bash, fish,
 nushell): `kern ssh` only asks it to start `sh`, and needs a POSIX `sh`
-and `tar` there.
+and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
+a session it starts uses `/run/user/<uid>` like a login would, and so do
+the programs in its terminals.
 
 Kern has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions

@@ -7,9 +7,10 @@
 //! which is in a file only the user can read. Everything after that goes to
 //! the editor thread as a [`Request`]; plugins decide what the methods mean.
 
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
@@ -65,16 +66,40 @@ impl Request {
 /// The longest socket path that fits in a Unix socket address.
 const MAX_SOCKET_PATH: usize = 100;
 
-/// Where sessions keep their sockets: `$XDG_RUNTIME_DIR/kern`, or a folder
-/// for the user in the temporary directory.
+/// Where sessions keep their sockets: `kern` in the runtime directory, or a
+/// folder for the user in the temporary directory.
 pub fn sessions_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR").map_or_else(
+    runtime_dir().map_or_else(
         || {
             let user = std::env::var("USER").unwrap_or_else(|_| "user".to_owned());
             std::env::temp_dir().join(format!("kern-{user}"))
         },
-        |dir| PathBuf::from(dir).join("kern"),
+        |dir| dir.join("kern"),
     )
+}
+
+/// The user's runtime directory: `$XDG_RUNTIME_DIR`, or `/run/user/<uid>`
+/// when it isn't set but that is there and theirs, as with commands run
+/// over ssh on some systems. Sessions started then get it too, so their
+/// sockets and their terminals' programs find the same one a login would.
+pub fn runtime_dir() -> Option<PathBuf> {
+    // Without /proc (macOS) there's no uid to look for, only the variable.
+    let uid = std::fs::metadata("/proc/self").ok().map(|meta| meta.uid());
+    pick_runtime_dir(
+        std::env::var_os("XDG_RUNTIME_DIR"),
+        uid,
+        Path::new("/run/user"),
+    )
+}
+
+fn pick_runtime_dir(set: Option<OsString>, uid: Option<u32>, run_user: &Path) -> Option<PathBuf> {
+    if let Some(dir) = set.filter(|dir| !dir.is_empty()) {
+        return Some(dir.into());
+    }
+    let uid = uid?;
+    let dir = run_user.join(uid.to_string());
+    let meta = std::fs::metadata(&dir).ok()?;
+    (meta.is_dir() && meta.uid() == uid).then_some(dir)
 }
 
 /// The socket and token files of the session called `name`.
@@ -461,5 +486,44 @@ impl Client {
         answers
             .join()
             .map_err(|_| io::Error::other("the thread copying answers panicked"))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_runtime_dir_is_the_variable_or_the_users_own_folder_in_run_user() {
+        let run_user = std::env::temp_dir().join(format!("kern-run-user-{}", std::process::id()));
+        let uid = std::fs::metadata("/proc/self").unwrap().uid();
+        std::fs::create_dir_all(run_user.join(uid.to_string())).unwrap();
+        let set = Some(OsString::from("/somewhere"));
+        assert_eq!(
+            pick_runtime_dir(set, Some(uid), &run_user),
+            Some(PathBuf::from("/somewhere"))
+        );
+        assert_eq!(
+            pick_runtime_dir(None, Some(uid), &run_user),
+            Some(run_user.join(uid.to_string())),
+            "unset: the user's folder, as a login would have"
+        );
+        assert_eq!(
+            pick_runtime_dir(Some(OsString::new()), Some(uid), &run_user),
+            Some(run_user.join(uid.to_string())),
+            "empty counts as unset"
+        );
+        assert_eq!(
+            pick_runtime_dir(None, Some(uid + 1), &run_user),
+            None,
+            "no folder for that user"
+        );
+        assert_eq!(
+            pick_runtime_dir(Some(OsString::from("/somewhere")), None, &run_user),
+            Some(PathBuf::from("/somewhere")),
+            "without a uid (no /proc) the variable still counts"
+        );
+        assert_eq!(pick_runtime_dir(None, None, &run_user), None);
+        std::fs::remove_dir_all(&run_user).unwrap();
     }
 }
