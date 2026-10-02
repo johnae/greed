@@ -10,8 +10,12 @@ return {
 	["ui.selection"] = { bg = "blue", fg = "bright-white" },
 	["ui.cursor"] = { reverse = true },
 	["ui.statusline"] = { bg = "bright-black", fg = "white" },
-	["ui.statusline.mode"] = { bg = "blue", fg = "black", bold = true },
+	["ui.statusline.mode"] = { bg = "green", fg = "black", bold = true },
 	["ui.statusline.message"] = { fg = "bright-yellow" },
+	["ui.statusline.tab"] = { bg = "blue", fg = "black" },
+	["ui.statusline.tab.number"] = { bg = "yellow", fg = "black", bold = true },
+	["ui.statusline.host"] = { bg = "cyan", fg = "black" },
+	["ui.statusline.session"] = { bg = "blue", fg = "black", bold = true },
 	-- Floats and panels keep the terminal's own background.
 	["ui.float"] = {},
 	["ui.panel"] = {},

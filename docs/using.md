@@ -632,6 +632,31 @@ kern.plugin.unload("hints")
 
 [Keys](keys.md) covers key names, modes and taking keys away.
 
+### The status line
+
+The status line shows the mode, the tab, the file and whether a macro is
+recording on the left, and problems, the cursor's place, the machine and
+the session on the right. Some show as pills with rounded ends, which need
+a Nerd Font; `kern.option.set("statusline-caps", "none")` makes them square.
+Add pieces of your own, or take some away:
+
+```luau
+local statusline = require("@statusline")
+statusline.add("right", "clock", function()
+	return os.date("%H:%M")
+end)
+-- A pill in a theme style
+statusline.add("left", "branch", function()
+	return { text = "main", style = "ui.statusline.tab" }
+end)
+statusline.remove("host")
+```
+
+A piece gets the main view, its buffer, the mode and the message, and
+returns text, a pill (`{ text, style }`), a list of pills shown joined, or
+nil to show nothing. The pills' colors are the theme's
+`ui.statusline.mode`, `.tab`, `.tab.number`, `.host` and `.session`.
+
 ### Themes
 
 `:theme` lists the themes and tries each one as you move through the list.

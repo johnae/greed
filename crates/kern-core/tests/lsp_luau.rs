@@ -273,7 +273,7 @@ fn the_status_line_counts_errors_and_warnings() {
         .unwrap()
         .expect("the plugin builds one");
     let right: String = line.right.iter().map(|s| s.text.as_str()).collect();
-    assert!(right.starts_with("E1 "), "{right}");
+    assert!(right.trim_start().starts_with("E1 "), "{right}");
     assert!(!right.contains('W'), "no warnings: {right}");
 }
 

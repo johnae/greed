@@ -181,8 +181,8 @@ kern.tab.set_layout({
   names so users can restyle them. Themes themselves go under those
   entries: `kern.theme.base(entries)` replaces the whole base, which is how
   the theme plugin switches themes.
-- The status line is built by a function you can replace with
-  `kern.statusline`.
+- The status line is pieces you can add to or take away from with
+  `require("@statusline").add` and `.remove`, or replace with `kern.statusline`.
 
 ## Waiting
 
