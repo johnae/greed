@@ -135,6 +135,7 @@ fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
             host.load_dirs(&[
                 plugins.join("core"),
                 plugins.join("picker"),
+                plugins.join("terminal"),
                 plugins.join("agent"),
             ])?;
             // Only now, so the agent plugin's own start (into ~/.claude/ide)

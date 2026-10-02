@@ -59,8 +59,8 @@ and propose edits that show up in the buffer for you to accept or reject.
 claude mcp add kern -- kern mcp     # Kern's tools in Claude Code
 ```
 
-Claude Code's `/ide` also finds a running Kern with no setup, and its edits
-arrive as proposals. Agents can write new plugins too: Kern type checks and
+`space o c` opens Claude Code in a pane, connected to Kern like it is to VS
+Code (outside Kern, `/ide` finds it), and its edits arrive as proposals. Agents can write new plugins too: Kern type checks and
 tests them, and you review the code before it loads.
 
 ## Try it

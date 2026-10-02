@@ -11,6 +11,7 @@ local registry = require("@self/registry")
 local proposals = require("@self/proposals")
 require("@self/tools")
 require("@self/ide")
+require("@self/claude")
 local extend = require("@self/extend")
 
 export type Tool = registry.Tool

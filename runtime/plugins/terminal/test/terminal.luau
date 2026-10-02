@@ -259,3 +259,22 @@ test("links keep working after they scroll off the screen", function(t)
 	t:keys("g x")
 	assert(opened(t, file) == "https://example.com/c")
 end)
+
+test("terminals get the environment plugins add", function(t)
+	local terminal = require("@terminal")
+	terminal.env.KERN_TEST_GREETING = "hello from a plugin"
+	t:run("terminal", { "sh", "-c", "echo $KERN_TEST_GREETING; exit 1" })
+	terminal.env.KERN_TEST_GREETING = nil
+	shows(t, "hello from a plugin")
+end)
+
+test("a program that can't start leaves the view as it was", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "before" })
+	kern.open(dir .. "/a.txt")
+	local ok = pcall(t.run, t, "terminal", { "kern-test-no-such-program" })
+	assert(not ok, "it fails")
+	assert(text() == "before")
+	for _, buffer in kern.buffers() do
+		assert(buffer:kind() ~= "terminal", "no terminal left behind")
+	end
+end)

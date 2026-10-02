@@ -284,6 +284,9 @@ kern.keymap.bind("normal", { ["space o m"] = "ide-mention" })
 
 -- Without a session (in tests, say) there is nothing for Claude Code to
 -- connect to.
-pcall(kern.control.serve_ide, { core.project.root() }, nil)
+local serving, port = pcall(kern.control.serve_ide, { core.project.root() }, nil)
 
-return {}
+return {
+	--- The port Claude Code connects to, when Kern is serving it.
+	port = if serving then port else nil,
+}

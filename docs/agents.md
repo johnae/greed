@@ -65,8 +65,14 @@ can undo.
 
 ## Claude Code's `/ide`
 
-Start Kern in a project, start `claude` in the same project, and `/ide`
-lists Kern next to any other editors. Once connected:
+`space o c` opens Claude Code in a pane beside your files, already
+connected to Kern; pressed again it goes back to that pane, or brings it
+back if you closed it. `claude` started in any Kern terminal connects by
+itself too. `:set claude-command "claude --continue"` changes what the pane
+runs.
+
+Started outside Kern, in the same project, `/ide` in Claude Code lists Kern
+next to any other editors. Once connected:
 
 - Claude Code sees your selection as you move, and `space o m` mentions the
   selected lines to it.

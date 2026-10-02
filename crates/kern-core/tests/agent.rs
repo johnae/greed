@@ -26,7 +26,12 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
             let (_, view) = editor.open("file", text, Some("notes.md".into()));
             editor.view_mut(view).selection = Selection::single(4, 7);
             let host = Host::new(editor)?;
-            host.load_dirs(&[plugin("core"), plugin("picker"), plugin("agent")])?;
+            host.load_dirs(&[
+                plugin("core"),
+                plugin("picker"),
+                plugin("terminal"),
+                plugin("agent"),
+            ])?;
             Ok(host)
         },
         Some(session),

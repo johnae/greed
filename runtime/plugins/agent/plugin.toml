@@ -1,2 +1,2 @@
 name = "agent"
-requires = ["core", "picker"]
+requires = ["core", "picker", "terminal"]

@@ -290,6 +290,11 @@ export type OpenOptions = {
 	float: boolean?,
 }
 
+--- Environment variables every new terminal gets, on top of the editor's.
+--- Plugins add to it, e.g. the agent plugin tells Claude Code where to
+--- find Kern.
+M.env = {} :: { [string]: string }
+
 --- Opens a terminal running `command` (the user's shell without) and
 --- types into it: in the focused view, a new pane or a float.
 function M.open(command: { string }?, options: OpenOptions?): Term
@@ -297,7 +302,6 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local buffer = kern.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
-	buffer:set_kept(true)
 	local view, previous
 	if opts.float then
 		view = kern.float(buffer, FLOAT)
@@ -312,14 +316,29 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local rows, cols = view:size()
 	local limit = kern.option.get("terminal-scrollback") :: number
 	local given = if command and #command > 0 then command else shell()
-	local term: Term = {
-		terminal = kern.terminal.spawn({
+	local spawned, started = pcall(function()
+		return kern.terminal.spawn({
 			command = given,
 			cwd = kern.project.current().root,
+			env = M.env,
 			rows = rows or 24,
 			cols = cols or 80,
 			scrollback = limit,
-		}),
+		})
+	end)
+	if not spawned then
+		-- Leave things as they were.
+		if previous then
+			view:show(previous)
+		else
+			view:close()
+		end
+		error(started, 2)
+	end
+	-- It keeps running while nothing shows it.
+	buffer:set_kept(true)
+	local term: Term = {
+		terminal = started,
 		buffer = buffer,
 		history = 0,
 		next = 0,
