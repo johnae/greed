@@ -20,6 +20,7 @@ local core = require("@core")
 local picker = require("@picker")
 local terminal = require("@terminal")
 local layouts = require("@self/layouts")
+local place = require("@self/place")
 
 local M = {}
 
@@ -225,6 +226,57 @@ end
 
 -- Commands: name, what it does, and what runs.
 local commands: { { name: string, doc: string, run: () -> () } } = {
+	{
+		name = "pane-place",
+		doc = "Show where a new pane would go, to move it and open it there",
+		run = function()
+			leave()
+			place.start(M.pane())
+		end,
+	},
+	{
+		name = "pane-place-left",
+		doc = "Move the new pane's frame left",
+		run = function()
+			place.move("left")
+		end,
+	},
+	{
+		name = "pane-place-right",
+		doc = "Move the new pane's frame right",
+		run = function()
+			place.move("right")
+		end,
+	},
+	{
+		name = "pane-place-up",
+		doc = "Move the new pane's frame up",
+		run = function()
+			place.move("up")
+		end,
+	},
+	{
+		name = "pane-place-down",
+		doc = "Move the new pane's frame down",
+		run = function()
+			place.move("down")
+		end,
+	},
+	{
+		name = "pane-place-here",
+		doc = "Open a pane with this file where the frame is",
+		run = function()
+			place.open()
+		end,
+	},
+	{
+		name = "pane-place-terminal",
+		doc = "Open a terminal where the frame is",
+		run = function()
+			place.open(true)
+		end,
+	},
+	{ name = "pane-place-cancel", doc = "Put things back without a new pane", run = place.cancel },
 	{ name = "layout-next", doc = "Arrange this tab with the next layout", run = layouts.next },
 	{
 		name = "layout-pick",
@@ -515,6 +567,7 @@ M.keys = {
 		["]"] = "layout-main-grow",
 		["["] = "layout-main-shrink",
 		y = "layout-pick",
+		p = "pane-place",
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
@@ -533,6 +586,20 @@ M.keys = {
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-t"] = "pane-mode-leave",
+	} :: { [string]: string },
+	-- While placing a new pane.
+	place = {
+		h = "pane-place-left",
+		j = "pane-place-down",
+		k = "pane-place-up",
+		l = "pane-place-right",
+		left = "pane-place-left",
+		down = "pane-place-down",
+		up = "pane-place-up",
+		right = "pane-place-right",
+		enter = "pane-place-here",
+		t = "pane-place-terminal",
+		esc = "pane-place-cancel",
 	} :: { [string]: string },
 	-- After ctrl-w (and space w) in normal mode, as in Vim and Helix.
 	window = {
@@ -606,6 +673,8 @@ local function bind()
 		kern.keymap.bind(mode, M.keys[mode])
 		kern.keymap.fallback(mode, "pane-mode-leave")
 	end
+	kern.keymap.bind("pane-place", M.keys.place)
+	kern.keymap.fallback("pane-place", "pane-place-cancel")
 	local window: { [string]: string } = {}
 	for key, name in M.keys.window do
 		window[`ctrl-w {key}`] = name

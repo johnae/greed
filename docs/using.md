@@ -390,6 +390,12 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+To put a new pane somewhere particular, `alt-p p` shows a frame where it
+would go, on the right of the pane you're in. `h j k l` move the frame to
+either side of any pane, or along a whole edge of the tab; `enter` opens a
+pane there showing this file, `t` a terminal, and `esc` leaves things as
+they were.
+
 ### Layouts
 
 Each tab has a layout that arranges its panes as they open and close:

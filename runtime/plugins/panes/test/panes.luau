@@ -321,3 +321,38 @@ test("alt-space goes to the next layout and the pane mode has the layout keys", 
 	assert(string.find(table.concat(t:floats(), "\n"), "main-stack", 1, true), "the layout picker")
 	t:keys("esc")
 end)
+
+test("a frame shows where a new pane would go, and moves before it opens", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	local b = a:split("right")
+	t:draw(80, 20)
+	t:keys("alt-p p")
+	assert(kern.mode.get() == "pane-place", kern.mode.get())
+	local frame = false
+	for _, line in t:floats() do
+		frame = frame or string.find(line, "new pane", 1, true) ~= nil
+	end
+	assert(frame, "the frame is up")
+	-- It starts on the right half of b; left goes to b's left half.
+	t:keys("h enter")
+	local id = ids(a, b)
+	local new = kern.view()
+	assert(shape() == `row({id[1]} {new:id()} {id[2]})`, `between a and b: {shape()}`)
+	assert(kern.mode.get() ~= "pane-place", "done placing")
+end)
+
+test("the frame goes along a whole edge of the tab, and esc puts things back", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	local b = a:split("right")
+	t:draw(80, 20)
+	t:keys("alt-p p esc")
+	assert(#kern.tab.current().panes == 2, "nothing opened")
+	assert(kern.view():id() == b:id(), "back where it was")
+	-- Up from b's right half: b's top half, then the top of the whole tab.
+	t:keys("alt-p p k k enter")
+	local id = ids(a, b)
+	local new = kern.view()
+	assert(shape() == `column({new:id()} row({id[1]} {id[2]}))`, `across the top: {shape()}`)
+end)

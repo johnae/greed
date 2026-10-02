@@ -149,6 +149,9 @@ export type View = {
 	--- The rows and columns of text it had room for when last drawn; nil
 	--- before it's drawn. "view.resized" says when they change.
 	size: (self: View) -> (number?, number?),
+	--- Where it was last drawn on the screen, in cells, its gutter included;
+	--- nil before it's drawn.
+	area: (self: View) -> { x: number, y: number, width: number, height: number }?,
 	--- The lines folds hide, 0-based and inclusive.
 	hidden_lines: (self: View) -> { { from: number, to: number } },
 	--- The 0-based line at the top of the view.

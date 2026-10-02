@@ -263,6 +263,17 @@ fn add_pane_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
     methods.add_method("is_pane", |lua, this, ()| {
         Ok(state(lua).editor.is_pane(this.id))
     });
+    methods.add_method("area", |lua, this, ()| {
+        let Some(area) = this.with_view(lua, |v| Ok(v.area))? else {
+            return Ok(None);
+        };
+        let t = lua.create_table()?;
+        t.set("x", area.x)?;
+        t.set("y", area.y)?;
+        t.set("width", area.width)?;
+        t.set("height", area.height)?;
+        Ok(Some(t))
+    });
     methods.add_method(
         "split",
         |lua, this, (dir, buffer): (String, Option<UserDataRef<BufferRef>>)| {
