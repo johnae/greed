@@ -141,7 +141,7 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
     let project = world.project("remote", &[("main.rs", "fn main() {}")]);
     std::fs::write(
         world.root.join("config/kern/init.luau"),
-        "require('@kern').option.set('flash-duration', 123)\n",
+        "require('@kern').option.set('flash-duration', 123)\nrequire('@kern').option.set('terminal-shell', 'cat')\n",
     )
     .unwrap();
     // Stands in for ssh: drops -T and the host, and runs the command here
@@ -165,7 +165,7 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
     let file = project.join("main.rs");
     let out = world.terminal(
         &project,
-        &format!("ssh somehost {}", file.display()),
+        &format!("ssh somehost --terminal {}", file.display()),
         &[
             ("KERN_SSH", fake_ssh.to_str().unwrap()),
             ("KERN_REMOTE", KERN),
@@ -173,7 +173,8 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
         &[
             Step::Until("the remote session", running),
             Step::Pause(400),
-            Step::Keys(":detach\r"),
+            // Typing goes to the terminal it opened; ctrl-\ leaves it.
+            Step::Keys("\x1c:detach\r"),
         ],
     );
     assert!(
@@ -191,6 +192,11 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
         "the session runs with the config that came along"
     );
     assert!(world.root.join("remote-home/.cache/kern").is_dir());
+    assert_eq!(
+        world.eval("remote", HAS_TERMINAL),
+        "true",
+        "--terminal opened one"
+    );
     world.eval("remote", "require('@kern').quit()");
 }
 
@@ -250,5 +256,33 @@ fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
     );
     let attach = inside(&["attach", "app"]);
     assert!(!attach.status.success(), "no session inside itself");
+    world.eval("app", "require('@kern').quit()");
+}
+
+/// Luau that says whether the session has a terminal open.
+const HAS_TERMINAL: &str = "for _, b in require('@kern').buffers() do if b:kind() == 'terminal' then return true end end return false";
+
+#[test]
+fn kern_with_terminal_opens_one_in_the_session_it_shows() {
+    let Some(world) = World::new("withterm") else {
+        return;
+    };
+    std::fs::write(
+        world.root.join("config/kern/init.luau"),
+        "require('@kern').option.set('terminal-shell', 'cat')\n",
+    )
+    .unwrap();
+    let project = world.project("app", &[("a.txt", "first")]);
+    world.terminal(
+        &project,
+        "--terminal a.txt",
+        &[],
+        &[
+            Step::Until("the session", running),
+            Step::Pause(400),
+            Step::Keys("\x1c:detach\r"),
+        ],
+    );
+    assert_eq!(world.eval("app", HAS_TERMINAL), "true");
     world.eval("app", "require('@kern').quit()");
 }

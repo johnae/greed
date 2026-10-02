@@ -334,6 +334,7 @@ impl Server<'_> {
             reader,
             mut writer,
             open,
+            terminal,
         } = attachment;
         let inputs = self.inputs.clone();
         thread::spawn(move || {
@@ -365,7 +366,7 @@ impl Server<'_> {
             last: None,
             images: HashSet::new(),
         });
-        let attached = self.host.client_attached(open.as_deref());
+        let attached = self.host.client_attached(open.as_deref(), terminal);
         self.report(attached);
     }
 

@@ -18,7 +18,7 @@ use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       --terminal           with kern [FILE] or kern ssh: open a terminal in the session too";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -31,11 +31,14 @@ Type Luau to evaluate it, or one of:
   :quit           leave";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Anywhere on the line: attach with a terminal open in the session.
+    let terminal = args.iter().any(|arg| arg == "--terminal");
+    args.retain(|arg| arg != "--terminal");
     let result = match args.as_slice() {
-        [] => edit(None, None),
+        [] => edit(None, None, terminal),
         [flag, name, rest @ ..] if flag == "--session" => {
-            edit(Some(name), rest.first().map(PathBuf::from))
+            edit(Some(name), rest.first().map(PathBuf::from), terminal)
         }
         [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
             session::serve(name, rest.first().map(Path::new))
@@ -50,7 +53,7 @@ fn main() -> ExitCode {
         }
         [cmd, host, rest @ ..] if cmd == "ssh" => {
             let (name, file) = session_and_file(rest);
-            session::ssh(host, name, file)
+            session::ssh(host, name, file, terminal)
         }
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
@@ -61,7 +64,7 @@ fn main() -> ExitCode {
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
-        [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file))),
+        [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file)), terminal),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -195,7 +198,11 @@ fn host(
 
 /// The editor: in a background session this terminal attaches to, or with
 /// `KERN_NO_SESSION` set, in this process.
-fn edit(name: Option<&str>, path: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+fn edit(
+    name: Option<&str>,
+    path: Option<PathBuf>,
+    terminal: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("KERN_NO_SESSION").is_some() {
         return edit_here(path.filter(|p| !p.is_dir()));
     }
@@ -204,7 +211,7 @@ fn edit(name: Option<&str>, path: Option<PathBuf>) -> Result<(), Box<dyn std::er
     {
         return session::open_inside(&inside, path.as_deref());
     }
-    session::start(name, path.as_deref())
+    session::start(name, path.as_deref(), terminal)
 }
 
 /// The editor in this process, for when a background session can't start.

@@ -97,6 +97,11 @@ search and agents all run on that machine, and only keys and screen updates
 cross the network. If the connection drops or you `:detach`, the session
 keeps running, and `kern ssh HOST` comes back to it.
 
+`kern ssh HOST --terminal` does the same and opens a terminal on that
+machine in a new tab, for when a shell is what you're after. It runs in the
+session, so it's still there after you disconnect. `kern --terminal` does
+the same here.
+
 Your config comes along: `kern ssh` copies `~/.config/kern` (your
 `init.luau` and plugins) to the other machine first, and a session it
 starts there runs that copy, so the editor works the way you set it up.

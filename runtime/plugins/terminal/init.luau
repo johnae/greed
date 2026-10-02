@@ -409,6 +409,15 @@ local function find(terminal: kern.Terminal): Term?
 	return nil
 end
 
+-- A client that asked for a terminal (`kern --terminal`, `kern ssh HOST
+-- --terminal`) gets one, in a tab of its own.
+kern.on("client.attached", function(event: kern.ClientAttached)
+	if event.terminal then
+		kern.tab.new()
+		M.open()
+	end
+end)
+
 kern.on("terminal.output", function(event)
 	local term = find(event.terminal)
 	if term then

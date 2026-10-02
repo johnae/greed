@@ -96,7 +96,7 @@ pub fn attach(name: Option<&str>) -> Result<(), Error> {
         )
         .into());
     }
-    follow(name, None)
+    follow(name, None, false)
 }
 
 /// The session whose terminal this runs in (`$KERN_TERMINAL`), if it's
@@ -140,10 +140,12 @@ pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
 /// Shows the session called `name` in this terminal, asking it to open
 /// `open`, and follows the client to any session it switches to, until a
 /// session quits or lets the terminal go.
-fn follow(mut name: String, mut open: Option<PathBuf>) -> Result<(), Error> {
+fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Result<(), Error> {
+    // A terminal is asked for once, not again after a switch.
     loop {
         let Attachment { reader, writer, .. } =
-            ctl::connect_to(Some(&name))?.attach_opening(open.as_deref())?;
+            ctl::connect_to(Some(&name))?.attach_opening(open.as_deref(), terminal)?;
+        terminal = false;
         match show(reader, writer)? {
             Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
@@ -249,7 +251,7 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
 
 /// Plain `kern`: attaches to the session for `path`'s project (or the one
 /// called `name`), starting it in the background if it isn't running.
-pub fn start(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
+pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
     // A running session opens what was asked for; a new one starts with it.
     let open = if running {
@@ -259,7 +261,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
             .map_err(|err| format!("{err} (KERN_NO_SESSION=1 runs it in this terminal)"))?;
         None
     };
-    follow(name, open)
+    follow(name, open, terminal)
 }
 
 /// `kern bridge`, run on the machine a session is on: connects this
@@ -290,7 +292,12 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 /// `kern ssh`: shows a session on `host`, through `kern bridge` run there
 /// over ssh, starting one if none is running. `$KERN_SSH` replaces the ssh
 /// command and `$KERN_REMOTE` the kern on the other end.
-pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Error> {
+pub fn ssh(
+    host: &str,
+    name: Option<&str>,
+    file: Option<&str>,
+    mut terminal: bool,
+) -> Result<(), Error> {
     let config = match send_config(host) {
         Ok(config) => config,
         Err(err) => {
@@ -302,8 +309,11 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
     };
+    // A terminal is asked for once, not again after a switch.
     loop {
-        match ssh_once(host, &to, config.as_deref())? {
+        let ended = ssh_once(host, &to, config.as_deref(), terminal)?;
+        terminal = false;
+        match ended {
             // The bridge on the other end finds (or starts) the session to
             // switch to; a new connection is the simplest way to ask it.
             Output::Switch(next) => to = next,
@@ -322,12 +332,17 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
 
 /// Shows the session `to` points at on `host` until it ends, lets go or
 /// switches; returns which.
-fn ssh_once(host: &str, to: &SwitchTo, config: Option<&str>) -> Result<Output, Error> {
+fn ssh_once(
+    host: &str,
+    to: &SwitchTo,
+    config: Option<&str>,
+    terminal: bool,
+) -> Result<Output, Error> {
     let remote_kern = std::env::var("KERN_REMOTE").unwrap_or_else(|_| "kern".to_owned());
     let line = bridge_command(&remote_kern, to, config);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
-    handshake(&mut reader, &mut writer).map_err(attach_failed)?;
+    handshake(&mut reader, &mut writer, terminal).map_err(attach_failed)?;
     let ended = show(reader, writer)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
@@ -339,12 +354,20 @@ fn ssh_once(host: &str, to: &SwitchTo, config: Option<&str>) -> Result<Output, E
 /// Asks to attach over `reader` and `writer`, already connected to a
 /// session. Fails with the session's reason if it refuses, e.g. because the
 /// two ends run kern versions that don't speak the same protocol.
-fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), Error> {
+fn handshake(
+    reader: &mut impl BufRead,
+    writer: &mut impl Write,
+    terminal: bool,
+) -> Result<(), Error> {
+    let mut params = control::handshake();
+    if terminal {
+        params["terminal"] = Value::Bool(true);
+    }
     let request = json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "attach",
-        "params": control::handshake(),
+        "params": params,
     });
     writeln!(writer, "{request}")?;
     writer.flush()?;

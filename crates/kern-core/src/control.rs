@@ -287,6 +287,9 @@ pub struct Attachment {
     pub writer: UnixStream,
     /// A file or folder the client asked to open, e.g. from `kern FILE`.
     pub open: Option<String>,
+    /// Whether the client asked for a terminal, e.g. `kern ssh HOST
+    /// --terminal`.
+    pub terminal: bool,
 }
 
 /// Answers one connection's requests until it closes, or hands it to the
@@ -322,10 +325,12 @@ fn serve_connection(
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
                 if writeln!(writer, "{ok}").is_ok() {
                     let open = message["params"]["open"].as_str().map(str::to_owned);
+                    let terminal = message["params"]["terminal"].as_bool() == Some(true);
                     let _ = attachments.send(Attachment {
                         reader,
                         writer,
                         open,
+                        terminal,
                     });
                 }
                 return;
@@ -439,20 +444,25 @@ impl Client {
     /// Attaches to the editor: from now on the connection carries input
     /// one way and frames the other, one JSON message per line.
     pub fn attach(self) -> io::Result<Attachment> {
-        self.attach_opening(None)
+        self.attach_opening(None, false)
     }
 
-    /// Like [`Client::attach`], asking the session to open `path` too.
-    pub fn attach_opening(mut self, path: Option<&Path>) -> io::Result<Attachment> {
+    /// Like [`Client::attach`], asking the session to open `path` too, and
+    /// with `terminal`, a terminal.
+    pub fn attach_opening(mut self, path: Option<&Path>, terminal: bool) -> io::Result<Attachment> {
         let mut params = handshake();
         if let Some(path) = path {
             params["open"] = Value::from(path.to_string_lossy());
+        }
+        if terminal {
+            params["terminal"] = Value::Bool(true);
         }
         self.call("attach", &params)?.map_err(io::Error::other)?;
         Ok(Attachment {
             reader: self.reader,
             writer: self.writer,
             open: None,
+            terminal: false,
         })
     }
 

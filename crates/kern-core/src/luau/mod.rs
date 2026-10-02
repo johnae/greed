@@ -395,11 +395,12 @@ impl Host {
     }
 
     /// Tells plugins a client attached, with the file or folder it asked to
-    /// open, if any.
-    pub fn client_attached(&self, open: Option<&str>) -> Result<(), HostError> {
+    /// open, if any, and whether it asked for a terminal.
+    pub fn client_attached(&self, open: Option<&str>, terminal: bool) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("path", open)?;
+            payload.set("terminal", terminal)?;
             api::emit(&self.lua, "client.attached", &payload).map_err(HostError::from)
         })
     }

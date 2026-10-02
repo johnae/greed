@@ -576,6 +576,8 @@ export type Control = {
 export type ClientAttached = {
 	--- The file or folder it asked to open, if any.
 	path: string?,
+	--- Whether it asked for a terminal, e.g. `kern ssh HOST --terminal`.
+	terminal: boolean,
 }
 
 --- A view was closed. Its handle no longer works, but its id can be
