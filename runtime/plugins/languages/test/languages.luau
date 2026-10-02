@@ -26,13 +26,7 @@ test(":health lists each language with its highlighting and servers", function(t
 	t:run("health")
 	local report = t:floats()[1]
 	assert(string.find(report, "rust%s+highlighting%s+rust%-analyzer"), report)
-	assert(
-		string.find(
-			report,
-			"python%s+no grammar%s+basedpyright%-langserver, pyright%-langserver, pylsp"
-		),
-		report
-	)
+	assert(string.find(report, "ruby%s+no grammar%s+ruby%-lsp, solargraph"), report)
 	t:keys("q")
 	assert(#t:floats() == 0, "q closes it")
 end)
@@ -57,12 +51,15 @@ end)
 test("the bundled query files load, each working with its grammar", function()
 	local problems = languages.load_queries()
 	assert(#problems == 0, table.concat(problems, "\n"))
-	for _, name in { "rust", "luau", "json", "toml", "markdown", "nix", "bash" } do
+	for _, name in kern.grammars() do
 		assert(kern.syntax.query(name, "textobjects"), `{name} has no textobjects query`)
 	end
 end)
 
 test("a plugin's query files replace or extend the bundled ones, until it goes", function(t)
+	-- Queries are checked when a buffer in their language is open.
+	t:buffer("|fn a() {}")
+	kern.view():buffer():set_language("rust")
 	local bundled = kern.syntax.query("rust", "textobjects") :: string
 	local dir = t:tempdir({
 		["more/plugin.toml"] = 'name = "more"\n',
@@ -106,6 +103,8 @@ test("m a f selects a Luau function", function(t)
 end)
 
 test("the newest query set is used, and a plugin's goes with it", function(t)
+	t:buffer("|fn a() {}")
+	kern.view():buffer():set_language("rust")
 	local dir = t:tempdir({
 		["first/plugin.toml"] = 'name = "first"\n',
 		["first/init.luau"] = "require('@kern').syntax.set_query('rust', 'folds', '(block) @a')\n",

@@ -339,3 +339,34 @@ fn rust_macro_bodies_are_highlighted_as_rust() {
         "{all:?}"
     );
 }
+
+#[test]
+fn queries_for_languages_no_buffer_is_in_compile_when_one_opens() {
+    let mut syntax = Syntax::new();
+    // Nothing is in Python yet, so a broken query isn't noticed now.
+    syntax
+        .set_query("python", "highlights", Some("(no_such_node) @x".into()))
+        .unwrap();
+    let text = "def f(): pass";
+    let ed = editor(text, "a.py");
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let problems = syntax.take_problems();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("python highlights"), "{problems:?}");
+    // The grammar's own query is used instead.
+    let buffer = ed.buffers().next().unwrap();
+    let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+    assert!(captured(&all, 0..3).contains(&"keyword"), "{all:?}");
+
+    // One that compiles is used once a buffer needs it.
+    let mut syntax = Syntax::new();
+    syntax
+        .set_query("python", "highlights", Some("\"def\" @custom".into()))
+        .unwrap();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    assert!(syntax.take_problems().is_empty());
+    let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+    assert_eq!(captured(&all, 0..3), ["custom"]);
+}

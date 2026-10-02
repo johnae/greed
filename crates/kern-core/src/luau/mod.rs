@@ -257,10 +257,12 @@ impl Host {
         f(&mut state.editor, &state.syntax)
     }
 
-    /// Sends buffers that changed to the syntax worker.
-    pub fn update_syntax(&self) {
+    /// Sends buffers that changed to the syntax worker. Returns queries that
+    /// failed to compile, one line each.
+    pub fn update_syntax(&self) -> Vec<String> {
         let state = &mut *state_mut(&self.lua);
         state.syntax.update(&state.editor);
+        state.syntax.take_problems()
     }
 
     /// Finished parses, to pass to [`Host::receive_parse`].

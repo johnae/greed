@@ -1,0 +1,100 @@
+// A counter
+^^^^^^^^^^^^ comment
+interface Countable {
+^^^^^^^^^ keyword
+          ^^^^^^^^^ type
+                    ^ punctuation.bracket
+  count(): number;
+  ^^^^^ variable.other.member
+       ^ punctuation.bracket
+        ^ punctuation.bracket
+           ^^^^^^ type.builtin
+                 ^ punctuation.delimiter
+}
+^ punctuation.bracket
+
+type Items<T> = readonly T[];
+^^^^ keyword
+     ^^^^^ type
+          ^ operator
+           ^ type
+            ^ operator
+              ^ operator
+                ^^^^^^^^ keyword
+                         ^ type
+                          ^ punctuation.bracket
+                           ^ punctuation.bracket
+                            ^ punctuation.delimiter
+
+export class Counter<T> implements Countable {
+^^^^^^ keyword
+       ^^^^^ keyword
+             ^^^^^^^ type
+                    ^ operator
+                     ^ type
+                      ^ operator
+                        ^^^^^^^^^^ keyword
+                                   ^^^^^^^^^ type
+                                             ^ punctuation.bracket
+  private n = 0;
+  ^^^^^^^ keyword
+          ^ variable.other.member
+            ^ operator
+              ^ constant.numeric
+               ^ punctuation.delimiter
+
+  add(items: Items<T>, step: number = 1): this {
+  ^^^ function.method
+  ^^^ variable.other.member
+     ^ punctuation.bracket
+      ^^^^^ variable.parameter
+      ^^^^^ variable
+             ^^^^^ type
+                  ^ punctuation.bracket
+                  ^ operator
+                   ^ type
+                    ^ punctuation.bracket
+                    ^ operator
+                     ^ punctuation.delimiter
+                       ^^^^ variable.parameter
+                       ^^^^ variable
+                             ^^^^^^ type.builtin
+                                    ^ operator
+                                      ^ constant.numeric
+                                       ^ punctuation.bracket
+                                               ^ punctuation.bracket
+    this.n += items.length * step;
+    ^^^^ variable.builtin
+        ^ punctuation.delimiter
+         ^ variable.other.member
+           ^^ operator
+              ^^^^^ variable
+                   ^ punctuation.delimiter
+                    ^^^^^^ variable.other.member
+                           ^ operator
+                             ^^^^ variable
+                                 ^ punctuation.delimiter
+    return this;
+    ^^^^^^ keyword
+           ^^^^ variable.builtin
+               ^ punctuation.delimiter
+  }
+  ^ punctuation.bracket
+
+  count(): number {
+  ^^^^^ function.method
+  ^^^^^ variable.other.member
+       ^ punctuation.bracket
+        ^ punctuation.bracket
+           ^^^^^^ type.builtin
+                  ^ punctuation.bracket
+    return this.n;
+    ^^^^^^ keyword
+           ^^^^ variable.builtin
+               ^ punctuation.delimiter
+                ^ variable.other.member
+                 ^ punctuation.delimiter
+  }
+  ^ punctuation.bracket
+}
+^ punctuation.bracket

@@ -1,0 +1,59 @@
+/* A counter */
+^^^^^^^^^^^^^^^ comment
+#include <stdio.h>
+^^^^^^^^ keyword
+         ^^^^^^^^^ string
+
+struct counter {
+^^^^^^ keyword
+       ^^^^^^^ type
+    int n;
+    ^^^ type
+        ^ variable.other.member
+         ^ punctuation.delimiter
+};
+ ^ punctuation.delimiter
+
+static int add(struct counter *c, int step) {
+^^^^^^ keyword
+       ^^^ type
+           ^^^ function
+           ^^^ variable
+               ^^^^^^ keyword
+                      ^^^^^^^ type
+                              ^ operator
+                               ^ variable
+                                  ^^^ type
+                                      ^^^^ variable
+    if (c == NULL) {
+    ^^ keyword
+        ^ variable
+          ^^ operator
+             ^^^^ constant
+        return -1;
+        ^^^^^^ keyword
+               ^^ constant.numeric
+                 ^ punctuation.delimiter
+    }
+    c->n += step;
+    ^ variable
+     ^^ operator
+       ^ variable.other.member
+         ^^ operator
+            ^^^^ variable
+                ^ punctuation.delimiter
+    printf("%d items\n", c->n);
+    ^^^^^^ function
+    ^^^^^^ variable
+           ^^^^^^^^^^^^ string
+                         ^ variable
+                          ^^ operator
+                            ^ variable.other.member
+                              ^ punctuation.delimiter
+    return c->n;
+    ^^^^^^ keyword
+           ^ variable
+            ^^ operator
+              ^ variable.other.member
+               ^ punctuation.delimiter
+}

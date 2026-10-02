@@ -231,6 +231,9 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(
             move |lua, (language, kind, source): (String, String, Option<String>)| {
                 let state = &mut *state_mut(lua);
+                // So it knows which languages buffers are in, and checks
+                // queries for those now.
+                state.syntax.update(&state.editor);
                 let owners = state
                     .query_owners
                     .entry((language.clone(), kind.clone()))

@@ -1,0 +1,103 @@
+// A counter
+^^^^^^^^^^^^ comment
+import { readFile } from "fs";
+^^^^^^ keyword
+       ^ punctuation.bracket
+         ^^^^^^^^ variable
+                  ^ punctuation.bracket
+                    ^^^^ keyword
+                         ^^^^ string
+                             ^ punctuation.delimiter
+
+export class Counter {
+^^^^^^ keyword
+       ^^^^^ keyword
+             ^^^^^^^ constructor
+             ^^^^^^^ variable
+                     ^ punctuation.bracket
+  #n = 0;
+     ^ operator
+       ^ constant.numeric
+        ^ punctuation.delimiter
+
+  add(...items) {
+  ^^^ function.method
+  ^^^ variable.other.member
+     ^ punctuation.bracket
+         ^^^^^ variable
+              ^ punctuation.bracket
+                ^ punctuation.bracket
+    for (const item of items) {
+    ^^^ keyword
+        ^ punctuation.bracket
+         ^^^^^ keyword
+               ^^^^ variable
+                    ^^ keyword
+                       ^^^^^ variable
+                            ^ punctuation.bracket
+                              ^ punctuation.bracket
+      if (item !== null) this.#n += 1;
+      ^^ keyword
+         ^ punctuation.bracket
+          ^^^^ variable
+               ^^^ operator
+                   ^^^^ constant.builtin
+                       ^ punctuation.bracket
+                         ^^^^ variable.builtin
+                             ^ punctuation.delimiter
+                                 ^^ operator
+                                    ^ constant.numeric
+                                     ^ punctuation.delimiter
+    }
+    ^ punctuation.bracket
+    return `${this.#n} items`;
+    ^^^^^^ keyword
+           ^^^^^^^^^^^^^^^^^^ string
+            ^^ punctuation.special
+              ^^^^ variable.builtin
+                  ^ punctuation.delimiter
+                     ^ punctuation.bracket
+                     ^ punctuation.special
+                             ^ punctuation.delimiter
+  }
+  ^ punctuation.bracket
+}
+^ punctuation.bracket
+
+const view = <div className="count">{new Counter().add(1, true)}</div>;
+^^^^^ keyword
+      ^^^^ variable
+           ^ operator
+             ^ punctuation.bracket
+             ^ operator
+              ^^^ tag.builtin
+              ^^^ tag
+              ^^^ variable
+                  ^^^^^^^^^ attribute
+                  ^^^^^^^^^ variable.other.member
+                           ^ operator
+                            ^^^^^^^ string
+                                   ^ punctuation.bracket
+                                   ^ operator
+                                    ^ punctuation.bracket
+                                     ^^^ keyword
+                                         ^^^^^^^ constructor
+                                         ^^^^^^^ variable
+                                                ^ punctuation.bracket
+                                                 ^ punctuation.bracket
+                                                  ^ punctuation.delimiter
+                                                   ^^^ function.method
+                                                   ^^^ variable.other.member
+                                                      ^ punctuation.bracket
+                                                       ^ constant.numeric
+                                                        ^ punctuation.delimiter
+                                                          ^^^^ constant.builtin
+                                                              ^ punctuation.bracket
+                                                               ^ punctuation.bracket
+                                                                ^^ punctuation.bracket
+                                                                  ^^^ tag.builtin
+                                                                  ^^^ tag
+                                                                  ^^^ variable
+                                                                     ^ punctuation.bracket
+                                                                     ^ operator
+                                                                      ^ punctuation.delimiter

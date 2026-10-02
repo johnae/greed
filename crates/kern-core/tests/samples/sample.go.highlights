@@ -1,0 +1,58 @@
+// Package kern counts things.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ comment
+package kern
+^^^^^^^ keyword
+
+import "fmt"
+^^^^^^ keyword
+       ^^^^^ string
+
+type Counter struct {
+^^^^ keyword
+     ^^^^^^^ type
+             ^^^^^^ keyword
+	n int
+ ^ variable.other.member
+   ^^^ type
+}
+
+func (c *Counter) Add(items ...string) error {
+^^^^ keyword
+      ^ variable
+        ^ operator
+         ^^^^^^^ type
+                  ^^^ function.method
+                  ^^^ variable.other.member
+                      ^^^^^ variable
+                            ^^^ operator
+                               ^^^^^^ type
+                                       ^^^^^ type
+	for _, item := range items {
+ ^^^ keyword
+     ^ variable
+        ^^^^ variable
+             ^^ operator
+                ^^^^^ keyword
+                      ^^^^^ variable
+		if item != "" {
+  ^^ keyword
+     ^^^^ variable
+          ^^ operator
+             ^^ string
+			c.n += 1
+   ^ variable
+     ^ variable.other.member
+       ^^ operator
+          ^ constant.numeric
+		}
+	}
+	return fmt.Errorf("%d items\n", c.n)
+ ^^^^^^ keyword
+        ^^^ variable
+            ^^^^^^ function.method
+            ^^^^^^ variable.other.member
+                   ^^^^^^^^^^^^ string
+                            ^^ constant.character.escape
+                                 ^ variable
+                                   ^ variable.other.member
+}

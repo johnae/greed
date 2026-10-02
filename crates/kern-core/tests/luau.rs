@@ -1234,7 +1234,7 @@ fn plugins_set_file_types_and_find_programs() {
     assert_eq!(
         h.eval("table.concat(require('@kern').grammars(), ',')")
             .unwrap(),
-        "bash,json,luau,markdown,nix,rust,toml"
+        "bash,c,go,javascript,json,luau,markdown,nix,python,rust,toml,tsx,typescript,yaml"
     );
     h.eval(
         "require('@kern').filetype('python', { extensions = { 'py' }, names = { 'SConstruct' } })",

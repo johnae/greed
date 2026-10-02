@@ -6,7 +6,7 @@
 //! a layer over the buffer's tree, and layers can hold layers of their own.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use kern_text::Rope;
 use streaming_iterator::StreamingIterator;
@@ -22,8 +22,40 @@ const MAX_DEPTH: usize = 4;
 /// can't hold the worker up.
 const MAX_LAYERS: usize = 2000;
 
-/// Every language, with the injections query it uses, if any.
-pub type Injections = Arc<HashMap<&'static str, (Arc<Language>, Option<Arc<Query>>)>>;
+/// Every language, with the injections query it uses.
+pub type Injections = Arc<HashMap<&'static str, (Arc<Language>, Arc<InjectionQuery>)>>;
+
+/// A language's injections query, compiled the first time a buffer needs
+/// it (or when it's set, if one did already).
+pub struct InjectionQuery {
+    source: Option<String>,
+    compiled: OnceLock<Option<Query>>,
+}
+
+impl InjectionQuery {
+    pub fn lazy(source: Option<String>) -> Self {
+        Self {
+            source,
+            compiled: OnceLock::new(),
+        }
+    }
+
+    pub fn compiled(query: Query) -> Self {
+        Self {
+            source: None,
+            compiled: OnceLock::from(Some(query)),
+        }
+    }
+
+    fn get(&self, language: &Language) -> Option<&Query> {
+        self.compiled
+            .get_or_init(|| {
+                let source = self.source.as_deref()?;
+                Query::new(&language.grammar, source).ok()
+            })
+            .as_ref()
+    }
+}
 
 /// A piece of the buffer parsed as another language.
 pub struct Layer {
@@ -143,7 +175,10 @@ fn inject(
     depth: usize,
     found: &mut Vec<Layer>,
 ) {
-    let Some((_, Some(query))) = injections.get(language.name) else {
+    let Some(query) = injections
+        .get(language.name)
+        .and_then(|(_, query)| query.get(language))
+    else {
         return;
     };
     if depth >= MAX_DEPTH {

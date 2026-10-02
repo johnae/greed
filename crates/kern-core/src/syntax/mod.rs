@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -17,7 +17,7 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree};
 
 use crate::{Buffer, BufferId, Editor};
-use injections::{Injections, Layer};
+use injections::{InjectionQuery, Injections, Layer};
 
 mod injections;
 
@@ -31,21 +31,22 @@ struct Highlights {
     captures: Vec<Arc<str>>,
 }
 
-impl Highlights {
-    fn new(grammar: &tree_sitter::Language, source: &str) -> Result<Self, String> {
-        let query = Query::new(grammar, source).map_err(|err| err.to_string())?;
+impl From<Query> for Highlights {
+    fn from(query: Query) -> Self {
         let captures = query.capture_names().iter().map(|&c| c.into()).collect();
-        Ok(Self { query, captures })
+        Self { query, captures }
     }
 }
 
-/// A grammar and the queries that come with it.
+/// A grammar and the queries that come with it. The queries compile the
+/// first time they're needed, since most are replaced by query files and
+/// compiling all of them would slow every start.
 pub struct Language {
     pub name: &'static str,
     grammar: tree_sitter::Language,
     /// The grammar's own highlights query, used until a plugin sets one.
     default_highlights: &'static str,
-    highlights: Highlights,
+    highlights: OnceLock<Highlights>,
     /// The grammar's own injections query, if it has one.
     default_injections: Option<&'static str>,
 }
@@ -57,16 +58,23 @@ impl Language {
         highlights: &'static str,
         injections: Option<&'static str>,
     ) -> Self {
-        let grammar = tree_sitter::Language::new(grammar);
-        let compiled = Highlights::new(&grammar, highlights)
-            .unwrap_or_else(|err| panic!("bundled {name} highlight query is broken: {err}"));
         Self {
             name,
-            grammar,
+            grammar: tree_sitter::Language::new(grammar),
             default_highlights: highlights,
-            highlights: compiled,
+            highlights: OnceLock::new(),
             default_injections: injections,
         }
+    }
+
+    /// The grammar's own highlights query, compiled.
+    fn default_highlights(&self) -> &Highlights {
+        self.highlights.get_or_init(|| {
+            Query::new(&self.grammar, self.default_highlights).map_or_else(
+                |err| panic!("bundled {} highlight query is broken: {err}", self.name),
+                Highlights::from,
+            )
+        })
     }
 }
 
@@ -82,6 +90,21 @@ pub(crate) const EXTENSIONS: &[(&str, &str)] = &[
     ("nix", "nix"),
     ("sh", "bash"),
     ("bash", "bash"),
+    ("py", "python"),
+    ("pyi", "python"),
+    ("go", "go"),
+    ("js", "javascript"),
+    ("mjs", "javascript"),
+    ("cjs", "javascript"),
+    ("jsx", "javascript"),
+    ("ts", "typescript"),
+    ("mts", "typescript"),
+    ("cts", "typescript"),
+    ("tsx", "tsx"),
+    ("c", "c"),
+    ("h", "c"),
+    ("yaml", "yaml"),
+    ("yml", "yaml"),
 ];
 
 /// The languages Kern has grammars for, sorted.
@@ -146,6 +169,48 @@ fn builtin() -> Vec<Arc<Language>> {
             tree_sitter_bash::HIGHLIGHT_QUERY,
             None,
         ),
+        Language::new(
+            "python",
+            tree_sitter_python::LANGUAGE,
+            tree_sitter_python::HIGHLIGHTS_QUERY,
+            None,
+        ),
+        Language::new(
+            "go",
+            tree_sitter_go::LANGUAGE,
+            tree_sitter_go::HIGHLIGHTS_QUERY,
+            None,
+        ),
+        Language::new(
+            "javascript",
+            tree_sitter_javascript::LANGUAGE,
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            Some(tree_sitter_javascript::INJECTIONS_QUERY),
+        ),
+        Language::new(
+            "typescript",
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+            None,
+        ),
+        Language::new(
+            "tsx",
+            tree_sitter_typescript::LANGUAGE_TSX,
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+            None,
+        ),
+        Language::new(
+            "c",
+            tree_sitter_c::LANGUAGE,
+            tree_sitter_c::HIGHLIGHT_QUERY,
+            None,
+        ),
+        Language::new(
+            "yaml",
+            tree_sitter_yaml::LANGUAGE,
+            tree_sitter_yaml::HIGHLIGHTS_QUERY,
+            None,
+        ),
         // Markdown's text within blocks: emphasis, links, code spans. Only
         // ever injected, never a file's own language.
         Language::new(
@@ -207,6 +272,11 @@ pub struct Syntax {
     sources: HashMap<(String, String), String>,
     /// Highlights queries plugins set, in place of the grammars' own.
     highlights: HashMap<&'static str, Highlights>,
+    /// Highlights queries set for languages no buffer was in yet, compiled
+    /// once one is.
+    pending: HashMap<&'static str, String>,
+    /// What went wrong compiling queries, to tell the user.
+    problems: Vec<String>,
     /// Each language's injections query, for the worker.
     injections: Injections,
     pub max_bytes: usize,
@@ -225,7 +295,7 @@ impl Syntax {
         let (outbox, results) = crossbeam_channel::unbounded();
         thread::spawn(move || parse_worker(&inbox, &outbox));
         let languages = builtin();
-        let injections = injections_of(&languages, &HashMap::new());
+        let injections = default_injections(&languages);
         Self {
             languages,
             requests,
@@ -235,6 +305,8 @@ impl Syntax {
             queries: HashMap::new(),
             sources: HashMap::new(),
             highlights: HashMap::new(),
+            pending: HashMap::new(),
+            problems: Vec::new(),
             injections,
             max_bytes: MAX_BYTES,
         }
@@ -300,9 +372,11 @@ impl Syntax {
             let Some(state) = self.state_for(buffer) else {
                 continue;
             };
-            if state.sent != Some(version) {
-                state.sent = Some(version);
-                let language = state.language.clone();
+            let language = state.language.clone();
+            let needs_parse = state.sent != Some(version);
+            state.sent = Some(version);
+            self.prepare(&language);
+            if needs_parse {
                 let _ = self.requests.send(Request {
                     buffer: buffer.id(),
                     version,
@@ -314,9 +388,36 @@ impl Syntax {
         }
     }
 
+    /// Compiles the highlights query set for `language`, now that a buffer
+    /// needs it. One that doesn't compile is reported, and the grammar's own
+    /// is used instead.
+    fn prepare(&mut self, language: &Language) {
+        let Some(source) = self.pending.remove(language.name) else {
+            return;
+        };
+        match Query::new(&language.grammar, &source) {
+            Ok(query) => {
+                self.highlights
+                    .insert(language.name, Highlights::from(query));
+            }
+            Err(err) => self
+                .problems
+                .push(format!("the {} highlights query: {err}", language.name)),
+        }
+    }
+
+    /// What went wrong compiling queries since the last call, one line
+    /// each.
+    pub fn take_problems(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.problems)
+    }
+
     /// Keeps a finished parse unless what we have is newer. One of the same
     /// version is a parse again, after the injections changed.
     pub fn receive(&mut self, parsed: Parsed) {
+        for layer in &parsed.layers {
+            self.prepare(&layer.language);
+        }
         if let Some(state) = self.buffers.get_mut(&parsed.buffer)
             && state
                 .tree
@@ -374,30 +475,63 @@ impl Syntax {
         kind: &str,
         source: Option<String>,
     ) -> Result<(), String> {
+        let key = (language.to_owned(), kind.to_owned());
+        if self.sources.get(&key) == source.as_ref() {
+            return Ok(());
+        }
         if let Some(grammar) = self.language_named(language) {
+            // A query for a language a buffer is in is checked now, and kept
+            // compiled. Any other waits until a buffer needs it, so starting
+            // doesn't compile every query there is.
+            let in_use = self
+                .buffers
+                .values()
+                .any(|s| s.language.name == grammar.name);
             let compiled = source
                 .as_deref()
-                .map(|s| Highlights::new(&grammar.grammar, s))
+                .filter(|_| in_use)
+                .map(|s| Query::new(&grammar.grammar, s).map_err(|err| err.to_string()))
                 .transpose()?;
-            if kind == "highlights" {
-                match compiled {
-                    Some(compiled) => self.highlights.insert(grammar.name, compiled),
-                    None => self.highlights.remove(grammar.name),
-                };
+            match kind {
+                "highlights" => {
+                    self.highlights.remove(grammar.name);
+                    self.pending.remove(grammar.name);
+                    if let Some(query) = compiled {
+                        self.highlights
+                            .insert(grammar.name, Highlights::from(query));
+                    } else if let Some(source) = &source {
+                        self.pending.insert(grammar.name, source.clone());
+                    }
+                }
+                "injections" => {
+                    let query = match compiled {
+                        Some(query) => InjectionQuery::compiled(query),
+                        None => InjectionQuery::lazy(
+                            source
+                                .clone()
+                                .or_else(|| grammar.default_injections.map(str::to_owned)),
+                        ),
+                    };
+                    let mut injections = (*self.injections).clone();
+                    injections.insert(grammar.name, (grammar.clone(), Arc::new(query)));
+                    self.injections = Arc::new(injections);
+                    // Parse everything again, to find the languages inside anew.
+                    for state in self.buffers.values_mut() {
+                        state.sent = None;
+                    }
+                }
+                _ => {
+                    if let (Some(query), Some(source)) = (compiled, &source) {
+                        self.queries
+                            .insert((grammar.name, source.clone()), Arc::new(query));
+                    }
+                }
             }
         }
-        let key = (language.to_owned(), kind.to_owned());
         match source {
             Some(source) => self.sources.insert(key, source),
             None => self.sources.remove(&key),
         };
-        if kind == "injections" {
-            self.injections = injections_of(&self.languages, &self.sources);
-            // Parse everything again, to find the languages inside anew.
-            for state in self.buffers.values_mut() {
-                state.sent = None;
-            }
-        }
         Ok(())
     }
 
@@ -447,7 +581,7 @@ impl Syntax {
         let highlights = self
             .highlights
             .get(language.name)
-            .unwrap_or(&language.highlights);
+            .unwrap_or_else(|| language.default_highlights());
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range.clone());
         let mut captures = cursor.captures(&highlights.query, tree.root_node(), RopeText(text));
@@ -526,22 +660,12 @@ impl<'a> TextProvider<&'a [u8]> for RopeText<'a> {
     }
 }
 
-/// Each language with the injections query it uses: the one a plugin set,
-/// or the grammar's own.
-fn injections_of(
-    languages: &[Arc<Language>],
-    sources: &HashMap<(String, String), String>,
-) -> Injections {
+/// Each language with its grammar's own injections query, compiled when
+/// first needed.
+fn default_injections(languages: &[Arc<Language>]) -> Injections {
     let map = languages.iter().map(|language| {
-        let key = (language.name.to_owned(), "injections".to_owned());
-        let source = sources
-            .get(&key)
-            .map(String::as_str)
-            .or(language.default_injections);
-        let query = source
-            .and_then(|s| Query::new(&language.grammar, s).ok())
-            .map(Arc::new);
-        (language.name, (language.clone(), query))
+        let query = InjectionQuery::lazy(language.default_injections.map(str::to_owned));
+        (language.name, (language.clone(), Arc::new(query)))
     });
     Arc::new(map.collect())
 }

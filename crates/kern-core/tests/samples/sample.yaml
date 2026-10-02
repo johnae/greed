@@ -1,0 +1,12 @@
+# A config
+name: kern
+version: 1.5
+fast: true
+license: null
+tags:
+  - editor
+  - "luau"
+build: &build
+  steps: [fmt, test]
+release:
+  <<: *build

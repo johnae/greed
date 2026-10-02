@@ -192,8 +192,9 @@ impl Server<'_> {
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
         loop {
-            self.host.update_syntax();
-            if let Some(problem) = self.host.sync_lsp().pop() {
+            let mut problems = self.host.update_syntax();
+            problems.extend(self.host.sync_lsp());
+            if let Some(problem) = problems.pop() {
                 self.message = Some(problem);
             }
             // Wake up in time for the next timer a command is waiting on.

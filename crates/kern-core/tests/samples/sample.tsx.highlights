@@ -1,0 +1,73 @@
+// A counter component
+^^^^^^^^^^^^^^^^^^^^^^ comment
+type Props = { start: number };
+^^^^ keyword
+     ^^^^^ type
+           ^ operator
+             ^ punctuation.bracket
+               ^^^^^ variable.other.member
+                      ^^^^^^ type.builtin
+                             ^ punctuation.bracket
+                              ^ punctuation.delimiter
+
+export function Count({ start }: Props) {
+^^^^^^ keyword
+       ^^^^^^^^ keyword
+                ^^^^^ function
+                ^^^^^ constructor
+                ^^^^^ type
+                ^^^^^ variable
+                     ^ punctuation.bracket
+                      ^ punctuation.bracket
+                              ^ punctuation.bracket
+                                 ^^^^^ type
+                                      ^ punctuation.bracket
+                                        ^ punctuation.bracket
+  const label: string = `from ${start}`;
+  ^^^^^ keyword
+        ^^^^^ variable
+               ^^^^^^ type.builtin
+                      ^ operator
+                        ^^^^^^^^^^^^^^^ string
+                              ^^ punctuation.special
+                                ^^^^^ variable
+                                     ^ punctuation.bracket
+                                     ^ punctuation.special
+                                       ^ punctuation.delimiter
+  return <Button title={label} onClick={() => start + 1}>Count</Button>;
+  ^^^^^^ keyword
+         ^ punctuation.bracket
+         ^ operator
+          ^^^^^^ tag
+          ^^^^^^ constructor
+          ^^^^^^ type
+          ^^^^^^ variable
+                 ^^^^^ attribute
+                 ^^^^^ variable.other.member
+                      ^ operator
+                       ^ punctuation.bracket
+                        ^^^^^ variable
+                             ^ punctuation.bracket
+                               ^^^^^^^ attribute
+                               ^^^^^^^ variable.other.member
+                                      ^ operator
+                                       ^ punctuation.bracket
+                                        ^ punctuation.bracket
+                                         ^ punctuation.bracket
+                                           ^^ operator
+                                              ^^^^^ variable
+                                                    ^ operator
+                                                      ^ constant.numeric
+                                                       ^ punctuation.bracket
+                                                        ^ punctuation.bracket
+                                                        ^ operator
+                                                              ^^ punctuation.bracket
+                                                                ^^^^^^ tag
+                                                                ^^^^^^ constructor
+                                                                ^^^^^^ type
+                                                                ^^^^^^ variable
+                                                                      ^ punctuation.bracket
+                                                                      ^ operator
+                                                                       ^ punctuation.delimiter
+}
+^ punctuation.bracket

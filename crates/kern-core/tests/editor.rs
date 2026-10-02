@@ -490,27 +490,27 @@ fn decorations_follow_edits_and_are_replaced_per_namespace() {
 fn file_types_come_from_a_table_plugins_can_change() {
     let mut ed = Editor::new(ClientId(1));
     let (rust, _) = ed.open("file", "", Some("src/main.rs".into()));
-    let (py, _) = ed.open("file", "", Some("tool.py".into()));
+    let (rb, _) = ed.open("file", "", Some("tool.rb".into()));
     let (make, _) = ed.open("file", "", Some("Makefile".into()));
     assert_eq!(ed.buffer(rust).language(), Some("rust"), "built in");
-    assert_eq!(ed.buffer(py).language(), None);
+    assert_eq!(ed.buffer(rb).language(), None);
 
-    ed.set_file_type("python", &["py".into(), "pyi".into()], &[]);
+    ed.set_file_type("ruby", &["rb".into(), "rake".into()], &[]);
     ed.set_file_type("make", &[], &["Makefile".into()]);
     assert_eq!(
-        ed.buffer(py).language(),
-        Some("python"),
+        ed.buffer(rb).language(),
+        Some("ruby"),
         "open buffers follow"
     );
     assert_eq!(ed.buffer(make).language(), Some("make"));
     assert_eq!(
-        ed.file_type(std::path::Path::new("a/b.pyi")).as_deref(),
-        Some("python")
+        ed.file_type(std::path::Path::new("a/b.rake")).as_deref(),
+        Some("ruby")
     );
 
     // Setting a language again replaces its extensions.
-    ed.set_file_type("python", &["pyw".into()], &[]);
-    assert_eq!(ed.buffer(py).language(), None);
+    ed.set_file_type("ruby", &["gemspec".into()], &[]);
+    assert_eq!(ed.buffer(rb).language(), None);
     // A language set on the buffer still wins.
     ed.set_language(rust, Some("text".into()));
     ed.set_file_type("rust", &["rs".into()], &[]);

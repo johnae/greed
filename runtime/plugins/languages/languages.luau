@@ -155,7 +155,15 @@ local languages: { [string]: Language } = {
 	},
 	typescript = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
-		extensions = { "ts", "mts", "cts", "tsx" },
+		extensions = { "ts", "mts", "cts" },
+		roots = { "tsconfig.json", "package.json" },
+		servers = { { "typescript-language-server", "--stdio" } },
+		comment = "//",
+		indent = 2,
+	},
+	tsx = {
+		formatter = { "prettier", "--stdin-filepath", "{path}" },
+		extensions = { "tsx" },
 		roots = { "tsconfig.json", "package.json" },
 		servers = { { "typescript-language-server", "--stdio" } },
 		comment = "//",

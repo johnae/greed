@@ -1,0 +1,57 @@
+# A config
+^^^^^^^^^^ comment
+name: kern
+^^^^ variable.other.member
+^^^^ string
+    ^ punctuation.delimiter
+      ^^^^ string
+version: 1.5
+^^^^^^^ variable.other.member
+^^^^^^^ string
+       ^ punctuation.delimiter
+         ^^^ constant.numeric
+fast: true
+^^^^ variable.other.member
+^^^^ string
+    ^ punctuation.delimiter
+      ^^^^ constant.builtin.boolean
+license: null
+^^^^^^^ variable.other.member
+^^^^^^^ string
+       ^ punctuation.delimiter
+         ^^^^ constant.builtin
+tags:
+^^^^ variable.other.member
+^^^^ string
+    ^ punctuation.delimiter
+  - editor
+  ^ punctuation.delimiter
+    ^^^^^^ string
+  - "luau"
+  ^ punctuation.delimiter
+    ^^^^^^ string
+build: &build
+^^^^^ variable.other.member
+^^^^^ string
+     ^ punctuation.delimiter
+       ^ punctuation.special
+        ^^^^^ label
+  steps: [fmt, test]
+  ^^^^^ variable.other.member
+  ^^^^^ string
+       ^ punctuation.delimiter
+         ^ punctuation.bracket
+          ^^^ string
+             ^ punctuation.delimiter
+               ^^^^ string
+                   ^ punctuation.bracket
+release:
+^^^^^^^ variable.other.member
+^^^^^^^ string
+       ^ punctuation.delimiter
+  <<: *build
+  ^^ variable.other.member
+  ^^ string
+    ^ punctuation.delimiter
+      ^ punctuation.special
+       ^^^^^ label

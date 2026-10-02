@@ -140,6 +140,41 @@ fn bash() {
     check("sample.sh");
 }
 
+#[test]
+fn python() {
+    check("sample.py");
+}
+
+#[test]
+fn go() {
+    check("sample.go");
+}
+
+#[test]
+fn javascript_with_jsx() {
+    check("sample.js");
+}
+
+#[test]
+fn typescript() {
+    check("sample.ts");
+}
+
+#[test]
+fn tsx() {
+    check("sample.tsx");
+}
+
+#[test]
+fn c() {
+    check("sample.c");
+}
+
+#[test]
+fn yaml() {
+    check("sample.yaml");
+}
+
 /// The names docs/highlighting.md lists, from its tables.
 fn documented() -> BTreeSet<String> {
     let docs = std::fs::read_to_string(root().join("docs/highlighting.md")).unwrap();

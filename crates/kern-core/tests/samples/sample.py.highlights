@@ -1,0 +1,87 @@
+# A counter
+^^^^^^^^^^^ comment
+import os
+^^^^^^ keyword
+       ^^ variable
+
+class Counter:
+^^^^^ keyword
+      ^^^^^^^ constructor
+      ^^^^^^^ variable
+    """Counts things."""
+    ^^^^^^^^^^^^^^^^^^^^ string
+
+    def __init__(self, start: int = 0):
+    ^^^ keyword
+        ^^^^^^^^ function
+        ^^^^^^^^ variable
+                 ^^^^ variable
+                       ^^^^^ variable
+                              ^^^ type
+                              ^^^ variable
+                                  ^ operator
+                                    ^ constant.numeric
+        self.n = start
+        ^^^^ variable
+             ^ variable.other.member
+             ^ variable
+               ^ operator
+                 ^^^^^ variable
+
+    def add(self, *items, step=1):
+    ^^^ keyword
+        ^^^ function
+        ^^^ variable
+            ^^^^ variable
+                  ^ operator
+                   ^^^^^ variable
+                          ^^^^ variable
+                              ^ operator
+                               ^ constant.numeric
+        for item in items:
+        ^^^ keyword
+            ^^^^ variable
+                 ^^ operator
+                    ^^^^^ variable
+            if item is not None:
+            ^^ keyword
+               ^^^^ variable
+                    ^^^^^^ operator
+                    ^^ operator
+                       ^^^ operator
+                           ^^^^ constant.builtin
+                self.n += step
+                ^^^^ variable
+                     ^ variable.other.member
+                     ^ variable
+                       ^^ operator
+                          ^^^^ variable
+        return f"{self.n} items in {os.getcwd()}"
+        ^^^^^^ keyword
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ string
+                 ^ punctuation.special
+                  ^^^^ variable
+                       ^ variable.other.member
+                       ^ variable
+                        ^ punctuation.special
+                                   ^ punctuation.special
+                                    ^^ variable
+                                       ^^^^^^ function.method
+                                       ^^^^^^ variable.other.member
+                                       ^^^^^^ variable
+                                               ^ punctuation.special
+
+print(Counter(2).add("a", None, True))
+^^^^^ function
+^^^^^ function.builtin
+^^^^^ variable
+      ^^^^^^^ constructor
+      ^^^^^^^ function
+      ^^^^^^^ variable
+              ^ constant.numeric
+                 ^^^ function.method
+                 ^^^ variable.other.member
+                 ^^^ variable
+                     ^^^ string
+                          ^^^^ constant.builtin
+                                ^^^^ constant.builtin
