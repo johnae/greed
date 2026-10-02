@@ -35,6 +35,7 @@ claude mcp add kern -- kern mcp
 | `buffers` | Open files and which have unsaved changes |
 | `read` | A file as the editor has it, unsaved changes included |
 | `diagnostics` | Errors and warnings from language servers |
+| `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
 | `outline` | A file's functions and types with their lines, from its syntax tree |
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |

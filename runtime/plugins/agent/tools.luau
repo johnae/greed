@@ -140,6 +140,84 @@ agent.tool({
 	end,
 })
 
+-- Adds each line of `text` to `out`, after `prefix`.
+local function add_lines(out: { string }, prefix: string, text: string)
+	local lines = string.split(text, "\n")
+	if lines[#lines] == "" then
+		table.remove(lines)
+	end
+	for _, line in lines do
+		table.insert(out, prefix .. line)
+	end
+end
+
+-- The changed lines between `old` and `new`, "-" for removed and "+" for
+-- added, each run under "@@ line N" (1-based, in `new`).
+local function diff_lines(old: string, new: string): string
+	local out = {}
+	local shift = 0
+	for _, hunk in kern.diff(old, new) do
+		local removed = string.sub(old, hunk.from + 1, hunk.to)
+		local _, breaks = string.gsub(string.sub(new, 1, hunk.from + shift), "\n", "")
+		shift += #hunk.text - #removed
+		table.insert(out, `@@ line {breaks + 1}`)
+		add_lines(out, "-", removed)
+		add_lines(out, "+", hunk.text)
+	end
+	return table.concat(out, "\n")
+end
+
+agent.tool({
+	name = "history_recent",
+	description = "What changed lately in the open files and who changed it. For each file, "
+		.. 'its edits, newest first: the author ("user", "external" for changes on disk, or '
+		.. 'the plugin that made them; changes agents made through the editor are "agent"), '
+		.. "the command they came from and how many seconds ago; then a diff of the text "
+		.. "since the first of them",
+	input = object({
+		path = { type = "string", description = "One file; every open file if left out" },
+		author = {
+			type = "string",
+			description = 'Only edits by them: "user", "external" or a plugin, like "agent"',
+		},
+		minutes = { type = "number", description = "How far back to look; 10 if left out" },
+	}),
+	run = function(args)
+		local filter: kern.HistoryFilter = { since = os.time() - (args.minutes or 10) * 60 }
+		if args.author == "user" or args.author == "external" then
+			filter.author = args.author
+		elseif args.author then
+			filter.plugin = args.author
+		end
+		local wanted: kern.Buffer? = if args.path then find_buffer(args.path :: string) else nil
+		local list = {}
+		for _, buffer in kern.buffers() do
+			local path = buffer:path()
+			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
+				local entries = buffer:history(filter)
+				if #entries > 0 then
+					local edits = {}
+					for i = 1, math.min(#entries, 20) do
+						local entry = entries[i]
+						table.insert(edits, {
+							author = entry.plugin or entry.author,
+							cause = entry.cause,
+							seconds_ago = math.max(0, math.floor(os.time() - entry.time)),
+						})
+					end
+					local before = buffer:text_before(entries[#entries].id) or ""
+					table.insert(list, {
+						path = path,
+						edits = edits,
+						diff = diff_lines(before, buffer:text()),
+					})
+				end
+			end
+		end
+		return kern.json.array(list)
+	end,
+})
+
 agent.tool({
 	name = "propose",
 	description = "Propose changes to a file for the user to review in the editor. Each change "
