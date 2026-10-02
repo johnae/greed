@@ -52,6 +52,11 @@ end
 -- How many characters either side of a wave's middle light up.
 local REACH = 3
 
+-- Smooth at both ends rather than a sharp peak.
+local function smooth(level: number): number
+	return level * level * (3 - 2 * level)
+end
+
 --- How lit each of `count` characters is, from 0 to 1, as a wave `t` of
 --- the way through them: brightest in its middle and fading either side.
 function M.wave(count: number, t: number): { number }
@@ -60,10 +65,22 @@ function M.wave(count: number, t: number): { number }
 	local middle = -REACH + t * (count - 1 + 2 * REACH)
 	local lit = {}
 	for i = 1, count do
-		local away = math.abs((i - 1) - middle) / REACH
-		local level = math.max(0, 1 - away)
-		-- Smooth at both ends rather than a sharp peak.
-		lit[i] = level * level * (3 - 2 * level)
+		lit[i] = smooth(math.max(0, 1 - math.abs((i - 1) - middle) / REACH))
+	end
+	return lit
+end
+
+--- How lit each of `count` characters is, from 0 to 1, as a glow `t` of the
+--- way through: it starts in their middle and spreads out both ways at
+--- once, two crests fading out past the ends.
+function M.burst(count: number, t: number): { number }
+	local middle = (count - 1) / 2
+	-- From the middle to past the ends.
+	local reached = t * (middle + REACH)
+	local lit = {}
+	for i = 1, count do
+		local from_middle = math.abs((i - 1) - middle)
+		lit[i] = smooth(math.max(0, 1 - math.abs(from_middle - reached) / REACH)) * (1 - t)
 	end
 	return lit
 end

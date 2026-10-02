@@ -85,7 +85,7 @@ test("with effects on, a wave of light goes through the file's letters when it c
 	kern.command({
 		name = "wave-test",
 		run = function()
-			statusline.wave("file")
+			statusline.glow("file")
 		end,
 	})
 	t:run("wave-test")
@@ -132,5 +132,48 @@ test("opening another file sends the wave by itself", function(t)
 	end
 	assert(lit > 0, "the file's letters are lit")
 	t:wait(400)
+	kern.option.set("effects", false)
+end)
+
+-- How many of the status line's left segments are lit letters now.
+local function lit_now(): number
+	local statusline = require("@statusline")
+	local ctx =
+		{ view = kern.view(), buffer = kern.view():buffer(), mode = kern.mode.get(), width = 80 }
+	local lit = 0
+	for _, segment in statusline.build(ctx :: any).left or {} do
+		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
+			lit += 1
+		end
+	end
+	return lit
+end
+
+test("the command line coming and going doesn't send light through the file", function(t)
+	kern.theme.set({ ["ui.statusline"] = { fg = "#808080", bg = "#101010" } })
+	kern.option.set("effects", true)
+	local dir = t:tempdir({ ["notes.txt"] = "hi" })
+	kern.open(dir .. "/notes.txt")
+	t:wait(700)
+	t:keys(": esc")
+	t:wait(200)
+	assert(lit_now() == 0, "nothing lit: " .. lit_now())
+	kern.option.set("effects", false)
+end)
+
+test("a new mode glows from the middle of its name", function(t)
+	kern.theme.set({
+		["ui.statusline"] = { fg = "#808080", bg = "#101010" },
+		["ui.statusline.mode"] = { fg = "#000000", bg = "#00aa00" },
+	})
+	kern.option.set("effects", true)
+	t:buffer("|abc")
+	t:keys("i")
+	t:wait(100)
+	assert(lit_now() == #"INSERT", "the mode's letters are lit: " .. lit_now())
+	t:wait(500)
+	assert(lit_now() == 0, "and back to normal")
+	t:keys("esc")
+	t:wait(500)
 	kern.option.set("effects", false)
 end)

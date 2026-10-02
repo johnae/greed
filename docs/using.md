@@ -650,8 +650,8 @@ local option = require("@kern").option
 -- rounded ends (they need a Nerd Font; "none" makes them square)
 option.set("statusline-pills", true)
 option.set("statusline-caps", "round")
--- A wave of light through the letters of the tab, the file or the mode
--- when they change, brightest in its middle
+-- A wave of light through the letters of the tab or the file when you go
+-- to another, and a glow from the middle of the mode when it changes
 option.set("effects", true)
 ```
 

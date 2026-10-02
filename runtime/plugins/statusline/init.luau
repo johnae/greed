@@ -2,8 +2,8 @@
 -- message) and whether keys are being recorded; on the right problems the
 -- language server found, where the cursor is, the machine and the session.
 -- With the statusline-pills option some are pills, with rounded ends drawn
--- in the theme's colors, and with the effects option a wave of light goes
--- through the tab, the file or the mode when they change.
+-- in the theme's colors, and with the effects option light goes through the
+-- tab or the file when you go to another, and the mode when it changes.
 --
 -- Add to it from your config, or take a piece away:
 --
@@ -175,12 +175,14 @@ local function color(name: string, key: "fg" | "bg"): string?
 	return entry and (entry :: any)[key]
 end
 
--- Pieces a wave of light is going through, and how far it has got, from 0
--- to 1.
-local waves: { [string]: number } = {}
+-- How lit each of `count` letters is, `t` of the way through (from effects).
+type Shape = (count: number, t: number) -> { number }
 
--- How long a wave takes to go through a piece, in milliseconds.
-local WAVE = 600
+-- Light going through a piece, lit as `shape` says, `t` of the way through.
+type Glow = { t: number, shape: Shape }
+
+-- The pieces light is going through.
+local glows: { [string]: Glow } = {}
 
 -- The color lit letters glow towards on the background `back`: the theme's
 -- glow if it stands apart enough, or else white or black, whichever stands
@@ -194,8 +196,8 @@ local function glow_for(back: { number }): { number }
 end
 
 -- `text` in the style `look` as one segment per character, each lit as the
--- wave `t` of the way through says. False when the colors aren't "#rrggbb".
-local function lit(text: string, look: string, t: number, out: { kern.StatusSegment }): boolean
+-- glow says. False when the colors aren't "#rrggbb".
+local function lit(text: string, look: string, glow: Glow, out: { kern.StatusSegment }): boolean
 	local background = color(look, "bg") or color("ui.statusline", "bg")
 	local fore = effects.rgb(color(look, "fg") or color("ui.statusline", "fg"))
 	local back = effects.rgb(background)
@@ -209,7 +211,7 @@ local function lit(text: string, look: string, t: number, out: { kern.StatusSegm
 	for _, code in utf8.codes(text) do
 		table.insert(chars, utf8.char(code))
 	end
-	for i, level in effects.wave(#chars, t) do
+	for i, level in glow.shape(#chars, glow.t) do
 		table.insert(
 			out,
 			{ text = chars[i], style = `=fg:{effects.mix(fore, target, level)}{rest}` }
@@ -229,19 +231,19 @@ local function pills(part: Part): { Pill }?
 	return part :: { Pill }
 end
 
--- `text` in the style `look` (or plain), lit by the wave `t` if there is one.
-local function text_in(text: string, look: string?, t: number?, out: { kern.StatusSegment })
-	if t and lit(text, look or "ui.statusline", t, out) then
+-- `text` in the style `look` (or plain), lit by `glow` if there is one.
+local function text_in(text: string, look: string?, glow: Glow?, out: { kern.StatusSegment })
+	if glow and lit(text, look or "ui.statusline", glow, out) then
 		return
 	end
 	table.insert(out, if look then { text = text, style = look } else text)
 end
 
--- `part` as segments, lit by the wave `t` if there is one. With the
+-- `part` as segments, lit by `glow` if there is one. With the
 -- statusline-pills option, pills sit side by side between rounded ends in
 -- their colors; without, only the mode keeps its colors and the rest is
 -- plain text. Each piece has a space either side.
-local function segments(part: Part, t: number?, out: { kern.StatusSegment })
+local function segments(part: Part, glow: Glow?, out: { kern.StatusSegment })
 	local list = pills(part)
 	if list == nil or kern.option.get("statusline-pills") ~= true then
 		local text: string, kept: string?
@@ -260,7 +262,7 @@ local function segments(part: Part, t: number?, out: { kern.StatusSegment })
 		end
 		local space = if kept then { text = " ", style = kept } else " "
 		table.insert(out, space)
-		text_in(text, kept, t, out)
+		text_in(text, kept, glow, out)
 		table.insert(out, space)
 		return
 	end
@@ -278,10 +280,12 @@ local function segments(part: Part, t: number?, out: { kern.StatusSegment })
 	cap("\u{e0b6}", list[1])
 	for _, pill in list do
 		table.insert(out, { text = " ", style = pill.style })
-		text_in(pill.text, pill.style, t, out)
+		text_in(pill.text, pill.style, glow, out)
 		table.insert(out, { text = " ", style = pill.style })
 	end
 	cap("\u{e0b4}", list[#list])
+	-- Room between one pill and the next.
+	table.insert(out, " ")
 end
 
 --- The status line's segments for `ctx`, as built from the pieces.
@@ -291,7 +295,7 @@ function M.build(ctx: kern.StatusContext): kern.StatusParts
 		for _, entry in list do
 			local part = entry.build(ctx)
 			if part then
-				segments(part, waves[entry.name], out)
+				segments(part, glows[entry.name], out)
 			end
 		end
 		return out
@@ -301,43 +305,52 @@ end
 
 kern.statusline(M.build)
 
---- Sends a wave of light through the piece called `name`, with the effects
---- option on.
-function M.wave(name: string)
+--- Sends light through the piece called `name` for `ms` milliseconds, with
+--- the effects option on: lit as `shape` says (effects.wave by default, a
+--- wave going through it; effects.burst spreads out from its middle).
+function M.glow(name: string, ms: number?, shape: Shape?)
 	if not effects.enabled() then
 		return
 	end
-	kern.animate(WAVE, function(t)
-		waves[name] = if t < 1 then t else nil
+	local glow: Glow = { t = 0, shape = shape or effects.wave }
+	glows[name] = glow
+	kern.animate(ms or 600, function(t)
+		glow.t = t
+		if t >= 1 and glows[name] == glow then
+			glows[name] = nil
+		end
 	end)
 end
 
--- What the waves follow: the shown tab and the main view's buffer.
-local function where(): (number, number)
-	return kern.tab.current().id, kern.view():buffer():id()
+-- What the light follows: the shown tab, and the file in its active pane,
+-- so floats like the command line coming and going don't count.
+local function where(): (number, string?)
+	local tab = kern.tab.current()
+	return tab.id, tab.active:buffer():path()
 end
 
--- After a command or a click, a wave goes through what changed.
+-- After a command or a click, light goes through what changed: the tab
+-- pill for another tab, the file for another file in the active pane.
 local function follow()
 	if not effects.enabled() then
 		return
 	end
-	local tab, buffer = where()
+	local tab, file = where()
 	-- Waits for the command to finish.
 	kern.sleep(0)
-	local now_tab, now_buffer = where()
+	local now_tab, now_file = where()
 	if now_tab ~= tab then
-		M.wave("tab")
-	end
-	if now_buffer ~= buffer then
-		M.wave("file")
+		M.glow("tab")
+	elseif now_file ~= file and now_file then
+		M.glow("file")
 	end
 end
 
 kern.on("command.run", follow)
 kern.on("mouse", follow)
+-- A new mode glows from the middle of its name out.
 kern.on("mode.changed", function()
-	M.wave("mode")
+	M.glow("mode", 450, effects.burst)
 end)
 
 return M
