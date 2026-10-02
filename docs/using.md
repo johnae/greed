@@ -394,10 +394,10 @@ require("@kern").theme.set({ ["notes.tag"] = { fg = "magenta" } })
 ```
 
 A rule's `pattern` is a Luau pattern; with `show` the match is replaced by
-that text, and with `action` (a command name) clicking it runs the
-command. The styles notes use are `notes.todo`, `notes.done`,
-`notes.done.box`, `notes.heading`, `notes.bullet`, `notes.due` and
-`notes.overdue`.
+that text, and with `action` (a command name) clicking it or pressing
+`enter` on it runs the command. The styles notes use are `notes.todo`,
+`notes.done`, `notes.done.box`, `notes.heading`, `notes.bullet`,
+`notes.due` and `notes.overdue`.
 
 Agents can read and write your notes and todos too; see
 [Agents](agents.md).
@@ -518,6 +518,10 @@ way puts the text on Kern's clipboard, so `p` pastes it.
 A click puts the cursor where you click and focuses that pane, dragging
 selects, and the wheel scrolls whatever's under it. Clicking a tab in the
 tab line shows it.
+
+Clicking a button (a proposal's accept and reject, a todo's box) presses
+it. So does `enter` in normal mode with the cursor on it; where several
+buttons share a spot, `enter` lists them to pick from.
 
 In a terminal, a program that asks for the mouse (vim, htop, less with
 `--mouse`) gets it. Otherwise the wheel scrolls back through the output,

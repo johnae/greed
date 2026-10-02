@@ -1,0 +1,58 @@
+-- Buttons from the keyboard: enter in normal mode runs the action of the
+-- mark under the cursor, as clicking it does. Plugins make buttons with a
+-- mark's `action`, like a proposal's accept and reject or a todo's box.
+
+local kern = require("@kern")
+
+local M = {}
+
+--- A button: its text, the command it runs and where its mark starts.
+export type Button = { text: string, action: string, from: number }
+
+--- Chooses among several buttons under the cursor and calls `press` with
+--- the one chosen. Without a picker it's the first; the picker plugin
+--- replaces this with a list to pick from.
+M.choose = function(buttons: { Button }, press: (button: Button) -> ())
+	press(buttons[1])
+end
+
+--- The buttons over `pos` in `buffer`, in the order their marks start.
+function M.at(buffer: kern.Buffer, pos: number): { Button }
+	local buttons: { Button } = {}
+	for _, mark in buffer:marks_at(pos) do
+		local action = mark.action
+		if action then
+			local text = mark.text or buffer:slice(mark.from, mark.to)
+			table.insert(buttons, { text = text, action = action, from = mark.from })
+		end
+	end
+	table.sort(buttons, function(a: Button, b: Button)
+		return a.from < b.from
+	end)
+	return buttons
+end
+
+kern.command({
+	name = "press-button",
+	doc = "Run the button under the cursor, as clicking it does",
+	run = function(ctx)
+		local view = ctx.view
+		local selection = view:selection()
+		local buttons = M.at(ctx.buffer, selection.ranges[selection.primary].head)
+		-- The cursor goes to the button first, as a click puts it.
+		local function press(button: Button)
+			view:set_selection({
+				ranges = { { anchor = button.from, head = button.from } },
+				primary = 1,
+			})
+			kern.run(button.action)
+		end
+		if #buttons == 1 then
+			press(buttons[1])
+		elseif #buttons > 1 then
+			M.choose(buttons, press)
+		end
+	end,
+})
+
+return M

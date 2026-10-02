@@ -9,6 +9,7 @@
 -- pickers.luau for examples.
 
 local kern = require("@kern")
+local core = require("@core")
 local picker = require("@self/picker")
 
 export type Item = picker.Item
@@ -16,6 +17,17 @@ export type Preview = picker.Preview
 export type Options = picker.Options
 
 require("@self/pickers")
+
+-- Several buttons under the cursor: pick which one enter presses.
+core.buttons.choose = function(buttons, press)
+	local items = {}
+	for _, button in buttons do
+		table.insert(items, { label = button.text, value = button })
+	end
+	picker.pick("Buttons", items, function(item)
+		press(item.value)
+	end)
+end
 
 kern.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 

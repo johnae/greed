@@ -138,6 +138,19 @@ impl Buffer {
         self.marks.values().flatten()
     }
 
+    /// The marks over `pos`, with their namespaces: those whose range holds
+    /// it, and empty ones that start there.
+    pub fn marks_at(&self, pos: usize) -> impl Iterator<Item = (&str, &Mark)> {
+        self.marks.iter().flat_map(move |(ns, marks)| {
+            marks
+                .iter()
+                .filter(move |m| {
+                    m.range.contains(&pos) || (m.range.is_empty() && m.range.start == pos)
+                })
+                .map(move |m| (&**ns, m))
+        })
+    }
+
     /// Replaces the marks in namespace `ns`.
     pub(crate) fn set_marks(&mut self, ns: &str, marks: Vec<Mark>) {
         if marks.is_empty() {

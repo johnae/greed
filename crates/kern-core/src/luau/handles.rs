@@ -441,40 +441,59 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("decorations", |lua, this, ns: String| {
         let marks = this.with_buffer(lua, |b| Ok(b.marks(&ns).to_vec()))?;
         let list = lua.create_table()?;
-        for mark in marks {
-            let t = lua.create_table()?;
-            t.set("from", mark.range.start)?;
-            t.set("to", mark.range.end)?;
-            t.set("style", &*mark.style)?;
-            t.set("line", mark.line)?;
-            t.set("text", mark.text.as_deref())?;
-            t.set("eol", mark.eol)?;
-            t.set("sign", mark.sign.as_deref())?;
-            t.set("above", mark.above)?;
-            t.set("overlay", mark.overlay)?;
-            t.set("conceal", mark.conceal)?;
-            t.set("fold", mark.fold)?;
-            t.set("action", mark.action.as_deref())?;
-            if !mark.lines.is_empty() {
-                let lines = lua.create_table()?;
-                for line in &mark.lines {
-                    lines.push(virtual_line_to_lua(lua, line)?)?;
-                }
-                t.set("lines", lines)?;
-            }
-            if let Some(image) = mark.image {
-                let i = lua.create_table()?;
-                i.set("id", image.id.0)?;
-                i.set("cols", image.cols)?;
-                i.set("rows", image.rows)?;
-                i.set("col", image.col)?;
-                i.set("row", image.row)?;
-                t.set("image", i)?;
-            }
+        for mark in &marks {
+            list.push(mark_to_lua(lua, mark)?)?;
+        }
+        Ok(list)
+    });
+    methods.add_method("marks_at", |lua, this, pos: usize| {
+        let marks = this.with_buffer(lua, |b| {
+            Ok(b.marks_at(pos)
+                .map(|(ns, m)| (ns.to_owned(), m.clone()))
+                .collect::<Vec<_>>())
+        })?;
+        let list = lua.create_table()?;
+        for (ns, mark) in &marks {
+            let t = mark_to_lua(lua, mark)?;
+            t.set("ns", ns.as_str())?;
             list.push(t)?;
         }
         Ok(list)
     });
+}
+
+/// A mark as the table plugins give `decorate`.
+fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
+    let t = lua.create_table()?;
+    t.set("from", mark.range.start)?;
+    t.set("to", mark.range.end)?;
+    t.set("style", &*mark.style)?;
+    t.set("line", mark.line)?;
+    t.set("text", mark.text.as_deref())?;
+    t.set("eol", mark.eol)?;
+    t.set("sign", mark.sign.as_deref())?;
+    t.set("above", mark.above)?;
+    t.set("overlay", mark.overlay)?;
+    t.set("conceal", mark.conceal)?;
+    t.set("fold", mark.fold)?;
+    t.set("action", mark.action.as_deref())?;
+    if !mark.lines.is_empty() {
+        let lines = lua.create_table()?;
+        for line in &mark.lines {
+            lines.push(virtual_line_to_lua(lua, line)?)?;
+        }
+        t.set("lines", lines)?;
+    }
+    if let Some(image) = mark.image {
+        let i = lua.create_table()?;
+        i.set("id", image.id.0)?;
+        i.set("cols", image.cols)?;
+        i.set("rows", image.rows)?;
+        i.set("col", image.col)?;
+        i.set("row", image.row)?;
+        t.set("image", i)?;
+    }
+    Ok(t)
 }
 
 /// A mark's virtual line: a string, or pieces `{ text, style? }` to style

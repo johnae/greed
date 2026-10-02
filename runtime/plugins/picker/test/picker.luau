@@ -262,3 +262,42 @@ test("the outline lists functions and types, nested, and jumps to one", function
 	t:keys("t w o enter")
 	t:expect("struct S;\nfn one() {}\nfn |two() {}\n")
 end)
+
+test("enter over several buttons picks which to press", function(t)
+	local ran: { string } = {}
+	for _, name in { "accept", "reject" } do
+		kern.command({
+			name = `test-{name}`,
+			run = function()
+				table.insert(ran, name)
+			end,
+		})
+	end
+	t:buffer("|change")
+	kern.view():buffer():decorate("buttons", {
+		{
+			from = 0,
+			to = 0,
+			style = "ui.button",
+			text = "accept",
+			eol = true,
+			action = "test-accept",
+		},
+		{
+			from = 0,
+			to = 0,
+			style = "ui.button",
+			text = "reject",
+			eol = true,
+			action = "test-reject",
+		},
+	})
+	t:keys("enter")
+	local listed = items()
+	assert(
+		#listed == 2 and listed[1] == "accept" and listed[2] == "reject",
+		table.concat(listed, ",")
+	)
+	t:keys("r e j enter")
+	assert(ran[1] == "reject" and #ran == 1, table.concat(ran, ","))
+end)

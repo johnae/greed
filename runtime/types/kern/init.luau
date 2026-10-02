@@ -101,6 +101,9 @@ export type Buffer = {
 	decorate: (self: Buffer, ns: string, marks: { Mark }) -> (),
 	--- The marks in namespace `ns`, where they are now.
 	decorations: (self: Buffer, ns: string) -> { Mark },
+	--- The marks over `pos` in every namespace, each with its `ns`: those
+	--- whose range holds it, and empty ones that start there.
+	marks_at: (self: Buffer, pos: number) -> { Mark & { ns: string } },
 	--- The first match of the regex `pattern` starting at or after `from`
 	--- (default 0), or with `backward` the last one starting before it; `wrap`
 	--- goes round the other end. Returns its start and end, nil when nothing

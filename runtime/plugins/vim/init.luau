@@ -977,6 +977,7 @@ local keys: { [string]: string } = {
 	u = "vim-undo",
 	["ctrl-r"] = "vim-redo",
 	["."] = "vim-repeat",
+	enter = "press-button",
 }
 local visual: { [string]: string } = {
 	d = "vim-operator-d",

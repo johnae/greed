@@ -143,8 +143,9 @@ kern.tab.set_layout({
   again on the cursor's line), fold lines away under the first one (`fold`),
   or show lines that aren't in the buffer under its own (`lines`), whole
   or in pieces with styles of their own. A mark's text with an `action`
-  (a command name) is a button: clicking it puts the cursor at the mark
-  and runs the command.
+  (a command name) is a button: clicking it, or `enter` on it in normal
+  mode, puts the cursor at the mark and runs the command.
+  `buffer:marks_at(pos)` gives the marks over a place in every namespace.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
   { summary = "3 places" })` gives a buffer to show in a panel or float,

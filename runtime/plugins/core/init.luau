@@ -23,8 +23,10 @@ local prompt = require("@self/prompt")
 local project = require("@self/project")
 local style = require("@self/style")
 local mouse = require("@self/mouse")
+local buttons = require("@self/buttons")
 
 kern.keymap.bind("normal", {
+	enter = "press-button",
 	h = "move-left",
 	j = "move-down",
 	k = "move-up",
@@ -148,6 +150,7 @@ return {
 	project = project,
 	style = style,
 	mouse = mouse,
+	buttons = buttons,
 	comment = comment,
 	jumps = jumps,
 	objects = objects,
