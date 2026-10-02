@@ -70,17 +70,99 @@ local function line_above(buffer: kern.Buffer, hunk: Hunk, at: Span): number?
 	return nil
 end
 
+-- Letters, digits, "_" and anything outside ASCII.
+local function is_word(byte: number?): boolean
+	return byte ~= nil
+		and (
+			byte >= 0x80
+			or byte == 95
+			or (byte >= 48 and byte <= 57)
+			or (byte >= 65 and byte <= 90)
+			or (byte >= 97 and byte <= 122)
+		)
+end
+
+-- `from`..`to` of `s` (0-based, `to` exclusive) widened to whole words at
+-- either end that starts or stops inside one.
+local function whole_words(s: string, from: number, to: number): (number, number)
+	if is_word(string.byte(s, from + 1)) then
+		while from > 0 and is_word(string.byte(s, from)) do
+			from -= 1
+		end
+	end
+	if is_word(string.byte(s, to)) then
+		while to < #s and is_word(string.byte(s, to + 1)) do
+			to += 1
+		end
+	end
+	return from, to
+end
+
+-- The words that differ between line `old` and line `new`, as byte ranges
+-- of each, or nil when the lines are the same or differ throughout.
+local function changed_words(old: string, new: string): (number?, number?, number?, number?)
+	if old == new then
+		return nil, nil, nil, nil
+	end
+	local shortest = math.min(#old, #new)
+	local prefix = 0
+	while prefix < shortest and string.byte(old, prefix + 1) == string.byte(new, prefix + 1) do
+		prefix += 1
+	end
+	local suffix = 0
+	while
+		suffix < shortest - prefix
+		and string.byte(old, #old - suffix) == string.byte(new, #new - suffix)
+	do
+		suffix += 1
+	end
+	local old_from, old_to = whole_words(old, prefix, #old - suffix)
+	local new_from, new_to = whole_words(new, prefix, #new - suffix)
+	if old_from == 0 and old_to == #old and new_from == 0 and new_to == #new then
+		return nil, nil, nil, nil
+	end
+	return old_from, old_to, new_from, new_to
+end
+
+-- The marks showing whole new lines under `line`, with the words that
+-- changed picked out in old and new lines that pair up one to one.
+local function line_marks(buffer: kern.Buffer, hunk: Hunk, at: Span, line: number): { kern.Mark }
+	local new_lines = string.split(string.sub(hunk.new, 1, -2), "\n")
+	local old_text = buffer:slice(at.from, at.to)
+	local old_lines = if old_text == "" then {} else string.split(string.sub(old_text, 1, -2), "\n")
+	local marks: { kern.Mark } = {}
+	local shown: { any } = table.clone(new_lines)
+	if #old_lines == #new_lines then
+		local old_start = at.from
+		for i, old in old_lines do
+			local new = new_lines[i]
+			local old_from, old_to, new_from, new_to = changed_words(old, new)
+			if old_from and old_to and new_from and new_to then
+				table.insert(marks, {
+					from = old_start + old_from,
+					to = old_start + old_to,
+					style = "diff.minus.change",
+				})
+				shown[i] = {
+					{ text = string.sub(new, 1, new_from) },
+					{ text = string.sub(new, new_from + 1, new_to), style = "diff.plus.change" },
+					{ text = string.sub(new, new_to + 1) },
+				}
+			end
+			old_start += #old + 1
+		end
+	end
+	local start = buffer:line_start(line)
+	table.insert(marks, { from = start, to = start, style = "diff.plus", lines = shown })
+	return marks
+end
+
 local function draw(p: Proposal, hunk: Hunk, at: Span)
 	local buffer = p.buffer
 	buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
 	local line = line_above(buffer, hunk, at)
 	if line then
-		local start = buffer:line_start(line)
-		local lines = string.split(string.sub(hunk.new, 1, -2), "\n")
-		buffer:decorate(
-			ns(hunk) .. "-text",
-			{ { from = start, to = start, style = "diff.plus", lines = lines } }
-		)
+		buffer:decorate(ns(hunk) .. "-text", line_marks(buffer, hunk, at, line))
 	else
 		local shown = string.gsub(hunk.new, "\n", "⏎")
 		buffer:decorate(

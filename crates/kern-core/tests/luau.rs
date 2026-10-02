@@ -1513,3 +1513,28 @@ fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
         "9x38 9x48"
     );
 }
+
+#[test]
+fn marks_lines_can_be_pieces_with_styles() {
+    let h = host("a");
+    h.eval(
+        "local b = require('@kern').view():buffer()
+         b:decorate('d', { { from = 0, to = 0, style = 'diff.plus', lines = {
+           'plain',
+           { { text = 'x = ' }, { text = '2', style = 'diff.plus.change' }, { text = ';' } },
+         } } })",
+    )
+    .unwrap();
+    let lines = h.with_editor(|ed| {
+        ed.buffer(ed.view(ed.focus()).buffer).marks("d")[0]
+            .lines
+            .clone()
+    });
+    assert_eq!(&*lines[0].text, "plain");
+    assert_eq!(&*lines[1].text, "x = 2;");
+    assert_eq!(lines[1].styles, [(4..5, "diff.plus.change".into())]);
+    let back = h
+        .eval("local l = require('@kern').view():buffer():decorations('d')[1].lines; return l[1] .. '|' .. l[2][2].text .. '|' .. l[2][2].style")
+        .unwrap();
+    assert_eq!(back, "plain|2|diff.plus.change");
+}

@@ -27,7 +27,7 @@ use std::fmt;
 
 use kern_text::TxId;
 
-pub use buffer::{Buffer, BufferId, Mark, MarkImage};
+pub use buffer::{Buffer, BufferId, Mark, MarkImage, VirtualLine};
 pub use editor::{
     Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, Panel, PanelOptions,
     Project, ProjectId, Scroll, Side, SwitchTo, Tab, TabId, View, ViewId, parse_marked,

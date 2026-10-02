@@ -90,3 +90,39 @@ test("new whole lines show as lines under the ones they replace", function(t)
 	rows = t:draw(20, 8)
 	assert(rows[3] == "thr3ee", rows[3])
 end)
+
+-- The marks of the proposal's changes beyond the old text itself.
+local function change_marks(buffer: kern.Buffer): { kern.Mark }
+	-- Proposals number their changes from 1 up, across tests.
+	for id = 1, 100 do
+		local marks = buffer:decorations(`proposal-{id}-text`)
+		if #marks > 0 then
+			return marks
+		end
+	end
+	return {}
+end
+
+test("in a changed line, the words that changed stand out on both sides", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "let total = count + 1\n" })
+	local path = dir .. "/a.txt"
+	kern.open(path)
+	propose(
+		t,
+		path,
+		{ { old_text = "let total = count + 1\n", new_text = "let total = amount + 1\n" } }
+	)
+	local buffer = kern.view():buffer()
+	local old, new
+	for _, mark in change_marks(buffer) do
+		if mark.style == "diff.minus.change" then
+			old = buffer:slice(mark.from, mark.to)
+		elseif mark.lines then
+			new = mark.lines[1]
+		end
+	end
+	assert(old == "count", old)
+	assert(type(new) == "table", "pieces")
+	assert(new[2].text == "amount" and new[2].style == "diff.plus.change", new[2].text)
+	assert(new[1].text == "let total = " and new[3].text == " + 1", new[1].text)
+end)

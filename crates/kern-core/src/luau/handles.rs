@@ -19,7 +19,7 @@ use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::layout::Direction;
 use crate::search::{self, Direction as SearchDirection};
-use crate::{Buffer, BufferId, Mark, MarkImage, Scroll, View, ViewId};
+use crate::{Buffer, BufferId, Mark, MarkImage, Scroll, View, ViewId, VirtualLine};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -404,11 +404,11 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     conceal: flag("conceal")?,
                     fold: flag("fold")?,
                     lines: t
-                        .get::<Option<Vec<String>>>("lines")?
+                        .get::<Option<Vec<Value>>>("lines")?
                         .unwrap_or_default()
                         .into_iter()
-                        .map(Into::into)
-                        .collect(),
+                        .map(virtual_line_from_lua)
+                        .collect::<LuaResult<_>>()?,
                     image: t
                         .get::<Option<Table>>("image")?
                         .map(|i| mark_image_from_lua(&i))
@@ -436,7 +436,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             t.set("conceal", mark.conceal)?;
             t.set("fold", mark.fold)?;
             if !mark.lines.is_empty() {
-                let lines: Vec<&str> = mark.lines.iter().map(|l| &**l).collect();
+                let lines = lua.create_table()?;
+                for line in &mark.lines {
+                    lines.push(virtual_line_to_lua(lua, line)?)?;
+                }
                 t.set("lines", lines)?;
             }
             if let Some(image) = mark.image {
@@ -452,6 +455,61 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         }
         Ok(list)
     });
+}
+
+/// A mark's virtual line: a string, or pieces `{ text, style? }` to style
+/// parts of it on top of the mark's style.
+fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
+    let pieces = match value {
+        Value::Table(pieces) => pieces,
+        Value::String(text) => return Ok(VirtualLine::from(&*text.to_str()?)),
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "a mark's line is a string or a list of pieces, not {}",
+                other.type_name()
+            )));
+        }
+    };
+    let mut text = String::new();
+    let mut styles = Vec::new();
+    for piece in pieces.sequence_values::<Table>() {
+        let piece = piece?;
+        let start = text.len();
+        text.push_str(&piece.get::<String>("text")?);
+        if let Some(style) = piece.get::<Option<String>>("style")? {
+            styles.push((start..text.len(), style.into()));
+        }
+    }
+    Ok(VirtualLine {
+        text: text.into(),
+        styles,
+    })
+}
+
+/// A virtual line as Luau gets it back: a string, or pieces if parts of it
+/// have styles.
+fn virtual_line_to_lua(lua: &Lua, line: &VirtualLine) -> LuaResult<Value> {
+    if line.styles.is_empty() {
+        return Ok(Value::String(lua.create_string(&*line.text)?));
+    }
+    let pieces = lua.create_table()?;
+    let push = |range: std::ops::Range<usize>, style: Option<&str>| -> LuaResult<()> {
+        if range.is_empty() {
+            return Ok(());
+        }
+        let piece = lua.create_table()?;
+        piece.set("text", &line.text[range])?;
+        piece.set("style", style)?;
+        pieces.push(piece)
+    };
+    let mut at = 0;
+    for (range, style) in &line.styles {
+        push(at..range.start, None)?;
+        push(range.clone(), Some(style))?;
+        at = range.end;
+    }
+    push(at..line.text.len(), None)?;
+    Ok(Value::Table(pieces))
 }
 
 /// `{ id, cols, rows, col?, row? }`.

@@ -756,6 +756,31 @@ fn virtual_lines_show_under_their_line_and_count_when_scrolling() {
 }
 
 #[test]
+fn parts_of_virtual_lines_can_have_styles_of_their_own() {
+    use kern_core::{Mark, VirtualLine};
+    let mut ed = editor("a|");
+    let buffer = ed.view(ed.main()).buffer;
+    let line = VirtualLine {
+        text: "let x = 2;".into(),
+        styles: vec![(8..9, "diff.plus.change".into())],
+    };
+    ed.decorate(
+        buffer,
+        "diff",
+        vec![Mark {
+            range: 0..0,
+            style: "diff.plus".into(),
+            lines: vec![line],
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 20, 3);
+    assert_eq!(body(&f)[1], "let x = 2;");
+    assert_eq!(tagged(&f, &Tag::from("diff.plus")).concat(), "let x = 2;");
+    assert_eq!(tagged(&f, &Tag::from("diff.plus.change")), ["2"]);
+}
+
+#[test]
 fn a_buffer_can_go_without_line_numbers() {
     let mut ed = editor("|one\ntwo");
     let buffer = ed.view(ed.main()).buffer;

@@ -124,8 +124,10 @@ export type Mark = {
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
 	--- Lines shown under the last line that aren't in the buffer, like
-	--- backlinks. The cursor never goes on them.
-	lines: { string }?,
+	--- backlinks. The cursor never goes on them. Each is a string, or pieces
+	--- with styles of their own on top of the mark's, e.g.
+	--- `{ { text = "x = " }, { text = "2", style = "diff.plus.change" } }`.
+	lines: { any }?,
 	--- An image (from `kern.image`) drawn over `cols` by `rows` cells right
 	--- of and below `from`, whatever text is there. `col` and `row` say
 	--- which of its cells is at `from`, for an image cut off at the top or

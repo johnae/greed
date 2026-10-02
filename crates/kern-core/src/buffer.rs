@@ -69,9 +69,27 @@ pub struct Mark {
     pub fold: bool,
     /// Lines shown under the range's last line that aren't in the buffer,
     /// like a list of backlinks. The cursor never goes on them.
-    pub lines: Vec<Arc<str>>,
+    pub lines: Vec<VirtualLine>,
     /// An image drawn over the text from the start of the range.
     pub image: Option<MarkImage>,
+}
+
+/// A line a mark shows under the text: drawn in the mark's style, with
+/// `styles` on top of parts of it (byte ranges of `text`), like the words
+/// that changed in a proposed line.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VirtualLine {
+    pub text: Arc<str>,
+    pub styles: Vec<(Range<usize>, Arc<str>)>,
+}
+
+impl From<&str> for VirtualLine {
+    fn from(text: &str) -> Self {
+        VirtualLine {
+            text: text.into(),
+            styles: Vec::new(),
+        }
+    }
 }
 
 /// An image over a block of cells: `cols` by `rows`, right of and below

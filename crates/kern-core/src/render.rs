@@ -27,6 +27,7 @@ use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
     Anchor, BufferId, CursorShape, Editor, FloatOptions, Mark, Panel, Scroll, Side, View, ViewId,
+    VirtualLine,
 };
 
 /// Highlights and marks drawn over a buffer's text.
@@ -923,11 +924,11 @@ impl<M: Measure> Renderer<M> {
         &self,
         rows: &mut Vec<Row>,
         limit: usize,
-        lines: impl Iterator<Item = (&'a Mark, &'a str)>,
+        lines: impl Iterator<Item = (&'a Mark, &'a VirtualLine)>,
         gutter: Option<&Gutter>,
         room: usize,
     ) -> bool {
-        for (mark, text) in lines {
+        for (mark, line) in lines {
             if rows.len() == limit {
                 return false;
             }
@@ -935,10 +936,19 @@ impl<M: Measure> Renderer<M> {
             if let Some(gutter) = gutter {
                 gutter.push(&mut row, None);
             }
-            row.push(
-                &self.keep_start(text, room),
-                smallvec![Tag::from(mark.style.clone())],
-            );
+            let kept = self.keep_start(&line.text, room);
+            let base = Tag::from(mark.style.clone());
+            if line.styles.is_empty() {
+                row.push(&kept, smallvec![base]);
+            } else {
+                for (i, g) in kept.grapheme_indices(true) {
+                    let mut tags = smallvec![base.clone()];
+                    if let Some((_, style)) = line.styles.iter().find(|(r, _)| r.contains(&i)) {
+                        tags.push(Tag::from(style.clone()));
+                    }
+                    row.push(g, tags);
+                }
+            }
             rows.push(row);
         }
         true
@@ -1446,13 +1456,13 @@ fn virtual_lines<'a>(
     editor: &'a Editor,
     view: &View,
     line: usize,
-) -> impl Iterator<Item = (&'a Mark, &'a str)> {
+) -> impl Iterator<Item = (&'a Mark, &'a VirtualLine)> {
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
     buffer
         .all_marks()
         .filter(move |m| !m.lines.is_empty() && last_line(text, &m.range) == line)
-        .flat_map(|m| m.lines.iter().map(move |l| (m, &**l)))
+        .flat_map(|m| m.lines.iter().map(move |l| (m, l)))
 }
 
 /// Whether a cursor is on `line`, which shows concealed text, and otherwise

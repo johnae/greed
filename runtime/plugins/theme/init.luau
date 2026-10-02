@@ -29,6 +29,8 @@ kern.theme.set({
 	["diff.plus"] = { fg = "green" },
 	["diff.minus"] = { fg = "red", strikethrough = true },
 	["diff.delta"] = { fg = "yellow" },
+	["diff.plus.change"] = { fg = "bright-green", bold = true },
+	["diff.minus.change"] = { fg = "bright-red", bold = true },
 	["markup.link"] = { fg = "cyan", underline = "line" },
 	fold = { fg = "bright-black" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
