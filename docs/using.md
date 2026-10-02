@@ -676,8 +676,12 @@ it gives: `kern.theme.set({ comment = { italic = false } })` keeps the
 theme's comment color. A theme's own `styles` work the same way on what it
 inherits. Names fall back to their parent, so `keyword.control` uses
 `keyword` unless it has its own entry; [Highlighting](highlighting.md) lists
-them. `#rrggbb` colors work in terminals that support them, which is nearly
-all.
+them.
+
+`#rrggbb` colors go out as they are when the terminal says it shows 24-bit
+color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors
+when it doesn't, like tmux without its `RGB` feature. `KERN_COLORS=truecolor`
+or `KERN_COLORS=256` decides for a terminal that says the wrong thing.
 
 ### Highlighting and syntax queries
 

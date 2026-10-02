@@ -35,6 +35,15 @@ const KEY_POLL: Duration = Duration::from_millis(50);
 /// keys and sizes to `input` and drawing the frames from `output`. Returns
 /// how it ended.
 pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, Error> {
+    let var = |name| std::env::var(name).ok();
+    TRUECOLOR.store(
+        truecolor(
+            var("KERN_COLORS").as_deref(),
+            var("COLORTERM").as_deref(),
+            var("TERM").as_deref(),
+        ),
+        Ordering::Relaxed,
+    );
     let terminal = Terminal::enter()?;
     let (width, height) = terminal::size()?;
     input.send(Input::Resize(Size { width, height }))?;
@@ -169,6 +178,47 @@ fn convert_mouse(event: MouseEvent) -> Mouse {
 /// tells apart keys that otherwise send the same bytes (`tab` and `ctrl-i`,
 /// `enter` and `shift-enter`) and `esc` from the start of a sequence.
 static KITTY_KEYS: AtomicBool = AtomicBool::new(false);
+
+/// Whether `#rrggbb` colors go out as they are, rather than as the nearest
+/// of the 256 every terminal has.
+static TRUECOLOR: AtomicBool = AtomicBool::new(true);
+
+/// Whether the terminal shows 24-bit color: `$KERN_COLORS` ("truecolor" or
+/// "24bit", or "256") says, or else `$COLORTERM` does ("truecolor", "24bit"), or a
+/// `$TERM` ending in "-direct".
+fn truecolor(kern_colors: Option<&str>, colorterm: Option<&str>, term: Option<&str>) -> bool {
+    match kern_colors {
+        Some("truecolor" | "24bit") => true,
+        Some("256") => false,
+        _ => {
+            matches!(colorterm, Some("truecolor" | "24bit"))
+                || term.is_some_and(|t| t.ends_with("-direct"))
+        }
+    }
+}
+
+/// The nearest of the 256 colors to `r`, `g`, `b`: from the 6x6x6 cube or
+/// the gray ramp.
+fn nearest_256(r: u8, g: u8, b: u8) -> u8 {
+    const LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    let level = |c: u8| (0..6).min_by_key(|&i| LEVELS[i].abs_diff(c)).unwrap_or(0);
+    let distance = |(r2, g2, b2): (u8, u8, u8)| {
+        [(r, r2), (g, g2), (b, b2)]
+            .iter()
+            .map(|&(from, to)| u32::from(from.abs_diff(to)).pow(2))
+            .sum::<u32>()
+    };
+    let (ri, gi, bi) = (level(r), level(g), level(b));
+    let cube = (LEVELS[ri], LEVELS[gi], LEVELS[bi]);
+    let average = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
+    let step = u8::try_from((average.saturating_sub(3) / 10).min(23)).unwrap_or(23);
+    let gray = 8 + 10 * step;
+    if distance((gray, gray, gray)) < distance(cube) {
+        232 + step
+    } else {
+        u8::try_from(16 + 36 * ri + 6 * gi + bi).unwrap_or(16)
+    }
+}
 
 /// Whether to ask for the kitty keyboard protocol: unless `$KERN_KEYS` is
 /// "legacy".
@@ -586,13 +636,40 @@ fn terminal_color(color: ThemeColor) -> Color {
     match color {
         ThemeColor::Default => Color::Reset,
         ThemeColor::Ansi(n) => ANSI[usize::from(n % 16)],
-        ThemeColor::Rgb(r, g, b) => Color::Rgb { r, g, b },
+        ThemeColor::Rgb(r, g, b) if TRUECOLOR.load(Ordering::Relaxed) => Color::Rgb { r, g, b },
+        ThemeColor::Rgb(r, g, b) => Color::AnsiValue(nearest_256(r, g, b)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truecolor_is_what_kern_colors_or_the_terminal_says() {
+        assert!(truecolor(None, Some("truecolor"), Some("xterm")));
+        assert!(truecolor(None, Some("24bit"), None));
+        assert!(truecolor(None, None, Some("xterm-direct")));
+        assert!(
+            !truecolor(None, None, Some("xterm-256color")),
+            "unsaid is 256"
+        );
+        assert!(
+            !truecolor(Some("256"), Some("truecolor"), None),
+            "KERN_COLORS wins"
+        );
+        assert!(truecolor(Some("truecolor"), None, Some("screen")));
+    }
+
+    #[test]
+    fn colors_without_truecolor_are_the_nearest_of_256() {
+        assert_eq!(nearest_256(0, 0, 0), 16);
+        assert_eq!(nearest_256(255, 255, 255), 231);
+        assert_eq!(nearest_256(255, 0, 0), 196);
+        assert_eq!(nearest_256(128, 128, 128), 244, "grays come from the ramp");
+        assert_eq!(nearest_256(0x2e, 0x34, 0x40), 237, "nord's background");
+        assert_eq!(nearest_256(0x5f, 0x87, 0xaf), 67, "a cube color exactly");
+    }
 
     /// A row of plain cells for `text`, as `put` lays it out.
     fn cells(text: &str, width: usize) -> Vec<Cell> {
