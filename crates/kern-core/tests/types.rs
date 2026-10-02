@@ -77,6 +77,14 @@ fn declared_api_exists() {
         ("Buffer", format!("{kern} check(kern.view():buffer())")),
         ("Edits", format!("{kern} kern.view():buffer():edit(check)")),
         (
+            "Node",
+            format!(
+                "{kern} local b = kern.view():buffer() \
+                 b:edit(function(e) e:insert(0, 'fn a() {{}}') end) b:set_language('rust') \
+                 check(b:node_at(3))"
+            ),
+        ),
+        (
             "Terminal",
             format!(
                 "{kern} local t = kern.terminal.spawn({{ command = {{ 'true' }}, rows = 2, cols = 10 }}) \

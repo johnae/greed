@@ -75,6 +75,17 @@ export type Buffer = {
 	--- Sets the language, or with nil goes back to the one the file's
 	--- extension implies.
 	set_language: (self: Buffer, language: string?) -> (),
+	--- The root of the syntax tree, or nil if the language has no grammar
+	--- (or the buffer is too big to parse).
+	tree: (self: Buffer) -> Node?,
+	--- The smallest named node covering `from`..`to` (default: just `from`).
+	node_at: (self: Buffer, from: number, to: number?) -> Node?,
+	--- Runs a tree-sitter query over the buffer, or only for matches
+	--- overlapping `from`..`to`, e.g.
+	--- `"(function_item name: (identifier) @name) @fn"`. One table per
+	--- match, from capture name to node. Errors on a query the language's
+	--- grammar can't compile.
+	query: (self: Buffer, source: string, range: { from: number?, to: number? }?) -> { { [string]: Node } },
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
 	--- together, as one undoable change, when it returns.
 	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
@@ -95,6 +106,34 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
+}
+
+--- A node in a buffer's syntax tree, from `buffer:tree()`, `buffer:node_at()` or
+--- `buffer:query()`. It describes the buffer as it was when found; after an edit,
+--- find it again. `tostring(node)` shows its subtree, handy for writing queries.
+export type Node = {
+	--- The grammar's name for it, e.g. "function_item" or "(".
+	kind: string,
+	from: number,
+	to: number,
+	--- False for punctuation and keywords the grammar doesn't name.
+	named: boolean,
+	--- True for text the grammar couldn't parse, or a missing piece it assumed.
+	error: boolean,
+	--- Its field name in its parent, e.g. "name" or "body", if it has one.
+	field: string?,
+	parent: (self: Node) -> Node?,
+	children: (self: Node) -> { Node },
+	--- Its children without the unnamed ones (punctuation, keywords).
+	named_children: (self: Node) -> { Node },
+	--- The child in field `field`, e.g. `fn:child("body")`.
+	child: (self: Node, field: string) -> Node?,
+	--- The next named sibling.
+	next: (self: Node) -> Node?,
+	--- The previous named sibling.
+	prev: (self: Node) -> Node?,
+	--- Its text. Errors if the buffer changed since the node was found.
+	text: (self: Node) -> string,
 }
 
 --- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.

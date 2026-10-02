@@ -20,6 +20,7 @@ mod process;
 mod projects;
 mod requests;
 mod sessions;
+mod syntax;
 mod tabs;
 mod tasks;
 mod terminal;
@@ -100,6 +101,8 @@ pub(crate) struct State {
     pub view_sizes: HashMap<crate::ViewId, (u16, u16)>,
     /// Each view's top line as last told to plugins with "view.scrolled".
     pub view_scrolls: HashMap<crate::ViewId, usize>,
+    /// Syntax trees, for highlighting and for plugins.
+    pub syntax: crate::syntax::Syntax,
 }
 
 #[derive(Clone)]
@@ -209,6 +212,7 @@ impl Host {
             terminals: terminal::Terminals::default(),
             view_sizes: HashMap::new(),
             view_scrolls: HashMap::new(),
+            syntax: crate::syntax::Syntax::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -238,6 +242,31 @@ impl Host {
 
     pub fn with_editor_mut<R>(&self, f: impl FnOnce(&mut Editor) -> R) -> R {
         f(&mut state_mut(&self.lua).editor)
+    }
+
+    /// Calls `f` with the editor and the syntax trees, for drawing.
+    pub fn with_editor_and_syntax<R>(
+        &self,
+        f: impl FnOnce(&mut Editor, &crate::syntax::Syntax) -> R,
+    ) -> R {
+        let state = &mut *state_mut(&self.lua);
+        f(&mut state.editor, &state.syntax)
+    }
+
+    /// Sends buffers that changed to the syntax worker.
+    pub fn update_syntax(&self) {
+        let state = &mut *state_mut(&self.lua);
+        state.syntax.update(&state.editor);
+    }
+
+    /// Finished parses, to pass to [`Host::receive_parse`].
+    pub fn parses(&self) -> crossbeam_channel::Receiver<crate::syntax::Parsed> {
+        state(&self.lua).syntax.results().clone()
+    }
+
+    /// Keeps a finished parse.
+    pub fn receive_parse(&self, parsed: crate::syntax::Parsed) {
+        state_mut(&self.lua).syntax.receive(parsed);
     }
 
     pub fn with_registry<R>(&self, f: impl FnOnce(&Registry<Function>) -> R) -> R {

@@ -117,7 +117,6 @@ where
         let mut server = Server {
             host: &host,
             renderer: Renderer::new(CellWidth),
-            syntax: Syntax::new(),
             size: None,
             message: None,
             client: Some(Client {
@@ -175,7 +174,6 @@ impl Client {
 struct Server<'a> {
     host: &'a Host,
     renderer: Renderer<CellWidth>,
-    syntax: Syntax,
     /// The attached client's screen size, once it has said.
     size: Option<Size>,
     message: Option<String>,
@@ -186,6 +184,7 @@ struct Server<'a> {
 
 impl Server<'_> {
     fn run(&mut self, inbox: &Receiver<Input>, session: Option<&Session>) {
+        let trees = self.host.parses();
         let lsp_events = self.host.lsp_events();
         let finished_jobs = self.host.finished_jobs();
         let terminal_events = self.host.terminal_events();
@@ -193,7 +192,7 @@ impl Server<'_> {
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
         loop {
-            self.host.with_editor(|ed| self.syntax.update(ed));
+            self.host.update_syntax();
             if let Some(problem) = self.host.sync_lsp().pop() {
                 self.message = Some(problem);
             }
@@ -211,9 +210,9 @@ impl Server<'_> {
                         }
                     }
                 }
-                recv(self.syntax.results()) -> parsed => {
+                recv(trees) -> parsed => {
                     if let Ok(parsed) = parsed {
-                        self.syntax.receive(parsed);
+                        self.host.receive_parse(parsed);
                     }
                 }
                 recv(lsp_events) -> event => {
@@ -390,12 +389,16 @@ impl Server<'_> {
                 }
             }
         };
-        let decorations = Shown {
-            syntax: &self.syntax,
-            diagnostics: host.diagnostic_marks(),
+        let diagnostics = host.diagnostic_marks();
+        let render = || {
+            host.with_editor_and_syntax(|ed, syntax| {
+                let shown = Shown {
+                    syntax,
+                    diagnostics: &diagnostics,
+                };
+                self.renderer.frame(ed, size, &status, &shown)
+            })
         };
-        let render =
-            || host.with_editor_mut(|ed| self.renderer.frame(ed, size, &status, &decorations));
         let mut frame = render();
         // Plugins may change views in answer (one scrolling another along),
         // which should show now rather than after the next key.
@@ -446,7 +449,7 @@ fn first_line(text: &str) -> String {
 /// What's drawn over buffer text: syntax highlighting and diagnostics.
 struct Shown<'a> {
     syntax: &'a Syntax,
-    diagnostics: HashMap<BufferId, Vec<(Range<usize>, u8)>>,
+    diagnostics: &'a HashMap<BufferId, Vec<(Range<usize>, u8)>>,
 }
 
 impl Decorations for Shown<'_> {

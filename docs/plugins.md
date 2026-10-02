@@ -79,6 +79,28 @@ it, `kern.create_buffer(kind, text)` makes a scratch buffer, and
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
+### Syntax trees
+
+Buffers in a language with a tree-sitter grammar have a syntax tree.
+`buffer:node_at(pos)` is the smallest named node there, and nodes know
+their `kind`, `from`, `to` and `field`, and can go to their `parent()`,
+`children()`, `child("body")`, `next()` and `prev()`.
+`buffer:query(source)` runs a tree-sitter query and returns each match as
+a table from capture name to node:
+
+```luau
+-- Select the name of every function in the file
+local ranges = {}
+for _, m in buffer:query("(function_item name: (identifier) @name)") do
+	table.insert(ranges, { anchor = m.name.from, head = m.name.to })
+end
+view:set_selection({ ranges = ranges, primary = 1 })
+```
+
+`tostring(node)` shows the node's subtree, which helps when writing a
+query. A node describes the text as it was when you got it; after an
+edit, find it again.
+
 The editor can have several projects open. `kern.project.current()` is
 the one shown, with its `root`; `kern.project.open`, `switch` and `close`
 manage them, and `buffer:project()` says which one a buffer belongs to.

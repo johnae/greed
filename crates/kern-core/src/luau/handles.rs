@@ -676,6 +676,7 @@ impl UserData for BufferRef {
         add_setting_methods(methods);
         add_decoration_methods(methods);
         add_search_methods(methods);
+        super::syntax::add_methods(methods);
         methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.save(lua, path)

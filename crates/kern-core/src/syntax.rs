@@ -16,7 +16,7 @@ use kern_text::Rope;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree};
 
-use crate::{BufferId, Editor};
+use crate::{Buffer, BufferId, Editor};
 
 /// Buffers larger than this aren't parsed, so huge files stay responsive.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -149,6 +149,10 @@ pub struct Syntax {
     requests: Sender<Request>,
     results: Receiver<Parsed>,
     buffers: HashMap<BufferId, BufferSyntax>,
+    /// For trees wanted right away, when the worker's is behind.
+    parser: Parser,
+    /// Queries plugins ran, by language and source, compiled once.
+    queries: HashMap<(&'static str, String), Arc<Query>>,
     pub max_bytes: usize,
 }
 
@@ -169,6 +173,8 @@ impl Syntax {
             requests,
             results,
             buffers: HashMap::new(),
+            parser: Parser::new(),
+            queries: HashMap::new(),
             max_bytes: MAX_BYTES,
         }
     }
@@ -186,45 +192,56 @@ impl Syntax {
         self.languages.iter().find(|l| l.name == name).cloned()
     }
 
+    /// The syntax state for `buffer`, set up for its current language, or
+    /// `None` if it has no language Kern knows or is too big to parse.
+    fn state_for(&mut self, buffer: &Buffer) -> Option<&mut BufferSyntax> {
+        let id = buffer.id();
+        let Some(name) = buffer.language() else {
+            self.buffers.remove(&id);
+            return None;
+        };
+        if self
+            .buffers
+            .get(&id)
+            .is_none_or(|s| s.language.name != name)
+        {
+            let Some(language) = self.language_named(name) else {
+                self.buffers.remove(&id);
+                return None;
+            };
+            self.buffers.insert(
+                id,
+                BufferSyntax {
+                    language,
+                    sent: None,
+                    tree: None,
+                },
+            );
+        }
+        let too_big = buffer.text().len_bytes() > self.max_bytes;
+        let state = self.buffers.get_mut(&id).expect("just inserted");
+        if too_big {
+            state.tree = None;
+            return None;
+        }
+        Some(state)
+    }
+
     /// Sends buffers that changed since their last parse to the worker.
     pub fn update(&mut self, editor: &Editor) {
         for buffer in editor.buffers() {
-            let id = buffer.id();
-            let Some(name) = buffer.language() else {
-                self.buffers.remove(&id);
+            let version = buffer.history().log().len();
+            let Some(state) = self.state_for(buffer) else {
                 continue;
             };
-            if self
-                .buffers
-                .get(&id)
-                .is_none_or(|s| s.language.name != name)
-            {
-                let Some(language) = self.language_named(name) else {
-                    self.buffers.remove(&id);
-                    continue;
-                };
-                self.buffers.insert(
-                    id,
-                    BufferSyntax {
-                        language,
-                        sent: None,
-                        tree: None,
-                    },
-                );
-            }
-            let state = self.buffers.get_mut(&id).expect("just inserted");
-            if buffer.text().len_bytes() > self.max_bytes {
-                state.tree = None;
-                continue;
-            }
-            let version = buffer.history().log().len();
             if state.sent != Some(version) {
                 state.sent = Some(version);
+                let language = state.language.clone();
                 let _ = self.requests.send(Request {
-                    buffer: id,
+                    buffer: buffer.id(),
                     version,
                     text: buffer.text().clone(),
-                    language: state.language.clone(),
+                    language,
                 });
             }
         }
@@ -237,6 +254,38 @@ impl Syntax {
         {
             state.tree = Some((parsed.version, parsed.tree));
         }
+    }
+
+    /// The syntax tree of `buffer` as its text is now, and its language.
+    /// When the worker hasn't caught up with the latest edit, the buffer is
+    /// parsed here and then. `None` if it has no language Kern knows or is
+    /// too big to parse.
+    pub fn tree(&mut self, buffer: &Buffer) -> Option<(Arc<Language>, Tree)> {
+        let version = buffer.history().log().len();
+        let state = self.state_for(buffer)?;
+        if let Some((v, tree)) = &state.tree
+            && *v == version
+        {
+            return Some((state.language.clone(), tree.clone()));
+        }
+        let language = state.language.clone();
+        self.parser.set_language(&language.grammar).ok()?;
+        let tree = parse(&mut self.parser, buffer.text())?;
+        let state = self.buffers.get_mut(&buffer.id())?;
+        state.tree = Some((version, tree.clone()));
+        Some((language, tree))
+    }
+
+    /// `source` compiled as a query for `language`. Compiled queries are
+    /// kept, so running one again is cheap.
+    pub fn query(&mut self, language: &Language, source: &str) -> Result<Arc<Query>, String> {
+        let key = (language.name, source.to_owned());
+        if let Some(query) = self.queries.get(&key) {
+            return Ok(query.clone());
+        }
+        let query = Arc::new(Query::new(&language.grammar, source).map_err(|e| e.to_string())?);
+        self.queries.insert(key, query.clone());
+        Ok(query)
     }
 
     /// Highlights overlapping `range` of `buffer`, whose text is `text`.
@@ -276,16 +325,9 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
             if parser.set_language(&request.language.grammar).is_err() {
                 continue;
             }
-            let text = &request.text;
-            let tree = parser.parse_with_options(
-                &mut |byte, _| {
-                    let (chunk, start, _, _) = text.chunk_at_byte(byte);
-                    &chunk.as_bytes()[byte - start..]
-                },
-                None,
-                None,
-            );
-            let Some(tree) = tree else { continue };
+            let Some(tree) = parse(&mut parser, &request.text) else {
+                continue;
+            };
             let parsed = Parsed {
                 buffer: request.buffer,
                 version: request.version,
@@ -298,8 +340,20 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
     }
 }
 
+/// Parses `text` from scratch with the parser's language.
+fn parse(parser: &mut Parser, text: &Rope) -> Option<Tree> {
+    parser.parse_with_options(
+        &mut |byte, _| {
+            let (chunk, start, _, _) = text.chunk_at_byte(byte);
+            &chunk.as_bytes()[byte - start..]
+        },
+        None,
+        None,
+    )
+}
+
 /// Lets queries read node text straight from a rope.
-struct RopeText<'a>(&'a Rope);
+pub(crate) struct RopeText<'a>(pub &'a Rope);
 
 impl<'a> TextProvider<&'a [u8]> for RopeText<'a> {
     type I = std::iter::Map<ropey::iter::Chunks<'a>, fn(&'a str) -> &'a [u8]>;

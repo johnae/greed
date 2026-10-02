@@ -132,3 +132,112 @@ fn buffers_without_files_highlight_in_the_language_they_are_given() {
     syntax.update(&ed);
     assert!(syntax.highlights(preview, &text, 0..12).is_empty());
 }
+
+fn host(text: &str, language: Option<&str>) -> kern_core::luau::Host {
+    let mut ed = Editor::new(ClientId(1));
+    ed.open("file", text, None);
+    let host = kern_core::luau::Host::new(ed).unwrap();
+    if let Some(language) = language {
+        host.eval(&format!(
+            "require('@kern').view():buffer():set_language('{language}')"
+        ))
+        .unwrap();
+    }
+    host
+}
+
+fn eval(host: &kern_core::luau::Host, body: &str) -> String {
+    host.eval(&format!(
+        "(function() local kern = require('@kern') local b = kern.view():buffer() {body} end)()"
+    ))
+    .unwrap()
+}
+
+const RUST: &str = "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\nfn two() {}\n";
+
+#[test]
+fn plugins_walk_the_syntax_tree() {
+    let h = host(RUST, Some("rust"));
+    // The name of the first function.
+    let name = eval(
+        &h,
+        "local n = b:node_at(3) return `{n.kind} {n.from} {n.to} {n.field} {n:text()}`",
+    );
+    assert_eq!(name, "identifier 3 6 name add");
+    let up = eval(&h, "return b:node_at(3):parent().kind");
+    assert_eq!(up, "function_item");
+    let body = eval(&h, "return b:node_at(3):parent():child('body'):text()");
+    assert_eq!(body, "{\n    a + b\n}");
+    let params = eval(
+        &h,
+        "local ps = b:node_at(3):parent():child('parameters') \
+         local out = {} for _, p in ps:named_children() do table.insert(out, p:text()) end \
+         return `{#ps:children()} {table.concat(out, '|')}`",
+    );
+    assert_eq!(params, "5 a: i32|b: i32");
+    let next = eval(
+        &h,
+        "local f = b:node_at(3):parent() return `{f:next():child('name'):text()} {f:prev()}`",
+    );
+    assert_eq!(next, "two nil");
+    assert_eq!(eval(&h, "return b:tree().kind"), "source_file");
+    assert_eq!(eval(&h, "return tostring(b:node_at(3))"), "(identifier)");
+    // The same node found twice is equal.
+    assert_eq!(
+        eval(&h, "return tostring(b:node_at(3) == b:node_at(4))"),
+        "true"
+    );
+}
+
+#[test]
+fn the_tree_follows_edits_right_away() {
+    let h = host(RUST, Some("rust"));
+    let kind = eval(
+        &h,
+        "b:edit(function(e) e:replace(0, 2, 'pub fn') end) \
+         return `{b:node_at(0).kind} {b:node_at(7):text()}`",
+    );
+    assert_eq!(kind, "visibility_modifier add");
+    let stale = eval(
+        &h,
+        "local n = b:node_at(7) b:edit(function(e) e:insert(0, ' ') end) \
+         local ok, err = pcall(n.text, n) return tostring(err)",
+    );
+    assert!(stale.contains("changed since"), "{stale}");
+}
+
+#[test]
+fn queries_return_their_captures_by_match() {
+    let h = host(RUST, Some("rust"));
+    let names = eval(
+        &h,
+        "local out = {} \
+         for _, m in b:query('(function_item name: (identifier) @name) @fn') do \
+           table.insert(out, `{m.name:text()}@{m.fn.from}`) end \
+         return table.concat(out, ' ')",
+    );
+    assert_eq!(names, "add@0 two@45");
+    let ranged = eval(&h, "return #b:query('(function_item) @fn', { from = 45 })");
+    assert_eq!(ranged, "1");
+    let predicate = eval(&h, "return #b:query('((identifier) @id (#eq? @id \"b\"))')");
+    assert_eq!(predicate, "2");
+    let bad = eval(
+        &h,
+        "local ok, err = pcall(b.query, b, '(no_such_node) @x') return tostring(err)",
+    );
+    assert!(bad.contains("query"), "{bad}");
+}
+
+#[test]
+fn buffers_without_a_grammar_have_no_tree() {
+    let h = host("plain text", None);
+    assert_eq!(
+        eval(
+            &h,
+            "return `{b:tree()} {b:node_at(0)} {#b:query('(x) @y')}`"
+        ),
+        "nil nil 0"
+    );
+    let unknown = host("plain text", Some("klingon"));
+    assert_eq!(eval(&unknown, "return tostring(b:tree())"), "nil");
+}

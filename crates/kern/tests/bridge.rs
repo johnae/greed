@@ -11,7 +11,19 @@ const KERN: &str = env!("CARGO_BIN_EXE_kern");
 /// `kern` with folders of its own for sessions, config and cache, so these
 /// tests never see your editors or write to your folders.
 fn kern() -> Command {
-    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    kern_in("shared")
+}
+
+/// The folders standing in for runtime, config and cache for `world`.
+/// Tests that write config get a world of their own: tests run in
+/// parallel, and a session starting while a plugin is half-written fails.
+fn world(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("kern-bridge-{name}-{}", std::process::id()))
+}
+
+/// `kern` in `world`.
+fn kern_in(name: &str) -> Command {
+    let root = world(name);
     for dir in ["run", "config", "cache", "claude"] {
         std::fs::create_dir_all(root.join(dir)).unwrap();
     }
@@ -267,7 +279,7 @@ fn plugin(dir: &std::path::Path, name: &str, command: &str) {
 
 #[test]
 fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
-    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    let root = world("layers");
     let own = root.join("config/kern");
     let brought = std::env::temp_dir().join(format!("kern-brought-{}", std::process::id()));
     for dir in [&own, &brought] {
@@ -289,14 +301,14 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
 
     let file = temp_file("layers", "text");
     let name = format!("bridge-layers-{}", std::process::id());
-    let mut command = kern();
+    let mut command = kern_in("layers");
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
         .env("KERN_SSH_CONFIG_DIR", &brought);
     let mut bridge = Bridge::spawn(command);
     bridge.attach();
     let eval = |code: &str| {
-        let out = kern()
+        let out = kern_in("layers")
             .args(["ctl", "eval", &format!("code={code}")])
             .env("KERN_SESSION", &name)
             .output()
@@ -337,7 +349,7 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
 
 #[test]
 fn a_trusted_projects_own_config_runs_when_its_session_starts() {
-    let root = std::env::temp_dir().join(format!("kern-bridge-world-{}", std::process::id()));
+    let root = world("trusted");
     let project = std::env::temp_dir().join(format!("kern-trusted-{}", std::process::id()));
     std::fs::create_dir_all(project.join(".git")).unwrap();
     std::fs::create_dir_all(project.join(".kern")).unwrap();
@@ -354,7 +366,7 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     )
     .unwrap();
     let name = format!("bridge-trusted-{}", std::process::id());
-    let mut command = kern();
+    let mut command = kern_in("trusted");
     command.args([
         "bridge",
         "--session",
@@ -363,7 +375,7 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     ]);
     let mut bridge = Bridge::spawn(command);
     bridge.attach();
-    let out = kern()
+    let out = kern_in("trusted")
         .args([
             "ctl",
             "eval",

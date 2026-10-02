@@ -1,0 +1,248 @@
+//! Syntax trees for plugins: `buffer:tree()`, `buffer:node_at(from, to)`
+//! and `buffer:query(source)`. A node describes the buffer as it was when
+//! the node was found; after an edit, ask again.
+
+use mlua::{Lua, MetaMethod, Table, UserData, UserDataFields, UserDataMethods};
+use std::sync::Arc;
+use streaming_iterator::StreamingIterator;
+
+use tree_sitter::{Node, QueryCursor, Tree};
+
+use super::handles::BufferRef;
+use super::{state, state_mut};
+use crate::BufferId;
+use crate::syntax::{Language, RopeText};
+
+type LuaResult<T> = mlua::Result<T>;
+
+/// A node in a buffer's syntax tree. It keeps the tree it came from and
+/// the way down to it from the root, child by child.
+pub(super) struct NodeRef {
+    buffer: BufferId,
+    /// The buffer's version the tree was parsed from.
+    version: usize,
+    tree: Tree,
+    path: Vec<u32>,
+}
+
+impl NodeRef {
+    fn new(buffer: BufferId, version: usize, tree: Tree, path: Vec<u32>) -> NodeRef {
+        NodeRef {
+            buffer,
+            version,
+            tree,
+            path,
+        }
+    }
+
+    fn node(&self) -> Node<'_> {
+        let mut node = self.tree.root_node();
+        for &i in &self.path {
+            node = node.child(i).expect("the path was taken in this tree");
+        }
+        node
+    }
+
+    fn at(&self, path: Vec<u32>) -> NodeRef {
+        NodeRef::new(self.buffer, self.version, self.tree.clone(), path)
+    }
+
+    fn parent(&self) -> Option<NodeRef> {
+        let (_, up) = self.path.split_last()?;
+        Some(self.at(up.to_vec()))
+    }
+
+    fn child(&self, i: u32) -> NodeRef {
+        let mut path = self.path.clone();
+        path.push(i);
+        self.at(path)
+    }
+
+    /// The sibling `step` places away (+1 next, -1 previous) that is named.
+    fn sibling(&self, step: i64) -> Option<NodeRef> {
+        let (&last, up) = self.path.split_last()?;
+        let parent = self.at(up.to_vec());
+        let node = parent.node();
+        let count = i64::from(node.child_count());
+        let mut i = i64::from(last) + step;
+        while (0..count).contains(&i) {
+            let index = u32::try_from(i).expect("in range");
+            if node.child(index).is_some_and(|n| n.is_named()) {
+                return Some(parent.child(index));
+            }
+            i += step;
+        }
+        None
+    }
+
+    fn children(&self, named_only: bool) -> Vec<NodeRef> {
+        let node = self.node();
+        (0..node.child_count())
+            .filter(|&i| !named_only || node.child(i).is_some_and(|n| n.is_named()))
+            .map(|i| self.child(i))
+            .collect()
+    }
+}
+
+/// Which of `parent`'s children `node` is.
+fn child_index(parent: Node, node: Node) -> u32 {
+    (0..parent.child_count())
+        .find(|&i| parent.child(i).is_some_and(|c| c.id() == node.id()))
+        .expect("a node is one of its parent's children")
+}
+
+/// The way down from the root to `node`.
+fn path_to(node: Node) -> Vec<u32> {
+    let mut path = Vec::new();
+    let mut node = node;
+    while let Some(parent) = node.parent() {
+        path.push(child_index(parent, node));
+        node = parent;
+    }
+    path.reverse();
+    path
+}
+
+impl UserData for NodeRef {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_field_method_get("kind", |_, this| Ok(this.node().kind().to_owned()));
+        fields.add_field_method_get("from", |_, this| Ok(this.node().start_byte()));
+        fields.add_field_method_get("to", |_, this| Ok(this.node().end_byte()));
+        fields.add_field_method_get("named", |_, this| Ok(this.node().is_named()));
+        fields.add_field_method_get("error", |_, this| {
+            let node = this.node();
+            Ok(node.is_error() || node.is_missing())
+        });
+        fields.add_field_method_get("field", |_, this| {
+            let Some((&last, up)) = this.path.split_last() else {
+                return Ok(None);
+            };
+            Ok(this
+                .at(up.to_vec())
+                .node()
+                .field_name_for_child(last)
+                .map(str::to_owned))
+        });
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("parent", |_, this, ()| Ok(this.parent()));
+        methods.add_method("children", |_, this, ()| Ok(this.children(false)));
+        methods.add_method("named_children", |_, this, ()| Ok(this.children(true)));
+        methods.add_method("child", |_, this, field: String| {
+            let node = this.node();
+            Ok(node
+                .child_by_field_name(&field)
+                .map(|child| this.child(child_index(node, child))))
+        });
+        methods.add_method("next", |_, this, ()| Ok(this.sibling(1)));
+        methods.add_method("prev", |_, this, ()| Ok(this.sibling(-1)));
+        methods.add_method("text", |lua, this, ()| {
+            let state = state(lua);
+            let buffer = state
+                .editor
+                .find_buffer(this.buffer)
+                .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
+            if buffer.history().log().len() != this.version {
+                return Err(mlua::Error::runtime(
+                    "the buffer changed since this node was found; find it again",
+                ));
+            }
+            let node = this.node();
+            Ok(buffer
+                .text()
+                .byte_slice(node.start_byte()..node.end_byte())
+                .to_string())
+        });
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            Ok(this.node().to_sexp())
+        });
+        methods.add_meta_method(
+            MetaMethod::Eq,
+            |_, this, other: mlua::UserDataRef<NodeRef>| {
+                Ok(this.buffer == other.buffer
+                    && this.version == other.version
+                    && this.path == other.path)
+            },
+        );
+    }
+}
+
+/// The buffer's current tree and its version, or `None` without one.
+fn tree_of(lua: &Lua, buffer: &BufferRef) -> LuaResult<Option<(Arc<Language>, Tree, usize)>> {
+    let state = &mut *state_mut(lua);
+    let found = state
+        .editor
+        .find_buffer(buffer.buffer)
+        .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
+    let version = found.history().log().len();
+    Ok(state
+        .syntax
+        .tree(found)
+        .map(|(language, tree)| (language, tree, version)))
+}
+
+/// Runs `source` over the buffer (or `from`..`to` of it): one table per
+/// match, from capture name to node.
+fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> LuaResult<Table> {
+    let matches = lua.create_table()?;
+    let Some((language, tree, version)) = tree_of(lua, buffer)? else {
+        return Ok(matches);
+    };
+    let compiled = state_mut(lua)
+        .syntax
+        .query(&language, source)
+        .map_err(|err| mlua::Error::runtime(format!("query: {err}")))?;
+    let state = state(lua);
+    let text = state
+        .editor
+        .find_buffer(buffer.buffer)
+        .expect("checked above")
+        .text();
+    let mut cursor = QueryCursor::new();
+    if let Some(range) = range {
+        let from: Option<usize> = range.get("from")?;
+        let to: Option<usize> = range.get("to")?;
+        cursor.set_byte_range(from.unwrap_or(0)..to.unwrap_or(usize::MAX));
+    }
+    let names = compiled.capture_names();
+    let base = NodeRef::new(buffer.buffer, version, tree.clone(), Vec::new());
+    let mut found = cursor.matches(&compiled, tree.root_node(), RopeText(text));
+    while let Some(m) = found.next() {
+        let captures = lua.create_table()?;
+        for capture in m.captures() {
+            let name = names[capture.index as usize];
+            if !captures.contains_key(name)? {
+                captures.set(name, base.at(path_to(capture.node)))?;
+            }
+        }
+        matches.push(captures)?;
+    }
+    Ok(matches)
+}
+
+/// `buffer:tree()`, `buffer:node_at()` and `buffer:query()`.
+pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("tree", |lua, this, ()| {
+        Ok(tree_of(lua, this)?
+            .map(|(_, tree, version)| NodeRef::new(this.buffer, version, tree, Vec::new())))
+    });
+    methods.add_method(
+        "node_at",
+        |lua, this, (from, to): (usize, Option<usize>)| {
+            let Some((_, tree, version)) = tree_of(lua, this)? else {
+                return Ok(None);
+            };
+            let to = to.unwrap_or(from);
+            let path = tree
+                .root_node()
+                .named_descendant_for_byte_range(from, to)
+                .map(path_to);
+            Ok(path.map(|path| NodeRef::new(this.buffer, version, tree, path)))
+        },
+    );
+    methods.add_method(
+        "query",
+        |lua, this, (source, range): (String, Option<Table>)| query(lua, this, &source, range),
+    );
+}
