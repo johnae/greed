@@ -98,6 +98,8 @@ pub(crate) struct State {
     pub terminals: terminal::Terminals,
     /// Each view's size as last told to plugins with "view.resized".
     pub view_sizes: HashMap<crate::ViewId, (u16, u16)>,
+    /// Each view's top line as last told to plugins with "view.scrolled".
+    pub view_scrolls: HashMap<crate::ViewId, usize>,
 }
 
 #[derive(Clone)]
@@ -206,6 +208,7 @@ impl Host {
             dirs: None,
             terminals: terminal::Terminals::default(),
             view_sizes: HashMap::new(),
+            view_scrolls: HashMap::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -437,10 +440,13 @@ impl Host {
     }
 
     /// Tells plugins about views drawn at a new size since the last call,
-    /// with "view.resized". Call it after drawing a frame.
-    pub fn report_resizes(&self) -> Result<(), HostError> {
+    /// with "view.resized", and scrolled to a new line, with
+    /// "view.scrolled". Call it after drawing a frame. Returns whether a
+    /// handler heard about it, since what it does may change the next
+    /// frame (one view scrolling another along, say).
+    pub fn report_views(&self) -> Result<bool, HostError> {
         budgeted(&self.lua, || {
-            report_resizes(&self.lua).map_err(HostError::from)
+            report_views(&self.lua).map_err(HostError::from)
         })
     }
 
@@ -621,21 +627,31 @@ fn mouse_event(lua: &Lua, mouse: Mouse, hit: Hit) -> mlua::Result<()> {
     api::emit(lua, "mouse", &payload)
 }
 
-/// Emits "view.resized" for each view drawn at a new size.
-fn report_resizes(lua: &Lua) -> mlua::Result<()> {
-    let changed: Vec<_> = {
+/// Emits "view.resized" for each view drawn at a new size and
+/// "view.scrolled" for each scrolled to a new line. Returns whether a
+/// handler heard either.
+fn report_views(lua: &Lua) -> mlua::Result<bool> {
+    let (resized, scrolled): (Vec<_>, Vec<_>) = {
         let state = &mut *state_mut(lua);
         let sizes: HashMap<_, _> = state.editor.view_sizes().collect();
-        let changed = sizes
+        let resized = sizes
             .iter()
             .filter(|(id, size)| state.view_sizes.get(id) != Some(size))
             .map(|(id, size)| (*id, *size))
             .collect();
         state.view_sizes = sizes;
-        changed
+        let scrolls: HashMap<_, _> = state.editor.view_scrolls().collect();
+        // A view that's new hasn't scrolled anywhere yet.
+        let scrolled = scrolls
+            .iter()
+            .filter(|(id, line)| state.view_scrolls.get(id).is_some_and(|old| old != *line))
+            .map(|(id, line)| (*id, *line))
+            .collect();
+        state.view_scrolls = scrolls;
+        (resized, scrolled)
     };
     let author = kern_text::Author::User(state(lua).editor.client());
-    for (id, (rows, cols)) in changed {
+    let payload = |id| -> mlua::Result<mlua::Table> {
         let payload = lua.create_table()?;
         payload.set(
             "view",
@@ -644,11 +660,23 @@ fn report_resizes(lua: &Lua) -> mlua::Result<()> {
                 author: author.clone(),
             },
         )?;
+        Ok(payload)
+    };
+    let heard = |event: &str| !state(lua).registry.handlers(event).is_empty();
+    let reported = (!resized.is_empty() && heard("view.resized"))
+        || (!scrolled.is_empty() && heard("view.scrolled"));
+    for (id, (rows, cols)) in resized {
+        let payload = payload(id)?;
         payload.set("rows", rows)?;
         payload.set("cols", cols)?;
         api::emit(lua, "view.resized", &payload)?;
     }
-    Ok(())
+    for (id, line) in scrolled {
+        let payload = payload(id)?;
+        payload.set("line", line)?;
+        api::emit(lua, "view.scrolled", &payload)?;
+    }
+    Ok(reported)
 }
 
 /// Removes everything plugin `name` registered.

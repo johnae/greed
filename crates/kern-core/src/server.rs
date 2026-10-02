@@ -393,8 +393,17 @@ impl Server<'_> {
             syntax: &self.syntax,
             diagnostics: host.diagnostic_marks(),
         };
-        let frame = host.with_editor_mut(|ed| self.renderer.frame(ed, size, &status, &decorations));
-        if let Err(err) = host.report_resizes() {
+        let render =
+            || host.with_editor_mut(|ed| self.renderer.frame(ed, size, &status, &decorations));
+        let mut frame = render();
+        // Plugins may change views in answer (one scrolling another along),
+        // which should show now rather than after the next key.
+        let mut reported = host.report_views();
+        if let Ok(true) = reported {
+            frame = render();
+            reported = host.report_views();
+        }
+        if let Err(err) = reported {
             self.message = Some(first_line(&err.to_string()));
         }
         let Some(client) = &mut self.client else {

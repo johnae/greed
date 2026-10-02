@@ -205,14 +205,21 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
 /// The rows of a frame drawn at this size, as text.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
     use crate::render::{CellWidth, Plain, Renderer, Size, Status};
-    let frame = Renderer::new(CellWidth).frame(
-        &mut state_mut(lua).editor,
-        Size { width, height },
-        &Status::Default { message: None },
-        &Plain,
-    );
-    super::report_resizes(lua)?;
-    Ok(frame.rows.iter().map(crate::render::Row::text).collect())
+    let frame = || {
+        Renderer::new(CellWidth).frame(
+            &mut state_mut(lua).editor,
+            Size { width, height },
+            &Status::Default { message: None },
+            &Plain,
+        )
+    };
+    let mut drawn = frame();
+    // As the server does: what plugins do about views changing shows at once.
+    if super::report_views(lua)? {
+        drawn = frame();
+        super::report_views(lua)?;
+    }
+    Ok(drawn.rows.iter().map(crate::render::Row::text).collect())
 }
 
 /// The error without mlua's "runtime error:" prefix and its stack traceback,

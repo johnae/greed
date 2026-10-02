@@ -676,6 +676,11 @@ impl Editor {
             .filter_map(|(id, view)| Some((*id, view.size?)))
     }
 
+    /// Each view's top line.
+    pub fn view_scrolls(&self) -> impl Iterator<Item = (ViewId, usize)> + '_ {
+        self.views.iter().map(|(id, view)| (*id, view.scroll.line))
+    }
+
     pub fn view(&self, id: ViewId) -> &View {
         &self.views[&id]
     }

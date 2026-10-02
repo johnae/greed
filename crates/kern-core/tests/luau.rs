@@ -1502,7 +1502,7 @@ fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
                 &Plain,
             );
         });
-        h.report_resizes().unwrap();
+        h.report_views().unwrap();
     };
     draw(40, 10);
     draw(40, 10);

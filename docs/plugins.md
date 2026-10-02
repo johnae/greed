@@ -137,7 +137,9 @@ handler returns.
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
 `view.closed` (for plugins holding on to a panel), `option.changed`,
 `buffer.opened`, `buffer.saved`, `view.resized` (with the rows and
-columns `view:size()` also gives), `mouse` (what the mouse did, the view
+columns `view:size()` also gives), `view.scrolled` (the line now at the
+top; what the handler changes shows in the same frame, so one view can
+scroll another along), `mouse` (what the mouse did, the view
 and buffer position under it, or a tab) and more. A plugin with buffers of
 its own kind can take their mouse events first with
 `require("@core").mouse.claim(kind, handler)`. `editor.started` comes once, when

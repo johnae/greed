@@ -72,3 +72,29 @@ test("page down and page up work in insert mode too", function(t)
 	t:keys("pageup esc")
 	assert(cursor_line() == 0, tostring(cursor_line()))
 end)
+
+test("view.scrolled lets one view scroll another, in the same frame", function(t)
+	long(t, 0)
+	local left = kern.view()
+	local right = left:split("right")
+	local heard: { number } = {}
+	kern.on("view.scrolled", function(event: kern.ViewScrolled)
+		table.insert(heard, event.line)
+		if event.view:id() == left:id() then
+			-- Drawing keeps the cursor on screen, so it goes along too.
+			local at = right:buffer():line_start(event.line)
+			right:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+			right:set_scroll(event.line)
+		end
+	end)
+	t:draw(40, 11)
+	left:focus()
+	t:keys("5 0 j")
+	local rows = t:draw(40, 11)
+	assert(#heard > 0, "it was heard")
+	assert(right:scroll() == left:scroll(), `{right:scroll()} vs {left:scroll()}`)
+	-- The right half of the first row already shows the line the left does.
+	local first = rows[1]
+	local shown = string.match(first, "line (%d+)%s*$")
+	assert(tonumber(shown) == left:scroll(), first)
+end)

@@ -592,6 +592,15 @@ export type ViewResized = {
 	cols: number,
 }
 
+--- A view was drawn starting at a different line than before. What a
+--- handler changes shows in the same frame, so a view can scroll another
+--- along with it.
+export type ViewScrolled = {
+	view: View,
+	--- The 0-based line now at the top.
+	line: number,
+}
+
 --- An option was set, with `kern.option.set` or `:set`.
 export type OptionChanged = {
 	name: string,
@@ -851,6 +860,7 @@ export type Kern = {
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
+		& ((event: "view.scrolled", handler: (event: ViewScrolled) -> ()) -> ())
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
