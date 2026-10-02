@@ -93,6 +93,9 @@ export type Buffer = {
 	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.
 	modified: (self: Buffer) -> boolean,
+	--- Closes the buffer, unsaved changes and all. Errors while a view shows it:
+	--- show something else there first. Plugins hear "buffer.closed".
+	close: (self: Buffer) -> (),
 	--- Replaces the marks in namespace `ns` (pick one per plugin feature,
 	--- e.g. "search"). Marks move with edits; `{}` clears them.
 	decorate: (self: Buffer, ns: string, marks: { Mark }) -> (),
@@ -455,6 +458,11 @@ export type CommandInfo = {
 	--- The file and line it was defined on, when that file is on disk.
 	path: string?,
 	line: number?,
+}
+
+--- A buffer was closed. Only its id is left.
+export type BufferClosed = {
+	id: number,
 }
 
 export type BufferChanged = {
@@ -947,6 +955,7 @@ export type Kern = {
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
 		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
+		& ((event: "buffer.closed", handler: (event: BufferClosed) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
 		& ((event: "pane.opened", handler: (event: PaneOpened) -> ()) -> ())

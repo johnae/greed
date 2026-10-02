@@ -144,4 +144,77 @@ kern.command({
 	end,
 })
 
+-- What views showing `closing` show instead: the file opened last in the
+-- same project, or an empty buffer.
+local function replacement(closing: kern.Buffer): kern.Buffer
+	local best: kern.Buffer? = nil
+	for _, buffer in kern.buffers() do
+		if
+			buffer:id() ~= closing:id()
+			and buffer:path()
+			and buffer:project() == closing:project()
+			and (best == nil or buffer:id() > best:id())
+		then
+			best = buffer
+		end
+	end
+	return best or kern.create_buffer("file", "")
+end
+
+--- Closes `buffer`: views showing it show another file instead. Refuses
+--- with unsaved changes unless `force`.
+function M.close(buffer: kern.Buffer, force: boolean?)
+	if buffer:kind() == "file" and buffer:modified() and not force then
+		error(
+			`unsaved changes in {buffer:path() or "this buffer"} - :w saves, :bc! closes anyway`,
+			0
+		)
+	end
+	local views = buffer:views()
+	if #views > 0 then
+		local instead = replacement(buffer)
+		for _, view in views do
+			view:show(instead)
+		end
+	end
+	buffer:close()
+end
+
+kern.command({
+	name = "buffer-close",
+	doc = "Close this buffer, showing another file in its place; refuses with "
+		.. "unsaved changes (force closes anyway)",
+	run = function(ctx)
+		M.close(ctx.buffer, ctx.force)
+	end,
+})
+
+kern.command({
+	name = "buffer-close-others",
+	doc = "Close every file but this one; refuses if one has unsaved changes "
+		.. "(force closes anyway)",
+	run = function(ctx)
+		local others = {}
+		for _, buffer in kern.buffers() do
+			if buffer:id() ~= ctx.buffer:id() and buffer:path() then
+				table.insert(others, buffer)
+			end
+		end
+		if not ctx.force then
+			local unsaved = {}
+			for _, buffer in others do
+				if buffer:modified() then
+					table.insert(unsaved, buffer:path() :: string)
+				end
+			end
+			if #unsaved > 0 then
+				error(`unsaved changes in {table.concat(unsaved, ", ")} - :bco! closes anyway`, 0)
+			end
+		end
+		for _, buffer in others do
+			M.close(buffer, true)
+		end
+	end,
+})
+
 return M

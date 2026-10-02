@@ -288,6 +288,15 @@ function M.forget(buffer: kern.Buffer)
 	end
 end
 
+-- A terminal whose buffer was closed (with :bc, say) ends its program.
+kern.on("buffer.closed", function(event: kern.BufferClosed)
+	local term = terms[event.id]
+	if term then
+		terms[event.id] = nil
+		term.terminal:close()
+	end
+end)
+
 local FLOAT: kern.FloatSpec = { title = "terminal", width = "80%", height = "80%" }
 
 export type OpenOptions = {

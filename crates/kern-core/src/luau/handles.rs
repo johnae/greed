@@ -684,6 +684,16 @@ impl UserData for BufferRef {
         methods.add_method("modified", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))
         });
+        methods.add_method("close", |lua, this, ()| {
+            this.with_buffer(lua, |_| Ok(()))?;
+            state_mut(lua)
+                .editor
+                .close_buffer(this.buffer)
+                .map_err(mlua::Error::external)?;
+            let payload = lua.create_table()?;
+            payload.set("id", this.buffer.0)?;
+            emit(lua, "buffer.closed", &payload)
+        });
     }
 }
 

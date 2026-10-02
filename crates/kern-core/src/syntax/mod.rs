@@ -275,8 +275,11 @@ impl Syntax {
         Some(state)
     }
 
-    /// Sends buffers that changed since their last parse to the worker.
+    /// Sends buffers that changed since their last parse to the worker, and
+    /// forgets closed ones.
     pub fn update(&mut self, editor: &Editor) {
+        self.buffers
+            .retain(|id, _| editor.find_buffer(*id).is_some());
         for buffer in editor.buffers() {
             let version = buffer.history().log().len();
             let Some(state) = self.state_for(buffer) else {

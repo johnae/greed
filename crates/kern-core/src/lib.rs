@@ -44,6 +44,8 @@ pub enum Error {
     },
     /// Only plugins can change a read-only buffer.
     ReadOnly,
+    /// A buffer can't close while a view shows it.
+    Shown,
 }
 
 impl fmt::Display for Error {
@@ -55,6 +57,7 @@ impl fmt::Display for Error {
                 "edit was made against version {actual:?}, but the buffer is at {expected:?}"
             ),
             Error::ReadOnly => f.write_str("this buffer is read-only"),
+            Error::Shown => f.write_str("a view still shows this buffer"),
         }
     }
 }
@@ -63,7 +66,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Text(err) => Some(err),
-            Error::StaleVersion { .. } | Error::ReadOnly => None,
+            Error::StaleVersion { .. } | Error::ReadOnly | Error::Shown => None,
         }
     }
 }

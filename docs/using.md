@@ -250,6 +250,11 @@ fills the panel directly.
 | `:w` `:w PATH` | Save, or save as |
 | `:e PATH` | Open a file |
 | `ctrl-s` | Save |
+| `:bc` (`:bd`) | Close the file; the one opened before it takes its place. `:bc!` closes it with unsaved changes |
+| `:bco` | Close every other file |
+| `:close` | Close the pane (the file stays open), like `alt-p x` |
+
+Closing a terminal's buffer ends its program.
 
 ## Language servers
 

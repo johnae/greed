@@ -1023,6 +1023,17 @@ impl Editor {
         id
     }
 
+    /// Closes `buffer`, unsaved changes and all. Fails while a view shows it,
+    /// so whoever closes it decides what those views show instead.
+    pub fn close_buffer(&mut self, buffer: BufferId) -> Result<(), Error> {
+        if self.views.values().any(|v| v.buffer == buffer) {
+            return Err(Error::Shown);
+        }
+        self.buffers.remove(&buffer);
+        self.buffer_projects.remove(&buffer);
+        Ok(())
+    }
+
     /// Removes a buffer that has no file and no view left.
     fn drop_if_unused(&mut self, buffer: BufferId) {
         let b = &self.buffers[&buffer];

@@ -101,3 +101,69 @@ test(":detach lets the client go and keeps running", function(t)
 	assert(not t:quitting(), "still running")
 	assert(not t:detached(), "only once")
 end)
+
+-- Whether a buffer for `path` is open.
+local function is_open(path: string): boolean
+	for _, buffer in kern.buffers() do
+		if buffer:path() == path then
+			return true
+		end
+	end
+	return false
+end
+
+test(":bc closes the buffer and shows the file opened before it", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b", ["c.txt"] = "c" })
+	kern.open(dir .. "/a.txt")
+	kern.open(dir .. "/b.txt")
+	kern.open(dir .. "/c.txt")
+	t:run("buffer-close")
+	assert(not is_open(dir .. "/c.txt"), "c is closed")
+	assert(kern.view():buffer():path() == dir .. "/b.txt", kern.view():buffer():path())
+
+	-- With no other file left, an empty buffer takes its place.
+	t:run("buffer-close")
+	t:run("buffer-close")
+	assert(kern.view():buffer():path() == nil and kern.view():buffer():text() == "")
+	assert(not is_open(dir .. "/a.txt"))
+end)
+
+test(":bc refuses with unsaved changes, and :bc! closes anyway", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	kern.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	local ok, err = pcall(function()
+		t:run("buffer-close")
+	end)
+	assert(not ok and string.find(tostring(err), "unsaved changes", 1, true), tostring(err))
+	assert(is_open(dir .. "/a.txt"), "still open")
+	kern.run("buffer-close", { force = true })
+	assert(not is_open(dir .. "/a.txt"), "forced")
+	assert(kern.fs.read(dir .. "/a.txt") == "a", "and the file is as it was")
+end)
+
+test(":bco closes every other file", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b", ["c.txt"] = "c" })
+	kern.open(dir .. "/a.txt")
+	kern.open(dir .. "/b.txt")
+	kern.open(dir .. "/c.txt")
+	t:run("buffer-close-others")
+	assert(is_open(dir .. "/c.txt"))
+	assert(not is_open(dir .. "/a.txt") and not is_open(dir .. "/b.txt"))
+end)
+
+test("a buffer a view shows can't close until something else is shown", function(t)
+	t:buffer("|abc")
+	local buffer = kern.view():buffer()
+	local closed: number? = nil
+	kern.on("buffer.closed", function(event)
+		closed = event.id
+	end)
+	assert(not pcall(buffer.close, buffer), "shown")
+	local id = buffer:id()
+	-- Without a file it would go by itself once nothing shows it.
+	buffer:set_kept(true)
+	kern.view():show(kern.create_buffer("file", "other"))
+	buffer:close()
+	assert(closed == id, "plugins hear about it")
+end)

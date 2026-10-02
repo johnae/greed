@@ -269,3 +269,20 @@ fn a_request_goes_after_the_edit_made_just_before_it() {
     let hover = methods.iter().position(|m| m == "textDocument/hover");
     assert!(change.is_some() && change < hover, "{methods:?}");
 }
+
+#[test]
+fn closed_buffers_are_closed_in_the_server_and_their_diagnostics_go() {
+    let mut s = setup("bad");
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+
+    let view = s.editor.focus();
+    let other = s.editor.create_buffer("file", "");
+    assert!(s.editor.close_buffer(buffer).is_err(), "a view shows it");
+    s.editor.show(view, other);
+    s.editor.close_buffer(buffer).unwrap();
+    s.lsp.sync(&s.editor);
+    assert!(s.methods().contains(&"textDocument/didClose".to_string()));
+    assert!(s.lsp.diagnostics(buffer).is_empty());
+}

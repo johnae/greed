@@ -373,6 +373,13 @@ local defaults: { [string]: string } = {
 	o = "open",
 	h = "describe-command",
 	help = "describe-command",
+	bc = "buffer-close",
+	bclose = "buffer-close",
+	bd = "buffer-close",
+	bdelete = "buffer-close",
+	bco = "buffer-close-others",
+	clo = "pane-close",
+	close = "pane-close",
 }
 for name, command in defaults do
 	M.alias(name, command)

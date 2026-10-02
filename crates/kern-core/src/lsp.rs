@@ -169,8 +169,8 @@ struct Server {
     capabilities: Value,
     /// Messages to send once the server has answered `initialize`.
     queued: Vec<Value>,
-    /// The version of each open document the server has.
-    documents: HashMap<BufferId, usize>,
+    /// The version and URI of each open document the server has.
+    documents: HashMap<BufferId, (usize, String)>,
 }
 
 impl Server {
@@ -262,8 +262,9 @@ impl Lsp {
         &self.events
     }
 
-    /// Opens new documents and sends changed ones, starting servers on first
-    /// use. Returns an error for each server that couldn't be reached.
+    /// Opens new documents, sends changed ones and closes those whose buffer
+    /// was closed, starting servers on first use. Returns an error for each
+    /// server that couldn't be reached.
     pub fn sync(&mut self, editor: &Editor) -> Vec<LspError> {
         let mut errors = Vec::new();
         for buffer in editor.buffers() {
@@ -271,6 +272,21 @@ impl Lsp {
                 errors.push(err);
             }
         }
+        let open: HashSet<BufferId> = editor.buffers().map(Buffer::id).collect();
+        for server in &mut self.servers {
+            let gone: Vec<(usize, String)> = server
+                .documents
+                .extract_if(|id, _| !open.contains(id))
+                .map(|(_, document)| document)
+                .collect();
+            for (_, uri) in gone {
+                if server.alive {
+                    let closed = json!({ "textDocument": { "uri": uri } });
+                    let _ = server.notify("textDocument/didClose", &closed);
+                }
+            }
+        }
+        self.diagnostics.retain(|id, _| open.contains(id));
         errors
     }
 
@@ -290,7 +306,7 @@ impl Lsp {
             return Ok(());
         }
         let uri = file_uri(path);
-        match server.documents.insert(buffer.id(), version) {
+        match server.documents.insert(buffer.id(), (version, uri.clone())) {
             None => server.notify(
                 "textDocument/didOpen",
                 &json!({ "textDocument": {
@@ -298,7 +314,7 @@ impl Lsp {
                     "text": buffer.text().to_string(),
                 }}),
             )?,
-            Some(old) if old != version => server.notify(
+            Some((old, _)) if old != version => server.notify(
                 "textDocument/didChange",
                 &json!({
                     "textDocument": { "uri": uri, "version": version },
