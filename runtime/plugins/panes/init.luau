@@ -1,6 +1,7 @@
 -- Panes and tabs, the way a terminal multiplexer has them: split the
 -- screen between files and terminals, move between them, give a pane more
--- room, keep tabs of layouts. The keys follow zellij's where they can:
+-- room, keep tabs of layouts (arranged by the layout managers in
+-- layouts.luau). The keys follow zellij's where they can:
 --
 -- - alt keys work everywhere, in every editing style and in terminals:
 --   alt-h/j/k/l move between panes (and to the next tab at the edge),
@@ -16,9 +17,14 @@
 
 local kern = require("@kern")
 local core = require("@core")
+local picker = require("@picker")
 local terminal = require("@terminal")
+local layouts = require("@self/layouts")
 
 local M = {}
+
+--- How tabs arrange their panes (see layouts.luau).
+M.layouts = layouts
 
 type Direction = "left" | "right" | "up" | "down"
 
@@ -98,6 +104,7 @@ end
 --- Grows the pane toward `dir`, or shrinks it with negative `steps`; at
 --- the edge of the screen it moves the other edge instead.
 function M.resize(dir: Direction, steps: number?)
+	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
 	local cells = STEP[dir] * (steps or 1)
 	if not pane:resize(dir, cells) then
@@ -107,6 +114,7 @@ end
 
 --- Grows the pane every way it can (or shrinks it, with a negative `steps`).
 function M.grow(steps: number)
+	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
 	for _, dir in { "right", "down" } :: { Direction } do
 		local cells = STEP[dir] * steps
@@ -217,6 +225,43 @@ end
 
 -- Commands: name, what it does, and what runs.
 local commands: { { name: string, doc: string, run: () -> () } } = {
+	{ name = "layout-next", doc = "Arrange this tab with the next layout", run = layouts.next },
+	{
+		name = "layout-pick",
+		doc = "Pick how this tab arranges its panes",
+		run = function()
+			local items = {}
+			for _, name in layouts.names() do
+				local label = name .. if name == layouts.current() then "  (now)" else ""
+				table.insert(items, { label = label, value = name })
+			end
+			picker.pick("Layouts", items, function(item)
+				layouts.use(item.value)
+			end)
+		end,
+	},
+	{
+		name = "layout-swap-main",
+		doc = "Swap this pane with the main one",
+		run = function()
+			layouts.swap_main(M.pane())
+		end,
+	},
+	{ name = "layout-rotate", doc = "Move every pane one place along", run = layouts.rotate },
+	{
+		name = "layout-main-grow",
+		doc = "Give the main pane more room",
+		run = function()
+			layouts.grow_main(0.05)
+		end,
+	},
+	{
+		name = "layout-main-shrink",
+		doc = "Give the main pane less room",
+		run = function()
+			layouts.grow_main(-0.05)
+		end,
+	},
 	{
 		name = "pane-left",
 		doc = "Move to the pane on the left, or the tab before",
@@ -435,6 +480,8 @@ M.keys = {
 		["alt-["] = "tab-previous",
 		["alt-]"] = "tab-next",
 		["alt-p"] = "pane-mode",
+		["alt-space"] = "layout-next",
+		["alt-m"] = "layout-swap-main",
 		["alt-t"] = "tab-mode",
 	} :: { [string]: string },
 	pane = {
@@ -462,6 +509,12 @@ M.keys = {
 		x = "pane-close-done",
 		f = "pane-zoom",
 		w = "terminal-float",
+		space = "layout-next",
+		m = "layout-swap-main",
+		o = "layout-rotate",
+		["]"] = "layout-main-grow",
+		["["] = "layout-main-shrink",
+		y = "layout-pick",
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
@@ -518,10 +571,28 @@ end
 
 modes.pane = {
 	back = "normal",
-	hint = hint(
-		M.keys.pane,
-		{ "h", "j", "k", "l", "n", "r", "d", "v", "s", "x", "f", "w", "H", "=", "-", "esc" }
-	),
+	hint = hint(M.keys.pane, {
+		"h",
+		"j",
+		"k",
+		"l",
+		"n",
+		"r",
+		"d",
+		"v",
+		"s",
+		"x",
+		"f",
+		"w",
+		"space",
+		"m",
+		"o",
+		"y",
+		"H",
+		"=",
+		"-",
+		"esc",
+	}),
 }
 modes.tab = { back = "normal", hint = hint(M.keys.tab, { "h", "l", "n", "t", "x", "r", "esc" }) }
 

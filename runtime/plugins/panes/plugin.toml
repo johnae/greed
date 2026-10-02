@@ -1,2 +1,2 @@
 name = "panes"
-requires = ["core", "terminal"]
+requires = ["core", "picker", "terminal"]

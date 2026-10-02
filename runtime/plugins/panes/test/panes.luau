@@ -223,3 +223,101 @@ test("a tab's layout can be read and set again, arranged another way", function(
 	ok = pcall(kern.tab.set_layout, { split = "row", children = { a, a, b, c } })
 	assert(not ok, "a pane twice")
 end)
+
+-- The shown tab's layout as nested lists of pane ids, "row(…)" and "column(…)".
+local function shape(): string
+	local function show(node: any): string
+		if type(node) ~= "table" then
+			return tostring(node:id())
+		end
+		local parts = {}
+		for _, child in node.children do
+			table.insert(parts, show(child))
+		end
+		return `{node.split}({table.concat(parts, " ")})`
+	end
+	return show(kern.tab.layout())
+end
+
+local function ids(...: kern.View): { number }
+	local list = {}
+	for _, view in { ... } do
+		table.insert(list, view:id())
+	end
+	return list
+end
+
+test("main-stack puts a new pane in main and stacks the rest beside it", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	panes.layouts.use("main-stack")
+	local b = a:split("right")
+	local c = b:split("down")
+	local id = ids(a, b, c)
+	assert(shape() == `row({id[3]} column({id[2]} {id[1]}))`, shape())
+	local layout = kern.tab.layout()
+	assert(math.abs(layout.sizes[1] - 0.6) < 0.01, "main takes 60%")
+
+	panes.layouts.swap_main(a)
+	assert(shape() == `row({id[1]} column({id[2]} {id[3]}))`, `a into main: {shape()}`)
+	panes.layouts.grow_main(0.1)
+	assert(math.abs(kern.tab.layout().sizes[1] - 0.7) < 0.01)
+	panes.layouts.rotate()
+	assert(shape() == `row({id[3]} column({id[1]} {id[2]}))`, `rotated: {shape()}`)
+
+	c:close()
+	assert(shape() == `row({id[1]} {id[2]})`, `closing rearranges: {shape()}`)
+end)
+
+test("columns and spiral arrange panes in their order", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	panes.layouts.use("columns")
+	local b = a:split("down")
+	local c = b:split("down")
+	local id = ids(a, b, c)
+	assert(shape() == `row({id[1]} {id[2]} {id[3]})`, `new after the one it came from: {shape()}`)
+	panes.layouts.use("spiral")
+	assert(shape() == `row({id[1]} column({id[2]} {id[3]}))`, shape())
+	panes.layouts.next()
+	assert(panes.layouts.current() == "manual", "spiral wraps round to manual")
+end)
+
+test("resizing by hand switches to manual and keeps the shape", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	panes.layouts.use("columns")
+	a:split("right")
+	t:draw(80, 20)
+	local before = shape()
+	t:keys("alt-=")
+	assert(panes.layouts.current() == "manual", panes.layouts.current())
+	assert(shape() == before, "the same panes, the same way")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "manual", 1, true), messages[#messages])
+end)
+
+test("your own layouts arrange panes too, and new tabs take the default", function(t)
+	panes.layouts.define("rows", function(list)
+		return if #list == 1 then list[1] else { split = "column", children = list }
+	end)
+	kern.option.set("pane-layout", "rows")
+	t:buffer("|hello")
+	kern.tab.new()
+	local a = kern.view()
+	assert(panes.layouts.current() == "rows", panes.layouts.current())
+	local b = a:split("right")
+	local id = ids(a, b)
+	assert(shape() == `column({id[1]} {id[2]})`, shape())
+	kern.option.set("pane-layout", "manual")
+end)
+
+test("alt-space goes to the next layout and the pane mode has the layout keys", function(t)
+	t:buffer("|hello")
+	local start = panes.layouts.current()
+	t:keys("alt-space")
+	assert(panes.layouts.current() ~= start, "a different layout")
+	t:keys("alt-p y")
+	assert(string.find(table.concat(t:floats(), "\n"), "main-stack", 1, true), "the layout picker")
+	t:keys("esc")
+end)

@@ -390,6 +390,33 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+### Layouts
+
+Each tab has a layout that arranges its panes as they open and close:
+
+- `manual`: panes go where you split them. The default.
+- `main-stack`: one main pane, the rest stacked beside it. A new pane takes
+  the main place and the old main joins the stack.
+- `columns`: all side by side.
+- `spiral`: each pane takes half of what's left, winding inward.
+
+`alt-space` goes to the next layout and `alt-p y` picks one; either says
+which at the bottom. A tab's panes keep an order, and that's what you change:
+`alt-m` swaps the pane into main, `alt-p o` moves them all one place
+along, and `alt-p [` and `]` give main less room or more. Resizing a pane
+by hand switches the tab to `manual`, keeping the shape it had.
+
+`:set pane-layout main-stack` sets the layout new tabs start with. A layout
+is a Luau function from the panes, in order, to how they're arranged, so
+you can write your own:
+
+```luau
+-- every pane in a row of its own, one above another
+require("@panes").layouts.define("rows", function(panes)
+	return if #panes == 1 then panes[1] else { split = "column", children = panes }
+end)
+```
+
 ## Clipboard
 
 What you copy goes on your system clipboard too, through your terminal
