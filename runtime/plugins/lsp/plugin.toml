@@ -1,2 +1,2 @@
 name = "lsp"
-requires = ["picker"]
+requires = ["picker", "multibuffer"]

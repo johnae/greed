@@ -119,8 +119,13 @@ fn plugin(name: &str) -> std::path::PathBuf {
 /// A host with the default lsp plugin loaded and the fake server connected.
 fn with_plugin() -> Host {
     let h = host();
-    h.load_dirs(&[plugin("core"), plugin("picker"), plugin("lsp")])
-        .unwrap();
+    h.load_dirs(&[
+        plugin("core"),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("lsp"),
+    ])
+    .unwrap();
     h.sync_lsp();
     // Wait for the first diagnostics.
     pump(&h, |h| h.diagnostic_marks().values().any(|d| !d.is_empty()));
@@ -466,6 +471,63 @@ fn the_problems_list_has_files_that_are_not_open() {
     assert!(
         items[1].ends_with("other.rs:3: warning: unused thing"),
         "{items:?}"
+    );
+}
+
+/// The open multibuffer's text, the text its found marks cover with their
+/// styles, and its header notes, as Luau sees them.
+fn multibuffer(h: &Host) -> String {
+    h.eval(
+        r#"
+        local kern = require("@kern")
+        for _, b in kern.buffers() do
+            if b:kind() == "multibuffer" then
+                local text = b:text()
+                local out = { text }
+                for _, m in b:decorations("multibuffer.found") do
+                    table.insert(out, `{string.sub(text, m.from + 1, m.to)}={m.style}`)
+                end
+                for _, m in b:decorations("multibuffer.headers") do
+                    local pieces = (m.lines :: { any })[2]
+                    table.insert(out, if pieces[2] then pieces[2].text else "-")
+                end
+                return table.concat(out, "|")
+            end
+        end
+        return "none"
+        "#,
+    )
+    .unwrap()
+}
+
+#[test]
+fn ctrl_e_puts_references_in_a_multibuffer() {
+    let h = with_plugin();
+    move_cursor(&h, 9);
+    press_and_wait(&h, "g r", |h| picker_items(h).is_some());
+    h.press_keys("ctrl-e").unwrap();
+    assert_eq!(
+        multibuffer(&h),
+        "2 references\nlet x = bad;\n|x=ui.search.match|bad=ui.search.match|-"
+    );
+}
+
+#[test]
+fn ctrl_e_puts_problems_in_a_multibuffer_with_their_messages() {
+    // The other file's problem is read from disk.
+    let dir = std::env::temp_dir().join("kern-lsp-luau");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("other.rs"), "fn a() {}\n\nunused();\n").unwrap();
+    let h = with_plugin();
+    pump(&h, |h| {
+        h.eval("return #require('@kern').lsp.problems()").unwrap() == "2"
+    });
+    h.press_keys("space D ctrl-e").unwrap();
+    assert_eq!(
+        multibuffer(&h),
+        "2 problems\nlet x = bad;\nunused();\n\
+         |bad=diagnostic.error|unuse=diagnostic.warning\
+         |  error: bad word|  warning: unused thing"
     );
 }
 

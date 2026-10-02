@@ -26,6 +26,9 @@ export type Excerpt = {
 	--- What to show above it; the path, relative to the folder Kern runs
 	--- in, if left out.
 	label: string?,
+	--- More to show above it, after the line number, like the problem a
+	--- line has.
+	note: string?,
 	--- Parts to draw in a style, by 0-based line in the file and byte
 	--- columns, like the matches of a search.
 	marks: { { line: number, from: number, to: number, style: string } }?,
@@ -42,6 +45,8 @@ export type Options = {
 type Part = {
 	path: string,
 	label: string,
+	-- Shown after the label and line number; the notes of joined excerpts.
+	note: string?,
 	-- The namespace of its mark in the multibuffer, and in its file's buffer
 	-- once that's open.
 	ns: string,
@@ -227,6 +232,16 @@ local function first_line(part: Part): number
 	return part.start
 end
 
+-- The line above `part`: its file and line, then its note.
+local function header(part: Part, line: number): { { text: string, style: string } }
+	local pieces = { { text = `{part.label}:{line + 1}`, style = "ui.multibuffer.file" } }
+	local note = part.note
+	if note then
+		table.insert(pieces, { text = `  {note}`, style = "ui.multibuffer.note" })
+	end
+	return pieces
+end
+
 -- Draws each file's name above its excerpts and the files' line numbers
 -- beside them, as they are now.
 local function redraw(state: State)
@@ -247,7 +262,7 @@ local function redraw(state: State)
 				style = "multibuffer.excerpt",
 				lines = {
 					"",
-					{ { text = `{part.label}:{line + 1}`, style = "ui.multibuffer.file" } },
+					header(part, line),
 				},
 			})
 			for i = 0, #lines_of(text) - 1 do
@@ -270,6 +285,7 @@ local function joined(excerpts: { Excerpt }, context: number): { Excerpt }
 			from = math.max(0, excerpt.from - context),
 			to = (excerpt.to or excerpt.from) + context,
 			label = excerpt.label,
+			note = excerpt.note,
 			marks = table.clone(excerpt.marks or {} :: { any }),
 		})
 	end
@@ -281,6 +297,9 @@ local function joined(excerpts: { Excerpt }, context: number): { Excerpt }
 		local last = out[#out]
 		if last and last.path == excerpt.path and excerpt.from <= (last.to :: number) + 1 then
 			last.to = math.max(last.to :: number, excerpt.to :: number)
+			if excerpt.note then
+				last.note = if last.note then `{last.note}; {excerpt.note}` else excerpt.note
+			end
 			for _, mark in excerpt.marks :: { any } do
 				table.insert(last.marks :: { any }, mark)
 			end
@@ -320,6 +339,7 @@ function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
 			local part: Part = {
 				path = excerpt.path,
 				label = excerpt.label or relative(excerpt.path),
+				note = excerpt.note,
 				ns = `multibuffer.{id}.{i}`,
 				start = excerpt.from,
 				text = text,
@@ -487,6 +507,42 @@ function M.location(buffer: kern.Buffer, pos: number): (string?, number, number)
 		end
 	end
 	return nil, 0, 0
+end
+
+-- Each project's results panel, while it's open.
+local panels: { [number]: kern.View } = {}
+
+kern.on("view.closed", function(event)
+	for project, view in panels do
+		if view:id() == event.view then
+			panels[project] = nil
+		end
+	end
+end)
+
+--- Shows `buffer` in the project's results panel on the right, in place of
+--- what it showed, or in a new one titled `title`, and focuses it.
+function M.show(buffer: kern.Buffer, title: string): kern.View
+	local project = kern.project.current().id
+	local current = panels[project]
+	if current then
+		current:show(buffer)
+		current:focus()
+		return current
+	end
+	local view = kern.panel(buffer, { side = "right", width = "45%", title = title })
+	panels[project] = view
+	return view
+end
+
+--- Closes the project's results panel, if it's open.
+function M.close()
+	local project = kern.project.current().id
+	local view = panels[project]
+	panels[project] = nil
+	if view then
+		view:close()
+	end
 end
 
 kern.command({

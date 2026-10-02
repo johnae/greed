@@ -121,7 +121,13 @@ fn flash_plugin_tests_pass() {
 
 #[test]
 fn lsp_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("picker"), plugin("lsp")], &plugin("lsp"));
+    let plugins = [
+        core(),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("lsp"),
+    ];
+    assert_all_pass(&plugins, &plugin("lsp"));
 }
 
 #[test]

@@ -1,24 +1,70 @@
 -- Lists of places across files: where the thing under the cursor is used,
--- and every problem servers found, open files or not.
+-- and every problem servers found, open files or not. ctrl-e in either
+-- list puts what it shows in a multibuffer, to read or edit all of it at
+-- once.
 
 local kern = require("@kern")
 local picker = require("@picker")
+local multibuffer = require("@multibuffer")
 local common = require("./common")
 
-type Place = { path: string, position: kern.LspPosition }
+type Place = { path: string, position: kern.LspPosition, ending: kern.LspPosition }
+
+-- What a place adds to a multibuffer: a style for its range, a note.
+type Shown = { style: string, note: string? }
+
+-- Whether the server for files like `path` counts columns in bytes; the
+-- default is UTF-16 code units. Asks a server of an open buffer in the same
+-- language, since the file itself may not be open.
+local function counts_bytes(path: string): boolean
+	local language = kern.language_of(path)
+	for _, buffer in kern.buffers() do
+		if buffer:language() == language then
+			local capabilities = kern.lsp.capabilities(buffer)
+			if capabilities then
+				return capabilities.positionEncoding == "utf-8"
+			end
+		end
+	end
+	return false
+end
+
+-- The byte column in `line` of a server's column `character`.
+local function byte_column(line: string, character: number, bytes: boolean): number
+	if bytes then
+		return math.min(character, #line)
+	end
+	local units = 0
+	for at, code in utf8.codes(line) do
+		if units >= character then
+			return at - 1
+		end
+		units += if code > 0xFFFF then 2 else 1
+	end
+	return #line
+end
 
 -- Picks one of `places`, labelled by `label`, with a preview of its file,
--- and goes to it.
-local function pick(title: string, places: { Place }, label: (place: Place, line: string) -> string)
+-- and goes to it; ctrl-e puts the places shown in a multibuffer instead,
+-- each styled and noted by `shown`, with `context` lines around it.
+local function pick(
+	title: string,
+	places: { Place },
+	label: (place: Place, line: string) -> string,
+	shown: (place: Place) -> Shown,
+	context: number
+)
 	local texts: { [string]: string } = {}
 	local function text(path: string): string
 		texts[path] = texts[path] or common.file_text(path) or ""
 		return texts[path]
 	end
+	local function line_of(place: Place): string
+		return string.split(text(place.path), "\n")[place.position.line + 1] or ""
+	end
 	local items = {}
 	for _, place in places do
-		local line = string.split(text(place.path), "\n")[place.position.line + 1] or ""
-		table.insert(items, { label = label(place, line), value = place })
+		table.insert(items, { label = label(place, line_of(place)), value = place })
 	end
 	picker.pick(title, items, function(item)
 		local place: Place = item.value
@@ -32,6 +78,44 @@ local function pick(title: string, places: { Place }, label: (place: Place, line
 				line = place.position.line,
 			}
 		end,
+		keys = {
+			["ctrl-e"] = function(picked)
+				local bytes: { [string]: boolean } = {}
+				local excerpts: { multibuffer.Excerpt } = {}
+				for _, item in picked do
+					local place: Place = item.value
+					if bytes[place.path] == nil then
+						bytes[place.path] = counts_bytes(place.path)
+					end
+					local line = line_of(place)
+					local start, ending = place.position, place.ending
+					local from = byte_column(line, start.character, bytes[place.path])
+					local to = if ending.line == start.line
+						then byte_column(line, ending.character, bytes[place.path])
+						else #line
+					local how = shown(place)
+					table.insert(excerpts, {
+						path = place.path,
+						from = start.line,
+						label = common.shown_path(place.path),
+						note = how.note,
+						marks = {
+							{
+								line = start.line,
+								from = from,
+								to = math.max(to, from + 1),
+								style = how.style,
+							},
+						},
+					})
+				end
+				local summary = `{#excerpts} {string.lower(title)}`
+				multibuffer.show(
+					multibuffer.open(excerpts, { summary = summary, context = context }),
+					title
+				)
+			end,
+		},
 	})
 end
 
@@ -65,7 +149,10 @@ kern.command({
 		for _, location in result or {} do
 			local path = kern.lsp.path(location.uri)
 			if path then
-				table.insert(places, { path = path, position = location.range.start })
+				table.insert(
+					places,
+					{ path = path, position = location.range.start, ending = location.range["end"] }
+				)
 			end
 		end
 		if #places == 0 then
@@ -76,7 +163,9 @@ kern.command({
 		pick("References", places, function(place, line)
 			local trimmed = string.match(line, "^%s*(.-)%s*$")
 			return `{common.shown_path(place.path)}:{place.position.line + 1}: {trimmed}`
-		end)
+		end, function()
+			return { style = "ui.search.match" }
+		end, 1)
 	end,
 })
 
@@ -89,7 +178,8 @@ kern.command({
 		for _, problem in kern.lsp.problems() do
 			local path = kern.lsp.path(problem.uri)
 			if path then
-				local place = { path = path, position = problem.range.start }
+				local place =
+					{ path = path, position = problem.range.start, ending = problem.range["end"] }
 				about[place] = problem
 				table.insert(places, place)
 			end
@@ -106,12 +196,18 @@ kern.command({
 			end
 			return by_place(a, b)
 		end)
-		pick("Problems", places, function(place)
+		local function described(place: Place): string
 			local first = string.split(about[place].message, "\n")[1]
-			local problem = { severity = about[place].severity, message = first }
-			local where = `{common.shown_path(place.path)}:{place.position.line + 1}`
-			return `{where}: {common.describe(problem)}`
-		end)
+			return common.describe({ severity = about[place].severity, message = first })
+		end
+		pick("Problems", places, function(place)
+			return `{common.shown_path(place.path)}:{place.position.line + 1}: {described(place)}`
+		end, function(place)
+			return {
+				style = `diagnostic.{common.severity(about[place].severity)}`,
+				note = described(place),
+			}
+		end, 0)
 	end,
 })
 

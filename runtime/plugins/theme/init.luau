@@ -99,6 +99,8 @@ kern.theme.set({
 
 	-- A multibuffer's file names, above their excerpts.
 	["ui.multibuffer.file"] = { fg = "blue", bold = true },
+	-- What an excerpt is about, e.g. a problem's message, after its file.
+	["ui.multibuffer.note"] = { fg = "bright-black", italic = true },
 })
 
 return {}

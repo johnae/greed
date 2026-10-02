@@ -19,17 +19,6 @@ local multibuffer = require("@multibuffer")
 
 type Found = { kern.GrepLine }
 
--- Each project's results panel, while it's open.
-local panels: { [number]: kern.View } = {}
-
-kern.on("view.closed", function(event)
-	for project, view in panels do
-		if view:id() == event.view then
-			panels[project] = nil
-		end
-	end
-end)
-
 local function key(path: string, line: number): string
 	return `{path}:{line + 1}`
 end
@@ -85,15 +74,7 @@ local function show(pattern: string, root: string, found: Found)
 	local summary = if #found == 1
 		then `1 line matches {pattern}`
 		else `{#found} lines match {pattern}`
-	local buffer = multibuffer.open(excerpts, { summary = summary })
-	local project = kern.project.current().id
-	local current = panels[project]
-	if current then
-		current:show(buffer)
-		current:focus()
-	else
-		panels[project] = kern.panel(buffer, { side = "right", width = "45%", title = "Search" })
-	end
+	multibuffer.show(multibuffer.open(excerpts, { summary = summary }), "Search")
 	kern.echo(`{summary} - edits change the files, :w saves them`)
 end
 
@@ -166,14 +147,7 @@ kern.command({
 kern.command({
 	name = "grep-close",
 	doc = "Close the search results",
-	run = function()
-		local project = kern.project.current().id
-		local view = panels[project]
-		panels[project] = nil
-		if view then
-			view:close()
-		end
-	end,
+	run = multibuffer.close,
 })
 
 kern.keymap.bind("normal", { ["space /"] = "search-project" })

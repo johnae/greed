@@ -275,6 +275,11 @@ and whether it was found.
 | `space D` | Pick a problem in any file the server checked, open or not |
 | `] d` `[ d` | Next and previous problem |
 
+In the `g r` and `space D` lists, `ctrl-e` puts the places shown in a panel
+like the project search's: each reference with a line around it, or each
+problem's line with its message beside the file name. Edit them there the
+same way.
+
 A rename or code action that changes other files opens them without showing
 them and leaves them unsaved, so you can look the change over (`space b`)
 and undo it before saving.

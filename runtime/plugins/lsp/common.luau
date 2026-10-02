@@ -49,9 +49,14 @@ end
 
 local SEVERITY = { "error", "warning", "info", "hint" }
 
+--- A severity's name: "error", "warning", "info" or "hint".
+function M.severity(severity: number): string
+	return SEVERITY[severity] or "problem"
+end
+
 --- A problem as one line, e.g. "error: bad word".
 function M.describe(problem: { severity: number, message: string }): string
-	return `{SEVERITY[problem.severity] or "problem"}: {problem.message}`
+	return `{M.severity(problem.severity)}: {problem.message}`
 end
 
 --- `path` relative to the project's root, when it's inside it.
