@@ -50,6 +50,11 @@ export type Options = {
 	summary: string,
 	--- How many lines around each excerpt show with it.
 	context: number?,
+	--- The text a file is compared against, for excerpts made by `diff`:
+	--- `space g r` puts the change under the cursor back to it.
+	base: ((path: string) -> string?)?,
+	--- Shows the view again after a change was put back.
+	refresh: (() -> ())?,
 }
 
 -- One excerpt, as shown.
@@ -71,7 +76,7 @@ type Part = {
 	lead: boolean,
 }
 
-type State = { buffer: kern.Buffer, parts: { Part } }
+type State = { buffer: kern.Buffer, parts: { Part }, options: Options }
 
 local M = {}
 
@@ -390,7 +395,7 @@ function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
 		)
 	end
 	buffer:decorate("multibuffer.found", found)
-	local state = { buffer = buffer, parts = parts }
+	local state = { buffer = buffer, parts = parts, options = options }
 	states[buffer:id()] = state
 	-- Files already open are kept in step from the start.
 	for _, part in parts do
@@ -523,6 +528,128 @@ function M.location(buffer: kern.Buffer, pos: number): (string?, number, number)
 	return nil, 0, 0
 end
 
+-- Where each line of `text` starts, by 0-based line + 1.
+local function line_starts(text: string): { number }
+	local starts = { 0 }
+	for at in string.gmatch(text, "\n()") do
+		table.insert(starts, (at :: number) - 1)
+	end
+	return starts
+end
+
+-- The 0-based line `pos` is on, from `starts`.
+local function line_at(starts: { number }, pos: number): number
+	local low, high = 1, #starts
+	while low < high do
+		local mid = (low + high + 1) // 2
+		if starts[mid] <= pos then
+			low = mid
+		else
+			high = mid - 1
+		end
+	end
+	return low - 1
+end
+
+type Hunk = {
+	-- Where its new text is in the file now, and the old text it replaced.
+	from: number,
+	to: number,
+	old: string,
+	-- The lines it covers now; `first` is the one removed lines show under
+	-- when it only removes.
+	first: number,
+	last: number,
+}
+
+-- The changes from `base` to `text`, where they are in `text`.
+local function hunks(base: string, text: string): { Hunk }
+	local out: { Hunk } = {}
+	local starts = line_starts(text)
+	-- Diffs are in the old text; `shift` turns their places into the new one's.
+	local shift = 0
+	for _, hunk in kern.diff(base, text) do
+		local from = hunk.from + shift
+		local old = string.sub(base, hunk.from + 1, hunk.to)
+		shift += #hunk.text - #old
+		local first = line_at(starts, from)
+		local last = if hunk.text ~= "" then line_at(starts, from + #hunk.text - 1) else first
+		table.insert(
+			out,
+			{ from = from, to = from + #hunk.text, old = old, first = first, last = last }
+		)
+	end
+	return out
+end
+
+--- An excerpt for each change from `base` to `text`, the file at `path`:
+--- lines added are marked, and lines removed show where they were. Open
+--- them with `base` in the options to let `space g r` put changes back.
+function M.diff(path: string, label: string?, base: string, text: string): { Excerpt }
+	local out: { Excerpt } = {}
+	for _, hunk in hunks(base, text) do
+		local removed = string.split(hunk.old, "\n")
+		if removed[#removed] == "" then
+			table.remove(removed)
+		end
+		local first, last = hunk.first, hunk.last
+		local added = if hunk.to > hunk.from then last - first + 1 else 0
+		local marks: { Mark } = {}
+		for line = first, first + added - 1 do
+			table.insert(
+				marks,
+				{ line = line, from = 0, to = 0, style = "diff.plus", whole = true }
+			)
+		end
+		if #removed > 0 then
+			-- Under the line before where they were; at the top, under the first.
+			local under = math.max(first - 1, 0)
+			table.insert(
+				marks,
+				{ line = under, from = 0, to = 0, style = "diff.minus", lines = removed }
+			)
+			first = under
+		end
+		table.insert(out, {
+			path = path,
+			from = first,
+			to = last,
+			label = label,
+			note = `+{added} -{#removed}`,
+			marks = marks,
+		})
+	end
+	return out
+end
+
+--- Puts the change under `pos` back to the multibuffer's `base`, in its
+--- file, and shows the view again. Returns false and why when there's no
+--- change there to put back.
+function M.revert(buffer: kern.Buffer, pos: number): (boolean, string?)
+	local state = states[buffer:id()]
+	local base_of = state and state.options.base
+	local path, line = M.location(buffer, pos)
+	local base = if base_of and path then base_of(path) else nil
+	if path == nil or base == nil then
+		return false, "no change here"
+	end
+	local file = kern.load(path)
+	for _, hunk in hunks(base :: string, file:text()) do
+		-- Lines only removed show under the line before where they were.
+		local first = if hunk.to == hunk.from then math.max(hunk.first - 1, 0) else hunk.first
+		if first <= line and line <= hunk.last then
+			file:edit(function(e)
+				e:replace(hunk.from, hunk.to, hunk.old)
+			end)
+			if state.options.refresh then
+				state.options.refresh()
+			end
+			return true, nil
+		end
+	end
+	return false, "no change here"
+end
+
 -- Each project's results panel, while it's open.
 local panels: { [number]: kern.View } = {}
 
@@ -585,9 +712,22 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind(
-	{ mode = "normal", kind = "multibuffer" },
-	{ enter = "multibuffer-open", q = "multibuffer-close" }
-)
+kern.command({
+	name = "multibuffer-revert",
+	doc = "Put the change under the cursor back the way it was, in a view of changes",
+	run = function(ctx)
+		local selection = ctx.view:selection()
+		local ok, why = M.revert(ctx.buffer, selection.ranges[selection.primary].head)
+		if not ok then
+			kern.echo(why :: string)
+		end
+	end,
+})
+
+kern.keymap.bind({ mode = "normal", kind = "multibuffer" }, {
+	enter = "multibuffer-open",
+	q = "multibuffer-close",
+	["space g r"] = "multibuffer-revert",
+})
 
 return M

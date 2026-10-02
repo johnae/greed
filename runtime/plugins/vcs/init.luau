@@ -240,21 +240,15 @@ kern.command({
 	name = "revert-change",
 	doc = "Put the change under the cursor back the way it was at the last commit",
 	run = function(ctx)
-		local buffer, line = ctx.buffer, ctx.buffer:line_of(head(ctx.view))
-		local in_changes_view = buffer:kind() == "multibuffer"
-		-- In the changes view, the change in the file under the cursor.
-		if in_changes_view then
-			local path, at = multibuffer.location(buffer, head(ctx.view))
-			if path == nil then
-				kern.echo("no change here")
-				return
+		local buffer = ctx.buffer
+		if buffer:kind() == "multibuffer" then
+			local ok, why = multibuffer.revert(buffer, head(ctx.view))
+			if not ok then
+				kern.echo(why :: string)
 			end
-			buffer, line = kern.load(path), at
-			-- Just loaded, it may not know its committed text yet.
-			if bases[buffer:id()] == nil then
-				refresh(buffer)
-			end
+			return
 		end
+		local line = buffer:line_of(head(ctx.view))
 		for _, change in changes(buffer) do
 			local first, last = lines_of(buffer, change)
 			-- Removed lines show under the line before where they were.
@@ -265,9 +259,6 @@ kern.command({
 				buffer:edit(function(e)
 					e:replace(change.from, change.to, change.old)
 				end)
-				if in_changes_view then
-					M.show_changes()
-				end
 				return
 			end
 		end
@@ -326,81 +317,6 @@ local function changed_files(repo: Repo): { string }
 	return files
 end
 
--- Where each line of `text` starts, in order, so a byte offset's line can
--- be found.
-local function line_starts(text: string): { number }
-	local starts = { 0 }
-	for at in string.gmatch(text, "\n()") do
-		table.insert(starts, (at :: number) - 1)
-	end
-	return starts
-end
-
--- The 0-based line `pos` is on, from `starts`.
-local function line_at(starts: { number }, pos: number): number
-	local low, high = 1, #starts
-	while low < high do
-		local mid = (low + high + 1) // 2
-		if starts[mid] <= pos then
-			low = mid
-		else
-			high = mid - 1
-		end
-	end
-	return low - 1
-end
-
--- An excerpt for each change from `base` to `text`, the file at `path`:
--- lines added are marked, and lines removed show where they were.
-local function excerpts_of(
-	path: string,
-	label: string,
-	base: string,
-	text: string
-): { multibuffer.Excerpt }
-	local out: { multibuffer.Excerpt } = {}
-	local starts = line_starts(text)
-	-- Hunks are in the old text; `shift` turns their places into the new one's.
-	local shift = 0
-	for _, hunk in kern.diff(base, text) do
-		local from = hunk.from + shift
-		local old = string.sub(base, hunk.from + 1, hunk.to)
-		shift += #hunk.text - #old
-		local removed = string.split(old, "\n")
-		if removed[#removed] == "" then
-			table.remove(removed)
-		end
-		local first = line_at(starts, from)
-		local last = if hunk.text ~= "" then line_at(starts, from + #hunk.text - 1) else first
-		local marks: { multibuffer.Mark } = {}
-		local added = if hunk.text ~= "" then last - first + 1 else 0
-		for line = first, first + added - 1 do
-			table.insert(
-				marks,
-				{ line = line, from = 0, to = 0, style = "diff.plus", whole = true }
-			)
-		end
-		if #removed > 0 then
-			-- Under the line before where they were; at the top, under the first.
-			local under = math.max(first - 1, 0)
-			table.insert(
-				marks,
-				{ line = under, from = 0, to = 0, style = "diff.minus", lines = removed }
-			)
-			first = under
-		end
-		table.insert(out, {
-			path = path,
-			from = first,
-			to = last,
-			label = label,
-			note = `+{added} -{#removed}`,
-			marks = marks,
-		})
-	end
-	return out
-end
-
 -- `n` of `word`, with an "s" for more than one.
 local function count(n: number, word: string): string
 	return `{n} {word}{if n == 1 then "" else "s"}`
@@ -426,7 +342,7 @@ function M.show_changes()
 		end
 		local text = if open then open:text() else kern.fs.read(path)
 		if text then
-			for _, excerpt in excerpts_of(path, relative, base_text(repo, relative), text) do
+			for _, excerpt in multibuffer.diff(path, relative, base_text(repo, relative), text) do
 				table.insert(excerpts, excerpt)
 			end
 		end
@@ -437,7 +353,14 @@ function M.show_changes()
 	end
 	local against = if repo.kind == "jj" then "the working copy's parent" else "HEAD"
 	local summary = `{count(#excerpts, "change")} in {count(#files, "file")} since {against}`
-	local view = multibuffer.open(excerpts, { summary = summary, context = 2 })
+	local view = multibuffer.open(excerpts, {
+		summary = summary,
+		context = 2,
+		base = function(path)
+			return base_text(repo, string.sub(path, #repo.root + 2))
+		end,
+		refresh = M.show_changes,
+	})
 	multibuffer.show(view, "Changes")
 end
 

@@ -110,3 +110,37 @@ test("excerpts that touch are joined, and context adds lines around them", funct
 	)
 	assert(wide:text() == "s\n1\n2\n3\n", wide:text())
 end)
+
+test("a diff's changes show as excerpts, and space g r puts one back", function(t)
+	local base = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n"
+	local dir = t:tempdir({ ["a.txt"] = "one\nTWO\nthree\nfour\nfive\nsix\neight\n" })
+	local path = dir .. "/a.txt"
+	t:buffer("|x")
+	local refreshed = 0
+	local excerpts = multibuffer.diff(path, "a.txt", base, kern.fs.read(path) :: string)
+	assert(#excerpts == 2, `two changes, not {#excerpts}`)
+	assert(excerpts[1].note == "+1 -1" and excerpts[2].note == "+0 -1", excerpts[2].note)
+	local buffer = multibuffer.open(excerpts, {
+		summary = "changes",
+		base = function()
+			return base
+		end,
+		refresh = function()
+			refreshed += 1
+		end,
+	})
+	local view = kern.view()
+	view:show(buffer)
+	local at = (string.find(buffer:text(), "TWO", 1, true) :: number) - 1
+	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	t:keys("space g r")
+	assert(
+		kern.load(path):text() == "one\ntwo\nthree\nfour\nfive\nsix\neight\n",
+		kern.load(path):text()
+	)
+	assert(refreshed == 1, "the view is shown again")
+	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+	t:keys("space g r")
+	local messages = t:messages()
+	assert(messages[#messages] == "no change here", messages[#messages])
+end)
