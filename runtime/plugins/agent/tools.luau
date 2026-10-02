@@ -199,4 +199,84 @@ agent.tool({
 	end,
 })
 
+-- The buffer for `path` (the current one if nil), opening the file without
+-- showing it if it isn't open, and failing without a syntax tree.
+local function syntax_buffer(path: string?): kern.Buffer
+	local buffer = if path then find_buffer(path) or kern.load(path) else kern.view():buffer()
+	if buffer:tree() == nil then
+		error(`no syntax tree for {buffer:path() or "this buffer"}: Kern has no grammar for it`, 0)
+	end
+	return buffer
+end
+
+-- Captured text longer than this many characters is cut, to keep answers
+-- small.
+local MAX_TEXT = 300
+
+local function cut(text: string): string
+	local past = utf8.offset(text, MAX_TEXT + 1)
+	return if past and past <= #text then string.sub(text, 1, past - 1) .. "…" else text
+end
+
+agent.tool({
+	name = "outline",
+	description = "The functions and types in a file with their lines, from its syntax tree: "
+		.. "cheaper than reading the whole file to find your way around it",
+	input = object({
+		path = { type = "string", description = "The file; the current one if left out" },
+	}),
+	run = function(args)
+		local buffer = syntax_buffer(args.path)
+		local list: { { name: string, kind: string, line: number, end_line: number } } = {}
+		for _, object in { "function", "type" } do
+			for _, found in core.syntax.objects(buffer, object) do
+				local name = found.around:child("name")
+				if name then
+					table.insert(list, {
+						name = name:text(),
+						kind = found.around.kind,
+						line = position(buffer, found.around.from).line,
+						end_line = position(buffer, found.around.to).line,
+					})
+				end
+			end
+		end
+		table.sort(list, function(a: { line: number }, b: { line: number })
+			return a.line < b.line
+		end)
+		return kern.json.array(list)
+	end,
+})
+
+agent.tool({
+	name = "syntax_query",
+	description = "Run a tree-sitter query over a file's syntax tree, e.g. "
+		.. '"(call_expression function: (identifier) @name)". Returns each match\'s captures '
+		.. "with their node kind, 1-based lines and columns and text",
+	input = object({
+		query = { type = "string" },
+		path = { type = "string", description = "The file; the current one if left out" },
+	}, { "query" }),
+	run = function(args)
+		local buffer = syntax_buffer(args.path)
+		local matches = {}
+		for _, captures in buffer:query(args.query) do
+			local match = {}
+			for name, node in captures do
+				local from, to = position(buffer, node.from), position(buffer, node.to)
+				match[name] = {
+					kind = node.kind,
+					line = from.line,
+					column = from.column,
+					end_line = to.line,
+					end_column = to.column,
+					text = cut(node:text()),
+				}
+			end
+			table.insert(matches, match)
+		end
+		return kern.json.array(matches)
+	end,
+})
+
 return {}

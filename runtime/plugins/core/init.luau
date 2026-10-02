@@ -13,6 +13,7 @@ require("@self/select")
 require("@self/jump")
 require("@self/scroll")
 local objects = require("@self/objects")
+local syntax = require("@self/syntax")
 require("@self/select_mode")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
@@ -131,6 +132,7 @@ kern.keymap.bind({}, {
 })
 
 kern.keymap.bind("normal", objects.keys)
+kern.keymap.bind("normal", syntax.keys)
 kern.keymap.counts("normal")
 kern.keymap.fallback("insert", "insert-char")
 kern.mode.cursor("insert", "bar")
@@ -149,5 +151,6 @@ return {
 	comment = comment,
 	jumps = jumps,
 	objects = objects,
+	syntax = syntax,
 	registers = registers,
 }

@@ -53,3 +53,30 @@ test("each language's comment is what ctrl-c uses", function()
 	languages.set("odin", { comment = "//" })
 	assert(core.comment.token("odin") == "//")
 end)
+
+test("every language's syntax objects query works with its grammar", function(t)
+	for _, name in kern.grammars() do
+		local language = languages.get(name)
+		local source = language and language.textobjects
+		if source then
+			t:buffer("|")
+			local buffer = kern.view():buffer()
+			buffer:set_language(name)
+			local ok, err = pcall(function()
+				return buffer:query(source :: string)
+			end)
+			assert(ok, `{name}: {err}`)
+		end
+	end
+end)
+
+test("m a f selects a Luau function", function(t)
+	t:buffer("local function f(a, b)\n\treturn |a\nend\n")
+	kern.view():buffer():set_language("luau")
+	t:keys("m a f")
+	t:expect("^local function f(a, b)\n\treturn a\nend|\n")
+	t:buffer("local function f(a, |b)\nend\n")
+	kern.view():buffer():set_language("luau")
+	t:keys("m a a")
+	t:expect("local function f(a^, b|)\nend\n")
+end)

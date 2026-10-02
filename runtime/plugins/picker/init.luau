@@ -22,6 +22,7 @@ kern.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 kern.keymap.bind("normal", {
 	["space f"] = "pick-file",
 	["space b"] = "pick-buffer",
+	["space s"] = "pick-outline",
 	["space ?"] = "command-palette",
 })
 

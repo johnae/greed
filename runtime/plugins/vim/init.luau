@@ -10,9 +10,10 @@
 --
 -- What's here: counts, h j k l w b e 0 ^ $ gg G f t F T %, the operators
 -- d c y > < gc with any of those motions or a text object (iw aW i( a"
--- ip ...) and doubled for whole lines (dd >> gcc), x X D C s S, r ~ J,
--- p P, i a I A o O, u ctrl-r, v V, * #, q@ macros, "a registers, and . to
--- repeat the last change that didn't type text.
+-- ip, and from the syntax tree if af ia ic) and doubled for whole lines
+-- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V, * #,
+-- q@ macros, "a registers, and . to repeat the last change that didn't
+-- type text.
 
 local kern = require("@kern")
 local core = require("@core")
@@ -356,6 +357,10 @@ end
 
 local BRACKETS = { b = "(", B = "{" }
 
+-- Objects from the syntax tree: functions, arguments and comments (`t` is
+-- left out, since Vim users expect a tag there).
+local SYNTAX_OBJECTS = { f = "function", a = "parameter", c = "comment" }
+
 -- The text object for `key` around `pos` ("w", "(", '"', "p", ...), inside
 -- it or around it: `from, to, linewise`, or nil.
 local function text_object(
@@ -370,6 +375,13 @@ local function text_object(
 	elseif key == "p" then
 		local first, last = paragraph_object(buffer, pos, around)
 		return motion_range(buffer, first, last, "line")
+	elseif SYNTAX_OBJECTS[key] then
+		local range =
+			core.syntax.select(buffer, { anchor = pos, head = pos }, SYNTAX_OBJECTS[key], around)
+		if range == nil then
+			return nil, nil, false
+		end
+		return range.anchor, range.head, false
 	end
 	local open, close = core.objects.around(buffer, pos, BRACKETS[key] or key)
 	if open == nil or close == nil then

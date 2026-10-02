@@ -86,3 +86,28 @@ test("tool names are checked, and a tool with the same name replaces the old one
 		"each client has its own tools"
 	)
 end)
+
+test("outline and syntax_query read a file's syntax tree, open or not", function(t)
+	require("@core").syntax.set_query(
+		"rust",
+		"textobjects",
+		"(function_item) @function.around (struct_item) @type.around"
+	)
+	local dir = t:tempdir({ ["a.rs"] = "struct S;\n\nfn main() {\n    run(1);\n}\n" })
+	t:buffer("|x")
+	local outline = run("outline", { path = dir .. "/a.rs" })
+	assert(#outline == 2, `{#outline} entries`)
+	assert(outline[1].name == "S" and outline[1].line == 1, outline[1].name)
+	assert(outline[2].name == "main" and outline[2].line == 3 and outline[2].end_line == 5)
+
+	local calls = run("syntax_query", {
+		path = dir .. "/a.rs",
+		query = "(call_expression function: (identifier) @name)",
+	})
+	assert(#calls == 1, `{#calls} matches`)
+	local name = calls[1].name
+	assert(name.text == "run" and name.line == 4 and name.column == 5, name.text)
+
+	local ok, err = pcall(run, "syntax_query", { query = "(x) @y" })
+	assert(not ok and string.find(tostring(err), "no syntax tree", 1, true), tostring(err))
+end)

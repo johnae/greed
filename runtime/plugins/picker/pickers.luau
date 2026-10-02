@@ -1,5 +1,5 @@
--- The pickers Kern ships with: files in the project, open buffers
--- and commands.
+-- The pickers Kern ships with: files in the project, open buffers,
+-- commands and the outline of a file.
 
 local kern = require("@kern")
 local picker = require("./picker")
@@ -85,6 +85,53 @@ kern.command({
 		picker.pick("Commands", items, function(item)
 			kern.run(item.value)
 		end)
+	end,
+})
+
+kern.command({
+	name = "pick-outline",
+	doc = "Jump to a function or type in the file, from its syntax tree",
+	run = function(ctx)
+		local buffer, view = ctx.buffer, ctx.view
+		local syntax = require("@core").syntax
+		local found: { { node: kern.Node, name: kern.Node } } = {}
+		for _, object in { "function", "type" } do
+			for _, o in syntax.objects(buffer, object) do
+				local name = o.around:child("name")
+				if name then
+					table.insert(found, { node = o.around, name = name })
+				end
+			end
+		end
+		table.sort(found, function(a: { name: kern.Node }, b: { name: kern.Node })
+			return a.name.from < b.name.from
+		end)
+		local items = {}
+		for _, f in found do
+			-- Nested items are indented under what holds them.
+			local depth = 0
+			for _, other in found do
+				if other.node.from < f.node.from and f.node.to <= other.node.to then
+					depth += 1
+				end
+			end
+			local line = buffer:line_of(f.name.from)
+			table.insert(items, {
+				label = `{string.rep("  ", depth)}{f.name:text()}  {f.node.kind}:{line + 1}`,
+				value = f.name.from,
+			})
+		end
+		local text, language = buffer:text(), buffer:language()
+		picker.pick("Outline", items, function(item)
+			view:set_selection({
+				ranges = { { anchor = item.value, head = item.value } },
+				primary = 1,
+			})
+		end, {
+			preview = function(item)
+				return { text = text, language = language, line = buffer:line_of(item.value) }
+			end,
+		})
 	end,
 })
 

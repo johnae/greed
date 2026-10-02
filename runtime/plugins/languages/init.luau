@@ -11,7 +11,9 @@
 
 local kern = require("@kern")
 local defaults = require("@self/languages")
-local comment = require("@core").comment
+local textobjects = require("@self/textobjects")
+local core = require("@core")
+local comment = core.comment
 
 export type Language = defaults.Language
 
@@ -21,6 +23,7 @@ local languages: { [string]: Language } = {}
 local function apply(name: string, language: Language)
 	kern.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
+	core.syntax.set_query(name, "textobjects", language.textobjects)
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })
@@ -57,6 +60,7 @@ function M.list(): { string }
 end
 
 for name, language in defaults do
+	language.textobjects = textobjects[name]
 	M.set(name, language)
 end
 

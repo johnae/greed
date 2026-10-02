@@ -287,3 +287,17 @@ test("yanking an empty line keeps the cursor on it", function(t)
 	t:keys("y y")
 	t:expect("a\n|\nb")
 end)
+
+test("text objects from the syntax tree: functions, arguments, comments", function(t)
+	require("@core").syntax.set_query(
+		"rust",
+		"textobjects",
+		"(function_item body: (_) @function.inside) @function.around (parameters (_) @parameter.around)"
+	)
+	buffer(t, "fn f(a: u8, |b: u8) {}\nfn g() {}")
+	kern.view():buffer():set_language("rust")
+	t:keys("d a a")
+	t:expect("fn f(a: u8|) {}\nfn g() {}")
+	t:keys("d a f")
+	t:expect("|\nfn g() {}")
+end)

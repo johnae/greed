@@ -200,6 +200,22 @@ selects every place it appears.
 | `m d (` | Take away the brackets or quotes around each selection |
 | `m r ( [` | Swap them for others |
 
+**By syntax**, in languages Kern has a grammar for (`:health` lists them):
+
+| Keys | |
+|---|---|
+| `m i f` `m a f` | Inside or around the function |
+| `m i t` `m a t` | Inside or around the type: a struct, enum, impl or table |
+| `m i a` `m a a` | An argument or parameter, around with its comma |
+| `m a c` | The comment |
+| `] f` `[ f` | The next or previous function; also `t`, `a` and `c` |
+| `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
+| `space s` | Jump to a function or type in the file |
+
+`:select-next-sibling` and `:select-prev-sibling` move to the node beside
+the selection. In Vim's style the same objects are `if` `af`, `ia` `aa` and
+`ic` `ac`, as in `daf` or `cia`.
+
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
 edit` switch to those; [Editing styles](editing-styles.md) explains each.
 

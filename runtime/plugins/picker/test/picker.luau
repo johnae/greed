@@ -246,3 +246,19 @@ test("the command palette shows each command's keys", function(t)
 	)
 	t:keys("esc")
 end)
+
+test("the outline lists functions and types, nested, and jumps to one", function(t)
+	require("@core").syntax.set_query(
+		"rust",
+		"textobjects",
+		"(function_item) @function.around (impl_item body: (_) @type.inside) @type.around (struct_item) @type.around"
+	)
+	t:buffer("|struct S;\nfn one() {}\nfn two() {}\n")
+	kern.view():buffer():set_language("rust")
+	t:keys("space s")
+	local list = kern.view():buffer():text()
+	assert(string.find(list, "S  struct_item:1", 1, true), list)
+	assert(string.find(list, "two  function_item:3", 1, true), list)
+	t:keys("t w o enter")
+	t:expect("struct S;\nfn one() {}\nfn |two() {}\n")
+end)
