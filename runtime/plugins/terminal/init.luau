@@ -469,16 +469,45 @@ kern.command({
 	end,
 })
 
+-- Two escs this close together (ms) leave the terminal.
+local DOUBLE_ESC = 300
+
+-- When esc last went to a program.
+local last_esc = -math.huge
+
+-- Sends `key` to the program in the buffer's terminal; once it has exited,
+-- stops typing into it instead.
+local function send(ctx: kern.Context, key: string)
+	local term = term_of(ctx.buffer)
+	if term == nil or term.terminal:exit_code() ~= nil then
+		kern.mode.set(core.style.home())
+		return
+	end
+	term.terminal:key(key)
+end
+
 kern.command({
 	name = "terminal-key",
 	doc = "Send the key to the terminal's program",
 	run = function(ctx)
-		local term = term_of(ctx.buffer)
-		if term == nil or term.terminal:exit_code() ~= nil then
-			kern.mode.set(core.style.home())
+		-- Escs only count as double with nothing between them.
+		last_esc = -math.huge
+		send(ctx, ctx.keys or "")
+	end,
+})
+
+kern.command({
+	name = "terminal-esc",
+	doc = "Send esc to the terminal's program; a second one quickly after stops typing into it",
+	run = function(ctx)
+		local now = kern.now()
+		if now - last_esc <= DOUBLE_ESC then
+			last_esc = -math.huge
+			kern.run("terminal-leave")
 			return
 		end
-		term.terminal:key(ctx.keys or "")
+		last_esc = now
+		send(ctx, "esc")
 	end,
 })
 
@@ -729,7 +758,11 @@ end)
 
 kern.keymap.isolate(MODE)
 kern.keymap.fallback(MODE, "terminal-key")
-kern.keymap.bind(MODE, { ["ctrl-\\"] = "terminal-leave", ["ctrl-space"] = "terminal-leader" })
+kern.keymap.bind(MODE, {
+	["ctrl-\\"] = "terminal-leave",
+	["ctrl-space"] = "terminal-leader",
+	esc = "terminal-esc",
+})
 kern.mode.cursor(MODE, "block")
 for _, mode in { "normal", "vim" } do
 	kern.keymap.bind({ mode = mode, kind = "terminal" }, {

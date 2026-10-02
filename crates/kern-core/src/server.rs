@@ -316,6 +316,9 @@ impl Server<'_> {
     fn input(&mut self, input: &Input) -> bool {
         match *input {
             Input::Key(key) => {
+                // A message lasts until the next key, unless that key
+                // brings another.
+                self.message = None;
                 let pressed = self.host.press(key);
                 self.report(pressed);
             }

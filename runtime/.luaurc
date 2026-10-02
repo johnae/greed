@@ -13,6 +13,7 @@
 		"projects": "./plugins/projects",
 		"multibuffer": "./plugins/multibuffer",
 		"notes": "./plugins/notes",
-		"theme": "./plugins/theme"
+		"theme": "./plugins/theme",
+		"hints": "./plugins/hints"
 	}
 }

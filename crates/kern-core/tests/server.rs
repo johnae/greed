@@ -75,6 +75,13 @@ fn errors_and_messages_show_on_the_status_line() {
         "{:?}",
         f.rows[1].text()
     );
+
+    // The message goes with the next key.
+    keys(&conn, "l");
+    let mut f = frame(&conn);
+    while f.rows[1].text().contains("this buffer has no file") {
+        f = frame(&conn);
+    }
 }
 
 #[test]

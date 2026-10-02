@@ -488,6 +488,12 @@ for _, c in commands do
 		doc = c.doc,
 		run = function()
 			run()
+			-- Messages go with the next key; while still in a mode, its keys
+			-- stay on the status line.
+			local mode = modes[kern.mode.get()]
+			if mode then
+				kern.echo(mode.hint)
+			end
 		end,
 	})
 	by_name[c.name] = c.run

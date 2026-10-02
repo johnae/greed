@@ -439,8 +439,10 @@ goes to the program, including ones the editor would otherwise take, like
 | Keys | |
 |---|---|
 | `space t` | Switch to a terminal, or open a new one |
-| `ctrl-\` | Stop typing into the program, to move around its output |
+| `ctrl-\`, `esc esc` | Stop typing into the program, to move around its output; one `esc` still goes to the program |
 | `ctrl-space` | The same, then `space`: `ctrl-space f` finds a file from inside a terminal |
+| `alt-p` and the other `alt` pane keys | Work as in any pane: `alt-p x` closes the terminal's pane |
+| `f1` | The keys that work while typing into it |
 | `i`, `a`, `enter` | Type into it again |
 | `p` | Paste the latest copy into the program |
 | `g x`, `ctrl-click` | Open the link under the cursor (or the mouse) |
@@ -577,7 +579,8 @@ takes their place, as in any terminal.
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.
 `space ?` lists every command, `space h c` describes one and `space h k`
 tells you what a key does. After a key like `space`, a hint shows what can
-follow.
+follow, and `f1` shows the keys of the mode you're in, in every mode. A
+message on the status line goes away with the next key.
 
 ## Configuration
 
