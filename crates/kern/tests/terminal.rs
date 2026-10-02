@@ -145,12 +145,14 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
     )
     .unwrap();
     // Stands in for ssh: drops -T and the host, and runs the command here
-    // with a home of its own, as another machine would have.
+    // with a home of its own, as another machine would have. Like a login
+    // shell that isn't POSIX sh (fish, nushell), it takes only plain words,
+    // so anything in sh's own syntax fails.
     let fake_ssh = world.root.join("fake-ssh");
     std::fs::write(
         &fake_ssh,
         format!(
-            "#!/bin/sh\nshift 2\nHOME={} exec sh -c \"$1\"\n",
+            "#!/bin/sh\nshift 2\n[ \"$*\" = 'sh -s' ] || {{ echo \"not plain words: $*\" >&2; exit 9; }}\nHOME={} exec sh -s\n",
             world.root.join("remote-home").display()
         ),
     )

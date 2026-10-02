@@ -12,3 +12,6 @@ devenv.local.yaml
 
 # local notes for Claude Code
 /.claude/CLAUDE.md
+
+# nix-build output
+/result

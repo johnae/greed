@@ -5,7 +5,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use kern_core::SwitchTo;
@@ -276,15 +276,9 @@ pub fn ssh(host: &str, name: Option<&str>, file: Option<&str>) -> Result<(), Err
 fn ssh_once(host: &str, to: &SwitchTo, config: Option<&str>) -> Result<Output, Error> {
     let remote_kern = std::env::var("KERN_REMOTE").unwrap_or_else(|_| "kern".to_owned());
     let line = bridge_command(&remote_kern, to, config);
-    let mut child = ssh_command()
-        .args(["-T", host, &line])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-    let mut writer = child.stdin.take().ok_or("ssh has no input")?;
-    let mut reader = BufReader::new(child.stdout.take().ok_or("ssh has no output")?);
-    handshake(&mut reader, &mut writer)
-        .map_err(|err| format!("couldn't attach on {host}: {err}"))?;
+    let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
+    let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
+    handshake(&mut reader, &mut writer).map_err(attach_failed)?;
     let ended = show(reader, writer)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
@@ -321,6 +315,39 @@ fn ssh_command() -> Command {
     Command::new(std::env::var("KERN_SSH").unwrap_or_else(|_| "ssh".to_owned()))
 }
 
+/// What the remote sh prints once it has read the line it runs.
+const READY: &str = "kern-ready";
+
+/// Runs the sh `line` on `host` and returns ssh with its input and output,
+/// for the program the line `exec`s.
+///
+/// ssh hands the remote command to the user's login shell, which may not
+/// speak POSIX sh (fish, nushell), so the command is only `sh -s`, two
+/// plain words every shell reads the same, and the line goes to that sh as
+/// input. Some shells (busybox's) read ahead of the line they run, so
+/// nothing more is sent until the line says it's running.
+fn remote(host: &str, line: &str) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), Error> {
+    let mut child = ssh_command()
+        .args(["-T", host, "sh", "-s"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let mut input = child.stdin.take().ok_or("ssh has no input")?;
+    let mut output = BufReader::new(child.stdout.take().ok_or("ssh has no output")?);
+    writeln!(input, "echo {READY}; {line}")?;
+    input.flush()?;
+    let mut said = String::new();
+    loop {
+        said.clear();
+        if output.read_line(&mut said)? == 0 {
+            return Err("the other end closed the connection (see above for why)".into());
+        }
+        if said.trim_end() == READY {
+            return Ok((child, input, output));
+        }
+    }
+}
+
 /// `arg` quoted for a POSIX shell.
 fn quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
@@ -336,7 +363,7 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
     serve(&name, path)
 }
 
-/// The command line that runs `kern bridge` on the other machine for `to`,
+/// The sh line that runs `kern bridge` (in its place) on the other machine for `to`,
 /// with the config `kern ssh` brought along in `config` (a folder, which
 /// may use `$HOME`).
 fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
@@ -353,8 +380,8 @@ fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
         .join(" ");
     match config {
         // Double quotes, so the remote shell fills in $HOME.
-        Some(dir) => format!("KERN_SSH_CONFIG_DIR=\"{dir}\" {command}"),
-        None => command,
+        Some(dir) => format!("KERN_SSH_CONFIG_DIR=\"{dir}\" exec {command}"),
+        None => format!("exec {command}"),
     }
 }
 
@@ -376,13 +403,13 @@ fn send_config(host: &str) -> Result<Option<String>, Error> {
         .args(["-cf", "-", "."])
         .stdout(Stdio::piped())
         .spawn()?;
-    let packed = tar.stdout.take().ok_or("tar has no output")?;
+    let mut packed = tar.stdout.take().ok_or("tar has no output")?;
     // A fresh copy each time, so plugins you removed go from there too.
-    let unpack = format!("rm -rf \"{dir}\" && mkdir -p \"{dir}\" && tar -C \"{dir}\" -xf -");
-    let status = ssh_command()
-        .args(["-T", host, &unpack])
-        .stdin(packed)
-        .status()?;
+    let unpack = format!("rm -rf \"{dir}\" && mkdir -p \"{dir}\" && exec tar -C \"{dir}\" -xf -");
+    let (mut ssh, mut input, _) = remote(host, &unpack)?;
+    std::io::copy(&mut packed, &mut input)?;
+    drop(input);
+    let status = ssh.wait()?;
     tar.wait()?;
     if !status.success() {
         return Err(format!("unpacking it there failed ({status})").into());
@@ -425,7 +452,7 @@ mod tests {
         };
         assert_eq!(
             bridge_command("kern", &to, Some("$HOME/.cache/kern/config-from-box")),
-            r#"KERN_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
+            r#"KERN_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" exec 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo {
             session: None,
@@ -433,7 +460,7 @@ mod tests {
         };
         assert_eq!(
             bridge_command("/opt/kern", &plain, None),
-            "'/opt/kern' 'bridge'"
+            "exec '/opt/kern' 'bridge'"
         );
     }
 }

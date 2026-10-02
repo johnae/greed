@@ -81,6 +81,10 @@ plugins an agent installs, stay on that machine across connections. A
 session that was already running keeps the config it started with.
 `KERN_SSH_CONFIG=0` leaves your config at home.
 
+Your login shell on the other machine can be anything (bash, fish,
+nushell): `kern ssh` only asks it to start `sh`, and needs a POSIX `sh`
+and `tar` there.
+
 Kern has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
 fail with a clear message. `KERN_REMOTE` sets the path of `kern` on the
