@@ -391,3 +391,23 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     bridge.quit();
     std::fs::remove_dir_all(&project).unwrap();
 }
+
+#[test]
+fn the_bridge_ends_when_its_session_does_even_with_its_input_open() {
+    let file = temp_file("dies", "short-lived");
+    let name = format!("bridge-dies-{}", std::process::id());
+    let server = Server::start(&["--session", &name, file.to_str().unwrap()]);
+    let mut bridge = Bridge::start(&["--session", &name]);
+    bridge.attach();
+    drop(server);
+    // Its input stays open, as when ssh is still connected.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while bridge.child.try_wait().unwrap().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the bridge still runs after its session ended"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::fs::remove_file(file).unwrap();
+}

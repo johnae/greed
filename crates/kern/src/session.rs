@@ -270,7 +270,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
 /// through is passed on as it is; the client on the other end attaches.
 pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
-    let mut input: Box<dyn BufRead> = Box::new(std::io::stdin().lock());
+    let mut input: Box<dyn BufRead + Send> = Box::new(BufReader::new(std::io::stdin()));
     if running {
         if path.is_some() {
             // The client attaches through us; ask the session to open the

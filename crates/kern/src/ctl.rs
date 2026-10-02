@@ -134,6 +134,6 @@ pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Erro
 /// `kern mcp`: an MCP server on stdin and stdout for the running editor, for
 /// agents like Claude Code (`claude mcp add kern -- kern mcp`).
 pub fn mcp() -> Result<(), Box<dyn std::error::Error>> {
-    connect()?.pipe(io::stdin().lock(), io::stdout())?;
+    connect()?.pipe(io::BufReader::new(io::stdin()), io::stdout())?;
     Ok(())
 }

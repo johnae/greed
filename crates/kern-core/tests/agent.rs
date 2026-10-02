@@ -145,7 +145,9 @@ fn a_bridge_passes_lines_through_and_notifications_get_no_answer() {
     ]
     .join("\n");
     let written = Written::default();
-    client.pipe(input.as_bytes(), written.clone()).unwrap();
+    client
+        .pipe(std::io::Cursor::new(input.into_bytes()), written.clone())
+        .unwrap();
     let output = String::from_utf8(written.0.lock().unwrap().clone()).unwrap();
     let answers: Vec<Value> = output
         .lines()
