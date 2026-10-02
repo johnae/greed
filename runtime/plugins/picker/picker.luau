@@ -1,7 +1,8 @@
 -- The picker itself: a floating buffer, kept in sync with what's typed.
 
 local kern = require("@kern")
-local menu = require("@core").menu
+local core = require("@core")
+local menu = core.menu
 
 export type Item = {
 	label: string,
@@ -16,6 +17,8 @@ export type Preview = {
 	--- A 0-based line to scroll to.
 	line: number?,
 }
+
+type Paths = { dirs: boolean?, choose: (path: string) -> () }
 
 export type Options = {
 	--- Shows a preview of the current item beside the list. Returning nil
@@ -40,6 +43,11 @@ export type Options = {
 	on_move: ((item: Item) -> ())?,
 	--- Called when the picker closes without choosing (esc).
 	on_cancel: (() -> ())?,
+	--- Lets you type a path: a query starting with "/", "~", "./" or "../"
+	--- lists what's in that folder instead of the items, narrowed by what's
+	--- typed after the last "/" (only folders with `dirs`). tab completes
+	--- the current one into the query, and enter gives `choose` its full path.
+	paths: Paths?,
 }
 
 -- At most this many matches are shown.
@@ -71,6 +79,10 @@ type Open = {
 	-- The item `on_move` last heard of.
 	moved_to: Item?,
 	on_cancel: (() -> ())?,
+	paths: Paths?,
+	-- The items and their labels as given, while a path's folder is listed
+	-- instead.
+	given: { items: { Item }, labels: { string } }?,
 }
 
 -- Shows the current item in the preview, if it changed.
@@ -177,6 +189,40 @@ local function search(o: Open, source: (query: string) -> { Item })
 	o.searching = false
 end
 
+-- Whether `q` is a path to list rather than something to look for.
+local function is_path(q: string): boolean
+	return string.match(q, "^[~/]") ~= nil or string.match(q, "^%.%.?/") ~= nil
+end
+
+-- Lists what's in the folder `q` names, narrowed by what's typed after its
+-- last "/", in place of the items. Labels are paths as typed, so tab can
+-- put them in the query.
+local function list_path(o: Open, q: string, paths: Paths)
+	local dir, typed = string.match(q, "^(.*/)(.*)$")
+	if dir == nil then
+		-- "~" alone is the home folder.
+		dir, typed = q .. "/", ""
+	end
+	local found = kern.fs.list(core.project.expand(dir :: string), {
+		hidden = string.sub(typed :: string, 1, 1) == ".",
+		ignored = true,
+	}) or {}
+	local items, labels, names = {}, {}, {}
+	for _, entry in found do
+		if entry.dir or not paths.dirs then
+			local label = `{dir}{entry.name}{if entry.dir then "/" else ""}`
+			table.insert(items, { label = label, value = label })
+			table.insert(labels, label)
+			table.insert(names, entry.name)
+		end
+	end
+	o.given = o.given or { items = o.items, labels = o.labels }
+	o.items, o.labels = items, labels
+	o.matches = kern.fuzzy(typed :: string, names)
+	o.current = 1
+	render(o)
+end
+
 -- Filters the items again if the query changed, or with a source, asks it
 -- once typing pauses.
 local function refresh(o: Open)
@@ -185,6 +231,15 @@ local function refresh(o: Open)
 		return
 	end
 	o.query = q
+	local paths = o.paths
+	if paths and is_path(q) then
+		list_path(o, q, paths)
+		return
+	end
+	local given = o.given
+	if given then
+		o.items, o.labels, o.given = given.items, given.labels, nil
+	end
 	local source = o.source
 	if source == nil then
 		o.matches = kern.fuzzy(q, o.labels)
@@ -238,6 +293,7 @@ local KEYS: { [string]: string } = {
 	["ctrl-p"] = "picker-prev",
 	enter = "picker-choose",
 	esc = "picker-close",
+	tab = "picker-complete",
 }
 
 kern.command({
@@ -266,11 +322,33 @@ kern.command({
 		end
 		local index = o.matches[o.current]
 		close()
-		if index then
+		local paths = o.paths
+		if index and paths and o.given then
+			-- Folders are listed with a "/" to show what they are.
+			local path = string.gsub(core.project.expand(o.items[index].value), "(.)/$", "%1")
+			paths.choose(path)
+		elseif index then
 			o.choose(o.items[index])
 		elseif o.fallback and o.query and o.query ~= "" then
 			o.fallback(o.query)
 		end
+	end,
+})
+
+kern.command({
+	name = "picker-complete",
+	doc = "Put the current path in the picker's query, to go on from there",
+	run = function()
+		local o = open
+		local index = o and o.matches[o.current]
+		if o == nil or index == nil or o.given == nil then
+			return
+		end
+		local label = o.labels[index]
+		o.buffer:edit(function(e)
+			e:replace(0, o.buffer:line_end(0), label)
+			e:select({ ranges = { { anchor = #label, head = #label } }, primary = 1 })
+		end)
 	end,
 })
 
@@ -356,6 +434,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		fallback = options and options.fallback,
 		on_move = options and options.on_move,
 		on_cancel = options and options.on_cancel,
+		paths = options and options.paths,
 		generation = 0,
 		searching = false,
 		mode = kern.mode.get(),

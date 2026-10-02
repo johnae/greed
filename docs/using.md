@@ -53,7 +53,7 @@ picker, project search and tree work within the shown one.
 | Keys | |
 |---|---|
 | `:project PATH` | Open the project `PATH` is in, or switch to it |
-| `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; type a folder path to open it |
+| `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; type a folder path (`~/src/`) to list the folders in it, `tab` to go into one |
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |

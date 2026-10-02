@@ -3,6 +3,7 @@
 
 local kern = require("@kern")
 local parse = require("./parse")
+local core = require("@core")
 
 export type Candidate = {
 	--- What replaces the word being typed.
@@ -73,10 +74,15 @@ M.register("buffer", function()
 	return items
 end)
 
--- Paths one directory at a time: "src/" lists what's in src.
+-- Paths one directory at a time: "src/" lists what's in src, "~/" the home
+-- folder, and hidden ones show once what's typed starts with ".".
 M.register("file", function(word)
 	local dir = string.match(word, "^(.*/)") or ""
-	local entries = kern.fs.list(if dir == "" then "." else dir) or {}
+	local typed = string.sub(word, #dir + 1)
+	local entries = kern.fs.list(if dir == "" then "." else core.project.expand(dir), {
+		hidden = string.sub(typed, 1, 1) == ".",
+		ignored = true,
+	}) or {}
 	local items = {}
 	for _, entry in entries do
 		table.insert(items, { text = dir .. entry.name .. (if entry.dir then "/" else "") })

@@ -174,6 +174,8 @@ kern.tab.set_layout({
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes
   the current one and `on_cancel` hears `esc`, for trying things out live.
+  With `paths = { dirs = true, choose = function(path) ... end }`, typing a
+  path lists the folder's contents, and `tab` completes one into the query.
 - The theme maps style names to looks, as in
   `kern.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those

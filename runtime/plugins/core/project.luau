@@ -146,6 +146,18 @@ function M.unsaved(): { string }
 	return unsaved
 end
 
+--- A typed path as a full one: "~/src" from the home folder, "src" from the
+--- folder Kern started in.
+function M.expand(path: string): string
+	local home = kern.fs.dirs().home
+	if home and (path == "~" or string.sub(path, 1, 2) == "~/") then
+		return home .. string.sub(path, 2)
+	elseif string.sub(path, 1, 1) ~= "/" then
+		return `{kern.fs.cwd()}/{path}`
+	end
+	return path
+end
+
 --- `path`, relative to `root`, as a path to open: relative to the
 --- starting directory when the root is inside it, so files opened from a
 --- search and from the file picker are the same buffer.

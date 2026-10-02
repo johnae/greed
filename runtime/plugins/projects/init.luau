@@ -58,17 +58,7 @@ local function short(path: string): string
 	return path
 end
 
--- A typed path as a full one: "~/src" from the home folder, "src" from the
--- folder Kern started in.
-local function expand(path: string): string
-	local home = kern.fs.dirs().home
-	if home and (path == "~" or string.sub(path, 1, 2) == "~/") then
-		return home .. string.sub(path, 2)
-	elseif string.sub(path, 1, 1) ~= "/" then
-		return `{kern.fs.cwd()}/{path}`
-	end
-	return path
-end
+local expand = core.project.expand
 
 local function is_dir(path: string): boolean
 	local info = kern.fs.stat(path)
@@ -243,6 +233,13 @@ kern.command({
 				kern.session.switch({ path = item.value.path })
 			end
 		end, {
+			-- A typed folder lists the folders in it, to go on with tab.
+			paths = {
+				dirs = true,
+				choose = function(path)
+					kern.session.switch({ path = path })
+				end,
+			},
 			fallback = function(query)
 				local path = expand(query)
 				if not is_dir(path) then

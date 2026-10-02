@@ -301,3 +301,34 @@ test("enter over several buttons picks which to press", function(t)
 	t:keys("r e j enter")
 	assert(ran[1] == "reject" and #ran == 1, table.concat(ran, ","))
 end)
+
+test("a picker that takes paths lists the folders in a typed one, and tab goes on", function(t)
+	local dir =
+		t:tempdir({ ["alpha/x"] = "", ["beta/y"] = "", ["file.txt"] = "", [".hidden/z"] = "" })
+	local picker = require("@picker")
+	local chosen: string? = nil
+	t:buffer("|x")
+	picker.pick("Places", { { label = "not a path", value = 1 } }, function() end, {
+		paths = {
+			dirs = true,
+			choose = function(path)
+				chosen = path
+			end,
+		},
+	})
+	for _, key in string.split(dir .. "/", "") do
+		t:keys(if key == " " then "space" else key)
+	end
+	local listed = items()
+	assert(
+		#listed == 2 and listed[1] == dir .. "/alpha/" and listed[2] == dir .. "/beta/",
+		table.concat(listed, ",")
+	)
+	t:keys("b tab")
+	assert(
+		string.split(kern.view():buffer():text(), "\n")[1] == dir .. "/beta/",
+		"tab put it in the query"
+	)
+	t:keys("backspace backspace backspace backspace backspace a enter")
+	assert(chosen == dir .. "/alpha", tostring(chosen))
+end)
