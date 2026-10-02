@@ -10,8 +10,9 @@
 --   z a         fold the section under the cursor, or unfold it
 --
 -- In notes (Markdown files in the notes folder, or every Markdown file with
--- `notes-everywhere`), links show without their brackets and each note
--- lists the notes linking to it at its end.
+-- `notes-everywhere`), links show without their brackets, markup shows as
+-- symbols (look.luau), and each note lists the notes linking to it at its
+-- end.
 --
 --     local kern = require("@kern")
 --     kern.option.set("notes-folder", "~/Documents/notes")
@@ -22,6 +23,7 @@ require("@self/links")
 require("@self/todos")
 require("@self/folds")
 require("@self/tools")
+require("@self/look")
 
 kern.keymap.bind("normal", {
 	["space n d"] = "notes-daily",

@@ -150,3 +150,55 @@ test("agents can list, search, read and write notes and their todos", function(t
 	assert(#open == 1 and open[1].text == "ship it due:2026-10-05" and open[1].due == "2026-10-05")
 	assert(not pcall(run_tool, "notes_read", { name = "nope" }), "a missing note fails")
 end)
+
+-- A note open with `text` and the cursor on its last line, drawn without
+-- line numbers. Returns the rows.
+local function shown(t: test.TestContext, text: string): { string }
+	local dir = folder(t, { ["plans.md"] = text })
+	kern.open(`{dir}/plans.md`)
+	local view = kern.view()
+	view:buffer():set_line_numbers(false)
+	local last = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = last, head = last } }, primary = 1 })
+	return t:draw(50, 8)
+end
+
+test("markup in notes shows as symbols, except on the cursor's line", function(t)
+	local rows =
+		shown(t, "# Plans\n- [ ] call the bank due:2020-01-01\n- [x] pay rent\n- milk\n- [ ] here")
+	assert(rows[1] == "◉ Plans", rows[1])
+	assert(rows[2] == "☐ call the bank 📅 1 Jan 2020", rows[2])
+	assert(rows[3] == "☑ pay rent", rows[3])
+	assert(rows[4] == "• milk", rows[4])
+	assert(rows[5] == "- [ ] here", `the cursor's line as written: {rows[5]}`)
+	local styles: { [string]: boolean } = {}
+	for _, mark in kern.view():buffer():decorations("notes-look") do
+		styles[mark.style] = true
+	end
+	assert(styles["notes.overdue"] and styles["notes.done"], "overdue and done have their styles")
+end)
+
+test("clicking a todo's box ticks it", function(t)
+	shown(t, "- [ ] call the bank\n\n")
+	t:mouse("press", 0, 0)
+	local text = kern.view():buffer():text()
+	assert(string.sub(text, 1, 6) == "- [x] ", text)
+end)
+
+test("symbols can change and rules of your own add styles and symbols", function(t)
+	local notes = require("@notes")
+	notes.symbols({ todo = "o", bullet = "-" })
+	notes.rule({ pattern = "#[%w_-]+", style = "notes.tag" })
+	notes.rule({ pattern = "!!", show = "(!)", style = "notes.urgent" })
+	local rows = shown(t, "- [ ] ring #home !!\n- milk\n")
+	assert(rows[1] == "o ring #home (!)", rows[1])
+	assert(rows[2] == "- milk", rows[2])
+	local tagged = false
+	local buffer = kern.view():buffer()
+	for _, mark in buffer:decorations("notes-look") do
+		tagged = tagged
+			or (mark.style == "notes.tag" and buffer:slice(mark.from, mark.to) == "#home")
+	end
+	assert(tagged, "the tag is styled")
+	notes.symbols({ todo = "☐", bullet = "•" })
+end)

@@ -10,6 +10,7 @@
 		"restore": "./plugins/restore",
 		"terminal": "./plugins/terminal",
 		"panes": "./plugins/panes",
-		"projects": "./plugins/projects"
+		"projects": "./plugins/projects",
+		"notes": "./plugins/notes"
 	}
 }

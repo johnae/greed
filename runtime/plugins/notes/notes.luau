@@ -17,7 +17,7 @@ kern.option.define({
 
 kern.option.define({
 	name = "notes-conceal",
-	doc = "Show links in notes without their brackets",
+	doc = "Show links in notes without their brackets, and markup as symbols",
 	default = true,
 })
 
@@ -128,6 +128,56 @@ end
 --- Today's date, as notes write it: "2026-10-01".
 function M.today(): string
 	return os.date("%Y-%m-%d") :: string
+end
+
+export type Symbols = {
+	todo: string,
+	done: string,
+	--- One for each heading level, the last for any deeper.
+	headings: { string },
+	bullet: string,
+	due: string,
+}
+
+export type Rule = {
+	--- A Luau pattern, e.g. "#[%w_-]+" for tags.
+	pattern: string,
+	--- The style what it matches is drawn in.
+	style: string,
+	--- What to show in its place, on lines the cursor isn't on.
+	show: string?,
+	--- A command clicking it runs, with the cursor put on it first.
+	action: string?,
+}
+
+--- What notes show their markup as, and the rules you added (see
+--- look.luau, which draws them).
+M.look = {
+	symbols = {
+		todo = "☐",
+		done = "☑",
+		headings = { "◉", "○", "◆", "◇" },
+		bullet = "•",
+		due = "📅",
+	} :: Symbols,
+	rules = {} :: { Rule },
+	-- Draws the notes again; look.luau sets it.
+	changed = function() end,
+}
+
+--- Replaces some or all of the symbols notes show their markup as.
+function M.symbols(changes: { [string]: any })
+	for name, value in changes do
+		(M.look.symbols :: any)[name] = value
+	end
+	M.look.changed()
+end
+
+--- Adds a rule: text matching `pattern` drawn in `style`, shown as `show`
+--- and running the command `action` when clicked, if given.
+function M.rule(rule: Rule)
+	table.insert(M.look.rules, rule)
+	M.look.changed()
 end
 
 return M

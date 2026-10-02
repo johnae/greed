@@ -333,11 +333,43 @@ links show without their brackets (except on the cursor's line) and the
 notes linking to it are listed at its end. Other Markdown files, like a
 project's README, look as they always do; `:set notes-everywhere true`
 treats every Markdown file as a note, and `:set notes-conceal false` shows
-the brackets.
+the brackets and the markup below as written.
 
 ```luau
 require("@kern").option.set("notes-folder", "~/Documents/notes")
 ```
+
+### How notes look
+
+On every line but the cursor's, a note's markup shows as symbols: todo
+boxes as ☐ and ☑ (done ones dimmed and struck through), headings as a
+symbol for their level, list dashes as bullets, and `due:2026-10-03` as
+📅 3 Oct, in red once it's past. The file stays plain Markdown; move the
+cursor onto a line to edit what's really there. Click a box to tick it, or
+a heading's symbol to fold its section.
+
+The symbols, rules of your own and how they all look are set from your
+config:
+
+```luau
+local notes = require("@notes")
+
+-- other symbols, e.g. from a Nerd Font
+notes.symbols({ todo = "", done = "", bullet = "-" })
+
+-- tags in their own colour, and !! shown as a flame
+notes.rule({ pattern = "#[%w_-]+", style = "notes.tag" })
+notes.rule({ pattern = "!!", show = "🔥", style = "notes.urgent" })
+
+-- how a style looks is the theme's, like everything else
+require("@kern").theme.set({ ["notes.tag"] = { fg = "magenta" } })
+```
+
+A rule's `pattern` is a Luau pattern; with `show` the match is replaced by
+that text, and with `action` (a command name) clicking it runs the
+command. The styles notes use are `notes.todo`, `notes.done`,
+`notes.done.box`, `notes.heading`, `notes.bullet`, `notes.due` and
+`notes.overdue`.
 
 Agents can read and write your notes and todos too; see
 [Agents](agents.md).
