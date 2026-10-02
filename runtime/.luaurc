@@ -15,6 +15,7 @@
 		"notes": "./plugins/notes",
 		"theme": "./plugins/theme",
 		"hints": "./plugins/hints",
-		"statusline": "./plugins/statusline"
+		"statusline": "./plugins/statusline",
+		"operations": "./plugins/operations"
 	}
 }

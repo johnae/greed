@@ -353,6 +353,28 @@ project search's results, so you can edit the changes there and `:w`
 saves the files; `space g r` on a change puts it back, and `enter` goes to
 it in its file. New files show whole, and deleted ones are left out.
 
+## Operations
+
+An operation is a piece of work across files taken as one thing: a
+rename an agent did in 14 files, a plugin's refactor, the changes you
+accepted from a proposal. Its edits in every file undo together, and you
+can review it in one buffer.
+
+| Keys | What it does |
+|---|---|
+| `space u o` (`:operations`) | Pick a recent operation to review |
+| `space u u` (`:operation-undo`) | Undo the latest operation, in every file at once |
+
+The review is a multibuffer of the operation's changes, with the programs
+it ran (a test run, a formatter) and how they exited at the top. Edit it
+like any multibuffer, `space g r` puts a change back, and `space u u` in it
+undoes that operation. Undo refuses, and changes nothing, when you've
+edited one of its files on top of it since; undo those edits first.
+
+Every edit also records who made it (you, a plugin, an agent, or a change
+on disk) and the command it came from. Agents can ask with the
+`history_recent` tool, and plugins with `buffer:history()`.
+
 ## Formatting
 
 Saving a file formats it, and `:format` does it without saving. Kern uses

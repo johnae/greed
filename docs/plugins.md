@@ -110,6 +110,18 @@ kern.history.undo_group(group) -- every buffer back, or nil and why not
 Undoing a group refuses, and changes nothing, when something was done on
 top of it in one of the buffers since.
 
+The `operations` plugin builds on groups: it names the work, remembers the
+files it changed and the programs it ran, and gives it a review and an
+undo key.
+
+```luau
+local operations = require("@operations")
+operations.run("rename parse to parse_line", function(op)
+	-- edit any buffers, then
+	operations.exec(op, { "cargo", "test" })
+end)
+```
+
 ### Syntax trees
 
 Buffers in a language with a tree-sitter grammar have a syntax tree.

@@ -1,0 +1,2 @@
+name = "operations"
+requires = ["core", "picker", "multibuffer"]
