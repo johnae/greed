@@ -623,9 +623,49 @@ kern.plugin.unload("hints")
 
 [Keys](keys.md) covers key names, modes and taking keys away.
 
-Theme names fall back to their parent, so `keyword.control` uses `keyword`
-unless it has its own entry. The default theme uses the terminal's 16
-colors; `#rrggbb` colors work in terminals that support them.
+### Themes
+
+`:theme` lists the themes and tries each one as you move through the list.
+`enter` keeps it, `esc` goes back to the one you had, and `:theme nord`
+switches straight away. The theme you pick is remembered for next time.
+
+Kern comes with `default` (your terminal's 16 colors, so it follows your
+terminal's palette), `nord`, `nord-light`, `dracula`, `catppuccin-mocha`,
+`catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `gruvbox`,
+`gruvbox-light`, `onedark`, `tokyonight`, `tokyonight-storm`,
+`solarized-dark`, `solarized-light`, `rose-pine`, `rose-pine-dawn`,
+`kanagawa`, `everforest` and `monokai`.
+
+Themes are Luau. Set one, or make your own, in `init.luau`:
+
+```luau
+local theme = require("@theme")
+theme.use("nord")
+
+-- A built-in theme with changes
+theme.define("my-nord", {
+	inherits = "nord",
+	styles = { comment = { fg = "#7b88a1", italic = false } },
+})
+
+-- A theme from a palette: backgrounds, text and hues, and optionally
+-- colors for keywords, functions, strings, types, constants and operators
+theme.define("mine", {
+	palette = {
+		bg = "#101418", bg_alt = "#181e24", bg_high = "#232b33", selection = "#2c3640",
+		fg = "#d0d6dc", comment = "#5c6773", gutter = "#3a444e",
+		red = "#e06c75", orange = "#d19a66", yellow = "#e5c07b", green = "#98c379",
+		cyan = "#56b6c2", blue = "#61afef", purple = "#c678dd",
+		keyword = "#c678dd",
+	},
+})
+```
+
+`kern.theme.set` changes single names on top of whichever theme is in use,
+and those changes stay when you switch themes. Names fall back to their
+parent, so `keyword.control` uses `keyword` unless it has its own entry;
+[Highlighting](highlighting.md) lists them. `#rrggbb` colors work in
+terminals that support them, which is nearly all.
 
 ### Highlighting and syntax queries
 

@@ -1,1 +1,2 @@
 name = "theme"
+requires = ["picker", "cmdline"]

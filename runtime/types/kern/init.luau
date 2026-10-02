@@ -941,6 +941,10 @@ export type Syntax = {
 export type Theme = {
 	--- Sets entries by name, replacing any with the same name.
 	set: (entries: { [string]: ThemeEntry }) -> (),
+	--- Replaces the base theme, the entries under those set with `set`: a
+	--- theme plugin calls it to switch themes without touching what your
+	--- config or other plugins set.
+	base: (entries: { [string]: ThemeEntry }) -> (),
 	--- The entry for exactly `name`, if there is one.
 	get: (name: string) -> ThemeEntry?,
 }

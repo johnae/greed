@@ -12,6 +12,7 @@
 		"panes": "./plugins/panes",
 		"projects": "./plugins/projects",
 		"multibuffer": "./plugins/multibuffer",
-		"notes": "./plugins/notes"
+		"notes": "./plugins/notes",
+		"theme": "./plugins/theme"
 	}
 }

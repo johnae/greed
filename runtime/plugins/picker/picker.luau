@@ -35,6 +35,11 @@ export type Options = {
 	--- Called with what was typed when enter is pressed and nothing matches,
 	--- e.g. to open a folder that isn't in the list.
 	fallback: ((query: string) -> ())?,
+	--- Called with the current item whenever it changes, e.g. to try it out
+	--- as you move, as the theme picker does.
+	on_move: ((item: Item) -> ())?,
+	--- Called when the picker closes without choosing (esc).
+	on_cancel: (() -> ())?,
 }
 
 -- At most this many matches are shown.
@@ -62,6 +67,10 @@ type Open = {
 	preview_view: kern.View?,
 	-- The item the preview shows.
 	previewed: Item?,
+	on_move: ((item: Item) -> ())?,
+	-- The item `on_move` last heard of.
+	moved_to: Item?,
+	on_cancel: (() -> ())?,
 }
 
 -- Shows the current item in the preview, if it changed.
@@ -129,6 +138,12 @@ local function render(o: Open)
 	end)
 	o.buffer:decorate("picker", marks)
 	update_preview(o)
+	local index = o.matches[o.current]
+	local item = if index then o.items[index] else nil
+	if o.on_move and item and item ~= o.moved_to then
+		o.moved_to = item
+		o.on_move(item)
+	end
 end
 
 -- Puts `items` in the list, as a source's answer.
@@ -262,7 +277,13 @@ kern.command({
 kern.command({
 	name = "picker-close",
 	doc = "Close the picker without choosing",
-	run = close,
+	run = function()
+		local cancel = open and open.on_cancel
+		close()
+		if cancel then
+			cancel()
+		end
+	end,
 })
 
 kern.command({
@@ -333,6 +354,8 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		source = options and options.source,
 		delay = options and options.delay or 100,
 		fallback = options and options.fallback,
+		on_move = options and options.on_move,
+		on_cancel = options and options.on_cancel,
 		generation = 0,
 		searching = false,
 		mode = kern.mode.get(),

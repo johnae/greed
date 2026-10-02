@@ -1154,6 +1154,45 @@ fn plugins_set_the_theme() {
 }
 
 #[test]
+fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
+    let h = host("");
+    let fg = |name: &str| {
+        h.eval(&format!(
+            "return (require('@kern').theme.get('{name}') or {{}}).fg"
+        ))
+    };
+    h.load_str(
+        "themes",
+        "local kern = require('@kern')
+         kern.theme.base({ keyword = { fg = 'red' }, comment = { fg = 'blue' } })
+         kern.command({ name = 'switch', run = function()
+           kern.theme.base({ keyword = { fg = 'yellow' }, string = { fg = 'cyan' } })
+         end })",
+    )
+    .unwrap();
+    h.load_str(
+        "mine",
+        "require('@kern').theme.set({ keyword = { fg = 'green' } })",
+    )
+    .unwrap();
+    assert_eq!(fg("keyword").unwrap(), "green", "set wins over the base");
+    assert_eq!(fg("comment").unwrap(), "blue");
+
+    // Another base replaces the whole of the last one.
+    h.run("switch").unwrap();
+    assert_eq!(fg("keyword").unwrap(), "green", "still on top");
+    assert_eq!(fg("comment").unwrap(), "nil", "the old base's entries go");
+    assert_eq!(fg("string").unwrap(), "cyan");
+
+    // Unloading the plugin that set an entry shows the base under it again,
+    // and unloading the base's plugin takes the base away.
+    h.load_str("mine", "").unwrap();
+    assert_eq!(fg("keyword").unwrap(), "yellow");
+    h.load_str("themes", "").unwrap();
+    assert_eq!(fg("keyword").unwrap(), "nil");
+}
+
+#[test]
 fn plugins_decorate_buffers() {
     let h = host("hello world");
     h.eval(

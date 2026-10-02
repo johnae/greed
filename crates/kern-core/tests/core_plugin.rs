@@ -111,7 +111,8 @@ fn vim_plugin_tests_pass() {
 
 #[test]
 fn theme_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("theme")], &plugin("theme"));
+    let plugins = [core(), plugin("picker"), plugin("cmdline"), plugin("theme")];
+    assert_all_pass(&plugins, &plugin("theme"));
 }
 
 #[test]
@@ -204,7 +205,8 @@ fn every_style_name_the_plugins_use_is_in_the_theme() {
     assert!(names.len() > 20, "found the names: {names:?}");
 
     let host = kern_core::luau::Host::new(kern_core::Editor::new(kern_text::ClientId(1))).unwrap();
-    host.load_dirs(&[core(), plugin("theme")]).unwrap();
+    host.load_dirs(&[core(), plugin("picker"), plugin("cmdline"), plugin("theme")])
+        .unwrap();
     let missing: Vec<&String> = names
         .iter()
         .filter(|name| {

@@ -1,106 +1,152 @@
--- The default theme. It only uses the terminal's 16 colors, so it follows
--- whatever palette your terminal has.
+-- Themes: what every style name looks like. Kern comes with the default
+-- (the terminal's 16 colors) and the usual ones from other editors: Nord,
+-- Dracula, Catppuccin, Gruvbox, Tokyo Night, One Dark and more.
 --
--- To change a few things, call `kern.theme.set` from your config with just
--- those names; to replace the theme, set everything. Names fall back to their
--- parent: "keyword.control" uses "keyword" unless it has its own entry.
+--   :theme NAME   switch to a theme
+--   :theme        pick one, trying each as you move; esc goes back
+--
+-- The theme picked is remembered (in the cache folder) until you pick
+-- another. To set it from your config, or define your own:
+--
+--     local theme = require("@theme")
+--     theme.use("nord")
+--     theme.define("mine", {
+--         palette = { bg = "#101418", ... },  -- see palette.luau
+--         styles = { comment = { fg = "#5c6773" } },
+--     })
+--     theme.define("nord-bold", { inherits = "nord", styles = { keyword = { bold = true } } })
+--
+-- A theme is the base under `kern.theme.set`: entries set that way, from
+-- your config or a plugin, stay on top whichever theme is in use.
 
 local kern = require("@kern")
+local picker = require("@picker")
+local cmdline = require("@cmdline")
+local palette = require("@self/palette")
 
-kern.theme.set({
-	["ui.gutter"] = { fg = "bright-black" },
-	["ui.gutter.diagnostic.error"] = { fg = "red" },
-	["ui.gutter.diagnostic.warning"] = { fg = "yellow" },
-	["ui.gutter.diagnostic.info"] = { fg = "blue" },
-	["ui.gutter.diagnostic.hint"] = { fg = "cyan" },
-	["ui.selection"] = { bg = "blue", fg = "bright-white" },
-	["ui.cursor"] = { reverse = true },
-	["ui.statusline"] = { bg = "bright-black", fg = "white" },
-	["ui.statusline.mode"] = { bg = "blue", fg = "black", bold = true },
-	["ui.statusline.message"] = { fg = "bright-yellow" },
-	["ui.float.border"] = { fg = "bright-black" },
-	["ui.float.title"] = { fg = "white", bold = true },
-	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
-	["ui.menu.match"] = { fg = "yellow", bold = true },
-	["ui.menu.doc"] = { dim = true },
-	["ui.button"] = { bg = "bright-black", fg = "bright-white" },
-	["ui.signature.parameter"] = { fg = "yellow", bold = true },
-	["ui.search.match"] = { bg = "yellow", fg = "black" },
-	["ui.grep.location"] = { fg = "cyan" },
-	["diff.plus"] = { fg = "green" },
-	["diff.minus"] = { fg = "red", strikethrough = true },
-	["diff.delta"] = { fg = "yellow" },
-	["diff.plus.change"] = { fg = "bright-green", bold = true },
-	["diff.minus.change"] = { fg = "bright-red", bold = true },
-	["notes.todo"] = { fg = "yellow" },
-	["notes.done"] = { fg = "bright-black", strikethrough = true },
-	["notes.done.box"] = { fg = "green" },
-	["notes.heading"] = { fg = "blue", bold = true },
-	["notes.bullet"] = { fg = "blue" },
-	["notes.due"] = { fg = "cyan" },
-	["notes.overdue"] = { fg = "red", bold = true },
-	["notes.tag"] = { fg = "magenta" },
-	["notes.urgent"] = { fg = "red", bold = true },
-	["markup.link"] = { fg = "cyan", underline = "line" },
-	fold = { fg = "bright-black" },
-	["ui.flash"] = { bg = "yellow", fg = "black" },
-	["ui.jump.label"] = { fg = "red", bold = true },
-	["ui.health.found"] = { fg = "green" },
-	["ui.health.missing"] = { fg = "bright-black" },
-	["ui.panel.border"] = { fg = "bright-black" },
-	["ui.panel.title"] = { bold = true },
-	["ui.pane.border"] = { fg = "bright-black" },
-	["ui.tabline"] = { bg = "bright-black", fg = "white" },
-	["ui.tabline.active"] = { bg = "blue", fg = "black", bold = true },
-	["ui.tree.directory"] = { fg = "blue", bold = true },
-	["ui.tree.open"] = { bg = "bright-black" },
+export type Palette = palette.Palette
+export type Styles = { [string]: kern.ThemeEntry }
 
-	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
-	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },
-	["diagnostic.info"] = { underline = "curl", underline_color = "blue" },
-	["diagnostic.hint"] = { underline = "dotted", underline_color = "cyan" },
-	["diagnostic.sign.error"] = { fg = "red", bold = true },
-	["diagnostic.sign.warning"] = { fg = "yellow", bold = true },
-	["diagnostic.sign.info"] = { fg = "blue" },
-	["diagnostic.sign.hint"] = { fg = "cyan" },
-	["diagnostic.message.error"] = { fg = "red", italic = true },
-	["diagnostic.message.warning"] = { fg = "yellow", italic = true },
-	["diagnostic.message.info"] = { fg = "blue", italic = true },
-	["diagnostic.message.hint"] = { fg = "cyan", italic = true },
+--- A theme: styles from a palette, styles of its own on top, and another
+--- theme to start from.
+export type Theme = {
+	inherits: string?,
+	palette: Palette?,
+	styles: Styles?,
+}
 
-	-- Code; docs/highlighting.md lists every name.
-	keyword = { fg = "magenta" },
-	string = { fg = "green" },
-	["string.special"] = { fg = "cyan" },
-	comment = { fg = "bright-black", italic = true },
-	["function"] = { fg = "blue" },
-	constructor = { fg = "blue" },
-	type = { fg = "yellow" },
-	attribute = { fg = "yellow" },
-	label = { fg = "yellow" },
-	namespace = { fg = "yellow" },
-	constant = { fg = "cyan" },
-	["constant.character.escape"] = { fg = "cyan", bold = true },
-	tag = { fg = "blue" },
-	special = { fg = "cyan" },
+local M = {}
 
-	-- Prose
-	["markup.heading"] = { fg = "blue", bold = true },
-	["markup.heading.marker"] = { fg = "bright-black" },
-	["markup.list"] = { fg = "magenta" },
-	["markup.bold"] = { bold = true },
-	["markup.italic"] = { italic = true },
-	["markup.strikethrough"] = { strikethrough = true },
-	["markup.link.url"] = { fg = "cyan", underline = true },
-	["markup.link.text"] = { fg = "blue" },
-	["markup.link.label"] = { fg = "blue" },
-	["markup.quote"] = { fg = "bright-black", italic = true },
-	["markup.raw"] = { fg = "green" },
+local themes: { [string]: Theme } = { default = { styles = require("@self/default") :: any } }
+for name, colors in require("@self/themes") do
+	themes[name] = { palette = colors }
+end
 
-	-- A multibuffer's file names, above their excerpts.
-	["ui.multibuffer.file"] = { fg = "blue", bold = true },
-	-- What an excerpt is about, e.g. a problem's message, after its file.
-	["ui.multibuffer.note"] = { fg = "bright-black", italic = true },
+local current = "default"
+
+--- Adds a theme, or replaces the one called `name`.
+function M.define(name: string, theme: Theme)
+	themes[name] = theme
+end
+
+--- Every theme's name, sorted.
+function M.list(): { string }
+	local names = {}
+	for name in themes do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	return names
+end
+
+--- The theme in use.
+function M.current(): string
+	return current
+end
+
+-- The styles of theme `name`, with what it inherits under them.
+local function styles(name: string, seen: { [string]: boolean }): Styles
+	local theme = themes[name]
+	if theme == nil then
+		error(`there's no theme called {name}`, 0)
+	elseif seen[name] then
+		error(`theme {name} inherits from itself`, 0)
+	end
+	seen[name] = true
+	local out: Styles = if theme.inherits then styles(theme.inherits, seen) else {}
+	if theme.palette then
+		for style, entry in palette.styles(theme.palette) do
+			out[style] = entry
+		end
+	end
+	for style, entry in theme.styles or {} do
+		out[style] = entry
+	end
+	return out
+end
+
+--- Switches to theme `name`.
+function M.use(name: string)
+	kern.theme.base(styles(name, {}))
+	current = name
+end
+
+-- Where the theme picked last is kept.
+local function remembered(): string?
+	local cache = kern.fs.dirs().cache
+	return cache and `{cache}/theme`
+end
+
+-- Switches to `name` and remembers it for next time.
+local function pick(name: string)
+	M.use(name)
+	local path = remembered()
+	if path then
+		kern.fs.write(path, name .. "\n")
+	end
+end
+
+cmdline.completer("theme", function()
+	local items = {}
+	for _, name in M.list() do
+		table.insert(items, { text = name, doc = if name == current then "in use" else nil })
+	end
+	return items
+end)
+
+kern.command({
+	name = "theme",
+	doc = "Switch to a theme, or pick one trying each as you move",
+	args = { { name = "name", doc = "e.g. nord or dracula", complete = "theme" } },
+	run = function(ctx)
+		local name = ctx.args[1]
+		if name then
+			pick(name)
+			return
+		end
+		local before = current
+		-- The theme in use comes first, so opening the picker changes nothing.
+		local items = { { label = current, value = current } }
+		for _, theme in M.list() do
+			if theme ~= current then
+				table.insert(items, { label = theme, value = theme })
+			end
+		end
+		picker.pick("Theme", items, function(item)
+			pick(item.value)
+		end, {
+			on_move = function(item)
+				M.use(item.value)
+			end,
+			on_cancel = function()
+				M.use(before)
+			end,
+		})
+	end,
 })
 
-return {}
+local saved = remembered()
+local name = saved and string.match(kern.fs.read(saved) or "", "^%s*(%S+)")
+M.use(if name and themes[name] then name else "default")
+
+return M

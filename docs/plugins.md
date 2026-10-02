@@ -172,10 +172,13 @@ kern.tab.set_layout({
   `kern.panel(buffer, { side = "right", width = 40 })`.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
-  for items as the query changes.
+  for items as the query changes. `on_move` hears each item as it becomes
+  the current one and `on_cancel` hears `esc`, for trying things out live.
 - The theme maps style names to looks, as in
   `kern.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
-  names so users can restyle them.
+  names so users can restyle them. Themes themselves go under those
+  entries: `kern.theme.base(entries)` replaces the whole base, which is how
+  the theme plugin switches themes.
 - The status line is built by a function you can replace with
   `kern.statusline`.
 

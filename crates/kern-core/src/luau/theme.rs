@@ -7,9 +7,12 @@
 //! })
 //! ```
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use mlua::{Lua, Table, Value};
 
-use super::{state, state_mut};
+use super::{State, state, state_mut};
 use crate::registry::PluginId;
 use crate::theme::{Color, Entry, Style, Underline};
 
@@ -22,18 +25,33 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     theme.set(
         "set",
         lua.create_function(move |lua, entries: Table| {
-            let mut parsed = Vec::new();
-            for pair in entries.pairs::<String, Table>() {
-                let (name, spec) = pair?;
-                let entry = entry_from_lua(&spec)
-                    .map_err(|err| mlua::Error::runtime(format!("theme entry {name:?}: {err}")))?;
-                parsed.push((name, entry));
-            }
+            let parsed = entries_from_lua(&entries)?;
             let mut state = state_mut(lua);
             for (name, entry) in parsed {
-                state.theme_owners.insert(name.as_str().into(), o.clone());
+                state.theme_owners.insert(name.clone(), o.clone());
                 state.editor.theme_mut().set(name, entry);
             }
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    theme.set(
+        "base",
+        lua.create_function(move |lua, entries: Table| {
+            let parsed: HashMap<_, _> = entries_from_lua(&entries)?.into_iter().collect();
+            let mut state = state_mut(lua);
+            let state = &mut *state;
+            // Entries set with `set` stay on top.
+            if let Some((_, old)) = state.theme_base.take() {
+                remove_base(state, &old);
+            }
+            for (name, entry) in &parsed {
+                if !state.theme_owners.contains_key(name) {
+                    state.editor.theme_mut().set(name.clone(), entry.clone());
+                }
+            }
+            state.theme_base = Some((o.clone(), parsed));
             Ok(())
         })?,
     )?;
@@ -53,6 +71,28 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
     Ok(theme)
+}
+
+/// Removes the entries of a base theme that no `set` entry covers.
+pub(super) fn remove_base(state: &mut State, base: &HashMap<Arc<str>, Entry>) {
+    for name in base.keys() {
+        if !state.theme_owners.contains_key(name) {
+            state.editor.theme_mut().remove(name);
+        }
+    }
+}
+
+/// Reads `{ [name] = entry }`.
+fn entries_from_lua(entries: &Table) -> LuaResult<Vec<(Arc<str>, Entry)>> {
+    entries
+        .pairs::<String, Table>()
+        .map(|pair| {
+            let (name, spec) = pair?;
+            let entry = entry_from_lua(&spec)
+                .map_err(|err| mlua::Error::runtime(format!("theme entry {name:?}: {err}")))?;
+            Ok((name.into(), entry))
+        })
+        .collect()
 }
 
 /// Reads `{ fg, bg, ..., tui = {...}, gui = {...} }`.
