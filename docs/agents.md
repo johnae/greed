@@ -60,10 +60,14 @@ out on both. Nothing changes until you decide:
 | `space o a` `space o r` | Accept or reject the changes your selections touch |
 | `space o A` `space o R` | Accept or reject every change in the file |
 | `space o o` | Pick from every pending change |
+| `space o d` | Show the file with every change in, beside it; again to hide |
 
 Changes follow the edits you make while they wait. The agent waits too, and
 then hears which changes went in. Accepted changes are ordinary edits you
 can undo.
+
+Side by side, the two panes scroll together, matching lines across the
+changes, and the right one keeps up as you edit, accept and reject.
 
 ## Claude Code's `/ide`
 

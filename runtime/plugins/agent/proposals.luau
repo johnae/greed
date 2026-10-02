@@ -9,6 +9,7 @@
 --   space o A  accept every change in the file
 --   space o R  reject every change in the file
 --   space o o  pick from every pending change
+--   space o d  the file with its changes in, side by side (compare.luau)
 --
 -- The agent's propose call waits for your decision and then learns which
 -- changes went in.
@@ -41,6 +42,15 @@ type Proposal = {
 
 local proposals: { Proposal } = {}
 local next_id = 0
+
+-- What wants to hear when a buffer's proposed changes come or go.
+local listeners: { (buffer: kern.Buffer) -> () } = {}
+
+local function changed(buffer: kern.Buffer)
+	for _, listener in listeners do
+		listener(buffer)
+	end
+end
 
 -- Each hunk has its own marks, so it moves with edits made while it waits
 -- and goes away on its own if its text is deleted.
@@ -231,6 +241,9 @@ local function decide(p: Proposal, chosen: (at: kern.Mark) -> boolean, accept: b
 		if index then
 			table.remove(proposals, index)
 		end
+	end
+	changed(p.buffer)
+	if #pending == 0 then
 		p.done.send(p)
 	end
 end
@@ -413,6 +426,7 @@ local function start(
 	for i, hunk in hunks do
 		draw(p, hunk, at[i])
 	end
+	changed(buffer)
 	local why = if reason then `: {reason}` else ""
 	kern.echo(`an agent proposes {#hunks} changes to {path}{why} - space o o to review`)
 	return p.done.wait()
@@ -514,6 +528,32 @@ function M.withdraw_all(): number
 		end
 	end
 	return n
+end
+
+type Change = { from: number, to: number, text: string }
+
+--- The changes waiting in `buffer`, where their old text is now, in the
+--- order they appear.
+function M.changes(buffer: kern.Buffer): { Change }
+	local list: { Change } = {}
+	for _, p in in_buffer(buffer) do
+		for _, hunk in p.pending do
+			local at = position(p, hunk)
+			if at then
+				table.insert(list, { from = at.from, to = at.to, text = hunk.new })
+			end
+		end
+	end
+	table.sort(list, function(a: Change, b: Change)
+		return a.from < b.from
+	end)
+	return list
+end
+
+--- Calls `listener` with the buffer whenever its proposed changes come or
+--- go.
+function M.on_change(listener: (buffer: kern.Buffer) -> ())
+	table.insert(listeners, listener)
 end
 
 --- How many proposed changes are waiting, across all files.
