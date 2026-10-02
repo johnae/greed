@@ -239,7 +239,9 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 		return
 	end
 	kern.sleep(delay)
-	if wanted == generation and open == nil then
+	-- The view typed into may have closed meanwhile, like the command line
+	-- on enter; only the one still focused gets asked about.
+	if wanted == generation and open == nil and kern.view():id() == view:id() then
 		ask(view, wanted)
 	end
 end)
