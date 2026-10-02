@@ -86,6 +86,17 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
     let token = lock["authToken"].as_str().unwrap().to_owned();
     assert!(connect(port, "wrong").is_err(), "the token is checked");
 
+    // Claude Code asks for the "mcp" subprotocol, and gives up on a server
+    // that doesn't agree to it.
+    let mut request = format!("ws://127.0.0.1:{port}")
+        .into_client_request()
+        .unwrap();
+    let headers = request.headers_mut();
+    headers.insert("x-claude-code-ide-authorization", token.parse().unwrap());
+    headers.insert("sec-websocket-protocol", "mcp".parse().unwrap());
+    let (_, response) = tungstenite::connect(request).unwrap();
+    assert_eq!(response.headers()["sec-websocket-protocol"], "mcp");
+
     let mut socket = connect(port, &token).unwrap();
     let request = json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/list", "params": {} });
     socket.send(Message::text(request.to_string())).unwrap();

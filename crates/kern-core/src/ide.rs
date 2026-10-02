@@ -14,12 +14,17 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 use tungstenite::handshake::server::{ErrorResponse, Request as Handshake, Response};
+use tungstenite::http::HeaderValue;
 use tungstenite::{Message, WebSocket};
 
 use crate::control::{Request, new_token};
 
 /// The header Claude Code sends the lock file's token in.
 const AUTH_HEADER: &str = "x-claude-code-ide-authorization";
+
+/// The header a WebSocket client asks for subprotocols in, and the server
+/// says which it speaks.
+const PROTOCOL_HEADER: &str = "sec-websocket-protocol";
 
 /// How often a connection checks for notifications to send while it waits
 /// for messages.
@@ -123,12 +128,25 @@ fn serve(
         clippy::result_large_err,
         reason = "tungstenite decides the callback's type"
     )]
-    let check = |request: &Handshake, response: Response| -> Result<Response, ErrorResponse> {
-        let given = request
-            .headers()
+    let check = |request: &Handshake, mut response: Response| -> Result<Response, ErrorResponse> {
+        let headers = request.headers();
+        let given = headers
             .get(AUTH_HEADER)
             .and_then(|value| value.to_str().ok());
         if given == Some(token) {
+            // Claude Code asks for the "mcp" subprotocol and waits forever
+            // on a connection that doesn't agree to it.
+            let wants_mcp = headers
+                .get_all(PROTOCOL_HEADER)
+                .iter()
+                .filter_map(|value| value.to_str().ok())
+                .flat_map(|value| value.split(','))
+                .any(|protocol| protocol.trim() == "mcp");
+            if wants_mcp {
+                response
+                    .headers_mut()
+                    .insert(PROTOCOL_HEADER, HeaderValue::from_static("mcp"));
+            }
             Ok(response)
         } else {
             let mut refused = ErrorResponse::new(Some("wrong or missing token".to_owned()));
