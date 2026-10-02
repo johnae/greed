@@ -636,8 +636,24 @@ kern.plugin.unload("hints")
 
 The status line shows the mode, the tab, the file and whether a macro is
 recording on the left, and problems, the cursor's place, the machine and
-the session on the right. Some show as pills with rounded ends, which need
-a Nerd Font; `kern.option.set("statusline-caps", "none")` makes them square.
+the session on the right. Two options make it livelier, both off unless you
+turn them on:
+
+```luau
+local option = require("@kern").option
+-- The mode, tab, machine and session as pills in their theme colors, with
+-- rounded ends (they need a Nerd Font; "none" makes them square)
+option.set("statusline-pills", true)
+option.set("statusline-caps", "round")
+-- A wave of light through the letters of the tab, the file or the mode
+-- when they change, brightest in its middle
+option.set("effects", true)
+```
+
+The wave's letters glow towards the theme's `ui.glow` color: brighter text
+in a dark theme, the accent in a light one. Effects need a theme with
+`#rrggbb` colors, so the default 16-color theme has none.
+
 Add pieces of your own, or take some away:
 
 ```luau

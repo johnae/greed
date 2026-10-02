@@ -44,6 +44,8 @@ return {
 	["notes.urgent"] = { fg = "red", bold = true },
 	["markup.link"] = { fg = "cyan", underline = "line" },
 	fold = { fg = "bright-black" },
+	-- What lit letters glow towards; effects need "#rrggbb" colors.
+	["ui.glow"] = { fg = "bright-white" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
 	["ui.jump.label"] = { fg = "red", bold = true },
 	["ui.health.found"] = { fg = "green" },

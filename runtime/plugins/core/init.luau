@@ -27,6 +27,7 @@ local buttons = require("@self/buttons")
 local indent = require("@self/indent")
 local folds = require("@self/folds")
 local config = require("@self/config")
+local effects = require("@self/effects")
 
 kern.keymap.bind("normal", {
 	enter = "press-button",
@@ -158,6 +159,7 @@ return {
 	indent = indent,
 	folds = folds,
 	config = config,
+	effects = effects,
 	comment = comment,
 	jumps = jumps,
 	objects = objects,

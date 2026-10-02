@@ -3,6 +3,7 @@
 -- from the usual (Nord's keywords are blue, Dracula's are pink).
 
 local kern = require("@kern")
+local effects = require("@core").effects
 
 export type Palette = {
 	--- The editor's background, and two steps from it: one for the status
@@ -41,6 +42,14 @@ local M = {}
 function M.styles(p: Palette): { [string]: kern.ThemeEntry }
 	local fg_alt = p.fg_alt or p.fg
 	local accent = p.accent or p.blue
+	-- What lit letters glow towards: brighter text on a dark theme, the
+	-- accent on a light one.
+	local bg, text = effects.rgb(p.bg), effects.rgb(p.fg)
+	local glow = if bg
+			and text
+			and effects.lightness(bg) < 0.5
+		then effects.mix(text, { 255, 255, 255 }, 0.7)
+		else accent
 	local keyword = p.keyword or p.purple
 	local func = p.func or p.blue
 	local str = p.string or p.green
@@ -86,6 +95,7 @@ function M.styles(p: Palette): { [string]: kern.ThemeEntry }
 		["ui.multibuffer.file"] = { fg = p.blue, bold = true },
 		["ui.multibuffer.note"] = { fg = p.comment, italic = true },
 		fold = { fg = p.comment },
+		["ui.glow"] = { fg = glow },
 
 		["diff.plus"] = { fg = p.green },
 		["diff.minus"] = { fg = p.red, strikethrough = true },
