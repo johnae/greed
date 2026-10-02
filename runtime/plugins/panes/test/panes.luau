@@ -434,3 +434,26 @@ test("a picker under a floating terminal takes typing again once the terminal hi
 	assert(#t:floats() == 0, "closed")
 	t:keys("alt-f ctrl-d")
 end)
+
+test("g in pane mode labels the panes, and a label goes to its pane to act on it", function(t)
+	t:buffer("|hello")
+	t:keys("alt-p v v esc")
+	local panes = kern.tab.current().panes
+	assert(#panes == 3, `{#panes} panes`)
+	t:draw(90, 20)
+	t:keys("alt-p g")
+	assert(#t:floats() == 3, "a label over each pane")
+	assert(string.find(t:floats()[1], "1", 1, true), t:floats()[1])
+	t:keys("1")
+	assert(#t:floats() == 0, "the labels go")
+	assert(kern.view():id() == panes[1]:id(), "the first pane")
+	assert(kern.mode.get() == "pane", "still in pane mode, to act on it")
+	t:keys("f")
+	assert(kern.tab.current().zoomed, "f zoomed the picked pane")
+	t:keys("f esc")
+
+	-- Any key that isn't a label leaves things as they were.
+	t:keys("alt-p g q")
+	assert(#t:floats() == 0 and kern.view():id() == panes[1]:id())
+	t:keys("esc")
+end)

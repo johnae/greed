@@ -173,6 +173,48 @@ function M.toggle_zoom()
 	kern.tab.set_zoomed(not kern.tab.current().zoomed)
 end
 
+-- What `pick` labels panes with: digits first, then letters.
+local LABELS = "123456789abcdefghijklmnopqrstuvwxyz"
+
+--- Puts a label over each pane of the tab and focuses the one whose label
+--- is typed next; any other key leaves things as they were. In a zoomed
+--- tab every pane shows again first. Returns whether a pane was picked.
+function M.pick(): boolean
+	if kern.tab.current().zoomed then
+		kern.tab.set_zoomed(false)
+		-- Lets the panes be drawn where they now are.
+		kern.sleep(0)
+	end
+	local badges: { kern.View } = {}
+	local labelled: { [string]: kern.View } = {}
+	for i, pane in kern.tab.current().panes do
+		local label = string.sub(LABELS, i, i)
+		local area = pane:area()
+		if label ~= "" and area then
+			labelled[label] = pane
+			local badge = kern.create_buffer("pane-label", ` {label} `, { readonly = true })
+			badge:set_line_numbers(false)
+			badge:decorate(
+				"pane-label",
+				{ { from = 0, to = 3, style = "ui.pane.label", line = true } }
+			)
+			table.insert(
+				badges,
+				kern.float(badge, { x = area.x, y = area.y, width = 5, height = 3, focus = false })
+			)
+		end
+	end
+	local key = kern.next_key()
+	for _, badge in badges do
+		badge:close()
+	end
+	local pane = labelled[key]
+	if pane then
+		M.focus(pane)
+	end
+	return pane ~= nil
+end
+
 --- Opens a tab, empty or with a terminal.
 function M.new_tab(with_terminal: boolean?)
 	kern.tab.new()
@@ -384,6 +426,13 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	{ name = "pane-close", doc = "Close this pane", run = M.close_pane },
 	{ name = "pane-only", doc = "Close every other pane in the tab", run = M.only },
 	{ name = "pane-zoom", doc = "Show only this pane, or all of them again", run = M.toggle_zoom },
+	{
+		name = "pane-pick",
+		doc = "Label the panes and go to the one whose label you type next",
+		run = function()
+			M.pick()
+		end,
+	},
 	{
 		name = "pane-grow",
 		doc = "Give this pane more room",
@@ -623,6 +672,7 @@ M.keys = {
 		s = "pane-split-down",
 		x = "pane-close-done",
 		f = "pane-zoom",
+		g = "pane-pick",
 		w = "terminal-float",
 		space = "layout-next",
 		m = "layout-swap-main",
@@ -678,6 +728,7 @@ M.keys = {
 		o = "pane-only",
 		t = "pane-terminal",
 		z = "pane-zoom",
+		g = "pane-pick",
 	} :: { [string]: string },
 }
 
@@ -712,6 +763,7 @@ modes.pane = {
 		"v",
 		"s",
 		"x",
+		"g",
 		"f",
 		"w",
 		"space",

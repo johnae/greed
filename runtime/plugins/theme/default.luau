@@ -53,6 +53,7 @@ return {
 	["ui.panel.border"] = { fg = "bright-black" },
 	["ui.panel.title"] = { bold = true },
 	["ui.pane.border"] = { fg = "bright-black" },
+	["ui.pane.label"] = { bg = "yellow", fg = "black", bold = true },
 	["ui.tabline"] = { bg = "bright-black", fg = "white" },
 	["ui.tabline.active"] = { bg = "blue", fg = "black", bold = true },
 	["ui.tree.directory"] = { fg = "blue", bold = true },

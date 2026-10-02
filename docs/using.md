@@ -489,6 +489,11 @@ terminal pane types into it; moving to a file goes back to normal mode.
 Entering the pane or tab mode shows its keys at the bottom. All the keys,
 and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
 
+To act on a pane without moving to it first, `alt-p g` puts a number over
+each pane; type one to go there, and you're still in the pane mode, so
+`alt-p g 3 f` zooms the third pane and `alt-p g 3 x` closes it. `ctrl-w g`
+and `space w g` label them too.
+
 To put a new pane somewhere particular, `alt-p p` shows a frame where it
 would go, on the right of the pane you're in. `h j k l` move the frame to
 either side of any pane, or along a whole edge of the tab; `enter` opens a

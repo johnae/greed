@@ -77,6 +77,7 @@ function M.styles(p: Palette): { [string]: kern.ThemeEntry }
 		["ui.panel.border"] = { fg = p.gutter },
 		["ui.panel.title"] = { fg = p.fg, bold = true },
 		["ui.pane.border"] = { fg = p.gutter },
+		["ui.pane.label"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.tabline"] = { bg = p.bg_alt, fg = p.comment },
 		["ui.tabline.active"] = { bg = accent, fg = p.bg, bold = true },
 		["ui.menu.selected"] = { bg = p.bg_high, fg = p.fg },

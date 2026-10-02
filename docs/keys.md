@@ -74,13 +74,13 @@ two modes where single keys act until `esc`.
 | `alt-[` `alt-]`, `alt-1` to `alt-9` | The tab before or after, or tab N |
 | `alt-space` | Arrange the tab with the next layout |
 | `alt-m` | Swap the pane with the main one |
-| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `w` float, `H J K L` move an edge, `= -` resize, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
+| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` float, `H J K L` move an edge, `= -` resize, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
 
 In normal mode (Helix and Vim), `ctrl-w` and `space w` start the window
 keys from Vim and Helix: `v` and `s` split, `h j k l` move, `w` the next
-pane, `q` close, `o` close the others, `t` a terminal, `z` zoom. In the Vim
-style, `g t` and `g T` change tabs.
+pane, `q` close, `o` close the others, `t` a terminal, `z` zoom, `g` label
+the panes. In the Vim style, `g t` and `g T` change tabs.
 
 All of these are ordinary bindings to commands (`pane-left`,
 `pane-terminal`, `tab-next`, ...), so they change like any other:
