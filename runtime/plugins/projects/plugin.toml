@@ -1,0 +1,2 @@
+name = "projects"
+requires = ["core", "picker"]

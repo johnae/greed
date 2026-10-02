@@ -9,6 +9,7 @@
 		"cmdline": "./plugins/cmdline",
 		"restore": "./plugins/restore",
 		"terminal": "./plugins/terminal",
-		"panes": "./plugins/panes"
+		"panes": "./plugins/panes",
+		"projects": "./plugins/projects"
 	}
 }

@@ -120,7 +120,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>) -> Result<(), Error> {
 fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
     if let Some(name) = &to.session {
         if !ctl::live_sessions()?.contains(name) {
-            spawn_server(name, None)?;
+            spawn_server(name, to.path.as_deref().map(Path::new))?;
         }
         return Ok((name.clone(), None));
     }

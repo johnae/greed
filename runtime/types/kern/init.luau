@@ -523,8 +523,9 @@ export type Sessions = {
 	current: () -> string?,
 	--- Sends the attached client to the session `name`, or to the session for
 	--- the project `path` is in (opening it there), starting it if it isn't
-	--- running. This session goes on without the client.
-	switch: (to: { name: string?, path: string? }) -> (),
+	--- running. This session goes on without the client. With `new`, a new
+	--- session for `path`'s project, even when one is running for it.
+	switch: (to: { name: string?, path: string?, new: boolean? }) -> (),
 }
 
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an

@@ -3,10 +3,12 @@
 //! switching moves the client, and whoever holds its connection (the
 //! terminal, or the bridge on the far end of `kern ssh`) reconnects.
 
+use std::path::Path;
+
 use mlua::{Lua, Table};
 
 use super::{state, state_mut};
-use crate::{SwitchTo, control};
+use crate::{SwitchTo, control, project};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -33,15 +35,27 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     session.set(
         "switch",
-        lua.create_function(|lua, to: Table| {
-            let to = SwitchTo {
-                session: to.get("name")?,
-                path: to.get("path")?,
+        lua.create_function(|lua, spec: Table| {
+            let mut to = SwitchTo {
+                session: spec.get("name")?,
+                path: spec.get("path")?,
             };
             if to.session.is_none() && to.path.is_none() {
                 return Err(mlua::Error::runtime(
                     "switch to what? give a session name or a path",
                 ));
+            }
+            // A session of its own, even if one runs for that project.
+            if spec.get::<Option<bool>>("new")?.unwrap_or(false)
+                && let Some(path) = &to.path
+            {
+                let taken: Vec<String> = control::sessions()
+                    .map_err(mlua::Error::external)?
+                    .into_iter()
+                    .map(|s| s.name)
+                    .collect();
+                let root = project::root_of(Path::new(path));
+                to.session = Some(project::session_name(&root, &taken));
             }
             state_mut(lua).editor.request_switch(to);
             Ok(())

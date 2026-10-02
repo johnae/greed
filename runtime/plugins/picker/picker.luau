@@ -22,8 +22,9 @@ export type Options = {
 	--- leaves the preview empty.
 	preview: ((item: Item) -> Preview?)?,
 	--- More keys for this picker, e.g. `["ctrl-e"] = ...`. Each closes the
-	--- picker and gets the items matching what was typed, best first.
-	keys: { [string]: (items: { Item }) -> () }?,
+	--- picker and gets the items matching what was typed, best first, and
+	--- the current one.
+	keys: { [string]: (items: { Item }, current: Item?) -> () }?,
 	--- Asks for the items as the query changes, instead of filtering a fixed
 	--- list, for searches too big to list up front. It runs `delay` ms after
 	--- typing stops and can wait, e.g. on `kern.fs.grep`; answers for a query
@@ -51,7 +52,7 @@ type Open = {
 	-- The mode to go back to when the picker closes.
 	mode: string,
 	preview: ((item: Item) -> Preview?)?,
-	keys: { [string]: (items: { Item }) -> () },
+	keys: { [string]: (items: { Item }, current: Item?) -> () },
 	source: ((query: string) -> { Item })?,
 	delay: number,
 	fallback: ((query: string) -> ())?,
@@ -284,8 +285,9 @@ kern.command({
 		for _, index in o.matches do
 			table.insert(items, o.items[index])
 		end
+		local current = items[o.current]
 		close()
-		action(items)
+		action(items, current)
 	end,
 })
 
