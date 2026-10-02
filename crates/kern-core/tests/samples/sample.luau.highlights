@@ -1,0 +1,84 @@
+-- A counter
+^^^^^^^^^^^^ comment
+local kern = require("@kern")
+^^^^^ keyword
+      ^^^^ variable
+           ^ operator
+             ^^^^^^^ function
+             ^^^^^^^ function.builtin
+             ^^^^^^^ variable
+                    ^ punctuation.bracket
+                     ^^^^^^^ string
+                            ^ punctuation.bracket
+
+local function count(items: { string }): number
+^^^^^ keyword
+      ^^^^^^^^ keyword.function
+               ^^^^^ function
+               ^^^^^ variable
+                    ^ punctuation.bracket
+                     ^^^^^ variable.parameter
+                     ^^^^^ variable
+                          ^ punctuation.delimiter
+                            ^ punctuation.bracket
+                              ^^^^^^ type.builtin
+                                     ^ punctuation.bracket
+                                      ^ punctuation.bracket
+                                       ^ punctuation.delimiter
+                                         ^^^^^^ type.builtin
+	local n = 0
+ ^^^^^ keyword
+       ^ variable
+         ^ operator
+           ^ constant.numeric
+	for _, item in items do
+ ^^^ keyword.control.repeat
+     ^ variable
+      ^ punctuation.delimiter
+        ^^^^ variable
+             ^^ keyword.operator
+                ^^^^^ variable
+                      ^^ keyword.control.repeat
+		if item ~= "" then
+  ^^ keyword.control.conditional
+     ^^^^ variable
+          ^^ operator
+             ^^ string
+                ^^^^ keyword.control.conditional
+			n += 1
+   ^ variable
+     ^^ operator
+        ^ constant.numeric
+		end
+  ^^^ keyword.control.conditional
+	end
+ ^^^ keyword.control.repeat
+	return n
+ ^^^^^^ keyword.control.return
+        ^ variable
+end
+^^^ keyword.function
+
+kern.echo(count({ "a", "b" }), true, nil)
+^^^^ variable
+    ^ punctuation.delimiter
+     ^^^^ variable.other.member
+     ^^^^ function
+     ^^^^ variable
+         ^ punctuation.bracket
+          ^^^^^ function
+          ^^^^^ variable
+               ^ punctuation.bracket
+                ^ constructor
+                ^ punctuation.bracket
+                  ^^^ string
+                     ^ punctuation.delimiter
+                       ^^^ string
+                           ^ constructor
+                           ^ punctuation.bracket
+                            ^ punctuation.bracket
+                             ^ punctuation.delimiter
+                               ^^^^ constant.builtin.boolean
+                                   ^ punctuation.delimiter
+                                     ^^^ constant.builtin
+                                        ^ punctuation.bracket

@@ -1,0 +1,52 @@
+# Kern
+^ markup.heading.marker
+  ^^^^ markup.heading.1
+
+Some *emphasis*, **strong** and `code`, with a [link](https://kern.dev).
+     ^^^^^^^^^^ markup.italic
+     ^ punctuation.delimiter
+              ^ punctuation.delimiter
+                 ^^^^^^^^^^ markup.bold
+                 ^ punctuation.delimiter
+                  ^ punctuation.delimiter
+                         ^ punctuation.delimiter
+                          ^ punctuation.delimiter
+                                ^^^^^^ markup.raw.inline
+                                ^ punctuation.delimiter
+                                     ^ punctuation.delimiter
+                                               ^ punctuation.delimiter
+                                                ^^^^ markup.link.text
+                                                    ^ punctuation.delimiter
+                                                     ^ punctuation.delimiter
+                                                      ^^^^^^^^^^^^^^^^ markup.link.url
+                                                                      ^ punctuation.delimiter
+
+## List
+^^ markup.heading.marker
+   ^^^^ markup.heading.2
+
+- one
+^^ markup.list.unnumbered
+- [x] done
+^^ markup.list.unnumbered
+  ^^^ markup.list.checked
+1. first
+^^^ markup.list.numbered
+
+> A quote
+^^^^^^^^^+ markup.quote
+^^ punctuation.special
+
+```rust
+^^^^^^^+ markup.raw.block
+^^^ punctuation.delimiter
+   ^^^^ label
+fn main() {}
+^^ keyword
+   ^^^^ function
+       ^ punctuation.bracket
+        ^ punctuation.bracket
+          ^ punctuation.bracket
+           ^ punctuation.bracket
+```
+^^^ punctuation.delimiter

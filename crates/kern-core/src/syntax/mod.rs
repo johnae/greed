@@ -435,9 +435,14 @@ impl Syntax {
         let mut captures = cursor.captures(&highlights.query, tree.root_node(), RopeText(text));
         while let Some((m, i)) = captures.next() {
             let capture = m.captures()[*i];
+            let name = &highlights.captures[capture.index as usize];
+            // Captures like `@_name` are only there for a predicate.
+            if name.starts_with('_') {
+                continue;
+            }
             found.push(Highlight {
                 range: capture.node.byte_range(),
-                capture: highlights.captures[capture.index as usize].clone(),
+                capture: name.clone(),
             });
         }
     }

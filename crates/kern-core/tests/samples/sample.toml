@@ -1,0 +1,10 @@
+# The package
+[package]
+name = "kern"
+version = "0.1.0"
+edition = 2024
+fast = true
+released = 2026-10-02
+
+[[bin]]
+path = "src/main.rs"

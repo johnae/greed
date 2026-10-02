@@ -1,0 +1,35 @@
+# The package
+^^^^^^^^^^^^^ comment
+[package]
+^ punctuation.bracket
+ ^^^^^^^ type
+        ^ punctuation.bracket
+name = "kern"
+^^^^ variable.other.member
+     ^ operator
+       ^^^^^^ string
+version = "0.1.0"
+^^^^^^^ variable.other.member
+        ^ operator
+          ^^^^^^^ string
+edition = 2024
+^^^^^^^ variable.other.member
+        ^ operator
+          ^^^^ constant.numeric
+fast = true
+^^^^ variable.other.member
+     ^ operator
+       ^^^^ constant.builtin.boolean
+released = 2026-10-02
+^^^^^^^^ variable.other.member
+         ^ operator
+           ^^^^^^^^^^ string.special
+
+[[bin]]
+^^ punctuation.bracket
+  ^^^ type
+     ^^ punctuation.bracket
+path = "src/main.rs"
+^^^^ variable.other.member
+     ^ operator
+       ^^^^^^^^^^^^^ string

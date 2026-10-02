@@ -1,0 +1,58 @@
+/// Adds one.
+^^^^^^^^^^^^^+ comment
+^^^^^^^^^^^^^+ comment.line.documentation
+#[inline]
+^^^^^^^^^ attribute
+ ^ punctuation.bracket
+        ^ punctuation.bracket
+pub fn add_one(x: u32) -> u32 {
+^^^ keyword
+    ^^ keyword
+       ^^^^^^^ function
+              ^ punctuation.bracket
+               ^ variable.parameter
+                ^ punctuation.delimiter
+                  ^^^ type.builtin
+                     ^ punctuation.bracket
+                          ^^^ type.builtin
+                              ^ punctuation.bracket
+    // the answer
+    ^^^^^^^^^^^^^ comment
+    let y = x + 1;
+    ^^^ keyword
+                ^ constant.numeric.integer
+                 ^ punctuation.delimiter
+    if y > 10 {
+    ^^ keyword
+           ^^ constant.numeric.integer
+              ^ punctuation.bracket
+        return 0;
+        ^^^^^^ keyword
+               ^ constant.numeric.integer
+                ^ punctuation.delimiter
+    }
+    ^ punctuation.bracket
+    println!("{} {}", y, "done\n");
+    ^^^^^^^ function.macro
+           ^ function.macro
+            ^ punctuation.bracket
+             ^^^^^^^ string
+                    ^ punctuation.delimiter
+                       ^ punctuation.delimiter
+                         ^^^^^^^^ string
+                              ^^ constant.character.escape
+                                 ^ punctuation.bracket
+                                  ^ punctuation.delimiter
+    Some(y).unwrap_or(0)
+    ^^^^ constructor
+    ^^^^ function
+        ^ punctuation.bracket
+          ^ punctuation.bracket
+           ^ punctuation.delimiter
+            ^^^^^^^^^ variable.other.member
+            ^^^^^^^^^ function.method
+                     ^ punctuation.bracket
+                      ^ constant.numeric.integer
+                       ^ punctuation.bracket
+}
+^ punctuation.bracket

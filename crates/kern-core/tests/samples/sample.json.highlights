@@ -1,0 +1,23 @@
+{
+  "name": "kern",
+  ^^^^^^ variable.other.member
+  ^^^^^^ string
+          ^^^^^^ string
+  "version": 1.5,
+  ^^^^^^^^^ variable.other.member
+  ^^^^^^^^^ string
+             ^^^ constant.numeric
+  "tags": ["editor", "luau"],
+  ^^^^^^ variable.other.member
+  ^^^^^^ string
+           ^^^^^^^^ string
+                     ^^^^^^ string
+  "fast": true,
+  ^^^^^^ variable.other.member
+  ^^^^^^ string
+          ^^^^ constant.builtin
+  "license": null
+  ^^^^^^^^^ variable.other.member
+  ^^^^^^^^^ string
+             ^^^^ constant.builtin
+}

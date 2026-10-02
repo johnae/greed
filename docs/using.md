@@ -600,6 +600,9 @@ add to it instead, start the file with `; extends`:
 ((line_comment) @comment.todo (#match? @comment.todo "TODO"))
 ```
 
+[Highlighting](highlighting.md) lists the names highlights queries use
+and the theme styles.
+
 A query with a mistake in it says so when Kern starts, and the one before
 it stays in use. `require("@languages").load_queries()` reads the files
 again after you change them.
