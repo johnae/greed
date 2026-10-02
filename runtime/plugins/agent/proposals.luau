@@ -167,19 +167,36 @@ local function line_marks(buffer: kern.Buffer, hunk: Hunk, at: Span, line: numbe
 	return marks
 end
 
+-- Buttons after the change's first line, which click the keys' commands
+-- with the cursor on the change.
+local function buttons(at: Span): { kern.Mark }
+	local function button(text: string, action: string): kern.Mark
+		return {
+			from = at.from,
+			to = at.from,
+			style = "ui.button",
+			text = text,
+			eol = true,
+			action = action,
+		}
+	end
+	return { button("accept", "proposal-accept"), button("reject", "proposal-reject") }
+end
+
 local function draw(p: Proposal, hunk: Hunk, at: Span)
 	local buffer = p.buffer
 	buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
 	local line = line_above(buffer, hunk, at)
+	local marks = buttons(at)
 	if line then
-		buffer:decorate(ns(hunk) .. "-text", line_marks(buffer, hunk, at, line))
+		for _, mark in line_marks(buffer, hunk, at, line) do
+			table.insert(marks, mark)
+		end
 	else
 		local shown = string.gsub(hunk.new, "\n", "⏎")
-		buffer:decorate(
-			ns(hunk) .. "-text",
-			{ { from = at.to, to = at.to, style = "diff.plus", text = shown } }
-		)
+		table.insert(marks, { from = at.to, to = at.to, style = "diff.plus", text = shown })
 	end
+	buffer:decorate(ns(hunk) .. "-text", marks)
 end
 
 local function clear(p: Proposal, hunk: Hunk)

@@ -296,6 +296,19 @@ struct Cell {
     /// Text a mark shows that isn't in the buffer, with the mark's style.
     /// The cursor never sits on it.
     inserted: Option<Arc<str>>,
+    /// For inserted text: the mark's action and where the mark starts.
+    action: Option<(Arc<str>, usize)>,
+}
+
+/// Where a mark with an action drew its text, so a click there finds it.
+#[derive(Debug, Clone)]
+struct ActionArea {
+    view: ViewId,
+    row: u16,
+    cols: Range<u16>,
+    action: Arc<str>,
+    /// The start of the mark's range.
+    at: usize,
 }
 
 pub struct Renderer<M> {
@@ -303,6 +316,8 @@ pub struct Renderer<M> {
     pub tab_width: usize,
     /// Images placed while laying out the frame being drawn.
     images: RefCell<Vec<ImagePlacement>>,
+    /// Where marks with actions are on screen, as last drawn.
+    actions: RefCell<Vec<ActionArea>>,
 }
 
 impl<M: Measure> Renderer<M> {
@@ -311,6 +326,7 @@ impl<M: Measure> Renderer<M> {
             measure,
             tab_width: 4,
             images: RefCell::default(),
+            actions: RefCell::default(),
         }
     }
 
@@ -324,6 +340,7 @@ impl<M: Measure> Renderer<M> {
         decorations: &dyn Decorations,
     ) -> Frame {
         self.images.borrow_mut().clear();
+        self.actions.borrow_mut().clear();
         let main = editor.main();
         let screen = Rect {
             x: 0,
@@ -638,8 +655,9 @@ impl<M: Measure> Renderer<M> {
                 }
                 let mut x = gutter;
                 for cell in &cells {
-                    if let Some(style) = &cell.inserted {
-                        row.push(&cell.text, smallvec![Tag::from(style.clone())]);
+                    if cell.inserted.is_some() {
+                        let place = screen_position(area, x, rows.len());
+                        self.push_inserted(&mut row, cell, view_id, place);
                         x += cell.width;
                         continue;
                     }
@@ -667,7 +685,9 @@ impl<M: Measure> Renderer<M> {
                 }
                 if i == last {
                     let eol = styled.iter().filter(on_line).filter(|m| m.eol);
-                    self.push_eol_text(&mut row, usize::from(area.width).saturating_sub(x), eol);
+                    let room = usize::from(area.width).saturating_sub(x);
+                    let screen_row = area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX);
+                    self.push_eol_text(&mut row, (view_id, area.x, screen_row), room, eol);
                 }
                 rows.push(row);
             }
@@ -687,16 +707,20 @@ impl<M: Measure> Renderer<M> {
     }
 
     /// Adds each mark's text after the end of a line, a space before each,
-    /// cut off at `room` cells rather than wrapped.
+    /// cut off at `room` cells rather than wrapped. `at` is the view, its
+    /// left edge and the row's line on screen, for marks with actions.
     fn push_eol_text<'a>(
         &self,
         row: &mut Row,
+        at: (ViewId, u16, u16),
         mut room: usize,
         marks: impl Iterator<Item = &'a &'a Mark>,
     ) {
+        let (view, left, screen_row) = at;
         for mark in marks {
             let Some(text) = &mark.text else { continue };
             let mut shown = String::new();
+            let mut used = 0;
             for g in std::iter::once(" ").chain(text.graphemes(true)) {
                 let w = self.measure.width(g);
                 if w > room {
@@ -704,12 +728,51 @@ impl<M: Measure> Renderer<M> {
                     break;
                 }
                 room -= w;
+                used += w;
                 shown.push_str(g);
             }
             if !shown.is_empty() {
+                if let Some(action) = &mark.action {
+                    // Past the row's text so far, which can end before the
+                    // cell past the end of the line, and the space in front.
+                    let ends = u16::try_from(self.text_width(&row.text())).unwrap_or(u16::MAX);
+                    let place = Position {
+                        col: left + ends + 1,
+                        row: screen_row,
+                    };
+                    self.record_action(view, place, used - 1, action, mark.range.start);
+                }
                 row.push(&shown, smallvec![Tag::from(mark.style.clone())]);
             }
         }
+    }
+
+    /// Draws a cell of a mark's text at screen position `place`.
+    fn push_inserted(&self, row: &mut Row, cell: &Cell, view: ViewId, place: Position) {
+        if let Some(style) = &cell.inserted {
+            row.push(&cell.text, smallvec![Tag::from(style.clone())]);
+        }
+        if let Some((action, at)) = &cell.action {
+            self.record_action(view, place, cell.width, action, *at);
+        }
+    }
+
+    fn record_action(
+        &self,
+        view: ViewId,
+        place: Position,
+        width: usize,
+        action: &Arc<str>,
+        at: usize,
+    ) {
+        let end = place.col + u16::try_from(width).unwrap_or(u16::MAX);
+        self.actions.borrow_mut().push(ActionArea {
+            view,
+            row: place.row,
+            cols: place.col..end,
+            action: action.clone(),
+            at,
+        });
     }
 
     /// Splits `line` into screen rows of at most `width` cells, breaking
@@ -749,6 +812,7 @@ impl<M: Measure> Renderer<M> {
                         width: w,
                         end_of_line: false,
                         inserted: Some(mark.style.clone()),
+                        action: mark.action.clone().map(|a| (a, mark.range.start)),
                     });
                     x += w;
                 }
@@ -771,6 +835,7 @@ impl<M: Measure> Renderer<M> {
                 width: w,
                 end_of_line: false,
                 inserted: None,
+                action: None,
             });
             x += w;
         }
@@ -806,6 +871,7 @@ impl<M: Measure> Renderer<M> {
                 width: 1,
                 end_of_line: true,
                 inserted: None,
+                action: None,
             });
         }
         rows

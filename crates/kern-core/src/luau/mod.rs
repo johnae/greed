@@ -415,7 +415,7 @@ impl Host {
     }
 
     /// Tells plugins what the mouse did, with "mouse", and what was under it.
-    pub fn mouse(&self, mouse: Mouse, hit: Hit) -> Result<(), HostError> {
+    pub fn mouse(&self, mouse: Mouse, hit: &Hit) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             mouse_event(&self.lua, mouse, hit).map_err(HostError::from)
         })
@@ -606,7 +606,7 @@ fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
 /// Emits "mouse": `kind`, `button` or `dir`, the screen cell, and what's
 /// there: a `view`, the `pos` in its buffer and the cell in its text (`x`,
 /// `y`), or a `tab`.
-fn mouse_event(lua: &Lua, mouse: Mouse, hit: Hit) -> mlua::Result<()> {
+fn mouse_event(lua: &Lua, mouse: Mouse, hit: &Hit) -> mlua::Result<()> {
     let payload = lua.create_table()?;
     payload.set("kind", mouse.kind.name())?;
     payload.set("button", mouse.kind.button().map(Button::name))?;
@@ -622,6 +622,7 @@ fn mouse_event(lua: &Lua, mouse: Mouse, hit: Hit) -> mlua::Result<()> {
         payload.set("pos", hit.pos)?;
         payload.set("x", hit.x)?;
         payload.set("y", hit.y)?;
+        payload.set("action", hit.action.as_deref())?;
     }
     payload.set("tab", hit.tab.map(|t| t.0))?;
     api::emit(lua, "mouse", &payload)

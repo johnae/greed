@@ -80,7 +80,7 @@ test("new whole lines show as lines under the ones they replace", function(t)
 	propose(t, path, { { old_text = "two\n", new_text = "2\nzwei\n" } })
 	local rows = t:draw(20, 8)
 	assert(rows[1] == "one", rows[1])
-	assert(rows[2] == "two", "the old line stays, marked: " .. rows[2])
+	assert(rows[2] == "two accept reject", "the old line stays, marked: " .. rows[2])
 	assert(rows[3] == "2" and rows[4] == "zwei", `then the new ones: {rows[3]} / {rows[4]}`)
 	assert(rows[5] == "three", rows[5])
 
@@ -88,7 +88,7 @@ test("new whole lines show as lines under the ones they replace", function(t)
 	t:keys("space o R")
 	propose(t, path, { { old_text = "thr", new_text = "3" } })
 	rows = t:draw(20, 8)
-	assert(rows[3] == "thr3ee", rows[3])
+	assert(string.sub(rows[3], 1, 7) == "thr3ee ", rows[3])
 end)
 
 -- The marks of the proposal's changes beyond the old text itself.
@@ -125,4 +125,28 @@ test("in a changed line, the words that changed stand out on both sides", functi
 	assert(type(new) == "table", "pieces")
 	assert(new[2].text == "amount" and new[2].style == "diff.plus.change", new[2].text)
 	assert(new[1].text == "let total = " and new[3].text == " + 1", new[1].text)
+end)
+
+test("each change has accept and reject buttons to click", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
+	local path = dir .. "/a.txt"
+	kern.open(path)
+	kern.view():buffer():set_line_numbers(false)
+	local answer = propose(t, path, {
+		{ old_text = "one\n", new_text = "1\n" },
+		{ old_text = "three\n", new_text = "3\n" },
+	})
+	local rows = t:draw(30, 8)
+	assert(rows[1] == "one accept reject", rows[1])
+	-- "accept" after "one ".
+	t:mouse("press", 5, 0)
+	local buffer = kern.view():buffer()
+	assert(buffer:text() == "1\ntwo\nthree\n", buffer:text())
+	rows = t:draw(30, 8)
+	local line = table.find(rows, "three accept reject")
+	assert(line, table.concat(rows, " / "))
+	-- "reject" after "three accept ".
+	t:mouse("press", 14, line - 1)
+	assert(buffer:text() == "1\ntwo\nthree\n")
+	assert(answer() == `accepted 1 of 2 changes to {path}; the user rejected change 2`, answer())
 end)

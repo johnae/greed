@@ -72,6 +72,9 @@ pub struct Mark {
     pub lines: Vec<VirtualLine>,
     /// An image drawn over the text from the start of the range.
     pub image: Option<MarkImage>,
+    /// A command that clicking the mark's `text` runs, with the cursor put
+    /// at the start of the range first, like a button.
+    pub action: Option<Arc<str>>,
 }
 
 /// A line a mark shows under the text: drawn in the mark's style, with

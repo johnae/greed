@@ -173,7 +173,6 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
 /// "scroll", with a button (default "left") or a scroll direction.
 fn mouse(lua: &Lua, kind: &str, col: u16, row: u16, which: Option<&str>) -> mlua::Result<()> {
     use crate::mouse::{Mouse, MouseKind};
-    use crate::render::{CellWidth, Renderer};
     let kind = MouseKind::parse(kind, which)
         .ok_or_else(|| mlua::Error::runtime(format!("{kind:?} {which:?} isn't a mouse event")))?;
     let event = Mouse {
@@ -184,9 +183,19 @@ fn mouse(lua: &Lua, kind: &str, col: u16, row: u16, which: Option<&str>) -> mlua
         alt: false,
         shift: false,
     };
-    let hit = Renderer::new(CellWidth).hit(&state(lua).editor, col, row);
-    super::mouse_event(lua, event, hit)?;
+    let hit = renderer(lua).hit(&state(lua).editor, col, row);
+    super::mouse_event(lua, event, &hit)?;
     jobs::settle(lua)
+}
+
+/// The renderer `t:draw` and `t:mouse` share, so a click finds what the
+/// last draw put where, as the server's does.
+fn renderer(lua: &Lua) -> mlua::AppDataRef<'_, crate::render::Renderer<crate::render::CellWidth>> {
+    use crate::render::{CellWidth, Renderer};
+    if lua.app_data_ref::<Renderer<CellWidth>>().is_none() {
+        lua.set_app_data(Renderer::new(CellWidth));
+    }
+    lua.app_data_ref().expect("it was just set")
 }
 
 /// `t:draw` and `t:mouse`: what a client would see and send.
@@ -204,9 +213,9 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
 
 /// The rows of a frame drawn at this size, as text.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
-    use crate::render::{CellWidth, Plain, Renderer, Size, Status};
+    use crate::render::{Plain, Size, Status};
     let frame = || {
-        Renderer::new(CellWidth).frame(
+        renderer(lua).frame(
             &mut state_mut(lua).editor,
             Size { width, height },
             &Status::Default { message: None },

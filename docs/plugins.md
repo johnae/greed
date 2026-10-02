@@ -101,7 +101,9 @@ shown tab's active pane is where `kern.open` opens files.
   labels). It can also hide text (`conceal`, like a link's brackets, shown
   again on the cursor's line), fold lines away under the first one (`fold`),
   or show lines that aren't in the buffer under its own (`lines`), whole
-  or in pieces with styles of their own.
+  or in pieces with styles of their own. A mark's text with an `action`
+  (a command name) is a button: clicking it puts the cursor at the mark
+  and runs the command.
 - Images: `kern.image.load(path)` reads a PNG, JPEG or GIF and gives an id,
   and a mark with `image = { id = id, cols = 20, rows = 8 }` draws it over
   that many cells from its start. `kern.image.cells(id)` says how many

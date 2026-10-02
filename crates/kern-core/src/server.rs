@@ -296,7 +296,7 @@ impl Server<'_> {
                 let hit = self
                     .host
                     .with_editor(|ed| self.renderer.hit(ed, mouse.col, mouse.row));
-                let handled = self.host.mouse(mouse, hit);
+                let handled = self.host.mouse(mouse, &hit);
                 self.report(handled);
             }
             Input::CellSize(w, h) => {

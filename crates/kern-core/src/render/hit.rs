@@ -3,14 +3,19 @@
 //! drawn.
 
 use super::{Measure, Rect, Renderer, hidden_lines, is_hidden, tab_label};
+use std::sync::Arc;
+
 use crate::{Editor, TabId, ViewId};
 
 /// What a screen cell shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Hit {
     pub view: Option<ViewId>,
-    /// The byte under the cell, or the end of its line past the end.
+    /// The byte under the cell, or the end of its line past the end. On a
+    /// mark's text, where the mark starts.
     pub pos: Option<usize>,
+    /// The action of the mark whose text is under the cell, if it has one.
+    pub action: Option<Arc<str>>,
     /// The cell, counted from the top left of the view's text, right of
     /// its gutter.
     pub x: u16,
@@ -58,9 +63,20 @@ impl<M: Measure> Renderer<M> {
             let gutter = area.width.saturating_sub(cols);
             let x = (col - area.x).saturating_sub(gutter);
             let y = row - area.y;
+            let button = self
+                .actions
+                .borrow()
+                .iter()
+                .find(|a| a.view == view_id && a.row == row && a.cols.contains(&col))
+                .map(|a| (a.action.clone(), a.at));
+            let (action, pos) = match button {
+                Some((action, at)) => (Some(action), Some(at)),
+                None => (None, self.byte_at(editor, view_id, x, y)),
+            };
             return Hit {
                 view: Some(view_id),
-                pos: self.byte_at(editor, view_id, x, y),
+                pos,
+                action,
                 x,
                 y,
                 tab: None,

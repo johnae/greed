@@ -51,3 +51,39 @@ test("the wheel scrolls the view and brings the cursor along", function(t)
 	t:mouse("scroll", 5, 5, "up")
 	assert(kern.view():scroll() == 3)
 end)
+
+test("clicking a mark's text with an action runs it, the cursor at the mark", function(t)
+	t:buffer("|hello\nworld")
+	local buffer = kern.view():buffer()
+	local ran: { number } = {}
+	kern.command({
+		name = "test-button",
+		run = function(ctx)
+			local selection = ctx.view:selection()
+			table.insert(ran, selection.ranges[selection.primary].head)
+		end,
+	})
+	buffer:decorate("buttons", {
+		{
+			from = 6,
+			to = 6,
+			style = "ui.button",
+			text = "[go]",
+			eol = true,
+			action = "test-button",
+		},
+		{ from = 8, to = 8, style = "ui.button", text = "<>", action = "test-button" },
+	})
+	local rows = t:draw(30, 4)
+	assert(rows[1] == "1 hello", rows[1])
+	assert(rows[2] == "2 wo<>rld [go]", rows[2])
+	-- "[go]" after the second line.
+	t:mouse("press", 11, 1)
+	assert(ran[1] == 6, tostring(ran[1]))
+	-- "<>" inside it.
+	t:mouse("press", 5, 1)
+	assert(ran[2] == 8, tostring(ran[2]))
+	-- Next to them it's an ordinary click.
+	t:mouse("press", 3, 1)
+	assert(#ran == 2)
+end)

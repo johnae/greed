@@ -1,7 +1,8 @@
 -- The mouse: a click focuses the view under it and puts the cursor there,
--- dragging selects, and the wheel scrolls the view under it. A plugin can
--- take the mouse in buffers of its own kind with `claim`, as the terminal
--- does to pass it on to the program in it.
+-- or runs the action of a mark's text (a button), dragging selects, and
+-- the wheel scrolls the view under it. A plugin can take the mouse in
+-- buffers of its own kind with `claim`, as the terminal does to pass it on
+-- to the program in it.
 
 local kern = require("@kern")
 
@@ -49,6 +50,13 @@ local pressed: { view: number, pos: number }? = nil
 kern.on("mouse", function(event: kern.MouseEvent)
 	local view = event.view
 	if view == nil then
+		return
+	end
+	-- A mark's text with an action is a button: the click runs it.
+	if event.kind == "press" and event.button == "left" and event.action and event.pos then
+		view:focus()
+		point(view, event.pos)
+		kern.run(event.action)
 		return
 	end
 	local claim = claims[view:buffer():kind()]

@@ -413,6 +413,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         .get::<Option<Table>>("image")?
                         .map(|i| mark_image_from_lua(&i))
                         .transpose()?,
+                    action: t.get::<Option<String>>("action")?.map(Into::into),
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -435,6 +436,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             t.set("overlay", mark.overlay)?;
             t.set("conceal", mark.conceal)?;
             t.set("fold", mark.fold)?;
+            t.set("action", mark.action.as_deref())?;
             if !mark.lines.is_empty() {
                 let lines = lua.create_table()?;
                 for line in &mark.lines {

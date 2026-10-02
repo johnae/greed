@@ -52,7 +52,8 @@ tools if you don't want that.
 with new text. The old text is struck through in the buffer and the new
 text shows after it; when whole lines change, as in Claude Code's diffs,
 the new lines show under the old ones, with the words that changed picked
-out on both. Nothing changes until you decide:
+out on both. Nothing changes until you decide, with the keys or by
+clicking `accept` or `reject` after each change:
 
 | Keys | |
 |---|---|

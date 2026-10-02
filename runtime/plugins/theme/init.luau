@@ -23,6 +23,7 @@ kern.theme.set({
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },
+	["ui.button"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.signature.parameter"] = { fg = "yellow", bold = true },
 	["ui.search.match"] = { bg = "yellow", fg = "black" },
 	["ui.grep.location"] = { fg = "cyan" },

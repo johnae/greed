@@ -133,6 +133,9 @@ export type Mark = {
 	--- which of its cells is at `from`, for an image cut off at the top or
 	--- left. Shown in terminals that can show images.
 	image: { id: number, cols: number, rows: number, col: number?, row: number? }?,
+	--- A command that clicking `text` runs, with the cursor put at `from`
+	--- first, so the text works as a button, e.g. "proposal-accept".
+	action: string?,
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -575,8 +578,10 @@ export type MouseEvent = {
 	--- The view under it, if any.
 	view: View?,
 	--- The place in the view's buffer under it: the character there, or the
-	--- end of the line past it.
+	--- end of the line past it. Over a mark's text, where the mark starts.
 	pos: number?,
+	--- The action of the mark whose text it's over, if that has one.
+	action: string?,
 	--- The cell in the view's text, from its top left, right of the gutter.
 	x: number?,
 	y: number?,
