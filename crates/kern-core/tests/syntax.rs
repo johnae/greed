@@ -280,3 +280,62 @@ fn a_highlights_query_set_replaces_the_grammars_own() {
         Some("anything")
     );
 }
+
+#[test]
+fn code_blocks_and_inline_text_in_markdown_are_highlighted_in_their_own_language() {
+    let text = "# Title\n\nSome *emphasis* here.\n\n```rust\nfn main() {}\n```\n\n```klingon\nqapla\n```\n";
+    let ed = editor(text, "README.md");
+    let mut syntax = Syntax::new();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.buffers().next().unwrap();
+    let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+
+    let fn_at = text.find("fn main").unwrap();
+    assert!(
+        captured(&all, fn_at..fn_at + 2).contains(&"keyword"),
+        "Rust inside the code block: {all:?}"
+    );
+    let emphasis = text.find("*emphasis*").unwrap();
+    assert!(
+        captured(&all, emphasis..emphasis + "*emphasis*".len()).contains(&"text.emphasis"),
+        "Markdown's inline text: {all:?}"
+    );
+    // A language Kern has no grammar for is left as it is.
+    let klingon = text.find("qapla").unwrap();
+    assert!(
+        all.iter()
+            .all(|h| !h.range.contains(&klingon) || !h.capture.starts_with("keyword"))
+    );
+
+    // An injections query set in place of the grammar's own is used, here
+    // one that injects nothing.
+    syntax
+        .set_query("markdown", "injections", Some(String::new()))
+        .unwrap();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+    assert!(
+        !captured(&all, fn_at..fn_at + 2).contains(&"keyword"),
+        "{all:?}"
+    );
+}
+
+#[test]
+fn rust_macro_bodies_are_highlighted_as_rust() {
+    let text = "fn f() { println!(\"{}\", 1 + 2); }";
+    let ed = editor(text, "a.rs");
+    let mut syntax = Syntax::new();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.buffers().next().unwrap();
+    let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+    let one = text.find('1').unwrap();
+    assert!(
+        captured(&all, one..one + 1)
+            .iter()
+            .any(|c| c.starts_with("constant") || c.starts_with("number")),
+        "{all:?}"
+    );
+}

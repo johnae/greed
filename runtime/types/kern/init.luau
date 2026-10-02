@@ -904,23 +904,24 @@ export type ThemeEntry = Style & {
 	gui: Style?,
 }
 
---- What style names look like. Everything on screen has one: "ui.text",
---- "ui.selection", "ui.statusline.mode", "ui.float.border", "keyword",
---- "diagnostic.error", or a name a plugin made up. Names fall back to their
---- parent, so "markup.heading.1" uses "markup.heading" if it has no entry.
 --- The tree-sitter queries each language uses: "highlights" for highlighting,
---- and others ("textobjects", ...) that plugins read. The languages plugin sets
---- them from the `queries/<language>/<kind>.scm` files in plugins and your config.
+--- "injections" for languages inside others (code blocks in Markdown), and
+--- others ("textobjects", ...) that plugins read. The languages plugin sets them
+--- from the `queries/<language>/<kind>.scm` files in plugins and your config.
 export type Syntax = {
 	--- Sets the `kind` query for `language`, or with nil takes this plugin's away.
 	--- Errors if the language's grammar can't compile it. The newest one set is
 	--- used, and unloading a plugin takes its queries away.
 	set_query: (language: string, kind: string, source: string?) -> (),
 	--- The `kind` query in use for `language`: the one set, or for "highlights"
-	--- the one that comes with the grammar.
+	--- and "injections" the one that comes with the grammar.
 	query: (language: string, kind: string) -> string?,
 }
 
+--- What style names look like. Everything on screen has one: "ui.text",
+--- "ui.selection", "ui.statusline.mode", "ui.float.border", "keyword",
+--- "diagnostic.error", or a name a plugin made up. Names fall back to their
+--- parent, so "markup.heading.1" uses "markup.heading" if it has no entry.
 export type Theme = {
 	--- Sets entries by name, replacing any with the same name.
 	set: (entries: { [string]: ThemeEntry }) -> (),
