@@ -262,6 +262,22 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         )?,
     )?;
     syntax.set(
+        "load_grammar",
+        lua.create_function(
+            |lua, (language, path, symbol): (String, String, Option<String>)| {
+                let bytes = std::fs::read(&path)
+                    .map_err(|err| mlua::Error::runtime(format!("{path}: {err}")))?;
+                let symbol = symbol.unwrap_or_else(|| language.replace('-', "_"));
+                state_mut(lua)
+                    .syntax
+                    .load_grammar(&language, &symbol, &bytes)
+                    .map_err(|err| {
+                        mlua::Error::runtime(format!("the {language} grammar in {path}: {err}"))
+                    })
+            },
+        )?,
+    )?;
+    syntax.set(
         "query",
         lua.create_function(|lua, (language, kind): (String, String)| {
             Ok(state(lua).syntax.query_source(&language, &kind))

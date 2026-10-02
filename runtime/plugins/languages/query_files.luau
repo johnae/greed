@@ -87,4 +87,9 @@ function M.load(own: string?): { string }
 	return problems
 end
 
+--- Whether query files set the `kind` query for `language`.
+function M.provides(language: string, kind: string): boolean
+	return set[`{language}/{kind}`] ~= nil
+end
+
 return M

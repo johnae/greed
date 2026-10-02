@@ -14,7 +14,8 @@ use std::thread;
 use crossbeam_channel::{Receiver, Sender};
 use kern_text::Rope;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree};
+use tree_sitter::wasmtime::Engine;
+use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree, WasmStore};
 
 use crate::{Buffer, BufferId, Editor};
 use injections::{InjectionQuery, Injections, Layer};
@@ -64,6 +65,18 @@ impl Language {
             default_highlights: highlights,
             highlights: OnceLock::new(),
             default_injections: injections,
+        }
+    }
+
+    /// A grammar loaded at run time. It comes without queries; they're set
+    /// like any other.
+    fn loaded(name: &'static str, grammar: tree_sitter::Language) -> Self {
+        Self {
+            name,
+            grammar,
+            default_highlights: "",
+            highlights: OnceLock::new(),
+            default_injections: None,
         }
     }
 
@@ -238,6 +251,8 @@ struct Request {
     text: Rope,
     language: Arc<Language>,
     injections: Injections,
+    /// Runs loaded grammars, once one has been.
+    engine: Option<Engine>,
 }
 
 /// A finished parse from the worker.
@@ -279,6 +294,12 @@ pub struct Syntax {
     problems: Vec<String>,
     /// Each language's injections query, for the worker.
     injections: Injections,
+    /// Runs grammars loaded from WebAssembly files, like downloaded ones, and
+    /// loads them. Made with the first one, since making it takes longer
+    /// than all the rest of starting up.
+    wasm: Option<(Engine, WasmStore)>,
+    /// The languages loaded that way.
+    loaded: Vec<&'static str>,
     pub max_bytes: usize,
 }
 
@@ -308,8 +329,73 @@ impl Syntax {
             pending: HashMap::new(),
             problems: Vec::new(),
             injections,
+            wasm: None,
+            loaded: Vec::new(),
             max_bytes: MAX_BYTES,
         }
+    }
+
+    /// Loads the grammar for `language` from a WebAssembly file's `bytes`,
+    /// like one built with `tree-sitter build --wasm`. `symbol` is the
+    /// grammar's own name for itself (`tree_sitter_<symbol>` in the file),
+    /// for when it differs from the language's, e.g. `c_sharp` for `c-sharp`.
+    /// Queries set for the language before are used from now on, and
+    /// buffers in it are parsed again.
+    pub fn load_grammar(
+        &mut self,
+        language: &str,
+        symbol: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        if self.wasm.is_none() {
+            let engine = Engine::default();
+            let loader = WasmStore::new(&engine).map_err(|err| err.to_string())?;
+            let ours = WasmStore::new(&engine).map_err(|err| err.to_string())?;
+            self.parser
+                .set_wasm_store(ours)
+                .map_err(|err| err.to_string())?;
+            self.wasm = Some((engine, loader));
+        }
+        let (_, store) = self.wasm.as_mut().expect("just made");
+        let grammar = store
+            .load_language(symbol, bytes)
+            .map_err(|err| err.to_string())?;
+        // Language names live as long as the editor, like the built-in ones.
+        let name: &'static str = match self.languages.iter().find(|l| l.name == language) {
+            Some(known) => known.name,
+            None => Box::leak(language.into()),
+        };
+        let loaded = Arc::new(Language::loaded(name, grammar));
+        self.languages.retain(|l| l.name != name);
+        self.languages.push(loaded.clone());
+        if !self.loaded.contains(&name) {
+            self.loaded.push(name);
+        }
+        self.highlights.remove(name);
+        let source = |kind: &str| {
+            self.sources
+                .get(&(name.to_owned(), kind.to_owned()))
+                .cloned()
+        };
+        if let Some(highlights) = source("highlights") {
+            self.pending.insert(name, highlights);
+        }
+        let query = InjectionQuery::lazy(source("injections"));
+        let mut injections = (*self.injections).clone();
+        injections.insert(name, (loaded, Arc::new(query)));
+        self.injections = Arc::new(injections);
+        self.buffers.retain(|_, state| state.language.name != name);
+        Ok(())
+    }
+
+    /// Every language with a grammar: the built-in ones and those loaded,
+    /// sorted.
+    pub fn names(&self) -> Vec<&'static str> {
+        let mut names = grammar_names();
+        names.extend(&self.loaded);
+        names.sort_unstable();
+        names.dedup();
+        names
     }
 
     /// Finished parses, to pass to [`Syntax::receive`].
@@ -383,6 +469,7 @@ impl Syntax {
                     text: buffer.text().clone(),
                     language,
                     injections: self.injections.clone(),
+                    engine: self.wasm.as_ref().map(|(engine, _)| engine.clone()),
                 });
             }
         }
@@ -603,12 +690,21 @@ impl Syntax {
 /// Parses requests as they come, skipping versions that are already stale.
 fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
     let mut parser = Parser::new();
+    // Whether the parser can run loaded grammars, which it gets a store of
+    // its own for with the first request after one was loaded.
+    let mut can_run_loaded = false;
     while let Ok(first) = inbox.recv() {
         let mut latest: HashMap<BufferId, Request> = HashMap::new();
         for request in std::iter::once(first).chain(inbox.try_iter()) {
             latest.insert(request.buffer, request);
         }
         for request in latest.into_values() {
+            if let Some(engine) = &request.engine
+                && !can_run_loaded
+                && let Ok(store) = WasmStore::new(engine)
+            {
+                can_run_loaded = parser.set_wasm_store(store).is_ok();
+            }
             if parser.set_language(&request.language.grammar).is_err() {
                 continue;
             }

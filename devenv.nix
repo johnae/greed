@@ -25,6 +25,8 @@
     pkgs.harper
 
     pkgs.tree-sitter
+    # wasmtime, which loads downloaded grammars, builds its C API with it
+    pkgs.cmake
   ];
 
   git-hooks.hooks = {

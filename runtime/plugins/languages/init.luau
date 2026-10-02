@@ -13,6 +13,7 @@ local kern = require("@kern")
 local defaults = require("@self/languages")
 local comment = require("@core").comment
 local query_files = require("@self/query_files")
+local grammars = require("@self/grammars")
 
 export type Language = defaults.Language
 
@@ -85,6 +86,41 @@ kern.on("plugin.unloaded", function()
 	M.load_queries()
 end)
 
+-- Grammars downloaded when a file in their language opens -------------------
+
+M.grammars = grammars
+
+--- Sets up the grammar for `language` if Kern knows where to get one,
+--- downloading it the first time. Returns whether it has one now.
+function M.ensure_grammar(language: string): boolean
+	return grammars.ensure(language, query_files.provides)
+end
+
+kern.on("buffer.opened", function(event: kern.BufferChanged)
+	local language = event.buffer:language()
+	if language and grammars.sources[language] then
+		local ok, err = pcall(M.ensure_grammar, language)
+		if not ok then
+			kern.echo(tostring(err))
+		end
+	end
+end)
+
+kern.command({
+	name = "grammar-fetch",
+	doc = "Download a grammar Kern knows where to get, ahead of opening a file in it",
+	args = { { name = "language", doc = "e.g. ruby" } },
+	run = function(ctx)
+		local language = ctx.args[1] or ctx.buffer:language()
+		if language == nil or grammars.sources[language] == nil then
+			error(`Kern doesn't know where to get a grammar for {language or "this buffer"}`, 0)
+		end
+		if M.ensure_grammar(language) then
+			kern.echo(`the {language} grammar is ready`)
+		end
+	end,
+})
+
 -- `:health` --------------------------------------------------------------
 
 local shown: kern.View? = nil
@@ -98,9 +134,9 @@ end
 
 -- One line per language: its grammar, then each server, found or missing.
 local function health_report(): (string, { kern.Mark })
-	local grammars = {}
+	local have = {}
 	for _, name in kern.grammars() do
-		grammars[name] = true
+		have[name] = true
 	end
 	local lines, marks = {}, {}
 	local pos = 0
@@ -114,8 +150,10 @@ local function health_report(): (string, { kern.Mark })
 	for _, name in M.list() do
 		local language = languages[name]
 		local line = add(string.format("%-12s", name))
-		if grammars[name] then
+		if have[name] then
 			line ..= add("highlighting  ")
+		elseif grammars.sources[name] then
+			line ..= add("downloads     ")
 		else
 			line ..= add("no grammar    ", "ui.health.missing")
 		end

@@ -36,7 +36,7 @@ pub(super) fn register(lua: &Lua, kern: &Table) -> LuaResult<()> {
 
     kern.set(
         "grammars",
-        lua.create_function(|_, ()| Ok(crate::syntax::grammar_names()))?,
+        lua.create_function(|lua, ()| Ok(state(lua).syntax.names()))?,
     )?;
 
     kern.set(

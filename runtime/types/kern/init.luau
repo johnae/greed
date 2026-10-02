@@ -924,6 +924,11 @@ export type Syntax = {
 	--- The `kind` query in use for `language`: the one set, or for "highlights"
 	--- and "injections" the one that comes with the grammar.
 	query: (language: string, kind: string) -> string?,
+	--- Loads the grammar for `language` from a WebAssembly file, like one built
+	--- with `tree-sitter build --wasm`, so buffers in it get a syntax tree. `symbol`
+	--- is the grammar's own name when it differs, e.g. "c_sharp" for "c-sharp";
+	--- by default the language with "-" as "_". Queries come separately.
+	load_grammar: (language: string, path: string, symbol: string?) -> (),
 }
 
 --- What style names look like. Everything on screen has one: "ui.text",
@@ -1009,7 +1014,7 @@ export type Kern = {
 	--- Makes files with these extensions (without the dot) or exact names, like
 	--- "Makefile", be in `language`, replacing whatever it had before.
 	filetype: (language: string, spec: { extensions: { string }?, names: { string }? }) -> (),
-	--- The languages Kern has syntax highlighting for, sorted.
+	--- The languages Kern has a grammar for, built in or loaded, sorted.
 	grammars: () -> { string },
 	--- Where `program` is on PATH, or nil if it isn't installed.
 	which: (program: string) -> string?,

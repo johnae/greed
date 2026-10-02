@@ -26,7 +26,7 @@ tungstenite = "0.30"
 smallvec = { version = "1.16", features = ["union", "serde"] }
 streaming-iterator = "0.1"
 toml = "1.1"
-tree-sitter = "0.27"
+tree-sitter = { version = "0.27", features = ["wasm"] }
 tree-sitter-bash = "0.25"
 tree-sitter-c = "0.24"
 tree-sitter-go = "0.25"

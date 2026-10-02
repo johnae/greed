@@ -65,7 +65,8 @@ tests them, and you review the code before it loads.
 
 ## Try it
 
-Kern builds with a recent stable Rust:
+Kern builds with a recent stable Rust and cmake (for the WebAssembly
+runtime that loads downloaded grammars):
 
 ```bash
 cargo build --release

@@ -591,6 +591,16 @@ colors; `#rrggbb` colors work in terminals that support them.
 
 ### Highlighting and syntax queries
 
+Kern has grammars built in for Rust, Nix, Bash, Python, Go, JavaScript,
+TypeScript, C, Luau, JSON, TOML, YAML and Markdown. For C++, C#, Java,
+Ruby, Scala, Haskell, OCaml, Julia, HTML and CSS it downloads the grammar
+the first time you open a file in that language (with `curl`), checks it
+against a checksum Kern knows, and keeps it in `~/.cache/kern/grammars`.
+`:health` shows which languages are built in, which download, and which
+have no grammar. `:grammar-fetch ruby` downloads one ahead of time, say
+before going offline, and `kern.option.set("grammar-download", false)`
+turns downloading off.
+
 What gets highlighted, and what counts as a function for `m i f`, comes
 from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where
 KIND is `highlights`, `injections` (languages inside others, like the code

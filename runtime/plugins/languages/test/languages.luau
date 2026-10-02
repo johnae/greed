@@ -26,7 +26,8 @@ test(":health lists each language with its highlighting and servers", function(t
 	t:run("health")
 	local report = t:floats()[1]
 	assert(string.find(report, "rust%s+highlighting%s+rust%-analyzer"), report)
-	assert(string.find(report, "ruby%s+no grammar%s+ruby%-lsp, solargraph"), report)
+	assert(string.find(report, "ruby%s+downloads%s+ruby%-lsp, solargraph"), report)
+	assert(string.find(report, "zig%s+no grammar%s+zls"), report)
 	t:keys("q")
 	assert(#t:floats() == 0, "q closes it")
 end)
@@ -121,4 +122,67 @@ test("the newest query set is used, and a plugin's goes with it", function(t)
 	-- The grammar's own highlights stay when nothing replaces them.
 	assert(string.find(kern.syntax.query("rust", "highlights") or "", "@keyword", 1, true) ~= nil)
 	assert(not pcall(kern.syntax.set_query, "rust", "highlights", "(no_such_node) @x"))
+end)
+
+-- A grammar source standing in for a download: the small JSON grammar the
+-- Rust tests use, and queries from `dir`.
+local function local_source(dir: string, sha256: string?): any
+	local wasm =
+		`{kern.plugin.dirs().languages}/../../../crates/kern-core/tests/samples/tree-sitter-json.wasm`
+	return {
+		repo = "example/tree-sitter-jsonish",
+		version = "v1",
+		sha256 = sha256 or "d2119fb98d5912719b13f9458574f8608d2d29dfbe45f6be1f860ea1fe2a2405",
+		symbol = "json",
+		url = "file://" .. wasm,
+		queries = `file://{dir}/{"{kind}"}.scm`,
+	}
+end
+
+test("a grammar is downloaded when a file in its language opens, and kept", function(t)
+	local dir = t:tempdir({ ["highlights.scm"] = "(number) @number\n(string) @string\n" })
+	languages.grammars.sources.jsonish = local_source(dir)
+	languages.set("jsonish", { extensions = { "jsonish" } })
+	local file = t:tempdir({ ["a.jsonish"] = '{"a": 42}' }) .. "/a.jsonish"
+	kern.open(file)
+	t:wait_for(function()
+		return table.find(kern.grammars(), "jsonish") ~= nil
+	end)
+	assert(kern.view():buffer():tree(), "it parses")
+	local query = kern.syntax.query("jsonish", "highlights") :: string
+	assert(string.find(query, "@constant.numeric", 1, true), "capture names are Kern's: " .. query)
+
+	-- Once kept, it loads again without downloading.
+	languages.grammars.sources.jsonish.url = "file:///nowhere/gone.wasm"
+	assert(languages.grammars.ensure("jsonish", function()
+		return false
+	end))
+end)
+
+test(
+	"a download that doesn't match its checksum is refused, and turning downloads off stops them",
+	function(t)
+		local dir = t:tempdir({})
+		languages.grammars.sources.badsum = local_source(dir, string.rep("0", 64))
+		local ok, err = pcall(languages.ensure_grammar, "badsum")
+		assert(not ok and string.find(tostring(err), "checksum", 1, true), tostring(err))
+		assert(table.find(kern.grammars(), "badsum") == nil)
+
+		languages.grammars.sources.off = local_source(dir)
+		kern.option.set("grammar-download", false)
+		assert(languages.ensure_grammar("off") == false, "not downloaded")
+		kern.option.set("grammar-download", true)
+		assert(languages.ensure_grammar("off"), "and downloaded once it's on")
+	end
+)
+
+test("queries from other editors get Kern's names, and catch-alls go last", function()
+	local adapted = languages.grammars.adapt(
+		"(identifier) @variable\n(call function: (identifier) @function.call)\n(x) @spell\n((pattern/wildcard) @number)"
+	)
+	assert(
+		adapted
+			== "(call function: (identifier) @function)\n(x) \n((wildcard) @constant.numeric)\n(identifier) @variable",
+		adapted
+	)
 end)

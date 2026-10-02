@@ -3,6 +3,7 @@
   lib,
   stdenv,
   rustPlatform,
+  cmake,
 }:
 
 rustPlatform.buildRustPackage {
@@ -21,6 +22,11 @@ rustPlatform.buildRustPackage {
   };
 
   cargoLock.lockFile = ../Cargo.lock;
+
+  # wasmtime, which loads downloaded grammars, builds its C API with cmake;
+  # it runs cmake itself, so the usual cmake configure step stays out.
+  nativeBuildInputs = [ cmake ];
+  dontUseCmakeConfigure = true;
 
   # A static binary is linked without PIE: the static C++ library Luau
   # links against isn't built position-independent.

@@ -370,3 +370,33 @@ fn queries_for_languages_no_buffer_is_in_compile_when_one_opens() {
     let all = syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
     assert_eq!(captured(&all, 0..3), ["custom"]);
 }
+
+#[test]
+fn grammars_load_from_webassembly_and_parse_like_built_in_ones() {
+    let wasm = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/samples/tree-sitter-json.wasm"),
+    )
+    .unwrap();
+    let mut syntax = Syntax::new();
+    // A query set before the grammar arrives is used once it does.
+    syntax
+        .set_query(
+            "jsonish",
+            "highlights",
+            Some("(number) @constant.numeric".into()),
+        )
+        .unwrap();
+    assert!(syntax.load_grammar("jsonish", "json", b"not wasm").is_err());
+    syntax.load_grammar("jsonish", "json", &wasm).unwrap();
+    assert!(syntax.names().contains(&"jsonish"));
+
+    let text = "{\"a\": 42}";
+    let mut ed = Editor::new(ClientId(1));
+    let buffer = ed.create_buffer("file", text);
+    ed.set_language(buffer, Some("jsonish".into()));
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let all = syntax.highlights(buffer, ed.buffer(buffer).text(), 0..text.len());
+    let at = text.find("42").unwrap();
+    assert_eq!(captured(&all, at..at + 2), ["constant.numeric"], "{all:?}");
+}

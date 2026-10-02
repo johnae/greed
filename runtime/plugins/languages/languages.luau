@@ -38,6 +38,12 @@ local languages: { [string]: Language } = {
 		comment = "//",
 		indent = 4,
 	},
+	["c-sharp"] = {
+		extensions = { "cs" },
+		servers = { { "csharp-ls" } },
+		comment = "//",
+		indent = 4,
+	},
 	cpp = {
 		formatter = { "clang-format", "--assume-filename={path}" },
 		extensions = { "cpp", "cc", "cxx", "hpp", "hh", "hxx" },
@@ -87,6 +93,12 @@ local languages: { [string]: Language } = {
 		comment = "//",
 		indent = 2,
 	},
+	julia = {
+		extensions = { "jl" },
+		roots = { "Project.toml" },
+		comment = "#",
+		indent = 4,
+	},
 	json = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "json" },
@@ -118,6 +130,13 @@ local languages: { [string]: Language } = {
 		comment = "#",
 		indent = 2,
 	},
+	ocaml = {
+		formatter = { "ocamlformat", "--name={path}", "-" },
+		extensions = { "ml" },
+		roots = { "dune-project" },
+		servers = { { "ocamllsp" } },
+		indent = 2,
+	},
 	python = {
 		formatter = { "ruff", "format", "-" },
 		extensions = { "py", "pyi" },
@@ -144,6 +163,14 @@ local languages: { [string]: Language } = {
 		servers = { { "rust-analyzer" } },
 		comment = "//",
 		indent = 4,
+	},
+	scala = {
+		formatter = { "scalafmt", "--stdin" },
+		extensions = { "scala", "sc" },
+		roots = { "build.sbt", "build.sc" },
+		servers = { { "metals" } },
+		comment = "//",
+		indent = 2,
 	},
 	toml = {
 		formatter = { "taplo", "format", "-" },
