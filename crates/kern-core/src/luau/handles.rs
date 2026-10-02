@@ -270,9 +270,16 @@ fn add_pane_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             let buffer = buffer
                 .map(|b| b.with_buffer(lua, |_| Ok(b.buffer)))
                 .transpose()?;
-            let new = state_mut(lua).editor.split_pane(this.id, dir, buffer);
-            new.map(|id| this.other(id))
-                .ok_or_else(|| mlua::Error::runtime("only panes can be split"))
+            let new = state_mut(lua)
+                .editor
+                .split_pane(this.id, dir, buffer)
+                .ok_or_else(|| mlua::Error::runtime("only panes can be split"))?;
+            // For layout managers, which arrange panes wherever they come from.
+            let payload = lua.create_table()?;
+            payload.set("view", this.other(new))?;
+            payload.set("from", this.other(this.id))?;
+            emit(lua, "pane.opened", &payload)?;
+            Ok(this.other(new))
         },
     );
     methods.add_method("neighbor", |lua, this, dir: String| {

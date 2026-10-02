@@ -92,6 +92,19 @@ finds the one beside it, `view:resize("down", 2)` moves its edge, and
 `view:close()` closes it. `kern.view()` is the focused view, and the
 shown tab's active pane is where `kern.open` opens files.
 
+`kern.tab.layout()` gives a tab's arrangement as a tree, and
+`kern.tab.set_layout(tree)` arranges its panes another way:
+
+```luau
+local a, b, c = table.unpack(kern.tab.current().panes)
+-- a across the top, a quarter high; b and c side by side under it
+kern.tab.set_layout({
+	split = "column",
+	sizes = { 1, 3 },
+	children = { a, { split = "row", children = { b, c } } },
+})
+```
+
 ## Showing things
 
 - Decorations style text without changing it, and move with edits:
@@ -137,7 +150,8 @@ handler returns.
 
 `kern.on(event, handler)` runs a handler on `buffer.changed`,
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
-`view.closed` (for plugins holding on to a panel), `option.changed`,
+`view.closed` (for plugins holding on to a panel), `pane.opened` (a split,
+from whichever plugin made it), `option.changed`,
 `buffer.opened`, `buffer.saved`, `view.resized` (with the rows and
 columns `view:size()` also gives), `view.scrolled` (the line now at the
 top; what the handler changes shows in the same frame, so one view can

@@ -89,6 +89,16 @@ impl Node {
         }
     }
 
+    /// Whether every split has children, with weights.
+    pub fn is_whole(&self) -> bool {
+        match self {
+            Node::Pane(_) => true,
+            Node::Split { children, .. } => {
+                !children.is_empty() && children.iter().all(|(c, w)| *w > 0 && c.is_whole())
+            }
+        }
+    }
+
     pub fn contains(&self, view: ViewId) -> bool {
         match self {
             Node::Pane(v) => *v == view,

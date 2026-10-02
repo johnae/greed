@@ -505,6 +505,24 @@ export type Tabs = {
 	rename: (id: number, name: string?) -> boolean,
 	--- Shows only the active pane of the shown tab, or all of them again.
 	set_zoomed: (zoomed: boolean) -> (),
+	--- How tab `id` (the shown one by default) lays out its panes, as a
+	--- `PaneLayout`, with sizes adding up to 1 in each split.
+	layout: (id: number?) -> any,
+	--- Lays tab `id`'s panes out as `layout` (a `PaneLayout`) instead. It
+	--- arranges the panes the tab has, so it has to hold each of them once;
+	--- opening and closing panes is `view:split` and `view:close`.
+	set_layout: (layout: any, id: number?) -> (),
+}
+
+--- A tab's panes: a pane is its view, a split lays out its children side by
+--- side ("row") or one above another ("column"), sharing the room by
+--- `sizes`, which are relative to each other (equal when left out).
+export type PaneLayout = View | { split: "row" | "column", children: { PaneLayout }, sizes: { number }? }
+
+--- A pane was opened, beside `from`.
+export type PaneOpened = {
+	view: View,
+	from: View,
 }
 
 --- A session running on this machine: an editor process of its own.
@@ -866,6 +884,7 @@ export type Kern = {
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "view.closed", handler: (event: ViewClosed) -> ()) -> ())
 		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
+		& ((event: "pane.opened", handler: (event: PaneOpened) -> ()) -> ())
 		& ((event: "view.scrolled", handler: (event: ViewScrolled) -> ()) -> ())
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())

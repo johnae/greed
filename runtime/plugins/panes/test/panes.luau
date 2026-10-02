@@ -183,3 +183,43 @@ test("clicking a tab in the tab line shows it", function(t)
 	t:mouse("press", 2, 0)
 	assert(kern.tab.list()[1].current)
 end)
+
+test("a tab's layout can be read and set again, arranged another way", function(t)
+	t:buffer("|hello")
+	local a = kern.view()
+	local opened: { number } = {}
+	kern.on("pane.opened", function(event: kern.PaneOpened)
+		table.insert(opened, event.view:id())
+	end)
+	local b = a:split("right")
+	local c = b:split("right")
+	assert(#opened == 2 and opened[2] == c:id(), "splitting says so")
+
+	local layout = kern.tab.layout()
+	assert(layout.split == "row" and #layout.children == 3, "three side by side")
+
+	-- a on top, b and c side by side below it, taking three quarters.
+	kern.tab.set_layout({
+		split = "column",
+		sizes = { 1, 3 },
+		children = { a, { split = "row", children = { b, c } } },
+	})
+	local rows = t:draw(41, 21)
+	local divider = 0
+	for i, row in rows do
+		if string.find(row, "─", 1, true) then
+			divider = i
+			break
+		end
+	end
+	assert(divider == 5, `the line under a is a quarter down: row {divider}`)
+	local read = kern.tab.layout()
+	assert(read.split == "column" and read.children[2].split == "row")
+	assert(math.abs(read.sizes[1] - 0.25) < 0.01, tostring(read.sizes[1]))
+
+	-- Every pane, each once.
+	local ok, err = pcall(kern.tab.set_layout, { split = "row", children = { a, b } })
+	assert(not ok and string.find(tostring(err), "every pane", 1, true), tostring(err))
+	ok = pcall(kern.tab.set_layout, { split = "row", children = { a, a, b, c } })
+	assert(not ok, "a pane twice")
+end)

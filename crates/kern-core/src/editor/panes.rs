@@ -289,6 +289,39 @@ impl Editor {
         Some(panes)
     }
 
+    /// How tab `id` of the shown project lays out its panes.
+    pub fn tab_layout(&self, id: TabId) -> Option<&Node> {
+        let project = &self.projects[self.current];
+        project
+            .tabs
+            .iter()
+            .find(|tab| tab.id == id)
+            .map(|tab| &tab.layout)
+    }
+
+    /// Lays out tab `id`'s panes as `layout` instead, which has to hold
+    /// exactly the panes it has: this arranges them, opening and closing
+    /// panes is done elsewhere.
+    pub fn set_tab_layout(&mut self, id: TabId, layout: Node) -> Result<(), String> {
+        let project = &mut self.projects[self.current];
+        let tab = project
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == id)
+            .ok_or("there's no such tab")?;
+        let (mut now, mut given) = (tab.layout.panes(), layout.panes());
+        now.sort();
+        given.sort();
+        if now != given {
+            return Err("a layout has to hold every pane of the tab, each once".to_owned());
+        }
+        if !layout.is_whole() {
+            return Err("every split needs at least one child".to_owned());
+        }
+        tab.layout = layout;
+        Ok(())
+    }
+
     /// Names tab `id`, or with `None` lets it be named after what it shows.
     pub fn rename_tab(&mut self, id: TabId, name: Option<Arc<str>>) -> bool {
         let project = &mut self.projects[self.current];
