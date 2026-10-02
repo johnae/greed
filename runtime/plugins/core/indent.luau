@@ -5,10 +5,12 @@
 -- new line goes one level in from the line where the innermost node
 -- captured as `@indent` around it starts, like a block or an argument
 -- list. When the text moving onto it starts with an `@outdent` node, like
--- `}` or `end`, it lines up with that line instead. Without a query, a new
--- line keeps the indent of the line it came from, one level more after an
--- opening bracket. A plugin can indent a language its own way with
--- `providers`, as the languages plugin does for Python's colons.
+-- `}` or `end`, it lines up with that line instead, and so does a line
+-- holding just such a closer when enter is pressed on it. Without a query,
+-- or where the code doesn't parse yet, a new line keeps the indent of the
+-- line it came from, one level more after a line matching the language's
+-- `openers` (an opening bracket, by default). A plugin can indent a
+-- language its own way with `providers`.
 
 local kern = require("@kern")
 local syntax = require("./syntax")
@@ -61,7 +63,8 @@ local function from_query(buffer: Buffer, pos: number, source: string): (string,
 	local closer = pos + #(string.match(rest, "^[ \t]*") :: string)
 	local inner: kern.Node? = nil
 	local closes = false
-	for _, match in buffer:query(source, { from = pos, to = finish }) do
+	-- From just before `pos`, so a block ending there missing its closer counts.
+	for _, match in buffer:query(source, { from = math.max(pos - 1, 0), to = finish }) do
 		local node = match.indent
 		if node and open_at(node, pos) and (inner == nil or node.from >= inner.from) then
 			inner = node
@@ -78,26 +81,78 @@ local function from_query(buffer: Buffer, pos: number, source: string): (string,
 	return if closes then base else base .. M.unit(buffer), closes
 end
 
---- A provider that keeps the indent of the line being broken, one level
---- more when what's before the break ends with a match of `opener` (a Luau
---- pattern), e.g. "[%(%[{:]" for brackets and Python's colons. Before a
---- closing bracket it closes a block.
-function M.by_line(opener: string): Provider
-	local ends = opener .. "[ \t]*$"
-	return function(buffer: Buffer, pos: number): (string, boolean)
-		local line = buffer:line_of(pos)
-		local before = buffer:slice(buffer:line_start(line), pos)
-		local after = buffer:slice(pos, buffer:line_end(line))
-		local base = M.of(buffer, line)
-		local closes = string.match(after, "^[ \t]*[%)%]}]") ~= nil
-		if string.match(before, ends) and not closes then
-			return base .. M.unit(buffer), false
+--- Luau patterns by language for a line after which the next goes a level
+--- in, matched against the line up to the break without trailing spaces,
+--- e.g. `{ "[%(%[{:]$" }` for Python. Used without an indents query, and
+--- with one where the code around the break doesn't parse yet, like a
+--- Ruby `def` before its `end` is typed.
+M.openers = {} :: { [string]: { string } }
+
+--- Luau patterns by language for text that goes a level out when it
+--- starts a line, like Ruby's `end` or `else`, matched against what comes
+--- after the break without leading spaces. Used where `openers` are.
+M.closers = {} :: { [string]: { string } }
+
+local OPENERS = { "[%(%[{]$" }
+local CLOSERS = { "^[%)%]}]" }
+
+local function matches(text: string, patterns: { string }): boolean
+	for _, pattern in patterns do
+		if string.match(text, pattern) then
+			return true
 		end
-		return base, closes
 	end
+	return false
 end
 
-local from_line = M.by_line("[%(%[{]")
+-- `indent` one level less.
+local function outdented(buffer: Buffer, indent: string): string
+	local unit = M.unit(buffer)
+	if string.sub(indent, -#unit) == unit then
+		return string.sub(indent, 1, -#unit - 1)
+	end
+	return string.sub(indent, 1, -2)
+end
+
+-- By the text: the indent of the last line with text before `pos`, one
+-- level more after a line matching `openers`, and one less before text
+-- matching `closers` (unless right after an opener, as in `{}`).
+local function from_line(
+	buffer: Buffer,
+	pos: number,
+	openers: { string },
+	closers: { string }
+): (string, boolean)
+	local line = buffer:line_of(pos)
+	local after = string.match(buffer:slice(pos, buffer:line_end(line)), "^%s*(.*)$") :: string
+	local before = buffer:slice(buffer:line_start(line), pos)
+	-- On a line with nothing before `pos`, the lines above say.
+	while not string.match(before, "%S") and line > 0 do
+		line -= 1
+		before = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+	end
+	before = string.match(before, "^(.-)%s*$") :: string
+	local base = if string.match(before, "%S") then M.of(buffer, line) else ""
+	local opens, closes = matches(before, openers), matches(after, closers)
+	if opens and not closes then
+		return base .. M.unit(buffer), false
+	elseif closes and not opens then
+		return outdented(buffer, base), true
+	end
+	return base, closes
+end
+
+-- Whether the syntax tree has an error around `pos`.
+local function broken(buffer: Buffer, pos: number): boolean
+	local node = buffer:node_at(math.max(pos - 1, 0))
+	while node do
+		if node.error then
+			return true
+		end
+		node = node:parent()
+	end
+	return false
+end
 
 --- The indent for a new line starting at `pos`, and whether the text
 --- moving onto it closes a block.
@@ -107,11 +162,31 @@ function M.at(buffer: Buffer, pos: number): (string, boolean)
 	if provider then
 		return provider(buffer, pos)
 	end
+	local openers = language and M.openers[language]
 	local source = syntax.query(buffer, "indents")
-	if source then
+	if source and buffer:tree() and not (openers and broken(buffer, pos)) then
 		return from_query(buffer, pos, source)
 	end
-	return from_line(buffer, pos)
+	return from_line(buffer, pos, openers or OPENERS, language and M.closers[language] or CLOSERS)
+end
+
+--- Lines up each cursor's line with its block when what's on it before
+--- the cursor closes one, like `end` or `}` typed at its start.
+function M.reindent(view: kern.View)
+	local buffer = view:buffer()
+	buffer:edit(function(e)
+		for _, range in view:selection().ranges do
+			local line = buffer:line_of(range.head)
+			local start = buffer:line_start(line)
+			local current = M.of(buffer, line)
+			if start + #current < range.head then
+				local wanted, closes = M.at(buffer, start + #current)
+				if closes and wanted ~= current then
+					e:replace(start, start + #current, wanted)
+				end
+			end
+		end
+	end)
 end
 
 -- Breaks the line at each cursor, as `M.break_lines` says; the cursors in
@@ -158,6 +233,7 @@ end
 --- the indent of a line left blank. Between brackets, the closing one gets
 --- a line of its own below.
 function M.break_lines(view: kern.View)
+	M.reindent(view)
 	break_lines(view, {})
 end
 

@@ -83,6 +83,10 @@ kern.command({
 	run = function(ctx)
 		if ctx.char then
 			type_text(ctx, ctx.char)
+			-- A closing bracket at a line's start lines up with its block.
+			if string.match(ctx.char, "^[%)%]}]$") then
+				indent.reindent(ctx.view)
+			end
 		end
 	end,
 })

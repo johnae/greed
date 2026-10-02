@@ -278,3 +278,29 @@ test("> and < use the language's indent", function(t)
 	t:keys("< >")
 	t:expect("|  a")
 end)
+
+test(
+	"Ruby indents by its keywords while the grammar isn't there or the code doesn't parse",
+	function(t)
+		-- Typing a method from scratch: its `end` lines up when enter is pressed.
+		typed(
+			t,
+			"ruby",
+			"def hello|",
+			"a enter p r i n t enter e n d enter",
+			"def hello\n  print\nend\n|"
+		)
+		typed(t, "ruby", "if x|", "a enter y enter e l s e enter z", "if x\n  y\nelse\n  z|")
+		typed(t, "ruby", "class A\n  def b|", "a enter", "class A\n  def b\n    |")
+	end
+)
+
+test("a pattern for names that aren't locals becomes a catch-all after the others", function()
+	local adapted = languages.grammars.adapt(
+		'(identifier) @variable\n\n((identifier) @function.method\n (#is-not? local))\n\n"def" @keyword'
+	)
+	assert(
+		adapted == '\n\n"def" @keyword\n(identifier) @variable\n(identifier) @function.method',
+		adapted
+	)
+end)

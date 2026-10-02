@@ -25,8 +25,8 @@ end)
 test("between brackets the closing one gets a line of its own", function(t)
 	kern.option.set("indent", "  ")
 	check(t, "  f(|)", "i enter", "  f(\n    |\n  )")
-	-- Before a closing bracket that isn't paired on the line, it lines up.
-	check(t, "  a|]", "i enter", "  a\n  |]")
+	-- Before a closing bracket that isn't paired on the line, it goes a level out.
+	check(t, "  a|]", "i enter", "  a\n|]")
 end)
 
 test("a line left blank loses its indent, and spaces after the cursor go", function(t)
@@ -46,4 +46,9 @@ end)
 test("several cursors each get their line's indent", function(t)
 	kern.option.set("indent", "  ")
 	check(t, "a|\n  b|", "i enter", "a\n|\n  b\n  |")
+end)
+
+test("a closing bracket typed at a line's start lines up with its block", function(t)
+	kern.option.set("indent", "  ")
+	check(t, "x = [\n  a\n  |", "i ]", "x = [\n  a\n]|")
 end)

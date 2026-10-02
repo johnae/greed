@@ -1,0 +1,41 @@
+[
+  (method)
+  (singleton_method)
+  (class)
+  (singleton_class)
+  (module)
+  (if)
+  (unless)
+  (while)
+  (until)
+  (for)
+  (case)
+  (case_match)
+  (when)
+  (in_clause)
+  (begin)
+  (do_block)
+  (block)
+  (lambda)
+  (else)
+  (elsif)
+  (rescue)
+  (ensure)
+  (hash)
+  (array)
+  (argument_list)
+  (method_parameters)
+  (parenthesized_statements)
+] @indent
+
+[
+  "end"
+  "else"
+  "elsif"
+  "when"
+  "rescue"
+  "ensure"
+  "}"
+  "]"
+  ")"
+] @outdent

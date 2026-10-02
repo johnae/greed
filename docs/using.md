@@ -176,7 +176,12 @@ for: a level in inside a block, bracket or `let`, and lined up with the
 block's first line before its `}` or `end`. Between a pair of brackets,
 `enter` puts the closing one on a line of its own. Languages without a
 grammar keep the line's indent, one level more after an opening bracket
-(or a `:` in Python and YAML). Each language has its own indent, like two
+(or a `:` in Python and YAML), and so does code that doesn't parse yet,
+like a Ruby `def` before its `end`, going by the language's keywords
+(`indent_after` and `outdent_before` in its entry). A line holding just a
+closer like `end`, `else` or `}` lines up with its block when you press
+`enter` on it, and a closing bracket does as you type it at a line's
+start. Each language has its own indent, like two
 spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
 { indent = 4 })`; the `indent` option is for files in no language.
 

@@ -161,6 +161,10 @@ function M.adapt(source: string): string
 	-- in the grammar, which not every build of one has; the node alone
 	-- matches the same text.
 	renamed = string.gsub(renamed, "%(([%w_]+)/([%w_]+)", "(%2")
+	-- Kern doesn't track which names are local variables, so a pattern
+	-- for those that aren't is a catch-all, kept after the others.
+	renamed =
+		string.gsub(renamed, "%(%(([%w_]+)%)%s+(@[%w._]+)%s*%(#is%-not%? local%)%s*%)", "(%1) %2")
 	local lines, last = {}, {}
 	for line in string.gmatch(renamed .. "\n", "(.-)\n") do
 		table.insert(if string.match(line, CATCH_ALL) then last else lines, line)

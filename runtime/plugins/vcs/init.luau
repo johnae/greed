@@ -124,10 +124,11 @@ local function mark(buffer: kern.Buffer)
 		for _, change in changes(buffer) do
 			local first, last = lines_of(buffer, change)
 			for line = first, last do
+				-- Only the sign is styled; the text keeps its own colours.
 				local start = buffer:line_start(line)
 				table.insert(marks, {
 					from = start,
-					to = buffer:line_end(line),
+					to = start,
 					style = STYLE[change.kind],
 					sign = change.kind,
 				})

@@ -63,6 +63,10 @@ test("a new file in a repository counts as added", function(t)
 	t:wait(10)
 	local s = signs()
 	assert(s[0] == "+" and s[1] == "+", "every line added")
+	-- Only the signs are coloured, so the text keeps its highlighting.
+	for _, mark in kern.view():buffer():decorations("vcs") do
+		assert(mark.from == mark.to, "a sign covers no text")
+	end
 end)
 
 test("files outside a repository get no signs", function(t)

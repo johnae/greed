@@ -15,9 +15,15 @@ export type Language = {
 	comment: string?,
 	--- Spaces per indent level; leave out to indent with tabs.
 	indent: number?,
-	--- For a language without an indents query: a Luau pattern for what a
-	--- line ends with when the next one goes a level in, e.g. "[%(%[{:]".
-	indent_after: string?,
+	--- Luau patterns for a line after which the next goes a level in,
+	--- matched against the line without its trailing spaces, e.g.
+	--- `{ "[%(%[{:]$" }`. Used without an indents query, and with one where
+	--- the code doesn't parse yet (a `def` before its `end` is typed).
+	indent_after: { string }?,
+	--- Luau patterns for text that goes a level out when it starts a line,
+	--- like `{ "^end%f[%W]" }`, matched without leading spaces. Used where
+	--- `indent_after` is; closing brackets by default.
+	outdent_before: { string }?,
 	--- A program that formats the file: it gets the text on its input and
 	--- prints it formatted. "{path}" in it stands for the file's path.
 	--- Without one, the language server formats, as rust-analyzer does.
@@ -141,7 +147,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	python = {
-		indent_after = "[%(%[{:]",
+		indent_after = { "[%(%[{:]$" },
 		formatter = { "ruff", "format", "-" },
 		extensions = { "py", "pyi" },
 		roots = { "pyproject.toml", "setup.py", "requirements.txt" },
@@ -160,6 +166,36 @@ local languages: { [string]: Language } = {
 		servers = { { "ruby-lsp" }, { "solargraph", "stdio" } },
 		comment = "#",
 		indent = 2,
+		indent_after = {
+			"^%s*def%s",
+			"^%s*class%s",
+			"^%s*module%s",
+			"^%s*if%s",
+			"^%s*unless%s",
+			"^%s*while%s",
+			"^%s*until%s",
+			"^%s*for%s",
+			"^%s*case%f[%W]",
+			"^%s*when%s",
+			"^%s*begin$",
+			"^%s*else$",
+			"^%s*elsif%s",
+			"^%s*rescue%f[%W]",
+			"^%s*ensure$",
+			"%sdo$",
+			"%sdo%s*|[^|]*|$",
+			"{%s*|[^|]*|$",
+			"[%(%[{]$",
+		},
+		outdent_before = {
+			"^end%f[%W]",
+			"^else%f[%W]",
+			"^elsif%f[%W]",
+			"^when%f[%W]",
+			"^rescue%f[%W]",
+			"^ensure%f[%W]",
+			"^[%)%]}]",
+		},
 	},
 	rust = {
 		extensions = { "rs" },
@@ -201,7 +237,7 @@ local languages: { [string]: Language } = {
 		indent = 2,
 	},
 	yaml = {
-		indent_after = "[%(%[{:]",
+		indent_after = { "[%(%[{:]$" },
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "yaml", "yml" },
 		servers = { { "yaml-language-server", "--stdio" } },

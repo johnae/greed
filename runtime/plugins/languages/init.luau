@@ -25,9 +25,8 @@ local function apply(name: string, language: Language)
 	kern.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
 	indent.units[name] = if language.indent then string.rep(" ", language.indent) else "\t"
-	indent.providers[name] = if language.indent_after
-		then indent.by_line(language.indent_after)
-		else nil
+	indent.openers[name] = language.indent_after
+	indent.closers[name] = language.outdent_before
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })
