@@ -584,6 +584,12 @@ follow.
 Your config is `~/.config/kern/init.luau`, plain Luau with the full plugin
 API. Your own plugins go in `~/.config/kern/plugins/NAME/`.
 
+Saving your config, in Kern or anywhere else, runs it again within a
+second: what it registered (commands, keys, theme entries, event handlers)
+is taken away and set up anew, and the status line says "config reloaded"
+or what went wrong. Options it set keep their values until it sets them
+again. `:config-reload` does the same by hand.
+
 Config runs in layers, each after the one before, so later ones win:
 
 1. The default plugins.

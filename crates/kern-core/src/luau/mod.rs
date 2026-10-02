@@ -26,6 +26,7 @@ mod tasks;
 mod terminal;
 mod testing;
 mod theme;
+mod watch;
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -109,6 +110,8 @@ pub(crate) struct State {
     /// The queries each plugin set, by language and kind, oldest first; the
     /// newest is the one in use.
     pub query_owners: HashMap<(String, String), Vec<(PluginId, String)>>,
+    /// Files plugins watch for changes.
+    pub watches: watch::Watches,
 }
 
 #[derive(Clone)]
@@ -221,6 +224,7 @@ impl Host {
             view_scrolls: HashMap::new(),
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
+            watches: watch::Watches::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -500,6 +504,19 @@ impl Host {
     pub fn handle_terminal(&self, event: crate::terminal::Event) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             terminal::handle(&self.lua, event).map_err(HostError::from)
+        })
+    }
+
+    /// Whether plugins watch any files, so the session should look at them
+    /// now and then with [`Host::check_watches`].
+    pub fn watching(&self) -> bool {
+        watch::watching(&self.lua)
+    }
+
+    /// Tells plugins about watched files that changed ("file.changed").
+    pub fn check_watches(&self) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            watch::check(&self.lua).map_err(HostError::from)
         })
     }
 

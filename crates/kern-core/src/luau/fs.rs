@@ -77,6 +77,8 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
 
+    super::watch::add_to(lua, &fs)?;
+
     fs.set(
         "write",
         lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {

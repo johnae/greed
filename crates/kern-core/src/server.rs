@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, select};
 use serde::{Deserialize, Serialize};
@@ -126,6 +126,7 @@ where
                 images: HashSet::new(),
             }),
             inputs,
+            watched_at: Instant::now(),
         };
         if let Some(session) = &session {
             host.set_session_name(&session.name);
@@ -180,9 +181,33 @@ struct Server<'a> {
     client: Option<Client>,
     /// For attached clients to send their input with the local client's.
     inputs: Sender<Input>,
+    /// When the watched files were last looked at.
+    watched_at: Instant,
 }
 
+/// How often watched files are looked at.
+const WATCH_EVERY: Duration = Duration::from_millis(500);
+
 impl Server<'_> {
+    /// With files watched, when to wake up to look at them.
+    fn watch_timer(&self) -> Receiver<Instant> {
+        if self.host.watching() {
+            crossbeam_channel::at(self.watched_at + WATCH_EVERY)
+        } else {
+            crossbeam_channel::never()
+        }
+    }
+
+    /// Tells plugins about watched files that changed, at most every
+    /// [`WATCH_EVERY`].
+    fn look_at_watched_files(&mut self) {
+        if self.watched_at.elapsed() >= WATCH_EVERY {
+            self.watched_at = Instant::now();
+            let checked = self.host.check_watches();
+            self.report(checked);
+        }
+    }
+
     fn run(&mut self, inbox: &Receiver<Input>, session: Option<&Session>) {
         let trees = self.host.parses();
         let lsp_events = self.host.lsp_events();
@@ -202,6 +227,7 @@ impl Server<'_> {
                 .host
                 .next_timer()
                 .map_or_else(crossbeam_channel::never, crossbeam_channel::at);
+            let look = self.watch_timer();
             select! {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
@@ -246,9 +272,11 @@ impl Server<'_> {
                     }
                 }
                 recv(timer) -> _ => {}
+                recv(look) -> _ => {}
             }
             let fired = self.host.fire_timers(Instant::now());
             self.report(fired);
+            self.look_at_watched_files();
             if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
                 self.message = Some(latest);
             }

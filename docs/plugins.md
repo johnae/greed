@@ -189,7 +189,8 @@ Commands and event handlers can wait without freezing the editor:
 `kern.fs.grep(...)` pause the command until the result is there, and
 `kern.signal()` lets one piece of code wait for a value another sends.
 `kern.animate(ms, step)` calls `step(t)` once a frame, which is all the
-flash on copy is.
+flash on copy is. `kern.fs.watch(path)` makes a "file.changed" event come
+whenever that file changes, from anywhere; it's how your config reloads.
 
 Language servers ask things too: `kern.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the

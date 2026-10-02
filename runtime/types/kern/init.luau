@@ -686,6 +686,11 @@ export type OptionChanged = {
 	value: OptionValue,
 }
 
+--- A file watched with `kern.fs.watch` was written, created or removed.
+export type FileChanged = {
+	path: string,
+}
+
 --- A plugin was loaded (or reloaded) and its entry file ran.
 export type PluginLoaded = {
 	name: string,
@@ -836,6 +841,9 @@ export type Fs = {
 	--- Replaces the file's contents with `text`, creating it and its folders
 	--- if needed.
 	write: (path: string, text: string) -> (boolean?, string?),
+	--- Watches the file at `path`: whenever it changes, from inside the
+	--- editor or out, plugins hear "file.changed". It needn't exist yet.
+	watch: (path: string) -> (),
 	--- The directory Kern was started in.
 	cwd: () -> string,
 	--- Your home folder, Kern's config folder (where init.luau and plugins/
@@ -975,6 +983,7 @@ export type Kern = {
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.loaded", handler: (event: PluginLoaded) -> ()) -> ())
+		& ((event: "file.changed", handler: (event: FileChanged) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())
 		& ((event: "editor.quitting", handler: (event: {}) -> ()) -> ())

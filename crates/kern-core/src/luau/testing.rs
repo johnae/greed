@@ -30,7 +30,9 @@ use kern_text::ClientId;
 use mlua::{Function, Lua, UserData, UserDataMethods};
 
 use super::modules::Modules;
-use super::{Host, HostError, api, budgeted, deadline, jobs, state, state_mut, tasks, terminal};
+use super::{
+    Host, HostError, api, budgeted, deadline, jobs, state, state_mut, tasks, terminal, watch,
+};
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
 
@@ -152,6 +154,7 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
             terminal::handle(lua, event)?;
         }
         jobs::settle(lua)?;
+        watch::check(lua)?;
         if done.call::<bool>(())? {
             return Ok(());
         }
@@ -284,7 +287,9 @@ impl UserData for TestContext {
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
             jobs::settle(lua)?;
             tasks::advance(lua, later)?;
-            jobs::settle(lua)
+            jobs::settle(lua)?;
+            // As much time as the session takes to look has gone by.
+            watch::check(lua)
         });
         methods.add_method("wait_for", |lua, _, (done, ms): (Function, Option<f64>)| {
             wait_until(
