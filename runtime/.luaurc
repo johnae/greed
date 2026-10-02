@@ -11,6 +11,7 @@
 		"terminal": "./plugins/terminal",
 		"panes": "./plugins/panes",
 		"projects": "./plugins/projects",
+		"multibuffer": "./plugins/multibuffer",
 		"notes": "./plugins/notes"
 	}
 }

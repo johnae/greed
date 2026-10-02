@@ -235,10 +235,12 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 Patterns are regexes; ones written in lowercase ignore case.
 
 In the project search, `enter` opens a match and `ctrl-e` puts what was
-found in a panel. You can edit the lines in that panel with any of the
-editing keys above, and `:w` writes the changes back to their files. Lines
-that changed since the search are left alone and reported. `:grep PATTERN`
-fills the panel directly.
+found in a panel: a multibuffer, with each matching line under its file's
+name and beside its line number. Edit those lines with any of the editing
+keys above (`s` to select the matches, then `c` to change them all) and
+the files change as you type; `:w` saves them, `enter` goes to the line and
+`q` closes the panel. A file that changed on disk since the search is left
+alone and reported. `:grep PATTERN` fills the panel directly.
 
 ## Files and buffers
 

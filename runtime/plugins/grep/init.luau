@@ -4,10 +4,10 @@
 --   ctrl-e              in that picker: put the matches in a results panel
 --   :grep PATTERN DIR?  put the matches in a results panel straight away
 --
--- The results panel has one line per match, `path:line: text`. Edit the
--- text with anything: s to select the matches and c to change them all
--- works well. :w writes the changed lines back to their files, enter opens
--- the match under the cursor, and q closes the panel.
+-- The results panel is a multibuffer: each matching line under its file's
+-- name. Edit the lines with anything (s to select the matches and c to
+-- change them all works well) and the files change as you type; :w saves
+-- them, enter opens the match under the cursor, and q closes the panel.
 --
 -- Patterns are regexes; ones in lowercase ignore case. The project is the
 -- folder holding .jj or .git (see core's project.luau).
@@ -15,23 +15,9 @@
 local kern = require("@kern")
 local core = require("@core")
 local picker = require("@picker")
+local multibuffer = require("@multibuffer")
 
 type Found = { kern.GrepLine }
-
--- A line to write back: what it read when found, what it should read, and
--- whether it was written.
-type Change = { old: string, new: string, applied: boolean? }
-
-type Results = {
-	root: string,
-	-- Each line's text when it was found, or last written, by "path:line".
-	original: { [string]: string },
-	-- Where each line's first match starts, by "path:line".
-	column: { [string]: number },
-}
-
--- The results shown in panels, by buffer id.
-local results: { [number]: Results } = {}
 
 -- Each project's results panel, while it's open.
 local panels: { [number]: kern.View } = {}
@@ -56,6 +42,13 @@ local function grep(pattern: string, root: string): Found
 	return found
 end
 
+-- The file at `path` relative to `root`, as an absolute path, the way open
+-- buffers know their files.
+local function absolute(root: string, path: string): string
+	local full = core.project.path(root, path)
+	return if string.sub(full, 1, 1) == "/" then full else `{kern.fs.cwd()}/{full}`
+end
+
 -- Opens `path` (relative to `root`) in the main view with the cursor at
 -- `column` on 0-based `line`.
 local function go_to(root: string, path: string, line: number, column: number)
@@ -67,167 +60,42 @@ local function go_to(root: string, path: string, line: number, column: number)
 	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 end
 
--- Shows `found` in the results panel, one line per match.
+-- Shows `found` in the results panel, each line under its file.
 local function show(pattern: string, root: string, found: Found)
 	if #found == 0 then
 		kern.echo(`nothing matches {pattern}`)
 		return
 	end
-	local lines, marks = {}, {}
-	local r: Results = { root = root, original = {}, column = {} }
-	local pos = 0
+	local excerpts: { multibuffer.Excerpt } = {}
 	for _, f in found do
-		local location = key(f.path, f.line)
-		local prefix = location .. ": "
-		r.original[location] = f.text
-		r.column[location] = f.matches[1].from
-		table.insert(marks, { from = pos, to = pos + #prefix - 2, style = "ui.grep.location" })
+		local marks = {}
 		for _, m in f.matches do
-			table.insert(marks, {
-				from = pos + #prefix + m.from,
-				to = pos + #prefix + m.to,
-				style = "ui.search.match",
-			})
+			table.insert(
+				marks,
+				{ line = f.line, from = m.from, to = m.to, style = "ui.search.match" }
+			)
 		end
-		table.insert(lines, prefix .. f.text)
-		pos += #prefix + #f.text + 1
+		table.insert(excerpts, {
+			path = absolute(root, f.path),
+			from = f.line,
+			label = f.path,
+			marks = marks,
+		})
 	end
-	local buffer = kern.create_buffer("grep", table.concat(lines, "\n"))
-	buffer:decorate("grep", marks)
-	results[buffer:id()] = r
+	local summary = if #found == 1
+		then `1 line matches {pattern}`
+		else `{#found} lines match {pattern}`
+	local buffer = multibuffer.open(excerpts, { summary = summary })
 	local project = kern.project.current().id
 	local current = panels[project]
 	if current then
-		results[current:buffer():id()] = nil
 		current:show(buffer)
 		current:focus()
 	else
 		panels[project] = kern.panel(buffer, { side = "right", width = "45%", title = "Search" })
 	end
-	kern.echo(`{#found} lines match {pattern} - :w writes your edits back`)
+	kern.echo(`{summary} - edits change the files, :w saves them`)
 end
-
--- `text` with the lines in `changes` (by 0-based line) replaced where they
--- still read as they did. Returns the new text and how many lines changed
--- and were skipped.
-local function replace_lines(text: string, changes: { [number]: Change }): (string, number, number)
-	local out, changed, skipped = {}, 0, 0
-	local pos, line = 1, 0
-	while true do
-		local newline = string.find(text, "\n", pos, true)
-		local content = string.sub(text, pos, (newline or #text + 1) - 1)
-		local cr = if string.sub(content, -1) == "\r" then "\r" else ""
-		content = string.sub(content, 1, #content - #cr)
-		local change = changes[line]
-		if change and content == change.old then
-			content = change.new
-			change.applied = true
-			changed += 1
-		elseif change then
-			skipped += 1
-		end
-		table.insert(out, content .. cr .. (if newline then "\n" else ""))
-		if newline == nil then
-			break
-		end
-		pos, line = newline + 1, line + 1
-	end
-	return table.concat(out), changed, skipped
-end
-
--- Edits the lines in `changes` in an open buffer, where they still read as
--- they did. Returns how many changed and were skipped.
-local function replace_in_buffer(
-	buffer: kern.Buffer,
-	changes: { [number]: Change }
-): (number, number)
-	local changed, skipped = 0, 0
-	buffer:edit(function(e)
-		for line, change in changes do
-			local start = if line < buffer:line_count() then buffer:line_start(line) else nil
-			if start and buffer:slice(start, buffer:line_end(line)) == change.old then
-				e:replace(start, buffer:line_end(line), change.new)
-				change.applied = true
-				changed += 1
-			else
-				skipped += 1
-			end
-		end
-	end)
-	return changed, skipped
-end
-
--- Writes the lines edited in a results buffer back to their files. Files
--- open in Kern are edited there, and saved unless they had other unsaved
--- changes.
-local function write_back(buffer: kern.Buffer)
-	local r = results[buffer:id()]
-	if r == nil then
-		return
-	end
-	local by_path: { [string]: { [number]: Change } } = {}
-	for i = 0, buffer:line_count() - 1 do
-		local text = buffer:slice(buffer:line_start(i), buffer:line_end(i))
-		local path, number, new = string.match(text, "^(.-):(%d+): (.*)$")
-		local old = path and r.original[`{path}:{number}`]
-		if path and number and new and old and old ~= new then
-			by_path[path] = by_path[path] or {}
-			by_path[path][(tonumber(number) :: number) - 1] = { old = old, new = new }
-		end
-	end
-	local open: { [string]: kern.Buffer } = {}
-	for _, b in kern.buffers() do
-		local path = b:path()
-		if path then
-			open[path] = b
-		end
-	end
-	local files, lines, skipped = 0, 0, 0
-	for path, changes in by_path do
-		local full = core.project.path(r.root, path)
-		-- Open buffers are known by absolute path.
-		local absolute = if string.sub(full, 1, 1) == "/" then full else `{kern.fs.cwd()}/{full}`
-		local changed, missed
-		local target = open[absolute]
-		if target then
-			local unsaved = target:modified()
-			changed, missed = replace_in_buffer(target, changes)
-			if changed > 0 and not unsaved then
-				target:save()
-			end
-		else
-			local text, err = kern.fs.read(full)
-			if text == nil then
-				error(err, 0)
-			end
-			local new_text
-			new_text, changed, missed = replace_lines(text, changes)
-			if changed > 0 then
-				local ok, write_err = kern.fs.write(full, new_text)
-				if not ok then
-					error(write_err, 0)
-				end
-			end
-		end
-		-- Lines skipped because they changed meanwhile stay as found, so the
-		-- next save tries them again.
-		for line, change in changes do
-			if change.applied then
-				r.original[key(path, line)] = change.new
-			end
-		end
-		files += if changed > 0 then 1 else 0
-		lines += changed
-		skipped += missed
-	end
-	local message = `changed {lines} lines in {files} files`
-	if skipped > 0 then
-		message ..= `; skipped {skipped} that changed since the search`
-	end
-	kern.echo(message)
-end
-
-core.file.on_save("grep", write_back)
 
 -- At most this many lines are listed while searching as you type; :grep
 -- lists everything.
@@ -296,24 +164,6 @@ kern.command({
 })
 
 kern.command({
-	name = "grep-open",
-	doc = "Open the match on the cursor's line",
-	run = function(ctx)
-		local r = results[ctx.buffer:id()]
-		if r == nil then
-			return
-		end
-		local selection = ctx.view:selection()
-		local line = ctx.buffer:line_of(selection.ranges[selection.primary].head)
-		local text = ctx.buffer:slice(ctx.buffer:line_start(line), ctx.buffer:line_end(line))
-		local path, number = string.match(text, "^(.-):(%d+): ")
-		if path and number then
-			go_to(r.root, path, (tonumber(number) :: number) - 1, r.column[`{path}:{number}`] or 0)
-		end
-	end,
-})
-
-kern.command({
 	name = "grep-close",
 	doc = "Close the search results",
 	run = function()
@@ -321,13 +171,11 @@ kern.command({
 		local view = panels[project]
 		panels[project] = nil
 		if view then
-			results[view:buffer():id()] = nil
 			view:close()
 		end
 	end,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "grep" }, { enter = "grep-open", q = "grep-close" })
 kern.keymap.bind("normal", { ["space /"] = "search-project" })
 
 return {}

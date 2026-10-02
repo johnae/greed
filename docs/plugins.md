@@ -145,6 +145,11 @@ kern.tab.set_layout({
   or in pieces with styles of their own. A mark's text with an `action`
   (a command name) is a button: clicking it puts the cursor at the mark
   and runs the command.
+- Multibuffers show excerpts of many files in one buffer, edited in place:
+  `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
+  { summary = "3 places" })` gives a buffer to show in a panel or float.
+  Edits in it change the files as you type, and changes to the files show
+  in it. Search results use one.
 - Images: `kern.image.load(path)` reads a PNG, JPEG or GIF and gives an id,
   and a mark with `image = { id = id, cols = 20, rows = 8 }` draws it over
   that many cells from its start. `kern.image.cells(id)` says how many

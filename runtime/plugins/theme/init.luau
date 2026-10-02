@@ -96,6 +96,9 @@ kern.theme.set({
 	["markup.link.label"] = { fg = "blue" },
 	["markup.quote"] = { fg = "bright-black", italic = true },
 	["markup.raw"] = { fg = "green" },
+
+	-- A multibuffer's file names, above their excerpts.
+	["ui.multibuffer.file"] = { fg = "blue", bold = true },
 })
 
 return {}
