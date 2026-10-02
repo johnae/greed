@@ -125,6 +125,7 @@ end)
 
 test("z a folds the section under the cursor, and again unfolds it", function(t)
 	t:buffer("# A\non|e\ntwo\n# B\nb")
+	kern.view():buffer():set_language("markdown")
 	t:keys("z a")
 	t:expect("|# A\none\ntwo\n# B\nb")
 	local hidden = kern.view():hidden_lines()

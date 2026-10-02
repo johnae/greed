@@ -216,6 +216,19 @@ selects every place it appears.
 the selection. In Vim's style the same objects are `if` `af`, `ia` `aa` and
 `ic` `ac`, as in `daf` or `cia`.
 
+**Folding**
+
+| Keys | |
+|---|---|
+| `z a` | Fold the block the cursor is in under its first line, or unfold it |
+| `z c` `z o` | Fold it, or unfold the folds the cursor is in |
+| `z R` | Unfold everything |
+
+A block is the smallest function, body, table or similar around the
+cursor's line, from the language's grammar. In a language without one,
+it's the lines indented under the nearest line indented less, and in
+Markdown it's the section under a heading. Vim's style has the same keys.
+
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
 edit` switch to those; [Editing styles](editing-styles.md) explains each.
 
@@ -615,10 +628,11 @@ turns downloading off.
 What gets highlighted, and what counts as a function for `m i f`, comes
 from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where
 KIND is `highlights`, `injections` (languages inside others, like the code
-blocks in Markdown, which are highlighted in their own language) or
-`textobjects`. Kern reads them from every plugin
-and from `~/.config/kern/queries`, so a file there replaces Kern's own. To
-add to it instead, start the file with `; extends`:
+blocks in Markdown, which are highlighted in their own language),
+`textobjects` or `folds` (the blocks `z a` folds, captured as `@fold`).
+Kern reads them from every plugin and from `~/.config/kern/queries`, so a
+file there replaces Kern's own. To add to it instead, start the file with
+`; extends`:
 
 ```scheme
 ; extends

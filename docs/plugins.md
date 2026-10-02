@@ -107,6 +107,12 @@ A plugin can also ship them as files in its own `queries/LANGUAGE/` folder
 (see [Configuration](using.md#highlighting-and-syntax-queries)), and the
 `plugin.loaded` event says when a plugin with some arrives.
 
+Folding uses a language's `folds` query, or indentation without one. To
+fold a language another way, give core a provider that returns the first
+and last line of the block around a line:
+`require("@core").folds.providers.org = function(buffer, line) ... end`.
+Notes folds Markdown sections this way.
+
 The editor can have several projects open. `kern.project.current()` is
 the one shown, with its `root`; `kern.project.open`, `switch` and `close`
 manage them, and `buffer:project()` says which one a buffer belongs to.

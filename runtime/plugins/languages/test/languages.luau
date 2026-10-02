@@ -108,17 +108,17 @@ test("the newest query set is used, and a plugin's goes with it", function(t)
 	kern.view():buffer():set_language("rust")
 	local dir = t:tempdir({
 		["first/plugin.toml"] = 'name = "first"\n',
-		["first/init.luau"] = "require('@kern').syntax.set_query('rust', 'folds', '(block) @a')\n",
+		["first/init.luau"] = "require('@kern').syntax.set_query('rust', 'scratch', '(block) @a')\n",
 		["second/plugin.toml"] = 'name = "second"\n',
-		["second/init.luau"] = "require('@kern').syntax.set_query('rust', 'folds', '(block) @b')\n",
+		["second/init.luau"] = "require('@kern').syntax.set_query('rust', 'scratch', '(block) @b')\n",
 	})
 	kern.plugin.load(dir .. "/first")
 	kern.plugin.load(dir .. "/second")
-	assert(kern.syntax.query("rust", "folds") == "(block) @b")
+	assert(kern.syntax.query("rust", "scratch") == "(block) @b")
 	kern.plugin.unload("second")
-	assert(kern.syntax.query("rust", "folds") == "(block) @a", "the first one's is back")
+	assert(kern.syntax.query("rust", "scratch") == "(block) @a", "the first one's is back")
 	kern.plugin.unload("first")
-	assert(kern.syntax.query("rust", "folds") == nil, "and then none")
+	assert(kern.syntax.query("rust", "scratch") == nil, "and then none")
 	-- The grammar's own highlights stay when nothing replaces them.
 	assert(string.find(kern.syntax.query("rust", "highlights") or "", "@keyword", 1, true) ~= nil)
 	assert(not pcall(kern.syntax.set_query, "rust", "highlights", "(no_such_node) @x"))
@@ -185,4 +185,32 @@ test("queries from other editors get Kern's names, and catch-alls go last", func
 			== "(call function: (identifier) @function)\n(x) \n((wildcard) @constant.numeric)\n(identifier) @variable",
 		adapted
 	)
+end)
+
+test("each bundled folds query compiles with its grammar", function()
+	languages.load_queries()
+	for _, name in kern.grammars() do
+		local source = kern.syntax.query(name, "folds")
+		if source then
+			local buffer = kern.create_buffer("file", "")
+			buffer:set_language(name)
+			local ok, err = pcall(function()
+				return buffer:query(source)
+			end)
+			assert(ok, `{name}: {err}`)
+		end
+	end
+	assert(kern.syntax.query("nix", "folds"), "nix has one")
+end)
+
+test("z a folds the smallest block the folds query finds around the cursor", function(t)
+	languages.load_queries()
+	t:buffer("fn a() {\n    if x {\n        |y();\n    }\n}\n")
+	kern.view():buffer():set_language("rust")
+	t:keys("z a")
+	local hidden = kern.view():hidden_lines()
+	assert(#hidden == 1 and hidden[1].from == 2 and hidden[1].to == 3, "the if's block")
+	t:keys("z a k z a")
+	hidden = kern.view():hidden_lines()
+	assert(#hidden == 1 and hidden[1].from == 1 and hidden[1].to == 4, "the function")
 end)

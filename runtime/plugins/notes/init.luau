@@ -7,7 +7,7 @@
 --   space n a   the agenda: open todos, soonest due first
 --   space n x   tick a todo, or untick it
 --   g d         follow the [[link]] under the cursor (making the note)
---   z a         fold the section under the cursor, or unfold it
+--   z a         fold the section under the cursor, or unfold it (core's folds)
 --
 -- In notes (Markdown files in the notes folder, or every Markdown file with
 -- `notes-everywhere`), links show without their brackets, markup shows as
@@ -33,7 +33,6 @@ kern.keymap.bind("normal", {
 	["space n /"] = "notes-search",
 	["space n x"] = "todo-toggle",
 	["g d"] = "notes-follow",
-	["z a"] = "fold-toggle",
 })
 
 return notes

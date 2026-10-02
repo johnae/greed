@@ -1,0 +1,16 @@
+[
+  (function_declaration)
+  (function_expression)
+  (generator_function_declaration)
+  (arrow_function)
+  (method_definition)
+  (class_declaration)
+  (class_body)
+  (statement_block)
+  (switch_body)
+  (switch_case)
+  (object)
+  (array)
+  (arguments)
+  (template_string)
+] @fold

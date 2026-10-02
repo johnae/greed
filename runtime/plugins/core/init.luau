@@ -24,6 +24,7 @@ local project = require("@self/project")
 local style = require("@self/style")
 local mouse = require("@self/mouse")
 local buttons = require("@self/buttons")
+local folds = require("@self/folds")
 
 kern.keymap.bind("normal", {
 	enter = "press-button",
@@ -135,6 +136,7 @@ kern.keymap.bind({}, {
 
 kern.keymap.bind("normal", objects.keys)
 kern.keymap.bind("normal", syntax.keys)
+kern.keymap.bind("normal", folds.keys)
 kern.keymap.counts("normal")
 kern.keymap.fallback("insert", "insert-char")
 kern.mode.cursor("insert", "bar")
@@ -151,6 +153,7 @@ return {
 	style = style,
 	mouse = mouse,
 	buttons = buttons,
+	folds = folds,
 	comment = comment,
 	jumps = jumps,
 	objects = objects,

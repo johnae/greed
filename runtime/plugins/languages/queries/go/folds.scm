@@ -1,0 +1,16 @@
+[
+  (function_declaration)
+  (method_declaration)
+  (func_literal)
+  (block)
+  (type_declaration)
+  (field_declaration_list)
+  (import_declaration)
+  (const_declaration)
+  (var_declaration)
+  (composite_literal)
+  (argument_list)
+  (expression_case)
+  (type_case)
+  (default_case)
+] @fold
