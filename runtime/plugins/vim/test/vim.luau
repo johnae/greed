@@ -289,7 +289,7 @@ test("yanking an empty line keeps the cursor on it", function(t)
 end)
 
 test("text objects from the syntax tree: functions, arguments, comments", function(t)
-	require("@core").syntax.set_query(
+	require("@kern").syntax.set_query(
 		"rust",
 		"textobjects",
 		"(function_item body: (_) @function.inside) @function.around (parameters (_) @parameter.around)"

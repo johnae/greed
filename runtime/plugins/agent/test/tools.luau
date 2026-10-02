@@ -88,7 +88,7 @@ test("tool names are checked, and a tool with the same name replaces the old one
 end)
 
 test("outline and syntax_query read a file's syntax tree, open or not", function(t)
-	require("@core").syntax.set_query(
+	require("@kern").syntax.set_query(
 		"rust",
 		"textobjects",
 		"(function_item) @function.around (struct_item) @type.around"

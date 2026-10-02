@@ -8,11 +8,11 @@
 --                   shrink it back
 --
 -- What counts as a function or a type comes from each language's
--- "textobjects" query, set with `syntax.set_query`. The languages plugin
--- sets them for the languages Kern ships with. A query captures nodes as
--- `@function.around` and `@function.inside` (and type, parameter,
--- comment); a match without an inside capture uses what's between the
--- around node's brackets.
+-- "textobjects" query (`kern.syntax.query`), which the languages plugin
+-- reads from `queries/<language>/textobjects.scm` files. A query captures
+-- nodes as `@function.around` and `@function.inside` (and type,
+-- parameter, comment); a match without an inside capture uses what's
+-- between the around node's brackets.
 
 local kern = require("@kern")
 local motions = require("./motions")
@@ -23,19 +23,10 @@ type Range = kern.Range
 
 local M = {}
 
--- Each language's queries, by kind ("textobjects").
-local queries: { [string]: { [string]: string } } = {}
-
---- Sets the query of `kind` ("textobjects") for `language`; nil removes it.
-function M.set_query(language: string, kind: string, source: string?)
-	queries[language] = queries[language] or {}
-	queries[language][kind] = source
-end
-
 --- The query of `kind` for the buffer's language, if there is one.
 function M.query(buffer: Buffer, kind: string): string?
 	local language = buffer:language()
-	return if language then (queries[language] or {})[kind] else nil
+	return if language then kern.syntax.query(language, kind) else nil
 end
 
 --- The syntax objects Kern knows, with the key that stands for each.

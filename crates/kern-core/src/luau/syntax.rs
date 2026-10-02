@@ -11,6 +11,7 @@ use tree_sitter::{Node, QueryCursor, Tree};
 use super::handles::BufferRef;
 use super::{state, state_mut};
 use crate::BufferId;
+use crate::registry::PluginId;
 use crate::syntax::{Language, RopeText};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -219,6 +220,51 @@ fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> L
         matches.push(captures)?;
     }
     Ok(matches)
+}
+
+/// `kern.syntax`: the queries languages use, set by the plugin `owner`.
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
+    let syntax = lua.create_table()?;
+    let o = owner.clone();
+    syntax.set(
+        "set_query",
+        lua.create_function(
+            move |lua, (language, kind, source): (String, String, Option<String>)| {
+                let state = &mut *state_mut(lua);
+                let owners = state
+                    .query_owners
+                    .entry((language.clone(), kind.clone()))
+                    .or_default();
+                // Without a source, the query in use goes back to the one
+                // another plugin set before, if any.
+                let in_use = source.clone().or_else(|| {
+                    owners
+                        .iter()
+                        .rev()
+                        .find(|(owner, _)| owner != &o)
+                        .map(|(_, source)| source.clone())
+                });
+                state
+                    .syntax
+                    .set_query(&language, &kind, in_use)
+                    .map_err(|err| {
+                        mlua::Error::runtime(format!("the {kind} query for {language}: {err}"))
+                    })?;
+                owners.retain(|(owner, _)| owner != &o);
+                if let Some(source) = source {
+                    owners.push((o.clone(), source));
+                }
+                Ok(())
+            },
+        )?,
+    )?;
+    syntax.set(
+        "query",
+        lua.create_function(|lua, (language, kind): (String, String)| {
+            Ok(state(lua).syntax.query_source(&language, &kind))
+        })?,
+    )?;
+    Ok(syntax)
 }
 
 /// `buffer:tree()`, `buffer:node_at()` and `buffer:query()`.

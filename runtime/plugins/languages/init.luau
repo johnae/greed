@@ -11,9 +11,8 @@
 
 local kern = require("@kern")
 local defaults = require("@self/languages")
-local textobjects = require("@self/textobjects")
-local core = require("@core")
-local comment = core.comment
+local comment = require("@core").comment
+local query_files = require("@self/query_files")
 
 export type Language = defaults.Language
 
@@ -23,7 +22,6 @@ local languages: { [string]: Language } = {}
 local function apply(name: string, language: Language)
 	kern.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
-	core.syntax.set_query(name, "textobjects", language.textobjects)
 	local servers = language.servers
 	if servers and #servers > 0 then
 		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })
@@ -60,9 +58,32 @@ function M.list(): { string }
 end
 
 for name, language in defaults do
-	language.textobjects = textobjects[name]
 	M.set(name, language)
 end
+
+-- Queries from files in every plugin and the config folder, read again
+-- when plugins come and go.
+local own = kern.plugin.dirs().languages
+
+--- Reads the query files again and sets the queries, showing and returning
+--- any problems (a query its grammar can't compile), one line each.
+function M.load_queries(): { string }
+	local problems = query_files.load(own)
+	for _, problem in problems do
+		kern.echo(problem)
+	end
+	return problems
+end
+
+M.load_queries()
+kern.on("plugin.loaded", function(event)
+	if event.dir and event.name ~= "languages" and kern.fs.list(`{event.dir}/queries`) then
+		M.load_queries()
+	end
+end)
+kern.on("plugin.unloaded", function()
+	M.load_queries()
+end)
 
 -- `:health` --------------------------------------------------------------
 

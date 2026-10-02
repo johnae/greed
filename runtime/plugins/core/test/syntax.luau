@@ -1,8 +1,7 @@
 local test = require("@kern/test")
 local kern = require("@kern")
-local syntax = require("@core").syntax
 
-syntax.set_query(
+kern.syntax.set_query(
 	"rust",
 	"textobjects",
 	[[
@@ -74,6 +73,7 @@ test("buffers without a grammar or a query are left alone", function(t)
 	t:buffer("fn one() {|}")
 	t:keys("m a f alt-o")
 	t:expect("fn one() {|}")
-	syntax.set_query("rust", "textobjects", nil)
+	-- A query without functions in it finds none.
+	kern.syntax.set_query("rust", "textobjects", "(line_comment) @comment.around")
 	check(t, "fn one() {|}", "m a f", "fn one() {|}")
 end)

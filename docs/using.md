@@ -583,3 +583,21 @@ kern.plugin.unload("hints")
 Theme names fall back to their parent, so `keyword.control` uses `keyword`
 unless it has its own entry. The default theme uses the terminal's 16
 colors; `#rrggbb` colors work in terminals that support them.
+
+### Highlighting and syntax queries
+
+What gets highlighted, and what counts as a function for `m i f`, comes
+from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where
+KIND is `highlights` or `textobjects`. Kern reads them from every plugin
+and from `~/.config/kern/queries`, so a file there replaces Kern's own. To
+add to it instead, start the file with `; extends`:
+
+```scheme
+; extends
+; ~/.config/kern/queries/rust/highlights.scm: TODO in comments stands out
+((line_comment) @comment.todo (#match? @comment.todo "TODO"))
+```
+
+A query with a mistake in it says so when Kern starts, and the one before
+it stays in use. `require("@languages").load_queries()` reads the files
+again after you change them.

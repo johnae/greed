@@ -103,6 +103,9 @@ pub(crate) struct State {
     pub view_scrolls: HashMap<crate::ViewId, usize>,
     /// Syntax trees, for highlighting and for plugins.
     pub syntax: crate::syntax::Syntax,
+    /// The queries each plugin set, by language and kind, oldest first; the
+    /// newest is the one in use.
+    pub query_owners: HashMap<(String, String), Vec<(PluginId, String)>>,
 }
 
 #[derive(Clone)]
@@ -213,6 +216,7 @@ impl Host {
             view_sizes: HashMap::new(),
             view_scrolls: HashMap::new(),
             syntax: crate::syntax::Syntax::new(),
+            query_owners: HashMap::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -610,8 +614,17 @@ fn load_manifest(lua: &Lua, dir: PathBuf, manifest: Manifest) -> Result<PluginId
 /// Adds or replaces a plugin and runs it.
 fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
     unregister(lua, name);
+    let dir = match &plugin {
+        Plugin::Dir { dir, .. } => Some(dir.to_string_lossy().into_owned()),
+        Plugin::Inline(_) => None,
+    };
     state_mut(lua).plugins.insert(name.into(), plugin);
-    run_plugin(lua, name)
+    run_plugin(lua, name)?;
+    let payload = lua.create_table()?;
+    payload.set("name", name)?;
+    payload.set("dir", dir)?;
+    api::emit(lua, "plugin.loaded", &payload)?;
+    Ok(())
 }
 
 fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
@@ -731,6 +744,15 @@ fn unregister(lua: &Lua, name: &str) {
         .is_some_and(|(owner, _)| &**owner == name)
     {
         state.statusline = None;
+    }
+    for ((language, kind), owners) in &mut state.query_owners {
+        let before = owners.len();
+        owners.retain(|(owner, _)| &**owner != name);
+        if owners.len() != before {
+            // What was in use before still compiled, so this can't fail.
+            let source = owners.last().map(|(_, source)| source.clone());
+            let _ = state.syntax.set_query(language, kind, source);
+        }
     }
 }
 

@@ -675,6 +675,13 @@ export type OptionChanged = {
 	value: OptionValue,
 }
 
+--- A plugin was loaded (or reloaded) and its entry file ran.
+export type PluginLoaded = {
+	name: string,
+	--- Its folder, for plugins loaded from one.
+	dir: string?,
+}
+
 --- A plugin was unloaded, and everything it registered removed.
 export type PluginUnloaded = {
 	name: string,
@@ -901,6 +908,19 @@ export type ThemeEntry = Style & {
 --- "ui.selection", "ui.statusline.mode", "ui.float.border", "keyword",
 --- "diagnostic.error", or a name a plugin made up. Names fall back to their
 --- parent, so "markup.heading.1" uses "markup.heading" if it has no entry.
+--- The tree-sitter queries each language uses: "highlights" for highlighting,
+--- and others ("textobjects", ...) that plugins read. The languages plugin sets
+--- them from the `queries/<language>/<kind>.scm` files in plugins and your config.
+export type Syntax = {
+	--- Sets the `kind` query for `language`, or with nil takes this plugin's away.
+	--- Errors if the language's grammar can't compile it. The newest one set is
+	--- used, and unloading a plugin takes its queries away.
+	set_query: (language: string, kind: string, source: string?) -> (),
+	--- The `kind` query in use for `language`: the one set, or for "highlights"
+	--- the one that comes with the grammar.
+	query: (language: string, kind: string) -> string?,
+}
+
 export type Theme = {
 	--- Sets entries by name, replacing any with the same name.
 	set: (entries: { [string]: ThemeEntry }) -> (),
@@ -932,6 +952,7 @@ export type Kern = {
 		& ((event: "view.scrolled", handler: (event: ViewScrolled) -> ()) -> ())
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
+		& ((event: "plugin.loaded", handler: (event: PluginLoaded) -> ()) -> ())
 		& ((event: "plugin.unloaded", handler: (event: PluginUnloaded) -> ()) -> ())
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())
 		& ((event: "editor.quitting", handler: (event: {}) -> ()) -> ())
@@ -1020,6 +1041,7 @@ export type Kern = {
 	tab: Tabs,
 	session: Sessions,
 	plugin: Plugins,
+	syntax: Syntax,
 	theme: Theme,
 }
 

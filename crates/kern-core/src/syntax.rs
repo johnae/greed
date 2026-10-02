@@ -21,34 +21,44 @@ use crate::{Buffer, BufferId, Editor};
 /// Buffers larger than this aren't parsed, so huge files stay responsive.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
 
-/// A grammar and the query that picks out what to highlight.
+/// A query that picks out what to highlight, and its capture names, e.g.
+/// "keyword" or "function.macro".
+struct Highlights {
+    query: Query,
+    captures: Vec<Arc<str>>,
+}
+
+impl Highlights {
+    fn new(grammar: &tree_sitter::Language, source: &str) -> Result<Self, String> {
+        let query = Query::new(grammar, source).map_err(|err| err.to_string())?;
+        let captures = query.capture_names().iter().map(|&c| c.into()).collect();
+        Ok(Self { query, captures })
+    }
+}
+
+/// A grammar and the highlights query that comes with it.
 pub struct Language {
     pub name: &'static str,
     grammar: tree_sitter::Language,
-    highlights: Query,
-    /// The query's capture names, e.g. "keyword" or "function.macro".
-    captures: Vec<Arc<str>>,
+    /// The grammar's own highlights query, used until a plugin sets one.
+    default_highlights: &'static str,
+    highlights: Highlights,
 }
 
 impl Language {
     fn new(
         name: &'static str,
         grammar: tree_sitter_language::LanguageFn,
-        highlights: &str,
+        highlights: &'static str,
     ) -> Self {
         let grammar = tree_sitter::Language::new(grammar);
-        let highlights = Query::new(&grammar, highlights)
+        let compiled = Highlights::new(&grammar, highlights)
             .unwrap_or_else(|err| panic!("bundled {name} highlight query is broken: {err}"));
-        let captures = highlights
-            .capture_names()
-            .iter()
-            .map(|&c| c.into())
-            .collect();
         Self {
             name,
             grammar,
-            highlights,
-            captures,
+            default_highlights: highlights,
+            highlights: compiled,
         }
     }
 }
@@ -153,6 +163,11 @@ pub struct Syntax {
     parser: Parser,
     /// Queries plugins ran, by language and source, compiled once.
     queries: HashMap<(&'static str, String), Arc<Query>>,
+    /// Queries plugins set, by language and kind ("highlights",
+    /// "textobjects", ...).
+    sources: HashMap<(String, String), String>,
+    /// Highlights queries plugins set, in place of the grammars' own.
+    highlights: HashMap<&'static str, Highlights>,
     pub max_bytes: usize,
 }
 
@@ -175,6 +190,8 @@ impl Syntax {
             buffers: HashMap::new(),
             parser: Parser::new(),
             queries: HashMap::new(),
+            sources: HashMap::new(),
+            highlights: HashMap::new(),
             max_bytes: MAX_BYTES,
         }
     }
@@ -288,6 +305,50 @@ impl Syntax {
         Ok(query)
     }
 
+    /// Sets the query of `kind` for `language`, or with `None` goes back to
+    /// none (for highlights, the grammar's own). "highlights" is used for
+    /// highlighting; any other kind is kept for plugins to read with
+    /// [`Syntax::query_source`]. For a language Kern has a grammar for, the
+    /// query is checked against it first, and an error says what's wrong.
+    pub fn set_query(
+        &mut self,
+        language: &str,
+        kind: &str,
+        source: Option<String>,
+    ) -> Result<(), String> {
+        if let Some(grammar) = self.language_named(language) {
+            let compiled = source
+                .as_deref()
+                .map(|s| Highlights::new(&grammar.grammar, s))
+                .transpose()?;
+            if kind == "highlights" {
+                match compiled {
+                    Some(compiled) => self.highlights.insert(grammar.name, compiled),
+                    None => self.highlights.remove(grammar.name),
+                };
+            }
+        }
+        let key = (language.to_owned(), kind.to_owned());
+        match source {
+            Some(source) => self.sources.insert(key, source),
+            None => self.sources.remove(&key),
+        };
+        Ok(())
+    }
+
+    /// The query of `kind` for `language` that's in use: the one a plugin
+    /// set, or for highlights the grammar's own.
+    pub fn query_source(&self, language: &str, kind: &str) -> Option<String> {
+        if let Some(source) = self.sources.get(&(language.to_owned(), kind.to_owned())) {
+            return Some(source.clone());
+        }
+        if kind != "highlights" {
+            return None;
+        }
+        let grammar = self.language_named(language)?;
+        Some(grammar.default_highlights.to_owned())
+    }
+
     /// Highlights overlapping `range` of `buffer`, whose text is `text`.
     pub fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         let Some(BufferSyntax {
@@ -298,15 +359,19 @@ impl Syntax {
         else {
             return Vec::new();
         };
+        let highlights = self
+            .highlights
+            .get(language.name)
+            .unwrap_or(&language.highlights);
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range);
         cursor
-            .captures(&language.highlights, tree.root_node(), RopeText(text))
+            .captures(&highlights.query, tree.root_node(), RopeText(text))
             .map_deref(|(m, i)| {
                 let capture = m.captures()[*i];
                 Highlight {
                     range: capture.node.byte_range(),
-                    capture: language.captures[capture.index as usize].clone(),
+                    capture: highlights.captures[capture.index as usize].clone(),
                 }
             })
             .collect()

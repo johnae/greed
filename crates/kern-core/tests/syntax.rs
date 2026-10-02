@@ -241,3 +241,42 @@ fn buffers_without_a_grammar_have_no_tree() {
     let unknown = host("plain text", Some("klingon"));
     assert_eq!(eval(&unknown, "return tostring(b:tree())"), "nil");
 }
+
+#[test]
+fn a_highlights_query_set_replaces_the_grammars_own() {
+    let text = "fn main() {}";
+    let ed = editor(text, "main.rs");
+    let mut syntax = Syntax::new();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.buffers().next().unwrap();
+    let all = |syntax: &Syntax| syntax.highlights(buffer.id(), buffer.text(), 0..text.len());
+
+    syntax
+        .set_query("rust", "highlights", Some("\"fn\" @custom.fn".into()))
+        .unwrap();
+    assert_eq!(captured(&all(&syntax), 0..2), ["custom.fn"]);
+    assert_eq!(
+        syntax.query_source("rust", "highlights").as_deref(),
+        Some("\"fn\" @custom.fn")
+    );
+
+    // A query the grammar can't compile is refused, and the last one stays.
+    let err = syntax
+        .set_query("rust", "highlights", Some("(no_such_node) @x".into()))
+        .unwrap_err();
+    assert!(err.contains("no_such_node"), "{err}");
+    assert_eq!(captured(&all(&syntax), 0..2), ["custom.fn"]);
+
+    syntax.set_query("rust", "highlights", None).unwrap();
+    assert!(captured(&all(&syntax), 0..2).contains(&"keyword"));
+
+    // Languages without a grammar keep their queries for plugins to read.
+    syntax
+        .set_query("klingon", "textobjects", Some("anything".into()))
+        .unwrap();
+    assert_eq!(
+        syntax.query_source("klingon", "textobjects").as_deref(),
+        Some("anything")
+    );
+}

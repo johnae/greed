@@ -114,6 +114,7 @@ fn api_tables_are_fully_declared() {
         ("Terminals", "kern.terminal"),
         ("Tabs", "kern.tab"),
         ("Images", "kern.image"),
+        ("Syntax", "kern.syntax"),
     ];
     let h = host();
     for (name, expr) in cases {

@@ -328,6 +328,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     )?;
     super::languages::register(lua, kern)?;
     kern.set("plugin", super::plugin::module(lua)?)?;
+    kern.set("syntax", super::syntax::module(lua, owner)?)?;
     kern.set("theme", super::theme::module(lua, owner)?)
 }
 

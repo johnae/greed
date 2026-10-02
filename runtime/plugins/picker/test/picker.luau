@@ -248,7 +248,7 @@ test("the command palette shows each command's keys", function(t)
 end)
 
 test("the outline lists functions and types, nested, and jumps to one", function(t)
-	require("@core").syntax.set_query(
+	require("@kern").syntax.set_query(
 		"rust",
 		"textobjects",
 		"(function_item) @function.around (impl_item body: (_) @type.inside) @type.around (struct_item) @type.around"

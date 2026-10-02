@@ -19,9 +19,6 @@ export type Language = {
 	--- prints it formatted. "{path}" in it stands for the file's path.
 	--- Without one, the language server formats, as rust-analyzer does.
 	formatter: { string }?,
-	--- A tree-sitter query for what counts as a function, type, parameter
-	--- and comment, for `m i f` and the like (see textobjects.luau).
-	textobjects: string?,
 }
 
 local languages: { [string]: Language } = {
