@@ -6,6 +6,8 @@
 --   ] f / [ f       the next or previous function (and t, a, c)
 --   alt-o / alt-i   grow the selection to the enclosing syntax node, or
 --                   shrink it back
+--   alt-shift-right / alt-shift-left  move the selected node past the
+--                   next or previous one beside it (arguments, items)
 --
 -- What counts as a function or a type comes from each language's
 -- "textobjects" query (`kern.syntax.query`), which the languages plugin
@@ -247,6 +249,41 @@ for _, backward in { false, true } do
 	})
 end
 
+-- swap-node-next and swap-node-prev: the node the primary selection covers
+-- trades places with the named node after (or before) it, and stays
+-- selected, so pressing again carries it further: arguments, list items,
+-- statements.
+for _, backward in { false, true } do
+	kern.command({
+		name = `swap-node-{if backward then "prev" else "next"}`,
+		doc = `Move the syntax node selected past the one {if backward then "before" else "after"} it`,
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local selection = ctx.view:selection()
+			local lo, hi = bounds(selection.ranges[selection.primary])
+			local node = node_in(buffer, lo, hi)
+			local other = node and (if backward then node:prev() else node:next())
+			if node == nil or other == nil then
+				kern.echo("nothing beside it to swap with")
+				return
+			end
+			local first, second = node, other
+			if backward then
+				first, second = other, node
+			end
+			local first_text, second_text = first:text(), second:text()
+			buffer:edit(function(e)
+				e:replace(first.from, first.to, second_text)
+				e:replace(second.from, second.to, first_text)
+			end)
+			-- Where the moved node's text ended up.
+			local from = if backward then first.from else second.from + #second_text - #first_text
+			local to = from + (if backward then #second_text else #first_text)
+			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+		end,
+	})
+end
+
 -- Replaces each selection with `pick(node)`'s nodes, for the node the
 -- selection covers; a selection with nothing to pick stays.
 local function select_nodes(ctx: kern.Context, pick: (kern.Node) -> { kern.Node })
@@ -316,6 +353,8 @@ M.keys = {
 	["[ n"] = "select-prev-sibling",
 	["alt-a"] = "select-all-siblings",
 	["alt-I"] = "select-all-children",
+	["alt-shift-right"] = "swap-node-next",
+	["alt-shift-left"] = "swap-node-prev",
 	["alt-e"] = "goto-parent-end",
 	["alt-b"] = "goto-parent-start",
 } :: { [string]: string }

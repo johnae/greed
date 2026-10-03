@@ -92,3 +92,24 @@ test(
 		check(t, "fn f(^a: u8|, b: u8) {}", "alt-e", "fn f(a: u8, b: u8|) {}")
 	end
 )
+
+test("alt-shift-right and alt-shift-left move the selected node past its neighbour", function(t)
+	check(
+		t,
+		"fn f() { g(^one|, two, three); }",
+		"alt-shift-right",
+		"fn f() { g(two, ^one|, three); }"
+	)
+	check(
+		t,
+		"fn f() { g(^one|, two, three); }",
+		"alt-shift-right alt-shift-right",
+		"fn f() { g(two, three, ^one|); }"
+	)
+	check(
+		t,
+		"fn f() { g(one, two, ^three|); }",
+		"alt-shift-left",
+		"fn f() { g(one, ^three|, two); }"
+	)
+end)

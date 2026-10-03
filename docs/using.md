@@ -295,6 +295,7 @@ selects every place it appears.
 | `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
 | `] n` `[ n` | The next or previous node beside it (Helix has these on `alt-n` `alt-p`, which are pane keys here) |
 | `alt-a` `alt-I` | Every node beside it, or every node inside it |
+| `alt-shift-right` `alt-shift-left` | Move the selected node past the next or previous one: swap arguments, list items, statements |
 | `alt-b` `alt-e` | The start or end of the node around it |
 | `space s` | Jump to a function or type in the file |
 
