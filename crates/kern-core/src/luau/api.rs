@@ -2,6 +2,7 @@
 //! commands and emitting events.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use kern_text::Author;
 use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
@@ -493,14 +494,26 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     keymap.set(
         "find",
-        lua.create_function(|lua, command: String| {
-            let mut found = state(lua).editor.keymap().bindings_for(&command);
-            found.sort_by_key(|(layer, keys)| (layer.to_string(), keys_text(keys)));
+        lua.create_function(|lua, command: Option<String>| {
+            let mut found: Vec<_> = {
+                let state = state(lua);
+                let keymap = state.editor.keymap();
+                match &command {
+                    Some(command) => keymap
+                        .bindings_for(command)
+                        .into_iter()
+                        .map(|(layer, keys)| (layer, keys, Arc::<str>::from(command.as_str())))
+                        .collect(),
+                    None => keymap.bindings(),
+                }
+            };
+            found.sort_by_key(|(layer, keys, _)| (layer.to_string(), keys_text(keys)));
             let list = lua.create_table()?;
-            for (layer, keys) in found {
+            for (layer, keys, command) in found {
                 let entry = lua.create_table()?;
                 entry.set("layer", layer.to_string())?;
                 entry.set("keys", keys_text(&keys))?;
+                entry.set("command", &*command)?;
                 list.push(entry)?;
             }
             Ok(list)

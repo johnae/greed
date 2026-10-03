@@ -608,8 +608,19 @@ impl Keymap {
     pub fn bindings_for(&self, command: &str) -> Vec<(Layer, Vec<Key>)> {
         let mut found = Vec::new();
         for (layer, children) in &self.layers {
-            collect_bindings(children, command, &mut Vec::new(), &mut |keys| {
+            collect_bindings(children, Some(command), &mut Vec::new(), &mut |keys, _| {
                 found.push((layer.clone(), keys));
+            });
+        }
+        found
+    }
+
+    /// Every active binding, in every layer: its layer, keys and command.
+    pub fn bindings(&self) -> Vec<(Layer, Vec<Key>, Arc<str>)> {
+        let mut found = Vec::new();
+        for (layer, children) in &self.layers {
+            collect_bindings(children, None, &mut Vec::new(), &mut |keys, command| {
+                found.push((layer.clone(), keys, command.clone()));
             });
         }
         found
@@ -733,20 +744,20 @@ fn format_keys(keys: &[Key]) -> String {
         .join(" ")
 }
 
-/// Calls `found` with every sequence under `children` (after `prefix`) whose
-/// active binding runs `command`.
+/// Calls `found` with each key sequence under `children` and the command it
+/// runs, for `command` only if given.
 fn collect_bindings(
     children: &HashMap<Key, Node>,
-    command: &str,
+    command: Option<&str>,
     prefix: &mut Vec<Key>,
-    found: &mut impl FnMut(Vec<Key>),
+    found: &mut impl FnMut(Vec<Key>, &Arc<str>),
 ) {
     for (key, node) in children {
         prefix.push(*key);
         match node {
             Node::Command(binding) => {
-                if &*binding.command == command {
-                    found(prefix.clone());
+                if command.is_none_or(|c| *binding.command == *c) {
+                    found(prefix.clone(), &binding.command);
                 }
             }
             Node::Prefix(next) => collect_bindings(next, command, prefix, found),

@@ -325,9 +325,9 @@ export type Keymap = {
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
 	--- the command each runs. Keys without a command start longer sequences.
 	next: (keys: string?) -> { { key: string, command: string? } },
-	--- Every key sequence that runs `command`, and the layer it's bound in
-	--- (a mode name, or "global").
-	find: (command: string) -> { { layer: string, keys: string } },
+	--- Every key sequence that runs `command` (every binding, without one),
+	--- the layer it's bound in (a mode name, or "global") and its command.
+	find: (command: string?) -> { { layer: string, keys: string, command: string } },
 	--- What `keys` runs in the current mode: the command, or nil and whether
 	--- more keys could still finish a sequence.
 	resolve: (keys: string) -> (string?, boolean),

@@ -68,14 +68,19 @@ kern.command({
 	run = function()
 		-- Keys that run each command in the mode the palette opened from.
 		local mode = kern.mode.get()
+		-- Every binding at once: one lookup per command takes long enough with
+		-- hundreds of them that keys typed right away miss the picker.
+		local keys_of: { [string]: { string } } = {}
+		for _, binding in kern.keymap.find() do
+			if binding.layer == mode or binding.layer == "global" then
+				local list = keys_of[binding.command] or {}
+				table.insert(list, binding.keys)
+				keys_of[binding.command] = list
+			end
+		end
 		local items = {}
 		for _, command in kern.commands() do
-			local keys = {}
-			for _, binding in kern.keymap.find(command.name) do
-				if binding.layer == mode or binding.layer == "global" then
-					table.insert(keys, binding.keys)
-				end
-			end
+			local keys = keys_of[command.name] or {}
 			local label = command.name
 			if #keys > 0 then
 				label ..= `  ({table.concat(keys, ", ")})`
