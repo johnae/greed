@@ -19,6 +19,7 @@
 		"models": "./plugins/models",
 		"pipe": "./plugins/pipe",
 		"assist": "./plugins/assist",
+		"context": "./plugins/context",
 		"operations": "./plugins/operations",
 		"approvals": "./plugins/approvals",
 		"vcs": "./plugins/vcs"

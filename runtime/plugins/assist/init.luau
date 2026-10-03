@@ -1,4 +1,5 @@
--- Commands that ask a language model, in the roles :models shows:
+-- Commands that ask a language model, in the roles :models shows, with
+-- what you pinned to the context (space i p, see the context plugin):
 --
 --   space i e   explain the selection, in a panel as the answer arrives
 --   space i a   ask something about the selection
@@ -14,6 +15,7 @@ local core = require("@core")
 local models = require("@models")
 local agent = require("@agent")
 local vcs = require("@vcs")
+local context = require("@context")
 
 kern.option.define({
 	name = "assist-role",
@@ -85,6 +87,12 @@ local function selected(view: kern.View): (string, number)
 	return buffer:slice(buffer:line_start(line), buffer:line_end(line)), line + 1
 end
 
+-- `content` with what's pinned to the context first, when anything is.
+local function with_context(content: string): string
+	local pinned = context.text()
+	return if pinned == "" then content else `Context I pinned:\n\n{pinned}\n\n---\n\n{content}`
+end
+
 -- Where the code comes from, for the model.
 local function source(buffer: kern.Buffer, line: number): string
 	return `{buffer:path() or "an unsaved buffer"}, line {line}, in {buffer:language() or "plain text"}`
@@ -100,7 +108,9 @@ local function about_selection(view: kern.View, title: string, question: string)
 		messages = {
 			{
 				role = "user",
-				content = `{question}\n\nFrom {source(view:buffer(), line)}:\n\n{text}`,
+				content = with_context(
+					`{question}\n\nFrom {source(view:buffer(), line)}:\n\n{text}`
+				),
 			},
 		},
 	})
@@ -170,8 +180,10 @@ kern.command({
 			messages = {
 				{
 					role = "user",
-					content = `Lines {first + 1} to {last + 1} of {source(buffer, first + 1)}. `
-						.. `The language server reports at line {line + 1}: {problem.message}\n\n{old}`,
+					content = with_context(
+						`Lines {first + 1} to {last + 1} of {source(buffer, first + 1)}. `
+							.. `The language server reports at line {line + 1}: {problem.message}\n\n{old}`
+					),
 				},
 			},
 		})

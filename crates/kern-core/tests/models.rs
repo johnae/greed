@@ -231,6 +231,7 @@ fn load_assist(host: &Host, address: &str) {
         plugin("approvals"),
         plugin("agent"),
         plugin("vcs"),
+        plugin("context"),
         plugin("models"),
         plugin("assist"),
     ])

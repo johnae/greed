@@ -1,0 +1,4 @@
+name = "context"
+requires = ["core", "agent", "vcs"]
+# Files by path for pinned files, and the cache to keep the context in.
+capabilities = ["fs.read", "fs.write"]

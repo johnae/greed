@@ -450,6 +450,23 @@ or `space o r` accepts or rejects it, and what you accept undoes as one
 operation. These use the `fast` role; `:set assist-role reasoning` asks
 another.
 
+### The context
+
+Pin what a model or an agent should see, and it goes with every question:
+
+| Keys | |
+|---|---|
+| `space i p` | Pin the selection, or the whole file when nothing is selected |
+| `space i i` | Show what's pinned, one item a line with its size in tokens; delete a line (`x d`) to drop it |
+| `:context-add-problems` | Pin this file's problems from the language server |
+| `:context-add-diff` | Pin the changes in progress |
+| `:context-clear` | Drop everything |
+
+Items are read fresh each time they're sent: a pinned selection follows the
+text as you edit, and the diff is the diff as it is now. The assist
+commands send the context with each question, and agents read it with the
+`context_get` tool. Each project keeps its own, across restarts.
+
 ## Formatting
 
 Saving a file formats it, and `:format` does it without saving. Kern uses

@@ -1,2 +1,2 @@
 name = "assist"
-requires = ["core", "models", "agent", "vcs"]
+requires = ["core", "models", "agent", "vcs", "context"]
