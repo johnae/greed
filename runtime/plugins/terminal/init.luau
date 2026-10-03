@@ -347,8 +347,8 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local env = table.clone(M.env)
 	local session = kern.session.current()
 	if session then
-		env.KERN_TERMINAL = session
-		env.KERN_SESSION = session
+		env.GREED_TERMINAL = session
+		env.GREED_SESSION = session
 	end
 	local spawned, started = pcall(function()
 		return kern.terminal.spawn({

@@ -262,9 +262,9 @@ end)
 
 test("terminals get the environment plugins add", function(t)
 	local terminal = require("@terminal")
-	terminal.env.KERN_TEST_GREETING = "hello from a plugin"
-	t:run("terminal", { "sh", "-c", "echo $KERN_TEST_GREETING; exit 1" })
-	terminal.env.KERN_TEST_GREETING = nil
+	terminal.env.GREED_TEST_GREETING = "hello from a plugin"
+	t:run("terminal", { "sh", "-c", "echo $GREED_TEST_GREETING; exit 1" })
+	terminal.env.GREED_TEST_GREETING = nil
 	shows(t, "hello from a plugin")
 end)
 

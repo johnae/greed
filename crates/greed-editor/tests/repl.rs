@@ -66,7 +66,7 @@ fn the_user_config_loads_last_and_errors_are_shown() {
     let run = |script: &str| {
         let mut child = Command::new(env!("CARGO_BIN_EXE_greed"))
             .arg("repl")
-            .env("KERN_CONFIG", &config)
+            .env("GREED_CONFIG", &config)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()

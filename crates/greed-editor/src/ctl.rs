@@ -11,7 +11,7 @@ usage: kern ctl tools                 list the tools the editor offers
        kern ctl TOOL [JSON | KEY=VALUE...]
                                       run a tool, e.g. kern ctl read path=src/main.rs
        kern ctl sessions              list running editors
-The session is $KERN_SESSION, or the only editor running.";
+The session is $GREED_SESSION, or the only editor running.";
 
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
@@ -100,17 +100,17 @@ pub fn live_sessions() -> io::Result<Vec<String>> {
     Ok(control::sessions()?.into_iter().map(|s| s.name).collect())
 }
 
-/// A connection to `$KERN_SESSION`, or to the only running editor.
+/// A connection to `$GREED_SESSION`, or to the only running editor.
 fn connect() -> Result<Client, Box<dyn std::error::Error>> {
     connect_to(None)
 }
 
 /// A connection to the session called `name`, or without one to
-/// `$KERN_SESSION` or the only running editor.
+/// `$GREED_SESSION` or the only running editor.
 pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Error>> {
     let name = match name
         .map(str::to_owned)
-        .or_else(|| std::env::var("KERN_SESSION").ok())
+        .or_else(|| std::env::var("GREED_SESSION").ok())
     {
         Some(name) => name,
         None => match live_sessions()?.as_slice() {
@@ -118,7 +118,7 @@ pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Erro
             [] => return Err("no editor is running".into()),
             several => {
                 return Err(format!(
-                    "several editors are running ({}); set KERN_SESSION to pick one",
+                    "several editors are running ({}); set GREED_SESSION to pick one",
                     several.join(", ")
                 )
                 .into());

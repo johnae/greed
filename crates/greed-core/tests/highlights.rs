@@ -1,6 +1,6 @@
 //! Highlighting of each bundled language, with the runtime's own queries,
 //! checked against a snapshot beside its sample. When a query changes on
-//! purpose, run with `KERN_UPDATE_SNAPSHOTS=1` and look the diff over.
+//! purpose, run with `GREED_UPDATE_SNAPSHOTS=1` and look the diff over.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -92,7 +92,7 @@ fn highlight(sample: &str) -> String {
 fn check(sample: &str) {
     let actual = highlight(sample);
     let snapshot = samples().join(format!("{sample}.highlights"));
-    if std::env::var_os("KERN_UPDATE_SNAPSHOTS").is_some() {
+    if std::env::var_os("GREED_UPDATE_SNAPSHOTS").is_some() {
         std::fs::write(&snapshot, &actual).unwrap();
         return;
     }
@@ -100,7 +100,7 @@ fn check(sample: &str) {
     assert!(
         actual == expected,
         "{sample} highlights differently from {}; if that's on purpose, run with \
-         KERN_UPDATE_SNAPSHOTS=1. Now:\n{actual}",
+         GREED_UPDATE_SNAPSHOTS=1. Now:\n{actual}",
         snapshot.display()
     );
 }

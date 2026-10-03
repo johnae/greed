@@ -33,9 +33,9 @@ fn kern_in(name: &str) -> Command {
         .env("XDG_CONFIG_HOME", root.join("config"))
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("CLAUDE_CONFIG_DIR", root.join("claude"))
-        .env_remove("KERN_SESSION")
-        .env_remove("KERN_CONFIG_DIR")
-        .env_remove("KERN_NO_SESSION");
+        .env_remove("GREED_SESSION")
+        .env_remove("GREED_CONFIG_DIR")
+        .env_remove("GREED_NO_SESSION");
     command
 }
 
@@ -243,7 +243,7 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     let mut command = kern();
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
-        .env("KERN_CONFIG_DIR", &config);
+        .env("GREED_CONFIG_DIR", &config);
     let mut bridge = Bridge::spawn(command);
     let rows = bridge.attach();
     let status = rows.last().unwrap();
@@ -255,7 +255,7 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
             "eval",
             "code=return table.concat(require('@kern').plugin.list(), ',')",
         ])
-        .env("KERN_SESSION", &name)
+        .env("GREED_SESSION", &name)
         .output()
         .unwrap();
     let listed = String::from_utf8(listed.stdout).unwrap();
@@ -304,13 +304,13 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
     let mut command = kern_in("layers");
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
-        .env("KERN_SSH_CONFIG_DIR", &brought);
+        .env("GREED_SSH_CONFIG_DIR", &brought);
     let mut bridge = Bridge::spawn(command);
     bridge.attach();
     let eval = |code: &str| {
         let out = kern_in("layers")
             .args(["ctl", "eval", &format!("code={code}")])
-            .env("KERN_SESSION", &name)
+            .env("GREED_SESSION", &name)
             .output()
             .unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
@@ -381,7 +381,7 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
             "eval",
             "code=return require('@kern').option.get('indent')",
         ])
-        .env("KERN_SESSION", &name)
+        .env("GREED_SESSION", &name)
         .output()
         .unwrap();
     assert_eq!(

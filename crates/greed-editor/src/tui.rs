@@ -38,7 +38,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let var = |name| std::env::var(name).ok();
     TRUECOLOR.store(
         truecolor(
-            var("KERN_COLORS").as_deref(),
+            var("GREED_COLORS").as_deref(),
             var("COLORTERM").as_deref(),
             var("TERM").as_deref(),
         ),
@@ -126,9 +126,9 @@ fn send_cell_size(input: &Sender<Input>) {
 }
 
 /// Puts `text` on the system clipboard through the terminal (OSC 52),
-/// which works over ssh too, unless `$KERN_CLIPBOARD` is "off".
+/// which works over ssh too, unless `$GREED_CLIPBOARD` is "off".
 fn copy_to_system(out: &mut impl Write, text: &str) -> io::Result<()> {
-    if std::env::var("KERN_CLIPBOARD").is_ok_and(|v| v == "off") {
+    if std::env::var("GREED_CLIPBOARD").is_ok_and(|v| v == "off") {
         return Ok(());
     }
     write!(out, "{}", osc52(text))?;
@@ -141,10 +141,10 @@ fn osc52(text: &str) -> String {
     format!("\x1b]52;c;{encoded}\x07")
 }
 
-/// Whether to take the mouse from the terminal: unless `$KERN_MOUSE` is
+/// Whether to take the mouse from the terminal: unless `$GREED_MOUSE` is
 /// "off". Most terminals still select their own way with shift held.
 fn mouse_wanted() -> bool {
-    std::env::var("KERN_MOUSE").map_or(true, |v| v != "off")
+    std::env::var("GREED_MOUSE").map_or(true, |v| v != "off")
 }
 
 /// Converts a terminal mouse event into a kern one.
@@ -183,7 +183,7 @@ static KITTY_KEYS: AtomicBool = AtomicBool::new(false);
 /// of the 256 every terminal has.
 static TRUECOLOR: AtomicBool = AtomicBool::new(true);
 
-/// Whether the terminal shows 24-bit color: `$KERN_COLORS` ("truecolor" or
+/// Whether the terminal shows 24-bit color: `$GREED_COLORS` ("truecolor" or
 /// "24bit", or "256") says, or else `$COLORTERM` does ("truecolor", "24bit"), or a
 /// `$TERM` ending in "-direct".
 fn truecolor(kern_colors: Option<&str>, colorterm: Option<&str>, term: Option<&str>) -> bool {
@@ -220,10 +220,10 @@ fn nearest_256(r: u8, g: u8, b: u8) -> u8 {
     }
 }
 
-/// Whether to ask for the kitty keyboard protocol: unless `$KERN_KEYS` is
+/// Whether to ask for the kitty keyboard protocol: unless `$GREED_KEYS` is
 /// "legacy".
 fn kitty_keys_wanted() -> bool {
-    std::env::var("KERN_KEYS").map_or(true, |v| v != "legacy")
+    std::env::var("GREED_KEYS").map_or(true, |v| v != "legacy")
 }
 
 /// Converts a terminal key event into a kern key. Returns `None` for keys
@@ -660,7 +660,7 @@ mod tests {
         );
         assert!(
             !truecolor(Some("256"), Some("truecolor"), None),
-            "KERN_COLORS wins"
+            "GREED_COLORS wins"
         );
         assert!(truecolor(Some("truecolor"), None, Some("screen")));
     }

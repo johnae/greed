@@ -33,10 +33,10 @@ ssh connection sharing (`ControlMaster`).
 In one of Kern's own terminals, `kern FILE` opens the file in that session
 and returns, rather than starting an editor inside the editor, and
 `kern ctl` talks to that session. Programs there can tell from
-`$KERN_TERMINAL`, which names the session.
+`$GREED_TERMINAL`, which names the session.
 
 Attaching from a second terminal takes the session over from the first. If
-a session can't start in the background, `KERN_NO_SESSION=1 kern FILE` runs
+a session can't start in the background, `GREED_NO_SESSION=1 kern FILE` runs
 the editor directly in the terminal.
 
 A session that quits remembers its projects, their open files and where the
@@ -112,7 +112,7 @@ The other machine's own `~/.config/kern` runs after it and wins, and
 `kern ssh` never touches it. Changes you make there, or an agent makes, or
 plugins an agent installs, stay on that machine across connections. A
 session that was already running keeps the config it started with.
-`KERN_SSH_CONFIG=0` leaves your config at home.
+`GREED_SSH_CONFIG=0` leaves your config at home.
 
 To keep a plugin you made over there, bring it home. `kern bring HOST`
 lists the plugins in the other machine's own config and data folders, and
@@ -134,8 +134,8 @@ the programs in its terminals.
 
 Kern has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
-fail with a clear message. `KERN_REMOTE` sets the path of `kern` on the
-other machine, and `KERN_SSH` the ssh command to use.
+fail with a clear message. `GREED_REMOTE` sets the path of `kern` on the
+other machine, and `GREED_SSH` the ssh command to use.
 
 ## Editing
 
@@ -507,7 +507,7 @@ models.roles.review = { provider = "work", model = "reviewer-1" }
 ```
 
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
-`KERN_SECRET_NAME`.
+`GREED_SECRET_NAME`.
 
 | Keys | |
 |---|---|
@@ -653,7 +653,7 @@ Programs that ask for the kitty keyboard protocol (Helix, Neovim, fish,
 recent shells) get it, so they can tell `tab` from `ctrl-i` or `enter` from
 `shift-enter`. For those keys to reach Kern in the first place your own
 terminal needs the protocol too (kitty, WezTerm, foot, Ghostty, Alacritty
-and iTerm2 have it); Kern asks for it when it starts. `KERN_KEYS=legacy`
+and iTerm2 have it); Kern asks for it when it starts. `GREED_KEYS=legacy`
 turns that off.
 
 Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
@@ -750,7 +750,7 @@ end)
 What you copy goes on your system clipboard too, through your terminal
 (OSC 52), so it works over `kern ssh` and in tmux with `set-clipboard on`.
 Most terminals allow it; some ask first or need it turned on (iTerm2:
-"Applications in terminal may access clipboard"). `KERN_CLIPBOARD=off`
+"Applications in terminal may access clipboard"). `GREED_CLIPBOARD=off`
 keeps copies inside Kern. A program in a Kern terminal that copies the same
 way puts the text on Kern's clipboard, so `p` pastes it.
 
@@ -774,14 +774,14 @@ types into it again; in a full screen program the wheel sends arrow keys. A
 click types into the program, and a drag selects output to copy with `y`.
 
 Most terminals still select text their own way while you hold shift.
-`KERN_MOUSE=off` leaves the mouse to your terminal.
+`GREED_MOUSE=off` leaves the mouse to your terminal.
 
 ## Images
 
 Kern shows images in terminals that speak the kitty graphics protocol:
 kitty, Ghostty, WezTerm and Konsole. It finds out from the variables those
-terminals set; `KERN_IMAGES=kitty` turns images on in another that speaks
-the protocol, and `KERN_IMAGES=none` turns them off. Elsewhere, the text
+terminals set; `GREED_IMAGES=kitty` turns images on in another that speaks
+the protocol, and `GREED_IMAGES=none` turns them off. Elsewhere, the text
 under an image shows instead.
 
 Programs in Kern's terminals can show images too, with the same kitty
@@ -976,8 +976,8 @@ them.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors
-when it doesn't, like tmux without its `RGB` feature. `KERN_COLORS=truecolor`
-or `KERN_COLORS=256` decides for a terminal that says the wrong thing.
+when it doesn't, like tmux without its `RGB` feature. `GREED_COLORS=truecolor`
+or `GREED_COLORS=256` decides for a terminal that says the wrong thing.
 
 ### Highlighting and syntax queries
 

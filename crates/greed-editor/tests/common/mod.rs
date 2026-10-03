@@ -48,10 +48,10 @@ impl World {
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("XDG_CACHE_HOME", self.root.join("cache"))
             .env("CLAUDE_CONFIG_DIR", self.root.join("claude"))
-            .env_remove("KERN_SESSION")
-            .env_remove("KERN_TERMINAL")
-            .env_remove("KERN_CONFIG_DIR")
-            .env_remove("KERN_NO_SESSION");
+            .env_remove("GREED_SESSION")
+            .env_remove("GREED_TERMINAL")
+            .env_remove("GREED_CONFIG_DIR")
+            .env_remove("GREED_NO_SESSION");
     }
 
     /// `kern ARGS` without a terminal, e.g. `ls` or `ctl`.
@@ -71,7 +71,7 @@ impl World {
         let mut command = Command::new(KERN);
         command.args(["ctl", "eval", &format!("code={code}")]);
         self.env(&mut command);
-        command.env("KERN_SESSION", name);
+        command.env("GREED_SESSION", name);
         let out = command.output().unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     }
@@ -99,7 +99,7 @@ impl World {
         self.env(&mut command);
         // `script` doesn't answer the query for kitty keys, which would cost
         // its timeout at every start.
-        command.env("KERN_KEYS", "legacy");
+        command.env("GREED_KEYS", "legacy");
         command.envs(env.iter().copied());
         let mut child = command.spawn().unwrap();
         let mut keys = child.stdin.take().unwrap();

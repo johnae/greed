@@ -241,7 +241,7 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
     }
     dirs.set("home", std::env::var("HOME").ok())?;
     // This machine's own config, where plugins agents write go.
-    let config = std::env::var("KERN_CONFIG_DIR")
+    let config = std::env::var("GREED_CONFIG_DIR")
         .ok()
         .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));
     dirs.set("config", config)?;
@@ -250,6 +250,6 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
     // like one Nix manages.
     dirs.set("data", user_dir("XDG_DATA_HOME", ".local/share"))?;
     // The copy of your config `kern ssh` brought, on its far end.
-    dirs.set("brought", std::env::var("KERN_SSH_CONFIG_DIR").ok())?;
+    dirs.set("brought", std::env::var("GREED_SSH_CONFIG_DIR").ok())?;
     Ok(dirs)
 }

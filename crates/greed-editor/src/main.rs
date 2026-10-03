@@ -81,10 +81,10 @@ fn main() -> ExitCode {
     }
 }
 
-/// Kern's config directory on this machine: `$KERN_CONFIG_DIR`, or `kern` in
+/// Kern's config directory on this machine: `$GREED_CONFIG_DIR`, or `kern` in
 /// the user's config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
 fn config_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("KERN_CONFIG_DIR") {
+    if let Some(dir) = std::env::var_os("GREED_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
     }
     user_dir("XDG_CONFIG_HOME", ".config")
@@ -99,12 +99,12 @@ fn state_dir() -> Option<PathBuf> {
 /// The copy of your config `kern ssh` brought from another machine, when
 /// this session runs on the far end of one.
 fn brought_dir() -> Option<PathBuf> {
-    std::env::var_os("KERN_SSH_CONFIG_DIR").map(PathBuf::from)
+    std::env::var_os("GREED_SSH_CONFIG_DIR").map(PathBuf::from)
 }
 
-/// The user's config: `$KERN_CONFIG`, or `init.luau` in the config directory.
+/// The user's config: `$GREED_CONFIG`, or `init.luau` in the config directory.
 fn config_file() -> Option<PathBuf> {
-    match std::env::var_os("KERN_CONFIG") {
+    match std::env::var_os("GREED_CONFIG") {
         Some(path) => Some(PathBuf::from(path)),
         None => Some(config_dir()?.join("init.luau")),
     }
@@ -222,13 +222,13 @@ fn host(
 }
 
 /// The editor: in a background session this terminal attaches to, or with
-/// `KERN_NO_SESSION` set, in this process.
+/// `GREED_NO_SESSION` set, in this process.
 fn edit(
     name: Option<&str>,
     path: Option<PathBuf>,
     terminal: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::var_os("KERN_NO_SESSION").is_some() {
+    if std::env::var_os("GREED_NO_SESSION").is_some() {
         return edit_here(path.filter(|p| !p.is_dir()));
     }
     if let Some(inside) = session::inside()

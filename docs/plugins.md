@@ -423,7 +423,7 @@ so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.
 
 Keys for those servers come from `kern.secrets.get("anthropic")`, never from
-config or plugin source. It looks in the environment (`KERN_SECRET_ANTHROPIC`,
+config or plugin source. It looks in the environment (`GREED_SECRET_ANTHROPIC`,
 or the usual `ANTHROPIC_API_KEY`), then the system keyring, then Kern's own
 secrets file, and waits like the rest. A plugin declares each secret it
 reads as `secrets:NAME`, and Kern's file APIs refuse to read the secrets file

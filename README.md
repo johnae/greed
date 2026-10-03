@@ -77,7 +77,7 @@ To install it, `cargo install --path crates/greed-editor`, or with Nix,
 `nix-build` here or `pkgs.callPackage ./nix/package.nix { }` in your own
 configuration. `nix-build -A static` builds a single statically linked
 binary that runs on any Linux of the same CPU, to copy to a server. The default plugins are built into the binary, so it runs
-from anywhere. To use your own copy of them, point `KERN_RUNTIME` at a
+from anywhere. To use your own copy of them, point `GREED_RUNTIME` at a
 folder shaped like `runtime/`. `luau-analyze` is optional and used for type
 checking plugins.
 

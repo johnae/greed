@@ -77,7 +77,7 @@ fn log_path(name: &str) -> PathBuf {
 pub fn attach(name: Option<&str>) -> Result<(), Error> {
     let name = match name
         .map(str::to_owned)
-        .or_else(|| std::env::var("KERN_SESSION").ok())
+        .or_else(|| std::env::var("GREED_SESSION").ok())
     {
         Some(name) => name,
         None => match ctl::live_sessions()?.as_slice() {
@@ -99,10 +99,10 @@ pub fn attach(name: Option<&str>) -> Result<(), Error> {
     follow(name, None, false)
 }
 
-/// The session whose terminal this runs in (`$KERN_TERMINAL`), if it's
+/// The session whose terminal this runs in (`$GREED_TERMINAL`), if it's
 /// still running.
 pub fn inside() -> Option<String> {
-    let name = std::env::var("KERN_TERMINAL")
+    let name = std::env::var("GREED_TERMINAL")
         .ok()
         .filter(|name| !name.is_empty())?;
     ctl::live_sessions().ok()?.contains(&name).then_some(name)
@@ -258,7 +258,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
         path.map(|_| target)
     } else {
         spawn_server(&name, Some(&target))
-            .map_err(|err| format!("{err} (KERN_NO_SESSION=1 runs it in this terminal)"))?;
+            .map_err(|err| format!("{err} (GREED_NO_SESSION=1 runs it in this terminal)"))?;
         None
     };
     follow(name, open, terminal)
@@ -290,8 +290,8 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 }
 
 /// `kern ssh`: shows a session on `host`, through `kern bridge` run there
-/// over ssh, starting one if none is running. `$KERN_SSH` replaces the ssh
-/// command and `$KERN_REMOTE` the kern on the other end.
+/// over ssh, starting one if none is running. `$GREED_SSH` replaces the ssh
+/// command and `$GREED_REMOTE` the kern on the other end.
 pub fn ssh(
     host: &str,
     name: Option<&str>,
@@ -338,7 +338,7 @@ fn ssh_once(
     config: Option<&str>,
     terminal: bool,
 ) -> Result<Output, Error> {
-    let remote_kern = std::env::var("KERN_REMOTE").unwrap_or_else(|_| "greed".to_owned());
+    let remote_kern = std::env::var("GREED_REMOTE").unwrap_or_else(|_| "greed".to_owned());
     let line = bridge_command(&remote_kern, to, config);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
@@ -382,9 +382,9 @@ fn handshake(
     Ok(())
 }
 
-/// The ssh command, which `$KERN_SSH` replaces.
+/// The ssh command, which `$GREED_SSH` replaces.
 fn ssh_command() -> Command {
-    Command::new(std::env::var("KERN_SSH").unwrap_or_else(|_| "ssh".to_owned()))
+    Command::new(std::env::var("GREED_SSH").unwrap_or_else(|_| "ssh".to_owned()))
 }
 
 /// What the remote sh prints once it has read the line it runs.
@@ -452,20 +452,20 @@ fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
         .join(" ");
     match config {
         // Double quotes, so the remote shell fills in $HOME.
-        Some(dir) => format!("KERN_SSH_CONFIG_DIR=\"{dir}\" exec {command}"),
+        Some(dir) => format!("GREED_SSH_CONFIG_DIR=\"{dir}\" exec {command}"),
         None => format!("exec {command}"),
     }
 }
 
 /// Copies your config (init.luau and plugins) to `host` with tar over ssh,
 /// into a folder named after this machine, and returns that folder as the
-/// remote shell should write it. Nothing to copy, or `$KERN_SSH_CONFIG` set
+/// remote shell should write it. Nothing to copy, or `$GREED_SSH_CONFIG` set
 /// to 0, gives `None`.
 fn send_config(host: &str) -> Result<Option<String>, Error> {
     let Some(local) = crate::config_dir().filter(|dir| dir.is_dir()) else {
         return Ok(None);
     };
-    if std::env::var("KERN_SSH_CONFIG").is_ok_and(|v| v == "0") {
+    if std::env::var("GREED_SSH_CONFIG").is_ok_and(|v| v == "0") {
         return Ok(None);
     }
     let dir = format!("$HOME/.cache/kern/config-from-{}", this_machine());
@@ -524,7 +524,7 @@ mod tests {
         };
         assert_eq!(
             bridge_command("kern", &to, Some("$HOME/.cache/kern/config-from-box")),
-            r#"KERN_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" exec 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
+            r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" exec 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo {
             session: None,

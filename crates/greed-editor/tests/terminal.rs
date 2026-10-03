@@ -167,8 +167,8 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
         &project,
         &format!("ssh somehost --terminal {}", file.display()),
         &[
-            ("KERN_SSH", fake_ssh.to_str().unwrap()),
-            ("KERN_REMOTE", KERN),
+            ("GREED_SSH", fake_ssh.to_str().unwrap()),
+            ("GREED_REMOTE", KERN),
         ],
         &[
             Step::Until("the remote session", running),
@@ -209,7 +209,7 @@ fn without_sessions_the_editor_runs_in_the_terminal_and_quits_with_it() {
     let out = world.terminal(
         &project,
         "a.txt",
-        &[("KERN_NO_SESSION", "1")],
+        &[("GREED_NO_SESSION", "1")],
         &[Step::Pause(800), Step::Keys(":q\r")],
     );
     assert!(out.contains("local text"), "drawn in this terminal");
@@ -240,7 +240,7 @@ fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
             .current_dir(&project)
             .stdin(std::process::Stdio::null());
         world.env(&mut command);
-        command.env("KERN_TERMINAL", "app").output().unwrap()
+        command.env("GREED_TERMINAL", "app").output().unwrap()
     };
     let opened = inside(&["b.txt"]);
     assert!(opened.status.success(), "{opened:?}");

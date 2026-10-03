@@ -2,7 +2,7 @@
 -- each and where the cursor was, and opens them again when it starts.
 -- Written down when it quits and when a file is saved, per session name in
 -- the cache, so it only works for editors running as a session (which
--- `kern` is, unless KERN_NO_SESSION is set).
+-- `kern` is, unless GREED_NO_SESSION is set).
 
 local kern = require("@kern")
 

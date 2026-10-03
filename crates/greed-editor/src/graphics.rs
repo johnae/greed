@@ -18,11 +18,11 @@ pub enum Protocol {
     Kitty,
 }
 
-/// The image protocol this terminal speaks, from `$KERN_IMAGES` ("kitty"
+/// The image protocol this terminal speaks, from `$GREED_IMAGES` ("kitty"
 /// or "none") or the variables terminals set.
 pub fn detect() -> Option<Protocol> {
     let var = |name: &str| std::env::var(name).unwrap_or_default();
-    match var("KERN_IMAGES").as_str() {
+    match var("GREED_IMAGES").as_str() {
         "kitty" => return Some(Protocol::Kitty),
         "none" => return None,
         _ => {}

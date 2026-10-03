@@ -411,7 +411,7 @@ export type Http = {
 }
 
 --- Secrets like API keys, kept out of config and plugin source: from the
---- environment (KERN_SECRET_NAME, or the usual variable, e.g. ANTHROPIC_API_KEY),
+--- environment (GREED_SECRET_NAME, or the usual variable, e.g. ANTHROPIC_API_KEY),
 --- the system keyring, or Kern's own secrets file. Both wait like kern.sleep. A
 --- plugin needs "secrets:NAME" for each secret it reads, or "secrets" for all.
 export type Secrets = {

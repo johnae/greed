@@ -18,7 +18,7 @@ kern ctl eval code='return require("@kern").mode.get()'
 
 Arguments are `key=value` pairs (values that parse as JSON are JSON) or one
 JSON object. `kern ctl` talks to the running session: the one named by
-`$KERN_SESSION`, or the only one running. Each session's socket is readable
+`$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
 
 ## Claude Code and other MCP clients

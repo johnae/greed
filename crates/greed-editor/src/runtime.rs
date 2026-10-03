@@ -8,18 +8,18 @@ mod embedded {
 }
 
 /// Where the runtime is, in the first of these places that has one:
-/// `$KERN_RUNTIME`, a folder chosen at build time (`KERN_RUNTIME_DIR`, for
+/// `$GREED_RUNTIME`, a folder chosen at build time (`GREED_RUNTIME_DIR`, for
 /// packagers), `share/greed/runtime` beside the binary's folder, the source
 /// tree it was built from, and last the copy built into the binary,
 /// unpacked into the cache.
 pub fn dir() -> io::Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("KERN_RUNTIME") {
+    if let Some(dir) = std::env::var_os("GREED_RUNTIME") {
         return Ok(PathBuf::from(dir));
     }
     let installed = std::env::current_exe()
         .ok()
         .and_then(|exe| Some(exe.parent()?.parent()?.join("share/greed/runtime")));
-    let candidates = option_env!("KERN_RUNTIME_DIR")
+    let candidates = option_env!("GREED_RUNTIME_DIR")
         .map(PathBuf::from)
         .into_iter()
         .chain(installed)

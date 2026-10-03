@@ -1,7 +1,7 @@
 //! `kern.secrets`: API keys and the like, kept out of config files and
 //! plugin source. A secret is found in, in order:
 //!
-//! 1. the environment, as `KERN_SECRET_NAME`, or the variable such a key
+//! 1. the environment, as `GREED_SECRET_NAME`, or the variable such a key
 //!    usually has (`ANTHROPIC_API_KEY` for "anthropic"),
 //! 2. the system keyring (`secret-tool` on Linux, `security` on macOS),
 //! 3. Kern's own secrets file, readable only by you, for machines without a
@@ -76,7 +76,7 @@ fn check_name(name: &str) -> LuaResult<()> {
 
 fn from_env(name: &str) -> Option<String> {
     let own = format!(
-        "KERN_SECRET_{}",
+        "GREED_SECRET_{}",
         name.to_ascii_uppercase().replace('-', "_")
     );
     let usual = USUAL.iter().find(|(n, _)| *n == name).map(|(_, var)| *var);
