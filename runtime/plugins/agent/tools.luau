@@ -4,6 +4,7 @@ local kern = require("@kern")
 local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
+local operations = require("@operations")
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
 	return { type = "object", properties = properties, required = required }
@@ -271,10 +272,18 @@ agent.tool({
 agent.tool({
 	name = "eval",
 	description = "Run Luau inside the editor with the full plugin API "
-		.. "(require('@kern')), and get back what it returns",
+		.. "(require('@kern')), and get back what it returns. Edits it makes are one "
+		.. "operation the user can review and undo in one step",
 	input = object({ code = { type = "string" } }, { "code" }),
 	run = function(args)
-		local ok, result = kern.eval(args.code)
+		local ok, result = false, ""
+		local first = string.match(args.code, "^%s*([^\n]*)") :: string
+		local op = operations.run(`eval: {string.sub(first, 1, 40)}`, function()
+			ok, result = kern.eval(args.code)
+		end, "agent")
+		if #op.files == 0 then
+			operations.forget(op)
+		end
 		if not ok then
 			error(result, 0)
 		end

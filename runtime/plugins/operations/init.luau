@@ -141,6 +141,14 @@ function M.exec(
 	return done, err
 end
 
+--- Drops `op` from the recent operations, e.g. one that changed nothing.
+function M.forget(op: Operation)
+	local index = table.find(operations, op)
+	if index then
+		table.remove(operations, index)
+	end
+end
+
 --- Recent operations, newest first.
 function M.list(): { Operation }
 	local list = {}

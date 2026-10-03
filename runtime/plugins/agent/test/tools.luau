@@ -127,3 +127,23 @@ test("history_recent says who changed which files lately, with a diff", function
 	assert(#run("history_recent", { author = "agent" }) == 0, "nothing by agents")
 	assert(#run("history_recent", { path = dir .. "/b.txt" }) == 0, "b is unchanged")
 end)
+
+test("eval's edits are one operation, and an eval that edits nothing leaves none", function(t)
+	local operations = require("@operations")
+	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	t:buffer("|x")
+	local before = #operations.list()
+	run("eval", { code = "return 1" })
+	assert(#operations.list() == before, "nothing changed, so no operation")
+	local code = `local kern = require("@kern")\n`
+		.. `for _, name in \{ "a", "b" \} do\n`
+		.. `  local b = kern.load("{dir}/" .. name .. ".txt")\n`
+		.. `  b:edit(function(e) e:insert(0, "!") end)\n`
+		.. `end`
+	run("eval", { code = code })
+	local op = operations.list()[1]
+	assert(op.author == "agent" and #op.files == 2, op.name)
+	assert(string.find(op.name, "^eval: local kern"), op.name)
+	assert(operations.undo(op))
+	assert(kern.load(dir .. "/a.txt"):text() == "a\n")
+end)

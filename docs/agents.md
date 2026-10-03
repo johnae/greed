@@ -41,7 +41,7 @@ claude mcp add kern -- kern mcp
 | `open` | Open a file for you, at a line |
 | `propose` | Propose edits to one or more files for you to review |
 | `project` | The project's root folder |
-| `eval` | Run Luau inside the editor |
+| `eval` | Run Luau inside the editor; what it edits is one operation you can review and undo |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
