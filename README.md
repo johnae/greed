@@ -1,14 +1,15 @@
-Greed is a modal text editor for the terminal with a small Rust core and
-everything else in Luau: keys, modes, commands, pickers, themes and the
+Greed, a General Runtime for Editing, Extending and Delegating, is a modal
+editor for the terminal and the environment around it: a small Rust core,
+and everything else in Luau. Keys, modes, commands, pickers, themes and the
 agent integration are plugins you can read, change or replace while it runs.
 
 ```text
-$ greed src/main.rs           # edit; the session keeps running if you detach
+$ greed src/main.rs          # edit; the session keeps running if you detach
 :detach                      # leave it running in the background
 $ greed ls
 48211
-$ greed attach                # come back to it
-$ greed ctl focus             # ask the running editor what you're looking at
+$ greed attach               # come back to it
+$ greed ctl focus            # ask the running editor what you're looking at
 { "path": "src/main.rs", "mode": "normal", "selections": [ ... ], ... }
 ```
 
