@@ -106,18 +106,41 @@ function M.next_pane()
 end
 
 --- Grows the pane toward `dir`, or shrinks it with negative `steps`; at
---- the edge of the screen it moves the other edge instead.
+--- the edge of the screen it moves the other edge instead. With a floating
+--- view focused, it grows or shrinks that.
 function M.resize(dir: Direction, steps: number?)
+	local cells = STEP[dir] * (steps or 1)
+	local view = kern.view()
+	if core.floats.is_float(view) then
+		core.floats.grow(view, dir, cells)
+		return
+	end
 	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
-	local cells = STEP[dir] * (steps or 1)
 	if not pane:resize(dir, cells) then
 		pane:resize(OPPOSITE[dir], -cells)
 	end
 end
 
+--- Moves the focused floating view toward `dir`.
+function M.move_float(dir: Direction)
+	local view = kern.view()
+	if core.floats.is_float(view) then
+		local cells = STEP[dir]
+		local dx = if dir == "left" then -cells elseif dir == "right" then cells else 0
+		local dy = if dir == "up" then -cells elseif dir == "down" then cells else 0
+		core.floats.move(view, dx, dy)
+	end
+end
+
 --- Grows the pane every way it can (or shrinks it, with a negative `steps`).
 function M.grow(steps: number)
+	local view = kern.view()
+	if core.floats.is_float(view) then
+		core.floats.grow(view, "right", STEP.right * steps)
+		core.floats.grow(view, "down", STEP.down * steps)
+		return
+	end
 	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
 	for _, dir in { "right", "down" } :: { Direction } do
@@ -476,6 +499,62 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		end,
 	},
 	{
+		name = "pane-shrink-left",
+		doc = "Move this pane's left edge in",
+		run = function()
+			M.resize("left", -1)
+		end,
+	},
+	{
+		name = "pane-shrink-right",
+		doc = "Move this pane's right edge in",
+		run = function()
+			M.resize("right", -1)
+		end,
+	},
+	{
+		name = "pane-shrink-up",
+		doc = "Move this pane's top edge down",
+		run = function()
+			M.resize("up", -1)
+		end,
+	},
+	{
+		name = "pane-shrink-down",
+		doc = "Move this pane's bottom edge up",
+		run = function()
+			M.resize("down", -1)
+		end,
+	},
+	{
+		name = "float-move-left",
+		doc = "Move the floating view left",
+		run = function()
+			M.move_float("left")
+		end,
+	},
+	{
+		name = "float-move-right",
+		doc = "Move the floating view right",
+		run = function()
+			M.move_float("right")
+		end,
+	},
+	{
+		name = "float-move-up",
+		doc = "Move the floating view up",
+		run = function()
+			M.move_float("up")
+		end,
+	},
+	{
+		name = "float-move-down",
+		doc = "Move the floating view down",
+		run = function()
+			M.move_float("down")
+		end,
+	},
+	{
 		name = "terminal-float",
 		doc = "Show the floating terminal, or hide it",
 		run = function()
@@ -524,6 +603,13 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Keys for tabs until esc: new, close, switch, rename",
 		run = function()
 			enter("tab")
+		end,
+	},
+	{
+		name = "resize-mode",
+		doc = "Keys for resizing the pane or floating view until esc, and moving a float",
+		run = function()
+			enter("resize")
 		end,
 	},
 	{ name = "pane-mode-leave", doc = "Back from the pane or tab mode", run = leave },
@@ -647,6 +733,29 @@ M.keys = {
 		["alt-space"] = "layout-next",
 		["alt-m"] = "layout-swap-main",
 		["alt-t"] = "tab-mode",
+		["alt-r"] = "resize-mode",
+	} :: { [string]: string },
+	-- Resizing the pane or floating view: grow toward a side, shrink from
+	-- it with shift, and move a float with the arrows.
+	resize = {
+		h = "pane-resize-left",
+		j = "pane-resize-down",
+		k = "pane-resize-up",
+		l = "pane-resize-right",
+		H = "pane-shrink-left",
+		J = "pane-shrink-down",
+		K = "pane-shrink-up",
+		L = "pane-shrink-right",
+		left = "float-move-left",
+		down = "float-move-down",
+		up = "float-move-up",
+		right = "float-move-right",
+		["="] = "pane-grow",
+		["+"] = "pane-grow",
+		["-"] = "pane-shrink",
+		esc = "pane-mode-leave",
+		enter = "pane-mode-leave",
+		["alt-r"] = "pane-mode-leave",
 	} :: { [string]: string },
 	pane = {
 		h = "pane-left",
@@ -681,6 +790,7 @@ M.keys = {
 		["["] = "layout-main-shrink",
 		y = "layout-pick",
 		p = "pane-place",
+		R = "resize-mode",
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
@@ -771,12 +881,17 @@ modes.pane = {
 		"o",
 		"y",
 		"H",
+		"R",
 		"=",
 		"-",
 		"esc",
 	}),
 }
 modes.tab = { back = "normal", hint = hint(M.keys.tab, { "h", "l", "n", "t", "x", "r", "esc" }) }
+modes.resize = {
+	back = "normal",
+	hint = "h j k l grow  H J K L shrink  arrows move a float  = - every way  esc",
+}
 
 -- Binds `M.keys` in the layers they belong to. The terminal's mode takes
 -- every key, so the everywhere keys are bound in it too.

@@ -155,19 +155,7 @@ impl UserData for ViewRef {
             }
             Ok(closed)
         });
-        methods.add_method("configure", |lua, this, spec: Table| {
-            let current = state(lua)
-                .editor
-                .float_options(this.id)
-                .cloned()
-                .ok_or_else(|| mlua::Error::runtime("only floating views can be configured"))?;
-            let options = float_options(current, Some(spec))?;
-            state_mut(lua).editor.configure_float(this.id, options);
-            Ok(())
-        });
-        methods.add_method("raise", |lua, this, ()| {
-            Ok(state_mut(lua).editor.raise_float(this.id))
-        });
+        add_float_methods(methods);
         add_pane_methods(methods);
         methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
         methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
@@ -265,6 +253,30 @@ impl BufferRef {
         drop(state);
         buffer_changed(lua, self.buffer, &self.author)
     }
+}
+
+/// The methods for floating views: changing how one is shown, bringing it
+/// to the front, and reading how it's shown.
+fn add_float_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    methods.add_method("configure", |lua, this, spec: Table| {
+        let current = state(lua)
+            .editor
+            .float_options(this.id)
+            .cloned()
+            .ok_or_else(|| mlua::Error::runtime("only floating views can be configured"))?;
+        let options = float_options(current, Some(spec))?;
+        state_mut(lua).editor.configure_float(this.id, options);
+        Ok(())
+    });
+    methods.add_method("raise", |lua, this, ()| {
+        Ok(state_mut(lua).editor.raise_float(this.id))
+    });
+    methods.add_method("float_spec", |lua, this, ()| {
+        let options = state(lua).editor.float_options(this.id).cloned();
+        options
+            .map(|options| super::api::float_spec(lua, &options))
+            .transpose()
+    });
 }
 
 /// Splitting panes, moving between them and resizing them.

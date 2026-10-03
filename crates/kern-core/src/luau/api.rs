@@ -859,6 +859,7 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
 fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("create_buffer", create_buffer_function(lua, owner)?)?;
     kern.set("panel", panel_function(lua, owner)?)?;
+    kern.set("floats", lua.create_function(|lua, ()| Ok(floats(lua)))?)?;
 
     let o = owner.clone();
     kern.set(
@@ -1121,6 +1122,53 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         x: extent(spec.get("x")?)?.or(base.x),
         y: extent(spec.get("y")?)?.or(base.y),
     })
+}
+
+/// `kern.floats()`: the floating views, the one in front last.
+fn floats(lua: &Lua) -> Vec<ViewRef> {
+    let state = state(lua);
+    let author = Author::User(state.editor.client());
+    state
+        .editor
+        .floats()
+        .iter()
+        .map(|f| ViewRef {
+            id: f.view,
+            author: author.clone(),
+        })
+        .collect()
+}
+
+/// `options` as a spec `kern.float` and `view:configure` take.
+pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> {
+    let to_lua = |extent: Extent| -> LuaResult<Value> {
+        match extent {
+            Extent::Cells(n) => Ok(Value::Integer(n.into())),
+            Extent::Percent(p) => lua.create_string(format!("{p}%")).map(Value::String),
+        }
+    };
+    let spec = lua.create_table()?;
+    spec.set("title", options.title.as_deref())?;
+    spec.set("width", to_lua(options.width)?)?;
+    spec.set("height", to_lua(options.height)?)?;
+    spec.set(
+        "anchor",
+        match options.anchor {
+            Anchor::Center => "center",
+            Anchor::Top => "top",
+            Anchor::Bottom => "bottom",
+            Anchor::Cursor => "cursor",
+            Anchor::AboveCursor => "above-cursor",
+        },
+    )?;
+    spec.set("focus", options.focus)?;
+    if let Some(x) = options.x {
+        spec.set("x", to_lua(x)?)?;
+    }
+    if let Some(y) = options.y {
+        spec.set("y", to_lua(y)?)?;
+    }
+    Ok(spec)
 }
 
 /// A size: a number of cells, or a string like "60%".

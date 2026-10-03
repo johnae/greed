@@ -227,6 +227,8 @@ export type View = {
 	configure: (self: View, spec: FloatSpec) -> (),
 	--- Brings a floating view in front of the other floats; false if it isn't floating.
 	raise: (self: View) -> boolean,
+	--- How a floating view is shown, as `kern.float` takes it; nil if it isn't floating.
+	float_spec: (self: View) -> FloatSpec?,
 	--- Whether it's a pane of a tab, rather than a panel or a floating view.
 	is_pane: (self: View) -> boolean,
 	--- Opens a pane beside this one on its `dir` side, showing `buffer`, or
@@ -1189,6 +1191,8 @@ export type Kern = {
 	which: (program: string) -> string?,
 	--- Shows `buffer` in a view floating over the main one, and focuses it.
 	float: (buffer: Buffer, spec: FloatSpec?) -> View,
+	--- The floating views, the one in front last.
+	floats: () -> { View },
 	--- Shows `buffer` in a panel beside the main view, which gives up the
 	--- room. Defaults: the left side, 30 cells wide, focused. Close it with
 	--- `view:close()`.

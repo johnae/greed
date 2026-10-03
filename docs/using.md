@@ -629,9 +629,10 @@ panes, tabs and terminals are where you left them.
 | `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane on that side (and on to the next tab) |
 | `alt-n` | A terminal in a new pane |
 | `alt-f` | A floating terminal, shown and hidden |
-| `alt-=` `alt--` | More room for the pane, or less |
+| `alt-=` `alt--` | More room for the pane (or floating view), or less |
 | `alt-[` `alt-]`, `alt-1`... | Tabs |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
+| `alt-r` | The resize mode: `h j k l` grow the pane or floating view toward that side, `H J K L` shrink it, the arrows move a floating view |
 | `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix |
 
 The `alt` keys work everywhere, including inside terminals. Moving to a
