@@ -25,6 +25,7 @@ local function sandbox(t: any): string
 	local dir = t:tempdir()
 	agent.dirs.staging = dir .. "/staging"
 	agent.dirs.plugins = dir .. "/plugins"
+	agent.dirs.fallback = dir .. "/data/plugins"
 	return dir
 end
 
@@ -75,7 +76,11 @@ test("installing waits for the user, then loads the plugin", function(t)
 	assert(kern.view():buffer():kind() == "plugin-review", "the review has focus")
 	assert(string.find(kern.view():buffer():text(), "shout", 1, true) ~= nil)
 	t:keys("a")
-	assert(answer() == "the user installed shout; it's loaded and its commands are ready", answer())
+	assert(
+		answer()
+			== `the user installed shout in {dir}/plugins/shout; it's loaded and its commands are ready`,
+		answer()
+	)
 	assert(kern.fs.read(dir .. "/plugins/shout/init.luau") == PLUGIN["init.luau"])
 	t:buffer("|hey")
 	t:run("shout")
@@ -119,4 +124,20 @@ test("bad names and paths are refused", function(t)
 	assert(not ok and string.find(tostring(err), "lowercase", 1, true), tostring(err))
 	ok, err = pcall(agent.try, "fine", { ["../escape.luau"] = "" })
 	assert(not ok and string.find(tostring(err), "inside", 1, true), tostring(err))
+end)
+
+test("when the config can't be written, a plugin is installed in the data folder", function(t)
+	local dir = sandbox(t)
+	-- A file where the plugins folder would go, as good as a read-only config.
+	kern.fs.write(dir .. "/blocked", "")
+	agent.dirs.plugins = dir .. "/blocked/plugins"
+	in_command(t, function()
+		return (agent.try("shout", PLUGIN))
+	end)
+	local answer = in_command(t, function()
+		return agent.install("shout")
+	end)
+	t:keys("a")
+	assert(string.find(answer() or "", dir .. "/data/plugins/shout", 1, true), answer())
+	assert(kern.fs.read(dir .. "/data/plugins/shout/init.luau") == PLUGIN["init.luau"])
 end)

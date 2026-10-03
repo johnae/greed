@@ -104,26 +104,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
 
-    fs.set(
-        "dirs",
-        lua.create_function(|lua, ()| {
-            let dirs = lua.create_table()?;
-            if let Some(root) = state(lua).dirs.clone() {
-                for (name, dir) in [("home", ""), ("config", "config"), ("cache", "cache")] {
-                    dirs.set(name, root.join(dir).to_string_lossy().trim_end_matches('/'))?;
-                }
-                return Ok(dirs);
-            }
-            dirs.set("home", std::env::var("HOME").ok())?;
-            // This machine's own config, where plugins agents write go.
-            let config = std::env::var("KERN_CONFIG_DIR")
-                .ok()
-                .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));
-            dirs.set("config", config)?;
-            dirs.set("cache", user_dir("XDG_CACHE_HOME", ".cache"))?;
-            Ok(dirs)
-        })?,
-    )?;
+    fs.set("dirs", lua.create_function(|lua, ()| dirs(lua))?)?;
 
     fs.set("grep", grep_function(lua)?)?;
     Ok(fs)
@@ -241,4 +222,34 @@ fn user_dir(var: &str, fallback: &str) -> Option<String> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(fallback)))?;
     Some(base.join("kern").to_string_lossy().into_owned())
+}
+
+/// `kern.fs.dirs()`: home, config, cache and data folders, and the config
+/// kern ssh brought; for tests, folders of their own.
+fn dirs(lua: &Lua) -> LuaResult<Table> {
+    let dirs = lua.create_table()?;
+    if let Some(root) = state(lua).dirs.clone() {
+        for (name, dir) in [
+            ("home", ""),
+            ("config", "config"),
+            ("cache", "cache"),
+            ("data", "data"),
+        ] {
+            dirs.set(name, root.join(dir).to_string_lossy().trim_end_matches('/'))?;
+        }
+        return Ok(dirs);
+    }
+    dirs.set("home", std::env::var("HOME").ok())?;
+    // This machine's own config, where plugins agents write go.
+    let config = std::env::var("KERN_CONFIG_DIR")
+        .ok()
+        .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));
+    dirs.set("config", config)?;
+    dirs.set("cache", user_dir("XDG_CACHE_HOME", ".cache"))?;
+    // Where plugins made in the editor go when the config can't be written,
+    // like one Nix manages.
+    dirs.set("data", user_dir("XDG_DATA_HOME", ".local/share"))?;
+    // The copy of your config `kern ssh` brought, on its far end.
+    dirs.set("brought", std::env::var("KERN_SSH_CONFIG_DIR").ok())?;
+    Ok(dirs)
 }

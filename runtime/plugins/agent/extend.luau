@@ -13,12 +13,15 @@ local M = {}
 local user_dirs = kern.fs.dirs()
 local cache = user_dirs.cache or (kern.fs.cwd() .. "/.kern-cache")
 local config = user_dirs.config or (kern.fs.cwd() .. "/.kern-config")
+local data = user_dirs.data or (kern.fs.cwd() .. "/.kern-data")
 
---- Where tried plugins are staged and where installed ones go. Tests point
+--- Where tried plugins are staged and where installed ones go: your config,
+--- or the data folder when the config can't be written (Nix). Tests point
 --- these somewhere temporary.
 M.dirs = {
 	staging = cache .. "/staging",
 	plugins = config .. "/plugins",
+	fallback = data .. "/plugins",
 }
 
 type Staged = { files: { [string]: string }, dir: string, report: string, passed: boolean }
@@ -207,11 +210,23 @@ function M.install(name: string): string
 	if not r.done.wait() then
 		return `the user rejected {name}`
 	end
-	write_files(target, s.files)
+	-- Your config first; when it can't be written, as when Nix manages it,
+	-- the data folder, so a declared config is never written to.
+	if not pcall(write_files, target, s.files) then
+		target = `{M.dirs.fallback}/{name}`
+		write_files(target, s.files)
+	end
 	-- Accepting the review approves what it asked for.
 	kern.plugin.approve(target)
-	kern.echo(`installed {name}`)
-	return `the user installed {name}; it's loaded and its commands are ready`
+	local where = target
+	-- On the far end of kern ssh, it's on this machine, not yours.
+	if kern.fs.dirs().brought then
+		local named = kern.fs.read("/etc/hostname")
+		local machine = named and string.match(named, "^%s*(%S+)") or "this machine"
+		where = `{target} on {machine}; on your own machine, kern bring HOST {name} copies it home`
+	end
+	kern.echo(`installed {name} in {where}`)
+	return `the user installed {name} in {target}; it's loaded and its commands are ready`
 end
 
 kern.command({

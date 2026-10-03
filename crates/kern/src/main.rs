@@ -85,21 +85,13 @@ fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("KERN_CONFIG_DIR") {
         return Some(PathBuf::from(dir));
     }
-    let dir = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(dir.join("kern"))
+    user_dir("XDG_CONFIG_HOME", ".config")
 }
 
 /// Kern's state folder, for what it keeps that isn't config or cache, like
 /// which plugins you approved: `$XDG_STATE_HOME/kern` or `~/.local/state/kern`.
 fn state_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state"))
-        })?;
-    Some(base.join("kern"))
+    user_dir("XDG_STATE_HOME", ".local/state")
 }
 
 /// The copy of your config `kern ssh` brought from another machine, when
@@ -116,20 +108,36 @@ fn config_file() -> Option<PathBuf> {
     }
 }
 
+/// Kern's data folder, where plugins made in the editor go when the config
+/// can't be written: `$XDG_DATA_HOME/kern` or `~/.local/share/kern`.
+fn data_dir() -> Option<PathBuf> {
+    user_dir("XDG_DATA_HOME", ".local/share")
+}
+
+/// `kern` in the folder the environment variable `var` names, or in
+/// `fallback` under the home folder.
+fn user_dir(var: &str, fallback: &str) -> Option<PathBuf> {
+    let base = std::env::var_os(var)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(fallback)))?;
+    Some(base.join("kern"))
+}
+
 /// The plugins to load: the default ones (core first, then by name), then
-/// the ones in the config `kern ssh` brought, then this machine's own, which
-/// replace brought ones of the same name.
+/// the ones in the config `kern ssh` brought, then the ones made in the
+/// editor (in the data folder), then this machine's own config's. A plugin
+/// in a later place replaces one of the same name in an earlier one.
 fn plugins() -> io::Result<Vec<PathBuf>> {
     let mut dirs = plugin_dirs(&runtime::dir()?.join("plugins"))?;
     dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
-    let own = user_plugins(config_dir())?;
-    let brought = user_plugins(brought_dir())?;
-    dirs.extend(
-        brought
-            .into_iter()
-            .filter(|b| !own.iter().any(|o| o.file_name() == b.file_name())),
-    );
-    dirs.extend(own);
+    let mut user: Vec<PathBuf> = Vec::new();
+    for dir in [brought_dir(), data_dir(), config_dir()] {
+        for plugin in user_plugins(dir)? {
+            user.retain(|p| p.file_name() != plugin.file_name());
+            user.push(plugin);
+        }
+    }
+    dirs.extend(user);
     Ok(dirs)
 }
 

@@ -3,6 +3,7 @@
 -- until you approve them, and again if it later asks for more.
 --
 --   :plugins-approve   review the waiting plugins and approve one
+--   :plugins           every plugin, where it comes from and what it may use
 
 local kern = require("@kern")
 local picker = require("@picker")
@@ -66,6 +67,72 @@ kern.command({
 				if #about.requires > 0 then
 					table.insert(lines, "")
 					table.insert(lines, `It uses the plugins {table.concat(about.requires, ", ")}.`)
+				end
+				return { text = table.concat(lines, "\n") }
+			end,
+		})
+	end,
+})
+
+-- Whether `path` is `dir` or inside it.
+local function inside(path: string, dir: string?): boolean
+	return dir ~= nil and (path == dir or string.sub(path, 1, #dir + 1) == dir .. "/")
+end
+
+--- Where the plugin in `dir` comes from, in words: Kern's own, your config,
+--- the copy of it kern ssh brought, the data folder (plugins made in the
+--- editor), or the project.
+function M.origin(dir: string): string
+	local dirs = kern.fs.dirs()
+	local core = kern.plugin.dirs().core
+	local shipped = core and string.match(core, "^(.*)/[^/]+$")
+	if inside(dir, shipped) then
+		return "Kern's own"
+	elseif inside(dir, dirs.brought) then
+		return "your config, brought by kern ssh"
+	elseif inside(dir, dirs.data) then
+		return "made in the editor (data folder)"
+	elseif inside(dir, dirs.config) then
+		return "your config"
+	elseif inside(dir, kern.project.current().root) then
+		return "this project"
+	end
+	return "loaded from " .. dir
+end
+
+kern.command({
+	name = "plugins",
+	doc = "List the plugins, where each comes from and what it may use; enter opens one",
+	run = function()
+		local items = {}
+		for _, about in kern.plugin.pending() do
+			table.insert(items, {
+				label = `{about.name}  waiting for approval  ({M.origin(about.dir)})`,
+				value = about,
+			})
+		end
+		local dirs = kern.plugin.dirs()
+		for _, name in kern.plugin.list() do
+			local dir = dirs[name]
+			if dir then
+				local about = kern.plugin.describe(dir)
+				local asks = {}
+				for _, capability in about.capabilities do
+					table.insert(asks, capability.name)
+				end
+				local uses = if #asks > 0 then "  " .. table.concat(asks, ", ") else ""
+				table.insert(items, { label = `{name}  {M.origin(dir)}{uses}`, value = about })
+			end
+		end
+		picker.pick("Plugins", items, function(item)
+			local about = item.value :: kern.PluginInfo
+			kern.open(about.dir .. "/init.luau")
+		end, {
+			preview = function(item)
+				local about = item.value :: kern.PluginInfo
+				local lines = { about.name, about.dir, M.origin(about.dir), "" }
+				for _, line in M.lines(about) do
+					table.insert(lines, line)
 				end
 				return { text = table.concat(lines, "\n") }
 			end,
