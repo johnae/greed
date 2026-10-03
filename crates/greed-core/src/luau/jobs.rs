@@ -140,13 +140,18 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     }
 }
 
-/// Waits for every running job and finishes it, for tests, which have no
-/// event loop to do it.
+/// Waits for every running job and finishes it, and lets work cut into time
+/// slices finish, for tests, which have no event loop to do it.
 pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
     let finished = state(lua).jobs.finished.clone();
-    while state(lua).jobs.running > 0 {
-        let done = finished.recv().map_err(mlua::Error::external)?;
-        finish(lua, done)?;
+    loop {
+        while state(lua).jobs.running > 0 {
+            let done = finished.recv().map_err(mlua::Error::external)?;
+            finish(lua, done)?;
+        }
+        // Work cut into time slices finishes too, which may start more jobs.
+        if !super::tasks::resume_sliced(lua)? {
+            return Ok(());
+        }
     }
-    Ok(())
 }

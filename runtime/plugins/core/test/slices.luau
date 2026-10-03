@@ -18,7 +18,9 @@ test("a long command yields to the editor and carries on", function(t)
 		end,
 	})
 	t:buffer("|x")
-	t:run("test-long")
+	-- greed.run comes back as soon as the command yields; t:run would wait
+	-- for its work to settle.
+	greed.run("test-long")
 	assert(not done, "it gave the editor a turn before finishing")
 	t:wait(10)
 	assert(done, "and finished after")

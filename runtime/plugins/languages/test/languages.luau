@@ -73,22 +73,30 @@ test("a plugin's query files replace or extend the bundled ones, until it goes",
 		["broken/init.luau"] = "",
 		["broken/queries/rust/folds.scm"] = "(no_such_node) @fold\n",
 	})
+	-- Loading or unloading a plugin reloads the queries in a handler, which
+	-- may yield; t:wait(0) lets it finish.
 	greed.plugin.load(dir .. "/more")
+	t:wait(0)
 	local extended = greed.syntax.query("rust", "textobjects") :: string
 	assert(string.find(extended, bundled, 1, true), "the bundled query stays")
 	assert(string.find(extended, "macro_invocation", 1, true), "and the plugin's is added")
 
 	-- Plugins are read in name order, so "other" replaces what came before.
 	greed.plugin.load(dir .. "/other")
+	t:wait(0)
 	assert(greed.syntax.query("rust", "textobjects") == "(line_comment) @comment.around\n")
 
 	greed.plugin.load(dir .. "/broken")
+	t:wait(0)
 	local problems = languages.load_queries()
 	assert(#problems == 1 and string.find(problems[1], "rust/folds", 1, true), problems[1])
 
 	greed.plugin.unload("broken")
+	t:wait(0)
 	greed.plugin.unload("other")
+	t:wait(0)
 	greed.plugin.unload("more")
+	t:wait(0)
 	assert(greed.syntax.query("rust", "textobjects") == bundled, "back to the bundled one")
 end)
 
@@ -113,11 +121,15 @@ test("the newest query set is used, and a plugin's goes with it", function(t)
 		["second/init.luau"] = "require('@greed').syntax.set_query('rust', 'scratch', '(block) @b')\n",
 	})
 	greed.plugin.load(dir .. "/first")
+	t:wait(0)
 	greed.plugin.load(dir .. "/second")
+	t:wait(0)
 	assert(greed.syntax.query("rust", "scratch") == "(block) @b")
 	greed.plugin.unload("second")
+	t:wait(0)
 	assert(greed.syntax.query("rust", "scratch") == "(block) @a", "the first one's is back")
 	greed.plugin.unload("first")
+	t:wait(0)
 	assert(greed.syntax.query("rust", "scratch") == nil, "and then none")
 	-- The grammar's own highlights stay when nothing replaces them.
 	assert(string.find(greed.syntax.query("rust", "highlights") or "", "@keyword", 1, true) ~= nil)

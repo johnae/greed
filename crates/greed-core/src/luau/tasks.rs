@@ -4,7 +4,7 @@
 //! Waiting yields a token. The coroutine is parked until something resolves
 //! that token, such as a timer firing, and is then resumed with the result.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -44,6 +44,9 @@ pub(crate) struct Tasks {
     worked: HashMap<usize, Duration>,
     /// Tokens to resolve when a coroutine finishes, by its id.
     finished: HashMap<usize, Vec<u64>>,
+    /// The timers of coroutines whose time slice ran out, which carry on as
+    /// soon as the editor had a turn.
+    sliced: HashSet<u64>,
 }
 
 impl Default for Tasks {
@@ -61,6 +64,7 @@ impl Default for Tasks {
             owners: HashMap::new(),
             worked: HashMap::new(),
             finished: HashMap::new(),
+            sliced: HashSet::new(),
         }
     }
 }
@@ -191,7 +195,9 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
                 return finish(lua, id);
             }
             state_mut(lua).tasks.worked.insert(id, worked);
-            Some(start_timer(lua, Duration::ZERO))
+            let token = start_timer(lua, Duration::ZERO);
+            state_mut(lua).tasks.sliced.insert(token);
+            Some(token)
         }
         _ => None,
     }
@@ -218,11 +224,33 @@ fn finish(lua: &Lua, id: usize) -> LuaResult<()> {
 
 /// Resumes the coroutine waiting on `token`, if there is one, with `value`.
 pub(super) fn wake(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult<()> {
-    let thread = state_mut(lua).tasks.waiting.remove(&token);
+    let thread = {
+        let tasks = &mut state_mut(lua).tasks;
+        tasks.sliced.remove(&token);
+        tasks.waiting.remove(&token)
+    };
     match thread {
         Some(thread) => resume(lua, thread, value),
         None => Ok(()),
     }
+}
+
+/// Carries on every coroutine whose time slice ran out, without waiting for
+/// its timer. Returns whether there were any. For tests, which look at the
+/// editor once a key's work is done.
+pub(super) fn resume_sliced(lua: &Lua) -> LuaResult<bool> {
+    let tokens: Vec<u64> = {
+        let tasks = &mut state_mut(lua).tasks;
+        let mut tokens: Vec<u64> = tasks.sliced.drain().collect();
+        // Oldest first, as their timers would fire.
+        tokens.sort_unstable();
+        tasks.timers.retain(|(_, token)| !tokens.contains(token));
+        tokens
+    };
+    for &token in &tokens {
+        wake(lua, token, ())?;
+    }
+    Ok(!tokens.is_empty())
 }
 
 /// Starts a timer and returns the token it resolves.
