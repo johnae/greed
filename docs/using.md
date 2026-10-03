@@ -160,7 +160,12 @@ There is always a selection; a cursor is a selection one character wide.
 | `%` | Select the whole file |
 | `ctrl-f` `ctrl-b` | A screen down or up (also `pagedown` `pageup`) |
 | `ctrl-d` `ctrl-u` | Half a screen down or up |
-| `z z` | Put the cursor's line in the middle of the screen |
+| `z z` `z c`, `z t`, `z b` | Put the cursor's line in the middle, at the top or at the bottom of the screen |
+| `z j` `z k` | Scroll a line down or up; `Z` keeps the view keys going until `esc` |
+| `g t` `g c` `g b` | The top, middle or bottom line on the screen |
+| `g n` `g p`, `g a`, `g m` | The next or previous open file, the one you were in before, the one you changed last |
+| `g .` `g \|`, `g f` | Where the file last changed, column N (`8 g \|`), the file named under the cursor |
+| `alt-.` | Do the last `f` or `t` again |
 | `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again |
 
 **Changing**
@@ -282,7 +287,7 @@ the selection. In Vim's style the same objects are `if` `af`, `ia` `aa` and
 | Keys | |
 |---|---|
 | `z a` | Fold the block the cursor is in under its first line, or unfold it |
-| `z c` `z o` | Fold it, or unfold the folds the cursor is in |
+| `z C` `z o` | Fold it, or unfold the folds the cursor is in (`z c` in the Vim style) |
 | `z R` | Unfold everything |
 
 A block is the smallest function, body, table or similar around the

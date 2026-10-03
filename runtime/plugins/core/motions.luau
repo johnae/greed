@@ -435,6 +435,30 @@ local function find_on_char(
 	return if till then buffer:next_char(at) else at
 end
 
+-- Moves each cursor to `char` for f, t, F or T, selecting from where it
+-- was or (`keep_anchor`) extending the selection.
+local function find(
+	ctx: kern.Context,
+	char: string,
+	forward: boolean,
+	till: boolean,
+	keep_anchor: boolean?
+)
+	local block = M.on_chars()
+	local search = if block then find_on_char else find_char
+	each_range(ctx, function(buffer, range)
+		local from = origin(buffer, range, block)
+		local to = search(buffer, from, char, forward, till, ctx.count or 1)
+		if to == nil then
+			return range
+		end
+		return extend_to(buffer, if keep_anchor then range else point(from), to, block)
+	end)
+end
+
+-- The last f, t, F or T, for alt-. to do again.
+local last_find: { char: string, forward: boolean, till: boolean }? = nil
+
 local function find_command(
 	name: string,
 	doc: string,
@@ -450,19 +474,22 @@ local function find_command(
 			if utf8.len(char) ~= 1 then
 				return
 			end
-			local block = M.on_chars()
-			local find = if block then find_on_char else find_char
-			each_range(ctx, function(buffer, range)
-				local from = origin(buffer, range, block)
-				local to = find(buffer, from, char, forward, till, ctx.count or 1)
-				if to == nil then
-					return range
-				end
-				return extend_to(buffer, if keep_anchor then range else point(from), to, block)
-			end)
+			last_find = { char = char, forward = forward, till = till }
+			find(ctx, char, forward, till, keep_anchor)
 		end,
 	})
 end
+
+kern.command({
+	name = "repeat-find",
+	doc = "Do the last f, t, F or T again; in select mode, extending",
+	run = function(ctx)
+		local again = last_find
+		if again then
+			find(ctx, again.char, again.forward, again.till, kern.mode.get() == "select")
+		end
+	end,
+})
 
 find_command("find-next-char", "Select up to and including the next character typed", true, false)
 find_command("till-next-char", "Select up to the next character typed", true, true)

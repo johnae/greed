@@ -14,7 +14,8 @@ require("@self/jump")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
-require("@self/scroll")
+local scroll = require("@self/scroll")
+local goto_keys = require("@self/goto")
 local objects = require("@self/objects")
 local syntax = require("@self/syntax")
 require("@self/select_mode")
@@ -91,7 +92,6 @@ kern.keymap.bind("normal", {
 	["ctrl-u"] = "half-page-up",
 	pagedown = "page-down",
 	pageup = "page-up",
-	["z z"] = "center-view",
 	x = "select-line",
 	[";"] = "collapse",
 	["."] = "repeat-change",
@@ -132,6 +132,7 @@ kern.keymap.bind("normal", {
 	["&"] = "align-selections",
 	["alt-("] = "rotate-contents-back",
 	["alt-)"] = "rotate-contents",
+	["alt-."] = "repeat-find",
 	["ctrl-a"] = "increment",
 	["ctrl-x"] = "decrement",
 })
@@ -167,6 +168,8 @@ kern.keymap.bind({}, {
 kern.keymap.bind("normal", objects.keys)
 kern.keymap.bind("normal", syntax.keys)
 kern.keymap.bind("normal", folds.keys)
+kern.keymap.bind("normal", scroll.keys)
+kern.keymap.bind("normal", goto_keys.keys)
 kern.keymap.counts("normal")
 kern.keymap.fallback("insert", "insert-char")
 kern.mode.cursor("insert", "bar")

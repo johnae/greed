@@ -71,7 +71,8 @@ character, and `v` starts a visual mode for selecting by hand.
 | `u` `ctrl-r` | Undo, redo |
 | `v` `V` | Visual mode, by character or by line; `i`/`a` there select a text object |
 | `*` `#` | Search for the word under the cursor, forward or back |
-| `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `z z` | Page and half page down and up, center the view |
+| `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
+| `z z` `z t` `z b`, `z a` `z c` `z o` `z R` | Center the view, cursor line to the top or bottom; folds |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
 | `.` | Repeat the last change, with what it typed |
 | `q` + a letter, `q` | Record a macro into that register, stop |

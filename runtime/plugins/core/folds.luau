@@ -209,7 +209,7 @@ kern.command({
 
 M.keys = {
 	["z a"] = "fold-toggle",
-	["z c"] = "fold-close",
+	["z C"] = "fold-close",
 	["z o"] = "fold-open",
 	["z R"] = "fold-open-all",
 } :: { [string]: string }

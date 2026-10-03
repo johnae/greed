@@ -1045,7 +1045,8 @@ kern.keymap.inherit("vim", "normal", {
 	"pageup",
 	"z z",
 	"z a",
-	"z c",
+	"z t",
+	"z b",
 	"z o",
 	"z R",
 	"ctrl-o",
@@ -1092,6 +1093,9 @@ local keys: { [string]: string } = {
 	["ctrl-r"] = "vim-redo",
 	["."] = "repeat-change",
 	enter = "press-button",
+	["z c"] = "fold-close",
+	["ctrl-e"] = "scroll-down",
+	["ctrl-y"] = "scroll-up",
 }
 local visual: { [string]: string } = {
 	d = "vim-operator-d",

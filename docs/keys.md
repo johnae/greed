@@ -128,7 +128,8 @@ Bindings live in layers. Most belong to a mode:
 | `edit` | Edit mode |
 | `vim`, `vim-insert`, `vim-visual` | The Vim style |
 | `terminal` | Typing into a terminal (takes every key) |
-| `pane`, `tab` | The pane and tab modes |
+| `pane`, `tab`, `resize` | The pane, tab and resize modes |
+| `view` | The sticky view mode (`Z` in the Helix style) |
 
 A layer can also be limited to one kind of buffer, so a key does
 something different in the file tree or a picker than in a file:
