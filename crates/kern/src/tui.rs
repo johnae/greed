@@ -358,6 +358,9 @@ struct Screen {
 impl Screen {
     fn draw(&mut self, out: &mut impl Write, frame: &Frame) -> io::Result<()> {
         let grid = compose(frame);
+        // The terminal shows the frame whole once it's written, never half drawn;
+        // terminals without synchronized output ignore this.
+        queue!(out, terminal::BeginSynchronizedUpdate)?;
         if self.grid.len() != grid.len()
             || self.grid.first().map(Vec::len) != grid.first().map(Vec::len)
         {
@@ -382,6 +385,7 @@ impl Screen {
             };
             queue!(out, cursor::MoveTo(pos.col, pos.row), shape, cursor::Show)?;
         }
+        queue!(out, terminal::EndSynchronizedUpdate)?;
         out.flush()
     }
 }
