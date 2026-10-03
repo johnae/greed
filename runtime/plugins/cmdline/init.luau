@@ -71,6 +71,10 @@ type Open = {
 	current: number,
 	-- Where the word tab fills in starts, while going through matches.
 	word_start: number?,
+	-- What shows the candidate tab is on, and the one that last showed
+	-- something, to undo it if nothing runs.
+	preview: complete.Preview?,
+	previewed: complete.Preview?,
 	-- While going through history: what was typed before, and where we are.
 	history_prefix: string?,
 	history_index: number,
@@ -118,18 +122,23 @@ local function render(o: Open, to_end: boolean?)
 	o.view:configure({ height = #lines + 2 })
 end
 
-local function close()
+-- Closes the command line; unless what's typed is about to run, a preview
+-- shown while going through matches is undone.
+local function close(running: boolean?)
 	if open then
-		local view, mode = open.view, open.mode
+		local view, mode, previewed = open.view, open.mode, open.previewed
 		open = nil
 		view:close()
 		kern.mode.set(mode)
+		if previewed and not running then
+			previewed(nil)
+		end
 	end
 end
 
 local function update(o: Open, text: string)
 	o.text = text
-	o.candidates, o.word = complete.candidates(text, first_words(), resolve)
+	o.candidates, o.word, o.preview = complete.candidates(text, first_words(), resolve)
 	o.current = 0
 	o.word_start = nil
 end
@@ -230,7 +239,7 @@ kern.command({
 			return
 		end
 		local text = o.text
-		close()
+		close(true)
 		remember(text)
 		execute(text)
 	end,
@@ -239,7 +248,9 @@ kern.command({
 kern.command({
 	name = "command-line-close",
 	doc = "Close the command line without running anything",
-	run = close,
+	run = function()
+		close()
+	end,
 })
 
 -- Fills in the next (`delta` 1) or previous (-1) match.
@@ -254,6 +265,10 @@ local function cycle(delta: number)
 	o.current = (o.current - 1 + delta) % count + 1
 	o.text = string.sub(o.text, 1, word_start - 1) .. parse.quote(o.candidates[o.current].text)
 	render(o, true)
+	if o.preview then
+		o.preview(o.candidates[o.current].text)
+		o.previewed = o.preview
+	end
 end
 
 kern.command({
@@ -353,9 +368,10 @@ function M.alias(name: string, command: string)
 end
 
 --- Adds a way to complete arguments, for commands whose argument specs
---- name it in `complete`.
-function M.completer(name: string, completer: complete.Completer)
-	complete.register(name, completer)
+--- name it in `complete`. `preview`, if given, shows the match tab is on
+--- (like a theme) and gets nil to undo that when nothing runs.
+function M.completer(name: string, completer: complete.Completer, preview: complete.Preview?)
+	complete.register(name, completer, preview)
 end
 
 -- The short names Vim and Helix use.

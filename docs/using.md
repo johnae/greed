@@ -724,7 +724,8 @@ nil to show nothing. The pills' colors are the theme's
 
 `:theme` lists the themes and tries each one as you move through the list.
 `enter` keeps it, `esc` goes back to the one you had, and `:theme nord`
-switches straight away. The theme you pick is remembered for next time.
+switches straight away. Tab through the matches after `:theme ` tries each
+one the same way. The theme you pick is remembered for next time.
 
 Kern comes with `default` (your terminal's 16 colors, so it follows your
 terminal's palette), `nord`, `nord-light`, `dracula`, `catppuccin-mocha`,

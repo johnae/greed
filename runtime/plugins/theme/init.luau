@@ -43,6 +43,8 @@ for name, colors in require("@self/themes") do
 end
 
 local current = "default"
+-- The theme in use before tab on `:theme` started trying others.
+local tried_from: string? = nil
 
 --- Adds a theme, or replaces the one called `name`.
 function M.define(name: string, theme: Theme)
@@ -117,6 +119,7 @@ end
 
 -- Switches to `name` and remembers it for next time.
 local function pick(name: string)
+	tried_from = nil
 	M.use(name)
 	local path = remembered()
 	if path then
@@ -130,6 +133,17 @@ cmdline.completer("theme", function()
 		table.insert(items, { text = name, doc = if name == current then "in use" else nil })
 	end
 	return items
+end, function(name)
+	-- Tab tries each theme; closing without running puts the old one back.
+	if name == nil then
+		if tried_from then
+			M.use(tried_from)
+		end
+		tried_from = nil
+	elseif themes[name] then
+		tried_from = tried_from or current
+		M.use(name)
+	end
 end)
 
 kern.command({

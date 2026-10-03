@@ -18,10 +18,16 @@ export type Completer = (word: string) -> { Candidate }
 
 local M = {}
 
-local completers: { [string]: Completer } = {}
+--- Shows what a candidate would do while tab is on it, like a theme; nil
+--- when the command line closes without running, to undo that.
+export type Preview = (text: string?) -> ()
 
-function M.register(name: string, completer: Completer)
+local completers: { [string]: Completer } = {}
+local previews: { [string]: Preview } = {}
+
+function M.register(name: string, completer: Completer, preview: Preview?)
 	completers[name] = completer
+	previews[name] = preview
 end
 
 -- The items matching `word`: exact matches, then ones starting with it,
@@ -90,16 +96,17 @@ M.register("file", function(word)
 	return items
 end)
 
--- Candidates for the last word of `line`, and that word. `first` lists
--- what the first word can be; `resolve` turns it into a command name.
-function M.candidates(line: string, first: { Candidate }, resolve: (name: string) -> string): ({ Candidate }, string)
+-- Candidates for the last word of `line`, that word, and the completer's
+-- preview if it has one. `first` lists what the first word can be;
+-- `resolve` turns it into a command name.
+function M.candidates(line: string, first: { Candidate }, resolve: (name: string) -> string): ({ Candidate }, string, Preview?)
 	local typed = string.match(line, "^%s*(.*)$") or ""
 	if not string.find(typed, "%s") then
-		return rank(typed, first), typed
+		return rank(typed, first), typed, nil
 	end
 	local parsed = parse.parse(typed)
 	if parsed == nil then
-		return {}, ""
+		return {}, "", nil
 	end
 	local name = resolve(parsed.name)
 	local index, word = #parsed.args, parsed.args[#parsed.args] or ""
@@ -109,11 +116,12 @@ function M.candidates(line: string, first: { Candidate }, resolve: (name: string
 	for _, command in kern.commands() do
 		if command.name == name then
 			local spec = command.args[index]
-			local completer = spec and spec.complete and completers[spec.complete]
-			return (if completer then rank(word, completer(word)) else {}), word
+			local key = spec and spec.complete
+			local completer = key and completers[key]
+			return (if completer then rank(word, completer(word)) else {}), word, key and previews[key]
 		end
 	end
-	return {}, ""
+	return {}, "", nil
 end
 
 return M
