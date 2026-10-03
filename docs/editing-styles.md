@@ -77,6 +77,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
 | `z z` `z t` `z b`, `z a` `z c` `z o` `z R` | Center the view, cursor line to the top or bottom; folds |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
+| `m` + a letter, `'` `` ` `` + a letter | Set a mark (`a`–`z` in the file, `A`–`Z` across files), go to its line or to it |
 | `.` | Repeat the last change, with what it typed |
 | `q` + a letter, `q` | Record a macro into that register, stop |
 | `@` + a letter, `@ @` | Play a macro, play the last one again |
@@ -92,7 +93,7 @@ The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
 Panels like the file tree and help keep their own keys.
 
-It isn't all of Vim yet. Marks, ex ranges and visual block mode are
+It isn't all of Vim yet. Ex ranges and visual block mode are
 missing.
 
 ## Edit

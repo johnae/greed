@@ -474,6 +474,69 @@ local motions: { [string]: Motion } = {
 	T = find_char(false, true),
 }
 
+-- Marks: a to z in the buffer, kept as decorations so they move with edits;
+-- A to Z across files, by path and place.
+local file_marks: { [string]: { path: string, pos: number } } = {}
+
+local function set_mark(buffer: Buffer, name: string, pos: number)
+	if string.match(name, "^%u$") then
+		local path = buffer:path()
+		if path then
+			file_marks[name] = { path = path, pos = pos }
+		end
+		return
+	end
+	local marks = {}
+	for _, mark in buffer:decorations("vim-marks") do
+		if mark.style ~= name then
+			table.insert(marks, mark)
+		end
+	end
+	-- The style names the mark; nothing in the theme draws it.
+	table.insert(marks, { from = pos, to = pos, style = name })
+	buffer:decorate("vim-marks", marks)
+end
+
+-- Where mark `name` is in `buffer`, or nil. An uppercase mark in another
+-- file opens it first.
+local function mark_place(buffer: Buffer, name: string): number?
+	if string.match(name, "^%u$") then
+		local mark = file_marks[name]
+		if mark == nil then
+			return nil
+		end
+		if buffer:path() ~= mark.path then
+			kern.open(mark.path)
+			buffer = kern.view():buffer()
+		end
+		return math.min(mark.pos, buffer:len())
+	end
+	for _, mark in buffer:decorations("vim-marks") do
+		if mark.style == name then
+			return mark.from
+		end
+	end
+	return nil
+end
+
+-- ' and `: to a mark's line, or to the mark itself.
+local function to_mark(exact: boolean): Motion
+	return function(buffer, _, _)
+		local name = kern.next_key()
+		local pos = mark_place(buffer, name)
+		if pos == nil then
+			kern.echo(`no mark {name}`)
+			return nil, "exclusive"
+		end
+		-- An uppercase mark may have opened another file.
+		buffer = kern.view():buffer()
+		if exact then
+			return pos, "exclusive"
+		end
+		return first_non_blank(buffer, buffer:line_of(pos)), "line"
+	end
+end
+
 -- G goes to line `count`, or the last line; gg to line `count`, or the first.
 local function goto_line(first: boolean): Motion
 	return function(buffer, _, count)
@@ -484,6 +547,8 @@ local function goto_line(first: boolean): Motion
 end
 motions.G = goto_line(false)
 motions["g g"] = goto_line(true)
+motions["'"] = to_mark(false)
+motions["`"] = to_mark(true)
 -- % goes to the matching bracket, or with a count, that percentage of the way
 -- down the file.
 motions["%"] = function(buffer: Buffer, pos: number, count: number): (number?, Kind)
@@ -1078,6 +1143,17 @@ command("normal", "Back to normal mode", function(ctx)
 	ctx.view:set_selection(point(on_char(buffer, pos)))
 end)
 
+command(
+	"mark",
+	"Set the mark typed next (a to z here, A to Z across files) at the cursor",
+	function(ctx)
+		local name = kern.next_key()
+		if string.match(name, "^%a$") then
+			set_mark(ctx.buffer, name, cursor(ctx))
+		end
+	end
+)
+
 command("visual", "Select characters, starting here", function(ctx)
 	local at = cursor(ctx)
 	ctx.view:set_selection(visual(ctx.buffer, at, at))
@@ -1235,7 +1311,15 @@ end)
 core.again.ignore({ "vim-undo", "vim-redo", "vim-macro", "vim-play-macro" })
 core.search.at_start.vim = true
 for _, name in
-	{ "vim-motion-G", "vim-motion-gg", "vim-motion-%", "vim-search-word", "vim-search-word-back" }
+	{
+		"vim-motion-G",
+		"vim-motion-gg",
+		"vim-motion-%",
+		"vim-motion-'",
+		"vim-motion-`",
+		"vim-search-word",
+		"vim-search-word-back",
+	}
 do
 	core.jumps.add(name)
 end
@@ -1316,6 +1400,7 @@ local keys: { [string]: string } = {
 	["*"] = "vim-search-word",
 	["#"] = "vim-search-word-back",
 	q = "vim-macro",
+	m = "vim-mark",
 	["@"] = "vim-play-macro",
 	['"'] = "select-register",
 	u = "vim-undo",
