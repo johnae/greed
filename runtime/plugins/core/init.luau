@@ -108,6 +108,7 @@ kern.keymap.bind("normal", {
 	n = "search-next",
 	N = "search-prev",
 	["*"] = "search-selection",
+	["alt-*"] = "search-selection-anywhere",
 	["%"] = "select-all",
 	s = "select-regex",
 	S = "split-regex",

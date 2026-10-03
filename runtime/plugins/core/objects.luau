@@ -39,10 +39,15 @@ local function pair(char: string): (string, string)
 end
 
 -- The bracket pair of kind `open` around `pos`: where the opener and closer
--- are, or nil.
-local function brackets_around(buffer: Buffer, pos: number, open: string): (number?, number?)
+-- are, or nil. With `outside`, a pair opening at `pos` doesn't count.
+local function brackets_around(
+	buffer: Buffer,
+	pos: number,
+	open: string,
+	outside: boolean?
+): (number?, number?)
 	-- On the opener itself, that's the pair.
-	if buffer:char_at(pos) == open then
+	if not outside and buffer:char_at(pos) == open then
 		return pos, text.matching_bracket(buffer, pos)
 	end
 	local close = CLOSE[open]
@@ -83,12 +88,21 @@ local function quotes_around(buffer: Buffer, pos: number, quote: string): (numbe
 	return nil, nil
 end
 
--- Where the pair for `char` around `pos` is, or nil.
-local function around(buffer: Buffer, pos: number, char: string): (number?, number?)
+-- Where the pair for `char` around `pos` is, or nil. A count picks brackets
+-- further out: 2 is the pair around the nearest one.
+local function around(buffer: Buffer, pos: number, char: string, count: number?): (number?, number?)
 	if QUOTES[char] then
 		return quotes_around(buffer, pos, char)
 	end
-	return brackets_around(buffer, pos, OPEN[char] :: string)
+	local open = OPEN[char] :: string
+	local from, to = brackets_around(buffer, pos, open)
+	for _ = 2, count or 1 do
+		if from == nil then
+			break
+		end
+		from, to = brackets_around(buffer, from, open, true)
+	end
+	return from, to
 end
 
 -- The word (or WORD) under `pos`, and with `include_space`, the spaces after it
@@ -122,13 +136,13 @@ local function word(buffer: Buffer, pos: number, big: boolean, include_space: bo
 	return { anchor = from, head = to }
 end
 
-local function object(name: string, doc: string, pick: (Buffer, Range) -> Range?)
+local function object(name: string, doc: string, pick: (Buffer, Range, number?) -> Range?)
 	kern.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
 			motions.each_range(ctx, function(buffer, range)
-				return pick(buffer, range) or range
+				return pick(buffer, range, ctx.count) or range
 			end)
 		end,
 	})
@@ -143,7 +157,8 @@ for _, big in { false, true } do
 	local w = if big then "W" else "w"
 	local what = if big then "WORD" else "word"
 	for _, outer in { false, true } do
-		local name = `select-{if outer then "around" else "inside"}-{string.lower(what)}`
+		local name =
+			`select-{if outer then "around" else "inside"}-{if big then "big-word" else "word"}`
 		object(
 			name,
 			`Select the {what}{if outer then " and the space after it" else ""}`,
@@ -168,8 +183,8 @@ for char, label in NAMES do
 	for _, outer in { false, true } do
 		local side = if outer then "around" else "inside"
 		local name = `select-{side}-{label}`
-		object(name, `Select {side} the {label}`, function(buffer, range)
-			local from, to = around(buffer, range.head, char)
+		object(name, `Select {side} the {label}`, function(buffer, range, count)
+			local from, to = around(buffer, range.head, char, count)
 			if from == nil or to == nil then
 				return nil
 			end

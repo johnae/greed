@@ -121,22 +121,33 @@ local function at_column(buffer: kern.Buffer, line: number, n: number): number
 	return pos
 end
 
--- Adds a copy of each selection `delta` lines away, at the same columns.
--- The copy of the primary selection becomes primary, so repeating goes on.
+-- Adds a copy of each selection on the next lines `delta` away (1 is down,
+-- -1 up) that are long enough for it, at the same columns. The copy of the
+-- primary selection becomes primary, so repeating goes on.
 local function copy_lines(ctx: kern.Context, delta: number)
 	local buffer, selection = ctx.buffer, ctx.view:selection()
 	local ranges = table.clone(selection.ranges)
 	local new = selection.ranges[selection.primary]
+	local function fits(line: number, col: number): boolean
+		return 0 <= line
+			and line < buffer:line_count()
+			and col <= column(buffer, buffer:line_end(line))
+	end
 	for i, range in selection.ranges do
-		local anchor_line, head_line =
-			buffer:line_of(range.anchor) + delta, buffer:line_of(range.head) + delta
-		if
-			math.min(anchor_line, head_line) >= 0
-			and math.max(anchor_line, head_line) < buffer:line_count()
-		then
+		local anchor_col, head_col = column(buffer, range.anchor), column(buffer, range.head)
+		local anchor_line, head_line = buffer:line_of(range.anchor), buffer:line_of(range.head)
+		local found = false
+		repeat
+			anchor_line += delta
+			head_line += delta
+			found = fits(anchor_line, anchor_col) and fits(head_line, head_col)
+			local inside = math.min(anchor_line, head_line) >= 0
+				and math.max(anchor_line, head_line) < buffer:line_count()
+		until found or not inside
+		if found then
 			local copy = {
-				anchor = at_column(buffer, anchor_line, column(buffer, range.anchor)),
-				head = at_column(buffer, head_line, column(buffer, range.head)),
+				anchor = at_column(buffer, anchor_line, anchor_col),
+				head = at_column(buffer, head_line, head_col),
 			}
 			table.insert(ranges, copy)
 			if i == selection.primary then
@@ -202,12 +213,16 @@ command(
 	"copy-selection-down",
 	"Add a selection on the next line, at the same columns",
 	function(ctx)
-		copy_lines(ctx, 1)
+		for _ = 1, ctx.count or 1 do
+			copy_lines(ctx, 1)
+		end
 	end
 )
 
 command("copy-selection-up", "Add a selection on the line above, at the same columns", function(ctx)
-	copy_lines(ctx, -1)
+	for _ = 1, ctx.count or 1 do
+		copy_lines(ctx, -1)
+	end
 end)
 
 command("keep-primary", "Keep only the primary selection", function(ctx)

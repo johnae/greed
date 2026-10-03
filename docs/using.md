@@ -179,13 +179,19 @@ There is always a selection; a cursor is a selection one character wide.
 | `J` | Join lines with one space |
 | `\|` | Pipe each selection through a shell command, a Luau filter or a model (below) |
 | `ctrl-c` | Comment the lines, or uncomment them |
-| `y` `p` `P` | Copy, paste after, paste before |
+| `y` `p` `P` | Copy, paste after, paste before; copied lines paste above or below the line |
 | `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
 | `Q` `q` | Start or stop recording a macro, play it (`3 q` three times) |
 | `u` `U` | Undo, redo |
 | `esc` | Back to normal mode |
 
-A number before a motion repeats it: `3 j`, `2 w`.
+A number before a motion repeats it: `3 j`, `2 w`. It also counts for `x`
+(lines), `p` and `P`, `u` and `U`, `>` and `<` (levels), `C` and `alt-C`,
+and picks brackets further out with `m i (` and the like.
+
+Some registers aren't storage: `"_` throws a copy away, `"+` and `"*` are
+the clipboard, `"%` is the file's path, `".` what each selection holds,
+`"#` each selection's number and `"/` the last search.
 
 `|` asks what to pipe the selections through, and puts back what comes out,
 each selection its own:
@@ -286,7 +292,8 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 |---|---|
 | `/` `?` | Search forward or back as you type |
 | `n` `N` | Next and previous match |
-| `*` | Search for the selected text, exactly as written |
+| `*` | Search for the selected text, exactly as written; a whole word only matches whole words |
+| `alt-*` | The same, also inside longer words |
 | `space /` | Search the whole project as you type |
 
 Patterns are regexes; ones written in lowercase ignore case.

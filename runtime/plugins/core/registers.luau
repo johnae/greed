@@ -33,23 +33,44 @@ function M.set(name: string, pieces: { string })
 	texts[name] = pieces
 end
 
---- Copies `pieces` to the register picked for this, or the clipboard.
+-- The clipboard's registers; copies go there when no register is picked.
+local CLIPBOARD = { ["+"] = true, ["*"] = true }
+
+--- Copies `pieces` to the register picked for this, or the clipboard. `_`
+--- throws them away.
 function M.copy(pieces: { string })
 	local name = M.take()
-	if name then
-		texts[name] = pieces
-	else
+	if name == nil or CLIPBOARD[name] then
 		kern.clipboard.set(pieces)
+	elseif name ~= "_" then
+		texts[name] = pieces
 	end
 end
 
---- What to paste: the picked register's text, or the clipboard's.
-function M.paste(): { string }?
+--- What to paste into `ctx`'s view: the picked register's text, or the
+--- clipboard's. Some registers are worked out rather than kept: `%` is the
+--- file's name, `.` what each selection holds, `#` each selection's number,
+--- and `_` is always empty.
+function M.paste(ctx: kern.Context): { string }?
 	local name = M.take()
-	if name then
-		return texts[name]
+	if name == nil or CLIPBOARD[name] then
+		return kern.clipboard.get()
+	elseif name == "_" then
+		return nil
+	elseif name == "%" then
+		local path = ctx.buffer:path()
+		return if path then { path } else nil
 	end
-	return kern.clipboard.get()
+	local ranges = ctx.view:selection().ranges
+	if name == "." or name == "#" then
+		local pieces = {}
+		for i, range in ranges do
+			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			table.insert(pieces, if name == "#" then tostring(i) else ctx.buffer:slice(from, to))
+		end
+		return pieces
+	end
+	return texts[name]
 end
 
 --- The register a macro is being recorded into, while one is.

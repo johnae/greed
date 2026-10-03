@@ -141,7 +141,9 @@ kern.command({
 	name = "undo",
 	doc = "Undo the last change",
 	run = function(ctx)
-		ctx.view:undo()
+		for _ = 1, ctx.count or 1 do
+			ctx.view:undo()
+		end
 	end,
 })
 
@@ -149,7 +151,9 @@ kern.command({
 	name = "redo",
 	doc = "Redo the last undone change",
 	run = function(ctx)
-		ctx.view:redo()
+		for _ = 1, ctx.count or 1 do
+			ctx.view:redo()
+		end
 	end,
 })
 
@@ -162,6 +166,8 @@ local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 		end
 	end
 	if #pieces == 0 then
+		-- A register picked for this goes unused rather than to the next copy.
+		registers.take()
 		if not quiet then
 			kern.echo("nothing selected")
 		end
@@ -171,11 +177,34 @@ local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 	return true
 end
 
+-- Where `piece` goes before or after `range`: whole lines (text ending in a
+-- line break) go above or below the selected lines, anything else right at
+-- the selection. Returns the place and the text to insert, with a line break put in
+-- front when lines go below a last line that has none.
+local function paste_place(
+	buffer: kern.Buffer,
+	range: kern.Range,
+	after: boolean,
+	piece: string
+): (number, string)
+	if string.sub(piece, -1) ~= "\n" then
+		return (if after then to(range) else from(range)), piece
+	end
+	if not after then
+		return buffer:line_start(buffer:line_of(from(range))), piece
+	end
+	local line = buffer:line_of(math.max(from(range), to(range) - 1))
+	if line + 1 < buffer:line_count() then
+		return buffer:line_start(line + 1), piece
+	end
+	return buffer:line_end(line), text.line_break(buffer) .. string.sub(piece, 1, -2)
+end
+
 -- Pastes the latest copy before or after each selection, and selects what
 -- was pasted. With as many pieces as selections, each selection gets its
 -- own piece.
 local function paste(ctx: kern.Context, after: boolean)
-	local pieces = registers.paste()
+	local pieces = registers.paste(ctx)
 	if pieces == nil then
 		return
 	end
@@ -186,11 +215,11 @@ local function paste(ctx: kern.Context, after: boolean)
 		-- Text inserted earlier in the buffer shifts the later selections.
 		local shift = 0
 		for i, range in selection.ranges do
-			local text = if one_each then pieces[i] else joined
-			local at = if after then to(range) else from(range)
-			e:insert(at, text)
-			selection.ranges[i] = { anchor = at + shift, head = at + shift + #text }
-			shift += #text
+			local piece = string.rep(if one_each then pieces[i] else joined, ctx.count or 1)
+			local at, inserted = paste_place(ctx.buffer, range, after, piece)
+			e:insert(at, inserted)
+			selection.ranges[i] = { anchor = at + shift, head = at + shift + #inserted }
+			shift += #inserted
 		end
 		e:select(selection)
 	end)
@@ -306,8 +335,12 @@ kern.command({
 	name = "replace-char",
 	doc = "Replace every selected character with the next one typed",
 	run = function(ctx)
-		local char = kern.next_key()
-		if utf8.len(char) ~= 1 then
+		local key = kern.next_key()
+		local char = if key == "enter"
+			then text.line_break(ctx.buffer)
+			elseif key == "tab" then "\t"
+			else key
+		if utf8.len(key) ~= 1 and char == key then
 			return
 		end
 		transform(ctx, function(s)
@@ -362,7 +395,7 @@ kern.command({
 				table.insert(starts, buffer:line_start(line))
 			end
 		end
-		motions.insert_at(ctx, starts, unit)
+		motions.insert_at(ctx, starts, string.rep(unit, ctx.count or 1))
 	end,
 })
 
@@ -376,7 +409,12 @@ kern.command({
 			for _, line in motions.selected_lines(ctx) do
 				local start = buffer:line_start(line)
 				local lead = indent.of(buffer, line)
-				local take = if string.sub(lead, 1, 1) == "\t" then 1 else math.min(#lead, width)
+				local take = 0
+				-- A tab or a unit's worth of spaces per level.
+				for _ = 1, ctx.count or 1 do
+					local rest = string.sub(lead, take + 1)
+					take += if string.sub(rest, 1, 1) == "\t" then 1 else math.min(#rest, width)
+				end
 				if take > 0 then
 					e:delete(start, start + take)
 				end
@@ -435,7 +473,7 @@ kern.command({
 	name = "replace-with-copy",
 	doc = "Replace each selection with what was copied",
 	run = function(ctx)
-		local pieces = registers.paste()
+		local pieces = registers.paste(ctx)
 		if pieces == nil then
 			return
 		end

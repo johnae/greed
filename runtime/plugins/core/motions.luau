@@ -365,17 +365,19 @@ kern.command({
 
 kern.command({
 	name = "select-line",
-	doc = "Select the whole line, including its line break",
+	doc = "Select the whole line, including its line break; again, the next line too",
 	run = function(ctx)
-		each_range(ctx, function(buffer, range)
-			local first = buffer:line_of(math.min(range.anchor, range.head))
-			local last = buffer:line_of(math.max(range.anchor, range.head))
-			local stop = buffer:len()
-			if last + 1 < buffer:line_count() then
-				stop = buffer:line_start(last + 1)
-			end
-			return { anchor = buffer:line_start(first), head = stop }
-		end)
+		for _ = 1, ctx.count or 1 do
+			each_range(ctx, function(buffer, range)
+				local first = buffer:line_of(math.min(range.anchor, range.head))
+				local last = buffer:line_of(math.max(range.anchor, range.head))
+				local stop = buffer:len()
+				if last + 1 < buffer:line_count() then
+					stop = buffer:line_start(last + 1)
+				end
+				return { anchor = buffer:line_start(first), head = stop }
+			end)
+		end
 	end,
 })
 

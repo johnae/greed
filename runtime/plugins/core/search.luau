@@ -4,6 +4,7 @@
 
 local kern = require("@kern")
 local prompt = require("./prompt")
+local registers = require("./registers")
 
 -- The last pattern searched for, and which way.
 local last: string? = nil
@@ -94,6 +95,7 @@ local function search(ctx: kern.Context, back: boolean)
 				return
 			end
 			last, backward = pattern, back
+			registers.set("/", { pattern })
 			if found == nil then
 				kern.echo(`no match for {pattern}`)
 			end
@@ -197,19 +199,51 @@ kern.command({
 	end,
 })
 
+local function word_char(c: string?): boolean
+	return c ~= nil and string.match(c, "^[%w_]$") ~= nil
+end
+
+-- Searches for the primary selection's text, as plain text in the same
+-- case. With `words`, a selection that starts or ends a word only matches
+-- there, so a whole word doesn't match inside a longer one.
+local function search_selection(ctx: kern.Context, words: boolean)
+	local buffer = ctx.buffer
+	local from, to = span(primary(ctx.view))
+	local text = buffer:slice(from, to)
+	if text == "" then
+		kern.echo("nothing selected to search for")
+		return
+	end
+	local pattern = (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0"))
+	if words then
+		local before = if from > 0 then buffer:char_at(buffer:prev_char(from)) else nil
+		if word_char(buffer:char_at(from)) and not word_char(before) then
+			pattern = "\\b" .. pattern
+		end
+		local last_char = buffer:char_at(buffer:prev_char(to))
+		if word_char(last_char) and not word_char(buffer:char_at(to)) then
+			pattern ..= "\\b"
+		end
+	end
+	pattern = "(?-i)" .. pattern
+	last, backward = pattern, false
+	registers.set("/", { pattern })
+	kern.echo(`searching for {text}`)
+end
+
 kern.command({
 	name = "search-selection",
-	doc = "Search for the selected text",
+	doc = "Search for the selected text, as whole words where it starts or ends one",
 	run = function(ctx)
-		local text = ctx.buffer:slice(span(primary(ctx.view)))
-		if text == "" then
-			kern.echo("nothing selected to search for")
-			return
-		end
-		-- As plain text, not a regex, and in the same case.
-		last, backward =
-			"(?-i)" .. (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0")), false
-		kern.echo(`searching for {text}`)
+		search_selection(ctx, true)
+	end,
+})
+
+kern.command({
+	name = "search-selection-anywhere",
+	doc = "Search for the selected text, also inside longer words",
+	run = function(ctx)
+		search_selection(ctx, false)
 	end,
 })
 
