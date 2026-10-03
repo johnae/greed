@@ -62,6 +62,16 @@ function M.home(): string
 	return current().mode
 end
 
+--- Whether `mode` is some style's own mode, like normal or vim.
+function M.is_home(mode: string): boolean
+	for _, style in styles do
+		if style.mode == mode then
+			return true
+		end
+	end
+	return false
+end
+
 --- The mode buffers of a kind are used in, when it isn't the style's own,
 --- e.g. `core.style.kind_modes.picker = "insert"`: a picker you come back
 --- to after a float over it closes takes typing again.

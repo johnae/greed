@@ -57,7 +57,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `h j k l` `w b e` `0 ^ $` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket |
 | `f t F T` + a character | To the next or previous character on the line |
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
-| `i w` `a w` `i W` `i (` `a "` `i p` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs |
+| `i w` `a w` `i W` `i (` `a "` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs, tags |
 | `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |
 | `x X D C s S` | The usual shortcuts for deleting and changing |
 | `r` `~` `J` | Replace a character, switch case, join lines |
@@ -68,10 +68,10 @@ character, and `v` starts a visual mode for selecting by hand.
 | `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `z z` | Page and half page down and up, center the view |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
-| `.` | Repeat the last change that didn't type text |
+| `.` | Repeat the last change, with what it typed |
 | `q` + a letter, `q` | Record a macro into that register, stop |
 | `@` + a letter, `@ @` | Play a macro, play the last one again |
-| `"` + a letter | Use that register for the next yank, delete or paste |
+| `"` + a letter | Use that register for the next yank, delete or paste; an uppercase letter appends |
 
 Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
@@ -79,9 +79,12 @@ go: the Vim style is plain Luau against the same API any plugin uses, with
 its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`)
 beside Helix's.
 
-It isn't all of Vim. Marks, ex ranges, visual block mode and the special
-registers (`"+`, `".`, `"0`) are missing. Search (`/ ? n N`) is Kern's, which
-selects the match.
+The unnamed register is the system clipboard, so `p` pastes what you
+copied in another program too; `"+` is the same and `"_` keeps nothing.
+Panels like the file tree and help keep their own keys.
+
+It isn't all of Vim yet. Marks, ex ranges, visual block mode and the
+numbered registers are missing.
 
 ## Edit
 
@@ -115,6 +118,8 @@ local kern = require("@kern")
 
 kern.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
 kern.keymap.inherit("mine", "normal", { "space", ":" })
+-- The file tree, help and other panels keep their keys.
+kern.keymap.inherit_kinds("mine", "normal")
 
 require("@core").style.define({
 	name = "mine",
@@ -125,4 +130,6 @@ require("@core").style.define({
 ```
 
 `esc` in insert mode comes back to the style's mode, and `:style mine`
-switches to it. The Vim plugin in `runtime/plugins/vim` is a full example.
+switches to it. `.` works in any style: it types the keys of the last
+change again; `require("@core").again.ignore({ "my-undo" })` leaves out
+commands that shouldn't count as one. The Vim plugin in `runtime/plugins/vim` is a full example.

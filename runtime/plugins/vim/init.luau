@@ -10,10 +10,9 @@
 --
 -- What's here: counts, h j k l w b e 0 ^ $ gg G f t F T %, the operators
 -- d c y > < gc with any of those motions or a text object (iw aW i( a"
--- ip, and from the syntax tree if af ia ic) and doubled for whole lines
+-- ip it, and from the syntax tree if af ia ic) and doubled for whole lines
 -- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V, * #,
--- q@ macros, "a registers, and . to repeat the last change that didn't
--- type text.
+-- q@ macros, "a registers, and . (core's) to repeat the last change.
 
 local kern = require("@kern")
 local core = require("@core")
@@ -31,9 +30,6 @@ type Motion = (buffer: Buffer, pos: number, count: number) -> (number?, Kind)
 local register = { text = "", linewise = false }
 -- What "a y and the like put in named registers.
 local named: { [string]: { text: string, linewise: boolean } } = {}
-
--- Repeats the last change for ".", with the count given to it.
-local last_change: ((ctx: kern.Context, count: number?) -> ())? = nil
 
 -- Text helpers -----------------------------------------------------------
 
@@ -138,17 +134,31 @@ local function repeat_step(step: (Buffer, number) -> number?): Motion
 	end
 end
 
+-- Vim's w: past the rest of the word (or run of punctuation), then past
+-- blanks and line breaks. An empty line counts as a word, so it stops there.
 local function next_word_start(buffer: Buffer, pos: number): number?
 	local len = buffer:len()
 	if pos >= len then
 		return nil
 	end
 	local from = class(buffer:char_at(pos))
-	while pos < len and class(buffer:char_at(pos)) == from and from ~= "space" and from ~= "eol" do
-		pos = buffer:next_char(pos)
+	if from == "word" or from == "punct" then
+		while pos < len and class(buffer:char_at(pos)) == from do
+			pos = buffer:next_char(pos)
+		end
 	end
-	while pos < len and is_blank(buffer, pos) do
-		pos = buffer:next_char(pos)
+	while pos < len do
+		local of = class(buffer:char_at(pos))
+		if of == "eol" then
+			pos = buffer:next_char(pos)
+			if pos < len and class(buffer:char_at(pos)) == "eol" then
+				return pos
+			end
+		elseif of == "space" then
+			pos = buffer:next_char(pos)
+		else
+			break
+		end
 	end
 	return pos
 end
@@ -355,6 +365,44 @@ local function paragraph_object(buffer: Buffer, pos: number, around: boolean): (
 	return buffer:line_start(first), buffer:line_start(last)
 end
 
+-- The innermost XML or HTML element around `pos`: inside it (between the
+-- tags) or around it (the tags too), or nil.
+local function tag_object(buffer: Buffer, pos: number, around: boolean): (number?, number?, boolean)
+	local tags = buffer:find_all("</?[A-Za-z][\\w:.-]*[^<>]*>") or {}
+	local open: { { name: string, from: number, to: number } } = {}
+	local best: { number }? = nil
+	for _, tag in tags do
+		local source = buffer:slice(tag.from, tag.to)
+		local closing, name = string.match(source, "^<(/?)([%w:%.%-_]+)")
+		if string.sub(source, -2) == "/>" or name == nil then
+			continue
+		elseif closing == "" then
+			table.insert(open, { name = name, from = tag.from, to = tag.to })
+			continue
+		end
+		-- A closing tag ends the latest open one of its name.
+		for i = #open, 1, -1 do
+			if open[i].name == name then
+				local first = open[i]
+				for _ = i, #open do
+					table.remove(open)
+				end
+				if first.from <= pos and pos < tag.to and (best == nil or first.from > best[1]) then
+					best = { first.from, first.to, tag.from, tag.to }
+				end
+				break
+			end
+		end
+	end
+	if best == nil then
+		return nil, nil, false
+	end
+	if around then
+		return best[1], best[4], false
+	end
+	return best[2], best[3], false
+end
+
 local BRACKETS = { b = "(", B = "{" }
 
 -- Objects from the syntax tree: functions, arguments and comments (`t` is
@@ -383,14 +431,29 @@ local function text_object(
 		end
 		return range.anchor, range.head, false
 	end
+	if key == "t" then
+		return tag_object(buffer, pos, around)
+	end
 	local open, close = core.objects.around(buffer, pos, BRACKETS[key] or key)
+	if open == nil and (key == '"' or key == "'" or key == "`") then
+		-- Before the quotes on a line, Vim takes the next pair on it.
+		local _, _, finish = line_bounds(buffer, pos)
+		local at = pos
+		while at < finish and buffer:char_at(at) ~= key do
+			at = buffer:next_char(at)
+		end
+		if at < finish then
+			open, close = core.objects.around(buffer, at, key)
+		end
+	end
 	if open == nil or close == nil then
 		return nil, nil, false
 	end
+	local first, last = open :: number, close :: number
 	if around then
-		return open, buffer:next_char(close), false
+		return first, buffer:next_char(last), false
 	end
-	return buffer:next_char(open), close, false
+	return buffer:next_char(first), last, false
 end
 
 -- Operators ---------------------------------------------------------------
@@ -443,13 +506,21 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 	end
 	local taken = { text = buffer:slice(from, to), linewise = linewise }
 	-- Into the register picked with ", or the unnamed one and the clipboard.
+	-- "_ keeps nothing, and an uppercase letter adds to its lowercase one.
 	local name = core.registers.take()
-	if name then
-		named[name] = taken
-		core.registers.set(name, { taken.text })
-	else
+	if name and string.match(name, "^%u$") then
+		name = string.lower(name)
+		local before = named[name]
+		if before then
+			taken = { text = before.text .. taken.text, linewise = before.linewise or linewise }
+		end
+	end
+	if name == nil or name == "+" or name == "*" then
 		register = taken
 		kern.clipboard.set(taken.text)
+	elseif name ~= "_" then
+		named[name] = taken
+		core.registers.set(name, { taken.text })
 	end
 	if op == "y" then
 		-- Whole lines at the end start with the line break before them.
@@ -525,10 +596,6 @@ local function operate(ctx: kern.Context, op: string)
 		if key == "g" then
 			key = "g " .. kern.next_key()
 		end
-		-- "cw" changes to the end of the word, as in Vim.
-		if op == "c" and key == "w" and class(buffer:char_at(pos)) ~= "space" then
-			key = "e"
-		end
 		local motion = motions[key]
 		if motion == nil then
 			return
@@ -541,15 +608,28 @@ local function operate(ctx: kern.Context, op: string)
 		if target == nil then
 			return
 		end
+		local of = class(buffer:char_at(pos))
+		if key == "w" and op == "c" and (of == "word" or of == "punct") then
+			-- "cw" changes to the end of the word, even from its last character.
+			target, kind = pos, "inclusive"
+			while class(buffer:char_at(buffer:next_char(target))) == of do
+				target = buffer:next_char(target)
+			end
+			for _ = 2, count do
+				target = word_end(buffer, target) or target
+			end
+		elseif key == "w" then
+			-- When the last word moved over ends a line, the operator stops at
+			-- the line's end rather than taking the line break too.
+			local before = if count > 1 then motion(buffer, pos, count - 1) or pos else pos
+			local line = buffer:line_of(before)
+			if buffer:line_of(target) > line then
+				target = buffer:line_end(line)
+			end
+		end
 		from, to, linewise = motion_range(buffer, pos, target, kind)
 	end
 	apply(ctx, op, from, to, linewise)
-	if op == "d" then
-		last_change = function(c)
-			local at = cursor(c)
-			apply(c, "d", at, math.min(at + to - from, c.buffer:len()), linewise)
-		end
-	end
 end
 
 -- Commands ----------------------------------------------------------------
@@ -621,15 +701,6 @@ local function shorthand(name: string, op: string, key: string, doc: string)
 			return
 		end
 		apply(ctx, op, motion_range(buffer, pos, target :: number, kind))
-		if op == "d" then
-			last_change = function(c: kern.Context, count: number?)
-				local at = cursor(c)
-				local target, kind = motions[key](c.buffer, at, count or ctx.count or 1)
-				if target then
-					apply(c, "d", motion_range(c.buffer, at, target, kind))
-				end
-			end
-		end
 	end)
 end
 shorthand("delete-char", "d", "l", "Delete the character under the cursor")
@@ -649,10 +720,24 @@ command("change-line", "Change the whole line", function(ctx)
 	enter_insert(ctx, from)
 end)
 
+-- What the unnamed register holds: the last yank or delete, unless
+-- something newer was copied since, in another program or another style.
+local function unnamed(): { text: string, linewise: boolean }
+	local pieces = kern.clipboard.get()
+	local text = if pieces then table.concat(pieces, "\n") else nil
+	if text and text ~= register.text then
+		return { text = text, linewise = string.sub(text, -1) == "\n" }
+	end
+	return register
+end
+
 local function paste(ctx: kern.Context, after: boolean)
 	local name = core.registers.take()
-	local from = register
-	if name then
+	local from = unnamed()
+	if name == "_" then
+		return
+	elseif name and name ~= "+" and name ~= "*" then
+		name = string.lower(name)
 		-- Text another style copied into it has no line information.
 		local pieces = core.registers.get(name)
 		from = named[name]
@@ -836,17 +921,20 @@ command(
 	function(ctx)
 		local buffer, pos = ctx.buffer, cursor(ctx)
 		local _, _, finish = line_bounds(buffer, pos)
+		local stop = pos
 		for _ = 1, ctx.count or 1 do
-			if pos >= finish then
-				break
+			if stop < finish then
+				stop = buffer:next_char(stop)
 			end
-			local ch = buffer:char_at(pos) :: string
-			local swapped = if string.match(ch, "%l") then string.upper(ch) else string.lower(ch)
-			buffer:edit(function(e)
-				e:replace(pos, buffer:next_char(pos), swapped)
-			end)
-			pos = buffer:next_char(pos)
 		end
+		-- One edit, so it undoes in one step.
+		local swapped = string.gsub(buffer:slice(pos, stop), "%a", function(c)
+			return if string.match(c, "%l") then string.upper(c) else string.lower(c)
+		end)
+		buffer:edit(function(e)
+			e:replace(pos, stop, swapped)
+		end)
+		pos = stop
 		ctx.view:set_selection(point(on_char(buffer, pos)))
 	end
 )
@@ -855,6 +943,8 @@ command("join", "Join the next line onto this one, with one space", function(ctx
 	local buffer = ctx.buffer
 	local at = cursor(ctx)
 	local line = buffer:line_of(at)
+	-- One undo step however many lines it joins.
+	kern.history.start_group()
 	for _ = 1, math.max((ctx.count or 2) - 1, 1) do
 		if line + 1 >= buffer:line_count() then
 			break
@@ -868,6 +958,7 @@ command("join", "Join the next line onto this one, with one space", function(ctx
 		end)
 		at = stop
 	end
+	kern.history.end_group()
 	ctx.view:set_selection(point(at))
 end)
 
@@ -899,15 +990,19 @@ command("redo", "Redo", function(ctx)
 	end
 end)
 
-command("repeat", "Repeat the last change", function(ctx)
-	local change = last_change
-	if change then
-		change(ctx, ctx.count)
-	end
-end)
+-- `.` is core's, which types the last change's keys again.
+core.again.ignore({ "vim-undo", "vim-redo", "vim-macro", "vim-play-macro" })
+core.search.at_start.vim = true
+for _, name in
+	{ "vim-motion-G", "vim-motion-gg", "vim-motion-%", "vim-search-word", "vim-search-word-back" }
+do
+	core.jumps.add(name)
+end
 
 -- Keys --------------------------------------------------------------------
 
+-- Panels like the file tree and help keep their keys.
+kern.keymap.inherit_kinds("vim", "normal")
 -- Keys other plugins put in normal mode that work the same here: the
 -- space-leader keys, the command line, search, and going to definitions,
 -- references and problems. Plugins loaded later get them too.
@@ -975,7 +1070,7 @@ local keys: { [string]: string } = {
 	['"'] = "select-register",
 	u = "vim-undo",
 	["ctrl-r"] = "vim-redo",
-	["."] = "vim-repeat",
+	["."] = "repeat-change",
 	enter = "press-button",
 }
 local visual: { [string]: string } = {

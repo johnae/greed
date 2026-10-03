@@ -108,6 +108,10 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
     }
     let event = lua.create_table()?;
     event.set("name", name)?;
+    if !keys.is_empty() {
+        event.set("keys", keys_text(keys))?;
+    }
+    event.set("count", count)?;
     emit(lua, "command.run", &event)?;
     tasks::spawn(lua, handler, ctx, owner, Some(name.into()))?;
     Ok(())
@@ -116,10 +120,17 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
 /// A key typed by the user: kept if keys are being recorded, then fed
 /// through the keymap.
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
-    if let Some(keys) = &mut state_mut(lua).recording {
-        keys.push(key);
+    for recording in state_mut(lua).recording.values_mut() {
+        recording.keys.push(key);
     }
     press_key(lua, key)
+}
+
+/// The keys a `kern.keys.record` keeps.
+pub(crate) struct Recording {
+    keys: Vec<Key>,
+    /// Whether it keeps keys fed by `kern.keys.feed` too, like a macro's.
+    fed: bool,
 }
 
 /// Feeds one key press through the keymap, running whatever it resolves
@@ -395,6 +406,18 @@ fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult
                 .editor
                 .keymap_mut()
                 .enable_counts(&mode, o.clone());
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
+        "inherit_kinds",
+        lua.create_function(move |lua, (mode, parent): (String, String)| {
+            state_mut(lua)
+                .editor
+                .keymap_mut()
+                .inherit_kinds(&mode, &parent, o.clone());
             Ok(())
         })?,
     )?;
@@ -1231,28 +1254,45 @@ fn keys_module(lua: &Lua) -> LuaResult<Table> {
     let keys = lua.create_table()?;
     keys.set(
         "record",
-        lua.create_function(|lua, ()| {
-            state_mut(lua).recording = Some(Vec::new());
+        lua.create_function(|lua, (name, opts): (Option<String>, Option<Table>)| {
+            let fed = match opts {
+                Some(opts) => opts.get::<Option<bool>>("fed")?.unwrap_or(false),
+                None => false,
+            };
+            state_mut(lua).recording.insert(
+                name.unwrap_or_default(),
+                Recording {
+                    keys: Vec::new(),
+                    fed,
+                },
+            );
             Ok(())
         })?,
     )?;
     keys.set(
         "stop",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, name: Option<String>| {
             Ok(state_mut(lua)
                 .recording
-                .take()
-                .map(|keys| keys.iter().map(ToString::to_string).collect::<Vec<_>>()))
+                .remove(&name.unwrap_or_default())
+                .map(|r| r.keys.iter().map(ToString::to_string).collect::<Vec<_>>()))
         })?,
     )?;
     keys.set(
         "recording",
-        lua.create_function(|lua, ()| Ok(state(lua).recording.is_some()))?,
+        lua.create_function(|lua, name: Option<String>| {
+            Ok(state(lua).recording.contains_key(&name.unwrap_or_default()))
+        })?,
     )?;
     keys.set(
         "feed",
         lua.create_function(|lua, sequence: String| {
             for key in Key::parse_sequence(&sequence).map_err(mlua::Error::external)? {
+                for recording in state_mut(lua).recording.values_mut() {
+                    if recording.fed {
+                        recording.keys.push(key);
+                    }
+                }
                 press_key(lua, key).map_err(into_lua)?;
             }
             Ok(())

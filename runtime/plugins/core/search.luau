@@ -47,12 +47,24 @@ local function next_match(
 	return from, to
 end
 
+-- Modes where a search puts the cursor at the start of the match rather
+-- than selecting it, like Vim's normal mode.
+local at_start: { [string]: boolean } = {}
+
 -- Selects the match of `pattern` after `range` (or before it, going back),
--- round the ends. Returns whether there was one.
-local function jump(view: kern.View, pattern: string, range: kern.Range, back: boolean): boolean
+-- round the ends, or puts the cursor at its start in a mode in `at_start`.
+-- Returns whether there was one.
+local function jump(
+	view: kern.View,
+	pattern: string,
+	range: kern.Range,
+	back: boolean,
+	mode: string
+): boolean
 	local from, to = next_match(view:buffer(), pattern, range, back)
 	if from and to then
-		view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+		local head = if at_start[mode] then from else to
+		view:set_selection({ ranges = { { anchor = from, head = head } }, primary = 1 })
 		return true
 	end
 	return false
@@ -74,13 +86,14 @@ local function search(ctx: kern.Context, back: boolean)
 	local view, buffer = ctx.view, ctx.buffer
 	local origin = view:selection()
 	local start = primary(view)
+	local mode = kern.mode.get()
 	prompt.open({
 		title = if back then "search back" else "search",
 		on_change = function(pattern)
 			highlight(buffer, pattern)
 			view:set_selection(origin)
 			if pattern ~= "" then
-				jump(view, pattern, start, back)
+				jump(view, pattern, start, back, mode)
 			end
 		end,
 		on_submit = function(pattern)
@@ -146,7 +159,7 @@ local function again(ctx: kern.Context, reverse: boolean)
 		kern.echo("nothing searched for yet")
 		return
 	end
-	if not jump(ctx.view, last, primary(ctx.view), backward ~= reverse) then
+	if not jump(ctx.view, last, primary(ctx.view), backward ~= reverse, kern.mode.get()) then
 		kern.echo(`no match for {last}`)
 	end
 end
@@ -249,6 +262,9 @@ kern.command({
 
 return {
 	smart_case = smart_case,
+	--- Modes where a search puts the cursor at the match's start instead of
+	--- selecting it: `core.search.at_start.vim = true`.
+	at_start = at_start,
 	--- The last pattern searched for, if any.
 	last = function(): string?
 		return last

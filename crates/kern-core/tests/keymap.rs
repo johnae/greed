@@ -414,3 +414,27 @@ fn a_mode_can_fall_back_to_another_under_some_prefixes() {
     assert_eq!(command(&km, "vim", "space f"), None, "gone with its owner");
     assert_eq!(command(&km, "all", "w").as_deref(), Some("next-word"));
 }
+
+#[test]
+fn a_mode_can_use_another_modes_keys_for_buffer_kinds_first() {
+    let mut km = Keymap::default();
+    km.bind(
+        Layer::mode_kind("normal", "tree"),
+        &keys("q"),
+        "tree-close",
+        "tree",
+    )
+    .unwrap();
+    km.bind(Layer::mode("vim"), &keys("q"), "vim-macro", "vim")
+        .unwrap();
+    km.inherit_kinds("vim", "normal", "vim");
+
+    let resolve = |km: &Keymap, kind: &str| match km.resolve("vim", kind, &keys("q")) {
+        Resolution::Command(command) => Some(command.to_string()),
+        _ => None,
+    };
+    assert_eq!(resolve(&km, "tree").as_deref(), Some("tree-close"));
+    assert_eq!(resolve(&km, "file").as_deref(), Some("vim-macro"));
+    km.remove_owned_by("vim");
+    assert_eq!(resolve(&km, "tree"), None, "gone with its owner");
+}

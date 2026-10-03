@@ -314,6 +314,8 @@ export type Keymap = {
 	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
 	--- them. Keys bound in `mode` itself come first.
 	inherit: (mode: string, parent: string, prefixes: { string }?) -> (),
+	--- Makes `mode` use `parent`'s keys for each buffer kind (the file tree, a help page) ahead of its own, so panels keep their keys in another style.
+	inherit_kinds: (mode: string, parent: string) -> (),
 	--- The command that handles a single unbound key in `mode`.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
@@ -345,16 +347,17 @@ export type Options = {
 	list: () -> { { name: string, doc: string, value: OptionValue } },
 }
 
---- Recording what's typed and feeding keys back, for macros.
+--- Recording what's typed and feeding keys back, for macros and repeating
+--- changes. Recordings have names (macros use the default, ""), so several
+--- can run at once.
 export type Keys = {
-	--- Starts keeping every key typed, until `stop`.
-	record: () -> (),
-	--- Stops recording and returns the keys typed, e.g. `{ "i", "x", "esc" }`,
-	--- or nil if nothing was recording.
-	stop: () -> { string }?,
-	recording: () -> boolean,
+	--- Starts keeping every key typed in the recording `name`, until `stop`; with `fed`, keys `feed` presses too.
+	record: (name: string?, opts: { fed: boolean? }?) -> (),
+	--- Stops the recording `name` and returns the keys typed, e.g. `{ "i", "x", "esc" }`, or nil if it wasn't recording.
+	stop: (name: string?) -> { string }?,
+	recording: (name: string?) -> boolean,
 	--- Presses the keys of a space-separated sequence as if they were
-	--- typed, without recording them.
+	--- typed. Only recordings started with `fed` keep them.
 	feed: (keys: string) -> (),
 }
 
@@ -818,6 +821,10 @@ export type PluginUnloaded = {
 export type CommandRun = {
 	--- The command about to run.
 	name: string,
+	--- The keys that ran it, when keys did, e.g. "g g".
+	keys: string?,
+	--- The number typed before the keys.
+	count: number?,
 }
 
 export type KeysPending = {

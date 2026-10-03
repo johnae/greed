@@ -188,6 +188,8 @@ kern.keymap.bind("edit", {
 
 kern.keymap.fallback("edit", "type-char")
 kern.mode.cursor("edit", "bar")
+-- Panels like the file tree and help keep their keys.
+kern.keymap.inherit_kinds("edit", "normal")
 
 require("@core").style.define({
 	name = "edit",

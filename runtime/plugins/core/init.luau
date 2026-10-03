@@ -31,6 +31,7 @@ local indent = require("@self/indent")
 local folds = require("@self/folds")
 local config = require("@self/config")
 local effects = require("@self/effects")
+local again = require("@self/again")
 
 kern.keymap.bind("normal", {
 	enter = "press-button",
@@ -91,6 +92,7 @@ kern.keymap.bind("normal", {
 	["z z"] = "center-view",
 	x = "select-line",
 	[";"] = "collapse",
+	["."] = "repeat-change",
 	["alt-;"] = "flip",
 	i = "insert-mode",
 	a = "append-mode",
@@ -164,6 +166,7 @@ return {
 	folds = folds,
 	config = config,
 	effects = effects,
+	again = again,
 	comment = comment,
 	jumps = jumps,
 	objects = objects,

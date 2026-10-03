@@ -359,6 +359,9 @@ pub struct Keymap {
     isolated: HashMap<Arc<str>, Vec<PluginId>>,
     /// Per mode, the modes it falls back to, in the order they were added.
     inherits: HashMap<Arc<str>, Vec<Inherit>>,
+    /// Per mode, the modes whose buffer-kind layers it uses ahead of its
+    /// own mode layer, and the plugins that asked.
+    kind_parents: HashMap<Arc<str>, Vec<(Arc<str>, PluginId)>>,
 }
 
 impl Keymap {
@@ -447,13 +450,24 @@ impl Keymap {
         });
     }
 
+    /// Makes `mode` use `parent`'s bindings for each buffer kind ahead of its
+    /// own for every buffer, so keys a plugin binds for a panel in one mode
+    /// work in another style's mode too, until `owner` is removed.
+    pub fn inherit_kinds(&mut self, mode: &str, parent: &str, owner: impl Into<PluginId>) {
+        self.kind_parents
+            .entry(mode.into())
+            .or_default()
+            .push((parent.into(), owner.into()));
+    }
+
     /// The layers that apply in `mode` for a buffer of `kind`, most specific
     /// first, each with the inheritance that brought it in, if any.
     fn lookup_order(&self, mode: &str, kind: &str) -> Vec<(Layer, Option<&Inherit>)> {
-        let mut order = vec![
-            (Layer::mode_kind(mode, kind), None),
-            (Layer::mode(mode), None),
-        ];
+        let mut order = vec![(Layer::mode_kind(mode, kind), None)];
+        for (parent, _) in self.kind_parents.get(mode).into_iter().flatten() {
+            order.push((Layer::mode_kind(parent, kind), None));
+        }
+        order.push((Layer::mode(mode), None));
         if self.isolated.contains_key(mode) {
             return order;
         }
@@ -632,6 +646,10 @@ impl Keymap {
             inherits.retain(|i| &*i.owner != owner);
         }
         self.inherits.retain(|_, inherits| !inherits.is_empty());
+        for parents in self.kind_parents.values_mut() {
+            parents.retain(|(_, o)| &**o != owner);
+        }
+        self.kind_parents.retain(|_, parents| !parents.is_empty());
     }
 
     fn lookup(&self, layer: &Layer, keys: &[Key]) -> Option<&Node> {

@@ -183,6 +183,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
 | `Q` `q` | Start or stop recording a macro, play it (`3 q` three times) |
 | `u` `U` | Undo, redo |
+| `.` | Repeat the last change at the selections, with what it typed (`3 .` with a new count) |
 | `esc` | Back to normal mode |
 
 A number before a motion repeats it: `3 j`, `2 w`. It also counts for `x`
