@@ -59,8 +59,9 @@ character, and `v` starts a visual mode for selecting by hand.
 
 | Keys | |
 |---|---|
-| `h j k l` `w b e` `0 ^ $` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket |
-| `f t F T` + a character | To the next or previous character on the line |
+| `h j k l` `w b e` `W B E` `g e` `0 ^ $` `g _` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket, `50 %` halfway down |
+| `{ }` `( )` `H M L` `- + _` `\|` | Paragraphs, sentences, the top, middle or bottom of the screen, lines, a column |
+| `f t F T` + a character, `; ,` | To the next or previous character on the line; again, or back |
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
 | `i w` `a w` `i W` `i (` `a "` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs, tags |
 | `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |

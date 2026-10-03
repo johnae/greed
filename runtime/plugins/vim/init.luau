@@ -8,7 +8,8 @@
 --
 --     require("@kern").option.set("editing-style", "vim")
 --
--- What's here: counts, h j k l w b e 0 ^ $ gg G f t F T %, the operators
+-- What's here: counts, h j k l w b e W B E ge gE 0 ^ $ g_ gg G f t F T ; , % { } ( )
+-- H M L - + _ |, the operators
 -- d c y > < gc with any of those motions or a text object (iw aW i( a"
 -- ip it, and from the syntax tree if af ia ic) and doubled for whole lines
 -- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V, * #,
@@ -139,10 +140,11 @@ end
 
 -- Motions -----------------------------------------------------------------
 
-local function repeat_step(step: (Buffer, number) -> number?): Motion
+-- `step` done `count` times, for WORDs with `big`.
+local function repeat_step(step: (Buffer, number, boolean?) -> number?, big: boolean?): Motion
 	return function(buffer, pos, count)
 		for _ = 1, count do
-			local next = step(buffer, pos)
+			local next = step(buffer, pos, big)
 			if next == nil then
 				break
 			end
@@ -152,16 +154,24 @@ local function repeat_step(step: (Buffer, number) -> number?): Motion
 	end
 end
 
--- Vim's w: past the rest of the word (or run of punctuation), then past
--- blanks and line breaks. An empty line counts as a word, so it stops there.
-local function next_word_start(buffer: Buffer, pos: number): number?
+-- A character's class for word motions; for WORDs (`big`), punctuation
+-- counts as part of a word.
+local function word_class(ch: string?, big: boolean?): string
+	local of = class(ch)
+	return if big and of == "punct" then "word" else of
+end
+
+-- Vim's w (W with `big`): past the rest of the word (or run of
+-- punctuation), then past blanks and line breaks. An empty line counts as
+-- a word, so it stops there.
+local function next_word_start(buffer: Buffer, pos: number, big: boolean?): number?
 	local len = buffer:len()
 	if pos >= len then
 		return nil
 	end
-	local from = class(buffer:char_at(pos))
+	local from = word_class(buffer:char_at(pos), big)
 	if from == "word" or from == "punct" then
-		while pos < len and class(buffer:char_at(pos)) == from do
+		while pos < len and word_class(buffer:char_at(pos), big) == from do
 			pos = buffer:next_char(pos)
 		end
 	end
@@ -181,7 +191,8 @@ local function next_word_start(buffer: Buffer, pos: number): number?
 	return pos
 end
 
-local function prev_word_start(buffer: Buffer, pos: number): number?
+-- Vim's b (B with `big`): back to the start of this word or the one before.
+local function prev_word_start(buffer: Buffer, pos: number, big: boolean?): number?
 	if pos == 0 then
 		return nil
 	end
@@ -189,14 +200,15 @@ local function prev_word_start(buffer: Buffer, pos: number): number?
 	while pos > 0 and is_blank(buffer, pos) do
 		pos = buffer:prev_char(pos)
 	end
-	local of = class(buffer:char_at(pos))
-	while pos > 0 and class(buffer:char_at(buffer:prev_char(pos))) == of do
+	local of = word_class(buffer:char_at(pos), big)
+	while pos > 0 and word_class(buffer:char_at(buffer:prev_char(pos)), big) == of do
 		pos = buffer:prev_char(pos)
 	end
 	return pos
 end
 
-local function word_end(buffer: Buffer, pos: number): number?
+-- Vim's e (E with `big`): on to the end of this word or the next.
+local function word_end(buffer: Buffer, pos: number, big: boolean?): number?
 	local len = buffer:len()
 	local next = buffer:next_char(pos)
 	if next >= len then
@@ -206,34 +218,167 @@ local function word_end(buffer: Buffer, pos: number): number?
 	while pos < len and is_blank(buffer, pos) do
 		pos = buffer:next_char(pos)
 	end
-	local of = class(buffer:char_at(pos))
-	while buffer:next_char(pos) < len and class(buffer:char_at(buffer:next_char(pos))) == of do
+	local of = word_class(buffer:char_at(pos), big)
+	while
+		buffer:next_char(pos) < len
+		and word_class(buffer:char_at(buffer:next_char(pos)), big) == of
+	do
 		pos = buffer:next_char(pos)
 	end
 	return pos
 end
 
--- Finds `count`-th `char` on the line: forward or back, landing on it or
--- (`before`) next to it.
+-- Vim's ge (gE with `big`): back to the end of the word before.
+local function prev_word_end(buffer: Buffer, pos: number, big: boolean?): number?
+	if pos == 0 then
+		return nil
+	end
+	local of = word_class(buffer:char_at(pos), big)
+	-- Out of this word, then over blanks, to the last character of the one before.
+	while
+		pos > 0
+		and word_class(buffer:char_at(pos), big) == of
+		and of ~= "space"
+		and of ~= "eol"
+	do
+		pos = buffer:prev_char(pos)
+	end
+	while pos > 0 and is_blank(buffer, pos) do
+		pos = buffer:prev_char(pos)
+	end
+	return pos
+end
+
+-- The last f, t, F or T, for ; and , to do again.
+local last_find: { forward: boolean, before: boolean, char: string }? = nil
+
+-- Finds the `count`-th `char` on the line: forward or back, landing on it
+-- or (`before`) next to it. Done again (`again`), t starts a character
+-- further on, so ; moves on past a character it's already next to.
+local function find_on_line(
+	buffer: Buffer,
+	pos: number,
+	count: number,
+	find: { forward: boolean, before: boolean, char: string },
+	again: boolean?
+): (number?, Kind)
+	local forward, before = find.forward, find.before
+	local _, start, finish = line_bounds(buffer, pos)
+	local at = pos
+	if again and before then
+		at = if forward then buffer:next_char(at) elseif at > start then buffer:prev_char(at) else at
+	end
+	for _ = 1, count do
+		repeat
+			at = if forward
+				then buffer:next_char(at)
+				else (if at > start then buffer:prev_char(at) else -1)
+		until at < 0 or at >= finish or buffer:char_at(at) == find.char
+		if at < 0 or at >= finish then
+			return nil, "inclusive"
+		end
+	end
+	if before then
+		at = if forward then buffer:prev_char(at) else buffer:next_char(at)
+	end
+	return at, if forward then "inclusive" else "exclusive"
+end
+
+-- f, t, F and T: the character to find comes next.
 local function find_char(forward: boolean, before: boolean): Motion
 	return function(buffer, pos, count)
-		local char = kern.next_key()
-		local _, start, finish = line_bounds(buffer, pos)
-		local at = pos
+		local find = { forward = forward, before = before, char = kern.next_key() }
+		last_find = find
+		return find_on_line(buffer, pos, count, find)
+	end
+end
+
+-- ; and ,: the last f, t, F or T again, the same way or (`reverse`) back.
+local function find_again(reverse: boolean): Motion
+	return function(buffer, pos, count)
+		local last = last_find
+		if last == nil then
+			return nil, "exclusive"
+		end
+		local find = { forward = last.forward ~= reverse, before = last.before, char = last.char }
+		return find_on_line(buffer, pos, count, find, true)
+	end
+end
+
+-- A linewise motion to the first non-blank of the line `delta(count)` lines away.
+local function to_line(delta: (count: number) -> number): Motion
+	return function(buffer, pos, count)
+		local line = math.clamp(buffer:line_of(pos) + delta(count), 0, buffer:line_count() - 1)
+		return first_non_blank(buffer, line), "line"
+	end
+end
+
+-- { and }: the blank line before or after the paragraph, `count` times.
+local function paragraph(forward: boolean): Motion
+	return function(buffer, pos, count)
+		local function blank(line: number): boolean
+			return buffer:line_end(line) == buffer:line_start(line)
+		end
+		local last = buffer:line_count() - 1
+		local line = buffer:line_of(pos)
 		for _ = 1, count do
+			local step = if forward then 1 else -1
+			-- Past blank lines first, then to the next blank one.
+			while line + step >= 0 and line + step <= last and blank(line + step) do
+				line += step
+			end
 			repeat
-				at = if forward
-					then buffer:next_char(at)
-					else (if at > start then buffer:prev_char(at) else -1)
-			until at < 0 or at >= finish or buffer:char_at(at) == char
-			if at < 0 or at >= finish then
-				return nil, "inclusive"
+				line += step
+			until line <= 0 or line >= last or blank(line)
+			line = math.clamp(line, 0, last)
+		end
+		if forward and line == last and not blank(line) then
+			return buffer:line_end(line), "exclusive"
+		end
+		return buffer:line_start(line), "exclusive"
+	end
+end
+
+-- ( and ): the start of the sentence before, or after, `count` times.
+local function sentence(forward: boolean): Motion
+	return function(buffer, pos, count)
+		for _ = 1, count do
+			local from, to = buffer:sentence(pos)
+			if forward then
+				-- Past this sentence's end and the spaces after it.
+				local at = to
+				while at < buffer:len() and is_blank(buffer, at) do
+					at = buffer:next_char(at)
+				end
+				if at == pos then
+					return pos, "exclusive"
+				end
+				pos = at
+			elseif from < pos then
+				pos = from
+			elseif pos > 0 then
+				local before = buffer:prev_char(pos)
+				while before > 0 and is_blank(buffer, before) do
+					before = buffer:prev_char(before)
+				end
+				pos = (buffer:sentence(before))
 			end
 		end
-		if before then
-			at = if forward then buffer:prev_char(at) else buffer:next_char(at)
-		end
-		return at, if forward then "inclusive" else "exclusive"
+		return pos, "exclusive"
+	end
+end
+
+-- H, M and L: a line on the screen, the `count`-th from the top or bottom
+-- for H and L.
+local function screen_line(where: "top" | "middle" | "bottom"): Motion
+	return function(buffer, _, count)
+		local first, last = kern.view():visible()
+		local top, bottom = buffer:line_of(first), buffer:line_of(math.max(first, last - 1))
+		local line = if where == "top"
+			then math.min(top + count - 1, bottom)
+			elseif where == "bottom" then math.max(bottom - count + 1, top)
+			else (top + bottom) // 2
+		return first_non_blank(buffer, line), "line"
 	end
 end
 
@@ -270,6 +415,46 @@ local motions: { [string]: Motion } = {
 		local target = repeat_step(word_end)(buffer, pos, count)
 		return target, "inclusive"
 	end,
+	W = repeat_step(next_word_start, true),
+	B = repeat_step(prev_word_start, true),
+	E = function(buffer, pos, count)
+		return (repeat_step(word_end, true)(buffer, pos, count)), "inclusive"
+	end,
+	["g e"] = function(buffer, pos, count)
+		return (repeat_step(prev_word_end)(buffer, pos, count)), "inclusive"
+	end,
+	["g E"] = function(buffer, pos, count)
+		return (repeat_step(prev_word_end, true)(buffer, pos, count)), "inclusive"
+	end,
+	[";"] = find_again(false),
+	[","] = find_again(true),
+	["}"] = paragraph(true),
+	["{"] = paragraph(false),
+	[")"] = sentence(true),
+	["("] = sentence(false),
+	H = screen_line("top"),
+	M = screen_line("middle"),
+	L = screen_line("bottom"),
+	["-"] = to_line(function(count)
+		return -count
+	end),
+	["+"] = to_line(function(count)
+		return count
+	end),
+	["_"] = to_line(function(count)
+		return count - 1
+	end),
+	["|"] = function(buffer, pos, count)
+		return at_column(buffer, buffer:line_of(pos), count - 1), "exclusive"
+	end,
+	["g _"] = function(buffer, pos, count)
+		local line = math.min(buffer:line_of(pos) + count - 1, buffer:line_count() - 1)
+		local at, start = buffer:line_end(line), buffer:line_start(line)
+		while at > start and is_blank(buffer, buffer:prev_char(at)) do
+			at = buffer:prev_char(at)
+		end
+		return if at > start then buffer:prev_char(at) else start, "inclusive"
+	end,
 	["0"] = function(buffer, pos)
 		local _, start = line_bounds(buffer, pos)
 		return start, "exclusive"
@@ -277,8 +462,10 @@ local motions: { [string]: Motion } = {
 	["^"] = function(buffer, pos)
 		return first_non_blank(buffer, buffer:line_of(pos)), "exclusive"
 	end,
-	["$"] = function(buffer, pos)
-		local _, start, finish = line_bounds(buffer, pos)
+	["$"] = function(buffer, pos, count)
+		-- With a count, the end of the line count - 1 lines down.
+		local line = math.min(buffer:line_of(pos) + count - 1, buffer:line_count() - 1)
+		local start, finish = buffer:line_start(line), buffer:line_end(line)
 		return if finish > start then buffer:prev_char(finish) else start, "inclusive"
 	end,
 	f = find_char(true, false),
@@ -297,9 +484,20 @@ local function goto_line(first: boolean): Motion
 end
 motions.G = goto_line(false)
 motions["g g"] = goto_line(true)
-motions["%"] = function(buffer: Buffer, pos: number, _: number): (number?, Kind)
+-- % goes to the matching bracket, or with a count, that percentage of the way
+-- down the file.
+motions["%"] = function(buffer: Buffer, pos: number, count: number): (number?, Kind)
+	if count > 0 then
+		local line =
+			math.clamp((count * buffer:line_count() + 99) // 100 - 1, 0, buffer:line_count() - 1)
+		return first_non_blank(buffer, line), "line"
+	end
 	return core.text.matching_bracket(buffer, pos), "inclusive"
 end
+
+-- Motions whose count, left out, is 0 rather than 1: G and % act
+-- differently without one.
+local COUNTLESS: { [string]: boolean } = { G = true, ["%"] = true }
 
 -- Ranges ------------------------------------------------------------------
 
@@ -584,22 +782,23 @@ local function operate(ctx: kern.Context, op: string)
 		local target, kind = motion(
 			buffer,
 			pos,
-			if inner_count or ctx.count then count else (if key == "G" then 0 else 1)
+			if inner_count or ctx.count then count else (if COUNTLESS[key] then 0 else 1)
 		)
 		if target == nil then
 			return
 		end
-		local of = class(buffer:char_at(pos))
-		if key == "w" and op == "c" and (of == "word" or of == "punct") then
+		local big = key == "W"
+		local of = word_class(buffer:char_at(pos), big)
+		if (key == "w" or big) and op == "c" and (of == "word" or of == "punct") then
 			-- "cw" changes to the end of the word, even from its last character.
 			target, kind = pos, "inclusive"
-			while class(buffer:char_at(buffer:next_char(target))) == of do
+			while word_class(buffer:char_at(buffer:next_char(target)), big) == of do
 				target = buffer:next_char(target)
 			end
 			for _ = 2, count do
-				target = word_end(buffer, target) or target
+				target = word_end(buffer, target, big) or target
 			end
-		elseif key == "w" then
+		elseif key == "w" or big then
 			-- When the last word moved over ends a line, the operator stops at
 			-- the line's end rather than taking the line break too.
 			local before = if count > 1 then motion(buffer, pos, count - 1) or pos else pos
@@ -635,7 +834,8 @@ for key, motion in motions do
 	command("motion-" .. string.gsub(key, " ", ""), "Vim motion " .. key, function(ctx)
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local target = motion(ctx.buffer, cursor(ctx), ctx.count or (if key == "G" then 0 else 1))
+		local target =
+			motion(ctx.buffer, cursor(ctx), ctx.count or (if COUNTLESS[key] then 0 else 1))
 		if target == nil then
 			return
 		end
