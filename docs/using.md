@@ -186,6 +186,11 @@ There is always a selection; a cursor is a selection one character wide.
 | `.` | Repeat the last change at the selections, with what it typed (`3 .` with a new count) |
 | `esc` | Back to normal mode |
 
+In insert mode, `tab` types a level of indent, `ctrl-w` (or
+`alt-backspace`) and `alt-d` delete a word back or forward, `ctrl-u` and
+`ctrl-k` delete to the start or end of the line, and `ctrl-r` + a
+register inserts what it holds.
+
 A number before a motion repeats it: `3 j`, `2 w`. It also counts for `x`
 (lines), `p` and `P`, `u` and `U`, `>` and `<` (levels), `C` and `alt-C`,
 and picks brackets further out with `m i (` and the like.

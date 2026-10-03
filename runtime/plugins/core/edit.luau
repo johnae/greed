@@ -104,6 +104,75 @@ kern.command({
 	end,
 })
 
+-- Adds command `name`, which deletes from each cursor to where
+-- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w.
+local function delete_to_command(name: string, doc: string, target: (kern.Buffer, number) -> number)
+	kern.command({
+		name = name,
+		doc = doc,
+		run = function(ctx)
+			ctx.buffer:edit(function(e)
+				for _, range in ctx.view:selection().ranges do
+					local at = target(ctx.buffer, range.head)
+					if at ~= range.head then
+						e:delete(math.min(at, range.head), math.max(at, range.head))
+					end
+				end
+			end)
+		end,
+	})
+end
+
+delete_to_command("delete-forward", "Delete the character after each cursor", text.after)
+delete_to_command(
+	"delete-word-back",
+	"Delete back to the start of the word before each cursor",
+	text.prev_word_start
+)
+delete_to_command(
+	"delete-word-forward",
+	"Delete to the start of the next word after each cursor",
+	text.next_word_start
+)
+delete_to_command(
+	"delete-to-line-start",
+	"Delete back to the start of the line from each cursor",
+	function(buffer, pos)
+		return buffer:line_start(buffer:line_of(pos))
+	end
+)
+delete_to_command(
+	"delete-to-line-end",
+	"Delete to the end of the line from each cursor",
+	function(buffer, pos)
+		return buffer:line_end(buffer:line_of(pos))
+	end
+)
+
+kern.command({
+	name = "insert-tab",
+	doc = "Insert a level of indent at each cursor",
+	run = function(ctx)
+		insert_at_heads(ctx, indent.unit(ctx.buffer))
+	end,
+})
+
+kern.command({
+	name = "insert-register",
+	doc = "Insert what the register typed next holds at each cursor",
+	run = function(ctx)
+		local key = kern.next_key()
+		if utf8.len(key) ~= 1 then
+			return
+		end
+		registers.pick(key)
+		local pieces = registers.paste(ctx)
+		if pieces then
+			insert_at_heads(ctx, table.concat(pieces, "\n"))
+		end
+	end,
+})
+
 -- Deletes each selection, or the character under each cursor.
 local function delete_selections(ctx: kern.Context)
 	ctx.buffer:edit(function(e)

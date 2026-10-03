@@ -24,6 +24,11 @@ function M.take(): string?
 	return name
 end
 
+--- Picks register `name` for the next operation, as `"` does.
+function M.pick(name: string)
+	picked = name
+end
+
 --- What register `name` holds, if anything.
 function M.get(name: string): { string }?
 	return texts[name]
