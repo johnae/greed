@@ -82,6 +82,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     fs.set(
         "write",
         lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
+            super::approvals::guard(lua, Path::new(&path))?;
             let written = Path::new(&path)
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)

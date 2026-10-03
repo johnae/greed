@@ -103,9 +103,11 @@ An agent can extend Kern while you work:
 2. `plugin_try` writes a plugin to a staging folder and checks it: strict
    types against the API, then the plugin's own tests in a headless editor.
    The agent gets back what failed and tries again.
-3. `plugin_install` asks you. A panel shows the code and the check results;
-   `a` installs it into `~/.config/kern/plugins` and loads it right away,
-   `r` rejects it.
+3. `plugin_install` asks you. A panel shows what the plugin may do beyond
+   the editor (its [capabilities](plugins.md#capabilities), like running
+   programs or reading files), the code and the check results; `a` installs
+   it into `~/.config/kern/plugins`, approves what it asks for and loads it
+   right away, `r` rejects it.
 
 Ask for something like "a command that jumps from a `use` line to the
 crate's entry in Cargo.toml" and the agent goes through these steps. You

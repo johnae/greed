@@ -91,6 +91,17 @@ fn config_dir() -> Option<PathBuf> {
     Some(dir.join("kern"))
 }
 
+/// Kern's state folder, for what it keeps that isn't config or cache, like
+/// which plugins you approved: `$XDG_STATE_HOME/kern` or `~/.local/state/kern`.
+fn state_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state"))
+        })?;
+    Some(base.join("kern"))
+}
+
 /// The copy of your config `kern ssh` brought from another machine, when
 /// this session runs on the far end of one.
 fn brought_dir() -> Option<PathBuf> {
@@ -164,6 +175,10 @@ fn host(
     // connection.
     if let Some(requests) = requests {
         host.set_request_sender(requests);
+    }
+    // Plugins other than Kern's own load once you've approved what they use.
+    if let (Some(state), Ok(runtime)) = (state_dir(), runtime::dir()) {
+        host.require_approval(state.join("approved.json"), vec![runtime.join("plugins")]);
     }
     host.load_dirs(&plugins().map_err(|err| HostError::Manifest {
         path: PathBuf::from("plugins"),

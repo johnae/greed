@@ -6,6 +6,7 @@
 //! commands can run other commands and emit events freely.
 
 mod api;
+mod approvals;
 mod capabilities;
 mod diff;
 mod fs;
@@ -120,6 +121,10 @@ pub(crate) struct State {
     /// The plugin whose code is running, if any: a command or handler it
     /// registered, or its own file loading.
     pub running: Option<PluginId>,
+    /// Approved capabilities, when plugins need approving.
+    pub approvals: Option<approvals::Approvals>,
+    /// The folders of plugins waiting for approval, oldest first.
+    pub pending: Vec<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -162,11 +167,22 @@ struct Deadline {
 #[derive(Debug)]
 pub enum HostError {
     Lua(mlua::Error),
-    Manifest { path: PathBuf, message: String },
+    Manifest {
+        path: PathBuf,
+        message: String,
+    },
     UnknownCommand(Arc<str>),
     UnknownPlugin(Arc<str>),
-    Required { plugin: Arc<str>, by: Arc<str> },
+    Required {
+        plugin: Arc<str>,
+        by: Arc<str>,
+    },
     Keys(ParseError),
+    /// A plugin declares capabilities that haven't been approved.
+    NotApproved {
+        name: Arc<str>,
+        missing: Vec<String>,
+    },
 }
 
 impl fmt::Display for HostError {
@@ -182,6 +198,11 @@ impl fmt::Display for HostError {
                 write!(f, "can't unload {plugin:?}: {by:?} requires it")
             }
             HostError::Keys(err) => err.fmt(f),
+            HostError::NotApproved { name, missing } => write!(
+                f,
+                "{name} wants {}, which you haven't approved: :plugins-approve reviews it",
+                missing.join(", ")
+            ),
         }
     }
 }
@@ -239,6 +260,8 @@ impl Host {
             watches: watch::Watches::default(),
             grants: HashMap::new(),
             running: None,
+            approvals: None,
+            pending: Vec::new(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -306,6 +329,12 @@ impl Host {
         load_dir(&self.lua, dir)
     }
 
+    /// Makes plugins from outside `shipped` wait until the capabilities
+    /// they declare are approved, keeping approvals in the file `store`.
+    pub fn require_approval(&self, store: PathBuf, shipped: Vec<PathBuf>) {
+        state_mut(&self.lua).approvals = Some(approvals::Approvals::load(store, shipped));
+    }
+
     /// Loads several plugin directories, each after the plugins it requires.
     pub fn load_dirs(&self, dirs: &[PathBuf]) -> Result<Vec<PluginId>, HostError> {
         let mut pending = dirs
@@ -313,6 +342,8 @@ impl Host {
             .map(|dir| read_manifest(dir))
             .collect::<Result<Vec<_>, _>>()?;
         let mut loaded = Vec::new();
+        // Plugins skipped until their capabilities are approved.
+        let mut waiting: Vec<String> = Vec::new();
         while !pending.is_empty() {
             let ready = pending.iter().position(|(_, manifest)| {
                 let plugins = &state(&self.lua).plugins;
@@ -322,17 +353,40 @@ impl Host {
                     .all(|r| plugins.contains_key(r.as_str()))
             });
             let Some(ready) = ready else {
-                let (dir, manifest) = &pending[0];
-                return Err(HostError::Manifest {
-                    path: dir.join("plugin.toml"),
-                    message: format!(
-                        "requires {}, which can't be loaded (missing, or requires each other)",
-                        manifest.requires.join(", ")
-                    ),
-                });
+                if waiting.is_empty() {
+                    let (dir, manifest) = &pending[0];
+                    return Err(HostError::Manifest {
+                        path: dir.join("plugin.toml"),
+                        message: format!(
+                            "requires {}, which can't be loaded (missing, or requires each other)",
+                            manifest.requires.join(", ")
+                        ),
+                    });
+                }
+                // The rest need a plugin that waits for approval; they load
+                // once it's approved.
+                let state = &mut *state_mut(&self.lua);
+                for (dir, manifest) in pending {
+                    state.editor.echo(format!(
+                        "{} waits until {} is approved",
+                        manifest.name,
+                        waiting.join(", ")
+                    ));
+                    state.pending.push(dir);
+                }
+                break;
             };
             let (dir, _) = pending.remove(ready);
-            loaded.push(self.load_dir(&dir)?);
+            match self.load_dir(&dir) {
+                Ok(name) => loaded.push(name),
+                Err(err) => {
+                    let HostError::NotApproved { name, .. } = &err else {
+                        return Err(err);
+                    };
+                    waiting.push(name.to_string());
+                    state_mut(&self.lua).editor.echo(err.to_string());
+                }
+            }
         }
         Ok(loaded)
     }
@@ -653,6 +707,15 @@ fn load_manifest(
         });
     }
     let name: PluginId = manifest.name.into();
+    let missing = unapproved(lua, &dir, &grant);
+    {
+        let pending = &mut state_mut(lua).pending;
+        pending.retain(|p| *p != dir);
+        if !missing.is_empty() {
+            pending.push(dir);
+            return Err(HostError::NotApproved { name, missing });
+        }
+    }
     let plugin = Plugin::Dir {
         dir,
         entry: manifest.entry,
@@ -660,6 +723,73 @@ fn load_manifest(
         grant,
     };
     install(lua, &name, plugin)?;
+    Ok(name)
+}
+
+/// The capabilities `grant` holds that the plugin in `dir` needs approved
+/// first; empty when plugins need no approving.
+fn unapproved(lua: &Lua, dir: &Path, grant: &capabilities::Grant) -> Vec<String> {
+    state(lua)
+        .approvals
+        .as_ref()
+        .map(|a| a.missing(dir, grant))
+        .unwrap_or_default()
+}
+
+/// What the plugin in `dir` is and asks for, for a review: `{ name, dir,
+/// requires, capabilities = { { name, what } }, missing }`, where `missing`
+/// lists the capabilities not approved yet.
+pub(crate) fn describe(lua: &Lua, dir: &Path) -> mlua::Result<mlua::Table> {
+    let (dir, manifest) = read_manifest(dir).map_err(api::into_lua)?;
+    let grant =
+        capabilities::Grant::listed(&manifest.capabilities).map_err(mlua::Error::runtime)?;
+    let missing = unapproved(lua, &dir, &grant);
+    let t = lua.create_table()?;
+    t.set("name", manifest.name)?;
+    t.set("dir", dir.to_string_lossy().into_owned())?;
+    t.set("requires", manifest.requires)?;
+    let list = lua.create_table()?;
+    for name in &manifest.capabilities {
+        let what = capabilities::KNOWN
+            .iter()
+            .find(|(known, _)| known == name)
+            .map_or("", |(_, what)| what);
+        let entry = lua.create_table()?;
+        entry.set("name", name.as_str())?;
+        entry.set("what", what)?;
+        list.push(entry)?;
+    }
+    t.set("capabilities", list)?;
+    t.set("missing", missing)?;
+    Ok(t)
+}
+
+/// Approves what the plugin in `dir` declares and loads it, then loads the
+/// waiting plugins that can load now.
+pub(crate) fn approve(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
+    let (dir, manifest) = read_manifest(dir)?;
+    let grant = capabilities::Grant::listed(&manifest.capabilities).map_err(|message| {
+        HostError::Manifest {
+            path: dir.join("plugin.toml"),
+            message,
+        }
+    })?;
+    if let (Some(approvals), capabilities::Grant::Only(asked)) =
+        (state_mut(lua).approvals.as_mut(), &grant)
+    {
+        approvals
+            .approve(&dir, asked)
+            .map_err(|err| HostError::Manifest {
+                path: approvals.path().to_owned(),
+                message: err.to_string(),
+            })?;
+    }
+    let name = load_manifest(lua, dir, manifest, grant)?;
+    // Those that waited for this one, or were approved some other way.
+    let waiting = state(lua).pending.clone();
+    for waiting in waiting {
+        let _ = load_dir(lua, &waiting);
+    }
     Ok(name)
 }
 

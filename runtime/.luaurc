@@ -17,6 +17,7 @@
 		"hints": "./plugins/hints",
 		"statusline": "./plugins/statusline",
 		"operations": "./plugins/operations",
+		"approvals": "./plugins/approvals",
 		"vcs": "./plugins/vcs"
 	}
 }

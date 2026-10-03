@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use mlua::{Lua, Table};
 
 use super::jobs::{self, Output};
-use super::{api, load_dir, plugin_dirs, plugin_name, plugin_names, run_tests};
+use super::{api, load_dir, plugin_dirs, plugin_name, plugin_names, run_tests, state};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -43,6 +43,31 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             }
             .map(|name| name.to_string())
             .map_err(api::into_lua)
+        })?,
+    )?;
+    plugin.set(
+        "describe",
+        lua.create_function(|lua, dir: String| super::describe(lua, Path::new(&dir)))?,
+    )?;
+    plugin.set(
+        "pending",
+        lua.create_function(|lua, ()| {
+            let list = lua.create_table()?;
+            let pending = state(lua).pending.clone();
+            for dir in pending {
+                if let Ok(found) = super::describe(lua, &dir) {
+                    list.push(found)?;
+                }
+            }
+            Ok(list)
+        })?,
+    )?;
+    plugin.set(
+        "approve",
+        lua.create_function(|lua, dir: String| {
+            super::approve(lua, Path::new(&dir))
+                .map(|name| name.to_string())
+                .map_err(api::into_lua)
         })?,
     )?;
     plugin.set(

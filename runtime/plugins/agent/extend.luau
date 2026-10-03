@@ -2,10 +2,11 @@
 -- plugin until its types and tests pass, then asks to install it. You see
 -- the code and the check results before anything loads.
 --
--- In the review:  a  install and load it    r  reject it
+-- In the review:  a  install, approve and load it    r  reject it
 
 local kern = require("@kern")
 local registry = require("./registry")
+local approvals = require("@approvals")
 
 local M = {}
 
@@ -20,7 +21,7 @@ M.dirs = {
 	plugins = config .. "/plugins",
 }
 
-type Staged = { files: { [string]: string }, report: string, passed: boolean }
+type Staged = { files: { [string]: string }, dir: string, report: string, passed: boolean }
 
 -- The latest try of each plugin, by name.
 local staged: { [string]: Staged } = {}
@@ -139,7 +140,7 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 	local dir = `{M.dirs.staging}/{name}-{tries}`
 	write_files(dir, files)
 	local report, passed = describe(kern.plugin.check(dir))
-	staged[name] = { files = files, report = report, passed = passed }
+	staged[name] = { files = files, dir = dir, report = report, passed = passed }
 	return report, passed
 end
 
@@ -178,12 +179,14 @@ function M.install(name: string): string
 	local target = `{M.dirs.plugins}/{name}`
 	local lines = {
 		`An agent wrote the plugin "{name}" and wants it installed in {target}.`,
-		"It can do anything Kern's plugin API allows: edit buffers, read and write files, offer tools to agents.",
-		"",
-		s.report,
-		"",
-		"a  install and load it    r  reject it",
+		"It can edit buffers and add commands, keys and agent tools; beyond the editor:",
 	}
+	for _, line in approvals.lines(kern.plugin.describe(s.dir)) do
+		table.insert(lines, line)
+	end
+	for _, line in { "", s.report, "", "a  install, approve and load it    r  reject it" } do
+		table.insert(lines, line)
+	end
 	local paths = {}
 	for path in s.files do
 		table.insert(paths, path)
@@ -204,14 +207,15 @@ function M.install(name: string): string
 		return `the user rejected {name}`
 	end
 	write_files(target, s.files)
-	kern.plugin.load(target)
+	-- Accepting the review approves what it asked for.
+	kern.plugin.approve(target)
 	kern.echo(`installed {name}`)
 	return `the user installed {name}; it's loaded and its commands are ready`
 end
 
 kern.command({
 	name = "plugin-review-accept",
-	doc = "Install and load the plugin under review",
+	doc = "Install, approve and load the plugin under review",
 	run = function()
 		finish(true)
 	end,

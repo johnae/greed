@@ -46,6 +46,15 @@ to add, e.g. `greet can't run programs: add "proc" to capabilities in its
 plugin.toml`. Your `init.luau` and a trusted project's `.kern` folder are
 config, not plugins, and can use everything.
 
+A plugin that isn't one of Kern's own and declares capabilities loads once
+you've approved them. Until then Kern says it waits, and
+`:plugins-approve` shows each waiting plugin with what it asks for; choose
+one to approve and load it. Approvals are kept per plugin folder in
+`~/.local/state/kern/approved.json`, and a plugin that later asks for more
+waits again. Plugins that use nothing beyond the editor load at once, and
+installing a plugin an agent wrote approves it, since its review shows the
+same list. Plugins can't write the approvals file through Kern.
+
 Capabilities follow the code that uses them. A plugin that requires another
 can call what that plugin offers, which works with that plugin's
 capabilities, so `requires` is part of what a plugin can do. And they limit

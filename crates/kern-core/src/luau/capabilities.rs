@@ -49,6 +49,7 @@ const GATED: &[(&str, &str)] = &[
     ("plugin.load", "plugins"),
     ("plugin.unload", "plugins"),
     ("plugin.check", "plugins"),
+    ("plugin.approve", "plugins"),
     ("control.serve_ide", "net"),
 ];
 

@@ -948,6 +948,23 @@ export type Plugins = {
 	--- Kern's API (if luau-analyze is installed), then its tests with the
 	--- loaded plugins. Waits, like kern.sleep, while it runs.
 	check: (dir: string) -> PluginCheck,
+	--- What the plugin in `dir` is and asks for, from its plugin.toml.
+	describe: (dir: string) -> PluginInfo,
+	--- The plugins waiting until what they use is approved.
+	pending: () -> { PluginInfo },
+	--- Approves what the plugin in `dir` declares, loads it, and loads the plugins that waited for it. Returns its name.
+	approve: (dir: string) -> string,
+}
+
+--- A plugin, as `kern.plugin.describe` tells it, for a review.
+export type PluginInfo = {
+	name: string,
+	dir: string,
+	requires: { string },
+	--- What it declares, each with what it lets the plugin do in words.
+	capabilities: { { name: string, what: string } },
+	--- The capabilities not approved yet; empty when it may load.
+	missing: { string },
 }
 
 --- How text looks. Colors are "red", "bright-blue" and the other 16

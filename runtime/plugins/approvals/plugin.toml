@@ -1,0 +1,3 @@
+name = "approvals"
+requires = ["core", "picker"]
+capabilities = ["plugins"]
