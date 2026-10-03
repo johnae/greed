@@ -5,7 +5,9 @@
 -- names Vim and Helix users know are aliases (`:w`, `:q`, `:wq`, `:e`).
 -- Words after the command are its arguments (`:open src/main.rs`), and a
 -- trailing "!" forces it (`:q!` quits with unsaved changes). `:lua` runs
--- Luau and `:=` shows the value of an expression.
+-- Luau and `:=` shows the value of an expression. A line range in front
+-- (`:%s/a/b/g`, `:5,10d`) selects those lines first; `ex.luau` has Vim's
+-- line commands, and `:g/regex/command` is here.
 --
 -- Matches show above the prompt as you type. Tab and shift-tab go through
 -- them, up and down go through earlier command lines starting with what's
@@ -25,6 +27,7 @@
 local kern = require("@kern")
 local parse = require("@self/parse")
 local complete = require("@self/complete")
+local ex = require("@self/ex")
 local core = require("@core")
 local menu = core.menu
 
@@ -168,8 +171,102 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	end
 end)
 
--- Runs a command line: Luau for "=" and "lua", otherwise a command.
-local function execute(text: string)
+-- Splits `text` at each unescaped `delimiter`; `\` before the delimiter
+-- takes it as is, other backslashes stay for the regex.
+local function split_at(text: string, delimiter: string): { string }
+	local parts, part = {}, {}
+	local i = 1
+	while i <= #text do
+		local c = string.sub(text, i, i)
+		if c == "\\" and string.sub(text, i + 1, i + 1) == delimiter then
+			table.insert(part, delimiter)
+			i += 2
+		else
+			if c == delimiter then
+				table.insert(parts, table.concat(part))
+				part = {}
+			else
+				table.insert(part, c)
+			end
+			i += 1
+		end
+	end
+	table.insert(parts, table.concat(part))
+	return parts
+end
+
+-- Vim's commands written with a pattern right after the name: :s/a/b/g,
+-- :g/regex/command and :v/regex/command (or :g!). Returns the name, the
+-- parts, and whether a :g is inverted, or nil for anything else.
+local function pattern_command(text: string): (string?, { string }, boolean)
+	local name, bang, delimiter, rest = string.match(text, "^%s*([sgv])(!?)([^%w%s\\\"|])(.*)$")
+	if name == nil or delimiter == nil or rest == nil or (bang == "!" and name ~= "g") then
+		return nil, {}, false
+	end
+	local parts = split_at(rest, delimiter)
+	if name == "s" then
+		return "substitute", { parts[1], parts[2] or "", string.gsub(parts[3] or "", "%s", "") }, false
+	end
+	-- What :g runs is the rest of the line, delimiters and all.
+	local command = table.concat(parts, delimiter, 2)
+	return "global", { parts[1], command }, name == "v" or bang == "!"
+end
+
+local execute: (text: string, lines: { first: number, last: number }?) -> ()
+
+-- :g/regex/command runs `command` on each line from `first` to `last` that
+-- matches (or, `inverted`, doesn't); with no command it selects those lines.
+local function global(pattern: string, command: string, inverted: boolean, first: number, last: number)
+	local view = kern.view()
+	local buffer = view:buffer()
+	local regex = core.search.smart_case(if pattern == "" then core.search.last() or "" else pattern)
+	-- Marks over each line keep its place as commands change the lines
+	-- around it; one that ends up empty was deleted, unless it was empty.
+	local marks: { kern.Mark } = {}
+	local lengths: { [string]: number } = {}
+	for line = first, last do
+		local from, to = buffer:line_start(line), buffer:line_end(line)
+		-- The match's start and end, or nil and the error for a bad pattern.
+		local found, err = buffer:find(regex, from)
+		if found == nil and err then
+			error(err, 0)
+		end
+		local matches = found ~= nil and found <= to and buffer:line_of(found) == line
+		if matches ~= inverted then
+			local name = tostring(#marks + 1)
+			local stop = math.min(to + 1, buffer:len())
+			table.insert(marks, { from = from, to = stop, style = name })
+			lengths[name] = stop - from
+		end
+	end
+	if command == "" then
+		local ranges = {}
+		for _, mark in marks do
+			table.insert(ranges, { anchor = mark.from, head = buffer:line_end(buffer:line_of(mark.from)) })
+		end
+		if #ranges > 0 then
+			view:set_selection({ ranges = ranges, primary = 1 })
+		end
+		return
+	end
+	buffer:decorate("cmdline-global", marks)
+	kern.history.start_group()
+	for i = 1, #marks do
+		for _, mark in buffer:decorations("cmdline-global") do
+			if mark.style == tostring(i) and (mark.to > mark.from or lengths[mark.style] == 0) then
+				local line = buffer:line_of(mark.from)
+				execute(command, { first = line, last = line })
+			end
+		end
+	end
+	kern.history.end_group()
+	buffer:decorate("cmdline-global", {})
+end
+
+-- Runs a command line: Luau for "=" and "lua", otherwise a command, with
+-- a line range before it (`:%s/a/b/`, `:5,10d`) or `lines` selected first.
+-- A range alone goes to its last line.
+function execute(text: string, lines: { first: number, last: number }?)
 	local expression = string.match(text, "^%s*=%s*(.*)$")
 	local code = string.match(text, "^%s*lua%s+(.*)$")
 	if expression or code then
@@ -182,18 +279,58 @@ local function execute(text: string)
 		end
 		return
 	end
+	local view = kern.view()
+	local buffer = view:buffer()
+	local first, last = nil, nil
+	if lines then
+		first, last = lines.first, lines.last
+	else
+		local selection = view:selection()
+		local selected_first, selected_last = ex.selected_lines(view)
+		first, last, text = parse.range(text, {
+			buffer = buffer,
+			current = buffer:line_of(core.motions.cursor(buffer, selection.ranges[selection.primary])),
+			first = selected_first,
+			last = selected_last,
+		})
+	end
+	if first and last then
+		if string.match(text, "^%s*$") then
+			ex.go_to_line(view, last)
+			return
+		end
+		view:set_selection({
+			ranges = { { anchor = buffer:line_start(first), head = buffer:line_end(last) } },
+			primary = 1,
+		})
+	end
+	local special, args, inverted = pattern_command(text)
+	if special == "global" then
+		global(args[1], args[2], inverted, first or 0, last or buffer:line_count() - 1)
+		return
+	elseif special then
+		kern.run(special, { args = args })
+		return
+	end
 	local parsed = parse.parse(text)
 	if parsed == nil then
 		return
 	end
-	local name = resolve(parsed.name)
+	local names: { [string]: boolean } = {}
 	for _, command in kern.commands() do
-		if command.name == name then
-			kern.run(name, { args = parsed.args, force = parsed.force })
-			return
-		end
+		names[command.name] = true
 	end
-	error("no command called " .. parsed.name, 0)
+	local name, args = resolve(parsed.name), parsed.args
+	-- Vim lets an argument follow a short name directly: :m0, :t$, :>.
+	local short, rest = string.match(parsed.name, "^(%a+)([^%a].*)$")
+	if not names[name] and short and rest and names[resolve(short)] then
+		name = resolve(short)
+		table.insert(args, 1, rest)
+	end
+	if not names[name] then
+		error("no command called " .. parsed.name, 0)
+	end
+	kern.run(name, { args = args, force = parsed.force })
 end
 
 local function remember(text: string)
@@ -208,8 +345,9 @@ end
 
 kern.command({
 	name = "command-line",
-	doc = "Type a command to run, with completion",
-	run = function()
+	doc = "Type a command to run, with completion, starting with the text given",
+	args = { { name = "text" } },
+	run = function(ctx)
 		close()
 		local buffer = kern.create_buffer("cmdline", ":")
 		local view = kern.float(buffer, { width = "100%", height = 3, anchor = "bottom" })
@@ -226,7 +364,7 @@ kern.command({
 		}
 		open = o
 		kern.mode.set("insert")
-		set_text(o, "")
+		set_text(o, ctx.args[1] or "")
 	end,
 })
 
@@ -396,6 +534,25 @@ local defaults: { [string]: string } = {
 	bco = "buffer-close-others",
 	clo = "pane-close",
 	close = "pane-close",
+	sp = "pane-split-down",
+	split = "pane-split-down",
+	vs = "pane-split-right",
+	vsplit = "pane-split-right",
+	s = "substitute",
+	d = "delete-lines",
+	delete = "delete-lines",
+	y = "yank-lines",
+	yank = "yank-lines",
+	m = "move-lines",
+	move = "move-lines",
+	t = "copy-lines",
+	co = "copy-lines",
+	copy = "copy-lines",
+	j = "join-lines",
+	join = "join-lines",
+	norm = "normal",
+	[">"] = "indent",
+	["<"] = "dedent",
 }
 for name, command in defaults do
 	M.alias(name, command)

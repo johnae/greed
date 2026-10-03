@@ -785,6 +785,26 @@ tells you what a key does. After a key like `space`, a hint shows what can
 follow, and `f1` shows the keys of the mode you're in, in every mode. A
 message on the status line goes away with the next key.
 
+Vim's line commands work in every style. A range in front picks the lines
+a command works on; without one, it's the lines the selection touches.
+
+| Command | |
+|---|---|
+| `:42`, `:$` | Go to line 42, or the last line |
+| `:s/regex/text/flags` | Replace on the lines: `g` every match on a line, `i` ignore case, `n` only count; `\1` and `&` put back what matched |
+| `:g/regex/command`, `:v/regex/command` | Run a command on each line that matches, or doesn't; with no command, select those lines |
+| `:d` `:y` | Delete or copy the lines |
+| `:m 0` `:t $` | Move or copy the lines below a line (`0` is the top) |
+| `:norm keys` | Type the keys in normal mode on each line |
+| `:j` `:>` `:<` | Join, indent or dedent the lines |
+
+Ranges are line numbers, `.` (the cursor's line), `$` (the last),
+`/regex/` (the next line matching), `'<` and `'>` (the selection's first
+and last line) and `%` (every line), with `+n` or `-n` after any of them:
+`:%s/old/new/g`, `:.,+3d`, `:/^fn/,$norm A;`. Patterns are regexes, as in
+search. In Vim's style, `:` in visual mode starts with `'<,'>` and `3 :`
+with `.,.+2`.
+
 ## Configuration
 
 Your config is `~/.config/kern/init.luau`, plain Luau with the full plugin
