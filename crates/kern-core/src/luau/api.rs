@@ -507,7 +507,7 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     None => keymap.bindings(),
                 }
             };
-            found.sort_by_key(|(layer, keys, _)| (layer.to_string(), keys_text(keys)));
+            found.sort_by_cached_key(|(layer, keys, _)| (layer.to_string(), keys_text(keys)));
             let list = lua.create_table()?;
             for (layer, keys, command) in found {
                 let entry = lua.create_table()?;
