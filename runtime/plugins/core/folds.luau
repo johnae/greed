@@ -142,15 +142,8 @@ local function cursor_line(view: kern.View): number
 	return view:buffer():line_of(selection.ranges[selection.primary].head)
 end
 
--- Folds the block around the cursor's line, saying so when there's none.
-local function fold(view: kern.View)
-	local buffer = view:buffer()
-	local line = cursor_line(view)
-	local first, last = M.block(buffer, line)
-	if first == nil then
-		kern.echo("nothing to fold here")
-		return
-	end
+--- Folds lines `first` to `last` (0-based) under the first.
+function M.fold(buffer: Buffer, first: number, last: number)
 	local start = buffer:line_start(first)
 	local marks = buffer:decorations("folds")
 	table.insert(marks, { from = start, to = buffer:line_end(last), style = "fold", fold = true })
@@ -162,9 +155,26 @@ local function fold(view: kern.View)
 		eol = true,
 	})
 	buffer:decorate("folds", marks)
+end
+
+local function go_to_line(view: kern.View, line: number)
+	local start = view:buffer():line_start(line)
+	view:set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+end
+
+-- Folds the block around the cursor's line, saying so when there's none.
+local function fold(view: kern.View)
+	local buffer = view:buffer()
+	local line = cursor_line(view)
+	local first, last = M.block(buffer, line)
+	if first == nil then
+		kern.echo("nothing to fold here")
+		return
+	end
+	M.fold(buffer, first, last)
 	-- The cursor can't stay on a hidden line.
 	if line ~= first then
-		view:set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+		go_to_line(view, first)
 	end
 end
 
@@ -206,6 +216,65 @@ kern.command({
 		ctx.buffer:decorate("folds", {})
 	end,
 })
+
+kern.command({
+	name = "fold-close-all",
+	doc = "Fold every outermost block in the buffer",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		buffer:decorate("folds", {})
+		local line, cursor = 0, cursor_line(ctx.view)
+		while line < buffer:line_count() do
+			local first, last = M.block(buffer, line)
+			if first == line then
+				M.fold(buffer, line, last)
+				if line < cursor and cursor <= last then
+					go_to_line(ctx.view, line)
+				end
+				line = last
+			end
+			line += 1
+		end
+	end,
+})
+
+kern.command({
+	name = "fold-selection",
+	doc = "Fold the selected lines under the first",
+	run = function(ctx)
+		local buffer, selection = ctx.buffer, ctx.view:selection()
+		local range = selection.ranges[selection.primary]
+		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local first, last = buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
+		if last > first then
+			M.fold(buffer, first, last)
+			go_to_line(ctx.view, first)
+		end
+	end,
+})
+
+-- fold-next and fold-prev: to the first line of the next block below, or
+-- the last line of the one above.
+for _, back in { false, true } do
+	kern.command({
+		name = if back then "fold-prev" else "fold-next",
+		doc = if back
+			then "Go to the end of the block above the cursor"
+			else "Go to the start of the block below the cursor",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local line = cursor_line(ctx.view)
+			local step, stop = if back then -1 else 1, if back then 0 else buffer:line_count() - 1
+			for i = line + step, stop, step do
+				local first, last = M.block(buffer, i)
+				if first and (if back then last == i else first == i) then
+					go_to_line(ctx.view, i)
+					return
+				end
+			end
+		end,
+	})
+end
 
 M.keys = {
 	["z a"] = "fold-toggle",
