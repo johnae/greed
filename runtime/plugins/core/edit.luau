@@ -389,6 +389,50 @@ kern.command({
 })
 
 kern.option.define({
+	name = "text-width",
+	doc = "How wide :reflow (and Vim's gq) makes lines",
+	default = 80,
+})
+
+kern.command({
+	name = "reflow",
+	doc = "Rewrap the lines of each selection to the text width, or the width given",
+	args = { { name = "width", doc = "Columns; the text-width option without" } },
+	run = function(ctx)
+		local width = tonumber(ctx.args[1]) or kern.option.get("text-width") :: number
+		local buffer = ctx.buffer
+		buffer:edit(function(e)
+			for _, range in ctx.view:selection().ranges do
+				local first = buffer:line_of(from(range))
+				local last = buffer:line_of(math.max(from(range), to(range) - 1))
+				local start, stop = buffer:line_start(first), buffer:line_end(last)
+				e:replace(start, stop, text.reflow(buffer:slice(start, stop), width))
+			end
+		end)
+	end,
+})
+
+kern.command({
+	name = "reindent-lines",
+	doc = "Indent each selected line as its language and the lines around it say",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local lines = motions.selected_lines(ctx)
+		-- Line by line, so each one is indented after the ones above it.
+		for _, line in lines do
+			local start = buffer:line_start(line)
+			local current = indent.of(buffer, line)
+			local wanted = indent.at(buffer, start + #current)
+			if wanted ~= current and buffer:line_end(line) > start + #current then
+				buffer:edit(function(e)
+					e:replace(start, start + #current, wanted)
+				end)
+			end
+		end
+	end,
+})
+
+kern.option.define({
 	name = "indent",
 	doc = "One level of indent, spaces or a tab, in languages that don't set their own",
 	default = "    ",

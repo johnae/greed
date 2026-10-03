@@ -227,3 +227,18 @@ test("space c comments the lines", function(t)
 	t:keys("space c")
 	t:expect("-- a|b")
 end)
+
+test(":reflow rewraps the selected lines, keeping paragraphs and indent", function(t)
+	t:buffer("^  one two three\n  four\n\nfive|")
+	t:run("reflow", { "12" })
+	t:expect("^  one two\n  three four\n\nfive|")
+end)
+
+test("reindent-lines indents each line as the lines around it say", function(t)
+	t:buffer("^a {\nx\n}|")
+	t:run("reindent-lines")
+	assert(
+		require("@kern").view():buffer():text() == "a {\n    x\n}",
+		require("@kern").view():buffer():text()
+	)
+end)

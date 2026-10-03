@@ -10,7 +10,7 @@
 --
 -- What's here: counts, h j k l w b e W B E ge gE 0 ^ $ g_ gg G f t F T ; , % { } ( )
 -- H M L - + _ |, the operators
--- d c y > < gc with any of those motions or a text object (iw aW i( a"
+-- d c y > < gc g~ gu gU g? gq gw = ! with any of those motions or a text object (iw aW i( a"
 -- ip it, and from the syntax tree if af ia ic) and doubled for whole lines
 -- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V, * #,
 -- q@ macros, "a registers, and . (core's) to repeat the last change.
@@ -647,11 +647,36 @@ local LINE_OPERATORS: { [string]: string } = {
 	[">"] = "indent",
 	["<"] = "dedent",
 	["gc"] = "toggle-comment",
+	["gq"] = "reflow",
+	["gw"] = "reflow",
+	["="] = "reindent-lines",
+	["!"] = "pipe",
+}
+
+-- Operators that rewrite the text they cover, character by character.
+local CASE_OPERATORS: { [string]: (string) -> string } = {
+	["g~"] = function(text)
+		return (
+			string.gsub(text, "%a", function(c)
+				return if string.match(c, "%l") then string.upper(c) else string.lower(c)
+			end)
+		)
+	end,
+	gu = string.lower,
+	gU = string.upper,
+	["g?"] = function(text)
+		return (
+			string.gsub(text, "%a", function(c)
+				local base = if string.match(c, "%l") then 97 else 65
+				return string.char((string.byte(c) - base + 13) % 26 + base)
+			end)
+		)
+	end,
 }
 
 -- Runs core's `command` on the lines `from`..`to` touch, keeping the cursor
 -- on the same character (or the line's first, for indents).
-local function on_lines(ctx: kern.Context, command: string, from: number, to: number)
+local function on_lines(ctx: kern.Context, command: string, from: number, to: number, op: string?)
 	local buffer = ctx.buffer
 	-- A linewise range at the end of the buffer starts with the break before it.
 	if from < to and buffer:char_at(from) == "\n" then
@@ -669,8 +694,11 @@ local function on_lines(ctx: kern.Context, command: string, from: number, to: nu
 	local grew = buffer:line_end(line) - buffer:line_start(line) - before
 	if command == "toggle-comment" then
 		at = math.clamp(at + grew, buffer:line_start(line), buffer:line_end(line))
+	elseif op == "gw" then
+		-- gw leaves the cursor where it was.
+		at = math.min(at, buffer:len())
 	else
-		at = first_non_blank(buffer, first)
+		at = first_non_blank(buffer, math.min(first, buffer:line_count() - 1))
 	end
 	ctx.view:set_selection(point(on_char(buffer, at)))
 end
@@ -680,7 +708,17 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 	local buffer = ctx.buffer
 	local line_command = LINE_OPERATORS[op]
 	if line_command then
-		on_lines(ctx, line_command, from, to)
+		on_lines(ctx, line_command, from, to, op)
+		return
+	end
+	local case = CASE_OPERATORS[op]
+	if case then
+		local start, finish = from, to :: number
+		local new = case(buffer:slice(start, finish))
+		buffer:edit(function(e)
+			e:replace(start, finish, new)
+		end)
+		ctx.view:set_selection(point(on_char(buffer, from)))
 		return
 	end
 	local taken = { text = buffer:slice(from, to), linewise = linewise }
@@ -852,7 +890,7 @@ for key, motion in motions do
 	end)
 end
 
-for _, op in { "d", "c", "y", ">", "<", "gc" } do
+for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw", "=", "!" } do
 	command("operator-" .. op, "Vim operator " .. op .. ", followed by a motion", function(ctx)
 		local mode = kern.mode.get()
 		if mode == "vim-visual" or mode == "vim-visual-line" then
@@ -1247,6 +1285,14 @@ local keys: { [string]: string } = {
 	[">"] = "vim-operator->",
 	["<"] = "vim-operator-<",
 	["g c"] = "vim-operator-gc",
+	["g ~"] = "vim-operator-g~",
+	["g u"] = "vim-operator-gu",
+	["g U"] = "vim-operator-gU",
+	["g ?"] = "vim-operator-g?",
+	["g q"] = "vim-operator-gq",
+	["g w"] = "vim-operator-gw",
+	["="] = "vim-operator-=",
+	["!"] = "vim-operator-!",
 	["*"] = "vim-search-word",
 	["#"] = "vim-search-word-back",
 	q = "vim-macro",
@@ -1271,6 +1317,14 @@ local visual: { [string]: string } = {
 	[">"] = "vim-operator->",
 	["<"] = "vim-operator-<",
 	["g c"] = "vim-operator-gc",
+	["g ~"] = "vim-operator-g~",
+	["~"] = "vim-operator-g~",
+	u = "vim-operator-gu",
+	U = "vim-operator-gU",
+	["g ?"] = "vim-operator-g?",
+	["g q"] = "vim-operator-gq",
+	["="] = "vim-operator-=",
+	["!"] = "vim-operator-!",
 	i = "vim-visual-inside",
 	a = "vim-visual-around",
 }

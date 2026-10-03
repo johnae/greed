@@ -182,6 +182,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
 | `>` `<` | Indent or dedent the lines by one level of the language's indent |
 | `J` | Join lines with one space |
+| `:reflow [WIDTH]` | Rewrap the selected lines to the `text-width` option (80), or WIDTH |
 | `\|` | Pipe each selection through a shell command, a Luau filter or a model (below) |
 | `space c`, `ctrl-c` | Comment the lines, or uncomment them |
 | `=` | Format the file |

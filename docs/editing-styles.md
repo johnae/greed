@@ -65,6 +65,8 @@ character, and `v` starts a visual mode for selecting by hand.
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
 | `i w` `a w` `i W` `i (` `a "` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs, tags |
 | `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |
+| `g ~` `g u` `g U` `g ?` + a motion | Switch case, lowercase, uppercase, rot13 (`~` `u` `U` in visual mode) |
+| `g q` `g w` `=` `!` + a motion | Rewrap to the `text-width` option (`g w` keeps the cursor), reindent, pipe through a command |
 | `x X D C s S` | The usual shortcuts for deleting and changing |
 | `r` `~` `J` | Replace a character, switch case, join lines |
 | `p P` | Paste after or before |

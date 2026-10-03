@@ -225,4 +225,46 @@ function M.after(buffer: Buffer, pos: number): number
 	return buffer:next_char(pos)
 end
 
+--- `lines` rewrapped so none is longer than `width` where words allow:
+--- each paragraph (blank lines separate them) keeps its first line's
+--- indent, and a final line break stays.
+function M.reflow(lines: string, width: number): string
+	local ends = string.sub(lines, -1) == "\n"
+	local body = if ends then string.sub(lines, 1, -2) else lines
+	local out: { string } = {}
+	local paragraph: { string } = {}
+	local indent: string? = nil
+	local function flush()
+		local lead = indent
+		if lead == nil then
+			return
+		end
+		local line, filled = lead, false
+		for _, word in paragraph do
+			if filled and #line + 1 + #word > width then
+				table.insert(out, line)
+				line = lead .. word
+			else
+				line = if filled then `{line} {word}` else line .. word
+			end
+			filled = true
+		end
+		table.insert(out, line)
+		paragraph, indent = {}, nil
+	end
+	for _, line in string.split(body, "\n") do
+		if string.match(line, "^%s*$") then
+			flush()
+			table.insert(out, "")
+		else
+			indent = indent or string.match(line, "^%s*") :: string
+			for word in string.gmatch(line, "%S+") do
+				table.insert(paragraph, word)
+			end
+		end
+	end
+	flush()
+	return table.concat(out, "\n") .. (if ends then "\n" else "")
+end
+
 return M
