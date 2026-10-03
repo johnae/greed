@@ -283,6 +283,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:bco` | Close every other file |
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
 | `:reload` | Load the file again from disk |
+| `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 
 Closing a terminal's buffer ends its program.
 

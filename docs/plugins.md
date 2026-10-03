@@ -313,6 +313,17 @@ piece or a plugin's top level, the calls that wait raise an error instead of
 running on the editor's thread, so no plugin can freeze the editor on a
 slow program or server.
 
+Heavy work doesn't freeze it either. A command or handler that runs for
+more than 15 ms without waiting is paused, the editor handles keys and
+draws, and it carries on where it was, so a slow plugin is only slow
+itself. (`coroutine.yield()` with nothing does the same on purpose.) Your
+own coroutines, like a generator made with `coroutine.wrap`, are never
+paused this way. One that works for a whole minute without finishing is
+stopped and Kern says so. Code that can't be paused, like a status line
+piece or a plugin's top level, is timed instead: anything that holds the
+editor up for 50 ms or more is kept with its plugin and what it was doing,
+`:stalls` lists them, and over 250 ms Kern tells you right away.
+
 Language servers ask things too: `kern.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it

@@ -146,10 +146,16 @@ pub(super) fn check(lua: &Lua, capability: &str) -> LuaResult<()> {
     }
 }
 
-/// Runs `f` as `owner`'s code, for [`check`].
-pub(super) fn running_as<R>(lua: &Lua, owner: Option<PluginId>, f: impl FnOnce() -> R) -> R {
-    let outer = std::mem::replace(&mut state_mut(lua).running, owner);
-    let result = f();
+/// Runs `f` as `owner`'s code, for [`check`], doing `what` ("the status
+/// line", ...), for the watchdog.
+pub(super) fn running_as<R>(
+    lua: &Lua,
+    owner: Option<&PluginId>,
+    what: &str,
+    f: impl FnOnce() -> R,
+) -> R {
+    let outer = std::mem::replace(&mut state_mut(lua).running, owner.cloned());
+    let (result, _) = super::stalls::timed(lua, owner.map(|o| &**o), what, f);
     state_mut(lua).running = outer;
     result
 }

@@ -16,6 +16,10 @@ use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
+/// How long a command or handler may work, across slices, before it is
+/// stopped: long enough for real work, short of a loop that never ends.
+const WORK_LIMIT: Duration = Duration::from_secs(60);
+
 /// Parked coroutines and the timers some of them wait on.
 pub(crate) struct Tasks {
     next_token: u64,
@@ -36,6 +40,8 @@ pub(crate) struct Tasks {
     /// The plugin each running coroutine's code belongs to, for capability
     /// checks while it runs.
     owners: HashMap<usize, PluginId>,
+    /// How long each coroutine has worked across the slices it was cut into.
+    worked: HashMap<usize, Duration>,
 }
 
 impl Default for Tasks {
@@ -51,6 +57,7 @@ impl Default for Tasks {
             latest: now,
             causes: HashMap::new(),
             owners: HashMap::new(),
+            worked: HashMap::new(),
         }
     }
 }
@@ -66,6 +73,13 @@ impl Tasks {
     pub(super) fn now(&self) -> Instant {
         self.firing
             .unwrap_or_else(|| Instant::now().max(self.latest))
+    }
+
+    /// Drops what's kept about the coroutine `id`, once it's done.
+    fn forget(&mut self, id: usize) {
+        self.causes.remove(&id);
+        self.owners.remove(&id);
+        self.worked.remove(&id);
     }
 }
 
@@ -106,30 +120,55 @@ fn key(thread: &Thread) -> usize {
 }
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
-    let (outer, outer_owner) = {
+    let id = key(&thread);
+    let (outer, outer_owner, owner, cause) = {
         let state = &mut *state_mut(lua);
-        let cause = state.tasks.causes.get(&key(&thread)).cloned();
-        let owner = state.tasks.owners.get(&key(&thread)).cloned();
+        let cause = state.tasks.causes.get(&id).cloned();
+        let owner = state.tasks.owners.get(&id).cloned();
         let outer = state.editor.cause().cloned();
-        state.editor.set_cause(cause);
-        (outer, std::mem::replace(&mut state.running, owner))
+        state.editor.set_cause(cause.clone());
+        let outer_owner = std::mem::replace(&mut state.running, owner.clone());
+        (outer, outer_owner, owner, cause)
     };
-    let yielded = thread.resume::<Value>(args);
+    let what = cause.as_deref().unwrap_or("a handler");
+    let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
+        super::sliced(lua, id, || thread.resume::<Value>(args))
+    });
     {
         let state = &mut *state_mut(lua);
         state.editor.set_cause(outer);
         state.running = outer_owner;
     }
     if thread.status() != ThreadStatus::Resumable {
-        let state = &mut *state_mut(lua);
-        state.tasks.causes.remove(&key(&thread));
-        state.tasks.owners.remove(&key(&thread));
+        state_mut(lua).tasks.forget(id);
         yielded?;
         return Ok(());
     }
-    let yielded = yielded?;
-    let token = match yielded {
+    let token = match yielded? {
         Value::Integer(n) => u64::try_from(n).ok(),
+        // Its slice ran out: it carries on once the editor had a turn,
+        // unless it has worked so long it looks like it never ends.
+        Value::Nil => {
+            let worked = state(lua)
+                .tasks
+                .worked
+                .get(&id)
+                .copied()
+                .unwrap_or_default()
+                + ran;
+            if worked > WORK_LIMIT {
+                let state = &mut *state_mut(lua);
+                state.tasks.forget(id);
+                let who = owner.as_deref().unwrap_or("a plugin");
+                state.editor.echo(format!(
+                    "stopped {what} ({who}) after {}s of work without finishing",
+                    WORK_LIMIT.as_secs()
+                ));
+                return Ok(());
+            }
+            state_mut(lua).tasks.worked.insert(id, worked);
+            Some(start_timer(lua, Duration::ZERO))
+        }
         _ => None,
     }
     .ok_or_else(|| {

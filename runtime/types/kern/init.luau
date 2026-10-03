@@ -1111,6 +1111,8 @@ export type Kern = {
 	sleep: (ms: number) -> (),
 	--- Runs `f` on its own, the way a command runs, and returns at once: it can wait (kern.sleep, kern.process.run, ...) while the editor and the code that started it go on. For work in the background, like a status line piece refreshing.
 	spawn: (f: (...any) -> ...any, ...any) -> (),
+	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading".
+	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
 	--- Milliseconds on the editor's clock, for timing animations. While a
 	--- timer wakes code, it reads the time the timer was due.
 	now: () -> number,

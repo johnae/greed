@@ -24,6 +24,7 @@ mod process;
 mod projects;
 mod requests;
 mod sessions;
+mod stalls;
 mod syntax;
 mod tabs;
 mod tasks;
@@ -54,6 +55,10 @@ use modules::Modules;
 
 /// How long one call into Luau may run before it is stopped.
 const BUDGET: Duration = Duration::from_secs(2);
+
+/// How long a command or handler runs before it yields to the editor, to
+/// carry on once keys are handled and the screen is drawn.
+const SLICE: Duration = Duration::from_millis(15);
 
 /// Plugin name used for code evaluated at the REPL.
 const REPL: &str = "user/repl";
@@ -128,6 +133,8 @@ pub(crate) struct State {
     pub pending: Vec<PathBuf>,
     /// HTTP streams being read.
     pub http: http::Streams,
+    /// Runs of plugin code that held the editor up.
+    pub stalls: stalls::Stalls,
 }
 
 #[derive(Clone)]
@@ -165,6 +172,9 @@ fn default_entry() -> String {
 struct Deadline {
     at: Cell<Option<Instant>>,
     budget: Cell<Duration>,
+    /// The task coroutine running now, by its pointer, and when it started
+    /// this run: past `SLICE` it yields, so the editor gets a turn.
+    slice: Cell<Option<(usize, Instant)>>,
 }
 
 #[derive(Debug)]
@@ -266,20 +276,34 @@ impl Host {
             approvals: None,
             pending: Vec::new(),
             http: http::Streams::default(),
+            stalls: stalls::Stalls::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
             budget: Cell::new(BUDGET),
+            slice: Cell::new(None),
         });
         lua.set_interrupt(|lua| {
             let deadline = deadline(lua);
-            match deadline.at.get() {
-                Some(at) if Instant::now() > at => Err(mlua::Error::runtime(format!(
+            let now = Instant::now();
+            if let Some(at) = deadline.at.get()
+                && now > at
+            {
+                return Err(mlua::Error::runtime(format!(
                     "stopped after running for more than {:?}",
                     deadline.budget.get()
-                ))),
-                _ => Ok(VmState::Continue),
+                )));
             }
+            // A command or handler that has run its slice yields to the
+            // editor, but only its own coroutine: one a plugin made, like a
+            // generator, must never see a yield it didn't ask for.
+            if let Some((thread, from)) = deadline.slice.get()
+                && now.duration_since(from) > SLICE
+                && lua.current_thread().to_pointer() as usize == thread
+            {
+                return Ok(VmState::Yield);
+            }
+            Ok(VmState::Continue)
         });
         Ok(Self { lua })
     }
@@ -823,14 +847,14 @@ fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
         } => {
             let file = dir.join(entry);
             let modules = Modules::new(lua, name, Some(dir), None, &grant)?;
-            capabilities::running_as(lua, owner, || {
+            capabilities::running_as(lua, owner.as_ref(), "loading", || {
                 budgeted(lua, || modules.run_file(lua, &file))
             })?
         }
         Plugin::Inline(source) => {
             let modules = Modules::new(lua, name, None, None, &capabilities::Grant::All)?;
             let chunk_name = format!("@{name}");
-            let values = capabilities::running_as(lua, owner, || {
+            let values = capabilities::running_as(lua, owner.as_ref(), "loading", || {
                 budgeted(lua, || modules.eval(lua, &source, &chunk_name))
             })?;
             values.into_iter().next().unwrap_or(Value::Nil)
@@ -1086,4 +1110,13 @@ pub(crate) fn plugin_dirs(lua: &Lua) -> Vec<(PluginId, PathBuf)> {
 /// The name in `dir`'s `plugin.toml`.
 pub(crate) fn plugin_name(dir: &Path) -> Result<String, HostError> {
     Ok(read_manifest(dir)?.1.name)
+}
+
+/// Runs `f`, a run of the task coroutine `thread`, as a slice the
+/// interrupt may cut short.
+fn sliced<R>(lua: &Lua, thread: usize, f: impl FnOnce() -> R) -> R {
+    let outer = deadline(lua).slice.replace(Some((thread, Instant::now())));
+    let result = f();
+    deadline(lua).slice.set(outer);
+    result
 }

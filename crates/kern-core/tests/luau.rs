@@ -824,7 +824,9 @@ fn waiting_only_works_inside_commands() {
 
     h.load_str(
         "raw",
-        "require('@kern').command { name = 'raw', run = function() coroutine.yield() end }",
+        "local kern = require('@kern')
+         kern.command { name = 'raw', run = function() coroutine.yield('x') end }
+         kern.command { name = 'turn', run = function() coroutine.yield() kern.echo('carried on') end }",
     )
     .unwrap();
     let err = h.run("raw").unwrap_err().to_string();
@@ -832,6 +834,11 @@ fn waiting_only_works_inside_commands() {
         err.contains("can only wait through kern functions"),
         "{err}"
     );
+    // A bare yield gives the editor a turn, then carries on.
+    h.run("turn").unwrap();
+    assert!(h.with_editor_mut(Editor::take_messages).is_empty());
+    h.fire_timers(std::time::Instant::now()).unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["carried on"]);
 }
 
 #[test]

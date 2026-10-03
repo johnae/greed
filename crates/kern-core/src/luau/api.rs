@@ -272,6 +272,10 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     kern.set("sleep", sleep)?;
     kern.set("spawn", spawn_function(lua, owner)?)?;
+    kern.set(
+        "stalls",
+        lua.create_function(|lua, ()| super::stalls::list(lua))?,
+    )?;
     kern.set("now", now)?;
     kern.set("next_key", tasks::next_key_function(lua)?)?;
 
@@ -1148,7 +1152,8 @@ pub(super) fn status_line(
     ctx.set("mode", mode)?;
     ctx.set("message", message)?;
     ctx.set("width", width)?;
-    let line: Table = super::capabilities::running_as(lua, Some(owner), || build.call(ctx))?;
+    let line: Table =
+        super::capabilities::running_as(lua, Some(&owner), "the status line", || build.call(ctx))?;
     Ok(Some(StatusLine {
         left: segments(line.get("left")?)?,
         right: segments(line.get("right")?)?,
