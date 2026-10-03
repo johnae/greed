@@ -137,19 +137,342 @@ kern.command({
 	end,
 })
 
+-- With nothing selected, copy and cut take whole lines, as in most
+-- editors. What such a copy put on the clipboard, so pasting it with
+-- nothing selected puts it above the line rather than at the cursor.
+local copied_lines: string? = nil
+
+local function nothing_selected(selection: kern.Selection): boolean
+	for _, range in selection.ranges do
+		if range.anchor ~= range.head then
+			return false
+		end
+	end
+	return true
+end
+
+-- A run of lines, first and last.
+type Block = { first: number, last: number }
+
+-- The lines the selection's ranges touch, merged where they meet, top to
+-- bottom.
+local function line_blocks(buffer: kern.Buffer, selection: kern.Selection): { Block }
+	local blocks: { Block } = {}
+	for _, range in selection.ranges do
+		local a, b = from(range), to(range)
+		table.insert(
+			blocks,
+			{ first = buffer:line_of(a), last = buffer:line_of(math.max(a, b - 1)) }
+		)
+	end
+	table.sort(blocks, function(x: Block, y: Block)
+		return x.first < y.first
+	end)
+	local merged: { Block } = {}
+	for _, block in blocks do
+		local top = merged[#merged]
+		if top and block.first <= top.last + 1 then
+			top.last = math.max(top.last, block.last)
+		else
+			table.insert(merged, { first = block.first, last = block.last })
+		end
+	end
+	return merged
+end
+
+-- Deletes each block of lines and the line break after it (or before it,
+-- at the end of the buffer).
+local function delete_lines(buffer: kern.Buffer, blocks: { Block })
+	buffer:edit(function(e)
+		for _, block in blocks do
+			local start, stop = buffer:line_start(block.first), buffer:line_end(block.last)
+			if stop < buffer:len() then
+				stop += 1
+			elseif start > 0 then
+				start -= 1
+			end
+			e:delete(start, stop)
+		end
+	end)
+end
+
+local function lines_text(buffer: kern.Buffer, first: number, last: number): string
+	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
+end
+
+-- Copies the lines the cursors are on, each with its line break. Returns
+-- the blocks of lines.
+local function copy_lines(ctx: kern.Context): { Block }
+	local blocks = line_blocks(ctx.buffer, ctx.view:selection())
+	local pieces = {}
+	for _, block in blocks do
+		table.insert(pieces, lines_text(ctx.buffer, block.first, block.last) .. "\n")
+	end
+	copied_lines = table.concat(pieces)
+	kern.clipboard.set(copied_lines)
+	return blocks
+end
+
+kern.command({
+	name = "copy-or-line",
+	doc = "Copy the selection, or the line when nothing is selected",
+	run = function(ctx)
+		if nothing_selected(ctx.view:selection()) then
+			copy_lines(ctx)
+		else
+			copied_lines = nil
+			kern.run("copy")
+		end
+	end,
+})
+
+kern.command({
+	name = "cut-or-line",
+	doc = "Cut the selection, or the line when nothing is selected",
+	run = function(ctx)
+		if not nothing_selected(ctx.view:selection()) then
+			copied_lines = nil
+			kern.run("cut")
+			return
+		end
+		delete_lines(ctx.buffer, copy_lines(ctx))
+	end,
+})
+
 kern.command({
 	name = "paste-over",
-	doc = "Paste, replacing each selection",
+	doc = "Paste, replacing each selection; lines copied whole go above the cursor's line",
 	run = function(ctx)
 		local pieces = kern.clipboard.get()
 		if pieces == nil then
 			return
 		end
-		local one_each = #pieces == #ctx.view:selection().ranges
+		local selection = ctx.view:selection()
 		local joined = table.concat(pieces, "\n")
+		if joined == copied_lines and nothing_selected(selection) then
+			local buffer = ctx.buffer
+			buffer:edit(function(e)
+				for _, block in line_blocks(buffer, selection) do
+					e:insert(buffer:line_start(block.first), joined)
+				end
+			end)
+			return
+		end
+		local one_each = #pieces == #selection.ranges
 		replace_selections(ctx, function(i)
 			return if one_each then pieces[i] else joined
 		end)
+	end,
+})
+
+kern.command({
+	name = "delete-lines-at-cursor",
+	doc = "Delete the lines the cursors are on",
+	run = function(ctx)
+		delete_lines(ctx.buffer, line_blocks(ctx.buffer, ctx.view:selection()))
+	end,
+})
+
+-- move-lines-up and move-lines-down: the lines the cursors are on swap
+-- with the line above or below them, cursors and all.
+for _, down in { false, true } do
+	kern.command({
+		name = if down then "move-lines-down" else "move-lines-up",
+		doc = if down then "Move the cursors' lines down one" else "Move the cursors' lines up one",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local selection = ctx.view:selection()
+			local blocks = line_blocks(buffer, selection)
+			local edge = if down
+				then blocks[#blocks].last == buffer:line_count() - 1
+				else blocks[1].first == 0
+			if edge then
+				return
+			end
+			local shifts: { { from: number, to: number, by: number } } = {}
+			buffer:edit(function(e)
+				for _, block in blocks do
+					local other = if down then block.last + 1 else block.first - 1
+					local moved, swapped =
+						lines_text(buffer, block.first, block.last),
+						lines_text(buffer, other, other)
+					local top = math.min(block.first, other)
+					local bottom = math.max(block.last, other)
+					e:replace(
+						buffer:line_start(top),
+						buffer:line_end(bottom),
+						if down then swapped .. "\n" .. moved else moved .. "\n" .. swapped
+					)
+					table.insert(shifts, {
+						from = buffer:line_start(block.first),
+						to = buffer:line_end(block.last),
+						by = (#swapped + 1) * (if down then 1 else -1),
+					})
+				end
+			end)
+			for i, range in selection.ranges do
+				for _, shift in shifts do
+					if from(range) >= shift.from and to(range) <= shift.to + 1 then
+						selection.ranges[i] =
+							{ anchor = range.anchor + shift.by, head = range.head + shift.by }
+					end
+				end
+			end
+			ctx.view:set_selection(selection)
+		end,
+	})
+end
+
+-- copy-lines-up and copy-lines-down: the cursors' lines doubled, the
+-- cursors going with the copy above or below.
+for _, down in { false, true } do
+	kern.command({
+		name = if down then "copy-lines-down" else "copy-lines-up",
+		doc = if down
+			then "Copy the cursors' lines below them"
+			else "Copy the cursors' lines above them",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local selection = ctx.view:selection()
+			-- Each copy moves the cursors after it down by its length, and a
+			-- copy below moves its own cursors down too.
+			local blocks = line_blocks(buffer, selection)
+			local copies: { string } = {}
+			local ranges = {}
+			local grown = 0
+			for i, block in blocks do
+				local lines = lines_text(buffer, block.first, block.last)
+				copies[i] = lines
+				for _, range in selection.ranges do
+					local line = buffer:line_of(range.head)
+					if line >= block.first and line <= block.last then
+						local by = grown + (if down then #lines + 1 else 0)
+						table.insert(ranges, { anchor = range.anchor + by, head = range.head + by })
+					end
+				end
+				grown += #lines + 1
+			end
+			buffer:edit(function(e)
+				for i, block in blocks do
+					if down then
+						e:insert(buffer:line_end(block.last), "\n" .. copies[i])
+					else
+						e:insert(buffer:line_start(block.first), copies[i] .. "\n")
+					end
+				end
+			end)
+			ctx.view:set_selection({ ranges = ranges, primary = 1 })
+		end,
+	})
+end
+
+-- insert-line-below and insert-line-above: a new line at the indent the
+-- code calls for, without breaking the one the cursor is on.
+for _, below in { true, false } do
+	kern.command({
+		name = if below then "insert-line-below" else "insert-line-above",
+		doc = if below
+			then "Start a new line below this one"
+			else "Start a new line above this one",
+		run = function(ctx)
+			kern.history.start_group()
+			indent.open(ctx.view, below)
+		end,
+	})
+end
+
+-- smart-home and extend-smart-home: to the line's first non-blank, or to
+-- its start when already there.
+for _, extend in { false, true } do
+	kern.command({
+		name = if extend then "extend-smart-home" else "smart-home",
+		doc = if extend
+			then "Select to the first non-blank of the line, or to its start"
+			else "Go to the first non-blank of the line, or to its start",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local selection = ctx.view:selection()
+			for i, range in selection.ranges do
+				local start = buffer:line_start(buffer:line_of(range.head))
+				local first = text.first_non_blank(buffer, start)
+				local pos = if range.head == first then start else first
+				selection.ranges[i] = { anchor = if extend then range.anchor else pos, head = pos }
+			end
+			ctx.view:set_selection(selection)
+		end,
+	})
+end
+
+kern.command({
+	name = "select-lines",
+	doc = "Select the cursor's line, or the next one too when whole lines are selected",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local selection = ctx.view:selection()
+		for i, range in selection.ranges do
+			local a, b = from(range), to(range)
+			local first, last = buffer:line_of(a), buffer:line_of(math.max(a, b - 1))
+			local whole = a == buffer:line_start(first)
+				and b > a
+				and (b == buffer:len() or b == buffer:line_start(last + 1))
+			if whole then
+				last += 1
+			end
+			local stop = if last + 1 < buffer:line_count()
+				then buffer:line_start(last + 1)
+				else buffer:len()
+			selection.ranges[i] = { anchor = buffer:line_start(first), head = stop }
+		end
+		ctx.view:set_selection(selection)
+	end,
+})
+
+-- Selects the word at the primary cursor, when nothing is selected there.
+-- Returns whether it did.
+local function select_word(ctx: kern.Context): boolean
+	local selection = ctx.view:selection()
+	local range = selection.ranges[selection.primary]
+	if range.anchor ~= range.head then
+		return false
+	end
+	local start, stop = text.word_at(ctx.buffer, range.head)
+	ctx.view:set_selection({ ranges = { { anchor = start, head = stop } }, primary = 1 })
+	return true
+end
+
+kern.command({
+	name = "select-next-match",
+	doc = "Select the word at the cursor, then add the next match of it as another selection",
+	run = function(ctx)
+		if select_word(ctx) then
+			return
+		end
+		if #ctx.view:selection().ranges == 1 then
+			kern.run("search-selection")
+		end
+		kern.run("search-next-add")
+	end,
+})
+
+kern.command({
+	name = "select-all-matches",
+	doc = "Select every match of the selected text (or the word at the cursor)",
+	run = function(ctx)
+		select_word(ctx)
+		kern.run("search-selection")
+		local count = 0
+		repeat
+			count = #ctx.view:selection().ranges
+			kern.run("search-next-add")
+		until #ctx.view:selection().ranges == count
+	end,
+})
+
+kern.command({
+	name = "replace-in-file",
+	doc = "Replace a regex everywhere in the file, on the command line",
+	run = function()
+		kern.run("command-line", { args = { "%s/" } })
 	end,
 })
 
@@ -158,7 +481,7 @@ kern.keymap.bind("edit", {
 	right = "move-right",
 	up = "move-up",
 	down = "move-down",
-	home = "line-start",
+	home = "smart-home",
 	["end"] = "line-end",
 	["ctrl-left"] = "move-word-left",
 	["ctrl-right"] = "move-word-right",
@@ -170,7 +493,7 @@ kern.keymap.bind("edit", {
 	["shift-right"] = "extend-right",
 	["shift-up"] = "extend-up",
 	["shift-down"] = "extend-down",
-	["shift-home"] = "extend-line-start",
+	["shift-home"] = "extend-smart-home",
 	["shift-end"] = "extend-line-end",
 	["ctrl-shift-left"] = "extend-word-left",
 	["ctrl-shift-right"] = "extend-word-right",
@@ -183,8 +506,8 @@ kern.keymap.bind("edit", {
 	delete = "erase-forward",
 	esc = "collapse",
 	["ctrl-a"] = "select-all",
-	["ctrl-c"] = "copy",
-	["ctrl-x"] = "cut",
+	["ctrl-c"] = "copy-or-line",
+	["ctrl-x"] = "cut-or-line",
 	["ctrl-v"] = "paste-over",
 	["ctrl-z"] = "undo",
 	["ctrl-y"] = "redo",
@@ -192,7 +515,49 @@ kern.keymap.bind("edit", {
 	["ctrl-p"] = "pick-file",
 	["ctrl-b"] = "pick-buffer",
 	["ctrl-P"] = "command-palette",
+	["ctrl-f"] = "search",
+	f3 = "search-next",
+	["shift-f3"] = "search-prev",
+	["ctrl-h"] = "replace-in-file",
+	["ctrl-g"] = "command-line",
+	["ctrl-d"] = "select-next-match",
+	["ctrl-L"] = "select-all-matches",
+	["ctrl-l"] = "select-lines",
+	["ctrl-K"] = "delete-lines-at-cursor",
+	["alt-up"] = "move-lines-up",
+	["alt-down"] = "move-lines-down",
+	["alt-shift-up"] = "copy-lines-up",
+	["alt-shift-down"] = "copy-lines-down",
+	["ctrl-alt-up"] = "copy-selection-up",
+	["ctrl-alt-down"] = "copy-selection-down",
+	["ctrl-enter"] = "insert-line-below",
+	["ctrl-shift-enter"] = "insert-line-above",
+	["ctrl-/"] = "toggle-comment",
+	["ctrl-_"] = "toggle-comment",
+	["ctrl-]"] = "indent",
+	["ctrl-backspace"] = "delete-word-back",
+	["ctrl-delete"] = "delete-word-forward",
+	["ctrl-w"] = "buffer-close",
+	f12 = "goto-definition",
+	["shift-f12"] = "goto-references",
+	f2 = "rename",
+	f8 = "next-diagnostic",
+	["shift-f8"] = "prev-diagnostic",
+	["ctrl-."] = "code-action",
+	["ctrl-O"] = "pick-outline",
+	["ctrl-t"] = "pick-workspace-symbol",
+	["ctrl-M"] = "pick-problem",
+	["alt-left"] = "jump-back",
+	["alt-right"] = "jump-forward",
 })
+
+-- Without modes there's no ":" to find, so switching here says where
+-- commands are.
+kern.on("option.changed", function(event: kern.OptionChanged)
+	if event.name == "editing-style" and event.value == "edit" then
+		kern.echo("ctrl-P runs any command, alt-x opens the command line")
+	end
+end)
 
 kern.keymap.fallback("edit", "type-char")
 kern.mode.cursor("edit", "bar")

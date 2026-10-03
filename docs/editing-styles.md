@@ -114,16 +114,31 @@ the keys are the ones most editors use.
 
 | Keys | |
 |---|---|
-| arrows, `home` `end`, `ctrl-left` `ctrl-right` | Move |
-| `pageup` `pagedown` | A screen up or down |
+| arrows, `home` `end`, `ctrl-left` `ctrl-right` | Move; `home` goes to the first non-blank, then the line's start |
+| `pageup` `pagedown`, `ctrl-home` `ctrl-end` | A screen up or down, the start or end of the file |
 | `shift` + arrows, `home` `end`, `ctrl-left` `ctrl-right` | Select |
-| `ctrl-a` | Select all |
-| `ctrl-c` `ctrl-x` `ctrl-v` | Copy, cut, paste |
+| `ctrl-a`, `ctrl-l` | Select all, select the line (again for the next one) |
+| `ctrl-c` `ctrl-x` `ctrl-v` | Copy, cut, paste; with nothing selected, copy and cut take the line |
 | `ctrl-z` `ctrl-y` | Undo, redo (`ctrl-shift-z` redoes too, where the terminal can tell it from `ctrl-z`) |
-| `tab` `shift-tab` | Indent or dedent the selected lines; `tab` alone types a level of indent |
-| `ctrl-p` `ctrl-b` | Find a file, switch to an open file |
+| `tab` `shift-tab`, `ctrl-]` | Indent or dedent the selected lines; `tab` alone types a level of indent |
+| `ctrl-backspace` `ctrl-delete` | Delete a word back or forward |
+| `alt-up` `alt-down`, `alt-shift-up` `alt-shift-down` | Move the line up or down, copy it up or down |
+| `ctrl-shift-k`, `ctrl-enter` `ctrl-shift-enter` | Delete the line, start a new line below or above |
+| `ctrl-d`, `ctrl-shift-l` | Select the word, then add its next match as another cursor; select every match |
+| `ctrl-alt-up` `ctrl-alt-down`, `alt`-click | Add a cursor above or below, or where you click |
+| `ctrl-/` | Comment or uncomment the lines |
+| `ctrl-f`, `f3` `shift-f3`, `ctrl-h` | Find, the next or previous match, replace in the file (`:%s/`) |
+| `ctrl-g` | Go to a line: type its number |
+| `f12` `shift-f12` `f2` `ctrl-.` | Go to the definition, find references, rename, code actions |
+| `f8` `shift-f8`, `ctrl-shift-m` | The next or previous problem, all problems |
+| `ctrl-shift-o` `ctrl-t` | Go to a symbol in the file, in the project |
+| `alt-left` `alt-right` | Back and forward through where you jumped from |
+| `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file |
 | `ctrl-P` or `alt-x` | Run a command |
 | `ctrl-s` | Save |
+
+Keys with `ctrl-shift` need a terminal that reports them, such as one with
+the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).
 
 Why it's here: for people who don't want modes, or don't want them yet,
 and for the odd edit where modes get in the way. Everything else in Kern
