@@ -402,10 +402,7 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 Ok(matches) => {
                     let list = lua.create_table()?;
                     for m in matches {
-                        let t = lua.create_table()?;
-                        t.set("from", m.start)?;
-                        t.set("to", m.end)?;
-                        list.push(t)?;
+                        list.push(span_table(lua, &m)?)?;
                     }
                     list.into_lua_multi(lua)
                 }
@@ -413,6 +410,44 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             }
         },
     );
+    methods.add_method(
+        "find_groups",
+        |lua, this, (pattern, from, to): (String, Option<usize>, Option<usize>)| {
+            let found = this.with_text(lua, |text| {
+                let to = to.unwrap_or(text.len_bytes());
+                Ok(search::find_all_groups(
+                    text,
+                    &pattern,
+                    from.unwrap_or(0)..to,
+                ))
+            })?;
+            match found {
+                Ok(matches) => {
+                    let list = lua.create_table()?;
+                    for groups in matches {
+                        let spans = lua.create_table()?;
+                        for group in &groups {
+                            match group {
+                                Some(span) => spans.push(span_table(lua, span)?)?,
+                                None => spans.push(false)?,
+                            }
+                        }
+                        list.push(spans)?;
+                    }
+                    list.into_lua_multi(lua)
+                }
+                Err(err) => (Value::Nil, err.to_string()).into_lua_multi(lua),
+            }
+        },
+    );
+}
+
+/// `{ from, to }` for a byte range.
+fn span_table(lua: &Lua, span: &std::ops::Range<usize>) -> LuaResult<Table> {
+    let t = lua.create_table()?;
+    t.set("from", span.start)?;
+    t.set("to", span.end)?;
+    Ok(t)
 }
 
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is

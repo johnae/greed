@@ -54,6 +54,26 @@ pub fn find_all(
     Ok(regex.find_iter(input).map(|m| m.start()..m.end()).collect())
 }
 
+/// Every match of `pattern` within `range` of `text` with its groups: the
+/// whole match first, then each group, `None` where one took no part.
+pub fn find_all_groups(
+    text: &Rope,
+    pattern: &str,
+    range: Range<usize>,
+) -> Result<Vec<Vec<Option<Range<usize>>>>, BadPattern> {
+    let regex = compile(pattern)?;
+    let end = range.end.min(text.len_bytes());
+    let input = Input::new(text.slice(..)).range(range.start.min(end)..end);
+    Ok(regex
+        .captures_iter(input)
+        .map(|caps| {
+            (0..caps.group_len())
+                .map(|i| caps.get_group(i).map(|span| span.start..span.end))
+                .collect()
+        })
+        .collect())
+}
+
 /// The first match starting at or after `from`, or the last one starting
 /// before it, going round the other end of the text with `wrap`.
 pub fn find(

@@ -1383,6 +1383,14 @@ fn plugins_search_buffers_with_regexes() {
         "0-2,3-5,6-8"
     );
     assert_eq!(eval("return #b:find_all('\\\\d', 2, 5)"), "1");
+    // Groups: the second takes no part in a match without an "x".
+    assert_eq!(
+        eval(
+            "local g = b:find_groups('([a-z])(x)?\\\\d')[1] :: any
+             return `{g[1].from}-{g[1].to} {g[2].from}-{g[2].to} {tostring(g[3])} {#g}`"
+        ),
+        "0-2 0-1 false 3"
+    );
     let bad = eval(
         "local ok, err = b:find('('); local all, err2 = b:find_all('['); return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. tostring(all) .. ' ' .. tostring(err2 ~= nil)",
     );

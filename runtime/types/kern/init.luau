@@ -115,6 +115,9 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
+	--- Like `find_all`, but each match is the whole match's range followed by
+	--- each group's, false for a group that took no part.
+	find_groups: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { { from: number, to: number } | false } }?, string?),
 	--- The transactions applied to it, newest first: by `author` ("user", "plugin",
 	--- "agent" or "external"), `plugin`, `cause` (the command that made them, "undo",
 	--- ...), `group`, made at or after `since` (seconds, like `time`), at most `limit`.
