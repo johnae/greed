@@ -72,7 +72,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `ctrl-a` `ctrl-x` | Add to or subtract from the number at or after the cursor, with counts |
 | `p P` | Paste after or before |
 | `i a I A o O`, `g i` | Insert; with a count (`3 i`) what you type goes in that many times; `g i` where you last stopped typing |
-| `u` `ctrl-r` | Undo, redo |
+| `u` `ctrl-r` `U` | Undo, redo, put back the last changed line |
 | `v` `V` `ctrl-v` | Visual mode, by character, line or block; `i`/`a` there select a text object |
 | `o` `r` `J` `p` in visual mode | Go to the other end, replace every character, join the lines, paste over the selection |
 | `g v` `g n` | Select the last visual selection again, or the next search match (`c g n` then `.` changes match after match) |
@@ -103,7 +103,7 @@ Panels like the file tree and help keep their own keys.
 
 Line commands with ranges (`:%s/a/b/g`, `:g/regex/d`, `:'<,'>norm A;`)
 are on the command line; [Using Kern](using.md#the-command-line) lists
-them. Some of Vim is still missing: `U`, a copied block pastes as plain
+them. Some of Vim is still missing: a copied block pastes as plain
 text (one piece per line), and Vim's own regex syntax (`\(`, `\<`) since
 patterns are the same regexes search uses.
 

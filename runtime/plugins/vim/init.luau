@@ -1,19 +1,20 @@
 -- Vim-style editing, written only against the plugin API. It has modes of
--- its own (vim, vim-insert and the three visual modes), so it sits
--- beside Helix's normal mode instead of replacing it, and borrows the
--- space-leader keys, ":", search, paging, the jumplist and the language
--- server keys from normal mode.
+-- its own (vim, vim-insert, vim-replace and the three visual modes), so it
+-- sits beside Helix's normal mode instead of replacing it, and borrows the
+-- space-leader keys, search, paging, the jumplist and the language server
+-- keys from normal mode.
 --
 -- Switch to it with `:style vim`, or put this in ~/.config/kern/init.luau:
 --
 --     require("@kern").option.set("editing-style", "vim")
 --
--- What's here: counts, h j k l w b e W B E ge gE 0 ^ $ g_ gg G f t F T ; , % { } ( )
--- H M L - + _ |, the operators
--- d c y > < gc g~ gu gU g? gq gw = ! with any of those motions or a text object (iw aW i( a"
--- ip it, and from the syntax tree if af ia ic) and doubled for whole lines
--- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V ctrl-v, * #,
--- q@ macros, "a registers, and . (core's) to repeat the last change.
+-- The file runs top to bottom as: text helpers; motions (one table, each
+-- saying how an operator takes its range) and marks; ranges and text
+-- objects; operators, applied through `apply` and the line and case
+-- tables; then commands for the visual modes (block mode keeps a selection
+-- per line), insert, replace, the change list and U; keys last. Ex
+-- commands (:s, :g, ranges) are the command line plugin's, and `.` is
+-- core's.
 
 local kern = require("@kern")
 local core = require("@core")
@@ -1349,6 +1350,61 @@ command("replace-back", "Put back the character typed over last, or move left", 
 	end)
 end)
 
+-- U puts back the line changes were last made on as it was before them.
+-- Before each command the cursor's line is noted; a change that keeps to
+-- that line, after others on it, keeps the first note.
+type LineNote = { buffer: number, line: number, text: string, lines: number }
+local before: LineNote? = nil
+local line_undo: LineNote? = nil
+-- Set while U changes the line, which isn't a change for it to note.
+local undoing_line = false
+
+local function cursor_line_note(view: kern.View): LineNote
+	local buffer = view:buffer()
+	local selection = view:selection()
+	local line = buffer:line_of(math.min(selection.ranges[selection.primary].head, buffer:len()))
+	return {
+		buffer = buffer:id(),
+		line = line,
+		text = buffer:slice(buffer:line_start(line), buffer:line_end(line)),
+		lines = buffer:line_count(),
+	}
+end
+
+kern.on("command.run", function()
+	before = cursor_line_note(kern.view())
+end)
+
+kern.on("buffer.changed", function(event: kern.BufferChanged)
+	local view = kern.view()
+	if undoing_line or view:buffer():id() ~= event.buffer:id() then
+		return
+	end
+	local now = cursor_line_note(view)
+	local b = before
+	if b == nil or b.buffer ~= now.buffer or b.line ~= now.line or b.lines ~= now.lines then
+		line_undo = nil
+	elseif line_undo == nil or line_undo.buffer ~= b.buffer or line_undo.line ~= b.line then
+		line_undo = b
+	end
+end)
+
+command("undo-line", "Put back the line last changed as it was before (U)", function(ctx)
+	local u, buffer = line_undo, ctx.buffer
+	if u == nil or u.buffer ~= buffer:id() or u.line >= buffer:line_count() then
+		return
+	end
+	local from, to = buffer:line_start(u.line), buffer:line_end(u.line)
+	-- U again puts the changes back.
+	line_undo = { buffer = u.buffer, line = u.line, text = buffer:slice(from, to), lines = u.lines }
+	undoing_line = true
+	buffer:edit(function(e)
+		e:replace(from, to, u.text)
+	end)
+	undoing_line = false
+	ctx.view:set_selection(point(from))
+end)
+
 -- The change list for g; and g,: where the last changes in each buffer
 -- were, kept as marks so they move with edits, numbered oldest first.
 local CHANGES = 100
@@ -1841,7 +1897,7 @@ command("redo", "Redo", function(ctx)
 end)
 
 -- `.` is core's, which types the last change's keys again.
-core.again.ignore({ "vim-undo", "vim-redo", "vim-macro", "vim-play-macro" })
+core.again.ignore({ "vim-undo", "vim-redo", "vim-undo-line", "vim-macro", "vim-play-macro" })
 core.search.at_start.vim = true
 for _, name in
 	{
@@ -1952,6 +2008,7 @@ local keys: { [string]: string } = {
 	["Z Z"] = "save-quit",
 	["Z Q"] = "vim-quit-unsaved",
 	R = "vim-replace-mode",
+	U = "vim-undo-line",
 	[":"] = "vim-command-line",
 	["g ;"] = "vim-change-older",
 	["g ,"] = "vim-change-newer",
