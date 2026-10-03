@@ -2,7 +2,8 @@
 -- (or after a ".") asks the server, and a menu at the cursor lists what
 -- matches the word so far. tab or ctrl-n and shift-tab or ctrl-p move
 -- through it, enter takes the current one, esc closes it; typing narrows
--- it. ctrl-space asks right away.
+-- it. ctrl-space asks right away. completion-words fills the same menu
+-- with words from open files instead, for Vim's ctrl-n and ctrl-p.
 --
 -- While the menu is open the editor is in a mode of its own that keeps
 -- every key of the mode you were typing in, so nothing else changes.
@@ -165,24 +166,13 @@ local function refresh(o: Open)
 	render(o)
 end
 
--- Asks the server what could go at the cursor in `view`, and opens the menu
--- if anything matches. `wanted` is the generation the ask was for.
-local function ask(view: kern.View, wanted: number)
+-- Opens the menu at the cursor in `view` with what of `items` matches the
+-- word being typed. Returns whether anything did.
+local function show(view: kern.View, items: { Item }): boolean
 	local mode = kern.mode.get()
 	local buffer = view:buffer()
-	if TYPING[mode] == nil or buffer:path() == nil then
-		return
-	end
-	local ok, result = pcall(kern.lsp.request, buffer, "textDocument/completion", {
-		textDocument = { uri = kern.lsp.uri(buffer) },
-		position = kern.lsp.position(buffer, head(view)),
-	})
-	if not ok or result == nil or wanted ~= generation or kern.mode.get() ~= mode then
-		return
-	end
-	local items = items_from(result, buffer)
 	if #items == 0 then
-		return
+		return false
 	end
 	close()
 	local start = word_start(buffer, head(view))
@@ -206,6 +196,25 @@ local function ask(view: kern.View, wanted: number)
 	open = o
 	kern.mode.set(`completion-{mode}`)
 	refresh(o)
+	return open ~= nil
+end
+
+-- Asks the server what could go at the cursor in `view`, and opens the menu
+-- if anything matches. `wanted` is the generation the ask was for.
+local function ask(view: kern.View, wanted: number)
+	local mode = kern.mode.get()
+	local buffer = view:buffer()
+	if TYPING[mode] == nil or buffer:path() == nil then
+		return
+	end
+	local ok, result = pcall(kern.lsp.request, buffer, "textDocument/completion", {
+		textDocument = { uri = kern.lsp.uri(buffer) },
+		position = kern.lsp.position(buffer, head(view)),
+	})
+	if not ok or result == nil or wanted ~= generation or kern.mode.get() ~= mode then
+		return
+	end
+	show(view, items_from(result, buffer))
 end
 
 -- Typing a word character or "." asks again once typing pauses; anything
@@ -263,6 +272,55 @@ local function move(delta: number)
 	local count = math.min(#o.matches, SHOWN)
 	o.current = (o.current - 1 + delta) % count + 1
 	render(o)
+end
+
+-- At most this many words are offered.
+local WORDS = 200
+
+-- The words in open buffers that start with what's typed before the cursor
+-- in `view`: this buffer's from the cursor on, then the rest of it, then
+-- the other buffers'.
+local function words(view: kern.View): { Item }
+	local buffer = view:buffer()
+	local pos = head(view)
+	local typed = buffer:slice(word_start(buffer, pos), pos)
+	local texts = { buffer:slice(pos, buffer:len()), buffer:slice(0, pos) }
+	for _, other in kern.buffers() do
+		if other:id() ~= buffer:id() then
+			table.insert(texts, other:text())
+		end
+	end
+	local seen: { [string]: boolean } = {}
+	local found: { Item } = {}
+	for _, text in texts do
+		for word in string.gmatch(text, "[%w_\128-\255]+") do
+			if #word > #typed and not seen[word] and string.sub(word, 1, #typed) == typed then
+				seen[word] = true
+				table.insert(found, { label = word, text = word })
+				if #found >= WORDS then
+					return found
+				end
+			end
+		end
+	end
+	return found
+end
+
+-- completion-words and completion-words-back: Vim's ctrl-n and ctrl-p.
+for _, back in { false, true } do
+	kern.command({
+		name = if back then "completion-words-back" else "completion-words",
+		doc = if back
+			then "Complete the word being typed from words in open files, starting with the last"
+			else "Complete the word being typed from words in open files",
+		run = function(ctx)
+			if not show(ctx.view, words(ctx.view)) then
+				kern.echo("no words to complete")
+			elseif back then
+				move(-1)
+			end
+		end,
+	})
 end
 
 kern.command({
