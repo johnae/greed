@@ -665,6 +665,13 @@ local function text_object(
 	elseif key == "p" then
 		local first, last = paragraph_object(buffer, pos, around)
 		return motion_range(buffer, first, last, "line")
+	elseif key == "s" then
+		local from, to = buffer:sentence(pos)
+		-- a sentence takes the blanks after it too.
+		while around and to < buffer:len() and class(buffer:char_at(to)) == "space" do
+			to = buffer:next_char(to)
+		end
+		return from, to, false
 	elseif SYNTAX_OBJECTS[key] then
 		local range =
 			core.syntax.select(buffer, { anchor = pos, head = pos }, SYNTAX_OBJECTS[key], around)
@@ -701,9 +708,14 @@ end
 
 -- Operators ---------------------------------------------------------------
 
+-- What 3i and 3o type again when insert mode ends: the count, where typing
+-- began, and whether it opened a line.
+local insert_repeat = { count = 1, start = 0, open = false }
+
 local function enter_insert(ctx: kern.Context, pos: number)
 	ctx.view:set_selection(point(pos))
 	kern.mode.set("vim-insert")
+	insert_repeat = { count = 1, start = pos, open = false }
 end
 
 -- Operators that work on whole lines through core's commands.
@@ -866,6 +878,31 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 	end
 end
 
+-- The match of the last search that `pos` is in, or the next one round the
+-- end: what gn takes.
+local function search_match(buffer: Buffer, pos: number): (number?, number?)
+	local last = core.search.last()
+	if last == nil then
+		return nil, nil
+	end
+	local pattern = core.search.smart_case(last)
+	local start = buffer:line_start(buffer:line_of(pos))
+	while start <= pos do
+		local from, to = buffer:find(pattern, start)
+		if from == nil or from > pos then
+			break
+		elseif to > pos then
+			return from, to
+		end
+		local next = math.max(to, buffer:next_char(from))
+		if next <= start then
+			break
+		end
+		start = next
+	end
+	return buffer:find(pattern, pos, { wrap = true })
+end
+
 -- Reads digits as a count, then returns the key after them and the count.
 local function read_count(): (string, number?)
 	local key = kern.next_key()
@@ -902,6 +939,13 @@ local function operate(ctx: kern.Context, op: string)
 	else
 		if key == "g" then
 			key = "g " .. kern.next_key()
+		end
+		if key == "g n" then
+			local found_from, found_to = search_match(buffer, pos)
+			if found_from and found_to then
+				apply(ctx, op, found_from, found_to, false)
+			end
+			return
 		end
 		local motion = motions[key]
 		if motion == nil then
@@ -1126,18 +1170,26 @@ local function unnamed(): { text: string, linewise: boolean }
 	return register
 end
 
-local function paste(ctx: kern.Context, after: boolean)
+-- What p pastes: the register picked with ", or the unnamed one. Nil for "_.
+local function to_paste(): { text: string, linewise: boolean }?
 	local name = core.registers.take()
-	local from = unnamed()
 	if name == "_" then
-		return
+		return nil
 	elseif name and name ~= "+" and name ~= "*" then
 		name = string.lower(name)
 		-- Text another style copied into it has no line information.
 		local pieces = core.registers.get(name)
-		from = named[name]
+		return named[name]
 			or (pieces and { text = table.concat(pieces, "\n"), linewise = false })
 			or { text = "", linewise = false }
+	end
+	return unnamed()
+end
+
+local function paste(ctx: kern.Context, after: boolean)
+	local from = to_paste()
+	if from == nil then
+		return
 	end
 	local buffer, pos = ctx.buffer, cursor(ctx)
 	local text = string.rep(from.text, ctx.count or 1)
@@ -1187,28 +1239,35 @@ command("paste-before", "Paste before the cursor, or above the line", function(c
 	paste(ctx, false)
 end)
 
-command("insert", "Insert before the cursor", function(ctx)
+-- Starts typing at `pos` as one undo step, typed the count's times over.
+local function start_insert(ctx: kern.Context, pos: number)
 	kern.history.start_group()
-	enter_insert(ctx, cursor(ctx))
+	enter_insert(ctx, pos)
+	insert_repeat.count = ctx.count or 1
+end
+
+command("insert", "Insert before the cursor", function(ctx)
+	start_insert(ctx, cursor(ctx))
 end)
 command("append", "Insert after the cursor", function(ctx)
-	kern.history.start_group()
 	local buffer, pos = ctx.buffer, cursor(ctx)
-	enter_insert(ctx, math.min(buffer:next_char(pos), buffer:line_end(buffer:line_of(pos))))
+	start_insert(ctx, math.min(buffer:next_char(pos), buffer:line_end(buffer:line_of(pos))))
 end)
 command("insert-line-start", "Insert at the first non-blank of the line", function(ctx)
-	kern.history.start_group()
-	enter_insert(ctx, first_non_blank(ctx.buffer, ctx.buffer:line_of(cursor(ctx))))
+	start_insert(ctx, first_non_blank(ctx.buffer, ctx.buffer:line_of(cursor(ctx))))
 end)
 command("append-line-end", "Insert at the end of the line", function(ctx)
-	kern.history.start_group()
-	enter_insert(ctx, ctx.buffer:line_end(ctx.buffer:line_of(cursor(ctx))))
+	start_insert(ctx, ctx.buffer:line_end(ctx.buffer:line_of(cursor(ctx))))
+end)
+command("insert-last", "Insert where insert mode was last left", function(ctx)
+	start_insert(ctx, mark_place(ctx.buffer, "^") or cursor(ctx))
 end)
 
 local function open_line(ctx: kern.Context, below: boolean)
 	kern.history.start_group()
 	core.indent.open(ctx.view, below)
 	enter_insert(ctx, cursor(ctx))
+	insert_repeat.count, insert_repeat.open = ctx.count or 1, true
 end
 command("open-below", "Open a line below and insert", function(ctx)
 	open_line(ctx, true)
@@ -1217,19 +1276,105 @@ command("open-above", "Open a line above and insert", function(ctx)
 	open_line(ctx, false)
 end)
 
+-- Types what 3i or 3o typed twice more, ending at `pos`. Returns where the
+-- cursor goes.
+local function repeat_insert(buffer: Buffer, pos: number): number
+	local times, start = insert_repeat.count - 1, insert_repeat.start
+	insert_repeat.count = 1
+	if times < 1 or pos <= start then
+		return pos
+	end
+	local text = if insert_repeat.open
+		then "\n" .. buffer:slice(buffer:line_start(buffer:line_of(start)), pos)
+		else buffer:slice(start, pos)
+	local typed = string.rep(text, times)
+	buffer:edit(function(e)
+		e:insert(pos, typed)
+	end)
+	return pos + #typed
+end
+
 command("normal", "Back to normal mode", function(ctx)
-	kern.history.end_group()
 	local mode = kern.mode.get()
-	local was_insert = mode == "vim-insert"
-	kern.mode.set("vim")
 	local buffer = ctx.buffer
 	local pos = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
-	local _, start = line_bounds(buffer, pos)
-	-- Leaving insert mode steps back onto the last character typed.
-	if was_insert and pos > start then
-		pos = buffer:prev_char(pos)
+	if mode == "vim-insert" then
+		pos = repeat_insert(buffer, pos)
+		set_mark(buffer, "^", pos)
+		-- Leaving insert mode steps back onto the last character typed.
+		local _, start = line_bounds(buffer, pos)
+		if pos > start then
+			pos = buffer:prev_char(pos)
+		end
 	end
+	kern.history.end_group()
+	kern.mode.set("vim")
 	ctx.view:set_selection(point(on_char(buffer, pos)))
+end)
+
+-- The last visual selection and its mode, for gv.
+local last_visual: { mode: string, selection: kern.Selection, block: typeof(block) }? = nil
+
+kern.on("mode.changed", function(event: kern.ModeChanged)
+	local visual_mode = "^vim%-visual"
+	if string.match(event.from, visual_mode) and not string.match(event.to, visual_mode) then
+		last_visual = {
+			mode = event.from,
+			selection = kern.view():selection(),
+			block = table.clone(block),
+		}
+	end
+end)
+
+command("reselect", "Select the last visual selection again", function(ctx)
+	if last_visual == nil then
+		return
+	end
+	local len = ctx.buffer:len()
+	local ranges = {}
+	for _, range in last_visual.selection.ranges do
+		table.insert(
+			ranges,
+			{ anchor = math.min(range.anchor, len), head = math.min(range.head, len) }
+		)
+	end
+	if last_visual.mode == "vim-visual-block" then
+		block = table.clone(last_visual.block)
+	elseif last_visual.mode == "vim-visual-line" then
+		visual_line = ctx.buffer:line_of(ranges[1].anchor)
+	end
+	kern.mode.set(last_visual.mode)
+	ctx.view:set_selection({ ranges = ranges, primary = last_visual.selection.primary })
+end)
+
+command("select-match", "Select the search match under the cursor, or the next one", function(ctx)
+	local from, to = search_match(ctx.buffer, cursor(ctx))
+	if from == nil or to == nil then
+		kern.echo("no match")
+		return
+	end
+	kern.mode.set("vim-visual")
+	ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+end)
+
+-- ctrl-a and ctrl-x: core's, leaving the cursor on the number's last digit.
+for _, down in { false, true } do
+	local name = if down then "decrement" else "increment"
+	local doc = if down
+		then "Subtract the count (or 1) from the number at or after the cursor"
+		else "Add the count (or 1) to the number at or after the cursor"
+	command(name, doc, function(ctx)
+		kern.run(name, { count = ctx.count })
+		local range = ctx.view:selection().ranges[1]
+		local to = math.max(range.anchor, range.head)
+		if to > math.min(range.anchor, range.head) then
+			ctx.view:set_selection(point(ctx.buffer:prev_char(to)))
+		end
+	end)
+end
+
+command("quit-unsaved", "Close without saving (ZQ)", function()
+	kern.run("quit", { force = true })
 end)
 
 command(
@@ -1395,8 +1540,9 @@ command(
 	end
 )
 
--- Joins `times` lines onto `line`, each with one space.
-local function join(ctx: kern.Context, line: number, times: number)
+-- Joins `times` lines onto `line`, each with one space, or as they are
+-- with `raw` (gJ).
+local function join(ctx: kern.Context, line: number, times: number, raw: boolean?)
 	local buffer = ctx.buffer
 	local at = cursor(ctx)
 	-- One undo step however many lines it joins.
@@ -1408,9 +1554,9 @@ local function join(ctx: kern.Context, line: number, times: number)
 		local stop = buffer:line_end(line)
 		local next_start = buffer:line_start(line + 1)
 		local next_text = buffer:slice(next_start, buffer:line_end(line + 1))
-		local lead = #(string.match(next_text, "^%s*") :: string)
+		local lead = if raw then 0 else #(string.match(next_text, "^%s*") :: string)
 		buffer:edit(function(e)
-			e:replace(stop, next_start + lead, " ")
+			e:replace(stop, next_start + lead, if raw then "" else " ")
 		end)
 		at = stop
 	end
@@ -1418,9 +1564,17 @@ local function join(ctx: kern.Context, line: number, times: number)
 	ctx.view:set_selection(point(at))
 end
 
-command("join", "Join the next line onto this one, with one space", function(ctx)
-	join(ctx, ctx.buffer:line_of(cursor(ctx)), math.max((ctx.count or 2) - 1, 1))
-end)
+for _, raw in { false, true } do
+	command(
+		if raw then "join-raw" else "join",
+		if raw
+			then "Join the next line onto this one as it is"
+			else "Join the next line onto this one, with one space",
+		function(ctx)
+			join(ctx, ctx.buffer:line_of(cursor(ctx)), math.max((ctx.count or 2) - 1, 1), raw)
+		end
+	)
+end
 
 -- The first and last line the selection touches.
 local function selected_lines(ctx: kern.Context): (number, number)
@@ -1454,6 +1608,51 @@ command("visual-replace", "Replace every selected character with the next one ty
 		end
 	end)
 	ctx.view:set_selection(point(on_char(buffer, top)))
+end)
+
+command("visual-paste", "Replace the selection with what's in the register", function(ctx)
+	local from = to_paste()
+	if from == nil then
+		return
+	end
+	local mode = kern.mode.get()
+	local buffer = ctx.buffer
+	if mode == "vim-visual-block" then
+		-- The block goes first, then what's pasted goes where it started.
+		block_operate(ctx, "d")
+	end
+	local range = ctx.view:selection().ranges[1]
+	local start, stop = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	kern.mode.set("vim")
+	local lines = mode == "vim-visual-line"
+	local text = from.text
+	if lines then
+		-- Whole lines take their line break, except the last line's.
+		if stop < buffer:len() then
+			stop += 1
+			if not from.linewise then
+				text ..= "\n"
+			end
+		elseif from.linewise then
+			text = string.gsub(text, "\n$", "")
+		end
+	elseif from.linewise then
+		text = "\n" .. text
+	end
+	-- What it replaces goes in the unnamed register, as a delete would (the
+	-- block's delete already did).
+	if stop > start then
+		store("d", { text = buffer:slice(start, stop), linewise = lines })
+	end
+	buffer:edit(function(e)
+		e:replace(start, stop, text)
+	end)
+	if lines or from.linewise then
+		local first = if lines then start else start + 1
+		ctx.view:set_selection(point(first_non_blank(buffer, buffer:line_of(first))))
+	else
+		ctx.view:set_selection(point(on_char(buffer, buffer:prev_char(start + #text))))
+	end
 end)
 
 -- * and # search for the word under the cursor, forward or back.
@@ -1588,6 +1787,14 @@ local keys: { [string]: string } = {
 	["z c"] = "fold-close",
 	["ctrl-e"] = "scroll-down",
 	["ctrl-y"] = "scroll-up",
+	["ctrl-a"] = "vim-increment",
+	["ctrl-x"] = "vim-decrement",
+	["g J"] = "vim-join-raw",
+	["g i"] = "vim-insert-last",
+	["g v"] = "vim-reselect",
+	["g n"] = "vim-select-match",
+	["Z Z"] = "save-quit",
+	["Z Q"] = "vim-quit-unsaved",
 }
 local visual: { [string]: string } = {
 	d = "vim-operator-d",
@@ -1613,6 +1820,8 @@ local visual: { [string]: string } = {
 	o = "vim-visual-swap",
 	r = "vim-visual-replace",
 	J = "vim-visual-join",
+	p = "vim-visual-paste",
+	P = "vim-visual-paste",
 	["ctrl-v"] = "vim-visual-block",
 }
 for key in motions do

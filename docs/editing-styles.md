@@ -63,17 +63,20 @@ character, and `v` starts a visual mode for selecting by hand.
 | `{ }` `( )` `H M L` `- + _` `\|` | Paragraphs, sentences, the top, middle or bottom of the screen, lines, a column |
 | `f t F T` + a character, `; ,` | To the next or previous character on the line; again, or back |
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
-| `i w` `a w` `i W` `i (` `a "` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, paragraphs, tags |
+| `i w` `a w` `i W` `i (` `a "` `i s` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, sentences, paragraphs, tags |
 | `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |
 | `g ~` `g u` `g U` `g ?` + a motion | Switch case, lowercase, uppercase, rot13 (`~` `u` `U` in visual mode) |
 | `g q` `g w` `=` `!` + a motion | Rewrap to the `text-width` option (`g w` keeps the cursor), reindent, pipe through a command |
 | `x X D C s S` | The usual shortcuts for deleting and changing |
-| `r` `~` `J` | Replace a character, switch case, join lines |
+| `r` `~` `J` `g J` | Replace a character, switch case, join lines (`g J` without adding or removing spaces) |
+| `ctrl-a` `ctrl-x` | Add to or subtract from the number at or after the cursor, with counts |
 | `p P` | Paste after or before |
-| `i a I A o O` | Insert |
+| `i a I A o O`, `g i` | Insert; with a count (`3 i`) what you type goes in that many times; `g i` where you last stopped typing |
 | `u` `ctrl-r` | Undo, redo |
 | `v` `V` `ctrl-v` | Visual mode, by character, line or block; `i`/`a` there select a text object |
-| `o` `r` `J` in visual mode | Go to the other end, replace every character, join the lines |
+| `o` `r` `J` `p` in visual mode | Go to the other end, replace every character, join the lines, paste over the selection |
+| `g v` `g n` | Select the last visual selection again, or the next search match (`c g n` then `.` changes match after match) |
+| `Z Z` `Z Q` | Save and close, close without saving |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
