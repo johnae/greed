@@ -101,12 +101,26 @@ fn prose_plugin_tests_pass() {
 
 #[test]
 fn cmdline_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("cmdline")], &plugin("cmdline"));
+    // :norm is tried in the Vim style.
+    assert_all_pass(
+        &[core(), plugin("cmdline"), plugin("vim")],
+        &plugin("cmdline"),
+    );
 }
 
 #[test]
 fn vim_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("vim")], &plugin("vim"));
+    // Vim uses the completion menu for ctrl-n in insert mode and the
+    // command line for :.
+    let plugins = [
+        core(),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("lsp"),
+        plugin("cmdline"),
+        plugin("vim"),
+    ];
+    assert_all_pass(&plugins, &plugin("vim"));
 }
 
 #[test]
