@@ -80,7 +80,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `.` | Repeat the last change, with what it typed |
 | `q` + a letter, `q` | Record a macro into that register, stop |
 | `@` + a letter, `@ @` | Play a macro, play the last one again |
-| `"` + a letter | Use that register for the next yank, delete or paste; an uppercase letter appends |
+| `"` + a letter | Use that register for the next yank, delete or paste; an uppercase letter appends; `"0` holds the last yank, `"1`–`"9` the last line deletes, `"-` a small one |
 
 Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
@@ -92,8 +92,8 @@ The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
 Panels like the file tree and help keep their own keys.
 
-It isn't all of Vim yet. Marks, ex ranges, visual block mode and the
-numbered registers are missing.
+It isn't all of Vim yet. Marks, ex ranges and visual block mode are
+missing.
 
 ## Edit
 

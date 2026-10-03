@@ -732,12 +732,32 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 			taken = { text = before.text .. taken.text, linewise = before.linewise or linewise }
 		end
 	end
+	-- Keeps `value` in register `into`, for p and for ctrl-r while typing.
+	local function keep(into: string, value: { text: string, linewise: boolean })
+		named[into] = value
+		core.registers.set(into, { value.text })
+	end
 	if name == nil or name == "+" or name == "*" then
 		register = taken
 		kern.clipboard.set(taken.text)
+		-- The numbered registers, as Vim keeps them: "0 the last yank, "1 to
+		-- "9 the last deletes of lines (older ones moving down), "- the last
+		-- smaller delete.
+		if op == "y" then
+			keep("0", taken)
+		elseif linewise or string.find(taken.text, "\n", 1, true) then
+			for n = 9, 2, -1 do
+				local older = named[tostring(n - 1)]
+				if older then
+					keep(tostring(n), older)
+				end
+			end
+			keep("1", taken)
+		else
+			keep("-", taken)
+		end
 	elseif name ~= "_" then
-		named[name] = taken
-		core.registers.set(name, { taken.text })
+		keep(name, taken)
 	end
 	if op == "y" then
 		-- Whole lines at the end start with the line break before them.
