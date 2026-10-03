@@ -11,6 +11,7 @@ local file = require("@self/file")
 local search = require("@self/search")
 require("@self/select")
 local jump = require("@self/jump")
+local hints = require("@self/hints")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
@@ -205,6 +206,7 @@ return {
 	comment = comment,
 	jumps = jumps,
 	jump = jump,
+	hints = hints,
 	objects = objects,
 	syntax = syntax,
 	words = words,

@@ -1117,9 +1117,14 @@ local function block_selection(buffer: Buffer): kern.Selection
 	return { ranges = ranges, primary = primary }
 end
 
+-- The motions the `motion-hints` option numbers the next places of.
+local HINTED: { [string]: boolean } =
+	{ w = true, b = true, e = true, W = true, B = true, E = true, ["g e"] = true, ["g E"] = true }
+
 -- Motions move the cursor, or extend the selection in visual mode.
 for key, motion in motions do
-	command("motion-" .. string.gsub(key, " ", ""), "Vim motion " .. key, function(ctx)
+	local name = "motion-" .. string.gsub(key, " ", "")
+	command(name, "Vim motion " .. key, function(ctx)
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
 		local mode = kern.mode.get()
@@ -1139,6 +1144,19 @@ for key, motion in motions do
 			ctx.view:set_selection(visual(ctx.buffer, visual_start(ctx.buffer, range), target))
 		else
 			ctx.view:set_selection(point(on_char(ctx.buffer, target)))
+		end
+		if HINTED[key] and (mode == "vim" or mode == "vim-visual") then
+			core.hints.after(ctx, "vim-" .. name, function(buffer, at)
+				local next = motion(buffer, core.motions.cursor(buffer, at), 1)
+				if next == nil then
+					return nil, nil
+				end
+				next = on_char(buffer, next)
+				local moved = if mode == "vim-visual"
+					then visual(buffer, visual_start(buffer, at), next)
+					else point(next)
+				return moved.ranges[1], next
+			end)
 		end
 	end)
 end

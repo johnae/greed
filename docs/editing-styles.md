@@ -43,6 +43,14 @@ select: `v l l` selects three characters, `;` leaves the cursor on the
 character it was on, and `d` on a bare cursor deletes that character.
 `w`, `b` and `e` move exactly as Helix's do.
 
+With `:set motion-hints true` (off by default), a word motion (`w` `b`
+`e` and their WORD forms) numbers the next nine places doing it again
+would take you, and typing a number goes there in one key: `w 3` instead
+of `w w w w`. In select mode it extends the selection. Right after such a
+motion a digit is then a number to jump to rather than the start of a
+count; any other key drops the numbers. Vim's style has the same option
+for `w b e W B E g e g E`, in normal and visual mode.
+
 Why it's the default: you see what a command will act on before you run
 it, and many selections are part of the model rather than a separate
 feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then

@@ -10,6 +10,7 @@
 local kern = require("@kern")
 local text = require("./text")
 local words = require("./words")
+local hints = require("./hints")
 
 type Buffer = kern.Buffer
 type Range = kern.Range
@@ -130,6 +131,10 @@ local function select_to(name: string, doc: string, target: Target, word: words.
 				each_range(ctx, function(buffer, range)
 					return words.move(buffer, range, ctx.count or 1, word)
 				end)
+				hints.after(ctx, name, function(buffer, range)
+					local next = words.move(buffer, range, 1, word)
+					return next, M.cursor(buffer, next)
+				end)
 				return
 			end
 			local skip = repeated(target, (ctx.count or 1) - 1)
@@ -152,6 +157,11 @@ local function extend_word(name: string, doc: string, target: Target, word: word
 				each_range(ctx, function(buffer, range)
 					local moved = words.move(buffer, range, ctx.count or 1, word)
 					return M.put_cursor(buffer, range, M.cursor(buffer, moved))
+				end)
+				hints.after(ctx, name, function(buffer, range)
+					local moved = words.move(buffer, range, 1, word)
+					local next = M.put_cursor(buffer, range, M.cursor(buffer, moved))
+					return next, M.cursor(buffer, next)
 				end)
 				return
 			end
