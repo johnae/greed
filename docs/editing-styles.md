@@ -101,8 +101,11 @@ The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
 Panels like the file tree and help keep their own keys.
 
-It isn't all of Vim yet. Ex ranges are missing, and a copied block pastes
-as plain text, one piece per line.
+Line commands with ranges (`:%s/a/b/g`, `:g/regex/d`, `:'<,'>norm A;`)
+are on the command line; [Using Kern](using.md#the-command-line) lists
+them. Some of Vim is still missing: `U`, a copied block pastes as plain
+text (one piece per line), and Vim's own regex syntax (`\(`, `\<`) since
+patterns are the same regexes search uses.
 
 ## Edit
 

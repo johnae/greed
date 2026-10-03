@@ -1461,6 +1461,28 @@ kern.on("mode.changed", function(event: kern.ModeChanged)
 	end
 end)
 
+command(
+	"command-line",
+	"Open the command line, with the selected lines (or the count's) as its range",
+	function(ctx)
+		local mode = kern.mode.get()
+		local text = ""
+		if string.match(mode, "^vim%-visual") then
+			-- A block's lines, as one range for '<,'> to read.
+			local ranges = ctx.view:selection().ranges
+			ctx.view:set_selection({
+				ranges = { { anchor = ranges[1].anchor, head = ranges[#ranges].head } },
+				primary = 1,
+			})
+			kern.mode.set("vim")
+			text = "'<,'>"
+		elseif ctx.count then
+			text = if ctx.count == 1 then "." else `.,.+{ctx.count - 1}`
+		end
+		kern.run("command-line", { args = { text } })
+	end
+)
+
 command("reselect", "Select the last visual selection again", function(ctx)
 	if last_visual == nil then
 		return
@@ -1844,7 +1866,6 @@ kern.keymap.inherit_kinds("vim", "normal")
 -- references and problems. Plugins loaded later get them too.
 kern.keymap.inherit("vim", "normal", {
 	"space",
-	":",
 	"/",
 	"?",
 	"n",
@@ -1931,6 +1952,7 @@ local keys: { [string]: string } = {
 	["Z Z"] = "save-quit",
 	["Z Q"] = "vim-quit-unsaved",
 	R = "vim-replace-mode",
+	[":"] = "vim-command-line",
 	["g ;"] = "vim-change-older",
 	["g ,"] = "vim-change-newer",
 	["z f"] = "vim-operator-zf",
@@ -1960,6 +1982,7 @@ local visual: { [string]: string } = {
 	["="] = "vim-operator-=",
 	["!"] = "vim-operator-!",
 	["z f"] = "vim-operator-zf",
+	[":"] = "vim-command-line",
 	i = "vim-visual-inside",
 	a = "vim-visual-around",
 	o = "vim-visual-swap",
