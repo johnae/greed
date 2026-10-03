@@ -1,4 +1,4 @@
-//! `kern.fs`: the file system, for file trees, previews, project search and the
+//! `greed.fs`: the file system, for file trees, previews, project search and the
 //! like. Failures return `nil` and a message, since a missing file is
 //! usually something to show rather than a bug.
 
@@ -110,7 +110,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     Ok(fs)
 }
 
-/// `kern.fs.grep`, which searches in the background and waits, so a command
+/// `greed.fs.grep`, which searches in the background and waits, so a command
 /// searching a big project never holds up the editor.
 fn grep_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(
@@ -121,10 +121,10 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
             }))
         },
     )?;
-    jobs::waiting(lua, "kern.fs.grep", start)
+    jobs::waiting(lua, "greed.fs.grep", start)
 }
 
-/// The directory and options from `kern.fs.grep`'s arguments.
+/// The directory and options from `greed.fs.grep`'s arguments.
 fn grep_args(dir: Option<String>, opts: Option<&Table>) -> LuaResult<(String, GrepOptions)> {
     let get =
         |key: &str| -> LuaResult<Option<mlua::Value>> { opts.map_or(Ok(None), |o| o.get(key)) };
@@ -141,7 +141,7 @@ fn grep_args(dir: Option<String>, opts: Option<&Table>) -> LuaResult<(String, Gr
     Ok((dir.unwrap_or_else(|| ".".to_owned()), options))
 }
 
-/// How many matching lines `kern.fs.grep` returns unless told otherwise.
+/// How many matching lines `greed.fs.grep` returns unless told otherwise.
 const DEFAULT_GREP_LIMIT: usize = 10_000;
 
 pub(super) fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> {
@@ -216,16 +216,16 @@ fn read(path: &Path, limit: Option<usize>) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Kern's folder under `$var`, or under `fallback` in the home directory.
+/// Greed's folder under `$var`, or under `fallback` in the home directory.
 fn user_dir(var: &str, fallback: &str) -> Option<String> {
     let base = std::env::var_os(var)
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(fallback)))?;
-    Some(base.join("kern").to_string_lossy().into_owned())
+    Some(base.join("greed").to_string_lossy().into_owned())
 }
 
-/// `kern.fs.dirs()`: home, config, cache and data folders, and the config
-/// kern ssh brought; for tests, folders of their own.
+/// `greed.fs.dirs()`: home, config, cache and data folders, and the config
+/// greed ssh brought; for tests, folders of their own.
 fn dirs(lua: &Lua) -> LuaResult<Table> {
     let dirs = lua.create_table()?;
     if let Some(root) = state(lua).dirs.clone() {
@@ -249,7 +249,7 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
     // Where plugins made in the editor go when the config can't be written,
     // like one Nix manages.
     dirs.set("data", user_dir("XDG_DATA_HOME", ".local/share"))?;
-    // The copy of your config `kern ssh` brought, on its far end.
+    // The copy of your config `greed ssh` brought, on its far end.
     dirs.set("brought", std::env::var("GREED_SSH_CONFIG_DIR").ok())?;
     Ok(dirs)
 }

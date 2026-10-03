@@ -1,7 +1,7 @@
 -- Diagnostics as marks: a sign beside each line with a problem, and the
 -- worst problem's message after the end of the line.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local NAMES = { "error", "warning", "info", "hint" }
 local SIGNS = { "E", "W", "I", "H" }
@@ -10,8 +10,8 @@ local M = {}
 
 -- The marks for `diagnostics` in `buffer`; `messages` says whether to show
 -- their text after each line.
-function M.diagnostic_marks(buffer: kern.Buffer, diagnostics: { kern.Diagnostic }, messages: boolean): { kern.Mark }
-	local worst: { [number]: kern.Diagnostic } = {}
+function M.diagnostic_marks(buffer: greed.Buffer, diagnostics: { greed.Diagnostic }, messages: boolean): { greed.Mark }
+	local worst: { [number]: greed.Diagnostic } = {}
 	for _, d in diagnostics do
 		local line = buffer:line_of(d.from)
 		local current = worst[line]
@@ -24,7 +24,7 @@ function M.diagnostic_marks(buffer: kern.Buffer, diagnostics: { kern.Diagnostic 
 		table.insert(lines, line)
 	end
 	table.sort(lines)
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	for _, line in lines do
 		local d = worst[line]
 		local name = NAMES[d.severity] or "hint"

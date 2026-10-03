@@ -1,4 +1,4 @@
-//! Kern's editor core: buffers, history, registry, keymaps and the Luau host.
+//! Greed's editor core: buffers, history, registry, keymaps and the Luau host.
 
 mod buffer;
 pub mod control;

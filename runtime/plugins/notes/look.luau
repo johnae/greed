@@ -12,9 +12,9 @@
 --     notes.symbols({ todo = "", done = "", bullet = "-" })
 --     notes.rule({ pattern = "#[%w_-]+", style = "notes.tag" })
 --     notes.rule({ pattern = "!!", show = "🔥", style = "notes.urgent" })
---     require("@kern").theme.set({ ["notes.tag"] = { fg = "magenta" } })
+--     require("@greed").theme.set({ ["notes.tag"] = { fg = "magenta" } })
 
-local kern = require("@kern")
+local greed = require("@greed")
 local notes = require("./notes")
 
 local M = {}
@@ -30,7 +30,7 @@ local function day(year: string, month: string, date: string): string
 end
 
 -- The marks for one line of text starting at `at`.
-local function line_marks(text: string, at: number, out: { kern.Mark })
+local function line_marks(text: string, at: number, out: { greed.Mark })
 	local function show(
 		from: number,
 		to: number,
@@ -102,12 +102,12 @@ local function line_marks(text: string, at: number, out: { kern.Mark })
 	end
 end
 
-local function mark(buffer: kern.Buffer)
-	if not notes.is_note(buffer) or kern.option.get("notes-conceal") ~= true then
+local function mark(buffer: greed.Buffer)
+	if not notes.is_note(buffer) or greed.option.get("notes-conceal") ~= true then
 		buffer:decorate("notes-look", {})
 		return
 	end
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	for line = 0, buffer:line_count() - 1 do
 		local start = buffer:line_start(line)
 		line_marks(buffer:slice(start, buffer:line_end(line)), start, marks)
@@ -117,21 +117,21 @@ end
 
 --- Draws every open note again, as after changing symbols or rules.
 function M.refresh()
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		mark(buffer)
 	end
 end
 
 notes.look.changed = M.refresh
 
-local function on_buffer(event: kern.BufferChanged)
+local function on_buffer(event: greed.BufferChanged)
 	pcall(mark, event.buffer)
 end
 
-kern.on("buffer.opened", on_buffer)
-kern.on("buffer.changed", on_buffer)
+greed.on("buffer.opened", on_buffer)
+greed.on("buffer.changed", on_buffer)
 
-kern.on("option.changed", function(event)
+greed.on("option.changed", function(event)
 	if event.name == "notes-conceal" or event.name == "notes-everywhere" then
 		M.refresh()
 	end

@@ -1,4 +1,4 @@
-//! `kern.project`: the projects open in the editor, each a folder with its
+//! `greed.project`: the projects open in the editor, each a folder with its
 //! own main view and panels. Plugins decide what opens a project and how
 //! switching looks; this is just the bookkeeping.
 

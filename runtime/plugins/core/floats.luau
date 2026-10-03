@@ -2,7 +2,7 @@
 -- the title is) to move one, an edge or a corner to resize it. Pressing on
 -- a float's border brings it to the front.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
@@ -14,7 +14,7 @@ type Area = { x: number, y: number, width: number, height: number }
 
 -- The float being dragged: which part was pressed, where, and the box it
 -- had then, border included.
-local dragging: { view: kern.View, part: string, col: number, row: number, box: Area }? = nil
+local dragging: { view: greed.View, part: string, col: number, row: number, box: Area }? = nil
 
 --- Where `box` would go after dragging its `part` by `dx` and `dy`
 --- cells: the top border moves it, the other edges and the corners resize it.
@@ -46,12 +46,12 @@ function M.dragged(box: Area, part: string, dx: number, dy: number): Area
 end
 
 --- Whether `view` is floating.
-function M.is_float(view: kern.View): boolean
+function M.is_float(view: greed.View): boolean
 	return view:float_spec() ~= nil
 end
 
 -- `view`'s box as last drawn, border included; nil before it's drawn.
-local function box_of(view: kern.View): Area?
+local function box_of(view: greed.View): Area?
 	local area = view:area()
 	if area == nil then
 		return nil
@@ -59,13 +59,13 @@ local function box_of(view: kern.View): Area?
 	return { x = area.x - 1, y = area.y - 1, width = area.width + 2, height = area.height + 2 }
 end
 
-local function place(view: kern.View, box: Area)
+local function place(view: greed.View, box: Area)
 	view:configure({ x = box.x, y = box.y, width = box.width, height = box.height })
 end
 
 --- Grows the float `view` by `cells` toward `side` ("left", "right", "up"
 --- or "down"), or shrinks it from that side with negative `cells`.
-function M.grow(view: kern.View, side: string, cells: number)
+function M.grow(view: greed.View, side: string, cells: number)
 	local box = box_of(view)
 	if box == nil then
 		return
@@ -79,14 +79,14 @@ function M.grow(view: kern.View, side: string, cells: number)
 end
 
 --- Moves the float `view` by `dx` columns and `dy` rows.
-function M.move(view: kern.View, dx: number, dy: number)
+function M.move(view: greed.View, dx: number, dy: number)
 	local box = box_of(view)
 	if box then
 		place(view, M.dragged(box, "top", dx, dy))
 	end
 end
 
-kern.on("mouse", function(event: kern.MouseEvent)
+greed.on("mouse", function(event: greed.MouseEvent)
 	if event.kind == "press" and event.button == "left" and event.border and event.view then
 		local view = event.view
 		local box = box_of(view)

@@ -1,4 +1,4 @@
-//! Keeps the `@kern` type definitions honest: everything they declare must
+//! Keeps the `@greed` type definitions honest: everything they declare must
 //! exist in the running API, plain API tables must declare everything they
 //! have, and the default runtime must pass `luau-analyze` in strict mode.
 
@@ -14,7 +14,7 @@ fn runtime() -> PathBuf {
 }
 
 fn types() -> String {
-    std::fs::read_to_string(runtime().join("types/kern/init.luau")).unwrap()
+    std::fs::read_to_string(runtime().join("types/greed/init.luau")).unwrap()
 }
 
 /// Field names declared in `export type <name> = { ... }`.
@@ -64,22 +64,25 @@ fn missing(host: &Host, setup: &str, names: &[String]) -> Vec<String> {
 #[test]
 fn declared_api_exists() {
     let types = types();
-    let kern = "local kern = require('@kern')";
+    let greed = "local greed = require('@greed')";
     let cases = [
-        ("Kern", format!("{kern} check(kern)")),
-        ("Keymap", format!("{kern} check(kern.keymap)")),
-        ("Mode", format!("{kern} check(kern.mode)")),
-        ("Options", format!("{kern} check(kern.option)")),
-        ("History", format!("{kern} check(kern.history)")),
-        ("Clipboard", format!("{kern} check(kern.clipboard)")),
-        ("Lsp", format!("{kern} check(kern.lsp)")),
-        ("View", format!("{kern} check(kern.view())")),
-        ("Buffer", format!("{kern} check(kern.view():buffer())")),
-        ("Edits", format!("{kern} kern.view():buffer():edit(check)")),
+        ("Greed", format!("{greed} check(greed)")),
+        ("Keymap", format!("{greed} check(greed.keymap)")),
+        ("Mode", format!("{greed} check(greed.mode)")),
+        ("Options", format!("{greed} check(greed.option)")),
+        ("History", format!("{greed} check(greed.history)")),
+        ("Clipboard", format!("{greed} check(greed.clipboard)")),
+        ("Lsp", format!("{greed} check(greed.lsp)")),
+        ("View", format!("{greed} check(greed.view())")),
+        ("Buffer", format!("{greed} check(greed.view():buffer())")),
+        (
+            "Edits",
+            format!("{greed} greed.view():buffer():edit(check)"),
+        ),
         (
             "Node",
             format!(
-                "{kern} local b = kern.view():buffer() \
+                "{greed} local b = greed.view():buffer() \
                  b:edit(function(e) e:insert(0, 'fn a() {{}}') end) b:set_language('rust') \
                  check(b:node_at(3))"
             ),
@@ -87,7 +90,7 @@ fn declared_api_exists() {
         (
             "Terminal",
             format!(
-                "{kern} local t = kern.terminal.spawn({{ command = {{ 'true' }}, rows = 2, cols = 10 }}) \
+                "{greed} local t = greed.terminal.spawn({{ command = {{ 'true' }}, rows = 2, cols = 10 }}) \
                  check(t) t:close()"
             ),
         ),
@@ -104,22 +107,22 @@ fn declared_api_exists() {
 fn api_tables_are_fully_declared() {
     let types = types();
     let cases = [
-        ("Kern", "kern"),
-        ("Keymap", "kern.keymap"),
-        ("Mode", "kern.mode"),
-        ("Options", "kern.option"),
-        ("History", "kern.history"),
-        ("Clipboard", "kern.clipboard"),
-        ("Lsp", "kern.lsp"),
-        ("Terminals", "kern.terminal"),
-        ("Tabs", "kern.tab"),
-        ("Images", "kern.image"),
-        ("Syntax", "kern.syntax"),
+        ("Greed", "greed"),
+        ("Keymap", "greed.keymap"),
+        ("Mode", "greed.mode"),
+        ("Options", "greed.option"),
+        ("History", "greed.history"),
+        ("Clipboard", "greed.clipboard"),
+        ("Lsp", "greed.lsp"),
+        ("Terminals", "greed.terminal"),
+        ("Tabs", "greed.tab"),
+        ("Images", "greed.image"),
+        ("Syntax", "greed.syntax"),
     ];
     let h = host();
     for (name, expr) in cases {
         let script = format!(
-            "(function() local kern = require('@kern') local names = {{}} \
+            "(function() local greed = require('@greed') local names = {{}} \
              for k in {expr} do table.insert(names, k) end \
              table.sort(names) return table.concat(names, ',') end)()"
         );

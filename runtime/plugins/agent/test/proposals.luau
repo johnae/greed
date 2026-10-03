@@ -1,12 +1,12 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local agent = require("@agent")
 
 -- Proposes `edits` to `path` from a command, as a tool call would, and
 -- returns a function that gives the agent's answer once there is one.
 local function propose(t: any, path: string, edits: { agent.Edit }): () -> string?
 	local answer: string? = nil
-	kern.command({
+	greed.command({
 		name = "test-propose",
 		run = function()
 			answer = agent.propose(path, edits, "numbers")
@@ -21,12 +21,12 @@ end
 test("proposed changes wait for review, and the agent hears what went in", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
 	local path = dir .. "/a.txt"
-	kern.open(path)
+	greed.open(path)
 	local answer = propose(t, path, {
 		{ old_text = "one", new_text = "1" },
 		{ old_text = "three", new_text = "3" },
 	})
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	assert(buffer:text() == "one two three\n", "nothing changes before review")
 	assert(agent.pending() == 2)
 	t:keys("space o a")
@@ -43,11 +43,11 @@ end)
 test("changes follow edits made while they wait", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
 	local path = dir .. "/a.txt"
-	kern.open(path)
+	greed.open(path)
 	local answer = propose(t, path, { { old_text = "three", new_text = "3" } })
 	t:keys("i X X esc")
 	t:keys("space o A")
-	assert(kern.view():buffer():text() == "XXone two 3\n", kern.view():buffer():text())
+	assert(greed.view():buffer():text() == "XXone two 3\n", greed.view():buffer():text())
 	assert(answer() == `accepted 1 of 1 changes to {path}`, answer())
 end)
 
@@ -75,8 +75,8 @@ end)
 test("new whole lines show as lines under the ones they replace", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
 	local path = dir .. "/a.txt"
-	kern.open(path)
-	kern.view():buffer():set_line_numbers(false)
+	greed.open(path)
+	greed.view():buffer():set_line_numbers(false)
 	propose(t, path, { { old_text = "two\n", new_text = "2\nzwei\n" } })
 	local rows = t:draw(20, 8)
 	assert(rows[1] == "one", rows[1])
@@ -92,7 +92,7 @@ test("new whole lines show as lines under the ones they replace", function(t)
 end)
 
 -- The marks of the proposal's changes beyond the old text itself.
-local function change_marks(buffer: kern.Buffer): { kern.Mark }
+local function change_marks(buffer: greed.Buffer): { greed.Mark }
 	-- Proposals number their changes from 1 up, across tests.
 	for id = 1, 100 do
 		local marks = buffer:decorations(`proposal-{id}-text`)
@@ -106,13 +106,13 @@ end
 test("in a changed line, the words that changed stand out on both sides", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "let total = count + 1\n" })
 	local path = dir .. "/a.txt"
-	kern.open(path)
+	greed.open(path)
 	propose(
 		t,
 		path,
 		{ { old_text = "let total = count + 1\n", new_text = "let total = amount + 1\n" } }
 	)
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	local old, new
 	for _, mark in change_marks(buffer) do
 		if mark.style == "diff.minus.change" then
@@ -130,8 +130,8 @@ end)
 test("each change has accept and reject buttons to click", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
 	local path = dir .. "/a.txt"
-	kern.open(path)
-	kern.view():buffer():set_line_numbers(false)
+	greed.open(path)
+	greed.view():buffer():set_line_numbers(false)
 	local answer = propose(t, path, {
 		{ old_text = "one\n", new_text = "1\n" },
 		{ old_text = "three\n", new_text = "3\n" },
@@ -140,7 +140,7 @@ test("each change has accept and reject buttons to click", function(t)
 	assert(rows[1] == "one accept reject", rows[1])
 	-- "accept" after "one ".
 	t:mouse("press", 5, 0)
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	assert(buffer:text() == "1\ntwo\nthree\n", buffer:text())
 	rows = t:draw(30, 8)
 	local line = table.find(rows, "three accept reject")
@@ -154,7 +154,7 @@ end)
 test("changes to several files are one operation, undone in one step", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\n", ["b.txt"] = "two\n" })
 	local answer: string? = nil
-	kern.command({
+	greed.command({
 		name = "test-propose-files",
 		run = function()
 			answer = agent.propose_files({
@@ -167,11 +167,11 @@ test("changes to several files are one operation, undone in one step", function(
 	assert(agent.pending() == 2)
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "2 changes to 2 files", 1, true), messages[#messages])
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("space o A")
-	kern.open(dir .. "/b.txt")
+	greed.open(dir .. "/b.txt")
 	t:keys("space o A")
-	local a, b = kern.load(dir .. "/a.txt"), kern.load(dir .. "/b.txt")
+	local a, b = greed.load(dir .. "/a.txt"), greed.load(dir .. "/b.txt")
 	assert(a:text() == "1\n" and b:text() == "2\n", a:text() .. b:text())
 	assert(
 		answer and string.find(answer, "accepted 1 of 1 changes to " .. dir .. "/b.txt", 1, true),

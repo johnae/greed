@@ -1,4 +1,4 @@
-# `nix-build` builds Kern; `nix-build -A static` builds one statically
+# `nix-build` builds Greed; `nix-build -A static` builds one statically
 # linked binary (Linux, musl) that runs on any Linux of the same CPU.
 {
   pkgs ? import <nixpkgs> { },

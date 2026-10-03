@@ -6,23 +6,23 @@
 -- The buffer holds the lines that scrolled off the top, then the screen.
 -- Output replaces the screen part and adds what scrolled off above it.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 
-kern.option.define({
+greed.option.define({
 	name = "terminal-scrollback",
 	doc = "How many lines that scrolled off a terminal's screen are kept",
 	default = 10000,
 })
 
-kern.option.define({
+greed.option.define({
 	name = "terminal-shell",
 	doc = 'What a new terminal runs, e.g. "fish -l"; empty for your $SHELL',
 	default = "",
 })
 
-kern.option.define({
+greed.option.define({
 	name = "link-opener",
 	doc = 'What opens a link, e.g. "firefox"; empty for xdg-open, or open on macOS',
 	default = "",
@@ -31,7 +31,7 @@ kern.option.define({
 -- The terminal-shell option as a command line, or nil for $SHELL.
 local function shell(): { string }?
 	local words = {}
-	for word in string.gmatch(kern.option.get("terminal-shell") :: string, "%S+") do
+	for word in string.gmatch(greed.option.get("terminal-shell") :: string, "%S+") do
 		table.insert(words, word)
 	end
 	return if #words > 0 then words else nil
@@ -40,8 +40,8 @@ end
 local MODE = "terminal"
 
 type Term = {
-	terminal: kern.Terminal,
-	buffer: kern.Buffer,
+	terminal: greed.Terminal,
+	buffer: greed.Buffer,
 	-- How many lines above the screen the buffer holds.
 	history: number,
 	-- The next scrollback line to add, counting from the first ever.
@@ -53,7 +53,7 @@ type Term = {
 	chunks: { { ns: string, lines: number } },
 	chunk: number,
 	-- What the main view showed before, to go back to when it closes.
-	previous: kern.Buffer?,
+	previous: greed.Buffer?,
 	-- Whether its views were opened for it (a pane, a float), so they close
 	-- with it.
 	owns: boolean,
@@ -67,8 +67,8 @@ type Term = {
 	alternate: boolean,
 	-- Links programs printed (OSC 8): above the screen by scrollback line,
 	-- counting from the first ever, and on the screen by row.
-	links: { [number]: { kern.TerminalLink } },
-	screen_links: { [number]: { kern.TerminalLink } },
+	links: { [number]: { greed.TerminalLink } },
+	screen_links: { [number]: { greed.TerminalLink } },
 	-- Scrollback lines trimmed from the top of the buffer.
 	dropped: number,
 }
@@ -78,24 +78,24 @@ local M = {}
 -- Terminals by the id of their buffer.
 local terms: { [number]: Term } = {}
 
-local function term_of(buffer: kern.Buffer): Term?
+local function term_of(buffer: greed.Buffer): Term?
 	local ok, id = pcall(buffer.id, buffer)
 	return if ok then terms[id] else nil
 end
 
 local function shown(term: Term): boolean
-	return kern.view():buffer():id() == term.buffer:id()
+	return greed.view():buffer():id() == term.buffer:id()
 end
 
 --- The terminal shown in `buffer`, if it's one.
-function M.terminal(buffer: kern.Buffer): kern.Terminal?
+function M.terminal(buffer: greed.Buffer): greed.Terminal?
 	local term = term_of(buffer)
 	return term and term.terminal
 end
 
 --- What the terminal in `buffer` was asked to run: its command, or nil for
 --- your shell (and for a buffer that isn't a terminal).
-function M.asked(buffer: kern.Buffer): { string }?
+function M.asked(buffer: greed.Buffer): { string }?
 	local term = term_of(buffer)
 	return term and term.asked and table.clone(term.asked)
 end
@@ -105,11 +105,11 @@ end
 -- to its last so it's drawn whenever any of it shows; `marked` holds the
 -- images that have one already.
 local function marks(
-	buffer: kern.Buffer,
-	rows: { kern.TerminalRow },
+	buffer: greed.Buffer,
+	rows: { greed.TerminalRow },
 	line: number,
 	marked: { [number]: boolean }
-): { kern.Mark }
+): { greed.Mark }
 	local list = {}
 	local last = buffer:line_count() - 1
 	for i, row in rows do
@@ -179,9 +179,9 @@ end
 -- Puts the cursor where the program's is in each view showing the
 -- terminal, and keeps the screen in view: always in views without focus,
 -- and in the focused one while typing into it or already at the bottom.
-local function follow(term: Term, screen: kern.TerminalScreen, before: number)
-	local focused = kern.view():id()
-	local typing = kern.mode.get() == MODE
+local function follow(term: Term, screen: greed.TerminalScreen, before: number)
+	local focused = greed.view():id()
+	local typing = greed.mode.get() == MODE
 	local buffer = term.buffer
 	for _, view in buffer:views() do
 		-- Drawing scrolls to the cursor, so a view that follows has its
@@ -243,21 +243,21 @@ function M.update(term: Term)
 end
 
 --- Types into the terminal `view` shows, if it shows one that's running.
-function M.enter(view: kern.View)
+function M.enter(view: greed.View)
 	local term = term_of(view:buffer())
 	if term and term.terminal:exit_code() == nil then
-		kern.mode.set(MODE)
+		greed.mode.set(MODE)
 		M.update(term)
 	end
 end
 
 --- Goes into the right mode for `view`: typing into a terminal, or out of
 --- the terminal mode for anything else.
-function M.settle(view: kern.View)
+function M.settle(view: greed.View)
 	if term_of(view:buffer()) then
 		M.enter(view)
-	elseif kern.mode.get() == MODE then
-		kern.mode.set(core.style.home_for(view))
+	elseif greed.mode.get() == MODE then
+		greed.mode.set(core.style.home_for(view))
 	end
 end
 
@@ -271,17 +271,17 @@ function M.close(term: Term)
 		if not (term.owns and view:close()) then
 			local ok = term.previous and pcall(view.show, view, term.previous)
 			if not ok then
-				view:show(kern.create_buffer("file", ""))
+				view:show(greed.create_buffer("file", ""))
 			end
 		end
 	end
 	term.buffer:set_kept(false)
-	M.settle(kern.view())
+	M.settle(greed.view())
 end
 
 --- Ends the terminal in `buffer` if nothing shows it any more, e.g. after
 --- its pane was closed.
-function M.forget(buffer: kern.Buffer)
+function M.forget(buffer: greed.Buffer)
 	local term = term_of(buffer)
 	if term and #buffer:views() == 0 then
 		M.close(term)
@@ -289,7 +289,7 @@ function M.forget(buffer: kern.Buffer)
 end
 
 -- A terminal whose buffer was closed (with :bc, say) ends its program.
-kern.on("buffer.closed", function(event: kern.BufferClosed)
+greed.on("buffer.closed", function(event: greed.BufferClosed)
 	local term = terms[event.id]
 	if term then
 		terms[event.id] = nil
@@ -298,27 +298,27 @@ kern.on("buffer.closed", function(event: kern.BufferClosed)
 end)
 
 -- Floating terminals belong to the tab they open in.
-local FLOAT: kern.FloatSpec = { title = "terminal", width = "80%", height = "80%", tab = true }
+local FLOAT: greed.FloatSpec = { title = "terminal", width = "80%", height = "80%", tab = true }
 
 export type OpenOptions = {
 	--- Open it in a new pane on this side of `from` (the focused view by
 	--- default), rather than in the focused view.
 	split: ("left" | "right" | "up" | "down")?,
-	from: kern.View?,
+	from: greed.View?,
 	--- Open it floating over the panes, placed as this spec says if given.
-	float: (boolean | kern.FloatSpec)?,
+	float: (boolean | greed.FloatSpec)?,
 }
 
 --- Environment variables every new terminal gets, on top of the editor's.
 --- Plugins add to it, e.g. the agent plugin tells Claude Code where to
---- find Kern.
+--- find Greed.
 M.env = {} :: { [string]: string }
 
 --- Opens a terminal running `command` (the user's shell without) and
 --- types into it: in the focused view, a new pane or a float.
 function M.open(command: { string }?, options: OpenOptions?): Term
 	local opts: OpenOptions = options or {}
-	local buffer = kern.create_buffer("terminal", "")
+	local buffer = greed.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
 	local view, previous
@@ -329,31 +329,31 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 				(spec :: any)[key] = value
 			end
 		end
-		view = kern.float(buffer, spec)
+		view = greed.float(buffer, spec)
 	elseif opts.split then
-		view = (opts.from or kern.view()):split(opts.split, buffer)
+		view = (opts.from or greed.view()):split(opts.split, buffer)
 	else
-		view = kern.view()
+		view = greed.view()
 		previous = view:buffer()
 		view:show(buffer)
 	end
 	-- A new view hasn't been drawn yet; it says its size once it is.
 	local rows, cols = view:size()
-	local limit = kern.option.get("terminal-scrollback") :: number
+	local limit = greed.option.get("terminal-scrollback") :: number
 	local given = if command and #command > 0 then command else shell()
-	-- Programs in it can tell which session they're in: `kern FILE` opens
+	-- Programs in it can tell which session they're in: `greed FILE` opens
 	-- the file here instead of starting another editor inside this one,
-	-- and `kern ctl` talks to this session.
+	-- and `greed ctl` talks to this session.
 	local env = table.clone(M.env)
-	local session = kern.session.current()
+	local session = greed.session.current()
 	if session then
 		env.GREED_TERMINAL = session
 		env.GREED_SESSION = session
 	end
 	local spawned, started = pcall(function()
-		return kern.terminal.spawn({
+		return greed.terminal.spawn({
 			command = given,
-			cwd = kern.project.current().root,
+			cwd = greed.project.current().root,
 			env = env,
 			rows = rows or 24,
 			cols = cols or 80,
@@ -397,12 +397,12 @@ end
 -- The floating terminal alt-f shows in each tab, by tab id, and where it
 -- was when hidden, so it comes back as moved or resized.
 local floats: { [number]: Term } = {}
-local float_specs: { [number]: kern.FloatSpec } = {}
+local float_specs: { [number]: greed.FloatSpec } = {}
 
 --- Shows the tab's floating terminal, starting it the first time, or hides
 --- it, leaving it running.
 function M.toggle_float()
-	local tab = kern.tab.current().id
+	local tab = greed.tab.current().id
 	local term = floats[tab]
 	if term == nil or terms[term.buffer:id()] == nil then
 		floats[tab] = M.open(nil, { float = true })
@@ -414,14 +414,14 @@ function M.toggle_float()
 		if spec then
 			float_specs[tab] = spec
 			view:close()
-			M.settle(kern.view())
+			M.settle(greed.view())
 			return
 		end
 	end
-	M.enter(kern.float(term.buffer, float_specs[tab] or FLOAT))
+	M.enter(greed.float(term.buffer, float_specs[tab] or FLOAT))
 end
 
-local function find(terminal: kern.Terminal): Term?
+local function find(terminal: greed.Terminal): Term?
 	for _, term in terms do
 		if term.terminal:id() == terminal:id() then
 			return term
@@ -430,23 +430,23 @@ local function find(terminal: kern.Terminal): Term?
 	return nil
 end
 
--- A client that asked for a terminal (`kern --terminal`, `kern ssh HOST
+-- A client that asked for a terminal (`greed --terminal`, `greed ssh HOST
 -- --terminal`) gets one, in a tab of its own.
-kern.on("client.attached", function(event: kern.ClientAttached)
+greed.on("client.attached", function(event: greed.ClientAttached)
 	if event.terminal then
-		kern.tab.new()
+		greed.tab.new()
 		M.open()
 	end
 end)
 
-kern.on("terminal.output", function(event)
+greed.on("terminal.output", function(event)
 	local term = find(event.terminal)
 	if term then
 		M.update(term)
 	end
 end)
 
-kern.on("terminal.exited", function(event)
+greed.on("terminal.exited", function(event)
 	local term = find(event.terminal)
 	if term == nil then
 		return
@@ -460,19 +460,19 @@ kern.on("terminal.exited", function(event)
 	term.buffer:decorate("terminal.exit", {
 		{ from = last, to = last, style = "comment", lines = { `[exited with {event.code}]` } },
 	})
-	if kern.mode.get() == MODE and shown(term) then
-		kern.mode.set(core.style.home())
+	if greed.mode.get() == MODE and shown(term) then
+		greed.mode.set(core.style.home())
 	end
 end)
 
-kern.on("view.resized", function(event: kern.ViewResized)
+greed.on("view.resized", function(event: greed.ViewResized)
 	local term = term_of(event.view:buffer())
 	if term and term.terminal:exit_code() == nil then
 		term.terminal:resize(event.rows, event.cols)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "terminal",
 	doc = "Open a terminal running a command, or your shell",
 	args = { { name = "command", doc = "The program and its arguments" } },
@@ -489,16 +489,16 @@ local last_esc = -math.huge
 
 -- Sends `key` to the program in the buffer's terminal; once it has exited,
 -- stops typing into it instead.
-local function send(ctx: kern.Context, key: string)
+local function send(ctx: greed.Context, key: string)
 	local term = term_of(ctx.buffer)
 	if term == nil or term.terminal:exit_code() ~= nil then
-		kern.mode.set(core.style.home())
+		greed.mode.set(core.style.home())
 		return
 	end
 	term.terminal:key(key)
 end
 
-kern.command({
+greed.command({
 	name = "terminal-key",
 	doc = "Send the key to the terminal's program",
 	run = function(ctx)
@@ -508,14 +508,14 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-esc",
 	doc = "Send esc to the terminal's program; a second one quickly after stops typing into it",
 	run = function(ctx)
-		local now = kern.now()
+		local now = greed.now()
 		if now - last_esc <= DOUBLE_ESC then
 			last_esc = -math.huge
-			kern.run("terminal-leave")
+			greed.run("terminal-leave")
 			return
 		end
 		last_esc = now
@@ -523,51 +523,51 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-input",
 	doc = "Type into the terminal's program",
 	run = function(ctx)
 		local term = term_of(ctx.buffer)
 		if term and term.terminal:exit_code() == nil then
-			kern.mode.set(MODE)
+			greed.mode.set(MODE)
 			M.update(term)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-leave",
 	doc = "Stop typing into the terminal, to move around its output",
 	run = function()
-		kern.mode.set(core.style.home())
+		greed.mode.set(core.style.home())
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-leader",
 	doc = "Stop typing into the terminal and press space, for the keys after it",
 	run = function()
-		kern.mode.set(core.style.home())
+		greed.mode.set(core.style.home())
 		-- Styles without space keys (edit mode) just stop typing into it.
-		if #kern.keymap.next("space") > 0 then
-			kern.keys.feed("space")
+		if #greed.keymap.next("space") > 0 then
+			greed.keys.feed("space")
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-paste",
 	doc = "Paste the latest copy into the terminal's program",
 	run = function(ctx)
 		local term = term_of(ctx.buffer)
-		local copy = kern.clipboard.get()
+		local copy = greed.clipboard.get()
 		if term and copy then
 			term.terminal:paste(table.concat(copy, "\n"))
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "terminal-close",
 	doc = "End the terminal's program and close it",
 	run = function(ctx)
@@ -583,7 +583,7 @@ local URL = [=[(https?|ftp|file)://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]]=]
 
 --- Where the link at `pos` in `buffer` goes: one a terminal's program
 --- printed, or a URL written there.
-function M.link_at(buffer: kern.Buffer, pos: number): string?
+function M.link_at(buffer: greed.Buffer, pos: number): string?
 	local line = buffer:line_of(pos)
 	local start = buffer:line_start(line)
 	local term = term_of(buffer)
@@ -607,26 +607,26 @@ end
 
 --- Opens `uri` with the link-opener option, or the system's opener.
 function M.open_link(uri: string)
-	local given = kern.option.get("link-opener") :: string
+	local given = greed.option.get("link-opener") :: string
 	local done, err
 	if given ~= "" then
 		local command = string.split(given, " ")
 		table.insert(command, uri)
-		done, err = kern.process.run(command)
+		done, err = greed.process.run(command)
 	else
-		done, err = kern.process.run({ "xdg-open", uri })
+		done, err = greed.process.run({ "xdg-open", uri })
 		if done == nil then
-			done, err = kern.process.run({ "open", uri })
+			done, err = greed.process.run({ "open", uri })
 		end
 	end
 	if done == nil then
-		kern.echo(`can't open {uri}: {err}`)
+		greed.echo(`can't open {uri}: {err}`)
 	elseif done.code ~= 0 then
-		kern.echo(`can't open {uri}: {done.stderr}`)
+		greed.echo(`can't open {uri}: {done.stderr}`)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "open-link",
 	doc = "Open the link under the cursor",
 	run = function(ctx)
@@ -635,14 +635,14 @@ kern.command({
 		if uri then
 			M.open_link(uri)
 		else
-			kern.echo("no link here")
+			greed.echo("no link here")
 		end
 	end,
 })
 
 --- Shows `term` in the main view and types into it.
 function M.show(term: Term)
-	local view = kern.view()
+	local view = greed.view()
 	if not shown(term) then
 		term.previous = view:buffer()
 		term.owns = false
@@ -651,7 +651,7 @@ function M.show(term: Term)
 	M.enter(view)
 end
 
-kern.command({
+greed.command({
 	name = "pick-terminal",
 	doc = "Switch to a terminal, or open a new one",
 	run = function()
@@ -676,7 +676,7 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["space t"] = "pick-terminal" })
+greed.keymap.bind("normal", { ["space t"] = "pick-terminal" })
 
 -- The mouse in a terminal. A program that asked for it gets it. Otherwise
 -- the wheel scrolls back through the output, as tmux does: up stops typing
@@ -686,7 +686,7 @@ kern.keymap.bind("normal", { ["space t"] = "pick-terminal" })
 local dragged = false
 local held: number? = nil
 
-local function on_mouse(event: kern.MouseEvent): boolean
+local function on_mouse(event: greed.MouseEvent): boolean
 	local view = assert(event.view)
 	local term = term_of(view:buffer())
 	if term == nil then
@@ -715,8 +715,8 @@ local function on_mouse(event: kern.MouseEvent): boolean
 			return true
 		end
 		view:focus()
-		if up and kern.mode.get() == MODE then
-			kern.mode.set(core.style.home())
+		if up and greed.mode.get() == MODE then
+			greed.mode.set(core.style.home())
 		end
 		core.mouse.scroll(view, if up then -core.mouse.lines else core.mouse.lines)
 		if not up and running and view:scroll() >= term.history then
@@ -733,7 +733,7 @@ local function on_mouse(event: kern.MouseEvent): boolean
 	end
 	if event.kind == "press" and event.button == "left" then
 		view:focus()
-		kern.mode.set(core.style.home())
+		greed.mode.set(core.style.home())
 		dragged, held = false, event.pos
 		if event.pos then
 			view:set_selection({
@@ -756,28 +756,28 @@ end
 core.mouse.claim("terminal", on_mouse)
 
 -- Clicking away from a terminal stops typing into it.
-kern.on("mouse", function(event: kern.MouseEvent)
+greed.on("mouse", function(event: greed.MouseEvent)
 	local view = event.view
 	if
 		event.kind == "press"
 		and view
 		and not term_of(view:buffer())
-		and kern.mode.get() == MODE
+		and greed.mode.get() == MODE
 	then
-		kern.mode.set(core.style.home())
+		greed.mode.set(core.style.home())
 	end
 end)
 
-kern.keymap.isolate(MODE)
-kern.keymap.fallback(MODE, "terminal-key")
-kern.keymap.bind(MODE, {
+greed.keymap.isolate(MODE)
+greed.keymap.fallback(MODE, "terminal-key")
+greed.keymap.bind(MODE, {
 	["ctrl-\\"] = "terminal-leave",
 	["ctrl-space"] = "terminal-leader",
 	esc = "terminal-esc",
 })
-kern.mode.cursor(MODE, "block")
+greed.mode.cursor(MODE, "block")
 for _, mode in { "normal", "vim" } do
-	kern.keymap.bind({ mode = mode, kind = "terminal" }, {
+	greed.keymap.bind({ mode = mode, kind = "terminal" }, {
 		i = "terminal-input",
 		a = "terminal-input",
 		enter = "terminal-input",
@@ -785,6 +785,6 @@ for _, mode in { "normal", "vim" } do
 		["g x"] = "open-link",
 	})
 end
-kern.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })
+greed.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })
 
 return M

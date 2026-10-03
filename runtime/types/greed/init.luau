@@ -1,4 +1,4 @@
---- The Kern API, as seen by plugins through `require("@kern")`.
+--- The Greed API, as seen by plugins through `require("@greed")`.
 ---
 --- This file only describes types, for `luau-analyze` and `luau-lsp`; the
 --- editor provides the real module. Positions are 0-based byte offsets and
@@ -186,7 +186,7 @@ export type Mark = {
 	--- with styles of their own on top of the mark's, e.g.
 	--- `{ { text = "x = " }, { text = "2", style = "diff.plus.change" } }`.
 	lines: { any }?,
-	--- An image (from `kern.image`) drawn over `cols` by `rows` cells right
+	--- An image (from `greed.image`) drawn over `cols` by `rows` cells right
 	--- of and below `from`, whatever text is there. `col` and `row` say
 	--- which of its cells is at `from`, for an image cut off at the top or
 	--- left. Shown in terminals that can show images.
@@ -230,7 +230,7 @@ export type View = {
 	configure: (self: View, spec: FloatSpec) -> (),
 	--- Brings a floating view in front of the other floats; false if it isn't floating.
 	raise: (self: View) -> boolean,
-	--- How a floating view is shown, as `kern.float` takes it; nil if it isn't floating.
+	--- How a floating view is shown, as `greed.float` takes it; nil if it isn't floating.
 	float_spec: (self: View) -> FloatSpec?,
 	--- Whether it's a pane of a tab, rather than a panel or a floating view.
 	is_pane: (self: View) -> boolean,
@@ -282,9 +282,9 @@ export type CommandSpec = {
 	run: (ctx: Context) -> (),
 }
 
---- A command for the command line, run as `kern NAME ARGS` in an editor
+--- A command for the command line, run as `greed NAME ARGS` in an editor
 --- with no screen. `run` can wait like a command; what it echoes and
---- returns is printed, and an error makes `kern` fail.
+--- returns is printed, and an error makes `greed` fail.
 export type CliSpec = {
 	--- Plain words with dashes, e.g. "bring".
 	name: string,
@@ -372,7 +372,7 @@ export type Keys = {
 	feed: (keys: string) -> (),
 }
 
---- A request for `kern.http`. `method` defaults to POST with a body and GET
+--- A request for `greed.http`. `method` defaults to POST with a body and GET
 --- without; `timeout` is in milliseconds, for the whole request.
 export type HttpRequest = {
 	url: string,
@@ -400,7 +400,7 @@ export type HttpStream = {
 }
 
 --- Requests over the network, each on a thread of its own so the editor
---- never waits. Both wait like kern.sleep, so they work in commands and event
+--- never waits. Both wait like greed.sleep, so they work in commands and event
 --- handlers. A plugin needs the "net" capability, or "net:HOST" for one host.
 export type Http = {
 	--- Sends a request and returns the whole response, or nil and why.
@@ -412,12 +412,12 @@ export type Http = {
 
 --- Secrets like API keys, kept out of config and plugin source: from the
 --- environment (GREED_SECRET_NAME, or the usual variable, e.g. ANTHROPIC_API_KEY),
---- the system keyring, or Kern's own secrets file. Both wait like kern.sleep. A
+--- the system keyring, or Greed's own secrets file. Both wait like greed.sleep. A
 --- plugin needs "secrets:NAME" for each secret it reads, or "secrets" for all.
 export type Secrets = {
 	--- The secret `name`, or nil if it isn't set anywhere.
 	get: (name: string) -> (string?, string?),
-	--- Keeps `value` as the secret `name`: in the keyring if there is one, otherwise in Kern's secrets file. Returns where it went, or nil and why not.
+	--- Keeps `value` as the secret `name`: in the keyring if there is one, otherwise in Greed's secrets file. Returns where it went, or nil and why not.
 	set: (name: string, value: string) -> (string?, string?),
 }
 
@@ -426,8 +426,8 @@ export type Process = {
 	--- Runs `command` (the program, then its arguments), with `stdin` as its
 	--- input and `cwd` as its folder, and returns how it exited and what it
 	--- printed; nil and the error if it couldn't start. It runs in the
-	--- background and waits like kern.sleep, so only in commands, event
-	--- handlers and kern.spawn.
+	--- background and waits like greed.sleep, so only in commands, event
+	--- handlers and greed.spawn.
 	run: (
 		command: { string },
 		opts: { stdin: string?, cwd: string? }?
@@ -442,7 +442,7 @@ export type TerminalRow = {
 	spans: { { from: number, to: number, style: string } },
 	--- Images on the row, as runs of cells from byte `from`: from the image's
 	--- cell (`col`, `row`) on, of an image `cols` by `rows` cells. `id` is a
-	--- `kern.image` id, for a mark's `image`.
+	--- `greed.image` id, for a mark's `image`.
 	images: { { from: number, id: number, col: number, row: number, cols: number, rows: number } },
 	--- Links the program printed (OSC 8), as byte ranges and where they go.
 	links: { TerminalLink },
@@ -602,11 +602,11 @@ export type BufferChanged = {
 	buffer: Buffer,
 }
 
---- A request from the session socket, e.g. from `kern ctl` or an agent.
---- Answer it with `kern.control.reply`.
+--- A request from the session socket, e.g. from `greed ctl` or an agent.
+--- Answer it with `greed.control.reply`.
 export type ControlRequest = {
 	id: number,
-	--- "socket" for the session socket (kern ctl, kern mcp), "ide" for Claude
+	--- "socket" for the session socket (greed ctl, greed mcp), "ide" for Claude
 	--- Code's IDE connection.
 	client: string,
 	method: string,
@@ -752,11 +752,11 @@ export type Control = {
 	notify: (method: string, params: any) -> (),
 }
 
---- A client attached, e.g. `kern FILE` in a session that was running.
+--- A client attached, e.g. `greed FILE` in a session that was running.
 export type ClientAttached = {
 	--- The file or folder it asked to open, if any.
 	path: string?,
-	--- Whether it asked for a terminal, e.g. `kern ssh HOST --terminal`.
+	--- Whether it asked for a terminal, e.g. `greed ssh HOST --terminal`.
 	terminal: boolean,
 }
 
@@ -812,13 +812,13 @@ export type ViewScrolled = {
 	line: number,
 }
 
---- An option was set, with `kern.option.set` or `:set`.
+--- An option was set, with `greed.option.set` or `:set`.
 export type OptionChanged = {
 	name: string,
 	value: OptionValue,
 }
 
---- A file watched with `kern.fs.watch` was written, created or removed.
+--- A file watched with `greed.fs.watch` was written, created or removed.
 export type FileChanged = {
 	path: string,
 }
@@ -980,16 +980,16 @@ export type Fs = {
 	--- Watches the file at `path`: whenever it changes, from inside the
 	--- editor or out, plugins hear "file.changed". It needn't exist yet.
 	watch: (path: string) -> (),
-	--- The directory Kern was started in.
+	--- The directory Greed was started in.
 	cwd: () -> string,
-	--- Your home folder, Kern's config folder (where init.luau and plugins/
+	--- Your home folder, Greed's config folder (where init.luau and plugins/
 	--- were read from), its cache folder, its data folder (where plugins made in
 	--- the editor go when the config can't be written) and, on the far end of
-	--- kern ssh, the copy of your config it brought.
+	--- greed ssh, the copy of your config it brought.
 	dirs: () -> { home: string?, config: string?, cache: string?, data: string?, brought: string? },
 	--- The lines matching the regex `pattern` in the text files under `dir`
 	--- (default: the current directory), sorted by path and line. It searches
-	--- in the background and waits like kern.sleep (commands, handlers, kern.spawn).
+	--- in the background and waits like greed.sleep (commands, handlers, greed.spawn).
 	--- Hidden and ignored files are skipped unless asked for; `limit`
 	--- (default 10000) caps the lines returned. A bad pattern gives nil and
 	--- why.
@@ -1000,7 +1000,7 @@ export type Fs = {
 	) -> ({ GrepLine }?, string?),
 }
 
---- A line `kern.fs.grep` found.
+--- A line `greed.fs.grep` found.
 export type GrepLine = {
 	--- Relative to the directory searched.
 	path: string,
@@ -1012,7 +1012,7 @@ export type GrepLine = {
 	matches: { { from: number, to: number } },
 }
 
---- What `kern.plugin.check` found. `types.skipped` says why types weren't
+--- What `greed.plugin.check` found. `types.skipped` says why types weren't
 --- checked; `tests.error` why the tests couldn't run.
 export type PluginCheck = {
 	types: { ok: boolean?, output: string?, skipped: string? },
@@ -1033,8 +1033,8 @@ export type Plugins = {
 	--- The folder of each plugin loaded from one, by name.
 	dirs: () -> { [string]: string },
 	--- Checks the plugin in `dir` without loading it: strict types against
-	--- Kern's API (if luau-analyze is installed), then its tests with the
-	--- loaded plugins. Waits, like kern.sleep, while it runs.
+	--- Greed's API (if luau-analyze is installed), then its tests with the
+	--- loaded plugins. Waits, like greed.sleep, while it runs.
 	check: (dir: string) -> PluginCheck,
 	--- What the plugin in `dir` is and asks for, from its plugin.toml.
 	describe: (dir: string) -> PluginInfo,
@@ -1044,7 +1044,7 @@ export type Plugins = {
 	approve: (dir: string) -> string,
 }
 
---- A plugin, as `kern.plugin.describe` tells it, for a review.
+--- A plugin, as `greed.plugin.describe` tells it, for a review.
 export type PluginInfo = {
 	name: string,
 	dir: string,
@@ -1113,9 +1113,9 @@ export type Theme = {
 	get: (name: string) -> ThemeEntry?,
 }
 
-export type Kern = {
+export type Greed = {
 	command: (spec: CommandSpec) -> (),
-	--- Adds a command line command, `kern NAME ARGS`; see `CliSpec`.
+	--- Adds a command line command, `greed NAME ARGS`; see `CliSpec`.
 	cli: (spec: CliSpec) -> (),
 	--- Runs a command by name, optionally with arguments, `force` and a count.
 	--- It returns once the command waits for something (a key, a prompt, a
@@ -1158,12 +1158,12 @@ export type Kern = {
 	--- Asks the editor to exit.
 	quit: () -> (),
 	--- Lets the attached terminal go and keeps the editor running in the
-	--- background, for `kern attach` to come back to.
+	--- background, for `greed attach` to come back to.
 	detach: () -> (),
 	--- Waits `ms` milliseconds without blocking the editor. Works in commands
 	--- and event handlers.
 	sleep: (ms: number) -> (),
-	--- Runs `f` on its own, the way a command runs, and returns at once: it can wait (kern.sleep, kern.process.run, ...) while the editor and the code that started it go on. For work in the background, like a status line piece refreshing.
+	--- Runs `f` on its own, the way a command runs, and returns at once: it can wait (greed.sleep, greed.process.run, ...) while the editor and the code that started it go on. For work in the background, like a status line piece refreshing.
 	spawn: (f: (...any) -> ...any, ...any) -> (),
 	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading".
 	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
@@ -1197,7 +1197,7 @@ export type Kern = {
 	--- Makes files with these extensions (without the dot) or exact names, like
 	--- "Makefile", be in `language`, replacing whatever it had before.
 	filetype: (language: string, spec: { extensions: { string }?, names: { string }? }) -> (),
-	--- The languages Kern has a grammar for, built in or loaded, sorted.
+	--- The languages Greed has a grammar for, built in or loaded, sorted.
 	grammars: () -> { string },
 	--- Where `program` is on PATH, or nil if it isn't installed.
 	which: (program: string) -> string?,
@@ -1245,4 +1245,4 @@ export type Kern = {
 	theme: Theme,
 }
 
-return (nil :: any) :: Kern
+return (nil :: any) :: Greed

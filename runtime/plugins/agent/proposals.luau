@@ -14,7 +14,7 @@
 -- The agent's propose call waits for your decision and then learns which
 -- changes went in.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local operations = require("@operations")
@@ -31,12 +31,12 @@ type Hunk = {
 
 type Proposal = {
 	path: string,
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	hunks: { Hunk },
 	-- The undecided hunks, in the order they appear in the file.
 	pending: { Hunk },
 	-- Gets the proposal back once every hunk is decided.
-	done: kern.Signal,
+	done: greed.Signal,
 	-- What Claude Code calls the diff, so it can withdraw it.
 	tab: string?,
 	-- The operation its accepted changes join, so they undo as one.
@@ -47,9 +47,9 @@ local proposals: { Proposal } = {}
 local next_id = 0
 
 -- What wants to hear when a buffer's proposed changes come or go.
-local listeners: { (buffer: kern.Buffer) -> () } = {}
+local listeners: { (buffer: greed.Buffer) -> () } = {}
 
-local function changed(buffer: kern.Buffer)
+local function changed(buffer: greed.Buffer)
 	for _, listener in listeners do
 		listener(buffer)
 	end
@@ -62,14 +62,14 @@ local function ns(hunk: Hunk): string
 end
 
 -- Where the hunk's old text is now, or nil if it was deleted.
-local function position(p: Proposal, hunk: Hunk): kern.Mark?
+local function position(p: Proposal, hunk: Hunk): greed.Mark?
 	return p.buffer:decorations(ns(hunk))[1]
 end
 
 -- The line to show the hunk's new lines under, when it replaces whole
 -- lines with whole lines (as diffs from Claude Code do): its last old
 -- line, or the line before where the new ones go in.
-local function line_above(buffer: kern.Buffer, hunk: Hunk, at: Span): number?
+local function line_above(buffer: greed.Buffer, hunk: Hunk, at: Span): number?
 	local function line_start(pos: number): boolean
 		return pos == 0 or buffer:slice(pos - 1, pos) == "\n"
 	end
@@ -139,11 +139,11 @@ end
 
 -- The marks showing whole new lines under `line`, with the words that
 -- changed picked out in old and new lines that pair up one to one.
-local function line_marks(buffer: kern.Buffer, hunk: Hunk, at: Span, line: number): { kern.Mark }
+local function line_marks(buffer: greed.Buffer, hunk: Hunk, at: Span, line: number): { greed.Mark }
 	local new_lines = string.split(string.sub(hunk.new, 1, -2), "\n")
 	local old_text = buffer:slice(at.from, at.to)
 	local old_lines = if old_text == "" then {} else string.split(string.sub(old_text, 1, -2), "\n")
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	local shown: { any } = table.clone(new_lines)
 	if #old_lines == #new_lines then
 		local old_start = at.from
@@ -172,8 +172,8 @@ end
 
 -- Buttons after the change's first line, which click the keys' commands
 -- with the cursor on the change.
-local function buttons(at: Span): { kern.Mark }
-	local function button(text: string, action: string): kern.Mark
+local function buttons(at: Span): { greed.Mark }
+	local function button(text: string, action: string): greed.Mark
 		return {
 			from = at.from,
 			to = at.from,
@@ -231,7 +231,7 @@ end
 
 -- Accepts or rejects the pending hunks of `p` for which `chosen(position)`
 -- is true, and tells the agent once none are left.
-local function decide(p: Proposal, chosen: (at: kern.Mark) -> boolean, accept: boolean)
+local function decide(p: Proposal, chosen: (at: greed.Mark) -> boolean, accept: boolean)
 	local edits, pending = {}, {}
 	for _, hunk in p.pending do
 		local at = position(p, hunk)
@@ -271,7 +271,7 @@ local function decide(p: Proposal, chosen: (at: kern.Mark) -> boolean, accept: b
 end
 
 -- The proposals waiting in `buffer`.
-local function in_buffer(buffer: kern.Buffer): { Proposal }
+local function in_buffer(buffer: greed.Buffer): { Proposal }
 	local found = {}
 	for _, p in proposals do
 		if p.buffer:id() == buffer:id() then
@@ -281,7 +281,7 @@ local function in_buffer(buffer: kern.Buffer): { Proposal }
 	return found
 end
 
-local function touches_selection(view: kern.View): (at: kern.Mark) -> boolean
+local function touches_selection(view: greed.View): (at: greed.Mark) -> boolean
 	local ranges = view:selection().ranges
 	return function(at)
 		for _, range in ranges do
@@ -294,10 +294,10 @@ local function touches_selection(view: kern.View): (at: kern.Mark) -> boolean
 	end
 end
 
-local function decide_here(ctx: kern.Context, chosen: (at: kern.Mark) -> boolean, accept: boolean)
+local function decide_here(ctx: greed.Context, chosen: (at: greed.Mark) -> boolean, accept: boolean)
 	local found = in_buffer(ctx.buffer)
 	if #found == 0 then
-		kern.echo("no proposed changes in this file")
+		greed.echo("no proposed changes in this file")
 	end
 	for _, p in found do
 		decide(p, chosen, accept)
@@ -308,7 +308,7 @@ local function everything(): boolean
 	return true
 end
 
-kern.command({
+greed.command({
 	name = "proposal-accept",
 	doc = "Accept the proposed changes your selections touch",
 	run = function(ctx)
@@ -316,7 +316,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "proposal-reject",
 	doc = "Reject the proposed changes your selections touch",
 	run = function(ctx)
@@ -324,7 +324,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "proposal-accept-all",
 	doc = "Accept every proposed change in this file",
 	run = function(ctx)
@@ -332,7 +332,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "proposal-reject-all",
 	doc = "Reject every proposed change in this file",
 	run = function(ctx)
@@ -340,15 +340,15 @@ kern.command({
 	end,
 })
 
-local function select_mark(view: kern.View, at: kern.Mark)
+local function select_mark(view: greed.View, at: greed.Mark)
 	view:set_selection({ ranges = { { anchor = at.from, head = at.to } }, primary = 1 })
 end
 
 -- Selects the old text of the next (or previous) proposed change.
-local function jump(ctx: kern.Context, forward: boolean)
+local function jump(ctx: greed.Context, forward: boolean)
 	local selection = ctx.view:selection()
 	local head = selection.ranges[selection.primary].head
-	local best: kern.Mark? = nil
+	local best: greed.Mark? = nil
 	for _, p in in_buffer(ctx.buffer) do
 		for _, hunk in p.pending do
 			local at = position(p, hunk)
@@ -363,13 +363,13 @@ local function jump(ctx: kern.Context, forward: boolean)
 		end
 	end
 	if best == nil then
-		kern.echo("no more proposed changes")
+		greed.echo("no more proposed changes")
 		return
 	end
 	select_mark(ctx.view, best)
 end
 
-kern.command({
+greed.command({
 	name = "proposal-next",
 	doc = "Select the next proposed change",
 	run = function(ctx)
@@ -377,7 +377,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "proposal-prev",
 	doc = "Select the previous proposed change",
 	run = function(ctx)
@@ -385,7 +385,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "proposals",
 	doc = "Pick a proposed change to review",
 	run = function()
@@ -404,18 +404,18 @@ kern.command({
 			end
 		end
 		if #items == 0 then
-			kern.echo("no proposed changes")
+			greed.echo("no proposed changes")
 			return
 		end
 		picker.pick("Proposed changes", items, function(item)
 			local p, at = item.value.p, item.value.at
-			kern.open(p.path)
-			select_mark(kern.view(), at)
+			greed.open(p.path)
+			select_mark(greed.view(), at)
 		end)
 	end,
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["] o"] = "proposal-next",
 	["[ o"] = "proposal-prev",
 	["space o a"] = "proposal-accept",
@@ -430,7 +430,7 @@ kern.keymap.bind("normal", {
 local function start(
 	op: operations.Operation,
 	path: string,
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	pending: { Hunk },
 	hunks: { Hunk },
 	at: { Span },
@@ -441,7 +441,7 @@ local function start(
 		buffer = buffer,
 		hunks = hunks,
 		pending = pending,
-		done = kern.signal(),
+		done = greed.signal(),
 		tab = tab,
 		op = op,
 	}
@@ -460,7 +460,7 @@ end
 -- Tells the user what came in to review.
 local function announce(changes: number, files: { string }, reason: string?)
 	local why = if reason then `: {reason}` else ""
-	kern.echo(`an agent proposes {changes} changes to {where(files)}{why} - space o o to review`)
+	greed.echo(`an agent proposes {changes} changes to {where(files)}{why} - space o o to review`)
 end
 
 local M = {}
@@ -470,7 +470,7 @@ export type FileEdits = { path: string, edits: { Edit } }
 
 type Prepared = {
 	path: string,
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	pending: { Hunk },
 	hunks: { Hunk },
 	at: { Span },
@@ -481,7 +481,7 @@ type Prepared = {
 local function prepare(path: string, edits: { Edit }): Prepared
 	local root = core.project.root()
 	local full = if string.sub(path, 1, 1) == "/" then path else core.project.path(root, path)
-	local buffer = kern.load(full)
+	local buffer = greed.load(full)
 	local text = buffer:text()
 	local hunks: { Hunk }, at: { Span } = {}, {}
 	for i, edit in edits do
@@ -555,10 +555,10 @@ function M.propose(path: string, edits: { Edit }, reason: string?): string
 end
 
 --- Proposes `changes` (byte ranges of `buffer` and their new text, sorted
---- and apart, as `kern.diff` gives them), then waits for the user. Returns
+--- and apart, as `greed.diff` gives them), then waits for the user. Returns
 --- how many they accepted and rejected.
 function M.propose_changes(
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	path: string,
 	changes: { { from: number, to: number, text: string } },
 	reason: string?,
@@ -609,7 +609,7 @@ type Change = { from: number, to: number, text: string }
 
 --- The changes waiting in `buffer`, where their old text is now, in the
 --- order they appear.
-function M.changes(buffer: kern.Buffer): { Change }
+function M.changes(buffer: greed.Buffer): { Change }
 	local list: { Change } = {}
 	for _, p in in_buffer(buffer) do
 		for _, hunk in p.pending do
@@ -627,7 +627,7 @@ end
 
 --- Calls `listener` with the buffer whenever its proposed changes come or
 --- go.
-function M.on_change(listener: (buffer: kern.Buffer) -> ())
+function M.on_change(listener: (buffer: greed.Buffer) -> ())
 	table.insert(listeners, listener)
 end
 

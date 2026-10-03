@@ -1,6 +1,6 @@
 //! Work that runs on another thread while the editor keeps going, like a
 //! project-wide grep. The command that starts a job waits for it the way it
-//! waits for `kern.sleep`, and is woken with the result when it's done.
+//! waits for `greed.sleep`, and is woken with the result when it's done.
 
 use crossbeam_channel::{Receiver, Sender};
 use mlua::{Function, Lua, Value};
@@ -94,7 +94,7 @@ pub(super) fn start_streaming(
 
 /// A Luau function named `name` that calls `start` and waits for the job it
 /// returns. It only works where code can wait: in a command, an event
-/// handler or `kern.spawn`. It never does the work on the editor's thread,
+/// handler or `greed.spawn`. It never does the work on the editor's thread,
 /// so nothing that calls it can hold the editor up.
 pub(super) fn waiting(lua: &Lua, name: &str, start: Function) -> LuaResult<Function> {
     lua.load(
@@ -102,7 +102,7 @@ pub(super) fn waiting(lua: &Lua, name: &str, start: Function) -> LuaResult<Funct
         local name, start = ...
         return function(...)
             if not coroutine.isyieldable() then
-                error(name .. ' waits, so it only works in a command, an event handler or kern.spawn', 2)
+                error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', 2)
             end
             return coroutine.yield(start(...))
         end

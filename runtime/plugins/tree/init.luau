@@ -3,10 +3,10 @@
 -- folder, h folds the folder you're in, r reads the disk again, q closes.
 -- Hidden and ignored files are left out, like in the file picker.
 --
--- It's only a plugin: to turn it off, `kern.plugin.unload("tree")` from your
+-- It's only a plugin: to turn it off, `greed.plugin.unload("tree")` from your
 -- config.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 
 type Node = {
@@ -17,8 +17,8 @@ type Node = {
 }
 
 type Tree = {
-	view: kern.View,
-	buffer: kern.Buffer,
+	view: greed.View,
+	buffer: greed.Buffer,
 	root: string,
 	-- Folders shown open.
 	expanded: { [string]: boolean },
@@ -35,7 +35,7 @@ local function absolute(path: string?): string?
 	if path == nil or string.sub(path, 1, 1) == "/" then
 		return path
 	end
-	return `{kern.fs.cwd()}/{path}`
+	return `{greed.fs.cwd()}/{path}`
 end
 
 local function join(dir: string, name: string): string
@@ -43,7 +43,7 @@ local function join(dir: string, name: string): string
 end
 
 local function collect(t: Tree, dir: string, depth: number)
-	for _, entry in kern.fs.list(dir) or {} do
+	for _, entry in greed.fs.list(dir) or {} do
 		local path = join(dir, entry.name)
 		table.insert(t.nodes, { path = path, name = entry.name, dir = entry.dir, depth = depth })
 		if entry.dir and t.expanded[path] then
@@ -69,8 +69,8 @@ local function render(t: Tree, keep: string?)
 	local lines, marks = {}, {}
 	local pos, cursor = 0, 0
 	-- Outside the tree, the file shown is the one to mark.
-	if kern.view():id() ~= t.view:id() then
-		t.open = absolute(kern.view():buffer():path())
+	if greed.view():id() ~= t.view:id() then
+		t.open = absolute(greed.view():buffer():path())
 	end
 	for _, node in t.nodes do
 		local icon = if not node.dir then "  " elseif t.expanded[node.path] then "▾ " else "▸ "
@@ -105,10 +105,10 @@ local M = {}
 
 -- The tree shown in the current project, if it has one.
 local function shown(): Tree?
-	return trees[kern.project.current().id]
+	return trees[greed.project.current().id]
 end
 
-kern.on("view.closed", function(event)
+greed.on("view.closed", function(event)
 	for project, t in trees do
 		if t.view:id() == event.view then
 			trees[project] = nil
@@ -117,7 +117,7 @@ kern.on("view.closed", function(event)
 end)
 
 function M.close()
-	local project = kern.project.current().id
+	local project = greed.project.current().id
 	local t = trees[project]
 	if t then
 		t.view:close()
@@ -131,26 +131,26 @@ function M.open(root: string?)
 	local dir = root or core.project.root()
 	-- Paths under the starting directory stay relative, so files opened
 	-- from the tree and from the file picker are the same buffer.
-	if dir == kern.fs.cwd() then
+	if dir == greed.fs.cwd() then
 		dir = "."
 	end
-	local open = absolute(kern.view():buffer():path())
-	local buffer = kern.create_buffer("tree", "", { readonly = true })
-	local view = kern.panel(buffer, { title = if dir == "." then "Files" else dir, width = 32 })
+	local open = absolute(greed.view():buffer():path())
+	local buffer = greed.create_buffer("tree", "", { readonly = true })
+	local view = greed.panel(buffer, { title = if dir == "." then "Files" else dir, width = 32 })
 	local t: Tree =
 		{ view = view, buffer = buffer, root = dir, expanded = {}, nodes = {}, open = open }
-	trees[kern.project.current().id] = t
+	trees[greed.project.current().id] = t
 	render(t)
 end
 
-kern.command({
+greed.command({
 	name = "tree",
 	doc = "Open the file tree, move to it, or close it if you're in it",
 	run = function()
 		local t = shown()
 		if t == nil then
 			M.open()
-		elseif kern.view():id() == t.view:id() then
+		elseif greed.view():id() == t.view:id() then
 			M.close()
 		else
 			render(t)
@@ -159,7 +159,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "tree-open",
 	doc = "Open the file on the cursor, or fold or unfold the folder",
 	run = function()
@@ -171,13 +171,13 @@ kern.command({
 		if node.dir then
 			t.expanded[node.path] = not t.expanded[node.path] or nil
 		else
-			kern.open(node.path)
+			greed.open(node.path)
 		end
 		render(t, node.path)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "tree-fold",
 	doc = "Fold the folder on the cursor, or the one it's in",
 	run = function()
@@ -199,7 +199,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "tree-refresh",
 	doc = "Read the tree from the disk again",
 	run = function()
@@ -210,14 +210,14 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "tree-close",
 	doc = "Close the file tree",
 	run = M.close,
 })
 
-kern.keymap.bind("normal", { ["space e"] = "tree" })
-kern.keymap.bind({ mode = "normal", kind = "tree" }, {
+greed.keymap.bind("normal", { ["space e"] = "tree" })
+greed.keymap.bind({ mode = "normal", kind = "tree" }, {
 	enter = "tree-open",
 	l = "tree-open",
 	h = "tree-fold",

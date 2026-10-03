@@ -1,13 +1,13 @@
-//! `kern test`: runs a plugin's `test/*.luau` files against a headless
+//! `greed test`: runs a plugin's `test/*.luau` files against a headless
 //! editor.
 //!
-//! A test file gets `test` from `require("@kern/test")` and calls
+//! A test file gets `test` from `require("@greed/test")` and calls
 //! `test(name, function(t) ... end)` for each test. Every
 //! test runs in a fresh host with the plugins loaded, so tests can't affect
 //! each other. `t` sets up a buffer, presses keys and checks the result:
 //!
 //! ```luau
-//! local test = require("@kern/test")
+//! local test = require("@greed/test")
 //!
 //! test("w selects a word", function(t)
 //!     t:buffer("|hello world")
@@ -89,7 +89,7 @@ fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
     // Folders of the test's own, so plugins writing to the config or cache
     // never touch the user's. They only exist once something writes there.
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dirs = std::env::temp_dir().join(format!("kern-home-{}-{n}", std::process::id()));
+    let dirs = std::env::temp_dir().join(format!("greed-home-{}-{n}", std::process::id()));
     state_mut(&host.lua).dirs = Some(dirs);
     host.load_dirs(plugins)?;
     Ok(host)

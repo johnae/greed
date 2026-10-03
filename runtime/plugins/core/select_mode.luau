@@ -3,10 +3,10 @@
 -- search as another selection. Every other key works as in normal mode, and
 -- changing or copying the text (d, c, y, ...) leaves select mode.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.keymap.inherit("select", "normal")
-kern.keymap.bind("select", {
+greed.keymap.inherit("select", "normal")
+greed.keymap.bind("select", {
 	h = "extend-left",
 	l = "extend-right",
 	j = "extend-down",
@@ -38,27 +38,27 @@ kern.keymap.bind("select", {
 	v = "select-mode",
 	esc = "select-mode",
 })
-kern.keymap.counts("select")
+greed.keymap.counts("select")
 
-kern.command({
+greed.command({
 	name = "select-mode",
 	doc = "Start select mode, where moves extend the selection, or leave it",
 	run = function()
-		kern.mode.set(if kern.mode.get() == "select" then "normal" else "select")
+		greed.mode.set(if greed.mode.get() == "select" then "normal" else "select")
 	end,
 })
 
 -- As in Helix, select mode lasts through anything that only selects (x, s,
 -- %, m i (, alt-o, ...) and ends when the text changes or is copied.
-kern.on("command.run", function(event: kern.CommandRun)
-	if kern.mode.get() == "select" and event.name == "copy" then
-		kern.mode.set("normal")
+greed.on("command.run", function(event: greed.CommandRun)
+	if greed.mode.get() == "select" and event.name == "copy" then
+		greed.mode.set("normal")
 	end
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
-	if kern.mode.get() == "select" and event.buffer:id() == kern.view():buffer():id() then
-		kern.mode.set("normal")
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	if greed.mode.get() == "select" and event.buffer:id() == greed.view():buffer():id() then
+		greed.mode.set("normal")
 	end
 end)
 

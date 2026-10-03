@@ -12,19 +12,19 @@
 -- Patterns are regexes; ones in lowercase ignore case. The project is the
 -- folder holding .jj or .git (see core's project.luau).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local multibuffer = require("@multibuffer")
 
-type Found = { kern.GrepLine }
+type Found = { greed.GrepLine }
 
 local function key(path: string, line: number): string
 	return `{path}:{line + 1}`
 end
 
 local function grep(pattern: string, root: string): Found
-	local found, err = kern.fs.grep(core.search.smart_case(pattern), root)
+	local found, err = greed.fs.grep(core.search.smart_case(pattern), root)
 	if found == nil then
 		error(err, 0)
 	end
@@ -35,14 +35,14 @@ end
 -- buffers know their files.
 local function absolute(root: string, path: string): string
 	local full = core.project.path(root, path)
-	return if string.sub(full, 1, 1) == "/" then full else `{kern.fs.cwd()}/{full}`
+	return if string.sub(full, 1, 1) == "/" then full else `{greed.fs.cwd()}/{full}`
 end
 
 -- Opens `path` (relative to `root`) in the main view with the cursor at
 -- `column` on 0-based `line`.
 local function go_to(root: string, path: string, line: number, column: number)
-	kern.open(core.project.path(root, path))
-	local view = kern.view()
+	greed.open(core.project.path(root, path))
+	local view = greed.view()
 	local buffer = view:buffer()
 	local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
 	local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
@@ -52,7 +52,7 @@ end
 -- Shows `found` in the results panel, each line under its file.
 local function show(pattern: string, root: string, found: Found)
 	if #found == 0 then
-		kern.echo(`nothing matches {pattern}`)
+		greed.echo(`nothing matches {pattern}`)
 		return
 	end
 	local excerpts: { multibuffer.Excerpt } = {}
@@ -75,14 +75,14 @@ local function show(pattern: string, root: string, found: Found)
 		then `1 line matches {pattern}`
 		else `{#found} lines match {pattern}`
 	multibuffer.show(multibuffer.open(excerpts, { summary = summary }), "Search")
-	kern.echo(`{summary} - edits change the files, :w saves them`)
+	greed.echo(`{summary} - edits change the files, :w saves them`)
 end
 
 -- At most this many lines are listed while searching as you type; :grep
 -- lists everything.
 local LIVE_LIMIT = 1000
 
-kern.command({
+greed.command({
 	name = "search-project",
 	doc = "Search the project for a regex as you type, and go to a match",
 	run = function()
@@ -91,7 +91,7 @@ kern.command({
 		local function lines(query: string): { picker.Item }
 			pattern = query
 			-- A half-typed pattern that doesn't parse yet finds nothing.
-			local found = kern.fs.grep(core.search.smart_case(query), root, { limit = LIVE_LIMIT })
+			local found = greed.fs.grep(core.search.smart_case(query), root, { limit = LIVE_LIMIT })
 				or {}
 			local items = {}
 			for _, f in found do
@@ -101,18 +101,18 @@ kern.command({
 			return items
 		end
 		picker.pick("Search", {}, function(item)
-			local f = item.value :: kern.GrepLine
+			local f = item.value :: greed.GrepLine
 			go_to(root, f.path, f.line, f.matches[1].from)
 		end, {
 			source = lines,
 			preview = function(item)
-				local f = item.value :: kern.GrepLine
+				local f = item.value :: greed.GrepLine
 				local path = core.project.path(root, f.path)
-				local text = kern.fs.read(path)
+				local text = greed.fs.read(path)
 				if text == nil then
 					return nil
 				end
-				return { text = text, language = kern.language_of(path), line = f.line }
+				return { text = text, language = greed.language_of(path), line = f.line }
 			end,
 			keys = {
 				["ctrl-e"] = function(picked)
@@ -127,7 +127,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "grep",
 	doc = "Put the lines matching a regex in a panel, to go to them or edit them",
 	args = {
@@ -144,12 +144,12 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "grep-close",
 	doc = "Close the search results",
 	run = multibuffer.close,
 })
 
-kern.keymap.bind("normal", { ["space /"] = "search-project" })
+greed.keymap.bind("normal", { ["space /"] = "search-project" })
 
 return {}

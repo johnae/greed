@@ -3,7 +3,7 @@
 -- side by side or in a cascade, and turning a pane into a float and back.
 -- Floats are placed by hand otherwise; nothing moves them on its own.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local terminal = require("@terminal")
 
 local M = {}
@@ -11,9 +11,9 @@ local M = {}
 type Area = { x: number, y: number, width: number, height: number }
 
 --- The shown tab's own floating views, the one in front last.
-function M.list(): { kern.View }
+function M.list(): { greed.View }
 	local out = {}
-	for _, view in kern.floats() do
+	for _, view in greed.floats() do
 		local spec = view:float_spec()
 		if spec and spec.tab then
 			table.insert(out, view)
@@ -25,7 +25,7 @@ end
 -- The room the tab's panes take, where its floats go.
 local function room(): Area
 	local left, top, right, bottom = math.huge, math.huge, 0, 0
-	for _, pane in kern.tab.current().panes do
+	for _, pane in greed.tab.current().panes do
 		local area = pane:area()
 		if area then
 			left = math.min(left, area.x)
@@ -79,7 +79,7 @@ end
 
 -- Where a new float goes: a step down and right from the one in front, at
 -- its size (its area is inside the border), or nil when there's none.
-local function cascaded(): kern.FloatSpec?
+local function cascaded(): greed.FloatSpec?
 	local front = M.list()
 	local last = front[#front]
 	local area = last and last:area()
@@ -97,34 +97,34 @@ end
 
 --- Opens `buffer` in a new floating view over the tab, a little down and
 --- right of the one in front.
-function M.open(buffer: kern.Buffer): kern.View
-	local spec: kern.FloatSpec = cascaded() or { width = "80%", height = "80%" }
+function M.open(buffer: greed.Buffer): greed.View
+	local spec: greed.FloatSpec = cascaded() or { width = "80%", height = "80%" }
 	spec.tab = true
 	local path = buffer:path()
 	spec.title = if path then string.match(path, "[^/]+$") else nil
-	return kern.float(buffer, spec)
+	return greed.float(buffer, spec)
 end
 
 -- What each tab hid, to show again: the buffer, how its float was shown,
 -- its selection and whether the buffer was kept before.
 type Hidden =
-	{ buffer: kern.Buffer, spec: kern.FloatSpec, selection: kern.Selection, kept: boolean }
+	{ buffer: greed.Buffer, spec: greed.FloatSpec, selection: greed.Selection, kept: boolean }
 local hidden: { [number]: { Hidden } } = {}
 
 --- Hides the tab's floats, or shows the ones it hid, as zellij's alt-f
 --- does; with none, opens a floating terminal. Hidden terminals keep
 --- running, and floats come back where they were.
 function M.toggle()
-	local tab = kern.tab.current().id
+	local tab = greed.tab.current().id
 	local stored = hidden[tab]
 	if stored then
 		hidden[tab] = nil
 		for _, float in stored do
-			local view = kern.float(float.buffer, float.spec)
+			local view = greed.float(float.buffer, float.spec)
 			view:set_selection(float.selection)
 			float.buffer:set_kept(float.kept)
 		end
-		terminal.settle(kern.view())
+		terminal.settle(greed.view())
 		return
 	end
 	local floats = M.list()
@@ -137,7 +137,7 @@ function M.toggle()
 		local buffer = view:buffer()
 		table.insert(list, {
 			buffer = buffer,
-			spec = view:float_spec() :: kern.FloatSpec,
+			spec = view:float_spec() :: greed.FloatSpec,
 			selection = view:selection(),
 			kept = buffer:kept(),
 		})
@@ -146,24 +146,24 @@ function M.toggle()
 		view:close()
 	end
 	hidden[tab] = list
-	terminal.settle(kern.view())
+	terminal.settle(greed.view())
 end
 
 --- Takes the focused pane out of the tab to float over it, or puts the
 --- focused float back in as a pane beside the active one.
-function M.flip(view: kern.View)
+function M.flip(view: greed.View)
 	local buffer, selection = view:buffer(), view:selection()
-	local moved: kern.View
+	local moved: greed.View
 	if view:float_spec() then
-		local active = kern.tab.current().active
+		local active = greed.tab.current().active
 		local rows, cols = active:size()
 		moved = active:split(if (cols or 80) > (rows or 24) * 2 then "right" else "down", buffer)
-	elseif #kern.tab.current().panes > 1 then
+	elseif #greed.tab.current().panes > 1 then
 		local path = buffer:path()
 		local title = if path then string.match(path, "[^/]+$") else buffer:kind()
-		moved = kern.float(buffer, { title = title, width = "70%", height = "70%", tab = true })
+		moved = greed.float(buffer, { title = title, width = "70%", height = "70%", tab = true })
 	else
-		kern.echo("the last pane stays in the tab")
+		greed.echo("the last pane stays in the tab")
 		return
 	end
 	moved:set_selection(selection)

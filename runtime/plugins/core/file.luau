@@ -1,31 +1,31 @@
 -- Opening, saving and quitting.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local project = require("./project")
 
 local M = {}
 
 -- How buffers that aren't files save, by kind.
-local savers: { [string]: (buffer: kern.Buffer) -> () } = {}
+local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
 
 --- Makes :w on buffers of `kind` call `save` rather than write a file,
 --- e.g. for a list of search results that writes its edits back.
-function M.on_save(kind: string, save: (buffer: kern.Buffer) -> ())
+function M.on_save(kind: string, save: (buffer: greed.Buffer) -> ())
 	savers[kind] = save
 end
 
 -- What runs on a file's buffer just before it's written, like a formatter,
 -- by name.
-local before_save: { [string]: (buffer: kern.Buffer) -> () } = {}
+local before_save: { [string]: (buffer: greed.Buffer) -> () } = {}
 
 --- Makes `hook` run on each file's buffer just before it's written,
 --- replacing any hook called `name`. An error in it is shown, and the file
 --- is written anyway.
-function M.before_save(name: string, hook: (buffer: kern.Buffer) -> ())
+function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
 	before_save[name] = hook
 end
 
-local function save(buffer: kern.Buffer, path: string?)
+local function save(buffer: greed.Buffer, path: string?)
 	local saver = savers[buffer:kind()]
 	if saver and path == nil then
 		saver(buffer)
@@ -34,11 +34,11 @@ local function save(buffer: kern.Buffer, path: string?)
 	for _, hook in before_save do
 		local ok, err = pcall(hook, buffer)
 		if not ok then
-			kern.echo(tostring(err))
+			greed.echo(tostring(err))
 		end
 	end
 	buffer:save(path)
-	kern.echo("wrote " .. (buffer:path() or "?"))
+	greed.echo("wrote " .. (buffer:path() or "?"))
 end
 
 -- Fails if any of `unsaved` has changes, unless `force` says to go ahead.
@@ -54,7 +54,7 @@ end
 -- Every file with unsaved changes, in any project.
 local function all_unsaved(): { string }
 	local unsaved = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:kind() == "file" and buffer:modified() then
 			table.insert(unsaved, buffer:path() or "an unnamed buffer")
 		end
@@ -65,17 +65,17 @@ end
 -- Leaves the shown project: with others open it closes and the terminal
 -- lets go, leaving the rest running; the last one quits the editor.
 local function quit(force: boolean)
-	if #kern.project.list() == 1 then
+	if #greed.project.list() == 1 then
 		check_unsaved(all_unsaved(), force)
-		kern.quit()
+		greed.quit()
 		return
 	end
 	check_unsaved(project.unsaved(), force)
-	kern.project.close(kern.project.current().id)
-	kern.detach()
+	greed.project.close(greed.project.current().id)
+	greed.detach()
 end
 
-kern.command({
+greed.command({
 	name = "save",
 	doc = "Write the buffer to its file, or to a new one",
 	args = {
@@ -90,15 +90,15 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "detach",
-	doc = "Leave the editor running in the background; kern attach comes back",
+	doc = "Leave the editor running in the background; greed attach comes back",
 	run = function()
-		kern.detach()
+		greed.detach()
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "quit",
 	doc = "Close the project and leave, or exit the editor if it's the last one; "
 		.. "refuses with unsaved changes (force goes anyway)",
@@ -107,16 +107,16 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "quit-all",
 	doc = "Exit the editor and every project, unless files have unsaved changes (force exits anyway)",
 	run = function(ctx)
 		check_unsaved(all_unsaved(), ctx.force)
-		kern.quit()
+		greed.quit()
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "save-quit",
 	doc = "Write the buffer to its file, then quit",
 	run = function(ctx)
@@ -125,7 +125,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "open",
 	doc = "Open a file in the main view",
 	args = {
@@ -140,15 +140,15 @@ kern.command({
 		if path == nil then
 			error("open needs a path, e.g. :open src/main.rs", 0)
 		end
-		kern.open(path)
+		greed.open(path)
 	end,
 })
 
 -- What views showing `closing` show instead: the file opened last in the
 -- same project, or an empty buffer.
-local function replacement(closing: kern.Buffer): kern.Buffer
-	local best: kern.Buffer? = nil
-	for _, buffer in kern.buffers() do
+local function replacement(closing: greed.Buffer): greed.Buffer
+	local best: greed.Buffer? = nil
+	for _, buffer in greed.buffers() do
 		if
 			buffer:id() ~= closing:id()
 			and buffer:path()
@@ -158,12 +158,12 @@ local function replacement(closing: kern.Buffer): kern.Buffer
 			best = buffer
 		end
 	end
-	return best or kern.create_buffer("file", "")
+	return best or greed.create_buffer("file", "")
 end
 
 --- Closes `buffer`: views showing it show another file instead. Refuses
 --- with unsaved changes unless `force`.
-function M.close(buffer: kern.Buffer, force: boolean?)
+function M.close(buffer: greed.Buffer, force: boolean?)
 	if buffer:kind() == "file" and buffer:modified() and not force then
 		error(
 			`unsaved changes in {buffer:path() or "this buffer"} - :w saves, :bc! closes anyway`,
@@ -180,7 +180,7 @@ function M.close(buffer: kern.Buffer, force: boolean?)
 	buffer:close()
 end
 
-kern.command({
+greed.command({
 	name = "buffer-close",
 	doc = "Close this buffer, showing another file in its place; refuses with "
 		.. "unsaved changes (force closes anyway)",
@@ -189,13 +189,13 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "buffer-close-others",
 	doc = "Close every file but this one; refuses if one has unsaved changes "
 		.. "(force closes anyway)",
 	run = function(ctx)
 		local others = {}
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			if buffer:id() ~= ctx.buffer:id() and buffer:path() then
 				table.insert(others, buffer)
 			end

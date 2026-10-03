@@ -1,4 +1,4 @@
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 test("ctrl-h goes back through earlier selections and ctrl-k forward again", function(t)
 	t:buffer("|one two three")

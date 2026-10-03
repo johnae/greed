@@ -1,7 +1,7 @@
-//! `kern.theme`: what style names look like.
+//! `greed.theme`: what style names look like.
 //!
 //! ```luau
-//! kern.theme.set({
+//! greed.theme.set({
 //!     keyword = { fg = "magenta", bold = true },
 //!     ["ui.selection"] = { bg = "#203040", tui = { bg = "blue" } },
 //! })

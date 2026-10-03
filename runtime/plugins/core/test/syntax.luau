@@ -1,7 +1,7 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
-kern.syntax.set_query(
+greed.syntax.set_query(
 	"rust",
 	"textobjects",
 	[[
@@ -14,7 +14,7 @@ kern.syntax.set_query(
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
-	kern.view():buffer():set_language("rust")
+	greed.view():buffer():set_language("rust")
 	t:keys(keys)
 	t:expect(after)
 end
@@ -74,7 +74,7 @@ test("buffers without a grammar or a query are left alone", function(t)
 	t:keys("m a f alt-o")
 	t:expect("fn one() {|}")
 	-- A query without functions in it finds none.
-	kern.syntax.set_query("rust", "textobjects", "(line_comment) @comment.around")
+	greed.syntax.set_query("rust", "textobjects", "(line_comment) @comment.around")
 	check(t, "fn one() {|}", "m a f", "fn one() {|}")
 end)
 

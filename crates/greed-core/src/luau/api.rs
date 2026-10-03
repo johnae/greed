@@ -1,4 +1,4 @@
-//! The `kern` module plugins get from `require("@kern")`, and running
+//! The `greed` module plugins get from `require("@greed")`, and running
 //! commands and emitting events.
 
 use std::collections::HashMap;
@@ -57,7 +57,7 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
 }
 
 /// `invoke`, returning the command's coroutine if it's still running, for
-/// `kern.run` to wait for.
+/// `greed.run` to wait for.
 fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize>, HostError> {
     let Invocation {
         keys,
@@ -139,17 +139,17 @@ pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
     press_key(lua, key)
 }
 
-/// The keys a `kern.keys.record` keeps.
+/// The keys a `greed.keys.record` keeps.
 pub(crate) struct Recording {
     keys: Vec<Key>,
-    /// Whether it keeps keys fed by `kern.keys.feed` too, like a macro's.
+    /// Whether it keeps keys fed by `greed.keys.feed` too, like a macro's.
     fed: bool,
 }
 
 /// Feeds one key press through the keymap, running whatever it resolves
 /// to, without recording it.
 fn press_key(lua: &Lua, key: Key) -> Result<(), HostError> {
-    // A command waiting on kern.next_key gets the key instead of the keymap.
+    // A command waiting on greed.next_key gets the key instead of the keymap.
     let waiter = state_mut(lua).key_waiter.take();
     if let Some(token) = waiter {
         tasks::wake(lua, token, key.to_string())?;
@@ -217,13 +217,13 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
     first_error.map_or(Ok(()), Err)
 }
 
-pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
-    let kern = lua.create_table()?;
+pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
+    let greed = lua.create_table()?;
 
-    kern.set("cli", super::cli::function(lua, owner)?)?;
+    greed.set("cli", super::cli::function(lua, owner)?)?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "command",
         lua.create_function(move |lua, spec: Table| {
             let command = Command {
@@ -242,10 +242,10 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    kern.set("run", run_function(lua)?)?;
+    greed.set("run", run_function(lua)?)?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "on",
         lua.create_function(move |lua, (event, handler): (String, Function)| {
             let source = caller(lua);
@@ -256,7 +256,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "echo",
         lua.create_function(|lua, parts: Variadic<Value>| {
             let text: Vec<String> = parts.iter().map(display).collect();
@@ -266,7 +266,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "view",
         lua.create_function(move |lua, ()| {
             Ok(ViewRef {
@@ -278,22 +278,22 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     let sleep = tasks::sleep_function(lua)?;
     let now = tasks::now_function(lua)?;
-    kern.set(
+    greed.set(
         "animate",
         tasks::animate_function(lua, now.clone(), sleep.clone())?,
     )?;
-    kern.set("sleep", sleep)?;
-    kern.set("spawn", spawn_function(lua, owner)?)?;
-    kern.set(
+    greed.set("sleep", sleep)?;
+    greed.set("spawn", spawn_function(lua, owner)?)?;
+    greed.set(
         "stalls",
         lua.create_function(|lua, ()| super::stalls::list(lua))?,
     )?;
-    kern.set("now", now)?;
-    kern.set("next_key", tasks::next_key_function(lua)?)?;
+    greed.set("now", now)?;
+    greed.set("next_key", tasks::next_key_function(lua)?)?;
 
-    kern.set("quit", quit_function(lua)?)?;
+    greed.set("quit", quit_function(lua)?)?;
 
-    kern.set(
+    greed.set(
         "eval",
         lua.create_function(|lua, source: String| {
             Ok(match super::eval_repl(lua, &source) {
@@ -304,7 +304,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "statusline",
         lua.create_function(move |lua, build: Function| {
             state_mut(lua).statusline = Some((o.clone(), build));
@@ -312,44 +312,44 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    workspace_functions(lua, &kern, owner)?;
-    submodules(lua, &kern, owner)?;
-    Ok(kern)
+    workspace_functions(lua, &greed, owner)?;
+    submodules(lua, &greed, owner)?;
+    Ok(greed)
 }
 
-/// `kern.keymap`, `kern.mode` and the other tables in `kern`.
-fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
-    kern.set("keymap", keymap_module(lua, owner)?)?;
-    kern.set("mode", mode_module(lua)?)?;
-    kern.set("option", option_module(lua, owner)?)?;
-    kern.set("history", history_module(lua)?)?;
-    kern.set("clipboard", clipboard_module(lua)?)?;
-    kern.set("lsp", super::lsp::module(lua, owner)?)?;
-    kern.set("fs", super::fs::module(lua)?)?;
-    kern.set("control", super::requests::module(lua)?)?;
-    kern.set("json", super::json::module(lua)?)?;
-    kern.set("project", super::projects::module(lua)?)?;
-    kern.set("tab", super::tabs::module(lua, owner)?)?;
-    kern.set("session", super::sessions::module(lua)?)?;
-    kern.set("keys", keys_module(lua)?)?;
-    kern.set("process", super::process::module(lua)?)?;
-    kern.set("http", super::http::module(lua, owner)?)?;
-    kern.set("secrets", super::secrets::module(lua, owner)?)?;
-    kern.set("terminal", super::terminal::module(lua, owner)?)?;
-    kern.set("image", super::images::module(lua)?)?;
-    kern.set("diff", super::diff::diff_function(lua)?)?;
-    kern.set("signal", tasks::signal_function(lua)?)?;
-    kern.set(
+/// `greed.keymap`, `greed.mode` and the other tables in `greed`.
+fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
+    greed.set("keymap", keymap_module(lua, owner)?)?;
+    greed.set("mode", mode_module(lua)?)?;
+    greed.set("option", option_module(lua, owner)?)?;
+    greed.set("history", history_module(lua)?)?;
+    greed.set("clipboard", clipboard_module(lua)?)?;
+    greed.set("lsp", super::lsp::module(lua, owner)?)?;
+    greed.set("fs", super::fs::module(lua)?)?;
+    greed.set("control", super::requests::module(lua)?)?;
+    greed.set("json", super::json::module(lua)?)?;
+    greed.set("project", super::projects::module(lua)?)?;
+    greed.set("tab", super::tabs::module(lua, owner)?)?;
+    greed.set("session", super::sessions::module(lua)?)?;
+    greed.set("keys", keys_module(lua)?)?;
+    greed.set("process", super::process::module(lua)?)?;
+    greed.set("http", super::http::module(lua, owner)?)?;
+    greed.set("secrets", super::secrets::module(lua, owner)?)?;
+    greed.set("terminal", super::terminal::module(lua, owner)?)?;
+    greed.set("image", super::images::module(lua)?)?;
+    greed.set("diff", super::diff::diff_function(lua)?)?;
+    greed.set("signal", tasks::signal_function(lua)?)?;
+    greed.set(
         "detach",
         lua.create_function(|lua, ()| {
             state_mut(lua).editor.request_detach();
             Ok(())
         })?,
     )?;
-    super::languages::register(lua, kern)?;
-    kern.set("plugin", super::plugin::module(lua)?)?;
-    kern.set("syntax", super::syntax::module(lua, owner)?)?;
-    kern.set("theme", super::theme::module(lua, owner)?)
+    super::languages::register(lua, greed)?;
+    greed.set("plugin", super::plugin::module(lua)?)?;
+    greed.set("syntax", super::syntax::module(lua, owner)?)?;
+    greed.set("theme", super::theme::module(lua, owner)?)
 }
 
 /// A mode name, or `{ mode = ..., kind = ... }`.
@@ -367,8 +367,8 @@ fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     }
 }
 
-/// `kern.keymap.unbind`, `kern.keymap.clear`, `kern.keymap.counts` and
-/// `kern.keymap.inherit`.
+/// `greed.keymap.unbind`, `greed.keymap.clear`, `greed.keymap.counts` and
+/// `greed.keymap.inherit`.
 fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     keymap.set(
@@ -869,13 +869,13 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
 
 /// Buffers, floating views, files and commands: what pickers and other UI
 /// plugins are built from.
-fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
-    kern.set("create_buffer", create_buffer_function(lua, owner)?)?;
-    kern.set("panel", panel_function(lua, owner)?)?;
-    kern.set("floats", lua.create_function(|lua, ()| Ok(floats(lua)))?)?;
+fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
+    greed.set("create_buffer", create_buffer_function(lua, owner)?)?;
+    greed.set("panel", panel_function(lua, owner)?)?;
+    greed.set("floats", lua.create_function(|lua, ()| Ok(floats(lua)))?)?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "float",
         lua.create_function(
             move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
@@ -890,7 +890,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
     )?;
 
     let o = owner.clone();
-    kern.set(
+    greed.set(
         "buffers",
         lua.create_function(move |lua, ()| {
             let ids: Vec<_> = state(lua).editor.buffers().map(crate::Buffer::id).collect();
@@ -905,9 +905,9 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
             Ok(list)
         })?,
     )?;
-    kern.set("load", load_function(lua, owner)?)?;
+    greed.set("load", load_function(lua, owner)?)?;
 
-    kern.set(
+    greed.set(
         "open",
         lua.create_function(|lua, path: String| {
             super::secrets::guard(lua, Path::new(&path))?;
@@ -915,7 +915,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "commands",
         lua.create_function(|lua, ()| {
             let list = lua.create_table()?;
@@ -947,18 +947,18 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "fuzzy",
         lua.create_function(|_, (query, items): (String, Vec<String>)| Ok(fuzzy(&query, &items)))?,
     )?;
-    kern.set(
+    greed.set(
         "fuzzy_positions",
         lua.create_function(|_, (query, text): (String, String)| {
             Ok(fuzzy_positions(&query, &text))
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "files",
         lua.create_function(|_, dir: Option<String>| {
             Ok(files(Path::new(dir.as_deref().unwrap_or("."))))
@@ -967,7 +967,7 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
     Ok(())
 }
 
-/// `kern.panel(buffer, { side, width, title, focus })`: a view beside the
+/// `greed.panel(buffer, { side, width, title, focus })`: a view beside the
 /// main one. It's on the left, 30 cells wide and focused unless the spec says
 /// otherwise.
 fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
@@ -1003,7 +1003,7 @@ fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     )
 }
 
-/// `kern.create_buffer(kind, text, { readonly, language })`.
+/// `greed.create_buffer(kind, text, { readonly, language })`.
 fn create_buffer_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(
@@ -1139,7 +1139,7 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
     })
 }
 
-/// `kern.floats()`: the floating views, the one in front last.
+/// `greed.floats()`: the floating views, the one in front last.
 fn floats(lua: &Lua) -> Vec<ViewRef> {
     let state = state(lua);
     let author = Author::User(state.editor.client());
@@ -1154,7 +1154,7 @@ fn floats(lua: &Lua) -> Vec<ViewRef> {
         .collect()
 }
 
-/// `options` as a spec `kern.float` and `view:configure` take.
+/// `options` as a spec `greed.float` and `view:configure` take.
 pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> {
     let to_lua = |extent: Extent| -> LuaResult<Value> {
         match extent {
@@ -1292,7 +1292,7 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
         .collect()
 }
 
-/// `kern.spawn(f, ...)`: runs `f` as a coroutine of `owner`'s, so it can
+/// `greed.spawn(f, ...)`: runs `f` as a coroutine of `owner`'s, so it can
 /// wait, and returns at once.
 fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
@@ -1301,7 +1301,7 @@ fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     })
 }
 
-/// `kern.load(path)`: the buffer for a file, opened without being shown.
+/// `greed.load(path)`: the buffer for a file, opened without being shown.
 fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, path: String| {
@@ -1318,7 +1318,7 @@ fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     })
 }
 
-/// `kern.quit`, which tells plugins with "editor.quitting" first.
+/// `greed.quit`, which tells plugins with "editor.quitting" first.
 fn quit_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, ()| {
         emit(lua, "editor.quitting", &lua.create_table()?)?;
@@ -1327,7 +1327,7 @@ fn quit_function(lua: &Lua) -> LuaResult<Function> {
     })
 }
 
-/// `kern.keys`: recording what's typed and feeding keys back, for macros.
+/// `greed.keys`: recording what's typed and feeding keys back, for macros.
 fn keys_module(lua: &Lua) -> LuaResult<Table> {
     let keys = lua.create_table()?;
     keys.set(
@@ -1379,7 +1379,7 @@ fn keys_module(lua: &Lua) -> LuaResult<Table> {
     Ok(keys)
 }
 
-/// `kern.open`: shows the file at `path` in the main view, opening it if it
+/// `greed.open`: shows the file at `path` in the main view, opening it if it
 /// isn't open, and tells plugins with "buffer.opened".
 fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
     let mut state = state_mut(lua);
@@ -1404,7 +1404,7 @@ fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
     emit(lua, "buffer.opened", &payload)
 }
 
-/// `kern.run(name, opts)`: starts a command; with `wait`, a command or
+/// `greed.run(name, opts)`: starts a command; with `wait`, a command or
 /// handler waits until it has finished.
 fn run_function(lua: &Lua) -> LuaResult<Function> {
     // Returns a token to yield until the command finishes, when it's asked
@@ -1437,11 +1437,11 @@ fn run_function(lua: &Lua) -> LuaResult<Function> {
         end
         ",
     )
-    .set_name("=kern.run")
+    .set_name("=greed.run")
     .call(start)
 }
 
-/// `kern.keymap.overlay(bindings)`: binds single keys for the next key
+/// `greed.keymap.overlay(bindings)`: binds single keys for the next key
 /// press only, or drops such bindings with nil.
 fn set_overlay(lua: &Lua, bindings: Option<HashMap<String, String>>) -> LuaResult<()> {
     let overlay = bindings

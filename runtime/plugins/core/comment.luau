@@ -2,7 +2,7 @@
 -- comments away if every line already has one. What starts a comment comes
 -- from the buffer's language; the languages plugin fills it in.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local motions = require("./motions")
 
 local tokens: { [string]: string } = {}
@@ -14,19 +14,19 @@ function M.set(language: string, token: string?)
 	tokens[language] = token
 end
 
---- What starts a line comment in `language`, if Kern knows.
+--- What starts a line comment in `language`, if Greed knows.
 function M.token(language: string?): string?
 	return if language then tokens[language] else nil
 end
 
-kern.command({
+greed.command({
 	name = "toggle-comment",
 	doc = "Comment the lines of each selection, or uncomment them if they all are",
 	run = function(ctx)
 		local buffer = ctx.buffer
 		local token = M.token(buffer:language())
 		if token == nil then
-			kern.echo("no line comment for this language")
+			greed.echo("no line comment for this language")
 			return
 		end
 		-- Each non-blank line: where it starts, its text and its indent.

@@ -1,4 +1,4 @@
-//! `kern.http` against a tiny server on localhost.
+//! `greed.http` against a tiny server on localhost.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -96,14 +96,14 @@ fn requests_wait_for_the_whole_response() {
         "fetch",
         &format!(
             r#"
-            local kern = require("@kern")
-            kern.command {{ name = "fetch", run = function()
-                local r = assert(kern.http.request({{ url = "{address}/hello" }}))
-                kern.echo(`{{r.status}} {{r.headers["x-kind"]}} {{r.body}}`)
-                local e = assert(kern.http.request({{ url = "{address}/echo", body = "sent" }}))
-                kern.echo(`{{e.status}} {{e.body}}`)
-                local _, err = kern.http.request({{ url = "http://127.0.0.1:1/" }})
-                kern.echo(if err then "refused" else "connected")
+            local greed = require("@greed")
+            greed.command {{ name = "fetch", run = function()
+                local r = assert(greed.http.request({{ url = "{address}/hello" }}))
+                greed.echo(`{{r.status}} {{r.headers["x-kind"]}} {{r.body}}`)
+                local e = assert(greed.http.request({{ url = "{address}/echo", body = "sent" }}))
+                greed.echo(`{{e.status}} {{e.body}}`)
+                local _, err = greed.http.request({{ url = "http://127.0.0.1:1/" }})
+                greed.echo(if err then "refused" else "connected")
             end }}
             "#
         ),
@@ -124,16 +124,16 @@ fn streams_give_each_piece_as_it_arrives() {
         "stream",
         &format!(
             r#"
-            local kern = require("@kern")
-            kern.command {{ name = "stream", run = function()
-                local s = assert(kern.http.stream({{ url = "{address}/stream" }}))
-                kern.echo("status " .. s.status)
+            local greed = require("@greed")
+            greed.command {{ name = "stream", run = function()
+                local s = assert(greed.http.stream({{ url = "{address}/stream" }}))
+                greed.echo("status " .. s.status)
                 while true do
                     local piece = s.read()
                     if piece == nil then break end
-                    kern.echo(piece)
+                    greed.echo(piece)
                 end
-                kern.echo("end")
+                greed.echo("end")
             end }}
             "#
         ),
@@ -149,7 +149,7 @@ fn streams_give_each_piece_as_it_arrives() {
 #[test]
 fn a_plugin_reaches_only_the_hosts_it_declares() {
     let address = serve();
-    let dir = std::env::temp_dir().join(format!("kern-http-net-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-http-net-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("plugin.toml"),
@@ -160,10 +160,10 @@ fn a_plugin_reaches_only_the_hosts_it_declares() {
         dir.join("init.luau"),
         format!(
             r#"
-            local kern = require("@kern")
-            kern.command {{ name = "fetcher-go", run = function()
-                local ok, err = pcall(kern.http.request, {{ url = "{address}/hello" }})
-                kern.echo(if ok then "fetched" else tostring(err))
+            local greed = require("@greed")
+            greed.command {{ name = "fetcher-go", run = function()
+                local ok, err = pcall(greed.http.request, {{ url = "{address}/hello" }})
+                greed.echo(if ok then "fetched" else tostring(err))
             end }}
             "#
         ),

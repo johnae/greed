@@ -3,11 +3,11 @@
 -- breaks included. Positions are byte offsets; a range's cursor is on its
 -- last character going forward.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local text = require("./text")
 
-type Buffer = kern.Buffer
-type Range = kern.Range
+type Buffer = greed.Buffer
+type Range = greed.Range
 
 --- What a word motion goes to.
 export type Target =

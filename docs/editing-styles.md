@@ -1,6 +1,6 @@
 # Editing styles
 
-Kern comes with three ways to edit, and you can switch between them while
+Greed comes with three ways to edit, and you can switch between them while
 it runs:
 
 | Style | How it works | Like |
@@ -14,10 +14,10 @@ it runs:
 :style            show the style in use and the others
 ```
 
-To start in a style every time, set it in `~/.config/kern/init.luau`:
+To start in a style every time, set it in `~/.config/greed/init.luau`:
 
 ```luau
-require("@kern").option.set("editing-style", "vim")
+require("@greed").option.set("editing-style", "vim")
 ```
 
 Helix and Vim share the keys that aren't about editing: `space f` finds
@@ -55,7 +55,7 @@ Why it's the default: you see what a command will act on before you run
 it, and many selections are part of the model rather than a separate
 feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then
 happens at each one, which covers most of what macros and
-search-and-replace are used for. [Using Kern](using.md#editing) lists
+search-and-replace are used for. [Using Greed](using.md#editing) lists
 the keys.
 
 ## Vim
@@ -116,7 +116,7 @@ copied in another program too; `"+` is the same and `"_` keeps nothing.
 Panels like the file tree and help keep their own keys.
 
 Line commands with ranges (`:%s/a/b/g`, `:g/regex/d`, `:'<,'>norm A;`)
-are on the command line; [Using Kern](using.md#the-command-line) lists
+are on the command line; [Using Greed](using.md#the-command-line) lists
 them. Some of Vim is still missing: a copied block pastes as plain
 text (one piece per line), and Vim's own regex syntax (`\(`, `\<`) since
 patterns are the same regexes search uses.
@@ -156,7 +156,7 @@ Keys with `ctrl-shift` need a terminal that reports them, such as one with
 the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).
 
 Why it's here: for people who don't want modes, or don't want them yet,
-and for the odd edit where modes get in the way. Everything else in Kern
+and for the odd edit where modes get in the way. Everything else in Greed
 still works, through `ctrl-P` and the command line (`alt-x`).
 
 ## Making your own
@@ -166,12 +166,12 @@ plugin. Its keys can borrow from Helix's normal mode, so `space`, `:` and
 the rest keep working:
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
-kern.keymap.inherit("mine", "normal", { "space", ":" })
+greed.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
+greed.keymap.inherit("mine", "normal", { "space", ":" })
 -- The file tree, help and other panels keep their keys.
-kern.keymap.inherit_kinds("mine", "normal")
+greed.keymap.inherit_kinds("mine", "normal")
 
 require("@core").style.define({
 	name = "mine",

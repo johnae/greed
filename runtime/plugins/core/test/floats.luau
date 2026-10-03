@@ -1,10 +1,10 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
-local function float(t: test.TestContext): kern.View
+local function float(t: test.TestContext): greed.View
 	t:buffer("|x")
-	local view = kern.float(
-		kern.create_buffer("scratch", "hello"),
+	local view = greed.float(
+		greed.create_buffer("scratch", "hello"),
 		{ title = "f", x = 2, y = 2, width = 20, height = 6 }
 	)
 	t:draw(60, 20)
@@ -25,15 +25,15 @@ end)
 
 test("dragging a float's corner resizes it, and a press brings it to the front", function(t)
 	local view = float(t)
-	local other = kern.float(
-		kern.create_buffer("scratch", "other"),
+	local other = greed.float(
+		greed.create_buffer("scratch", "other"),
 		{ x = 30, y = 2, width = 20, height = 6, focus = false }
 	)
 	t:draw(60, 20)
 	local before = view:area() :: { x: number, y: number, width: number, height: number }
 	local right, bottom = before.x + before.width, before.y + before.height
 	t:mouse("press", right, bottom)
-	assert(kern.view():id() == view:id(), "pressing the border focuses it")
+	assert(greed.view():id() == view:id(), "pressing the border focuses it")
 	t:mouse("drag", right + 4, bottom + 2)
 	t:mouse("release", right + 4, bottom + 2)
 	t:draw(60, 20)

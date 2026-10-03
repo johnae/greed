@@ -12,14 +12,14 @@
 -- signs show what the change you're working on does to the file.
 
 local core = require("@core")
-local kern = require("@kern")
+local greed = require("@greed")
 local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
 
 local M = {}
 
-kern.option.define({
+greed.option.define({
 	name = "vcs-signs",
 	doc = "Show signs beside lines changed since the last commit",
 	default = true,
@@ -45,9 +45,9 @@ end
 local function repo_of(path: string): Repo?
 	local dir = parent(path)
 	while dir and dir ~= "" do
-		if kern.fs.stat(dir .. "/.jj") then
+		if greed.fs.stat(dir .. "/.jj") then
 			return { kind = "jj", root = dir }
-		elseif kern.fs.stat(dir .. "/.git") then
+		elseif greed.fs.stat(dir .. "/.git") then
 			return { kind = "git", root = dir }
 		end
 		dir = parent(dir)
@@ -56,11 +56,11 @@ local function repo_of(path: string): Repo?
 end
 
 local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{kern.fs.cwd()}/{path}`
+	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
 end
 
 -- The repository `buffer`'s file is in, and the file's path from its root.
-local function locate(buffer: kern.Buffer): (Repo?, string?)
+local function locate(buffer: greed.Buffer): (Repo?, string?)
 	local path = buffer:path()
 	local repo = path and repo_of(absolute(path))
 	if path == nil or repo == nil then
@@ -81,7 +81,7 @@ local function vcs(repo: Repo, args: { string }, snapshot: boolean?): string?
 	for _, arg in args do
 		table.insert(command, arg)
 	end
-	local done = kern.process.run(command, { cwd = repo.root })
+	local done = greed.process.run(command, { cwd = repo.root })
 	return if done and done.code == 0 then done.stdout else nil
 end
 
@@ -95,7 +95,7 @@ end
 
 -- The file at the last commit: its text, "" if it's new, or false outside a
 -- repository.
-local function fetch_base(buffer: kern.Buffer): string | false
+local function fetch_base(buffer: greed.Buffer): string | false
 	local repo, relative = locate(buffer)
 	if repo == nil or relative == nil then
 		return false
@@ -104,7 +104,7 @@ local function fetch_base(buffer: kern.Buffer): string | false
 end
 
 -- The changes since the last commit, in order.
-local function changes(buffer: kern.Buffer): { Change }
+local function changes(buffer: greed.Buffer): { Change }
 	local base = bases[buffer:id()]
 	if not base then
 		return {}
@@ -112,7 +112,7 @@ local function changes(buffer: kern.Buffer): { Change }
 	local out: { Change } = {}
 	-- Hunks are in the old text; `shift` turns their places into the new one's.
 	local shift = 0
-	for _, hunk in kern.diff(base, buffer:text()) do
+	for _, hunk in greed.diff(base, buffer:text()) do
 		local from = hunk.from + shift
 		local old = string.sub(base, hunk.from + 1, hunk.to)
 		local kind: "+" | "~" | "-" = if old == "" then "+" elseif hunk.text == "" then "-" else "~"
@@ -124,7 +124,7 @@ end
 
 -- The first and last lines a change covers; a removal covers the line it
 -- was removed from.
-local function lines_of(buffer: kern.Buffer, change: Change): (number, number)
+local function lines_of(buffer: greed.Buffer, change: Change): (number, number)
 	local first = buffer:line_of(math.min(change.from, buffer:len()))
 	local last = if change.to > change.from then buffer:line_of(change.to - 1) else first
 	return first, last
@@ -133,9 +133,9 @@ end
 local STYLE: { [string]: string } =
 	{ ["+"] = "diff.plus", ["~"] = "diff.delta", ["-"] = "diff.minus" }
 
-local function mark(buffer: kern.Buffer)
-	local marks: { kern.Mark } = {}
-	if kern.option.get("vcs-signs") == true then
+local function mark(buffer: greed.Buffer)
+	local marks: { greed.Mark } = {}
+	if greed.option.get("vcs-signs") == true then
 		for _, change in changes(buffer) do
 			local first, last = lines_of(buffer, change)
 			for line = first, last do
@@ -153,36 +153,36 @@ local function mark(buffer: kern.Buffer)
 	buffer:decorate("vcs", marks)
 end
 
-local function refresh(buffer: kern.Buffer)
+local function refresh(buffer: greed.Buffer)
 	bases[buffer:id()] = fetch_base(buffer)
 	mark(buffer)
 end
 
-kern.on("buffer.opened", function(event: kern.BufferChanged)
+greed.on("buffer.opened", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
 -- Saving may follow a commit made elsewhere, so the base is read again.
-kern.on("buffer.saved", function(event: kern.BufferChanged)
+greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	if not bases[buffer:id()] then
 		return
 	end
 	generation += 1
 	local mine = generation
-	kern.sleep(100)
+	greed.sleep(100)
 	if mine == generation then
 		pcall(mark, buffer)
 	end
 end)
 
-kern.on("option.changed", function(event)
+greed.on("option.changed", function(event)
 	if event.name == "vcs-signs" then
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			if bases[buffer:id()] then
 				mark(buffer)
 			end
@@ -190,12 +190,12 @@ kern.on("option.changed", function(event)
 	end
 end)
 
-local function head(view: kern.View): number
+local function head(view: greed.View): number
 	local selection = view:selection()
 	return selection.ranges[selection.primary].head
 end
 
-local function goto_change(ctx: kern.Context, forward: boolean)
+local function goto_change(ctx: greed.Context, forward: boolean)
 	local buffer = ctx.buffer
 	local line = buffer:line_of(head(ctx.view))
 	local found = changes(buffer)
@@ -218,14 +218,14 @@ local function goto_change(ctx: kern.Context, forward: boolean)
 		end
 	end
 	if target == nil then
-		kern.echo("no more changes")
+		greed.echo("no more changes")
 		return
 	end
 	local at = buffer:line_start(target)
 	ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 end
 
-kern.command({
+greed.command({
 	name = "next-change",
 	doc = "Go to the next change since the last commit",
 	run = function(ctx)
@@ -233,7 +233,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "prev-change",
 	doc = "Go to the previous change since the last commit",
 	run = function(ctx)
@@ -242,7 +242,7 @@ kern.command({
 })
 
 for _, last in { false, true } do
-	kern.command({
+	greed.command({
 		name = if last then "last-change" else "first-change",
 		doc = if last
 			then "Go to the last change since the last commit"
@@ -252,7 +252,7 @@ for _, last in { false, true } do
 			local found = changes(buffer)
 			local change = found[if last then #found else 1]
 			if change == nil then
-				kern.echo("no changes")
+				greed.echo("no changes")
 				return
 			end
 			local at = buffer:line_start((lines_of(buffer, change)))
@@ -262,7 +262,7 @@ for _, last in { false, true } do
 end
 
 -- The change since the last commit on the cursor's line, if there is one.
-local function change_here(ctx: kern.Context): Change?
+local function change_here(ctx: greed.Context): Change?
 	local buffer = ctx.buffer
 	local line = buffer:line_of(head(ctx.view))
 	for _, change in changes(buffer) do
@@ -275,7 +275,7 @@ local function change_here(ctx: kern.Context): Change?
 end
 
 for _, around in { false, true } do
-	kern.command({
+	greed.command({
 		name = if around then "select-around-change" else "select-inside-change",
 		doc = if around
 			then "Select the lines of the change since the last commit under the cursor"
@@ -299,7 +299,7 @@ for _, around in { false, true } do
 	})
 end
 
-kern.command({
+greed.command({
 	name = "revert-change",
 	doc = "Put the change under the cursor back the way it was at the last commit",
 	run = function(ctx)
@@ -307,7 +307,7 @@ kern.command({
 		if buffer:kind() == "multibuffer" then
 			local ok, why = multibuffer.revert(buffer, head(ctx.view))
 			if not ok then
-				kern.echo(why :: string)
+				greed.echo(why :: string)
 			end
 			return
 		end
@@ -325,17 +325,17 @@ kern.command({
 				return
 			end
 		end
-		kern.echo("no change here")
+		greed.echo("no change here")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "blame-line",
 	doc = "Show who last changed the line under the cursor, and when",
 	run = function(ctx)
 		local repo, relative = locate(ctx.buffer)
 		if repo == nil or relative == nil then
-			kern.echo("this file isn't in a repository")
+			greed.echo("this file isn't in a repository")
 			return
 		end
 		local line = ctx.buffer:line_of(head(ctx.view)) + 1
@@ -343,14 +343,14 @@ kern.command({
 			then vcs(repo, { "file", "annotate", "-r", "@", "--", `root-file:"{relative}"` })
 			else vcs(repo, { "blame", "-L", `{line},{line}`, "--", relative })
 		if out == nil then
-			kern.echo("no history for this line")
+			greed.echo("no history for this line")
 			return
 		end
 		local text: string = if repo.kind == "jj"
 			then string.split(out :: string, "\n")[line] or ""
 			else out :: string
 		-- Just the who and when, not the line's text again.
-		kern.echo(string.match(text, "^[^)]*%)") or string.match(text, "^[^:]*") or "")
+		greed.echo(string.match(text, "^[^)]*%)") or string.match(text, "^[^:]*") or "")
 	end,
 })
 
@@ -389,7 +389,7 @@ end
 --- is in, as a multibuffer: edit it to change the files, `space g r` puts
 --- the change under the cursor back.
 function M.show_changes()
-	local repo = repo_of(kern.project.current().root .. "/.")
+	local repo = repo_of(greed.project.current().root .. "/.")
 	if repo == nil then
 		error("the project isn't in a repository", 0)
 	end
@@ -398,12 +398,12 @@ function M.show_changes()
 	for _, relative in files do
 		local path = `{repo.root}/{relative}`
 		local open = nil
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			if buffer:path() and absolute(buffer:path() :: string) == path then
 				open = buffer
 			end
 		end
-		local text = if open then open:text() else kern.fs.read(path)
+		local text = if open then open:text() else greed.fs.read(path)
 		if text then
 			for _, excerpt in multibuffer.diff(path, relative, base_text(repo, relative), text) do
 				table.insert(excerpts, excerpt)
@@ -411,7 +411,7 @@ function M.show_changes()
 		end
 	end
 	if #excerpts == 0 then
-		kern.echo(`nothing changed since {if repo.kind == "jj" then "@-" else "HEAD"}`)
+		greed.echo(`nothing changed since {if repo.kind == "jj" then "@-" else "HEAD"}`)
 		return
 	end
 	local against = if repo.kind == "jj" then "the working copy's parent" else "HEAD"
@@ -427,7 +427,7 @@ function M.show_changes()
 	multibuffer.show(view, "Changes")
 end
 
-kern.command({
+greed.command({
 	name = "changes",
 	doc = "Show every change since the last commit in one buffer, to read, edit or put back",
 	run = M.show_changes,
@@ -448,17 +448,17 @@ function M.changed_files(dir: string): ({ string }?, string?)
 	return out, nil
 end
 
-kern.command({
+greed.command({
 	name = "pick-changed-file",
 	doc = "Open a file changed since the last commit",
 	run = function()
 		local root = core.project.root()
 		local files, err = M.changed_files(root)
 		if files == nil then
-			kern.echo(err :: string)
+			greed.echo(err :: string)
 			return
 		elseif #files == 0 then
-			kern.echo("nothing changed")
+			greed.echo("nothing changed")
 			return
 		end
 		local items = {}
@@ -469,7 +469,7 @@ kern.command({
 			table.insert(items, { label = shown, value = path })
 		end
 		picker.pick("Changed files", items, function(item)
-			kern.open(item.value)
+			greed.open(item.value)
 		end)
 	end,
 })
@@ -503,7 +503,7 @@ function M.describe(dir: string, message: string): (boolean, string?)
 	local args = if repo.kind == "jj"
 		then { "jj", "describe", "-m", message }
 		else { "git", "commit", "-q", "-m", message }
-	local done, err = kern.process.run(args, { cwd = repo.root })
+	local done, err = greed.process.run(args, { cwd = repo.root })
 	if done == nil or done.code ~= 0 then
 		return false, if done then done.stderr else err
 	end
@@ -522,7 +522,7 @@ function M.commit(paths: { string }, message: string): (boolean, string?)
 	-- jj reads paths as patterns, so each is quoted as one exact file.
 	local exact: { string } = {}
 	for _, path in paths do
-		local buffer = kern.load(path)
+		local buffer = greed.load(path)
 		if buffer:modified() then
 			buffer:save()
 		end
@@ -537,7 +537,7 @@ function M.commit(paths: { string }, message: string): (boolean, string?)
 			{ "commit", "-q", "-m", message, "--", table.unpack(relative) },
 		}
 	for _, args in steps do
-		local done, err = kern.process.run({ repo.kind, table.unpack(args) }, { cwd = repo.root })
+		local done, err = greed.process.run({ repo.kind, table.unpack(args) }, { cwd = repo.root })
 		if done == nil or done.code ~= 0 then
 			return false, if done then done.stderr else err
 		end
@@ -545,13 +545,13 @@ function M.commit(paths: { string }, message: string): (boolean, string?)
 	return true, nil
 end
 
-kern.command({
+greed.command({
 	name = "operation-commit",
 	doc = "Save the files of the latest operation (or the one being reviewed) and commit just them, named after it",
 	run = function(ctx)
 		local op = operations.target(ctx.buffer)
 		if op == nil or #op.files == 0 then
-			kern.echo("no operation with changes to commit")
+			greed.echo("no operation with changes to commit")
 			return
 		end
 		local paths = {}
@@ -559,11 +559,11 @@ kern.command({
 			table.insert(paths, file.path)
 		end
 		local ok, why = M.commit(paths, op.name)
-		kern.echo(if ok then `committed "{op.name}"` else `can't commit: {why}`)
+		greed.echo(if ok then `committed "{op.name}"` else `can't commit: {why}`)
 	end,
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space g s"] = "changes",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",

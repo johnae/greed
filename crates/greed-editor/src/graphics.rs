@@ -1,4 +1,4 @@
-//! Images in the terminal Kern runs in, drawn with the kitty graphics
+//! Images in the terminal Greed runs in, drawn with the kitty graphics
 //! protocol (kitty, Ghostty, `WezTerm`, Konsole). Each image is sent once and
 //! then placed, cropped and scaled, wherever a frame puts it.
 

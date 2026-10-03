@@ -1,7 +1,7 @@
 -- A one-line prompt at the bottom of the screen, for search and other
 -- commands that ask for a bit of text. Enter accepts, esc cancels.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local style = require("./style")
 
 export type Options = {
@@ -17,8 +17,8 @@ export type Options = {
 }
 
 type Open = {
-	view: kern.View,
-	buffer: kern.Buffer,
+	view: greed.View,
+	buffer: greed.Buffer,
 	options: Options,
 	-- The mode to go back to.
 	mode: string,
@@ -40,7 +40,7 @@ local function close(finish: (options: Options, typed: string) -> ())
 	local typed = text(o)
 	open = nil
 	o.view:close()
-	kern.mode.set(o.mode)
+	greed.mode.set(o.mode)
 	finish(o.options, typed)
 end
 
@@ -56,7 +56,7 @@ local function mask(o: Open)
 	end
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local o = open
 	if o == nil or event.buffer:id() ~= o.buffer:id() then
 		return
@@ -67,7 +67,7 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "prompt-submit",
 	doc = "Accept what's typed in the prompt",
 	run = function()
@@ -84,16 +84,16 @@ local function cancel(options: Options)
 end
 
 -- Closed some other way, it counts as cancelled.
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	local o = open
 	if o and o.view:id() == event.view then
 		open = nil
-		kern.mode.set(o.mode)
+		greed.mode.set(o.mode)
 		cancel(o.options)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "prompt-cancel",
 	doc = "Close the prompt without accepting",
 	run = function()
@@ -102,7 +102,7 @@ kern.command({
 })
 
 style.kind_modes.prompt = "insert"
-kern.keymap.bind({ mode = "insert", kind = "prompt" }, {
+greed.keymap.bind({ mode = "insert", kind = "prompt" }, {
 	enter = "prompt-submit",
 	esc = "prompt-cancel",
 	["ctrl-c"] = "prompt-cancel",
@@ -113,14 +113,14 @@ local M = {}
 --- Asks for a line of text at the bottom of the screen.
 function M.open(options: Options)
 	if open then
-		kern.run("prompt-cancel")
+		greed.run("prompt-cancel")
 	end
 	local text = options.text or ""
-	local buffer = kern.create_buffer("prompt", text)
+	local buffer = greed.create_buffer("prompt", text)
 	local view =
-		kern.float(buffer, { title = options.title, width = "100%", height = 3, anchor = "bottom" })
-	open = { view = view, buffer = buffer, options = options, mode = kern.mode.get() }
-	kern.mode.set("insert")
+		greed.float(buffer, { title = options.title, width = "100%", height = 3, anchor = "bottom" })
+	open = { view = view, buffer = buffer, options = options, mode = greed.mode.get() }
+	greed.mode.set("insert")
 	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })
 	mask(open :: Open)
 end
@@ -129,7 +129,7 @@ end
 --- nil when the prompt is cancelled. Works in commands and handlers. With
 --- `secret`, dots show instead of what's typed.
 function M.ask(title: string, text: string?, options: { secret: boolean? }?): string?
-	local done = kern.signal()
+	local done = greed.signal()
 	M.open({
 		title = title,
 		text = text,

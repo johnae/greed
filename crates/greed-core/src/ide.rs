@@ -79,7 +79,7 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
     let lock = json!({
         "pid": std::process::id(),
         "workspaceFolders": workspace,
-        "ideName": "Kern",
+        "ideName": "Greed",
         "transport": "ws",
         "authToken": token,
     });

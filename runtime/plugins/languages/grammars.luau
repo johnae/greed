@@ -1,18 +1,18 @@
--- Grammars Kern doesn't have built in, downloaded the first time a file in
+-- Grammars Greed doesn't have built in, downloaded the first time a file in
 -- their language opens and kept in the cache folder after that. Each is a
 -- WebAssembly file from the grammar's own releases, checked against the
 -- checksum below, with the queries from the same version of its
--- repository, their capture names changed to Kern's.
+-- repository, their capture names changed to Greed's.
 --
--- Turn downloading off with `kern.option.set("grammar-download", false)`;
+-- Turn downloading off with `greed.option.set("grammar-download", false)`;
 -- grammars already downloaded still load. `:grammar-fetch NAME` downloads
 -- one ahead of time.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "grammar-download",
-	doc = "Download the grammar for a language Kern has none for when a file in it opens",
+	doc = "Download the grammar for a language Greed has none for when a file in it opens",
 	default = true,
 })
 
@@ -39,7 +39,7 @@ local function tree_sitter(name: string, version: string, sha256: string): Sourc
 	return { repo = `tree-sitter/tree-sitter-{name}`, version = version, sha256 = sha256 }
 end
 
---- The grammars Kern knows where to get, by language.
+--- The grammars Greed knows where to get, by language.
 M.sources = {
 	cpp = tree_sitter(
 		"cpp",
@@ -104,7 +104,7 @@ M.sources = {
 } :: { [string]: Source }
 M.sources.cpp.inherits = { "c" }
 
--- Capture names other editors use, as Kern's (see docs/highlighting.md).
+-- Capture names other editors use, as Greed's (see docs/highlighting.md).
 local NAMES: { [string]: string? } = {
 	number = "constant.numeric",
 	float = "constant.numeric.float",
@@ -148,7 +148,7 @@ local DROPPED = { embedded = true, spell = true, nospell = true, none = true }
 -- With the first pattern to match some text winning, these go last.
 local CATCH_ALL = "^%(([%w_]+)%)%s+@[%w._]+$"
 
---- `source`, a query written for another editor, with Kern's capture names
+--- `source`, a query written for another editor, with Greed's capture names
 --- and its catch-all patterns moved to the end.
 function M.adapt(source: string): string
 	local renamed = string.gsub(source, "@([%w._]+)", function(name: string): string
@@ -161,7 +161,7 @@ function M.adapt(source: string): string
 	-- in the grammar, which not every build of one has; the node alone
 	-- matches the same text.
 	renamed = string.gsub(renamed, "%(([%w_]+)/([%w_]+)", "(%2")
-	-- Kern doesn't track which names are local variables, so a pattern
+	-- Greed doesn't track which names are local variables, so a pattern
 	-- for those that aren't is a catch-all, kept after the others.
 	renamed =
 		string.gsub(renamed, "%(%(([%w_]+)%)%s+(@[%w._]+)%s*%(#is%-not%? local%)%s*%)", "(%1) %2")
@@ -177,7 +177,7 @@ end
 
 --- How files are fetched: `url` saved at `path`. Tests swap it out.
 function M.fetch(url: string, path: string)
-	local result, err = kern.process.run({
+	local result, err = greed.process.run({
 		"curl",
 		"--fail",
 		"--silent",
@@ -200,13 +200,13 @@ end
 local KINDS = { "highlights", "injections" }
 
 local function sha256(path: string): string?
-	local result = kern.process.run({ "sha256sum", path })
+	local result = greed.process.run({ "sha256sum", path })
 	return result and string.match(result.stdout, "^(%x+)")
 end
 
 -- Where `name`'s files go.
 local function folder(name: string, source: Source): string
-	local cache = kern.fs.dirs().cache or (kern.fs.cwd() .. "/.kern-cache")
+	local cache = greed.fs.dirs().cache or (greed.fs.cwd() .. "/.greed-cache")
 	return `{cache}/grammars/{name}/{source.version}`
 end
 
@@ -232,37 +232,37 @@ end
 local function files(name: string, source: Source): string?
 	local dir = folder(name, source)
 	local wasm = `{dir}/grammar.wasm`
-	if kern.fs.stat(wasm) then
+	if greed.fs.stat(wasm) then
 		return wasm
 	end
-	if kern.option.get("grammar-download") ~= true then
+	if greed.option.get("grammar-download") ~= true then
 		return nil
 	end
-	kern.echo(`downloading the {name} grammar`)
+	greed.echo(`downloading the {name} grammar`)
 	local part = wasm .. ".part"
 	M.fetch(wasm_url(source), part)
 	local got = sha256(part)
 	if got ~= source.sha256 then
-		kern.process.run({ "rm", "-f", part })
+		greed.process.run({ "rm", "-f", part })
 		error(`the {name} grammar downloaded doesn't match its checksum ({got or "unknown"})`, 0)
 	end
 	for _, kind in KINDS do
 		-- Not every grammar has every kind; those that don't are left out.
 		pcall(M.fetch, queries_url(source, kind), `{dir}/{kind}.scm`)
 	end
-	kern.process.run({ "mv", part, wasm })
+	greed.process.run({ "mv", part, wasm })
 	return wasm
 end
 
 -- Languages being set up, so a second file opening doesn't start again.
 local busy: { [string]: boolean } = {}
 
---- Sets up the grammar for `name` if Kern knows where to get one:
+--- Sets up the grammar for `name` if Greed knows where to get one:
 --- downloads it the first time, loads it and sets its queries, leaving
 --- alone any a plugin or your config set from query files (`provided`
 --- says which). Returns whether `name` has a grammar now.
 function M.ensure(name: string, provided: (language: string, kind: string) -> boolean): boolean
-	if table.find(kern.grammars(), name) then
+	if table.find(greed.grammars(), name) then
 		return true
 	end
 	local source = M.sources[name]
@@ -275,17 +275,17 @@ function M.ensure(name: string, provided: (language: string, kind: string) -> bo
 		if wasm == nil then
 			return false
 		end
-		kern.syntax.load_grammar(name, wasm, source.symbol)
+		greed.syntax.load_grammar(name, wasm, source.symbol)
 		local dir = folder(name, source)
 		for _, kind in KINDS do
-			local own = kern.fs.read(`{dir}/{kind}.scm`)
+			local own = greed.fs.read(`{dir}/{kind}.scm`)
 			if own and not provided(name, kind) then
 				local parts = {}
 				for _, parent in source.inherits or {} do
-					table.insert(parts, kern.syntax.query(parent, kind) or "")
+					table.insert(parts, greed.syntax.query(parent, kind) or "")
 				end
 				table.insert(parts, own)
-				kern.syntax.set_query(name, kind, M.adapt(table.concat(parts, "\n")))
+				greed.syntax.set_query(name, kind, M.adapt(table.concat(parts, "\n")))
 			end
 		end
 		return true

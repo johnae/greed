@@ -16,17 +16,17 @@
 -- s, S, K and alt-K show the result as you type the regex. Typing, deleting
 -- and pasting then work on every selection.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local prompt = require("./prompt")
 local search = require("./search")
 
-type Ranges = { kern.Range }
+type Ranges = { greed.Range }
 
-local function span(range: kern.Range): (number, number)
+local function span(range: greed.Range): (number, number)
 	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
-local function set(view: kern.View, ranges: Ranges, primary: number?)
+local function set(view: greed.View, ranges: Ranges, primary: number?)
 	if #ranges > 0 then
 		view:set_selection({ ranges = ranges, primary = math.clamp(primary or 1, 1, #ranges) })
 	end
@@ -34,9 +34,9 @@ end
 
 -- The matches of `pattern` inside `range`; errors on a bad pattern.
 local function matches(
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	pattern: string,
-	range: kern.Range
+	range: greed.Range
 ): { { from: number, to: number } }
 	local from, to = span(range)
 	local found, err = buffer:find_all(pattern, from, to)
@@ -49,7 +49,7 @@ end
 -- Asks for a regex, showing what `apply` makes of the selections as it's
 -- typed. A pattern that doesn't parse yet, or leaves nothing selected,
 -- shows the selections as they were.
-local function with_regex(ctx: kern.Context, title: string, apply: (Ranges, string) -> Ranges)
+local function with_regex(ctx: greed.Context, title: string, apply: (Ranges, string) -> Ranges)
 	local view = ctx.view
 	local origin = view:selection()
 	local function preview(pattern: string)
@@ -75,7 +75,7 @@ local function with_regex(ctx: kern.Context, title: string, apply: (Ranges, stri
 end
 
 -- The pieces of each range between matches of `pattern`.
-local function split(buffer: kern.Buffer, ranges: Ranges, pattern: string): Ranges
+local function split(buffer: greed.Buffer, ranges: Ranges, pattern: string): Ranges
 	local out = {}
 	for _, range in ranges do
 		local start, finish = span(range)
@@ -92,7 +92,7 @@ local function split(buffer: kern.Buffer, ranges: Ranges, pattern: string): Rang
 	return out
 end
 
-local function keep(ctx: kern.Context, keep_matching: boolean)
+local function keep(ctx: greed.Context, keep_matching: boolean)
 	with_regex(ctx, if keep_matching then "keep" else "remove", function(ranges, pattern)
 		local out = {}
 		for _, range in ranges do
@@ -105,7 +105,7 @@ local function keep(ctx: kern.Context, keep_matching: boolean)
 end
 
 -- The column of `pos` on its line, in characters.
-local function column(buffer: kern.Buffer, pos: number): number
+local function column(buffer: greed.Buffer, pos: number): number
 	local at, n = buffer:line_start(buffer:line_of(pos)), 0
 	while at < pos do
 		at = buffer:next_char(at)
@@ -115,7 +115,7 @@ local function column(buffer: kern.Buffer, pos: number): number
 end
 
 -- The position `n` characters into `line`, or its end if it's shorter.
-local function at_column(buffer: kern.Buffer, line: number, n: number): number
+local function at_column(buffer: greed.Buffer, line: number, n: number): number
 	local pos, finish = buffer:line_start(line), buffer:line_end(line)
 	for _ = 1, n do
 		if pos >= finish then
@@ -129,7 +129,7 @@ end
 -- Adds a copy of each selection on the next lines `delta` away (1 is down,
 -- -1 up) that are long enough for it, at the same columns. The copy of the
 -- primary selection becomes primary, so repeating goes on.
-local function copy_lines(ctx: kern.Context, delta: number)
+local function copy_lines(ctx: greed.Context, delta: number)
 	local buffer, selection = ctx.buffer, ctx.view:selection()
 	local ranges = table.clone(selection.ranges)
 	local new = selection.ranges[selection.primary]
@@ -173,13 +173,13 @@ local function copy_lines(ctx: kern.Context, delta: number)
 	end
 end
 
-local function rotate(ctx: kern.Context, delta: number)
+local function rotate(ctx: greed.Context, delta: number)
 	local selection = ctx.view:selection()
 	set(ctx.view, selection.ranges, (selection.primary - 1 + delta) % #selection.ranges + 1)
 end
 
-local function command(name: string, doc: string, run: (ctx: kern.Context) -> ())
-	kern.command({ name = name, doc = doc, run = run })
+local function command(name: string, doc: string, run: (ctx: greed.Context) -> ())
+	greed.command({ name = name, doc = doc, run = run })
 end
 
 command("select-regex", "Select every match of a regex inside the selections", function(ctx)
@@ -253,12 +253,12 @@ command("rotate-primary", "Make the next selection the primary one", function(ct
 end)
 
 -- The start of `line`, or the end of the buffer past its last line.
-local function line_start(buffer: kern.Buffer, line: number): number
+local function line_start(buffer: greed.Buffer, line: number): number
 	return if line < buffer:line_count() then buffer:line_start(line) else buffer:len()
 end
 
 -- The lines `range` touches: its first, and the one its last character is on.
-local function lines_of(buffer: kern.Buffer, range: kern.Range): (number, number)
+local function lines_of(buffer: greed.Buffer, range: greed.Range): (number, number)
 	local from, to = span(range)
 	return buffer:line_of(from), buffer:line_of(if to > from then buffer:prev_char(to) else to)
 end
@@ -319,7 +319,7 @@ end)
 
 -- Replaces the text of each selection with `change(i, text)` in one edit,
 -- keeping each selection around its new text.
-local function replace_each(ctx: kern.Context, change: (number, string) -> string)
+local function replace_each(ctx: greed.Context, change: (number, string) -> string)
 	local buffer, selection = ctx.buffer, ctx.view:selection()
 	buffer:edit(function(e)
 		local shift = 0
@@ -403,7 +403,7 @@ end
 
 -- The number at or after `pos` on its line, as Helix's ctrl-a finds it:
 -- where it starts and ends, and its value. Decimal, with a sign, or hex.
-local function number_at(buffer: kern.Buffer, pos: number): (number?, number?, number?, boolean?)
+local function number_at(buffer: greed.Buffer, pos: number): (number?, number?, number?, boolean?)
 	local line = buffer:line_of(pos)
 	local start = buffer:line_start(line)
 	local text = buffer:slice(start, buffer:line_end(line))

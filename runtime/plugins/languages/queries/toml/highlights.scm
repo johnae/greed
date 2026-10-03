@@ -1,4 +1,4 @@
-; From tree-sitter-toml (MIT), with Kern's capture names.
+; From tree-sitter-toml (MIT), with Greed's capture names.
 
 ; Properties
 ;-----------

@@ -3,7 +3,7 @@
 -- you're in, and the first time you're in a mode listed in `intro` (like
 -- typing into a terminal), a line in the status line says how to get out.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
@@ -12,7 +12,7 @@ M.intro = {
 	terminal = "typing into the terminal: esc esc or ctrl-\\ stops, alt-p for panes, f1 for more",
 } :: { [string]: string }
 
-local shown: kern.View? = nil
+local shown: greed.View? = nil
 -- Whether what's shown is f1's help, which goes with the next command.
 local helping = false
 
@@ -40,12 +40,12 @@ end
 --- anything to show.
 function M.show(keys: string, title: string): boolean
 	hide()
-	local nexts = kern.keymap.next(if keys == "" then nil else keys)
+	local nexts = greed.keymap.next(if keys == "" then nil else keys)
 	if #nexts == 0 then
 		return false
 	end
 	local docs = {}
-	for _, command in kern.commands() do
+	for _, command in greed.commands() do
 		docs[command.name] = command.doc
 	end
 	-- Descriptions start in one column, after the longest key name.
@@ -58,8 +58,8 @@ function M.show(keys: string, title: string): boolean
 		local key = next.key .. string.rep(" ", width - #next.key)
 		table.insert(lines, `{key} {describe(next.command, docs)}`)
 	end
-	local buffer = kern.create_buffer("hints", table.concat(lines, "\n"))
-	shown = kern.float(buffer, {
+	local buffer = greed.create_buffer("hints", table.concat(lines, "\n"))
+	shown = greed.float(buffer, {
 		title = title,
 		width = "100%",
 		height = #lines + 2,
@@ -69,7 +69,7 @@ function M.show(keys: string, title: string): boolean
 	return true
 end
 
-kern.on("keys.pending", function(event: kern.KeysPending)
+greed.on("keys.pending", function(event: greed.KeysPending)
 	if event.keys == "" then
 		hide()
 	else
@@ -77,18 +77,18 @@ kern.on("keys.pending", function(event: kern.KeysPending)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "keys-help",
 	doc = "Show the keys of the mode you're in and what each does",
 	run = function()
-		if M.show("", `{kern.mode.get()} keys`) then
+		if M.show("", `{greed.mode.get()} keys`) then
 			helping = true
 		end
 	end,
 })
 
 -- f1's help stays until the next command.
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if helping and event.name ~= "keys-help" then
 		hide()
 	end
@@ -97,16 +97,16 @@ end)
 -- The modes introduced already this session.
 local introduced: { [string]: boolean } = {}
 
-kern.on("mode.changed", function(event: kern.ModeChanged)
+greed.on("mode.changed", function(event: greed.ModeChanged)
 	local intro = M.intro[event.to]
 	if intro and not introduced[event.to] then
 		introduced[event.to] = true
-		kern.echo(intro)
+		greed.echo(intro)
 	end
 end)
 
 -- In every mode, and in the terminal's, which takes every other key.
-kern.keymap.bind({}, { f1 = "keys-help" })
-kern.keymap.bind("terminal", { f1 = "keys-help" })
+greed.keymap.bind({}, { f1 = "keys-help" })
+greed.keymap.bind("terminal", { f1 = "keys-help" })
 
 return M

@@ -1,4 +1,4 @@
-; From tree-sitter-luau (MIT), with Kern's capture names.
+; From tree-sitter-luau (MIT), with Greed's capture names.
 
 ; Preproc
 (hash_bang_line) @keyword.directive

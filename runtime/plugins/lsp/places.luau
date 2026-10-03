@@ -3,12 +3,12 @@
 -- list puts what it shows in a multibuffer, to read or edit all of it at
 -- once.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("@picker")
 local multibuffer = require("@multibuffer")
 local common = require("./common")
 
-type Place = { path: string, position: kern.LspPosition, ending: kern.LspPosition }
+type Place = { path: string, position: greed.LspPosition, ending: greed.LspPosition }
 
 -- What a place adds to a multibuffer: a style for its range, a note.
 type Shown = { style: string, note: string? }
@@ -17,10 +17,10 @@ type Shown = { style: string, note: string? }
 -- default is UTF-16 code units. Asks a server of an open buffer in the same
 -- language, since the file itself may not be open.
 local function counts_bytes(path: string): boolean
-	local language = kern.language_of(path)
-	for _, buffer in kern.buffers() do
+	local language = greed.language_of(path)
+	for _, buffer in greed.buffers() do
 		if buffer:language() == language then
-			local capabilities = kern.lsp.capabilities(buffer)
+			local capabilities = greed.lsp.capabilities(buffer)
 			if capabilities then
 				return capabilities.positionEncoding == "utf-8"
 			end
@@ -74,7 +74,7 @@ local function pick(
 			local place: Place = item.value
 			return {
 				text = text(place.path),
-				language = kern.language_of(place.path),
+				language = greed.language_of(place.path),
 				line = place.position.line,
 			}
 		end,
@@ -131,7 +131,7 @@ end
 
 -- The places the thing under the cursor is used, as LSP locations, or nil
 -- if the request failed (having said why).
-local function references(ctx: kern.Context): { any }?
+local function references(ctx: greed.Context): { any }?
 	local buffer = ctx.buffer
 	local ok, result, err = common.request(buffer, "textDocument/references", function()
 		local params = common.at(buffer, common.head(ctx.view))
@@ -141,13 +141,13 @@ local function references(ctx: kern.Context): { any }?
 	if not ok then
 		return nil
 	elseif err then
-		kern.echo(`references: {err.message}`)
+		greed.echo(`references: {err.message}`)
 		return nil
 	end
 	return result or {}
 end
 
-kern.command({
+greed.command({
 	name = "goto-references",
 	doc = "Pick a place where the thing under the cursor is used, and go there",
 	run = function(ctx)
@@ -157,7 +157,7 @@ kern.command({
 		end
 		local places: { Place } = {}
 		for _, location in found do
-			local path = kern.lsp.path(location.uri)
+			local path = greed.lsp.path(location.uri)
 			if path then
 				table.insert(
 					places,
@@ -166,7 +166,7 @@ kern.command({
 			end
 		end
 		if #places == 0 then
-			kern.echo("no references found")
+			greed.echo("no references found")
 			return
 		end
 		table.sort(places, by_place)
@@ -179,7 +179,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "select-references",
 	doc = "Select every place in this file where the thing under the cursor is used",
 	run = function(ctx)
@@ -188,27 +188,27 @@ kern.command({
 			return
 		end
 		local buffer = ctx.buffer
-		local ranges: { kern.Range } = {}
+		local ranges: { greed.Range } = {}
 		for _, location in found do
-			if kern.lsp.path(location.uri) == buffer:path() then
+			if greed.lsp.path(location.uri) == buffer:path() then
 				table.insert(ranges, {
-					anchor = kern.lsp.offset(buffer, location.range.start),
-					head = kern.lsp.offset(buffer, location.range["end"]),
+					anchor = greed.lsp.offset(buffer, location.range.start),
+					head = greed.lsp.offset(buffer, location.range["end"]),
 				})
 			end
 		end
 		if #ranges == 0 then
-			kern.echo("no references in this file")
+			greed.echo("no references in this file")
 			return
 		end
-		table.sort(ranges, function(a: kern.Range, b: kern.Range)
+		table.sort(ranges, function(a: greed.Range, b: greed.Range)
 			return a.anchor < b.anchor
 		end)
 		ctx.view:set_selection({ ranges = ranges, primary = 1 })
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-workspace-symbol",
 	doc = "Pick a function, type or other symbol anywhere in the project, as the language server knows them",
 	run = function(ctx)
@@ -223,7 +223,7 @@ kern.command({
 				local items = {}
 				for _, symbol in if ok then result or {} else {} do
 					local location = symbol.location
-					local path = location and kern.lsp.path(location.uri)
+					local path = location and greed.lsp.path(location.uri)
 					if path and location.range then
 						table.insert(items, {
 							label = `{symbol.name}  {common.shown_path(path)}:{location.range.start.line + 1}`,
@@ -237,14 +237,14 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-problem",
 	doc = "Pick a problem in any file, open or not, and go to it",
 	run = function()
 		local places: { Place } = {}
-		local about: { [Place]: kern.LspProblem } = {}
-		for _, problem in kern.lsp.problems() do
-			local path = kern.lsp.path(problem.uri)
+		local about: { [Place]: greed.LspProblem } = {}
+		for _, problem in greed.lsp.problems() do
+			local path = greed.lsp.path(problem.uri)
 			if path then
 				local place =
 					{ path = path, position = problem.range.start, ending = problem.range["end"] }
@@ -253,7 +253,7 @@ kern.command({
 			end
 		end
 		if #places == 0 then
-			kern.echo("no problems")
+			greed.echo("no problems")
 			return
 		end
 		-- Errors first, then by file and line.
@@ -279,7 +279,7 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["g r"] = "goto-references",
 	["space D"] = "pick-problem",
 	-- Helix has this on space h, which is help here.

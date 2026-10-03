@@ -4,11 +4,11 @@
 --
 -- The letters labels use can be changed:
 --
---     require("@kern").option.set("jump-label-alphabet", "fjdkslaghrueiwoqptyvbcnxmz")
+--     require("@greed").option.set("jump-label-alphabet", "fjdkslaghrueiwoqptyvbcnxmz")
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "jump-label-alphabet",
 	doc = "The letters jump labels are made of, most comfortable first",
 	default = "abcdefghijklmnopqrstuvwxyz",
@@ -19,7 +19,7 @@ type Target = { from: number, to: number, label: string }
 
 local function letters(): { string }
 	local out = {}
-	for _, code in utf8.codes(kern.option.get("jump-label-alphabet") :: string) do
+	for _, code in utf8.codes(greed.option.get("jump-label-alphabet") :: string) do
 		table.insert(out, utf8.char(code))
 	end
 	return out
@@ -27,7 +27,7 @@ end
 
 -- The words of two or more characters on screen, nearest to `head` first
 -- (earlier ones on a tie), each with a label.
-local function targets(view: kern.View, head: number): { Target }
+local function targets(view: greed.View, head: number): { Target }
 	local from, to = view:visible()
 	local words: { Match } = view:buffer():find_all("\\w{2,}", from, to) or {}
 	table.sort(words, function(a: Match, b: Match)
@@ -48,7 +48,7 @@ local function targets(view: kern.View, head: number): { Target }
 end
 
 -- Shows what's left of each label of `targets` starting with `typed`.
-local function show(buffer: kern.Buffer, targets: { Target }, typed: string)
+local function show(buffer: greed.Buffer, targets: { Target }, typed: string)
 	local marks = {}
 	for _, target in targets do
 		if string.sub(target.label, 1, #typed) == typed then
@@ -70,23 +70,23 @@ local M = {}
 
 --- Labels the words on screen in `view` and waits for one to be typed:
 --- returns where that word starts and ends, or nil.
-function M.pick(view: kern.View): (number?, number?)
+function M.pick(view: greed.View): (number?, number?)
 	if #letters() == 0 then
-		kern.echo("jump-label-alphabet is empty")
+		greed.echo("jump-label-alphabet is empty")
 		return nil, nil
 	end
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local found = targets(view, selection.ranges[selection.primary].head)
 	if #found == 0 then
-		kern.echo("no words to jump to")
+		greed.echo("no words to jump to")
 		return nil, nil
 	end
 	-- Two keys, whatever their length in bytes.
 	local typed = ""
 	for _ = 1, 2 do
 		show(buffer, found, typed)
-		typed ..= kern.next_key()
+		typed ..= greed.next_key()
 	end
 	buffer:decorate("jump", {})
 	for _, target in found do
@@ -97,7 +97,7 @@ function M.pick(view: kern.View): (number?, number?)
 	return nil, nil
 end
 
-kern.command({
+greed.command({
 	name = "jump-to-word",
 	doc = "Label the words on screen and select the one whose label is typed",
 	run = function(ctx)

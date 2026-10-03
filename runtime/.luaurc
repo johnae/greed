@@ -1,7 +1,7 @@
 {
 	"languageMode": "strict",
 	"aliases": {
-		"kern": "./types/kern",
+		"greed": "./types/greed",
 		"picker": "./plugins/picker",
 		"core": "./plugins/core",
 		"languages": "./plugins/languages",

@@ -1,5 +1,5 @@
 ; From tree-sitter-typescript and tree-sitter-javascript (MIT), with
-; Kern's capture names: TypeScript's own patterns, then JavaScript's.
+; Greed's capture names: TypeScript's own patterns, then JavaScript's.
 
 ; Types
 

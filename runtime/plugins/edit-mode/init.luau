@@ -3,11 +3,11 @@
 -- and the usual ctrl shortcuts do the usual things.
 --
 -- Switch to it with `:style edit`, or to use it all the time, put this in
--- ~/.config/kern/init.luau:
+-- ~/.config/greed/init.luau:
 --
---     require("@kern").option.set("editing-style", "edit")
+--     require("@greed").option.set("editing-style", "edit")
 
-local kern = require("@kern")
+local greed = require("@greed")
 local text = require("@core").text
 local indent = require("@core").indent
 
@@ -21,23 +21,23 @@ local typing = {
 	["erase-forward"] = true,
 }
 
-kern.on("command.run", function(event: kern.CommandRun)
-	if kern.mode.get() == "edit" and not typing[event.name] then
-		kern.history.end_group()
+greed.on("command.run", function(event: greed.CommandRun)
+	if greed.mode.get() == "edit" and not typing[event.name] then
+		greed.history.end_group()
 	end
 end)
 
-local function from(range: kern.Range): number
+local function from(range: greed.Range): number
 	return math.min(range.anchor, range.head)
 end
 
-local function to(range: kern.Range): number
+local function to(range: greed.Range): number
 	return math.max(range.anchor, range.head)
 end
 
 -- Replaces each selection with a piece of text (`text(i)` for the i-th
 -- selection) and leaves a cursor after each.
-local function replace_selections(ctx: kern.Context, text: (i: number) -> string)
+local function replace_selections(ctx: greed.Context, text: (i: number) -> string)
 	local selection = ctx.view:selection()
 	ctx.buffer:edit(function(e)
 		-- Earlier edits move the later selections by this much.
@@ -54,16 +54,16 @@ local function replace_selections(ctx: kern.Context, text: (i: number) -> string
 	end)
 end
 
-local function type_text(ctx: kern.Context, text: string)
-	kern.history.start_group()
+local function type_text(ctx: greed.Context, text: string)
+	greed.history.start_group()
 	replace_selections(ctx, function()
 		return text
 	end)
 end
 
 -- Deletes each selection, or one character before (or after) each cursor.
-local function erase(ctx: kern.Context, forward: boolean)
-	kern.history.start_group()
+local function erase(ctx: greed.Context, forward: boolean)
+	greed.history.start_group()
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
@@ -77,7 +77,7 @@ local function erase(ctx: kern.Context, forward: boolean)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "type-char",
 	doc = "Type the pressed character, replacing any selection",
 	run = function(ctx)
@@ -91,11 +91,11 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "type-newline",
 	doc = "Type a line break, replacing any selection, and start the new line at its indent",
 	run = function(ctx)
-		kern.history.start_group()
+		greed.history.start_group()
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
 				type_text(ctx, "")
@@ -106,14 +106,14 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "type-tab",
 	doc = "Indent the selected lines when a selection spans lines, otherwise type a level of indent",
 	run = function(ctx)
 		local buffer = ctx.buffer
 		for _, range in ctx.view:selection().ranges do
 			if buffer:line_of(from(range)) ~= buffer:line_of(to(range)) then
-				kern.run("indent")
+				greed.run("indent")
 				return
 			end
 		end
@@ -121,7 +121,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "erase-back",
 	doc = "Delete the selection, or the character before the cursor",
 	run = function(ctx)
@@ -129,7 +129,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "erase-forward",
 	doc = "Delete the selection, or the character after the cursor",
 	run = function(ctx)
@@ -142,7 +142,7 @@ kern.command({
 -- nothing selected puts it above the line rather than at the cursor.
 local copied_lines: string? = nil
 
-local function nothing_selected(selection: kern.Selection): boolean
+local function nothing_selected(selection: greed.Selection): boolean
 	for _, range in selection.ranges do
 		if range.anchor ~= range.head then
 			return false
@@ -156,7 +156,7 @@ type Block = { first: number, last: number }
 
 -- The lines the selection's ranges touch, merged where they meet, top to
 -- bottom.
-local function line_blocks(buffer: kern.Buffer, selection: kern.Selection): { Block }
+local function line_blocks(buffer: greed.Buffer, selection: greed.Selection): { Block }
 	local blocks: { Block } = {}
 	for _, range in selection.ranges do
 		local a, b = from(range), to(range)
@@ -182,7 +182,7 @@ end
 
 -- Deletes each block of lines and the line break after it (or before it,
 -- at the end of the buffer).
-local function delete_lines(buffer: kern.Buffer, blocks: { Block })
+local function delete_lines(buffer: greed.Buffer, blocks: { Block })
 	buffer:edit(function(e)
 		for _, block in blocks do
 			local start, stop = buffer:line_start(block.first), buffer:line_end(block.last)
@@ -196,24 +196,24 @@ local function delete_lines(buffer: kern.Buffer, blocks: { Block })
 	end)
 end
 
-local function lines_text(buffer: kern.Buffer, first: number, last: number): string
+local function lines_text(buffer: greed.Buffer, first: number, last: number): string
 	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
 end
 
 -- Copies the lines the cursors are on, each with its line break. Returns
 -- the blocks of lines.
-local function copy_lines(ctx: kern.Context): { Block }
+local function copy_lines(ctx: greed.Context): { Block }
 	local blocks = line_blocks(ctx.buffer, ctx.view:selection())
 	local pieces = {}
 	for _, block in blocks do
 		table.insert(pieces, lines_text(ctx.buffer, block.first, block.last) .. "\n")
 	end
 	copied_lines = table.concat(pieces)
-	kern.clipboard.set(copied_lines)
+	greed.clipboard.set(copied_lines)
 	return blocks
 end
 
-kern.command({
+greed.command({
 	name = "copy-or-line",
 	doc = "Copy the selection, or the line when nothing is selected",
 	run = function(ctx)
@@ -221,29 +221,29 @@ kern.command({
 			copy_lines(ctx)
 		else
 			copied_lines = nil
-			kern.run("copy")
+			greed.run("copy")
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "cut-or-line",
 	doc = "Cut the selection, or the line when nothing is selected",
 	run = function(ctx)
 		if not nothing_selected(ctx.view:selection()) then
 			copied_lines = nil
-			kern.run("cut")
+			greed.run("cut")
 			return
 		end
 		delete_lines(ctx.buffer, copy_lines(ctx))
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "paste-over",
 	doc = "Paste, replacing each selection; lines copied whole go above the cursor's line",
 	run = function(ctx)
-		local pieces = kern.clipboard.get()
+		local pieces = greed.clipboard.get()
 		if pieces == nil then
 			return
 		end
@@ -265,7 +265,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "delete-lines-at-cursor",
 	doc = "Delete the lines the cursors are on",
 	run = function(ctx)
@@ -276,7 +276,7 @@ kern.command({
 -- move-lines-up and move-lines-down: the lines the cursors are on swap
 -- with the line above or below them, cursors and all.
 for _, down in { false, true } do
-	kern.command({
+	greed.command({
 		name = if down then "move-lines-down" else "move-lines-up",
 		doc = if down then "Move the cursors' lines down one" else "Move the cursors' lines up one",
 		run = function(ctx)
@@ -326,7 +326,7 @@ end
 -- copy-lines-up and copy-lines-down: the cursors' lines doubled, the
 -- cursors going with the copy above or below.
 for _, down in { false, true } do
-	kern.command({
+	greed.command({
 		name = if down then "copy-lines-down" else "copy-lines-up",
 		doc = if down
 			then "Copy the cursors' lines below them"
@@ -369,13 +369,13 @@ end
 -- insert-line-below and insert-line-above: a new line at the indent the
 -- code calls for, without breaking the one the cursor is on.
 for _, below in { true, false } do
-	kern.command({
+	greed.command({
 		name = if below then "insert-line-below" else "insert-line-above",
 		doc = if below
 			then "Start a new line below this one"
 			else "Start a new line above this one",
 		run = function(ctx)
-			kern.history.start_group()
+			greed.history.start_group()
 			indent.open(ctx.view, below)
 		end,
 	})
@@ -384,7 +384,7 @@ end
 -- smart-home and extend-smart-home: to the line's first non-blank, or to
 -- its start when already there.
 for _, extend in { false, true } do
-	kern.command({
+	greed.command({
 		name = if extend then "extend-smart-home" else "smart-home",
 		doc = if extend
 			then "Select to the first non-blank of the line, or to its start"
@@ -403,7 +403,7 @@ for _, extend in { false, true } do
 	})
 end
 
-kern.command({
+greed.command({
 	name = "select-lines",
 	doc = "Select the cursor's line, or the next one too when whole lines are selected",
 	run = function(ctx)
@@ -429,7 +429,7 @@ kern.command({
 
 -- Selects the word at the primary cursor, when nothing is selected there.
 -- Returns whether it did.
-local function select_word(ctx: kern.Context): boolean
+local function select_word(ctx: greed.Context): boolean
 	local selection = ctx.view:selection()
 	local range = selection.ranges[selection.primary]
 	if range.anchor ~= range.head then
@@ -440,7 +440,7 @@ local function select_word(ctx: kern.Context): boolean
 	return true
 end
 
-kern.command({
+greed.command({
 	name = "select-next-match",
 	doc = "Select the word at the cursor, then add the next match of it as another selection",
 	run = function(ctx)
@@ -448,35 +448,35 @@ kern.command({
 			return
 		end
 		if #ctx.view:selection().ranges == 1 then
-			kern.run("search-selection")
+			greed.run("search-selection")
 		end
-		kern.run("search-next-add")
+		greed.run("search-next-add")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "select-all-matches",
 	doc = "Select every match of the selected text (or the word at the cursor)",
 	run = function(ctx)
 		select_word(ctx)
-		kern.run("search-selection")
+		greed.run("search-selection")
 		local count = 0
 		repeat
 			count = #ctx.view:selection().ranges
-			kern.run("search-next-add")
+			greed.run("search-next-add")
 		until #ctx.view:selection().ranges == count
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "replace-in-file",
 	doc = "Replace a regex everywhere in the file, on the command line",
 	run = function()
-		kern.run("command-line", { args = { "%s/" } })
+		greed.run("command-line", { args = { "%s/" } })
 	end,
 })
 
-kern.keymap.bind("edit", {
+greed.keymap.bind("edit", {
 	left = "move-left",
 	right = "move-right",
 	up = "move-up",
@@ -555,16 +555,16 @@ kern.keymap.bind("edit", {
 
 -- Without modes there's no ":" to find, so switching here says where
 -- commands are.
-kern.on("option.changed", function(event: kern.OptionChanged)
+greed.on("option.changed", function(event: greed.OptionChanged)
 	if event.name == "editing-style" and event.value == "edit" then
-		kern.echo("ctrl-P runs any command, alt-x opens the command line")
+		greed.echo("ctrl-P runs any command, alt-x opens the command line")
 	end
 end)
 
-kern.keymap.fallback("edit", "type-char")
-kern.mode.cursor("edit", "bar")
+greed.keymap.fallback("edit", "type-char")
+greed.mode.cursor("edit", "bar")
 -- Panels like the file tree and help keep their keys.
-kern.keymap.inherit_kinds("edit", "normal")
+greed.keymap.inherit_kinds("edit", "normal")
 
 require("@core").style.define({
 	name = "edit",

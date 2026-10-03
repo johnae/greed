@@ -1,4 +1,4 @@
-//! The session socket: how `kern ctl`, `kern mcp` and other programs talk to
+//! The session socket: how `greed ctl`, `greed mcp` and other programs talk to
 //! a running editor.
 //!
 //! A connection sends JSON-RPC 2.0 requests, one per line, and gets one
@@ -22,10 +22,10 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 
 /// What each side says about itself when a client attaches: the protocol it
-/// speaks and the kern version.
+/// speaks and the greed version.
 pub fn handshake() -> Value {
     json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })
 }
@@ -37,8 +37,8 @@ fn mismatch(theirs: Option<u64>) -> String {
         |p| format!("protocol {p}"),
     );
     format!(
-        "this session runs kern {} and speaks protocol {PROTOCOL}, the client speaks {theirs}; \
-         use the same kern version on both ends",
+        "this session runs greed {} and speaks protocol {PROTOCOL}, the client speaks {theirs}; \
+         use the same greed version on both ends",
         env!("CARGO_PKG_VERSION")
     )
 }
@@ -66,15 +66,15 @@ impl Request {
 /// The longest socket path that fits in a Unix socket address.
 const MAX_SOCKET_PATH: usize = 100;
 
-/// Where sessions keep their sockets: `kern` in the runtime directory, or a
+/// Where sessions keep their sockets: `greed` in the runtime directory, or a
 /// folder for the user in the temporary directory.
 pub fn sessions_dir() -> PathBuf {
     runtime_dir().map_or_else(
         || {
             let user = std::env::var("USER").unwrap_or_else(|_| "user".to_owned());
-            std::env::temp_dir().join(format!("kern-{user}"))
+            std::env::temp_dir().join(format!("greed-{user}"))
         },
-        |dir| dir.join("kern"),
+        |dir| dir.join("greed"),
     )
 }
 
@@ -140,7 +140,7 @@ impl Session {
     }
 }
 
-/// Writes down which project the session at `socket` is for, so `kern` in
+/// Writes down which project the session at `socket` is for, so `greed` in
 /// that project finds it and the switcher can list it.
 fn describe(socket: &Path, root: &Path) -> io::Result<()> {
     let info = json!({ "pid": std::process::id(), "root": root });
@@ -161,7 +161,7 @@ impl Drop for Session {
     }
 }
 
-/// A running session, as `kern ls` and the switcher see it.
+/// A running session, as `greed ls` and the switcher see it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionInfo {
     pub name: String,
@@ -285,9 +285,9 @@ pub(crate) fn new_token() -> io::Result<String> {
 pub struct Attachment {
     pub reader: BufReader<UnixStream>,
     pub writer: UnixStream,
-    /// A file or folder the client asked to open, e.g. from `kern FILE`.
+    /// A file or folder the client asked to open, e.g. from `greed FILE`.
     pub open: Option<String>,
-    /// Whether the client asked for a terminal, e.g. `kern ssh HOST
+    /// Whether the client asked for a terminal, e.g. `greed ssh HOST
     /// --terminal`.
     pub terminal: bool,
 }
@@ -393,7 +393,7 @@ fn error_response(id: &Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-/// A connection to a session, for clients like `kern ctl`.
+/// A connection to a session, for clients like `greed ctl`.
 pub struct Client {
     reader: BufReader<UnixStream>,
     writer: UnixStream,
@@ -469,7 +469,7 @@ impl Client {
     /// Copies JSON-RPC lines from `input` to the session, and the session's
     /// answers to `output`, until the session closes its end: after `input`
     /// ends and it has answered what's pending, or when it goes away. This
-    /// is all a bridge like `kern mcp` needs: plugins speak the protocol.
+    /// is all a bridge like `greed mcp` needs: plugins speak the protocol.
     ///
     /// When the session goes first, the thread copying `input` is left
     /// waiting on it; the process exiting ends it.
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn the_runtime_dir_is_the_variable_or_the_users_own_folder_in_run_user() {
-        let run_user = std::env::temp_dir().join(format!("kern-run-user-{}", std::process::id()));
+        let run_user = std::env::temp_dir().join(format!("greed-run-user-{}", std::process::id()));
         let uid = std::fs::metadata("/proc/self").unwrap().uid();
         std::fs::create_dir_all(run_user.join(uid.to_string())).unwrap();
         let set = Some(OsString::from("/somewhere"));

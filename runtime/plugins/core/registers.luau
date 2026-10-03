@@ -2,7 +2,7 @@
 -- paste, delete or macro; without one, copies go to the clipboard and macros
 -- to `@`. `Q` starts and stops recording keys, `q` plays them back.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
@@ -46,7 +46,7 @@ local CLIPBOARD = { ["+"] = true, ["*"] = true }
 function M.copy(pieces: { string })
 	local name = M.take()
 	if name == nil or CLIPBOARD[name] then
-		kern.clipboard.set(pieces)
+		greed.clipboard.set(pieces)
 	elseif name ~= "_" then
 		texts[name] = pieces
 	end
@@ -56,10 +56,10 @@ end
 --- clipboard's. Some registers are worked out rather than kept: `%` is the
 --- file's name, `.` what each selection holds, `#` each selection's number,
 --- and `_` is always empty.
-function M.paste(ctx: kern.Context): { string }?
+function M.paste(ctx: greed.Context): { string }?
 	local name = M.take()
 	if name == nil or CLIPBOARD[name] then
-		return kern.clipboard.get()
+		return greed.clipboard.get()
 	elseif name == "_" then
 		return nil
 	elseif name == "%" then
@@ -92,11 +92,11 @@ function M.set_macro(name: string, keys: string)
 	macros[name] = keys
 end
 
-kern.command({
+greed.command({
 	name = "select-register",
 	doc = "Pick a register, by the next key typed, for the next copy, paste or macro",
 	run = function()
-		local key = kern.next_key()
+		local key = greed.next_key()
 		if utf8.len(key) == 1 then
 			picked = key
 		end
@@ -108,16 +108,16 @@ kern.command({
 function M.toggle_recording(name: string, stop_keys: string?)
 	if recording_into == nil then
 		recording_into = name
-		kern.keys.record()
-		kern.echo(`recording @{name}`)
+		greed.keys.record()
+		greed.echo(`recording @{name}`)
 		return
 	end
-	local keys = kern.keys.stop() or {}
+	local keys = greed.keys.stop() or {}
 	for _ = 1, #string.split(stop_keys or "", " ") do
 		table.remove(keys)
 	end
 	macros[recording_into] = table.concat(keys, " ")
-	kern.echo(`recorded @{recording_into}`)
+	greed.echo(`recorded @{recording_into}`)
 	recording_into = nil
 end
 
@@ -125,7 +125,7 @@ end
 function M.play(name: string, count: number?)
 	local keys = macros[name]
 	if keys == nil or keys == "" then
-		kern.echo(`no macro in @{name}`)
+		greed.echo(`no macro in @{name}`)
 		return
 	end
 	if depth >= 100 then
@@ -134,7 +134,7 @@ function M.play(name: string, count: number?)
 	depth += 1
 	local ok, err = pcall(function()
 		for _ = 1, count or 1 do
-			kern.keys.feed(keys)
+			greed.keys.feed(keys)
 		end
 	end)
 	depth -= 1
@@ -143,7 +143,7 @@ function M.play(name: string, count: number?)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "record-macro",
 	doc = "Start recording keys into a macro (@, or the register picked), or stop",
 	run = function(ctx)
@@ -151,7 +151,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "play-macro",
 	doc = "Play the macro in @, or the register picked",
 	run = function(ctx)

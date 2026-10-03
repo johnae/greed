@@ -1,4 +1,4 @@
-//! `kern.image`: images for marks to show, e.g. a picture in a note.
+//! `greed.image`: images for marks to show, e.g. a picture in a note.
 
 use std::sync::Arc;
 

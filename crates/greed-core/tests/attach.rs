@@ -32,21 +32,21 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
             )?;
             host.load_str(
                 "keys",
-                "local kern = require('@kern')
-                 kern.command({ name = 'go', run = function() kern.session.switch({ name = 'elsewhere' }) end })
-                 kern.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go' })",
+                "local greed = require('@greed')
+                 greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
+                 greed.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
                 "picture",
                 &format!(
-                    "local kern = require('@kern')
-                     kern.command({{ name = 'picture', run = function(ctx)
-                         local id = assert(kern.image.load('{png}'))
+                    "local greed = require('@greed')
+                     greed.command({{ name = 'picture', run = function(ctx)
+                         local id = assert(greed.image.load('{png}'))
                          ctx.buffer:decorate('pic', {{ {{ from = 0, to = 1, style = 'x',
                              image = {{ id = id, cols = 2, rows = 1 }} }} }})
                      end }})
-                     kern.keymap.bind('normal', {{ ['ctrl-p'] = 'picture' }})",
+                     greed.keymap.bind('normal', {{ ['ctrl-p'] = 'picture' }})",
                     png = png.display()
                 ),
             )?;
@@ -224,7 +224,7 @@ fn a_session_can_send_its_client_to_another_session() {
 /// A tiny PNG in a file for the picture command; the image test removes it.
 fn picture() -> std::path::PathBuf {
     let image = greed_core::image::Image::from_pixels(2, 1, 3, &[255, 0, 0, 0, 0, 255]).unwrap();
-    let path = std::env::temp_dir().join(format!("kern-attach-{}.png", std::process::id()));
+    let path = std::env::temp_dir().join(format!("greed-attach-{}.png", std::process::id()));
     std::fs::write(&path, &image.png).unwrap();
     path
 }

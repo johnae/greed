@@ -49,7 +49,7 @@ pub enum Output {
     /// The client should attach to another session instead; this one goes on
     /// without it.
     Switch(SwitchTo),
-    /// Text Kern copied, for the client to put on the system clipboard.
+    /// Text Greed copied, for the client to put on the system clipboard.
     Clipboard(String),
     /// An image frames will place, sent once before the first frame that
     /// does.

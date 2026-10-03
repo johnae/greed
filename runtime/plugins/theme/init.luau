@@ -1,4 +1,4 @@
--- Themes: what every style name looks like. Kern comes with the default
+-- Themes: what every style name looks like. Greed comes with the default
 -- (the terminal's 16 colors) and the usual ones from other editors: Nord,
 -- Dracula, Catppuccin, Gruvbox, Tokyo Night, One Dark and more.
 --
@@ -16,16 +16,16 @@
 --     })
 --     theme.define("nord-bold", { inherits = "nord", styles = { keyword = { bold = true } } })
 --
--- A theme is the base under `kern.theme.set`: entries set that way, from
+-- A theme is the base under `greed.theme.set`: entries set that way, from
 -- your config or a plugin, stay on top whichever theme is in use.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("@picker")
 local cmdline = require("@cmdline")
 local palette = require("@self/palette")
 
 export type Palette = palette.Palette
-export type Styles = { [string]: kern.ThemeEntry }
+export type Styles = { [string]: greed.ThemeEntry }
 
 --- A theme: styles from a palette, styles of its own on top, and another
 --- theme to start from.
@@ -67,7 +67,7 @@ function M.current(): string
 end
 
 -- `under` with the fields `over` gives changed, the surfaces' too.
-local function patch(under: kern.ThemeEntry?, over: kern.ThemeEntry): kern.ThemeEntry
+local function patch(under: greed.ThemeEntry?, over: greed.ThemeEntry): greed.ThemeEntry
 	local out: { [string]: any } = table.clone(under or {}) :: any
 	for key, value in over :: { [string]: any } do
 		local surface = out[key]
@@ -107,13 +107,13 @@ end
 
 --- Switches to theme `name`.
 function M.use(name: string)
-	kern.theme.base(styles(name, {}))
+	greed.theme.base(styles(name, {}))
 	current = name
 end
 
 -- Where the theme picked last is kept.
 local function remembered(): string?
-	local cache = kern.fs.dirs().cache
+	local cache = greed.fs.dirs().cache
 	return cache and `{cache}/theme`
 end
 
@@ -123,7 +123,7 @@ local function pick(name: string)
 	M.use(name)
 	local path = remembered()
 	if path then
-		kern.fs.write(path, name .. "\n")
+		greed.fs.write(path, name .. "\n")
 	end
 end
 
@@ -146,7 +146,7 @@ end, function(name)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "theme",
 	doc = "Switch to a theme, or pick one trying each as you move",
 	args = { { name = "name", doc = "e.g. nord or dracula", complete = "theme" } },
@@ -178,7 +178,7 @@ kern.command({
 })
 
 local saved = remembered()
-local name = saved and string.match(kern.fs.read(saved) or "", "^%s*(%S+)")
+local name = saved and string.match(greed.fs.read(saved) or "", "^%s*(%S+)")
 M.use(if name and themes[name] then name else "default")
 
 return M

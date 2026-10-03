@@ -20,7 +20,7 @@
 -- time the picker opens, and what they found last is kept, so the picker
 -- opens at once.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 
@@ -48,10 +48,10 @@ local sources: { Source } = {}
 local found: { Found } = {}
 local looking = false
 
--- "~/src/kern" for a folder in the home directory, since that's how
+-- "~/src/greed" for a folder in the home directory, since that's how
 -- people say it.
 local function short(path: string): string
-	local home = kern.fs.dirs().home
+	local home = greed.fs.dirs().home
 	if home and string.sub(path, 1, #home + 1) == home .. "/" then
 		return "~" .. string.sub(path, #home + 1)
 	end
@@ -61,19 +61,19 @@ end
 local expand = core.project.expand
 
 local function is_dir(path: string): boolean
-	local info = kern.fs.stat(path)
+	local info = greed.fs.stat(path)
 	return info ~= nil and info.kind == "dir"
 end
 
 -- What the sources found, kept in the cache so the picker has it at once.
 local function cache_file(): string?
-	local cache = kern.fs.dirs().cache
+	local cache = greed.fs.dirs().cache
 	return if cache then `{cache}/project-sources` else nil
 end
 
 local function load_cache()
 	local file = cache_file()
-	local text = file and kern.fs.read(file)
+	local text = file and greed.fs.read(file)
 	found = {}
 	for _, line in string.split(text or "", "\n") do
 		local from, path = string.match(line, "^([^\t]*)\t(.+)$")
@@ -92,12 +92,12 @@ local function save_cache()
 	for _, f in found do
 		table.insert(lines, `{f.from}\t{f.path}`)
 	end
-	kern.fs.write(file, table.concat(lines, "\n") .. "\n")
+	greed.fs.write(file, table.concat(lines, "\n") .. "\n")
 end
 
 -- The project folders under `dir`, `depth` levels down at most.
 local function look_in(dir: string, depth: number, markers: { string }?, into: { string })
-	local entries = kern.fs.list(dir) or {}
+	local entries = greed.fs.list(dir) or {}
 	for _, entry in entries do
 		if entry.dir and string.sub(entry.name, 1, 1) ~= "." then
 			local path = `{dir}/{entry.name}`
@@ -110,7 +110,7 @@ local function look_in(dir: string, depth: number, markers: { string }?, into: {
 			else
 				local is_project = false
 				for _, marker in markers do
-					if kern.fs.stat(`{path}/{marker}`) then
+					if greed.fs.stat(`{path}/{marker}`) then
 						is_project = true
 						break
 					end
@@ -130,10 +130,10 @@ end
 local function look(source: Source): ({ string }, string)
 	local paths = {}
 	if source.command then
-		local done, err = kern.process.run(source.command)
+		local done, err = greed.process.run(source.command)
 		if done == nil or done.code ~= 0 then
 			local why = if done then string.match(done.stderr, "^[^\n]*") else err
-			kern.echo(`projects: {table.concat(source.command, " ")} failed: {why}`)
+			greed.echo(`projects: {table.concat(source.command, " ")} failed: {why}`)
 		else
 			for _, line in string.split(done.stdout, "\n") do
 				local printed = string.match(line, "^%s*(.-)%s*$") :: string
@@ -200,11 +200,11 @@ local function items(): { picker.Item }
 		end
 		table.insert(list, { label = label, value = value })
 	end
-	for _, p in kern.project.list() do
+	for _, p in greed.project.list() do
 		local label = short(p.root) .. if p.current then "  (shown)" else ""
 		add(p.root, label, { project = p.id, root = p.root })
 	end
-	for _, s in kern.session.list() do
+	for _, s in greed.session.list() do
 		if not s.current then
 			local label = `{if s.root then short(s.root) else s.name}  (session {s.name})`
 			add(s.root, label, { session = s.name, root = s.root })
@@ -219,43 +219,43 @@ local function items(): { picker.Item }
 	return list
 end
 
-kern.command({
+greed.command({
 	name = "pick-project",
 	doc = "Go to a project: one open here, a running session, a recent one or one "
 		.. "your sources find; or type a folder to open",
 	run = function()
 		picker.pick("Projects (alt-enter: in a new session)", items(), function(item)
 			if item.value.project then
-				kern.project.switch(item.value.project)
+				greed.project.switch(item.value.project)
 			elseif item.value.session then
-				kern.session.switch({ name = item.value.session })
+				greed.session.switch({ name = item.value.session })
 			else
-				kern.session.switch({ path = item.value.path })
+				greed.session.switch({ path = item.value.path })
 			end
 		end, {
 			-- A typed folder lists the folders in it, to go on with tab.
 			paths = {
 				dirs = true,
 				choose = function(path)
-					kern.session.switch({ path = path })
+					greed.session.switch({ path = path })
 				end,
 			},
 			fallback = function(query)
 				local path = expand(query)
 				if not is_dir(path) then
-					kern.echo(`no folder at {path}`)
+					greed.echo(`no folder at {path}`)
 					return
 				end
-				kern.session.switch({ path = path })
+				greed.session.switch({ path = path })
 			end,
 			keys = {
 				["alt-enter"] = function(_, current)
 					local root = current and current.value.root
 					if root == nil then
-						kern.echo("that session doesn't say which project it's for")
+						greed.echo("that session doesn't say which project it's for")
 						return
 					end
-					kern.session.switch({ path = root, new = true })
+					greed.session.switch({ path = root, new = true })
 				end,
 			},
 		})
@@ -265,11 +265,11 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["space P"] = "pick-project" })
+greed.keymap.bind("normal", { ["space P"] = "pick-project" })
 
 load_cache()
 
-kern.on("editor.started", function()
+greed.on("editor.started", function()
 	M.refresh()
 end)
 

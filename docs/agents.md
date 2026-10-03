@@ -1,33 +1,33 @@
 # Agents
 
-Agents use Kern the way you do, as clients of the running editor. They can
+Agents use Greed the way you do, as clients of the running editor. They can
 read buffers with your unsaved changes, see what you have selected and what
 the language servers report, open files for you, and propose edits that
 you review in the buffer. Every tool is also a shell command, for scripts
 and agents that prefer a CLI.
 
-## From the shell: `kern ctl`
+## From the shell: `greed ctl`
 
 ```bash
-kern ctl tools                       # what the editor offers
-kern ctl focus                       # the current file, selections, visible lines
-kern ctl read path=src/main.rs from_line=10 to_line=20
-kern ctl diagnostics
-kern ctl eval code='return require("@kern").mode.get()'
+greed ctl tools                       # what the editor offers
+greed ctl focus                       # the current file, selections, visible lines
+greed ctl read path=src/main.rs from_line=10 to_line=20
+greed ctl diagnostics
+greed ctl eval code='return require("@greed").mode.get()'
 ```
 
 Arguments are `key=value` pairs (values that parse as JSON are JSON) or one
-JSON object. `kern ctl` talks to the running session: the one named by
+JSON object. `greed ctl` talks to the running session: the one named by
 `$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
 
 ## Claude Code and other MCP clients
 
 ```bash
-claude mcp add kern -- kern mcp
+claude mcp add greed -- greed mcp
 ```
 
-`kern mcp` connects an MCP client to the running editor. The tools:
+`greed mcp` connects an MCP client to the running editor. The tools:
 
 | Tool | What it does |
 |---|---|
@@ -70,7 +70,7 @@ each change:
 
 Changes follow the edits you make while they wait. The agent waits too, and
 then hears which changes went in. What you accept from one proposal is an
-operation (see [Using Kern](using.md#operations)): `space u u` undoes it in
+operation (see [Using Greed](using.md#operations)): `space u u` undoes it in
 every file at once, and `space u o` reviews it.
 
 Side by side, the two panes scroll together, matching lines across the
@@ -79,12 +79,12 @@ changes, and the right one keeps up as you edit, accept and reject.
 ## Claude Code's `/ide`
 
 `space o c` opens Claude Code in a pane beside your files, already
-connected to Kern; pressed again it goes back to that pane, or brings it
-back if you closed it. `claude` started in any Kern terminal connects by
+connected to Greed; pressed again it goes back to that pane, or brings it
+back if you closed it. `claude` started in any Greed terminal connects by
 itself too. `:set claude-command "claude --continue"` changes what the pane
 runs.
 
-Started outside Kern, in the same project, `/ide` in Claude Code lists Kern
+Started outside Greed, in the same project, `/ide` in Claude Code lists Greed
 next to any other editors. Once connected:
 
 - Claude Code sees your selection as you move, and `space o m` mentions the
@@ -93,12 +93,12 @@ next to any other editors. Once connected:
   you accept some of them, Claude Code learns which.
 - It can read diagnostics, open files and check for unsaved changes.
 
-Kern writes a lock file to `~/.claude/ide` so Claude Code can find it, and
+Greed writes a lock file to `~/.claude/ide` so Claude Code can find it, and
 removes it when the session ends.
 
 ## Plugins written by agents
 
-An agent can extend Kern while you work:
+An agent can extend Greed while you work:
 
 1. `plugin_guide` gives it the plugin conventions and the full typed API.
 2. `plugin_try` writes a plugin to a staging folder and checks it: strict
@@ -107,7 +107,7 @@ An agent can extend Kern while you work:
 3. `plugin_install` asks you. A panel shows what the plugin may do beyond
    the editor (its [capabilities](plugins.md#capabilities), like running
    programs or reading files), the code and the check results; `a` installs
-   it into `~/.config/kern/plugins`, approves what it asks for and loads it
+   it into `~/.config/greed/plugins`, approves what it asks for and loads it
    right away, `r` rejects it.
 
 Ask for something like "a command that jumps from a `use` line to the

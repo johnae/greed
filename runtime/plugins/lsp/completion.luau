@@ -8,11 +8,11 @@
 -- While the menu is open the editor is in a mode of its own that keeps
 -- every key of the mode you were typing in, so nothing else changes.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local menu = core.menu
 
-kern.option.define({
+greed.option.define({
 	name = "completion-delay",
 	doc = "Milliseconds of no typing before completions are asked for; 0 turns asking off",
 	default = 150,
@@ -31,9 +31,9 @@ local SHOWN = 10
 type Item = { label: string, detail: string?, text: string, from: number? }
 
 type Open = {
-	view: kern.View,
-	buffer: kern.Buffer,
-	menu: kern.View,
+	view: greed.View,
+	buffer: greed.Buffer,
+	menu: greed.View,
 	-- Every item the server sent, and the ones matching what's typed.
 	items: { Item },
 	matches: { number },
@@ -48,7 +48,7 @@ local open: Open? = nil
 -- Goes up with each keystroke, so a slow answer for older text is dropped.
 local generation = 0
 
-local function head(view: kern.View): number
+local function head(view: greed.View): number
 	local selection = view:selection()
 	return selection.ranges[selection.primary].head
 end
@@ -59,7 +59,7 @@ local function is_word(ch: string): boolean
 end
 
 -- Where the word ending at `pos` starts.
-local function word_start(buffer: kern.Buffer, pos: number): number
+local function word_start(buffer: greed.Buffer, pos: number): number
 	local at = pos
 	while at > 0 do
 		local before = buffer:prev_char(at)
@@ -80,7 +80,7 @@ local function plain(snippet: string): string
 end
 
 -- The server's items in a form the menu uses.
-local function items_from(result: any, buffer: kern.Buffer): { Item }
+local function items_from(result: any, buffer: greed.Buffer): { Item }
 	local list = if result and result.items then result.items else result or {}
 	local out = {}
 	for _, item in list do
@@ -90,7 +90,7 @@ local function items_from(result: any, buffer: kern.Buffer): { Item }
 			text = item.textEdit.newText
 			local range = item.textEdit.range or item.textEdit.replace
 			if range then
-				from = kern.lsp.offset(buffer, range.start)
+				from = greed.lsp.offset(buffer, range.start)
 			end
 		end
 		if item.insertTextFormat == 2 then
@@ -108,8 +108,8 @@ local function close()
 	end
 	open = nil
 	o.menu:close()
-	if kern.mode.get() == `completion-{o.mode}` then
-		kern.mode.set(o.mode)
+	if greed.mode.get() == `completion-{o.mode}` then
+		greed.mode.set(o.mode)
 	end
 end
 
@@ -134,7 +134,7 @@ local function render(o: Open)
 		if item.detail then
 			line ..= `  {item.detail}`
 		end
-		menu.mark_row(marks, from, line, i == o.current, kern.fuzzy_positions(typed, label), 1)
+		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(typed, label), 1)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -157,7 +157,7 @@ local function refresh(o: Open)
 	for i, item in o.items do
 		labels[i] = item.label
 	end
-	o.matches = kern.fuzzy(typed, labels)
+	o.matches = greed.fuzzy(typed, labels)
 	o.current = 1
 	if #o.matches == 0 then
 		close()
@@ -168,8 +168,8 @@ end
 
 -- Opens the menu at the cursor in `view` with what of `items` matches the
 -- word being typed. Returns whether anything did.
-local function show(view: kern.View, items: { Item }): boolean
-	local mode = kern.mode.get()
+local function show(view: greed.View, items: { Item }): boolean
+	local mode = greed.mode.get()
 	local buffer = view:buffer()
 	if #items == 0 then
 		return false
@@ -181,8 +181,8 @@ local function show(view: kern.View, items: { Item }): boolean
 			start = math.min(start, item.from)
 		end
 	end
-	local list = kern.create_buffer("completion", "", { readonly = true })
-	local float = kern.float(list, { anchor = "cursor", width = 20, height = 3, focus = false })
+	local list = greed.create_buffer("completion", "", { readonly = true })
+	local float = greed.float(list, { anchor = "cursor", width = 20, height = 3, focus = false })
 	local o: Open = {
 		view = view,
 		buffer = buffer,
@@ -194,24 +194,24 @@ local function show(view: kern.View, items: { Item }): boolean
 		mode = mode,
 	}
 	open = o
-	kern.mode.set(`completion-{mode}`)
+	greed.mode.set(`completion-{mode}`)
 	refresh(o)
 	return open ~= nil
 end
 
 -- Asks the server what could go at the cursor in `view`, and opens the menu
 -- if anything matches. `wanted` is the generation the ask was for.
-local function ask(view: kern.View, wanted: number)
-	local mode = kern.mode.get()
+local function ask(view: greed.View, wanted: number)
+	local mode = greed.mode.get()
 	local buffer = view:buffer()
 	if TYPING[mode] == nil or buffer:path() == nil then
 		return
 	end
-	local ok, result = pcall(kern.lsp.request, buffer, "textDocument/completion", {
-		textDocument = { uri = kern.lsp.uri(buffer) },
-		position = kern.lsp.position(buffer, head(view)),
+	local ok, result = pcall(greed.lsp.request, buffer, "textDocument/completion", {
+		textDocument = { uri = greed.lsp.uri(buffer) },
+		position = greed.lsp.position(buffer, head(view)),
 	})
-	if not ok or result == nil or wanted ~= generation or kern.mode.get() ~= mode then
+	if not ok or result == nil or wanted ~= generation or greed.mode.get() ~= mode then
 		return
 	end
 	show(view, items_from(result, buffer))
@@ -219,12 +219,12 @@ end
 
 -- Typing a word character or "." asks again once typing pauses; anything
 -- else closes the menu.
-kern.on("buffer.changed", function(event: kern.BufferChanged)
-	local view = kern.view()
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local view = greed.view()
 	if event.buffer:id() ~= view:buffer():id() then
 		return
 	end
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	local typing = TYPING[mode] ~= nil or (open ~= nil and mode == `completion-{open.mode}`)
 	if not typing then
 		return
@@ -243,19 +243,19 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 		end
 		return
 	end
-	local delay = kern.option.get("completion-delay") :: number
+	local delay = greed.option.get("completion-delay") :: number
 	if delay <= 0 or not (in_word or ch == ".") then
 		return
 	end
-	kern.sleep(delay)
+	greed.sleep(delay)
 	-- The view typed into may have closed meanwhile, like the command line
 	-- on enter; only the one still focused gets asked about.
-	if wanted == generation and open == nil and kern.view():id() == view:id() then
+	if wanted == generation and open == nil and greed.view():id() == view:id() then
 		ask(view, wanted)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "completion-ask",
 	doc = "Ask the language server what could go at the cursor",
 	run = function(ctx)
@@ -280,12 +280,12 @@ local WORDS = 200
 -- The words in open buffers that start with what's typed before the cursor
 -- in `view`: this buffer's from the cursor on, then the rest of it, then
 -- the other buffers'.
-local function words(view: kern.View): { Item }
+local function words(view: greed.View): { Item }
 	local buffer = view:buffer()
 	local pos = head(view)
 	local typed = buffer:slice(word_start(buffer, pos), pos)
 	local texts = { buffer:slice(pos, buffer:len()), buffer:slice(0, pos) }
-	for _, other in kern.buffers() do
+	for _, other in greed.buffers() do
 		if other:id() ~= buffer:id() then
 			table.insert(texts, other:text())
 		end
@@ -308,14 +308,14 @@ end
 
 -- completion-words and completion-words-back: Vim's ctrl-n and ctrl-p.
 for _, back in { false, true } do
-	kern.command({
+	greed.command({
 		name = if back then "completion-words-back" else "completion-words",
 		doc = if back
 			then "Complete the word being typed from words in open files, starting with the last"
 			else "Complete the word being typed from words in open files",
 		run = function(ctx)
 			if not show(ctx.view, words(ctx.view)) then
-				kern.echo("no words to complete")
+				greed.echo("no words to complete")
 			elseif back then
 				move(-1)
 			end
@@ -323,7 +323,7 @@ for _, back in { false, true } do
 	})
 end
 
-kern.command({
+greed.command({
 	name = "completion-next",
 	doc = "Move to the next completion",
 	run = function()
@@ -331,7 +331,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "completion-prev",
 	doc = "Move to the previous completion",
 	run = function()
@@ -339,7 +339,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "completion-accept",
 	doc = "Put the current completion in place of the word being typed",
 	run = function()
@@ -360,12 +360,12 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "completion-close",
 	doc = "Close the completion menu and do what esc does where you were typing",
 	run = function()
 		close()
-		kern.keys.feed("esc")
+		greed.keys.feed("esc")
 	end,
 })
 
@@ -382,14 +382,14 @@ local KEYS = {
 
 for mode, fallback in TYPING do
 	local completing = `completion-{mode}`
-	kern.keymap.inherit(completing, mode)
-	kern.keymap.bind(completing, KEYS)
-	kern.keymap.fallback(completing, fallback)
-	kern.mode.cursor(completing, "bar")
+	greed.keymap.inherit(completing, mode)
+	greed.keymap.bind(completing, KEYS)
+	greed.keymap.fallback(completing, fallback)
+	greed.mode.cursor(completing, "bar")
 	core.style.shown_as[completing] = mode
-	kern.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
+	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
 end
 -- Helix's own key for it; edit mode keeps ctrl-x for cut.
-kern.keymap.bind("insert", { ["ctrl-x"] = "completion-ask" })
+greed.keymap.bind("insert", { ["ctrl-x"] = "completion-ask" })
 
 return {}

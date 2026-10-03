@@ -1,6 +1,6 @@
--- The tools Kern offers agents out of the box. Each is also `kern ctl NAME`.
+-- The tools Greed offers agents out of the box. Each is also `greed ctl NAME`.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
@@ -12,9 +12,9 @@ end
 
 -- The open buffer for `path`, matching it as given, against the project,
 -- or by its end; nil if it isn't open.
-local function find_buffer(path: string): kern.Buffer?
-	local cwd = kern.fs.cwd()
-	for _, buffer in kern.buffers() do
+local function find_buffer(path: string): greed.Buffer?
+	local cwd = greed.fs.cwd()
+	for _, buffer in greed.buffers() do
 		local own = buffer:path()
 		if own and (own == path or cwd .. "/" .. own == path or own == cwd .. "/" .. path) then
 			return buffer
@@ -24,7 +24,7 @@ local function find_buffer(path: string): kern.Buffer?
 end
 
 -- 1-based line and column, as people and agents count them.
-local function position(buffer: kern.Buffer, pos: number): { line: number, column: number }
+local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }
 	local line = buffer:line_of(pos)
 	return { line = line + 1, column = pos - buffer:line_start(line) + 1 }
 end
@@ -36,7 +36,7 @@ agent.tool({
 	description = "What the user is looking at: the current file, their selections "
 		.. "with the selected text, and the lines on screen",
 	run = function()
-		local view = kern.view()
+		local view = greed.view()
 		local buffer = view:buffer()
 		local selection = view:selection()
 		local selections = {}
@@ -55,7 +55,7 @@ agent.tool({
 			kind = buffer:kind(),
 			language = buffer:language(),
 			modified = buffer:modified(),
-			mode = kern.mode.get(),
+			mode = greed.mode.get(),
 			selections = selections,
 			visible = { from = position(buffer, first).line, to = position(buffer, last).line },
 		}
@@ -67,7 +67,7 @@ agent.tool({
 	description = "The files open in the editor, and which have unsaved changes",
 	run = function()
 		local list = {}
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path then
 				table.insert(
@@ -76,7 +76,7 @@ agent.tool({
 				)
 			end
 		end
-		return kern.json.array(list)
+		return greed.json.array(list)
 	end,
 })
 
@@ -91,12 +91,12 @@ agent.tool({
 	}),
 	run = function(args)
 		local path: string? = args.path
-		local buffer = if path then find_buffer(path) else kern.view():buffer()
+		local buffer = if path then find_buffer(path) else greed.view():buffer()
 		local text: string
 		if buffer then
 			text = buffer:text()
 		else
-			local read, err = kern.fs.read(path :: string)
+			local read, err = greed.fs.read(path :: string)
 			if read == nil then
 				error(err, 0)
 			end
@@ -120,11 +120,11 @@ agent.tool({
 	}),
 	run = function(args)
 		local list = {}
-		local wanted: kern.Buffer? = if args.path then find_buffer(args.path :: string) else nil
-		for _, buffer in kern.buffers() do
+		local wanted: greed.Buffer? = if args.path then find_buffer(args.path :: string) else nil
+		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
-				for _, d in kern.lsp.diagnostics(buffer) do
+				for _, d in greed.lsp.diagnostics(buffer) do
 					local at = position(buffer, d.from)
 					table.insert(list, {
 						path = path,
@@ -137,7 +137,7 @@ agent.tool({
 				end
 			end
 		end
-		return kern.json.array(list)
+		return greed.json.array(list)
 	end,
 })
 
@@ -157,7 +157,7 @@ end
 local function diff_lines(old: string, new: string): string
 	local out = {}
 	local shift = 0
-	for _, hunk in kern.diff(old, new) do
+	for _, hunk in greed.diff(old, new) do
 		local removed = string.sub(old, hunk.from + 1, hunk.to)
 		local _, breaks = string.gsub(string.sub(new, 1, hunk.from + shift), "\n", "")
 		shift += #hunk.text - #removed
@@ -184,15 +184,15 @@ agent.tool({
 		minutes = { type = "number", description = "How far back to look; 10 if left out" },
 	}),
 	run = function(args)
-		local filter: kern.HistoryFilter = { since = os.time() - (args.minutes or 10) * 60 }
+		local filter: greed.HistoryFilter = { since = os.time() - (args.minutes or 10) * 60 }
 		if args.author == "user" or args.author == "external" then
 			filter.author = args.author
 		elseif args.author then
 			filter.plugin = args.author
 		end
-		local wanted: kern.Buffer? = if args.path then find_buffer(args.path :: string) else nil
+		local wanted: greed.Buffer? = if args.path then find_buffer(args.path :: string) else nil
 		local list = {}
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
 				local entries = buffer:history(filter)
@@ -215,7 +215,7 @@ agent.tool({
 				end
 			end
 		end
-		return kern.json.array(list)
+		return greed.json.array(list)
 	end,
 })
 
@@ -258,9 +258,9 @@ agent.tool({
 	description = "Open a file in the editor for the user, optionally at a 1-based line",
 	input = object({ path = { type = "string" }, line = { type = "integer" } }, { "path" }),
 	run = function(args)
-		kern.open(args.path)
+		greed.open(args.path)
 		if args.line then
-			local view = kern.view()
+			local view = greed.view()
 			local buffer = view:buffer()
 			local at = buffer:line_start(math.clamp(args.line - 1, 0, buffer:line_count() - 1))
 			view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
@@ -272,14 +272,14 @@ agent.tool({
 agent.tool({
 	name = "eval",
 	description = "Run Luau inside the editor with the full plugin API "
-		.. "(require('@kern')), and get back what it returns. Edits it makes are one "
+		.. "(require('@greed')), and get back what it returns. Edits it makes are one "
 		.. "operation the user can review and undo in one step",
 	input = object({ code = { type = "string" } }, { "code" }),
 	run = function(args)
 		local ok, result = false, ""
 		local first = string.match(args.code, "^%s*([^\n]*)") :: string
 		local op = operations.run(`eval: {string.sub(first, 1, 40)}`, function()
-			ok, result = kern.eval(args.code)
+			ok, result = greed.eval(args.code)
 		end, "agent")
 		if #op.files == 0 then
 			operations.forget(op)
@@ -301,10 +301,10 @@ agent.tool({
 
 -- The buffer for `path` (the current one if nil), opening the file without
 -- showing it if it isn't open, and failing without a syntax tree.
-local function syntax_buffer(path: string?): kern.Buffer
-	local buffer = if path then find_buffer(path) or kern.load(path) else kern.view():buffer()
+local function syntax_buffer(path: string?): greed.Buffer
+	local buffer = if path then find_buffer(path) or greed.load(path) else greed.view():buffer()
 	if buffer:tree() == nil then
-		error(`no syntax tree for {buffer:path() or "this buffer"}: Kern has no grammar for it`, 0)
+		error(`no syntax tree for {buffer:path() or "this buffer"}: Greed has no grammar for it`, 0)
 	end
 	return buffer
 end
@@ -344,7 +344,7 @@ agent.tool({
 		table.sort(list, function(a: { line: number }, b: { line: number })
 			return a.line < b.line
 		end)
-		return kern.json.array(list)
+		return greed.json.array(list)
 	end,
 })
 
@@ -375,7 +375,7 @@ agent.tool({
 			end
 			table.insert(matches, match)
 		end
-		return kern.json.array(matches)
+		return greed.json.array(matches)
 	end,
 })
 

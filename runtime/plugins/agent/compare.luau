@@ -3,7 +3,7 @@
 -- text picked out. The two scroll together, line for line where they
 -- match, and the side view follows edits and decisions.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local proposals = require("./proposals")
 
 -- Where one change is, in lines: from `old` for `old_lines` in the file,
@@ -12,10 +12,10 @@ type Block = { old: number, old_lines: number, new: number, new_lines: number }
 
 type Compare = {
 	-- The file's buffer and the view the side view is beside.
-	source: kern.Buffer,
-	beside: kern.View,
-	view: kern.View,
-	shown: kern.Buffer,
+	source: greed.Buffer,
+	beside: greed.View,
+	view: greed.View,
+	shown: greed.Buffer,
 	blocks: { Block },
 	-- The line each view was just scrolled to from the other, so its own
 	-- scroll event for it doesn't send the other back.
@@ -31,7 +31,7 @@ end
 
 -- The file's text with the waiting changes in, the new text's ranges in
 -- it, and where each change is in lines.
-local function proposed(buffer: kern.Buffer): (string, { { from: number, to: number } }, { Block })
+local function proposed(buffer: greed.Buffer): (string, { { from: number, to: number } }, { Block })
 	local text = buffer:text()
 	local parts, added, blocks = {}, {}, {}
 	local at, length, shift = 0, 0, 0
@@ -97,7 +97,7 @@ local function refresh(c: Compare)
 	c.shown:edit(function(e)
 		e:replace(0, c.shown:len(), text)
 	end)
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	for _, range in added do
 		table.insert(marks, { from = range.from, to = range.to, style = "diff.plus" })
 	end
@@ -106,7 +106,7 @@ end
 
 -- Scrolls `view` to `line`, moving its cursor only if it would be off
 -- screen, since drawing keeps the cursor in view.
-local function scroll_to(view: kern.View, line: number)
+local function scroll_to(view: greed.View, line: number)
 	local buffer = view:buffer()
 	line = math.clamp(line, 0, buffer:line_count() - 1)
 	local rows = view:size() or 1
@@ -119,7 +119,7 @@ local function scroll_to(view: kern.View, line: number)
 	view:set_scroll(line)
 end
 
-kern.on("view.scrolled", function(event: kern.ViewScrolled)
+greed.on("view.scrolled", function(event: greed.ViewScrolled)
 	local c = open
 	if c == nil then
 		return
@@ -141,7 +141,7 @@ kern.on("view.scrolled", function(event: kern.ViewScrolled)
 	end
 end)
 
-kern.on("view.closed", function(event)
+greed.on("view.closed", function(event)
 	local c = open
 	if c and (event.view == c.view:id() or event.view == c.beside:id()) then
 		close()
@@ -150,7 +150,7 @@ end)
 
 -- Deciding on changes and editing the file both change what the side
 -- view shows.
-local function follow(buffer: kern.Buffer)
+local function follow(buffer: greed.Buffer)
 	local c = open
 	if c and buffer:id() == c.source:id() then
 		refresh(c)
@@ -159,11 +159,11 @@ end
 
 proposals.on_change(follow)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	follow(event.buffer)
 end)
 
-kern.command({
+greed.command({
 	name = "proposal-compare",
 	doc = "Show the file with its proposed changes in, side by side",
 	run = function(ctx)
@@ -173,11 +173,11 @@ kern.command({
 		end
 		local source = ctx.buffer
 		if #proposals.changes(source) == 0 then
-			kern.echo("no proposed changes here")
+			greed.echo("no proposed changes here")
 			return
 		end
 		local shown =
-			kern.create_buffer("proposal", "", { readonly = true, language = source:language() })
+			greed.create_buffer("proposal", "", { readonly = true, language = source:language() })
 		local view = ctx.view:split("right", shown)
 		local c: Compare = {
 			source = source,
@@ -194,6 +194,6 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["space o d"] = "proposal-compare" })
+greed.keymap.bind("normal", { ["space o d"] = "proposal-compare" })
 
 return {}

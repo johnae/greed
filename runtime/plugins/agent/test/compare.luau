@@ -1,10 +1,10 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local agent = require("@agent")
 
 -- Proposes `edits` to `path` from a command, as a tool call would.
 local function propose(t: any, path: string, edits: { agent.Edit })
-	kern.command({
+	greed.command({
 		name = "test-propose",
 		run = function()
 			agent.propose(path, edits, nil)
@@ -21,8 +21,8 @@ local function numbered(n: number): string
 	return table.concat(lines, "\n") .. "\n"
 end
 
-local function side(): kern.Buffer?
-	for _, buffer in kern.buffers() do
+local function side(): greed.Buffer?
+	for _, buffer in greed.buffers() do
 		if buffer:kind() == "proposal" then
 			return buffer
 		end
@@ -33,14 +33,14 @@ end
 test("space o d shows the file with its changes in, beside it, scrolling along", function(t)
 	local dir = t:tempdir({ ["a.txt"] = numbered(60) })
 	local path = dir .. "/a.txt"
-	kern.open(path)
-	local file = kern.view()
+	greed.open(path)
+	local file = greed.view()
 	-- Three lines in for one near the top, so the two sides are off by two.
 	propose(t, path, { { old_text = "line 3\n", new_text = "three\nand\nmore\n" } })
 	t:draw(80, 12)
 	t:keys("space o d")
 	local shown = assert(side(), "a side view")
-	assert(kern.view():id() == file:id(), "the file keeps focus")
+	assert(greed.view():id() == file:id(), "the file keeps focus")
 	local text = shown:text()
 	assert(string.find(text, "line 2\nthree\nand\nmore\nline 4\n", 1, true), text)
 	local marks = shown:decorations("compare")
@@ -67,7 +67,7 @@ end)
 test("the side view keeps up with edits to the file", function(t)
 	local dir = t:tempdir({ ["a.txt"] = numbered(5) })
 	local path = dir .. "/a.txt"
-	kern.open(path)
+	greed.open(path)
 	propose(t, path, { { old_text = "line 5\n", new_text = "five\n" } })
 	t:keys("space o d")
 	t:keys("g g i X esc")

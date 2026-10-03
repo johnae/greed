@@ -15,7 +15,7 @@
 --         operations.exec(op, { "cargo", "test" })
 --     end)
 
-local kern = require("@kern")
+local greed = require("@greed")
 local multibuffer = require("@multibuffer")
 local picker = require("@picker")
 
@@ -37,7 +37,7 @@ export type Operation = {
 	commands: { Command },
 	--- "running", "done", "undone" or "partly undone".
 	status: string,
-	--- Saved before Kern last restarted: its undo group is gone, so undo
+	--- Saved before Greed last restarted: its undo group is gone, so undo
 	--- puts its changes back by comparing texts.
 	restored: boolean?,
 }
@@ -60,7 +60,7 @@ local reviews: { [number]: Operation } = {}
 
 -- Where operations are kept for after a restart.
 local function saved_path(): string?
-	local cache = kern.fs.dirs().cache
+	local cache = greed.fs.dirs().cache
 	return cache and `{cache}/operations.json`
 end
 
@@ -84,20 +84,20 @@ local function save()
 				author = op.author,
 				time = op.time,
 				status = op.status,
-				files = kern.json.array(files),
-				commands = kern.json.array(op.commands),
+				files = greed.json.array(files),
+				commands = greed.json.array(op.commands),
 			})
 		end
 	end
-	kern.fs.write(path, kern.json.encode(kern.json.array(list)))
+	greed.fs.write(path, greed.json.encode(greed.json.array(list)))
 end
 
 --- Loads the operations saved before a restart, in place of the ones
---- known now. Kern does this when it starts.
+--- known now. Greed does this when it starts.
 function M.restore()
 	local path = saved_path()
-	local text = path and kern.fs.read(path)
-	local list = if text then kern.json.decode(text) else nil
+	local text = path and greed.fs.read(path)
+	local list = if text then greed.json.decode(text) else nil
 	operations = {}
 	for _, saved in list or {} do
 		table.insert(operations, {
@@ -116,7 +116,7 @@ end
 --- Starts an operation: edits from here until `finish` belong to it.
 function M.start(name: string, author: string?): Operation
 	local op: Operation = {
-		id = kern.history.new_group(),
+		id = greed.history.new_group(),
 		name = name,
 		author = author or "user",
 		time = os.time(),
@@ -124,8 +124,8 @@ function M.start(name: string, author: string?): Operation
 		commands = {},
 		status = "running",
 	}
-	outer[op.id] = kern.history.group()
-	kern.history.set_group(op.id)
+	outer[op.id] = greed.history.group()
+	greed.history.set_group(op.id)
 	table.insert(operations, op)
 	if #operations > KEEP then
 		table.remove(operations, 1)
@@ -136,7 +136,7 @@ end
 -- The files `op` changed so far, with their text before it and now.
 local function changed_files(op: Operation): { File }
 	local files: { File } = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local path = buffer:path()
 		local entries = buffer:history({ group = op.id })
 		if path and #entries > 0 then
@@ -152,8 +152,8 @@ end
 
 --- Ends `op`: edits after this are no longer part of it.
 function M.finish(op: Operation)
-	if kern.history.group() == op.id then
-		kern.history.set_group(outer[op.id])
+	if greed.history.group() == op.id then
+		greed.history.set_group(outer[op.id])
 	end
 	outer[op.id] = nil
 	op.files = changed_files(op)
@@ -176,10 +176,10 @@ end
 --- Runs `f` with its edits joining `op`, finished or not, so they undo
 --- with it, like changes accepted from a proposal one by one.
 function M.join(op: Operation, f: () -> ())
-	local current = kern.history.group()
-	kern.history.set_group(op.id)
+	local current = greed.history.group()
+	greed.history.set_group(op.id)
 	local ok, err = pcall(f)
-	kern.history.set_group(current)
+	greed.history.set_group(current)
 	op.files = changed_files(op)
 	save()
 	if not ok then
@@ -187,14 +187,14 @@ function M.join(op: Operation, f: () -> ())
 	end
 end
 
---- Runs a program as part of `op`, like `kern.process.run`, and keeps how
+--- Runs a program as part of `op`, like `greed.process.run`, and keeps how
 --- it went with the operation.
 function M.exec(
 	op: Operation,
 	argv: { string },
 	opts: { stdin: string?, cwd: string? }?
 ): ({ code: number?, stdout: string, stderr: string }?, string?)
-	local done, err = kern.process.run(argv, opts)
+	local done, err = greed.process.run(argv, opts)
 	local output = if done then done.stdout .. done.stderr else err or ""
 	if #output > OUTPUT then
 		output = "..." .. string.sub(output, -OUTPUT)
@@ -239,12 +239,12 @@ end
 
 -- A file's text now: its buffer's if open, otherwise the disk's.
 local function text_now(path: string): string
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:path() == path then
 			return buffer:text()
 		end
 	end
-	return kern.fs.read(path) or ""
+	return greed.fs.read(path) or ""
 end
 
 type Revert = { from: number, to: number, text: string }
@@ -254,10 +254,10 @@ type Revert = { from: number, to: number, text: string }
 -- text it replaced. Also how many were left.
 local function reverts(file: File, now: string): ({ Revert }, number)
 	-- Changes since the operation, by where they are in its text after.
-	local later = kern.diff(file.after, now)
+	local later = greed.diff(file.after, now)
 	local out: { Revert }, left = {}, 0
 	local shift = 0
-	for _, change in kern.diff(file.before, file.after) do
+	for _, change in greed.diff(file.before, file.after) do
 		local old = string.sub(file.before, change.from + 1, change.to)
 		-- Where its text is in the operation's text after.
 		local from = change.from + shift
@@ -284,11 +284,11 @@ end
 -- as one undo step. Returns how many changes it put back and left.
 local function revert_what_remains(op: Operation): (number, number)
 	local put, left = 0, 0
-	local group = kern.history.new_group()
-	local current = kern.history.group()
-	kern.history.set_group(group)
+	local group = greed.history.new_group()
+	local current = greed.history.group()
+	greed.history.set_group(group)
 	for _, file in op.files do
-		local buffer = kern.load(file.path)
+		local buffer = greed.load(file.path)
 		local list, kept = reverts(file, buffer:text())
 		left += kept
 		put += #list
@@ -300,19 +300,19 @@ local function revert_what_remains(op: Operation): (number, number)
 			end)
 		end
 	end
-	kern.history.set_group(current)
+	greed.history.set_group(current)
 	return put, left
 end
 
 --- Undoes `op` in every file it changed, as one step. When something was
---- done on top of it since (or Kern restarted), it puts back the changes
+--- done on top of it since (or Greed restarted), it puts back the changes
 --- nobody edited since and leaves the rest. Returns whether it changed
 --- anything, and a word on what it left or why it couldn't.
 function M.undo(op: Operation): (boolean, string?)
 	if op.status == "running" then
 		M.finish(op)
 	end
-	if not op.restored and op.status == "done" and kern.history.undo_group(op.id) then
+	if not op.restored and op.status == "done" and greed.history.undo_group(op.id) then
 		op.status = "undone"
 		save()
 		return true, nil
@@ -360,7 +360,7 @@ function M.review(op: Operation)
 	multibuffer.show(buffer, "Operation")
 end
 
-kern.command({
+greed.command({
 	name = "operations",
 	doc = "Pick a recent operation to review: its changes across files and the programs it ran",
 	run = function()
@@ -373,7 +373,7 @@ kern.command({
 			})
 		end
 		if #items == 0 then
-			kern.echo("no operations yet")
+			greed.echo("no operations yet")
 			return
 		end
 		picker.pick("Operations", items, function(item)
@@ -384,7 +384,7 @@ kern.command({
 
 --- The operation commands act on from `buffer`: the one it reviews, or
 --- the latest one not undone.
-function M.target(buffer: kern.Buffer): Operation?
+function M.target(buffer: greed.Buffer): Operation?
 	local reviewed = reviews[buffer:id()]
 	if reviewed then
 		return reviewed
@@ -397,33 +397,33 @@ function M.target(buffer: kern.Buffer): Operation?
 	return nil
 end
 
-kern.command({
+greed.command({
 	name = "operation-undo",
 	doc = "Undo the latest operation, or the one being reviewed, in every file at once",
 	run = function(ctx)
 		local op = M.target(ctx.buffer)
 		if op == nil then
-			kern.echo("no operation to undo")
+			greed.echo("no operation to undo")
 			return
 		end
 		local ok, why = M.undo(op)
 		if not ok then
-			kern.echo(`can't undo "{op.name}": {why}`)
+			greed.echo(`can't undo "{op.name}": {why}`)
 			return
 		end
 		local what = if why then `; {why}` else ` in {count(#op.files, "file")}`
-		kern.echo(`undid "{op.name}"{what}`)
+		greed.echo(`undid "{op.name}"{what}`)
 		if reviews[ctx.buffer:id()] then
 			M.review(op)
 		end
 	end,
 })
 
-kern.on("buffer.closed", function(event)
+greed.on("buffer.closed", function(event)
 	reviews[event.id] = nil
 end)
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space u o"] = "operations",
 	["space u u"] = "operation-undo",
 })

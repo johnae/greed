@@ -28,7 +28,7 @@ fn keys_edit_and_show_the_buffer() {
 
 #[test]
 fn luau_expressions_print_their_value() {
-    let out = repl(&[], "1 + 2\nrequire('@kern').echo('hello')\n");
+    let out = repl(&[], "1 + 2\nrequire('@greed').echo('hello')\n");
     assert_eq!(out, "3\nhello\n");
 }
 
@@ -43,7 +43,7 @@ fn errors_are_reported_and_the_repl_continues() {
 
 #[test]
 fn files_open_and_write_back() {
-    let path = std::env::temp_dir().join(format!("kern-repl-test-{}.txt", std::process::id()));
+    let path = std::env::temp_dir().join(format!("greed-repl-test-{}.txt", std::process::id()));
     std::fs::write(&path, "world").unwrap();
     let out = repl(
         &[path.to_str().unwrap()],
@@ -59,10 +59,10 @@ fn files_open_and_write_back() {
 
 #[test]
 fn the_user_config_loads_last_and_errors_are_shown() {
-    let dir = std::env::temp_dir().join(format!("kern-config-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-config-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("init.luau");
-    std::fs::write(&config, "require('@kern').mode.set('insert')\n").unwrap();
+    std::fs::write(&config, "require('@greed').mode.set('insert')\n").unwrap();
     let run = |script: &str| {
         let mut child = Command::new(env!("CARGO_BIN_EXE_greed"))
             .arg("repl")

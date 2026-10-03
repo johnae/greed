@@ -15,7 +15,7 @@
 -- Servers start the first time a file of their language is open, if one is
 -- installed; the languages plugin says which (see `:health`).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("@picker")
 local common = require("@self/common")
 local marks = require("@self/marks")
@@ -55,7 +55,7 @@ local function without_fences(text: string): string
 	return table.concat(kept, "\n")
 end
 
-local shown: kern.View? = nil
+local shown: greed.View? = nil
 
 local function close_info()
 	if shown then
@@ -67,17 +67,17 @@ end
 local function show_info(title: string, text: string)
 	close_info()
 	local lines = string.split(text, "\n")
-	local buffer = kern.create_buffer("info", text)
-	shown = kern.float(buffer, { title = title, width = "70%", height = math.min(#lines + 2, 20) })
+	local buffer = greed.create_buffer("info", text)
+	shown = greed.float(buffer, { title = title, width = "70%", height = math.min(#lines + 2, 20) })
 end
 
-kern.command({
+greed.command({
 	name = "hover",
 	doc = "Show what's under the cursor, and any problems there",
 	run = function(ctx)
 		local pos = head(ctx.view)
 		local parts = {}
-		for _, d in kern.lsp.diagnostics(ctx.buffer) do
+		for _, d in greed.lsp.diagnostics(ctx.buffer) do
 			if d.from <= pos and pos <= d.to then
 				table.insert(parts, describe(d))
 			end
@@ -93,7 +93,7 @@ kern.command({
 			table.insert(parts, text)
 		end
 		if #parts == 0 then
-			kern.echo("nothing to show here")
+			greed.echo("nothing to show here")
 			return
 		end
 		show_info("Hover", table.concat(parts, "\n\n"))
@@ -111,7 +111,7 @@ for _, place in
 	}
 do
 	local name, method, what = place[1], place[2], place[3]
-	kern.command({
+	greed.command({
 		name = name,
 		doc = `Go to where the thing under the cursor is {what}`,
 		run = function(ctx)
@@ -119,20 +119,20 @@ do
 			if not ok then
 				return
 			elseif err then
-				kern.echo(`{method}: {err.message}`)
+				greed.echo(`{method}: {err.message}`)
 				return
 			end
 			-- A location, a list of locations or links (maybe empty), or nothing.
 			local target = if result and result[1] then result[1] else result
 			if target == nil or (target.uri == nil and target.targetUri == nil) then
-				kern.echo(`no {method} found`)
+				greed.echo(`no {method} found`)
 				return
 			end
 			local uri = target.uri or target.targetUri
 			local range = target.range or target.targetSelectionRange
-			local path = kern.lsp.path(uri)
+			local path = greed.lsp.path(uri)
 			if path == nil then
-				kern.echo(`can't open {uri}`)
+				greed.echo(`can't open {uri}`)
 				return
 			end
 			common.open_at(path, range.start)
@@ -140,15 +140,15 @@ do
 	})
 end
 
-local function sorted_diagnostics(buffer: kern.Buffer): { kern.Diagnostic }
-	local list = kern.lsp.diagnostics(buffer)
-	table.sort(list, function(a: kern.Diagnostic, b: kern.Diagnostic)
+local function sorted_diagnostics(buffer: greed.Buffer): { greed.Diagnostic }
+	local list = greed.lsp.diagnostics(buffer)
+	table.sort(list, function(a: greed.Diagnostic, b: greed.Diagnostic)
 		return a.from < b.from
 	end)
 	return list
 end
 
-local function jump(ctx: kern.Context, forward: boolean)
+local function jump(ctx: greed.Context, forward: boolean)
 	local pos = head(ctx.view)
 	local list = sorted_diagnostics(ctx.buffer)
 	local target = nil
@@ -169,13 +169,13 @@ local function jump(ctx: kern.Context, forward: boolean)
 	end
 	if target then
 		move_to(ctx.view, target.from)
-		kern.echo(describe(target))
+		greed.echo(describe(target))
 	else
-		kern.echo("no more problems")
+		greed.echo("no more problems")
 	end
 end
 
-kern.command({
+greed.command({
 	name = "next-diagnostic",
 	doc = "Go to the next problem in this file",
 	run = function(ctx)
@@ -183,7 +183,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "prev-diagnostic",
 	doc = "Go to the previous problem in this file",
 	run = function(ctx)
@@ -192,7 +192,7 @@ kern.command({
 })
 
 for _, last in { false, true } do
-	kern.command({
+	greed.command({
 		name = if last then "last-diagnostic" else "first-diagnostic",
 		doc = if last
 			then "Go to the last problem in this file"
@@ -202,15 +202,15 @@ for _, last in { false, true } do
 			local target = list[if last then #list else 1]
 			if target then
 				move_to(ctx.view, target.from)
-				kern.echo(describe(target))
+				greed.echo(describe(target))
 			else
-				kern.echo("no problems")
+				greed.echo("no problems")
 			end
 		end,
 	})
 end
 
-kern.command({
+greed.command({
 	name = "pick-diagnostic",
 	doc = "Pick a problem in this file and go to it",
 	run = function(ctx)
@@ -221,7 +221,7 @@ kern.command({
 			table.insert(items, { label = `{line}: {describe(d)}`, value = d.from })
 		end
 		if #items == 0 then
-			kern.echo("no problems")
+			greed.echo("no problems")
 			return
 		end
 		local text, language = buffer:text(), buffer:language()
@@ -235,7 +235,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "info-close",
 	doc = "Close the hover window",
 	run = close_info,
@@ -244,10 +244,10 @@ kern.command({
 -- A server asking you to pick, e.g. "Reload the project?" with buttons:
 -- the actions show in a picker titled with its message, and the server
 -- hears which one you chose, or nothing if you closed it.
-kern.lsp.on_request("window/showMessageRequest", function(params)
+greed.lsp.on_request("window/showMessageRequest", function(params)
 	local actions = params.actions or {}
 	if #actions == 0 then
-		kern.echo(params.message)
+		greed.echo(params.message)
 		return nil
 	end
 	local items = {}
@@ -258,8 +258,8 @@ kern.lsp.on_request("window/showMessageRequest", function(params)
 	return if item then item.value else nil
 end)
 
-kern.keymap.bind({ mode = "normal", kind = "info" }, { esc = "info-close", q = "info-close" })
-kern.keymap.bind("normal", {
+greed.keymap.bind({ mode = "normal", kind = "info" }, { esc = "info-close", q = "info-close" })
+greed.keymap.bind("normal", {
 	["space k"] = "hover",
 	["g d"] = "goto-definition",
 	["g D"] = "goto-declaration",
@@ -272,25 +272,25 @@ kern.keymap.bind("normal", {
 	["[ D"] = "first-diagnostic",
 })
 
-kern.option.define({
+greed.option.define({
 	name = "diagnostic-messages",
 	doc = "Show each line's worst problem after the end of the line",
 	default = true,
 })
 
 -- Signs beside lines with problems, and their messages after the line.
-local function mark_problems(buffer: kern.Buffer)
-	local messages = kern.option.get("diagnostic-messages") == true
-	buffer:decorate("lsp", marks.diagnostic_marks(buffer, kern.lsp.diagnostics(buffer), messages))
+local function mark_problems(buffer: greed.Buffer)
+	local messages = greed.option.get("diagnostic-messages") == true
+	buffer:decorate("lsp", marks.diagnostic_marks(buffer, greed.lsp.diagnostics(buffer), messages))
 end
 
-kern.on("lsp.diagnostics", function(event: kern.DiagnosticsChanged)
+greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
 	mark_problems(event.buffer)
 end)
 
-kern.on("option.changed", function(event)
+greed.on("option.changed", function(event)
 	if event.name == "diagnostic-messages" then
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			mark_problems(buffer)
 		end
 	end

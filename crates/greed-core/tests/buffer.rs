@@ -232,7 +232,7 @@ proptest! {
 
 #[test]
 fn buffers_know_whether_they_changed_since_saving() {
-    let path = std::env::temp_dir().join(format!("kern-modified-{}.txt", std::process::id()));
+    let path = std::env::temp_dir().join(format!("greed-modified-{}.txt", std::process::id()));
     let mut f = Fixture::new("");
     f.buffer = Buffer::new(BufferId(1), "file", "").with_path(&path);
     assert!(!f.buffer.is_modified());

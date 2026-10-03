@@ -3,7 +3,7 @@
 -- back through it, ctrl-i (or tab) forward again. Other plugins add their
 -- own jumping commands with `require("@core").jumps.add(name)`.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 type Place = { buffer: number, path: string?, pos: number }
 
@@ -47,7 +47,7 @@ local list: { Place } = {}
 local index = 1
 
 local function here(): Place?
-	local view = kern.view()
+	local view = greed.view()
 	local buffer = view:buffer()
 	if buffer:kind() ~= "file" then
 		return nil
@@ -79,9 +79,9 @@ end
 -- whether it could.
 local function go(place: Place): boolean
 	local shown = false
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:id() == place.buffer then
-			kern.view():show(buffer)
+			greed.view():show(buffer)
 			shown = true
 			break
 		end
@@ -90,14 +90,14 @@ local function go(place: Place): boolean
 		if place.path == nil then
 			return false
 		end
-		kern.open(place.path)
+		greed.open(place.path)
 	end
-	local pos = math.min(place.pos, kern.view():buffer():len())
-	kern.view():set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	local pos = math.min(place.pos, greed.view():buffer():len())
+	greed.view():set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
 	return true
 end
 
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if JUMPS[event.name] then
 		local place = here()
 		if place then
@@ -106,7 +106,7 @@ kern.on("command.run", function(event: kern.CommandRun)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "jump-back",
 	doc = "Go back to where the last jump started",
 	run = function()
@@ -126,7 +126,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "jump-forward",
 	doc = "Go forward again after jumping back",
 	run = function()

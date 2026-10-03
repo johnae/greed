@@ -8,7 +8,7 @@
 -- Other plugins open one with `require("@self/picker").pick(...)`; see
 -- pickers.luau for examples.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@self/picker")
 
@@ -29,15 +29,15 @@ core.buttons.choose = function(buttons, press)
 	end)
 end
 
-kern.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
+greed.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 -- A picker takes typing; if something leaves it in another mode, esc still
 -- closes it.
 core.style.kind_modes.picker = "insert"
 for _, mode in { "normal", "vim", "edit" } do
-	kern.keymap.bind({ mode = mode, kind = "picker" }, { esc = "picker-close" })
+	greed.keymap.bind({ mode = mode, kind = "picker" }, { esc = "picker-close" })
 end
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space f"] = "pick-file",
 	["space b"] = "pick-buffer",
 	["space s"] = "pick-outline",

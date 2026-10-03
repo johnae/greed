@@ -1,16 +1,16 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local operations = require("@operations")
 
-local function append(buffer: kern.Buffer, text: string)
+local function append(buffer: greed.Buffer, text: string)
 	buffer:edit(function(e)
 		e:insert(buffer:len(), text)
 	end)
 end
 
 -- The review view, once shown.
-local function review(): kern.Buffer
-	for _, buffer in kern.buffers() do
+local function review(): greed.Buffer
+	for _, buffer in greed.buffers() do
 		if buffer:kind() == "multibuffer" then
 			return buffer
 		end
@@ -20,7 +20,7 @@ end
 
 test("an operation's edits across files undo as one step", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
-	local a, b = kern.load(dir .. "/a.txt"), kern.load(dir .. "/b.txt")
+	local a, b = greed.load(dir .. "/a.txt"), greed.load(dir .. "/b.txt")
 	t:buffer("|x")
 	local op = operations.run("shout", function()
 		append(a, "A\n")
@@ -37,7 +37,7 @@ end)
 
 test("edits on top of an operation stay when it's undone", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\nb\nc\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	local op = operations.run("first", function()
 		a:edit(function(e)
@@ -53,7 +53,7 @@ end)
 
 test("a change edited since is left, and the rest undone", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\nfour\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	local op = operations.run("shout", function()
 		a:edit(function(e)
@@ -76,7 +76,7 @@ end)
 
 test("operations come back after a restart, and undo by comparing texts", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	operations.run("saved", function()
 		append(a, "1\n")
@@ -92,7 +92,7 @@ end)
 
 test("a failing operation keeps what it did, to undo", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	local ok = pcall(function()
 		operations.run("half", function()
@@ -103,14 +103,14 @@ test("a failing operation keeps what it did, to undo", function(t)
 	assert(not ok)
 	local op = operations.list()[1]
 	assert(op.name == "half" and #op.files == 1)
-	assert(kern.history.group() == nil, "the group is closed again")
+	assert(greed.history.group() == nil, "the group is closed again")
 	assert(operations.undo(op))
 	assert(a:text() == "a\n")
 end)
 
 test("the review shows the changes and programs run, and puts changes back", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	local op = operations.run("rename", function(op)
 		a:edit(function(e)
@@ -123,7 +123,7 @@ test("the review shows the changes and programs run, and puts changes back", fun
 	local text = review():text()
 	assert(string.find(text, "^rename, by user: 1 change in 1 file\nran true: ok\n"), text)
 	local at = (string.find(text, "TWO", 1, true) :: number) - 1
-	kern.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	greed.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	t:keys("space g r")
 	assert(a:text() == "one\ntwo\nthree\n", a:text())
 	assert(string.find(review():text(), "0 changes", 1, true), review():text())
@@ -131,7 +131,7 @@ end)
 
 test("joining a finished operation makes later edits undo with it", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
-	local a, b = kern.load(dir .. "/a.txt"), kern.load(dir .. "/b.txt")
+	local a, b = greed.load(dir .. "/a.txt"), greed.load(dir .. "/b.txt")
 	t:buffer("|x")
 	local op = operations.run("proposal", function() end, "agent")
 	assert(#op.files == 0)
@@ -148,7 +148,7 @@ end)
 
 test("space u o picks an operation to review", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	local a = kern.load(dir .. "/a.txt")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	operations.run("picked", function()
 		append(a, "1\n")

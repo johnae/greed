@@ -9,7 +9,7 @@
 --     languages.set("python", { servers = { { "pylsp" } } })
 --     languages.set("odin", { extensions = { "odin" }, servers = { { "ols" } } })
 
-local kern = require("@kern")
+local greed = require("@greed")
 local defaults = require("@self/languages")
 local comment = require("@core").comment
 local indent = require("@core").indent
@@ -22,22 +22,22 @@ local languages: { [string]: Language } = {}
 
 -- Tells the editor about a language's files and servers.
 local function apply(name: string, language: Language)
-	kern.filetype(name, { extensions = language.extensions, names = language.names })
+	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
 	indent.units[name] = if language.indent then string.rep(" ", language.indent) else "\t"
 	indent.openers[name] = language.indent_after
 	indent.closers[name] = language.outdent_before
 	local servers = language.servers
 	if servers and #servers > 0 then
-		kern.lsp.server({ language = name, commands = servers, root_markers = language.roots })
+		greed.lsp.server({ language = name, commands = servers, root_markers = language.roots })
 	else
-		kern.lsp.remove(name)
+		greed.lsp.remove(name)
 	end
 end
 
 local M = {}
 
---- The entry for language `name`, if Kern knows it.
+--- The entry for language `name`, if Greed knows it.
 function M.get(name: string): Language?
 	return languages[name]
 end
@@ -68,25 +68,25 @@ end
 
 -- Queries from files in every plugin and the config folder, read again
 -- when plugins come and go.
-local own = kern.plugin.dirs().languages
+local own = greed.plugin.dirs().languages
 
 --- Reads the query files again and sets the queries, showing and returning
 --- any problems (a query its grammar can't compile), one line each.
 function M.load_queries(): { string }
 	local problems = query_files.load(own)
 	for _, problem in problems do
-		kern.echo(problem)
+		greed.echo(problem)
 	end
 	return problems
 end
 
 M.load_queries()
-kern.on("plugin.loaded", function(event)
-	if event.dir and event.name ~= "languages" and kern.fs.list(`{event.dir}/queries`) then
+greed.on("plugin.loaded", function(event)
+	if event.dir and event.name ~= "languages" and greed.fs.list(`{event.dir}/queries`) then
 		M.load_queries()
 	end
 end)
-kern.on("plugin.unloaded", function()
+greed.on("plugin.unloaded", function()
 	M.load_queries()
 end)
 
@@ -94,40 +94,40 @@ end)
 
 M.grammars = grammars
 
---- Sets up the grammar for `language` if Kern knows where to get one,
+--- Sets up the grammar for `language` if Greed knows where to get one,
 --- downloading it the first time. Returns whether it has one now.
 function M.ensure_grammar(language: string): boolean
 	return grammars.ensure(language, query_files.provides)
 end
 
-kern.on("buffer.opened", function(event: kern.BufferChanged)
+greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local language = event.buffer:language()
 	if language and grammars.sources[language] then
 		local ok, err = pcall(M.ensure_grammar, language)
 		if not ok then
-			kern.echo(tostring(err))
+			greed.echo(tostring(err))
 		end
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "grammar-fetch",
-	doc = "Download a grammar Kern knows where to get, ahead of opening a file in it",
+	doc = "Download a grammar Greed knows where to get, ahead of opening a file in it",
 	args = { { name = "language", doc = "e.g. ruby" } },
 	run = function(ctx)
 		local language = ctx.args[1] or ctx.buffer:language()
 		if language == nil or grammars.sources[language] == nil then
-			error(`Kern doesn't know where to get a grammar for {language or "this buffer"}`, 0)
+			error(`Greed doesn't know where to get a grammar for {language or "this buffer"}`, 0)
 		end
 		if M.ensure_grammar(language) then
-			kern.echo(`the {language} grammar is ready`)
+			greed.echo(`the {language} grammar is ready`)
 		end
 	end,
 })
 
 -- `:health` --------------------------------------------------------------
 
-local shown: kern.View? = nil
+local shown: greed.View? = nil
 
 local function close_health()
 	if shown then
@@ -137,9 +137,9 @@ local function close_health()
 end
 
 -- One line per language: its grammar, then each server, found or missing.
-local function health_report(): (string, { kern.Mark })
+local function health_report(): (string, { greed.Mark })
 	local have = {}
-	for _, name in kern.grammars() do
+	for _, name in greed.grammars() do
 		have[name] = true
 	end
 	local lines, marks = {}, {}
@@ -166,7 +166,7 @@ local function health_report(): (string, { kern.Mark })
 			line ..= add("no server set", "ui.health.missing")
 		end
 		for i, command in servers do
-			local found = kern.which(command[1]) ~= nil
+			local found = greed.which(command[1]) ~= nil
 			if i > 1 then
 				line ..= add(", ")
 			end
@@ -178,27 +178,27 @@ local function health_report(): (string, { kern.Mark })
 	return table.concat(lines, "\n"), marks
 end
 
-kern.command({
+greed.command({
 	name = "health",
 	doc = "Show each language's highlighting and servers, and which are installed",
 	run = function()
 		close_health()
 		local text, marks = health_report()
-		local buffer = kern.create_buffer("health", text, { readonly = true })
+		local buffer = greed.create_buffer("health", text, { readonly = true })
 		buffer:decorate("health", marks)
-		shown = kern.float(
+		shown = greed.float(
 			buffer,
 			{ title = "Health: found servers in green", width = "80%", height = "80%" }
 		)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "health-close",
 	doc = "Close the health report",
 	run = close_health,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "health" }, { esc = "health-close", q = "health-close" })
+greed.keymap.bind({ mode = "normal", kind = "health" }, { esc = "health-close", q = "health-close" })
 
 return M

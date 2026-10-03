@@ -1,6 +1,6 @@
 //! The watchdog: every run of plugin code on the editor's thread is timed,
 //! and one that held the editor up is kept with the plugin and what it was
-//! running, so a freeze can be traced to its cause. `kern.stalls()` lists
+//! running, so a freeze can be traced to its cause. `greed.stalls()` lists
 //! them; long ones are also said right away.
 
 use std::collections::VecDeque;
@@ -51,7 +51,7 @@ fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
     if took >= SAY {
         state.editor.echo(format!(
             "{} held the editor up for {} ms ({what}) - :stalls lists these",
-            plugin.unwrap_or("Kern"),
+            plugin.unwrap_or("Greed"),
             took.as_millis()
         ));
     }
@@ -67,7 +67,7 @@ fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
     });
 }
 
-/// `kern.stalls()`: the runs that held the editor up, newest first.
+/// `greed.stalls()`: the runs that held the editor up, newest first.
 pub(super) fn list(lua: &Lua) -> LuaResult<Table> {
     let list = lua.create_table()?;
     for stall in state(lua).stalls.kept.iter().rev() {

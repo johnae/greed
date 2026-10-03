@@ -1,15 +1,15 @@
-//! `kern.secrets`: API keys and the like, kept out of config files and
+//! `greed.secrets`: API keys and the like, kept out of config files and
 //! plugin source. A secret is found in, in order:
 //!
 //! 1. the environment, as `GREED_SECRET_NAME`, or the variable such a key
 //!    usually has (`ANTHROPIC_API_KEY` for "anthropic"),
 //! 2. the system keyring (`secret-tool` on Linux, `security` on macOS),
-//! 3. Kern's own secrets file, readable only by you, for machines without a
+//! 3. Greed's own secrets file, readable only by you, for machines without a
 //!    keyring, like many reached over ssh.
 //!
 //! A plugin reads only the secrets it declares as `secrets:NAME`, or all of
 //! them with `secrets`. Lookups run a program, so they happen on a thread
-//! and wait like `kern.sleep`.
+//! and wait like `greed.sleep`.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -30,14 +30,14 @@ const USUAL: &[(&str, &str)] = &[
     ("openai", "OPENAI_API_KEY"),
 ];
 
-/// The keyring's service name for Kern's secrets.
-const SERVICE: &str = "kern";
+/// The keyring's service name for Greed's secrets.
+const SERVICE: &str = "greed";
 
 /// Where secrets are looked for and kept, worked out on the editor's
 /// thread and handed to the job.
 #[derive(Clone)]
 pub(super) struct Places {
-    /// Kern's own secrets file.
+    /// Greed's own secrets file.
     file: PathBuf,
     /// Whether to use the system keyring; tests don't.
     keyring: bool,
@@ -54,7 +54,7 @@ fn places(lua: &Lua) -> Option<Places> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".local/state")))?;
     Some(Places {
-        file: base.join("kern/secrets.json"),
+        file: base.join("greed/secrets.json"),
         keyring: true,
     })
 }
@@ -146,7 +146,7 @@ fn to_keyring(name: &str, value: &str) -> bool {
         )
         .is_some()
     } else {
-        let label = format!("Kern: {name}");
+        let label = format!("Greed: {name}");
         run(
             "secret-tool",
             &[
@@ -190,7 +190,7 @@ pub(super) fn find(places: &Places, name: &str) -> Option<String> {
 }
 
 /// Keeps `value` as the secret `name`: in the keyring if there is one,
-/// otherwise in Kern's secrets file. Says where it went.
+/// otherwise in Greed's secrets file. Says where it went.
 pub(super) fn keep(places: &Places, name: &str, value: &str) -> Result<String, String> {
     if places.keyring && to_keyring(name, value) {
         return Ok("the system keyring".to_owned());
@@ -225,7 +225,7 @@ fn places_for(lua: &Lua, owner: &PluginId, name: &str) -> LuaResult<Places> {
     places(lua).ok_or_else(|| mlua::Error::runtime("there's no home folder"))
 }
 
-/// `kern.secrets` for `owner`.
+/// `greed.secrets` for `owner`.
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let secrets = lua.create_table()?;
     let o = owner.clone();
@@ -242,8 +242,8 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             Output::Secret(keep(&places, &name, &value).map(Some))
         }))
     })?;
-    secrets.set("get", jobs::waiting(lua, "kern.secrets.get", start_get)?)?;
-    secrets.set("set", jobs::waiting(lua, "kern.secrets.set", start_set)?)?;
+    secrets.set("get", jobs::waiting(lua, "greed.secrets.get", start_get)?)?;
+    secrets.set("set", jobs::waiting(lua, "greed.secrets.set", start_set)?)?;
     Ok(secrets)
 }
 
@@ -268,12 +268,12 @@ pub(super) fn named(capability: &str) -> Option<&str> {
         .filter(|name| check_name(name).is_ok())
 }
 
-/// Fails if `path` is Kern's secrets file, which plugins may neither read
-/// nor write through Kern's API, only ask for a secret by name.
+/// Fails if `path` is Greed's secrets file, which plugins may neither read
+/// nor write through Greed's API, only ask for a secret by name.
 pub(super) fn guard(lua: &Lua, path: &Path) -> LuaResult<()> {
     match places(lua) {
         Some(places) if super::approvals::same_file(path, &places.file) => Err(
-            mlua::Error::runtime("Kern's secrets file is only read through kern.secrets"),
+            mlua::Error::runtime("Greed's secrets file is only read through greed.secrets"),
         ),
         _ => Ok(()),
     }
@@ -287,15 +287,15 @@ mod tests {
 
     #[test]
     fn secrets_kept_in_the_file_come_back_and_stay_private() {
-        let dir = std::env::temp_dir().join(format!("kern-secrets-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("greed-secrets-{}", std::process::id()));
         let places = Places {
             file: dir.join("secrets.json"),
             keyring: false,
         };
-        assert_eq!(find(&places, "kern-test-nothing"), None);
-        let kept = keep(&places, "kern-test-key", "s3cret").unwrap();
+        assert_eq!(find(&places, "greed-test-nothing"), None);
+        let kept = keep(&places, "greed-test-key", "s3cret").unwrap();
         assert!(kept.ends_with("secrets.json"), "{kept}");
-        assert_eq!(find(&places, "kern-test-key").as_deref(), Some("s3cret"));
+        assert_eq!(find(&places, "greed-test-key").as_deref(), Some("s3cret"));
         let mode = std::fs::metadata(&places.file)
             .unwrap()
             .permissions()

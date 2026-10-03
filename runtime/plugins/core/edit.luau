@@ -1,7 +1,7 @@
 -- Modes and editing commands: insert, append, delete, change, undo, copy,
 -- paste.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local indent = require("./indent")
 local motions = require("./motions")
 local registers = require("./registers")
@@ -10,11 +10,11 @@ local text = require("./text")
 
 local each_range, point = motions.each_range, motions.point
 
-local function from(range: kern.Range): number
+local function from(range: greed.Range): number
 	return math.min(range.anchor, range.head)
 end
 
-local function to(range: kern.Range): number
+local function to(range: greed.Range): number
 	return math.max(range.anchor, range.head)
 end
 
@@ -26,25 +26,25 @@ local appending = false
 -- before it, is undone as one step.
 local function enter_insert(append: boolean?)
 	appending = append == true
-	kern.history.start_group()
-	kern.mode.set("insert")
+	greed.history.start_group()
+	greed.mode.set("insert")
 end
 
 -- `range`, or for a bare cursor sitting on a character (a block), that
 -- character, which commands like copy and paste act on as Helix does.
-local function on_cursor(buffer: kern.Buffer, range: kern.Range): kern.Range
+local function on_cursor(buffer: greed.Buffer, range: greed.Range): greed.Range
 	if range.anchor == range.head and range.head < buffer:len() and motions.on_chars() then
 		return { anchor = range.head, head = buffer:next_char(range.head) }
 	end
 	return range
 end
 
-kern.command({
+greed.command({
 	name = "normal-mode",
 	doc = "Back to the editing style's own mode (normal, in Helix's)",
 	run = function(ctx)
-		kern.history.end_group()
-		kern.mode.set(style.home())
+		greed.history.end_group()
+		greed.mode.set(style.home())
 		if appending and motions.on_chars() then
 			each_range(ctx, function(buffer, range)
 				local start = buffer:line_start(buffer:line_of(range.head))
@@ -57,7 +57,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "insert-mode",
 	doc = "Insert before each selection",
 	run = function(ctx)
@@ -68,7 +68,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "append-mode",
 	doc = "Insert after each selection",
 	run = function(ctx)
@@ -83,7 +83,7 @@ kern.command({
 })
 
 -- Inserts `text` at every cursor; cursors end up after it.
-local function insert_at_heads(ctx: kern.Context, text: string)
+local function insert_at_heads(ctx: greed.Context, text: string)
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			e:insert(range.head, text)
@@ -91,7 +91,7 @@ local function insert_at_heads(ctx: kern.Context, text: string)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "insert-char",
 	doc = "Insert the typed character at each cursor",
 	run = function(ctx)
@@ -105,7 +105,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "insert-newline",
 	doc = "Insert a line break at each cursor, starting the new line at its indent",
 	run = function(ctx)
@@ -113,7 +113,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "delete-back",
 	doc = "Delete the character before each cursor",
 	run = function(ctx)
@@ -129,8 +129,8 @@ kern.command({
 
 -- Adds command `name`, which deletes from each cursor to where
 -- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w.
-local function delete_to_command(name: string, doc: string, target: (kern.Buffer, number) -> number)
-	kern.command({
+local function delete_to_command(name: string, doc: string, target: (greed.Buffer, number) -> number)
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -172,7 +172,7 @@ delete_to_command(
 	end
 )
 
-kern.command({
+greed.command({
 	name = "insert-tab",
 	doc = "Insert a level of indent at each cursor",
 	run = function(ctx)
@@ -180,11 +180,11 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "insert-register",
 	doc = "Insert what the register typed next holds at each cursor",
 	run = function(ctx)
-		local key = kern.next_key()
+		local key = greed.next_key()
 		if utf8.len(key) ~= 1 then
 			return
 		end
@@ -197,7 +197,7 @@ kern.command({
 })
 
 -- Deletes each selection, or the character under each cursor.
-local function delete_selections(ctx: kern.Context)
+local function delete_selections(ctx: greed.Context)
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
@@ -209,27 +209,27 @@ local function delete_selections(ctx: kern.Context)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "open-below",
 	doc = "Open a new line below each cursor and insert there",
 	run = function(ctx)
-		kern.history.start_group()
+		greed.history.start_group()
 		indent.open(ctx.view, true)
 		enter_insert()
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "open-above",
 	doc = "Open a new line above each cursor and insert there",
 	run = function(ctx)
-		kern.history.start_group()
+		greed.history.start_group()
 		indent.open(ctx.view, false)
 		enter_insert()
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "undo",
 	doc = "Undo the last change",
 	run = function(ctx)
@@ -239,7 +239,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "redo",
 	doc = "Redo the last undone change",
 	run = function(ctx)
@@ -250,7 +250,7 @@ kern.command({
 })
 
 -- Copies the text of each selection, one piece per selection.
-local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
+local function copy_selections(ctx: greed.Context, quiet: boolean?): boolean
 	local pieces = {}
 	for _, range in ctx.view:selection().ranges do
 		range = on_cursor(ctx.buffer, range)
@@ -262,7 +262,7 @@ local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 		-- A register picked for this goes unused rather than to the next copy.
 		registers.take()
 		if not quiet then
-			kern.echo("nothing selected")
+			greed.echo("nothing selected")
 		end
 		return false
 	end
@@ -275,8 +275,8 @@ end
 -- the selection. Returns the place and the text to insert, with a line break put in
 -- front when lines go below a last line that has none.
 local function paste_place(
-	buffer: kern.Buffer,
-	range: kern.Range,
+	buffer: greed.Buffer,
+	range: greed.Range,
 	after: boolean,
 	piece: string
 ): (number, string)
@@ -296,7 +296,7 @@ end
 -- Pastes the latest copy before or after each selection, and selects what
 -- was pasted. With as many pieces as selections, each selection gets its
 -- own piece.
-local function paste(ctx: kern.Context, after: boolean)
+local function paste(ctx: greed.Context, after: boolean)
 	local pieces = registers.paste(ctx)
 	if pieces == nil then
 		return
@@ -318,7 +318,7 @@ local function paste(ctx: kern.Context, after: boolean)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "copy",
 	doc = "Copy each selection to the clipboard",
 	run = function(ctx)
@@ -326,7 +326,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "cut",
 	doc = "Copy each selection to the clipboard and delete it",
 	run = function(ctx)
@@ -336,7 +336,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "paste-after",
 	doc = "Paste after each selection",
 	run = function(ctx)
@@ -344,7 +344,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "paste-before",
 	doc = "Paste before each selection",
 	run = function(ctx)
@@ -352,7 +352,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "delete",
 	doc = "Copy each selection and delete it",
 	run = function(ctx)
@@ -361,45 +361,45 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "delete-without-copy",
 	doc = "Delete each selection, leaving the clipboard alone",
 	run = delete_selections,
 })
 
-kern.command({
+greed.command({
 	name = "change",
 	doc = "Copy each selection, delete it and switch to insert mode",
 	run = function(ctx)
-		kern.history.start_group()
+		greed.history.start_group()
 		copy_selections(ctx, true)
 		delete_selections(ctx)
 		enter_insert()
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "change-without-copy",
 	doc = "Delete each selection and switch to insert mode, leaving the clipboard alone",
 	run = function(ctx)
-		kern.history.start_group()
+		greed.history.start_group()
 		delete_selections(ctx)
 		enter_insert()
 	end,
 })
 
-kern.option.define({
+greed.option.define({
 	name = "text-width",
 	doc = "How wide :reflow (and Vim's gq) makes lines",
 	default = 80,
 })
 
-kern.command({
+greed.command({
 	name = "reflow",
 	doc = "Rewrap the lines of each selection to the text width, or the width given",
 	args = { { name = "width", doc = "Columns; the text-width option without" } },
 	run = function(ctx)
-		local width = tonumber(ctx.args[1]) or kern.option.get("text-width") :: number
+		local width = tonumber(ctx.args[1]) or greed.option.get("text-width") :: number
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
 			for _, range in ctx.view:selection().ranges do
@@ -412,7 +412,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "reindent-lines",
 	doc = "Indent each selected line as its language and the lines around it say",
 	run = function(ctx)
@@ -432,7 +432,7 @@ kern.command({
 	end,
 })
 
-kern.option.define({
+greed.option.define({
 	name = "indent",
 	doc = "One level of indent, spaces or a tab, in languages that don't set their own",
 	default = "    ",
@@ -440,7 +440,7 @@ kern.option.define({
 
 -- Replaces the text of each selection (or the character under each cursor)
 -- with `change(text)`, keeping the selections around the new text.
-local function transform(ctx: kern.Context, change: (string) -> string)
+local function transform(ctx: greed.Context, change: (string) -> string)
 	local buffer = ctx.buffer
 	local selection = ctx.view:selection()
 	buffer:edit(function(e)
@@ -468,11 +468,11 @@ local function transform(ctx: kern.Context, change: (string) -> string)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "replace-char",
 	doc = "Replace every selected character with the next one typed",
 	run = function(ctx)
-		local key = kern.next_key()
+		local key = greed.next_key()
 		local char = if key == "enter"
 			then text.line_break(ctx.buffer)
 			elseif key == "tab" then "\t"
@@ -490,7 +490,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "switch-case",
 	doc = "Switch the case of each selected letter",
 	run = function(ctx)
@@ -504,7 +504,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "lowercase",
 	doc = "Make the selections lowercase",
 	run = function(ctx)
@@ -512,7 +512,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "uppercase",
 	doc = "Make the selections uppercase",
 	run = function(ctx)
@@ -520,7 +520,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "indent",
 	doc = "Indent the lines of each selection",
 	run = function(ctx)
@@ -536,7 +536,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "dedent",
 	doc = "Take one level of indent off the lines of each selection",
 	run = function(ctx)
@@ -563,7 +563,7 @@ kern.command({
 -- Adds an empty line above or below each selection's lines, `count` of
 -- them, leaving the selections where they are.
 for _, above in { false, true } do
-	kern.command({
+	greed.command({
 		name = if above then "add-newline-above" else "add-newline-below",
 		doc = if above
 			then "Add an empty line above each selection, staying put"
@@ -588,7 +588,7 @@ for _, above in { false, true } do
 	})
 end
 
-kern.command({
+greed.command({
 	name = "join-lines",
 	doc = "Join the next line onto each cursor's, or the lines of each selection, with one space",
 	run = function(ctx)
@@ -612,7 +612,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "insert-line-start",
 	doc = "Insert at the start of each line, after its indent",
 	run = function(ctx)
@@ -623,7 +623,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "append-line-end",
 	doc = "Insert at the end of each line",
 	run = function(ctx)
@@ -634,7 +634,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "replace-with-copy",
 	doc = "Replace each selection with what was copied",
 	run = function(ctx)

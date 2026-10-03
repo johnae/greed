@@ -1,4 +1,4 @@
-//! Files plugins watch: `kern.fs.watch(path)`, then a "file.changed" event
+//! Files plugins watch: `greed.fs.watch(path)`, then a "file.changed" event
 //! whenever the file changes, from inside the editor or out. The session
 //! looks every half second; a few `stat`s, so there is no watcher thread.
 
@@ -29,7 +29,7 @@ pub(crate) struct Watches {
     files: HashMap<PathBuf, Stamp>,
 }
 
-/// Adds `watch(path)` to `fs`, the `kern.fs` table: starts watching `path`,
+/// Adds `watch(path)` to `fs`, the `greed.fs` table: starts watching `path`,
 /// if it isn't already.
 pub(super) fn add_to(lua: &Lua, fs: &Table) -> LuaResult<()> {
     fs.set(

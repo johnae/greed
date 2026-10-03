@@ -3,7 +3,7 @@
 -- normal mode the cursor is a block on a character, as in Helix: on the
 -- one after a lone `|`, and on a selection's last character going forward.
 
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -132,11 +132,11 @@ test("g s goes to the first character that isn't a space, m m to the matching br
 end)
 
 test("j and k step over folded lines", function(t)
-	local kern = require("@kern")
+	local greed = require("@greed")
 	t:buffer("|# A\none\ntwo\n# B")
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	buffer:decorate("fold", { { from = 0, to = 11, style = "fold", fold = true } })
-	assert(#kern.view():hidden_lines() == 1, "lines 1 and 2 are folded")
+	assert(#greed.view():hidden_lines() == 1, "lines 1 and 2 are folded")
 	t:keys("j")
 	t:expect("# A\none\ntwo\n|# B")
 	t:keys("k")

@@ -270,13 +270,13 @@ mod from_luau {
         h.load_str(
             "term",
             r#"
-            local kern = require("@kern")
+            local greed = require("@greed")
             local seen: { text: string?, code: number? } = {}
-            local t = kern.terminal.spawn({ command = { "sh", "-c", "printf hello; exit 4" }, rows = 3, cols = 20 })
-            kern.on("terminal.output", function(e)
+            local t = greed.terminal.spawn({ command = { "sh", "-c", "printf hello; exit 4" }, rows = 3, cols = 20 })
+            greed.on("terminal.output", function(e)
                 seen.text = e.terminal:screen().rows[1].text
             end)
-            kern.on("terminal.exited", function(e)
+            greed.on("terminal.exited", function(e)
                 seen.code = e.code
                 assert(e.terminal:id() == t:id())
             end)
@@ -298,8 +298,8 @@ mod from_luau {
         h.load_str(
             "term",
             r#"
-            local kern = require("@kern")
-            return kern.terminal.spawn({ command = { "sleep", "30" }, rows = 3, cols = 20 })
+            local greed = require("@greed")
+            return greed.terminal.spawn({ command = { "sleep", "30" }, rows = 3, cols = 20 })
             "#,
         )
         .unwrap();

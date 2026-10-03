@@ -4,9 +4,9 @@
 -- switching between them leaves the others' keys alone.
 --
 --     :style vim
---     require("@kern").option.set("editing-style", "edit")
+--     require("@greed").option.set("editing-style", "edit")
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 export type Style = {
 	name: string,
@@ -21,7 +21,7 @@ export type Style = {
 
 local styles: { [string]: Style } = {}
 
-kern.option.define({
+greed.option.define({
 	name = "editing-style",
 	doc = "How editing works: helix, edit or vim (see :style)",
 	default = "helix",
@@ -29,7 +29,7 @@ kern.option.define({
 
 -- The style in use: the option's, or Helix's if that style isn't known.
 local function current(): Style
-	return styles[kern.option.get("editing-style") :: string] or styles.helix
+	return styles[greed.option.get("editing-style") :: string] or styles.helix
 end
 
 local M = {}
@@ -37,8 +37,8 @@ local M = {}
 --- Adds a style. If the user already chose it, it starts now.
 function M.define(style: Style)
 	styles[style.name] = style
-	if kern.option.get("editing-style") == style.name then
-		kern.mode.set(style.mode)
+	if greed.option.get("editing-style") == style.name then
+		greed.mode.set(style.mode)
 	end
 end
 
@@ -78,7 +78,7 @@ end
 M.kind_modes = {} :: { [string]: string }
 
 --- The mode to be in with `view` focused: its buffer kind's, or `home()`.
-function M.home_for(view: kern.View): string
+function M.home_for(view: greed.View): string
 	return M.kind_modes[view:buffer():kind()] or M.home()
 end
 
@@ -105,7 +105,7 @@ function M.set(name: string)
 	if styles[name] == nil then
 		error(`no editing style called {name}; there's {table.concat(M.names(), ", ")}`, 0)
 	end
-	kern.option.set("editing-style", name)
+	greed.option.set("editing-style", name)
 end
 
 function M.names(): { string }
@@ -116,19 +116,19 @@ function M.names(): { string }
 	return names
 end
 
-kern.on("option.changed", function(event)
+greed.on("option.changed", function(event)
 	if event.name ~= "editing-style" then
 		return
 	end
 	if styles[event.value :: string] == nil then
-		kern.echo(`no editing style called {event.value}; using {current().name}`)
+		greed.echo(`no editing style called {event.value}; using {current().name}`)
 	end
-	kern.history.end_group()
-	kern.mode.set(M.home())
+	greed.history.end_group()
+	greed.mode.set(M.home())
 end)
 
 -- A style goes with its plugin, and Helix's takes over if it was in use.
-kern.on("plugin.unloaded", function(event)
+greed.on("plugin.unloaded", function(event)
 	local using = current()
 	for name, style in styles do
 		if style.plugin == event.name then
@@ -136,22 +136,22 @@ kern.on("plugin.unloaded", function(event)
 		end
 	end
 	if current() ~= using then
-		kern.mode.set(M.home())
+		greed.mode.set(M.home())
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "style",
 	doc = "Switch editing style: helix, edit or vim",
 	args = { { name = "style", doc = "The style", complete = "editing-style" } },
 	run = function(ctx)
 		local name = ctx.args[1]
 		if name == nil then
-			kern.echo(`editing style: {current().name} (there's {table.concat(M.names(), ", ")})`)
+			greed.echo(`editing style: {current().name} (there's {table.concat(M.names(), ", ")})`)
 			return
 		end
 		M.set(name)
-		kern.echo(`editing style: {name}`)
+		greed.echo(`editing style: {name}`)
 	end,
 })
 

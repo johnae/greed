@@ -24,8 +24,8 @@ fn focus(host: &Host) -> ViewId {
 }
 
 const WRAP: &str = r#"
-local kern = require("@kern")
-kern.command {
+local greed = require("@greed")
+greed.command {
   name = "wrap-in-some",
   doc = "Wrap each selection in Some(...)",
   run = function(ctx)
@@ -37,7 +37,7 @@ kern.command {
     end)
   end,
 }
-kern.keymap.bind("normal", { ["m s"] = "wrap-in-some" })
+greed.keymap.bind("normal", { ["m s"] = "wrap-in-some" })
 "#;
 
 #[test]
@@ -83,14 +83,14 @@ fn insert_mode_fallback_gets_the_typed_char() {
     h.load_str(
         "insert",
         r#"
-        local kern = require("@kern")
-        kern.command { name = "insert-char", run = function(ctx)
+        local greed = require("@greed")
+        greed.command { name = "insert-char", run = function(ctx)
           local pos = ctx.view:selection().ranges[1].head
           ctx.buffer:edit(function(e) e:insert(pos, ctx.char) end)
         end }
-        kern.command { name = "insert-mode", run = function() kern.mode.set("insert") end }
-        kern.keymap.bind("normal", { i = "insert-mode" })
-        kern.keymap.fallback("insert", "insert-char")
+        greed.command { name = "insert-mode", run = function() greed.mode.set("insert") end }
+        greed.keymap.bind("normal", { i = "insert-mode" })
+        greed.keymap.fallback("insert", "insert-char")
         "#,
     )
     .unwrap();
@@ -113,7 +113,7 @@ fn errors_name_the_plugin_and_line() {
     let h = host("");
     h.load_str(
         "broken",
-        "local kern = require('@kern')\nkern.command { name = 'boom', run = function()\n  error('nope')\nend }",
+        "local greed = require('@greed')\ngreed.command { name = 'boom', run = function()\n  error('nope')\nend }",
     )
     .unwrap();
     let err = h.run("boom").unwrap_err().to_string();
@@ -137,7 +137,7 @@ fn unknown_commands_are_reported() {
     assert!(matches!(h.run("nope"), Err(HostError::UnknownCommand(_))));
     h.load_str(
         "k",
-        "require('@kern').keymap.bind('normal', { x = 'missing' })",
+        "require('@greed').keymap.bind('normal', { x = 'missing' })",
     )
     .unwrap();
     assert!(matches!(
@@ -152,7 +152,7 @@ fn reloading_replaces_registrations() {
     h.load_str("p", WRAP).unwrap();
     h.load_str(
         "p",
-        "require('@kern').command { name = 'other', run = function() end }",
+        "require('@greed').command { name = 'other', run = function() end }",
     )
     .unwrap();
     h.with_registry(|reg| {
@@ -169,13 +169,13 @@ fn reloading_replaces_registrations() {
 
 #[test]
 fn plugin_directories_load_with_local_requires() {
-    let dir = std::env::temp_dir().join(format!("kern-plugin-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-plugin-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("plugin.toml"), "name = \"greeter\"\n").unwrap();
     std::fs::write(dir.join("words.luau"), "return { hello = 'hi there' }\n").unwrap();
     std::fs::write(
         dir.join("init.luau"),
-        "local kern = require('@kern')\nlocal words = require('@self/words')\nkern.command { name = 'greet', run = function() kern.echo(words.hello) end }\n",
+        "local greed = require('@greed')\nlocal words = require('@self/words')\ngreed.command { name = 'greet', run = function() greed.echo(words.hello) end }\n",
     )
     .unwrap();
 
@@ -193,7 +193,7 @@ fn eval_returns_values_and_keeps_globals() {
     assert_eq!(h.eval("x = 40").unwrap(), "");
     assert_eq!(h.eval("x + 2").unwrap(), "42");
     assert_eq!(
-        h.eval("require('@kern').view():buffer():text()").unwrap(),
+        h.eval("require('@greed').view():buffer():text()").unwrap(),
         "hello"
     );
 }
@@ -204,13 +204,13 @@ fn mode_changes_emit_an_event() {
     h.load_str(
         "watch",
         r#"
-        local kern = require("@kern")
-        kern.on("mode.changed", function(ev) kern.echo(ev.from .. "->" .. ev.to) end)
+        local greed = require("@greed")
+        greed.on("mode.changed", function(ev) greed.echo(ev.from .. "->" .. ev.to) end)
         "#,
     )
     .unwrap();
-    h.eval("require('@kern').mode.set('insert')").unwrap();
-    h.eval("require('@kern').mode.set('insert')").unwrap();
+    h.eval("require('@greed').mode.set('insert')").unwrap();
+    h.eval("require('@greed').mode.set('insert')").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["normal->insert"]);
 }
 
@@ -219,21 +219,21 @@ fn options_round_trip_through_luau() {
     let h = host("");
     h.load_str(
         "opts",
-        "local o = require('@kern').option\no.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }",
+        "local o = require('@greed').option\no.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }",
     )
     .unwrap();
     assert_eq!(
-        h.eval("require('@kern').option.get('tab-width')").unwrap(),
+        h.eval("require('@greed').option.get('tab-width')").unwrap(),
         "4"
     );
-    h.eval("require('@kern').option.set('tab-width', 2)")
+    h.eval("require('@greed').option.set('tab-width', 2)")
         .unwrap();
     assert_eq!(
         h.with_registry(|reg| reg.option("tab-width").cloned()),
         Some(Value::Int(2))
     );
     assert!(
-        h.eval("require('@kern').option.set('tab-width', 'x')")
+        h.eval("require('@greed').option.set('tab-width', 'x')")
             .is_err()
     );
 }
@@ -243,7 +243,7 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
     let h = host("aé\nb\r\nlast");
     let eval = |s: &str| {
         h.eval(&format!(
-            "(function() local b = require('@kern').view():buffer(); return {s} end)()"
+            "(function() local b = require('@greed').view():buffer(); return {s} end)()"
         ))
         .unwrap()
     };
@@ -259,11 +259,11 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
     assert_eq!(eval("b:prev_char(3)"), "1");
     assert_eq!(eval("b:slice(0, 3)"), "aé");
     assert!(
-        h.eval("require('@kern').view():buffer():char_at(2)")
+        h.eval("require('@greed').view():buffer():char_at(2)")
             .is_err()
     );
     assert!(
-        h.eval("require('@kern').view():buffer():slice(0, 99)")
+        h.eval("require('@greed').view():buffer():slice(0, 99)")
             .is_err()
     );
 }
@@ -271,19 +271,21 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
 #[test]
 fn selections_round_trip_and_are_validated() {
     let h = host("hello world");
-    h.eval("require('@kern').view():set_selection({ ranges = { { anchor = 0, head = 5 }, { anchor = 6, head = 11 } }, primary = 2 })")
+    h.eval("require('@greed').view():set_selection({ ranges = { { anchor = 0, head = 5 }, { anchor = 6, head = 11 } }, primary = 2 })")
         .unwrap();
     let sel = selection(&h);
     assert_eq!(sel.ranges(), &[Range::new(0, 5), Range::new(6, 11)]);
     assert_eq!(sel.primary(), Range::new(6, 11));
     assert_eq!(
-        h.eval("require('@kern').view():selection().primary")
+        h.eval("require('@greed').view():selection().primary")
             .unwrap(),
         "2"
     );
     assert!(
-        h.eval("require('@kern').view():set_selection({ ranges = { { anchor = 0, head = 50 } } })")
-            .is_err()
+        h.eval(
+            "require('@greed').view():set_selection({ ranges = { { anchor = 0, head = 50 } } })"
+        )
+        .is_err()
     );
 }
 
@@ -292,7 +294,7 @@ fn overlapping_edits_are_rejected_without_changing_anything() {
     let h = host("hello");
     let err = h
         .eval(
-            "require('@kern').view():buffer():edit(function(e) e:delete(0, 3) e:delete(2, 4) end)",
+            "require('@greed').view():buffer():edit(function(e) e:delete(0, 3) e:delete(2, 4) end)",
         )
         .unwrap_err();
     assert!(err.to_string().contains("overlap"), "{err}");
@@ -304,7 +306,7 @@ fn plugin_edits_are_attributed_to_the_plugin() {
     let h = host("");
     h.load_str(
         "bot",
-        "require('@kern').view():buffer():edit(function(e) e:insert(0, 'hi') end)",
+        "require('@greed').view():buffer():edit(function(e) e:insert(0, 'hi') end)",
     )
     .unwrap();
     let author = h.with_editor(|ed| {
@@ -319,18 +321,18 @@ fn plugin_edits_are_attributed_to_the_plugin() {
 #[test]
 fn views_undo_and_redo() {
     let h = host("");
-    h.eval("require('@kern').view():buffer():edit(function(e) e:insert(0, 'x') end)")
+    h.eval("require('@greed').view():buffer():edit(function(e) e:insert(0, 'x') end)")
         .unwrap();
-    assert_eq!(h.eval("require('@kern').view():undo()").unwrap(), "true");
+    assert_eq!(h.eval("require('@greed').view():undo()").unwrap(), "true");
     assert_eq!(text(&h), "");
-    assert_eq!(h.eval("require('@kern').view():undo()").unwrap(), "false");
-    assert_eq!(h.eval("require('@kern').view():redo()").unwrap(), "true");
+    assert_eq!(h.eval("require('@greed').view():undo()").unwrap(), "false");
+    assert_eq!(h.eval("require('@greed').view():redo()").unwrap(), "true");
     assert_eq!(text(&h), "x");
 }
 
 /// Writes a plugin called `name` with `files` into a fresh temp directory.
 fn plugin_dir(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("kern-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     for (path, source) in files {
         let path = dir.join(path);
@@ -348,7 +350,7 @@ fn requires_resolve_like_luau_tooling() {
         &[
             (
                 "init.luau",
-                "local a = require('@self/lib/a')\nrequire('@kern').echo(a.name, a.b)",
+                "local a = require('@self/lib/a')\nrequire('@greed').echo(a.name, a.b)",
             ),
             ("lib/a.luau", "return { name = 'a', b = require('./b') }"),
             ("lib/b.luau", "return 'b'"),
@@ -363,7 +365,7 @@ fn requires_resolve_like_luau_tooling() {
 #[test]
 fn bad_requires_explain_themselves() {
     let cases = [
-        ("bare", "require('kern')", "use \"@kern\""),
+        ("bare", "require('greed')", "use \"@greed\""),
         (
             "self-outside-init",
             "require('./lib/x')",
@@ -371,7 +373,7 @@ fn bad_requires_explain_themselves() {
         ),
         (
             "test-api",
-            "require('@kern/test')",
+            "require('@greed/test')",
             "only available in test files",
         ),
         ("missing", "require('@self/nope')", "no such file"),
@@ -398,12 +400,12 @@ fn bad_requires_explain_themselves() {
 #[test]
 fn scratch_buffers_float_and_go_away_when_closed() {
     let h = host("main");
-    h.eval("b = require('@kern').create_buffer('picker', 'one\\ntwo')")
+    h.eval("b = require('@greed').create_buffer('picker', 'one\\ntwo')")
         .unwrap();
-    h.eval("v = require('@kern').float(b, { title = 'Pick', width = 30, height = '50%' })")
+    h.eval("v = require('@greed').float(b, { title = 'Pick', width = 30, height = '50%' })")
         .unwrap();
     assert_eq!(
-        h.eval("require('@kern').view():buffer():kind()").unwrap(),
+        h.eval("require('@greed').view():buffer():kind()").unwrap(),
         "picker"
     );
     h.with_editor(|ed| {
@@ -414,7 +416,7 @@ fn scratch_buffers_float_and_go_away_when_closed() {
     });
     assert_eq!(h.eval("v:close()").unwrap(), "true");
     assert_eq!(
-        h.eval("require('@kern').view():buffer():text()").unwrap(),
+        h.eval("require('@greed').view():buffer():text()").unwrap(),
         "main"
     );
     let err = h.eval("b:text()").unwrap_err().to_string();
@@ -422,8 +424,10 @@ fn scratch_buffers_float_and_go_away_when_closed() {
     let err = h.eval("v:selection()").unwrap_err().to_string();
     assert!(err.contains("this view was closed"), "{err}");
     assert!(
-        h.eval("require('@kern').float(require('@kern').create_buffer('x'), { anchor = 'left' })")
-            .is_err()
+        h.eval(
+            "require('@greed').float(require('@greed').create_buffer('x'), { anchor = 'left' })"
+        )
+        .is_err()
     );
 }
 
@@ -432,12 +436,12 @@ fn edits_and_undo_announce_buffer_changes() {
     let h = host("");
     h.load_str(
         "watch",
-        "local kern = require('@kern')\nkern.on('buffer.changed', function(ev) kern.echo('changed ' .. ev.buffer:text()) end)",
+        "local greed = require('@greed')\ngreed.on('buffer.changed', function(ev) greed.echo('changed ' .. ev.buffer:text()) end)",
     )
     .unwrap();
-    h.eval("require('@kern').view():buffer():edit(function(e) e:insert(0, 'x') end)")
+    h.eval("require('@greed').view():buffer():edit(function(e) e:insert(0, 'x') end)")
         .unwrap();
-    h.eval("require('@kern').view():undo()").unwrap();
+    h.eval("require('@greed').view():undo()").unwrap();
     assert_eq!(
         h.with_editor_mut(Editor::take_messages),
         ["changed x", "changed "]
@@ -447,23 +451,23 @@ fn edits_and_undo_announce_buffer_changes() {
 #[test]
 fn buffers_off_screen_can_be_edited() {
     let h = host("");
-    h.eval("s = require('@kern').create_buffer('scratch', 'abc')")
+    h.eval("s = require('@greed').create_buffer('scratch', 'abc')")
         .unwrap();
     h.eval("s:edit(function(e) e:insert(3, 'd') end)").unwrap();
     assert_eq!(h.eval("s:text()").unwrap(), "abcd");
-    assert_eq!(h.eval("#require('@kern').buffers()").unwrap(), "2");
+    assert_eq!(h.eval("#require('@greed').buffers()").unwrap(), "2");
 }
 
 #[test]
 fn open_shows_a_file_in_the_main_view() {
     let dir = plugin_dir("open-files", &[("notes.md", "# Notes")]);
     let h = host("start");
-    h.eval("b = require('@kern').create_buffer('picker')")
+    h.eval("b = require('@greed').create_buffer('picker')")
         .unwrap();
-    h.eval("require('@kern').float(b)").unwrap();
+    h.eval("require('@greed').float(b)").unwrap();
     let path = dir.join("notes.md");
     h.eval(&format!(
-        "require('@kern').open({:?})",
+        "require('@greed').open({:?})",
         path.to_str().unwrap()
     ))
     .unwrap();
@@ -477,7 +481,7 @@ fn commands_are_listed_with_docs_and_owners() {
     let h = host("");
     h.load_str("mine", WRAP).unwrap();
     let listed = h
-        .eval("(function() local c = require('@kern').commands()[1] return c.name .. '|' .. c.doc .. '|' .. c.owner end)()")
+        .eval("(function() local c = require('@greed').commands()[1] return c.name .. '|' .. c.doc .. '|' .. c.owner end)()")
         .unwrap();
     assert_eq!(listed, "wrap-in-some|Wrap each selection in Some(...)|mine");
 }
@@ -487,7 +491,7 @@ fn fuzzy_matching_ranks_best_first() {
     let h = host("");
     let ranked = |q: &str| {
         h.eval(&format!(
-            "table.concat(require('@kern').fuzzy({q:?}, {{ 'README.md', 'src/main.rs', 'Cargo.toml', 'src/lib.rs' }}), ',')"
+            "table.concat(require('@greed').fuzzy({q:?}, {{ 'README.md', 'src/main.rs', 'Cargo.toml', 'src/lib.rs' }}), ',')"
         ))
         .unwrap()
     };
@@ -512,7 +516,7 @@ fn files_skip_hidden_and_ignored_ones() {
     let h = host("");
     let listed = h
         .eval(&format!(
-            "table.concat(require('@kern').files({:?}), ',')",
+            "table.concat(require('@greed').files({:?}), ',')",
             dir.to_str().unwrap()
         ))
         .unwrap();
@@ -523,7 +527,7 @@ fn files_skip_hidden_and_ignored_ones() {
 /// Evaluates `source` with `DIR` set to `dir`.
 fn eval_in(h: &Host, dir: &std::path::Path, source: &str) -> String {
     h.eval(&format!(
-        "local kern = require('@kern')\nlocal DIR = {:?}\n{source}",
+        "local greed = require('@greed')\nlocal DIR = {:?}\n{source}",
         dir.to_str().unwrap()
     ))
     .unwrap()
@@ -549,7 +553,7 @@ fn directories_list_folders_first_and_skip_hidden_and_ignored_entries() {
             &dir,
             &format!(
                 "local out = {{}}
-                 for _, e in kern.fs.list(DIR{opts}) do
+                 for _, e in greed.fs.list(DIR{opts}) do
                    table.insert(out, if e.dir then e.name .. '/' else e.name)
                  end
                  return table.concat(out, ',')"
@@ -564,7 +568,7 @@ fn directories_list_folders_first_and_skip_hidden_and_ignored_entries() {
     let missing = eval_in(
         &h,
         &dir,
-        "local list, err = kern.fs.list(DIR .. '/nope') return tostring(list) .. ' ' .. tostring(err ~= nil)",
+        "local list, err = greed.fs.list(DIR .. '/nope') return tostring(list) .. ' ' .. tostring(err ~= nil)",
     );
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(missing, "nil true");
@@ -578,7 +582,7 @@ fn files_read_whole_or_up_to_a_limit() {
         eval_in(
             &h,
             &dir,
-            &format!("local text, err = kern.fs.read(DIR .. '/a.txt'{args}) return text or err"),
+            &format!("local text, err = greed.fs.read(DIR .. '/a.txt'{args}) return text or err"),
         )
     };
     assert_eq!(read(""), "héllo\nworld\n");
@@ -588,15 +592,15 @@ fn files_read_whole_or_up_to_a_limit() {
     let missing = eval_in(
         &h,
         &dir,
-        "local text, err = kern.fs.read(DIR .. '/nope') return tostring(text) .. ' ' .. err",
+        "local text, err = greed.fs.read(DIR .. '/nope') return tostring(text) .. ' ' .. err",
     );
     assert!(missing.starts_with("nil "), "{missing}");
 
     let stat = eval_in(
         &h,
         &dir,
-        "local f, d = kern.fs.stat(DIR .. '/a.txt'), kern.fs.stat(DIR)
-         return f.kind .. ' ' .. f.size .. ' ' .. d.kind .. ' ' .. tostring(kern.fs.stat(DIR .. '/nope'))",
+        "local f, d = greed.fs.stat(DIR .. '/a.txt'), greed.fs.stat(DIR)
+         return f.kind .. ' ' .. f.size .. ' ' .. d.kind .. ' ' .. tostring(greed.fs.stat(DIR .. '/nope'))",
     );
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(stat, "file 13 dir nil");
@@ -620,18 +624,18 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
         h.load_str(
             "grep-test",
             &format!(
-                "local kern = require('@kern')
+                "local greed = require('@greed')
                  local DIR = {:?}
-                 kern.command {{ name = 'grep-test', run = function()
-                   local found, err = kern.fs.grep({args})
-                   if not found then kern.echo(err) return end
+                 greed.command {{ name = 'grep-test', run = function()
+                   local found, err = greed.fs.grep({args})
+                   if not found then greed.echo(err) return end
                    local out = {{}}
                    for _, m in found do
                      local spans = {{}}
                      for _, r in m.matches do table.insert(spans, r.from .. '-' .. r.to) end
                      table.insert(out, `{{m.path}}:{{m.line}}:{{m.text}}:{{table.concat(spans, ' ')}}`)
                    end
-                   kern.echo(table.concat(out, ','))
+                   greed.echo(table.concat(out, ','))
                  end }}",
                 dir.to_str().unwrap()
             ),
@@ -668,12 +672,12 @@ fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
     let written = eval_in(
         &h,
         &dir,
-        "local ok = kern.fs.write(DIR .. '/new.txt', 'hi\\n')
-         local nested = kern.fs.write(DIR .. '/new/deeper/x.txt', '')
-         local _, err = kern.fs.write(DIR .. '/a.txt/x.txt', '')
-         return tostring(ok) .. ' ' .. tostring(nested) .. ' ' .. tostring(err ~= nil) .. ' ' .. kern.fs.read(DIR .. '/new.txt')",
+        "local ok = greed.fs.write(DIR .. '/new.txt', 'hi\\n')
+         local nested = greed.fs.write(DIR .. '/new/deeper/x.txt', '')
+         local _, err = greed.fs.write(DIR .. '/a.txt/x.txt', '')
+         return tostring(ok) .. ' ' .. tostring(nested) .. ' ' .. tostring(err ~= nil) .. ' ' .. greed.fs.read(DIR .. '/new.txt')",
     );
-    let cwd = eval_in(&h, &dir, "return kern.fs.cwd()");
+    let cwd = eval_in(&h, &dir, "return greed.fs.cwd()");
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(written, "true true true hi\n");
     assert_eq!(cwd, std::env::current_dir().unwrap().to_str().unwrap());
@@ -685,7 +689,7 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     assert_eq!(h.status_line(None, 80).unwrap(), None);
     h.load_str(
         "bar",
-        "require('@kern').statusline(function(s) return { left = { { text = s.mode, style = 'ui.statusline.mode' } }, right = { s.message or '-' } } end)",
+        "require('@greed').statusline(function(s) return { left = { { text = s.mode, style = 'ui.statusline.mode' } }, right = { s.message or '-' } } end)",
     )
     .unwrap();
     let line = h.status_line(Some("hi"), 80).unwrap().unwrap();
@@ -699,7 +703,7 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     assert_eq!(h.status_line(None, 80).unwrap(), None);
 
     // Any style name works; it's drawn over the status line's own style.
-    h.load_str("loud", "require('@kern').statusline(function() return { left = { { text = 'x', style = 'loud' } } } end)")
+    h.load_str("loud", "require('@greed').statusline(function() return { left = { { text = 'x', style = 'loud' } } } end)")
         .unwrap();
     let line = h.status_line(None, 80).unwrap().unwrap();
     let names: Vec<&str> = line.left[0]
@@ -723,7 +727,7 @@ fn plugins_require_the_plugins_they_declare() {
         "app",
         &[(
             "init.luau",
-            "require('@kern').echo(require('@lib').greet())",
+            "require('@greed').echo(require('@lib').greet())",
         )],
     );
     std::fs::write(
@@ -762,7 +766,7 @@ fn running_a_command_is_announced() {
     let h = host("");
     h.load_str(
         "log",
-        "local kern = require('@kern')\nkern.command { name = 'noop', run = function() end }\nkern.on('command.run', function(ev) kern.echo('ran ' .. ev.name) end)",
+        "local greed = require('@greed')\ngreed.command { name = 'noop', run = function() end }\ngreed.on('command.run', function(ev) greed.echo('ran ' .. ev.name) end)",
     )
     .unwrap();
     h.run("noop").unwrap();
@@ -776,7 +780,7 @@ fn a_single_file_loads_as_a_plugin_with_local_requires() {
         &[
             (
                 "init.luau",
-                "require('@kern').echo(require('@self/helpers').name)",
+                "require('@greed').echo(require('@self/helpers').name)",
             ),
             ("helpers.luau", "return { name = 'from helpers' }"),
         ],
@@ -788,11 +792,11 @@ fn a_single_file_loads_as_a_plugin_with_local_requires() {
 }
 
 const SLEEPY: &str = r#"
-local kern = require("@kern")
-kern.command { name = "later", run = function(ctx)
-  kern.echo("before")
-  kern.sleep(500)
-  kern.echo("after")
+local greed = require("@greed")
+greed.command { name = "later", run = function(ctx)
+  greed.echo("before")
+  greed.sleep(500)
+  greed.echo("after")
   ctx.buffer:edit(function(e) e:insert(0, "!") end)
 end }
 "#;
@@ -819,19 +823,22 @@ fn commands_can_wait_without_blocking() {
 #[test]
 fn waiting_only_works_inside_commands() {
     let h = host("");
-    let err = h.eval("require('@kern').sleep(1)").unwrap_err().to_string();
+    let err = h
+        .eval("require('@greed').sleep(1)")
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("can only be used in a command"), "{err}");
 
     h.load_str(
         "raw",
-        "local kern = require('@kern')
-         kern.command { name = 'raw', run = function() coroutine.yield('x') end }
-         kern.command { name = 'turn', run = function() coroutine.yield() kern.echo('carried on') end }",
+        "local greed = require('@greed')
+         greed.command { name = 'raw', run = function() coroutine.yield('x') end }
+         greed.command { name = 'turn', run = function() coroutine.yield() greed.echo('carried on') end }",
     )
     .unwrap();
     let err = h.run("raw").unwrap_err().to_string();
     assert!(
-        err.contains("can only wait through kern functions"),
+        err.contains("can only wait through greed functions"),
         "{err}"
     );
     // A bare yield gives the editor a turn, then carries on.
@@ -847,19 +854,19 @@ fn plugins_make_read_only_buffers_in_a_language() {
     h.load_str(
         "viewer",
         r#"
-        local kern = require("@kern")
-        local buffer = kern.create_buffer("preview", "fn main() {}", { readonly = true, language = "rust" })
-        kern.float(buffer)
-        kern.command { name = "type-x", run = function(ctx)
+        local greed = require("@greed")
+        local buffer = greed.create_buffer("preview", "fn main() {}", { readonly = true, language = "rust" })
+        greed.float(buffer)
+        greed.command { name = "type-x", run = function(ctx)
           ctx.buffer:edit(function(e) e:insert(0, "x") end)
         end }
-        kern.command { name = "comment-out", run = function()
+        greed.command { name = "comment-out", run = function()
           buffer:edit(function(e) e:insert(0, "// ") end)
         end }
-        kern.command { name = "describe", run = function()
-          kern.echo(tostring(buffer:readonly()) .. " " .. tostring(buffer:language()))
+        greed.command { name = "describe", run = function()
+          greed.echo(tostring(buffer:readonly()) .. " " .. tostring(buffer:language()))
         end }
-        kern.command { name = "unlock", run = function()
+        greed.command { name = "unlock", run = function()
           buffer:set_readonly(false)
           buffer:set_language(nil)
         end }
@@ -881,7 +888,7 @@ fn plugins_make_read_only_buffers_in_a_language() {
     );
     assert_eq!(
         h.eval(
-            "require('@kern').language_of('src/a.rs'), require('@kern').language_of('Makefile')"
+            "require('@greed').language_of('src/a.rs'), require('@greed').language_of('Makefile')"
         )
         .unwrap(),
         "rust\tnil"
@@ -894,20 +901,20 @@ fn commands_get_arguments_and_force() {
     h.load_str(
         "greeter",
         r#"
-        local kern = require("@kern")
-        kern.command {
+        local greed = require("@greed")
+        greed.command {
           name = "greet",
           doc = "Say hello",
           args = { { name = "who", doc = "Who to greet", complete = "buffer" } },
           run = function(ctx)
-            kern.echo(table.concat(ctx.args, "+") .. " " .. tostring(ctx.force))
+            greed.echo(table.concat(ctx.args, "+") .. " " .. tostring(ctx.force))
           end,
         }
-        kern.keymap.bind("normal", { g = "greet" })
+        greed.keymap.bind("normal", { g = "greet" })
         "#,
     )
     .unwrap();
-    h.eval("require('@kern').run('greet', { args = { 'a', 'b' }, force = true })")
+    h.eval("require('@greed').run('greet', { args = { 'a', 'b' }, force = true })")
         .unwrap();
     h.press_keys("g").unwrap();
     assert_eq!(
@@ -916,7 +923,7 @@ fn commands_get_arguments_and_force() {
     );
     let args = h
         .eval(
-            "local a = require('@kern').commands()[1].args[1]
+            "local a = require('@greed').commands()[1].args[1]
              return a.name .. ' ' .. a.doc .. ' ' .. a.complete",
         )
         .unwrap();
@@ -929,17 +936,17 @@ fn plugins_evaluate_code_in_a_shared_scratch_environment() {
     h.load_str(
         "calc",
         r#"
-        local kern = require("@kern")
-        kern.command { name = "calc", run = function(ctx)
-          local ok, result = kern.eval(ctx.args[1])
-          kern.echo(tostring(ok) .. ":" .. result)
+        local greed = require("@greed")
+        greed.command { name = "calc", run = function(ctx)
+          local ok, result = greed.eval(ctx.args[1])
+          greed.echo(tostring(ok) .. ":" .. result)
         end }
         "#,
     )
     .unwrap();
     let calc = |code: &str| {
         h.eval(&format!(
-            "require('@kern').run('calc', {{ args = {{ {code:?} }} }})"
+            "require('@greed').run('calc', {{ args = {{ {code:?} }} }})"
         ))
         .unwrap();
         h.with_editor_mut(Editor::take_messages).pop().unwrap()
@@ -955,9 +962,9 @@ fn plugins_evaluate_code_in_a_shared_scratch_environment() {
 #[test]
 fn floats_change_size_and_title_after_they_open() {
     let h = host("main");
-    h.eval("b = require('@kern').create_buffer('prompt', '')")
+    h.eval("b = require('@greed').create_buffer('prompt', '')")
         .unwrap();
-    h.eval("v = require('@kern').float(b, { title = 'Run', width = 30, height = 3, anchor = 'bottom' })")
+    h.eval("v = require('@greed').float(b, { title = 'Run', width = 30, height = 3, anchor = 'bottom' })")
         .unwrap();
     h.eval("v:configure({ height = 8, title = 'Run (2)' })")
         .unwrap();
@@ -970,12 +977,12 @@ fn floats_change_size_and_title_after_they_open() {
         assert_eq!(float.options.anchor, greed_core::Anchor::Bottom);
     });
     let err = h
-        .eval("require('@kern').view():configure({ height = 2 })")
+        .eval("require('@greed').view():configure({ height = 2 })")
         .err();
     assert!(err.is_none(), "the float is focused");
     h.eval("v:close()").unwrap();
     let err = h
-        .eval("require('@kern').view():configure({ height = 2 })")
+        .eval("require('@greed').view():configure({ height = 2 })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("floating"), "{err}");
@@ -986,7 +993,7 @@ fn options_are_listed_with_their_docs_and_values() {
     let h = host("");
     h.load_str(
         "opts",
-        "local o = require('@kern').option
+        "local o = require('@greed').option
          o.define { name = 'wrap', doc = 'Wrap long lines', default = true }
          o.define { name = 'tab-width', doc = 'Spaces per tab', default = 4 }
          o.set('tab-width', 2)",
@@ -995,7 +1002,7 @@ fn options_are_listed_with_their_docs_and_values() {
     let listed = h
         .eval(
             "local out = {}
-             for _, o in require('@kern').option.list() do
+             for _, o in require('@greed').option.list() do
                table.insert(out, o.name .. '=' .. tostring(o.value) .. ' (' .. o.doc .. ')')
              end
              return table.concat(out, ', ')",
@@ -1010,9 +1017,9 @@ fn options_are_listed_with_their_docs_and_values() {
 #[test]
 fn plugins_set_the_cursor_shape_per_mode() {
     let h = host("");
-    h.eval("require('@kern').mode.cursor('edit', 'bar')")
+    h.eval("require('@greed').mode.cursor('edit', 'bar')")
         .unwrap();
-    h.eval("require('@kern').mode.cursor('replace', 'underline')")
+    h.eval("require('@greed').mode.cursor('replace', 'underline')")
         .unwrap();
     h.with_editor_mut(|ed| {
         ed.set_mode("edit");
@@ -1021,7 +1028,7 @@ fn plugins_set_the_cursor_shape_per_mode() {
         assert_eq!(ed.cursor_shape(), greed_core::CursorShape::Underline);
     });
     let err = h
-        .eval("require('@kern').mode.cursor('edit', 'blob')")
+        .eval("require('@greed').mode.cursor('edit', 'blob')")
         .unwrap_err()
         .to_string();
     assert!(err.contains("block"), "{err}");
@@ -1032,19 +1039,19 @@ fn plugins_unbind_keys_and_clear_layers() {
     let h = host("");
     h.load_str(
         "base",
-        "local kern = require('@kern')
-         kern.keymap.bind('normal', { w = 'next-word', x = 'select-line', ['g g'] = 'goto-start' })",
+        "local greed = require('@greed')
+         greed.keymap.bind('normal', { w = 'next-word', x = 'select-line', ['g g'] = 'goto-start' })",
     )
     .unwrap();
     h.load_str(
         "mine",
-        "local kern = require('@kern')
-         kern.keymap.unbind('normal', { 'w' })
-         kern.keymap.clear({ mode = 'insert' })",
+        "local greed = require('@greed')
+         greed.keymap.unbind('normal', { 'w' })
+         greed.keymap.clear({ mode = 'insert' })",
     )
     .unwrap();
     let resolve = |keys: &str| {
-        h.eval(&format!("require('@kern').keymap.resolve({keys:?})"))
+        h.eval(&format!("require('@greed').keymap.resolve({keys:?})"))
             .unwrap()
     };
     assert_eq!(resolve("w"), "nil\tfalse");
@@ -1052,9 +1059,9 @@ fn plugins_unbind_keys_and_clear_layers() {
 
     h.load_str(
         "vim",
-        "local kern = require('@kern')
-         kern.keymap.clear('normal')
-         kern.keymap.bind('normal', { ['d d'] = 'delete-line' })",
+        "local greed = require('@greed')
+         greed.keymap.clear('normal')
+         greed.keymap.bind('normal', { ['d d'] = 'delete-line' })",
     )
     .unwrap();
     assert_eq!(resolve("x"), "nil\tfalse");
@@ -1070,10 +1077,10 @@ fn commands_get_the_count_typed_before_them() {
     let h = host("");
     h.load_str(
         "counter",
-        "local kern = require('@kern')
-         kern.keymap.counts('normal')
-         kern.command { name = 'show', run = function(ctx) kern.echo(tostring(ctx.count)) end }
-         kern.keymap.bind('normal', { s = 'show' })",
+        "local greed = require('@greed')
+         greed.keymap.counts('normal')
+         greed.command { name = 'show', run = function(ctx) greed.echo(tostring(ctx.count)) end }
+         greed.keymap.bind('normal', { s = 'show' })",
     )
     .unwrap();
     h.press_keys("2 5 s s").unwrap();
@@ -1086,9 +1093,9 @@ fn plugins_unload_unless_another_requires_them() {
         "unload-base",
         &[(
             "init.luau",
-            "local kern = require('@kern')
-             kern.command { name = 'hello', run = function() kern.echo('hi') end }
-             kern.keymap.bind('normal', { h = 'hello' })
+            "local greed = require('@greed')
+             greed.command { name = 'hello', run = function() greed.echo('hi') end }
+             greed.keymap.bind('normal', { h = 'hello' })
              return {}",
         )],
     );
@@ -1102,14 +1109,14 @@ fn plugins_unload_unless_another_requires_them() {
     h.load_dir(&base).unwrap();
     h.load_dir(&user).unwrap();
     assert_eq!(
-        h.eval("table.concat(require('@kern').plugin.list(), ',')")
+        h.eval("table.concat(require('@greed').plugin.list(), ',')")
             .unwrap(),
         "unload-base,unload-user"
     );
 
     let err = h.unload("unload-base").unwrap_err().to_string();
     assert!(err.contains("unload-user"), "{err}");
-    h.eval("require('@kern').plugin.unload('unload-user')")
+    h.eval("require('@greed').plugin.unload('unload-user')")
         .unwrap();
     h.unload("unload-base").unwrap();
     assert!(h.with_registry(|reg| reg.command("hello").is_none()));
@@ -1128,7 +1135,7 @@ fn plugins_set_the_theme() {
     let h = host("");
     h.load_str(
         "colors",
-        "require('@kern').theme.set({
+        "require('@greed').theme.set({
            keyword = { fg = 'magenta', bold = true },
            ['diagnostic.error'] = { underline = 'curl', underline_color = 'red' },
            ['ui.selection'] = { bg = '#203040', tui = { bg = 'blue' } },
@@ -1154,16 +1161,16 @@ fn plugins_set_the_theme() {
         );
     });
     assert_eq!(
-        h.eval("require('@kern').theme.get('keyword').fg").unwrap(),
+        h.eval("require('@greed').theme.get('keyword').fg").unwrap(),
         "magenta"
     );
     let err = h
-        .eval("require('@kern').theme.set({ x = { fg = 'chartreuse' } })")
+        .eval("require('@greed').theme.set({ x = { fg = 'chartreuse' } })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("chartreuse"), "{err}");
     let err = h
-        .eval("require('@kern').theme.set({ x = { colour = 'red' } })")
+        .eval("require('@greed').theme.set({ x = { colour = 'red' } })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("colour"), "{err}");
@@ -1178,21 +1185,21 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
     let h = host("");
     let fg = |name: &str| {
         h.eval(&format!(
-            "return (require('@kern').theme.get('{name}') or {{}}).fg"
+            "return (require('@greed').theme.get('{name}') or {{}}).fg"
         ))
     };
     h.load_str(
         "themes",
-        "local kern = require('@kern')
-         kern.theme.base({ keyword = { fg = 'red' }, comment = { fg = 'blue', italic = true } })
-         kern.command({ name = 'switch', run = function()
-           kern.theme.base({ keyword = { fg = 'yellow' }, string = { fg = 'cyan' } })
+        "local greed = require('@greed')
+         greed.theme.base({ keyword = { fg = 'red' }, comment = { fg = 'blue', italic = true } })
+         greed.command({ name = 'switch', run = function()
+           greed.theme.base({ keyword = { fg = 'yellow' }, string = { fg = 'cyan' } })
          end })",
     )
     .unwrap();
     h.load_str(
         "mine",
-        "require('@kern').theme.set({ keyword = { fg = 'green' }, comment = { italic = false } })",
+        "require('@greed').theme.set({ keyword = { fg = 'green' }, comment = { italic = false } })",
     )
     .unwrap();
     assert_eq!(fg("keyword").unwrap(), "green", "set wins over the base");
@@ -1202,7 +1209,7 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
         "fields set leave the base's other fields"
     );
     assert_eq!(
-        h.eval("return require('@kern').theme.get('comment').italic")
+        h.eval("return require('@greed').theme.get('comment').italic")
             .unwrap(),
         "false"
     );
@@ -1225,7 +1232,7 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
 fn plugins_decorate_buffers() {
     let h = host("hello world");
     h.eval(
-        "local b = require('@kern').view():buffer()
+        "local b = require('@greed').view():buffer()
          b:decorate('search', { { from = 6, to = 11, style = 'match' }, { from = 0, to = 0, style = 'current', line = true } })",
     )
     .unwrap();
@@ -1240,21 +1247,21 @@ fn plugins_decorate_buffers() {
     });
     assert_eq!(
         h.eval(
-            "local m = require('@kern').view():buffer():decorations('search')[1]
+            "local m = require('@greed').view():buffer():decorations('search')[1]
              return m.from .. ' ' .. m.to .. ' ' .. m.style .. ' ' .. tostring(m.line)"
         )
         .unwrap(),
         "6 11 match false"
     );
     let err = h
-        .eval("require('@kern').view():buffer():decorate('x', { { from = 0, to = 1 } })")
+        .eval("require('@greed').view():buffer():decorate('x', { { from = 0, to = 1 } })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("style"), "{err}");
-    h.eval("require('@kern').view():buffer():decorate('search', {})")
+    h.eval("require('@greed').view():buffer():decorate('search', {})")
         .unwrap();
     assert_eq!(
-        h.eval("#require('@kern').view():buffer():decorations('search')")
+        h.eval("#require('@greed').view():buffer():decorations('search')")
             .unwrap(),
         "0"
     );
@@ -1264,18 +1271,18 @@ fn plugins_decorate_buffers() {
 fn fuzzy_matches_say_where_they_matched() {
     let h = host("");
     assert_eq!(
-        h.eval("table.concat(require('@kern').fuzzy_positions('mrs', 'src/main.rs'), ',')")
+        h.eval("table.concat(require('@greed').fuzzy_positions('mrs', 'src/main.rs'), ',')")
             .unwrap(),
         "4,9,10"
     );
     // Byte offsets, so multibyte characters before a match count fully.
     assert_eq!(
-        h.eval("table.concat(require('@kern').fuzzy_positions('b', 'éb'), ',')")
+        h.eval("table.concat(require('@greed').fuzzy_positions('b', 'éb'), ',')")
             .unwrap(),
         "2"
     );
     assert_eq!(
-        h.eval("#require('@kern').fuzzy_positions('zz', 'abc')")
+        h.eval("#require('@greed').fuzzy_positions('zz', 'abc')")
             .unwrap(),
         "0"
     );
@@ -1286,7 +1293,7 @@ fn marks_carry_inserted_text_signs_and_order() {
     let h = host("let x = 1");
     let shown = h
         .eval(
-            "local b = require('@kern').view():buffer()
+            "local b = require('@greed').view():buffer()
              b:decorate('lsp', { { from = 5, to = 5, style = 'hint', text = ': i32' },
                                  { from = 0, to = 3, style = 'diagnostic.error', text = 'oops', eol = true, sign = 'E', above = true } })
              local m = b:decorations('lsp')
@@ -1300,22 +1307,22 @@ fn marks_carry_inserted_text_signs_and_order() {
 fn plugins_set_file_types_and_find_programs() {
     let h = host("");
     assert_eq!(
-        h.eval("table.concat(require('@kern').grammars(), ',')")
+        h.eval("table.concat(require('@greed').grammars(), ',')")
             .unwrap(),
         "bash,c,go,javascript,json,luau,markdown,nix,python,rust,toml,tsx,typescript,yaml"
     );
     h.eval(
-        "require('@kern').filetype('python', { extensions = { 'py' }, names = { 'SConstruct' } })",
+        "require('@greed').filetype('python', { extensions = { 'py' }, names = { 'SConstruct' } })",
     )
     .unwrap();
     assert_eq!(
-        h.eval("require('@kern').language_of('a/b.py'), require('@kern').language_of('SConstruct'), require('@kern').language_of('x.zz')")
+        h.eval("require('@greed').language_of('a/b.py'), require('@greed').language_of('SConstruct'), require('@greed').language_of('x.zz')")
             .unwrap(),
         "python\tpython\tnil"
     );
     assert_eq!(
         h.eval(
-            "require('@kern').which('sh') ~= nil, require('@kern').which('no-such-program-kern')"
+            "require('@greed').which('sh') ~= nil, require('@greed').which('no-such-program-greed')"
         )
         .unwrap(),
         "true\tnil"
@@ -1326,9 +1333,9 @@ fn plugins_set_file_types_and_find_programs() {
 fn plugins_open_panels_beside_the_main_view() {
     use greed_core::{Extent, Side};
     let h = host("main");
-    h.eval("b = require('@kern').create_buffer('tree', 'src/')")
+    h.eval("b = require('@greed').create_buffer('tree', 'src/')")
         .unwrap();
-    h.eval("p = require('@kern').panel(b, { side = 'right', width = '30%', title = 'Files', focus = false })")
+    h.eval("p = require('@greed').panel(b, { side = 'right', width = '30%', title = 'Files', focus = false })")
         .unwrap();
     h.with_editor(|ed| {
         let panel = &ed.panels()[0];
@@ -1338,7 +1345,7 @@ fn plugins_open_panels_beside_the_main_view() {
         assert_eq!(ed.focus(), ed.main(), "focus stays");
     });
     // Defaults: the left side, 30 cells, focused.
-    h.eval("q = require('@kern').panel(require('@kern').create_buffer('x', ''))")
+    h.eval("q = require('@greed').panel(require('@greed').create_buffer('x', ''))")
         .unwrap();
     h.with_editor(|ed| {
         let panel = &ed.panels()[1];
@@ -1351,7 +1358,7 @@ fn plugins_open_panels_beside_the_main_view() {
     assert_eq!(h.eval("p:close(), q:close()").unwrap(), "true\ttrue");
     assert!(h.with_editor(|ed| ed.panels().is_empty()));
     let err = h
-        .eval("require('@kern').panel(require('@kern').create_buffer('x', ''), { side = 'top' })")
+        .eval("require('@greed').panel(require('@greed').create_buffer('x', ''), { side = 'top' })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("left"), "{err}");
@@ -1362,7 +1369,7 @@ fn plugins_search_buffers_with_regexes() {
     let h = host("a1 b2 c3");
     let eval = |code: &str| {
         h.eval(&format!(
-            "local b = require('@kern').view():buffer()\n{code}"
+            "local b = require('@greed').view():buffer()\n{code}"
         ))
         .unwrap()
     };
@@ -1401,21 +1408,21 @@ fn plugins_search_buffers_with_regexes() {
 fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
     let h = host("");
     let eval = |code: &str| {
-        h.eval(&format!("local kern = require('@kern')\n{code}"))
+        h.eval(&format!("local greed = require('@greed')\n{code}"))
             .unwrap()
     };
     assert_eq!(
         eval(
-            "return kern.json.encode({ a = 1, list = { 'x', true }, empty = {}, none = kern.json.array() })"
+            "return greed.json.encode({ a = 1, list = { 'x', true }, empty = {}, none = greed.json.array() })"
         ),
         r#"{"a":1,"empty":{},"list":["x",true],"none":[]}"#
     );
     assert_eq!(
-        eval("local v = kern.json.decode('{\"a\":[1,2],\"b\":null}') return v.a[2], v.b"),
+        eval("local v = greed.json.decode('{\"a\":[1,2],\"b\":null}') return v.a[2], v.b"),
         "2\tnil"
     );
     assert_eq!(
-        eval("local v, err = kern.json.decode('{') return v, err ~= nil"),
+        eval("local v, err = greed.json.decode('{') return v, err ~= nil"),
         "nil\ttrue"
     );
 }
@@ -1426,20 +1433,20 @@ fn signals_wake_whoever_waits_with_the_value_sent() {
     h.load_str(
         "signals",
         r#"
-        local kern = require("@kern")
+        local greed = require("@greed")
         local signal = nil
-        kern.command { name = "wait", run = function()
-          signal = kern.signal()
-          kern.echo("got " .. signal.wait())
+        greed.command { name = "wait", run = function()
+          signal = greed.signal()
+          greed.echo("got " .. signal.wait())
         end }
-        kern.command { name = "send", run = function()
+        greed.command { name = "send", run = function()
           signal.send("yes")
           signal.send("ignored")
         end }
-        kern.command { name = "early", run = function()
-          local s = kern.signal()
+        greed.command { name = "early", run = function()
+          local s = greed.signal()
           s.send(42)
-          kern.echo("early " .. s.wait())
+          greed.echo("early " .. s.wait())
         end }
         "#,
     )
@@ -1462,8 +1469,8 @@ fn files_load_into_buffers_without_being_shown() {
     let loaded = eval_in(
         &h,
         &dir,
-        "local b = kern.load(DIR .. '/a.txt')
-         return b:text() .. ' ' .. tostring(kern.load(DIR .. '/a.txt'):id() == b:id()) .. ' ' .. kern.view():buffer():text()",
+        "local b = greed.load(DIR .. '/a.txt')
+         return b:text() .. ' ' .. tostring(greed.load(DIR .. '/a.txt'):id() == b:id()) .. ' ' .. greed.view():buffer():text()",
     );
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(loaded, "from disk true main");
@@ -1474,7 +1481,7 @@ fn diffs_come_back_as_line_changes() {
     let h = host("");
     assert_eq!(
         h.eval(
-            "local c = require('@kern').diff('a\\nb\\n', 'a\\nB\\n')[1] return c.from, c.to, c.text"
+            "local c = require('@greed').diff('a\\nb\\n', 'a\\nB\\n')[1] return c.from, c.to, c.text"
         )
         .unwrap(),
         "2\t4\tB\n"
@@ -1485,31 +1492,31 @@ fn diffs_come_back_as_line_changes() {
 fn plugins_open_switch_and_close_projects() {
     let h = host("first");
     let eval = |code: &str| {
-        h.eval(&format!("local kern = require('@kern')\n{code}"))
+        h.eval(&format!("local greed = require('@greed')\n{code}"))
             .unwrap()
     };
-    let first = eval("return kern.project.current().id");
-    let second = eval("return kern.project.open('/work/other')");
+    let first = eval("return greed.project.current().id");
+    let second = eval("return greed.project.open('/work/other')");
     assert_eq!(
-        eval("local p = kern.project.current() return p.root, p.current, #kern.project.list()"),
+        eval("local p = greed.project.current() return p.root, p.current, #greed.project.list()"),
         "/work/other\ttrue\t2"
     );
     assert_eq!(
-        eval("return kern.view():buffer():project() == kern.project.current().id"),
+        eval("return greed.view():buffer():project() == greed.project.current().id"),
         "true",
         "the new project's empty buffer is its own"
     );
     assert_eq!(
-        eval(&format!("return kern.project.switch({first})")),
+        eval(&format!("return greed.project.switch({first})")),
         "true"
     );
-    assert_eq!(eval("return kern.view():buffer():text()"), "first");
+    assert_eq!(eval("return greed.view():buffer():text()"), "first");
     assert_eq!(
-        eval(&format!("return kern.project.close({second})")),
+        eval(&format!("return greed.project.close({second})")),
         "true"
     );
     assert_eq!(
-        eval(&format!("return kern.project.close({first})")),
+        eval(&format!("return greed.project.close({first})")),
         "false",
         "the last one stays"
     );
@@ -1523,7 +1530,7 @@ fn files_open_before_plugins_load_are_announced_once_they_have() {
     let host = Host::new(editor).unwrap();
     host.load_str(
         "listen",
-        "local kern = require('@kern')\nkern.on('buffer.opened', function(e) kern.echo('opened ' .. e.buffer:path()) end)",
+        "local greed = require('@greed')\ngreed.on('buffer.opened', function(e) greed.echo('opened ' .. e.buffer:path()) end)",
     )
     .unwrap();
     host.announce_open_files().unwrap();
@@ -1536,11 +1543,11 @@ fn kept_buffers_stay_open_while_nothing_shows_them() {
     let h = host("");
     h.eval(
         r#"
-        local kern = require("@kern")
-        kept = kern.create_buffer("terminal", "shell")
+        local greed = require("@greed")
+        kept = greed.create_buffer("terminal", "shell")
         kept:set_kept(true)
-        kern.view():show(kept)
-        kern.view():show(kern.create_buffer("scratch", ""))
+        greed.view():show(kept)
+        greed.view():show(greed.create_buffer("scratch", ""))
         "#,
     )
     .unwrap();
@@ -1558,9 +1565,9 @@ fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
     h.load_str(
         "sizes",
         r#"
-        local kern = require("@kern")
+        local greed = require("@greed")
         local seen = {}
-        kern.on("view.resized", function(e)
+        greed.on("view.resized", function(e)
             table.insert(seen, `{e.rows}x{e.cols}`)
             local rows, cols = e.view:size()
             assert(rows == e.rows and cols == e.cols)
@@ -1594,7 +1601,7 @@ fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
 fn marks_lines_can_be_pieces_with_styles() {
     let h = host("a");
     h.eval(
-        "local b = require('@kern').view():buffer()
+        "local b = require('@greed').view():buffer()
          b:decorate('d', { { from = 0, to = 0, style = 'diff.plus', lines = {
            'plain',
            { { text = 'x = ' }, { text = '2', style = 'diff.plus.change' }, { text = ';' } },
@@ -1610,7 +1617,7 @@ fn marks_lines_can_be_pieces_with_styles() {
     assert_eq!(&*lines[1].text, "x = 2;");
     assert_eq!(lines[1].styles, [(4..5, "diff.plus.change".into())]);
     let back = h
-        .eval("local l = require('@kern').view():buffer():decorations('d')[1].lines; return l[1] .. '|' .. l[2][2].text .. '|' .. l[2][2].style")
+        .eval("local l = require('@greed').view():buffer():decorations('d')[1].lines; return l[1] .. '|' .. l[2][2].text .. '|' .. l[2][2].style")
         .unwrap();
     assert_eq!(back, "plain|2|diff.plus.change");
 }
@@ -1619,9 +1626,9 @@ fn marks_lines_can_be_pieces_with_styles() {
 fn waiting_calls_refuse_to_run_where_they_would_hold_up_the_editor() {
     let host = host("");
     for call in [
-        "require('@kern').process.run({ 'sleep', '5' })",
-        "require('@kern').fs.grep('x')",
-        "require('@kern').http.request({ url = 'http://127.0.0.1:1/' })",
+        "require('@greed').process.run({ 'sleep', '5' })",
+        "require('@greed').fs.grep('x')",
+        "require('@greed').http.request({ url = 'http://127.0.0.1:1/' })",
     ] {
         let started = std::time::Instant::now();
         let err = host.eval(call).unwrap_err().to_string();

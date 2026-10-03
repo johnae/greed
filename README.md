@@ -1,14 +1,14 @@
-Kern is a modal text editor for the terminal with a small Rust core and
+Greed is a modal text editor for the terminal with a small Rust core and
 everything else in Luau: keys, modes, commands, pickers, themes and the
 agent integration are plugins you can read, change or replace while it runs.
 
 ```text
-$ kern src/main.rs           # edit; the session keeps running if you detach
+$ greed src/main.rs           # edit; the session keeps running if you detach
 :detach                      # leave it running in the background
-$ kern ls
+$ greed ls
 48211
-$ kern attach                # come back to it
-$ kern ctl focus             # ask the running editor what you're looking at
+$ greed attach                # come back to it
+$ greed ctl focus             # ask the running editor what you're looking at
 { "path": "src/main.rs", "mode": "normal", "selections": [ ... ], ... }
 ```
 
@@ -25,9 +25,9 @@ A plugin is a folder with an `init.luau`. This one adds a command and binds
 it to `g u`:
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.command({
+greed.command({
 	name = "upper",
 	doc = "Upper-case the selections",
 	run = function(ctx)
@@ -40,13 +40,13 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["g u"] = "upper" })
+greed.keymap.bind("normal", { ["g u"] = "upper" })
 ```
 
-Put it in `~/.config/kern/plugins/upper/` with a `plugin.toml` saying
-`name = "upper"`, or run `kern new upper` in `~/.config/kern/plugins/` to get
+Put it in `~/.config/greed/plugins/upper/` with a `plugin.toml` saying
+`name = "upper"`, or run `greed new upper` in `~/.config/greed/plugins/` to get
 one with a test. The API is typed, so `luau-analyze` and `luau-lsp` check
-plugins against it, and `kern test upper` runs a plugin's tests in a headless
+plugins against it, and `greed test upper` runs a plugin's tests in a headless
 editor.
 
 ## Agents
@@ -56,21 +56,21 @@ have open (unsaved changes included), see your selections and diagnostics,
 and propose edits that show up in the buffer for you to accept or reject.
 
 ```bash
-claude mcp add kern -- kern mcp     # Kern's tools in Claude Code
+claude mcp add greed -- greed mcp     # Greed's tools in Claude Code
 ```
 
-`space o c` opens Claude Code in a pane, connected to Kern like it is to VS
-Code (outside Kern, `/ide` finds it), and its edits arrive as proposals. Agents can write new plugins too: Kern type checks and
+`space o c` opens Claude Code in a pane, connected to Greed like it is to VS
+Code (outside Greed, `/ide` finds it), and its edits arrive as proposals. Agents can write new plugins too: Greed type checks and
 tests them, and you review the code before it loads.
 
 ## Try it
 
-Kern builds with a recent stable Rust and cmake (for the WebAssembly
+Greed builds with a recent stable Rust and cmake (for the WebAssembly
 runtime that loads downloaded grammars):
 
 ```bash
 cargo build --release
-./target/release/kern README.md
+./target/release/greed README.md
 ```
 
 To install it, `cargo install --path crates/greed-editor`, or with Nix,
@@ -83,13 +83,13 @@ checking plugins.
 
 ## Documentation
 
-- [Using Kern](docs/using.md): editing, searching, files, sessions,
+- [Using Greed](docs/using.md): editing, searching, files, sessions,
   configuration.
 - [Writing plugins](docs/plugins.md): commands, keys, decorations, panels,
   tests and types.
-- [Agents](docs/agents.md): `kern ctl`, MCP, proposals, `/ide` and plugins
+- [Agents](docs/agents.md): `greed ctl`, MCP, proposals, `/ide` and plugins
   written by agents.
-- [How Kern is built](docs/design.md): what lives in Rust, what lives in
+- [How Greed is built](docs/design.md): what lives in Rust, what lives in
   Luau, and why.
 
-Kern is early and changes often.
+Greed is early and changes often.

@@ -1,5 +1,5 @@
 --- The test API, for files in a plugin's `test/` directory, through
---- `require("@kern/test")`. Run tests with `kern test PLUGIN_DIR`.
+--- `require("@greed/test")`. Run tests with `greed test PLUGIN_DIR`.
 ---
 --- Buffers are written with markers: `|` at each cursor or selection head,
 --- and `^` at the anchor of a selection. "^hello |world" selects "hello ".
@@ -12,7 +12,7 @@ export type TestContext = {
 	--- Runs a command, with arguments as from the command line, and waits
 	--- for any background work it starts.
 	run: (self: TestContext, command: string, args: { string }?) -> (),
-	--- Lets `ms` milliseconds pass for commands waiting on kern.sleep.
+	--- Lets `ms` milliseconds pass for commands waiting on greed.sleep.
 	wait: (self: TestContext, ms: number) -> (),
 	--- Waits, for real, until `done` returns true, passing on terminal
 	--- output as it comes; fails after `ms` milliseconds (default 5000).

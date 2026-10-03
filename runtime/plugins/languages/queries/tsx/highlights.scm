@@ -1,5 +1,5 @@
 ; From tree-sitter-typescript and tree-sitter-javascript (MIT), with
-; Kern's capture names: TypeScript's own patterns, then JavaScript's.
+; Greed's capture names: TypeScript's own patterns, then JavaScript's.
 
 ; JSX: HTML's own tags, then components.
 (jsx_opening_element (identifier) @tag.builtin (#match? @tag.builtin "^[a-z][^.]*$"))

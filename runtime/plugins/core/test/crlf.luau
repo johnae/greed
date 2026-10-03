@@ -1,8 +1,8 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function text(): string
-	return kern.view():buffer():text()
+	return greed.view():buffer():text()
 end
 
 test("new lines in a CRLF file are CRLF too", function(t)

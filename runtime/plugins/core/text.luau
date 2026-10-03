@@ -1,9 +1,9 @@
 -- Text helpers shared by motions: character classes, word boundaries and
--- columns. Positions are byte offsets, as everywhere in the kern API.
+-- columns. Positions are byte offsets, as everywhere in the greed API.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-type Buffer = kern.Buffer
+type Buffer = greed.Buffer
 
 local M = {}
 

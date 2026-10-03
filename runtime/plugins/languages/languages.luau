@@ -1,6 +1,6 @@
--- The languages Kern knows: which files are in each, the language servers to
+-- The languages Greed knows: which files are in each, the language servers to
 -- try (the first one installed runs), the files that mark a project's root,
--- and how comments and indentation look. Kern has syntax highlighting for
+-- and how comments and indentation look. Greed has syntax highlighting for
 -- some of them; `:health` shows which.
 
 export type Language = {

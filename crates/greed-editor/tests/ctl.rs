@@ -1,15 +1,15 @@
-//! `kern ctl`, `kern ls` and `kern mcp` against real sessions.
+//! `greed ctl`, `greed ls` and `greed mcp` against real sessions.
 
 mod common;
 
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
 
-use common::{KERN, World, running};
+use common::{GREED, World, running};
 
-/// A headless session for `project`, started like `kern serve` does it.
+/// A headless session for `project`, started like `greed serve` does it.
 fn serve(world: &World, project: &std::path::Path) -> Child {
-    let mut command = Command::new(KERN);
+    let mut command = Command::new(GREED);
     command
         .arg("serve")
         .arg(project)
@@ -32,7 +32,7 @@ fn ctl_says_when_no_editor_is_running() {
     let Some(world) = World::new("ctl-none") else {
         return;
     };
-    let out = world.kern(&["ctl", "tools"]);
+    let out = world.greed(&["ctl", "tools"]);
     assert!(!out.status.success());
     assert!(
         text(&out).1.contains("no editor is running"),
@@ -50,38 +50,38 @@ fn ctl_runs_tools_with_arguments_as_pairs_or_json() {
     let mut server = serve(&world, &project.join("a.txt"));
     world.wait_for("the session", running);
 
-    let (tools, _) = text(&world.kern(&["ctl", "tools"]));
+    let (tools, _) = text(&world.greed(&["ctl", "tools"]));
     for name in ["focus", "read", "propose", "eval"] {
         assert!(
             tools.lines().any(|l| l.starts_with(name)),
             "{name} in {tools}"
         );
     }
-    let (lines, _) = text(&world.kern(&["ctl", "read", "path=a.txt", "from_line=2", "to_line=2"]));
+    let (lines, _) = text(&world.greed(&["ctl", "read", "path=a.txt", "from_line=2", "to_line=2"]));
     assert_eq!(lines.trim(), "two", "pairs, with numbers parsed as JSON");
-    let (lines, _) = text(&world.kern(&["ctl", "read", r#"{"path": "a.txt", "from_line": 3}"#]));
+    let (lines, _) = text(&world.greed(&["ctl", "read", r#"{"path": "a.txt", "from_line": 3}"#]));
     assert_eq!(lines.trim(), "three", "one JSON object");
-    let (focus, _) = text(&world.kern(&["ctl", "focus"]));
+    let (focus, _) = text(&world.greed(&["ctl", "focus"]));
     assert!(
         focus.contains("\"path\""),
         "JSON results are pretty-printed: {focus}"
     );
 
-    let failed = world.kern(&["ctl", "nope"]);
+    let failed = world.greed(&["ctl", "nope"]);
     assert!(!failed.status.success());
     assert!(
         text(&failed).1.contains("no tool called nope"),
         "{:?}",
         text(&failed)
     );
-    let bad = world.kern(&["ctl", "read", "no-equals-sign"]);
+    let bad = world.greed(&["ctl", "read", "no-equals-sign"]);
     assert!(
         text(&bad).1.contains("expected KEY=VALUE"),
         "{:?}",
         text(&bad)
     );
 
-    world.eval("tools", "require('@kern').quit()");
+    world.eval("tools", "require('@greed').quit()");
     let _ = server.wait();
 }
 
@@ -97,19 +97,19 @@ fn several_sessions_need_a_name_and_ls_lists_them_with_their_projects() {
 
     let listed = world.sessions();
     assert!(listed.contains(first.to_str().unwrap()) && listed.contains(second.to_str().unwrap()));
-    let out = world.kern(&["ctl", "focus"]);
+    let out = world.greed(&["ctl", "focus"]);
     assert!(
         text(&out).1.contains("several editors are running"),
         "{:?}",
         text(&out)
     );
     assert_eq!(
-        world.eval("second", "return require('@kern').session.current()"),
+        world.eval("second", "return require('@greed').session.current()"),
         "second"
     );
 
     for name in ["first", "second"] {
-        world.eval(name, "require('@kern').quit()");
+        world.eval(name, "require('@greed').quit()");
     }
     for server in &mut servers {
         let _ = server.wait();
@@ -117,7 +117,7 @@ fn several_sessions_need_a_name_and_ls_lists_them_with_their_projects() {
 }
 
 #[test]
-fn kern_mcp_speaks_mcp_on_stdio() {
+fn greed_mcp_speaks_mcp_on_stdio() {
     let Some(world) = World::new("mcp") else {
         return;
     };
@@ -125,7 +125,7 @@ fn kern_mcp_speaks_mcp_on_stdio() {
     let mut server = serve(&world, &project.join("a.txt"));
     world.wait_for("the session", running);
 
-    let mut command = Command::new(KERN);
+    let mut command = Command::new(GREED);
     command
         .arg("mcp")
         .stdin(Stdio::piped())
@@ -161,9 +161,9 @@ fn kern_mcp_speaks_mcp_on_stdio() {
         2,
         "the notification gets no answer: {answers:?}"
     );
-    assert_eq!(answers[0]["result"]["serverInfo"]["name"], "kern");
+    assert_eq!(answers[0]["result"]["serverInfo"]["name"], "greed");
     assert_eq!(answers[1]["result"]["content"][0]["text"], "hello mcp");
 
-    world.eval("mcp", "require('@kern').quit()");
+    world.eval("mcp", "require('@greed').quit()");
     let _ = server.wait();
 }

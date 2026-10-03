@@ -1,19 +1,19 @@
--- Lets an agent extend Kern: it reads how plugins are written, tries a
+-- Lets an agent extend Greed: it reads how plugins are written, tries a
 -- plugin until its types and tests pass, then asks to install it. You see
 -- the code and the check results before anything loads.
 --
 -- In the review:  a  install, approve and load it    r  reject it
 
-local kern = require("@kern")
+local greed = require("@greed")
 local registry = require("./registry")
 local approvals = require("@approvals")
 
 local M = {}
 
-local user_dirs = kern.fs.dirs()
-local cache = user_dirs.cache or (kern.fs.cwd() .. "/.kern-cache")
-local config = user_dirs.config or (kern.fs.cwd() .. "/.kern-config")
-local data = user_dirs.data or (kern.fs.cwd() .. "/.kern-data")
+local user_dirs = greed.fs.dirs()
+local cache = user_dirs.cache or (greed.fs.cwd() .. "/.greed-cache")
+local config = user_dirs.config or (greed.fs.cwd() .. "/.greed-config")
+local data = user_dirs.data or (greed.fs.cwd() .. "/.greed-data")
 
 --- Where tried plugins are staged and where installed ones go: your config,
 --- or the data folder when the config can't be written (Nix). Tests point
@@ -31,31 +31,31 @@ local staged: { [string]: Staged } = {}
 local tries = 0
 
 local GUIDE = [[
-# Writing a Kern plugin
+# Writing a Greed plugin
 
 A plugin is a folder with plugin.toml (`name = "my-plugin"`, optionally
 `requires = ["core"]` to use `require("@core")`, and `capabilities` for
 what it uses beyond the editor), an init.luau, and tests in
 test/*.luau. It's Luau, not Lua 5.1: types (`local x: number`), `if a then b
 else c` expressions, string interpolation with backticks, `+=`, and
-`for k, v in t do` without pairs(). Everything comes from `require("@kern")`.
+`for k, v in t do` without pairs(). Everything comes from `require("@greed")`.
 
-- Commands: `kern.command({ name = "words-like-this", doc = "...", run = function(ctx) ... end })`.
+- Commands: `greed.command({ name = "words-like-this", doc = "...", run = function(ctx) ... end })`.
   `ctx.buffer` and `ctx.view` are where the command runs.
-- Keys: `kern.keymap.bind("normal", { ["g x"] = "command-name" })`.
+- Keys: `greed.keymap.bind("normal", { ["g x"] = "command-name" })`.
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
 - Agents: `require("@agent").tool({ name, description, input, run })` offers a tool over MCP.
-- Waiting (kern.sleep, kern.fs.grep, kern.signal) works in commands and event handlers.
-- Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (kern.process.run,
-  kern.terminal.spawn, kern.lsp.server), "fs.read" (kern.fs reads, kern.load, kern.open,
-  kern.files), "fs.write" (kern.fs.write, buffer:save(path)), "clipboard" (reading it),
-  "net" or "net:HOST" (kern.http), "secrets:NAME" (kern.secrets.get), "eval", "plugins". Ask
+- Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
+- Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (greed.process.run,
+  greed.terminal.spawn, greed.lsp.server), "fs.read" (greed.fs reads, greed.load, greed.open,
+  greed.files), "fs.write" (greed.fs.write, buffer:save(path)), "clipboard" (reading it),
+  "net" or "net:HOST" (greed.http), "secrets:NAME" (greed.secrets.get), "eval", "plugins". Ask
   only for what the plugin needs; the user sees the list.
   Editing buffers, commands, keys and the rest of the editor need none.
 
 Tests:
 
-    local test = require("@kern/test")
+    local test = require("@greed/test")
     test("what it does", function(t)
         t:buffer("hello |world")   -- | is the cursor, ^ a selection's anchor
         t:run("command-name")
@@ -67,9 +67,9 @@ follow; they're exactly what luau-analyze checks against.
 ]]
 
 local function read_types(): string
-	local core = kern.plugin.dirs().core
-	local types = if core then kern.fs.read(core .. "/../../types/kern/init.luau") else nil
-	return types or "(Kern's type definitions weren't found)"
+	local core = greed.plugin.dirs().core
+	local types = if core then greed.fs.read(core .. "/../../types/greed/init.luau") else nil
+	return types or "(Greed's type definitions weren't found)"
 end
 
 -- Plugin names are plain words with dashes; file paths stay inside the
@@ -94,7 +94,7 @@ local function check_files(name: string, files: { [string]: string })
 	end
 end
 
-local function describe(report: kern.PluginCheck): (string, boolean)
+local function describe(report: greed.PluginCheck): (string, boolean)
 	local lines, passed = {}, true
 	if report.types.skipped then
 		table.insert(lines, `types: not checked ({report.types.skipped})`)
@@ -125,7 +125,7 @@ end
 
 local function write_files(dir: string, files: { [string]: string })
 	for path, text in files do
-		local ok, err = kern.fs.write(`{dir}/{path}`, text)
+		local ok, err = greed.fs.write(`{dir}/{path}`, text)
 		if not ok then
 			error(err, 0)
 		end
@@ -143,13 +143,13 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 	tries += 1
 	local dir = `{M.dirs.staging}/{name}-{tries}`
 	write_files(dir, files)
-	local report, passed = describe(kern.plugin.check(dir))
+	local report, passed = describe(greed.plugin.check(dir))
 	staged[name] = { files = files, dir = dir, report = report, passed = passed }
 	return report, passed
 end
 
 -- The review waiting for the user, if any.
-local review: { done: kern.Signal, view: kern.View }? = nil
+local review: { done: greed.Signal, view: greed.View }? = nil
 
 local function finish(accepted: boolean)
 	local r = review
@@ -161,7 +161,7 @@ local function finish(accepted: boolean)
 	r.done.send(accepted)
 end
 
-kern.on("view.closed", function(event)
+greed.on("view.closed", function(event)
 	if review and review.view:id() == event.view then
 		finish(false)
 	end
@@ -185,7 +185,7 @@ function M.install(name: string): string
 		`An agent wrote the plugin "{name}" and wants it installed in {target}.`,
 		"It can edit buffers and add commands, keys and agent tools; beyond the editor:",
 	}
-	for _, line in approvals.lines(kern.plugin.describe(s.dir)) do
+	for _, line in approvals.lines(greed.plugin.describe(s.dir)) do
 		table.insert(lines, line)
 	end
 	for _, line in { "", s.report, "", "a  install, approve and load it    r  reject it" } do
@@ -202,11 +202,11 @@ function M.install(name: string): string
 		table.insert(lines, s.files[path])
 	end
 	local buffer =
-		kern.create_buffer("plugin-review", table.concat(lines, "\n"), { readonly = true })
-	local view = kern.panel(buffer, { side = "right", width = "60%", title = `Install {name}?` })
-	local r = { done = kern.signal(), view = view }
+		greed.create_buffer("plugin-review", table.concat(lines, "\n"), { readonly = true })
+	local view = greed.panel(buffer, { side = "right", width = "60%", title = `Install {name}?` })
+	local r = { done = greed.signal(), view = view }
 	review = r
-	kern.echo(`an agent wants to install the plugin {name} - a installs it, r rejects it`)
+	greed.echo(`an agent wants to install the plugin {name} - a installs it, r rejects it`)
 	if not r.done.wait() then
 		return `the user rejected {name}`
 	end
@@ -217,19 +217,19 @@ function M.install(name: string): string
 		write_files(target, s.files)
 	end
 	-- Accepting the review approves what it asked for.
-	kern.plugin.approve(target)
+	greed.plugin.approve(target)
 	local where = target
-	-- On the far end of kern ssh, it's on this machine, not yours.
-	if kern.fs.dirs().brought then
-		local named = kern.fs.read("/etc/hostname")
+	-- On the far end of greed ssh, it's on this machine, not yours.
+	if greed.fs.dirs().brought then
+		local named = greed.fs.read("/etc/hostname")
 		local machine = named and string.match(named, "^%s*(%S+)") or "this machine"
-		where = `{target} on {machine}; on your own machine, kern bring HOST {name} copies it home`
+		where = `{target} on {machine}; on your own machine, greed bring HOST {name} copies it home`
 	end
-	kern.echo(`installed {name} in {where}`)
+	greed.echo(`installed {name} in {where}`)
 	return `the user installed {name} in {target}; it's loaded and its commands are ready`
 end
 
-kern.command({
+greed.command({
 	name = "plugin-review-accept",
 	doc = "Install, approve and load the plugin under review",
 	run = function()
@@ -237,7 +237,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "plugin-review-reject",
 	doc = "Reject the plugin under review",
 	run = function()
@@ -245,7 +245,7 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "plugin-review" }, {
+greed.keymap.bind({ mode = "normal", kind = "plugin-review" }, {
 	a = "plugin-review-accept",
 	r = "plugin-review-reject",
 	q = "plugin-review-reject",
@@ -258,10 +258,10 @@ end
 
 registry.tool({
 	name = "plugin_guide",
-	description = "How to write a Kern plugin, with the full typed API. Read this before plugin_try",
+	description = "How to write a Greed plugin, with the full typed API. Read this before plugin_try",
 	run = function()
 		local plugins = {}
-		for name in kern.plugin.dirs() do
+		for name in greed.plugin.dirs() do
 			table.insert(plugins, name)
 		end
 		table.sort(plugins)
@@ -271,7 +271,7 @@ registry.tool({
 
 registry.tool({
 	name = "plugin_try",
-	description = "Write a plugin's files and check them: strict types against Kern's API, "
+	description = "Write a plugin's files and check them: strict types against Greed's API, "
 		.. "then its tests. Returns what failed; fix and try again until it passes",
 	input = object({
 		name = { type = "string", description = "Lowercase words with dashes" },

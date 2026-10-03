@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 test("shows the mode, the tab, the file and the position", function(t)
 	t:buffer("ab\nçd|e")
@@ -27,8 +27,8 @@ end)
 
 test("files in the project show from its root", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "", ["src/main.rs"] = "fn main() {}" })
-	kern.project.open(dir)
-	kern.open(dir .. "/src/main.rs")
+	greed.project.open(dir)
+	greed.open(dir .. "/src/main.rs")
 	local left = t:status()
 	assert(left and string.find(left, " src/main.rs ", 1, true), left)
 end)
@@ -44,7 +44,7 @@ test("shows when keys are being recorded into a macro", function(t)
 end)
 
 test("with the pills option, pills get rounded ends in the theme's colors", function(t)
-	kern.theme.set({
+	greed.theme.set({
 		["ui.statusline"] = { bg = "#101010" },
 		["ui.statusline.mode"] = { bg = "#00ff00" },
 	})
@@ -54,26 +54,26 @@ test("with the pills option, pills get rounded ends in the theme's colors", func
 		left and not string.find(left, "\u{e0b6}", 1, true),
 		"no pills by default: " .. tostring(left)
 	)
-	kern.option.set("statusline-pills", true)
+	greed.option.set("statusline-pills", true)
 	left = t:status()
 	assert(left and string.find(left, "\u{e0b6} NORMAL \u{e0b4}", 1, true), left)
-	kern.option.set("statusline-caps", "none")
+	greed.option.set("statusline-caps", "none")
 	left = t:status()
 	assert(left and not string.find(left, "\u{e0b6}", 1, true), left)
-	kern.option.set("statusline-caps", "round")
-	kern.option.set("statusline-pills", false)
+	greed.option.set("statusline-caps", "round")
+	greed.option.set("statusline-pills", false)
 end)
 
 test("with effects on, a wave of light goes through the file's letters when it changes", function(t)
 	local statusline = require("@statusline")
-	kern.theme.set({
+	greed.theme.set({
 		["ui.statusline"] = { fg = "#808080", bg = "#101010" },
 		["ui.glow"] = { fg = "#ffffff" },
 	})
 	t:buffer("|abc")
 	local function file_segments(): number
 		local ctx =
-			{ view = kern.view(), buffer = kern.view():buffer(), mode = "normal", width = 80 }
+			{ view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
 		local lit = 0
 		for _, segment in statusline.build(ctx :: any).left or {} do
 			if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
@@ -82,7 +82,7 @@ test("with effects on, a wave of light goes through the file's letters when it c
 		end
 		return lit
 	end
-	kern.command({
+	greed.command({
 		name = "wave-test",
 		run = function()
 			statusline.glow("file")
@@ -90,13 +90,13 @@ test("with effects on, a wave of light goes through the file's letters when it c
 	})
 	t:run("wave-test")
 	assert(file_segments() == 0, "effects are off by default")
-	kern.option.set("effects", true)
+	greed.option.set("effects", true)
 	t:run("wave-test")
 	t:wait(300)
 	assert(file_segments() == #"[scratch]", "one segment per letter mid-wave: " .. file_segments())
 	t:wait(400)
 	assert(file_segments() == 0, "gone once it's through")
-	kern.option.set("effects", false)
+	greed.option.set("effects", false)
 end)
 
 test("pieces can be added and taken away", function(t)
@@ -114,16 +114,16 @@ end)
 
 test("opening another file sends the wave by itself", function(t)
 	local statusline = require("@statusline")
-	kern.theme.set({
+	greed.theme.set({
 		["ui.statusline"] = { fg = "#808080", bg = "#101010" },
 		["ui.glow"] = { fg = "#ffffff" },
 	})
-	kern.option.set("effects", true)
+	greed.option.set("effects", true)
 	local dir = t:tempdir({ ["notes.txt"] = "hi" })
 	t:buffer("|abc")
 	t:run("open", { dir .. "/notes.txt" })
 	t:wait(300)
-	local ctx = { view = kern.view(), buffer = kern.view():buffer(), mode = "normal", width = 80 }
+	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
 	local lit = 0
 	for _, segment in statusline.build(ctx :: any).left or {} do
 		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
@@ -132,14 +132,14 @@ test("opening another file sends the wave by itself", function(t)
 	end
 	assert(lit > 0, "the file's letters are lit")
 	t:wait(400)
-	kern.option.set("effects", false)
+	greed.option.set("effects", false)
 end)
 
 -- How many of the status line's left segments are lit letters now.
 local function lit_now(): number
 	local statusline = require("@statusline")
 	local ctx =
-		{ view = kern.view(), buffer = kern.view():buffer(), mode = kern.mode.get(), width = 80 }
+		{ view = greed.view(), buffer = greed.view():buffer(), mode = greed.mode.get(), width = 80 }
 	local lit = 0
 	for _, segment in statusline.build(ctx :: any).left or {} do
 		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
@@ -150,23 +150,23 @@ local function lit_now(): number
 end
 
 test("the command line coming and going doesn't send light through the file", function(t)
-	kern.theme.set({ ["ui.statusline"] = { fg = "#808080", bg = "#101010" } })
-	kern.option.set("effects", true)
+	greed.theme.set({ ["ui.statusline"] = { fg = "#808080", bg = "#101010" } })
+	greed.option.set("effects", true)
 	local dir = t:tempdir({ ["notes.txt"] = "hi" })
-	kern.open(dir .. "/notes.txt")
+	greed.open(dir .. "/notes.txt")
 	t:wait(700)
 	t:keys(": esc")
 	t:wait(200)
 	assert(lit_now() == 0, "nothing lit: " .. lit_now())
-	kern.option.set("effects", false)
+	greed.option.set("effects", false)
 end)
 
 test("a new mode glows from the middle of its name", function(t)
-	kern.theme.set({
+	greed.theme.set({
 		["ui.statusline"] = { fg = "#808080", bg = "#101010" },
 		["ui.statusline.mode"] = { fg = "#000000", bg = "#00aa00" },
 	})
-	kern.option.set("effects", true)
+	greed.option.set("effects", true)
 	t:buffer("|abc")
 	t:keys("i")
 	t:wait(100)
@@ -175,22 +175,22 @@ test("a new mode glows from the middle of its name", function(t)
 	assert(lit_now() == 0, "and back to normal")
 	t:keys("esc")
 	t:wait(500)
-	kern.option.set("effects", false)
+	greed.option.set("effects", false)
 end)
 
 test("dark letters on a light pill light up too", function(t)
 	-- Nord's mode pill: dark letters on light green, with a near white glow.
-	kern.theme.set({
+	greed.theme.set({
 		["ui.statusline"] = { fg = "#e5e9f0", bg = "#3b4252" },
 		["ui.statusline.mode"] = { fg = "#2e3440", bg = "#a3be8c" },
 		["ui.glow"] = { fg = "#f3f5f8" },
 	})
-	kern.option.set("effects", true)
+	greed.option.set("effects", true)
 	t:buffer("|abc")
 	t:keys("i")
 	t:wait(60)
 	local statusline = require("@statusline")
-	local ctx = { view = kern.view(), buffer = kern.view():buffer(), mode = "insert", width = 80 }
+	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "insert", width = 80 }
 	local brightest = 0
 	for _, segment in statusline.build(ctx :: any).left or {} do
 		local r, g, b = string.match(
@@ -210,7 +210,7 @@ test("dark letters on a light pill light up too", function(t)
 	assert(brightest > 400, "the letters got brighter: " .. brightest)
 	t:keys("esc")
 	t:wait(500)
-	kern.option.set("effects", false)
+	greed.option.set("effects", false)
 end)
 
 test("an async piece shows what its last refresh found, without the line waiting", function(t)
@@ -219,7 +219,7 @@ test("an async piece shows what its last refresh found, without the line waiting
 	statusline.add_async("right", "slow", {
 		refresh = function()
 			-- Stands in for a slow program, like a status in a big repository.
-			kern.sleep(200)
+			greed.sleep(200)
 			runs += 1
 			return `run {runs}`
 		end,

@@ -13,7 +13,7 @@ fn host() -> Host {
     editor.open(
         "file",
         "let x = bad;",
-        Some(std::env::temp_dir().join("kern-lsp-luau/main.rs")),
+        Some(std::env::temp_dir().join("greed-lsp-luau/main.rs")),
     );
     let host = Host::new(editor).unwrap();
     let (input, output, _log) = support::start();
@@ -37,7 +37,7 @@ fn diagnostics_arrive_and_are_announced() {
     let h = host();
     h.load_str(
         "watch",
-        "local kern = require('@kern')\nkern.on('lsp.diagnostics', function(ev)\n  local d = kern.lsp.diagnostics(ev.buffer)[1]\n  kern.echo(ev.buffer:slice(d.from, d.to) .. ': ' .. d.message)\nend)",
+        "local greed = require('@greed')\ngreed.on('lsp.diagnostics', function(ev)\n  local d = greed.lsp.diagnostics(ev.buffer)[1]\n  greed.echo(ev.buffer:slice(d.from, d.to) .. ': ' .. d.message)\nend)",
     )
     .unwrap();
     assert!(h.sync_lsp().is_empty());
@@ -55,16 +55,16 @@ fn commands_wait_for_answers() {
     h.load_str(
         "ask",
         r#"
-        local kern = require("@kern")
-        kern.command { name = "hover", run = function(ctx)
+        local greed = require("@greed")
+        greed.command { name = "hover", run = function(ctx)
             local params = {
-                textDocument = { uri = kern.lsp.uri(ctx.buffer) },
-                position = kern.lsp.position(ctx.buffer, 4),
+                textDocument = { uri = greed.lsp.uri(ctx.buffer) },
+                position = greed.lsp.position(ctx.buffer, 4),
             }
-            local result = kern.lsp.request(ctx.buffer, "textDocument/hover", params)
-            kern.echo(result.contents)
-            local _, err = kern.lsp.request(ctx.buffer, "fail", {})
-            kern.echo("error: " .. err.message)
+            local result = greed.lsp.request(ctx.buffer, "textDocument/hover", params)
+            greed.echo(result.contents)
+            local _, err = greed.lsp.request(ctx.buffer, "fail", {})
+            greed.echo("error: " .. err.message)
         end }
         "#,
     )
@@ -83,7 +83,7 @@ fn commands_wait_for_answers() {
 fn requests_need_a_server_and_a_command() {
     let h = host();
     let err = h
-        .eval("require('@kern').lsp.request(require('@kern').view():buffer(), 'x', {})")
+        .eval("require('@greed').lsp.request(require('@greed').view():buffer(), 'x', {})")
         .unwrap_err()
         .to_string();
     assert!(err.contains("can only be used in a command"), "{err}");
@@ -93,7 +93,7 @@ fn requests_need_a_server_and_a_command() {
     });
     h.load_str(
         "ask",
-        "local kern = require('@kern')\nkern.command { name = 'ask', run = function(ctx) kern.lsp.request(ctx.buffer, 'x', {}) end }",
+        "local greed = require('@greed')\ngreed.command { name = 'ask', run = function(ctx) greed.lsp.request(ctx.buffer, 'x', {}) end }",
     )
     .unwrap();
     let err = h.run("ask").unwrap_err().to_string();
@@ -104,7 +104,7 @@ fn requests_need_a_server_and_a_command() {
 fn server_settings_need_a_command() {
     let h = host();
     let err = h
-        .eval("require('@kern').lsp.server({ language = 'rust', command = {} })")
+        .eval("require('@greed').lsp.server({ language = 'rust', command = {} })")
         .unwrap_err()
         .to_string();
     assert!(err.contains("needs a command"), "{err}");
@@ -228,7 +228,7 @@ fn the_lsp_plugin_marks_problems_with_signs_and_messages() {
     });
     assert_eq!(row, "E 1 let x = bad; bad word");
 
-    h.eval("require('@kern').option.set('diagnostic-messages', false)")
+    h.eval("require('@greed').option.set('diagnostic-messages', false)")
         .unwrap();
     assert_eq!(
         marks(&h),
@@ -459,7 +459,7 @@ fn code_actions_apply_edits_run_commands_and_resolve() {
 fn the_problems_list_has_files_that_are_not_open() {
     let h = with_plugin();
     pump(&h, |h| {
-        h.eval("return #require('@kern').lsp.problems()").unwrap() == "2"
+        h.eval("return #require('@greed').lsp.problems()").unwrap() == "2"
     });
     h.press_keys("space D").unwrap();
     let items = picker_items(&h).unwrap();
@@ -479,8 +479,8 @@ fn the_problems_list_has_files_that_are_not_open() {
 fn multibuffer(h: &Host) -> String {
     h.eval(
         r#"
-        local kern = require("@kern")
-        for _, b in kern.buffers() do
+        local greed = require("@greed")
+        for _, b in greed.buffers() do
             if b:kind() == "multibuffer" then
                 local text = b:text()
                 local out = { text }
@@ -515,12 +515,12 @@ fn ctrl_e_puts_references_in_a_multibuffer() {
 #[test]
 fn ctrl_e_puts_problems_in_a_multibuffer_with_their_messages() {
     // The other file's problem is read from disk.
-    let dir = std::env::temp_dir().join("kern-lsp-luau");
+    let dir = std::env::temp_dir().join("greed-lsp-luau");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("other.rs"), "fn a() {}\n\nunused();\n").unwrap();
     let h = with_plugin();
     pump(&h, |h| {
-        h.eval("return #require('@kern').lsp.problems()").unwrap() == "2"
+        h.eval("return #require('@greed').lsp.problems()").unwrap() == "2"
     });
     h.press_keys("space D ctrl-e").unwrap();
     assert_eq!(
@@ -574,9 +574,9 @@ fn a_server_asking_to_pick_waits_for_the_picker_and_hears_the_answer() {
     h.load_str(
         "ask",
         r#"
-        local kern = require("@kern")
-        kern.command { name = "ask-server", run = function(ctx)
-            kern.lsp.request(ctx.buffer, "workspace/executeCommand", { command = "ask" })
+        local greed = require("@greed")
+        greed.command { name = "ask-server", run = function(ctx)
+            greed.lsp.request(ctx.buffer, "workspace/executeCommand", { command = "ask" })
         end }
         "#,
     )

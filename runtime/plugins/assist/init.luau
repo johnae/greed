@@ -10,14 +10,14 @@
 -- one operation. In the description buffer, a applies it (jj describe, or a
 -- git commit of what's staged).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local models = require("@models")
 local agent = require("@agent")
 local vcs = require("@vcs")
 local context = require("@context")
 
-kern.option.define({
+greed.option.define({
 	name = "assist-role",
 	doc = "The model role assist's commands ask; see :models",
 	default = "fast",
@@ -26,34 +26,34 @@ kern.option.define({
 local M = {}
 
 local function role(): string
-	return kern.option.get("assist-role") :: string
+	return greed.option.get("assist-role") :: string
 end
 
 -- The panel answers show in, while it's open.
-local panel: kern.View? = nil
+local panel: greed.View? = nil
 
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	if panel and panel:id() == event.view then
 		panel = nil
 	end
 end)
 
 --- Shows a fresh buffer of `kind` in the answer panel, titled `title`.
-local function show(kind: string, title: string, language: string?): kern.Buffer
-	local buffer = kern.create_buffer(kind, "", { readonly = true, language = language })
+local function show(kind: string, title: string, language: string?): greed.Buffer
+	local buffer = greed.create_buffer(kind, "", { readonly = true, language = language })
 	local open = panel
 	if open then
 		open:show(buffer)
 		open:configure({ title = title })
 	else
-		panel = kern.panel(buffer, { side = "right", width = "45%", title = title, focus = false })
+		panel = greed.panel(buffer, { side = "right", width = "45%", title = title, focus = false })
 	end
 	return buffer
 end
 
 --- Asks the model and writes its answer into `buffer` as it arrives.
 --- Returns the whole answer, or nil and why not.
-function M.answer_into(buffer: kern.Buffer, request: models.Request): (string?, string?)
+function M.answer_into(buffer: greed.Buffer, request: models.Request): (string?, string?)
 	local stream, err = models.stream(role(), request)
 	if stream == nil then
 		return nil, err
@@ -74,7 +74,7 @@ end
 
 -- The selected text, or the line under the cursor when nothing more is
 -- selected, and the 1-based line it starts on.
-local function selected(view: kern.View): (string, number)
+local function selected(view: greed.View): (string, number)
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local range = selection.ranges[selection.primary]
@@ -94,12 +94,12 @@ local function with_context(content: string): string
 end
 
 -- Where the code comes from, for the model.
-local function source(buffer: kern.Buffer, line: number): string
+local function source(buffer: greed.Buffer, line: number): string
 	return `{buffer:path() or "an unsaved buffer"}, line {line}, in {buffer:language() or "plain text"}`
 end
 
 -- Asks `question` about the selection in `view`, answering in the panel.
-local function about_selection(view: kern.View, title: string, question: string)
+local function about_selection(view: greed.View, title: string, question: string)
 	local text, line = selected(view)
 	local buffer = show("answer", title, "markdown")
 	local _, err = M.answer_into(buffer, {
@@ -115,11 +115,11 @@ local function about_selection(view: kern.View, title: string, question: string)
 		},
 	})
 	if err then
-		kern.echo(err)
+		greed.echo(err)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "explain",
 	doc = "Explain the selection (or the line), in a panel as the answer arrives",
 	run = function(ctx)
@@ -127,7 +127,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "ask-about",
 	doc = "Ask a language model something about the selection (or the line)",
 	run = function(ctx)
@@ -142,12 +142,12 @@ kern.command({
 local AROUND = 20
 
 -- The most severe problem on the cursor's line.
-local function problem_at(view: kern.View): kern.Diagnostic?
+local function problem_at(view: greed.View): greed.Diagnostic?
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local line = buffer:line_of(selection.ranges[selection.primary].head)
-	local best: kern.Diagnostic? = nil
-	for _, d in kern.lsp.diagnostics(buffer) do
+	local best: greed.Diagnostic? = nil
+	for _, d in greed.lsp.diagnostics(buffer) do
 		if buffer:line_of(d.from) == line and (best == nil or d.severity < best.severity) then
 			best = d
 		end
@@ -155,14 +155,14 @@ local function problem_at(view: kern.View): kern.Diagnostic?
 	return best
 end
 
-kern.command({
+greed.command({
 	name = "fix",
 	doc = "Ask a language model to fix the problem under the cursor, as changes to review",
 	run = function(ctx)
 		local buffer = ctx.buffer
 		local problem = problem_at(ctx.view)
 		if problem == nil then
-			kern.echo("no problem on this line")
+			greed.echo("no problem on this line")
 			return
 		end
 		local line = buffer:line_of(problem.from)
@@ -173,7 +173,7 @@ kern.command({
 			then buffer:line_start(last + 1)
 			else buffer:len()
 		local old = buffer:slice(from, to)
-		kern.echo("asking the model for a fix...")
+		greed.echo("asking the model for a fix...")
 		local answer, err = models.ask(role(), {
 			system = "You fix code. Reply with only the rewritten lines, the whole excerpt, "
 				.. "changed as little as the fix needs: no explanations, no code fences.",
@@ -188,7 +188,7 @@ kern.command({
 			},
 		})
 		if answer == nil then
-			kern.echo(err :: string)
+			greed.echo(err :: string)
 			return
 		end
 		local new = models.unfenced(answer)
@@ -196,14 +196,14 @@ kern.command({
 			new ..= "\n"
 		end
 		local changes = {}
-		for _, change in kern.diff(old, new) do
+		for _, change in greed.diff(old, new) do
 			table.insert(
 				changes,
 				{ from = from + change.from, to = from + change.to, text = change.text }
 			)
 		end
 		if #changes == 0 then
-			kern.echo("the model changed nothing")
+			greed.echo("the model changed nothing")
 			return
 		end
 		agent.propose_changes(
@@ -216,25 +216,25 @@ kern.command({
 })
 
 -- The folder of the buffer, or the project's, for the repository.
-local function folder(buffer: kern.Buffer): string
+local function folder(buffer: greed.Buffer): string
 	local path = buffer:path()
-	return if path then string.match(path, "^(.*)/[^/]*$") or "." else kern.project.current().root
+	return if path then string.match(path, "^(.*)/[^/]*$") or "." else greed.project.current().root
 end
 
 -- Where each description buffer applies, by buffer.
 local describing: { [number]: string } = {}
 
-kern.command({
+greed.command({
 	name = "commit-message",
 	doc = "Draft a description of the changes in progress, from their diff",
 	run = function(ctx)
 		local dir = folder(ctx.buffer)
 		local diff, kind = vcs.diff(dir)
 		if diff == nil then
-			kern.echo(kind or "no diff")
+			greed.echo(kind or "no diff")
 			return
 		elseif diff == "" then
-			kern.echo("nothing has changed")
+			greed.echo("nothing has changed")
 			return
 		end
 		local buffer = show("commit-message", "Description: a applies it, q closes")
@@ -246,12 +246,12 @@ kern.command({
 			messages = { { role = "user", content = `Describe these changes:\n\n{diff}` } },
 		})
 		if err then
-			kern.echo(err)
+			greed.echo(err)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "commit-message-apply",
 	doc = "Use the drafted description: jj describe, or a git commit of what's staged",
 	run = function(ctx)
@@ -261,14 +261,14 @@ kern.command({
 		end
 		local message = models.unfenced(ctx.buffer:text())
 		local ok, err = vcs.describe(dir, (string.gsub(message, "%s+$", "")))
-		kern.echo(if ok then "described" else `can't describe: {err}`)
+		greed.echo(if ok then "described" else `can't describe: {err}`)
 		if ok and panel then
 			panel:close()
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "assist-close",
 	doc = "Close the answer panel",
 	run = function()
@@ -278,18 +278,18 @@ kern.command({
 	end,
 })
 
-kern.on("buffer.closed", function(event: kern.BufferClosed)
+greed.on("buffer.closed", function(event: greed.BufferClosed)
 	describing[event.id] = nil
 end)
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space i e"] = "explain",
 	["space i a"] = "ask-about",
 	["space i f"] = "fix",
 	["space i c"] = "commit-message",
 })
-kern.keymap.bind({ mode = "normal", kind = "answer" }, { q = "assist-close" })
-kern.keymap.bind(
+greed.keymap.bind({ mode = "normal", kind = "answer" }, { q = "assist-close" })
+greed.keymap.bind(
 	{ mode = "normal", kind = "commit-message" },
 	{ a = "commit-message-apply", q = "assist-close" }
 )

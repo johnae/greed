@@ -1,4 +1,4 @@
-//! `kern bridge`, the end of `kern ssh` that runs next to the session,
+//! `greed bridge`, the end of `greed ssh` that runs next to the session,
 //! driven over pipes the way ssh drives it.
 
 use std::io::{BufRead, BufReader, Write};
@@ -6,28 +6,28 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
 
-const KERN: &str = env!("CARGO_BIN_EXE_greed");
+const GREED: &str = env!("CARGO_BIN_EXE_greed");
 
-/// `kern` with folders of its own for sessions, config and cache, so these
+/// `greed` with folders of its own for sessions, config and cache, so these
 /// tests never see your editors or write to your folders.
-fn kern() -> Command {
-    kern_in("shared")
+fn greed() -> Command {
+    greed_in("shared")
 }
 
 /// The folders standing in for runtime, config and cache for `world`.
 /// Tests that write config get a world of their own: tests run in
 /// parallel, and a session starting while a plugin is half-written fails.
 fn world(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("kern-bridge-{name}-{}", std::process::id()))
+    std::env::temp_dir().join(format!("greed-bridge-{name}-{}", std::process::id()))
 }
 
-/// `kern` in `world`.
-fn kern_in(name: &str) -> Command {
+/// `greed` in `world`.
+fn greed_in(name: &str) -> Command {
     let root = world(name);
     for dir in ["run", "config", "cache", "claude"] {
         std::fs::create_dir_all(root.join(dir)).unwrap();
     }
-    let mut command = Command::new(KERN);
+    let mut command = Command::new(GREED);
     command
         .env("XDG_RUNTIME_DIR", root.join("run"))
         .env("XDG_CONFIG_HOME", root.join("config"))
@@ -39,7 +39,7 @@ fn kern_in(name: &str) -> Command {
     command
 }
 
-/// A `kern bridge` driven over pipes. Dropping it stops the bridge, so a
+/// A `greed bridge` driven over pipes. Dropping it stops the bridge, so a
 /// failing test can't leave one behind holding the test run open.
 struct Bridge {
     child: Child,
@@ -49,7 +49,7 @@ struct Bridge {
 
 impl Bridge {
     fn start(args: &[&str]) -> Bridge {
-        let mut command = kern();
+        let mut command = greed();
         command.arg("bridge").args(args);
         Bridge::spawn(command)
     }
@@ -131,7 +131,8 @@ impl Drop for Bridge {
 }
 
 fn temp_file(label: &str, text: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("kern-bridge-{label}-{}.txt", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("greed-bridge-{label}-{}.txt", std::process::id()));
     std::fs::write(&path, text).unwrap();
     path
 }
@@ -162,18 +163,18 @@ fn the_bridge_attaches_to_a_running_session() {
 
 #[test]
 fn sessions_are_named_after_their_project_and_found_by_it() {
-    let project = std::env::temp_dir().join(format!("kern-proj-{}", std::process::id()));
+    let project = std::env::temp_dir().join(format!("greed-proj-{}", std::process::id()));
     std::fs::create_dir_all(project.join(".git")).unwrap();
     std::fs::create_dir_all(project.join("src")).unwrap();
     std::fs::write(project.join("README.md"), "top").unwrap();
     std::fs::write(project.join("src/lib.rs"), "deep inside").unwrap();
     let root = project.to_str().unwrap();
     let _server = Server::start(&[root]);
-    let name = format!("kern-proj-{}", std::process::id());
+    let name = format!("greed-proj-{}", std::process::id());
     // The session takes a moment to start listening.
     let mut listed = String::new();
     for _ in 0..500 {
-        let out = kern().arg("ls").output().unwrap();
+        let out = greed().arg("ls").output().unwrap();
         listed = String::from_utf8(out.stdout).unwrap();
         if listed
             .lines()
@@ -193,14 +194,14 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     std::fs::remove_dir_all(&project).unwrap();
 }
 
-/// A `kern serve` started by a test, stopped when the test ends even if it
+/// A `greed serve` started by a test, stopped when the test ends even if it
 /// fails, so a session left behind can't hold the test run open.
 struct Server(Child);
 
 impl Server {
     fn start(args: &[&str]) -> Server {
         Server(
-            kern()
+            greed()
                 .arg("serve")
                 .args(args)
                 .stdin(Stdio::null())
@@ -220,12 +221,13 @@ impl Drop for Server {
 }
 
 #[test]
-fn a_session_loads_the_config_kern_config_dir_points_at() {
-    let config = std::env::temp_dir().join(format!("kern-config-from-afar-{}", std::process::id()));
+fn a_session_loads_the_config_greed_config_dir_points_at() {
+    let config =
+        std::env::temp_dir().join(format!("greed-config-from-afar-{}", std::process::id()));
     std::fs::create_dir_all(config.join("plugins/hello")).unwrap();
     std::fs::write(
         config.join("init.luau"),
-        "require('@kern').echo('config from afar')\n",
+        "require('@greed').echo('config from afar')\n",
     )
     .unwrap();
     std::fs::write(
@@ -235,12 +237,12 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     .unwrap();
     std::fs::write(
         config.join("plugins/hello/init.luau"),
-        "require('@kern').command({ name = 'hello-from-afar', run = function() end })\n",
+        "require('@greed').command({ name = 'hello-from-afar', run = function() end })\n",
     )
     .unwrap();
     let file = temp_file("config", "text");
     let name = format!("bridge-config-{}", std::process::id());
-    let mut command = kern();
+    let mut command = greed();
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
         .env("GREED_CONFIG_DIR", &config);
@@ -249,11 +251,11 @@ fn a_session_loads_the_config_kern_config_dir_points_at() {
     let status = rows.last().unwrap();
     assert!(status.contains("config from afar"), "{rows:?}");
     // The plugin in the config's plugins folder loaded too.
-    let listed = kern()
+    let listed = greed()
         .args([
             "ctl",
             "eval",
-            "code=return table.concat(require('@kern').plugin.list(), ',')",
+            "code=return table.concat(require('@greed').plugin.list(), ',')",
         ])
         .env("GREED_SESSION", &name)
         .output()
@@ -272,27 +274,27 @@ fn plugin(dir: &std::path::Path, name: &str, command: &str) {
     std::fs::write(path.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
     std::fs::write(
         path.join("init.luau"),
-        format!("require('@kern').command({{ name = '{command}', run = function() end }})\n"),
+        format!("require('@greed').command({{ name = '{command}', run = function() end }})\n"),
     )
     .unwrap();
 }
 
 #[test]
-fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
+fn the_config_greed_ssh_brings_comes_first_and_the_machines_own_wins() {
     let root = world("layers");
-    let own = root.join("config/kern");
-    let brought = std::env::temp_dir().join(format!("kern-brought-{}", std::process::id()));
+    let own = root.join("config/greed");
+    let brought = std::env::temp_dir().join(format!("greed-brought-{}", std::process::id()));
     for dir in [&own, &brought] {
         std::fs::create_dir_all(dir).unwrap();
     }
     std::fs::write(
         brought.join("init.luau"),
-        "local o = require('@kern').option\no.set('indent', 'AAAA')\no.set('jump-label-alphabet', 'xy')\n",
+        "local o = require('@greed').option\no.set('indent', 'AAAA')\no.set('jump-label-alphabet', 'xy')\n",
     )
     .unwrap();
     std::fs::write(
         own.join("init.luau"),
-        "require('@kern').option.set('indent', 'BB')\n",
+        "require('@greed').option.set('indent', 'BB')\n",
     )
     .unwrap();
     plugin(&brought, "only-brought", "from-brought");
@@ -301,14 +303,14 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
 
     let file = temp_file("layers", "text");
     let name = format!("bridge-layers-{}", std::process::id());
-    let mut command = kern_in("layers");
+    let mut command = greed_in("layers");
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
         .env("GREED_SSH_CONFIG_DIR", &brought);
     let mut bridge = Bridge::spawn(command);
     bridge.attach();
     let eval = |code: &str| {
-        let out = kern_in("layers")
+        let out = greed_in("layers")
             .args(["ctl", "eval", &format!("code={code}")])
             .env("GREED_SESSION", &name)
             .output()
@@ -316,17 +318,17 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     };
     assert_eq!(
-        eval("return require('@kern').option.get('indent')"),
+        eval("return require('@greed').option.get('indent')"),
         "BB",
         "the machine's own config runs last"
     );
     assert_eq!(
-        eval("return require('@kern').option.get('jump-label-alphabet')"),
+        eval("return require('@greed').option.get('jump-label-alphabet')"),
         "xy",
         "the brought one still runs"
     );
     let commands = eval(
-        "local n = {} for _, c in require('@kern').commands() do table.insert(n, c.name) end return table.concat(n, ',')",
+        "local n = {} for _, c in require('@greed').commands() do table.insert(n, c.name) end return table.concat(n, ',')",
     );
     assert!(
         commands.contains("from-brought"),
@@ -337,7 +339,7 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
         "the own plugin of the same name wins: {commands}"
     );
     assert_eq!(
-        eval("return require('@kern').fs.dirs().config"),
+        eval("return require('@greed').fs.dirs().config"),
         own.to_str().unwrap(),
         "agents install into the machine's own config"
     );
@@ -350,23 +352,23 @@ fn the_config_kern_ssh_brings_comes_first_and_the_machines_own_wins() {
 #[test]
 fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     let root = world("trusted");
-    let project = std::env::temp_dir().join(format!("kern-trusted-{}", std::process::id()));
+    let project = std::env::temp_dir().join(format!("greed-trusted-{}", std::process::id()));
     std::fs::create_dir_all(project.join(".git")).unwrap();
-    std::fs::create_dir_all(project.join(".kern")).unwrap();
+    std::fs::create_dir_all(project.join(".greed")).unwrap();
     std::fs::write(
-        project.join(".kern/init.luau"),
-        "require('@kern').option.set('indent', 'FROM-PROJECT')\n",
+        project.join(".greed/init.luau"),
+        "require('@greed').option.set('indent', 'FROM-PROJECT')\n",
     )
     .unwrap();
     std::fs::write(project.join("a.txt"), "text").unwrap();
-    std::fs::create_dir_all(root.join("cache/kern")).unwrap();
+    std::fs::create_dir_all(root.join("cache/greed")).unwrap();
     std::fs::write(
-        root.join("cache/kern/trusted-projects"),
+        root.join("cache/greed/trusted-projects"),
         format!("{}\n", project.display()),
     )
     .unwrap();
     let name = format!("bridge-trusted-{}", std::process::id());
-    let mut command = kern_in("trusted");
+    let mut command = greed_in("trusted");
     command.args([
         "bridge",
         "--session",
@@ -375,11 +377,11 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     ]);
     let mut bridge = Bridge::spawn(command);
     bridge.attach();
-    let out = kern_in("trusted")
+    let out = greed_in("trusted")
         .args([
             "ctl",
             "eval",
-            "code=return require('@kern').option.get('indent')",
+            "code=return require('@greed').option.get('indent')",
         ])
         .env("GREED_SESSION", &name)
         .output()

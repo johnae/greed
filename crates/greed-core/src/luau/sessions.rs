@@ -1,7 +1,7 @@
-//! `kern.session`: the sessions running on this machine, and sending the
+//! `greed.session`: the sessions running on this machine, and sending the
 //! attached client to another one. Each session is its own editor process;
 //! switching moves the client, and whoever holds its connection (the
-//! terminal, or the bridge on the far end of `kern ssh`) reconnects.
+//! terminal, or the bridge on the far end of `greed ssh`) reconnects.
 
 use std::path::Path;
 

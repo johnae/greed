@@ -7,11 +7,11 @@
 --
 -- To change how long it lasts, set "flash-duration" from your config:
 --
---     require("@kern").option.set("flash-duration", 150)
+--     require("@greed").option.set("flash-duration", 150)
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "flash-duration",
 	doc = "How long copied text flashes, in milliseconds",
 	default = 300,
@@ -38,12 +38,12 @@ local function mix(from: { number }, to: { number }, t: number): string
 	return string.format("#%02x%02x%02x", out[1], out[2], out[3])
 end
 
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if event.name ~= "copy" then
 		return
 	end
-	local view = kern.view()
-	local marks: { kern.Mark } = {}
+	local view = greed.view()
+	local marks: { greed.Mark } = {}
 	for _, range in view:selection().ranges do
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		if from < to then
@@ -55,22 +55,22 @@ kern.on("command.run", function(event: kern.CommandRun)
 	end
 	latest += 1
 	local mine = latest
-	local duration = kern.option.get("flash-duration") :: number
+	local duration = greed.option.get("flash-duration") :: number
 	local buffer = view:buffer()
-	local flash = kern.theme.get("ui.flash") or { bg = "yellow", fg = "black" }
-	local text = kern.theme.get("ui.text")
-	kern.theme.set({ ["ui.flash.now"] = { bg = flash.bg, fg = flash.fg } })
+	local flash = greed.theme.get("ui.flash") or { bg = "yellow", fg = "black" }
+	local text = greed.theme.get("ui.text")
+	greed.theme.set({ ["ui.flash.now"] = { bg = flash.bg, fg = flash.fg } })
 	buffer:decorate("flash", marks)
 	local from_bg = flash.bg and rgb(flash.bg)
 	local to_bg = rgb(text and text.bg or "#000000")
 	if from_bg and to_bg then
-		kern.animate(duration, function(t)
+		greed.animate(duration, function(t)
 			if latest == mine then
-				kern.theme.set({ ["ui.flash.now"] = { bg = mix(from_bg, to_bg, t), fg = flash.fg } })
+				greed.theme.set({ ["ui.flash.now"] = { bg = mix(from_bg, to_bg, t), fg = flash.fg } })
 			end
 		end)
 	else
-		kern.sleep(duration)
+		greed.sleep(duration)
 	end
 	-- The buffer may have gone away while it flashed.
 	if latest == mine then

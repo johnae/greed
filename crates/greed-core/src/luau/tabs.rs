@@ -1,4 +1,4 @@
-//! `kern.tab`: the shown project's tabs, each a layout of panes. Splitting
+//! `greed.tab`: the shown project's tabs, each a layout of panes. Splitting
 //! and moving between panes is on views (`view:split`, `view:neighbor`).
 
 use greed_text::Author;

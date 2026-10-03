@@ -1,4 +1,4 @@
-; Bash, with Kern's capture names. The first pattern to match some text
+; Bash, with Greed's capture names. The first pattern to match some text
 ; wins, so the specific ones come first.
 
 (comment) @comment

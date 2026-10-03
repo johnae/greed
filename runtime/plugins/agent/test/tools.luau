@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local agent = require("@agent")
 
 -- Runs the socket tool `name` with `args`.
@@ -26,9 +26,9 @@ end)
 
 test("buffers lists open files and which have changes", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("i x esc")
-	kern.open(dir .. "/b.txt")
+	greed.open(dir .. "/b.txt")
 	local modified = {}
 	for _, entry in run("buffers") do
 		modified[entry.path] = entry.modified
@@ -47,7 +47,7 @@ end)
 
 test("project and diagnostics answer about the editor", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "", ["a.txt"] = "" })
-	kern.run("project", { args = { dir } })
+	greed.run("project", { args = { dir } })
 	t:buffer("|x")
 	assert(run("project") == dir, tostring(run("project")))
 	assert(#run("diagnostics", { path = dir .. "/not-open.txt" }) == 0)
@@ -88,7 +88,7 @@ test("tool names are checked, and a tool with the same name replaces the old one
 end)
 
 test("outline and syntax_query read a file's syntax tree, open or not", function(t)
-	require("@kern").syntax.set_query(
+	require("@greed").syntax.set_query(
 		"rust",
 		"textobjects",
 		"(function_item) @function.around (struct_item) @type.around"
@@ -114,10 +114,10 @@ end)
 
 test("history_recent says who changed which files lately, with a diff", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n", ["b.txt"] = "b\n" })
-	kern.open(dir .. "/b.txt")
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/b.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("j A space 2 esc")
-	assert(kern.view():buffer():text() == "one\ntwo 2\n", kern.view():buffer():text())
+	assert(greed.view():buffer():text() == "one\ntwo 2\n", greed.view():buffer():text())
 	local recent = run("history_recent")
 	assert(#recent == 1, "only the changed file")
 	local file = recent[1]
@@ -135,15 +135,15 @@ test("eval's edits are one operation, and an eval that edits nothing leaves none
 	local before = #operations.list()
 	run("eval", { code = "return 1" })
 	assert(#operations.list() == before, "nothing changed, so no operation")
-	local code = `local kern = require("@kern")\n`
+	local code = `local greed = require("@greed")\n`
 		.. `for _, name in \{ "a", "b" \} do\n`
-		.. `  local b = kern.load("{dir}/" .. name .. ".txt")\n`
+		.. `  local b = greed.load("{dir}/" .. name .. ".txt")\n`
 		.. `  b:edit(function(e) e:insert(0, "!") end)\n`
 		.. `end`
 	run("eval", { code = code })
 	local op = operations.list()[1]
 	assert(op.author == "agent" and #op.files == 2, op.name)
-	assert(string.find(op.name, "^eval: local kern"), op.name)
+	assert(string.find(op.name, "^eval: local greed"), op.name)
 	assert(operations.undo(op))
-	assert(kern.load(dir .. "/a.txt"):text() == "a\n")
+	assert(greed.load(dir .. "/a.txt"):text() == "a\n")
 end)

@@ -1,14 +1,14 @@
 -- Marks for lists of choices, like the picker's: the selected row and the
 -- characters a query matched.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
 -- Adds the marks for one row of a list to `marks`. The row starts at byte
--- `from` in the buffer; `matched` are byte offsets from `kern.fuzzy_positions`
+-- `from` in the buffer; `matched` are byte offsets from `greed.fuzzy_positions`
 -- into the part of the row starting `offset` bytes in.
-function M.mark_row(marks: { kern.Mark }, from: number, row: string, selected: boolean, matched: { number }, offset: number)
+function M.mark_row(marks: { greed.Mark }, from: number, row: string, selected: boolean, matched: { number }, offset: number)
 	if selected then
 		table.insert(marks, { from = from, to = from + #row, style = "ui.menu.selected", line = true })
 	end

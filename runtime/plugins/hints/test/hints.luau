@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 test("a prefix key shows what can follow it", function(t)
 	t:buffer("|abc")
@@ -27,8 +27,8 @@ end)
 test(
 	"keys that start longer sequences say more, and commands without a doc show their name",
 	function(t)
-		kern.command({ name = "hint-test-nodoc", run = function() end })
-		kern.keymap.bind("normal", { ["g q"] = "hint-test-nodoc" })
+		greed.command({ name = "hint-test-nodoc", run = function() end })
+		greed.keymap.bind("normal", { ["g q"] = "hint-test-nodoc" })
 		t:buffer("|abc")
 		t:keys("m")
 		assert(string.find(t:floats()[1], "i        more...", 1, true), t:floats()[1])
@@ -38,7 +38,7 @@ test(
 )
 
 test("long key names keep the descriptions lined up", function(t)
-	kern.keymap.bind("normal", { ["g ctrl-shift-home"] = "goto-start" })
+	greed.keymap.bind("normal", { ["g ctrl-shift-home"] = "goto-start" })
 	t:buffer("|abc")
 	t:keys("g")
 	local columns = {}
@@ -69,11 +69,11 @@ test("the first time in a mode with an intro, the status line says how to get ou
 	local hints = require("@hints")
 	hints.intro["hint-test"] = "you're in the test mode"
 	t:buffer("|abc")
-	kern.mode.set("hint-test")
+	greed.mode.set("hint-test")
 	local messages = t:messages()
 	assert(messages[#messages] == "you're in the test mode", messages[#messages])
-	kern.mode.set("normal")
-	kern.mode.set("hint-test")
+	greed.mode.set("normal")
+	greed.mode.set("hint-test")
 	assert(#t:messages() == 0, "only once")
-	kern.mode.set("normal")
+	greed.mode.set("normal")
 end)

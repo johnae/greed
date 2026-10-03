@@ -17,7 +17,7 @@
 -- Every key is in `M.keys`; rebind or unbind them from your config like any
 -- other (see docs/keys.md).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local terminal = require("@terminal")
@@ -45,21 +45,21 @@ local STEP: { [Direction]: number } = { left = 4, right = 4, up = 2, down = 2 }
 
 --- The pane keys go to: the focused view if it's a pane, else the shown
 --- tab's active pane.
-function M.pane(): kern.View
-	local view = kern.view()
-	return if view:is_pane() then view else kern.tab.current().active
+function M.pane(): greed.View
+	local view = greed.view()
+	return if view:is_pane() then view else greed.tab.current().active
 end
 
 local settle = terminal.settle
 
 --- Focuses `view`, going into the right mode for it.
-function M.focus(view: kern.View)
+function M.focus(view: greed.View)
 	view:focus()
 	settle(view)
 end
 
-local function tabs(): ({ kern.TabInfo }, number)
-	local list = kern.tab.list()
+local function tabs(): ({ greed.TabInfo }, number)
+	local list = greed.tab.list()
 	for i, tab in list do
 		if tab.current then
 			return list, i
@@ -72,16 +72,16 @@ end
 function M.cycle_tab(offset: number)
 	local list, i = tabs()
 	local tab = list[(i - 1 + offset) % #list + 1]
-	kern.tab.switch(tab.id)
-	settle(kern.view())
+	greed.tab.switch(tab.id)
+	settle(greed.view())
 end
 
 --- Shows the `n`th tab, if there is one.
 function M.go_to_tab(n: number)
-	local tab = kern.tab.list()[n]
+	local tab = greed.tab.list()[n]
 	if tab then
-		kern.tab.switch(tab.id)
-		settle(kern.view())
+		greed.tab.switch(tab.id)
+		settle(greed.view())
 	end
 end
 
@@ -92,7 +92,7 @@ function M.move(dir: Direction)
 	if next then
 		M.focus(next)
 	elseif dir == "left" or dir == "right" then
-		if #kern.tab.list() > 1 then
+		if #greed.tab.list() > 1 then
 			M.cycle_tab(if dir == "left" then -1 else 1)
 		end
 	end
@@ -100,7 +100,7 @@ end
 
 --- Focuses the next pane in the tab, round the end.
 function M.next_pane()
-	local tab = kern.tab.current()
+	local tab = greed.tab.current()
 	local current = M.pane():id()
 	for i, pane in tab.panes do
 		if pane:id() == current then
@@ -115,7 +115,7 @@ end
 --- view focused, it grows or shrinks that.
 function M.resize(dir: Direction, steps: number?)
 	local cells = STEP[dir] * (steps or 1)
-	local view = kern.view()
+	local view = greed.view()
 	if core.floats.is_float(view) then
 		core.floats.grow(view, dir, cells)
 		return
@@ -129,7 +129,7 @@ end
 
 --- Moves the focused floating view toward `dir`.
 function M.move_float(dir: Direction)
-	local view = kern.view()
+	local view = greed.view()
 	if core.floats.is_float(view) then
 		local cells = STEP[dir]
 		local dx = if dir == "left" then -cells elseif dir == "right" then cells else 0
@@ -140,7 +140,7 @@ end
 
 --- Grows the pane every way it can (or shrinks it, with a negative `steps`).
 function M.grow(steps: number)
-	local view = kern.view()
+	local view = greed.view()
 	if core.floats.is_float(view) then
 		core.floats.grow(view, "right", STEP.right * steps)
 		core.floats.grow(view, "down", STEP.down * steps)
@@ -158,7 +158,7 @@ end
 
 -- The side to split the pane along: its longer one, counting a cell as
 -- about twice as tall as it's wide.
-local function longer_side(pane: kern.View): Direction
+local function longer_side(pane: greed.View): Direction
 	local rows, cols = pane:size()
 	return if (cols or 80) > (rows or 24) * 2 then "right" else "down"
 end
@@ -204,17 +204,17 @@ function M.close_pane()
 	local pane = M.pane()
 	local buffer = pane:buffer()
 	if not pane:close() then
-		kern.echo("the last pane stays open")
+		greed.echo("the last pane stays open")
 		return
 	end
 	terminal.forget(buffer)
-	settle(kern.view())
+	settle(greed.view())
 end
 
 --- Closes every other pane in the tab.
 function M.only()
 	local keep = M.pane():id()
-	for _, pane in kern.tab.current().panes do
+	for _, pane in greed.tab.current().panes do
 		if pane:id() ~= keep then
 			pane:close()
 		end
@@ -222,7 +222,7 @@ function M.only()
 end
 
 function M.toggle_zoom()
-	kern.tab.set_zoomed(not kern.tab.current().zoomed)
+	greed.tab.set_zoomed(not greed.tab.current().zoomed)
 end
 
 -- What `pick` labels panes with: digits first, then letters.
@@ -232,19 +232,19 @@ local LABELS = "123456789abcdefghijklmnopqrstuvwxyz"
 --- is typed next; any other key leaves things as they were. In a zoomed
 --- tab every pane shows again first. Returns whether a pane was picked.
 function M.pick(): boolean
-	if kern.tab.current().zoomed then
-		kern.tab.set_zoomed(false)
+	if greed.tab.current().zoomed then
+		greed.tab.set_zoomed(false)
 		-- Lets the panes be drawn where they now are.
-		kern.sleep(0)
+		greed.sleep(0)
 	end
-	local badges: { kern.View } = {}
-	local labelled: { [string]: kern.View } = {}
-	for i, pane in kern.tab.current().panes do
+	local badges: { greed.View } = {}
+	local labelled: { [string]: greed.View } = {}
+	for i, pane in greed.tab.current().panes do
 		local label = string.sub(LABELS, i, i)
 		local area = pane:area()
 		if label ~= "" and area then
 			labelled[label] = pane
-			local badge = kern.create_buffer("pane-label", ` {label} `, { readonly = true })
+			local badge = greed.create_buffer("pane-label", ` {label} `, { readonly = true })
 			badge:set_line_numbers(false)
 			badge:decorate(
 				"pane-label",
@@ -252,11 +252,11 @@ function M.pick(): boolean
 			)
 			table.insert(
 				badges,
-				kern.float(badge, { x = area.x, y = area.y, width = 5, height = 3, focus = false })
+				greed.float(badge, { x = area.x, y = area.y, width = 5, height = 3, focus = false })
 			)
 		end
 	end
-	local key = kern.next_key()
+	local key = greed.next_key()
 	for _, badge in badges do
 		badge:close()
 	end
@@ -269,28 +269,28 @@ end
 
 --- Opens a tab, empty or with a terminal.
 function M.new_tab(with_terminal: boolean?)
-	kern.tab.new()
+	greed.tab.new()
 	if with_terminal then
 		terminal.open()
-	elseif kern.mode.get() == "terminal" then
-		kern.mode.set(core.style.home())
+	elseif greed.mode.get() == "terminal" then
+		greed.mode.set(core.style.home())
 	end
 end
 
 function M.close_tab()
-	if not kern.tab.close(kern.tab.current().id) then
-		kern.echo("the last tab stays open")
+	if not greed.tab.close(greed.tab.current().id) then
+		greed.echo("the last tab stays open")
 		return
 	end
-	settle(kern.view())
+	settle(greed.view())
 end
 
 function M.rename_tab()
-	local id = kern.tab.current().id
+	local id = greed.tab.current().id
 	core.prompt.open({
 		title = "Tab name",
 		on_submit = function(name)
-			kern.tab.rename(id, name)
+			greed.tab.rename(id, name)
 		end,
 	})
 end
@@ -299,22 +299,22 @@ end
 local modes: { [string]: { back: string, hint: string } } = {}
 
 local function enter(mode: string)
-	local current = kern.mode.get()
+	local current = greed.mode.get()
 	modes[mode].back = if modes[current] then modes[current].back else current
-	kern.mode.set(mode)
-	kern.echo(modes[mode].hint)
+	greed.mode.set(mode)
+	greed.echo(modes[mode].hint)
 end
 
 local function leave()
-	local current = modes[kern.mode.get()]
+	local current = modes[greed.mode.get()]
 	if current then
-		kern.mode.set(current.back)
-		settle(kern.view())
+		greed.mode.set(current.back)
+		settle(greed.view())
 	end
 end
 
 -- Runs `f`, then leaves the mode.
-local function once(f: () -> ()): (kern.Context) -> ()
+local function once(f: () -> ()): (greed.Context) -> ()
 	return function()
 		f()
 		leave()
@@ -522,14 +522,14 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		name = "pane-new-down",
 		doc = "Open a pane below with a new, empty buffer",
 		run = function()
-			M.focus(M.pane():split("down", kern.create_buffer("file", "")))
+			M.focus(M.pane():split("down", greed.create_buffer("file", "")))
 		end,
 	},
 	{
 		name = "pane-new-right",
 		doc = "Open a pane on the right with a new, empty buffer",
 		run = function()
-			M.focus(M.pane():split("right", kern.create_buffer("file", "")))
+			M.focus(M.pane():split("right", greed.create_buffer("file", "")))
 		end,
 	},
 	{
@@ -537,7 +537,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Open the file named under the cursor in a pane below",
 		run = function()
 			M.split("down")
-			kern.run("goto-file")
+			greed.run("goto-file")
 		end,
 	},
 	{
@@ -545,7 +545,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Open the file named under the cursor in a pane on the right",
 		run = function()
 			M.split("right")
-			kern.run("goto-file")
+			greed.run("goto-file")
 		end,
 	},
 	{
@@ -715,7 +715,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		name = "float-flip",
 		doc = "Take this pane out to float over the tab, or put a floating view back in as a pane",
 		run = function()
-			M.floats.flip(kern.view())
+			M.floats.flip(greed.view())
 		end,
 	},
 	{
@@ -745,23 +745,23 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 local by_name: { [string]: () -> () } = {}
 for _, c in commands do
 	local run = c.run
-	kern.command({
+	greed.command({
 		name = c.name,
 		doc = c.doc,
 		run = function()
 			run()
 			-- Messages go with the next key; while still in a mode, its keys
 			-- stay on the status line.
-			local mode = modes[kern.mode.get()]
+			local mode = modes[greed.mode.get()]
 			if mode then
-				kern.echo(mode.hint)
+				greed.echo(mode.hint)
 			end
 		end,
 	})
 	by_name[c.name] = c.run
 end
 
-kern.command({
+greed.command({
 	name = "tab-go",
 	doc = "Show tab N",
 	args = { { name = "n", doc = "The tab's number, from 1" } },
@@ -770,13 +770,13 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "float-file",
 	doc = "Open a file (this one if none is given) in a new floating view",
 	args = { { name = "path", complete = "file" } },
 	run = function(ctx)
 		local path = ctx.args[1]
-		M.focus(M.floats.open(if path then kern.load(path) else ctx.buffer))
+		M.focus(M.floats.open(if path then greed.load(path) else ctx.buffer))
 	end,
 })
 
@@ -784,7 +784,7 @@ kern.command({
 local function save_layout(args: { string }, mine: boolean)
 	local function save(name: string)
 		local file, err = M.saved.save(name, mine)
-		kern.echo(if file then `saved layout {name} in {file}` else `can't save it: {err}`)
+		greed.echo(if file then `saved layout {name} in {file}` else `can't save it: {err}`)
 	end
 	if args[1] then
 		save(args[1])
@@ -793,7 +793,7 @@ local function save_layout(args: { string }, mine: boolean)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "layout-save",
 	doc = "Save this tab's panes, and what they show, as a layout of the project",
 	args = { { name = "name", doc = "What to call it" } },
@@ -802,7 +802,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "layout-save-mine",
 	doc = "Save this tab's panes, and what they show, as a layout for any project",
 	args = { { name = "name", doc = "What to call it" } },
@@ -811,7 +811,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "layout-open",
 	doc = "Open a saved layout as a new tab",
 	args = { { name = "name", doc = "The layout" } },
@@ -825,7 +825,7 @@ kern.command({
 			table.insert(items, { label = name, value = name })
 		end
 		if #items == 0 then
-			kern.echo("no saved layouts yet; :layout-save NAME saves this tab")
+			greed.echo("no saved layouts yet; :layout-save NAME saves this tab")
 			return
 		end
 		picker.pick("Saved layouts", items, function(item)
@@ -839,7 +839,7 @@ kern.command({
 for _, name in
 	{ "pane-terminal", "pane-close", "tab-new", "tab-terminal", "tab-close", "tab-rename" }
 do
-	kern.command({
+	greed.command({
 		name = `{name}-done`,
 		doc = `{name}, then back from the mode`,
 		run = once(by_name[name]),
@@ -1054,32 +1054,32 @@ modes.resize = {
 -- Binds `M.keys` in the layers they belong to. The terminal's mode takes
 -- every key, so the everywhere keys are bound in it too.
 local function bind()
-	kern.keymap.bind({}, M.keys.everywhere)
-	kern.keymap.bind("terminal", M.keys.everywhere)
+	greed.keymap.bind({}, M.keys.everywhere)
+	greed.keymap.bind("terminal", M.keys.everywhere)
 	for mode in modes do
-		kern.keymap.isolate(mode)
-		kern.keymap.bind(mode, M.keys[mode])
-		kern.keymap.fallback(mode, "pane-mode-leave")
+		greed.keymap.isolate(mode)
+		greed.keymap.bind(mode, M.keys[mode])
+		greed.keymap.fallback(mode, "pane-mode-leave")
 	end
-	kern.keymap.bind("pane-place", M.keys.place)
-	kern.keymap.fallback("pane-place", "pane-place-cancel")
+	greed.keymap.bind("pane-place", M.keys.place)
+	greed.keymap.fallback("pane-place", "pane-place-cancel")
 	local window: { [string]: string } = {}
 	for key, name in M.keys.window do
 		window[`ctrl-w {key}`] = name
 		window[`space w {key}`] = name
 	end
-	kern.keymap.bind("normal", window)
-	kern.keymap.bind("vim", window)
-	kern.keymap.bind("vim", { ["g t"] = "tab-next", ["g T"] = "tab-previous" })
+	greed.keymap.bind("normal", window)
+	greed.keymap.bind("vim", window)
+	greed.keymap.bind("vim", { ["g t"] = "tab-next", ["g T"] = "tab-previous" })
 end
 
 bind()
 
 -- Clicking a tab in the tab line shows it.
-kern.on("mouse", function(event: kern.MouseEvent)
+greed.on("mouse", function(event: greed.MouseEvent)
 	if event.kind == "press" and event.tab then
-		kern.tab.switch(event.tab)
-		settle(kern.view())
+		greed.tab.switch(event.tab)
+		settle(greed.view())
 	end
 end)
 

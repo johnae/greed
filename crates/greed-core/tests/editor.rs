@@ -227,7 +227,7 @@ fn scratch_buffers_go_away_with_their_last_view() {
 
 #[test]
 fn files_open_once_and_show_in_a_view() {
-    let dir = std::env::temp_dir().join(format!("kern-open-file-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-open-file-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("a.txt");
     std::fs::write(&path, "from disk").unwrap();
@@ -372,7 +372,7 @@ fn buffers_take_their_language_from_the_file_unless_given_one() {
 
 #[test]
 fn buffers_save_to_a_new_path_and_keep_it() {
-    let dir = std::env::temp_dir().join(format!("kern-save-as-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-save-as-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut ed = editor("fn main() {}");
     let buffer = ed.view(ed.focus()).buffer;
@@ -635,7 +635,7 @@ fn closing_a_project_that_isnt_shown_keeps_the_shown_one() {
 
 #[test]
 fn files_opened_belong_to_the_shown_project() {
-    let dir = std::env::temp_dir().join(format!("kern-project-file-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-project-file-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("a.txt"), "a").unwrap();
     let mut ed = editor("");
@@ -844,7 +844,7 @@ fn edits_carry_the_cause_they_were_made_for() {
 
 #[test]
 fn reloading_a_file_is_an_external_edit_undo_takes_back() {
-    let dir = std::env::temp_dir().join(format!("kern-reload-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-reload-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("a.txt");
     std::fs::write(&path, "one\ntwo\n").unwrap();

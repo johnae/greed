@@ -64,7 +64,7 @@ fn agents_get_mcp_answers_and_the_tools_list() {
         .call("initialize", &json!({ "protocolVersion": "2025-06-18" }))
         .unwrap()
         .unwrap();
-    assert_eq!(init["serverInfo"]["name"], "kern");
+    assert_eq!(init["serverInfo"]["name"], "greed");
     assert_eq!(init["capabilities"]["tools"], json!({}));
     assert_eq!(
         client
@@ -164,7 +164,7 @@ fn a_bridge_passes_lines_through_and_notifications_get_no_answer() {
 
 #[test]
 fn a_proposal_waits_for_the_user_and_tells_the_agent_what_happened() {
-    let dir = std::env::temp_dir().join(format!("kern-propose-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-propose-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("a.txt");
     std::fs::write(&file, "let x = 1;\n").unwrap();

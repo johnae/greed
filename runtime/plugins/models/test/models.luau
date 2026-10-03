@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local models = require("@models")
 local sse = require("../sse")
 
@@ -27,7 +27,7 @@ test(":models lists each role and whether its key is found", function(t)
 	t:buffer("|x")
 	t:run("models")
 	t:wait(50)
-	local text = kern.view():buffer():text()
+	local text = greed.view():buffer():text()
 	assert(string.find(text, "fast: claude-haiku", 1, true), text)
 	assert(
 		string.find(text, "local: llama3.2 at ollama", 1, true)

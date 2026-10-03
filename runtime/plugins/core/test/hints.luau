@@ -1,16 +1,16 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function labels(): string
 	local out = {}
-	for _, mark in kern.view():buffer():decorations("motion-hints") do
+	for _, mark in greed.view():buffer():decorations("motion-hints") do
 		table.insert(out, `{mark.text}@{mark.from}`)
 	end
 	return table.concat(out, " ")
 end
 
 test("with motion-hints on, w numbers the next words and a digit goes there", function(t)
-	kern.option.set("motion-hints", true)
+	greed.option.set("motion-hints", true)
 	t:buffer("|one two three four five")
 	t:keys("w")
 	t:expect("^one |two three four five")
@@ -24,15 +24,15 @@ test("with motion-hints on, w numbers the next words and a digit goes there", fu
 	assert(labels() == "", labels())
 	t:keys("g h 2 w")
 	t:expect("one ^two |three four five")
-	kern.option.set("motion-hints", false)
+	greed.option.set("motion-hints", false)
 end)
 
 test("in select mode a digit extends; with the option off, nothing is numbered", function(t)
-	kern.option.set("motion-hints", true)
+	greed.option.set("motion-hints", true)
 	t:buffer("|one two three four")
 	t:keys("v w 2")
 	t:expect("^one two three |four")
-	kern.option.set("motion-hints", false)
+	greed.option.set("motion-hints", false)
 	t:buffer("|one two three")
 	t:keys("w")
 	assert(labels() == "", labels())
@@ -42,10 +42,10 @@ end)
 
 test("a key overlay binds keys for the next press only", function(t)
 	t:buffer("|abc")
-	kern.keymap.overlay({ x = "goto-end" })
+	greed.keymap.overlay({ x = "goto-end" })
 	t:keys("x")
 	t:expect("abc|")
-	kern.keymap.overlay({ x = "goto-end" })
+	greed.keymap.overlay({ x = "goto-end" })
 	t:keys("g h x")
 	t:expect("^abc|")
 end)

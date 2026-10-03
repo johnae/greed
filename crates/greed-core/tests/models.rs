@@ -114,7 +114,7 @@ fn host(address: &str) -> Host {
         "config",
         &format!(
             r#"
-            local kern = require("@kern")
+            local greed = require("@greed")
             local models = require("@models")
             models.providers.fake = {{ kind = "anthropic", url = "{address}" }}
             models.providers.compat = {{ kind = "openai", url = "{address}/v1" }}
@@ -122,21 +122,21 @@ fn host(address: &str) -> Host {
             models.roles["local"] = {{ provider = "compat", model = "m2" }}
             models.roles.locked = {{ provider = "fake", model = "refuse" }}
             local hi = {{ messages = {{ {{ role = "user", content = "hi" }} }} }}
-            kern.command {{ name = "ask-fast", run = function()
+            greed.command {{ name = "ask-fast", run = function()
                 local stream = assert(models.stream("fast", hi))
                 while true do
                     local piece, err = stream.next()
-                    if piece == nil then kern.echo("end " .. tostring(err)) break end
-                    kern.echo(piece)
+                    if piece == nil then greed.echo("end " .. tostring(err)) break end
+                    greed.echo(piece)
                 end
-                kern.echo("all " .. stream.text)
+                greed.echo("all " .. stream.text)
             end }}
-            kern.command {{ name = "ask-local", run = function()
-                kern.echo((assert(models.ask("local", hi))))
+            greed.command {{ name = "ask-local", run = function()
+                greed.echo((assert(models.ask("local", hi))))
             end }}
-            kern.command {{ name = "ask-locked", run = function()
+            greed.command {{ name = "ask-locked", run = function()
                 local _, err = models.ask("locked", hi)
-                kern.echo(err)
+                greed.echo(err)
             end }}
             "#
         ),
@@ -188,15 +188,15 @@ fn a_model_pipe_rewrites_the_selection_as_one_operation() {
         "config",
         &format!(
             r#"
-            local kern = require("@kern")
+            local greed = require("@greed")
             local models = require("@models")
             models.providers.fake = {{ kind = "anthropic", url = "{address}" }}
             models.roles.fast = {{ provider = "fake", model = "m1" }}
-            kern.command {{ name = "pipe-test", run = function(ctx)
+            greed.command {{ name = "pipe-test", run = function(ctx)
                 ctx.view:set_selection({{ ranges = {{ {{ anchor = 0, head = 8 }} }}, primary = 1 }})
                 local ok, err = require("@pipe").pipe(ctx.view, "model: shout it")
-                kern.echo(if ok then "piped" else tostring(err))
-                kern.echo(require("@operations").list()[1].name)
+                greed.echo(if ok then "piped" else tostring(err))
+                greed.echo(require("@operations").list()[1].name)
             end }}
             "#
         ),
@@ -279,7 +279,7 @@ fn explain_writes_the_answer_into_a_panel_as_it_arrives() {
 
 #[test]
 fn a_drafted_description_commits_what_is_staged() {
-    let dir = std::env::temp_dir().join(format!("kern-assist-git-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-assist-git-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let git = |args: &[&str]| {
@@ -311,14 +311,14 @@ fn a_drafted_description_commits_what_is_staged() {
     host.load_str(
         "press-a",
         r#"
-        local kern = require("@kern")
-        kern.command { name = "press-a", run = function()
-            for _, buffer in kern.buffers() do
+        local greed = require("@greed")
+        greed.command { name = "press-a", run = function()
+            for _, buffer in greed.buffers() do
                 if buffer:kind() == "commit-message" then
                     buffer:views()[1]:focus()
                 end
             end
-            kern.run("commit-message-apply")
+            greed.run("commit-message-apply")
         end }
         "#,
     )
@@ -335,7 +335,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
     editor.open(
         "file",
         "let x = bad;",
-        Some(std::env::temp_dir().join("kern-assist-fix/main.rs")),
+        Some(std::env::temp_dir().join("greed-assist-fix/main.rs")),
     );
     let host = Host::new(editor).unwrap();
     let (input, output, _log) = support::start();

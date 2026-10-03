@@ -147,7 +147,7 @@ fn mouse_wanted() -> bool {
     std::env::var("GREED_MOUSE").map_or(true, |v| v != "off")
 }
 
-/// Converts a terminal mouse event into a kern one.
+/// Converts a terminal mouse event into a greed one.
 fn convert_mouse(event: MouseEvent) -> Mouse {
     let button = |b: MouseButton| match b {
         MouseButton::Left => Button::Left,
@@ -186,8 +186,8 @@ static TRUECOLOR: AtomicBool = AtomicBool::new(true);
 /// Whether the terminal shows 24-bit color: `$GREED_COLORS` ("truecolor" or
 /// "24bit", or "256") says, or else `$COLORTERM` does ("truecolor", "24bit"), or a
 /// `$TERM` ending in "-direct".
-fn truecolor(kern_colors: Option<&str>, colorterm: Option<&str>, term: Option<&str>) -> bool {
-    match kern_colors {
+fn truecolor(greed_colors: Option<&str>, colorterm: Option<&str>, term: Option<&str>) -> bool {
+    match greed_colors {
         Some("truecolor" | "24bit") => true,
         Some("256") => false,
         _ => {
@@ -226,8 +226,8 @@ fn kitty_keys_wanted() -> bool {
     std::env::var("GREED_KEYS").map_or(true, |v| v != "legacy")
 }
 
-/// Converts a terminal key event into a kern key. Returns `None` for keys
-/// kern doesn't know.
+/// Converts a terminal key event into a greed key. Returns `None` for keys
+/// greed doesn't know.
 pub fn convert(event: KeyEvent) -> Option<Key> {
     let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
     let code = match event.code {
@@ -516,7 +516,7 @@ fn uncertain_width(grapheme: &str) -> bool {
 /// Writes row `y` of the screen. Text goes out in runs of one style, except
 /// that after a grapheme of uncertain width the cursor is put where the
 /// next cell starts, with the grapheme's cells blanked first, so a terminal
-/// drawing it narrower or wider than Kern counted doesn't shift the rest of
+/// drawing it narrower or wider than Greed counted doesn't shift the rest of
 /// the row (like a float's border).
 fn write_row(out: &mut impl Write, y: u16, row: &[Cell]) -> io::Result<()> {
     queue!(out, cursor::MoveTo(0, y))?;
@@ -650,7 +650,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn truecolor_is_what_kern_colors_or_the_terminal_says() {
+    fn truecolor_is_what_greed_colors_or_the_terminal_says() {
         assert!(truecolor(None, Some("truecolor"), Some("xterm")));
         assert!(truecolor(None, Some("24bit"), None));
         assert!(truecolor(None, None, Some("xterm-direct")));
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn after_a_grapheme_of_uncertain_width_the_cursor_goes_where_the_next_cell_is() {
-        // "❄️" is two cells to Kern; a terminal drawing it as one would
+        // "❄️" is two cells to Greed; a terminal drawing it as one would
         // shift "x|" left without the move after it.
         let out = written(&cells("a❄\u{fe0f}x|", 6));
         // Cursor positions are 1-based: row 4, column 2 is cell 1.
@@ -723,7 +723,7 @@ mod tests {
     }
 
     #[test]
-    fn keys_convert_to_kern_names() {
+    fn keys_convert_to_greed_names() {
         assert_eq!(
             key(TermKey::Char('g'), KeyModifiers::NONE).as_deref(),
             Some("g")

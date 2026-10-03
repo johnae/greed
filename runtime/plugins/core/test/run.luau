@@ -1,26 +1,26 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
-test("kern.run returns when the command waits; with wait, once it has finished", function(t)
+test("greed.run returns when the command waits; with wait, once it has finished", function(t)
 	t:buffer("|")
 	local seen: { string } = {}
-	kern.command({
+	greed.command({
 		name = "test-ask",
 		run = function()
-			table.insert(seen, "key " .. kern.next_key())
+			table.insert(seen, "key " .. greed.next_key())
 		end,
 	})
-	kern.command({
+	greed.command({
 		name = "test-run",
 		run = function()
-			kern.run("test-ask")
+			greed.run("test-ask")
 			table.insert(seen, "after run")
 		end,
 	})
-	kern.command({
+	greed.command({
 		name = "test-run-wait",
 		run = function()
-			kern.run("test-ask", { wait = true })
+			greed.run("test-ask", { wait = true })
 			table.insert(seen, "after waiting")
 		end,
 	})
@@ -33,10 +33,10 @@ test("kern.run returns when the command waits; with wait, once it has finished",
 	assert(table.concat(seen, ", ") == "key y, after waiting", table.concat(seen, ", "))
 	table.clear(seen)
 	-- A command that doesn't wait has finished already.
-	kern.command({
+	greed.command({
 		name = "test-wait-quick",
 		run = function()
-			kern.run("goto-start", { wait = true })
+			greed.run("goto-start", { wait = true })
 			table.insert(seen, "done")
 		end,
 	})

@@ -1,13 +1,13 @@
 -- :secret-set NAME keeps a secret, like an API key, where plugins that
--- declare it can ask for it with kern.secrets.get: the system keyring, or
--- Kern's own secrets file where there is none. What you type shows as dots.
+-- declare it can ask for it with greed.secrets.get: the system keyring, or
+-- Greed's own secrets file where there is none. What you type shows as dots.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local prompt = require("./prompt")
 
-kern.command({
+greed.command({
 	name = "secret-set",
-	doc = "Keep a secret, like an API key, in the system keyring (or Kern's secrets file)",
+	doc = "Keep a secret, like an API key, in the system keyring (or Greed's secrets file)",
 	args = { { name = "name", doc = "e.g. anthropic" } },
 	run = function(ctx)
 		local name = ctx.args[1] or prompt.ask("Secret's name")
@@ -18,8 +18,8 @@ kern.command({
 		if value == nil or value == "" then
 			return
 		end
-		local where, err = kern.secrets.set(name, value)
-		kern.echo(if where then `kept {name} in {where}` else `can't keep {name}: {err}`)
+		local where, err = greed.secrets.set(name, value)
+		greed.echo(if where then `kept {name} in {where}` else `can't keep {name}: {err}`)
 	end,
 })
 

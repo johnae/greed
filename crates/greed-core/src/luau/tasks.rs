@@ -27,7 +27,7 @@ pub(crate) struct Tasks {
     /// Values sent to signals nobody waits on yet.
     sent: HashMap<u64, Value>,
     timers: Vec<(Instant, u64)>,
-    /// What `kern.now` counts from.
+    /// What `greed.now` counts from.
     epoch: Instant,
     /// While timers fire, when they were due. Code they wake sees that as
     /// the time, so timing doesn't drift and tests can step through it.
@@ -196,7 +196,7 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         _ => None,
     }
     .ok_or_else(|| {
-        mlua::Error::runtime("a command can only wait through kern functions like kern.sleep")
+        mlua::Error::runtime("a command can only wait through greed functions like greed.sleep")
     })?;
     state_mut(lua).tasks.waiting.insert(token, thread);
     Ok(())
@@ -277,7 +277,7 @@ pub(super) fn advance(lua: &Lua, until: Instant) -> LuaResult<()> {
     Ok(())
 }
 
-/// `kern.now()`: milliseconds on the editor's clock.
+/// `greed.now()`: milliseconds on the editor's clock.
 pub(super) fn now_function(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, ()| {
         let tasks = &state(lua).tasks;
@@ -285,7 +285,7 @@ pub(super) fn now_function(lua: &Lua) -> LuaResult<Function> {
     })
 }
 
-/// `kern.animate(ms, step)`: calls `step(t)` about once a frame for `ms`
+/// `greed.animate(ms, step)`: calls `step(t)` about once a frame for `ms`
 /// milliseconds, with `t` going from 0 to 1.
 pub(super) fn animate_function(lua: &Lua, now: Function, sleep: Function) -> LuaResult<Function> {
     lua.load(
@@ -293,7 +293,7 @@ pub(super) fn animate_function(lua: &Lua, now: Function, sleep: Function) -> Lua
         local now, sleep = ...
         return function(ms, step)
             if not coroutine.isyieldable() then
-                error("kern.animate can only be used in a command or event handler", 2)
+                error("greed.animate can only be used in a command or event handler", 2)
             end
             local start = now()
             local t = if ms > 0 then 0 else 1
@@ -308,11 +308,11 @@ pub(super) fn animate_function(lua: &Lua, now: Function, sleep: Function) -> Lua
         end
         "#,
     )
-    .set_name("=kern.animate")
+    .set_name("=greed.animate")
     .call((now, sleep))
 }
 
-/// `kern.sleep(ms)`: waits without blocking the editor.
+/// `greed.sleep(ms)`: waits without blocking the editor.
 pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(|lua, ms: f64| {
         let ms = if ms.is_finite() { ms.max(0.0) } else { 0.0 };
@@ -323,17 +323,17 @@ pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
         local start = ...
         return function(ms)
             if not coroutine.isyieldable() then
-                error("kern.sleep can only be used in a command or event handler", 2)
+                error("greed.sleep can only be used in a command or event handler", 2)
             end
             return coroutine.yield(start(ms))
         end
         "#,
     )
-    .set_name("=kern.sleep")
+    .set_name("=greed.sleep")
     .call(start)
 }
 
-/// `kern.next_key()`: waits for the next key press and returns its name,
+/// `greed.next_key()`: waits for the next key press and returns its name,
 /// e.g. "g" or "ctrl-s". The key doesn't go through the keymap.
 pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(|lua, ()| {
@@ -347,17 +347,17 @@ pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
         local start = ...
         return function()
             if not coroutine.isyieldable() then
-                error("kern.next_key can only be used in a command or event handler", 2)
+                error("greed.next_key can only be used in a command or event handler", 2)
             end
             return coroutine.yield(start())
         end
         "#,
     )
-    .set_name("=kern.next_key")
+    .set_name("=greed.next_key")
     .call(start)
 }
 
-/// `kern.signal()`: a one-shot value one piece of code waits for and
+/// `greed.signal()`: a one-shot value one piece of code waits for and
 /// another sends, e.g. a tool waiting for the user to review an edit. A
 /// value sent before anyone waits is kept for the first wait.
 pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
@@ -403,7 +403,7 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
         end
         "#,
     )
-    .set_name("=kern.signal")
+    .set_name("=greed.signal")
     .call((new, send, take))
 }
 

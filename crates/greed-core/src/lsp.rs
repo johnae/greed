@@ -400,7 +400,7 @@ impl Lsp {
             &json!({
                 "processId": std::process::id(),
                 "rootUri": file_uri(root),
-                "clientInfo": { "name": "kern" },
+                "clientInfo": { "name": "greed" },
                 "capabilities": client_capabilities(),
             }),
         )?;

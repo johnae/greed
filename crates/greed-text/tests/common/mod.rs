@@ -1,4 +1,4 @@
-//! Shared helpers and proptest strategies for kern-text tests.
+//! Shared helpers and proptest strategies for greed-text tests.
 
 #![allow(dead_code)]
 

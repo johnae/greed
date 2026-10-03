@@ -1,7 +1,7 @@
--- The pickers Kern ships with: files in the project, open buffers,
+-- The pickers Greed ships with: files in the project, open buffers,
 -- commands and the outline of a file.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("./picker")
 local project = require("@core").project
 
@@ -10,19 +10,19 @@ local PREVIEW_BYTES = 64 * 1024
 
 -- A file's start, highlighted in its language.
 local function file_preview(item: picker.Item): picker.Preview?
-	local text = kern.fs.read(item.value, PREVIEW_BYTES)
+	local text = greed.fs.read(item.value, PREVIEW_BYTES)
 	if text == nil then
 		return nil
 	end
 	if string.find(text, "\0", 1, true) then
 		return { text = "(binary file)" }
 	end
-	return { text = text, language = kern.language_of(item.value) }
+	return { text = text, language = greed.language_of(item.value) }
 end
 
 -- An open buffer's text as it is now, saved or not.
 local function buffer_preview(item: picker.Item): picker.Preview?
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:path() == item.value then
 			return { text = buffer:text(), language = buffer:language() }
 		end
@@ -33,15 +33,15 @@ end
 -- Picks a file under `root`, skipping ignored files, and opens it.
 local function pick_file(title: string, root: string)
 	local items = {}
-	for _, path in kern.files(root) do
+	for _, path in greed.files(root) do
 		table.insert(items, { label = path, value = project.path(root, path) })
 	end
 	picker.pick(title, items, function(item)
-		kern.open(item.value)
+		greed.open(item.value)
 	end, { preview = file_preview })
 end
 
-kern.command({
+greed.command({
 	name = "pick-file",
 	doc = "Open a file in the project, skipping ignored files",
 	run = function()
@@ -49,51 +49,51 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-file-here",
-	doc = "Open a file under the folder Kern was started in, skipping ignored files",
+	doc = "Open a file under the folder Greed was started in, skipping ignored files",
 	run = function()
-		pick_file("Files here", kern.fs.cwd())
+		pick_file("Files here", greed.fs.cwd())
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-resume",
 	doc = "Open the last picker again",
 	run = function()
 		if not picker.resume() then
-			kern.echo("no picker yet")
+			greed.echo("no picker yet")
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-buffer",
 	doc = "Switch to an open file",
 	run = function()
 		local items = {}
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path then
 				table.insert(items, { label = path, value = path })
 			end
 		end
 		picker.pick("Buffers", items, function(item)
-			kern.open(item.value)
+			greed.open(item.value)
 		end, { preview = buffer_preview })
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "command-palette",
 	doc = "Run any command by name",
 	run = function()
 		-- Keys that run each command in the mode the palette opened from.
-		local mode = kern.mode.get()
+		local mode = greed.mode.get()
 		-- Every binding at once: one lookup per command takes long enough with
 		-- hundreds of them that keys typed right away miss the picker.
 		local keys_of: { [string]: { string } } = {}
-		for _, binding in kern.keymap.find() do
+		for _, binding in greed.keymap.find() do
 			if binding.layer == mode or binding.layer == "global" then
 				local list = keys_of[binding.command] or {}
 				table.insert(list, binding.keys)
@@ -101,7 +101,7 @@ kern.command({
 			end
 		end
 		local items = {}
-		for _, command in kern.commands() do
+		for _, command in greed.commands() do
 			local keys = keys_of[command.name] or {}
 			local label = command.name
 			if #keys > 0 then
@@ -110,18 +110,18 @@ kern.command({
 			table.insert(items, { label = `{label}  {command.doc}`, value = command.name })
 		end
 		picker.pick("Commands", items, function(item)
-			kern.run(item.value)
+			greed.run(item.value)
 		end)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-outline",
 	doc = "Jump to a function or type in the file, from its syntax tree",
 	run = function(ctx)
 		local buffer, view = ctx.buffer, ctx.view
 		local syntax = require("@core").syntax
-		local found: { { node: kern.Node, name: kern.Node } } = {}
+		local found: { { node: greed.Node, name: greed.Node } } = {}
 		for _, object in { "function", "type" } do
 			for _, o in syntax.objects(buffer, object) do
 				local name = o.around:child("name")
@@ -130,7 +130,7 @@ kern.command({
 				end
 			end
 		end
-		table.sort(found, function(a: { name: kern.Node }, b: { name: kern.Node })
+		table.sort(found, function(a: { name: greed.Node }, b: { name: greed.Node })
 			return a.name.from < b.name.from
 		end)
 		local items = {}
@@ -162,7 +162,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pick-jump",
 	doc = "Pick a place from the jumplist and go there",
 	run = function()
@@ -170,8 +170,8 @@ kern.command({
 		local root = project.root() .. "/"
 		local items = {}
 		for _, place in jumps.list() do
-			local buffer: kern.Buffer? = nil
-			for _, open in kern.buffers() do
+			local buffer: greed.Buffer? = nil
+			for _, open in greed.buffers() do
 				if open:id() == place.buffer then
 					buffer = open
 				end
@@ -194,7 +194,7 @@ kern.command({
 			table.insert(items, { label = `{name}:{where}  {line}`, value = place })
 		end
 		if #items == 0 then
-			kern.echo("the jumplist is empty")
+			greed.echo("the jumplist is empty")
 			return
 		end
 		picker.pick("Jumplist", items, function(item)

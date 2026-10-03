@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 -- A hundred numbered lines, drawn on a screen ten lines high.
 local function long(t: any, cursor_line: number)
@@ -12,7 +12,7 @@ local function long(t: any, cursor_line: number)
 end
 
 local function cursor_line(): number
-	local view = kern.view()
+	local view = greed.view()
 	local selection = view:selection()
 	return view:buffer():line_of(selection.ranges[selection.primary].head)
 end
@@ -21,31 +21,31 @@ test("ctrl-f and ctrl-b move a screen down and up, cursor and all", function(t)
 	long(t, 3)
 	t:keys("ctrl-f")
 	assert(
-		kern.view():scroll() == 10 and cursor_line() == 13,
-		`{kern.view():scroll()} {cursor_line()}`
+		greed.view():scroll() == 10 and cursor_line() == 13,
+		`{greed.view():scroll()} {cursor_line()}`
 	)
 	t:draw(40, 11)
 	t:keys("ctrl-b")
 	assert(
-		kern.view():scroll() == 0 and cursor_line() == 3,
-		`{kern.view():scroll()} {cursor_line()}`
+		greed.view():scroll() == 0 and cursor_line() == 3,
+		`{greed.view():scroll()} {cursor_line()}`
 	)
 	t:keys("ctrl-b")
-	assert(kern.view():scroll() == 0 and cursor_line() == 0, "stops at the top")
+	assert(greed.view():scroll() == 0 and cursor_line() == 0, "stops at the top")
 end)
 
 test("ctrl-d and ctrl-u move half a screen", function(t)
 	long(t, 2)
 	t:keys("ctrl-d")
 	assert(
-		kern.view():scroll() == 5 and cursor_line() == 7,
-		`{kern.view():scroll()} {cursor_line()}`
+		greed.view():scroll() == 5 and cursor_line() == 7,
+		`{greed.view():scroll()} {cursor_line()}`
 	)
 	t:draw(40, 11)
 	t:keys("ctrl-u")
 	assert(
-		kern.view():scroll() == 0 and cursor_line() == 2,
-		`{kern.view():scroll()} {cursor_line()}`
+		greed.view():scroll() == 0 and cursor_line() == 2,
+		`{greed.view():scroll()} {cursor_line()}`
 	)
 end)
 
@@ -60,7 +60,7 @@ end)
 test("z z puts the cursor's line in the middle of the screen", function(t)
 	long(t, 50)
 	t:keys("z z")
-	assert(kern.view():scroll() == 45, tostring(kern.view():scroll()))
+	assert(greed.view():scroll() == 45, tostring(greed.view():scroll()))
 	local rows = t:draw(40, 11)
 	assert(string.find(rows[6], "line 50", 1, true), rows[6])
 end)
@@ -75,10 +75,10 @@ end)
 
 test("view.scrolled lets one view scroll another, in the same frame", function(t)
 	long(t, 0)
-	local left = kern.view()
+	local left = greed.view()
 	local right = left:split("right")
 	local heard: { number } = {}
-	kern.on("view.scrolled", function(event: kern.ViewScrolled)
+	greed.on("view.scrolled", function(event: greed.ViewScrolled)
 		table.insert(heard, event.line)
 		if event.view:id() == left:id() then
 			-- Drawing keeps the cursor on screen, so it goes along too.

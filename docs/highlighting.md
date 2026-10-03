@@ -1,6 +1,6 @@
 # Highlighting
 
-Kern highlights code with tree-sitter. A language's `highlights` query
+Greed highlights code with tree-sitter. A language's `highlights` query
 gives pieces of the text names like `keyword.control.return` or
 `markup.heading.1`, and the theme gives each name a look. The names are
 the same in every language, so one theme entry styles keywords everywhere.
@@ -10,14 +10,14 @@ A name falls back to its parent when the theme has no entry for it:
 can be as short as the top-level names, or style any of the finer ones.
 
 ```luau
-require("@kern").theme.set({
+require("@greed").theme.set({
 	keyword = { fg = "magenta" },
 	["keyword.control.return"] = { fg = "red", bold = true },
 	["markup.heading.1"] = { fg = "blue", bold = true, underline = true },
 })
 ```
 
-These are the names Kern's own queries use, and the ones to use in queries
+These are the names Greed's own queries use, and the ones to use in queries
 you write. They're the names Helix uses, so its queries work as they are.
 
 ## Code
@@ -114,8 +114,8 @@ you write. They're the names Helix uses, so its queries work as they are.
 ## Writing queries
 
 Queries are files named `queries/LANGUAGE/highlights.scm`, in a plugin or in
-`~/.config/kern/queries`; see [Using Kern](using.md#highlighting-and-syntax-queries).
-In `kern repl`, `tostring(require("@kern").view():buffer():tree())` shows
+`~/.config/greed/queries`; see [Using Greed](using.md#highlighting-and-syntax-queries).
+In `greed repl`, `tostring(require("@greed").view():buffer():tree())` shows
 the current buffer's syntax tree, which is what a query matches against. A
 capture whose name starts with `_` (like `@_name`) is only there for a
 predicate and isn't drawn.

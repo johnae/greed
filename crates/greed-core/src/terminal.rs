@@ -169,7 +169,7 @@ impl Terminal {
 
         let (input, inputs) = crossbeam_channel::unbounded::<Vec<u8>>();
         std::thread::Builder::new()
-            .name("kern-terminal-in".into())
+            .name("greed-terminal-in".into())
             .spawn(move || {
                 for bytes in inputs {
                     if writer
@@ -209,7 +209,7 @@ impl Terminal {
         let exit = Arc::new(Mutex::new(None));
         let (pumped, ended, replies) = (shared.clone(), exit.clone(), input.clone());
         std::thread::Builder::new()
-            .name("kern-terminal-out".into())
+            .name("greed-terminal-out".into())
             .spawn(move || {
                 pump(&pumped, reader, id, &events, &replies);
                 let code = child.wait().map_or(1, |status| status.exit_code());

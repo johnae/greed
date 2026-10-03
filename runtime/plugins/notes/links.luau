@@ -2,7 +2,7 @@
 -- brackets are hidden (except on the cursor's line), `g d` follows a link,
 -- and the notes linking to a note are listed at its end.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local notes = require("./notes")
 
 type Link = { from: number, to: number, target: string, text_from: number, text_to: number }
@@ -11,7 +11,7 @@ local M = {}
 
 --- The links in `buffer`: where each is, where the part to show is, and
 --- the note it points at.
-function M.links(buffer: kern.Buffer): { Link }
+function M.links(buffer: greed.Buffer): { Link }
 	local text = buffer:text()
 	local out: { Link } = {}
 	local at = 1
@@ -46,7 +46,7 @@ end
 
 --- The names of the notes that link to note `name`.
 function M.backlinks(name: string): { string }
-	local found = kern.fs.grep(`\\[\\[\\s*{escape(name)}\\s*(\\|[^\\]]*)?\\]\\]`, notes.folder())
+	local found = greed.fs.grep(`\\[\\[\\s*{escape(name)}\\s*(\\|[^\\]]*)?\\]\\]`, notes.folder())
 		or {}
 	local seen, out = {}, {}
 	for _, line in found do
@@ -64,9 +64,9 @@ end
 -- opened or saved.
 local shown_backlinks: { [number]: { string } } = {}
 
-local function mark(buffer: kern.Buffer)
-	local marks: { kern.Mark } = {}
-	local conceal = kern.option.get("notes-conceal") == true
+local function mark(buffer: greed.Buffer)
+	local marks: { greed.Mark } = {}
+	local conceal = greed.option.get("notes-conceal") == true
 	for _, link in M.links(buffer) do
 		table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
 		if conceal then
@@ -97,7 +97,7 @@ local function mark(buffer: kern.Buffer)
 	buffer:decorate("notes", marks)
 end
 
-local function refresh(buffer: kern.Buffer)
+local function refresh(buffer: greed.Buffer)
 	if not notes.is_note(buffer) then
 		return
 	end
@@ -105,23 +105,23 @@ local function refresh(buffer: kern.Buffer)
 	mark(buffer)
 end
 
-kern.on("buffer.opened", function(event: kern.BufferChanged)
+greed.on("buffer.opened", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
-kern.on("buffer.saved", function(event: kern.BufferChanged)
+greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if notes.is_note(event.buffer) then
 		pcall(mark, event.buffer)
 	end
 end)
 
-kern.on("option.changed", function(event)
+greed.on("option.changed", function(event)
 	if event.name == "notes-conceal" or event.name == "notes-everywhere" then
-		for _, buffer in kern.buffers() do
+		for _, buffer in greed.buffers() do
 			if notes.is_note(buffer) then
 				mark(buffer)
 			else
@@ -131,7 +131,7 @@ kern.on("option.changed", function(event)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "notes-follow",
 	doc = "Open the note the [[link]] under the cursor points at, or go to the definition",
 	run = function(ctx)
@@ -139,11 +139,11 @@ kern.command({
 		local head = selection.ranges[selection.primary].head
 		for _, link in M.links(ctx.buffer) do
 			if link.from <= head and head < link.to then
-				kern.open(notes.path(link.target))
+				greed.open(notes.path(link.target))
 				return
 			end
 		end
-		kern.run("goto-definition")
+		greed.run("goto-definition")
 	end,
 })
 

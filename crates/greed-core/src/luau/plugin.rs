@@ -1,6 +1,6 @@
-//! `kern.plugin`: loading and unloading plugins while the editor runs, and
+//! `greed.plugin`: loading and unloading plugins while the editor runs, and
 //! checking a plugin before it's loaded: strict type checking against
-//! Kern's API, then its tests, the way `kern test` runs them.
+//! Greed's API, then its tests, the way `greed test` runs them.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -101,13 +101,13 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             local start = ...
             return function(dir)
                 if not coroutine.isyieldable() then
-                    error("kern.plugin.check can only be used in a command or event handler", 2)
+                    error("greed.plugin.check can only be used in a command or event handler", 2)
                 end
                 return coroutine.yield(start(dir))
             end
             "#,
         )
-        .set_name("=kern.plugin.check")
+        .set_name("=greed.plugin.check")
         .call::<mlua::Function>(start)?,
     )?;
     Ok(plugin)
@@ -136,7 +136,7 @@ fn check(dir: &Path, others: &[(String, PathBuf)]) -> Check {
 }
 
 /// Runs `luau-analyze` in strict mode on the plugin's files, with
-/// `require("@kern")` and `require("@name")` for each other plugin pointing
+/// `require("@greed")` and `require("@name")` for each other plugin pointing
 /// at their types. Returns whether it passed and what it said, or why it
 /// couldn't run.
 fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), String> {
@@ -155,13 +155,13 @@ fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), S
         // luau-analyze runs in a temporary folder, so relative paths break.
         let plugin = &std::fs::canonicalize(plugin).unwrap_or_else(|_| plugin.clone());
         aliases.insert(name.clone(), plugin.to_string_lossy().into());
-        // Kern's types live next to the default plugins.
+        // Greed's types live next to the default plugins.
         if name == "core"
             && let Some(runtime) = plugin.parent().and_then(Path::parent)
         {
             aliases.insert(
-                "kern".to_owned(),
-                runtime.join("types/kern").to_string_lossy().into(),
+                "greed".to_owned(),
+                runtime.join("types/greed").to_string_lossy().into(),
             );
         }
     }
@@ -170,7 +170,7 @@ fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), S
     // follows links, so the plugin's code is checked from a copy inside a
     // folder holding one. That also leaves the plugin's folder as it was.
     let wrapper = std::env::temp_dir().join(format!(
-        "kern-check-{}-{}",
+        "greed-check-{}-{}",
         std::process::id(),
         NEXT_CHECK.fetch_add(1, Ordering::Relaxed)
     ));

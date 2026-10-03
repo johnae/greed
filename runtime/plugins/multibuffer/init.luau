@@ -1,6 +1,6 @@
 -- Multibuffers: one buffer made of excerpts from many files, edited in
 -- place. Typing in an excerpt edits its file as you go (the file opens in
--- Kern the first time one of its excerpts changes), and a change made to
+-- Greed the first time one of its excerpts changes), and a change made to
 -- the file anywhere else shows in the excerpt. :w saves every file changed
 -- this way, enter goes to the line under the cursor and q closes the view.
 --
@@ -13,7 +13,7 @@
 -- them; neither is text you can edit. Excerpts that overlap or touch are
 -- joined.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 
 export type Excerpt = {
@@ -23,7 +23,7 @@ export type Excerpt = {
 	from: number,
 	--- Its last line, included; `from` if left out.
 	to: number?,
-	--- What to show above it; the path, relative to the folder Kern runs
+	--- What to show above it; the path, relative to the folder Greed runs
 	--- in, if left out.
 	label: string?,
 	--- More to show above it, after the line number, like the problem a
@@ -72,11 +72,11 @@ type Part = {
 	text: string,
 	-- The file's buffer, once open, and whether the mark there starts with
 	-- the line break before the excerpt.
-	source: kern.Buffer?,
+	source: greed.Buffer?,
 	lead: boolean,
 }
 
-type State = { buffer: kern.Buffer, parts: { Part }, options: Options }
+type State = { buffer: greed.Buffer, parts: { Part }, options: Options }
 
 local M = {}
 
@@ -88,8 +88,8 @@ local syncing = false
 
 local next_id = 0
 
-local function open_buffer(path: string): kern.Buffer?
-	for _, buffer in kern.buffers() do
+local function open_buffer(path: string): greed.Buffer?
+	for _, buffer in greed.buffers() do
 		if buffer:path() == path then
 			return buffer
 		end
@@ -109,14 +109,14 @@ local function lines_of(text: string): { string }
 end
 
 local function relative(path: string): string
-	local cwd = kern.fs.cwd() .. "/"
+	local cwd = greed.fs.cwd() .. "/"
 	return if string.sub(path, 1, #cwd) == cwd then string.sub(path, #cwd + 1) else path
 end
 
 -- Byte offsets of lines `from`..`to` of `buffer`, as a mark that also takes
 -- the line break before them when there is one, so text typed at the
 -- excerpt's start falls inside it.
-local function line_mark(buffer: kern.Buffer, from: number, to: number): (kern.Mark, boolean)
+local function line_mark(buffer: greed.Buffer, from: number, to: number): (greed.Mark, boolean)
 	local start = buffer:line_start(from)
 	local stop = if to + 1 < buffer:line_count() then buffer:line_start(to + 1) else buffer:len()
 	local lead = from > 0
@@ -126,7 +126,7 @@ end
 
 -- The text the mark `ns` covers in `buffer`, without the line break before
 -- it, and where that text starts; nil if the mark went with its text.
-local function marked(buffer: kern.Buffer, ns: string, lead: boolean): (string?, number)
+local function marked(buffer: greed.Buffer, ns: string, lead: boolean): (string?, number)
 	local mark = buffer:decorations(ns)[1]
 	if mark == nil then
 		return nil, 0
@@ -144,7 +144,7 @@ end
 -- Makes `old`, the text at `start` in `buffer`, read `new`, replacing only
 -- what lies between the start and end they share. Replacing all of a
 -- mark's text would take the mark away with it.
-local function rewrite(buffer: kern.Buffer, start: number, old: string, new: string)
+local function rewrite(buffer: greed.Buffer, start: number, old: string, new: string)
 	if old == new then
 		return
 	end
@@ -178,7 +178,7 @@ local function rewrite(buffer: kern.Buffer, start: number, old: string, new: str
 		text = string.sub(old, -1) .. text
 	end
 	syncing = true
-	local ok, err = pcall(buffer.edit, buffer, function(e: kern.Edits)
+	local ok, err = pcall(buffer.edit, buffer, function(e: greed.Edits)
 		e:replace(start + from, start + to, text)
 	end)
 	syncing = false
@@ -190,7 +190,7 @@ end
 -- Puts the mark `ns` back over `text` at `start` after the plugin rewrote
 -- it, rather than trusting edits at its edges to land inside it. Marks only
 -- need to follow edits made by others.
-local function place(buffer: kern.Buffer, ns: string, start: number, text: string, lead: boolean)
+local function place(buffer: greed.Buffer, ns: string, start: number, text: string, lead: boolean)
 	if text ~= "" then
 		local from = if lead then start - 1 else start
 		buffer:decorate(ns, { { from = from, to = start + #text, style = "multibuffer.excerpt" } })
@@ -212,7 +212,7 @@ local function as_shown(text: string): string
 end
 
 -- Starts keeping `part` in step with `buffer`, its file's.
-local function attach(part: Part, buffer: kern.Buffer, from: number, to: number)
+local function attach(part: Part, buffer: greed.Buffer, from: number, to: number)
 	local mark, lead = line_mark(buffer, from, to)
 	buffer:decorate(part.ns, { mark })
 	part.source, part.lead = buffer, lead
@@ -224,7 +224,7 @@ local function ensure_source(part: Part): boolean
 	if part.source then
 		return true
 	end
-	local buffer = open_buffer(part.path) or kern.load(part.path)
+	local buffer = open_buffer(part.path) or greed.load(part.path)
 	local to = part.start + #lines_of(part.text) - 1
 	if to >= buffer:line_count() then
 		return false
@@ -330,15 +330,15 @@ end
 local function file_lines(path: string, cache: { [string]: { string } }): { string }
 	if cache[path] == nil then
 		local buffer = open_buffer(path)
-		local text = if buffer then buffer:text() else kern.fs.read(path)
+		local text = if buffer then buffer:text() else greed.fs.read(path)
 		cache[path] = lines_of(text or "")
 	end
 	return cache[path]
 end
 
---- A multibuffer of `excerpts`, not shown yet: show it with `kern.panel`,
---- `kern.float` or a view's `show`.
-function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
+--- A multibuffer of `excerpts`, not shown yet: show it with `greed.panel`,
+--- `greed.float` or a view's `show`.
+function M.open(excerpts: { Excerpt }, options: Options): greed.Buffer
 	next_id += 1
 	local id = next_id
 	local cache = {}
@@ -346,7 +346,7 @@ function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
 	local length = #options.summary + 1
 	local parts: { Part } = {}
 	local ranges: { { ns: string, from: number, to: number } } = {}
-	local found: { kern.Mark } = {}
+	local found: { greed.Mark } = {}
 	for i, excerpt in joined(excerpts, options.context or 0) do
 		local lines = file_lines(excerpt.path, cache)
 		local to = math.min(excerpt.to :: number, #lines - 1)
@@ -386,7 +386,7 @@ function M.open(excerpts: { Excerpt }, options: Options): kern.Buffer
 			table.insert(parts, part)
 		end
 	end
-	local buffer = kern.create_buffer("multibuffer", table.concat(pieces))
+	local buffer = greed.create_buffer("multibuffer", table.concat(pieces))
 	buffer:set_line_numbers(false)
 	for _, range in ranges do
 		buffer:decorate(
@@ -421,7 +421,7 @@ local function to_files(state: State)
 			table.insert(problems, part.label)
 			table.insert(kept, part)
 		else
-			local source = part.source :: kern.Buffer
+			local source = part.source :: greed.Buffer
 			local old, start = marked(source, part.ns, part.lead)
 			if old then
 				rewrite(source, start, old, new)
@@ -438,12 +438,12 @@ local function to_files(state: State)
 	state.parts = kept
 	redraw(state)
 	if #problems > 0 then
-		kern.echo(`changed since it was found, so left alone: {table.concat(problems, ", ")}`)
+		greed.echo(`changed since it was found, so left alone: {table.concat(problems, ", ")}`)
 	end
 end
 
 -- Carries edits made to a file elsewhere into the multibuffers showing it.
-local function from_file(buffer: kern.Buffer)
+local function from_file(buffer: greed.Buffer)
 	for _, state in states do
 		local changed = false
 		for _, part in state.parts do
@@ -467,7 +467,7 @@ local function from_file(buffer: kern.Buffer)
 	end
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if syncing then
 		return
 	end
@@ -479,7 +479,7 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	end
 end)
 
-kern.on("buffer.closed", function(event: kern.BufferClosed)
+greed.on("buffer.closed", function(event: greed.BufferClosed)
 	local state = states[event.id]
 	if state then
 		states[event.id] = nil
@@ -493,7 +493,7 @@ kern.on("buffer.closed", function(event: kern.BufferClosed)
 end)
 
 -- :w saves the files the multibuffer changed.
-core.file.on_save("multibuffer", function(buffer: kern.Buffer)
+core.file.on_save("multibuffer", function(buffer: greed.Buffer)
 	local state = states[buffer:id()]
 	if state == nil then
 		return
@@ -507,12 +507,12 @@ core.file.on_save("multibuffer", function(buffer: kern.Buffer)
 			saved += 1
 		end
 	end
-	kern.echo(`saved {saved} files`)
+	greed.echo(`saved {saved} files`)
 end)
 
 --- Where `pos` in a multibuffer is in its files: the path, and the 0-based
 --- line and byte column; nil outside the excerpts.
-function M.location(buffer: kern.Buffer, pos: number): (string?, number, number)
+function M.location(buffer: greed.Buffer, pos: number): (string?, number, number)
 	local state = states[buffer:id()]
 	if state == nil then
 		return nil, 0, 0
@@ -568,7 +568,7 @@ local function hunks(base: string, text: string): { Hunk }
 	local starts = line_starts(text)
 	-- Diffs are in the old text; `shift` turns their places into the new one's.
 	local shift = 0
-	for _, hunk in kern.diff(base, text) do
+	for _, hunk in greed.diff(base, text) do
 		local from = hunk.from + shift
 		local old = string.sub(base, hunk.from + 1, hunk.to)
 		shift += #hunk.text - #old
@@ -625,7 +625,7 @@ end
 --- Puts the change under `pos` back to the multibuffer's `base`, in its
 --- file, and shows the view again. Returns false and why when there's no
 --- change there to put back.
-function M.revert(buffer: kern.Buffer, pos: number): (boolean, string?)
+function M.revert(buffer: greed.Buffer, pos: number): (boolean, string?)
 	local state = states[buffer:id()]
 	local base_of = state and state.options.base
 	local path, line = M.location(buffer, pos)
@@ -633,7 +633,7 @@ function M.revert(buffer: kern.Buffer, pos: number): (boolean, string?)
 	if path == nil or base == nil then
 		return false, "no change here"
 	end
-	local file = kern.load(path)
+	local file = greed.load(path)
 	for _, hunk in hunks(base :: string, file:text()) do
 		-- Lines only removed show under the line before where they were.
 		local first = if hunk.to == hunk.from then math.max(hunk.first - 1, 0) else hunk.first
@@ -651,9 +651,9 @@ function M.revert(buffer: kern.Buffer, pos: number): (boolean, string?)
 end
 
 -- Each project's results panel, while it's open.
-local panels: { [number]: kern.View } = {}
+local panels: { [number]: greed.View } = {}
 
-kern.on("view.closed", function(event)
+greed.on("view.closed", function(event)
 	for project, view in panels do
 		if view:id() == event.view then
 			panels[project] = nil
@@ -663,22 +663,22 @@ end)
 
 --- Shows `buffer` in the project's results panel on the right, in place of
 --- what it showed, or in a new one titled `title`, and focuses it.
-function M.show(buffer: kern.Buffer, title: string): kern.View
-	local project = kern.project.current().id
+function M.show(buffer: greed.Buffer, title: string): greed.View
+	local project = greed.project.current().id
 	local current = panels[project]
 	if current then
 		current:show(buffer)
 		current:focus()
 		return current
 	end
-	local view = kern.panel(buffer, { side = "right", width = "45%", title = title })
+	local view = greed.panel(buffer, { side = "right", width = "45%", title = title })
 	panels[project] = view
 	return view
 end
 
 --- Closes the project's results panel, if it's open.
 function M.close()
-	local project = kern.project.current().id
+	local project = greed.project.current().id
 	local view = panels[project]
 	panels[project] = nil
 	if view then
@@ -686,7 +686,7 @@ function M.close()
 	end
 end
 
-kern.command({
+greed.command({
 	name = "multibuffer-open",
 	doc = "Go to the line under the cursor in its file",
 	run = function(ctx)
@@ -695,8 +695,8 @@ kern.command({
 		if path == nil then
 			return
 		end
-		kern.open(path)
-		local view = kern.view()
+		greed.open(path)
+		local view = greed.view()
 		local buffer = view:buffer()
 		local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
 		local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
@@ -704,7 +704,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "multibuffer-close",
 	doc = "Close the view showing the multibuffer",
 	run = function(ctx)
@@ -712,19 +712,19 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "multibuffer-revert",
 	doc = "Put the change under the cursor back the way it was, in a view of changes",
 	run = function(ctx)
 		local selection = ctx.view:selection()
 		local ok, why = M.revert(ctx.buffer, selection.ranges[selection.primary].head)
 		if not ok then
-			kern.echo(why :: string)
+			greed.echo(why :: string)
 		end
 	end,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "multibuffer" }, {
+greed.keymap.bind({ mode = "normal", kind = "multibuffer" }, {
 	enter = "multibuffer-open",
 	q = "multibuffer-close",
 	["space g r"] = "multibuffer-revert",

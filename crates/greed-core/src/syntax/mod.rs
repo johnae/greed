@@ -91,7 +91,7 @@ impl Language {
     }
 }
 
-/// The language of each file extension Kern knows.
+/// The language of each file extension Greed knows.
 pub(crate) const EXTENSIONS: &[(&str, &str)] = &[
     ("rs", "rust"),
     ("toml", "toml"),
@@ -120,7 +120,7 @@ pub(crate) const EXTENSIONS: &[(&str, &str)] = &[
     ("yml", "yaml"),
 ];
 
-/// The languages Kern has grammars for, sorted.
+/// The languages Greed has grammars for, sorted.
 pub fn grammar_names() -> Vec<&'static str> {
     let mut names: Vec<&str> = EXTENSIONS.iter().map(|(_, name)| *name).collect();
     names.sort_unstable();
@@ -137,7 +137,7 @@ pub fn language_name(path: &Path) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// The languages Kern knows out of the box.
+/// The languages Greed knows out of the box.
 fn builtin() -> Vec<Arc<Language>> {
     [
         Language::new(
@@ -412,7 +412,7 @@ impl Syntax {
     }
 
     /// The syntax state for `buffer`, set up for its current language, or
-    /// `None` if it has no language Kern knows or is too big to parse.
+    /// `None` if it has no language Greed knows or is too big to parse.
     fn state_for(&mut self, buffer: &Buffer) -> Option<&mut BufferSyntax> {
         let id = buffer.id();
         let Some(name) = buffer.language() else {
@@ -518,7 +518,7 @@ impl Syntax {
 
     /// The syntax tree of `buffer` as its text is now, and its language.
     /// When the worker hasn't caught up with the latest edit, the buffer is
-    /// parsed here and then. `None` if it has no language Kern knows or is
+    /// parsed here and then. `None` if it has no language Greed knows or is
     /// too big to parse.
     pub fn tree(&mut self, buffer: &Buffer) -> Option<(Arc<Language>, Tree)> {
         let version = buffer.history().log().len();
@@ -554,7 +554,7 @@ impl Syntax {
     /// none (for highlights and injections, the grammar's own). "highlights"
     /// and "injections" are used for highlighting; any other kind is kept
     /// for plugins to read with [`Syntax::query_source`]. For a language
-    /// Kern has a grammar for, the query is checked against it first, and an
+    /// Greed has a grammar for, the query is checked against it first, and an
     /// error says what's wrong.
     pub fn set_query(
         &mut self,

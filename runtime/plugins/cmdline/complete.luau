@@ -1,7 +1,7 @@
 -- What the command line offers as you type: command names first, then
 -- each argument as the command describes it.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local parse = require("./parse")
 local core = require("@core")
 
@@ -38,7 +38,7 @@ local function rank(word: string, items: { Candidate }): { Candidate }
 		texts[i] = item.text
 	end
 	local exact, prefix, rest = {}, {}, {}
-	for _, i in kern.fuzzy(word, texts) do
+	for _, i in greed.fuzzy(word, texts) do
 		local item = items[i]
 		if item.text == word then
 			table.insert(exact, item)
@@ -55,7 +55,7 @@ end
 
 M.register("command", function()
 	local items = {}
-	for _, command in kern.commands() do
+	for _, command in greed.commands() do
 		table.insert(items, { text = command.name, doc = command.doc })
 	end
 	return items
@@ -63,7 +63,7 @@ end)
 
 M.register("option", function()
 	local items = {}
-	for _, option in kern.option.list() do
+	for _, option in greed.option.list() do
 		table.insert(items, { text = option.name, doc = option.doc .. " (now " .. tostring(option.value) .. ")" })
 	end
 	return items
@@ -71,7 +71,7 @@ end)
 
 M.register("buffer", function()
 	local items = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local path = buffer:path()
 		if path then
 			table.insert(items, { text = path })
@@ -85,7 +85,7 @@ end)
 M.register("file", function(word)
 	local dir = string.match(word, "^(.*/)") or ""
 	local typed = string.sub(word, #dir + 1)
-	local entries = kern.fs.list(if dir == "" then "." else core.project.expand(dir), {
+	local entries = greed.fs.list(if dir == "" then "." else core.project.expand(dir), {
 		hidden = string.sub(typed, 1, 1) == ".",
 		ignored = true,
 	}) or {}
@@ -113,7 +113,7 @@ function M.candidates(line: string, first: { Candidate }, resolve: (name: string
 	if string.find(typed, "%s$") then
 		index, word = index + 1, ""
 	end
-	for _, command in kern.commands() do
+	for _, command in greed.commands() do
 		if command.name == name then
 			local spec = command.args[index]
 			local key = spec and spec.complete

@@ -12,12 +12,12 @@
 --   m d X           take away the X pair around each selection
 --   m r X Y         swap the X pair around each selection for Y's
 
-local kern = require("@kern")
+local greed = require("@greed")
 local motions = require("./motions")
 local text = require("./text")
 
-type Buffer = kern.Buffer
-type Range = kern.Range
+type Buffer = greed.Buffer
+type Range = greed.Range
 
 local OPEN = {
 	["("] = "(",
@@ -147,7 +147,7 @@ local function word(buffer: Buffer, pos: number, big: boolean, include_space: bo
 end
 
 local function object(name: string, doc: string, pick: (Buffer, Range, number?) -> Range?)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -290,7 +290,7 @@ end
 
 -- Reads a character to stand for a pair; nil for keys like esc.
 local function pair_key(): string?
-	local key = kern.next_key()
+	local key = greed.next_key()
 	return if utf8.len(key) == 1 then key else nil
 end
 
@@ -345,7 +345,7 @@ for _, outer in { false, true } do
 	for _, back in { false, true } do
 		local which = if back then "last" else "next"
 		local name = `select-{side}-{which}`
-		kern.command({
+		greed.command({
 			name = name,
 			doc = `Select {side} the {which} pair of the bracket or quote typed next`,
 			run = function(ctx)
@@ -450,7 +450,7 @@ for _, outer in { false, true } do
 	M.keys[`m {key} d`] = `select-{side}-number`
 end
 
-kern.command({
+greed.command({
 	name = "surround-add",
 	doc = "Wrap each selection in the pair of the next character typed",
 	run = function(ctx)
@@ -477,7 +477,7 @@ kern.command({
 
 -- Swaps the `char` pair around each selection's head for `open` and
 -- `close`, once per pair.
-local function replace_pairs(ctx: kern.Context, char: string, open: string, close: string)
+local function replace_pairs(ctx: greed.Context, char: string, open: string, close: string)
 	local buffer = ctx.buffer
 	local found, seen = {}, {}
 	for _, range in ctx.view:selection().ranges do
@@ -495,7 +495,7 @@ local function replace_pairs(ctx: kern.Context, char: string, open: string, clos
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "surround-delete",
 	doc = "Take away the pair of the next character typed from around each selection",
 	run = function(ctx)
@@ -507,7 +507,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "surround-replace",
 	doc = "Swap the pair of the next character typed around each selection for another's",
 	run = function(ctx)

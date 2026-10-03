@@ -1,17 +1,17 @@
 -- Saved layouts: a tab's arrangement and what each pane shows, kept to
 -- open again.
 --
---   :layout-save NAME       saves the tab in the project, .kern/layouts/
+--   :layout-save NAME       saves the tab in the project, .greed/layouts/
 --   :layout-save-mine NAME  saves it in your config, for any project
 --   :layout-open [NAME]     opens one as a new tab (picks one without)
 --
 -- A pane is saved as the file it shows (relative to the project), or as a
 -- terminal and what it runs. A project can open one itself, from its
--- .kern/init.luau:
+-- .greed/init.luau:
 --
 --     require("@panes").saved.open("dev", { here = true })
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local terminal = require("@terminal")
 local layouts = require("./layouts")
@@ -28,11 +28,11 @@ type Saved = {
 }
 
 local function project_dir(): string
-	return `{core.project.root()}/.kern/layouts`
+	return `{core.project.root()}/.greed/layouts`
 end
 
 local function my_dir(): string?
-	local config = kern.fs.dirs().config
+	local config = greed.fs.dirs().config
 	return if config then `{config}/layouts` else nil
 end
 
@@ -69,7 +69,7 @@ function M.save(name: string, mine: boolean?): (string?, string?)
 		return nil, "there's no config folder to save it in"
 	end
 	local file = `{dir}/{name}.json`
-	local ok, err = kern.fs.write(file, kern.json.encode(describe(kern.tab.layout())) .. "\n")
+	local ok, err = greed.fs.write(file, greed.json.encode(describe(greed.tab.layout())) .. "\n")
 	if not ok then
 		return nil, err
 	end
@@ -80,7 +80,7 @@ end
 function M.names(): { string }
 	local names, seen = {}, {}
 	for _, dir in { project_dir(), my_dir() } do
-		for _, entry in kern.fs.list(dir :: string, { hidden = true }) or {} do
+		for _, entry in greed.fs.list(dir :: string, { hidden = true }) or {} do
 			local name = string.match(entry.name, "^(.+)%.json$")
 			if name and not entry.dir and not seen[name] then
 				seen[name] = true
@@ -94,9 +94,9 @@ end
 
 local function load(name: string): (Saved?, string?)
 	for _, dir in { project_dir(), my_dir() } do
-		local text = kern.fs.read(`{dir}/{name}.json`)
+		local text = greed.fs.read(`{dir}/{name}.json`)
 		if text then
-			local saved, err = kern.json.decode(text)
+			local saved, err = greed.json.decode(text)
 			if saved == nil then
 				return nil, `layout {name} isn't JSON: {err}`
 			end
@@ -131,7 +131,7 @@ end
 
 -- Opens `leaf` in a new pane beside `base`, or with `here` in `base`
 -- itself. Returns the pane it's in.
-local function open_leaf(leaf: Saved, base: kern.View, here: boolean): kern.View
+local function open_leaf(leaf: Saved, base: greed.View, here: boolean): greed.View
 	if leaf.terminal ~= nil then
 		local command = command_of(leaf)
 		if here then
@@ -140,9 +140,9 @@ local function open_leaf(leaf: Saved, base: kern.View, here: boolean): kern.View
 			return base
 		end
 		terminal.open(command, { split = "right", from = base })
-		return kern.view()
+		return greed.view()
 	end
-	local buffer = if leaf.file then kern.load(full(leaf.file)) else kern.create_buffer("file", "")
+	local buffer = if leaf.file then greed.load(full(leaf.file)) else greed.create_buffer("file", "")
 	if here then
 		base:show(buffer)
 		return base
@@ -151,7 +151,7 @@ local function open_leaf(leaf: Saved, base: kern.View, here: boolean): kern.View
 end
 
 -- The saved tree with each pane's place taken by its view.
-local function with_views(node: Saved, views: { kern.View }, next: { number }): any
+local function with_views(node: Saved, views: { greed.View }, next: { number }): any
 	if node.children then
 		local children = {}
 		for _, child in node.children do
@@ -168,36 +168,36 @@ end
 function M.open(name: string, opts: { here: boolean? }?)
 	local saved, err = load(name)
 	if saved == nil then
-		kern.echo(err)
+		greed.echo(err)
 		return
 	end
 	if opts and opts.here then
-		local tab = kern.tab.current()
+		local tab = greed.tab.current()
 		for _, pane in tab.panes do
 			if pane:id() ~= tab.active:id() then
 				pane:close()
 			end
 		end
 	else
-		kern.tab.new()
+		greed.tab.new()
 	end
 	-- It's arranged as saved, not by a layout manager.
 	layouts.use("manual")
-	local base = kern.tab.current().active
+	local base = greed.tab.current().active
 	local views = {}
 	for i, leaf in leaves(saved, {}) do
 		table.insert(views, open_leaf(leaf, base, i == 1))
 	end
 	if #views > 1 then
-		local ok, problem = pcall(kern.tab.set_layout, with_views(saved, views, { 0 }))
+		local ok, problem = pcall(greed.tab.set_layout, with_views(saved, views, { 0 }))
 		if not ok then
-			kern.echo(`layout {name}: {problem}`)
+			greed.echo(`layout {name}: {problem}`)
 			return
 		end
 	end
 	views[1]:focus()
 	terminal.settle(views[1])
-	kern.echo(`opened layout {name}`)
+	greed.echo(`opened layout {name}`)
 end
 
 return M

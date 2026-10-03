@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local projects = require("@projects")
 
 -- Types `text` into whatever has the keys, a character at a time.
@@ -10,12 +10,12 @@ local function type_text(t: test.TestContext, text: string)
 end
 
 local function picker_text(): string
-	return kern.view():buffer():text()
+	return greed.view():buffer():text()
 end
 
 -- Looks at the sources again, from a command, since commands wait.
 local function refresh(t: test.TestContext)
-	kern.command({
+	greed.command({
 		name = "test-refresh",
 		run = function()
 			projects.refresh()
@@ -35,19 +35,19 @@ end
 test("space P switches between the projects open here", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "" })
 	t:buffer("|x")
-	local first = kern.project.current().id
-	kern.project.open(dir)
+	local first = greed.project.current().id
+	greed.project.open(dir)
 	t:keys("space P")
 	-- Projects come first, in the order they were opened.
 	t:keys("enter")
-	assert(kern.project.current().id == first, "back in the first project")
+	assert(greed.project.current().id == first, "back in the first project")
 end)
 
 test("space P offers recent projects, which open in their own session", function(t)
 	local core = require("@core")
 	local dir = t:tempdir({ [".git/HEAD"] = "" })
 	core.project.open(dir)
-	kern.project.close(kern.project.current().id)
+	greed.project.close(greed.project.current().id)
 	assert(table.find(core.project.recent(), dir), "remembered")
 	t:buffer("|x")
 	t:keys("space P")
@@ -62,7 +62,7 @@ test("alt-enter opens the project in a new session of its own", function(t)
 	local core = require("@core")
 	local dir = t:tempdir({ [".git/HEAD"] = "" })
 	core.project.open(dir)
-	kern.project.close(kern.project.current().id)
+	greed.project.close(greed.project.current().id)
 	t:buffer("|x")
 	t:keys("space P")
 	type_text(t, string.match(dir, "[^/]+$") :: string)

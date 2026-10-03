@@ -1,9 +1,9 @@
--- Lets agents and scripts use the editor: `kern ctl` from a shell, and MCP
--- clients like Claude Code through `kern mcp`.
+-- Lets agents and scripts use the editor: `greed ctl` from a shell, and MCP
+-- clients like Claude Code through `greed mcp`.
 --
 -- Requests come in on the session socket. registry.luau answers MCP's
 -- methods (initialize, tools/list, tools/call), so the tools are the same
--- for an agent and for `kern ctl TOOL`. Add your own with
+-- for an agent and for `greed ctl TOOL`. Add your own with
 -- `require("@agent").tool { ... }`; tools.luau has the built-in ones, and
 -- proposals.luau the review of edits agents propose.
 

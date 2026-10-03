@@ -1,12 +1,12 @@
-# Using Kern
+# Using Greed
 
 ## Starting and sessions
 
-`kern FILE` opens a file. The editor runs as a session in the background and
+`greed FILE` opens a file. The editor runs as a session in the background and
 your terminal attaches to it, so closing the terminal (or typing `:detach`)
 leaves everything as it was: open files, undo history, language servers.
 
-Each project gets its own session, named after its folder. Running `kern`
+Each project gets its own session, named after its folder. Running `greed`
 anywhere in a project attaches to that project's session if it's running
 (opening the file you named), or starts it. Projects in separate sessions
 don't affect each other: a slow plugin or a crash in one leaves the others
@@ -14,36 +14,36 @@ alone.
 
 | Command | What it does |
 |---|---|
-| `kern [FILE or FOLDER]` | Attach to the project's session, or start it |
-| `kern --session NAME [PATH]` | Attach to or start a session with this name, e.g. a second one for a project |
+| `greed [FILE or FOLDER]` | Attach to the project's session, or start it |
+| `greed --session NAME [PATH]` | Attach to or start a session with this name, e.g. a second one for a project |
 | `:detach` | Leave the session running |
-| `kern attach [NAME]` | Attach to a session; the only one if there's one |
-| `kern ls` | List running sessions and their projects |
-| `kern serve [PATH]` | Run a project's session with no terminal |
+| `greed attach [NAME]` | Attach to a session; the only one if there's one |
+| `greed ls` | List running sessions and their projects |
+| `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the shown project and leave; on the last one, quit the session |
 
-`kern commands` lists every command line command, including the ones
-plugins add (`kern ls`, `kern new` and `kern bring` are plugins too).
+`greed commands` lists every command line command, including the ones
+plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
 
 Switching to another session (`space P`, `:session`) moves your terminal
-there and leaves the session you were in running. Over `kern ssh` it
+there and leaves the session you were in running. Over `greed ssh` it
 reconnects through a new ssh connection, which is close to instant with
 ssh connection sharing (`ControlMaster`).
 
-In one of Kern's own terminals, `kern FILE` opens the file in that session
+In one of Greed's own terminals, `greed FILE` opens the file in that session
 and returns, rather than starting an editor inside the editor, and
-`kern ctl` talks to that session. Programs there can tell from
+`greed ctl` talks to that session. Programs there can tell from
 `$GREED_TERMINAL`, which names the session.
 
 Attaching from a second terminal takes the session over from the first. If
-a session can't start in the background, `GREED_NO_SESSION=1 kern FILE` runs
+a session can't start in the background, `GREED_NO_SESSION=1 greed FILE` runs
 the editor directly in the terminal.
 
 A session that quits remembers its projects, their open files and where the
 cursor was, and opens them again the next time it starts. It writes this
 down when it quits and whenever you save a file, in the cache folder
-(`~/.cache/kern/sessions`). Starting with a file keeps that file shown. Turn
-it off with `kern.option.set("restore-session", false)`.
+(`~/.cache/greed/sessions`). Starting with a file keeps that file shown. Turn
+it off with `greed.option.set("restore-session", false)`.
 
 ## Projects
 
@@ -64,7 +64,7 @@ picker, project search and tree work within the shown one.
 | `:qa` | Quit every project |
 
 A recent project or a folder typed into `space P` opens in its own session,
-starting it if it isn't running, like `kern FOLDER` from a terminal.
+starting it if it isn't running, like `greed FOLDER` from a terminal.
 `:project PATH` opens a project in this session instead. `space P` works the
 same in the Helix and Vim styles; in edit mode, where space types, pick
 `pick-project` from the command palette (`ctrl-P`).
@@ -91,55 +91,55 @@ editor starts. Each entry says where it came from.
 ## Editing on another machine
 
 ```bash
-kern ssh build-box src/main.rs
+greed ssh build-box src/main.rs
 ```
 
-`kern ssh HOST [--session NAME] [FILE]` shows a session running on another
+`greed ssh HOST [--session NAME] [FILE]` shows a session running on another
 machine, starting one there if none is running. Files, language servers,
 search and agents all run on that machine, and only keys and screen updates
 cross the network. If the connection drops or you `:detach`, the session
-keeps running, and `kern ssh HOST` comes back to it.
+keeps running, and `greed ssh HOST` comes back to it.
 
-`kern ssh HOST --terminal` does the same and opens a terminal on that
+`greed ssh HOST --terminal` does the same and opens a terminal on that
 machine in a new tab, for when a shell is what you're after. It runs in the
-session, so it's still there after you disconnect. `kern --terminal` does
+session, so it's still there after you disconnect. `greed --terminal` does
 the same here.
 
-Your config comes along: `kern ssh` copies `~/.config/kern` (your
+Your config comes along: `greed ssh` copies `~/.config/greed` (your
 `init.luau` and plugins) to the other machine first, and a session it
 starts there runs that copy, so the editor works the way you set it up.
-The other machine's own `~/.config/kern` runs after it and wins, and
-`kern ssh` never touches it. Changes you make there, or an agent makes, or
+The other machine's own `~/.config/greed` runs after it and wins, and
+`greed ssh` never touches it. Changes you make there, or an agent makes, or
 plugins an agent installs, stay on that machine across connections. A
 session that was already running keeps the config it started with.
 `GREED_SSH_CONFIG=0` leaves your config at home.
 
-To keep a plugin you made over there, bring it home. `kern bring HOST`
+To keep a plugin you made over there, bring it home. `greed bring HOST`
 lists the plugins in the other machine's own config and data folders, and
-`kern bring HOST PLUGIN` copies one into your config's `plugins` folder.
-Kern asks you to approve what it uses the next time it starts.
+`greed bring HOST PLUGIN` copies one into your config's `plugins` folder.
+Greed asks you to approve what it uses the next time it starts.
 
 ```sh
-$ kern bring build-box
-build-box has these; kern bring build-box PLUGIN copies one here:
-  /home/me/.config/kern/plugins/todo-sync
-$ kern bring build-box todo-sync
+$ greed bring build-box
+build-box has these; greed bring build-box PLUGIN copies one here:
+  /home/me/.config/greed/plugins/todo-sync
+$ greed bring build-box todo-sync
 ```
 
 Your login shell on the other machine can be anything (bash, fish,
-nushell): `kern ssh` only asks it to start `sh`, and needs a POSIX `sh`
+nushell): `greed ssh` only asks it to start `sh`, and needs a POSIX `sh`
 and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
 a session it starts uses `/run/user/<uid>` like a login would, and so do
 the programs in its terminals.
 
-Kern has to be installed on both machines. The two ends check that they
+Greed has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
-fail with a clear message. `GREED_REMOTE` sets the path of `kern` on the
+fail with a clear message. `GREED_REMOTE` sets the path of `greed` on the
 other machine, and `GREED_SSH` the ssh command to use.
 
 ## Editing
 
-Kern edits the way Helix does: you select text, then say what to do with it.
+Greed edits the way Helix does: you select text, then say what to do with it.
 There is always a selection; a cursor is a selection one character wide.
 
 **Moving and selecting** (normal mode)
@@ -281,7 +281,7 @@ selects every place it appears.
 | `m d (` | Take away the brackets or quotes around each selection |
 | `m r ( [` | Swap them for others |
 
-**By syntax**, in languages Kern has a grammar for (`:health` lists them):
+**By syntax**, in languages Greed has a grammar for (`:health` lists them):
 
 | Keys | |
 |---|---|
@@ -351,7 +351,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | Keys | |
 |---|---|
 | `space f` | Find a file in the project |
-| `space F` | Find a file under the folder Kern was started in |
+| `space F` | Find a file under the folder Greed was started in |
 | `space '` | Open the last picker again |
 | `space b` | Switch to an open file |
 | `space j` | Pick a place from the jumplist |
@@ -365,18 +365,18 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
 | `:reload` | Load the file again from disk |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
-| `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Kern's own secrets file where there's none); what you type shows as dots |
+| `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
 
 Closing a terminal's buffer ends its program.
 
 When a file changes on disk, from another program or an agent, its buffer
 loads the change as an edit you can undo with `u`. A buffer with unsaved
-changes is left alone and Kern tells you; `:reload` loads the file into it
+changes is left alone and Greed tells you; `:reload` loads the file into it
 anyway. `:set auto-reload false` stops loading changes by itself.
 
 ## Language servers
 
-Kern knows the usual languages and their servers and starts a server when a
+Greed knows the usual languages and their servers and starts a server when a
 file needs one and it's installed. `:health` shows each language's server
 and whether it was found.
 
@@ -422,7 +422,7 @@ Typing `(` or `,` in a call shows what the function takes, above the
 cursor, with the parameter you're on picked out. It follows along as you
 type and closes when the call does or you leave insert mode. To ask for it
 with a key, bind `signature-help` in insert mode, e.g.
-`kern.keymap.bind("insert", { ["ctrl-k"] = "signature-help" })`.
+`greed.keymap.bind("insert", { ["ctrl-k"] = "signature-help" })`.
 
 ## Version control
 
@@ -491,7 +491,7 @@ model plays it. Out of the box:
 | `reasoning` | Claude Opus 5.5, at Anthropic |
 | `local` | Llama 3.2, on [Ollama](https://ollama.com) on this machine |
 
-For Anthropic, give Kern your key with `:secret-set anthropic` (it goes in
+For Anthropic, give Greed your key with `:secret-set anthropic` (it goes in
 the system keyring), or set `ANTHROPIC_API_KEY`. `:models` shows each role,
 its model and whether its key is found.
 
@@ -540,7 +540,7 @@ commands send the context with each question, and agents read it with the
 
 ## Formatting
 
-Saving a file formats it, and `:format` does it without saving. Kern uses
+Saving a file formats it, and `:format` does it without saving. Greed uses
 the language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
 `prettier`, `shfmt`, ...) and otherwise asks the language server, which is
 how Rust gets `rustfmt` through rust-analyzer. Only what the formatter
@@ -551,7 +551,7 @@ changed is replaced, so your cursor stays put.
 require("@languages").set("python", { formatter = { "black", "-q", "-" } })
 
 -- No formatting on save
-require("@kern").option.set("format-on-save", false)
+require("@greed").option.set("format-on-save", false)
 ```
 
 A formatter gets the text on its input and prints it formatted; `{path}` in
@@ -584,7 +584,7 @@ treats every Markdown file as a note, and `:set notes-conceal false` shows
 the brackets and the markup below as written.
 
 ```luau
-require("@kern").option.set("notes-folder", "~/Documents/notes")
+require("@greed").option.set("notes-folder", "~/Documents/notes")
 ```
 
 ### How notes look
@@ -610,7 +610,7 @@ notes.rule({ pattern = "#[%w_-]+", style = "notes.tag" })
 notes.rule({ pattern = "!!", show = "🔥", style = "notes.urgent" })
 
 -- how a style looks is the theme's, like everything else
-require("@kern").theme.set({ ["notes.tag"] = { fg = "magenta" } })
+require("@greed").theme.set({ ["notes.tag"] = { fg = "magenta" } })
 ```
 
 A rule's `pattern` is a Luau pattern; with `show` the match is replaced by
@@ -651,9 +651,9 @@ what new terminals run.
 
 Programs that ask for the kitty keyboard protocol (Helix, Neovim, fish,
 recent shells) get it, so they can tell `tab` from `ctrl-i` or `enter` from
-`shift-enter`. For those keys to reach Kern in the first place your own
+`shift-enter`. For those keys to reach Greed in the first place your own
 terminal needs the protocol too (kitty, WezTerm, foot, Ghostty, Alacritty
-and iTerm2 have it); Kern asks for it when it starts. `GREED_KEYS=legacy`
+and iTerm2 have it); Greed asks for it when it starts. `GREED_KEYS=legacy`
 turns that off.
 
 Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
@@ -664,7 +664,7 @@ macOS), or whatever `:set link-opener firefox` names.
 
 Split the screen between files and terminals, the way a terminal
 multiplexer does, and keep tabs of layouts. Everything stays running in the
-session, so after `:detach` and `kern attach` (or over `kern ssh`) the
+session, so after `:detach` and `greed attach` (or over `greed ssh`) the
 panes, tabs and terminals are where you left them.
 
 | Keys | |
@@ -725,10 +725,10 @@ by hand switches the tab to `manual`, keeping the shape it had.
 
 `:layout-save NAME` saves the tab as it is: its panes, their sizes, and what
 each shows, a file (relative to the project) or a terminal and what it runs.
-It goes in the project, in `.kern/layouts/`, so it can be shared with the
+It goes in the project, in `.greed/layouts/`, so it can be shared with the
 rest of the repository; `:layout-save-mine NAME` keeps it in your config,
 for any project. `:layout-open` picks one and opens it as a new tab. A
-project can open one by itself from its `.kern/init.luau`:
+project can open one by itself from its `.greed/init.luau`:
 
 ```luau
 require("@panes").saved.open("dev", { here = true })
@@ -748,11 +748,11 @@ end)
 ## Clipboard
 
 What you copy goes on your system clipboard too, through your terminal
-(OSC 52), so it works over `kern ssh` and in tmux with `set-clipboard on`.
+(OSC 52), so it works over `greed ssh` and in tmux with `set-clipboard on`.
 Most terminals allow it; some ask first or need it turned on (iTerm2:
 "Applications in terminal may access clipboard"). `GREED_CLIPBOARD=off`
-keeps copies inside Kern. A program in a Kern terminal that copies the same
-way puts the text on Kern's clipboard, so `p` pastes it.
+keeps copies inside Greed. A program in a Greed terminal that copies the same
+way puts the text on Greed's clipboard, so `p` pastes it.
 
 ## Mouse
 
@@ -778,13 +778,13 @@ Most terminals still select text their own way while you hold shift.
 
 ## Images
 
-Kern shows images in terminals that speak the kitty graphics protocol:
+Greed shows images in terminals that speak the kitty graphics protocol:
 kitty, Ghostty, WezTerm and Konsole. It finds out from the variables those
 terminals set; `GREED_IMAGES=kitty` turns images on in another that speaks
 the protocol, and `GREED_IMAGES=none` turns them off. Elsewhere, the text
 under an image shows instead.
 
-Programs in Kern's terminals can show images too, with the same kitty
+Programs in Greed's terminals can show images too, with the same kitty
 protocol or iTerm2's: `kitten icat picture.png`, `imgcat`, chafa's and
 yazi's previews. They scroll with the output, and text written over them
 takes their place, as in any terminal.
@@ -819,10 +819,10 @@ with `.,.+2`.
 
 ## Configuration
 
-Your config is `~/.config/kern/init.luau`, plain Luau with the full plugin
-API. Your own plugins go in `~/.config/kern/plugins/NAME/`.
+Your config is `~/.config/greed/init.luau`, plain Luau with the full plugin
+API. Your own plugins go in `~/.config/greed/plugins/NAME/`.
 
-Saving your config, in Kern or anywhere else, runs it again within a
+Saving your config, in Greed or anywhere else, runs it again within a
 second: what it registered (commands, keys, theme entries, event handlers)
 is taken away and set up anew, and the status line says "config reloaded"
 or what went wrong. Options it set keep their values until it sets them
@@ -831,29 +831,29 @@ again. `:config-reload` does the same by hand.
 Config runs in layers, each after the one before, so later ones win:
 
 1. The default plugins.
-2. The config `kern ssh` brought from your machine, in a session on
+2. The config `greed ssh` brought from your machine, in a session on
    another one.
-3. This machine's own config, `~/.config/kern`.
-4. The project's own config, `.kern/init.luau` in the project, once you
+3. This machine's own config, `~/.config/greed`.
+4. The project's own config, `.greed/init.luau` in the project, once you
    trust it.
 
 A project's config is code from whoever wrote the repository, so it doesn't
 run until you say so: opening a project that has one tells you, and
 `:trust` runs it, now and whenever the project opens again. Trusted
-projects are listed in `~/.cache/kern/trusted-projects`; take a line out
+projects are listed in `~/.cache/greed/trusted-projects`; take a line out
 to stop trusting one.
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
 -- Keys
-kern.keymap.bind("normal", { ["space w"] = "save" })
+greed.keymap.bind("normal", { ["space w"] = "save" })
 
 -- Options (`:set` changes them while running)
-kern.option.set("flash-duration", 150)
+greed.option.set("flash-duration", 150)
 
 -- The theme: change a few names, or all of them
-kern.theme.set({
+greed.theme.set({
 	["ui.selection"] = { bg = "#3b3f51" },
 	["keyword"] = { fg = "magenta", bold = true },
 })
@@ -862,7 +862,7 @@ kern.theme.set({
 require("@languages").set("python", { servers = { { "pylsp" } } })
 
 -- Turn off a default plugin
-kern.plugin.unload("hints")
+greed.plugin.unload("hints")
 ```
 
 [Keys](keys.md) covers key names, modes and taking keys away.
@@ -875,7 +875,7 @@ the session on the right. Two options make it livelier, both off unless you
 turn them on:
 
 ```luau
-local option = require("@kern").option
+local option = require("@greed").option
 -- The mode, tab, machine and session as pills in their theme colors, with
 -- rounded ends (they need a Nerd Font; "none" makes them square)
 option.set("statusline-pills", true)
@@ -917,7 +917,7 @@ for it.
 ```luau
 statusline.add_async("right", "change", {
 	refresh = function()
-		local done = require("@kern").process.run({
+		local done = require("@greed").process.run({
 			"jj", "log", "-r", "@", "--no-graph", "-T", "change_id.short()",
 		})
 		return done and done.code == 0 and done.stdout or nil
@@ -934,7 +934,7 @@ statusline.add_async("right", "change", {
 switches straight away. Tab through the matches after `:theme ` tries each
 one the same way. The theme you pick is remembered for next time.
 
-Kern comes with `default` (your terminal's 16 colors, so it follows your
+Greed comes with `default` (your terminal's 16 colors, so it follows your
 terminal's palette), `nord`, `nord-light`, `dracula`, `catppuccin-mocha`,
 `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `gruvbox`,
 `gruvbox-light`, `onedark`, `tokyonight`, `tokyonight-storm`,
@@ -966,9 +966,9 @@ theme.define("mine", {
 })
 ```
 
-`kern.theme.set` changes single names on top of whichever theme is in use,
+`greed.theme.set` changes single names on top of whichever theme is in use,
 and those changes stay when you switch themes. Each changes only the fields
-it gives: `kern.theme.set({ comment = { italic = false } })` keeps the
+it gives: `greed.theme.set({ comment = { italic = false } })` keeps the
 theme's comment color. A theme's own `styles` work the same way on what it
 inherits. Names fall back to their parent, so `keyword.control` uses
 `keyword` unless it has its own entry; [Highlighting](highlighting.md) lists
@@ -981,14 +981,14 @@ or `GREED_COLORS=256` decides for a terminal that says the wrong thing.
 
 ### Highlighting and syntax queries
 
-Kern has grammars built in for Rust, Nix, Bash, Python, Go, JavaScript,
+Greed has grammars built in for Rust, Nix, Bash, Python, Go, JavaScript,
 TypeScript, C, Luau, JSON, TOML, YAML and Markdown. For C++, C#, Java,
 Ruby, Scala, Haskell, OCaml, Julia, HTML and CSS it downloads the grammar
 the first time you open a file in that language (with `curl`), checks it
-against a checksum Kern knows, and keeps it in `~/.cache/kern/grammars`.
+against a checksum Greed knows, and keeps it in `~/.cache/greed/grammars`.
 `:health` shows which languages are built in, which download, and which
 have no grammar. `:grammar-fetch ruby` downloads one ahead of time, say
-before going offline, and `kern.option.set("grammar-download", false)`
+before going offline, and `greed.option.set("grammar-download", false)`
 turns downloading off.
 
 What gets highlighted, and what counts as a function for `m i f`, comes
@@ -998,19 +998,19 @@ blocks in Markdown, which are highlighted in their own language),
 `textobjects`, `folds` (the blocks `z a` folds, captured as `@fold`) or
 `indents` (nodes whose lines go a level in, `@indent`, and closing tokens
 that line up with their block's first line, `@outdent`).
-Kern reads them from every plugin and from `~/.config/kern/queries`, so a
-file there replaces Kern's own. To add to it instead, start the file with
+Greed reads them from every plugin and from `~/.config/greed/queries`, so a
+file there replaces Greed's own. To add to it instead, start the file with
 `; extends`:
 
 ```scheme
 ; extends
-; ~/.config/kern/queries/rust/highlights.scm: TODO in comments stands out
+; ~/.config/greed/queries/rust/highlights.scm: TODO in comments stands out
 ((line_comment) @comment.todo (#match? @comment.todo "TODO"))
 ```
 
 [Highlighting](highlighting.md) lists the names highlights queries use
 and the theme styles.
 
-A query with a mistake in it says so when Kern starts, and the one before
+A query with a mistake in it says so when Greed starts, and the one before
 it stays in use. `require("@languages").load_queries()` reads the files
 again after you change them.

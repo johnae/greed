@@ -5,11 +5,11 @@
 --   space h c   describe a command
 --   space h k   describe a key
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("@picker")
 
 type Open = {
-	view: kern.View,
+	view: greed.View,
 	path: string?,
 	line: number?,
 }
@@ -23,12 +23,12 @@ local function close()
 	end
 end
 
-local function show(command: kern.CommandInfo)
+local function show(command: greed.CommandInfo)
 	close()
 	local lines = { command.name, "" }
 	table.insert(lines, if command.doc == "" then "(no description)" else command.doc)
 	table.insert(lines, "")
-	local bindings = kern.keymap.find(command.name)
+	local bindings = greed.keymap.find(command.name)
 	if #bindings == 0 then
 		table.insert(lines, "Keys: none")
 	end
@@ -41,20 +41,20 @@ local function show(command: kern.CommandInfo)
 		table.insert(lines, "enter: go to the definition   esc: close")
 	end
 
-	local buffer = kern.create_buffer("help", table.concat(lines, "\n"))
+	local buffer = greed.create_buffer("help", table.concat(lines, "\n"))
 	open = {
-		view = kern.float(buffer, { title = "Help", width = "70%", height = #lines + 2 }),
+		view = greed.float(buffer, { title = "Help", width = "70%", height = #lines + 2 }),
 		path = command.path,
 		line = command.line,
 	}
 end
 
-kern.command({
+greed.command({
 	name = "describe-command",
 	doc = "Show what a command does, its keys, and where it's defined",
 	run = function()
 		local items = {}
-		for _, command in kern.commands() do
+		for _, command in greed.commands() do
 			table.insert(items, { label = command.name .. "  " .. command.doc, value = command })
 		end
 		picker.pick("Describe", items, function(item)
@@ -63,40 +63,40 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "describe-key",
 	doc = "Press keys to see what command they run",
 	run = function()
-		kern.echo("press a key to describe")
+		greed.echo("press a key to describe")
 		local keys = ""
 		while true do
-			local key = kern.next_key()
+			local key = greed.next_key()
 			keys = if keys == "" then key else `{keys} {key}`
-			local name, pending = kern.keymap.resolve(keys)
+			local name, pending = greed.keymap.resolve(keys)
 			if name then
-				for _, command in kern.commands() do
+				for _, command in greed.commands() do
 					if command.name == name then
 						show(command)
 						return
 					end
 				end
-				kern.echo(`{keys} runs {name}, which doesn't exist`)
+				greed.echo(`{keys} runs {name}, which doesn't exist`)
 				return
 			elseif not pending then
-				kern.echo(`{keys} isn't bound to anything`)
+				greed.echo(`{keys} isn't bound to anything`)
 				return
 			end
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "help-close",
 	doc = "Close the help window",
 	run = close,
 })
 
-kern.command({
+greed.command({
 	name = "help-goto",
 	doc = "Open the file a command is defined in, at its definition",
 	run = function()
@@ -105,20 +105,20 @@ kern.command({
 			return
 		end
 		close()
-		kern.open(o.path)
-		local view = kern.view()
+		greed.open(o.path)
+		local view = greed.view()
 		local pos = view:buffer():line_start((o.line or 1) - 1)
 		view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
 	end,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "help" }, {
+greed.keymap.bind({ mode = "normal", kind = "help" }, {
 	esc = "help-close",
 	q = "help-close",
 	enter = "help-goto",
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space h c"] = "describe-command",
 	["space h k"] = "describe-key",
 })

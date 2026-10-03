@@ -1,4 +1,4 @@
-; From tree-sitter-python (MIT), with Kern's capture names.
+; From tree-sitter-python (MIT), with Greed's capture names.
 
 ; Identifier naming conventions
 

@@ -1,4 +1,4 @@
-//! `kern.terminal`: programs running in terminals, for the terminal plugin
+//! `greed.terminal`: programs running in terminals, for the terminal plugin
 //! to show in buffers. Output arrives as "terminal.output" events, and the
 //! end of the program as "terminal.exited". A terminal belongs to the
 //! plugin that started it and ends with it.

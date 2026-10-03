@@ -5,9 +5,9 @@
 -- hint rather than the start of a count. Styles add their motions by
 -- calling `after` at the end of them, as core's word motions and Vim's do.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "motion-hints",
 	doc = "Number the next places a word motion would go, and go there on a digit",
 	default = false,
@@ -20,10 +20,10 @@ local SHOWN = 9
 
 --- One more of the motion from `range`: the range it gives and the
 --- character the cursor lands on, or nil when it goes nowhere new.
-export type Step = (buffer: kern.Buffer, range: kern.Range) -> (kern.Range?, number?)
+export type Step = (buffer: greed.Buffer, range: greed.Range) -> (greed.Range?, number?)
 
 -- The motion the shown hints are for, and the buffer they're drawn in.
-local shown: { command: string, buffer: kern.Buffer }? = nil
+local shown: { command: string, buffer: greed.Buffer }? = nil
 
 local function clear()
 	local hints = shown
@@ -37,14 +37,14 @@ end
 
 --- Shows the hints for motion `command` from the primary selection, each
 --- next place found by `step`. Does nothing with the option off.
-function M.after(ctx: kern.Context, command: string, step: Step)
-	if not kern.option.get("motion-hints") then
+function M.after(ctx: greed.Context, command: string, step: Step)
+	if not greed.option.get("motion-hints") then
 		return
 	end
 	local buffer = ctx.buffer
 	local selection = ctx.view:selection()
 	local range = selection.ranges[selection.primary]
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	local keys: { [string]: string } = {}
 	for n = 1, SHOWN do
 		local next, at = step(buffer, range)
@@ -71,24 +71,24 @@ function M.after(ctx: kern.Context, command: string, step: Step)
 	end
 	buffer:decorate("motion-hints", marks)
 	shown = { command = command, buffer = buffer }
-	kern.keymap.overlay(keys)
+	greed.keymap.overlay(keys)
 end
 
 -- Any other command takes the hints away; the digits went with the next key.
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if not string.match(event.name, "^motion%-hint%-%d$") then
 		clear()
 	end
 end)
 
 for n = 1, SHOWN do
-	kern.command({
+	greed.command({
 		name = `motion-hint-{n}`,
 		doc = `Do the last motion {n} more times`,
 		run = function()
 			local hints = shown
 			if hints then
-				kern.run(hints.command, { count = n })
+				greed.run(hints.command, { count = n })
 			end
 		end,
 	})

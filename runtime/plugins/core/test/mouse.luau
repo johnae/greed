@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function lines(n: number): string
 	local all = {}
@@ -12,12 +12,12 @@ end
 -- A buffer without line numbers, drawn, so screen cells are text cells.
 local function drawn(t: test.TestContext, text: string)
 	t:buffer("|" .. text)
-	kern.view():buffer():set_line_numbers(false)
+	greed.view():buffer():set_line_numbers(false)
 	t:draw(40, 10)
 end
 
 local function head(): number
-	local selection = kern.view():selection()
+	local selection = greed.view():selection()
 	return selection.ranges[selection.primary].head
 end
 
@@ -43,20 +43,20 @@ test("the wheel scrolls the view and brings the cursor along", function(t)
 	drawn(t, lines(50))
 	t:mouse("scroll", 5, 5, "down")
 	t:mouse("scroll", 5, 5, "down")
-	assert(kern.view():scroll() == 6, tostring(kern.view():scroll()))
-	local buffer = kern.view():buffer()
+	assert(greed.view():scroll() == 6, tostring(greed.view():scroll()))
+	local buffer = greed.view():buffer()
 	assert(buffer:line_of(head()) == 6, "the cursor is on screen")
 	t:draw(40, 10)
-	assert(kern.view():scroll() == 6, "drawing doesn't scroll back")
+	assert(greed.view():scroll() == 6, "drawing doesn't scroll back")
 	t:mouse("scroll", 5, 5, "up")
-	assert(kern.view():scroll() == 3)
+	assert(greed.view():scroll() == 3)
 end)
 
 test("clicking a mark's text with an action runs it, the cursor at the mark", function(t)
 	t:buffer("|hello\nworld")
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	local ran: { number } = {}
-	kern.command({
+	greed.command({
 		name = "test-button",
 		run = function(ctx)
 			local selection = ctx.view:selection()
@@ -104,5 +104,5 @@ test("double and triple clicks select the word and the line; shift extends, alt 
 	t:expect("h^ello world\nsec|ond")
 	t:mouse("release", 3, 1)
 	t:mouse("press", 0, 0, "left", { alt = true })
-	assert(#kern.view():selection().ranges == 2, "a second cursor")
+	assert(#greed.view():selection().ranges == 2, "a second cursor")
 end)

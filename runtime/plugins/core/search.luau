@@ -2,7 +2,7 @@
 -- go to the next and previous match, and * searches for the selection.
 -- Patterns are regexes; ones in lowercase ignore case.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local prompt = require("./prompt")
 local registers = require("./registers")
 
@@ -10,12 +10,12 @@ local registers = require("./registers")
 local last: string? = nil
 local backward = false
 
-local function primary(view: kern.View): kern.Range
+local function primary(view: greed.View): greed.Range
 	local selection = view:selection()
 	return selection.ranges[selection.primary]
 end
 
-local function span(range: kern.Range): (number, number)
+local function span(range: greed.Range): (number, number)
 	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
@@ -26,7 +26,7 @@ end
 
 -- Where a search for the next match starts: after the selection, or after
 -- the character under a cursor.
-local function after(buffer: kern.Buffer, range: kern.Range): number
+local function after(buffer: greed.Buffer, range: greed.Range): number
 	local from, to = span(range)
 	return if to > from then to else buffer:next_char(from)
 end
@@ -34,9 +34,9 @@ end
 -- The match of `pattern` after `range` (or before it, going back), round
 -- the ends.
 local function next_match(
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	pattern: string,
-	range: kern.Range,
+	range: greed.Range,
 	back: boolean
 ): (number?, number?)
 	local start = if back then span(range) else after(buffer, range)
@@ -55,9 +55,9 @@ local at_start: { [string]: boolean } = {}
 -- round the ends, or puts the cursor at its start in a mode in `at_start`.
 -- Returns whether there was one.
 local function jump(
-	view: kern.View,
+	view: greed.View,
 	pattern: string,
-	range: kern.Range,
+	range: greed.Range,
 	back: boolean,
 	mode: string
 ): boolean
@@ -70,8 +70,8 @@ local function jump(
 	return false
 end
 
-local function highlight(buffer: kern.Buffer, pattern: string)
-	local marks: { kern.Mark } = {}
+local function highlight(buffer: greed.Buffer, pattern: string)
+	local marks: { greed.Mark } = {}
 	if pattern ~= "" then
 		for _, m in buffer:find_all(smart_case(pattern)) or {} do
 			if m.to > m.from then
@@ -82,11 +82,11 @@ local function highlight(buffer: kern.Buffer, pattern: string)
 	buffer:decorate("search", marks)
 end
 
-local function search(ctx: kern.Context, back: boolean)
+local function search(ctx: greed.Context, back: boolean)
 	local view, buffer = ctx.view, ctx.buffer
 	local origin = view:selection()
 	local start = primary(view)
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	prompt.open({
 		title = if back then "search back" else "search",
 		on_change = function(pattern)
@@ -104,13 +104,13 @@ local function search(ctx: kern.Context, back: boolean)
 			-- Nil and the error for a bad pattern.
 			local found, err = buffer:find(smart_case(pattern))
 			if found == nil and err then
-				kern.echo(`bad pattern {pattern}: {err}`)
+				greed.echo(`bad pattern {pattern}: {err}`)
 				return
 			end
 			last, backward = pattern, back
 			registers.set("/", { pattern })
 			if found == nil then
-				kern.echo(`no match for {pattern}`)
+				greed.echo(`no match for {pattern}`)
 			end
 		end,
 		on_cancel = function()
@@ -122,26 +122,26 @@ end
 
 -- Adds the next match of the last search as a selection of its own, and
 -- makes it the primary one.
-local function add_next(ctx: kern.Context, reverse: boolean)
+local function add_next(ctx: greed.Context, reverse: boolean)
 	if last == nil then
-		kern.echo("nothing searched for yet")
+		greed.echo("nothing searched for yet")
 		return
 	end
 	local selection = ctx.view:selection()
 	local from, to = next_match(ctx.buffer, last, primary(ctx.view), backward ~= reverse)
 	if from == nil or to == nil then
-		kern.echo(`no match for {last}`)
+		greed.echo(`no match for {last}`)
 		return
 	end
 	for _, range in selection.ranges do
 		local a, b = span(range)
 		if a < to and from < b then
-			kern.echo("no more matches")
+			greed.echo("no more matches")
 			return
 		end
 	end
 	table.insert(selection.ranges, { anchor = from, head = to })
-	table.sort(selection.ranges, function(a: kern.Range, b: kern.Range)
+	table.sort(selection.ranges, function(a: greed.Range, b: greed.Range)
 		return span(a) < span(b)
 	end)
 	for i, range in selection.ranges do
@@ -154,17 +154,17 @@ end
 
 -- Goes to the next match of the last search, the same way it went (or the
 -- other way, with `reverse`).
-local function again(ctx: kern.Context, reverse: boolean)
+local function again(ctx: greed.Context, reverse: boolean)
 	if last == nil then
-		kern.echo("nothing searched for yet")
+		greed.echo("nothing searched for yet")
 		return
 	end
-	if not jump(ctx.view, last, primary(ctx.view), backward ~= reverse, kern.mode.get()) then
-		kern.echo(`no match for {last}`)
+	if not jump(ctx.view, last, primary(ctx.view), backward ~= reverse, greed.mode.get()) then
+		greed.echo(`no match for {last}`)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "search",
 	doc = "Search forward for a regex as you type",
 	run = function(ctx)
@@ -172,7 +172,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-back",
 	doc = "Search backward for a regex as you type",
 	run = function(ctx)
@@ -180,7 +180,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-next",
 	doc = "Select the next match of the last search",
 	run = function(ctx)
@@ -188,7 +188,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-prev",
 	doc = "Select the previous match of the last search",
 	run = function(ctx)
@@ -196,7 +196,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-next-add",
 	doc = "Add the next match of the last search as another selection",
 	run = function(ctx)
@@ -204,7 +204,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-prev-add",
 	doc = "Add the previous match of the last search as another selection",
 	run = function(ctx)
@@ -219,12 +219,12 @@ end
 -- Searches for the primary selection's text, as plain text in the same
 -- case. With `words`, a selection that starts or ends a word only matches
 -- there, so a whole word doesn't match inside a longer one.
-local function search_selection(ctx: kern.Context, words: boolean)
+local function search_selection(ctx: greed.Context, words: boolean)
 	local buffer = ctx.buffer
 	local from, to = span(primary(ctx.view))
 	local text = buffer:slice(from, to)
 	if text == "" then
-		kern.echo("nothing selected to search for")
+		greed.echo("nothing selected to search for")
 		return
 	end
 	local pattern = (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0"))
@@ -241,10 +241,10 @@ local function search_selection(ctx: kern.Context, words: boolean)
 	pattern = "(?-i)" .. pattern
 	last, backward = pattern, false
 	registers.set("/", { pattern })
-	kern.echo(`searching for {text}`)
+	greed.echo(`searching for {text}`)
 end
 
-kern.command({
+greed.command({
 	name = "search-selection",
 	doc = "Search for the selected text, as whole words where it starts or ends one",
 	run = function(ctx)
@@ -252,7 +252,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "search-selection-anywhere",
 	doc = "Search for the selected text, also inside longer words",
 	run = function(ctx)

@@ -1,4 +1,4 @@
-; From tree-sitter-json (MIT), with Kern's capture names.
+; From tree-sitter-json (MIT), with Greed's capture names.
 
 (pair
   key: (_) @variable.other.member)

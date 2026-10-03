@@ -1,4 +1,4 @@
-local test = require("@kern/test")
+local test = require("@greed/test")
 local core = require("@core")
 local effects = core.effects
 

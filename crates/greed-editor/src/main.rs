@@ -1,4 +1,4 @@
-//! The `kern` command line: the editor itself, a headless REPL for driving
+//! The `greed` command line: the editor itself, a headless REPL for driving
 //! the editor core from a script or an agent, and a test runner for plugins.
 
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -18,7 +18,7 @@ use greed_core::luau::{Host, HostError, run_tests};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       kern commands        these, and the commands plugins add (kern ls, kern new, ...)\n       --terminal           with kern [FILE] or kern ssh: open a terminal in the session too";
+const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -75,13 +75,13 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("kern: {err}");
+            eprintln!("greed: {err}");
             ExitCode::FAILURE
         }
     }
 }
 
-/// Kern's config directory on this machine: `$GREED_CONFIG_DIR`, or `kern` in
+/// Greed's config directory on this machine: `$GREED_CONFIG_DIR`, or `greed` in
 /// the user's config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
 fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("GREED_CONFIG_DIR") {
@@ -90,13 +90,13 @@ fn config_dir() -> Option<PathBuf> {
     user_dir("XDG_CONFIG_HOME", ".config")
 }
 
-/// Kern's state folder, for what it keeps that isn't config or cache, like
-/// which plugins you approved: `$XDG_STATE_HOME/kern` or `~/.local/state/kern`.
+/// Greed's state folder, for what it keeps that isn't config or cache, like
+/// which plugins you approved: `$XDG_STATE_HOME/greed` or `~/.local/state/greed`.
 fn state_dir() -> Option<PathBuf> {
     user_dir("XDG_STATE_HOME", ".local/state")
 }
 
-/// The copy of your config `kern ssh` brought from another machine, when
+/// The copy of your config `greed ssh` brought from another machine, when
 /// this session runs on the far end of one.
 fn brought_dir() -> Option<PathBuf> {
     std::env::var_os("GREED_SSH_CONFIG_DIR").map(PathBuf::from)
@@ -110,23 +110,23 @@ fn config_file() -> Option<PathBuf> {
     }
 }
 
-/// Kern's data folder, where plugins made in the editor go when the config
-/// can't be written: `$XDG_DATA_HOME/kern` or `~/.local/share/kern`.
+/// Greed's data folder, where plugins made in the editor go when the config
+/// can't be written: `$XDG_DATA_HOME/greed` or `~/.local/share/greed`.
 fn data_dir() -> Option<PathBuf> {
     user_dir("XDG_DATA_HOME", ".local/share")
 }
 
-/// `kern` in the folder the environment variable `var` names, or in
+/// `greed` in the folder the environment variable `var` names, or in
 /// `fallback` under the home folder.
 fn user_dir(var: &str, fallback: &str) -> Option<PathBuf> {
     let base = std::env::var_os(var)
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(fallback)))?;
-    Some(base.join("kern"))
+    Some(base.join("greed"))
 }
 
 /// The plugins to load: the default ones (core first, then by name), then
-/// the ones in the config `kern ssh` brought, then the ones made in the
+/// the ones in the config `greed ssh` brought, then the ones made in the
 /// editor (in the data folder), then this machine's own config's. A plugin
 /// in a later place replaces one of the same name in an earlier one.
 fn plugins() -> io::Result<Vec<PathBuf>> {
@@ -186,7 +186,7 @@ fn host(
     if let Some(requests) = requests {
         host.set_request_sender(requests);
     }
-    // Plugins other than Kern's own load once you've approved what they use.
+    // Plugins other than Greed's own load once you've approved what they use.
     if let (Some(state), Ok(runtime)) = (state_dir(), runtime::dir()) {
         host.require_approval(state.join("approved.json"), vec![runtime.join("plugins")]);
     }
@@ -253,7 +253,7 @@ fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
 
     let interactive = io::stdin().is_terminal();
     if interactive {
-        println!("kern repl. :help for help.");
+        println!("greed repl. :help for help.");
     }
     let mut out = io::stdout();
     for line in prompt_lines(interactive) {
@@ -278,7 +278,7 @@ fn prompt_lines(interactive: bool) -> impl Iterator<Item = io::Result<String>> {
     let mut lines = io::stdin().lock().lines();
     std::iter::from_fn(move || {
         if interactive {
-            print!("kern> ");
+            print!("greed> ");
             io::stdout().flush().ok();
         }
         lines.next()
@@ -363,7 +363,7 @@ fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>) {
     }
 }
 
-/// Whether `name` could be a command plugins add with `kern.cli`: plain
+/// Whether `name` could be a command plugins add with `greed.cli`: plain
 /// lowercase words with dashes. Anything else is a file.
 fn command_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_lowercase())
@@ -372,8 +372,8 @@ fn command_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// `kern NAME ARGS`: the command a plugin added with `kern.cli`, run in an
-/// editor with no screen. With no such command, `kern NAME` edits the file.
+/// `greed NAME ARGS`: the command a plugin added with `greed.cli`, run in an
+/// editor with no screen. With no such command, `greed NAME` edits the file.
 fn plugin_command(
     name: &str,
     args: &[String],
@@ -384,7 +384,7 @@ fn plugin_command(
         if args.is_empty() {
             return edit(None, Some(PathBuf::from(name)), terminal);
         }
-        return Err(format!("there's no command {name} (kern commands lists them)").into());
+        return Err(format!("there's no command {name} (greed commands lists them)").into());
     }
     // What starting up said, like a config error, before the command's own.
     for message in host.with_editor_mut(Editor::take_messages) {
@@ -399,7 +399,7 @@ fn plugin_command(
     Ok(())
 }
 
-/// `kern commands`: Kern's own commands, then the ones plugins add.
+/// `greed commands`: Greed's own commands, then the ones plugins add.
 fn commands() -> Result<(), Box<dyn std::error::Error>> {
     println!("{USAGE}");
     let commands = host("", None, None)?.cli_commands();
@@ -408,7 +408,7 @@ fn commands() -> Result<(), Box<dyn std::error::Error>> {
     }
     for (name, usage, doc) in commands {
         let line = format!("{name} {usage}");
-        println!("       kern {:<15} {doc}", line.trim_end());
+        println!("       greed {:<15} {doc}", line.trim_end());
     }
     Ok(())
 }

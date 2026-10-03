@@ -3,16 +3,16 @@
 -- last change (g .), a column (g |) and the file named under the cursor
 -- (g f).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local motions = require("./motions")
 local text = require("./text")
 
 local M = {}
 
--- File buffers, oldest first, as `kern.buffers()` lists them.
-local function files(): { kern.Buffer }
+-- File buffers, oldest first, as `greed.buffers()` lists them.
+local function files(): { greed.Buffer }
 	local out = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:kind() == "file" then
 			table.insert(out, buffer)
 		end
@@ -25,7 +25,7 @@ end
 local recent: { number } = {}
 local changed: number? = nil
 
-local function seen(buffer: kern.Buffer)
+local function seen(buffer: greed.Buffer)
 	if buffer:kind() ~= "file" then
 		return
 	end
@@ -39,18 +39,18 @@ local function seen(buffer: kern.Buffer)
 	end
 end
 
-kern.on("command.run", function()
-	seen(kern.view():buffer())
+greed.on("command.run", function()
+	seen(greed.view():buffer())
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if event.buffer:kind() == "file" then
 		changed = event.buffer:id()
 	end
 end)
 
-local function by_id(id: number?): kern.Buffer?
-	for _, buffer in kern.buffers() do
+local function by_id(id: number?): greed.Buffer?
+	for _, buffer in greed.buffers() do
 		if buffer:id() == id then
 			return buffer
 		end
@@ -58,7 +58,7 @@ local function by_id(id: number?): kern.Buffer?
 	return nil
 end
 
-local function show(view: kern.View, buffer: kern.Buffer?)
+local function show(view: greed.View, buffer: greed.Buffer?)
 	if buffer and buffer:id() ~= view:buffer():id() then
 		view:show(buffer)
 		seen(buffer)
@@ -66,7 +66,7 @@ local function show(view: kern.View, buffer: kern.Buffer?)
 end
 
 for _, back in { false, true } do
-	kern.command({
+	greed.command({
 		name = if back then "buffer-prev" else "buffer-next",
 		doc = if back then "Show the previous open file" else "Show the next open file",
 		run = function(ctx)
@@ -86,7 +86,7 @@ for _, back in { false, true } do
 	})
 end
 
-kern.command({
+greed.command({
 	name = "goto-last-accessed-file",
 	doc = "Show the file you were in before this one",
 	run = function(ctx)
@@ -95,7 +95,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "goto-last-modified-file",
 	doc = "Show the file you changed last, other than this one",
 	run = function(ctx)
@@ -103,7 +103,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "goto-last-modification",
 	doc = "Move to where this file was last changed",
 	run = function(ctx)
@@ -116,7 +116,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "goto-column",
 	doc = "Move to the column given as a count, on each cursor's line",
 	run = function(ctx)
@@ -134,7 +134,7 @@ local PATH_CHAR = "[%w%._%-/~+@]"
 --- The path `range` names: the selection's text when it's longer than a
 --- character, otherwise the run of path characters around the cursor. Nil
 --- if there's none.
-function M.path_at(buffer: kern.Buffer, range: kern.Range): string?
+function M.path_at(buffer: greed.Buffer, range: greed.Range): string?
 	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 	if to > buffer:next_char(from) then
 		return buffer:slice(from, to)
@@ -154,31 +154,31 @@ function M.path_at(buffer: kern.Buffer, range: kern.Range): string?
 	return if last >= first then string.sub(row, first, last) else nil
 end
 
-kern.command({
+greed.command({
 	name = "goto-file",
 	doc = "Open the file named under the cursor or in the selection",
 	run = function(ctx)
 		local selection = ctx.view:selection()
 		local path = M.path_at(ctx.buffer, selection.ranges[selection.primary])
 		if path == nil or path == "" then
-			kern.echo("no file name under the cursor")
+			greed.echo("no file name under the cursor")
 			return
 		end
-		local home = kern.fs.dirs().home
+		local home = greed.fs.dirs().home
 		if home and string.sub(path, 1, 2) == "~/" then
 			path = home .. string.sub(path, 2)
 		end
 		if string.sub(path, 1, 1) ~= "/" then
-			-- Relative to the file it's named in, else to where Kern runs.
+			-- Relative to the file it's named in, else to where Greed runs.
 			local own = ctx.buffer:path()
-			local dir = if own then string.match(own, "^(.*)/[^/]*$") else kern.fs.cwd()
+			local dir = if own then string.match(own, "^(.*)/[^/]*$") else greed.fs.cwd()
 			path = `{dir}/{path}`
 		end
-		if kern.fs.stat(path) == nil then
-			kern.echo(`no file {path}`)
+		if greed.fs.stat(path) == nil then
+			greed.echo(`no file {path}`)
 			return
 		end
-		kern.open(path)
+		greed.open(path)
 	end,
 })
 

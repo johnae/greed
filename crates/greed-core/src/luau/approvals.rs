@@ -1,4 +1,4 @@
-//! Approving what plugins may use. A plugin from outside the folders Kern
+//! Approving what plugins may use. A plugin from outside the folders Greed
 //! ships that declares capabilities loads only once you've approved them.
 //! Approvals are kept per plugin folder with the capabilities approved, so
 //! a plugin asking for more waits again. Without a store, as in tests,
@@ -75,7 +75,7 @@ impl Approvals {
     }
 
     /// Whether `path` is the approvals file, which plugins may not write
-    /// through Kern's API.
+    /// through Greed's API.
     pub fn protects(&self, path: &Path) -> bool {
         same_file(path, &self.path)
     }
@@ -87,7 +87,7 @@ pub(super) fn guard(lua: &mlua::Lua, path: &Path) -> mlua::Result<()> {
     let state = super::state(lua);
     if state.approvals.as_ref().is_some_and(|a| a.protects(path)) {
         return Err(mlua::Error::runtime(
-            "plugins can't write Kern's approvals; :plugins-approve does",
+            "plugins can't write Greed's approvals; :plugins-approve does",
         ));
     }
     Ok(())

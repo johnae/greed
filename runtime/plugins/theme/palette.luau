@@ -2,7 +2,7 @@
 -- hues, with optional colors for the syntax roles where a theme departs
 -- from the usual (Nord's keywords are blue, Dracula's are pink).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local effects = require("@core").effects
 
 export type Palette = {
@@ -38,8 +38,8 @@ export type Palette = {
 
 local M = {}
 
---- Every style name Kern and its plugins use, from `p`.
-function M.styles(p: Palette): { [string]: kern.ThemeEntry }
+--- Every style name Greed and its plugins use, from `p`.
+function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 	local fg_alt = p.fg_alt or p.fg
 	local accent = p.accent or p.blue
 	-- What lit letters glow towards: brighter text on a dark theme, the
@@ -58,7 +58,7 @@ function M.styles(p: Palette): { [string]: kern.ThemeEntry }
 	local operator = p.operator or p.cyan
 	local severity: { [string]: string } =
 		{ error = p.red, warning = p.yellow, info = p.blue, hint = p.cyan }
-	local styles: { [string]: kern.ThemeEntry } = {
+	local styles: { [string]: greed.ThemeEntry } = {
 		["ui.text"] = { fg = p.fg, bg = p.bg },
 		["ui.gutter"] = { fg = p.gutter },
 		["ui.selection"] = { bg = p.selection },

@@ -9,10 +9,10 @@
 -- language its own way with `providers`, as notes does for Markdown
 -- sections.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local syntax = require("./syntax")
 
-type Buffer = kern.Buffer
+type Buffer = greed.Buffer
 
 local M = {}
 
@@ -137,7 +137,7 @@ local function unfold(buffer: Buffer, starts: { number })
 	buffer:decorate("folds", kept)
 end
 
-local function cursor_line(view: kern.View): number
+local function cursor_line(view: greed.View): number
 	local selection = view:selection()
 	return view:buffer():line_of(selection.ranges[selection.primary].head)
 end
@@ -157,18 +157,18 @@ function M.fold(buffer: Buffer, first: number, last: number)
 	buffer:decorate("folds", marks)
 end
 
-local function go_to_line(view: kern.View, line: number)
+local function go_to_line(view: greed.View, line: number)
 	local start = view:buffer():line_start(line)
 	view:set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
 end
 
 -- Folds the block around the cursor's line, saying so when there's none.
-local function fold(view: kern.View)
+local function fold(view: greed.View)
 	local buffer = view:buffer()
 	local line = cursor_line(view)
 	local first, last = M.block(buffer, line)
 	if first == nil then
-		kern.echo("nothing to fold here")
+		greed.echo("nothing to fold here")
 		return
 	end
 	M.fold(buffer, first, last)
@@ -178,7 +178,7 @@ local function fold(view: kern.View)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "fold-toggle",
 	doc = "Fold the block the cursor is in, or unfold it",
 	run = function(ctx)
@@ -191,7 +191,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "fold-close",
 	doc = "Fold the block the cursor is in under its first line",
 	run = function(ctx)
@@ -201,7 +201,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "fold-open",
 	doc = "Unfold the folds the cursor is in",
 	run = function(ctx)
@@ -209,7 +209,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "fold-open-all",
 	doc = "Unfold everything in the buffer",
 	run = function(ctx)
@@ -217,7 +217,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "fold-close-all",
 	doc = "Fold every outermost block in the buffer",
 	run = function(ctx)
@@ -238,7 +238,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "fold-selection",
 	doc = "Fold the selected lines under the first",
 	run = function(ctx)
@@ -256,7 +256,7 @@ kern.command({
 -- fold-next and fold-prev: to the first line of the next block below, or
 -- the last line of the one above.
 for _, back in { false, true } do
-	kern.command({
+	greed.command({
 		name = if back then "fold-prev" else "fold-next",
 		doc = if back
 			then "Go to the end of the block above the cursor"

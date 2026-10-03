@@ -2,7 +2,7 @@
 -- cursor everywhere it's used, and code actions (quick fixes, refactors)
 -- for the cursor or the selection.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local common = require("./common")
@@ -12,15 +12,15 @@ local edits = require("./edits")
 local function apply(edit: any, what: string)
 	local changed, err = edits.apply_workspace(edit)
 	if changed == nil then
-		kern.echo(`{what}: {err}`)
+		greed.echo(`{what}: {err}`)
 	elseif changed > 1 then
-		kern.echo(`{what}: changed {changed} files`)
+		greed.echo(`{what}: changed {changed} files`)
 	end
 end
 
 -- The word at `pos`, for a name to start from when the server doesn't
 -- give one.
-local function word_at(buffer: kern.Buffer, pos: number): string?
+local function word_at(buffer: greed.Buffer, pos: number): string?
 	local line = buffer:line_of(pos)
 	for _, found in buffer:find_all("\\w+", buffer:line_start(line), buffer:line_end(line)) or {} do
 		if found.from <= pos and pos <= found.to then
@@ -32,8 +32,8 @@ end
 
 -- What the name under the cursor is now, as the server sees it: false if
 -- the server says it can't be renamed.
-local function current_name(buffer: kern.Buffer, pos: number): (boolean, string?)
-	local capabilities = kern.lsp.capabilities(buffer)
+local function current_name(buffer: greed.Buffer, pos: number): (boolean, string?)
+	local capabilities = greed.lsp.capabilities(buffer)
 	local provider = capabilities and capabilities.renameProvider
 	if type(provider) ~= "table" or not provider.prepareProvider then
 		return true, word_at(buffer, pos)
@@ -42,20 +42,20 @@ local function current_name(buffer: kern.Buffer, pos: number): (boolean, string?
 	if not ok then
 		return false, nil
 	elseif result == nil then
-		kern.echo("can't rename this")
+		greed.echo("can't rename this")
 		return false, nil
 	elseif result.placeholder then
 		return true, result.placeholder
 	end
 	local range = result.range or result
 	if range.start then
-		local from = kern.lsp.offset(buffer, range.start)
-		return true, buffer:slice(from, kern.lsp.offset(buffer, range["end"]))
+		local from = greed.lsp.offset(buffer, range.start)
+		return true, buffer:slice(from, greed.lsp.offset(buffer, range["end"]))
 	end
 	return true, word_at(buffer, pos)
 end
 
-kern.command({
+greed.command({
 	name = "rename",
 	doc = "Rename the thing under the cursor everywhere it's used",
 	run = function(ctx)
@@ -83,9 +83,9 @@ kern.command({
 				if not answered then
 					return
 				elseif err then
-					kern.echo(`rename: {err.message}`)
+					greed.echo(`rename: {err.message}`)
 				elseif result == nil then
-					kern.echo("nothing to rename")
+					greed.echo("nothing to rename")
 				else
 					apply(result, "rename")
 				end
@@ -96,14 +96,14 @@ kern.command({
 
 -- The problems the server reported in `from`..`to`, as it sent them, so
 -- it can offer fixes for them.
-local function problems_in(buffer: kern.Buffer, from: number, to: number): { any }
+local function problems_in(buffer: greed.Buffer, from: number, to: number): { any }
 	local list = {}
-	for _, d in kern.lsp.diagnostics(buffer) do
+	for _, d in greed.lsp.diagnostics(buffer) do
 		if d.from <= to and from <= d.to then
 			table.insert(list, {
 				range = {
-					start = kern.lsp.position(buffer, d.from),
-					["end"] = kern.lsp.position(buffer, d.to),
+					start = greed.lsp.position(buffer, d.from),
+					["end"] = greed.lsp.position(buffer, d.to),
 				},
 				severity = d.severity,
 				message = d.message,
@@ -116,13 +116,13 @@ end
 
 -- Does what a code action says: fetches its edit if the server left that
 -- for later, applies it, then runs its command.
-local function run_action(buffer: kern.Buffer, action: any)
+local function run_action(buffer: greed.Buffer, action: any)
 	-- A bare command, the older kind of answer.
 	if type(action.command) == "string" then
 		action = { title = action.title, command = action }
 	end
 	if action.edit == nil and action.command == nil and action.data ~= nil then
-		local ok, resolved = pcall(kern.lsp.request, buffer, "codeAction/resolve", action)
+		local ok, resolved = pcall(greed.lsp.request, buffer, "codeAction/resolve", action)
 		if ok and resolved then
 			action = resolved
 		end
@@ -131,17 +131,17 @@ local function run_action(buffer: kern.Buffer, action: any)
 		apply(action.edit, action.title)
 	end
 	if action.command then
-		local _, err = kern.lsp.request(buffer, "workspace/executeCommand", {
+		local _, err = greed.lsp.request(buffer, "workspace/executeCommand", {
 			command = action.command.command,
 			arguments = action.command.arguments,
 		})
 		if err then
-			kern.echo(`{action.title}: {err.message}`)
+			greed.echo(`{action.title}: {err.message}`)
 		end
 	end
 end
 
-kern.command({
+greed.command({
 	name = "code-action",
 	doc = "Pick a fix or refactor for the cursor or the selection",
 	run = function(ctx)
@@ -151,10 +151,10 @@ kern.command({
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		local ok, result, err = common.request(buffer, "textDocument/codeAction", function()
 			return {
-				textDocument = { uri = kern.lsp.uri(buffer) },
+				textDocument = { uri = greed.lsp.uri(buffer) },
 				range = {
-					start = kern.lsp.position(buffer, from),
-					["end"] = kern.lsp.position(buffer, to),
+					start = greed.lsp.position(buffer, from),
+					["end"] = greed.lsp.position(buffer, to),
 				},
 				context = { diagnostics = problems_in(buffer, from, to) },
 			}
@@ -162,7 +162,7 @@ kern.command({
 		if not ok then
 			return
 		elseif err then
-			kern.echo(`code actions: {err.message}`)
+			greed.echo(`code actions: {err.message}`)
 			return
 		end
 		-- What the server prefers first, otherwise in its order.
@@ -175,7 +175,7 @@ kern.command({
 		end
 		table.move(others, 1, #others, #items + 1, items)
 		if #items == 0 then
-			kern.echo("no code actions here")
+			greed.echo("no code actions here")
 			return
 		end
 		picker.pick("Code actions", items, function(item)
@@ -184,7 +184,7 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space r"] = "rename",
 	["space a"] = "code-action",
 })

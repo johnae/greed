@@ -40,7 +40,7 @@ pub fn session_name(root: &Path, taken: &[String]) -> String {
     // Session names end up in socket paths, which are short on Unix.
     let base: String = base.trim_matches('-').chars().take(MAX_NAME - 3).collect();
     let base = base.trim_end_matches('-');
-    let base = if base.is_empty() { "kern" } else { base };
+    let base = if base.is_empty() { "greed" } else { base };
     std::iter::once(base.to_owned())
         // One more name than are taken: at least one of them is free.
         .chain((2..=taken.len() + 2).map(|n| format!("{base}-{n}")))

@@ -1,4 +1,4 @@
-//! Command line commands plugins add with `kern.cli`, run as `kern NAME
+//! Command line commands plugins add with `greed.cli`, run as `greed NAME
 //! ARGS` in an editor with no screen. A command runs as a coroutine, so it
 //! can wait on programs, the network and timers; what it echoes and
 //! returns is printed.
@@ -27,7 +27,7 @@ pub(crate) struct CliCommand {
 /// The command line commands, by name.
 pub(crate) type Commands = HashMap<String, CliCommand>;
 
-/// `kern.cli(spec)` for `owner`.
+/// `greed.cli(spec)` for `owner`.
 pub(super) fn function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, spec: Table| {
@@ -75,7 +75,7 @@ pub(super) fn run(
     };
     let whole: Function = lua
         .load("local run, keep = ...\nreturn function(args) keep((run(args))) end")
-        .set_name("=kern.cli")
+        .set_name("=greed.cli")
         .call((run, keep))?;
     super::budgeted(lua, || {
         tasks::spawn(lua, whole, args, owner, Some(name.into()))

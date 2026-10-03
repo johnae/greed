@@ -1,4 +1,4 @@
-//! The terminal client and sessions end to end: the real `kern` binary in a
+//! The terminal client and sessions end to end: the real `greed` binary in a
 //! pseudo-terminal (through `script`), driven with keys, the way a person
 //! uses it. Each test gets its own sessions, config and cache folders, so it
 //! never sees your editors or another test's.
@@ -7,10 +7,10 @@ mod common;
 
 use std::time::Duration;
 
-use common::{KERN, Step, World, none_running, running};
+use common::{GREED, Step, World, none_running, running};
 
 #[test]
-fn kern_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal() {
+fn greed_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal() {
     let Some(world) = World::new("lifecycle") else {
         return;
     };
@@ -28,7 +28,7 @@ fn kern_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal()
         ],
     );
     assert!(
-        out.contains("detached; kern attach notes comes back"),
+        out.contains("detached; greed attach notes comes back"),
         "{out}"
     );
     let listed = world.sessions();
@@ -37,7 +37,7 @@ fn kern_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal()
         "{listed}"
     );
     assert_eq!(
-        world.eval("notes", "return require('@kern').view():buffer():text()"),
+        world.eval("notes", "return require('@greed').view():buffer():text()"),
         "yes buy milk"
     );
 
@@ -51,7 +51,7 @@ fn kern_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal()
 }
 
 #[test]
-fn kern_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
+fn greed_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
     let Some(world) = World::new("join") else {
         return;
     };
@@ -79,10 +79,10 @@ fn kern_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
         "one session for the project: {listed}"
     );
     assert_eq!(
-        world.eval("app", "return require('@kern').view():buffer():text()"),
+        world.eval("app", "return require('@greed').view():buffer():text()"),
         "second"
     );
-    world.eval("app", "require('@kern').quit()");
+    world.eval("app", "require('@greed').quit()");
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn the_terminal_follows_when_its_session_switches_to_another_project() {
     let second = world.project("second", &[("b.txt", "in the second")]);
     let target = second.join("b.txt");
     let script = format!(
-        "require('@kern').session.switch({{ path = {:?} }})",
+        "require('@greed').session.switch({{ path = {:?} }})",
         target.to_str().unwrap()
     );
     // The switch is asked for from outside, the way an agent or plugin would.
@@ -123,7 +123,7 @@ fn the_terminal_follows_when_its_session_switches_to_another_project() {
         "the second project was drawn"
     );
     assert!(
-        out.contains("detached; kern attach second comes back"),
+        out.contains("detached; greed attach second comes back"),
         "{out}"
     );
     let listed = world.sessions();
@@ -134,14 +134,14 @@ fn the_terminal_follows_when_its_session_switches_to_another_project() {
 }
 
 #[test]
-fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
+fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
     let Some(world) = World::new("ssh") else {
         return;
     };
     let project = world.project("remote", &[("main.rs", "fn main() {}")]);
     std::fs::write(
-        world.root.join("config/kern/init.luau"),
-        "require('@kern').option.set('flash-duration', 123)\nrequire('@kern').option.set('terminal-shell', 'cat')\n",
+        world.root.join("config/greed/init.luau"),
+        "require('@greed').option.set('flash-duration', 123)\nrequire('@greed').option.set('terminal-shell', 'cat')\n",
     )
     .unwrap();
     // Stands in for ssh: drops -T and the host, and runs the command here
@@ -168,7 +168,7 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
         &format!("ssh somehost --terminal {}", file.display()),
         &[
             ("GREED_SSH", fake_ssh.to_str().unwrap()),
-            ("GREED_REMOTE", KERN),
+            ("GREED_REMOTE", GREED),
         ],
         &[
             Step::Until("the remote session", running),
@@ -178,7 +178,7 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
         ],
     );
     assert!(
-        out.contains("detached; kern ssh somehost comes back"),
+        out.contains("detached; greed ssh somehost comes back"),
         "{out}"
     );
     // Highlighting puts colour codes between "fn" and "main".
@@ -186,18 +186,18 @@ fn kern_ssh_brings_the_config_and_shows_the_remote_session() {
     assert_eq!(
         world.eval(
             "remote",
-            "return require('@kern').option.get('flash-duration')"
+            "return require('@greed').option.get('flash-duration')"
         ),
         "123",
         "the session runs with the config that came along"
     );
-    assert!(world.root.join("remote-home/.cache/kern").is_dir());
+    assert!(world.root.join("remote-home/.cache/greed").is_dir());
     assert_eq!(
         world.eval("remote", HAS_TERMINAL),
         "true",
         "--terminal opened one"
     );
-    world.eval("remote", "require('@kern').quit()");
+    world.eval("remote", "require('@greed').quit()");
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn without_sessions_the_editor_runs_in_the_terminal_and_quits_with_it() {
 }
 
 #[test]
-fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
+fn greed_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
     let Some(world) = World::new("inside") else {
         return;
     };
@@ -234,7 +234,7 @@ fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
     );
     // As a program in one of the session's terminals runs it.
     let inside = |args: &[&str]| {
-        let mut command = std::process::Command::new(KERN);
+        let mut command = std::process::Command::new(GREED);
         command
             .args(args)
             .current_dir(&project)
@@ -245,31 +245,31 @@ fn kern_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
     let opened = inside(&["b.txt"]);
     assert!(opened.status.success(), "{opened:?}");
     assert_eq!(
-        world.eval("app", "return require('@kern').view():buffer():text()"),
+        world.eval("app", "return require('@greed').view():buffer():text()"),
         "second"
     );
     let bare = inside(&[]);
     assert!(!bare.status.success());
     assert!(
-        String::from_utf8_lossy(&bare.stderr).contains("in Kern already"),
+        String::from_utf8_lossy(&bare.stderr).contains("in Greed already"),
         "{bare:?}"
     );
     let attach = inside(&["attach", "app"]);
     assert!(!attach.status.success(), "no session inside itself");
-    world.eval("app", "require('@kern').quit()");
+    world.eval("app", "require('@greed').quit()");
 }
 
 /// Luau that says whether the session has a terminal open.
-const HAS_TERMINAL: &str = "for _, b in require('@kern').buffers() do if b:kind() == 'terminal' then return true end end return false";
+const HAS_TERMINAL: &str = "for _, b in require('@greed').buffers() do if b:kind() == 'terminal' then return true end end return false";
 
 #[test]
-fn kern_with_terminal_opens_one_in_the_session_it_shows() {
+fn greed_with_terminal_opens_one_in_the_session_it_shows() {
     let Some(world) = World::new("withterm") else {
         return;
     };
     std::fs::write(
-        world.root.join("config/kern/init.luau"),
-        "require('@kern').option.set('terminal-shell', 'cat')\n",
+        world.root.join("config/greed/init.luau"),
+        "require('@greed').option.set('terminal-shell', 'cat')\n",
     )
     .unwrap();
     let project = world.project("app", &[("a.txt", "first")]);
@@ -284,5 +284,5 @@ fn kern_with_terminal_opens_one_in_the_session_it_shows() {
         ],
     );
     assert_eq!(world.eval("app", HAS_TERMINAL), "true");
-    world.eval("app", "require('@kern').quit()");
+    world.eval("app", "require('@greed').quit()");
 }

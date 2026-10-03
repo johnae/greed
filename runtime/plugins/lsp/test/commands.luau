@@ -1,4 +1,4 @@
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 test("without a language server, hover and g d say so", function(t)
 	t:buffer("|plain text")
@@ -18,9 +18,9 @@ test("space d with no problems says so", function(t)
 end)
 
 test("a file whose language has no server says so too", function(t)
-	local kern = require("@kern")
+	local greed = require("@greed")
 	local dir = t:tempdir({ ["notes.zz"] = "hello" })
-	kern.open(dir .. "/notes.zz")
+	greed.open(dir .. "/notes.zz")
 	t:keys("space k")
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "no language server", 1, true), messages[#messages])

@@ -1,6 +1,6 @@
-//! `kern.json`: JSON for plugins, e.g. for tool results and HTTP bodies.
+//! `greed.json`: JSON for plugins, e.g. for tool results and HTTP bodies.
 //! Luau tables become objects or arrays by their keys; an empty table is
-//! an object unless it came from `kern.json.array`.
+//! an object unless it came from `greed.json.array`.
 
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 

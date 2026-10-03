@@ -1,10 +1,10 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 -- Records where the cursor was each time "test-button" ran.
 local function recorder(): { number }
 	local ran: { number } = {}
-	kern.command({
+	greed.command({
 		name = "test-button",
 		run = function(ctx)
 			local selection = ctx.view:selection()
@@ -17,7 +17,7 @@ end
 test("enter runs the button under the cursor, the cursor at its mark", function(t)
 	local ran = recorder()
 	t:buffer("- [ ] t|odo\nplain")
-	kern.view():buffer():decorate("buttons", {
+	greed.view():buffer():decorate("buttons", {
 		{ from = 2, to = 9, style = "ui.button", action = "test-button" },
 		{
 			from = 10,
@@ -31,7 +31,7 @@ test("enter runs the button under the cursor, the cursor at its mark", function(
 	t:keys("enter")
 	assert(ran[1] == 2, tostring(ran[1]))
 	-- An empty mark's text is over where it starts.
-	kern.view():set_selection({ ranges = { { anchor = 10, head = 10 } }, primary = 1 })
+	greed.view():set_selection({ ranges = { { anchor = 10, head = 10 } }, primary = 1 })
 	t:keys("enter")
 	assert(ran[2] == 10, tostring(ran[2]))
 end)
@@ -39,7 +39,7 @@ end)
 test("enter off a button does nothing", function(t)
 	local ran = recorder()
 	t:buffer("|plain text")
-	kern.view():buffer():decorate("buttons", {
+	greed.view():buffer():decorate("buttons", {
 		{ from = 6, to = 10, style = "ui.button", action = "test-button" },
 	})
 	t:keys("enter")
@@ -49,7 +49,7 @@ end)
 
 test("marks_at finds marks in every namespace, with their namespace", function(t)
 	t:buffer("|abcdef")
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	buffer:decorate("one", { { from = 0, to = 3, style = "x" } })
 	buffer:decorate("two", { { from = 2, to = 2, style = "y" }, { from = 4, to = 6, style = "z" } })
 	local function at(pos: number): string

@@ -1,4 +1,4 @@
--- The themes that come with Kern, as palettes. Each follows its upstream
+-- The themes that come with Greed, as palettes. Each follows its upstream
 -- colors; the names match what Helix and other editors call them.
 
 local palette = require("./palette")

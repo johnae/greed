@@ -222,7 +222,7 @@ fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> L
     Ok(matches)
 }
 
-/// `kern.syntax`: the queries languages use, set by the plugin `owner`.
+/// `greed.syntax`: the queries languages use, set by the plugin `owner`.
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let syntax = lua.create_table()?;
     let o = owner.clone();

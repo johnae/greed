@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function describe(t: test.TestContext, command: string)
 	t:buffer("|")
@@ -54,7 +54,7 @@ test("describing an unbound key says so", function(t)
 end)
 
 test("a command without a doc or keys says so, and q closes the help", function(t)
-	kern.command({ name = "bare-test-command", run = function() end })
+	greed.command({ name = "bare-test-command", run = function() end })
 	t:buffer("|abc")
 	describe(t, "bare-test-command")
 	local help = t:floats()[1]
@@ -67,7 +67,7 @@ end)
 test(
 	"a command bound in several layers lists each, and help opened twice replaces itself",
 	function(t)
-		kern.keymap.bind("edit", { ["alt-g"] = "goto-start" })
+		greed.keymap.bind("edit", { ["alt-g"] = "goto-start" })
 		describe(t, "goto-start")
 		local help = t:floats()[1]
 		assert(string.find(help, "Keys: g g (normal)", 1, true), help)
@@ -82,8 +82,8 @@ test(
 test("enter does nothing for a command with no file to go to", function(t)
 	-- Defined at the REPL, so it has no file.
 	assert(
-		kern.eval(
-			"require('@kern').command({ name = 'no-file-test-command', doc = 'Here', run = function() end })"
+		greed.eval(
+			"require('@greed').command({ name = 'no-file-test-command', doc = 'Here', run = function() end })"
 		)
 	)
 	describe(t, "no-file-test-command")
@@ -92,7 +92,7 @@ test("enter does nothing for a command with no file to go to", function(t)
 end)
 
 test("a key bound to a missing command says so", function(t)
-	kern.keymap.bind("normal", { ["g z"] = "nothing-by-this-name" })
+	greed.keymap.bind("normal", { ["g z"] = "nothing-by-this-name" })
 	t:buffer("|abc")
 	t:keys("space h k g z")
 	local messages = t:messages()
@@ -104,8 +104,8 @@ end)
 
 test("describing a key works in the mode you're in", function(t)
 	t:buffer("|abc")
-	kern.mode.set("insert")
-	kern.run("describe-key")
+	greed.mode.set("insert")
+	greed.run("describe-key")
 	t:keys("esc")
 	assert(string.find(t:floats()[1] or "", "normal-mode", 1, true), tostring(t:floats()[1]))
 end)

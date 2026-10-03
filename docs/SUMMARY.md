@@ -1,11 +1,11 @@
 # Summary
 
-[Kern](README.md)
+[Greed](README.md)
 
-- [Using Kern](using.md)
+- [Using Greed](using.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)
 - [Writing plugins](plugins.md)
 - [Agents](agents.md)
-- [How Kern is built](design.md)
+- [How Greed is built](design.md)

@@ -27,15 +27,15 @@ fn start(name: &str, plugin: &'static str) -> (Connection, std::path::PathBuf, S
 }
 
 const ECHO: &str = r#"
-local kern = require("@kern")
-kern.on("control.request", function(req)
+local greed = require("@greed")
+greed.on("control.request", function(req)
   if req.method == "echo" then
-    kern.control.reply(req.id, { got = req.params, text = kern.view():buffer():text() })
+    greed.control.reply(req.id, { got = req.params, text = greed.view():buffer():text() })
   elseif req.method == "later" then
-    kern.sleep(10)
-    kern.control.reply(req.id, "done")
+    greed.sleep(10)
+    greed.control.reply(req.id, "done")
   else
-    kern.control.reply(req.id, nil, "unknown method " .. req.method)
+    greed.control.reply(req.id, nil, "unknown method " .. req.method)
   end
 end)
 "#;

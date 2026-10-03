@@ -1,4 +1,4 @@
-; Adapted from nvim-treesitter, with Kern's capture names.
+; Adapted from nvim-treesitter, with Greed's capture names.
 [
   (code_span)
   (link_title)

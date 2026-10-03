@@ -7,14 +7,14 @@
 -- cursor is on its last character going forward, and motions start from
 -- there. Where it's a bar (insert, edit mode), it sits between characters.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local text = require("./text")
 local words = require("./words")
 local hints = require("./hints")
 
-type Buffer = kern.Buffer
-type Range = kern.Range
-type Selection = kern.Selection
+type Buffer = greed.Buffer
+type Range = greed.Range
+type Selection = greed.Selection
 
 -- Finds a new position from a cursor's head.
 type Target = (buffer: Buffer, head: number) -> number
@@ -23,7 +23,7 @@ local M = {}
 
 -- Replaces every range with `f(buffer, range)` and sets the result as the
 -- view's selection.
-local function each_range(ctx: kern.Context, f: (buffer: Buffer, range: Range) -> Range)
+local function each_range(ctx: greed.Context, f: (buffer: Buffer, range: Range) -> Range)
 	local sel = ctx.view:selection()
 	for i, range in sel.ranges do
 		sel.ranges[i] = f(ctx.buffer, range)
@@ -61,7 +61,7 @@ end
 --- Whether the current mode's cursor sits on characters (a block), as in
 --- Helix's and Vim's normal modes, rather than between them (a bar).
 function M.on_chars(): boolean
-	return kern.mode.shape() ~= "bar"
+	return greed.mode.shape() ~= "bar"
 end
 
 -- Where a motion on `range` starts: its block cursor's character, or its
@@ -90,7 +90,7 @@ end
 -- Where the cursor sits on characters, `target` gets the cursor's
 -- character, or `on_char` does if given, and lands the cursor on one.
 local function move(name: string, doc: string, target: Target, on_char: Target?)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -107,7 +107,7 @@ end
 -- keeps the anchor where it is, growing or shrinking the selection. With a
 -- block cursor, both ends stay on whole characters.
 local function extend(name: string, doc: string, target: Target, on_char: Target?)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -123,7 +123,7 @@ end
 -- Registers a command that selects from each head to `target(buffer, head)`;
 -- with a block cursor, the word motion `word` as Helix does it.
 local function select_to(name: string, doc: string, target: Target, word: words.Target)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -149,7 +149,7 @@ end
 -- Registers a command that extends each selection by the word motion
 -- `word`, keeping the anchor, as Helix's extend_next_word_start and the like.
 local function extend_word(name: string, doc: string, target: Target, word: words.Target)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -193,7 +193,7 @@ local function same_selection(a: Selection, b: Selection?): boolean
 end
 
 local function vertical(name: string, doc: string, delta: number, keep_anchor: boolean)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -338,13 +338,13 @@ move(
 )
 
 -- Moves every cursor to the start of 1-based `line`, kept inside the buffer.
-local function goto_line(ctx: kern.Context, line: number)
+local function goto_line(ctx: greed.Context, line: number)
 	local buffer = ctx.buffer
 	local at = buffer:line_start(math.clamp(line - 1, 0, buffer:line_count() - 1))
 	ctx.view:set_selection({ ranges = { point(at) }, primary = 1 })
 end
 
-kern.command({
+greed.command({
 	name = "goto-start",
 	doc = "Move to the start of the buffer, or with a count, to that line",
 	run = function(ctx)
@@ -352,7 +352,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "goto-last-line",
 	doc = "Move to the start of the last line",
 	run = function(ctx)
@@ -366,7 +366,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "goto-line",
 	doc = "Move to the line given as a count, or the last line",
 	run = function(ctx)
@@ -448,7 +448,7 @@ end
 -- Moves each cursor to `char` for f, t, F or T, selecting from where it
 -- was or (`keep_anchor`) extending the selection.
 local function find(
-	ctx: kern.Context,
+	ctx: greed.Context,
 	char: string,
 	forward: boolean,
 	till: boolean,
@@ -476,11 +476,11 @@ local function find_command(
 	till: boolean,
 	keep_anchor: boolean?
 )
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
-			local char = kern.next_key()
+			local char = greed.next_key()
 			if utf8.len(char) ~= 1 then
 				return
 			end
@@ -490,13 +490,13 @@ local function find_command(
 	})
 end
 
-kern.command({
+greed.command({
 	name = "repeat-find",
 	doc = "Do the last f, t, F or T again; in select mode, extending",
 	run = function(ctx)
 		local again = last_find
 		if again then
-			find(ctx, again.char, again.forward, again.till, kern.mode.get() == "select")
+			find(ctx, again.char, again.forward, again.till, greed.mode.get() == "select")
 		end
 	end,
 })
@@ -563,7 +563,7 @@ extend(
 	text.first_non_blank
 )
 
-kern.command({
+greed.command({
 	name = "extend-goto-line",
 	doc = "Extend the selection to the line given as a count, or the last line",
 	run = function(ctx)
@@ -576,7 +576,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "match-bracket",
 	doc = "Move to the matching bracket, or the closing one of the pair around the cursor",
 	run = function(ctx)
@@ -588,7 +588,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "select-line",
 	doc = "Select the whole line, including its line break; again, the next line too",
 	run = function(ctx)
@@ -612,7 +612,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "select-all",
 	doc = "Select the whole buffer",
 	run = function(ctx)
@@ -620,7 +620,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "collapse",
 	doc = "Collapse each selection to its cursor",
 	run = function(ctx)
@@ -631,7 +631,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "flip",
 	doc = "Swap the anchor and head of each selection",
 	run = function(ctx)
@@ -642,7 +642,7 @@ kern.command({
 })
 
 -- The lines each selection touches, each once, in order.
-function M.selected_lines(ctx: kern.Context): { number }
+function M.selected_lines(ctx: greed.Context): { number }
 	local buffer = ctx.buffer
 	local seen, lines = {}, {}
 	for _, range in ctx.view:selection().ranges do
@@ -666,7 +666,7 @@ end
 -- Inserts `text` at each of `points`, moving the selections along so that
 -- ones that began at a point keep the new text inside them, or (`push`) go
 -- after it.
-function M.insert_at(ctx: kern.Context, points: { number }, text: string, push: boolean?)
+function M.insert_at(ctx: greed.Context, points: { number }, text: string, push: boolean?)
 	local function moved(pos: number): number
 		local before = 0
 		for _, p in points do

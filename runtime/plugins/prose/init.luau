@@ -7,11 +7,11 @@
 --   ] p / [ p       next / previous paragraph
 --   ] s / [ s       next / previous sentence
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 
-type Buffer = kern.Buffer
-type Range = kern.Range
+type Buffer = greed.Buffer
+type Range = greed.Range
 
 local each_range, point = core.motions.each_range, core.motions.point
 
@@ -177,7 +177,7 @@ local function text_object(
 	select: (Buffer, Range, boolean) -> Range
 )
 	for _, around in { false, true } do
-		kern.command({
+		greed.command({
 			name = if around then `select-{name}-around` else `select-{name}`,
 			doc = if around then around_doc else doc,
 			run = function(ctx)
@@ -190,7 +190,7 @@ local function text_object(
 end
 
 local function motion(name: string, doc: string, target: (Buffer, number) -> number)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -224,7 +224,7 @@ motion("prev-paragraph", "Move to the start of the paragraph, or the one before"
 motion("next-sentence", "Move to the start of the next sentence", next_sentence)
 motion("prev-sentence", "Move to the start of the sentence, or the one before", prev_sentence)
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["m i p"] = "select-paragraph",
 	["m a p"] = "select-paragraph-around",
 	["m i s"] = "select-sentence",

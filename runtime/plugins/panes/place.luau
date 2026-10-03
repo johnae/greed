@@ -3,7 +3,7 @@
 -- arrows) move the frame, enter opens a pane there with this file, t a
 -- terminal, and esc puts things back.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local terminal = require("@terminal")
 
 type Direction = "left" | "right" | "up" | "down"
@@ -12,14 +12,14 @@ type Rect = { x: number, y: number, width: number, height: number }
 -- Where a new pane can go: beside `pane` on its `side`, or with no pane,
 -- along that edge of the tab. `rect` is the room it would take; a tab
 -- edge is steered to by `x` and `y`, on the edge.
-type Spot = { pane: kern.View?, side: Direction, rect: Rect, x: number?, y: number? }
+type Spot = { pane: greed.View?, side: Direction, rect: Rect, x: number?, y: number? }
 
 local MODE = "pane-place"
 local SIDES: { Direction } = { "right", "down", "left", "up" }
 
 local M = {}
 
-type Placing = { spots: { Spot }, at: number, frame: kern.View, from: kern.View, back: string }
+type Placing = { spots: { Spot }, at: number, frame: greed.View, from: greed.View, back: string }
 
 local placing: Placing? = nil
 
@@ -42,7 +42,7 @@ end
 local function spots(): { Spot }
 	local list: { Spot } = {}
 	local whole: Rect? = nil
-	local tab = kern.tab.current()
+	local tab = greed.tab.current()
 	for _, pane in tab.panes do
 		local area = pane:area()
 		if area then
@@ -130,16 +130,16 @@ local function finish()
 	placing = nil
 	p.frame:close()
 	p.from:focus()
-	kern.mode.set(p.back)
+	greed.mode.set(p.back)
 end
 
 --- Shows the frame on the focused pane's right, where a split there would
 --- go, to move and open a pane at.
-function M.start(from: kern.View)
+function M.start(from: greed.View)
 	finish()
 	local list = spots()
 	if #list == 0 then
-		kern.echo("the panes haven't been drawn yet")
+		greed.echo("the panes haven't been drawn yet")
 		return
 	end
 	local at = 1
@@ -148,9 +148,9 @@ function M.start(from: kern.View)
 			at = i
 		end
 	end
-	local buffer = kern.create_buffer("pane-place", "new pane", { readonly = true })
+	local buffer = greed.create_buffer("pane-place", "new pane", { readonly = true })
 	local r = list[at].rect
-	local frame = kern.float(buffer, {
+	local frame = greed.float(buffer, {
 		title = "enter: here  t: terminal  esc",
 		x = r.x,
 		y = r.y,
@@ -158,8 +158,8 @@ function M.start(from: kern.View)
 		height = r.height,
 		focus = false,
 	})
-	placing = { spots = list, at = at, frame = frame, from = from, back = kern.mode.get() }
-	kern.mode.set(MODE)
+	placing = { spots = list, at = at, frame = frame, from = from, back = greed.mode.get() }
+	greed.mode.set(MODE)
 end
 
 --- Moves the frame to the next spot toward `dir`.
@@ -196,10 +196,10 @@ end
 
 -- Moves `new` (just opened) to the `side` edge of the whole tab, taking a
 -- third of it.
-local function to_edge(new: kern.View, side: Direction)
-	local rest = without(kern.tab.layout(), new:id())
+local function to_edge(new: greed.View, side: Direction)
+	local rest = without(greed.tab.layout(), new:id())
 	local first = side == "left" or side == "up"
-	kern.tab.set_layout({
+	greed.tab.set_layout({
 		split = if side == "left" or side == "right" then "row" else "column",
 		children = if first then { new, rest } else { rest, new },
 		sizes = if first then { 1, 2 } else { 2, 1 },
@@ -216,10 +216,10 @@ function M.open(with_terminal: boolean?)
 	local spot = p.spots[p.at]
 	finish()
 	local target = spot.pane or p.from
-	local new: kern.View
+	local new: greed.View
 	if with_terminal then
 		terminal.open(nil, { split = spot.side, from = target })
-		new = kern.view()
+		new = greed.view()
 	else
 		new = target:split(spot.side)
 		new:focus()
@@ -233,7 +233,7 @@ end
 --- Puts things back without opening a pane.
 M.cancel = finish
 
-kern.keymap.isolate(MODE)
-kern.mode.cursor(MODE, "block")
+greed.keymap.isolate(MODE)
+greed.mode.cursor(MODE, "block")
 
 return M

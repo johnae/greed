@@ -1,7 +1,7 @@
 -- Buffers are written with markers: `|` is a selection's head and `^` its
 -- anchor (left out for cursors). "^hello |world" selects "hello ".
 
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -103,11 +103,11 @@ test("copying nothing says so", function(t)
 end)
 
 test("commands that wait finish when time passes", function(t)
-	local kern = require("@kern")
-	kern.command({
+	local greed = require("@greed")
+	greed.command({
 		name = "slow-insert",
 		run = function(ctx)
-			kern.sleep(100)
+			greed.sleep(100)
 			ctx.buffer:edit(function(e)
 				e:insert(0, "done ")
 			end)
@@ -223,7 +223,7 @@ end)
 test("space c comments the lines", function(t)
 	require("@core").comment.set("lua", "--")
 	t:buffer("a|b")
-	require("@kern").view():buffer():set_language("lua")
+	require("@greed").view():buffer():set_language("lua")
 	t:keys("space c")
 	t:expect("-- a|b")
 end)
@@ -238,7 +238,7 @@ test("reindent-lines indents each line as the lines around it say", function(t)
 	t:buffer("^a {\nx\n}|")
 	t:run("reindent-lines")
 	assert(
-		require("@kern").view():buffer():text() == "a {\n    x\n}",
-		require("@kern").view():buffer():text()
+		require("@greed").view():buffer():text() == "a {\n    x\n}",
+		require("@greed").view():buffer():text()
 	)
 end)

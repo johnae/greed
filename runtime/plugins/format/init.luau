@@ -5,13 +5,13 @@
 --
 -- To stop formatting on save:
 --
---     require("@kern").option.set("format-on-save", false)
+--     require("@greed").option.set("format-on-save", false)
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local languages = require("@languages")
 
-kern.option.define({
+greed.option.define({
 	name = "format-on-save",
 	doc = "Format files when they're saved",
 	default = true,
@@ -51,8 +51,8 @@ local function common_ends(old: string, new: string): (number, number)
 end
 
 -- Replaces the buffer's text with `formatted`, changing only what differs.
-local function apply(buffer: kern.Buffer, formatted: string)
-	local hunks = kern.diff(buffer:text(), formatted)
+local function apply(buffer: greed.Buffer, formatted: string)
+	local hunks = greed.diff(buffer:text(), formatted)
 	if #hunks == 0 then
 		return
 	end
@@ -68,11 +68,11 @@ end
 
 -- The formatter command for the buffer, with "{path}" filled in, if its
 -- language has one and it's installed.
-local function formatter(buffer: kern.Buffer): { string }?
+local function formatter(buffer: greed.Buffer): { string }?
 	local language = buffer:language()
 	local spec = language and languages.get(language)
 	local command = spec and spec.formatter
-	if command == nil or #command == 0 or kern.which(command[1]) == nil then
+	if command == nil or #command == 0 or greed.which(command[1]) == nil then
 		return nil
 	end
 	local path = buffer:path() or ""
@@ -87,10 +87,10 @@ end
 
 -- Runs `command` on the buffer's text and puts the result in. Returns an
 -- error to show, if it failed.
-local function run_formatter(buffer: kern.Buffer, command: { string }): string?
+local function run_formatter(buffer: greed.Buffer, command: { string }): string?
 	local path = buffer:path()
 	local folder = path and string.match(path, "^(.*)/[^/]*$")
-	local done, err = kern.process.run(command, { stdin = buffer:text(), cwd = folder })
+	local done, err = greed.process.run(command, { stdin = buffer:text(), cwd = folder })
 	if done == nil then
 		return `{command[1]}: {err}`
 	elseif done.code ~= 0 then
@@ -103,13 +103,13 @@ end
 
 -- Asks the language server to format the buffer. Returns false if there's
 -- no server, or it can't.
-local function server_format(buffer: kern.Buffer): boolean
+local function server_format(buffer: greed.Buffer): boolean
 	if buffer:path() == nil then
 		return false
 	end
 	local indent = require("@core").indent.unit(buffer)
-	local ok, edits = pcall(kern.lsp.request, buffer, "textDocument/formatting", {
-		textDocument = { uri = kern.lsp.uri(buffer) },
+	local ok, edits = pcall(greed.lsp.request, buffer, "textDocument/formatting", {
+		textDocument = { uri = greed.lsp.uri(buffer) },
 		options = {
 			tabSize = if indent == "\t" then 4 else #indent,
 			insertSpaces = indent ~= "\t",
@@ -121,8 +121,8 @@ local function server_format(buffer: kern.Buffer): boolean
 	local ranges = {}
 	for _, edit in edits do
 		table.insert(ranges, {
-			from = kern.lsp.offset(buffer, edit.range.start),
-			to = kern.lsp.offset(buffer, edit.range["end"]),
+			from = greed.lsp.offset(buffer, edit.range.start),
+			to = greed.lsp.offset(buffer, edit.range["end"]),
 			text = edit.newText,
 		})
 	end
@@ -138,7 +138,7 @@ local M = {}
 
 --- Formats `buffer` with its language's formatter, or its language server.
 --- Returns false if neither could, and an error if the formatter failed.
-function M.format(buffer: kern.Buffer): (boolean, string?)
+function M.format(buffer: greed.Buffer): (boolean, string?)
 	local command = formatter(buffer)
 	if command then
 		local err = run_formatter(buffer, command)
@@ -147,7 +147,7 @@ function M.format(buffer: kern.Buffer): (boolean, string?)
 	return server_format(buffer), nil
 end
 
-kern.command({
+greed.command({
 	name = "format",
 	doc = "Format the buffer with its language's formatter or language server",
 	run = function(ctx)
@@ -155,13 +155,13 @@ kern.command({
 		if err then
 			error(err, 0)
 		elseif not formatted then
-			kern.echo("nothing to format this with")
+			greed.echo("nothing to format this with")
 		end
 	end,
 })
 
 core.file.before_save("format", function(buffer)
-	if kern.option.get("format-on-save") == true then
+	if greed.option.get("format-on-save") == true then
 		local _, err = M.format(buffer)
 		if err then
 			error(err, 0)
@@ -170,6 +170,6 @@ core.file.before_save("format", function(buffer)
 end)
 
 -- Helix formats on =; this formats the whole buffer.
-kern.keymap.bind("normal", { ["="] = "format" })
+greed.keymap.bind("normal", { ["="] = "format" })
 
 return M

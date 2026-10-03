@@ -1,4 +1,4 @@
-; From tree-sitter-yaml (MIT), with Kern's capture names.
+; From tree-sitter-yaml (MIT), with Greed's capture names.
 
 (boolean_scalar) @constant.builtin.boolean
 

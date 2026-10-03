@@ -1,6 +1,6 @@
 -- The picker itself: a floating buffer, kept in sync with what's typed.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local menu = core.menu
 
@@ -12,7 +12,7 @@ export type Item = {
 --- What to show beside the picker for the current item.
 export type Preview = {
 	text: string,
-	--- The language to highlight it as, e.g. from `kern.language_of(path)`.
+	--- The language to highlight it as, e.g. from `greed.language_of(path)`.
 	language: string?,
 	--- A 0-based line to scroll to.
 	line: number?,
@@ -30,7 +30,7 @@ export type Options = {
 	keys: { [string]: (items: { Item }, current: Item?) -> () }?,
 	--- Asks for the items as the query changes, instead of filtering a fixed
 	--- list, for searches too big to list up front. It runs `delay` ms after
-	--- typing stops and can wait, e.g. on `kern.fs.grep`; answers for a query
+	--- typing stops and can wait, e.g. on `greed.fs.grep`; answers for a query
 	--- that has since changed are dropped. `items` can be empty then.
 	source: ((query: string) -> { Item })?,
 	--- Milliseconds without typing before `source` runs; 100 by default.
@@ -55,8 +55,8 @@ export type Options = {
 local LIMIT = 200
 
 type Open = {
-	buffer: kern.Buffer,
-	view: kern.View,
+	buffer: greed.Buffer,
+	view: greed.View,
 	items: { Item },
 	labels: { string },
 	query: string?,
@@ -73,7 +73,7 @@ type Open = {
 	-- Goes up with each query, so a source's late answer can tell it's stale.
 	generation: number,
 	searching: boolean,
-	preview_view: kern.View?,
+	preview_view: greed.View?,
 	-- The item the preview shows.
 	previewed: Item?,
 	on_move: ((item: Item) -> ())?,
@@ -101,7 +101,7 @@ local function update_preview(o: Open)
 	local shown = if item then preview(item) else nil
 	local text = if shown then shown.text else ""
 	view:show(
-		kern.create_buffer(
+		greed.create_buffer(
 			"preview",
 			text,
 			{ readonly = true, language = shown and shown.language }
@@ -126,7 +126,7 @@ end
 -- cursor where it is in the query.
 local function render(o: Open)
 	local lines = {}
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	local from = o.buffer:line_end(0) + 1
 	for i, index in o.matches do
 		if i > LIMIT then
@@ -138,7 +138,7 @@ local function render(o: Open)
 			from,
 			line,
 			i == o.current,
-			if o.source then {} else kern.fuzzy_positions(o.query or "", o.labels[index]),
+			if o.source then {} else greed.fuzzy_positions(o.query or "", o.labels[index]),
 			1
 		)
 		table.insert(lines, line)
@@ -204,7 +204,7 @@ local function list_path(o: Open, q: string, paths: Paths)
 		-- "~" alone is the home folder.
 		dir, typed = q .. "/", ""
 	end
-	local found = kern.fs.list(core.project.expand(dir :: string), {
+	local found = greed.fs.list(core.project.expand(dir :: string), {
 		hidden = string.sub(typed :: string, 1, 1) == ".",
 		ignored = true,
 	}) or {}
@@ -219,7 +219,7 @@ local function list_path(o: Open, q: string, paths: Paths)
 	end
 	o.given = o.given or { items = o.items, labels = o.labels }
 	o.items, o.labels = items, labels
-	o.matches = kern.fuzzy(typed :: string, names)
+	o.matches = greed.fuzzy(typed :: string, names)
 	o.current = 1
 	render(o)
 end
@@ -243,7 +243,7 @@ local function refresh(o: Open)
 	end
 	local source = o.source
 	if source == nil then
-		o.matches = kern.fuzzy(q, o.labels)
+		o.matches = greed.fuzzy(q, o.labels)
 		o.current = 1
 		render(o)
 		return
@@ -254,13 +254,13 @@ local function refresh(o: Open)
 		set_items(o, {})
 		return
 	end
-	kern.sleep(o.delay)
+	greed.sleep(o.delay)
 	if open == o and generation == o.generation and not o.searching then
 		search(o, source)
 	end
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if open and event.buffer:id() == open.buffer:id() then
 		refresh(open)
 	end
@@ -276,14 +276,14 @@ local function close(chosen: boolean?)
 		if preview then
 			preview:close()
 		end
-		kern.mode.set(mode)
+		greed.mode.set(mode)
 		if cancel and not chosen then
 			cancel()
 		end
 	end
 end
 
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	if open and open.view:id() == event.view then
 		close()
 	end
@@ -308,7 +308,7 @@ local KEYS: { [string]: string } = {
 	tab = "picker-complete",
 }
 
-kern.command({
+greed.command({
 	name = "picker-next",
 	doc = "Move to the next item in the picker",
 	run = function()
@@ -316,7 +316,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-prev",
 	doc = "Move to the previous item in the picker",
 	run = function()
@@ -324,7 +324,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-choose",
 	doc = "Choose the current item and close the picker",
 	run = function()
@@ -348,7 +348,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-complete",
 	doc = "Put the current path in the picker's query, to go on from there",
 	run = function()
@@ -365,7 +365,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-close",
 	doc = "Close the picker without choosing",
 	run = function()
@@ -373,7 +373,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "picker-key",
 	doc = "Run what the open picker does for the key pressed",
 	run = function(ctx)
@@ -385,7 +385,7 @@ kern.command({
 			-- usually does.
 			local usual = KEYS[key]
 			if usual then
-				kern.run(usual)
+				greed.run(usual)
 			end
 			return
 		end
@@ -433,15 +433,15 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 	local preview = options and options.preview
 	-- With a preview, the list takes the left half and the preview the right.
 	local preview_view = if preview
-		then kern.float(
-			kern.create_buffer("preview", "", { readonly = true }),
+		then greed.float(
+			greed.create_buffer("preview", "", { readonly = true }),
 			{ x = "50%", width = "46%", height = "70%", focus = false }
 		)
 		else nil
-	local buffer = kern.create_buffer("picker")
+	local buffer = greed.create_buffer("picker")
 	local view = if preview
-		then kern.float(buffer, { title = title, x = "4%", width = "46%", height = "70%" })
-		else kern.float(buffer, { title = title, width = "60%", height = "60%" })
+		then greed.float(buffer, { title = title, x = "4%", width = "46%", height = "70%" })
+		else greed.float(buffer, { title = title, width = "60%", height = "60%" })
 	local o: Open = {
 		buffer = buffer,
 		view = view,
@@ -461,16 +461,16 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		paths = options and options.paths,
 		generation = 0,
 		searching = false,
-		mode = kern.mode.get(),
+		mode = greed.mode.get(),
 	}
 	for key in o.keys do
 		if not bound[key] then
 			bound[key] = true
-			kern.keymap.bind({ mode = "insert", kind = "picker" }, { [key] = "picker-key" })
+			greed.keymap.bind({ mode = "insert", kind = "picker" }, { [key] = "picker-key" })
 		end
 	end
 	open = o
-	kern.mode.set("insert")
+	greed.mode.set("insert")
 	refresh(o)
 end
 
@@ -480,7 +480,7 @@ end
 ---     local item = picker.choose("Model", items)
 ---     if item then ... end
 function M.choose(title: string, items: { Item }, options: Options?): Item?
-	local done = kern.signal()
+	local done = greed.signal()
 	local given: Options = if options then table.clone(options) else {}
 	local cancel = given.on_cancel
 	given.on_cancel = function()

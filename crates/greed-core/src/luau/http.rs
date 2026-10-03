@@ -1,10 +1,10 @@
-//! `kern.http`: requests over the network, each on a thread of its own so
+//! `greed.http`: requests over the network, each on a thread of its own so
 //! the editor never waits on one. `request` waits for the whole response;
 //! `stream` waits for its status and headers, then `read` waits for each
 //! piece of the body as it arrives, e.g. tokens from a model.
 //!
 //! Both only work in a command or event handler, which wait for them the
-//! way they wait for `kern.sleep`. A plugin needs the `net` capability, or
+//! way they wait for `greed.sleep`. A plugin needs the `net` capability, or
 //! `net:HOST` for one host.
 
 use std::collections::{HashMap, VecDeque};
@@ -229,7 +229,7 @@ pub(super) fn stream_started(
             end
             ",
         )
-        .set_name("=kern.http.stream.read")
+        .set_name("=greed.http.stream.read")
         .call(read_now)?;
     stream.set("read", read)?;
     stream.set(
@@ -297,7 +297,7 @@ pub(super) fn chunk_arrived(lua: &Lua, id: u64, chunk: Chunk) -> LuaResult<()> {
     tasks::wake(lua, waiter, values)
 }
 
-/// `kern.http` for `owner`.
+/// `greed.http` for `owner`.
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let http = lua.create_table()?;
     let o = owner.clone();
@@ -335,11 +335,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     })?;
     http.set(
         "request",
-        jobs::waiting(lua, "kern.http.request", start_request)?,
+        jobs::waiting(lua, "greed.http.request", start_request)?,
     )?;
     http.set(
         "stream",
-        jobs::waiting(lua, "kern.http.stream", start_stream)?,
+        jobs::waiting(lua, "greed.http.stream", start_stream)?,
     )?;
     Ok(http)
 }

@@ -82,7 +82,7 @@ pub(crate) struct State {
     pub tasks: tasks::Tasks,
     /// The command waiting for the next key press, if any.
     pub key_waiter: Option<u64>,
-    /// What each `kern.keys.record` is keeping, by name.
+    /// What each `greed.keys.record` is keeping, by name.
     pub recording: HashMap<String, api::Recording>,
     /// Language servers.
     pub lsp: crate::lsp::Lsp,
@@ -94,8 +94,8 @@ pub(crate) struct State {
     /// The theme entries plugins set, each with the plugin that set it last,
     /// so it goes with the plugin. Each patches the base theme's entry.
     pub theme_set: HashMap<Arc<str>, (PluginId, crate::theme::Entry)>,
-    /// The theme under the entries plugins set with `kern.theme.set`, from
-    /// `kern.theme.base`, and the plugin that set it.
+    /// The theme under the entries plugins set with `greed.theme.set`, from
+    /// `greed.theme.base`, and the plugin that set it.
     pub theme_base: Option<(PluginId, HashMap<Arc<str>, crate::theme::Entry>)>,
     /// Work running on other threads.
     pub jobs: jobs::Jobs,
@@ -733,7 +733,7 @@ pub(crate) fn load_dir(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
 
 /// Loads the folder `dir` as a plugin called `name`, with `init.luau` as its
 /// entry, unless it has a `plugin.toml` saying otherwise. For config that
-/// isn't a packaged plugin, like a project's `.kern` folder, which gets
+/// isn't a packaged plugin, like a project's `.greed` folder, which gets
 /// every capability as config does.
 pub(crate) fn load_dir_as(lua: &Lua, dir: &Path, name: &str) -> Result<PluginId, HostError> {
     if dir.join("plugin.toml").is_file() {

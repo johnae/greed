@@ -1,4 +1,4 @@
-//! Kern's text model: change sets, selections and transactions over a rope.
+//! Greed's text model: change sets, selections and transactions over a rope.
 //!
 //! Positions throughout are byte offsets into UTF-8 text.
 

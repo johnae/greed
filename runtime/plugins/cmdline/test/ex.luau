@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 -- Types `text` on the command line and runs it.
 local function ex(t: test.TestContext, text: string)
@@ -66,7 +66,7 @@ test(":g runs a command on matching lines, :v on the others", function(t)
 	-- Without a command, :g selects the lines.
 	t:buffer("|a1\nb\na2")
 	ex(t, "g/a/")
-	assert(#kern.view():selection().ranges == 2, "a selection per line")
+	assert(#greed.view():selection().ranges == 2, "a selection per line")
 end)
 
 test(":m and :t move and copy lines, :y copies them", function(t)
@@ -78,14 +78,14 @@ test(":m and :t move and copy lines, :y copies them", function(t)
 	ex(t, "t1")
 	t:expect("a\n|a\nb\nc")
 	ex(t, "2,3y")
-	local copied = (kern.clipboard.get() or {})[1]
+	local copied = (greed.clipboard.get() or {})[1]
 	assert(copied == "a\nb\n", copied)
 end)
 
 test(":norm types keys on each line of the range, in normal mode", function(t)
 	t:buffer("|a\nb\nc")
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	ex(t, "%norm A;")
 	t:expect("a;\nb;\nc|;")
-	kern.mode.set("normal")
+	greed.mode.set("normal")
 end)

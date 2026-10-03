@@ -3,17 +3,17 @@
 -- aren't open are opened (without being shown) and left unsaved, so the
 -- change can be looked over and undone before writing it.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
 --- Applies LSP text edits to `buffer` as one change.
-function M.apply(buffer: kern.Buffer, edits: { any })
+function M.apply(buffer: greed.Buffer, edits: { any })
 	local ranges = {}
 	for _, edit in edits do
 		table.insert(ranges, {
-			from = kern.lsp.offset(buffer, edit.range.start),
-			to = kern.lsp.offset(buffer, edit.range["end"]),
+			from = greed.lsp.offset(buffer, edit.range.start),
+			to = greed.lsp.offset(buffer, edit.range["end"]),
 			text = edit.newText,
 		})
 	end
@@ -25,12 +25,12 @@ function M.apply(buffer: kern.Buffer, edits: { any })
 end
 
 -- The open buffer for `uri`, or the file opened for it.
-local function buffer_for(uri: string): (kern.Buffer?, string?)
-	local path = kern.lsp.path(uri)
+local function buffer_for(uri: string): (greed.Buffer?, string?)
+	local path = greed.lsp.path(uri)
 	if path == nil then
 		return nil, `can't edit {uri}`
 	end
-	local ok, buffer = pcall(kern.load, path)
+	local ok, buffer = pcall(greed.load, path)
 	if not ok then
 		return nil, tostring(buffer)
 	end
@@ -71,7 +71,7 @@ end
 
 -- Servers send edits this way too, e.g. after running a code action's
 -- command.
-kern.lsp.on_request("workspace/applyEdit", function(params)
+greed.lsp.on_request("workspace/applyEdit", function(params)
 	local changed, err = M.apply_workspace(params.edit)
 	if changed == nil then
 		return { applied = false, failureReason = err }

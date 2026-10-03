@@ -1,9 +1,9 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 -- The text's background now.
 local function background(): string?
-	local text = kern.theme.get("ui.text")
+	local text = greed.theme.get("ui.text")
 	return text and text.bg
 end
 

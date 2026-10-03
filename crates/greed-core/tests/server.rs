@@ -88,7 +88,7 @@ fn errors_and_messages_show_on_the_status_line() {
 fn saving_writes_the_file_and_says_so() {
     let path: &'static Path = Box::leak(
         std::env::temp_dir()
-            .join(format!("kern-server-save-{}.txt", std::process::id()))
+            .join(format!("greed-server-save-{}.txt", std::process::id()))
             .into_boxed_path(),
     );
     let conn = start("draft", Some(path));
@@ -149,7 +149,7 @@ fn the_server_wakes_up_for_timers() {
         let host = Host::new(editor)?;
         host.load_str(
             "sleepy",
-            "local kern = require('@kern')\nkern.command { name = 'later', run = function(ctx) kern.sleep(20) ctx.buffer:edit(function(e) e:insert(0, 'woke') end) end }\nkern.keymap.bind('normal', { z = 'later' })",
+            "local greed = require('@greed')\ngreed.command { name = 'later', run = function(ctx) greed.sleep(20) ctx.buffer:edit(function(e) e:insert(0, 'woke') end) end }\ngreed.keymap.bind('normal', { z = 'later' })",
         )?;
         Ok(host)
     });

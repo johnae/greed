@@ -1,16 +1,16 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 test("the default theme styles the editor's own names and syntax", function()
 	for _, name in { "ui.selection", "ui.statusline", "ui.float.border", "diagnostic.error", "keyword", "comment" } do
-		assert(kern.theme.get(name) ~= nil, name .. " has no entry")
+		assert(greed.theme.get(name) ~= nil, name .. " has no entry")
 	end
-	local keyword = kern.theme.get("keyword") :: kern.ThemeEntry
+	local keyword = greed.theme.get("keyword") :: greed.ThemeEntry
 	assert(keyword.fg == "magenta", "keywords are magenta")
 end)
 
 test("a config can change single entries", function()
-	kern.theme.set({ keyword = { fg = "#ff8000" } })
-	assert((kern.theme.get("keyword") :: kern.ThemeEntry).fg == "#ff8000", "changed")
-	assert((kern.theme.get("comment") :: kern.ThemeEntry).italic == true, "the rest stays")
+	greed.theme.set({ keyword = { fg = "#ff8000" } })
+	assert((greed.theme.get("keyword") :: greed.ThemeEntry).fg == "#ff8000", "changed")
+	assert((greed.theme.get("comment") :: greed.ThemeEntry).italic == true, "the rest stays")
 end)

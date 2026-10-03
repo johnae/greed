@@ -1,4 +1,4 @@
-//! `kern.process`: running other programs, like a formatter or `jj`. A
+//! `greed.process`: running other programs, like a formatter or `jj`. A
 //! command waits for the program on another thread, so the editor keeps
 //! going; outside a command it runs right away.
 
@@ -96,6 +96,6 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         let how = run_from_lua(command, opts.as_ref())?;
         Ok(jobs::start(lua, move || Output::Process(run(how))))
     })?;
-    process.set("run", jobs::waiting(lua, "kern.process.run", start)?)?;
+    process.set("run", jobs::waiting(lua, "greed.process.run", start)?)?;
     Ok(process)
 }

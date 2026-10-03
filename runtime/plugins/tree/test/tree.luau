@@ -1,9 +1,9 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 -- The tree's lines.
 local function lines(): { string }
-	return string.split(kern.view():buffer():text(), "\n")
+	return string.split(greed.view():buffer():text(), "\n")
 end
 
 -- A project of its own for the test, with a folder and files in it, as the
@@ -15,7 +15,7 @@ local function project(t: any): string
 		["src/lib.rs"] = "",
 		["notes.md"] = "",
 	})
-	kern.run("project", { args = { dir } })
+	greed.run("project", { args = { dir } })
 	t:buffer("|x")
 	return dir
 end
@@ -23,7 +23,7 @@ end
 test("space e opens the tree in a panel, folders first", function(t)
 	project(t)
 	t:keys("space e")
-	assert(kern.view():buffer():kind() == "tree", "focused")
+	assert(greed.view():buffer():kind() == "tree", "focused")
 	local dir = "src"
 	assert(lines()[1] == "▸ " .. dir .. "/", lines()[1])
 	-- Typing in it is refused.
@@ -53,43 +53,43 @@ end)
 test("space e moves back to the tree, and closes it from inside", function(t)
 	t:buffer("|x")
 	t:keys("space e")
-	local tree = kern.view()
+	local tree = greed.view()
 	t:keys("q")
-	assert(kern.view():id() ~= tree:id(), "q closes it")
+	assert(greed.view():id() ~= tree:id(), "q closes it")
 	t:keys("space e")
 	t:keys("space e")
-	assert(kern.view():buffer():kind() ~= "tree", "space e in the tree closes it")
+	assert(greed.view():buffer():kind() ~= "tree", "space e in the tree closes it")
 end)
 
 test("each project has its own tree, rooted in the project", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "", ["inside.txt"] = "" })
 	t:buffer("|x")
 	t:keys("space e")
-	local first = kern.view():buffer():text()
-	kern.run("project", { args = { dir } })
+	local first = greed.view():buffer():text()
+	greed.run("project", { args = { dir } })
 	t:keys("space e")
-	assert(kern.view():buffer():kind() == "tree", "a tree of its own")
+	assert(greed.view():buffer():kind() == "tree", "a tree of its own")
 	assert(
-		string.find(kern.view():buffer():text(), "inside.txt", 1, true) ~= nil,
-		kern.view():buffer():text()
+		string.find(greed.view():buffer():text(), "inside.txt", 1, true) ~= nil,
+		greed.view():buffer():text()
 	)
-	kern.project.switch(kern.project.list()[1].id)
+	greed.project.switch(greed.project.list()[1].id)
 	t:keys("space e")
-	assert(kern.view():buffer():text() == first, "the first project's tree is as it was")
+	assert(greed.view():buffer():text() == first, "the first project's tree is as it was")
 end)
 
 test("a tree closed some other way opens again", function(t)
 	t:buffer("|x")
 	t:keys("space e")
-	kern.view():close()
+	greed.view():close()
 	t:keys("space e")
-	assert(kern.view():buffer():kind() == "tree", "a new tree")
+	assert(greed.view():buffer():kind() == "tree", "a new tree")
 	t:keys("space e")
 end)
 
 -- The text of the line the tree marks as the open file, if any.
 local function marked_open(): string?
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	for _, mark in buffer:decorations("tree") do
 		if mark.style == "ui.tree.open" then
 			return buffer:slice(mark.from, mark.to)
@@ -103,8 +103,8 @@ test("enter on a file opens it in the main view, and the tree marks it", functio
 	t:keys("space e")
 	assert(table.concat(lines(), "|") == "▸ src/|  notes.md", "hidden files are left out")
 	t:keys("j enter")
-	local path = kern.view():buffer():path() or ""
-	assert(kern.view():buffer():kind() == "file" and string.sub(path, -8) == "notes.md", path)
+	local path = greed.view():buffer():path() or ""
+	assert(greed.view():buffer():kind() == "file" and string.sub(path, -8) == "notes.md", path)
 	t:keys("space e")
 	assert(marked_open() == "  notes.md", tostring(marked_open()))
 	t:keys("q")
@@ -112,7 +112,7 @@ end)
 
 test("the tree marks the file you came from", function(t)
 	local dir = project(t)
-	kern.open(dir .. "/notes.md")
+	greed.open(dir .. "/notes.md")
 	t:keys("space e")
 	assert(marked_open() == "  notes.md", tostring(marked_open()))
 	t:keys("q")

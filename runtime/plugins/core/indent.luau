@@ -12,11 +12,11 @@
 -- `openers` (an opening bracket, by default). A plugin can indent a
 -- language its own way with `providers`.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local syntax = require("./syntax")
 local text = require("./text")
 
-type Buffer = kern.Buffer
+type Buffer = greed.Buffer
 
 local M = {}
 
@@ -35,7 +35,7 @@ M.units = {} :: { [string]: string }
 --- One level of indent in `buffer`: its language's, or the "indent" option.
 function M.unit(buffer: Buffer): string
 	local language = buffer:language()
-	return language and M.units[language] or kern.option.get("indent") :: string
+	return language and M.units[language] or greed.option.get("indent") :: string
 end
 
 --- The indent `line` starts with.
@@ -46,7 +46,7 @@ end
 
 -- Whether `node` is open at `pos`: it holds it, or ends there missing its
 -- closing token, as while typing a block.
-local function open_at(node: kern.Node, pos: number): boolean
+local function open_at(node: greed.Node, pos: number): boolean
 	if node.from >= pos then
 		return false
 	elseif pos < node.to then
@@ -61,7 +61,7 @@ local function from_query(buffer: Buffer, pos: number, source: string): (string,
 	local finish = buffer:line_end(buffer:line_of(pos))
 	local rest = buffer:slice(pos, finish)
 	local closer = pos + #(string.match(rest, "^[ \t]*") :: string)
-	local inner: kern.Node? = nil
+	local inner: greed.Node? = nil
 	local closes = false
 	-- From just before `pos`, so a block ending there missing its closer counts.
 	for _, match in buffer:query(source, { from = math.max(pos - 1, 0), to = finish }) do
@@ -172,7 +172,7 @@ end
 
 --- Lines up each cursor's line with its block when what's on it before
 --- the cursor closes one, like `end` or `}` typed at its start.
-function M.reindent(view: kern.View)
+function M.reindent(view: greed.View)
 	local buffer = view:buffer()
 	buffer:edit(function(e)
 		for _, range in view:selection().ranges do
@@ -191,7 +191,7 @@ end
 
 -- Breaks the line at each cursor, as `M.break_lines` says; the cursors in
 -- `above` instead get a line put in above the first one.
-local function break_lines(view: kern.View, above: { [number]: boolean })
+local function break_lines(view: greed.View, above: { [number]: boolean })
 	local buffer = view:buffer()
 	local br = text.line_break(buffer)
 	local selection = view:selection()
@@ -232,14 +232,14 @@ end
 --- leaving the cursor there. Spaces right after the cursor go, and so does
 --- the indent of a line left blank. Between brackets, the closing one gets
 --- a line of its own below.
-function M.break_lines(view: kern.View)
+function M.break_lines(view: greed.View)
 	M.reindent(view)
 	break_lines(view, {})
 end
 
 --- Opens a line below (or above) each cursor's line at the indent it calls
 --- for, with the cursor on it.
-function M.open(view: kern.View, below: boolean)
+function M.open(view: greed.View, below: boolean)
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local above = {}

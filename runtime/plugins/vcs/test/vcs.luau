@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local operations = require("@operations")
 local vcs = require("@vcs")
 
@@ -7,7 +7,7 @@ local vcs = require("@vcs")
 local function repo(t: test.TestContext, files: { [string]: string }): string
 	local dir = t:tempdir(files)
 	local function git(...: string)
-		local done = kern.process.run(
+		local done = greed.process.run(
 			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", ... },
 			{ cwd = dir }
 		)
@@ -21,7 +21,7 @@ end
 
 -- Each line's sign, by 0-based line number.
 local function signs(): { [number]: string }
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	local out = {}
 	for _, mark in buffer:decorations("vcs") do
 		if mark.sign then
@@ -33,7 +33,7 @@ end
 
 test("lines added, changed and removed since the last commit get signs", function(t)
 	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	assert(next(signs()) == nil, "nothing changed yet")
 	-- "one" becomes "ONE", "three" goes, and a line is added at the end.
 	t:keys("e c O N E esc j j x d g e o n e w esc")
@@ -47,7 +47,7 @@ end)
 
 test("] g and [ g go between changes, space g r puts one back", function(t)
 	local dir = repo(t, { ["a.txt"] = "a\nb\nc\nd\ne\n" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("j c B esc g g 4 j c E esc")
 	t:wait(500)
 	t:keys("g g ] g")
@@ -55,37 +55,37 @@ test("] g and [ g go between changes, space g r puts one back", function(t)
 	t:keys("] g")
 	t:expect("a\nB\nc\nd\n|E\n")
 	t:keys("[ g space g r")
-	assert(kern.view():buffer():text() == "a\nb\nc\nd\nE\n", kern.view():buffer():text())
+	assert(greed.view():buffer():text() == "a\nb\nc\nd\nE\n", greed.view():buffer():text())
 end)
 
 test("a new file in a repository counts as added", function(t)
 	local dir = repo(t, { ["a.txt"] = "a\n" })
-	kern.fs.write(dir .. "/new.txt", "x\ny\n")
-	kern.open(dir .. "/new.txt")
+	greed.fs.write(dir .. "/new.txt", "x\ny\n")
+	greed.open(dir .. "/new.txt")
 	t:wait(10)
 	local s = signs()
 	assert(s[0] == "+" and s[1] == "+", "every line added")
 	-- Only the signs are coloured, so the text keeps its highlighting.
-	for _, mark in kern.view():buffer():decorations("vcs") do
+	for _, mark in greed.view():buffer():decorations("vcs") do
 		assert(mark.from == mark.to, "a sign covers no text")
 	end
 end)
 
 test("files outside a repository get no signs", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("x c z esc")
 	t:wait(500)
 	assert(next(signs()) == nil)
 end)
 
 test("with jj, changes are against the working copy's parent", function(t)
-	if kern.which("jj") == nil then
+	if greed.which("jj") == nil then
 		return
 	end
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
 	local function jj(...: string)
-		local done = kern.process.run(
+		local done = greed.process.run(
 			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
 			{ cwd = dir }
 		)
@@ -93,7 +93,7 @@ test("with jj, changes are against the working copy's parent", function(t)
 	end
 	jj("git", "init")
 	jj("commit", "-m", "first")
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("j e c T W O esc")
 	t:wait(500)
 	local s = signs()
@@ -102,15 +102,15 @@ end)
 
 test("space g b says who last changed the line", function(t)
 	local dir = repo(t, { ["a.txt"] = "one\ntwo\n" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("j space g b")
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "(t ", 1, true), messages[#messages])
 end)
 
 -- The changes view, once shown.
-local function changes_view(): kern.Buffer?
-	for _, buffer in kern.buffers() do
+local function changes_view(): greed.Buffer?
+	for _, buffer in greed.buffers() do
 		if buffer:kind() == "multibuffer" then
 			return buffer
 		end
@@ -125,12 +125,12 @@ test(
 			["a.txt"] = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
 			["b.txt"] = "keep\n",
 		})
-		kern.project.open(dir)
-		kern.fs.write(dir .. "/a.txt", "one\nTWO\nthree\nfour\nfive\nseven\n")
-		kern.fs.write(dir .. "/c.txt", "brand new\n")
+		greed.project.open(dir)
+		greed.fs.write(dir .. "/a.txt", "one\nTWO\nthree\nfour\nfive\nseven\n")
+		greed.fs.write(dir .. "/c.txt", "brand new\n")
 		t:buffer("|x")
 		t:run("changes")
-		local view = changes_view() :: kern.Buffer
+		local view = changes_view() :: greed.Buffer
 		assert(view, "the changes view is open")
 		local text = view:text()
 		assert(string.find(text, "^3 changes in 2 files since HEAD\n"), text)
@@ -150,18 +150,18 @@ test(
 
 		-- space g r puts the change under the cursor back, and the view follows.
 		local at = (string.find(text, "TWO", 1, true) :: number) - 1
-		kern.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		greed.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 		t:keys("space g r")
-		local file = kern.load(dir .. "/a.txt")
+		local file = greed.load(dir .. "/a.txt")
 		assert(string.find(file:text(), "\ntwo\n", 1, true), file:text())
-		local now = changes_view() :: kern.Buffer
+		local now = changes_view() :: greed.Buffer
 		assert(string.find(now:text(), "^2 changes in 2 files", 1), now:text())
 	end
 )
 
 test("with nothing changed, it says so", function(t)
 	local dir = repo(t, { ["a.txt"] = "one\n" })
-	kern.project.open(dir)
+	greed.project.open(dir)
 	t:buffer("|x")
 	t:run("changes")
 	local messages = t:messages()
@@ -169,12 +169,12 @@ test("with nothing changed, it says so", function(t)
 end)
 
 test("with jj, the changes view shows the working copy's changes against its parent", function(t)
-	if kern.which("jj") == nil then
+	if greed.which("jj") == nil then
 		return
 	end
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n", ["old.txt"] = "going\n" })
 	local function jj(...: string)
-		local done = kern.process.run(
+		local done = greed.process.run(
 			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
 			{ cwd = dir }
 		)
@@ -182,12 +182,12 @@ test("with jj, the changes view shows the working copy's changes against its par
 	end
 	jj("git", "init")
 	jj("commit", "-m", "first")
-	kern.fs.write(dir .. "/a.txt", "one\ntwo\nthree\n")
-	kern.process.run({ "rm", dir .. "/old.txt" })
-	kern.project.open(dir)
+	greed.fs.write(dir .. "/a.txt", "one\ntwo\nthree\n")
+	greed.process.run({ "rm", dir .. "/old.txt" })
+	greed.project.open(dir)
 	t:buffer("|x")
 	t:run("changes")
-	local view = changes_view() :: kern.Buffer
+	local view = changes_view() :: greed.Buffer
 	local text = view:text()
 	assert(string.find(text, "^1 change in 1 file since the working copy's parent\n"), text)
 	assert(string.find(text, "three", 1, true), text)
@@ -195,8 +195,8 @@ end)
 
 test("space u c commits just the latest operation's files, named after it", function(t)
 	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
-	kern.fs.write(dir .. "/b.txt", "mine\n")
-	local a = kern.load(dir .. "/a.txt")
+	greed.fs.write(dir .. "/b.txt", "mine\n")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	operations.run("change a", function()
 		a:edit(function(e)
@@ -206,12 +206,12 @@ test("space u c commits just the latest operation's files, named after it", func
 	t:keys("space u c")
 	local messages = t:messages()
 	assert(messages[#messages] == 'committed "change a"', messages[#messages])
-	local log = kern.process.run(
+	local log = greed.process.run(
 		{ "git", "log", "-1", "--format=%s", "--name-only" },
 		{ cwd = dir }
 	)
 	assert(log and string.find(log.stdout, "^change a\n\na.txt\n$"), log and log.stdout)
-	local status = kern.process.run({ "git", "status", "--porcelain" }, { cwd = dir })
+	local status = greed.process.run({ "git", "status", "--porcelain" }, { cwd = dir })
 	assert(
 		status and status.stdout == " M b.txt\n",
 		"b's change stays: " .. (status and status.stdout or "")
@@ -219,12 +219,12 @@ test("space u c commits just the latest operation's files, named after it", func
 end)
 
 test("with jj, an operation commits as its own change", function(t)
-	if kern.which("jj") == nil then
+	if greed.which("jj") == nil then
 		return
 	end
 	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
 	local function jj(...: string): string
-		local done = kern.process.run(
+		local done = greed.process.run(
 			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
 			{ cwd = dir }
 		)
@@ -233,8 +233,8 @@ test("with jj, an operation commits as its own change", function(t)
 	end
 	jj("git", "init")
 	jj("commit", "-m", "first")
-	kern.fs.write(dir .. "/b.txt", "mine\n")
-	local a = kern.load(dir .. "/a.txt")
+	greed.fs.write(dir .. "/b.txt", "mine\n")
+	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
 	local op = operations.run("change a", function()
 		a:edit(function(e)
@@ -250,7 +250,7 @@ end)
 
 test("m i g selects the change under the cursor, m a g its lines", function(t)
 	local dir = repo(t, { ["a.txt"] = "a\nb\nc\n" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("j c B esc")
 	t:wait(500)
 	t:keys("m a g")
@@ -259,7 +259,7 @@ end)
 
 test("changed_files lists the files changed since the last commit", function(t)
 	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
-	kern.fs.write(dir .. "/b.txt", "B\n")
+	greed.fs.write(dir .. "/b.txt", "B\n")
 	local files = require("@vcs").changed_files(dir) :: { string }
 	assert(#files == 1 and string.match(files[1], "/b%.txt$"), table.concat(files, ", "))
 end)

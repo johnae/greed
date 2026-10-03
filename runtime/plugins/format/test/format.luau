@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local languages = require("@languages")
 
 -- Opens a file in a language whose formatter squeezes runs of spaces, and
@@ -14,7 +14,7 @@ local function squeezing(t: test.TestContext, text: string): string
 		},
 	})
 	local dir = t:tempdir({ ["a.sq"] = text })
-	kern.open(dir .. "/a.sq")
+	greed.open(dir .. "/a.sq")
 	return dir .. "/a.sq"
 end
 
@@ -23,7 +23,7 @@ test("saving formats the file, changing only what the formatter changed", functi
 	t:keys("g l b")
 	t:expect("one    two |three^")
 	t:run("save")
-	assert(kern.fs.read(path) == "one two three", (kern.fs.read(path)))
+	assert(greed.fs.read(path) == "one two three", (greed.fs.read(path)))
 	t:expect("one two |three^")
 end)
 
@@ -32,7 +32,7 @@ test(
 	function(t)
 		local path = squeezing(t, "oops  here")
 		t:run("save")
-		assert(kern.fs.read(path) == "oops  here", (kern.fs.read(path)))
+		assert(greed.fs.read(path) == "oops  here", (greed.fs.read(path)))
 		local said = table.concat(t:messages(), "\n")
 		assert(string.find(said, "bad input", 1, true), said)
 	end
@@ -40,21 +40,21 @@ test(
 
 test(":format formats without saving, and format-on-save off leaves saving alone", function(t)
 	local path = squeezing(t, "a   b")
-	kern.option.set("format-on-save", false)
+	greed.option.set("format-on-save", false)
 	t:run("save")
-	assert(kern.fs.read(path) == "a   b")
+	assert(greed.fs.read(path) == "a   b")
 	t:run("format")
-	assert(kern.view():buffer():text() == "a b")
-	assert(kern.view():buffer():modified(), "not saved")
-	kern.option.set("format-on-save", true)
+	assert(greed.view():buffer():text() == "a b")
+	assert(greed.view():buffer():modified(), "not saved")
+	greed.option.set("format-on-save", true)
 end)
 
 test("a formatter that isn't installed is skipped", function(t)
 	languages.set("missing", { extensions = { "miss" }, formatter = { "no-such-formatter-here" } })
 	local dir = t:tempdir({ ["a.miss"] = "x  y" })
-	kern.open(dir .. "/a.miss")
+	greed.open(dir .. "/a.miss")
 	t:run("format")
-	assert(kern.view():buffer():text() == "x  y")
+	assert(greed.view():buffer():text() == "x  y")
 	local messages = t:messages()
 	assert(messages[#messages] == "nothing to format this with", messages[#messages])
 end)
@@ -65,7 +65,7 @@ test("formatting next to characters of more than one byte keeps them whole", fun
 		{ extensions = { "acc" }, formatter = { "sh", "-c", "sed 's/é/è/'" } }
 	)
 	local dir = t:tempdir({ ["a.acc"] = "café\n" })
-	kern.open(dir .. "/a.acc")
+	greed.open(dir .. "/a.acc")
 	t:run("format")
-	assert(kern.view():buffer():text() == "cafè\n", kern.view():buffer():text())
+	assert(greed.view():buffer():text() == "cafè\n", greed.view():buffer():text())
 end)

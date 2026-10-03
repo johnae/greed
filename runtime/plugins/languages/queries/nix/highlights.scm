@@ -1,4 +1,4 @@
-; From tree-sitter-nix (MIT), with Kern's capture names.
+; From tree-sitter-nix (MIT), with Greed's capture names.
 
 (comment) @comment
 

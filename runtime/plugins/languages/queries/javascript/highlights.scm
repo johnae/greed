@@ -1,4 +1,4 @@
-; From tree-sitter-javascript (MIT), with Kern's capture names.
+; From tree-sitter-javascript (MIT), with Greed's capture names.
 
 ; JSX: HTML's own tags, then components.
 (jsx_opening_element (identifier) @tag.builtin (#match? @tag.builtin "^[a-z][^.]*$"))

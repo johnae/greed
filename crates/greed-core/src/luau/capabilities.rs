@@ -1,11 +1,11 @@
 //! What a plugin may use beyond the editor itself. A plugin lists it in its
 //! `plugin.toml` as `capabilities = ["proc", "fs.read"]`, and the parts of
-//! its `@kern` it didn't list raise an error that names the line to add.
-//! Config (an `init.luau`, a trusted project's `.kern`) and code typed at
+//! its `@greed` it didn't list raise an error that names the line to add.
+//! Config (an `init.luau`, a trusted project's `.greed`) and code typed at
 //! the REPL get everything.
 //!
-//! Capabilities follow the code: a plugin's `@kern` is built for it alone,
-//! so what another plugin's exported function does with its own `@kern`
+//! Capabilities follow the code: a plugin's `@greed` is built for it alone,
+//! so what another plugin's exported function does with its own `@greed`
 //! counts against that plugin, which `requires` makes visible.
 
 use std::collections::BTreeSet;
@@ -29,7 +29,7 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("secrets", "read and keep any secret, like API keys"),
 ];
 
-/// The parts of `@kern` each capability opens, as paths into the table.
+/// The parts of `@greed` each capability opens, as paths into the table.
 const GATED: &[(&str, &str)] = &[
     ("process.run", "proc"),
     ("terminal.spawn", "proc"),
@@ -112,19 +112,19 @@ fn denied(owner: &str, capability: &str) -> mlua::Error {
     ))
 }
 
-/// Replaces what `grant` doesn't open in `kern`, `owner`'s `@kern`, with
+/// Replaces what `grant` doesn't open in `greed`, `owner`'s `@greed`, with
 /// functions that say what to declare.
-pub(super) fn gate(lua: &Lua, kern: &Table, owner: &PluginId, grant: &Grant) -> LuaResult<()> {
+pub(super) fn gate(lua: &Lua, greed: &Table, owner: &PluginId, grant: &Grant) -> LuaResult<()> {
     for (path, capability) in GATED {
         if grant.allows(capability) {
             continue;
         }
         let (table, key) = match path.split_once('.') {
-            Some((module, key)) => match kern.get::<Value>(module)? {
+            Some((module, key)) => match greed.get::<Value>(module)? {
                 Value::Table(table) => (table, key),
                 _ => continue,
             },
-            None => (kern.clone(), *path),
+            None => (greed.clone(), *path),
         };
         let owner = owner.clone();
         table.set(

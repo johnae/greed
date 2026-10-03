@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -23,7 +23,7 @@ end)
 
 test("s shows the matches while typing and puts things back on esc", function(t)
 	t:buffer("^a1 b2|")
-	local view = kern.view()
+	local view = greed.view()
 	t:keys("s [ 0 - 9 ]")
 	assert(#view:selection().ranges == 2, "both digits are selected while typing")
 	t:keys("esc")

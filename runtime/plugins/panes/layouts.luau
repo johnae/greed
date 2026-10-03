@@ -9,22 +9,22 @@
 -- switches the tab to `manual`, keeping the shape it has.
 --
 -- A layout is a function from the panes, in order, and the tab's settings
--- to a `kern.PaneLayout` tree; `define` adds your own:
+-- to a `greed.PaneLayout` tree; `define` adds your own:
 --
 --     require("@panes").layouts.define("rows", function(panes)
 --         return { split = "column", children = panes }
 --     end)
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 export type Settings = {
 	--- The main area's share of the tab in `main-stack`, from 0 to 1.
 	main: number,
 }
 
-export type Layout = (panes: { kern.View }, settings: Settings) -> any
+export type Layout = (panes: { greed.View }, settings: Settings) -> any
 
-kern.option.define({
+greed.option.define({
 	name = "pane-layout",
 	doc = 'How new tabs arrange their panes: "manual", "main-stack", "columns", "spiral" or your own',
 	default = "manual",
@@ -57,7 +57,7 @@ end
 local function state_of(id: number): TabState
 	local state = states[id]
 	if state == nil then
-		local default = kern.option.get("pane-layout") :: string
+		local default = greed.option.get("pane-layout") :: string
 		state = {
 			layout = if layouts[default] then default else "manual",
 			panes = {},
@@ -70,8 +70,8 @@ end
 
 -- The tab's panes in the state's order: the ones it knows first, then any
 -- it doesn't yet, in the tab's own order.
-local function ordered(tab: kern.TabInfo, state: TabState): { kern.View }
-	local by_id: { [number]: kern.View } = {}
+local function ordered(tab: greed.TabInfo, state: TabState): { greed.View }
+	local by_id: { [number]: greed.View } = {}
 	for _, pane in tab.panes do
 		by_id[pane:id()] = pane
 	end
@@ -95,7 +95,7 @@ end
 
 --- Arranges the shown tab by its layout. `manual` leaves it as it is.
 function M.arrange()
-	local tab = kern.tab.current()
+	local tab = greed.tab.current()
 	local state = state_of(tab.id)
 	local panes = ordered(tab, state)
 	local layout = layouts[state.layout]
@@ -103,27 +103,27 @@ function M.arrange()
 		return
 	end
 	local ok, err = pcall(function()
-		kern.tab.set_layout(layout(panes, state.settings), tab.id)
+		greed.tab.set_layout(layout(panes, state.settings), tab.id)
 	end)
 	if not ok then
-		kern.echo(`layout {state.layout}: {err}`)
+		greed.echo(`layout {state.layout}: {err}`)
 	end
 end
 
 --- The shown tab's layout.
 function M.current(): string
-	return state_of(kern.tab.current().id).layout
+	return state_of(greed.tab.current().id).layout
 end
 
 --- Arranges the shown tab with layout `name`.
 function M.use(name: string)
 	if layouts[name] == nil then
-		kern.echo(`there's no layout called {name}`)
+		greed.echo(`there's no layout called {name}`)
 		return
 	end
-	state_of(kern.tab.current().id).layout = name
+	state_of(greed.tab.current().id).layout = name
 	M.arrange()
-	kern.echo(`layout: {name}`)
+	greed.echo(`layout: {name}`)
 end
 
 --- Arranges the shown tab with the layout after its own.
@@ -135,17 +135,17 @@ end
 --- Switches the shown tab to `manual`, keeping its shape, when a pane is
 --- resized by hand in another layout.
 function M.made_manual(why: string)
-	local state = state_of(kern.tab.current().id)
+	local state = state_of(greed.tab.current().id)
 	if state.layout ~= "manual" then
 		state.layout = "manual"
-		kern.echo(`layout: manual ({why})`)
+		greed.echo(`layout: manual ({why})`)
 	end
 end
 
 --- Swaps `pane` with the main one, the first in the order; the main one
 --- swaps with the second.
-function M.swap_main(pane: kern.View)
-	local tab = kern.tab.current()
+function M.swap_main(pane: greed.View)
+	local tab = greed.tab.current()
 	local state = state_of(tab.id)
 	ordered(tab, state)
 	local i = table.find(state.panes, pane:id())
@@ -159,7 +159,7 @@ end
 
 --- Moves every pane one place along the order, the last one to the front.
 function M.rotate()
-	local tab = kern.tab.current()
+	local tab = greed.tab.current()
 	local state = state_of(tab.id)
 	ordered(tab, state)
 	if #state.panes > 1 then
@@ -170,15 +170,15 @@ end
 
 --- Grows the main area by `by` (a share of the tab), or shrinks it.
 function M.grow_main(by: number)
-	local state = state_of(kern.tab.current().id)
+	local state = state_of(greed.tab.current().id)
 	state.settings.main = math.clamp(state.settings.main + by, 0.1, 0.9)
 	M.arrange()
 end
 
 -- New panes go into main in `main-stack`, pushing the old main onto the
 -- stack, and right after the pane they came from otherwise.
-kern.on("pane.opened", function(event: kern.PaneOpened)
-	local tab = kern.tab.current()
+greed.on("pane.opened", function(event: greed.PaneOpened)
+	local tab = greed.tab.current()
 	local state = state_of(tab.id)
 	if state.layout == "manual" then
 		return
@@ -199,7 +199,7 @@ kern.on("pane.opened", function(event: kern.PaneOpened)
 	M.arrange()
 end)
 
-kern.on("view.closed", function()
+greed.on("view.closed", function()
 	M.arrange()
 end)
 

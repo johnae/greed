@@ -1,9 +1,9 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local function hidden(): string
 	local out = {}
-	for _, lines in kern.view():hidden_lines() do
+	for _, lines in greed.view():hidden_lines() do
 		table.insert(out, `{lines.from}-{lines.to}`)
 	end
 	return table.concat(out, " ")
@@ -35,9 +35,9 @@ test("z C folds, z o unfolds, and z R unfolds everything", function(t)
 	assert(hidden() == "", hidden())
 	t:keys("j j z C")
 	assert(hidden() == "1-3", "the block around the cursor's line: " .. hidden())
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	local f = buffer:line_start(5)
-	kern.view():set_selection({ ranges = { { anchor = f, head = f } }, primary = 1 })
+	greed.view():set_selection({ ranges = { { anchor = f, head = f } }, primary = 1 })
 	t:keys("z C")
 	assert(hidden() == "1-3 5-5", hidden())
 	t:keys("z R")
@@ -58,7 +58,7 @@ test("a plugin can fold a language its own way", function(t)
 		return line, line + 2
 	end
 	t:buffer("|a\nb\nc\nd")
-	kern.view():buffer():set_language("klingon")
+	greed.view():buffer():set_language("klingon")
 	t:keys("z a")
 	assert(hidden() == "1-2", hidden())
 	core.folds.providers.klingon = nil

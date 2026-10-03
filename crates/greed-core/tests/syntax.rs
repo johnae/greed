@@ -127,7 +127,7 @@ fn buffers_without_files_highlight_in_the_language_they_are_given() {
     let all = syntax.highlights(preview, &text, 0..12);
     assert!(captured(&all, 0..2).contains(&"keyword"), "{all:?}");
 
-    // Switching to a language Kern doesn't know drops the highlights.
+    // Switching to a language Greed doesn't know drops the highlights.
     ed.set_language(preview, Some("klingon".into()));
     syntax.update(&ed);
     assert!(syntax.highlights(preview, &text, 0..12).is_empty());
@@ -139,7 +139,7 @@ fn host(text: &str, language: Option<&str>) -> greed_core::luau::Host {
     let host = greed_core::luau::Host::new(ed).unwrap();
     if let Some(language) = language {
         host.eval(&format!(
-            "require('@kern').view():buffer():set_language('{language}')"
+            "require('@greed').view():buffer():set_language('{language}')"
         ))
         .unwrap();
     }
@@ -148,7 +148,7 @@ fn host(text: &str, language: Option<&str>) -> greed_core::luau::Host {
 
 fn eval(host: &greed_core::luau::Host, body: &str) -> String {
     host.eval(&format!(
-        "(function() local kern = require('@kern') local b = kern.view():buffer() {body} end)()"
+        "(function() local greed = require('@greed') local b = greed.view():buffer() {body} end)()"
     ))
     .unwrap()
 }
@@ -301,7 +301,7 @@ fn code_blocks_and_inline_text_in_markdown_are_highlighted_in_their_own_language
         captured(&all, emphasis..emphasis + "*emphasis*".len()).contains(&"text.emphasis"),
         "Markdown's inline text: {all:?}"
     );
-    // A language Kern has no grammar for is left as it is.
+    // A language Greed has no grammar for is left as it is.
     let klingon = text.find("qapla").unwrap();
     assert!(
         all.iter()

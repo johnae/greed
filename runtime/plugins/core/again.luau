@@ -9,7 +9,7 @@
 -- becomes the last change. Undo, redo, macros and `.` itself don't start
 -- runs.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local style = require("./style")
 
 local M = {}
@@ -41,7 +41,7 @@ local function finish(extra: number)
 		return
 	end
 	run = nil
-	local keys = kern.keys.stop("again") or {}
+	local keys = greed.keys.stop("again") or {}
 	for _ = 1, extra do
 		table.remove(keys)
 	end
@@ -54,8 +54,8 @@ local function finish(extra: number)
 	end
 end
 
-kern.on("command.run", function(event: kern.CommandRun)
-	if not style.is_home(kern.mode.get()) then
+greed.on("command.run", function(event: greed.CommandRun)
+	if not style.is_home(greed.mode.get()) then
 		return
 	end
 	-- The keys of this command, with its count's digits, came in before it ran.
@@ -70,19 +70,19 @@ kern.on("command.run", function(event: kern.CommandRun)
 	run = {
 		keys = event.keys,
 		count = event.count,
-		buffer = kern.view():buffer():id(),
+		buffer = greed.view():buffer():id(),
 		changed = false,
 	}
-	kern.keys.record("again", { fed = true })
+	greed.keys.record("again", { fed = true })
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if run and event.buffer:id() == run.buffer then
 		run.changed = true
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "repeat-change",
 	doc = "Repeat the last change, at the cursors; a count replaces the one it had",
 	run = function(ctx)
@@ -91,7 +91,7 @@ kern.command({
 			return
 		end
 		local count = ctx.count or change.count
-		kern.keys.feed(if count then `{count} {change.keys}` else change.keys)
+		greed.keys.feed(if count then `{count} {change.keys}` else change.keys)
 	end,
 })
 

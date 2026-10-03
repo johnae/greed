@@ -1,17 +1,17 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local agent = require("@agent")
 
 local PLUGIN = {
 	["init.luau"] = [[
-local kern = require("@kern")
-kern.command({ name = "shout", doc = "Upper-case the buffer", run = function(ctx)
+local greed = require("@greed")
+greed.command({ name = "shout", doc = "Upper-case the buffer", run = function(ctx)
 	ctx.buffer:edit(function(e) e:replace(0, ctx.buffer:len(), string.upper(ctx.buffer:text())) end)
 end })
 return {}
 ]],
 	["test/shout.luau"] = [[
-local test = require("@kern/test")
+local test = require("@greed/test")
 test("shouts", function(t)
 	t:buffer("|hi")
 	t:run("shout")
@@ -33,7 +33,7 @@ end
 -- what it returned once it has.
 local function in_command(t: any, f: () -> string): () -> string?
 	local result: string? = nil
-	kern.command({
+	greed.command({
 		name = "test-extend",
 		run = function()
 			result = f()
@@ -52,7 +52,7 @@ test("a tried plugin is checked and the agent hears what failed", function(t)
 	end)()
 	assert(report and string.find(report, "tests: 1 passed, 0 failed", 1, true), report)
 	local broken = in_command(t, function()
-		return (agent.try("shout", { ["init.luau"] = 'require("@kern").nope()\nreturn {}\n' }))
+		return (agent.try("shout", { ["init.luau"] = 'require("@greed").nope()\nreturn {}\n' }))
 	end)()
 	assert(
 		broken
@@ -73,15 +73,15 @@ test("installing waits for the user, then loads the plugin", function(t)
 		return agent.install("shout")
 	end)
 	assert(answer() == nil, "waiting for the user")
-	assert(kern.view():buffer():kind() == "plugin-review", "the review has focus")
-	assert(string.find(kern.view():buffer():text(), "shout", 1, true) ~= nil)
+	assert(greed.view():buffer():kind() == "plugin-review", "the review has focus")
+	assert(string.find(greed.view():buffer():text(), "shout", 1, true) ~= nil)
 	t:keys("a")
 	assert(
 		answer()
 			== `the user installed shout in {dir}/plugins/shout; it's loaded and its commands are ready`,
 		answer()
 	)
-	assert(kern.fs.read(dir .. "/plugins/shout/init.luau") == PLUGIN["init.luau"])
+	assert(greed.fs.read(dir .. "/plugins/shout/init.luau") == PLUGIN["init.luau"])
 	t:buffer("|hey")
 	t:run("shout")
 	t:expect("HEY|")
@@ -97,7 +97,7 @@ test("a rejected plugin isn't installed", function(t)
 	end)
 	t:keys("r")
 	assert(answer() == "the user rejected shout", answer())
-	assert(kern.fs.stat(dir .. "/plugins/shout") == nil)
+	assert(greed.fs.stat(dir .. "/plugins/shout") == nil)
 end)
 
 test("closing the review some other way rejects the plugin", function(t)
@@ -108,9 +108,9 @@ test("closing the review some other way rejects the plugin", function(t)
 	local answer = in_command(t, function()
 		return agent.install("shout")
 	end)
-	kern.view():close()
+	greed.view():close()
 	assert(answer() == "the user rejected shout", answer())
-	assert(kern.fs.stat(dir .. "/plugins/shout") == nil)
+	assert(greed.fs.stat(dir .. "/plugins/shout") == nil)
 	local again = in_command(t, function()
 		return agent.install("shout")
 	end)
@@ -129,7 +129,7 @@ end)
 test("when the config can't be written, a plugin is installed in the data folder", function(t)
 	local dir = sandbox(t)
 	-- A file where the plugins folder would go, as good as a read-only config.
-	kern.fs.write(dir .. "/blocked", "")
+	greed.fs.write(dir .. "/blocked", "")
 	agent.dirs.plugins = dir .. "/blocked/plugins"
 	in_command(t, function()
 		return (agent.try("shout", PLUGIN))
@@ -139,5 +139,5 @@ test("when the config can't be written, a plugin is installed in the data folder
 	end)
 	t:keys("a")
 	assert(string.find(answer() or "", dir .. "/data/plugins/shout", 1, true), answer())
-	assert(kern.fs.read(dir .. "/data/plugins/shout/init.luau") == PLUGIN["init.luau"])
+	assert(greed.fs.read(dir .. "/data/plugins/shout/init.luau") == PLUGIN["init.luau"])
 end)

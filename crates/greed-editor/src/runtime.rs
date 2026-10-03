@@ -34,17 +34,17 @@ pub fn dir() -> io::Result<PathBuf> {
     unpack(&cache)
 }
 
-/// Kern's cache folder: `$XDG_CACHE_HOME/kern` or `~/.cache/kern`.
+/// Greed's cache folder: `$XDG_CACHE_HOME/greed` or `~/.cache/greed`.
 fn cache_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
-    Some(base.join("kern"))
+    Some(base.join("greed"))
 }
 
 /// Unpacks the built-in runtime into `cache` once per version of it, and
 /// returns its folder. It's written beside and renamed into place, so a
-/// second kern starting at the same time never sees half of it.
+/// second greed starting at the same time never sees half of it.
 fn unpack(cache: &Path) -> io::Result<PathBuf> {
     let dir = cache.join(format!("runtime-{}", embedded::HASH));
     if dir.is_dir() {
@@ -58,7 +58,7 @@ fn unpack(cache: &Path) -> io::Result<PathBuf> {
     });
     if let Err(err) = written.and_then(|()| std::fs::rename(&partial, &dir)) {
         let _ = std::fs::remove_dir_all(&partial);
-        // Another kern may have got there first.
+        // Another greed may have got there first.
         if !dir.is_dir() {
             return Err(err);
         }
@@ -72,10 +72,10 @@ mod tests {
 
     #[test]
     fn unpacks_the_built_in_runtime_once() {
-        let cache = std::env::temp_dir().join(format!("kern-runtime-test-{}", std::process::id()));
+        let cache = std::env::temp_dir().join(format!("greed-runtime-test-{}", std::process::id()));
         let dir = unpack(&cache).unwrap();
         assert!(dir.join("plugins/core/plugin.toml").is_file());
-        assert!(dir.join("types/kern/init.luau").is_file());
+        assert!(dir.join("types/greed/init.luau").is_file());
         let source =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core/init.luau");
         assert_eq!(

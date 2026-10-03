@@ -1,9 +1,9 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local multibuffer = require("@multibuffer")
 
-local function buffer_for(path: string): kern.Buffer?
-	for _, buffer in kern.buffers() do
+local function buffer_for(path: string): greed.Buffer?
+	for _, buffer in greed.buffers() do
 		if buffer:path() == path then
 			return buffer
 		end
@@ -13,14 +13,14 @@ end
 
 -- A multibuffer of lines 1-2 of a.txt and line 0 of b.txt, shown and
 -- focused, with the cursor on line `at`.
-local function setup(t: test.TestContext, at: number): (string, kern.Buffer)
+local function setup(t: test.TestContext, at: number): (string, greed.Buffer)
 	local dir = t:tempdir({ ["a.txt"] = "zero\none\ntwo\nthree\n", ["b.txt"] = "only" })
 	t:buffer("|x")
 	local buffer = multibuffer.open({
 		{ path = dir .. "/a.txt", from = 1, to = 2 },
 		{ path = dir .. "/b.txt", from = 0 },
 	}, { summary = "two files" })
-	local view = kern.view()
+	local view = greed.view()
 	view:show(buffer)
 	local pos = buffer:line_start(at)
 	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
@@ -40,7 +40,7 @@ end)
 test("typing in an excerpt edits its file as you go, even at the excerpt's edges", function(t)
 	local dir = setup(t, 1)
 	t:keys("i > space esc")
-	local a = buffer_for(dir .. "/a.txt") :: kern.Buffer
+	local a = buffer_for(dir .. "/a.txt") :: greed.Buffer
 	assert(a and a:text() == "zero\n> one\ntwo\nthree\n", a and a:text())
 	t:keys("j A ! esc")
 	assert(a:text() == "zero\n> one\ntwo!\nthree\n", a:text())
@@ -49,7 +49,7 @@ test("typing in an excerpt edits its file as you go, even at the excerpt's edges
 	assert(a:text() == "zero\n> one\ntwo!\nnew\nthree\n", a:text())
 	-- The file's last line has no line break; the multibuffer doesn't add one.
 	t:keys("j A ? esc")
-	local b = buffer_for(dir .. "/b.txt") :: kern.Buffer
+	local b = buffer_for(dir .. "/b.txt") :: greed.Buffer
 	assert(b:text() == "only?", b:text())
 	t:keys("u")
 	assert(
@@ -57,14 +57,14 @@ test("typing in an excerpt edits its file as you go, even at the excerpt's edges
 		"undo in the multibuffer undoes in the file: "
 			.. string.format("%q", b:text())
 			.. " mb "
-			.. string.format("%q", kern.view():buffer():text())
+			.. string.format("%q", greed.view():buffer():text())
 	)
 end)
 
 test("a file edited elsewhere shows the change in its excerpt", function(t)
 	local dir, buffer = setup(t, 1)
 	t:keys("i x esc u")
-	local a = buffer_for(dir .. "/a.txt") :: kern.Buffer
+	local a = buffer_for(dir .. "/a.txt") :: greed.Buffer
 	a:edit(function(e)
 		e:insert(0, "new first line\n")
 	end)
@@ -78,7 +78,7 @@ end)
 test("deleting an excerpt's lines deletes them from the file", function(t)
 	local dir = setup(t, 1)
 	t:keys("x x d")
-	local a = buffer_for(dir .. "/a.txt") :: kern.Buffer
+	local a = buffer_for(dir .. "/a.txt") :: greed.Buffer
 	assert(a:text() == "zero\nthree\n", a:text())
 end)
 
@@ -88,11 +88,11 @@ test("enter goes to the line in its file, and :w saves what changed", function(t
 	t:keys("i 2 esc")
 	t:run("save")
 	assert(
-		kern.fs.read(dir .. "/a.txt") == "zero\none\n2two\nthree\n",
-		(kern.fs.read(dir .. "/a.txt"))
+		greed.fs.read(dir .. "/a.txt") == "zero\none\n2two\nthree\n",
+		(greed.fs.read(dir .. "/a.txt"))
 	)
 	t:keys("enter")
-	assert(kern.view():buffer():path() == dir .. "/a.txt")
+	assert(greed.view():buffer():path() == dir .. "/a.txt")
 	t:expect("zero\none\n2|two\nthree\n")
 end)
 
@@ -117,7 +117,7 @@ test("a diff's changes show as excerpts, and space g r puts one back", function(
 	local path = dir .. "/a.txt"
 	t:buffer("|x")
 	local refreshed = 0
-	local excerpts = multibuffer.diff(path, "a.txt", base, kern.fs.read(path) :: string)
+	local excerpts = multibuffer.diff(path, "a.txt", base, greed.fs.read(path) :: string)
 	assert(#excerpts == 2, `two changes, not {#excerpts}`)
 	assert(excerpts[1].note == "+1 -1" and excerpts[2].note == "+0 -1", excerpts[2].note)
 	local buffer = multibuffer.open(excerpts, {
@@ -129,14 +129,14 @@ test("a diff's changes show as excerpts, and space g r puts one back", function(
 			refreshed += 1
 		end,
 	})
-	local view = kern.view()
+	local view = greed.view()
 	view:show(buffer)
 	local at = (string.find(buffer:text(), "TWO", 1, true) :: number) - 1
 	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	t:keys("space g r")
 	assert(
-		kern.load(path):text() == "one\ntwo\nthree\nfour\nfive\nsix\neight\n",
-		kern.load(path):text()
+		greed.load(path):text() == "one\ntwo\nthree\nfour\nfive\nsix\neight\n",
+		greed.load(path):text()
 	)
 	assert(refreshed == 1, "the view is shown again")
 	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })

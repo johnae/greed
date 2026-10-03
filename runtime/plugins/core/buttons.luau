@@ -2,7 +2,7 @@
 -- mark under the cursor, as clicking it does. Plugins make buttons with a
 -- mark's `action`, like a proposal's accept and reject or a todo's box.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
@@ -17,7 +17,7 @@ M.choose = function(buttons: { Button }, press: (button: Button) -> ())
 end
 
 --- The buttons over `pos` in `buffer`, in the order their marks start.
-function M.at(buffer: kern.Buffer, pos: number): { Button }
+function M.at(buffer: greed.Buffer, pos: number): { Button }
 	local buttons: { Button } = {}
 	for _, mark in buffer:marks_at(pos) do
 		local action = mark.action
@@ -32,7 +32,7 @@ function M.at(buffer: kern.Buffer, pos: number): { Button }
 	return buttons
 end
 
-kern.command({
+greed.command({
 	name = "press-button",
 	doc = "Run the button under the cursor, as clicking it does",
 	run = function(ctx)
@@ -45,7 +45,7 @@ kern.command({
 				ranges = { { anchor = button.from, head = button.from } },
 				primary = 1,
 			})
-			kern.run(button.action)
+			greed.run(button.action)
 		end
 		if #buttons == 1 then
 			press(buttons[1])

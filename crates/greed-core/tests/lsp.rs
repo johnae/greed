@@ -18,7 +18,7 @@ struct Setup {
 fn setup(text: &str) -> Setup {
     let (client_out, client_in, log) = support::start();
 
-    let path = std::env::temp_dir().join("kern-lsp-test/main.rs");
+    let path = std::env::temp_dir().join("greed-lsp-test/main.rs");
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, Some(path.clone()));
     let mut lsp = Lsp::default();
@@ -186,7 +186,7 @@ fn positions_count_in_the_servers_encoding() {
 #[test]
 fn project_roots_come_from_markers_or_the_files_directory() {
     use greed_core::lsp::project_root;
-    let dir = std::env::temp_dir().join(format!("kern-root-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-root-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("crate/src")).unwrap();
     std::fs::write(dir.join("crate/Cargo.toml"), "").unwrap();
 
@@ -214,7 +214,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
     let config = ServerConfig {
         language: "rust".into(),
         commands: vec![
-            command(&["no-such-server-kern"]),
+            command(&["no-such-server-greed"]),
             command(&["sh", "-c", "true"]),
         ],
         root_markers: Vec::new(),
@@ -229,7 +229,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
     let mut lsp = Lsp::default();
     lsp.configure(ServerConfig {
         language: "rust".into(),
-        commands: vec![command(&["no-such-server-kern"])],
+        commands: vec![command(&["no-such-server-greed"])],
         root_markers: Vec::new(),
     });
     assert!(

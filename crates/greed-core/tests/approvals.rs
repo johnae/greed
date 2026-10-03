@@ -10,7 +10,7 @@ struct Temp(PathBuf);
 impl Temp {
     fn new(label: &str) -> Temp {
         let dir =
-            std::env::temp_dir().join(format!("kern-approvals-{label}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("greed-approvals-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Temp(dir)
@@ -46,7 +46,7 @@ fn host(store: &Path, shipped: &Path) -> Host {
 }
 
 fn loaded(host: &Host) -> String {
-    host.eval("table.concat(require('@kern').plugin.list(), ',')")
+    host.eval("table.concat(require('@greed').plugin.list(), ',')")
         .unwrap()
 }
 
@@ -65,18 +65,18 @@ fn a_plugin_declaring_capabilities_waits_until_approved() {
     );
 
     let waiting = host
-        .eval("require('@kern').plugin.pending()[1].missing[1]")
+        .eval("require('@greed').plugin.pending()[1].missing[1]")
         .unwrap();
     assert_eq!(waiting, "proc");
     let approved = host
         .eval(&format!(
-            "require('@kern').plugin.approve({:?})",
+            "require('@greed').plugin.approve({:?})",
             runner.to_str().unwrap()
         ))
         .unwrap();
     assert_eq!(approved, "runner");
     assert_eq!(
-        host.eval("#require('@kern').plugin.pending()").unwrap(),
+        host.eval("#require('@greed').plugin.pending()").unwrap(),
         "0"
     );
 
@@ -117,7 +117,7 @@ fn shipped_plugins_need_no_approval_and_dependents_wait_with_the_plugin() {
     host.load_dirs(&[own, base.clone(), user]).unwrap();
     assert_eq!(loaded(&host), "own");
     host.eval(&format!(
-        "require('@kern').plugin.approve({:?})",
+        "require('@greed').plugin.approve({:?})",
         base.to_str().unwrap()
     ))
     .unwrap();
@@ -135,12 +135,12 @@ fn plugins_cant_write_the_approvals_file() {
     let host = host(&store, &temp.0.join("shipped"));
     let err = host
         .eval(&format!(
-            "require('@kern').fs.write({:?}, '{{}}')",
+            "require('@greed').fs.write({:?}, '{{}}')",
             store.to_str().unwrap()
         ))
         .unwrap_err();
     assert!(
-        err.to_string().contains("can't write Kern's approvals"),
+        err.to_string().contains("can't write Greed's approvals"),
         "{err}"
     );
     assert!(!store.exists());

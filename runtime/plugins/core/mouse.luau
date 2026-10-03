@@ -5,7 +5,7 @@
 -- take the mouse in buffers of its own kind with `claim`, as the terminal
 -- does to pass it on to the program in it.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local text = require("./text")
 
 local M = {}
@@ -13,7 +13,7 @@ local M = {}
 --- How many lines a turn of the wheel scrolls.
 M.lines = 3
 
-export type Handler = (event: kern.MouseEvent) -> boolean
+export type Handler = (event: greed.MouseEvent) -> boolean
 
 local claims: { [string]: Handler } = {}
 
@@ -23,13 +23,13 @@ function M.claim(kind: string, handler: Handler)
 	claims[kind] = handler
 end
 
-local function point(view: kern.View, pos: number, anchor: number?)
+local function point(view: greed.View, pos: number, anchor: number?)
 	view:set_selection({ ranges = { { anchor = anchor or pos, head = pos } }, primary = 1 })
 end
 
 --- Scrolls `view` by `lines` (up when negative), bringing the cursor onto
 --- the screen with it, since drawing would scroll back to the cursor.
-function M.scroll(view: kern.View, lines: number)
+function M.scroll(view: greed.View, lines: number)
 	local buffer = view:buffer()
 	local last = math.max(buffer:line_count() - 1, 0)
 	local top = math.clamp(view:scroll() + lines, 0, last)
@@ -56,8 +56,8 @@ M.double_click = 400
 -- The last left press, to count clicks: 1, 2 or 3.
 local last_click: { view: number, pos: number, at: number, count: number }? = nil
 
-local function clicks(view: kern.View, pos: number): number
-	local now = kern.now()
+local function clicks(view: greed.View, pos: number): number
+	local now = greed.now()
 	local last = last_click
 	local count = if last
 			and last.view == view:id()
@@ -72,7 +72,7 @@ end
 -- A left press with the cursor at `pos`: shift extends the selection to
 -- it, alt adds a cursor there, and a double or triple click selects the
 -- word or the line.
-local function press(view: kern.View, event: kern.MouseEvent, pos: number)
+local function press(view: greed.View, event: greed.MouseEvent, pos: number)
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local count = clicks(view, pos)
@@ -99,7 +99,7 @@ local function press(view: kern.View, event: kern.MouseEvent, pos: number)
 	end
 end
 
-kern.on("mouse", function(event: kern.MouseEvent)
+greed.on("mouse", function(event: greed.MouseEvent)
 	local view = event.view
 	if view == nil then
 		return
@@ -108,7 +108,7 @@ kern.on("mouse", function(event: kern.MouseEvent)
 	if event.kind == "press" and event.button == "left" and event.action and event.pos then
 		view:focus()
 		point(view, event.pos)
-		kern.run(event.action)
+		greed.run(event.action)
 		return
 	end
 	local claim = claims[view:buffer():kind()]
@@ -116,7 +116,7 @@ kern.on("mouse", function(event: kern.MouseEvent)
 		return
 	end
 	if event.kind == "press" and event.button == "left" then
-		if kern.view():id() ~= view:id() then
+		if greed.view():id() ~= view:id() then
 			view:focus()
 		end
 		if event.pos then

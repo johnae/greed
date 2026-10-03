@@ -4,9 +4,9 @@
 -- space-leader keys, search, paging, the jumplist and the language server
 -- keys from normal mode.
 --
--- Switch to it with `:style vim`, or put this in ~/.config/kern/init.luau:
+-- Switch to it with `:style vim`, or put this in ~/.config/greed/init.luau:
 --
---     require("@kern").option.set("editing-style", "vim")
+--     require("@greed").option.set("editing-style", "vim")
 --
 -- The file runs top to bottom as: text helpers; motions (one table, each
 -- saying how an operator takes its range) and marks; ranges and text
@@ -16,10 +16,10 @@
 -- commands (:s, :g, ranges) are the command line plugin's, and `.` is
 -- core's.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 
-type Buffer = kern.Buffer
+type Buffer = greed.Buffer
 
 -- How a motion's range is taken: up to but not including the target, up
 -- to and including it, or whole lines.
@@ -106,7 +106,7 @@ local function wanted_column(buffer: Buffer, pos: number): number
 end
 
 -- Any command other than j and k forgets the column.
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if event.name ~= "vim-motion-j" and event.name ~= "vim-motion-k" then
 		wanted = nil
 	end
@@ -114,14 +114,14 @@ end)
 
 -- The character the cursor is on. In visual mode the selection includes it,
 -- so going forward it's the selection's last character.
-local function cursor(ctx: kern.Context): number
+local function cursor(ctx: greed.Context): number
 	local selection = ctx.view:selection()
 	return core.motions.cursor(ctx.buffer, selection.ranges[selection.primary])
 end
 
 -- A visual selection from the character at `from` to the one at `to`, both
 -- included, whichever way round.
-local function visual(buffer: Buffer, from: number, to: number): kern.Selection
+local function visual(buffer: Buffer, from: number, to: number): greed.Selection
 	local range = if to >= from
 		then { anchor = from, head = buffer:next_char(to) }
 		else { anchor = buffer:next_char(from), head = to }
@@ -129,13 +129,13 @@ local function visual(buffer: Buffer, from: number, to: number): kern.Selection
 end
 
 -- The character a visual selection started on.
-local function visual_start(buffer: Buffer, range: kern.Range): number
+local function visual_start(buffer: Buffer, range: greed.Range): number
 	return if range.head > range.anchor or range.anchor == range.head
 		then range.anchor
 		else buffer:prev_char(range.anchor)
 end
 
-local function point(pos: number): kern.Selection
+local function point(pos: number): greed.Selection
 	return { ranges = { { anchor = pos, head = pos } }, primary = 1 }
 end
 
@@ -296,7 +296,7 @@ end
 -- f, t, F and T: the character to find comes next.
 local function find_char(forward: boolean, before: boolean): Motion
 	return function(buffer, pos, count)
-		local find = { forward = forward, before = before, char = kern.next_key() }
+		local find = { forward = forward, before = before, char = greed.next_key() }
 		last_find = find
 		return find_on_line(buffer, pos, count, find)
 	end
@@ -381,7 +381,7 @@ end
 -- for H and L.
 local function screen_line(where: "top" | "middle" | "bottom"): Motion
 	return function(buffer, _, count)
-		local first, last = kern.view():visible()
+		local first, last = greed.view():visible()
 		local top, bottom = buffer:line_of(first), buffer:line_of(math.max(first, last - 1))
 		local line = if where == "top"
 			then math.min(top + count - 1, bottom)
@@ -506,8 +506,8 @@ local function mark_place(buffer: Buffer, name: string): number?
 			return nil
 		end
 		if buffer:path() ~= mark.path then
-			kern.open(mark.path)
-			buffer = kern.view():buffer()
+			greed.open(mark.path)
+			buffer = greed.view():buffer()
 		end
 		return math.min(mark.pos, buffer:len())
 	end
@@ -522,14 +522,14 @@ end
 -- ' and `: to a mark's line, or to the mark itself.
 local function to_mark(exact: boolean): Motion
 	return function(buffer, _, _)
-		local name = kern.next_key()
+		local name = greed.next_key()
 		local pos = mark_place(buffer, name)
 		if pos == nil then
-			kern.echo(`no mark {name}`)
+			greed.echo(`no mark {name}`)
 			return nil, "exclusive"
 		end
 		-- An uppercase mark may have opened another file.
-		buffer = kern.view():buffer()
+		buffer = greed.view():buffer()
 		if exact then
 			return pos, "exclusive"
 		end
@@ -692,7 +692,7 @@ local function text_object(
 		return from, to, false
 	elseif key == "n" or key == "l" then
 		-- The next or last pair: c i n ( changes inside the next parens.
-		local open, close = core.objects.next_pair(buffer, pos, kern.next_key(), key == "l")
+		local open, close = core.objects.next_pair(buffer, pos, greed.next_key(), key == "l")
 		if open == nil or close == nil then
 			return nil, nil, false
 		end
@@ -729,9 +729,9 @@ end
 -- began, and whether it opened a line.
 local insert_repeat = { count = 1, start = 0, open = false }
 
-local function enter_insert(ctx: kern.Context, pos: number)
+local function enter_insert(ctx: greed.Context, pos: number)
 	ctx.view:set_selection(point(pos))
-	kern.mode.set("vim-insert")
+	greed.mode.set("vim-insert")
 	insert_repeat = { count = 1, start = pos, open = false }
 end
 
@@ -770,7 +770,7 @@ local CASE_OPERATORS: { [string]: (string) -> string } = {
 
 -- Runs core's `command` on the lines `from`..`to` touch, keeping the cursor
 -- on the same character (or the line's first, for indents).
-local function on_lines(ctx: kern.Context, command: string, from: number, to: number, op: string?)
+local function on_lines(ctx: greed.Context, command: string, from: number, to: number, op: string?)
 	local buffer = ctx.buffer
 	-- A linewise range at the end of the buffer starts with the break before it.
 	if from < to and buffer:char_at(from) == "\n" then
@@ -784,7 +784,7 @@ local function on_lines(ctx: kern.Context, command: string, from: number, to: nu
 		ranges = { { anchor = buffer:line_start(first), head = buffer:line_end(last) } },
 		primary = 1,
 	})
-	kern.run(command)
+	greed.run(command)
 	local grew = buffer:line_end(line) - buffer:line_start(line) - before
 	if command == "toggle-comment" then
 		at = math.clamp(at + grew, buffer:line_start(line), buffer:line_end(line))
@@ -818,7 +818,7 @@ local function store(op: string, taken: { text: string, linewise: boolean })
 	end
 	if name == nil or name == "+" or name == "*" then
 		register = taken
-		kern.clipboard.set(taken.text)
+		greed.clipboard.set(taken.text)
 		-- The numbered registers, as Vim keeps them: "0 the last yank, "1 to
 		-- "9 the last deletes of lines (older ones moving down), "- the last
 		-- smaller delete.
@@ -866,8 +866,8 @@ end
 
 -- Wraps `from`..`to` in the pair for the key typed next; whole lines wrap
 -- from their first non-blank to their end.
-local function surround(ctx: kern.Context, from: number, to: number, linewise: boolean)
-	local char = kern.next_key()
+local function surround(ctx: greed.Context, from: number, to: number, linewise: boolean)
+	local char = greed.next_key()
 	if utf8.len(char) ~= 1 then
 		return
 	end
@@ -888,7 +888,7 @@ local function surround(ctx: kern.Context, from: number, to: number, linewise: b
 end
 
 -- Applies operator `op` (one of "d", "c", "y", "ys" or LINE_OPERATORS) to `from`..`to`.
-local function apply(ctx: kern.Context, op: string, from: number, to: number, linewise: boolean)
+local function apply(ctx: greed.Context, op: string, from: number, to: number, linewise: boolean)
 	local buffer = ctx.buffer
 	if op == "ys" then
 		surround(ctx, from, to, linewise)
@@ -921,7 +921,7 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 		return
 	end
 	if op == "c" then
-		kern.history.start_group()
+		greed.history.start_group()
 		if linewise then
 			-- Changing lines keeps one empty line to type on.
 			local first = buffer:line_of(
@@ -974,25 +974,25 @@ end
 
 -- Reads digits as a count, then returns the key after them and the count.
 local function read_count(): (string, number?)
-	local key = kern.next_key()
+	local key = greed.next_key()
 	local count: number? = nil
 	while string.match(key, "^%d$") and (count or key ~= "0") do
 		count = (count or 0) * 10 + (tonumber(key) :: number)
-		key = kern.next_key()
+		key = greed.next_key()
 	end
 	return key, count
 end
 
 -- Runs operator `op` with the motion or object typed after it.
-local function operate(ctx: kern.Context, op: string)
+local function operate(ctx: greed.Context, op: string)
 	local key, inner_count = read_count()
 	local count = (ctx.count or 1) * (inner_count or 1)
 	local buffer, pos = ctx.buffer, cursor(ctx)
 	-- vim-surround's keys: ds( deletes a pair, cs"' changes one, and ys
 	-- takes a motion or object and then the pair to wrap it in.
 	if (op == "d" or op == "c") and key == "s" then
-		local char = kern.next_key()
-		local with = if op == "c" then kern.next_key() else nil
+		local char = greed.next_key()
+		local with = if op == "c" then greed.next_key() else nil
 		local open, close = core.objects.around(buffer, pos, PAIR_ALIASES[char] or char)
 		if open == nil or close == nil then
 			return
@@ -1021,14 +1021,14 @@ local function operate(ctx: kern.Context, op: string)
 		)
 	elseif key == "i" or key == "a" then
 		local found_from, found_to, object_linewise =
-			text_object(buffer, pos, kern.next_key(), key == "a")
+			text_object(buffer, pos, greed.next_key(), key == "a")
 		if found_from == nil or found_to == nil then
 			return
 		end
 		from, to, linewise = found_from, found_to, object_linewise
 	else
 		if key == "g" then
-			key = "g " .. kern.next_key()
+			key = "g " .. greed.next_key()
 		end
 		if key == "g n" then
 			local found_from, found_to = search_match(buffer, pos)
@@ -1076,15 +1076,15 @@ end
 
 -- Commands ----------------------------------------------------------------
 
-local function command(name: string, doc: string, run: (ctx: kern.Context) -> ())
-	kern.command({ name = "vim-" .. name, doc = doc, run = run })
+local function command(name: string, doc: string, run: (ctx: greed.Context) -> ())
+	greed.command({ name = "vim-" .. name, doc = doc, run = run })
 end
 
 -- The line V started on, which stays selected as other lines are added.
 local visual_line = 0
 
 -- Every line from `from` to `to`, whichever way round, as a selection.
-local function lines_selection(buffer: Buffer, from: number, to: number): kern.Selection
+local function lines_selection(buffer: Buffer, from: number, to: number): greed.Selection
 	local range = if to >= from
 		then { anchor = buffer:line_start(from), head = buffer:line_end(to) }
 		else { anchor = buffer:line_end(from), head = buffer:line_start(to) }
@@ -1099,11 +1099,11 @@ local block = { line = 0, column = 0, cursor = 0, to_end = false }
 
 -- The selection for the block from its corner to `block.cursor`, both
 -- columns included.
-local function block_selection(buffer: Buffer): kern.Selection
+local function block_selection(buffer: Buffer): greed.Selection
 	local line, column = buffer:line_of(block.cursor), column_of(buffer, block.cursor)
 	local top, bottom = math.min(block.line, line), math.max(block.line, line)
 	local left, right = math.min(block.column, column), math.max(block.column, column)
-	local ranges: { kern.Range } = {}
+	local ranges: { greed.Range } = {}
 	local primary = 1
 	for row = top, bottom do
 		local head = if block.to_end
@@ -1127,7 +1127,7 @@ for key, motion in motions do
 	command(name, "Vim motion " .. key, function(ctx)
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local mode = kern.mode.get()
+		local mode = greed.mode.get()
 		local from = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
 		local target = motion(ctx.buffer, from, ctx.count or (if COUNTLESS[key] then 0 else 1))
 		if target == nil then
@@ -1163,11 +1163,11 @@ end
 
 -- Operator `op` on the visual block, each line's piece on its own. What c
 -- types goes on every line.
-local function block_operate(ctx: kern.Context, op: string)
+local function block_operate(ctx: greed.Context, op: string)
 	local buffer = ctx.buffer
 	local ranges = ctx.view:selection().ranges
 	local top = ranges[1].anchor
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	local line_command = LINE_OPERATORS[op]
 	if line_command then
 		on_lines(ctx, line_command, top, ranges[#ranges].head, op)
@@ -1186,7 +1186,7 @@ local function block_operate(ctx: kern.Context, op: string)
 		end
 	end
 	if op == "c" then
-		kern.history.start_group()
+		greed.history.start_group()
 	end
 	buffer:edit(function(e)
 		for _, range in ranges do
@@ -1208,19 +1208,19 @@ local function block_operate(ctx: kern.Context, op: string)
 		removed += range.head - range.anchor
 	end
 	ctx.view:set_selection({ ranges = points, primary = 1 })
-	kern.mode.set("vim-insert")
+	greed.mode.set("vim-insert")
 end
 
 for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw", "=", "!", "zf" } do
 	command("operator-" .. op, "Vim operator " .. op .. ", followed by a motion", function(ctx)
-		local mode = kern.mode.get()
+		local mode = greed.mode.get()
 		if mode == "vim-visual-block" then
 			block_operate(ctx, op)
 			return
 		elseif mode == "vim-visual" or mode == "vim-visual-line" then
 			local range = ctx.view:selection().ranges[1]
 			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-			kern.mode.set("vim")
+			greed.mode.set("vim")
 			if mode == "vim-visual-line" then
 				apply(ctx, op, motion_range(ctx.buffer, from, to, "line"))
 			else
@@ -1259,7 +1259,7 @@ shorthand("substitute", "c", "l", "Change the character under the cursor")
 command("change-line", "Change the whole line", function(ctx)
 	local buffer, pos = ctx.buffer, cursor(ctx)
 	local line = buffer:line_of(pos)
-	kern.history.start_group()
+	greed.history.start_group()
 	local from, to = first_non_blank(buffer, line), buffer:line_end(line)
 	buffer:edit(function(e)
 		e:delete(from, to)
@@ -1270,7 +1270,7 @@ end)
 -- What the unnamed register holds: the last yank or delete, unless
 -- something newer was copied since, in another program or another style.
 local function unnamed(): { text: string, linewise: boolean }
-	local pieces = kern.clipboard.get()
+	local pieces = greed.clipboard.get()
 	local text = if pieces then table.concat(pieces, "\n") else nil
 	if text and text ~= register.text then
 		return { text = text, linewise = string.sub(text, -1) == "\n" }
@@ -1294,7 +1294,7 @@ local function to_paste(): { text: string, linewise: boolean }?
 	return unnamed()
 end
 
-local function paste(ctx: kern.Context, after: boolean)
+local function paste(ctx: greed.Context, after: boolean)
 	local from = to_paste()
 	if from == nil then
 		return
@@ -1348,8 +1348,8 @@ command("paste-before", "Paste before the cursor, or above the line", function(c
 end)
 
 -- Starts typing at `pos` as one undo step, typed the count's times over.
-local function start_insert(ctx: kern.Context, pos: number)
-	kern.history.start_group()
+local function start_insert(ctx: greed.Context, pos: number)
+	greed.history.start_group()
 	enter_insert(ctx, pos)
 	insert_repeat.count = ctx.count or 1
 end
@@ -1371,8 +1371,8 @@ command("insert-last", "Insert where insert mode was last left", function(ctx)
 	start_insert(ctx, mark_place(ctx.buffer, "^") or cursor(ctx))
 end)
 
-local function open_line(ctx: kern.Context, below: boolean)
-	kern.history.start_group()
+local function open_line(ctx: greed.Context, below: boolean)
+	greed.history.start_group()
 	core.indent.open(ctx.view, below)
 	enter_insert(ctx, cursor(ctx))
 	insert_repeat.count, insert_repeat.open = ctx.count or 1, true
@@ -1386,17 +1386,17 @@ end)
 
 command("insert-one", "Run one normal mode command, then go on typing", function(ctx)
 	local before = ctx.view:selection()
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	local keys: string?, count: number? = nil, nil
 	while true do
-		local key = kern.next_key()
+		local key = greed.next_key()
 		if keys == nil and string.match(key, "^%d$") and (count or key ~= "0") then
 			count = (count or 0) * 10 + (tonumber(key) :: number)
 		else
 			keys = if keys then keys .. " " .. key else key
-			local name, more = kern.keymap.resolve(keys :: string)
+			local name, more = greed.keymap.resolve(keys :: string)
 			if name then
-				kern.run(name, { count = count })
+				greed.run(name, { count = count })
 				break
 			elseif not more then
 				break
@@ -1405,11 +1405,11 @@ command("insert-one", "Run one normal mode command, then go on typing", function
 	end
 	-- Back to typing, unless the command went to another mode. A command that
 	-- didn't move leaves the cursor where typing was, even past the line's end.
-	if kern.mode.get() == "vim" then
+	if greed.mode.get() == "vim" then
 		local after = ctx.view:selection()
 		local moved = after.ranges[1].head ~= before.ranges[1].head
 			or after.ranges[1].anchor ~= before.ranges[1].anchor
-		kern.mode.set("vim-insert")
+		greed.mode.set("vim-insert")
 		ctx.view:set_selection(if moved then point(cursor(ctx)) else before)
 	end
 end)
@@ -1419,10 +1419,10 @@ end)
 local replaced: { { pos: number, text: string } } = {}
 
 command("replace-mode", "Type over the text", function(ctx)
-	kern.history.start_group()
+	greed.history.start_group()
 	replaced = {}
 	ctx.view:set_selection(point(cursor(ctx)))
-	kern.mode.set("vim-replace")
+	greed.mode.set("vim-replace")
 end)
 
 command("replace-typed", "Type over the character under the cursor", function(ctx)
@@ -1465,7 +1465,7 @@ local line_undo: LineNote? = nil
 -- Set while U changes the line, which isn't a change for it to note.
 local undoing_line = false
 
-local function cursor_line_note(view: kern.View): LineNote
+local function cursor_line_note(view: greed.View): LineNote
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local line = buffer:line_of(math.min(selection.ranges[selection.primary].head, buffer:len()))
@@ -1477,12 +1477,12 @@ local function cursor_line_note(view: kern.View): LineNote
 	}
 end
 
-kern.on("command.run", function()
-	before = cursor_line_note(kern.view())
+greed.on("command.run", function()
+	before = cursor_line_note(greed.view())
 end)
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
-	local view = kern.view()
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local view = greed.view()
 	if undoing_line or view:buffer():id() ~= event.buffer:id() then
 		return
 	end
@@ -1518,16 +1518,16 @@ local changes_made = 0
 -- How far back g; has gone in each buffer, by its id; 0 is past the newest.
 local changes_back: { [number]: number } = {}
 
-local function changes(buffer: Buffer): { kern.Mark }
+local function changes(buffer: Buffer): { greed.Mark }
 	local marks = buffer:decorations("vim-changes")
-	table.sort(marks, function(a: kern.Mark, b: kern.Mark)
+	table.sort(marks, function(a: greed.Mark, b: greed.Mark)
 		return (tonumber(a.style) :: number) < (tonumber(b.style) :: number)
 	end)
 	return marks
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
-	local view = kern.view()
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local view = greed.view()
 	local buffer = event.buffer
 	if view:buffer():id() ~= buffer:id() then
 		return
@@ -1562,7 +1562,7 @@ for _, newer in { false, true } do
 				+ (ctx.count or 1) * (if newer then -1 else 1)
 			local mark = marks[#marks - back + 1]
 			if back < 1 or mark == nil then
-				kern.echo(if newer then "at the newest change" else "at the oldest change")
+				greed.echo(if newer then "at the newest change" else "at the oldest change")
 				return
 			end
 			changes_back[buffer:id()] = back
@@ -1590,7 +1590,7 @@ local function repeat_insert(buffer: Buffer, pos: number): number
 end
 
 command("normal", "Back to normal mode", function(ctx)
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	local buffer = ctx.buffer
 	local pos = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
 	if mode == "vim-insert" or mode == "vim-replace" then
@@ -1604,20 +1604,20 @@ command("normal", "Back to normal mode", function(ctx)
 			pos = buffer:prev_char(pos)
 		end
 	end
-	kern.history.end_group()
-	kern.mode.set("vim")
+	greed.history.end_group()
+	greed.mode.set("vim")
 	ctx.view:set_selection(point(on_char(buffer, pos)))
 end)
 
 -- The last visual selection and its mode, for gv.
-local last_visual: { mode: string, selection: kern.Selection, block: typeof(block) }? = nil
+local last_visual: { mode: string, selection: greed.Selection, block: typeof(block) }? = nil
 
-kern.on("mode.changed", function(event: kern.ModeChanged)
+greed.on("mode.changed", function(event: greed.ModeChanged)
 	local visual_mode = "^vim%-visual"
 	if string.match(event.from, visual_mode) and not string.match(event.to, visual_mode) then
 		last_visual = {
 			mode = event.from,
-			selection = kern.view():selection(),
+			selection = greed.view():selection(),
 			block = table.clone(block),
 		}
 	end
@@ -1627,7 +1627,7 @@ command(
 	"command-line",
 	"Open the command line, with the selected lines (or the count's) as its range",
 	function(ctx)
-		local mode = kern.mode.get()
+		local mode = greed.mode.get()
 		local text = ""
 		if string.match(mode, "^vim%-visual") then
 			-- A block's lines, as one range for '<,'> to read.
@@ -1636,20 +1636,20 @@ command(
 				ranges = { { anchor = ranges[1].anchor, head = ranges[#ranges].head } },
 				primary = 1,
 			})
-			kern.mode.set("vim")
+			greed.mode.set("vim")
 			text = "'<,'>"
 		elseif ctx.count then
 			text = if ctx.count == 1 then "." else `.,.+{ctx.count - 1}`
 		end
-		kern.run("command-line", { args = { text } })
+		greed.run("command-line", { args = { text } })
 	end
 )
 
 command("visual-surround", "Wrap the selection in the pair typed next", function(ctx)
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	local range = ctx.view:selection().ranges[1]
 	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	surround(ctx, from, to, mode == "vim-visual-line")
 end)
 
@@ -1662,9 +1662,9 @@ for _, grow in { true, false } do
 			then "Select the syntax node around the cursor or selection, in visual mode"
 			else "Shrink the selection back, or to the first syntax node inside it",
 		function()
-			kern.run(if grow then "expand-selection" else "shrink-selection")
-			if kern.mode.get() == "vim" then
-				kern.mode.set("vim-visual")
+			greed.run(if grow then "expand-selection" else "shrink-selection")
+			if greed.mode.get() == "vim" then
+				greed.mode.set("vim-visual")
 			end
 		end
 	)
@@ -1681,20 +1681,20 @@ end)
 -- the word under the cursor, then adds its next match each time; c d y i a
 -- I A act on every selection, and esc goes back to one cursor.
 command("multi-next", "Select the word under the cursor, or add its next match", function(ctx)
-	if kern.mode.get() ~= "vim-multi" then
+	if greed.mode.get() ~= "vim-multi" then
 		local from, to = word_object(ctx.buffer, cursor(ctx), false)
 		ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
-		kern.run("search-selection")
-		kern.mode.set("vim-multi")
+		greed.run("search-selection")
+		greed.mode.set("vim-multi")
 		return
 	end
-	kern.run("search-next-add")
+	greed.run("search-next-add")
 end)
 
 command("multi-skip", "Drop this match and add the next one instead", function(ctx)
 	local skipped = ctx.view:selection()
 	local old = skipped.ranges[skipped.primary]
-	kern.run("search-next-add")
+	greed.run("search-next-add")
 	local selection = ctx.view:selection()
 	if #selection.ranges == #skipped.ranges then
 		return
@@ -1713,31 +1713,31 @@ end)
 
 command("multi-back", "Drop the match added last", function(ctx)
 	if #ctx.view:selection().ranges == 1 then
-		kern.run("vim-normal")
+		greed.run("vim-normal")
 		return
 	end
-	kern.run("remove-primary")
+	greed.run("remove-primary")
 end)
 
 -- Back to one cursor, at the primary selection's start.
-local function leave_multi(ctx: kern.Context)
+local function leave_multi(ctx: greed.Context)
 	local selection = ctx.view:selection()
 	local range = selection.ranges[selection.primary]
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	ctx.view:set_selection(point(on_char(ctx.buffer, math.min(range.anchor, range.head))))
 end
 
 command("multi-change", "Delete every selection and type in each place", function()
-	kern.history.start_group()
-	kern.run("delete")
-	kern.mode.set("vim-insert")
+	greed.history.start_group()
+	greed.run("delete")
+	greed.mode.set("vim-insert")
 end)
 command("multi-delete", "Delete every selection", function(ctx)
-	kern.run("delete")
+	greed.run("delete")
 	leave_multi(ctx)
 end)
 command("multi-copy", "Copy every selection", function(ctx)
-	kern.run("copy")
+	greed.run("copy")
 	leave_multi(ctx)
 end)
 
@@ -1753,9 +1753,9 @@ for _, at_end in { false, true } do
 					else math.min(range.anchor, range.head)
 				selection.ranges[i] = { anchor = pos, head = pos }
 			end
-			kern.history.start_group()
+			greed.history.start_group()
 			ctx.view:set_selection(selection)
-			kern.mode.set("vim-insert")
+			greed.mode.set("vim-insert")
 		end
 	)
 end
@@ -1777,17 +1777,17 @@ command("reselect", "Select the last visual selection again", function(ctx)
 	elseif last_visual.mode == "vim-visual-line" then
 		visual_line = ctx.buffer:line_of(ranges[1].anchor)
 	end
-	kern.mode.set(last_visual.mode)
+	greed.mode.set(last_visual.mode)
 	ctx.view:set_selection({ ranges = ranges, primary = last_visual.selection.primary })
 end)
 
 command("select-match", "Select the search match under the cursor, or the next one", function(ctx)
 	local from, to = search_match(ctx.buffer, cursor(ctx))
 	if from == nil or to == nil then
-		kern.echo("no match")
+		greed.echo("no match")
 		return
 	end
-	kern.mode.set("vim-visual")
+	greed.mode.set("vim-visual")
 	ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 end)
 
@@ -1798,7 +1798,7 @@ for _, down in { false, true } do
 		then "Subtract the count (or 1) from the number at or after the cursor"
 		else "Add the count (or 1) to the number at or after the cursor"
 	command(name, doc, function(ctx)
-		kern.run(name, { count = ctx.count })
+		greed.run(name, { count = ctx.count })
 		local range = ctx.view:selection().ranges[1]
 		local to = math.max(range.anchor, range.head)
 		if to > math.min(range.anchor, range.head) then
@@ -1808,14 +1808,14 @@ for _, down in { false, true } do
 end
 
 command("quit-unsaved", "Close without saving (ZQ)", function()
-	kern.run("quit", { force = true })
+	greed.run("quit", { force = true })
 end)
 
 command(
 	"mark",
 	"Set the mark typed next (a to z here, A to Z across files) at the cursor",
 	function(ctx)
-		local name = kern.next_key()
+		local name = greed.next_key()
 		if string.match(name, "^%a$") then
 			set_mark(ctx.buffer, name, cursor(ctx))
 		end
@@ -1825,7 +1825,7 @@ command(
 command("visual", "Select characters, starting here", function(ctx)
 	local at = cursor(ctx)
 	ctx.view:set_selection(visual(ctx.buffer, at, at))
-	kern.mode.set("vim-visual")
+	greed.mode.set("vim-visual")
 end)
 
 -- The register the last macro played from, for @@.
@@ -1836,7 +1836,7 @@ command("macro", "Record a macro into the register typed next, or stop recording
 		core.registers.toggle_recording("", ctx.keys)
 		return
 	end
-	local name = kern.next_key()
+	local name = greed.next_key()
 	if utf8.len(name) == 1 then
 		core.registers.toggle_recording(name)
 	end
@@ -1846,7 +1846,7 @@ command(
 	"play-macro",
 	"Play the macro in the register typed next; @@ plays the last one again",
 	function(ctx)
-		local name = kern.next_key()
+		local name = greed.next_key()
 		if name == "@" then
 			name = last_macro or ""
 		end
@@ -1863,12 +1863,12 @@ command("visual-block", "Select a block of columns across lines", function(ctx)
 	block.line, block.column, block.cursor = ctx.buffer:line_of(at), column_of(ctx.buffer, at), at
 	block.to_end = false
 	ctx.view:set_selection(block_selection(ctx.buffer))
-	kern.mode.set("vim-visual-block")
+	greed.mode.set("vim-visual-block")
 end)
 
 -- I and A: type at the start (or, `at_end`, the end) of each of the block's
 -- lines. I skips lines too short to reach the block, as Vim does.
-local function block_insert(at_end: boolean): (ctx: kern.Context) -> ()
+local function block_insert(at_end: boolean): (ctx: greed.Context) -> ()
 	return function(ctx)
 		local all = ctx.view:selection().ranges
 		local ranges = {}
@@ -1881,9 +1881,9 @@ local function block_insert(at_end: boolean): (ctx: kern.Context) -> ()
 		if #ranges == 0 then
 			ranges = { { anchor = all[1].anchor, head = all[1].anchor } }
 		end
-		kern.history.start_group()
+		greed.history.start_group()
 		ctx.view:set_selection({ ranges = ranges, primary = 1 })
-		kern.mode.set("vim-insert")
+		greed.mode.set("vim-insert")
 	end
 end
 
@@ -1891,7 +1891,7 @@ command("block-insert", "Type before the block on each of its lines", block_inse
 command("block-append", "Type after the block on each of its lines", block_insert(true))
 
 command("visual-swap", "Go to the other end of the selection", function(ctx)
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	local buffer = ctx.buffer
 	if mode == "vim-visual-block" then
 		local corner = at_column(buffer, block.line, block.column)
@@ -1911,14 +1911,14 @@ end)
 command("visual-line", "Select whole lines, starting with this one", function(ctx)
 	visual_line = ctx.buffer:line_of(cursor(ctx))
 	ctx.view:set_selection(lines_selection(ctx.buffer, visual_line, visual_line))
-	kern.mode.set("vim-visual-line")
+	greed.mode.set("vim-visual-line")
 end)
 
 -- In visual mode, i and a select a text object: v i w, v a (.
 for _, around in { false, true } do
 	local word = if around then "around" else "inside"
 	command(`visual-{word}`, `Select {word} the text object typed next`, function(ctx)
-		local from, to = text_object(ctx.buffer, cursor(ctx), kern.next_key(), around)
+		local from, to = text_object(ctx.buffer, cursor(ctx), greed.next_key(), around)
 		if from and to then
 			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 		end
@@ -1929,7 +1929,7 @@ command(
 	"replace-char",
 	"Replace the character under the cursor with the next one typed",
 	function(ctx)
-		local char = kern.next_key()
+		local char = greed.next_key()
 		if utf8.len(char) ~= 1 then
 			return
 		end
@@ -1976,11 +1976,11 @@ command(
 
 -- Joins `times` lines onto `line`, each with one space, or as they are
 -- with `raw` (gJ).
-local function join(ctx: kern.Context, line: number, times: number, raw: boolean?)
+local function join(ctx: greed.Context, line: number, times: number, raw: boolean?)
 	local buffer = ctx.buffer
 	local at = cursor(ctx)
 	-- One undo step however many lines it joins.
-	kern.history.start_group()
+	greed.history.start_group()
 	for _ = 1, times do
 		if line + 1 >= buffer:line_count() then
 			break
@@ -1994,7 +1994,7 @@ local function join(ctx: kern.Context, line: number, times: number, raw: boolean
 		end)
 		at = stop
 	end
-	kern.history.end_group()
+	greed.history.end_group()
 	ctx.view:set_selection(point(at))
 end
 
@@ -2011,7 +2011,7 @@ for _, raw in { false, true } do
 end
 
 -- The first and last line the selection touches.
-local function selected_lines(ctx: kern.Context): (number, number)
+local function selected_lines(ctx: greed.Context): (number, number)
 	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
 	local first, last = ranges[1], ranges[#ranges]
 	local from, to = math.min(first.anchor, first.head), math.max(last.anchor, last.head)
@@ -2020,18 +2020,18 @@ end
 
 command("visual-join", "Join the selected lines, with one space", function(ctx)
 	local first, last = selected_lines(ctx)
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	join(ctx, first, math.max(last - first, 1))
 end)
 
 command("visual-replace", "Replace every selected character with the next one typed", function(ctx)
-	local char = kern.next_key()
+	local char = greed.next_key()
 	if utf8.len(char) ~= 1 then
 		return
 	end
 	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
 	local top = math.min(ranges[1].anchor, ranges[1].head)
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	buffer:edit(function(e)
 		for _, range in ranges do
 			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
@@ -2049,7 +2049,7 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 	if from == nil then
 		return
 	end
-	local mode = kern.mode.get()
+	local mode = greed.mode.get()
 	local buffer = ctx.buffer
 	if mode == "vim-visual-block" then
 		-- The block goes first, then what's pasted goes where it started.
@@ -2057,7 +2057,7 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 	end
 	local range = ctx.view:selection().ranges[1]
 	local start, stop = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-	kern.mode.set("vim")
+	greed.mode.set("vim")
 	local lines = mode == "vim-visual-line"
 	local text = from.text
 	if lines then
@@ -2097,8 +2097,8 @@ for _, back in { false, true } do
 		function(ctx)
 			local from, to = word_object(ctx.buffer, cursor(ctx), false)
 			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
-			kern.run("search-selection")
-			kern.run(if back then "search-prev" else "search-next")
+			greed.run("search-selection")
+			greed.run(if back then "search-prev" else "search-next")
 			local range = ctx.view:selection().ranges[1]
 			ctx.view:set_selection(point(math.min(range.anchor, range.head)))
 		end
@@ -2137,11 +2137,11 @@ end
 -- Keys --------------------------------------------------------------------
 
 -- Panels like the file tree and help keep their keys.
-kern.keymap.inherit_kinds("vim", "normal")
+greed.keymap.inherit_kinds("vim", "normal")
 -- Keys other plugins put in normal mode that work the same here: the
 -- space-leader keys, search, and going to definitions and problems.
 -- Plugins loaded later get them too.
-kern.keymap.inherit("vim", "normal", {
+greed.keymap.inherit("vim", "normal", {
 	"space",
 	"/",
 	"?",
@@ -2167,9 +2167,9 @@ kern.keymap.inherit("vim", "normal", {
 	"tab",
 })
 -- Insert mode as everyone has it, except that esc comes back here.
-kern.keymap.inherit("vim-insert", "insert")
-kern.keymap.fallback("vim-insert", "insert-char")
-kern.mode.cursor("vim-insert", "bar")
+greed.keymap.inherit("vim-insert", "insert")
+greed.keymap.fallback("vim-insert", "insert-char")
+greed.mode.cursor("vim-insert", "bar")
 
 local keys: { [string]: string } = {
 	d = "vim-operator-d",
@@ -2291,9 +2291,9 @@ for key in motions do
 	keys[key] = "vim-motion-" .. string.gsub(key, " ", "")
 	visual[key] = keys[key]
 end
-kern.keymap.bind("vim", keys)
-kern.keymap.bind("vim-visual", visual)
-kern.keymap.bind("vim-insert", {
+greed.keymap.bind("vim", keys)
+greed.keymap.bind("vim-visual", visual)
+greed.keymap.bind("vim-insert", {
 	esc = "vim-normal",
 	["ctrl-o"] = "vim-insert-one",
 	["ctrl-t"] = "indent",
@@ -2301,7 +2301,7 @@ kern.keymap.bind("vim-insert", {
 	["ctrl-n"] = "completion-words",
 	["ctrl-p"] = "completion-words-back",
 })
-kern.keymap.bind("vim-multi", {
+greed.keymap.bind("vim-multi", {
 	["ctrl-n"] = "vim-multi-next",
 	["ctrl-x"] = "vim-multi-skip",
 	["ctrl-p"] = "vim-multi-back",
@@ -2316,21 +2316,21 @@ kern.keymap.bind("vim-multi", {
 	A = "vim-multi-append",
 	esc = "vim-normal",
 })
-kern.keymap.inherit("vim-replace", "vim-insert")
-kern.keymap.bind("vim-replace", { backspace = "vim-replace-back" })
-kern.keymap.fallback("vim-replace", "vim-replace-typed")
-kern.mode.cursor("vim-replace", "underline")
-kern.keymap.counts("vim")
-kern.keymap.counts("vim-visual")
-kern.keymap.inherit("vim-visual-line", "vim-visual")
-kern.keymap.counts("vim-visual-line")
-kern.keymap.inherit("vim-visual-block", "vim-visual")
-kern.keymap.bind("vim-visual-block", {
+greed.keymap.inherit("vim-replace", "vim-insert")
+greed.keymap.bind("vim-replace", { backspace = "vim-replace-back" })
+greed.keymap.fallback("vim-replace", "vim-replace-typed")
+greed.mode.cursor("vim-replace", "underline")
+greed.keymap.counts("vim")
+greed.keymap.counts("vim-visual")
+greed.keymap.inherit("vim-visual-line", "vim-visual")
+greed.keymap.counts("vim-visual-line")
+greed.keymap.inherit("vim-visual-block", "vim-visual")
+greed.keymap.bind("vim-visual-block", {
 	I = "vim-block-insert",
 	A = "vim-block-append",
 	["ctrl-v"] = "vim-normal",
 })
-kern.keymap.counts("vim-visual-block")
+greed.keymap.counts("vim-visual-block")
 
 core.style.define({
 	name = "vim",

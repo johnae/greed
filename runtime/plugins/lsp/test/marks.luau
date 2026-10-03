@@ -1,14 +1,14 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local marks = require("../marks")
 
-local function diagnostic(from: number, severity: number, message: string): kern.Diagnostic
+local function diagnostic(from: number, severity: number, message: string): greed.Diagnostic
 	return { from = from, to = from + 1, severity = severity, message = message }
 end
 
 test("each line with problems gets a sign and its worst message", function(t)
 	t:buffer("|let a = b;\nlet c = d;\nok")
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	local found = marks.diagnostic_marks(buffer, {
 		diagnostic(8, 2, "unused"),
 		diagnostic(4, 1, "not found\nmore detail"),
@@ -27,6 +27,6 @@ end)
 
 test("messages can be left out", function(t)
 	t:buffer("|let a = b;")
-	local found = marks.diagnostic_marks(kern.view():buffer(), { diagnostic(4, 1, "not found") }, false)
+	local found = marks.diagnostic_marks(greed.view():buffer(), { diagnostic(4, 1, "not found") }, false)
 	assert(#found == 1 and found[1].sign == "E", "just the sign")
 end)

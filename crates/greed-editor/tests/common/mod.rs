@@ -1,5 +1,5 @@
 //! A test world: folders standing in for a user's, so tests that run the
-//! real kern binary never see your editors, config or cache, or each other.
+//! real greed binary never see your editors, config or cache, or each other.
 
 #![allow(dead_code, reason = "each test file uses a different part")]
 
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-pub const KERN: &str = env!("CARGO_BIN_EXE_greed");
+pub const GREED: &str = env!("CARGO_BIN_EXE_greed");
 
 /// Folders standing in for a user's: where sessions live, the config, the
 /// cache, and Claude Code's.
@@ -22,9 +22,9 @@ impl World {
             eprintln!("script isn't installed; skipping (it comes with the devenv shell)");
             return None;
         }
-        let root = std::env::temp_dir().join(format!("kern-world-{label}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("greed-world-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for dir in ["run", "config/kern", "cache", "claude", "remote-home"] {
+        for dir in ["run", "config/greed", "cache", "claude", "remote-home"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
         Some(World { root })
@@ -54,21 +54,21 @@ impl World {
             .env_remove("GREED_NO_SESSION");
     }
 
-    /// `kern ARGS` without a terminal, e.g. `ls` or `ctl`.
-    pub fn kern(&self, args: &[&str]) -> Output {
-        let mut command = Command::new(KERN);
+    /// `greed ARGS` without a terminal, e.g. `ls` or `ctl`.
+    pub fn greed(&self, args: &[&str]) -> Output {
+        let mut command = Command::new(GREED);
         command.args(args).stdin(Stdio::null());
         self.env(&mut command);
         command.output().unwrap()
     }
 
     pub fn sessions(&self) -> String {
-        String::from_utf8(self.kern(&["ls"]).stdout).unwrap()
+        String::from_utf8(self.greed(&["ls"]).stdout).unwrap()
     }
 
     /// What `eval` of `code` returns in session `name`.
     pub fn eval(&self, name: &str, code: &str) -> String {
-        let mut command = Command::new(KERN);
+        let mut command = Command::new(GREED);
         command.args(["ctl", "eval", &format!("code={code}")]);
         self.env(&mut command);
         command.env("GREED_SESSION", name);
@@ -85,10 +85,10 @@ impl World {
         }
     }
 
-    /// Runs `kern ARGS` in a pseudo-terminal in `dir` with `env` added, does
+    /// Runs `greed ARGS` in a pseudo-terminal in `dir` with `env` added, does
     /// `steps` while it runs, and returns what it printed once it exits.
     pub fn terminal(&self, dir: &Path, args: &str, env: &[(&str, &str)], steps: &[Step]) -> String {
-        let line = format!("stty cols 90 rows 20; {KERN} {args}");
+        let line = format!("stty cols 90 rows 20; {GREED} {args}");
         let mut command = Command::new("script");
         command
             .args(["-qfec", &line, "/dev/null"])
@@ -117,7 +117,7 @@ impl World {
         while child.try_wait().unwrap().is_none() {
             if Instant::now() > deadline {
                 let _ = child.kill();
-                panic!("kern {args} didn't exit");
+                panic!("greed {args} didn't exit");
             }
             std::thread::sleep(Duration::from_millis(30));
         }
@@ -135,7 +135,7 @@ impl Drop for World {
             .lines()
             .filter_map(|l| l.split_whitespace().next())
         {
-            self.eval(name, "require('@kern').quit()");
+            self.eval(name, "require('@greed').quit()");
         }
         let _ = std::fs::remove_dir_all(&self.root);
     }

@@ -2,12 +2,12 @@
 -- all; Helix's view keys (z z, z t, z b, z j, z k, and Z to keep them going);
 -- and going to the top, middle or bottom line on the screen.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local motions = require("./motions")
 local text = require("./text")
 
 -- How many lines the view showed when it was last drawn.
-local function rows(view: kern.View): number
+local function rows(view: greed.View): number
 	local buffer = view:buffer()
 	local first, last = view:visible()
 	return buffer:line_of(last) - buffer:line_of(first) + 1
@@ -15,7 +15,7 @@ end
 
 -- Moves the view and every cursor `lines` down (up if negative), keeping
 -- their columns.
-local function scroll_by(ctx: kern.Context, lines: number)
+local function scroll_by(ctx: greed.Context, lines: number)
 	local view, buffer = ctx.view, ctx.buffer
 	local last = buffer:line_count() - 1
 	view:set_scroll(math.clamp(view:scroll() + lines, 0, last))
@@ -27,7 +27,7 @@ local function scroll_by(ctx: kern.Context, lines: number)
 end
 
 local function command(name: string, doc: string, lines: (rows: number) -> number)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -50,14 +50,14 @@ command("half-page-up", "Move half a screen up", function(n)
 end)
 
 -- The line the primary cursor is on.
-local function cursor_line(ctx: kern.Context): number
+local function cursor_line(ctx: greed.Context): number
 	local selection = ctx.view:selection()
 	return ctx.buffer:line_of(motions.cursor(ctx.buffer, selection.ranges[selection.primary]))
 end
 
 -- Scrolls so the cursor's line is `from_top` rows below the top of the view.
 local function align(name: string, doc: string, from_top: (rows: number) -> number)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -78,7 +78,7 @@ end)
 
 -- Scrolls the view `lines` down (up if negative) without moving the
 -- cursor, unless that would take it off the screen.
-local function scroll_view(ctx: kern.Context, lines: number)
+local function scroll_view(ctx: greed.Context, lines: number)
 	local view, buffer = ctx.view, ctx.buffer
 	local last = buffer:line_count() - 1
 	local top = math.clamp(view:scroll() + lines, 0, last)
@@ -96,7 +96,7 @@ local function scroll_view(ctx: kern.Context, lines: number)
 end
 
 for _, up in { false, true } do
-	kern.command({
+	greed.command({
 		name = if up then "scroll-up" else "scroll-down",
 		doc = if up then "Scroll the view a line up" else "Scroll the view a line down",
 		run = function(ctx)
@@ -108,7 +108,7 @@ end
 -- Puts the cursor on the line `at(top, rows)` of the view, at its first
 -- character that isn't a space.
 local function to_window(name: string, doc: string, at: (top: number, rows: number) -> number)
-	kern.command({
+	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
@@ -150,20 +150,20 @@ local VIEW_KEYS: { [string]: string } = {
 	["ctrl-u"] = "half-page-up",
 }
 
-kern.command({
+greed.command({
 	name = "view-mode",
 	doc = "Keys for the view until esc: center, top, bottom, scroll",
 	run = function()
-		kern.mode.set("view")
-		kern.echo("z c center  t top  b bottom  j k scroll  esc")
+		greed.mode.set("view")
+		greed.echo("z c center  t top  b bottom  j k scroll  esc")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "view-mode-leave",
 	doc = "Back from the view mode",
 	run = function()
-		kern.mode.set("normal")
+		greed.mode.set("normal")
 	end,
 })
 
@@ -172,9 +172,9 @@ for key, command in VIEW_KEYS do
 	M.keys[`z {key}`] = command
 end
 M.keys.Z = "view-mode"
-kern.keymap.bind("view", VIEW_KEYS)
-kern.keymap.bind("view", { esc = "view-mode-leave" })
-kern.keymap.isolate("view")
-kern.keymap.fallback("view", "view-mode-leave")
+greed.keymap.bind("view", VIEW_KEYS)
+greed.keymap.bind("view", { esc = "view-mode-leave" })
+greed.keymap.isolate("view")
+greed.keymap.fallback("view", "view-mode-leave")
 
 return M

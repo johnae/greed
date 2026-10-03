@@ -1,7 +1,7 @@
 //! Requests from the session socket, for plugins to answer. Each one is a
 //! `control.request` event with an `id`, a `method` and `params`; a handler
-//! answers it with `kern.control.reply(id, result)` or
-//! `kern.control.reply(id, nil, message)`. It can wait first, so a request
+//! answers it with `greed.control.reply(id, result)` or
+//! `greed.control.reply(id, nil, message)`. It can wait first, so a request
 //! can take as long as it needs, e.g. for the user to review an edit.
 
 use std::path::PathBuf;

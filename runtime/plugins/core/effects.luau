@@ -3,11 +3,11 @@
 -- They take their colors from the theme and only work with "#rrggbb" ones.
 -- They are off unless you turn them on:
 --
---     require("@kern").option.set("effects", true)
+--     require("@greed").option.set("effects", true)
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "effects",
 	doc = "Small animations, like a wave of light through the status line when you switch files",
 	default = false,
@@ -17,7 +17,7 @@ local M = {}
 
 --- Whether effects are on.
 function M.enabled(): boolean
-	return kern.option.get("effects") == true
+	return greed.option.get("effects") == true
 end
 
 --- The red, green and blue of a "#rrggbb" color, or nil for another kind.

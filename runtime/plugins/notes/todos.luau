@@ -2,7 +2,7 @@
 -- The agenda lists the open ones from every note, soonest due first;
 -- capture adds one to the inbox note from anywhere.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local picker = require("@picker")
 local prompt = require("@core").prompt
 local notes = require("./notes")
@@ -28,7 +28,7 @@ end
 --- Every todo in the notes, open ones only unless `all`, soonest due first
 --- (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
-	local found = kern.fs.grep("^\\s*[-*] \\[[ xX]\\] ", notes.folder()) or {}
+	local found = greed.fs.grep("^\\s*[-*] \\[[ xX]\\] ", notes.folder()) or {}
 	local out: { Todo } = {}
 	for _, line in found do
 		local done, text = M.parse(line.text)
@@ -64,13 +64,13 @@ function M.add(text: string, name: string?, due: string?)
 end
 
 local function open_at(name: string, line: number)
-	kern.open(notes.path(name))
-	local view = kern.view()
+	greed.open(notes.path(name))
+	local view = greed.view()
 	local at = view:buffer():line_start(math.min(line, view:buffer():line_count() - 1))
 	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 end
 
-kern.command({
+greed.command({
 	name = "todo-toggle",
 	doc = "Tick the todo on each selected line, or untick it; a plain line becomes a todo",
 	run = function(ctx)
@@ -96,7 +96,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "notes-agenda",
 	doc = "Pick from the open todos in every note, soonest due first",
 	run = function()
@@ -106,7 +106,7 @@ kern.command({
 			table.insert(items, { label = `{due}{todo.text}  ({todo.note})`, value = todo })
 		end
 		if #items == 0 then
-			kern.echo("nothing to do")
+			greed.echo("nothing to do")
 			return
 		end
 		picker.pick("Agenda", items, function(item)
@@ -116,7 +116,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "notes-capture",
 	doc = "Add a todo to the inbox note, from wherever you are",
 	run = function()
@@ -125,27 +125,27 @@ kern.command({
 			on_submit = function(text)
 				if string.match(text, "%S") then
 					M.add(text)
-					kern.echo("added to the inbox")
+					greed.echo("added to the inbox")
 				end
 			end,
 		})
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "notes-daily",
 	doc = "Open today's note, making it if there isn't one",
 	run = function()
 		local today = notes.today()
 		local path = notes.path(`daily/{today}`)
-		if kern.fs.stat(path) == nil then
-			kern.fs.write(path, `# {today}\n\n`)
+		if greed.fs.stat(path) == nil then
+			greed.fs.write(path, `# {today}\n\n`)
 		end
-		kern.open(path)
+		greed.open(path)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "notes-find",
 	doc = "Open a note by name",
 	run = function()
@@ -154,20 +154,20 @@ kern.command({
 			table.insert(items, { label = name, value = name })
 		end
 		picker.pick("Notes", items, function(item)
-			kern.open(notes.path(item.value))
+			greed.open(notes.path(item.value))
 		end, {
 			preview = function(item)
 				return { text = notes.read(item.value) or "", language = "markdown" }
 			end,
 			-- A name that isn't a note yet makes one.
 			fallback = function(query)
-				kern.open(notes.path(query))
+				greed.open(notes.path(query))
 			end,
 		})
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "notes-search",
 	doc = "Search every note as you type",
 	run = function()
@@ -176,7 +176,7 @@ kern.command({
 		end, {
 			source = function(query)
 				local items = {}
-				for _, line in kern.fs.grep(query, notes.folder()) or {} do
+				for _, line in greed.fs.grep(query, notes.folder()) or {} do
 					local note = notes.name(`{notes.folder()}/{line.path}`)
 					table.insert(items, {
 						label = `{note}:{line.line + 1}: {line.text}`,

@@ -2,13 +2,13 @@
 -- act on the lines the selection touches, which a range before them
 -- (`:%s/a/b/g`, `:5,10d`) sets.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 
 local M = {}
 
 -- The first and last line the primary selection touches.
-function M.selected_lines(view: kern.View): (number, number)
+function M.selected_lines(view: greed.View): (number, number)
 	local buffer, selection = view:buffer(), view:selection()
 	local range = selection.ranges[selection.primary]
 	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
@@ -17,7 +17,7 @@ end
 
 -- Lines `first` to `last` and the line break after them (or before them,
 -- at the end of the buffer), as a byte range.
-local function whole_lines(buffer: kern.Buffer, first: number, last: number): (number, number)
+local function whole_lines(buffer: greed.Buffer, first: number, last: number): (number, number)
 	local from, to = buffer:line_start(first), buffer:line_end(last)
 	if to < buffer:len() then
 		to += 1
@@ -28,12 +28,12 @@ local function whole_lines(buffer: kern.Buffer, first: number, last: number): (n
 end
 
 -- The text of lines `first` to `last`, without the last line break.
-local function lines_text(buffer: kern.Buffer, first: number, last: number): string
+local function lines_text(buffer: greed.Buffer, first: number, last: number): string
 	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
 end
 
 -- Puts the cursor on the first non-blank of `line`.
-local function go_to_line(view: kern.View, line: number)
+local function go_to_line(view: greed.View, line: number)
 	local buffer = view:buffer()
 	local start = buffer:line_start(line)
 	local text = buffer:slice(start, buffer:line_end(line))
@@ -47,7 +47,7 @@ M.go_to_line = go_to_line
 -- tab, and a backslash before anything else takes it as is.
 local function expand(
 	replacement: string,
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	groups: { { from: number, to: number } | false }
 ): string
 	local out = {}
@@ -77,7 +77,7 @@ local function expand(
 	return table.concat(out)
 end
 
-kern.command({
+greed.command({
 	name = "substitute",
 	doc = "Replace a regex with text on the selected lines (:s/regex/text/flags)",
 	args = { { name = "regex" }, { name = "replacement" }, { name = "flags" } },
@@ -128,7 +128,7 @@ kern.command({
 			error(`pattern not found: {pattern}`, 0)
 		end
 		if string.find(flags, "n", 1, true) then
-			kern.echo(`{#edits} matches on {changed_lines} lines`)
+			greed.echo(`{#edits} matches on {changed_lines} lines`)
 			return
 		end
 		buffer:edit(function(e)
@@ -143,19 +143,19 @@ kern.command({
 		end
 		go_to_line(ctx.view, math.min(last_changed, buffer:line_count() - 1))
 		if changed_lines > 2 then
-			kern.echo(`{#edits} substitutions on {changed_lines} lines`)
+			greed.echo(`{#edits} substitutions on {changed_lines} lines`)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "delete-lines",
 	doc = "Delete the selected lines, copying them (:d)",
 	run = function(ctx)
 		local buffer = ctx.buffer
 		local first, last = M.selected_lines(ctx.view)
 		local from, to = whole_lines(buffer, first, last)
-		kern.clipboard.set(lines_text(buffer, first, last) .. "\n")
+		greed.clipboard.set(lines_text(buffer, first, last) .. "\n")
 		buffer:edit(function(e)
 			e:delete(from, to)
 		end)
@@ -163,19 +163,19 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "yank-lines",
 	doc = "Copy the selected lines (:y)",
 	run = function(ctx)
 		local first, last = M.selected_lines(ctx.view)
-		kern.clipboard.set(lines_text(ctx.buffer, first, last) .. "\n")
+		greed.clipboard.set(lines_text(ctx.buffer, first, last) .. "\n")
 	end,
 })
 
 -- The text of lines `first` to `last` put below line `after` (-1 for the
 -- top), as an insert position and text.
 local function lines_below(
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	first: number,
 	last: number,
 	after: number
@@ -188,7 +188,7 @@ local function lines_below(
 end
 
 -- The line number argument of :m and :t, 0-based, -1 for "0" (the top).
-local function target_line(ctx: kern.Context): number
+local function target_line(ctx: greed.Context): number
 	local arg = ctx.args[1] or ""
 	if arg == "$" then
 		return ctx.buffer:line_count() - 1
@@ -202,7 +202,7 @@ local function target_line(ctx: kern.Context): number
 	return math.clamp(n - 1, -1, ctx.buffer:line_count() - 1)
 end
 
-kern.command({
+greed.command({
 	name = "copy-lines",
 	doc = "Copy the selected lines below a line, 0 for the top (:t)",
 	args = { { name = "line" } },
@@ -218,7 +218,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "move-lines",
 	doc = "Move the selected lines below a line, 0 for the top (:m)",
 	args = { { name = "line" } },
@@ -248,7 +248,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "normal",
 	doc = "Type keys in normal mode on each selected line (:norm)",
 	args = { { name = "keys" } },
@@ -264,17 +264,17 @@ kern.command({
 			table.insert(sequence, if char == " " then "space" else char)
 		end
 		local typed = table.concat(sequence, " ")
-		local mode = kern.mode.get()
+		local mode = greed.mode.get()
 		local view, buffer = ctx.view, ctx.buffer
 		local first, last = M.selected_lines(view)
 		-- Marks keep each line's place as earlier lines change.
-		local marks: { kern.Mark } = {}
+		local marks: { greed.Mark } = {}
 		for line = first, last do
 			local start = buffer:line_start(line)
 			table.insert(marks, { from = start, to = start, style = tostring(line) })
 		end
 		buffer:decorate("cmdline-normal", marks)
-		kern.history.start_group()
+		greed.history.start_group()
 		for line = first, last do
 			for _, mark in buffer:decorations("cmdline-normal") do
 				if mark.style == tostring(line) then
@@ -285,13 +285,13 @@ kern.command({
 					})
 				end
 			end
-			kern.keys.feed(typed)
+			greed.keys.feed(typed)
 			-- A command left unfinished, like insert mode, ends with the line.
-			if kern.mode.get() ~= mode then
-				kern.keys.feed("esc")
+			if greed.mode.get() ~= mode then
+				greed.keys.feed("esc")
 			end
 		end
-		kern.history.end_group()
+		greed.history.end_group()
 		buffer:decorate("cmdline-normal", {})
 	end,
 })

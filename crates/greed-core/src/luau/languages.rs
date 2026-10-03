@@ -1,4 +1,4 @@
-//! What plugins need to set languages up: file types, the grammars Kern has,
+//! What plugins need to set languages up: file types, the grammars Greed has,
 //! and finding programs like language servers.
 
 use std::path::Path;
@@ -9,8 +9,8 @@ use super::{state, state_mut};
 
 type LuaResult<T> = mlua::Result<T>;
 
-pub(super) fn register(lua: &Lua, kern: &Table) -> LuaResult<()> {
-    kern.set(
+pub(super) fn register(lua: &Lua, greed: &Table) -> LuaResult<()> {
+    greed.set(
         "language_of",
         lua.create_function(|lua, path: String| {
             Ok(state(lua)
@@ -20,7 +20,7 @@ pub(super) fn register(lua: &Lua, kern: &Table) -> LuaResult<()> {
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "filetype",
         lua.create_function(|lua, (language, spec): (String, Table)| {
             let list = |key: &str| -> LuaResult<Vec<String>> {
@@ -34,12 +34,12 @@ pub(super) fn register(lua: &Lua, kern: &Table) -> LuaResult<()> {
         })?,
     )?;
 
-    kern.set(
+    greed.set(
         "grammars",
         lua.create_function(|lua, ()| Ok(state(lua).syntax.names()))?,
     )?;
 
-    kern.set(
+    greed.set(
         "which",
         lua.create_function(|_, program: String| {
             Ok(crate::lsp::which(&program).map(|p| p.to_string_lossy().into_owned()))

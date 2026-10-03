@@ -14,10 +14,10 @@
 -- symbols (look.luau), and each note lists the notes linking to it at its
 -- end.
 --
---     local kern = require("@kern")
---     kern.option.set("notes-folder", "~/Documents/notes")
+--     local greed = require("@greed")
+--     greed.option.set("notes-folder", "~/Documents/notes")
 
-local kern = require("@kern")
+local greed = require("@greed")
 local notes = require("@self/notes")
 require("@self/links")
 require("@self/todos")
@@ -25,7 +25,7 @@ require("@self/folds")
 require("@self/tools")
 require("@self/look")
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space n d"] = "notes-daily",
 	["space n c"] = "notes-capture",
 	["space n a"] = "notes-agenda",

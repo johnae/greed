@@ -24,7 +24,7 @@
 --
 -- A command then uses `args = { { name = "branch", complete = "branch" } }`.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local parse = require("@self/parse")
 local complete = require("@self/complete")
 local ex = require("@self/ex")
@@ -50,7 +50,7 @@ local function first_words(): { complete.Candidate }
 		{ text = "=", doc = "Show the value of a Luau expression" },
 	}
 	local docs = {}
-	for _, command in kern.commands() do
+	for _, command in greed.commands() do
 		docs[command.name] = command.doc
 		table.insert(items, { text = command.name, doc = command.doc })
 	end
@@ -61,8 +61,8 @@ local function first_words(): { complete.Candidate }
 end
 
 type Open = {
-	buffer: kern.Buffer,
-	view: kern.View,
+	buffer: greed.Buffer,
+	view: greed.View,
 	-- The mode to go back to when the command line closes.
 	mode: string,
 	-- The text after ":", as last seen.
@@ -96,7 +96,7 @@ local function render(o: Open, to_end: boolean?)
 	local start = prompt_start(o)
 	local column = o.view:selection().ranges[1].head - start
 	local lines = {}
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	local from = 0
 	for i, candidate in o.candidates do
 		if i > SHOWN then
@@ -108,7 +108,7 @@ local function render(o: Open, to_end: boolean?)
 			table.insert(marks, { from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" })
 			line ..= candidate.doc
 		end
-		menu.mark_row(marks, from, line, i == o.current, kern.fuzzy_positions(o.word, candidate.text), 1)
+		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text), 1)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -132,7 +132,7 @@ local function close(running: boolean?)
 		local view, mode, previewed = open.view, open.mode, open.previewed
 		open = nil
 		view:close()
-		kern.mode.set(mode)
+		greed.mode.set(mode)
 		if previewed and not running then
 			previewed(nil)
 		end
@@ -152,7 +152,7 @@ local function set_text(o: Open, text: string)
 	render(o, true)
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local o = open
 	if o == nil or event.buffer:id() ~= o.buffer:id() then
 		return
@@ -217,12 +217,12 @@ local execute: (text: string, lines: { first: number, last: number }?) -> ()
 -- :g/regex/command runs `command` on each line from `first` to `last` that
 -- matches (or, `inverted`, doesn't); with no command it selects those lines.
 local function global(pattern: string, command: string, inverted: boolean, first: number, last: number)
-	local view = kern.view()
+	local view = greed.view()
 	local buffer = view:buffer()
 	local regex = core.search.smart_case(if pattern == "" then core.search.last() or "" else pattern)
 	-- Marks over each line keep its place as commands change the lines
 	-- around it; one that ends up empty was deleted, unless it was empty.
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	local lengths: { [string]: number } = {}
 	for line = first, last do
 		local from, to = buffer:line_start(line), buffer:line_end(line)
@@ -250,7 +250,7 @@ local function global(pattern: string, command: string, inverted: boolean, first
 		return
 	end
 	buffer:decorate("cmdline-global", marks)
-	kern.history.start_group()
+	greed.history.start_group()
 	for i = 1, #marks do
 		for _, mark in buffer:decorations("cmdline-global") do
 			if mark.style == tostring(i) and (mark.to > mark.from or lengths[mark.style] == 0) then
@@ -259,7 +259,7 @@ local function global(pattern: string, command: string, inverted: boolean, first
 			end
 		end
 	end
-	kern.history.end_group()
+	greed.history.end_group()
 	buffer:decorate("cmdline-global", {})
 end
 
@@ -270,16 +270,16 @@ function execute(text: string, lines: { first: number, last: number }?)
 	local expression = string.match(text, "^%s*=%s*(.*)$")
 	local code = string.match(text, "^%s*lua%s+(.*)$")
 	if expression or code then
-		local ok, result = kern.eval((expression or code) :: string)
+		local ok, result = greed.eval((expression or code) :: string)
 		if not ok then
 			error(result, 0)
 		end
 		if result ~= "" or expression then
-			kern.echo(if result == "" then "nil" else result)
+			greed.echo(if result == "" then "nil" else result)
 		end
 		return
 	end
-	local view = kern.view()
+	local view = greed.view()
 	local buffer = view:buffer()
 	local first, last = nil, nil
 	if lines then
@@ -309,7 +309,7 @@ function execute(text: string, lines: { first: number, last: number }?)
 		global(args[1], args[2], inverted, first or 0, last or buffer:line_count() - 1)
 		return
 	elseif special then
-		kern.run(special, { args = args })
+		greed.run(special, { args = args })
 		return
 	end
 	local parsed = parse.parse(text)
@@ -317,7 +317,7 @@ function execute(text: string, lines: { first: number, last: number }?)
 		return
 	end
 	local names: { [string]: boolean } = {}
-	for _, command in kern.commands() do
+	for _, command in greed.commands() do
 		names[command.name] = true
 	end
 	local name, args = resolve(parsed.name), parsed.args
@@ -330,7 +330,7 @@ function execute(text: string, lines: { first: number, last: number }?)
 	if not names[name] then
 		error("no command called " .. parsed.name, 0)
 	end
-	kern.run(name, { args = args, force = parsed.force })
+	greed.run(name, { args = args, force = parsed.force })
 end
 
 local function remember(text: string)
@@ -343,19 +343,19 @@ local function remember(text: string)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "command-line",
 	doc = "Type a command to run, with completion, starting with the text given",
 	args = { { name = "text" } },
 	run = function(ctx)
 		close()
-		local buffer = kern.create_buffer("cmdline", ":")
-		local view = kern.float(buffer, { width = "100%", height = 3, anchor = "bottom" })
+		local buffer = greed.create_buffer("cmdline", ":")
+		local view = greed.float(buffer, { width = "100%", height = 3, anchor = "bottom" })
 		view:set_selection({ ranges = { { anchor = 1, head = 1 } }, primary = 1 })
 		local o: Open = {
 			buffer = buffer,
 			view = view,
-			mode = kern.mode.get(),
+			mode = greed.mode.get(),
 			text = "",
 			candidates = {},
 			word = "",
@@ -363,12 +363,12 @@ kern.command({
 			history_index = 0,
 		}
 		open = o
-		kern.mode.set("insert")
+		greed.mode.set("insert")
 		set_text(o, ctx.args[1] or "")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "command-line-run",
 	doc = "Run what's typed on the command line",
 	run = function()
@@ -383,7 +383,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "command-line-close",
 	doc = "Close the command line without running anything",
 	run = function()
@@ -409,7 +409,7 @@ local function cycle(delta: number)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "command-line-next",
 	doc = "Fill in the next match on the command line",
 	run = function()
@@ -417,7 +417,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "command-line-prev",
 	doc = "Fill in the previous match on the command line",
 	run = function()
@@ -452,7 +452,7 @@ local function step(delta: number)
 	end
 end
 
-kern.command({
+greed.command({
 	name = "command-line-older",
 	doc = "Show the previous command line that starts with what's typed",
 	run = function()
@@ -460,7 +460,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "command-line-newer",
 	doc = "Show the next command line that starts with what's typed",
 	run = function()
@@ -476,7 +476,7 @@ complete.register("editing-style", function()
 	return items
 end)
 
-kern.command({
+greed.command({
 	name = "set",
 	doc = "Set an option",
 	args = {
@@ -490,11 +490,11 @@ kern.command({
 		if name == nil or value == "" then
 			error("set needs an option and a value, e.g. :set tab-width 2", 0)
 		end
-		local parsed: kern.OptionValue = if value == "true"
+		local parsed: greed.OptionValue = if value == "true"
 			then true
 			elseif value == "false" then false
 			else tonumber(value) or value
-		kern.option.set(name, parsed)
+		greed.option.set(name, parsed)
 	end,
 })
 
@@ -559,7 +559,7 @@ for name, command in defaults do
 end
 
 core.style.kind_modes.cmdline = "insert"
-kern.keymap.bind({ mode = "insert", kind = "cmdline" }, {
+greed.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 	enter = "command-line-run",
 	esc = "command-line-close",
 	["ctrl-c"] = "command-line-close",
@@ -571,12 +571,12 @@ kern.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 	["ctrl-n"] = "command-line-newer",
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	[":"] = "command-line",
 })
 
 -- In edit mode ":" types, so the command line is on alt-x there.
-kern.keymap.bind("edit", {
+greed.keymap.bind("edit", {
 	["alt-x"] = "command-line",
 })
 

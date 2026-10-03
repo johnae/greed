@@ -1,8 +1,8 @@
--- Kern's default editing model: Helix-style modal editing, written against
+-- Greed's default editing model: Helix-style modal editing, written against
 -- the same API any plugin uses. Read this to see how commands and keymaps
 -- fit together; copy any part of it into your own config to change it.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local text = require("@self/text")
 local motions = require("@self/motions")
@@ -38,7 +38,7 @@ local again = require("@self/again")
 local words = require("@self/words")
 local floats = require("@self/floats")
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	enter = "press-button",
 	h = "move-left",
 	j = "move-down",
@@ -149,7 +149,7 @@ kern.keymap.bind("normal", {
 	["[ space"] = "add-newline-above",
 })
 
-kern.keymap.bind("insert", {
+greed.keymap.bind("insert", {
 	esc = "normal-mode",
 	pagedown = "page-down",
 	pageup = "page-up",
@@ -172,19 +172,19 @@ kern.keymap.bind("insert", {
 })
 
 -- An empty layer applies in every mode.
-kern.keymap.bind({}, {
+greed.keymap.bind({}, {
 	["ctrl-s"] = "save",
 	["ctrl-q"] = "quit",
 })
 
-kern.keymap.bind("normal", objects.keys)
-kern.keymap.bind("normal", syntax.keys)
-kern.keymap.bind("normal", folds.keys)
-kern.keymap.bind("normal", scroll.keys)
-kern.keymap.bind("normal", goto_keys.keys)
-kern.keymap.counts("normal")
-kern.keymap.fallback("insert", "insert-char")
-kern.mode.cursor("insert", "bar")
+greed.keymap.bind("normal", objects.keys)
+greed.keymap.bind("normal", syntax.keys)
+greed.keymap.bind("normal", folds.keys)
+greed.keymap.bind("normal", scroll.keys)
+greed.keymap.bind("normal", goto_keys.keys)
+greed.keymap.counts("normal")
+greed.keymap.fallback("insert", "insert-char")
+greed.mode.cursor("insert", "bar")
 
 -- Other plugins can use these with `require("@core")`.
 return {

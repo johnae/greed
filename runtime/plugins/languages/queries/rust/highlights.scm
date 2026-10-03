@@ -1,4 +1,4 @@
-; From tree-sitter-rust (MIT), with Kern's capture names.
+; From tree-sitter-rust (MIT), with Greed's capture names.
 
 ; Identifiers
 

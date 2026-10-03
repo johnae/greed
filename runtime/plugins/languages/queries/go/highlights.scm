@@ -1,4 +1,4 @@
-; From tree-sitter-go (MIT), with Kern's capture names.
+; From tree-sitter-go (MIT), with Greed's capture names.
 
 ; Function calls
 

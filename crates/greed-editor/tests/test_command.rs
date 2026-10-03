@@ -18,13 +18,13 @@ fn core_plugin_tests_pass() {
 
 #[test]
 fn failing_tests_fail_the_command() {
-    let dir = std::env::temp_dir().join(format!("kern-test-command-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-test-command-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("test")).unwrap();
     std::fs::write(dir.join("plugin.toml"), "name = \"sample\"\n").unwrap();
     std::fs::write(dir.join("init.luau"), "").unwrap();
     std::fs::write(
         dir.join("test/sample.luau"),
-        "local test = require('@kern/test')\ntest('fails', function(t)\n  t:buffer('|a')\n  t:expect('a|')\nend)\n",
+        "local test = require('@greed/test')\ntest('fails', function(t)\n  t:buffer('|a')\n  t:expect('a|')\nend)\n",
     )
     .unwrap();
 
@@ -45,10 +45,10 @@ fn failing_tests_fail_the_command() {
 
 #[test]
 fn new_plugins_pass_their_own_tests_and_load_from_the_config_directory() {
-    let config = std::env::temp_dir().join(format!("kern-new-plugin-{}", std::process::id()));
-    let plugins = config.join("kern/plugins");
+    let config = std::env::temp_dir().join(format!("greed-new-plugin-{}", std::process::id()));
+    let plugins = config.join("greed/plugins");
     std::fs::create_dir_all(&plugins).unwrap();
-    let kern = |args: &[&str]| {
+    let greed = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_greed"))
             .args(args)
             .current_dir(&plugins)
@@ -57,7 +57,7 @@ fn new_plugins_pass_their_own_tests_and_load_from_the_config_directory() {
             .unwrap()
     };
 
-    let made = kern(&["new", "greeter"]);
+    let made = greed(&["new", "greeter"]);
     assert!(
         made.status.success(),
         "{}",
@@ -68,20 +68,20 @@ fn new_plugins_pass_their_own_tests_and_load_from_the_config_directory() {
         "greeter/init.luau",
         "greeter/test/greet.luau",
         ".luaurc",
-        ".kern-types/kern/init.luau",
+        ".greed-types/greed/init.luau",
     ] {
         assert!(plugins.join(file).is_file(), "{file}");
     }
     assert!(
-        !kern(&["new", "greeter"]).status.success(),
+        !greed(&["new", "greeter"]).status.success(),
         "won't overwrite"
     );
     assert!(
-        !kern(&["new", "bad name"]).status.success(),
+        !greed(&["new", "bad name"]).status.success(),
         "checks the name"
     );
 
-    let tested = kern(&["test", "greeter"]);
+    let tested = greed(&["test", "greeter"]);
     let out = String::from_utf8_lossy(&tested.stdout);
     assert!(tested.status.success(), "{out}");
     assert!(out.contains("1 passed, 0 failed"), "{out}");

@@ -1,4 +1,4 @@
-//! `kern ctl`: drives a running editor from the shell, through its session
+//! `greed ctl`: drives a running editor from the shell, through its session
 //! socket. Every tool a plugin offers agents is a subcommand here too.
 
 use std::io;
@@ -7,10 +7,10 @@ use greed_core::control::{self, Client};
 use serde_json::{Map, Value, json};
 
 const USAGE: &str = "\
-usage: kern ctl tools                 list the tools the editor offers
-       kern ctl TOOL [JSON | KEY=VALUE...]
-                                      run a tool, e.g. kern ctl read path=src/main.rs
-       kern ctl sessions              list running editors
+usage: greed ctl tools                 list the tools the editor offers
+       greed ctl TOOL [JSON | KEY=VALUE...]
+                                      run a tool, e.g. greed ctl read path=src/main.rs
+       greed ctl sessions              list running editors
 The session is $GREED_SESSION, or the only editor running.";
 
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -131,8 +131,8 @@ pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Erro
     Ok(Client::connect(&socket, token.trim())?)
 }
 
-/// `kern mcp`: an MCP server on stdin and stdout for the running editor, for
-/// agents like Claude Code (`claude mcp add kern -- kern mcp`).
+/// `greed mcp`: an MCP server on stdin and stdout for the running editor, for
+/// agents like Claude Code (`claude mcp add greed -- greed mcp`).
 pub fn mcp() -> Result<(), Box<dyn std::error::Error>> {
     connect()?.pipe(io::BufReader::new(io::stdin()), io::stdout())?;
     Ok(())

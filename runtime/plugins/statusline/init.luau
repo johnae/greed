@@ -11,21 +11,21 @@
 --     statusline.add("right", "clock", function() return os.date("%H:%M") end)
 --     statusline.remove("host")
 --
--- `kern.statusline` with a function of your own replaces it all; the last
+-- `greed.statusline` with a function of your own replaces it all; the last
 -- one set wins.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local style = core.style
 local effects = core.effects
 
-kern.option.define({
+greed.option.define({
 	name = "statusline-pills",
 	doc = "Show the mode, tab, machine and session in the status line as pills in their colors",
 	default = false,
 })
 
-kern.option.define({
+greed.option.define({
 	name = "statusline-caps",
 	doc = 'The ends of status line pills: "round" (needs a Nerd Font) or "none"',
 	default = "round",
@@ -36,7 +36,7 @@ kern.option.define({
 --- name, gives a list.
 export type Pill = { text: string, style: string? }
 export type Part = string | Pill | { Pill }
-export type Piece = (ctx: kern.StatusContext) -> Part?
+export type Piece = (ctx: greed.StatusContext) -> Part?
 
 type Entry = { name: string, build: Piece }
 
@@ -60,7 +60,7 @@ function M.add(side: "left" | "right", name: string, build: Piece, before: strin
 end
 
 --- How a piece that takes time to find refreshes: `refresh` runs the way a
---- command does, so it can wait on `kern.process.run`, `kern.http` and the
+--- command does, so it can wait on `greed.process.run`, `greed.http` and the
 --- rest, and returns what to show. It runs when the editor starts, every
 --- `every` milliseconds if given, and on each event in `on`.
 export type AsyncPiece = {
@@ -93,7 +93,7 @@ end
 ---
 ---     statusline.add_async("right", "change", {
 ---         refresh = function()
----             local done = kern.process.run({ "jj", "log", "-r", "@", "--no-graph", "-T", "change_id.short()" })
+---             local done = greed.process.run({ "jj", "log", "-r", "@", "--no-graph", "-T", "change_id.short()" })
 ---             return done and done.code == 0 and done.stdout or nil
 ---         end,
 ---         every = 5000,
@@ -104,16 +104,16 @@ function M.add_async(side: "left" | "right", name: string, spec: AsyncPiece, bef
 	M.add(side, name, function()
 		return found[name]
 	end, before)
-	local on = kern.on :: (event: string, handler: (any) -> ()) -> ()
+	local on = greed.on :: (event: string, handler: (any) -> ()) -> ()
 	for _, event in spec.on or {} do
 		on(event, function()
 			refresh(name, spec)
 		end)
 	end
-	kern.spawn(function()
+	greed.spawn(function()
 		refresh(name, spec)
 		while spec.every and not stopped[name] do
-			kern.sleep(spec.every)
+			greed.sleep(spec.every)
 			refresh(name, spec)
 		end
 	end)
@@ -137,16 +137,16 @@ end
 local host: string? = nil
 local function machine(): string?
 	if host == nil then
-		local named = kern.fs.read("/etc/hostname")
+		local named = greed.fs.read("/etc/hostname")
 		host = named and string.match(named, "^%s*(%S+)") or ""
 	end
 	return if host ~= "" then host else nil
 end
 
 -- Without /etc/hostname (macOS), `hostname` says, once the editor runs.
-kern.on("editor.started", function()
+greed.on("editor.started", function()
 	if machine() == nil then
-		local done = kern.process.run({ "hostname" })
+		local done = greed.process.run({ "hostname" })
 		host = done and done.code == 0 and string.match(done.stdout, "^%s*(%S+)") or ""
 	end
 end)
@@ -165,10 +165,10 @@ M.add("left", "mode", function(ctx)
 end)
 
 M.add("left", "tab", function()
-	local tabs = kern.tab.list()
+	local tabs = greed.tab.list()
 	for i, tab in tabs do
 		if tab.current then
-			local name = tab.name or string.match(kern.project.current().root, "[^/]+$") or "tab"
+			local name = tab.name or string.match(greed.project.current().root, "[^/]+$") or "tab"
 			local parts: { Pill } = {
 				{ text = tostring(i), style = "ui.statusline.tab.number" },
 				{ text = name, style = "ui.statusline.tab" },
@@ -185,7 +185,7 @@ M.add("left", "file", function(ctx)
 	end
 	local name = ctx.buffer:path() or "[scratch]"
 	-- Files in the project show from its root.
-	local root = kern.project.current().root .. "/"
+	local root = greed.project.current().root .. "/"
 	if string.sub(name, 1, #root) == root then
 		name = string.sub(name, #root + 1)
 	end
@@ -200,7 +200,7 @@ end)
 -- Counts of errors and warnings from the language server, if any.
 M.add("right", "problems", function(ctx)
 	local counts = { 0, 0 }
-	for _, d in kern.lsp.diagnostics(ctx.buffer) do
+	for _, d in greed.lsp.diagnostics(ctx.buffer) do
 		if d.severity <= 2 then
 			counts[d.severity] += 1
 		end
@@ -228,12 +228,12 @@ M.add("right", "host", function()
 end)
 
 M.add("right", "session", function()
-	return pill(kern.session.current(), "ui.statusline.session")
+	return pill(greed.session.current(), "ui.statusline.session")
 end)
 
 -- A theme entry's color as an inline style can take it.
 local function color(name: string, key: "fg" | "bg"): string?
-	local entry = kern.theme.get(name)
+	local entry = greed.theme.get(name)
 	return entry and (entry :: any)[key]
 end
 
@@ -262,7 +262,7 @@ end
 
 -- `text` in the style `look` as one segment per character, each lit as the
 -- glow says. False when the colors aren't "#rrggbb".
-local function lit(text: string, look: string, glow: Glow, out: { kern.StatusSegment }): boolean
+local function lit(text: string, look: string, glow: Glow, out: { greed.StatusSegment }): boolean
 	local background = color(look, "bg") or color("ui.statusline", "bg")
 	local fore = effects.rgb(color(look, "fg") or color("ui.statusline", "fg"))
 	local back = effects.rgb(background)
@@ -270,7 +270,7 @@ local function lit(text: string, look: string, glow: Glow, out: { kern.StatusSeg
 		return false
 	end
 	local target = glow_for(fore)
-	local entry = kern.theme.get(look)
+	local entry = greed.theme.get(look)
 	local rest = ` bg:{background}{if entry and entry.bold then " bold" else ""}`
 	local chars = {}
 	for _, code in utf8.codes(text) do
@@ -297,7 +297,7 @@ local function pills(part: Part): { Pill }?
 end
 
 -- `text` in the style `look` (or plain), lit by `glow` if there is one.
-local function text_in(text: string, look: string?, glow: Glow?, out: { kern.StatusSegment })
+local function text_in(text: string, look: string?, glow: Glow?, out: { greed.StatusSegment })
 	if glow and lit(text, look or "ui.statusline", glow, out) then
 		return
 	end
@@ -308,9 +308,9 @@ end
 -- statusline-pills option, pills sit side by side between rounded ends in
 -- their colors; without, only the mode keeps its colors and the rest is
 -- plain text. Each piece has a space either side.
-local function segments(part: Part, glow: Glow?, out: { kern.StatusSegment })
+local function segments(part: Part, glow: Glow?, out: { greed.StatusSegment })
 	local list = pills(part)
-	if list == nil or kern.option.get("statusline-pills") ~= true then
+	if list == nil or greed.option.get("statusline-pills") ~= true then
 		local text: string, kept: string?
 		if list == nil then
 			text = if type(part) == "string" then part else (part :: Pill).text
@@ -331,7 +331,7 @@ local function segments(part: Part, glow: Glow?, out: { kern.StatusSegment })
 		table.insert(out, space)
 		return
 	end
-	local round = kern.option.get("statusline-caps") == "round"
+	local round = greed.option.get("statusline-caps") == "round"
 	local under = color("ui.statusline", "bg")
 	local function cap(glyph: string, pill: Pill)
 		local bg = color(pill.style :: string, "bg")
@@ -354,8 +354,8 @@ local function segments(part: Part, glow: Glow?, out: { kern.StatusSegment })
 end
 
 --- The status line's segments for `ctx`, as built from the pieces.
-function M.build(ctx: kern.StatusContext): kern.StatusParts
-	local function side(list: { Entry }): { kern.StatusSegment }
+function M.build(ctx: greed.StatusContext): greed.StatusParts
+	local function side(list: { Entry }): { greed.StatusSegment }
 		local out = {}
 		for _, entry in list do
 			local part = entry.build(ctx)
@@ -368,7 +368,7 @@ function M.build(ctx: kern.StatusContext): kern.StatusParts
 	return { left = side(M.left), right = side(M.right) }
 end
 
-kern.statusline(M.build)
+greed.statusline(M.build)
 
 --- Sends light through the piece called `name` for `ms` milliseconds, with
 --- the effects option on: lit as `shape` says (effects.wave by default, a
@@ -379,7 +379,7 @@ function M.glow(name: string, ms: number?, shape: Shape?)
 	end
 	local glow: Glow = { t = 0, shape = shape or effects.wave }
 	glows[name] = glow
-	kern.animate(ms or 600, function(t)
+	greed.animate(ms or 600, function(t)
 		glow.t = t
 		if t >= 1 and glows[name] == glow then
 			glows[name] = nil
@@ -390,7 +390,7 @@ end
 -- What the light follows: the shown tab, and the file in its active pane,
 -- so floats like the command line coming and going don't count.
 local function where(): (number, string?)
-	local tab = kern.tab.current()
+	local tab = greed.tab.current()
 	return tab.id, tab.active:buffer():path()
 end
 
@@ -402,7 +402,7 @@ local function follow()
 	end
 	local tab, file = where()
 	-- Waits for the command to finish.
-	kern.sleep(0)
+	greed.sleep(0)
 	local now_tab, now_file = where()
 	if now_tab ~= tab then
 		M.glow("tab")
@@ -411,10 +411,10 @@ local function follow()
 	end
 end
 
-kern.on("command.run", follow)
-kern.on("mouse", follow)
+greed.on("command.run", follow)
+greed.on("mouse", follow)
 -- A new mode glows from the middle of its name out.
-kern.on("mode.changed", function()
+greed.on("mode.changed", function()
 	M.glow("mode", 450, effects.burst)
 end)
 

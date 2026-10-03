@@ -6,7 +6,7 @@
 -- Each kept selection is a set of marks in its buffer, so it moves with
 -- edits made since.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 -- At most this many selections are kept for each view.
 local KEPT = 50
@@ -48,11 +48,11 @@ do
 	IGNORED[name] = true
 end
 
-local function namespace(view: kern.View): string
+local function namespace(view: greed.View): string
 	return `selection-history-{view:id()}`
 end
 
-local function history_of(view: kern.View): History
+local function history_of(view: greed.View): History
 	local found = histories[view:id()]
 	if found then
 		return found
@@ -63,8 +63,8 @@ local function history_of(view: kern.View): History
 end
 
 -- The ranges of `entry`, where its marks are now.
-local function ranges_of(view: kern.View, entry: Entry): { kern.Range }
-	local ranges: { kern.Range } = {}
+local function ranges_of(view: greed.View, entry: Entry): { greed.Range }
+	local ranges: { greed.Range } = {}
 	for _, mark in view:buffer():decorations(namespace(view)) do
 		local id, index, reversed = string.match(mark.style, "^(%d+) (%d+) (%d)$")
 		if tonumber(id) == entry.id then
@@ -77,7 +77,7 @@ local function ranges_of(view: kern.View, entry: Entry): { kern.Range }
 	return ranges
 end
 
-local function same(a: kern.Selection, b: kern.Selection): boolean
+local function same(a: greed.Selection, b: greed.Selection): boolean
 	if #a.ranges ~= #b.ranges or a.primary ~= b.primary then
 		return false
 	end
@@ -90,7 +90,7 @@ local function same(a: kern.Selection, b: kern.Selection): boolean
 end
 
 -- Keeps only `entries`' marks in the view's namespace.
-local function keep_marks(view: kern.View, entries: { Entry })
+local function keep_marks(view: greed.View, entries: { Entry })
 	local wanted: { [number]: boolean } = {}
 	for _, entry in entries do
 		wanted[entry.id] = true
@@ -105,7 +105,7 @@ local function keep_marks(view: kern.View, entries: { Entry })
 end
 
 -- Adds the view's selection to its history, unless it's the last one kept.
-local function push(view: kern.View, history: History)
+local function push(view: greed.View, history: History)
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local last = history.entries[#history.entries]
@@ -142,11 +142,11 @@ end
 
 -- Before each command, the selection it starts from is kept. A command
 -- after going back drops what was ahead.
-kern.on("command.run", function(event: kern.CommandRun)
+greed.on("command.run", function(event: greed.CommandRun)
 	if IGNORED[event.name] then
 		return
 	end
-	local view = kern.view()
+	local view = greed.view()
 	local history = history_of(view)
 	if history.at then
 		for _ = history.at + 1, #history.entries do
@@ -158,12 +158,12 @@ kern.on("command.run", function(event: kern.CommandRun)
 	push(view, history)
 end)
 
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	histories[event.view] = nil
 end)
 
 -- Shows entry `at`, if it's for the buffer the view shows.
-local function show(view: kern.View, history: History, at: number): boolean
+local function show(view: greed.View, history: History, at: number): boolean
 	local entry = history.entries[at]
 	if entry == nil or entry.buffer ~= view:buffer():id() then
 		return false
@@ -177,7 +177,7 @@ local function show(view: kern.View, history: History, at: number): boolean
 	return true
 end
 
-kern.command({
+greed.command({
 	name = "selection-undo",
 	doc = "Go back to the selection before the last command",
 	run = function(ctx)
@@ -189,18 +189,18 @@ kern.command({
 		end
 		local at = history.at :: number
 		if not show(ctx.view, history, at - 1) then
-			kern.echo("no earlier selection")
+			greed.echo("no earlier selection")
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "selection-redo",
 	doc = "Go forward to the selection selection-undo went back from",
 	run = function(ctx)
 		local history = history_of(ctx.view)
 		if history.at == nil or not show(ctx.view, history, history.at + 1) then
-			kern.echo("no later selection")
+			greed.echo("no later selection")
 		end
 	end,
 })

@@ -10,14 +10,14 @@
 --     models.roles.fast = { provider = "ollama", model = "llama3.2" }
 --     models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", secret = "work" }
 --
--- Keys come from kern.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
+-- Keys come from greed.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
 
-local kern = require("@kern")
+local greed = require("@greed")
 local sse = require("@self/sse")
 
 --- Where a model is served: `kind` is "anthropic" or "openai" (any server
 --- with OpenAI's chat completions API, like Ollama or vLLM), `secret` the
---- name of its key in kern.secrets, if it needs one.
+--- name of its key in greed.secrets, if it needs one.
 export type Provider = { kind: string, url: string, secret: string? }
 
 --- Which provider and model play a role.
@@ -81,7 +81,7 @@ local function http_request(
 	model: string,
 	request: Request,
 	key: string?
-): kern.HttpRequest
+): greed.HttpRequest
 	local headers: { [string]: string } = { ["content-type"] = "application/json" }
 	local body: { [string]: any } = {
 		model = model,
@@ -99,7 +99,7 @@ local function http_request(
 		return {
 			url = provider.url .. "/v1/messages",
 			headers = headers,
-			body = kern.json.encode(body),
+			body = greed.json.encode(body),
 		}
 	end
 	if key then
@@ -115,7 +115,7 @@ local function http_request(
 	return {
 		url = provider.url .. "/chat/completions",
 		headers = headers,
-		body = kern.json.encode(body),
+		body = greed.json.encode(body),
 	}
 end
 
@@ -125,7 +125,7 @@ local function read_event(kind: string, event: sse.Event): (string?, boolean, st
 	if event.data == "[DONE]" then
 		return nil, true, nil
 	end
-	local decoded = kern.json.decode(event.data)
+	local decoded = greed.json.decode(event.data)
 	if type(decoded) ~= "table" then
 		return nil, false, nil
 	end
@@ -133,7 +133,7 @@ local function read_event(kind: string, event: sse.Event): (string?, boolean, st
 		local err = decoded.error
 		return nil,
 			true,
-			if type(err) == "table" then err.message or kern.json.encode(err) else tostring(err)
+			if type(err) == "table" then err.message or greed.json.encode(err) else tostring(err)
 	end
 	if kind == "anthropic" then
 		if decoded.type == "content_block_delta" and decoded.delta then
@@ -148,7 +148,7 @@ end
 
 -- Why a request the server refused failed, from its body.
 local function refusal(status: number, body: string): string
-	local decoded = kern.json.decode(body)
+	local decoded = greed.json.decode(body)
 	local err = type(decoded) == "table" and decoded.error
 	local message = if type(err) == "table"
 		then err.message
@@ -159,7 +159,7 @@ end
 
 --- Asks the model playing `role`, and returns the answer as it arrives.
 --- Waits for the server to start answering. Works in commands, event
---- handlers and kern.spawn.
+--- handlers and greed.spawn.
 function M.stream(role: string, request: Request): (Stream?, string?)
 	local chosen, provider, why = M.resolve(role)
 	if chosen == nil or provider == nil then
@@ -167,13 +167,13 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	end
 	local key: string? = nil
 	if provider.secret then
-		key = kern.secrets.get(provider.secret)
+		key = greed.secrets.get(provider.secret)
 		if key == nil then
 			return nil,
 				`no key for {chosen.provider}: :secret-set {provider.secret}, or set it in the environment`
 		end
 	end
-	local response, err = kern.http.stream(http_request(provider, chosen.model, request, key))
+	local response, err = greed.http.stream(http_request(provider, chosen.model, request, key))
 	if response == nil then
 		return nil, `can't reach {chosen.provider}: {err}`
 	end
@@ -260,7 +260,7 @@ function M.ask(role: string, request: Request): (string?, string?)
 end
 
 -- The list of roles while it's shown.
-local shown: kern.View? = nil
+local shown: greed.View? = nil
 
 local function close()
 	if shown then
@@ -269,7 +269,7 @@ local function close()
 	end
 end
 
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	if shown and shown:id() == event.view then
 		shown = nil
 	end
@@ -288,7 +288,7 @@ function M.describe(): { string }
 		if chosen and provider then
 			local key = "no key needed"
 			if provider.secret then
-				key = if kern.secrets.get(provider.secret)
+				key = if greed.secrets.get(provider.secret)
 					then "key found"
 					else `no key: :secret-set {provider.secret}`
 			end
@@ -303,23 +303,23 @@ function M.describe(): { string }
 	return lines
 end
 
-kern.command({
+greed.command({
 	name = "models",
 	doc = "Show which provider and model plays each role, and whether its key is found",
 	run = function()
 		close()
 		local buffer =
-			kern.create_buffer("models", table.concat(M.describe(), "\n"), { readonly = true })
-		shown = kern.float(buffer, { title = "Models by role", width = "80%", height = "40%" })
+			greed.create_buffer("models", table.concat(M.describe(), "\n"), { readonly = true })
+		shown = greed.float(buffer, { title = "Models by role", width = "80%", height = "40%" })
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "models-close",
 	doc = "Close the list of models",
 	run = close,
 })
 
-kern.keymap.bind({ mode = "normal", kind = "models" }, { q = "models-close", esc = "models-close" })
+greed.keymap.bind({ mode = "normal", kind = "models" }, { q = "models-close", esc = "models-close" })
 
 return M

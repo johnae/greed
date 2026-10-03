@@ -1,7 +1,7 @@
 -- Splitting a command line into words, and reading the line range before
 -- a command.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 export type Parsed = {
 	--- The command as typed, without a trailing "!".
@@ -61,7 +61,7 @@ end
 --- What a range's addresses are measured from: the buffer, the cursor's
 --- line and the selection's first and last line, all 0-based.
 export type Lines = {
-	buffer: kern.Buffer,
+	buffer: greed.Buffer,
 	current: number,
 	first: number,
 	last: number,

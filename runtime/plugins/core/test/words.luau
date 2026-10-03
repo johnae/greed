@@ -1,10 +1,10 @@
 -- Helix's own word motion tests (helix-core/src/movement.rs), run against
 -- core's port: each case is a count, a range before and the range after,
 -- as anchor and head. Samples with multibyte characters are left out, since
--- Helix counts characters and Kern bytes.
+-- Helix counts characters and Greed bytes.
 
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local words = require("@core").words
 
 local CASES: { [string]: { any } } = {
@@ -659,7 +659,7 @@ for target, cases in CASES do
 			if string.find(sample, "[\128-\255]") then
 				continue
 			end
-			local buffer = kern.create_buffer("scratch", sample)
+			local buffer = greed.create_buffer("scratch", sample)
 			for _, s in steps do
 				local count, from, want = s[1], s[2], s[3]
 				local got =

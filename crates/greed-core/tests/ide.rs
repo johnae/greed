@@ -15,19 +15,19 @@ use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 /// back with the client they came from, and sends a notification on
 /// "poke".
 const PLUGIN: &str = r#"
-local kern = require("@kern")
-kern.control.serve_ide({ "/project" }, LOCK_DIR)
-kern.on("control.request", function(req)
+local greed = require("@greed")
+greed.control.serve_ide({ "/project" }, LOCK_DIR)
+greed.on("control.request", function(req)
   if req.method == "poke" then
-    kern.control.notify("selection_changed", { text = "hi" })
+    greed.control.notify("selection_changed", { text = "hi" })
   end
-  kern.control.reply(req.id, { client = req.client, method = req.method })
+  greed.control.reply(req.id, { client = req.client, method = req.method })
 end)
 "#;
 
 fn start(label: &str) -> (Connection, PathBuf) {
     let name = format!("ide-{label}-{}", std::process::id());
-    let dir = std::env::temp_dir().join(format!("kern-{name}"));
+    let dir = std::env::temp_dir().join(format!("greed-{name}"));
     let session = control::listen(&name, None).unwrap();
     let requests = session.sender().clone();
     let plugin = PLUGIN.replace("LOCK_DIR", &format!("{:?}", dir.to_str().unwrap()));
@@ -79,7 +79,7 @@ fn next(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Value {
 fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
     let (conn, dir) = start("talk");
     let (port, lock) = lock(&dir);
-    assert_eq!(lock["ideName"], "Kern");
+    assert_eq!(lock["ideName"], "Greed");
     assert_eq!(lock["transport"], "ws");
     assert_eq!(lock["workspaceFolders"], json!(["/project"]));
     assert_eq!(lock["pid"], std::process::id());
@@ -129,12 +129,12 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
 /// temporary directory, and `file` open.
 fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
     let name = format!("ide-{label}-{}", std::process::id());
-    let dir = std::env::temp_dir().join(format!("kern-{name}"));
+    let dir = std::env::temp_dir().join(format!("greed-{name}"));
     let session = control::listen(&name, None).unwrap();
     let requests = session.sender().clone();
     let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
     let start = format!(
-        "require('@kern').control.serve_ide({{ '/project' }}, {:?})",
+        "require('@greed').control.serve_ide({{ '/project' }}, {:?})",
         dir.to_str().unwrap()
     );
     let file = file.to_owned();
@@ -185,7 +185,7 @@ fn call(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, id: u64, tool: &str, 
 
 #[test]
 fn claude_codes_diffs_become_proposals_and_come_back_saved() {
-    let work = std::env::temp_dir().join(format!("kern-ide-work-{}", std::process::id()));
+    let work = std::env::temp_dir().join(format!("greed-ide-work-{}", std::process::id()));
     std::fs::create_dir_all(&work).unwrap();
     let file = work.join("a.txt");
     std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
@@ -265,7 +265,7 @@ fn notification(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, method: &str)
 
 #[test]
 fn mentioning_whole_lines_names_just_those_lines() {
-    let work = std::env::temp_dir().join(format!("kern-ide-mention-work-{}", std::process::id()));
+    let work = std::env::temp_dir().join(format!("greed-ide-mention-work-{}", std::process::id()));
     std::fs::create_dir_all(&work).unwrap();
     let file = work.join("a.txt");
     std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
@@ -324,7 +324,7 @@ fn wait_for_proposal(label: &str) {
 
 #[test]
 fn a_rejected_diff_leaves_the_file_alone_and_says_so() {
-    let work = std::env::temp_dir().join(format!("kern-ide-reject-work-{}", std::process::id()));
+    let work = std::env::temp_dir().join(format!("greed-ide-reject-work-{}", std::process::id()));
     std::fs::create_dir_all(&work).unwrap();
     let file = work.join("a.txt");
     std::fs::write(&file, "one\ntwo\n").unwrap();

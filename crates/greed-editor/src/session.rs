@@ -1,7 +1,7 @@
 //! Running the editor as a session that outlives its terminal, like zellij
-//! or tmux: `kern serve` runs it headless, `kern attach` shows it, plain
-//! `kern` starts one in the background and attaches, and `kern ssh` shows a
-//! session on another machine through `kern bridge` running there.
+//! or tmux: `greed serve` runs it headless, `greed attach` shows it, plain
+//! `greed` starts one in the background and attaches, and `greed ssh` shows a
+//! session on another machine through `greed bridge` running there.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -18,10 +18,10 @@ use crate::{ctl, host, read, tui};
 
 type Error = Box<dyn std::error::Error>;
 
-/// How long `kern` waits for the server it started to listen.
+/// How long `greed` waits for the server it started to listen.
 const STARTUP: Duration = Duration::from_secs(5);
 
-/// `kern serve`: runs the editor with no terminal until something quits it.
+/// `greed serve`: runs the editor with no terminal until something quits it.
 pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     let target = absolute(path)?;
     let root = project::root_of(&target);
@@ -34,7 +34,7 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     let conn = server::spawn_with_session(move || host(&text, file, Some(requests)), Some(session));
     // Nothing is drawn until a client attaches and says how big it is.
     conn.server.join().map_err(|_| "the editor crashed")??;
-    // `kern` sends a background session's output here; after a clean exit
+    // `greed` sends a background session's output here; after a clean exit
     // there is nothing in it to explain.
     let _ = std::fs::remove_file(log_path(name));
     Ok(())
@@ -72,7 +72,7 @@ fn log_path(name: &str) -> PathBuf {
     control::sessions_dir().join(format!("{name}.log"))
 }
 
-/// `kern attach`: shows the session called `name` (or the only one running)
+/// `greed attach`: shows the session called `name` (or the only one running)
 /// in this terminal until it quits or lets this terminal go.
 pub fn attach(name: Option<&str>) -> Result<(), Error> {
     let name = match name
@@ -108,19 +108,19 @@ pub fn inside() -> Option<String> {
     ctl::live_sessions().ok()?.contains(&name).then_some(name)
 }
 
-/// `kern [FILE]` in a terminal of session `name`: opens the file in that
+/// `greed [FILE]` in a terminal of session `name`: opens the file in that
 /// session instead of starting another editor inside it.
 pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
     let Some(path) = path else {
         return Err(format!(
-            "this terminal is in Kern already (session {name}); kern FILE opens a file there"
+            "this terminal is in Greed already (session {name}); greed FILE opens a file there"
         )
         .into());
     };
     let path = absolute(Some(path))?;
     if path.is_dir() {
         return Err(format!(
-            "this terminal is in Kern already (session {name}); :session {} goes to that folder's project",
+            "this terminal is in Greed already (session {name}); :session {} goes to that folder's project",
             path.display()
         )
         .into());
@@ -149,7 +149,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Re
         match show(reader, writer)? {
             Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
-                println!("detached; kern attach {name} comes back");
+                println!("detached; greed attach {name} comes back");
                 return Ok(());
             }
             Output::Exit
@@ -215,7 +215,7 @@ fn show(
     tui::run(&input, &output)
 }
 
-/// Starts `kern serve` for the session called `name` in the background, its
+/// Starts `greed serve` for the session called `name` in the background, its
 /// output going to a log, and waits until it listens.
 fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
     std::fs::create_dir_all(control::sessions_dir())?;
@@ -249,7 +249,7 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
     Ok(child)
 }
 
-/// Plain `kern`: attaches to the session for `path`'s project (or the one
+/// Plain `greed`: attaches to the session for `path`'s project (or the one
 /// called `name`), starting it in the background if it isn't running.
 pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
@@ -264,7 +264,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
     follow(name, open, terminal)
 }
 
-/// `kern bridge`, run on the machine a session is on: connects this
+/// `greed bridge`, run on the machine a session is on: connects this
 /// process's input and output to the session called `name`, or to the one
 /// for `path`'s project, starting it if it isn't running. What comes
 /// through is passed on as it is; the client on the other end attaches.
@@ -289,9 +289,9 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
     Ok(())
 }
 
-/// `kern ssh`: shows a session on `host`, through `kern bridge` run there
+/// `greed ssh`: shows a session on `host`, through `greed bridge` run there
 /// over ssh, starting one if none is running. `$GREED_SSH` replaces the ssh
-/// command and `$GREED_REMOTE` the kern on the other end.
+/// command and `$GREED_REMOTE` the greed on the other end.
 pub fn ssh(
     host: &str,
     name: Option<&str>,
@@ -301,7 +301,7 @@ pub fn ssh(
     let config = match send_config(host) {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("kern: couldn't bring your config to {host}, going on without it: {err}");
+            eprintln!("greed: couldn't bring your config to {host}, going on without it: {err}");
             None
         }
     };
@@ -318,7 +318,7 @@ pub fn ssh(
             // switch to; a new connection is the simplest way to ask it.
             Output::Switch(next) => to = next,
             Output::Detached => {
-                println!("detached; kern ssh {host} comes back");
+                println!("detached; greed ssh {host} comes back");
                 return Ok(());
             }
             Output::Exit
@@ -338,8 +338,8 @@ fn ssh_once(
     config: Option<&str>,
     terminal: bool,
 ) -> Result<Output, Error> {
-    let remote_kern = std::env::var("GREED_REMOTE").unwrap_or_else(|_| "greed".to_owned());
-    let line = bridge_command(&remote_kern, to, config);
+    let remote_greed = std::env::var("GREED_REMOTE").unwrap_or_else(|_| "greed".to_owned());
+    let line = bridge_command(&remote_greed, to, config);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
     handshake(&mut reader, &mut writer, terminal).map_err(attach_failed)?;
@@ -353,7 +353,7 @@ fn ssh_once(
 
 /// Asks to attach over `reader` and `writer`, already connected to a
 /// session. Fails with the session's reason if it refuses, e.g. because the
-/// two ends run kern versions that don't speak the same protocol.
+/// two ends run greed versions that don't speak the same protocol.
 fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
@@ -388,7 +388,7 @@ fn ssh_command() -> Command {
 }
 
 /// What the remote sh prints once it has read the line it runs.
-const READY: &str = "kern-ready";
+const READY: &str = "greed-ready";
 
 /// Runs the sh `line` on `host` and returns ssh with its input and output,
 /// for the program the line `exec`s.
@@ -425,7 +425,7 @@ fn quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', r"'\''"))
 }
 
-/// `kern serve` without a name: the session for `path`'s project, named
+/// `greed serve` without a name: the session for `path`'s project, named
 /// after it.
 pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
     let (name, running, _) = find_session(None, path)?;
@@ -435,11 +435,11 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
     serve(&name, path)
 }
 
-/// The sh line that runs `kern bridge` (in its place) on the other machine for `to`,
-/// with the config `kern ssh` brought along in `config` (a folder, which
+/// The sh line that runs `greed bridge` (in its place) on the other machine for `to`,
+/// with the config `greed ssh` brought along in `config` (a folder, which
 /// may use `$HOME`).
-fn bridge_command(kern: &str, to: &SwitchTo, config: Option<&str>) -> String {
-    let mut args = vec![kern.to_owned(), "bridge".to_owned()];
+fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>) -> String {
+    let mut args = vec![greed.to_owned(), "bridge".to_owned()];
     if let Some(name) = &to.session {
         args.extend(["--session".to_owned(), name.clone()]);
     }
@@ -468,7 +468,7 @@ fn send_config(host: &str) -> Result<Option<String>, Error> {
     if std::env::var("GREED_SSH_CONFIG").is_ok_and(|v| v == "0") {
         return Ok(None);
     }
-    let dir = format!("$HOME/.cache/kern/config-from-{}", this_machine());
+    let dir = format!("$HOME/.cache/greed/config-from-{}", this_machine());
     let mut tar = Command::new("tar")
         .arg("-C")
         .arg(&local)
@@ -519,20 +519,20 @@ mod tests {
     #[test]
     fn the_bridge_command_quotes_paths_and_brings_the_config() {
         let to = SwitchTo {
-            session: Some("kern".to_owned()),
+            session: Some("greed".to_owned()),
             path: Some("it's here.rs".to_owned()),
         };
         assert_eq!(
-            bridge_command("kern", &to, Some("$HOME/.cache/kern/config-from-box")),
-            r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/kern/config-from-box" exec 'kern' 'bridge' '--session' 'kern' 'it'\''s here.rs'"#
+            bridge_command("greed", &to, Some("$HOME/.cache/greed/config-from-box")),
+            r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/greed/config-from-box" exec 'greed' 'bridge' '--session' 'greed' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo {
             session: None,
             path: None,
         };
         assert_eq!(
-            bridge_command("/opt/kern", &plain, None),
-            "exec '/opt/kern' 'bridge'"
+            bridge_command("/opt/greed", &plain, None),
+            "exec '/opt/greed' 'bridge'"
         );
     }
 }

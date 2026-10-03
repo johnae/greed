@@ -1,9 +1,9 @@
-//! `kern.lsp`: language servers, for plugins. Requests wait for their
-//! answer like `kern.sleep` waits for time, so a plugin reads as plain
+//! `greed.lsp`: language servers, for plugins. Requests wait for their
+//! answer like `greed.sleep` waits for time, so a plugin reads as plain
 //! top-to-bottom code:
 //!
 //! ```luau
-//! local result, err = kern.lsp.request(buffer, "textDocument/hover", params)
+//! local result, err = greed.lsp.request(buffer, "textDocument/hover", params)
 //! ```
 
 use greed_text::Author;
@@ -280,7 +280,7 @@ fn buffer_ref<'a>(editor: &'a Editor, buffer: &BufferRef) -> LuaResult<&'a Buffe
         .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))
 }
 
-/// `kern.lsp.request(buffer, method, params)`: sends a request and waits for
+/// `greed.lsp.request(buffer, method, params)`: sends a request and waits for
 /// the answer, returning `result, error`.
 fn request_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(
@@ -302,12 +302,12 @@ fn request_function(lua: &Lua) -> LuaResult<Function> {
         local start = ...
         return function(buffer, method, params)
             if not coroutine.isyieldable() then
-                error("kern.lsp.request can only be used in a command or event handler", 2)
+                error("greed.lsp.request can only be used in a command or event handler", 2)
             end
             return coroutine.yield(start(buffer, method, params))
         end
         "#,
     )
-    .set_name("=kern.lsp.request")
+    .set_name("=greed.lsp.request")
     .call(start)
 }

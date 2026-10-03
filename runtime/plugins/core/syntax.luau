@@ -10,28 +10,28 @@
 --                   next or previous one beside it (arguments, items)
 --
 -- What counts as a function or a type comes from each language's
--- "textobjects" query (`kern.syntax.query`), which the languages plugin
+-- "textobjects" query (`greed.syntax.query`), which the languages plugin
 -- reads from `queries/<language>/textobjects.scm` files. A query captures
 -- nodes as `@function.around` and `@function.inside` (and type,
 -- parameter, comment); a match without an inside capture uses what's
 -- between the around node's brackets.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local motions = require("./motions")
 
-type Buffer = kern.Buffer
-type Node = kern.Node
-type Range = kern.Range
+type Buffer = greed.Buffer
+type Node = greed.Node
+type Range = greed.Range
 
 local M = {}
 
 --- The query of `kind` for the buffer's language, if there is one.
 function M.query(buffer: Buffer, kind: string): string?
 	local language = buffer:language()
-	return if language then kern.syntax.query(language, kind) else nil
+	return if language then greed.syntax.query(language, kind) else nil
 end
 
---- The syntax objects Kern knows, with the key that stands for each.
+--- The syntax objects Greed knows, with the key that stands for each.
 M.OBJECTS = {
 	f = "function",
 	t = "type",
@@ -175,14 +175,14 @@ end
 type Growth = { buffer: number, from: number, to: number, grown_from: number, grown_to: number }
 local grown: { [number]: { Growth } } = {}
 
-local function select_node(ctx: kern.Context, step: (Buffer, Range, number) -> Range?)
+local function select_node(ctx: greed.Context, step: (Buffer, Range, number) -> Range?)
 	local view = ctx.view:id()
 	motions.each_range(ctx, function(buffer, range)
 		return step(buffer, range, view) or range
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "expand-selection",
 	doc = "Grow each selection to the syntax node around it",
 	run = function(ctx)
@@ -205,7 +205,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "shrink-selection",
 	doc = "Shrink each selection back, or to the first syntax node inside it",
 	run = function(ctx)
@@ -235,7 +235,7 @@ kern.command({
 })
 
 for _, backward in { false, true } do
-	kern.command({
+	greed.command({
 		name = `select-{if backward then "prev" else "next"}-sibling`,
 		doc = `Select the {if backward then "previous" else "next"} syntax node beside each selection`,
 		run = function(ctx)
@@ -254,7 +254,7 @@ end
 -- selected, so pressing again carries it further: arguments, list items,
 -- statements.
 for _, backward in { false, true } do
-	kern.command({
+	greed.command({
 		name = `swap-node-{if backward then "prev" else "next"}`,
 		doc = `Move the syntax node selected past the one {if backward then "before" else "after"} it`,
 		run = function(ctx)
@@ -264,7 +264,7 @@ for _, backward in { false, true } do
 			local node = node_in(buffer, lo, hi)
 			local other = node and (if backward then node:prev() else node:next())
 			if node == nil or other == nil then
-				kern.echo("nothing beside it to swap with")
+				greed.echo("nothing beside it to swap with")
 				return
 			end
 			local first, second = node, other
@@ -286,9 +286,9 @@ end
 
 -- Replaces each selection with `pick(node)`'s nodes, for the node the
 -- selection covers; a selection with nothing to pick stays.
-local function select_nodes(ctx: kern.Context, pick: (kern.Node) -> { kern.Node })
+local function select_nodes(ctx: greed.Context, pick: (greed.Node) -> { greed.Node })
 	local buffer = ctx.buffer
-	local ranges: { kern.Range } = {}
+	local ranges: { greed.Range } = {}
 	for _, range in ctx.view:selection().ranges do
 		local lo, hi = bounds(range)
 		local node = node_in(buffer, lo, hi)
@@ -303,7 +303,7 @@ local function select_nodes(ctx: kern.Context, pick: (kern.Node) -> { kern.Node 
 	ctx.view:set_selection({ ranges = ranges, primary = 1 })
 end
 
-kern.command({
+greed.command({
 	name = "select-all-siblings",
 	doc = "Select every syntax node beside each selection's, its own included",
 	run = function(ctx)
@@ -314,7 +314,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "select-all-children",
 	doc = "Select every syntax node inside each selection's",
 	run = function(ctx)
@@ -325,7 +325,7 @@ kern.command({
 })
 
 for _, at_end in { false, true } do
-	kern.command({
+	greed.command({
 		name = if at_end then "goto-parent-end" else "goto-parent-start",
 		doc = if at_end
 			then "Move to the end of the syntax node around each selection's"
@@ -363,7 +363,7 @@ for key, object in M.OBJECTS do
 	for _, outer in { false, true } do
 		local side = if outer then "around" else "inside"
 		local name = `select-{side}-{object}`
-		kern.command({
+		greed.command({
 			name = name,
 			doc = `Select {side} the {object} at each selection`,
 			run = function(ctx)
@@ -377,7 +377,7 @@ for key, object in M.OBJECTS do
 	for _, backward in { false, true } do
 		local direction = if backward then "prev" else "next"
 		local name = `{direction}-{object}`
-		kern.command({
+		greed.command({
 			name = name,
 			doc = `Select the {if backward then "previous" else "next"} {object}`,
 			run = function(ctx)

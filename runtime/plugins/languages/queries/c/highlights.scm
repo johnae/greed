@@ -1,4 +1,4 @@
-; From tree-sitter-c (MIT), with Kern's capture names.
+; From tree-sitter-c (MIT), with Greed's capture names.
 
 
 ((identifier) @constant

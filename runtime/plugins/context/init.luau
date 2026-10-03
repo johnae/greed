@@ -17,7 +17,7 @@
 --     end)
 --     require("@context").add({ kind = "computed", name = "todos" })
 
-local kern = require("@kern")
+local greed = require("@greed")
 local agent = require("@agent")
 local vcs = require("@vcs")
 
@@ -42,7 +42,7 @@ local computed: { [string]: () -> string } = {}
 local next_id = 0
 
 local function root(): string
-	return kern.project.current().root
+	return greed.project.current().root
 end
 
 local function items(): { Item }
@@ -60,7 +60,7 @@ local function ns(item: Item): string
 	return `context-{item.id}`
 end
 
-local function mark(buffer: kern.Buffer, item: Item, from: number, to: number)
+local function mark(buffer: greed.Buffer, item: Item, from: number, to: number)
 	buffer:decorate(ns(item), { { from = from, to = to, style = "context" } })
 end
 
@@ -71,8 +71,8 @@ end
 
 -- Where a selection is now: its mark, or where it was if the mark went. One
 -- restored from the last session gets its mark back here.
-local function span(item: Item): (kern.Buffer, number, number)
-	local buffer = kern.load(item.path :: string)
+local function span(item: Item): (greed.Buffer, number, number)
+	local buffer = greed.load(item.path :: string)
 	local current = buffer:decorations(ns(item))[1]
 	if current then
 		item.from, item.to = current.from, current.to
@@ -92,11 +92,11 @@ function M.read(item: Item): (string, string)
 		local first, last = buffer:line_of(from) + 1, buffer:line_of(math.max(from, to - 1)) + 1
 		return buffer:slice(from, to), `{relative(item.path :: string)}:{first}-{last}`
 	elseif item.kind == "file" then
-		return kern.load(item.path :: string):text(), relative(item.path :: string)
+		return greed.load(item.path :: string):text(), relative(item.path :: string)
 	elseif item.kind == "problems" then
-		local buffer = kern.load(item.path :: string)
+		local buffer = greed.load(item.path :: string)
 		local lines = {}
-		for _, d in kern.lsp.diagnostics(buffer) do
+		for _, d in greed.lsp.diagnostics(buffer) do
 			table.insert(lines, `line {buffer:line_of(d.from) + 1}: {d.message}`)
 		end
 		local text = if #lines > 0 then table.concat(lines, "\n") else "(no problems)"
@@ -119,7 +119,7 @@ end
 
 -- Saving, so the context comes back with the project.
 local function saved_path(): string?
-	local cache = kern.fs.dirs().cache
+	local cache = greed.fs.dirs().cache
 	return cache and `{cache}/context.json`
 end
 
@@ -143,9 +143,9 @@ local function save()
 				to = item.to,
 			})
 		end
-		all[project] = kern.json.array(plain)
+		all[project] = greed.json.array(plain)
 	end
-	kern.fs.write(path, kern.json.encode(all))
+	greed.fs.write(path, greed.json.encode(all))
 end
 
 --- Pins `item` to the shown project's context.
@@ -153,7 +153,7 @@ function M.add(item: Item)
 	next_id += 1
 	item.id = next_id
 	if item.kind == "selection" then
-		mark(kern.load(item.path :: string), item, item.from :: number, item.to :: number)
+		mark(greed.load(item.path :: string), item, item.from :: number, item.to :: number)
 	end
 	table.insert(items(), item)
 	save()
@@ -166,7 +166,7 @@ function M.remove(item: Item)
 	if index then
 		table.remove(list, index)
 		if item.kind == "selection" and item.path then
-			kern.load(item.path):decorate(ns(item), {})
+			greed.load(item.path):decorate(ns(item), {})
 		end
 		save()
 	end
@@ -194,7 +194,7 @@ function M.text(): string
 end
 
 -- The context buffer while it's shown, and the item each line stands for.
-local shown: { view: kern.View, buffer: kern.Buffer, lines: { Item } }? = nil
+local shown: { view: greed.View, buffer: greed.Buffer, lines: { Item } }? = nil
 
 local function render(): (string, { Item }, number)
 	local lines, list, total = {}, {}, 0
@@ -212,7 +212,7 @@ local function title(total: number): string
 	return `Context: {total} tokens - x d drops an item, q closes`
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
+greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local open = shown
 	if open == nil or event.buffer:id() ~= open.buffer:id() then
 		return
@@ -228,13 +228,13 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	open.view:configure({ title = title(total) })
 end)
 
-kern.on("view.closed", function(event: kern.ViewClosed)
+greed.on("view.closed", function(event: greed.ViewClosed)
 	if shown and shown.view:id() == event.view then
 		shown = nil
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "context",
 	doc = "Show what's pinned for models and agents, with sizes; delete a line to drop it",
 	run = function()
@@ -243,10 +243,10 @@ kern.command({
 		end
 		local text, list, total = render()
 		if #list == 0 then
-			kern.echo("nothing is pinned - space i p pins the selection or the file")
+			greed.echo("nothing is pinned - space i p pins the selection or the file")
 			return
 		end
-		local buffer = kern.create_buffer("context", text)
+		local buffer = greed.create_buffer("context", text)
 		for i in list do
 			local stop = if i < #list then buffer:line_start(i) else buffer:len()
 			buffer:decorate(
@@ -254,18 +254,18 @@ kern.command({
 				{ { from = buffer:line_start(i - 1), to = stop, style = "context" } }
 			)
 		end
-		local view = kern.float(buffer, { title = title(total), width = "70%", height = "40%" })
+		local view = greed.float(buffer, { title = title(total), width = "70%", height = "40%" })
 		shown = { view = view, buffer = buffer, lines = list }
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "context-add",
 	doc = "Pin the selection to the context, or the file when nothing is selected",
 	run = function(ctx)
 		local path = ctx.buffer:path()
 		if path == nil then
-			kern.echo("only text in files can be pinned")
+			greed.echo("only text in files can be pinned")
 			return
 		end
 		local selection = ctx.view:selection()
@@ -273,47 +273,47 @@ kern.command({
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		if to - from > 1 then
 			M.add({ kind = "selection", path = path, from = from, to = to })
-			kern.echo(`pinned {to - from} characters of {relative(path)}`)
+			greed.echo(`pinned {to - from} characters of {relative(path)}`)
 		else
 			M.add({ kind = "file", path = path })
-			kern.echo(`pinned {relative(path)}`)
+			greed.echo(`pinned {relative(path)}`)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "context-add-problems",
 	doc = "Pin this file's problems to the context",
 	run = function(ctx)
 		local path = ctx.buffer:path()
 		if path then
 			M.add({ kind = "problems", path = path })
-			kern.echo(`pinned the problems in {relative(path)}`)
+			greed.echo(`pinned the problems in {relative(path)}`)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "context-add-diff",
 	doc = "Pin the changes in progress to the context",
 	run = function()
 		M.add({ kind = "diff" })
-		kern.echo("pinned the changes in progress")
+		greed.echo("pinned the changes in progress")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "context-clear",
 	doc = "Drop everything pinned to the context",
 	run = function()
 		for _, item in M.list() do
 			M.remove(item)
 		end
-		kern.echo("the context is empty")
+		greed.echo("the context is empty")
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "context-close",
 	doc = "Close the context list",
 	run = function()
@@ -336,8 +336,8 @@ agent.tool({
 -- Back from the last session.
 local function restore()
 	local path = saved_path()
-	local text = path and kern.fs.read(path)
-	local all = if text then kern.json.decode(text) else nil
+	local text = path and greed.fs.read(path)
+	local all = if text then greed.json.decode(text) else nil
 	for project, list in all or {} do
 		pinned[project] = {}
 		for _, saved in list do
@@ -357,11 +357,11 @@ end
 
 restore()
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space i p"] = "context-add",
 	["space i i"] = "context",
 })
-kern.keymap.bind(
+greed.keymap.bind(
 	{ mode = "normal", kind = "context" },
 	{ q = "context-close", esc = "context-close" }
 )

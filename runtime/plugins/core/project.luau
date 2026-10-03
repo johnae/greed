@@ -9,7 +9,7 @@
 --
 --     table.insert(require("@core").project.markers, 1, "Cargo.lock")
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
@@ -18,7 +18,7 @@ local M = {}
 M.markers = { ".jj", ".git" }
 
 local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else kern.fs.cwd() .. "/" .. path
+	return if string.sub(path, 1, 1) == "/" then path else greed.fs.cwd() .. "/" .. path
 end
 
 local function parent(dir: string): string?
@@ -31,23 +31,23 @@ end
 --- Without a path, the current buffer's file is used, or else the shown
 --- project's root.
 function M.root(path: string?): string
-	local start = path or kern.view():buffer():path()
+	local start = path or greed.view():buffer():path()
 	if start == nil then
-		return kern.project.current().root
+		return greed.project.current().root
 	end
 	local first = absolute(start)
-	local info = kern.fs.stat(first)
+	local info = greed.fs.stat(first)
 	local folder = if info and info.kind == "dir" then first else parent(first)
 	local dir = folder
 	while dir do
 		for _, marker in M.markers do
-			if kern.fs.stat(dir .. "/" .. marker) then
+			if greed.fs.stat(dir .. "/" .. marker) then
 				return dir
 			end
 		end
 		dir = parent(dir)
 	end
-	return folder or kern.project.current().root
+	return folder or greed.project.current().root
 end
 
 -- How many recent projects are remembered.
@@ -55,13 +55,13 @@ local RECENT = 30
 
 -- A list of folders kept in the cache, one per line, as `name`.
 local function list_file(name: string): string?
-	local cache = kern.fs.dirs().cache
+	local cache = greed.fs.dirs().cache
 	return if cache then `{cache}/{name}` else nil
 end
 
 local function read_list(name: string): { string }
 	local file = list_file(name)
-	local text = file and kern.fs.read(file)
+	local text = file and greed.fs.read(file)
 	local roots = {}
 	for _, line in string.split(text or "", "\n") do
 		if line ~= "" then
@@ -83,7 +83,7 @@ local function add_to_list(name: string, root: string, limit: number)
 			table.insert(roots, other)
 		end
 	end
-	kern.fs.write(file, table.concat(roots, "\n") .. "\n")
+	greed.fs.write(file, table.concat(roots, "\n") .. "\n")
 end
 
 --- The roots of projects opened lately, newest first, from any session.
@@ -95,26 +95,26 @@ local function remember(root: string)
 	add_to_list("recent-projects", root, RECENT)
 end
 
---- The roots of projects whose own config (`.kern/init.luau`) you trusted.
+--- The roots of projects whose own config (`.greed/init.luau`) you trusted.
 function M.trusted(): { string }
 	return read_list("trusted-projects")
 end
 
--- Runs the config in project `root`'s `.kern` folder if it has one and it's
+-- Runs the config in project `root`'s `.greed` folder if it has one and it's
 -- trusted, or says how to trust it.
 local function run_config(root: string)
-	local dir = `{root}/.kern`
-	if kern.fs.stat(`{dir}/init.luau`) == nil then
+	local dir = `{root}/.greed`
+	if greed.fs.stat(`{dir}/init.luau`) == nil then
 		return
 	end
 	if not table.find(M.trusted(), root) then
-		kern.echo(`{root} has its own Kern config in .kern/ - :trust runs it`)
+		greed.echo(`{root} has its own Greed config in .greed/ - :trust runs it`)
 		return
 	end
 	local name = string.match(root, "([^/]+)$") or root
-	local ok, err = pcall(kern.plugin.load, dir, `project/{name}`)
+	local ok, err = pcall(greed.plugin.load, dir, `project/{name}`)
 	if not ok then
-		kern.echo(`project config: {err}`)
+		greed.echo(`project config: {err}`)
 	end
 end
 
@@ -123,22 +123,22 @@ end
 function M.open(path: string): number
 	local root = M.root(path)
 	remember(root)
-	for _, project in kern.project.list() do
+	for _, project in greed.project.list() do
 		if project.root == root then
-			kern.project.switch(project.id)
+			greed.project.switch(project.id)
 			return project.id
 		end
 	end
-	local id = kern.project.open(root)
+	local id = greed.project.open(root)
 	run_config(root)
 	return id
 end
 
 --- The files in the shown project that have unsaved changes.
 function M.unsaved(): { string }
-	local current = kern.project.current().id
+	local current = greed.project.current().id
 	local unsaved = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		if buffer:project() == current and buffer:kind() == "file" and buffer:modified() then
 			table.insert(unsaved, buffer:path() or "an unnamed buffer")
 		end
@@ -147,13 +147,13 @@ function M.unsaved(): { string }
 end
 
 --- A typed path as a full one: "~/src" from the home folder, "src" from the
---- folder Kern started in.
+--- folder Greed started in.
 function M.expand(path: string): string
-	local home = kern.fs.dirs().home
+	local home = greed.fs.dirs().home
 	if home and (path == "~" or string.sub(path, 1, 2) == "~/") then
 		return home .. string.sub(path, 2)
 	elseif string.sub(path, 1, 1) ~= "/" then
-		return `{kern.fs.cwd()}/{path}`
+		return `{greed.fs.cwd()}/{path}`
 	end
 	return path
 end
@@ -162,7 +162,7 @@ end
 --- starting directory when the root is inside it, so files opened from a
 --- search and from the file picker are the same buffer.
 function M.path(root: string, path: string): string
-	local cwd = kern.fs.cwd()
+	local cwd = greed.fs.cwd()
 	if root == cwd then
 		return path
 	elseif string.sub(root, 1, #cwd + 1) == cwd .. "/" then
@@ -171,20 +171,20 @@ function M.path(root: string, path: string): string
 	return root .. "/" .. path
 end
 
-kern.command({
+greed.command({
 	name = "project",
 	doc = "Open a project, or switch to it if it's open",
 	args = { { name = "path", doc = "A folder or file in the project", complete = "file" } },
 	run = function(ctx)
 		local path = ctx.args[1]
 		if path == nil then
-			error("project needs a path, e.g. :project ~/src/kern; space P picks an open one", 0)
+			error("project needs a path, e.g. :project ~/src/greed; space P picks an open one", 0)
 		end
 		M.open(path)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "project-close",
 	doc = "Close the shown project, unless it has unsaved changes (force closes anyway)",
 	run = function(ctx)
@@ -192,13 +192,13 @@ kern.command({
 		if #unsaved > 0 and not ctx.force then
 			error("unsaved changes in " .. table.concat(unsaved, ", "), 0)
 		end
-		if not kern.project.close(kern.project.current().id) then
+		if not greed.project.close(greed.project.current().id) then
 			error("this is the only project open; :q quits", 0)
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "session",
 	doc = "Go to another session: a running one by name, or a project's (started if needed)",
 	args = { { name = "to", doc = "A session's name, or a folder or file", complete = "file" } },
@@ -207,48 +207,48 @@ kern.command({
 		if to == nil then
 			error("session needs a name or a path; space P picks one", 0)
 		end
-		for _, session in kern.session.list() do
+		for _, session in greed.session.list() do
 			if session.name == to then
-				kern.session.switch({ name = to })
+				greed.session.switch({ name = to })
 				return
 			end
 		end
-		kern.session.switch({ path = to })
+		greed.session.switch({ path = to })
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "trust",
-	doc = "Trust the shown project's own config in .kern/, and run it now and whenever it opens",
+	doc = "Trust the shown project's own config in .greed/, and run it now and whenever it opens",
 	run = function()
-		local root = kern.project.current().root
-		if kern.fs.stat(`{root}/.kern/init.luau`) == nil then
-			error(`{root} has no .kern/init.luau to trust`, 0)
+		local root = greed.project.current().root
+		if greed.fs.stat(`{root}/.greed/init.luau`) == nil then
+			error(`{root} has no .greed/init.luau to trust`, 0)
 		end
 		add_to_list("trusted-projects", root, math.huge)
 		run_config(root)
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "project-config",
-	doc = "Run the shown project's own config in .kern/, if you trusted it",
+	doc = "Run the shown project's own config in .greed/, if you trusted it",
 	run = function()
-		run_config(kern.project.current().root)
+		run_config(greed.project.current().root)
 	end,
 })
 
--- `kern FILE` or `kern FOLDER` in a session that's already running: show
+-- `greed FILE` or `greed FOLDER` in a session that's already running: show
 -- that project, and the file if it's one.
-kern.on("client.attached", function(event: kern.ClientAttached)
+greed.on("client.attached", function(event: greed.ClientAttached)
 	local path = event.path
 	if path == nil then
 		return
 	end
 	M.open(path)
-	local info = kern.fs.stat(path)
+	local info = greed.fs.stat(path)
 	if info == nil or info.kind == "file" then
-		kern.open(path)
+		greed.open(path)
 	end
 end)
 

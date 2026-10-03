@@ -2,7 +2,7 @@
 -- reach the same files you do, through the editor, so an open note changes
 -- in front of you.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local agent = require("@agent")
 local notes = require("./notes")
 local links = require("./links")
@@ -16,7 +16,7 @@ agent.tool({
 	name = "notes_list",
 	description = 'The names of every note, like "ideas" or "daily/2026-10-01"',
 	run = function()
-		return kern.json.array(notes.all())
+		return greed.json.array(notes.all())
 	end,
 })
 
@@ -25,7 +25,7 @@ agent.tool({
 	description = "Search every note for a regex; each match with its note and 1-based line",
 	input = object({ pattern = { type = "string" } }, { "pattern" }),
 	run = function(args)
-		local found, err = kern.fs.grep(args.pattern, notes.folder())
+		local found, err = greed.fs.grep(args.pattern, notes.folder())
 		if found == nil then
 			error(err, 0)
 		end
@@ -37,7 +37,7 @@ agent.tool({
 				text = line.text,
 			})
 		end
-		return kern.json.array(out)
+		return greed.json.array(out)
 	end,
 })
 
@@ -50,7 +50,7 @@ agent.tool({
 		if text == nil then
 			error(`there's no note called {args.name}`, 0)
 		end
-		return { text = text, linked_from = kern.json.array(links.backlinks(args.name)) }
+		return { text = text, linked_from = greed.json.array(links.backlinks(args.name)) }
 	end,
 })
 
@@ -76,7 +76,7 @@ agent.tool({
 			buffer:save()
 			return `wrote {args.name}`
 		end
-		local ok, err = kern.fs.write(notes.path(args.name), args.text)
+		local ok, err = greed.fs.write(notes.path(args.name), args.text)
 		if not ok then
 			error(err, 0)
 		end
@@ -99,7 +99,7 @@ agent.tool({
 				due = todo.due,
 			})
 		end
-		return kern.json.array(out)
+		return greed.json.array(out)
 	end,
 })
 

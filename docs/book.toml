@@ -1,6 +1,6 @@
 # Builds the docs as a website with mdBook: `mdbook build docs`.
 [book]
-title = "Kern"
+title = "Greed"
 src = "."
 
 [build]

@@ -1,21 +1,21 @@
 -- Where the notes are, which buffers are notes, and reading and writing
 -- them by name.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.option.define({
+greed.option.define({
 	name = "notes-folder",
 	doc = "The folder notes live in; ~ is your home folder",
 	default = "~/notes",
 })
 
-kern.option.define({
+greed.option.define({
 	name = "notes-everywhere",
 	doc = "Treat every Markdown file as a note: concealed links and backlinks",
 	default = false,
 })
 
-kern.option.define({
+greed.option.define({
 	name = "notes-conceal",
 	doc = "Show links in notes without their brackets, and markup as symbols",
 	default = true,
@@ -25,8 +25,8 @@ local M = {}
 
 --- The notes folder, with ~ filled in.
 function M.folder(): string
-	local folder = kern.option.get("notes-folder") :: string
-	local home = kern.fs.dirs().home
+	local folder = greed.option.get("notes-folder") :: string
+	local home = greed.fs.dirs().home
 	if home and (folder == "~" or string.sub(folder, 1, 2) == "~/") then
 		folder = home .. string.sub(folder, 2)
 	end
@@ -34,25 +34,25 @@ function M.folder(): string
 end
 
 local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{kern.fs.cwd()}/{path}`
+	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
 end
 
 --- Whether `buffer` is a note: Markdown in the notes folder, or any
 --- Markdown with `notes-everywhere`.
-function M.is_note(buffer: kern.Buffer): boolean
+function M.is_note(buffer: greed.Buffer): boolean
 	-- A buffer can be closed by the time an event about it is handled.
 	local ok, path = pcall(buffer.path, buffer)
 	if not ok or path == nil or not string.match(path, "%.md$") then
 		return false
 	end
-	if kern.option.get("notes-everywhere") == true then
+	if greed.option.get("notes-everywhere") == true then
 		return true
 	end
 	local folder = M.folder()
 	return string.sub(absolute(path), 1, #folder + 1) == folder .. "/"
 end
 
---- The file for note `name`, e.g. "ideas" or "projects/kern".
+--- The file for note `name`, e.g. "ideas" or "projects/greed".
 function M.path(name: string): string
 	local file = if string.match(name, "%.md$") then name else name .. ".md"
 	return `{M.folder()}/{file}`
@@ -71,7 +71,7 @@ end
 --- Every note's name, sorted.
 function M.all(): { string }
 	local names = {}
-	for _, path in kern.files(M.folder()) do
+	for _, path in greed.files(M.folder()) do
 		if string.match(path, "%.md$") then
 			table.insert(names, (string.gsub(path, "%.md$", "")))
 		end
@@ -81,9 +81,9 @@ function M.all(): { string }
 end
 
 --- The buffer note `name` is open in, if it is.
-function M.buffer(name: string): kern.Buffer?
+function M.buffer(name: string): greed.Buffer?
 	local path = M.path(name)
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local p = buffer:path()
 		if p and absolute(p) == path then
 			return buffer
@@ -98,7 +98,7 @@ function M.read(name: string): string?
 	if buffer then
 		return buffer:text()
 	end
-	return (kern.fs.read(M.path(name)))
+	return (greed.fs.read(M.path(name)))
 end
 
 --- Adds `text` as a line at the end of note `name`, making the note if
@@ -115,11 +115,11 @@ function M.append(name: string, text: string)
 		return
 	end
 	local path = M.path(name)
-	local current: string = kern.fs.read(path) or ""
+	local current: string = greed.fs.read(path) or ""
 	local before = if current ~= "" and string.sub(current, -1) ~= "\n"
 		then current .. "\n"
 		else current
-	local ok, err = kern.fs.write(path, before .. text .. "\n")
+	local ok, err = greed.fs.write(path, before .. text .. "\n")
 	if not ok then
 		error(err, 0)
 	end

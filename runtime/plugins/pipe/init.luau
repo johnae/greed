@@ -14,12 +14,12 @@
 -- review with space u o; marks keep each result in its place if you edit
 -- while the model works.
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local models = require("@models")
 local operations = require("@operations")
 
-kern.option.define({
+greed.option.define({
 	name = "pipe-model-role",
 	doc = "The model role `| model: ...` asks; see :models",
 	default = "fast",
@@ -30,7 +30,7 @@ export type Filter = (text: string) -> string
 
 local M = {}
 
-local function span(range: kern.Range): (number, number)
+local function span(range: greed.Range): (number, number)
 	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
@@ -128,7 +128,7 @@ local function run(
 	command: string,
 	input: string?
 ): { code: number?, stdout: string, stderr: string }
-	local done, err = kern.process.run({ "sh", "-c", command }, { stdin = input })
+	local done, err = greed.process.run({ "sh", "-c", command }, { stdin = input })
 	if done == nil then
 		error(err, 0)
 	end
@@ -152,7 +152,7 @@ local SYSTEM = "You rewrite text as instructed. Reply with only the rewritten te
 
 local function model(instruction: string): Filter
 	return function(text)
-		local role = kern.option.get("pipe-model-role") :: string
+		local role = greed.option.get("pipe-model-role") :: string
 		local answer, err = models.ask(role, {
 			system = SYSTEM,
 			messages = { { role = "user", content = `{instruction}\n\n{text}` } },
@@ -191,10 +191,10 @@ end
 -- Pipes each selection in `view` through `filter`, keeping marks over them so
 -- the results land in place even if the text moves while it works. Returns
 -- what puts every result in with one edit, or why it can't.
-local function gather(view: kern.View, filter: Filter): ((() -> ())?, string?)
+local function gather(view: greed.View, filter: Filter): ((() -> ())?, string?)
 	local buffer = view:buffer()
 	local ns = "pipe"
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	for _, range in view:selection().ranges do
 		local from, to = span(range)
 		table.insert(marks, { from = from, to = to, style = "pipe" })
@@ -226,15 +226,15 @@ local function gather(view: kern.View, filter: Filter): ((() -> ())?, string?)
 end
 
 --- Pipes `view`'s selections through `target`. Waits for programs and
---- models; works in commands and kern.spawn. Returns false and why when it
+--- models; works in commands and greed.spawn. Returns false and why when it
 --- can't.
-function M.pipe(view: kern.View, target: string): (boolean, string?)
+function M.pipe(view: greed.View, target: string): (boolean, string?)
 	local filter, from_model, why = M.parse(target)
 	if filter == nil then
 		return false, why
 	end
 	if from_model then
-		kern.echo("asking the model...")
+		greed.echo("asking the model...")
 	end
 	local apply, err = gather(view, filter)
 	if apply == nil then
@@ -253,12 +253,12 @@ function M.pipe(view: kern.View, target: string): (boolean, string?)
 end
 
 -- Asks for what to run, or takes it from the command line.
-local function command_from(ctx: kern.Context, title: string): string?
+local function command_from(ctx: greed.Context, title: string): string?
 	local given = if #ctx.args > 0 then table.concat(ctx.args, " ") else core.prompt.ask(title)
 	return if given == nil or given == "" then nil else given
 end
 
-kern.command({
+greed.command({
 	name = "pipe",
 	doc = "Pipe each selection through a shell command, a Luau filter (luau: name) or a model (model: what to do)",
 	args = { { name = "target", doc = "e.g. sort -u, luau: snake_case, model: add doc comments" } },
@@ -269,22 +269,22 @@ kern.command({
 		end
 		local ok, err = M.pipe(ctx.view, target)
 		if ok then
-			kern.echo("")
+			greed.echo("")
 		else
-			kern.echo(err :: string)
+			greed.echo(err :: string)
 		end
 	end,
 })
 
 -- Puts what `command` prints before (or after) each selection, and selects it.
-local function insert_output(ctx: kern.Context, after: boolean)
+local function insert_output(ctx: greed.Context, after: boolean)
 	local command = command_from(ctx, if after then "Append output of" else "Insert output of")
 	if command == nil then
 		return
 	end
 	local done = run(command)
 	if done.code ~= 0 then
-		kern.echo(`{command} failed: {done.stderr}`)
+		greed.echo(`{command} failed: {done.stderr}`)
 		return
 	end
 	local output = done.stdout
@@ -302,7 +302,7 @@ local function insert_output(ctx: kern.Context, after: boolean)
 	end)
 end
 
-kern.command({
+greed.command({
 	name = "insert-output",
 	doc = "Insert what a shell command prints before each selection",
 	args = { { name = "command", doc = "e.g. date" } },
@@ -311,7 +311,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "append-output",
 	doc = "Insert what a shell command prints after each selection",
 	args = { { name = "command", doc = "e.g. date" } },
@@ -320,7 +320,7 @@ kern.command({
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "pipe-to",
 	doc = "Give each selection to a shell command as input, leaving the text as it is",
 	args = { { name = "command", doc = "e.g. xclip" } },
@@ -332,14 +332,14 @@ kern.command({
 		for _, range in ctx.view:selection().ranges do
 			local done = run(command, ctx.buffer:slice(span(range)))
 			if done.code ~= 0 then
-				kern.echo(`{command} failed: {done.stderr}`)
+				greed.echo(`{command} failed: {done.stderr}`)
 				return
 			end
 		end
 	end,
 })
 
-kern.command({
+greed.command({
 	name = "keep-pipe",
 	doc = "Keep the selections a shell command succeeds on, given each as input",
 	args = { { name = "command", doc = "e.g. grep -q TODO" } },
@@ -355,14 +355,14 @@ kern.command({
 			end
 		end
 		if #kept == 0 then
-			kern.echo(`{command} failed on every selection`)
+			greed.echo(`{command} failed on every selection`)
 			return
 		end
 		ctx.view:set_selection({ ranges = kept, primary = 1 })
 	end,
 })
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["|"] = "pipe",
 	["!"] = "insert-output",
 	["alt-!"] = "append-output",

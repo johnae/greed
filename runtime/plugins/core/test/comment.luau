@@ -1,10 +1,10 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local core = require("@core")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
-	kern.view():buffer():set_language("lua")
+	greed.view():buffer():set_language("lua")
 	t:keys(keys)
 	t:expect(after)
 end
@@ -20,7 +20,7 @@ end)
 
 test("a language without a comment says so", function(t)
 	t:buffer("|abc")
-	kern.view():buffer():set_language(nil)
+	greed.view():buffer():set_language(nil)
 	t:keys("ctrl-c")
 	t:expect("|abc")
 	local messages = t:messages()

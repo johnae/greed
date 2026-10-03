@@ -41,11 +41,11 @@ fn core_plugin_tests_pass() {
 
 #[test]
 fn failures_name_the_line_and_what_differed() {
-    let dir = std::env::temp_dir().join(format!("kern-test-harness-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("greed-test-harness-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("test")).unwrap();
     std::fs::write(
         dir.join("test/sample.luau"),
-        "local test = require('@kern/test')\ntest('passes', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('a|b')\nend)\n\
+        "local test = require('@greed/test')\ntest('passes', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('a|b')\nend)\n\
          test('fails', function(t)\n  t:buffer('|ab')\n  t:keys('l')\n  t:expect('ab|')\nend)\n\
          test('errors', function(t)\n  t:run('no-such-command')\nend)\n",
     )
@@ -156,7 +156,7 @@ fn tree_plugin_tests_pass() {
 }
 
 /// Every default plugin's tests, with all the default plugins loaded the
-/// way `kern test` runs them, so a plugin added later can't be missed here.
+/// way `greed test` runs them, so a plugin added later can't be missed here.
 #[test]
 fn every_default_plugin_passes_its_tests_with_the_others_loaded() {
     let root = core().parent().unwrap().to_owned();
@@ -230,7 +230,7 @@ fn every_style_name_the_plugins_use_is_in_the_theme() {
             while !parts.is_empty() {
                 let found = host
                     .eval(&format!(
-                        "require('@kern').theme.get({:?}) ~= nil",
+                        "require('@greed').theme.get({:?}) ~= nil",
                         parts.join(".")
                     ))
                     .unwrap();

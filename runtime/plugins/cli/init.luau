@@ -1,7 +1,7 @@
--- Kern's command line commands that are only Luau: `kern ls`, `kern new`
--- and `kern bring`. Plugins add their own the same way:
+-- Greed's command line commands that are only Luau: `greed ls`, `greed new`
+-- and `greed bring`. Plugins add their own the same way:
 --
---     kern.cli({
+--     greed.cli({
 --         name = "hello",
 --         doc = "Say hello",
 --         usage = "[NAME]",
@@ -10,18 +10,18 @@
 --         end,
 --     })
 --
--- `kern hello world` then prints "hello world".
+-- `greed hello world` then prints "hello world".
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 local M = {}
 
-kern.cli({
+greed.cli({
 	name = "ls",
 	doc = "List the running sessions and their projects",
 	run = function()
 		local lines = {}
-		for _, session in kern.session.list() do
+		for _, session in greed.session.list() do
 			table.insert(lines, string.format("%-20s %s", session.name, session.root or ""))
 		end
 		return table.concat(lines, "\n")
@@ -37,13 +37,13 @@ capabilities = []
 local INIT = [[
 -- NAME: say what this plugin does here.
 --
--- Run `kern test .` in this directory to run its tests. To use it, put this
+-- Run `greed test .` in this directory to run its tests. To use it, put this
 -- directory in the `plugins` directory next to your config
--- (~/.config/kern/plugins/NAME).
+-- (~/.config/greed/plugins/NAME).
 
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.command({
+greed.command({
 	name = "NAME-greet",
 	doc = "Insert a greeting at each cursor",
 	run = function(ctx)
@@ -56,13 +56,13 @@ kern.command({
 })
 
 -- Bind it to keys like this:
--- kern.keymap.bind("normal", { ["space x"] = "NAME-greet" })
+-- greed.keymap.bind("normal", { ["space x"] = "NAME-greet" })
 
 return {}
 ]]
 
 local TEST = [[
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 test("greet inserts a greeting", function(t)
 	t:buffer("|!")
@@ -75,13 +75,13 @@ local LUAURC = [[
 {
 	"languageMode": "strict",
 	"aliases": {
-		"kern": "./.kern-types/kern"
+		"greed": "./.greed-types/greed"
 	}
 }
 ]]
 
 --- Makes the plugin `name` in `here`, with a test, and sets up type checking
---- there: a `.luaurc` aliasing `@kern` to a `.kern-types` link to Kern's
+--- there: a `.luaurc` aliasing `@greed` to a `.greed-types` link to Greed's
 --- types. They live above the plugin because luau-analyze looks for an
 --- `init.luau`'s config from its folder's parent. Returns what it did.
 function M.new(here: string, name: string?): { string }
@@ -89,48 +89,48 @@ function M.new(here: string, name: string?): { string }
 		error("give the plugin a name: letters, digits, - and _", 0)
 	end
 	local dir = `{here}/{name}`
-	if kern.fs.stat(dir) then
+	if greed.fs.stat(dir) then
 		error(`{name} already exists`, 0)
 	end
 	local files: { [string]: string } =
 		{ ["plugin.toml"] = MANIFEST, ["init.luau"] = INIT, ["test/greet.luau"] = TEST }
 	for file, text in files do
-		local ok, err = kern.fs.write(`{dir}/{file}`, (string.gsub(text, "NAME", name)))
+		local ok, err = greed.fs.write(`{dir}/{file}`, (string.gsub(text, "NAME", name)))
 		if not ok then
 			error(err, 0)
 		end
 	end
 	local done = { `created {name}/: plugin.toml, init.luau, test/greet.luau` }
-	local core = kern.plugin.dirs().core
+	local core = greed.plugin.dirs().core
 	local runtime = core and string.match(core, "^(.*)/plugins/[^/]+$")
-	if runtime and kern.fs.stat(here .. "/.kern-types") == nil then
-		kern.process.run({ "ln", "-s", runtime .. "/types", here .. "/.kern-types" })
-		table.insert(done, "linked .kern-types to Kern's type definitions")
+	if runtime and greed.fs.stat(here .. "/.greed-types") == nil then
+		greed.process.run({ "ln", "-s", runtime .. "/types", here .. "/.greed-types" })
+		table.insert(done, "linked .greed-types to Greed's type definitions")
 	end
-	local config = kern.fs.read(here .. "/.luaurc")
+	local config = greed.fs.read(here .. "/.luaurc")
 	if config == nil then
-		kern.fs.write(here .. "/.luaurc", LUAURC)
+		greed.fs.write(here .. "/.luaurc", LUAURC)
 		table.insert(done, "created .luaurc for type checking")
-	elseif not string.find(config, '"kern"', 1, true) then
-		table.insert(done, 'note: add "kern": "./.kern-types/kern" to the aliases in .luaurc')
+	elseif not string.find(config, '"greed"', 1, true) then
+		table.insert(done, 'note: add "greed": "./.greed-types/greed" to the aliases in .luaurc')
 	end
-	table.insert(done, `run \`kern test {name}\` to try it`)
+	table.insert(done, `run \`greed test {name}\` to try it`)
 	return done
 end
 
-kern.cli({
+greed.cli({
 	name = "new",
 	doc = "Make a plugin to start from, with a test and type checking set up",
 	usage = "NAME",
 	run = function(args)
-		return table.concat(M.new(kern.fs.cwd(), args[1]), "\n")
+		return table.concat(M.new(greed.fs.cwd(), args[1]), "\n")
 	end,
 })
 
 -- The far end's own plugins, one folder per line: its config's and its
 -- data folder's.
 local REMOTE_PLUGINS = [[
-for d in "${XDG_CONFIG_HOME:-$HOME/.config}/kern/plugins" "${XDG_DATA_HOME:-$HOME/.local/share}/kern/plugins"; do
+for d in "${XDG_CONFIG_HOME:-$HOME/.config}/greed/plugins" "${XDG_DATA_HOME:-$HOME/.local/share}/greed/plugins"; do
 	for p in "$d"/*/; do [ -f "$p/plugin.toml" ] && echo "${p%/}"; done
 done
 true
@@ -139,20 +139,20 @@ true
 -- Copies plugin $4 from folder $3 on machine $2 into folder $1.
 local COPY = [[mkdir -p "$1" && ssh "$2" "tar -C '$3' -cf - '$4'" | tar -C "$1" -xf -]]
 
-kern.cli({
+greed.cli({
 	name = "bring",
 	doc = "Copy a plugin made on another machine (in its config or data folder) into your config",
 	usage = "HOST [PLUGIN]",
 	run = function(args)
 		local host, name = args[1], args[2]
 		if host == nil then
-			error("which machine? kern bring HOST [PLUGIN]", 0)
+			error("which machine? greed bring HOST [PLUGIN]", 0)
 		end
-		local config = kern.fs.dirs().config
+		local config = greed.fs.dirs().config
 		if config == nil then
 			error("there's no config folder here", 0)
 		end
-		local listed, err = kern.process.run({ "ssh", host, REMOTE_PLUGINS })
+		local listed, err = greed.process.run({ "ssh", host, REMOTE_PLUGINS })
 		if listed == nil or listed.code ~= 0 then
 			error(`can't reach {host}: {if listed then listed.stderr else err}`, 0)
 		end
@@ -170,7 +170,7 @@ kern.cli({
 			return `{host} has no plugins of its own`
 		end
 		if name == nil then
-			local lines = { `{host} has these; kern bring {host} PLUGIN copies one here:` }
+			local lines = { `{host} has these; greed bring {host} PLUGIN copies one here:` }
 			for _, path in found do
 				table.insert(lines, "  " .. path)
 			end
@@ -182,11 +182,11 @@ kern.cli({
 		end
 		local target = `{config}/plugins`
 		local done, failed =
-			kern.process.run({ "sh", "-c", COPY, "sh", target, host, parent, plugin })
+			greed.process.run({ "sh", "-c", COPY, "sh", target, host, parent, plugin })
 		if done == nil or done.code ~= 0 then
 			error(`copying {plugin} failed: {if done then done.stderr else failed}`, 0)
 		end
-		return `copied {plugin} from {host} into {target}/{plugin}; Kern asks you to approve it when it next starts`
+		return `copied {plugin} from {host} into {target}/{plugin}; Greed asks you to approve it when it next starts`
 	end,
 })
 

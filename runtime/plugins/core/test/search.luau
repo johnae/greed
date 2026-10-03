@@ -1,9 +1,9 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 test("/ selects the next match as you type, and enter keeps it", function(t)
 	t:buffer("|one two one two")
-	local buffer = kern.view():buffer()
+	local buffer = greed.view():buffer()
 	t:keys("/ t w")
 	assert(#buffer:decorations("search") == 2, "every match is highlighted while typing")
 	t:keys("o enter")

@@ -1,6 +1,6 @@
 # Writing plugins
 
-Everything you use in Kern is a plugin written against the API described
+Everything you use in Greed is a plugin written against the API described
 here, so the default plugins in `runtime/plugins` are the best examples:
 `core` is the whole editing model, `grep` the project search, `agent` the
 MCP tools.
@@ -8,13 +8,13 @@ MCP tools.
 ## A plugin
 
 ```text
-~/.config/kern/plugins/greet/
+~/.config/greed/plugins/greet/
   plugin.toml        name = "greet", what it may use
   init.luau          runs when the plugin loads
-  test/greet.luau    tests, run with `kern test greet`
+  test/greet.luau    tests, run with `greed test greet`
 ```
 
-`kern new greet` creates this, with a working test and type checking set up.
+`greed new greet` creates this, with a working test and type checking set up.
 `plugin.toml` can list plugins this one uses, like
 `requires = ["core", "picker"]`; they load first and are available as
 `require("@core")` and `require("@picker")`. Files inside a plugin require
@@ -33,30 +33,30 @@ capabilities = ["proc", "fs.read"]
 
 | Capability | What it opens |
 |---|---|
-| `proc` | Running programs: `kern.process.run`, `kern.terminal.spawn`, `kern.lsp.server`. A program can do anything you can, so this is full access |
-| `fs.read` | Files by path: `kern.fs` reads, `kern.files`, `kern.load`, `kern.open`, `kern.image.load` |
-| `fs.write` | `kern.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
-| `clipboard` | Reading what you copied (`kern.clipboard.get`, `history`); setting it needs nothing |
-| `net` | The network: `kern.http` to any host, and the Claude Code connection |
-| `net:HOST` | `kern.http` to one host, e.g. `net:api.anthropic.com` |
-| `secrets:NAME` | `kern.secrets.get("NAME")`, e.g. `secrets:anthropic` for an API key |
+| `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`. A program can do anything you can, so this is full access |
+| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load` |
+| `fs.write` | `greed.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
+| `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
+| `net` | The network: `greed.http` to any host, and the Claude Code connection |
+| `net:HOST` | `greed.http` to one host, e.g. `net:api.anthropic.com` |
+| `secrets:NAME` | `greed.secrets.get("NAME")`, e.g. `secrets:anthropic` for an API key |
 | `secrets` | Every secret, and keeping new ones |
-| `eval` | `kern.eval`, which runs Luau with every capability |
+| `eval` | `greed.eval`, which runs Luau with every capability |
 | `plugins` | Loading, unloading and checking other plugins |
 
 Using something the plugin didn't declare raises an error that says what
 to add, e.g. `greet can't run programs: add "proc" to capabilities in its
-plugin.toml`. Your `init.luau` and a trusted project's `.kern` folder are
+plugin.toml`. Your `init.luau` and a trusted project's `.greed` folder are
 config, not plugins, and can use everything.
 
-A plugin that isn't one of Kern's own and declares capabilities loads once
-you've approved them. Until then Kern says it waits, and
+A plugin that isn't one of Greed's own and declares capabilities loads once
+you've approved them. Until then Greed says it waits, and
 `:plugins-approve` shows each waiting plugin with what it asks for; choose
 one to approve and load it. Approvals are kept per plugin folder in
-`~/.local/state/kern/approved.json`, and a plugin that later asks for more
+`~/.local/state/greed/approved.json`, and a plugin that later asks for more
 waits again. Plugins that use nothing beyond the editor load at once, and
 installing a plugin an agent wrote approves it, since its review shows the
-same list. Plugins can't write the approvals file through Kern.
+same list. Plugins can't write the approvals file through Greed.
 
 Capabilities follow the code that uses them. A plugin that requires another
 can call what that plugin offers, which works with that plugin's
@@ -72,35 +72,35 @@ t do` without `pairs`.
 ## Commands and keys
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.command({
+greed.command({
 	name = "greet",
 	doc = "Say hello",
 	args = { { name = "who", doc = "Who to greet" } },
 	run = function(ctx)
-		kern.echo(`hello {ctx.args[1] or "there"}`)
+		greed.echo(`hello {ctx.args[1] or "there"}`)
 	end,
 })
 
-kern.keymap.bind("normal", { ["space g"] = "greet" })
+greed.keymap.bind("normal", { ["space g"] = "greet" })
 ```
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
 was typed, and `ctx.char` for keys that type a character. Keymaps are bound
 per mode, or per kind of buffer with `{ mode = "normal", kind = "tree" }`.
-Bindings made later win, and `kern.keymap.unbind` and `kern.keymap.clear`
+Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
-name, and `kern.mode.set("visual")` makes one. `kern.keymap.inherit(mode,
+name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
 "normal", { "space", ":" })` lets a new mode use some of normal mode's
 keys, which is how a whole editing style is built; see [Editing
-styles](editing-styles.md#making-your-own); `kern.keymap.inherit_kinds(mode,
+styles](editing-styles.md#making-your-own); `greed.keymap.inherit_kinds(mode,
 "normal")` gives it the keys plugins bind for panels like the file tree.
-`kern.keys.record(name)` and `kern.keys.stop(name)` keep what's typed, for
-macros and the like; several recordings can run at once. `kern.keymap.fallback(mode,
+`greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for
+macros and the like; several recordings can run at once. `greed.keymap.fallback(mode,
 command)` runs a command for any single key nothing else takes, and
-`kern.keymap.isolate(mode)` keeps keys bound for every mode out of one,
+`greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
 the way a terminal takes every key.
 
 ## Buffers, views and edits
@@ -120,9 +120,9 @@ Edits made in one `edit` call are one undo step and are applied together,
 so their positions all refer to the text before the edit. Selections move
 with the text.
 
-`kern.open(path)` shows a file, `kern.load(path)` opens one without showing
-it, `kern.create_buffer(kind, text)` makes a scratch buffer, and
-`buffer:find`, `buffer:find_all` and `kern.fs.grep` search with regexes.
+`greed.open(path)` shows a file, `greed.load(path)` opens one without showing
+it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
+`buffer:find`, `buffer:find_all` and `greed.fs.grep` search with regexes.
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
@@ -142,16 +142,16 @@ end
 local before = buffer:text_before(tx.id)
 ```
 
-A command's edits carry its name as their cause; `kern.history.set_cause`
+A command's edits carry its name as their cause; `greed.history.set_cause`
 names them otherwise. To make edits in several buffers undo as one step,
 put them in a group:
 
 ```luau
-local group = kern.history.new_group()
-kern.history.set_group(group)
+local group = greed.history.new_group()
+greed.history.set_group(group)
 -- ... edit any buffers ...
-kern.history.set_group(nil)
-kern.history.undo_group(group) -- every buffer back, or nil and why not
+greed.history.set_group(nil)
+greed.history.undo_group(group) -- every buffer back, or nil and why not
 ```
 
 Undoing a group refuses, and changes nothing, when something was done on
@@ -191,8 +191,8 @@ view:set_selection({ ranges = ranges, primary = 1 })
 query. A node describes the text as it was when you got it; after an
 edit, find it again.
 
-Each language's queries are in `kern.syntax`: `kern.syntax.query("rust",
-"textobjects")` is the one in use, and `kern.syntax.set_query` sets one.
+Each language's queries are in `greed.syntax`: `greed.syntax.query("rust",
+"textobjects")` is the one in use, and `greed.syntax.set_query` sets one.
 A plugin can also ship them as files in its own `queries/LANGUAGE/` folder
 (see [Configuration](using.md#highlighting-and-syntax-queries)), and the
 `plugin.loaded` event says when a plugin with some arrives.
@@ -206,26 +206,26 @@ way, with the `indents` query and `require("@core").indent.providers`,
 whose functions get the buffer and the place a line break goes in and
 return the new line's indent.
 
-The editor can have several projects open. `kern.project.current()` is
-the one shown, with its `root`; `kern.project.open`, `switch` and `close`
+The editor can have several projects open. `greed.project.current()` is
+the one shown, with its `root`; `greed.project.open`, `switch` and `close`
 manage them, and `buffer:project()` says which one a buffer belongs to.
 Panels belong to the project they were opened in, so a plugin that keeps
 one (like a results panel) should keep one per project.
 
-Each project has tabs (`kern.tab.list`, `new`, `switch`, `close`,
+Each project has tabs (`greed.tab.list`, `new`, `switch`, `close`,
 `rename`), and each tab has panes laid out side by side and one above
 another. `view:split("right", buffer)` opens a pane, `view:neighbor("left")`
 finds the one beside it, `view:resize("down", 2)` moves its edge, and
-`view:close()` closes it. `kern.view()` is the focused view, and the
-shown tab's active pane is where `kern.open` opens files.
+`view:close()` closes it. `greed.view()` is the focused view, and the
+shown tab's active pane is where `greed.open` opens files.
 
-`kern.tab.layout()` gives a tab's arrangement as a tree, and
-`kern.tab.set_layout(tree)` arranges its panes another way:
+`greed.tab.layout()` gives a tab's arrangement as a tree, and
+`greed.tab.set_layout(tree)` arranges its panes another way:
 
 ```luau
-local a, b, c = table.unpack(kern.tab.current().panes)
+local a, b, c = table.unpack(greed.tab.current().panes)
 -- a across the top, a quarter high; b and c side by side under it
-kern.tab.set_layout({
+greed.tab.set_layout({
 	split = "column",
 	sizes = { 1, 3 },
 	children = { a, { split = "row", children = { b, c } } },
@@ -253,13 +253,13 @@ kern.tab.set_layout({
   file's name. Edits in it change the files as you type, and changes to
   the files show in it. Search results, references and the problems list
   use one.
-- Images: `kern.image.load(path)` reads a PNG, JPEG or GIF and gives an id,
+- Images: `greed.image.load(path)` reads a PNG, JPEG or GIF and gives an id,
   and a mark with `image = { id = id, cols = 20, rows = 8 }` draws it over
-  that many cells from its start. `kern.image.cells(id)` says how many
+  that many cells from its start. `greed.image.cells(id)` says how many
   cells it covers at its own size.
 - Floats show a buffer over the main view, and panels beside it:
-  `kern.float(buffer, { title = "Info", width = "60%" })`,
-  `kern.panel(buffer, { side = "right", width = 40 })`.
+  `greed.float(buffer, { title = "Info", width = "60%" })`,
+  `greed.panel(buffer, { side = "right", width = 40 })`.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes
@@ -267,12 +267,12 @@ kern.tab.set_layout({
   With `paths = { dirs = true, choose = function(path) ... end }`, typing a
   path lists the folder's contents, and `tab` completes one into the query.
 - The theme maps style names to looks, as in
-  `kern.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
+  `greed.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those
-  entries: `kern.theme.base(entries)` replaces the whole base, which is how
+  entries: `greed.theme.base(entries)` replaces the whole base, which is how
   the theme plugin switches themes.
 - The status line is pieces you can add to or take away from with
-  `require("@statusline").add` and `.remove`, or replace with `kern.statusline`.
+  `require("@statusline").add` and `.remove`, or replace with `greed.statusline`.
 
 ## Waiting
 
@@ -280,44 +280,44 @@ Commands and event handlers can wait without freezing the editor, and
 waiting always looks the same: the call returns once the answer is there.
 
 ```luau
-kern.command({
+greed.command({
 	name = "rename-file",
 	run = function(ctx)
 		local name = core.prompt.ask("New name", ctx.buffer:path())
 		if name == nil then
 			return -- cancelled
 		end
-		local moved = kern.process.run({ "git", "mv", ctx.buffer:path(), name })
+		local moved = greed.process.run({ "git", "mv", ctx.buffer:path(), name })
 		if moved == nil or moved.code ~= 0 then
-			kern.echo(moved and moved.stderr or "git isn't installed")
+			greed.echo(moved and moved.stderr or "git isn't installed")
 			return
 		end
 		local choice = picker.choose("Open it?", { { label = "yes" }, { label = "no" } })
 		if choice and choice.label == "yes" then
-			kern.open(name)
+			greed.open(name)
 		end
 	end,
 })
 ```
 
-`kern.sleep(ms)`, `kern.next_key()`, `kern.process.run(...)`,
-`kern.http.request(...)`, `kern.lsp.request(...)`, `kern.fs.grep(...)` and
-`kern.plugin.check(...)` wait like this, and so do
+`greed.sleep(ms)`, `greed.next_key()`, `greed.process.run(...)`,
+`greed.http.request(...)`, `greed.lsp.request(...)`, `greed.fs.grep(...)` and
+`greed.plugin.check(...)` wait like this, and so do
 `picker.choose(title, items)` and `core.prompt.ask(title)`, which give nil
 when you close them. (`picker.pick` and `core.prompt.open` take callbacks
-instead, for pickers that stay open while you work.) `kern.signal()` lets
-one piece of code wait for a value another sends. `kern.animate(ms, step)`
+instead, for pickers that stay open while you work.) `greed.signal()` lets
+one piece of code wait for a value another sends. `greed.animate(ms, step)`
 calls `step(t)` once a frame, which is all the flash on copy is.
-`kern.fs.watch(path)` makes a "file.changed" event come whenever that file
+`greed.fs.watch(path)` makes a "file.changed" event come whenever that file
 changes, from anywhere; it's how your config reloads.
 
-`kern.run(name)` starts a command and returns as soon as that command
+`greed.run(name)` starts a command and returns as soon as that command
 waits for something, so the code after it doesn't see what the command
-did after a key or a reply. `kern.run(name, { wait = true })` waits until
+did after a key or a reply. `greed.run(name, { wait = true })` waits until
 the command has finished, the same way as the calls above.
 
 Waiting only works where code runs as a coroutine: commands, event
-handlers, and `kern.spawn(f, ...)`, which runs `f` that way and returns at
+handlers, and `greed.spawn(f, ...)`, which runs `f` that way and returns at
 once, for work in the background. Called anywhere else, like a status line
 piece or a plugin's top level, the calls that wait raise an error instead of
 running on the editor's thread, so no plugin can freeze the editor on a
@@ -329,19 +329,19 @@ draws, and it carries on where it was, so a slow plugin is only slow
 itself. (`coroutine.yield()` with nothing does the same on purpose.) Your
 own coroutines, like a generator made with `coroutine.wrap`, are never
 paused this way. One that works for a whole minute without finishing is
-stopped and Kern says so. Code that can't be paused, like a status line
+stopped and Greed says so. Code that can't be paused, like a status line
 piece or a plugin's top level, is timed instead: anything that holds the
 editor up for 50 ms or more is kept with its plugin and what it was doing,
-`:stalls` lists them, and over 250 ms Kern tells you right away.
+`:stalls` lists them, and over 250 ms Greed tells you right away.
 
-Language servers ask things too: `kern.lsp.on_request(method, handler)`
+Language servers ask things too: `greed.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it
 answers.
 
 ## Events and options
 
-`kern.on(event, handler)` runs a handler on `buffer.changed`,
+`greed.on(event, handler)` runs a handler on `buffer.changed`,
 `mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
 `view.closed` (for plugins holding on to a panel), `pane.opened` (a split,
 from whichever plugin made it), `option.changed`,
@@ -354,13 +354,13 @@ its own kind can take their mouse events first with
 `require("@core").mouse.claim(kind, handler)`. `editor.started` comes once, when
 the editor is up with every plugin and config loaded, and `editor.quitting`
 just before it quits.
-`kern.option.define({ name, doc, default })` adds an option users set with
-`kern.option.set` or `:set`.
+`greed.option.define({ name, doc, default })` adds an option users set with
+`greed.option.set` or `:set`.
 
 ## Programs and terminals
 
-`kern.process.run(command, opts)` runs a program to the end and returns
-what it printed. `kern.terminal.spawn({ command, rows, cols })` starts one
+`greed.process.run(command, opts)` runs a program to the end and returns
+what it printed. `greed.terminal.spawn({ command, rows, cols })` starts one
 in a terminal: `terminal.output` events say there's something new to read
 with `terminal:screen()` and `terminal:scrollback(from)`, and
 `terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,
@@ -370,15 +370,15 @@ that started it.
 
 ## The command line
 
-`kern.cli({ name, doc, usage, run })` adds a command to `kern` itself.
-`kern NAME ARGS` starts an editor with no screen, with your plugins and
+`greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.
+`greed NAME ARGS` starts an editor with no screen, with your plugins and
 config, and calls `run` with the arguments. It can wait like any command
-(on `kern.process.run`, `kern.http.request`, `kern.sleep`); what it
+(on `greed.process.run`, `greed.http.request`, `greed.sleep`); what it
 echoes is printed as it goes, what it returns is printed at the end, and
-an error makes `kern` exit with a failure.
+an error makes `greed` exit with a failure.
 
 ```luau
-kern.cli({
+greed.cli({
 	name = "hello",
 	doc = "Say hello",
 	usage = "[NAME]",
@@ -388,23 +388,23 @@ kern.cli({
 })
 ```
 
-`kern hello world` prints `hello world`, and `kern commands` lists it.
+`greed hello world` prints `hello world`, and `greed commands` lists it.
 Names are lowercase words with dashes; a file of that name in the current
-folder wins, and `kern NAME` with no such command opens `NAME` as a file.
+folder wins, and `greed NAME` with no such command opens `NAME` as a file.
 
 ## The network
 
-`kern.http.request({ url, method, headers, body, timeout })` returns the
+`greed.http.request({ url, method, headers, body, timeout })` returns the
 whole response (`status`, `headers` with lowercase names, `body`), or nil
-and why. `kern.http.stream(...)` returns once the status and headers are
+and why. `greed.http.stream(...)` returns once the status and headers are
 in, and `read()` gives the body piece by piece as it arrives, which is how
 model APIs stream their answers:
 
 ```luau
-local stream, err = kern.http.stream({
+local stream, err = greed.http.stream({
 	url = "https://api.example.com/v1/generate",
 	headers = { ["content-type"] = "application/json" },
-	body = kern.json.encode({ prompt = "Hello", stream = true }),
+	body = greed.json.encode({ prompt = "Hello", stream = true }),
 })
 if stream == nil then
 	error(err, 0)
@@ -414,19 +414,19 @@ while true do
 	if piece == nil then
 		break
 	end
-	kern.echo(piece)
+	greed.echo(piece)
 end
 ```
 
-Each request runs on a thread of its own and both wait like `kern.sleep`,
+Each request runs on a thread of its own and both wait like `greed.sleep`,
 so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.
 
-Keys for those servers come from `kern.secrets.get("anthropic")`, never from
+Keys for those servers come from `greed.secrets.get("anthropic")`, never from
 config or plugin source. It looks in the environment (`GREED_SECRET_ANTHROPIC`,
-or the usual `ANTHROPIC_API_KEY`), then the system keyring, then Kern's own
+or the usual `ANTHROPIC_API_KEY`), then the system keyring, then Greed's own
 secrets file, and waits like the rest. A plugin declares each secret it
-reads as `secrets:NAME`, and Kern's file APIs refuse to read the secrets file
+reads as `secrets:NAME`, and Greed's file APIs refuse to read the secrets file
 itself.
 
 ## Models
@@ -448,7 +448,7 @@ while true do
 	if piece == nil then
 		break
 	end
-	kern.echo(stream.text)
+	greed.echo(stream.text)
 end
 ```
 
@@ -460,14 +460,14 @@ in their config.
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up in Claude Code (through
-`kern mcp`) and as `kern ctl NAME` in the shell:
+`greed mcp`) and as `greed ctl NAME` in the shell:
 
 ```luau
 require("@agent").tool({
 	name = "word_count",
 	description = "How many words the current file has",
 	run = function()
-		local _, words = string.gsub(require("@kern").view():buffer():text(), "%S+", "")
+		local _, words = string.gsub(require("@greed").view():buffer():text(), "%S+", "")
 		return tostring(words)
 	end,
 })
@@ -476,7 +476,7 @@ require("@agent").tool({
 ## Tests
 
 ```luau
-local test = require("@kern/test")
+local test = require("@greed/test")
 
 test("greet says hello", function(t)
 	t:run("greet", { "world" })
@@ -491,7 +491,7 @@ test("copy and paste at every selection", function(t)
 end)
 ```
 
-`kern test DIR` runs a plugin's tests, each in a fresh editor with the
+`greed test DIR` runs a plugin's tests, each in a fresh editor with the
 default plugins loaded. `t:wait(ms)` moves the clock forward for code that
 sleeps, `t:wait_for(check)` waits for real until `check()` is true (for a
 program's output), and `t:tempdir(files)` makes a folder of files to work
@@ -499,14 +499,14 @@ on.
 
 ## Types
 
-The API is fully typed in `runtime/types/kern`. `kern new` sets up a
+The API is fully typed in `runtime/types/greed`. `greed new` sets up a
 `.luaurc` so `luau-lsp` in your editor and `luau-analyze --mode=strict`
 check your plugin against it.
 
 ## Loading and reloading
 
-Kern loads the default plugins, then yours, then `init.luau`. Each plugin
+Greed loads the default plugins, then yours, then `init.luau`. Each plugin
 runs in its own environment and owns what it registers: reloading a plugin
 replaces its commands, keys, options, handlers and theme entries, and
-`kern.plugin.unload(name)` removes them. A plugin that runs too long is
+`greed.plugin.unload(name)` removes them. A plugin that runs too long is
 stopped, so a mistake in a loop can't hang the editor.

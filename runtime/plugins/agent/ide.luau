@@ -1,12 +1,12 @@
 -- Claude Code's IDE integration: run `claude` in the project and `/ide`
--- offers Kern, like it offers VS Code. Claude Code then sees your
+-- offers Greed, like it offers VS Code. Claude Code then sees your
 -- selection as you move, reads diagnostics, and shows its edits here as
 -- proposed changes to accept or reject (see proposals.luau) instead of
 -- writing files behind your back.
 --
 --   space o m  mention the selected lines to Claude Code
 
-local kern = require("@kern")
+local greed = require("@greed")
 local core = require("@core")
 local registry = require("./registry")
 local proposals = require("./proposals")
@@ -20,11 +20,11 @@ local function text(...: string)
 end
 
 local function json(value: any)
-	return text(kern.json.encode(value))
+	return text(greed.json.encode(value))
 end
 
 local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else kern.fs.cwd() .. "/" .. path
+	return if string.sub(path, 1, 1) == "/" then path else greed.fs.cwd() .. "/" .. path
 end
 
 local function uri(path: string): string
@@ -32,9 +32,9 @@ local function uri(path: string): string
 end
 
 -- The open buffer for the file at `path`, however either path is written.
-local function find_buffer(path: string): kern.Buffer?
+local function find_buffer(path: string): greed.Buffer?
 	local wanted = absolute(path)
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local own = buffer:path()
 		if own and absolute(own) == wanted then
 			return buffer
@@ -44,13 +44,13 @@ local function find_buffer(path: string): kern.Buffer?
 end
 
 -- A position as LSP and Claude Code count it: 0-based line and column.
-local function lsp_position(buffer: kern.Buffer, pos: number)
+local function lsp_position(buffer: greed.Buffer, pos: number)
 	local line = buffer:line_of(pos)
 	return { line = line, character = pos - buffer:line_start(line) }
 end
 
 -- Where the primary selection of `view` starts and ends.
-local function primary_range(view: kern.View): (number, number)
+local function primary_range(view: greed.View): (number, number)
 	local selection = view:selection()
 	local range = selection.ranges[selection.primary]
 	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
@@ -58,7 +58,7 @@ end
 
 -- The primary selection in the main view, as Claude Code describes one.
 local function current_selection(): { [string]: any }?
-	local view = kern.view()
+	local view = greed.view()
 	local buffer = view:buffer()
 	local path = buffer:path()
 	if path == nil then
@@ -84,7 +84,7 @@ end
 tool("openFile", function(args)
 	local path = args.filePath
 	if args.makeFrontmost == false then
-		local buffer = kern.load(path)
+		local buffer = greed.load(path)
 		return json({
 			success = true,
 			filePath = absolute(path),
@@ -92,8 +92,8 @@ tool("openFile", function(args)
 			lineCount = buffer:line_count(),
 		})
 	end
-	kern.open(path)
-	local view = kern.view()
+	greed.open(path)
+	local view = greed.view()
 	local buffer = view:buffer()
 	if args.startText then
 		local content = buffer:text()
@@ -115,13 +115,13 @@ end)
 
 tool("openDiff", function(args)
 	local path = args.new_file_path or args.old_file_path
-	local buffer = kern.load(path)
+	local buffer = greed.load(path)
 	local before = buffer:text()
-	local changes = kern.diff(before, args.new_file_contents)
+	local changes = greed.diff(before, args.new_file_contents)
 	if #changes == 0 then
 		return text("FILE_SAVED", before)
 	end
-	kern.open(path)
+	greed.open(path)
 	local unsaved = buffer:modified()
 	local decided = proposals.propose_changes(buffer, path, changes, args.tab_name, args.tab_name)
 	if decided.accepted == 0 then
@@ -157,9 +157,9 @@ tool("getCurrentSelection", selection_tool)
 tool("getLatestSelection", selection_tool)
 
 tool("getOpenEditors", function()
-	local active = kern.view():buffer():id()
+	local active = greed.view():buffer():id()
 	local tabs: { any } = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local path = buffer:path()
 		if path then
 			table.insert(tabs, {
@@ -171,7 +171,7 @@ tool("getOpenEditors", function()
 			})
 		end
 	end
-	return json({ tabs = kern.json.array(tabs) })
+	return json({ tabs = greed.json.array(tabs) })
 end)
 
 tool("getWorkspaceFolders", function()
@@ -187,11 +187,11 @@ local SEVERITY = { "Error", "Warning", "Information", "Hint" }
 
 tool("getDiagnostics", function(args)
 	local files: { any } = {}
-	for _, buffer in kern.buffers() do
+	for _, buffer in greed.buffers() do
 		local path = buffer:path()
 		if path and (args.uri == nil or uri(path) == args.uri) then
 			local list: { any } = {}
-			for _, d in kern.lsp.diagnostics(buffer) do
+			for _, d in greed.lsp.diagnostics(buffer) do
 				table.insert(list, {
 					message = d.message,
 					severity = SEVERITY[d.severity] or "Hint",
@@ -202,10 +202,10 @@ tool("getDiagnostics", function(args)
 					source = d.source,
 				})
 			end
-			table.insert(files, { uri = uri(path), diagnostics = kern.json.array(list) })
+			table.insert(files, { uri = uri(path), diagnostics = greed.json.array(list) })
 		end
 	end
-	return json(kern.json.array(files))
+	return json(greed.json.array(files))
 end)
 
 tool("checkDocumentDirty", function(args)
@@ -240,10 +240,10 @@ end)
 local last_sent = ""
 local generation = 0
 
-kern.on("command.run", function()
+greed.on("command.run", function()
 	generation += 1
 	local mine = generation
-	kern.sleep(100)
+	greed.sleep(100)
 	if mine ~= generation then
 		return
 	end
@@ -251,14 +251,14 @@ kern.on("command.run", function()
 	if selection == nil then
 		return
 	end
-	local encoded = kern.json.encode(selection)
+	local encoded = greed.json.encode(selection)
 	if encoded ~= last_sent then
 		last_sent = encoded
-		kern.control.notify("selection_changed", selection)
+		greed.control.notify("selection_changed", selection)
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "ide-mention",
 	doc = "Mention the selected lines to Claude Code, like @file#L1-5",
 	run = function(ctx)
@@ -272,7 +272,7 @@ kern.command({
 		local last = if to > from and to == ctx.buffer:line_start(ctx.buffer:line_of(to))
 			then ctx.buffer:line_of(ctx.buffer:prev_char(to))
 			else ctx.buffer:line_of(to)
-		kern.control.notify("at_mentioned", {
+		greed.control.notify("at_mentioned", {
 			filePath = absolute(path),
 			lineStart = ctx.buffer:line_of(from),
 			lineEnd = last,
@@ -280,13 +280,13 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["space o m"] = "ide-mention" })
+greed.keymap.bind("normal", { ["space o m"] = "ide-mention" })
 
 -- Without a session (in tests, say) there is nothing for Claude Code to
 -- connect to.
-local serving, port = pcall(kern.control.serve_ide, { core.project.root() }, nil)
+local serving, port = pcall(greed.control.serve_ide, { core.project.root() }, nil)
 
 return {
-	--- The port Claude Code connects to, when Kern is serving it.
+	--- The port Claude Code connects to, when Greed is serving it.
 	port = if serving then port else nil,
 }

@@ -1,6 +1,6 @@
 -- The tools offered to agents, and the MCP methods that list and run them.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 export type Tool = {
 	--- Letters, digits, `_` and `-`, which every MCP client accepts.
@@ -9,7 +9,7 @@ export type Tool = {
 	description: string,
 	--- A JSON Schema for the arguments: `{ type = "object", properties = {...} }`.
 	input: { [string]: any }?,
-	--- Who sees it: "socket" (`kern ctl`, `kern mcp`; the default) or "ide"
+	--- Who sees it: "socket" (`greed ctl`, `greed mcp`; the default) or "ide"
 	--- (Claude Code's IDE connection, which expects its own set of tools).
 	client: string?,
 	--- Does the work. It can wait, e.g. for the user. A string result goes
@@ -23,7 +23,7 @@ local tools: { [string]: { [string]: Tool } } = {}
 
 local M = {}
 
---- Offers `spec` to agents and `kern ctl`. A tool with the same name is
+--- Offers `spec` to agents and `greed ctl`. A tool with the same name is
 --- replaced.
 function M.tool(spec: Tool)
 	assert(string.match(spec.name, "^[%w_%-]+$"), "tool names are letters, digits, _ and -")
@@ -64,7 +64,7 @@ local function call(params: { name: string, arguments: { [string]: any }? }, cli
 	if type(result) == "table" and result.content then
 		return result
 	end
-	return text_result(kern.json.encode(result), false)
+	return text_result(greed.json.encode(result), false)
 end
 
 local methods: { [string]: (params: any, client: string) -> any } = {
@@ -72,7 +72,7 @@ local methods: { [string]: (params: any, client: string) -> any } = {
 		return {
 			protocolVersion = params and params.protocolVersion or "2025-06-18",
 			capabilities = { tools = {} },
-			serverInfo = { name = "kern", version = "0.1" },
+			serverInfo = { name = "greed", version = "0.1" },
 		}
 	end,
 	ping = function()
@@ -87,25 +87,25 @@ local methods: { [string]: (params: any, client: string) -> any } = {
 				inputSchema = tool.input or { type = "object", properties = {} },
 			})
 		end
-		return { tools = kern.json.array(list) }
+		return { tools = greed.json.array(list) }
 	end,
 	["tools/call"] = call,
 }
 
-kern.on("control.request", function(request: kern.ControlRequest)
+greed.on("control.request", function(request: greed.ControlRequest)
 	local method = methods[request.method]
 	-- Notifications, like notifications/initialized, need no answer, but the
 	-- socket waits for one.
 	if method == nil and string.sub(request.method, 1, 14) == "notifications/" then
-		kern.control.reply(request.id, nil)
+		greed.control.reply(request.id, nil)
 	elseif method == nil then
-		kern.control.reply(request.id, nil, `unknown method {request.method}`)
+		greed.control.reply(request.id, nil, `unknown method {request.method}`)
 	else
 		local ok, result = pcall(method, request.params, request.client)
 		if ok then
-			kern.control.reply(request.id, result)
+			greed.control.reply(request.id, result)
 		else
-			kern.control.reply(request.id, nil, tostring(result))
+			greed.control.reply(request.id, nil, tostring(result))
 		end
 	end
 end)

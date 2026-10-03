@@ -1,6 +1,6 @@
-# How Kern is built
+# How Greed is built
 
-Kern has a small core written in Rust and a large layer written in Luau.
+Greed has a small core written in Rust and a large layer written in Luau.
 Knowing where the line is tells you what you can change from a plugin
 (almost everything) and where to look when something is slow.
 
@@ -46,12 +46,12 @@ panel and writing edits back are Luau.
 
 The editor runs as a session: one process that owns the buffers, the Luau
 plugins and the language servers. Clients connect to it. The terminal UI is
-one client: it sends keys and draws the frames it gets back. `kern ctl`,
-`kern mcp` and Claude Code are others, and a graphical client can be added
+one client: it sends keys and draws the frames it gets back. `greed ctl`,
+`greed mcp` and Claude Code are others, and a graphical client can be added
 the same way.
 
 Because the session owns the state, a terminal can detach and reattach
-without losing anything, and `kern ssh` attaches a terminal on one machine
+without losing anything, and `greed ssh` attaches a terminal on one machine
 to a session on another. A client says which protocol it speaks when it
 attaches, and the session refuses clients it can't talk to instead of
 misreading them.
@@ -78,6 +78,6 @@ callbacks, and the editor keeps responding meanwhile.
 ## Agents are clients too
 
 Agents see the same editor state you do, and their edits arrive as
-proposals in the buffer that you accept or reject. When they extend Kern,
+proposals in the buffer that you accept or reject. When they extend Greed,
 their plugins go through the same type checking and tests as any other, and
 you review them before they load.

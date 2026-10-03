@@ -1,5 +1,5 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 local parse = require("../parse")
 
 -- The command line's prompt, from the float showing it.
@@ -58,19 +58,19 @@ test("matches show above the prompt and tab fills them in", function(t)
 end)
 
 test("arguments complete by what the command takes", function(t)
-	kern.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
+	greed.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
 	t:buffer("|abc")
 	t:keys(": s e t space t a b")
 	t:keys("tab")
 	assert(prompt(t) == ":set tab-width", prompt(t))
 	t:keys("space 2 enter")
-	assert(kern.option.get("tab-width") == 2, tostring(kern.option.get("tab-width")))
+	assert(greed.option.get("tab-width") == 2, tostring(greed.option.get("tab-width")))
 end)
 
 test("arguments reach the command", function(t)
 	t:buffer("|abc")
 	t:keys(": e space n o t e s . m d enter")
-	local path = kern.view():buffer():path() or ""
+	local path = greed.view():buffer():path() or ""
 	assert(string.sub(path, -9) == "/notes.md", path)
 end)
 
@@ -125,7 +125,7 @@ end)
 
 test("alt-x opens it in edit mode, where colon types", function(t)
 	t:buffer("|abc")
-	kern.mode.set("edit")
+	greed.mode.set("edit")
 	t:keys("alt-x")
 	t:expect_mode("insert")
 	assert(prompt(t) == ":", prompt(t))
@@ -135,15 +135,15 @@ end)
 
 test(":set parses the value, and text can have spaces", function(t)
 	t:buffer("|x")
-	kern.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
+	greed.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
 	t:run("set", { "tab-width", "2" })
-	assert(kern.option.get("tab-width") == 2)
+	assert(greed.option.get("tab-width") == 2)
 	t:run("set", { "jump-label-alphabet", "ab", "cd" })
 	assert(
-		kern.option.get("jump-label-alphabet") == "ab cd",
-		tostring(kern.option.get("jump-label-alphabet"))
+		greed.option.get("jump-label-alphabet") == "ab cd",
+		tostring(greed.option.get("jump-label-alphabet"))
 	)
-	kern.option.set("jump-label-alphabet", "abcdefghijklmnopqrstuvwxyz")
+	greed.option.set("jump-label-alphabet", "abcdefghijklmnopqrstuvwxyz")
 	assert(not pcall(function()
 		t:run("set", { "tab-width" })
 	end), "a value is needed")
@@ -151,11 +151,11 @@ end)
 
 test(":w, :wq and :qa are the usual commands", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a" })
-	kern.open(dir .. "/a.txt")
+	greed.open(dir .. "/a.txt")
 	t:keys("i 1 esc : w enter")
-	assert(kern.fs.read(dir .. "/a.txt") == "1a")
+	assert(greed.fs.read(dir .. "/a.txt") == "1a")
 	t:keys("i 2 esc : w q enter")
-	assert(kern.fs.read(dir .. "/a.txt") == "12a" and t:quitting())
+	assert(greed.fs.read(dir .. "/a.txt") == "12a" and t:quitting())
 end)
 
 test("shift-tab goes back through the matches, and wraps round", function(t)
@@ -180,7 +180,7 @@ test("other plugins add completers and aliases", function(t)
 		return { { text = "main" }, { text = "dev" } }
 	end)
 	local got = nil
-	kern.command({
+	greed.command({
 		name = "checkout",
 		args = { { name = "branch", complete = "branch" } },
 		run = function(ctx)
@@ -197,7 +197,7 @@ end)
 test("files complete one folder at a time", function(t)
 	local dir = t:tempdir({ ["src/main.rs"] = "", ["src/lib.rs"] = "" })
 	t:buffer("|abc")
-	kern.run("command-line")
+	greed.run("command-line")
 	for _, key in string.split(`e {dir}/s`, "") do
 		t:keys(if key == " " then "space" else key)
 	end
@@ -230,9 +230,9 @@ test(":lua with an error says what went wrong, and := shows nil", function(t)
 end)
 
 test("paths complete from the home folder, and hidden ones once a dot is typed", function(t)
-	local home = kern.fs.dirs().home :: string
-	kern.fs.write(home .. "/projects/a.txt", "")
-	kern.fs.write(home .. "/.config/kern.luau", "")
+	local home = greed.fs.dirs().home :: string
+	greed.fs.write(home .. "/projects/a.txt", "")
+	greed.fs.write(home .. "/.config/greed.luau", "")
 	t:buffer("|abc")
 	t:keys(": e space ~ / p r tab")
 	assert(prompt(t) == ":e ~/projects/", prompt(t))

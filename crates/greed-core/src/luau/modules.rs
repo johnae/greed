@@ -1,7 +1,7 @@
 //! Plugin environments and `require`, resolved the way Luau's own tools
 //! resolve them so `luau-analyze` and `luau-lsp` see what runs:
 //!
-//! - `require("@kern")` is the editor API; `require("@kern/test")` is the
+//! - `require("@greed")` is the editor API; `require("@greed/test")` is the
 //!   test API, available in test files.
 //! - `require("./x")` loads `x.luau` (or `x/init.luau`) next to the file
 //!   doing the require. From an `init.luau`, siblings are `@self/x`.
@@ -25,10 +25,10 @@ pub(super) struct Modules {
     owner: PluginId,
     /// The plugin's globals, over the read-only standard library.
     globals: Table,
-    kern: Table,
+    greed: Table,
     test: Option<Function>,
     /// The plugin's directory; `None` for inline code, which can only
-    /// require `@kern`.
+    /// require `@greed`.
     root: Option<PathBuf>,
     /// Loaded modules, by path.
     loaded: Table,
@@ -47,10 +47,10 @@ impl Modules {
         meta.set("__index", lua.globals())?;
         globals.set_metatable(Some(meta))?;
         let owner: PluginId = owner.into();
-        let kern = api::kern_module(lua, &owner)?;
-        capabilities::gate(lua, &kern, &owner, grant)?;
+        let greed = api::greed_module(lua, &owner)?;
+        capabilities::gate(lua, &greed, &owner, grant)?;
         Ok(Self {
-            kern,
+            greed,
             owner,
             globals,
             test,
@@ -110,10 +110,10 @@ impl Modules {
 
     fn require(&self, lua: &Lua, from: Option<&Path>, name: &str) -> LuaResult<Value> {
         match name {
-            "@kern" => return Ok(Value::Table(self.kern.clone())),
-            "@kern/test" => {
+            "@greed" => return Ok(Value::Table(self.greed.clone())),
+            "@greed/test" => {
                 return self.test.clone().map(Value::Function).ok_or_else(|| {
-                    mlua::Error::runtime("@kern/test is only available in test files")
+                    mlua::Error::runtime("@greed/test is only available in test files")
                 });
             }
             _ => {}
@@ -139,7 +139,7 @@ impl Modules {
     fn resolve(&self, from: Option<&Path>, name: &str) -> LuaResult<PathBuf> {
         let fail = |why: &str| mlua::Error::runtime(format!("can't require {name:?}: {why}"));
         let (Some(root), Some(from)) = (&self.root, from) else {
-            return Err(fail("only @kern can be required here"));
+            return Err(fail("only @greed can be required here"));
         };
         let dir = from.parent().unwrap_or(root);
         let is_init = from.file_name().is_some_and(|f| f == "init.luau");
@@ -159,7 +159,7 @@ impl Modules {
             dir.join(name)
         } else {
             return Err(fail(
-                "use \"@kern\", \"./file\", or \"@self/file\" from init.luau",
+                "use \"@greed\", \"./file\", or \"@self/file\" from init.luau",
             ));
         };
         let base = normalize(&base);

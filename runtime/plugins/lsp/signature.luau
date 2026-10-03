@@ -3,7 +3,7 @@
 -- follows as you type, and closes when the call ends or typing stops.
 -- The signature-help command asks for it, for a key in insert mode.
 
-local kern = require("@kern")
+local greed = require("@greed")
 
 -- The modes signature help works in: typing, and typing with the
 -- completion menu open.
@@ -14,7 +14,7 @@ local function typing(mode: string): boolean
 		or string.match(mode, "^completion%-") ~= nil
 end
 
-type Open = { view: kern.View, list: kern.Buffer }
+type Open = { view: greed.View, list: greed.Buffer }
 
 local open: Open? = nil
 -- Goes up with each keystroke, so a slow answer for older text is dropped.
@@ -27,15 +27,15 @@ local function close()
 	end
 end
 
-local function head(view: kern.View): number
+local function head(view: greed.View): number
 	local selection = view:selection()
 	return selection.ranges[selection.primary].head
 end
 
 -- The characters that ask for signature help in `buffer`, and the ones
 -- that ask again while it's showing.
-local function triggers(buffer: kern.Buffer): ({ string }, { string })
-	local capabilities = kern.lsp.capabilities(buffer)
+local function triggers(buffer: greed.Buffer): ({ string }, { string })
+	local capabilities = greed.lsp.capabilities(buffer)
 	local provider = capabilities and capabilities.signatureHelpProvider
 	if type(provider) ~= "table" then
 		return {}, {}
@@ -85,9 +85,9 @@ local function show(help: any)
 	local width = math.min((utf8.len(label) or #label) + 2, 80)
 	local o: Open
 	if open == nil then
-		local list = kern.create_buffer("signature", label, { readonly = true })
+		local list = greed.create_buffer("signature", label, { readonly = true })
 		local view =
-			kern.float(list, { anchor = "above-cursor", width = width, height = 3, focus = false })
+			greed.float(list, { anchor = "above-cursor", width = width, height = 3, focus = false })
 		o = { view = view, list = list }
 		open = o
 	else
@@ -99,7 +99,7 @@ local function show(help: any)
 	end
 	local from, to =
 		parameter_range(signature, signature.activeParameter or help.activeParameter or 0)
-	local marks: { kern.Mark } = {}
+	local marks: { greed.Mark } = {}
 	if from and to then
 		table.insert(marks, { from = from, to = to, style = "ui.signature.parameter" })
 	end
@@ -108,19 +108,19 @@ end
 
 -- Asks the server for signature help at the cursor of `view`, and shows
 -- it, or closes it when there's none.
-local function ask(view: kern.View, context: any)
+local function ask(view: greed.View, context: any)
 	local buffer = view:buffer()
 	if buffer:path() == nil then
 		return
 	end
 	generation += 1
 	local wanted = generation
-	local ok, help = pcall(kern.lsp.request, buffer, "textDocument/signatureHelp", {
-		textDocument = { uri = kern.lsp.uri(buffer) },
-		position = kern.lsp.position(buffer, head(view)),
+	local ok, help = pcall(greed.lsp.request, buffer, "textDocument/signatureHelp", {
+		textDocument = { uri = greed.lsp.uri(buffer) },
+		position = greed.lsp.position(buffer, head(view)),
 		context = context,
 	})
-	if wanted ~= generation or not typing(kern.mode.get()) then
+	if wanted ~= generation or not typing(greed.mode.get()) then
 		return
 	end
 	if ok and help then
@@ -130,10 +130,10 @@ local function ask(view: kern.View, context: any)
 	end
 end
 
-kern.on("buffer.changed", function(event: kern.BufferChanged)
-	local view = kern.view()
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local view = greed.view()
 	local buffer = view:buffer()
-	if event.buffer:id() ~= buffer:id() or not typing(kern.mode.get()) then
+	if event.buffer:id() ~= buffer:id() or not typing(greed.mode.get()) then
 		return
 	end
 	local pos = head(view)
@@ -147,18 +147,18 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	end
 end)
 
-kern.on("mode.changed", function(event: kern.ModeChanged)
+greed.on("mode.changed", function(event: greed.ModeChanged)
 	if not typing(event.to) then
 		close()
 	end
 end)
 
-kern.command({
+greed.command({
 	name = "signature-help",
 	doc = "While typing, show what the function being called takes",
 	run = function(ctx)
-		if not typing(kern.mode.get()) then
-			kern.echo("signature help shows while typing")
+		if not typing(greed.mode.get()) then
+			greed.echo("signature help shows while typing")
 			return
 		end
 		ask(ctx.view, { triggerKind = 1, isRetrigger = open ~= nil })

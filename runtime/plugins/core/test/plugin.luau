@@ -1,15 +1,15 @@
-local test = require("@kern/test")
-local kern = require("@kern")
+local test = require("@greed/test")
+local greed = require("@greed")
 
 local GOOD = {
 	["plugin.toml"] = 'name = "hello"\n',
 	["init.luau"] = [[
-local kern = require("@kern")
-kern.command({ name = "hello", run = function() kern.echo("hello there") end })
+local greed = require("@greed")
+greed.command({ name = "hello", run = function() greed.echo("hello there") end })
 return {}
 ]],
 	["test/hello.luau"] = [[
-local test = require("@kern/test")
+local test = require("@greed/test")
 test("says hello", function(t)
 	t:run("hello")
 	assert(t:messages()[1] == "hello there")
@@ -21,12 +21,12 @@ end)
 }
 
 -- Checks `dir` from a command, since checking waits, and returns the report.
-local function check(t: any, dir: string): kern.PluginCheck
-	local report: kern.PluginCheck? = nil
-	kern.command({
+local function check(t: any, dir: string): greed.PluginCheck
+	local report: greed.PluginCheck? = nil
+	greed.command({
 		name = "test-check",
 		run = function()
-			report = kern.plugin.check(dir)
+			report = greed.plugin.check(dir)
 		end,
 	})
 	t:run("test-check")
@@ -45,21 +45,21 @@ end)
 test("type errors are reported", function(t)
 	local dir = t:tempdir({
 		["plugin.toml"] = 'name = "typo"\n',
-		["init.luau"] = 'local kern = require("@kern")\nkern.ech("x")\nreturn {}\n',
+		["init.luau"] = 'local greed = require("@greed")\ngreed.ech("x")\nreturn {}\n',
 	})
 	local report = check(t, dir)
 	if report.types.skipped then
 		return
 	end
-	assert(report.types.ok == false, "kern.ech isn't in the API")
+	assert(report.types.ok == false, "greed.ech isn't in the API")
 	assert(string.find(report.types.output or "", "ech", 1, true) ~= nil, report.types.output)
 end)
 
 test("plugins load while the editor runs", function(t)
 	local dir = t:tempdir(GOOD)
-	assert(kern.plugin.load(dir) == "hello")
-	assert(table.find(kern.plugin.list(), "hello"))
-	assert(kern.plugin.dirs().hello == dir)
+	assert(greed.plugin.load(dir) == "hello")
+	assert(table.find(greed.plugin.list(), "hello"))
+	assert(greed.plugin.dirs().hello == dir)
 	t:run("hello")
 	assert(t:messages()[1] == "hello there")
 end)

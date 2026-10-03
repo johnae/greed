@@ -1,28 +1,28 @@
-//! Command line commands plugins add with `kern.cli`.
+//! Command line commands plugins add with `greed.cli`.
 
 use greed_core::Editor;
 use greed_core::luau::Host;
 use greed_text::ClientId;
 
 const COMMANDS: &str = r#"
-local kern = require("@kern")
-kern.cli({
+local greed = require("@greed")
+greed.cli({
     name = "greet",
     doc = "Say hello",
     usage = "[NAME]",
     run = function(args)
-        kern.echo("thinking")
-        kern.sleep(0.01)
-        local done = kern.process.run({ "echo", args[1] or "there" })
+        greed.echo("thinking")
+        greed.sleep(0.01)
+        local done = greed.process.run({ "echo", args[1] or "there" })
         return "hello " .. string.gsub(done.stdout, "\n", "")
     end,
 })
-kern.cli({ name = "quiet", run = function() end })
-kern.cli({ name = "fail", run = function() error("no luck", 0) end })
-kern.cli({
+greed.cli({ name = "quiet", run = function() end })
+greed.cli({ name = "fail", run = function() error("no luck", 0) end })
+greed.cli({
     name = "stuck",
     run = function()
-        kern.signal().wait()
+        greed.signal().wait()
     end,
 })
 "#;

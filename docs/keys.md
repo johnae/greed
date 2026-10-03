@@ -18,19 +18,19 @@ them by name.
 
 ## Binding keys
 
-Bindings go in `~/.config/kern/init.luau`:
+Bindings go in `~/.config/greed/init.luau`:
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space w"] = "save",
 	["space q"] = "quit",
 	Q = "quit-all",
 })
 
 -- In insert mode too
-kern.keymap.bind("insert", { ["ctrl-s"] = "save" })
+greed.keymap.bind("insert", { ["ctrl-s"] = "save" })
 ```
 
 A binding maps a key, or a sequence of keys separated by spaces, to a
@@ -52,11 +52,11 @@ Key names:
 ```luau
 -- Hide some keys; whatever they did before comes back if the plugin that
 -- unbound them is removed
-kern.keymap.unbind("normal", { "U", "g w" })
+greed.keymap.unbind("normal", { "U", "g w" })
 
 -- Start a mode over: everything bound in it so far is hidden, and bindings
 -- made afterwards apply as usual
-kern.keymap.clear("normal")
+greed.keymap.clear("normal")
 ```
 
 ## Panes, tabs and terminals
@@ -88,21 +88,21 @@ All of these are ordinary bindings to commands (`pane-left`,
 `pane-terminal`, `tab-next`, ...), so they change like any other:
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
 -- alt-n is something else in my shell
-kern.keymap.unbind({}, { "alt-n" })
-kern.keymap.unbind("terminal", { "alt-n" })
+greed.keymap.unbind({}, { "alt-n" })
+greed.keymap.unbind("terminal", { "alt-n" })
 
 -- Split with space | and space -
-kern.keymap.bind("normal", {
+greed.keymap.bind("normal", {
 	["space |"] = "pane-split-right",
 	["space -"] = "pane-split-down",
 })
 
 -- The pane mode on ctrl-p, in terminals too, as in zellij
-kern.keymap.bind({}, { ["ctrl-p"] = "pane-mode" })
-kern.keymap.bind("terminal", { ["ctrl-p"] = "pane-mode" })
+greed.keymap.bind({}, { ["ctrl-p"] = "pane-mode" })
+greed.keymap.bind("terminal", { ["ctrl-p"] = "pane-mode" })
 ```
 
 The terminal's mode takes every key, so the `alt` keys are bound in the
@@ -116,7 +116,7 @@ above. Bind more there the same way:
 
 ```luau
 -- ctrl-o finds a file without leaving the terminal first
-kern.keymap.bind("terminal", { ["ctrl-o"] = "pick-file" })
+greed.keymap.bind("terminal", { ["ctrl-o"] = "pick-file" })
 ```
 
 ## Modes and layers
@@ -137,17 +137,17 @@ something different in the file tree or a picker than in a file:
 
 ```luau
 -- o opens the file under the cursor, but only in the file tree
-kern.keymap.bind({ mode = "normal", kind = "tree" }, { o = "tree-open" })
+greed.keymap.bind({ mode = "normal", kind = "tree" }, { o = "tree-open" })
 
 -- An empty layer applies in every mode
-kern.keymap.bind({}, { ["ctrl-q"] = "quit" })
+greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
 ```
 
-When a key is pressed, Kern looks in the mode and buffer kind's layer
+When a key is pressed, Greed looks in the mode and buffer kind's layer
 first, then the mode's, then the buffer kind's, then the layer for every
 mode.
 
-`kern.keymap.inherit` lets a mode use another mode's keys, all of them or
+`greed.keymap.inherit` lets a mode use another mode's keys, all of them or
 only those starting with some prefixes. The Vim style uses it to share
 `space`, `:` and search with Helix's normal mode; see
 [Editing styles](editing-styles.md#making-your-own).
@@ -157,9 +157,9 @@ only those starting with some prefixes. The Vim style uses it to share
 Any Luau function can become a command, and then a key:
 
 ```luau
-local kern = require("@kern")
+local greed = require("@greed")
 
-kern.command({
+greed.command({
 	name = "upcase-line",
 	doc = "Upper-case the line the cursor is on",
 	run = function(ctx)
@@ -173,7 +173,7 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["g u"] = "upcase-line" })
+greed.keymap.bind("normal", { ["g u"] = "upcase-line" })
 ```
 
 [Writing plugins](plugins.md) covers commands, and the rest of the API,
