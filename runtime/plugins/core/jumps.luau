@@ -29,6 +29,14 @@ for _, name in
 		"prev-diagnostic",
 		"pick-diagnostic",
 		"grep-open",
+		"search-project",
+		"pick-outline",
+		"next-change",
+		"prev-change",
+		"tree-open",
+		"multibuffer-open",
+		"proposal-next",
+		"proposal-prev",
 	}
 do
 	JUMPS[name] = true
