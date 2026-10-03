@@ -835,6 +835,73 @@ dependencies = [
 ]
 
 [[package]]
+name = "greed-core"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "base64 0.22.1",
+ "crossbeam-channel",
+ "greed-text",
+ "ignore",
+ "image",
+ "mlua",
+ "nucleo-matcher",
+ "portable-pty",
+ "proptest",
+ "regex-cursor",
+ "ropey",
+ "serde",
+ "serde_json",
+ "similar",
+ "smallvec",
+ "streaming-iterator",
+ "toml",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-language",
+ "tree-sitter-luau",
+ "tree-sitter-md",
+ "tree-sitter-nix",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-toml-ng",
+ "tree-sitter-typescript",
+ "tree-sitter-yaml",
+ "tungstenite",
+ "unicode-segmentation",
+ "unicode-width",
+ "ureq",
+ "url",
+]
+
+[[package]]
+name = "greed-editor"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "crossbeam-channel",
+ "crossterm",
+ "greed-core",
+ "greed-text",
+ "serde_json",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "greed-text"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "ropey",
+ "smallvec",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1054,73 +1121,6 @@ checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
-]
-
-[[package]]
-name = "kern"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "crossbeam-channel",
- "crossterm",
- "kern-core",
- "kern-text",
- "serde_json",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "kern-core"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "base64 0.22.1",
- "crossbeam-channel",
- "ignore",
- "image",
- "kern-text",
- "mlua",
- "nucleo-matcher",
- "portable-pty",
- "proptest",
- "regex-cursor",
- "ropey",
- "serde",
- "serde_json",
- "similar",
- "smallvec",
- "streaming-iterator",
- "toml",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-c",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-json",
- "tree-sitter-language",
- "tree-sitter-luau",
- "tree-sitter-md",
- "tree-sitter-nix",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-toml-ng",
- "tree-sitter-typescript",
- "tree-sitter-yaml",
- "tungstenite",
- "unicode-segmentation",
- "unicode-width",
- "ureq",
- "url",
-]
-
-[[package]]
-name = "kern-text"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "ropey",
- "smallvec",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-# Kern as a Nix package: `pkgs.callPackage ./nix/package.nix { }`.
+# Greed as a Nix package: `pkgs.callPackage ./nix/package.nix { }`.
 {
   lib,
   stdenv,
@@ -7,7 +7,7 @@
 }:
 
 rustPlatform.buildRustPackage {
-  pname = "kern";
+  pname = "greed";
   version = (lib.importTOML ../Cargo.toml).workspace.package.version;
 
   src = lib.fileset.toSource {
@@ -33,21 +33,21 @@ rustPlatform.buildRustPackage {
   env = lib.optionalAttrs stdenv.hostPlatform.isStatic {
     RUSTFLAGS = "-C relocation-model=static";
   };
-  cargoBuildFlags = [ "--package" "kern" ];
+  cargoBuildFlags = [ "--package" "greed-editor" ];
 
   # The runtime is built into the binary too; installing it lets editors
   # find the Luau types for plugins.
   postInstall = ''
-    mkdir -p $out/share/kern
-    cp -r runtime $out/share/kern/runtime
+    mkdir -p $out/share/greed
+    cp -r runtime $out/share/greed/runtime
   '';
 
   # The tests need luau-analyze, a terminal and sockets; run them with cargo.
   doCheck = false;
 
   meta = {
-    description = "A fast, extensible modal editor with a Luau plugin layer";
-    mainProgram = "kern";
+    description = "A General Runtime for Editing, Extending and Delegating: an extensible editor and more";
+    mainProgram = "greed";
     platforms = lib.platforms.unix;
   };
 }

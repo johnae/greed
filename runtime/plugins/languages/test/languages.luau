@@ -128,7 +128,7 @@ end)
 -- Rust tests use, and queries from `dir`.
 local function local_source(dir: string, sha256: string?): any
 	local wasm =
-		`{kern.plugin.dirs().languages}/../../../crates/kern-core/tests/samples/tree-sitter-json.wasm`
+		`{kern.plugin.dirs().languages}/../../../crates/greed-core/tests/samples/tree-sitter-json.wasm`
 	return {
 		repo = "example/tree-sitter-jsonish",
 		version = "v1",

@@ -1,0 +1,16 @@
+[package]
+name = "greed-text"
+description = "Text model for Greed: ropes, selections, change sets and transactions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ropey.workspace = true
+smallvec.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

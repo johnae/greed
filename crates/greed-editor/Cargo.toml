@@ -1,0 +1,23 @@
+[package]
+name = "greed-editor"
+description = "Greed, a General Runtime for Editing, Extending and Delegating: an extensible editor and more"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "greed"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+crossbeam-channel.workspace = true
+crossterm.workspace = true
+greed-core.workspace = true
+greed-text.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+
+[lints]
+workspace = true

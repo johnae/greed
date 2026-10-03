@@ -11,8 +11,8 @@ rust-version = "1.90"
 [workspace.dependencies]
 crossbeam-channel = "0.5"
 crossterm = "0.29"
-kern-core = { path = "crates/kern-core" }
-kern-text = { path = "crates/kern-text" }
+greed-core = { path = "crates/greed-core" }
+greed-text = { path = "crates/greed-text" }
 ignore = "0.4"
 mlua = { version = "0.12", features = ["luau", "error-send", "serialize"] }
 nucleo-matcher = "0.3"

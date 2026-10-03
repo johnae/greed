@@ -73,7 +73,7 @@ cargo build --release
 ./target/release/kern README.md
 ```
 
-To install it, `cargo install --path crates/kern`, or with Nix,
+To install it, `cargo install --path crates/greed-editor`, or with Nix,
 `nix-build` here or `pkgs.callPackage ./nix/package.nix { }` in your own
 configuration. `nix-build -A static` builds a single statically linked
 binary that runs on any Linux of the same CPU, to copy to a server. The default plugins are built into the binary, so it runs

@@ -12,7 +12,7 @@
     pkgs.cargo-insta
     pkgs.cargo-deny
     pkgs.cargo-llvm-cov
-    # `script`, which the terminal tests run kern under
+    # `script`, which the terminal tests run greed under
     pkgs.util-linux
     pkgs.bacon
 
