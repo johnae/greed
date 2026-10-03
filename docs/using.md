@@ -272,6 +272,9 @@ selects every place it appears.
 | `m i "` `m a "` | Inside or around the quotes; also `'` and `` ` `` |
 | `m i m` `m a m` | Inside or around the nearest brackets or quotes, whichever they are |
 | `m i x` `m a x` | Inside or around the XML or HTML element |
+| `m i n (` `m i l (` | Inside the next or last pair after or before the cursor (`m a` for around); any bracket or quote |
+| `m i i` `m a i` | The lines indented as far as this one, or with the line above too |
+| `m i d` `m a d` | The number at or after the cursor, or with its sign |
 | `m i g` `m a g` | The change since the last commit under the cursor, or its whole lines |
 | `m s (` | Wrap each selection in brackets, quotes, or any character |
 | `m d (` | Take away the brackets or quotes around each selection |
@@ -295,7 +298,8 @@ selects every place it appears.
 | `space s` | Jump to a function or type in the file |
 
 In Vim's style the same objects are `if` `af`, `ia` `aa` and `ic` `ac`, as in
-`daf` or `cia`.
+`daf` or `cia`, and the next/last, indent and number objects are `in(`
+`il(`, `ii` `ai` and `id` `ad`, as in `cin(` or `dii`.
 
 **Folding**
 

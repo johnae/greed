@@ -4,6 +4,10 @@
 --   m i ( / m a (   inside or around the brackets; also [ { < and the
 --                   closing brackets
 --   m i " / m a "   inside or around the quotes; also ' and `
+--   m i n X / m i l X  inside the next or last X pair (m a: around)
+--   m i i / m a i   the lines indented as far as this one (a: and the
+--                   line above)
+--   m i d / m a d   the number at or after the cursor (a: with its sign)
 --   m s X           wrap each selection in X and its pair
 --   m d X           take away the X pair around each selection
 --   m r X Y         swap the X pair around each selection for Y's
@@ -67,8 +71,8 @@ local function brackets_around(
 	return nil, nil
 end
 
--- The `quote` pair around `pos` on its line, or nil.
-local function quotes_around(buffer: Buffer, pos: number, quote: string): (number?, number?)
+-- Where each `quote` is on `pos`'s line.
+local function quotes_on_line(buffer: Buffer, pos: number, quote: string): { number }
 	local line = buffer:line_of(pos)
 	local start, stop = buffer:line_start(line), buffer:line_end(line)
 	local found: { number } = {}
@@ -79,6 +83,12 @@ local function quotes_around(buffer: Buffer, pos: number, quote: string): (numbe
 		end
 		at = buffer:next_char(at)
 	end
+	return found
+end
+
+-- The `quote` pair around `pos` on its line, or nil.
+local function quotes_around(buffer: Buffer, pos: number, quote: string): (number?, number?)
+	local found = quotes_on_line(buffer, pos, quote)
 	-- Quotes pair up from the start of the line.
 	for i = 1, #found - 1, 2 do
 		if found[i] <= pos and pos <= found[i + 1] then
@@ -148,6 +158,17 @@ local function object(name: string, doc: string, pick: (Buffer, Range, number?) 
 	})
 end
 
+-- The range inside the pair from `from` to `to`, or with `outer`, around it.
+local function pair_range(buffer: Buffer, from: number?, to: number?, outer: boolean): Range?
+	if from == nil or to == nil then
+		return nil
+	end
+	if outer then
+		return { anchor = from, head = buffer:next_char(to) }
+	end
+	return { anchor = buffer:next_char(from), head = to }
+end
+
 local M = {}
 
 -- Bindings for every object, filled in below.
@@ -185,13 +206,7 @@ for char, label in NAMES do
 		local name = `select-{side}-{label}`
 		object(name, `Select {side} the {label}`, function(buffer, range, count)
 			local from, to = around(buffer, motions.cursor(buffer, range), char, count)
-			if from == nil or to == nil then
-				return nil
-			end
-			if outer then
-				return { anchor = from, head = buffer:next_char(to) }
-			end
-			return { anchor = buffer:next_char(from), head = to }
+			return pair_range(buffer, from, to, outer)
 		end)
 		local key = if outer then "a" else "i"
 		M.keys[`m {key} {char}`] = name
@@ -267,13 +282,7 @@ for _, outer in { false, true } do
 		`Select {side} the nearest brackets or quotes`,
 		function(buffer, range, count)
 			local from, to = nearest(buffer, motions.cursor(buffer, range), count)
-			if from == nil or to == nil then
-				return nil
-			end
-			if outer then
-				return { anchor = from, head = buffer:next_char(to) }
-			end
-			return { anchor = buffer:next_char(from), head = to }
+			return pair_range(buffer, from, to, outer)
 		end
 	)
 	M.keys[`m {if outer then "a" else "i"} m`] = `select-{side}-pair`
@@ -283,6 +292,162 @@ end
 local function pair_key(): string?
 	local key = kern.next_key()
 	return if utf8.len(key) == 1 then key else nil
+end
+
+--- The next pair for `char` that starts after `pos` (or, with `back`, the
+--- last one that ends before it): the opener and closer, or nil. Quotes
+--- look on `pos`'s line, brackets anywhere.
+function M.next_pair(buffer: Buffer, pos: number, char: string, back: boolean): (number?, number?)
+	local open, close = pair(char)
+	if QUOTES[char] then
+		local found = quotes_on_line(buffer, pos, char)
+		local last_from, last_to: number? = nil, nil
+		for i = 1, #found - 1, 2 do
+			local a, b = found[i], found[i + 1]
+			if not back and a > pos then
+				return a, b
+			elseif back and b < pos then
+				last_from, last_to = a, b
+			end
+		end
+		return last_from, last_to
+	end
+	local at = pos
+	while true do
+		if back then
+			if at == 0 then
+				return nil, nil
+			end
+			at = buffer:prev_char(at)
+		else
+			at = buffer:next_char(at)
+			if at >= buffer:len() then
+				return nil, nil
+			end
+		end
+		local c = buffer:char_at(at)
+		if not back and c == open then
+			local to = text.matching_bracket(buffer, at)
+			if to then
+				return at, to
+			end
+		elseif back and c == close then
+			local from = text.matching_bracket(buffer, at)
+			if from then
+				return from, at
+			end
+		end
+	end
+end
+
+for _, outer in { false, true } do
+	local side = if outer then "around" else "inside"
+	for _, back in { false, true } do
+		local which = if back then "last" else "next"
+		local name = `select-{side}-{which}`
+		kern.command({
+			name = name,
+			doc = `Select {side} the {which} pair of the bracket or quote typed next`,
+			run = function(ctx)
+				local char = pair_key()
+				if char == nil then
+					return
+				end
+				motions.each_range(ctx, function(buffer, range)
+					local from, to = M.next_pair(buffer, motions.cursor(buffer, range), char, back)
+					return pair_range(buffer, from, to, outer) or range
+				end)
+			end,
+		})
+		M.keys[`m {if outer then "a" else "i"} {if back then "l" else "n"}`] = name
+	end
+end
+
+-- How far `line` is indented, or nil for a blank line.
+local function indent_of(buffer: Buffer, line: number): number?
+	local start, stop = buffer:line_start(line), buffer:line_end(line)
+	local first = text.first_non_blank(buffer, start)
+	return if first >= stop then nil else first - start
+end
+
+--- The lines around `pos`'s line indented at least as far as it, blank
+--- lines inside included, as a range of whole lines; `around` takes the
+--- line above too, like a block's header.
+function M.indent(buffer: Buffer, pos: number, around: boolean): (number, number)
+	local line = buffer:line_of(pos)
+	local count = buffer:line_count()
+	-- A blank line belongs with the next line that isn't.
+	local base = indent_of(buffer, line)
+	local probe = line
+	while base == nil and probe + 1 < count do
+		probe += 1
+		base = indent_of(buffer, probe)
+	end
+	local depth = base or 0
+	local function inside(l: number): boolean
+		local found = indent_of(buffer, l)
+		return found == nil or found >= depth
+	end
+	local first, last = line, line
+	while first > 0 and inside(first - 1) do
+		first -= 1
+	end
+	while last + 1 < count and inside(last + 1) do
+		last += 1
+	end
+	-- Blank lines at the edges aren't part of it.
+	while first < line and indent_of(buffer, first) == nil do
+		first += 1
+	end
+	while last > line and indent_of(buffer, last) == nil do
+		last -= 1
+	end
+	if around and first > 0 then
+		first -= 1
+	end
+	local to = if last + 1 < count then buffer:line_start(last + 1) else buffer:line_end(last)
+	return buffer:line_start(first), to
+end
+
+--- The number at or after `pos` on its line: decimal (with a fraction) or
+--- hex; `around` takes its minus sign too. Nil when there's none.
+function M.number(buffer: Buffer, pos: number, around: boolean): (number?, number?)
+	local line = buffer:line_of(pos)
+	local start, stop = buffer:line_start(line), buffer:line_end(line)
+	local found = buffer:find_all("-?(0[xX][0-9a-fA-F]+|[0-9]+(\\.[0-9]+)?)", start, stop) or {}
+	for _, m in found do
+		if m.to > pos then
+			local from = m.from
+			if not around and buffer:char_at(from) == "-" then
+				from += 1
+			end
+			return from, m.to
+		end
+	end
+	return nil, nil
+end
+
+for _, outer in { false, true } do
+	local side = if outer then "around" else "inside"
+	local key = if outer then "a" else "i"
+	object(
+		`select-{side}-indent`,
+		`Select the lines indented as far as this one{if outer then ", and the one above" else ""}`,
+		function(buffer, range)
+			local from, to = M.indent(buffer, motions.cursor(buffer, range), outer)
+			return { anchor = from, head = to }
+		end
+	)
+	M.keys[`m {key} i`] = `select-{side}-indent`
+	object(
+		`select-{side}-number`,
+		`Select the number at or after the cursor{if outer then ", with its sign" else ""}`,
+		function(buffer, range)
+			local from, to = M.number(buffer, motions.cursor(buffer, range), outer)
+			return if from and to then { anchor = from, head = to } else nil
+		end
+	)
+	M.keys[`m {key} d`] = `select-{side}-number`
 end
 
 kern.command({

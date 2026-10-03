@@ -684,6 +684,22 @@ local function text_object(
 	if key == "t" then
 		local from, to = core.objects.tag(buffer, pos, around)
 		return from, to, false
+	elseif key == "i" then
+		local from, to = core.objects.indent(buffer, pos, around)
+		return motion_range(buffer, from, math.max(from, to - 1), "line")
+	elseif key == "d" then
+		local from, to = core.objects.number(buffer, pos, around)
+		return from, to, false
+	elseif key == "n" or key == "l" then
+		-- The next or last pair: c i n ( changes inside the next parens.
+		local open, close = core.objects.next_pair(buffer, pos, kern.next_key(), key == "l")
+		if open == nil or close == nil then
+			return nil, nil, false
+		end
+		if around then
+			return open, buffer:next_char(close), false
+		end
+		return buffer:next_char(open), close, false
 	end
 	local open, close = core.objects.around(buffer, pos, BRACKETS[key] or key)
 	if open == nil and (key == '"' or key == "'" or key == "`") then
