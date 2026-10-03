@@ -6,6 +6,7 @@
 //! commands can run other commands and emit events freely.
 
 mod api;
+mod capabilities;
 mod diff;
 mod fs;
 mod handles;
@@ -114,6 +115,11 @@ pub(crate) struct State {
     pub query_owners: HashMap<(String, String), Vec<(PluginId, String)>>,
     /// Files plugins watch for changes.
     pub watches: watch::Watches,
+    /// What each plugin may use beyond the editor.
+    pub grants: HashMap<PluginId, capabilities::Grant>,
+    /// The plugin whose code is running, if any: a command or handler it
+    /// registered, or its own file loading.
+    pub running: Option<PluginId>,
 }
 
 #[derive(Clone)]
@@ -124,6 +130,7 @@ enum Plugin {
         entry: String,
         /// Plugins it requires, which can't be unloaded while it's loaded.
         requires: Vec<String>,
+        grant: capabilities::Grant,
     },
     /// Source passed in directly: config, tests, the REPL.
     Inline(Arc<str>),
@@ -137,6 +144,9 @@ struct Manifest {
     /// Plugins this one uses through `require("@name")`; they load first.
     #[serde(default)]
     requires: Vec<String>,
+    /// What it uses beyond the editor; see `capabilities`.
+    #[serde(default)]
+    capabilities: Vec<String>,
 }
 
 fn default_entry() -> String {
@@ -227,6 +237,8 @@ impl Host {
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
+            grants: HashMap::new(),
+            running: None,
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -341,6 +353,7 @@ impl Host {
             dir: dir.to_owned(),
             entry: entry.to_string_lossy().into_owned(),
             requires: Vec::new(),
+            grant: capabilities::Grant::All,
         };
         install(&self.lua, name, plugin)
     }
@@ -593,12 +606,19 @@ impl Host {
 /// loaded plugin of the same name.
 pub(crate) fn load_dir(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
     let (dir, manifest) = read_manifest(dir)?;
-    load_manifest(lua, dir, manifest)
+    let grant = capabilities::Grant::listed(&manifest.capabilities).map_err(|message| {
+        HostError::Manifest {
+            path: dir.join("plugin.toml"),
+            message,
+        }
+    })?;
+    load_manifest(lua, dir, manifest, grant)
 }
 
 /// Loads the folder `dir` as a plugin called `name`, with `init.luau` as its
 /// entry, unless it has a `plugin.toml` saying otherwise. For config that
-/// isn't a packaged plugin, like a project's `.kern` folder.
+/// isn't a packaged plugin, like a project's `.kern` folder, which gets
+/// every capability as config does.
 pub(crate) fn load_dir_as(lua: &Lua, dir: &Path, name: &str) -> Result<PluginId, HostError> {
     if dir.join("plugin.toml").is_file() {
         return load_dir(lua, dir);
@@ -611,11 +631,17 @@ pub(crate) fn load_dir_as(lua: &Lua, dir: &Path, name: &str) -> Result<PluginId,
         name: name.to_owned(),
         entry: default_entry(),
         requires: Vec::new(),
+        capabilities: Vec::new(),
     };
-    load_manifest(lua, dir, manifest)
+    load_manifest(lua, dir, manifest, capabilities::Grant::All)
 }
 
-fn load_manifest(lua: &Lua, dir: PathBuf, manifest: Manifest) -> Result<PluginId, HostError> {
+fn load_manifest(
+    lua: &Lua,
+    dir: PathBuf,
+    manifest: Manifest,
+    grant: capabilities::Grant,
+) -> Result<PluginId, HostError> {
     if let Some(missing) = manifest
         .requires
         .iter()
@@ -631,6 +657,7 @@ fn load_manifest(lua: &Lua, dir: PathBuf, manifest: Manifest) -> Result<PluginId
         dir,
         entry: manifest.entry,
         requires: manifest.requires,
+        grant,
     };
     install(lua, &name, plugin)?;
     Ok(name)
@@ -639,11 +666,15 @@ fn load_manifest(lua: &Lua, dir: PathBuf, manifest: Manifest) -> Result<PluginId
 /// Adds or replaces a plugin and runs it.
 fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
     unregister(lua, name);
-    let dir = match &plugin {
-        Plugin::Dir { dir, .. } => Some(dir.to_string_lossy().into_owned()),
-        Plugin::Inline(_) => None,
+    let (dir, grant) = match &plugin {
+        Plugin::Dir { dir, grant, .. } => (Some(dir.to_string_lossy().into_owned()), grant.clone()),
+        Plugin::Inline(_) => (None, capabilities::Grant::All),
     };
-    state_mut(lua).plugins.insert(name.into(), plugin);
+    {
+        let mut state = state_mut(lua);
+        state.plugins.insert(name.into(), plugin);
+        state.grants.insert(name.into(), grant);
+    }
     run_plugin(lua, name)?;
     let payload = lua.create_table()?;
     payload.set("name", name)?;
@@ -654,16 +685,23 @@ fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
 
 fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
     let plugin = state(lua).plugins[name].clone();
+    let owner = Some(PluginId::from(name));
     let export = match plugin {
-        Plugin::Dir { dir, entry, .. } => {
+        Plugin::Dir {
+            dir, entry, grant, ..
+        } => {
             let file = dir.join(entry);
-            let modules = Modules::new(lua, name, Some(dir), None)?;
-            budgeted(lua, || modules.run_file(lua, &file))?
+            let modules = Modules::new(lua, name, Some(dir), None, &grant)?;
+            capabilities::running_as(lua, owner, || {
+                budgeted(lua, || modules.run_file(lua, &file))
+            })?
         }
         Plugin::Inline(source) => {
-            let modules = Modules::new(lua, name, None, None)?;
+            let modules = Modules::new(lua, name, None, None, &capabilities::Grant::All)?;
             let chunk_name = format!("@{name}");
-            let values = budgeted(lua, || modules.eval(lua, &source, &chunk_name))?;
+            let values = capabilities::running_as(lua, owner, || {
+                budgeted(lua, || modules.eval(lua, &source, &chunk_name))
+            })?;
             values.into_iter().next().unwrap_or(Value::Nil)
         }
     };
@@ -812,6 +850,7 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
         let mut state = state_mut(lua);
         state.plugins.remove(name);
         state.exports.remove(name);
+        state.grants.remove(name);
     }
     let payload = lua.create_table()?;
     payload.set("name", name)?;
@@ -834,7 +873,7 @@ pub(crate) fn eval_repl(lua: &Lua, source: &str) -> mlua::Result<String> {
     let modules = if let Some(modules) = cached {
         modules
     } else {
-        let modules = Modules::new(lua, REPL, None, None)?;
+        let modules = Modules::new(lua, REPL, None, None, &capabilities::Grant::All)?;
         state_mut(lua).repl = Some(modules.clone());
         modules
     };

@@ -1,2 +1,3 @@
 name = "projects"
 requires = ["core", "picker"]
+capabilities = ["proc", "fs.read", "fs.write"]

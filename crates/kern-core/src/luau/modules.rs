@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 
 use mlua::{Function, Lua, Table, Value};
 
+use super::capabilities::{self, Grant};
 use super::{api, state, state_mut};
 use crate::registry::PluginId;
 
@@ -39,14 +40,17 @@ impl Modules {
         owner: &str,
         root: Option<PathBuf>,
         test: Option<Function>,
+        grant: &Grant,
     ) -> LuaResult<Self> {
         let globals = lua.create_table()?;
         let meta = lua.create_table()?;
         meta.set("__index", lua.globals())?;
         globals.set_metatable(Some(meta))?;
         let owner: PluginId = owner.into();
+        let kern = api::kern_module(lua, &owner)?;
+        capabilities::gate(lua, &kern, &owner, grant)?;
         Ok(Self {
-            kern: api::kern_module(lua, &owner)?,
+            kern,
             owner,
             globals,
             test,

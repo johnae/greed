@@ -12,6 +12,7 @@ use mlua::thread::ThreadStatus;
 use mlua::{Function, IntoLuaMulti, Lua, Thread, Value};
 
 use super::{state, state_mut};
+use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -32,6 +33,9 @@ pub(crate) struct Tasks {
     /// Why each running coroutine edits: the command it runs for, or what
     /// was running when it started. Set as the editor's cause while it runs.
     causes: HashMap<usize, Arc<str>>,
+    /// The plugin each running coroutine's code belongs to, for capability
+    /// checks while it runs.
+    owners: HashMap<usize, PluginId>,
 }
 
 impl Default for Tasks {
@@ -46,6 +50,7 @@ impl Default for Tasks {
             firing: None,
             latest: now,
             causes: HashMap::new(),
+            owners: HashMap::new(),
         }
     }
 }
@@ -64,18 +69,14 @@ impl Tasks {
     }
 }
 
-/// Runs `f` as a coroutine. If it waits, it's parked until its token
-/// resolves.
-pub(super) fn spawn(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> LuaResult<()> {
-    spawn_for(lua, f, args, None)
-}
-
-/// Runs `f` as a coroutine whose edits are made for `cause` (by default,
-/// whatever the code starting it edits for).
-pub(super) fn spawn_for(
+/// Runs `f`, code `owner` registered, as a coroutine whose edits are made
+/// for `cause` (by default, whatever the code starting it edits for). If it
+/// waits, it's parked until its token resolves.
+pub(super) fn spawn(
     lua: &Lua,
     f: Function,
     args: impl IntoLuaMulti,
+    owner: PluginId,
     cause: Option<Arc<str>>,
 ) -> LuaResult<()> {
     let thread = lua.create_thread(f)?;
@@ -84,6 +85,7 @@ pub(super) fn spawn_for(
         if let Some(cause) = cause.or_else(|| state.editor.cause().cloned()) {
             state.tasks.causes.insert(key(&thread), cause);
         }
+        state.tasks.owners.insert(key(&thread), owner);
     }
     resume(lua, thread, args)
 }
@@ -104,17 +106,24 @@ fn key(thread: &Thread) -> usize {
 }
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
-    let outer = {
+    let (outer, outer_owner) = {
         let state = &mut *state_mut(lua);
         let cause = state.tasks.causes.get(&key(&thread)).cloned();
+        let owner = state.tasks.owners.get(&key(&thread)).cloned();
         let outer = state.editor.cause().cloned();
         state.editor.set_cause(cause);
-        outer
+        (outer, std::mem::replace(&mut state.running, owner))
     };
     let yielded = thread.resume::<Value>(args);
-    state_mut(lua).editor.set_cause(outer);
+    {
+        let state = &mut *state_mut(lua);
+        state.editor.set_cause(outer);
+        state.running = outer_owner;
+    }
     if thread.status() != ThreadStatus::Resumable {
-        state_mut(lua).tasks.causes.remove(&key(&thread));
+        let state = &mut *state_mut(lua);
+        state.tasks.causes.remove(&key(&thread));
+        state.tasks.owners.remove(&key(&thread));
         yielded?;
         return Ok(());
     }

@@ -1,2 +1,3 @@
 name = "vcs"
 requires = ["core", "multibuffer", "operations"]
+capabilities = ["proc", "fs.read"]

@@ -30,7 +30,8 @@ local GUIDE = [[
 # Writing a Kern plugin
 
 A plugin is a folder with plugin.toml (`name = "my-plugin"`, optionally
-`requires = ["core"]` to use `require("@core")`), an init.luau, and tests in
+`requires = ["core"]` to use `require("@core")`, and `capabilities` for
+what it uses beyond the editor), an init.luau, and tests in
 test/*.luau. It's Luau, not Lua 5.1: types (`local x: number`), `if a then b
 else c` expressions, string interpolation with backticks, `+=`, and
 `for k, v in t do` without pairs(). Everything comes from `require("@kern")`.
@@ -41,6 +42,11 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
 - Agents: `require("@agent").tool({ name, description, input, run })` offers a tool over MCP.
 - Waiting (kern.sleep, kern.fs.grep, kern.signal) works in commands and event handlers.
+- Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (kern.process.run,
+  kern.terminal.spawn, kern.lsp.server), "fs.read" (kern.fs reads, kern.load, kern.open,
+  kern.files), "fs.write" (kern.fs.write, buffer:save(path)), "clipboard" (reading it),
+  "net", "eval", "plugins". Ask only for what the plugin needs; the user sees the list.
+  Editing buffers, commands, keys and the rest of the editor need none.
 
 Tests:
 

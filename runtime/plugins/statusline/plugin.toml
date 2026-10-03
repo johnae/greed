@@ -1,2 +1,3 @@
 name = "statusline"
 requires = ["core"]
+capabilities = ["proc", "fs.read"]

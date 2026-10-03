@@ -136,7 +136,13 @@ impl Host {
     }
 
     fn run_test_file(&self, root: &Path, file: &Path, test: Function) -> Result<(), HostError> {
-        let modules = Modules::new(&self.lua, "test", Some(root.to_owned()), Some(test))?;
+        let modules = Modules::new(
+            &self.lua,
+            "test",
+            Some(root.to_owned()),
+            Some(test),
+            &super::capabilities::Grant::All,
+        )?;
         budgeted(&self.lua, || modules.run_file(&self.lua, file))?;
         Ok(())
     }

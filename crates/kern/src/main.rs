@@ -328,7 +328,7 @@ fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const NEW_MANIFEST: &str = "name = \"NAME\"\n";
+const NEW_MANIFEST: &str = "name = \"NAME\"\n# What it uses beyond the editor, e.g. [\"proc\", \"fs.read\"]; see the plugin docs.\ncapabilities = []\n";
 
 const NEW_INIT: &str = r#"-- NAME: say what this plugin does here.
 --

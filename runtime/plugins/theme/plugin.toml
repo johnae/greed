@@ -1,2 +1,3 @@
 name = "theme"
 requires = ["picker", "cmdline"]
+capabilities = ["fs.read", "fs.write"]

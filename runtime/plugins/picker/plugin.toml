@@ -1,2 +1,3 @@
 name = "picker"
 requires = ["core"]
+capabilities = ["fs.read"]

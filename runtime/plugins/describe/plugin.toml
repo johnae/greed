@@ -1,2 +1,3 @@
 name = "describe"
 requires = ["picker"]
+capabilities = ["fs.read"]

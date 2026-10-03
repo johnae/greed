@@ -69,15 +69,20 @@ fn answer(
     let handler = state(lua)
         .lsp_handlers
         .get(method)
-        .map(|(_, handler)| handler.clone());
+        .map(|(owner, handler)| (owner.clone(), handler.clone()));
     let result = match handler {
-        Some(handler) => match handler.call::<Value>(to_lua(lua, params)?) {
-            Ok(value) => lua.from_value(value)?,
-            Err(err) => {
-                state_mut(lua).editor.echo(format!("{method}: {err}"));
-                serde_json::Value::Null
+        Some((owner, handler)) => {
+            let answered = super::capabilities::running_as(lua, Some(owner), || {
+                handler.call::<Value>(to_lua(lua, params)?)
+            });
+            match answered {
+                Ok(value) => lua.from_value(value)?,
+                Err(err) => {
+                    state_mut(lua).editor.echo(format!("{method}: {err}"));
+                    serde_json::Value::Null
+                }
             }
-        },
+        }
         None => serde_json::Value::Null,
     };
     state_mut(lua).lsp.respond(server, id, &result);

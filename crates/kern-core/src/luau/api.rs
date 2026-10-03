@@ -57,7 +57,7 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
         force,
         count,
     } = how;
-    let (handler, author, view, buffer) = {
+    let (handler, owner, author, view, buffer) = {
         let state = state(lua);
         let command = state
             .registry
@@ -67,6 +67,7 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
         let view = state.editor.focus();
         (
             command.handler.clone(),
+            command.owner.clone(),
             author,
             view,
             state.editor.view(view).buffer,
@@ -108,7 +109,7 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
     let event = lua.create_table()?;
     event.set("name", name)?;
     emit(lua, "command.run", &event)?;
-    tasks::spawn_for(lua, handler, ctx, Some(name.into()))?;
+    tasks::spawn(lua, handler, ctx, owner, Some(name.into()))?;
     Ok(())
 }
 
@@ -177,15 +178,15 @@ fn keys_text(keys: &[Key]) -> String {
 /// Calls every handler for `event` with `payload`. All handlers run even if
 /// one fails; the first error is returned.
 pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
-    let handlers: Vec<Function> = state(lua)
+    let handlers: Vec<(Function, PluginId)> = state(lua)
         .registry
         .handlers(event)
         .iter()
-        .map(|h| h.handler.clone())
+        .map(|h| (h.handler.clone(), h.owner.clone()))
         .collect();
     let mut first_error = None;
-    for handler in handlers {
-        if let Err(err) = tasks::spawn(lua, handler, payload.clone()) {
+    for (handler, owner) in handlers {
+        if let Err(err) = tasks::spawn(lua, handler, payload.clone(), owner, None) {
             first_error.get_or_insert(err);
         }
     }
@@ -1111,7 +1112,7 @@ pub(super) fn status_line(
     message: Option<&str>,
     width: u16,
 ) -> LuaResult<Option<StatusLine>> {
-    let (build, view, buffer, mode, author) = {
+    let (build, owner, view, buffer, mode, author) = {
         let state = state(lua);
         let Some((owner, build)) = &state.statusline else {
             return Ok(None);
@@ -1119,6 +1120,7 @@ pub(super) fn status_line(
         let view = state.editor.main();
         (
             build.clone(),
+            owner.clone(),
             view,
             state.editor.view(view).buffer,
             state.editor.mode().to_owned(),
@@ -1144,7 +1146,7 @@ pub(super) fn status_line(
     ctx.set("mode", mode)?;
     ctx.set("message", message)?;
     ctx.set("width", width)?;
-    let line: Table = build.call(ctx)?;
+    let line: Table = super::capabilities::running_as(lua, Some(owner), || build.call(ctx))?;
     Ok(Some(StatusLine {
         left: segments(line.get("left")?)?,
         right: segments(line.get("right")?)?,

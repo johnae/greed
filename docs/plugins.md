@@ -9,7 +9,7 @@ MCP tools.
 
 ```text
 ~/.config/kern/plugins/greet/
-  plugin.toml        name = "greet"
+  plugin.toml        name = "greet", what it may use
   init.luau          runs when the plugin loads
   test/greet.luau    tests, run with `kern test greet`
 ```
@@ -19,6 +19,38 @@ MCP tools.
 `requires = ["core", "picker"]`; they load first and are available as
 `require("@core")` and `require("@picker")`. Files inside a plugin require
 each other with `require("@self/name")` or `require("./name")`.
+
+### Capabilities
+
+A plugin can edit buffers, add commands, keys, pickers and the rest of the
+editor freely. Anything that reaches outside the editor, it declares in
+`plugin.toml`:
+
+```toml
+name = "greet"
+capabilities = ["proc", "fs.read"]
+```
+
+| Capability | What it opens |
+|---|---|
+| `proc` | Running programs: `kern.process.run`, `kern.terminal.spawn`, `kern.lsp.server`. A program can do anything you can, so this is full access |
+| `fs.read` | Files by path: `kern.fs` reads, `kern.files`, `kern.load`, `kern.open`, `kern.image.load` |
+| `fs.write` | `kern.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
+| `clipboard` | Reading what you copied (`kern.clipboard.get`, `history`); setting it needs nothing |
+| `net` | The network, like the Claude Code connection |
+| `eval` | `kern.eval`, which runs Luau with every capability |
+| `plugins` | Loading, unloading and checking other plugins |
+
+Using something the plugin didn't declare raises an error that says what
+to add, e.g. `greet can't run programs: add "proc" to capabilities in its
+plugin.toml`. Your `init.luau` and a trusted project's `.kern` folder are
+config, not plugins, and can use everything.
+
+Capabilities follow the code that uses them. A plugin that requires another
+can call what that plugin offers, which works with that plugin's
+capabilities, so `requires` is part of what a plugin can do. And they limit
+plugins only: an agent that runs commands in a shell of its own isn't
+affected.
 
 Plugins are Luau, a typed dialect of Lua. If you know Lua, the differences
 you'll meet are types (`local n: number = 1`), `if a then b else c` as an

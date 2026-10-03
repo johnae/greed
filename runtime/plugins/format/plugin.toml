@@ -1,2 +1,3 @@
 name = "format"
 requires = ["core", "languages"]
+capabilities = ["proc"]

@@ -1,2 +1,3 @@
 name = "operations"
 requires = ["core", "picker", "multibuffer"]
+capabilities = ["proc", "fs.read", "fs.write"]

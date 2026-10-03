@@ -1,2 +1,3 @@
 name = "agent"
 requires = ["core", "picker", "terminal", "operations"]
+capabilities = ["fs.read", "fs.write", "eval", "plugins", "net"]
