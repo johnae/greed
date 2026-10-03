@@ -16,6 +16,7 @@
 		"theme": "./plugins/theme",
 		"hints": "./plugins/hints",
 		"statusline": "./plugins/statusline",
-		"operations": "./plugins/operations"
+		"operations": "./plugins/operations",
+		"vcs": "./plugins/vcs"
 	}
 }

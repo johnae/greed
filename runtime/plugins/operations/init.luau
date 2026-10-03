@@ -245,20 +245,26 @@ kern.command({
 	end,
 })
 
+--- The operation commands act on from `buffer`: the one it reviews, or
+--- the latest one not undone.
+function M.target(buffer: kern.Buffer): Operation?
+	local reviewed = reviews[buffer:id()]
+	if reviewed then
+		return reviewed
+	end
+	for _, op in M.list() do
+		if op.status ~= "undone" then
+			return op
+		end
+	end
+	return nil
+end
+
 kern.command({
 	name = "operation-undo",
 	doc = "Undo the latest operation, or the one being reviewed, in every file at once",
 	run = function(ctx)
-		local reviewed = reviews[ctx.buffer:id()]
-		local op = reviewed
-		if op == nil then
-			for _, candidate in M.list() do
-				if candidate.status ~= "undone" then
-					op = candidate
-					break
-				end
-			end
-		end
+		local op = M.target(ctx.buffer)
 		if op == nil then
 			kern.echo("no operation to undo")
 			return
@@ -269,7 +275,7 @@ kern.command({
 			return
 		end
 		kern.echo(`undid "{op.name}" in {count(#op.files, "file")}`)
-		if reviewed then
+		if reviews[ctx.buffer:id()] then
 			M.review(op)
 		end
 	end,

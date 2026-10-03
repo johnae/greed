@@ -1,5 +1,7 @@
 local test = require("@kern/test")
 local kern = require("@kern")
+local operations = require("@operations")
+local vcs = require("@vcs")
 
 -- A git repository holding `files`, committed. Returns its folder.
 local function repo(t: test.TestContext, files: { [string]: string }): string
@@ -189,4 +191,59 @@ test("with jj, the changes view shows the working copy's changes against its par
 	local text = view:text()
 	assert(string.find(text, "^1 change in 1 file since the working copy's parent\n"), text)
 	assert(string.find(text, "three", 1, true), text)
+end)
+
+test("space u c commits just the latest operation's files, named after it", function(t)
+	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	kern.fs.write(dir .. "/b.txt", "mine\n")
+	local a = kern.load(dir .. "/a.txt")
+	t:buffer("|x")
+	operations.run("change a", function()
+		a:edit(function(e)
+			e:insert(0, "A")
+		end)
+	end)
+	t:keys("space u c")
+	local messages = t:messages()
+	assert(messages[#messages] == 'committed "change a"', messages[#messages])
+	local log = kern.process.run(
+		{ "git", "log", "-1", "--format=%s", "--name-only" },
+		{ cwd = dir }
+	)
+	assert(log and string.find(log.stdout, "^change a\n\na.txt\n$"), log and log.stdout)
+	local status = kern.process.run({ "git", "status", "--porcelain" }, { cwd = dir })
+	assert(
+		status and status.stdout == " M b.txt\n",
+		"b's change stays: " .. (status and status.stdout or "")
+	)
+end)
+
+test("with jj, an operation commits as its own change", function(t)
+	if kern.which("jj") == nil then
+		return
+	end
+	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	local function jj(...: string): string
+		local done = kern.process.run(
+			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+		return done.stdout
+	end
+	jj("git", "init")
+	jj("commit", "-m", "first")
+	kern.fs.write(dir .. "/b.txt", "mine\n")
+	local a = kern.load(dir .. "/a.txt")
+	t:buffer("|x")
+	local op = operations.run("change a", function()
+		a:edit(function(e)
+			e:insert(0, "A")
+		end)
+	end)
+	local ok, why = vcs.commit({ op.files[1].path }, op.name)
+	assert(ok, why)
+	assert(jj("log", "--no-graph", "-r", "@-", "-T", "description") == "change a\n")
+	assert(string.find(jj("diff", "-s", "-r", "@-"), "a.txt", 1, true) ~= nil)
+	assert(string.find(jj("diff", "-s"), "b.txt", 1, true), "b's change stays in the working copy")
 end)

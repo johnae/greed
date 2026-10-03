@@ -5,12 +5,14 @@
 --   space g r   put the change under the cursor back the way it was
 --   space g b   who last changed this line, and when
 --   space g s   every change since the last commit, in one multibuffer
+--   space u c   commit just the latest operation's files, named after it
 --
 -- With jj the comparison is with the working copy's parent (@-), so the
 -- signs show what the change you're working on does to the file.
 
 local kern = require("@kern")
 local multibuffer = require("@multibuffer")
+local operations = require("@operations")
 
 local M = {}
 
@@ -370,12 +372,66 @@ kern.command({
 	run = M.show_changes,
 })
 
+--- Saves the buffers of `paths` (files in one repository) and commits just
+--- them with `message`, leaving any other changes as they were. Returns
+--- false and why when it can't.
+function M.commit(paths: { string }, message: string): (boolean, string?)
+	local repo = if paths[1] then repo_of(paths[1]) else nil
+	if repo == nil then
+		return false, "the files aren't in a repository"
+	end
+	local relative: { string } = {}
+	-- jj reads paths as patterns, so each is quoted as one exact file.
+	local exact: { string } = {}
+	for _, path in paths do
+		local buffer = kern.load(path)
+		if buffer:modified() then
+			buffer:save()
+		end
+		local from_root = string.sub(absolute(path), #repo.root + 2)
+		table.insert(relative, from_root)
+		table.insert(exact, `file:"{(string.gsub(from_root, '["\\]', "\\%0"))}"`)
+	end
+	local steps: { { string } } = if repo.kind == "jj"
+		then { { "commit", "-m", message, table.unpack(exact) } }
+		else {
+			{ "add", "--", table.unpack(relative) },
+			{ "commit", "-q", "-m", message, "--", table.unpack(relative) },
+		}
+	for _, args in steps do
+		local done, err = kern.process.run({ repo.kind, table.unpack(args) }, { cwd = repo.root })
+		if done == nil or done.code ~= 0 then
+			return false, if done then done.stderr else err
+		end
+	end
+	return true, nil
+end
+
+kern.command({
+	name = "operation-commit",
+	doc = "Save the files of the latest operation (or the one being reviewed) and commit just them, named after it",
+	run = function(ctx)
+		local op = operations.target(ctx.buffer)
+		if op == nil or #op.files == 0 then
+			kern.echo("no operation with changes to commit")
+			return
+		end
+		local paths = {}
+		for _, file in op.files do
+			table.insert(paths, file.path)
+		end
+		local ok, why = M.commit(paths, op.name)
+		kern.echo(if ok then `committed "{op.name}"` else `can't commit: {why}`)
+	end,
+})
+
 kern.keymap.bind("normal", {
 	["space g s"] = "changes",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
 	["space g r"] = "revert-change",
 	["space g b"] = "blame-line",
+	["space u c"] = "operation-commit",
 })
 
 return M

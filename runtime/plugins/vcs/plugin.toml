@@ -1,2 +1,2 @@
 name = "vcs"
-requires = ["core", "multibuffer"]
+requires = ["core", "multibuffer", "operations"]

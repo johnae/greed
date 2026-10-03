@@ -370,12 +370,18 @@ can review it in one buffer.
 |---|---|
 | `space u o` (`:operations`) | Pick a recent operation to review |
 | `space u u` (`:operation-undo`) | Undo the latest operation, in every file at once |
+| `space u c` (`:operation-commit`) | Save the latest operation's files and commit just them, named after it |
 
 The review is a multibuffer of the operation's changes, with the programs
 it ran (a test run, a formatter) and how they exited at the top. Edit it
 like any multibuffer, `space g r` puts a change back, and `space u u` in it
 undoes that operation. Undo refuses, and changes nothing, when you've
 edited one of its files on top of it since; undo those edits first.
+
+`space u c` turns an operation into a commit of its own (a jj change, or a
+git commit): it saves the operation's files and commits only them, with the
+operation's name as the message, so other changes you have going stay
+where they were. In a review it commits the operation shown.
 
 Every edit also records who made it (you, a plugin, an agent, or a change
 on disk) and the command it came from. Agents can ask with the
