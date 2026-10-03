@@ -133,7 +133,7 @@ impl Host {
         Ok(self
             .run_test_file(root, file, test)
             .err()
-            .map(|err| failure_message(&err)))
+            .map(|err| err.brief()))
     }
 
     fn run_test_file(&self, root: &Path, file: &Path, test: Function) -> Result<(), HostError> {
@@ -236,15 +236,6 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
         super::report_views(lua)?;
     }
     Ok(drawn.rows.iter().map(crate::render::Row::text).collect())
-}
-
-/// The error without mlua's "runtime error:" prefix and its stack traceback,
-/// which only shows Rust frames.
-fn failure_message(err: &HostError) -> String {
-    let text = err.to_string();
-    let text = text.split("\nstack traceback:").next().unwrap_or(&text);
-    let text = text.strip_prefix("runtime error: ").unwrap_or(text);
-    text.trim().to_owned()
 }
 
 /// The `t` passed to each test.

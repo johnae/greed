@@ -18,7 +18,7 @@ use kern_core::luau::{Host, HostError, run_tests};
 use kern_core::server;
 use kern_text::ClientId;
 
-const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern new PLUGIN_NAME\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ls              list running editors\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       --terminal           with kern [FILE] or kern ssh: open a terminal in the session too";
+const USAGE: &str = "usage: kern [FILE]\n       kern repl [FILE]\n       kern test [PLUGIN_DIR]\n       kern ctl TOOL [ARGS] (kern ctl for more)\n       kern mcp             MCP server for the running editor, on stdio\n       kern serve [FILE]    run the editor with no terminal\n       kern attach [NAME]   show a running editor here\n       kern ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       kern commands        these, and the commands plugins add (kern ls, kern new, ...)\n       --terminal           with kern [FILE] or kern ssh: open a terminal in the session too";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -46,7 +46,6 @@ fn main() -> ExitCode {
         [cmd, rest @ ..] if cmd == "serve" => session::serve_project(rest.first().map(Path::new)),
         [cmd] if cmd == "attach" => session::attach(None),
         [cmd, name] if cmd == "attach" => session::attach(Some(name)),
-        [cmd] if cmd == "ls" => ctl::run(&["sessions".to_owned()]),
         [cmd, rest @ ..] if cmd == "bridge" => {
             let (name, file) = session_and_file(rest);
             session::bridge(name, file.map(Path::new))
@@ -60,10 +59,13 @@ fn main() -> ExitCode {
         [cmd] if cmd == "test" => runtime::dir()
             .map_err(Into::into)
             .and_then(|dir| test(&dir.join("plugins/core"))),
-        [cmd, name] if cmd == "new" => new_plugin(name),
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
+        [cmd] if cmd == "commands" => commands(),
+        [name, rest @ ..] if command_name(name) && !Path::new(name).exists() => {
+            plugin_command(name, rest, terminal)
+        }
         [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file)), terminal),
         _ => {
             eprintln!("{USAGE}");
@@ -351,99 +353,6 @@ fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const NEW_MANIFEST: &str = "name = \"NAME\"\n# What it uses beyond the editor, e.g. [\"proc\", \"fs.read\"]; see the plugin docs.\ncapabilities = []\n";
-
-const NEW_INIT: &str = r#"-- NAME: say what this plugin does here.
---
--- Run `kern test .` in this directory to run its tests. To use it, put this
--- directory in the `plugins` directory next to your config
--- (~/.config/kern/plugins/NAME).
-
-local kern = require("@kern")
-
-kern.command({
-	name = "NAME-greet",
-	doc = "Insert a greeting at each cursor",
-	run = function(ctx)
-		ctx.buffer:edit(function(e)
-			for _, range in ctx.view:selection().ranges do
-				e:insert(range.head, "hello")
-			end
-		end)
-	end,
-})
-
--- Bind it to keys like this:
--- kern.keymap.bind("normal", { ["space x"] = "NAME-greet" })
-"#;
-
-const NEW_TEST: &str = r#"local test = require("@kern/test")
-
-test("greet inserts a greeting", function(t)
-	t:buffer("|!")
-	t:run("NAME-greet")
-	t:expect("hello|!")
-end)
-"#;
-
-/// Scaffolds a plugin in a new directory called `name`.
-fn new_plugin(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let valid = !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if !valid {
-        return Err(format!("{name:?} isn't a plugin name: use letters, digits, - and _").into());
-    }
-    let dir = Path::new(name);
-    if dir.exists() {
-        return Err(format!("{name} already exists").into());
-    }
-    std::fs::create_dir_all(dir.join("test"))?;
-    for (file, text) in [
-        ("plugin.toml", NEW_MANIFEST),
-        ("init.luau", NEW_INIT),
-        ("test/greet.luau", NEW_TEST),
-    ] {
-        std::fs::write(dir.join(file), text.replace("NAME", name))?;
-    }
-    println!("created {name}/: plugin.toml, init.luau, test/greet.luau");
-    set_up_type_checking()?;
-    println!("run `kern test {name}` to try it");
-    Ok(())
-}
-
-const LUAURC: &str = r#"{
-	"languageMode": "strict",
-	"aliases": {
-		"kern": "./.kern-types/kern"
-	}
-}
-"#;
-
-/// Lets luau-analyze and luau-lsp find Kern's types for plugins in the
-/// current directory: a `.luaurc` aliasing `@kern` to a `.kern-types` link.
-/// They have to live here, above the plugins, because an `init.luau` looks
-/// for its config from its directory's parent, and alias paths can't leave
-/// the config's directory. Leaves existing files alone.
-fn set_up_type_checking() -> io::Result<()> {
-    let link = Path::new(".kern-types");
-    if link.symlink_metadata().is_err() {
-        std::os::unix::fs::symlink(runtime::dir()?.canonicalize()?.join("types"), link)?;
-        println!("linked .kern-types to Kern's type definitions");
-    }
-    let config = Path::new(".luaurc");
-    if config.exists() {
-        if !std::fs::read_to_string(config)?.contains("\"kern\"") {
-            println!("note: add \"kern\": \"./.kern-types/kern\" to the aliases in .luaurc");
-        }
-    } else {
-        std::fs::write(config, LUAURC)?;
-        println!("created .luaurc for type checking");
-    }
-    Ok(())
-}
-
 /// `[--session NAME] [FILE]` from the end of a command line.
 fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>) {
     match args {
@@ -452,4 +361,54 @@ fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>) {
         }
         rest => (None, rest.first().map(String::as_str)),
     }
+}
+
+/// Whether `name` could be a command plugins add with `kern.cli`: plain
+/// lowercase words with dashes. Anything else is a file.
+fn command_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// `kern NAME ARGS`: the command a plugin added with `kern.cli`, run in an
+/// editor with no screen. With no such command, `kern NAME` edits the file.
+fn plugin_command(
+    name: &str,
+    args: &[String],
+    terminal: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let host = host("", None, None)?;
+    if !host.cli_commands().iter().any(|(n, _, _)| n == name) {
+        if args.is_empty() {
+            return edit(None, Some(PathBuf::from(name)), terminal);
+        }
+        return Err(format!("there's no command {name} (kern commands lists them)").into());
+    }
+    // What starting up said, like a config error, before the command's own.
+    for message in host.with_editor_mut(Editor::take_messages) {
+        eprintln!("{message}");
+    }
+    let returned = host
+        .run_cli(name, args.to_vec(), &mut |message| println!("{message}"))
+        .map_err(|err| err.brief())?;
+    if let Some(text) = returned.filter(|text| !text.is_empty()) {
+        println!("{text}");
+    }
+    Ok(())
+}
+
+/// `kern commands`: Kern's own commands, then the ones plugins add.
+fn commands() -> Result<(), Box<dyn std::error::Error>> {
+    println!("{USAGE}");
+    let commands = host("", None, None)?.cli_commands();
+    if !commands.is_empty() {
+        println!("\nfrom plugins:");
+    }
+    for (name, usage, doc) in commands {
+        let line = format!("{name} {usage}");
+        println!("       kern {:<15} {doc}", line.trim_end());
+    }
+    Ok(())
 }

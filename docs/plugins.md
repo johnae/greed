@@ -360,6 +360,30 @@ cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
 which you can use in your own marks too. A terminal ends with the plugin
 that started it.
 
+## The command line
+
+`kern.cli({ name, doc, usage, run })` adds a command to `kern` itself.
+`kern NAME ARGS` starts an editor with no screen, with your plugins and
+config, and calls `run` with the arguments. It can wait like any command
+(on `kern.process.run`, `kern.http.request`, `kern.sleep`); what it
+echoes is printed as it goes, what it returns is printed at the end, and
+an error makes `kern` exit with a failure.
+
+```luau
+kern.cli({
+	name = "hello",
+	doc = "Say hello",
+	usage = "[NAME]",
+	run = function(args)
+		return `hello {args[1] or "there"}`
+	end,
+})
+```
+
+`kern hello world` prints `hello world`, and `kern commands` lists it.
+Names are lowercase words with dashes; a file of that name in the current
+folder wins, and `kern NAME` with no such command opens `NAME` as a file.
+
 ## The network
 
 `kern.http.request({ url, method, headers, body, timeout })` returns the

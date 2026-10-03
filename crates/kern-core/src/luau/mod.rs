@@ -8,6 +8,7 @@
 mod api;
 mod approvals;
 mod capabilities;
+mod cli;
 mod diff;
 mod fs;
 mod handles;
@@ -134,6 +135,8 @@ pub(crate) struct State {
     pub pending: Vec<PathBuf>,
     /// HTTP streams being read.
     pub http: http::Streams,
+    /// Command line commands plugins added.
+    pub cli: cli::Commands,
     /// Runs of plugin code that held the editor up.
     pub stalls: stalls::Stalls,
 }
@@ -223,6 +226,17 @@ impl fmt::Display for HostError {
 
 impl std::error::Error for HostError {}
 
+impl HostError {
+    /// The error without mlua's "runtime error:" prefix and its stack
+    /// traceback, which only shows Rust frames.
+    pub fn brief(&self) -> String {
+        let text = self.to_string();
+        let text = text.split("\nstack traceback:").next().unwrap_or(&text);
+        let text = text.strip_prefix("runtime error: ").unwrap_or(text);
+        text.trim().to_owned()
+    }
+}
+
 impl From<mlua::Error> for HostError {
     fn from(err: mlua::Error) -> Self {
         HostError::Lua(err)
@@ -277,6 +291,7 @@ impl Host {
             approvals: None,
             pending: Vec::new(),
             http: http::Streams::default(),
+            cli: cli::Commands::default(),
             stalls: stalls::Stalls::default(),
         });
         lua.set_app_data(Deadline {
@@ -671,6 +686,24 @@ impl Host {
         budgeted(&self.lua, || api::run_command(&self.lua, name))
     }
 
+    /// The command line commands plugins added: name, what follows it on
+    /// the command line and what it does, sorted by name.
+    pub fn cli_commands(&self) -> Vec<(String, String, String)> {
+        cli::list(&self.lua)
+    }
+
+    /// Runs the command line command `name` with `args` to its end, waiting
+    /// on the jobs and timers it waits on, and handing each message it
+    /// echoes to `say`. Returns what it returned, as text.
+    pub fn run_cli(
+        &self,
+        name: &str,
+        args: Vec<String>,
+        say: &mut dyn FnMut(&str),
+    ) -> Result<Option<String>, HostError> {
+        Ok(cli::run(&self.lua, name, args, say)?)
+    }
+
     /// Feeds one key press through the keymap, running whatever it resolves
     /// to.
     pub fn press(&self, key: Key) -> Result<(), HostError> {
@@ -949,6 +982,7 @@ fn unregister(lua: &Lua, name: &str) {
     state.registry.remove_owned_by(name);
     state.terminals.remove_owned_by(name);
     state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
+    state.cli.retain(|_, command| &*command.owner != name);
     state.editor.keymap_mut().remove_owned_by(name);
     let mut restyled: Vec<Arc<str>> = state
         .theme_base

@@ -52,6 +52,11 @@ impl Jobs {
     pub(super) fn finished(&self) -> &Receiver<Done> {
         &self.finished
     }
+
+    /// How many jobs are running.
+    pub(super) fn running(&self) -> usize {
+        self.running
+    }
 }
 
 /// Runs `work` on a new thread and returns the token its result wakes.

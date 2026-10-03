@@ -196,6 +196,8 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
 pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let kern = lua.create_table()?;
 
+    kern.set("cli", super::cli::function(lua, owner)?)?;
+
     let o = owner.clone();
     kern.set(
         "command",

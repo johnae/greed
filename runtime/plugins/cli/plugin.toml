@@ -1,0 +1,2 @@
+name = "cli"
+capabilities = ["proc", "fs.read", "fs.write"]

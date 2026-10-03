@@ -22,6 +22,9 @@ alone.
 | `kern serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the shown project and leave; on the last one, quit the session |
 
+`kern commands` lists every command line command, including the ones
+plugins add (`kern ls`, `kern new` and `kern bring` are plugins too).
+
 Switching to another session (`space P`, `:session`) moves your terminal
 there and leaves the session you were in running. Over `kern ssh` it
 reconnects through a new ssh connection, which is close to instant with
@@ -110,6 +113,18 @@ The other machine's own `~/.config/kern` runs after it and wins, and
 plugins an agent installs, stay on that machine across connections. A
 session that was already running keeps the config it started with.
 `KERN_SSH_CONFIG=0` leaves your config at home.
+
+To keep a plugin you made over there, bring it home. `kern bring HOST`
+lists the plugins in the other machine's own config and data folders, and
+`kern bring HOST PLUGIN` copies one into your config's `plugins` folder.
+Kern asks you to approve what it uses the next time it starts.
+
+```sh
+$ kern bring build-box
+build-box has these; kern bring build-box PLUGIN copies one here:
+  /home/me/.config/kern/plugins/todo-sync
+$ kern bring build-box todo-sync
+```
 
 Your login shell on the other machine can be anything (bash, fish,
 nushell): `kern ssh` only asks it to start `sh`, and needs a POSIX `sh`

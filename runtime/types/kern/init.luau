@@ -275,6 +275,18 @@ export type CommandSpec = {
 	run: (ctx: Context) -> (),
 }
 
+--- A command for the command line, run as `kern NAME ARGS` in an editor
+--- with no screen. `run` can wait like a command; what it echoes and
+--- returns is printed, and an error makes `kern` fail.
+export type CliSpec = {
+	--- Plain words with dashes, e.g. "bring".
+	name: string,
+	doc: string?,
+	--- What follows the name, e.g. "HOST [PLUGIN]".
+	usage: string?,
+	run: (args: { string }) -> string?,
+}
+
 --- A keymap layer. Leave `mode` or `kind` out to match any.
 export type Layer = {
 	mode: string?,
@@ -1079,6 +1091,8 @@ export type Theme = {
 
 export type Kern = {
 	command: (spec: CommandSpec) -> (),
+	--- Adds a command line command, `kern NAME ARGS`; see `CliSpec`.
+	cli: (spec: CliSpec) -> (),
 	--- Runs a command by name, optionally with arguments, `force` and a count.
 	run: (name: string, opts: { args: { string }?, force: boolean?, count: number? }?) -> (),
 	--- Runs Luau code in a scratch environment whose globals persist, like a
