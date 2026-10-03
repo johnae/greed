@@ -125,6 +125,15 @@ kern.keymap.bind("normal", {
 	["alt-,"] = "remove-primary",
 	["("] = "rotate-primary-back",
 	[")"] = "rotate-primary",
+	X = "extend-to-line-bounds",
+	["alt-x"] = "shrink-to-line-bounds",
+	["alt-_"] = "merge-consecutive-selections",
+	["_"] = "trim-selections",
+	["&"] = "align-selections",
+	["alt-("] = "rotate-contents-back",
+	["alt-)"] = "rotate-contents",
+	["ctrl-a"] = "increment",
+	["ctrl-x"] = "decrement",
 })
 
 kern.keymap.bind("insert", {

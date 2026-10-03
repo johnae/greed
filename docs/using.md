@@ -238,6 +238,11 @@ spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
 | `C` `alt-C` | Add a selection on the line below or above |
 | `,` `alt-,` | Keep only the primary selection, or drop it |
 | `(` `)` | Make the previous or next selection primary |
+| `X` `alt-x` | Extend each selection to whole lines, or shrink it to the whole lines inside |
+| `alt-_` | Merge selections that touch (`:merge-selections` merges them all) |
+| `_` `&` | Trim spaces off the selections, line them up at one column |
+| `alt-(` `alt-)` | Rotate what the selections hold, back or forward |
+| `ctrl-a` `ctrl-x` | Add to or subtract from the number at each cursor (`5 ctrl-a`) |
 | `v` | Select mode: moves extend the selection, `n` `N` add the next match as another selection |
 
 With several selections, everything you type or delete happens at each one.

@@ -1,6 +1,12 @@
 local test = require("@kern/test")
 local kern = require("@kern")
 
+local function check(t: test.TestContext, before: string, keys: string, after: string)
+	t:buffer(before)
+	t:keys(keys)
+	t:expect(after)
+end
+
 test("% selects the whole buffer", function(t)
 	t:buffer("a|b\ncd")
 	t:keys("%")
@@ -103,4 +109,32 @@ test("s with nothing typed uses the last search", function(t)
 	t:expect("^foo| bar ^foo|")
 	t:keys("c z esc")
 	t:expect("z| bar z|")
+end)
+
+test("X takes whole lines, alt-x only the whole lines inside", function(t)
+	check(t, "a^b\nc|d\ne", "X", "^ab\ncd\n|e")
+	check(t, "a^b\ncd\ne|f", "alt-x", "ab\n^cd\n|ef")
+end)
+
+test("alt-- merges every selection, alt-_ the ones that touch", function(t)
+	t:buffer("^a| b ^c|")
+	t:run("merge-selections")
+	t:expect("^a b c|")
+	check(t, "^a|^b| ^c|", "alt-_", "^ab| ^c|")
+end)
+
+test("_ trims spaces off the selections, & lines them up", function(t)
+	check(t, "^ a |b", "_", " ^a| b")
+	check(t, "|x = 1\nlonger |= 2", "&", "       |x = 1\nlonger |= 2")
+end)
+
+test("alt-( and alt-) rotate what the selections hold", function(t)
+	check(t, "^a| ^b| ^c|", "alt-)", "^c| ^a| ^b|")
+	check(t, "^a| ^b| ^c|", "alt-(", "^b| ^c| ^a|")
+end)
+
+test("ctrl-a and ctrl-x add to and subtract from the number at the cursor", function(t)
+	check(t, "x = |41;", "ctrl-a", "x = ^42|;")
+	check(t, "|x = 1, y = 9", "5 ctrl-x", "x = ^-4|, y = 9")
+	check(t, "|0xff", "ctrl-a", "^0x100|")
 end)

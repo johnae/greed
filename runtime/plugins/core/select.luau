@@ -7,6 +7,11 @@
 --   C        add a selection on the next line; alt-C on the line above
 --   ,        keep only the primary selection; alt-, removes it
 --   ( and )  make the previous or next selection the primary one
+--   X        extend to whole lines; alt-x shrink to the whole lines inside
+--   alt-_    merge selections that touch
+--   _ and &  trim spaces off the selections, line them up at one column
+--   alt-( )  rotate what the selections hold
+--   ctrl-a   add to the number at each cursor; ctrl-x subtract
 --
 -- s, S, K and alt-K show the result as you type the regex. Typing, deleting
 -- and pasting then work on every selection.
@@ -246,5 +251,218 @@ end)
 command("rotate-primary", "Make the next selection the primary one", function(ctx)
 	rotate(ctx, 1)
 end)
+
+-- The start of `line`, or the end of the buffer past its last line.
+local function line_start(buffer: kern.Buffer, line: number): number
+	return if line < buffer:line_count() then buffer:line_start(line) else buffer:len()
+end
+
+-- The lines `range` touches: its first, and the one its last character is on.
+local function lines_of(buffer: kern.Buffer, range: kern.Range): (number, number)
+	local from, to = span(range)
+	return buffer:line_of(from), buffer:line_of(if to > from then buffer:prev_char(to) else to)
+end
+
+command("extend-to-line-bounds", "Extend each selection to whole lines", function(ctx)
+	local buffer, selection = ctx.buffer, ctx.view:selection()
+	for i, range in selection.ranges do
+		local first, last = lines_of(buffer, range)
+		selection.ranges[i] =
+			{ anchor = buffer:line_start(first), head = line_start(buffer, last + 1) }
+	end
+	ctx.view:set_selection(selection)
+end)
+
+command("shrink-to-line-bounds", "Shrink each selection to the whole lines inside it", function(ctx)
+	local buffer, selection = ctx.buffer, ctx.view:selection()
+	for i, range in selection.ranges do
+		local from, to = span(range)
+		local first, last = lines_of(buffer, range)
+		if buffer:line_start(first) < from then
+			first += 1
+		end
+		if line_start(buffer, last + 1) > to then
+			last -= 1
+		end
+		if first <= last then
+			selection.ranges[i] =
+				{ anchor = buffer:line_start(first), head = line_start(buffer, last + 1) }
+		end
+	end
+	ctx.view:set_selection(selection)
+end)
+
+command(
+	"merge-selections",
+	"Merge all selections into one, from the first to the last",
+	function(ctx)
+		local ranges = ctx.view:selection().ranges
+		local from, _ = span(ranges[1])
+		local _, to = span(ranges[#ranges])
+		set(ctx.view, { { anchor = from, head = to } })
+	end
+)
+
+command("merge-consecutive-selections", "Merge selections that touch or overlap", function(ctx)
+	local merged: Ranges = {}
+	for _, range in ctx.view:selection().ranges do
+		local from, to = span(range)
+		local last = merged[#merged]
+		if last and from <= last.head then
+			last.head = math.max(last.head, to)
+		else
+			table.insert(merged, { anchor = from, head = to })
+		end
+	end
+	set(ctx.view, merged)
+end)
+
+-- Replaces the text of each selection with `change(i, text)` in one edit,
+-- keeping each selection around its new text.
+local function replace_each(ctx: kern.Context, change: (number, string) -> string)
+	local buffer, selection = ctx.buffer, ctx.view:selection()
+	buffer:edit(function(e)
+		local shift = 0
+		for i, range in selection.ranges do
+			local from, to = span(range)
+			local new = change(i, buffer:slice(from, to))
+			e:replace(from, to, new)
+			selection.ranges[i] = { anchor = from + shift, head = from + shift + #new }
+			shift += #new - (to - from)
+		end
+		e:select(selection)
+	end)
+end
+
+command(
+	"trim-selections",
+	"Trim the spaces and line breaks off both ends of each selection",
+	function(ctx)
+		local buffer, selection = ctx.buffer, ctx.view:selection()
+		local kept: Ranges = {}
+		for _, range in selection.ranges do
+			local from, to = span(range)
+			local text = buffer:slice(from, to)
+			local lead = #(string.match(text, "^%s*") :: string)
+			local trail = #(string.match(text, "%s*$") :: string)
+			if lead < #text then
+				table.insert(kept, { anchor = from + lead, head = to - trail })
+			end
+		end
+		set(ctx.view, kept)
+	end
+)
+
+command(
+	"align-selections",
+	"Line the selections up at one column, with spaces before them",
+	function(ctx)
+		local buffer = ctx.buffer
+		local ranges = ctx.view:selection().ranges
+		local widest = 0
+		for _, range in ranges do
+			widest = math.max(widest, column(buffer, (span(range))))
+		end
+		buffer:edit(function(e)
+			local seen: { [number]: boolean } = {}
+			for _, range in ranges do
+				local from = span(range)
+				local line = buffer:line_of(from)
+				-- One selection per line moves; Helix aligns columns, not every selection.
+				if not seen[line] then
+					seen[line] = true
+					local pad = widest - column(buffer, from)
+					if pad > 0 then
+						e:insert(from, string.rep(" ", pad))
+					end
+				end
+			end
+		end)
+	end
+)
+
+for _, back in { false, true } do
+	command(
+		if back then "rotate-contents-back" else "rotate-contents",
+		if back
+			then "Move each selection's text to the selection before it, the first's to the last"
+			else "Move each selection's text to the selection after it, the last's to the first",
+		function(ctx)
+			local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
+			local texts = {}
+			for i, range in ranges do
+				texts[i] = buffer:slice(span(range))
+			end
+			local n = #texts
+			replace_each(ctx, function(i)
+				return texts[if back then i % n + 1 else (i - 2) % n + 1]
+			end)
+		end
+	)
+end
+
+-- The number at or after `pos` on its line, as Helix's ctrl-a finds it:
+-- where it starts and ends, and its value. Decimal, with a sign, or hex.
+local function number_at(buffer: kern.Buffer, pos: number): (number?, number?, number?, boolean?)
+	local line = buffer:line_of(pos)
+	local start = buffer:line_start(line)
+	local text = buffer:slice(start, buffer:line_end(line))
+	local at = pos - start + 1
+	local init = 1
+	while true do
+		local from, to = string.find(text, "%-?0[xX]%x+", init)
+		local dfrom, dto = string.find(text, "%-?%d+", init)
+		if dfrom and (from == nil or dfrom < from) then
+			from, to = dfrom, dto
+		end
+		if from == nil or to == nil then
+			return nil, nil, nil, nil
+		end
+		local first, last = from :: number, to :: number
+		if last >= at then
+			local literal = string.sub(text, first, last)
+			local hex = string.find(literal, "[xX]") ~= nil
+			local sign = if string.sub(literal, 1, 1) == "-" then -1 else 1
+			local value = if hex
+				then sign * (tonumber(string.match(literal, "%x+$"), 16) :: number)
+				else tonumber(literal)
+			return start + first - 1, start + last, value, hex
+		end
+		init = last + 1
+	end
+end
+
+local function format_number(value: number, hex: boolean?): string
+	if not hex then
+		return tostring(value)
+	end
+	return (if value < 0 then "-" else "") .. string.format("0x%x", math.abs(value))
+end
+
+for _, down in { false, true } do
+	command(
+		if down then "decrement" else "increment",
+		if down
+			then "Subtract the count (or 1) from the number at each cursor"
+			else "Add the count (or 1) to the number at each cursor",
+		function(ctx)
+			local buffer, selection = ctx.buffer, ctx.view:selection()
+			local step = (ctx.count or 1) * (if down then -1 else 1)
+			buffer:edit(function(e)
+				local shift = 0
+				for i, range in selection.ranges do
+					local from, to, value, hex = number_at(buffer, (span(range)))
+					if from and to and value then
+						local text = format_number(value + step, hex)
+						e:replace(from, to, text)
+						selection.ranges[i] = { anchor = from + shift, head = from + shift + #text }
+						shift += #text - (to - from)
+					end
+				end
+				e:select(selection)
+			end)
+		end
+	)
+end
 
 return {}
