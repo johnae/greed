@@ -5,3 +5,5 @@
 (parameter_list (_) @parameter.around)
 (argument_list (_) @parameter.around)
 (comment) @comment.around
+((function_declaration name: (identifier) @_name (#match? @_name "^(Test|Benchmark|Example|Fuzz)") body: (_) @test.inside) @test.around)
+(keyed_element) @entry.around

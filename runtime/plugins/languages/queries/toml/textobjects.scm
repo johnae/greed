@@ -3,3 +3,4 @@
 (pair) @parameter.around
 (array (_) @parameter.around)
 (comment) @comment.around
+(pair) @entry.around

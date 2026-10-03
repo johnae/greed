@@ -201,6 +201,53 @@ for char, label in NAMES do
 	end
 end
 
+--- The innermost XML or HTML element around `pos`: inside it (between its
+--- tags) or around it (the tags too), as `from, to`, or nil.
+function M.tag(buffer: Buffer, pos: number, around: boolean): (number?, number?)
+	local tags = buffer:find_all("</?[A-Za-z][\\w:.-]*[^<>]*>") or {}
+	local open: { { name: string, from: number, to: number } } = {}
+	local best: { number }? = nil
+	for _, tag in tags do
+		local source = buffer:slice(tag.from, tag.to)
+		local closing, name = string.match(source, "^<(/?)([%w:%.%-_]+)")
+		if string.sub(source, -2) == "/>" or name == nil then
+			continue
+		elseif closing == "" then
+			table.insert(open, { name = name, from = tag.from, to = tag.to })
+			continue
+		end
+		-- A closing tag ends the latest open one of its name.
+		for i = #open, 1, -1 do
+			if open[i].name == name then
+				local first = open[i]
+				for _ = i, #open do
+					table.remove(open)
+				end
+				if first.from <= pos and pos < tag.to and (best == nil or first.from > best[1]) then
+					best = { first.from, first.to, tag.from, tag.to }
+				end
+				break
+			end
+		end
+	end
+	if best == nil then
+		return nil, nil
+	end
+	if around then
+		return best[1], best[4]
+	end
+	return best[2], best[3]
+end
+
+for _, outer in { false, true } do
+	local side = if outer then "around" else "inside"
+	object(`select-{side}-tag`, `Select {side} the XML or HTML element`, function(buffer, range)
+		local from, to = M.tag(buffer, motions.cursor(buffer, range), outer)
+		return if from and to then { anchor = from, head = to } else nil
+	end)
+	M.keys[`m {if outer then "a" else "i"} x`] = `select-{side}-tag`
+end
+
 -- The innermost pair of any kind around `pos`, as Helix's m i m finds it.
 local function nearest(buffer: Buffer, pos: number, count: number?): (number?, number?)
 	local best_from, best_to: number? = nil, nil

@@ -1,7 +1,8 @@
 -- Version control: signs beside lines added (+), changed (~) and removed
 -- (-) since the last commit, with jj, or git where there's no .jj.
 --
---   ] g / [ g   next / previous change
+--   ] g / [ g   next / previous change; ] G / [ G the last and first
+--   m i g       the change under the cursor; m a g its lines
 --   space g r   put the change under the cursor back the way it was
 --   space g b   who last changed this line, and when
 --   space g s   every change since the last commit, in one multibuffer
@@ -258,6 +259,44 @@ for _, last in { false, true } do
 	})
 end
 
+-- The change since the last commit on the cursor's line, if there is one.
+local function change_here(ctx: kern.Context): Change?
+	local buffer = ctx.buffer
+	local line = buffer:line_of(head(ctx.view))
+	for _, change in changes(buffer) do
+		local first, last = lines_of(buffer, change)
+		if first <= line and line <= last then
+			return change
+		end
+	end
+	return nil
+end
+
+for _, around in { false, true } do
+	kern.command({
+		name = if around then "select-around-change" else "select-inside-change",
+		doc = if around
+			then "Select the lines of the change since the last commit under the cursor"
+			else "Select the text of the change since the last commit under the cursor",
+		run = function(ctx)
+			local change = change_here(ctx)
+			if change == nil then
+				return
+			end
+			local buffer = ctx.buffer
+			local from, to = change.from, change.to
+			if around then
+				local first, last = lines_of(buffer, change)
+				from = buffer:line_start(first)
+				to = if last + 1 < buffer:line_count()
+					then buffer:line_start(last + 1)
+					else buffer:len()
+			end
+			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+		end,
+	})
+end
+
 kern.command({
 	name = "revert-change",
 	doc = "Put the change under the cursor back the way it was at the last commit",
@@ -487,6 +526,8 @@ kern.keymap.bind("normal", {
 	["[ g"] = "prev-change",
 	["] G"] = "last-change",
 	["[ G"] = "first-change",
+	["m i g"] = "select-inside-change",
+	["m a g"] = "select-around-change",
 	["space g r"] = "revert-change",
 	["space g b"] = "blame-line",
 	["space u c"] = "operation-commit",

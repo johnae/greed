@@ -15,3 +15,10 @@
 (field_declaration_list (_) @parameter.around)
 (line_comment) @comment.around
 (block_comment) @comment.around
+((attribute_item (attribute (identifier) @_test (#eq? @_test "test")))
+  .
+  (function_item body: (_) @test.inside) @test.around)
+((mod_item name: (identifier) @_tests (#eq? @_tests "tests") body: (_) @test.inside) @test.around)
+(field_initializer) @entry.around
+(field_declaration) @entry.around
+(match_arm) @entry.around

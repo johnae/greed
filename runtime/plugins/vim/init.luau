@@ -383,44 +383,6 @@ local function paragraph_object(buffer: Buffer, pos: number, around: boolean): (
 	return buffer:line_start(first), buffer:line_start(last)
 end
 
--- The innermost XML or HTML element around `pos`: inside it (between the
--- tags) or around it (the tags too), or nil.
-local function tag_object(buffer: Buffer, pos: number, around: boolean): (number?, number?, boolean)
-	local tags = buffer:find_all("</?[A-Za-z][\\w:.-]*[^<>]*>") or {}
-	local open: { { name: string, from: number, to: number } } = {}
-	local best: { number }? = nil
-	for _, tag in tags do
-		local source = buffer:slice(tag.from, tag.to)
-		local closing, name = string.match(source, "^<(/?)([%w:%.%-_]+)")
-		if string.sub(source, -2) == "/>" or name == nil then
-			continue
-		elseif closing == "" then
-			table.insert(open, { name = name, from = tag.from, to = tag.to })
-			continue
-		end
-		-- A closing tag ends the latest open one of its name.
-		for i = #open, 1, -1 do
-			if open[i].name == name then
-				local first = open[i]
-				for _ = i, #open do
-					table.remove(open)
-				end
-				if first.from <= pos and pos < tag.to and (best == nil or first.from > best[1]) then
-					best = { first.from, first.to, tag.from, tag.to }
-				end
-				break
-			end
-		end
-	end
-	if best == nil then
-		return nil, nil, false
-	end
-	if around then
-		return best[1], best[4], false
-	end
-	return best[2], best[3], false
-end
-
 local BRACKETS = { b = "(", B = "{" }
 
 -- Objects from the syntax tree: functions, arguments and comments (`t` is
@@ -450,7 +412,8 @@ local function text_object(
 		return range.anchor, range.head, false
 	end
 	if key == "t" then
-		return tag_object(buffer, pos, around)
+		local from, to = core.objects.tag(buffer, pos, around)
+		return from, to, false
 	end
 	local open, close = core.objects.around(buffer, pos, BRACKETS[key] or key)
 	if open == nil and (key == '"' or key == "'" or key == "`") then

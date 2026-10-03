@@ -6,3 +6,4 @@
 (arguments (_) @parameter.around)
 (table_constructor (field) @parameter.around)
 (comment) @comment.around
+(table_constructor (field) @entry.around)

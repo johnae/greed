@@ -42,3 +42,8 @@ test("m i m and m a m take the nearest brackets or quotes of any kind", function
 	check(t, [[f("a|b", [c])]], "m i m", [[f("^ab|", [c])]])
 	check(t, "f([c|])", "m a m", "f(^[c]|)")
 end)
+
+test("m i x and m a x take an XML or HTML element", function(t)
+	check(t, "<a><b>x|y</b></a>", "m i x", "<a><b>^xy|</b></a>")
+	check(t, "<a><b>x|y</b></a>", "m a x", "<a>^<b>xy</b>|</a>")
+end)

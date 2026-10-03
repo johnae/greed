@@ -13,3 +13,5 @@
 (enum_declaration body: (_) @type.inside) @type.around
 (type_arguments (_) @parameter.around)
 (type_parameters (_) @parameter.around)
+((call_expression function: (identifier) @_name (#match? @_name "^(it|test|describe)$") arguments: (arguments (_) (_) @test.inside)) @test.around)
+(pair) @entry.around

@@ -2,3 +2,4 @@
 (array) @type.around
 (object (pair) @parameter.around)
 (array (_) @parameter.around)
+(pair) @entry.around

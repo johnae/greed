@@ -1,7 +1,7 @@
 -- Select mode, like Helix's: `v` starts it, and moves extend the selection
 -- instead of starting a new one. `n` and `N` add the next match of the last
 -- search as another selection. Every other key works as in normal mode, and
--- anything that acts on the selection (d, c, y, ...) leaves select mode.
+-- changing or copying the text (d, c, y, ...) leaves select mode.
 
 local kern = require("@kern")
 
@@ -48,30 +48,16 @@ kern.command({
 	end,
 })
 
--- Commands that keep select mode going; anything else leaves it first.
-local STAYS = {
-	["select-mode"] = true,
-	["search-next-add"] = true,
-	["search-prev-add"] = true,
-	["collapse"] = true,
-	["flip"] = true,
-	["keep-primary"] = true,
-	["remove-primary"] = true,
-	["rotate-primary"] = true,
-	["rotate-primary-back"] = true,
-	["page-down"] = true,
-	["page-up"] = true,
-	["half-page-down"] = true,
-	["half-page-up"] = true,
-	["center-view"] = true,
-}
-
+-- As in Helix, select mode lasts through anything that only selects (x, s,
+-- %, m i (, alt-o, ...) and ends when the text changes or is copied.
 kern.on("command.run", function(event: kern.CommandRun)
-	if
-		kern.mode.get() == "select"
-		and not STAYS[event.name]
-		and string.sub(event.name, 1, 7) ~= "extend-"
-	then
+	if kern.mode.get() == "select" and event.name == "copy" then
+		kern.mode.set("normal")
+	end
+end)
+
+kern.on("buffer.changed", function(event: kern.BufferChanged)
+	if kern.mode.get() == "select" and event.buffer:id() == kern.view():buffer():id() then
 		kern.mode.set("normal")
 	end
 end)

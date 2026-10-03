@@ -8,3 +8,5 @@
 (formal_parameters (_) @parameter.around)
 (arguments (_) @parameter.around)
 (comment) @comment.around
+((call_expression function: (identifier) @_name (#match? @_name "^(it|test|describe)$") arguments: (arguments (_) (_) @test.inside)) @test.around)
+(pair) @entry.around

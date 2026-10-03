@@ -30,7 +30,14 @@ function M.query(buffer: Buffer, kind: string): string?
 end
 
 --- The syntax objects Kern knows, with the key that stands for each.
-M.OBJECTS = { f = "function", t = "type", a = "parameter", c = "comment" } :: { [string]: string }
+M.OBJECTS = {
+	f = "function",
+	t = "type",
+	a = "parameter",
+	c = "comment",
+	T = "test",
+	e = "entry",
+} :: { [string]: string }
 
 export type Object = { around: Node, inside: Node? }
 

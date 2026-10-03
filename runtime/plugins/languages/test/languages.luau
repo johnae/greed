@@ -304,3 +304,14 @@ test("a pattern for names that aren't locals becomes a catch-all after the other
 		adapted
 	)
 end)
+
+test("m a T selects a test, m a e an entry", function(t)
+	t:buffer("fn a() {}\n\n#[test]\nfn b() {\n    x|;\n}\n")
+	kern.view():buffer():set_language("rust")
+	t:keys("m a T")
+	t:expect("fn a() {}\n\n#[test]\n^fn b() {\n    x;\n}|\n")
+	t:buffer('{"a": 1, "b": |2}')
+	kern.view():buffer():set_language("json")
+	t:keys("m a e")
+	t:expect('{"a": 1, ^"b": 2|}')
+end)

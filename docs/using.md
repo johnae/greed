@@ -255,7 +255,7 @@ spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
 | `_` `&` | Trim spaces off the selections, line them up at one column |
 | `alt-(` `alt-)` | Rotate what the selections hold, back or forward |
 | `ctrl-a` `ctrl-x` | Add to or subtract from the number at each cursor (`5 ctrl-a`) |
-| `v` | Select mode: moves extend the selection, `n` `N` add the next match as another selection |
+| `v` | Select mode: moves extend the selection, `n` `N` add the next match as another selection; it lasts until you change or copy the text |
 
 With several selections, everything you type or delete happens at each one.
 `%`, then `s foo`, then `c bar` replaces every `foo` in the file. `s` with
@@ -270,6 +270,8 @@ selects every place it appears.
 | `m i (` `m a (` | Inside or around the brackets; also `[` `{` `<` |
 | `m i "` `m a "` | Inside or around the quotes; also `'` and `` ` `` |
 | `m i m` `m a m` | Inside or around the nearest brackets or quotes, whichever they are |
+| `m i x` `m a x` | Inside or around the XML or HTML element |
+| `m i g` `m a g` | The change since the last commit under the cursor, or its whole lines |
 | `m s (` | Wrap each selection in brackets, quotes, or any character |
 | `m d (` | Take away the brackets or quotes around each selection |
 | `m r ( [` | Swap them for others |
@@ -282,6 +284,8 @@ selects every place it appears.
 | `m i t` `m a t` | Inside or around the type: a struct, enum, impl or table |
 | `m i a` `m a a` | An argument or parameter, around with its comma |
 | `m a c` | The comment |
+| `m i T` `m a T` | Inside or around the test (Rust, Python, Go, JavaScript and TypeScript) |
+| `m a e` | An entry in a table, map or struct |
 | `] f` `[ f` | The next or previous function; also `t`, `a` and `c` |
 | `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
 | `] n` `[ n` | The next or previous node beside it (Helix has these on `alt-n` `alt-p`, which are pane keys here) |

@@ -6,3 +6,4 @@
 (binding_set (binding) @parameter.around)
 (list_expression (_) @parameter.around)
 (comment) @comment.around
+(binding_set (binding) @entry.around)
