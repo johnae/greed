@@ -1116,7 +1116,10 @@ export type Kern = {
 	--- Adds a command line command, `kern NAME ARGS`; see `CliSpec`.
 	cli: (spec: CliSpec) -> (),
 	--- Runs a command by name, optionally with arguments, `force` and a count.
-	run: (name: string, opts: { args: { string }?, force: boolean?, count: number? }?) -> (),
+	--- It returns once the command waits for something (a key, a prompt, a
+	--- reply); with `wait`, a command or handler instead waits until it has
+	--- finished, without blocking the editor.
+	run: (name: string, opts: { args: { string }?, force: boolean?, count: number?, wait: boolean? }?) -> (),
 	--- Runs Luau code in a scratch environment whose globals persist, like a
 	--- REPL. Returns true and the values as text (tab-separated), or false
 	--- and the error.

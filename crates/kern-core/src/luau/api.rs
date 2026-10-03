@@ -52,6 +52,12 @@ struct Invocation<'a> {
 
 /// Runs a command as the user.
 fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
+    invoke_running(lua, name, how).map(|_| ())
+}
+
+/// `invoke`, returning the command's coroutine if it's still running, for
+/// `kern.run` to wait for.
+fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize>, HostError> {
     let Invocation {
         keys,
         args,
@@ -114,8 +120,13 @@ fn invoke(lua: &Lua, name: &str, how: Invocation) -> Result<(), HostError> {
     }
     event.set("count", count)?;
     emit(lua, "command.run", &event)?;
-    tasks::spawn(lua, handler, ctx, owner, Some(name.into()))?;
-    Ok(())
+    Ok(tasks::spawn_running(
+        lua,
+        handler,
+        ctx,
+        owner,
+        Some(name.into()),
+    )?)
 }
 
 /// A key typed by the user: kept if keys are being recorded, then fed
@@ -230,21 +241,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    kern.set(
-        "run",
-        lua.create_function(|lua, (name, opts): (String, Option<Table>)| {
-            let how = match opts {
-                Some(opts) => Invocation {
-                    args: opts.get::<Option<Vec<String>>>("args")?.unwrap_or_default(),
-                    force: opts.get::<Option<bool>>("force")?.unwrap_or(false),
-                    count: opts.get("count")?,
-                    ..Invocation::default()
-                },
-                None => Invocation::default(),
-            };
-            invoke(lua, &name, how).map_err(into_lua)
-        })?,
-    )?;
+    kern.set("run", run_function(lua)?)?;
 
     let o = owner.clone();
     kern.set(
@@ -1402,4 +1399,41 @@ fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
         },
     )?;
     emit(lua, "buffer.opened", &payload)
+}
+
+/// `kern.run(name, opts)`: starts a command; with `wait`, a command or
+/// handler waits until it has finished.
+fn run_function(lua: &Lua) -> LuaResult<Function> {
+    // Returns a token to yield until the command finishes, when it's asked
+    // to wait and the command is still running.
+    let start = lua.create_function(|lua, (name, opts): (String, Option<Table>)| {
+        let (how, wait) = match opts {
+            Some(opts) => (
+                Invocation {
+                    args: opts.get::<Option<Vec<String>>>("args")?.unwrap_or_default(),
+                    force: opts.get::<Option<bool>>("force")?.unwrap_or(false),
+                    count: opts.get("count")?,
+                    ..Invocation::default()
+                },
+                opts.get::<Option<bool>>("wait")?.unwrap_or(false),
+            ),
+            None => (Invocation::default(), false),
+        };
+        let running = invoke_running(lua, &name, how).map_err(into_lua)?;
+        Ok(running.filter(|_| wait).map(|id| tasks::wait_for(lua, id)))
+    })?;
+    lua.load(
+        r"
+        local start = ...
+        return function(name, opts)
+            local token = start(name, opts)
+            -- Outside a command or handler there's nothing to wait in.
+            if token and coroutine.isyieldable() then
+                coroutine.yield(token)
+            end
+        end
+        ",
+    )
+    .set_name("=kern.run")
+    .call(start)
 }

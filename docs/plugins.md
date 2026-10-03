@@ -311,6 +311,11 @@ calls `step(t)` once a frame, which is all the flash on copy is.
 `kern.fs.watch(path)` makes a "file.changed" event come whenever that file
 changes, from anywhere; it's how your config reloads.
 
+`kern.run(name)` starts a command and returns as soon as that command
+waits for something, so the code after it doesn't see what the command
+did after a key or a reply. `kern.run(name, { wait = true })` waits until
+the command has finished, the same way as the calls above.
+
 Waiting only works where code runs as a coroutine: commands, event
 handlers, and `kern.spawn(f, ...)`, which runs `f` that way and returns at
 once, for work in the background. Called anywhere else, like a status line

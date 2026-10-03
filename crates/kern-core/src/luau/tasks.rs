@@ -42,6 +42,8 @@ pub(crate) struct Tasks {
     owners: HashMap<usize, PluginId>,
     /// How long each coroutine has worked across the slices it was cut into.
     worked: HashMap<usize, Duration>,
+    /// Tokens to resolve when a coroutine finishes, by its id.
+    finished: HashMap<usize, Vec<u64>>,
 }
 
 impl Default for Tasks {
@@ -58,6 +60,7 @@ impl Default for Tasks {
             causes: HashMap::new(),
             owners: HashMap::new(),
             worked: HashMap::new(),
+            finished: HashMap::new(),
         }
     }
 }
@@ -93,15 +96,38 @@ pub(super) fn spawn(
     owner: PluginId,
     cause: Option<Arc<str>>,
 ) -> LuaResult<()> {
+    spawn_running(lua, f, args, owner, cause).map(|_| ())
+}
+
+/// `spawn`, returning the coroutine's id if it's still running (waiting on
+/// something), for `wait_for`.
+pub(super) fn spawn_running(
+    lua: &Lua,
+    f: Function,
+    args: impl IntoLuaMulti,
+    owner: PluginId,
+    cause: Option<Arc<str>>,
+) -> LuaResult<Option<usize>> {
     let thread = lua.create_thread(f)?;
+    let id = key(&thread);
     {
         let state = &mut *state_mut(lua);
         if let Some(cause) = cause.or_else(|| state.editor.cause().cloned()) {
-            state.tasks.causes.insert(key(&thread), cause);
+            state.tasks.causes.insert(id, cause);
         }
-        state.tasks.owners.insert(key(&thread), owner);
+        state.tasks.owners.insert(id, owner);
     }
-    resume(lua, thread, args)
+    resume(lua, thread.clone(), args)?;
+    Ok((thread.status() == ThreadStatus::Resumable).then_some(id))
+}
+
+/// A token resolved when the running coroutine `id` finishes, so another
+/// coroutine can wait for it by yielding the token.
+pub(super) fn wait_for(lua: &Lua, id: usize) -> u64 {
+    let tasks = &mut state_mut(lua).tasks;
+    let token = tasks.token();
+    tasks.finished.entry(id).or_default().push(token);
+    token
 }
 
 /// Sets why the running code edits, for the rest of its coroutine too.
@@ -140,7 +166,7 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         state.running = outer_owner;
     }
     if thread.status() != ThreadStatus::Resumable {
-        state_mut(lua).tasks.forget(id);
+        finish(lua, id)?;
         yielded?;
         return Ok(());
     }
@@ -157,14 +183,12 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
                 .unwrap_or_default()
                 + ran;
             if worked > WORK_LIMIT {
-                let state = &mut *state_mut(lua);
-                state.tasks.forget(id);
                 let who = owner.as_deref().unwrap_or("a plugin");
-                state.editor.echo(format!(
+                state_mut(lua).editor.echo(format!(
                     "stopped {what} ({who}) after {}s of work without finishing",
                     WORK_LIMIT.as_secs()
                 ));
-                return Ok(());
+                return finish(lua, id);
             }
             state_mut(lua).tasks.worked.insert(id, worked);
             Some(start_timer(lua, Duration::ZERO))
@@ -175,6 +199,20 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         mlua::Error::runtime("a command can only wait through kern functions like kern.sleep")
     })?;
     state_mut(lua).tasks.waiting.insert(token, thread);
+    Ok(())
+}
+
+/// Drops what's kept about the coroutine `id`, which is done or stopped,
+/// and lets whatever waits for it carry on, whether it finished or failed.
+fn finish(lua: &Lua, id: usize) -> LuaResult<()> {
+    let waiters = {
+        let tasks = &mut state_mut(lua).tasks;
+        tasks.forget(id);
+        tasks.finished.remove(&id).unwrap_or_default()
+    };
+    for token in waiters {
+        wake(lua, token, ())?;
+    }
     Ok(())
 }
 
