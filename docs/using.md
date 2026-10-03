@@ -341,6 +341,8 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | Keys | |
 |---|---|
 | `space f` | Find a file in the project |
+| `space F` | Find a file under the folder Kern was started in |
+| `space '` | Open the last picker again |
 | `space b` | Switch to an open file |
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
@@ -374,6 +376,8 @@ and whether it was found.
 | `g d` | Go to the definition |
 | `g D` `g y` `g i` | Go to the declaration, the type's definition, an implementation |
 | `g r` | Pick a place it's used, with a preview |
+| `space H` | Select every place in this file it's used (Helix's space h, which is help here) |
+| `space S` | Pick a symbol anywhere in the project |
 | `space r` | Rename it everywhere it's used |
 | `space a` | Pick a fix or refactor for the cursor or selection |
 | `space d` | Pick a problem in this file |
@@ -420,6 +424,7 @@ the working copy's parent, so the signs show what your current change does.
 | `] g` `[ g` | Next and previous change; `] G` `[ G` the last and first |
 | `space g r` | Put the change under the cursor back the way it was |
 | `space g b` | Who last changed this line, and when |
+| `space g g` | Pick a file changed since the last commit |
 | `space g s` (`:changes`) | Every change in the project, in one buffer |
 
 `:set vcs-signs false` hides the signs.

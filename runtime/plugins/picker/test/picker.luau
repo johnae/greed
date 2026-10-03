@@ -377,3 +377,13 @@ test("choose waits for the item, and gives nil when the picker ends without one"
 	assert(done and item == nil, "another picker taking its place gives nil")
 	t:keys("esc")
 end)
+
+test("space ' opens the last picker again", function(t)
+	t:buffer("|abc")
+	t:keys("space ? esc")
+	t:expect_mode("normal")
+	t:keys("space '")
+	t:expect_mode("insert")
+	assert(current() ~= nil, "the palette is back")
+	t:keys("esc")
+end)

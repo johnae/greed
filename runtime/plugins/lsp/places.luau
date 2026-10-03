@@ -129,24 +129,34 @@ local function by_place(a: Place, b: Place): boolean
 	return a.position.character < b.position.character
 end
 
+-- The places the thing under the cursor is used, as LSP locations, or nil
+-- if the request failed (having said why).
+local function references(ctx: kern.Context): { any }?
+	local buffer = ctx.buffer
+	local ok, result, err = common.request(buffer, "textDocument/references", function()
+		local params = common.at(buffer, common.head(ctx.view))
+		params.context = { includeDeclaration = true }
+		return params
+	end)
+	if not ok then
+		return nil
+	elseif err then
+		kern.echo(`references: {err.message}`)
+		return nil
+	end
+	return result or {}
+end
+
 kern.command({
 	name = "goto-references",
 	doc = "Pick a place where the thing under the cursor is used, and go there",
 	run = function(ctx)
-		local buffer = ctx.buffer
-		local ok, result, err = common.request(buffer, "textDocument/references", function()
-			local params = common.at(buffer, common.head(ctx.view))
-			params.context = { includeDeclaration = true }
-			return params
-		end)
-		if not ok then
-			return
-		elseif err then
-			kern.echo(`references: {err.message}`)
+		local found = references(ctx)
+		if found == nil then
 			return
 		end
 		local places: { Place } = {}
-		for _, location in result or {} do
+		for _, location in found do
 			local path = kern.lsp.path(location.uri)
 			if path then
 				table.insert(
@@ -166,6 +176,64 @@ kern.command({
 		end, function()
 			return { style = "ui.search.match" }
 		end, 1)
+	end,
+})
+
+kern.command({
+	name = "select-references",
+	doc = "Select every place in this file where the thing under the cursor is used",
+	run = function(ctx)
+		local found = references(ctx)
+		if found == nil then
+			return
+		end
+		local buffer = ctx.buffer
+		local ranges: { kern.Range } = {}
+		for _, location in found do
+			if kern.lsp.path(location.uri) == buffer:path() then
+				table.insert(ranges, {
+					anchor = kern.lsp.offset(buffer, location.range.start),
+					head = kern.lsp.offset(buffer, location.range["end"]),
+				})
+			end
+		end
+		if #ranges == 0 then
+			kern.echo("no references in this file")
+			return
+		end
+		table.sort(ranges, function(a: kern.Range, b: kern.Range)
+			return a.anchor < b.anchor
+		end)
+		ctx.view:set_selection({ ranges = ranges, primary = 1 })
+	end,
+})
+
+kern.command({
+	name = "pick-workspace-symbol",
+	doc = "Pick a function, type or other symbol anywhere in the project, as the language server knows them",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		picker.pick("Symbols", {}, function(item)
+			common.open_at(item.value.path, item.value.position)
+		end, {
+			source = function(query)
+				local ok, result = common.request(buffer, "workspace/symbol", function()
+					return { query = query }
+				end)
+				local items = {}
+				for _, symbol in if ok then result or {} else {} do
+					local location = symbol.location
+					local path = location and kern.lsp.path(location.uri)
+					if path and location.range then
+						table.insert(items, {
+							label = `{symbol.name}  {common.shown_path(path)}:{location.range.start.line + 1}`,
+							value = { path = path, position = location.range.start },
+						})
+					end
+				end
+				return items
+			end,
+		})
 	end,
 })
 
@@ -214,6 +282,9 @@ kern.command({
 kern.keymap.bind("normal", {
 	["g r"] = "goto-references",
 	["space D"] = "pick-problem",
+	-- Helix has this on space h, which is help here.
+	["space H"] = "select-references",
+	["space S"] = "pick-workspace-symbol",
 })
 
 return {}

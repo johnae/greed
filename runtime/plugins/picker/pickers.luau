@@ -30,18 +30,40 @@ local function buffer_preview(item: picker.Item): picker.Preview?
 	return nil
 end
 
+-- Picks a file under `root`, skipping ignored files, and opens it.
+local function pick_file(title: string, root: string)
+	local items = {}
+	for _, path in kern.files(root) do
+		table.insert(items, { label = path, value = project.path(root, path) })
+	end
+	picker.pick(title, items, function(item)
+		kern.open(item.value)
+	end, { preview = file_preview })
+end
+
 kern.command({
 	name = "pick-file",
 	doc = "Open a file in the project, skipping ignored files",
 	run = function()
-		local root = project.root()
-		local items = {}
-		for _, path in kern.files(root) do
-			table.insert(items, { label = path, value = project.path(root, path) })
+		pick_file("Files", project.root())
+	end,
+})
+
+kern.command({
+	name = "pick-file-here",
+	doc = "Open a file under the folder Kern was started in, skipping ignored files",
+	run = function()
+		pick_file("Files here", kern.fs.cwd())
+	end,
+})
+
+kern.command({
+	name = "picker-resume",
+	doc = "Open the last picker again",
+	run = function()
+		if not picker.resume() then
+			kern.echo("no picker yet")
 		end
-		picker.pick("Files", items, function(item)
-			kern.open(item.value)
-		end, { preview = file_preview })
 	end,
 })
 

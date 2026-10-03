@@ -407,10 +407,24 @@ local M = {}
 
 M.KEYS = KEYS
 
+-- The last picker opened, for `resume`.
+local last: { title: string, items: { Item }, choose: (item: Item) -> (), options: Options? }? = nil
+
+--- Opens the last picker again, as Helix's space '. False if there's none.
+function M.resume(): boolean
+	local again = last
+	if again == nil then
+		return false
+	end
+	M.pick(again.title, again.items, again.choose, again.options)
+	return true
+end
+
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
 -- `options.preview` shows the current item beside the list, and
 -- `options.source` makes the items follow the query.
 function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), options: Options?)
+	last = { title = title, items = items, choose = choose, options = options }
 	close()
 	local labels = {}
 	for i, item in items do

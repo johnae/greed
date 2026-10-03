@@ -256,3 +256,10 @@ test("m i g selects the change under the cursor, m a g its lines", function(t)
 	t:keys("m a g")
 	t:expect("a\n^B\n|c\n")
 end)
+
+test("changed_files lists the files changed since the last commit", function(t)
+	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	kern.fs.write(dir .. "/b.txt", "B\n")
+	local files = require("@vcs").changed_files(dir) :: { string }
+	assert(#files == 1 and string.match(files[1], "/b%.txt$"), table.concat(files, ", "))
+end)

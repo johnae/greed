@@ -42,6 +42,8 @@ kern.keymap.bind("normal", {
 	["space b"] = "pick-buffer",
 	["space s"] = "pick-outline",
 	["space j"] = "pick-jump",
+	["space F"] = "pick-file-here",
+	["space '"] = "picker-resume",
 	["space ?"] = "command-palette",
 })
 

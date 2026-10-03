@@ -11,9 +11,11 @@
 -- With jj the comparison is with the working copy's parent (@-), so the
 -- signs show what the change you're working on does to the file.
 
+local core = require("@core")
 local kern = require("@kern")
 local multibuffer = require("@multibuffer")
 local operations = require("@operations")
+local picker = require("@picker")
 
 local M = {}
 
@@ -431,6 +433,47 @@ kern.command({
 	run = M.show_changes,
 })
 
+--- The files changed in the repository `dir` is in, as absolute paths: with
+--- jj in the working copy's change, with git since the last commit, leaving
+--- out deleted ones. Nil and why not outside a repository.
+function M.changed_files(dir: string): ({ string }?, string?)
+	local repo = repo_of(dir .. "/.")
+	if repo == nil then
+		return nil, "not in a repository"
+	end
+	local out = {}
+	for _, relative in changed_files(repo) do
+		table.insert(out, `{repo.root}/{relative}`)
+	end
+	return out, nil
+end
+
+kern.command({
+	name = "pick-changed-file",
+	doc = "Open a file changed since the last commit",
+	run = function()
+		local root = core.project.root()
+		local files, err = M.changed_files(root)
+		if files == nil then
+			kern.echo(err :: string)
+			return
+		elseif #files == 0 then
+			kern.echo("nothing changed")
+			return
+		end
+		local items = {}
+		for _, path in files do
+			local shown = if string.sub(path, 1, #root + 1) == root .. "/"
+				then string.sub(path, #root + 2)
+				else path
+			table.insert(items, { label = shown, value = path })
+		end
+		picker.pick("Changed files", items, function(item)
+			kern.open(item.value)
+		end)
+	end,
+})
+
 --- The changes in progress in the repository `dir` is in, as a diff: with
 --- jj the working copy's change; with git what's staged, or everything when
 --- nothing is. Also which it is ("jj" or "git"), or nil and why not.
@@ -528,6 +571,7 @@ kern.keymap.bind("normal", {
 	["[ G"] = "first-change",
 	["m i g"] = "select-inside-change",
 	["m a g"] = "select-around-change",
+	["space g g"] = "pick-changed-file",
 	["space g r"] = "revert-change",
 	["space g b"] = "blame-line",
 	["space u c"] = "operation-commit",
