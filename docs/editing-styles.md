@@ -133,6 +133,7 @@ the keys are the ones most editors use.
 | `f8` `shift-f8`, `ctrl-shift-m` | The next or previous problem, all problems |
 | `ctrl-shift-o` `ctrl-t` | Go to a symbol in the file, in the project |
 | `alt-left` `alt-right` | Back and forward through where you jumped from |
+| `ctrl-u` `ctrl-shift-u` | Back to the cursors before the last command, and forward again |
 | `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file |
 | `ctrl-P` or `alt-x` | Run a command |
 | `ctrl-s` | Save |

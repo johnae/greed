@@ -549,6 +549,8 @@ kern.keymap.bind("edit", {
 	["ctrl-M"] = "pick-problem",
 	["alt-left"] = "jump-back",
 	["alt-right"] = "jump-forward",
+	["ctrl-u"] = "selection-undo",
+	["ctrl-U"] = "selection-redo",
 })
 
 -- Without modes there's no ":" to find, so switching here says where

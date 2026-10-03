@@ -19,6 +19,7 @@ local goto_keys = require("@self/goto")
 local objects = require("@self/objects")
 local syntax = require("@self/syntax")
 require("@self/select_mode")
+require("@self/selections")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
 local registers = require("@self/registers")
@@ -135,6 +136,8 @@ kern.keymap.bind("normal", {
 	["alt-."] = "repeat-find",
 	["ctrl-a"] = "increment",
 	["ctrl-x"] = "decrement",
+	["ctrl-h"] = "selection-undo",
+	["ctrl-k"] = "selection-redo",
 	["space c"] = "toggle-comment",
 	-- Copies already go to the clipboard; these are Helix's keys for it.
 	["space y"] = "copy",

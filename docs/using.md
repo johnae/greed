@@ -157,6 +157,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `m m` | The matching bracket |
 | `g w` | Label every word on screen; type a label to jump there |
 | `;` `alt-;` | Collapse the selection to the cursor, swap its ends |
+| `ctrl-h` `ctrl-k` | Back to the selection before the last command, and forward again |
 | `%` | Select the whole file |
 | `ctrl-f` `ctrl-b` | A screen down or up (also `pagedown` `pageup`) |
 | `ctrl-d` `ctrl-u` | Half a screen down or up |
