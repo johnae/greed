@@ -107,6 +107,10 @@ pub struct FloatOptions {
     pub x: Option<Extent>,
     /// See `x`.
     pub y: Option<Extent>,
+    /// Whether it belongs to the tab it opened in, shown only with that tab
+    /// and closed with it, like a floating terminal. Otherwise it floats
+    /// over every tab, like a picker.
+    pub tab: bool,
 }
 
 /// A view floating over the main one.
@@ -117,6 +121,8 @@ pub struct Float {
     /// The view that had focus when this one opened, which gets it back
     /// when this one closes.
     pub(crate) return_to: ViewId,
+    /// The tab it belongs to, if it belongs to one.
+    pub(crate) tab: Option<TabId>,
 }
 
 /// Which edge of the screen a panel is on.
@@ -531,17 +537,24 @@ impl Editor {
         if !options.focus {
             self.focus = previous;
         }
+        let tab = options.tab.then(|| self.current_tab().id());
         self.floats.push(Float {
             view,
             options,
             return_to: previous,
+            tab,
         });
         view
     }
 
-    /// Floating views, bottom first.
-    pub fn floats(&self) -> &[Float] {
-        &self.floats
+    /// The floating views shown: those over every tab and the shown tab's
+    /// own, bottom first.
+    pub fn floats(&self) -> Vec<&Float> {
+        let tab = self.current_tab().id();
+        self.floats
+            .iter()
+            .filter(|f| f.tab.is_none_or(|t| t == tab))
+            .collect()
     }
 
     /// Shows `buffer` in a new panel beside the main view, focusing it if
@@ -621,7 +634,7 @@ impl Editor {
         }
         if self.focus == view {
             self.focus = return_to
-                .or_else(|| self.floats.last().map(|f| f.view))
+                .or_else(|| self.floats().last().map(|f| f.view))
                 .unwrap_or(self.current_project().main());
         }
         self.drop_if_unused(closed.buffer);

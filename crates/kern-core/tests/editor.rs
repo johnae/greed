@@ -189,6 +189,7 @@ fn float_options() -> kern_core::FloatOptions {
         focus: true,
         x: None,
         y: None,
+        tab: false,
     }
 }
 

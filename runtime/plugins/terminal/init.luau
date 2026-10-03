@@ -297,15 +297,16 @@ kern.on("buffer.closed", function(event: kern.BufferClosed)
 	end
 end)
 
-local FLOAT: kern.FloatSpec = { title = "terminal", width = "80%", height = "80%" }
+-- Floating terminals belong to the tab they open in.
+local FLOAT: kern.FloatSpec = { title = "terminal", width = "80%", height = "80%", tab = true }
 
 export type OpenOptions = {
 	--- Open it in a new pane on this side of `from` (the focused view by
 	--- default), rather than in the focused view.
 	split: ("left" | "right" | "up" | "down")?,
 	from: kern.View?,
-	--- Open it floating over the panes.
-	float: boolean?,
+	--- Open it floating over the panes, placed as this spec says if given.
+	float: (boolean | kern.FloatSpec)?,
 }
 
 --- Environment variables every new terminal gets, on top of the editor's.
@@ -322,7 +323,13 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	buffer:set_line_numbers(false)
 	local view, previous
 	if opts.float then
-		view = kern.float(buffer, FLOAT)
+		local spec = table.clone(FLOAT)
+		if type(opts.float) == "table" then
+			for key, value in opts.float :: { [string]: any } do
+				(spec :: any)[key] = value
+			end
+		end
+		view = kern.float(buffer, spec)
 	elseif opts.split then
 		view = (opts.from or kern.view()):split(opts.split, buffer)
 	else
@@ -387,16 +394,16 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	return term
 end
 
--- The floating terminal of each project, by project id.
+-- The floating terminal alt-f shows in each tab, by tab id.
 local floats: { [number]: Term } = {}
 
---- Shows the project's floating terminal, starting it the first time, or
---- hides it, leaving it running.
+--- Shows the tab's floating terminal, starting it the first time, or hides
+--- it, leaving it running.
 function M.toggle_float()
-	local project = kern.project.current().id
-	local term = floats[project]
+	local tab = kern.tab.current().id
+	local term = floats[tab]
 	if term == nil or terms[term.buffer:id()] == nil then
-		floats[project] = M.open(nil, { float = true })
+		floats[tab] = M.open(nil, { float = true })
 		return
 	end
 	for _, view in term.buffer:views() do

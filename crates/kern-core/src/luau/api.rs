@@ -1088,6 +1088,7 @@ pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
     focus: true,
     x: None,
     y: None,
+    tab: false,
 };
 
 /// Reads `{ title, width, height, anchor, focus, x, y }` onto `base`;
@@ -1121,6 +1122,7 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         focus: spec.get::<Option<bool>>("focus")?.unwrap_or(base.focus),
         x: extent(spec.get("x")?)?.or(base.x),
         y: extent(spec.get("y")?)?.or(base.y),
+        tab: spec.get::<Option<bool>>("tab")?.unwrap_or(base.tab),
     })
 }
 
@@ -1162,6 +1164,7 @@ pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> 
         },
     )?;
     spec.set("focus", options.focus)?;
+    spec.set("tab", options.tab)?;
     if let Some(x) = options.x {
         spec.set("x", to_lua(x)?)?;
     }

@@ -74,7 +74,7 @@ two modes where single keys act until `esc`.
 | `alt-[` `alt-]`, `alt-1` to `alt-9` | The tab before or after, or tab N |
 | `alt-space` | Arrange the tab with the next layout |
 | `alt-m` | Swap the pane with the main one |
-| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` float, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
+| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` the floating terminal, `W` another, `F` float the pane or put a float back, `z` hide or show the floats, `T` tile them, `C` cascade them, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
 | `alt-r` | Resize mode: `h j k l` grow the pane or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
 

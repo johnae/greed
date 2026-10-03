@@ -70,7 +70,7 @@ impl<M: Measure> Renderer<M> {
         };
         let candidates = editor
             .floats()
-            .iter()
+            .into_iter()
             .rev()
             .map(|f| (f.view, true))
             .chain(editor.panels().iter().map(|p| (p.view, false)))

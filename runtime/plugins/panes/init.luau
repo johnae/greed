@@ -30,6 +30,9 @@ M.layouts = layouts
 --- Layouts saved to open again (see saved.luau).
 M.saved = require("@self/saved")
 
+--- The floating views a tab has (see floats.luau).
+M.floats = require("@self/floats")
+
 type Direction = "left" | "right" | "up" | "down"
 
 local OPPOSITE: { [Direction]: Direction } =
@@ -606,6 +609,41 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		end,
 	},
 	{
+		name = "float-terminal-new",
+		doc = "Open another floating terminal in this tab",
+		run = function()
+			M.floats.new_terminal()
+		end,
+	},
+	{
+		name = "floats-toggle",
+		doc = "Hide this tab's floating views, or show them again",
+		run = function()
+			M.floats.toggle()
+		end,
+	},
+	{
+		name = "float-flip",
+		doc = "Take this pane out to float over the tab, or put a floating view back in as a pane",
+		run = function()
+			M.floats.flip(kern.view())
+		end,
+	},
+	{
+		name = "floats-tile",
+		doc = "Lay this tab's floating views out side by side",
+		run = function()
+			M.floats.tile()
+		end,
+	},
+	{
+		name = "floats-cascade",
+		doc = "Stack this tab's floating views in a cascade",
+		run = function()
+			M.floats.cascade()
+		end,
+	},
+	{
 		name = "resize-mode",
 		doc = "Keys for resizing the pane or floating view until esc, and moving a float",
 		run = function()
@@ -791,6 +829,11 @@ M.keys = {
 		y = "layout-pick",
 		p = "pane-place",
 		R = "resize-mode",
+		W = "float-terminal-new",
+		F = "float-flip",
+		z = "floats-toggle",
+		T = "floats-tile",
+		C = "floats-cascade",
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
@@ -882,6 +925,11 @@ modes.pane = {
 		"y",
 		"H",
 		"R",
+		"W",
+		"F",
+		"z",
+		"T",
+		"C",
 		"=",
 		"-",
 		"esc",

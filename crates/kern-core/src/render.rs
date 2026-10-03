@@ -26,8 +26,8 @@ use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
-    Anchor, BufferId, CursorShape, Editor, FloatOptions, Mark, Panel, Scroll, Side, View, ViewId,
-    VirtualLine,
+    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, Mark, Panel, Scroll, Side, View,
+    ViewId, VirtualLine,
 };
 
 /// Highlights and marks drawn over a buffer's text.
@@ -372,7 +372,8 @@ impl<M: Measure> Renderer<M> {
         // it.
         let mut images = self.images.take();
         let mut floats = Vec::new();
-        for float in editor.floats().to_vec() {
+        let shown: Vec<Float> = editor.floats().into_iter().cloned().collect();
+        for float in shown {
             let rect = place(&float.options, screen, cursor);
             let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, decorations);
             if editor.focus() == float.view {

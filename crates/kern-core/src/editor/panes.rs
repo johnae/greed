@@ -276,8 +276,14 @@ impl Editor {
         if project.tabs.len() == 1 {
             return None;
         }
-        let panes = project.remove_tab(t).panes();
+        let mut panes = project.remove_tab(t).panes();
         let main = project.main();
+        // Its floats go with it.
+        panes.extend(
+            self.floats
+                .extract_if(.., |f| f.tab == Some(id))
+                .map(|f| f.view),
+        );
         for view in &panes {
             if let Some(closed) = self.views.remove(view) {
                 self.drop_if_unused(closed.buffer);

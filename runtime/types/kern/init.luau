@@ -569,6 +569,10 @@ export type FloatSpec = {
 	--- follows `anchor` up and down. It's always kept on screen.
 	x: (number | string)?,
 	y: (number | string)?,
+	--- Whether it belongs to the tab it opens in: shown only with that tab,
+	--- and closed with it, like a floating terminal. Otherwise it floats over
+	--- every tab, like a picker. Defaults to false.
+	tab: boolean?,
 }
 
 export type CommandInfo = {

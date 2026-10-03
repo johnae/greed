@@ -275,6 +275,7 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
             focus: true,
             x: None,
             y: None,
+            tab: false,
         },
     );
     let f = frame(&mut ed, 20, 9);
@@ -509,6 +510,7 @@ fn floats_can_be_placed_side_by_side() {
         focus: false,
         x,
         y,
+        tab: false,
     };
     let left = ed.create_buffer("picker", "a");
     let right = ed.create_buffer("preview", "b");
@@ -629,6 +631,7 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
         focus: false,
         x: None,
         y: None,
+        tab: false,
     };
     let mut ed = editor("ab|c\nd");
     let cursor = frame(&mut ed, 30, 10)
@@ -665,6 +668,7 @@ fn a_float_anchored_above_the_cursor_opens_above_it_or_below_near_the_top() {
         focus: false,
         x: None,
         y: None,
+        tab: false,
     };
     let mut ed = editor("a\nb\nc\nd\ne|");
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
