@@ -72,7 +72,9 @@ character, and `v` starts a visual mode for selecting by hand.
 | `p P` | Paste after or before |
 | `i a I A o O` | Insert |
 | `u` `ctrl-r` | Undo, redo |
-| `v` `V` | Visual mode, by character or by line; `i`/`a` there select a text object |
+| `v` `V` `ctrl-v` | Visual mode, by character, line or block; `i`/`a` there select a text object |
+| `o` `r` `J` in visual mode | Go to the other end, replace every character, join the lines |
+| `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
 | `z z` `z t` `z b`, `z a` `z c` `z o` `z R` | Center the view, cursor line to the top or bottom; folds |
@@ -86,15 +88,15 @@ character, and `v` starts a visual mode for selecting by hand.
 Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
 go: the Vim style is plain Luau against the same API any plugin uses, with
-its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`)
-beside Helix's.
+its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`,
+`vim-visual-block`) beside Helix's.
 
 The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
 Panels like the file tree and help keep their own keys.
 
-It isn't all of Vim yet. Ex ranges and visual block mode are
-missing.
+It isn't all of Vim yet. Ex ranges are missing, and a copied block pastes
+as plain text, one piece per line.
 
 ## Edit
 

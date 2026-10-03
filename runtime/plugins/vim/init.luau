@@ -1,5 +1,5 @@
 -- Vim-style editing, written only against the plugin API. It has modes of
--- its own (vim, vim-insert, vim-visual and vim-visual-line), so it sits
+-- its own (vim, vim-insert and the three visual modes), so it sits
 -- beside Helix's normal mode instead of replacing it, and borrows the
 -- space-leader keys, ":", search, paging, the jumplist and the language
 -- server keys from normal mode.
@@ -12,7 +12,7 @@
 -- H M L - + _ |, the operators
 -- d c y > < gc g~ gu gU g? gq gw = ! with any of those motions or a text object (iw aW i( a"
 -- ip it, and from the syntax tree if af ia ic) and doubled for whole lines
--- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V, * #,
+-- (dd >> gcc), x X D C s S, r ~ J, p P, i a I A o O, u ctrl-r, v V ctrl-v, * #,
 -- q@ macros, "a registers, and . (core's) to repeat the last change.
 
 local kern = require("@kern")
@@ -151,6 +151,14 @@ local function repeat_step(step: (Buffer, number, boolean?) -> number?, big: boo
 			pos = next
 		end
 		return pos, "exclusive"
+	end
+end
+
+-- `repeat_step`, landing on the character it stops at.
+local function inclusive_step(step: (Buffer, number, boolean?) -> number?, big: boolean?): Motion
+	local motion = repeat_step(step, big)
+	return function(buffer, pos, count)
+		return (motion(buffer, pos, count)), "inclusive"
 	end
 end
 
@@ -321,8 +329,8 @@ local function paragraph(forward: boolean): Motion
 		end
 		local last = buffer:line_count() - 1
 		local line = buffer:line_of(pos)
+		local step = if forward then 1 else -1
 		for _ = 1, count do
-			local step = if forward then 1 else -1
 			-- Past blank lines first, then to the next blank one.
 			while line + step >= 0 and line + step <= last and blank(line + step) do
 				line += step
@@ -411,21 +419,12 @@ local motions: { [string]: Motion } = {
 	end,
 	w = repeat_step(next_word_start),
 	b = repeat_step(prev_word_start),
-	e = function(buffer, pos, count)
-		local target = repeat_step(word_end)(buffer, pos, count)
-		return target, "inclusive"
-	end,
+	e = inclusive_step(word_end),
 	W = repeat_step(next_word_start, true),
 	B = repeat_step(prev_word_start, true),
-	E = function(buffer, pos, count)
-		return (repeat_step(word_end, true)(buffer, pos, count)), "inclusive"
-	end,
-	["g e"] = function(buffer, pos, count)
-		return (repeat_step(prev_word_end)(buffer, pos, count)), "inclusive"
-	end,
-	["g E"] = function(buffer, pos, count)
-		return (repeat_step(prev_word_end, true)(buffer, pos, count)), "inclusive"
-	end,
+	E = inclusive_step(word_end, true),
+	["g e"] = inclusive_step(prev_word_end),
+	["g E"] = inclusive_step(prev_word_end, true),
 	[";"] = find_again(false),
 	[","] = find_again(true),
 	["}"] = paragraph(true),
@@ -768,6 +767,49 @@ local function on_lines(ctx: kern.Context, command: string, from: number, to: nu
 	ctx.view:set_selection(point(on_char(buffer, at)))
 end
 
+-- Keeps `value` in register `into`, for p and for ctrl-r while typing.
+local function keep(into: string, value: { text: string, linewise: boolean })
+	named[into] = value
+	core.registers.set(into, { value.text })
+end
+
+-- Keeps what operator `op` took in the register picked with ", or the
+-- unnamed one and the clipboard. "_ keeps nothing, and an uppercase letter
+-- adds to its lowercase one.
+local function store(op: string, taken: { text: string, linewise: boolean })
+	local name = core.registers.take()
+	if name and string.match(name, "^%u$") then
+		name = string.lower(name)
+		local before = named[name]
+		if before then
+			taken =
+				{ text = before.text .. taken.text, linewise = before.linewise or taken.linewise }
+		end
+	end
+	if name == nil or name == "+" or name == "*" then
+		register = taken
+		kern.clipboard.set(taken.text)
+		-- The numbered registers, as Vim keeps them: "0 the last yank, "1 to
+		-- "9 the last deletes of lines (older ones moving down), "- the last
+		-- smaller delete.
+		if op == "y" then
+			keep("0", taken)
+		elseif taken.linewise or string.find(taken.text, "\n", 1, true) then
+			for n = 9, 2, -1 do
+				local older = named[tostring(n - 1)]
+				if older then
+					keep(tostring(n), older)
+				end
+			end
+			keep("1", taken)
+		else
+			keep("-", taken)
+		end
+	elseif name ~= "_" then
+		keep(name, taken)
+	end
+end
+
 -- Applies operator `op` (one of "d", "c", "y" or LINE_OPERATORS) to `from`..`to`.
 local function apply(ctx: kern.Context, op: string, from: number, to: number, linewise: boolean)
 	local buffer = ctx.buffer
@@ -786,44 +828,7 @@ local function apply(ctx: kern.Context, op: string, from: number, to: number, li
 		ctx.view:set_selection(point(on_char(buffer, from)))
 		return
 	end
-	local taken = { text = buffer:slice(from, to), linewise = linewise }
-	-- Into the register picked with ", or the unnamed one and the clipboard.
-	-- "_ keeps nothing, and an uppercase letter adds to its lowercase one.
-	local name = core.registers.take()
-	if name and string.match(name, "^%u$") then
-		name = string.lower(name)
-		local before = named[name]
-		if before then
-			taken = { text = before.text .. taken.text, linewise = before.linewise or linewise }
-		end
-	end
-	-- Keeps `value` in register `into`, for p and for ctrl-r while typing.
-	local function keep(into: string, value: { text: string, linewise: boolean })
-		named[into] = value
-		core.registers.set(into, { value.text })
-	end
-	if name == nil or name == "+" or name == "*" then
-		register = taken
-		kern.clipboard.set(taken.text)
-		-- The numbered registers, as Vim keeps them: "0 the last yank, "1 to
-		-- "9 the last deletes of lines (older ones moving down), "- the last
-		-- smaller delete.
-		if op == "y" then
-			keep("0", taken)
-		elseif linewise or string.find(taken.text, "\n", 1, true) then
-			for n = 9, 2, -1 do
-				local older = named[tostring(n - 1)]
-				if older then
-					keep(tostring(n), older)
-				end
-			end
-			keep("1", taken)
-		else
-			keep("-", taken)
-		end
-	elseif name ~= "_" then
-		keep(name, taken)
-	end
+	store(op, { text = buffer:slice(from, to), linewise = linewise })
 	if op == "y" then
 		-- Whole lines at the end start with the line break before them.
 		local at = if linewise
@@ -952,18 +957,47 @@ local function lines_selection(buffer: Buffer, from: number, to: number): kern.S
 	return { ranges = { range }, primary = 1 }
 end
 
+-- Visual block mode: a rectangle of columns across lines, kept as one
+-- selection per line, so what's typed after I, A or c goes on every line.
+-- The corner it started from, where the cursor is, and whether $ took it
+-- to the end of every line.
+local block = { line = 0, column = 0, cursor = 0, to_end = false }
+
+-- The selection for the block from its corner to `block.cursor`, both
+-- columns included.
+local function block_selection(buffer: Buffer): kern.Selection
+	local line, column = buffer:line_of(block.cursor), column_of(buffer, block.cursor)
+	local top, bottom = math.min(block.line, line), math.max(block.line, line)
+	local left, right = math.min(block.column, column), math.max(block.column, column)
+	local ranges: { kern.Range } = {}
+	local primary = 1
+	for row = top, bottom do
+		local head = if block.to_end
+			then buffer:line_end(row)
+			else at_column(buffer, row, right + 1)
+		table.insert(ranges, { anchor = at_column(buffer, row, left), head = head })
+		if row == line then
+			primary = #ranges
+		end
+	end
+	return { ranges = ranges, primary = primary }
+end
+
 -- Motions move the cursor, or extend the selection in visual mode.
 for key, motion in motions do
 	command("motion-" .. string.gsub(key, " ", ""), "Vim motion " .. key, function(ctx)
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local target =
-			motion(ctx.buffer, cursor(ctx), ctx.count or (if COUNTLESS[key] then 0 else 1))
+		local mode = kern.mode.get()
+		local from = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
+		local target = motion(ctx.buffer, from, ctx.count or (if COUNTLESS[key] then 0 else 1))
 		if target == nil then
 			return
 		end
-		local mode = kern.mode.get()
-		if mode == "vim-visual-line" then
+		if mode == "vim-visual-block" then
+			block.cursor, block.to_end = target, key == "$"
+			ctx.view:set_selection(block_selection(ctx.buffer))
+		elseif mode == "vim-visual-line" then
 			ctx.view:set_selection(
 				lines_selection(ctx.buffer, visual_line, ctx.buffer:line_of(target))
 			)
@@ -975,10 +1009,63 @@ for key, motion in motions do
 	end)
 end
 
+-- Operator `op` on the visual block, each line's piece on its own. What c
+-- types goes on every line.
+local function block_operate(ctx: kern.Context, op: string)
+	local buffer = ctx.buffer
+	local ranges = ctx.view:selection().ranges
+	local top = ranges[1].anchor
+	kern.mode.set("vim")
+	local line_command = LINE_OPERATORS[op]
+	if line_command then
+		on_lines(ctx, line_command, top, ranges[#ranges].head, op)
+		return
+	end
+	local case = CASE_OPERATORS[op]
+	if case == nil then
+		local pieces = {}
+		for _, range in ranges do
+			table.insert(pieces, buffer:slice(range.anchor, range.head))
+		end
+		store(op, { text = table.concat(pieces, "\n"), linewise = false })
+		if op == "y" then
+			ctx.view:set_selection(point(on_char(buffer, top)))
+			return
+		end
+	end
+	if op == "c" then
+		kern.history.start_group()
+	end
+	buffer:edit(function(e)
+		for _, range in ranges do
+			if case then
+				e:replace(range.anchor, range.head, case(buffer:slice(range.anchor, range.head)))
+			else
+				e:delete(range.anchor, range.head)
+			end
+		end
+	end)
+	if op ~= "c" then
+		ctx.view:set_selection(point(on_char(buffer, top)))
+		return
+	end
+	local points, removed = {}, 0
+	for _, range in ranges do
+		local pos = range.anchor - removed
+		table.insert(points, { anchor = pos, head = pos })
+		removed += range.head - range.anchor
+	end
+	ctx.view:set_selection({ ranges = points, primary = 1 })
+	kern.mode.set("vim-insert")
+end
+
 for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw", "=", "!" } do
 	command("operator-" .. op, "Vim operator " .. op .. ", followed by a motion", function(ctx)
 		local mode = kern.mode.get()
-		if mode == "vim-visual" or mode == "vim-visual-line" then
+		if mode == "vim-visual-block" then
+			block_operate(ctx, op)
+			return
+		elseif mode == "vim-visual" or mode == "vim-visual-line" then
 			local range = ctx.view:selection().ranges[1]
 			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 			kern.mode.set("vim")
@@ -1132,9 +1219,11 @@ end)
 
 command("normal", "Back to normal mode", function(ctx)
 	kern.history.end_group()
-	local was_insert = kern.mode.get() == "vim-insert"
+	local mode = kern.mode.get()
+	local was_insert = mode == "vim-insert"
 	kern.mode.set("vim")
-	local buffer, pos = ctx.buffer, cursor(ctx)
+	local buffer = ctx.buffer
+	local pos = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
 	local _, start = line_bounds(buffer, pos)
 	-- Leaving insert mode steps back onto the last character typed.
 	if was_insert and pos > start then
@@ -1189,6 +1278,56 @@ command(
 		core.registers.play(name, ctx.count)
 	end
 )
+
+command("visual-block", "Select a block of columns across lines", function(ctx)
+	local at = cursor(ctx)
+	block.line, block.column, block.cursor = ctx.buffer:line_of(at), column_of(ctx.buffer, at), at
+	block.to_end = false
+	ctx.view:set_selection(block_selection(ctx.buffer))
+	kern.mode.set("vim-visual-block")
+end)
+
+-- I and A: type at the start (or, `at_end`, the end) of each of the block's
+-- lines. I skips lines too short to reach the block, as Vim does.
+local function block_insert(at_end: boolean): (ctx: kern.Context) -> ()
+	return function(ctx)
+		local all = ctx.view:selection().ranges
+		local ranges = {}
+		for _, range in all do
+			if at_end or range.anchor < range.head then
+				local pos = if at_end then range.head else range.anchor
+				table.insert(ranges, { anchor = pos, head = pos })
+			end
+		end
+		if #ranges == 0 then
+			ranges = { { anchor = all[1].anchor, head = all[1].anchor } }
+		end
+		kern.history.start_group()
+		ctx.view:set_selection({ ranges = ranges, primary = 1 })
+		kern.mode.set("vim-insert")
+	end
+end
+
+command("block-insert", "Type before the block on each of its lines", block_insert(false))
+command("block-append", "Type after the block on each of its lines", block_insert(true))
+
+command("visual-swap", "Go to the other end of the selection", function(ctx)
+	local mode = kern.mode.get()
+	local buffer = ctx.buffer
+	if mode == "vim-visual-block" then
+		local corner = at_column(buffer, block.line, block.column)
+		block.line, block.column, block.cursor =
+			buffer:line_of(block.cursor), column_of(buffer, block.cursor), corner
+		ctx.view:set_selection(block_selection(buffer))
+	elseif mode == "vim-visual-line" then
+		local line = buffer:line_of(cursor(ctx))
+		ctx.view:set_selection(lines_selection(buffer, line, visual_line))
+		visual_line = line
+	else
+		local range = ctx.view:selection().ranges[1]
+		ctx.view:set_selection(visual(buffer, cursor(ctx), visual_start(buffer, range)))
+	end
+end)
 
 command("visual-line", "Select whole lines, starting with this one", function(ctx)
 	visual_line = ctx.buffer:line_of(cursor(ctx))
@@ -1256,13 +1395,13 @@ command(
 	end
 )
 
-command("join", "Join the next line onto this one, with one space", function(ctx)
+-- Joins `times` lines onto `line`, each with one space.
+local function join(ctx: kern.Context, line: number, times: number)
 	local buffer = ctx.buffer
 	local at = cursor(ctx)
-	local line = buffer:line_of(at)
 	-- One undo step however many lines it joins.
 	kern.history.start_group()
-	for _ = 1, math.max((ctx.count or 2) - 1, 1) do
+	for _ = 1, times do
 		if line + 1 >= buffer:line_count() then
 			break
 		end
@@ -1277,6 +1416,44 @@ command("join", "Join the next line onto this one, with one space", function(ctx
 	end
 	kern.history.end_group()
 	ctx.view:set_selection(point(at))
+end
+
+command("join", "Join the next line onto this one, with one space", function(ctx)
+	join(ctx, ctx.buffer:line_of(cursor(ctx)), math.max((ctx.count or 2) - 1, 1))
+end)
+
+-- The first and last line the selection touches.
+local function selected_lines(ctx: kern.Context): (number, number)
+	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
+	local first, last = ranges[1], ranges[#ranges]
+	local from, to = math.min(first.anchor, first.head), math.max(last.anchor, last.head)
+	return buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
+end
+
+command("visual-join", "Join the selected lines, with one space", function(ctx)
+	local first, last = selected_lines(ctx)
+	kern.mode.set("vim")
+	join(ctx, first, math.max(last - first, 1))
+end)
+
+command("visual-replace", "Replace every selected character with the next one typed", function(ctx)
+	local char = kern.next_key()
+	if utf8.len(char) ~= 1 then
+		return
+	end
+	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
+	local top = math.min(ranges[1].anchor, ranges[1].head)
+	kern.mode.set("vim")
+	buffer:edit(function(e)
+		for _, range in ranges do
+			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local text = string.gsub(buffer:slice(from, to), utf8.charpattern, function(c)
+				return if c == "\n" then c else char
+			end)
+			e:replace(from, to, text)
+		end
+	end)
+	ctx.view:set_selection(point(on_char(buffer, top)))
 end)
 
 -- * and # search for the word under the cursor, forward or back.
@@ -1383,6 +1560,7 @@ local keys: { [string]: string } = {
 	O = "vim-open-above",
 	v = "vim-visual",
 	V = "vim-visual-line",
+	["ctrl-v"] = "vim-visual-block",
 	r = "vim-replace-char",
 	["~"] = "vim-switch-case",
 	J = "vim-join",
@@ -1432,6 +1610,10 @@ local visual: { [string]: string } = {
 	["!"] = "vim-operator-!",
 	i = "vim-visual-inside",
 	a = "vim-visual-around",
+	o = "vim-visual-swap",
+	r = "vim-visual-replace",
+	J = "vim-visual-join",
+	["ctrl-v"] = "vim-visual-block",
 }
 for key in motions do
 	keys[key] = "vim-motion-" .. string.gsub(key, " ", "")
@@ -1444,6 +1626,13 @@ kern.keymap.counts("vim")
 kern.keymap.counts("vim-visual")
 kern.keymap.inherit("vim-visual-line", "vim-visual")
 kern.keymap.counts("vim-visual-line")
+kern.keymap.inherit("vim-visual-block", "vim-visual")
+kern.keymap.bind("vim-visual-block", {
+	I = "vim-block-insert",
+	A = "vim-block-append",
+	["ctrl-v"] = "vim-normal",
+})
+kern.keymap.counts("vim-visual-block")
 
 core.style.define({
 	name = "vim",
@@ -1454,6 +1643,7 @@ core.style.define({
 		["vim-insert"] = "insert",
 		["vim-visual"] = "visual",
 		["vim-visual-line"] = "visual line",
+		["vim-visual-block"] = "visual block",
 	},
 	plugin = "vim",
 })
