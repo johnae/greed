@@ -355,7 +355,33 @@ export type Options = {
 	get: (name: string) -> OptionValue?,
 	set: (name: string, value: OptionValue) -> (),
 	--- Every option, sorted by name.
-	list: () -> { { name: string, doc: string, value: OptionValue } },
+	list: () -> { OptionInfo },
+}
+
+export type OptionInfo = {
+	name: string,
+	doc: string,
+	value: OptionValue,
+	default: OptionValue,
+	--- The plugin that defined it.
+	owner: string,
+	--- The plugin that last set it (your config is a plugin too), if anything has.
+	set_by: string?,
+	--- Where it was defined, e.g. "core/edit.luau:12", and the file and line
+	--- when that file is on disk.
+	source: string?,
+	path: string?,
+	line: number?,
+}
+
+--- An event handler, as `greed.handlers()` lists it.
+export type HandlerInfo = {
+	event: string,
+	--- The plugin that added it.
+	owner: string,
+	source: string?,
+	path: string?,
+	line: number?,
 }
 
 --- Recording what's typed and feeding keys back, for macros and repeating
@@ -1220,6 +1246,8 @@ export type Greed = {
 	diff: (old: string, new: string) -> { { from: number, to: number, text: string } },
 	--- Every command, sorted by name.
 	commands: () -> { CommandInfo },
+	--- Every event handler, by event and then the order they were added.
+	handlers: () -> { HandlerInfo },
 	--- The 1-based indices of `items` that match `query`, best first.
 	fuzzy: (query: string, items: { string }) -> { number },
 	--- The byte offsets of the characters in `text` that `query` matches,

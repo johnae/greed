@@ -793,7 +793,10 @@ takes their place, as in any terminal.
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.
 `space ?` lists every command, `space h c` describes one and `space h k`
-tells you what a key does. After a key like `space`, a hint shows what can
+tells you what a key does. `space h h` describes anything the editor is
+made of (commands, options with their values, events and who listens to
+them, the plugin API, plugins and modes), and `enter` in the help window
+goes to where it's defined. After a key like `space`, a hint shows what can
 follow, and `f1` shows the keys of the mode you're in, in every mode. A
 message on the status line goes away with the next key.
 

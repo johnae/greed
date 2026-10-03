@@ -33,6 +33,7 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
                 plugin("multibuffer"),
                 plugin("operations"),
                 plugin("approvals"),
+                plugin("describe"),
                 plugin("agent"),
             ])?;
             Ok(host)

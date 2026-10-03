@@ -147,3 +147,13 @@ test("eval's edits are one operation, and an eval that edits nothing leaves none
 	assert(operations.undo(op))
 	assert(greed.load(dir .. "/a.txt"):text() == "a\n")
 end)
+
+test("describe tells an agent what something is, or the names like it", function(t)
+	t:buffer("|")
+	local text = run("describe", { name = "next-word" })
+	assert(string.find(text, "command next-word", 1, true), text)
+	assert(string.find(text, "Keys: w (normal)", 1, true), text)
+	local like = run("describe", { name = "option.s", kind = "api" })
+	assert(string.find(like, "api greed.option.set", 1, true), like)
+	assert(run("describe", { name = "zzz-nothing" }) == "nothing called zzz-nothing")
+end)

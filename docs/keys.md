@@ -10,6 +10,8 @@ how keymaps are organised.
 |---|---|
 | `space h k` | Press a key and see the command it runs, its other keys and where it's defined |
 | `space h c` | Pick a command and see what it does and which keys run it |
+| `space h h` | Describe anything: commands, options, events, functions of the plugin API, plugins and modes, from one picker |
+| `space h o` `space h e` `space h a` `space h p` `space h m` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, or a mode and its keys |
 | `space ?` | Every command, with its keys; enter runs one |
 | `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow |
 

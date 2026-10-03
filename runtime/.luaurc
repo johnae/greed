@@ -23,6 +23,7 @@
 		"operations": "./plugins/operations",
 		"approvals": "./plugins/approvals",
 		"cli": "./plugins/cli",
-		"vcs": "./plugins/vcs"
+		"vcs": "./plugins/vcs",
+		"describe": "./plugins/describe"
 	}
 }

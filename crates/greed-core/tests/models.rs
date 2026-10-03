@@ -229,6 +229,7 @@ fn load_assist(host: &Host, address: &str) {
         plugin("multibuffer"),
         plugin("operations"),
         plugin("approvals"),
+        plugin("describe"),
         plugin("agent"),
         plugin("vcs"),
         plugin("context"),

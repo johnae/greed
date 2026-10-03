@@ -5,6 +5,7 @@ local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
 local operations = require("@operations")
+local describe = require("@describe")
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
 	return { type = "object", properties = properties, required = required }
@@ -376,6 +377,40 @@ agent.tool({
 			table.insert(matches, match)
 		end
 		return greed.json.array(matches)
+	end,
+})
+
+agent.tool({
+	name = "describe",
+	description = "What a command, option, event, API function or type, plugin or mode is: "
+		.. "its doc, keys, current value, who defined it and where. Give a name that "
+		.. "isn't exact and it lists the names that contain it",
+	input = object({
+		name = {
+			type = "string",
+			description = "e.g. next-word, text-width, buffer.changed, greed.option.set, Buffer:edit",
+		},
+		kind = {
+			type = "string",
+			enum = { "command", "option", "event", "api", "plugin", "mode" },
+			description = "To look in one kind only",
+		},
+	}, { "name" }),
+	run = function(args)
+		local text = describe.text(args.name, args.kind)
+		if text then
+			return text
+		end
+		local like = {}
+		for _, entry in describe.entries(args.kind) do
+			if string.find(entry.name, args.name, 1, true) and #like < 40 then
+				table.insert(like, `{entry.kind} {entry.name}`)
+			end
+		end
+		if #like == 0 then
+			return `nothing called {args.name}`
+		end
+		return `nothing called exactly {args.name}; these contain it:\n{table.concat(like, "\n")}`
 	end,
 })
 

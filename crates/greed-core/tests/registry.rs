@@ -81,6 +81,7 @@ fn options_are_typed() {
         name: "tab-width".into(),
         doc: "Spaces per tab".into(),
         owner: "core".into(),
+        source: None,
         default: Value::Int(4),
     });
     assert_eq!(reg.option("tab-width"), Some(&Value::Int(4)));
@@ -97,6 +98,7 @@ fn removing_the_owner_removes_its_options() {
         name: "wrap".into(),
         doc: String::new().into(),
         owner: "user/me".into(),
+        source: None,
         default: Value::Bool(false),
     });
     reg.remove_owned_by("user/me");

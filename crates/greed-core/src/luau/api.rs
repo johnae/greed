@@ -2,7 +2,7 @@
 //! commands and emitting events.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use greed_text::Author;
@@ -728,6 +728,7 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     .unwrap_or_default()
                     .into(),
                 owner: o.clone(),
+                source: caller(lua),
                 default: option_value(spec.get("default")?)?,
             };
             state_mut(lua).registry.define_option(def);
@@ -744,10 +745,14 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set(
         "set",
         lua.create_function(|lua, (name, value): (String, Value)| {
-            state_mut(lua)
-                .registry
-                .set_option(&name, option_value(value.clone())?)
-                .map_err(mlua::Error::external)?;
+            {
+                let state = &mut *state_mut(lua);
+                let by = state.running.clone();
+                state
+                    .registry
+                    .set_option_by(&name, option_value(value.clone())?, by)
+                    .map_err(mlua::Error::external)?;
+            }
             let payload = lua.create_table()?;
             payload.set("name", name)?;
             payload.set("value", value)?;
@@ -757,21 +762,19 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set(
         "list",
         lua.create_function(|lua, ()| {
-            let mut options: Vec<_> = {
-                let state = state(lua);
-                state
-                    .registry
-                    .options()
-                    .map(|(def, value)| (def.name.clone(), def.doc.clone(), value.clone()))
-                    .collect()
-            };
-            options.sort_by(|a, b| a.0.cmp(&b.0));
+            let state = state(lua);
+            let mut options: Vec<_> = state.registry.option_states().collect();
+            options.sort_by(|a, b| a.def.name.cmp(&b.def.name));
             let list = lua.create_table()?;
-            for (name, doc, value) in options {
+            for option in options {
                 let entry = lua.create_table()?;
-                entry.set("name", &*name)?;
-                entry.set("doc", &*doc)?;
-                entry.set("value", option_to_lua(lua, value)?)?;
+                entry.set("name", &*option.def.name)?;
+                entry.set("doc", &*option.def.doc)?;
+                entry.set("value", option_to_lua(lua, option.value.clone())?)?;
+                entry.set("default", option_to_lua(lua, option.def.default.clone())?)?;
+                entry.set("owner", &*option.def.owner)?;
+                entry.set("set_by", option.set_by.map(|by| &**by))?;
+                set_source(&entry, &state.sources, option.def.source.as_ref())?;
                 list.push(entry)?;
             }
             Ok(list)
@@ -915,6 +918,8 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
         })?,
     )?;
 
+    greed.set("handlers", lua.create_function(handlers)?)?;
+
     greed.set(
         "commands",
         lua.create_function(|lua, ()| {
@@ -934,13 +939,7 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
                     args.push(spec)?;
                 }
                 entry.set("args", args)?;
-                if let Some(source) = &command.source {
-                    entry.set("source", format!("{}:{}", source.file, source.line))?;
-                    if let Some(path) = state.sources.get(&*source.file) {
-                        entry.set("path", path.to_string_lossy().as_ref())?;
-                        entry.set("line", source.line)?;
-                    }
-                }
+                set_source(&entry, &state.sources, command.source.as_ref())?;
                 list.push(entry)?;
             }
             Ok(list)
@@ -1458,4 +1457,41 @@ fn set_overlay(lua: &Lua, bindings: Option<HashMap<String, String>>) -> LuaResul
         .transpose()?;
     state_mut(lua).editor.set_overlay(overlay);
     Ok(())
+}
+
+/// Sets `source` (`"file:line"`), and `path` and `line` when the file is on
+/// disk, on `entry`, for what a plugin defined.
+fn set_source(
+    entry: &Table,
+    sources: &HashMap<String, PathBuf>,
+    source: Option<&Source>,
+) -> LuaResult<()> {
+    let Some(source) = source else {
+        return Ok(());
+    };
+    entry.set("source", format!("{}:{}", source.file, source.line))?;
+    if let Some(path) = sources.get(&*source.file) {
+        entry.set("path", path.to_string_lossy().as_ref())?;
+        entry.set("line", source.line)?;
+    }
+    Ok(())
+}
+
+/// `greed.handlers()`: every event handler, by event and then the order
+/// they were added, with the plugin that added it and where.
+fn handlers(lua: &Lua, (): ()) -> LuaResult<Table> {
+    let state = state(lua);
+    let mut events: Vec<_> = state.registry.events().collect();
+    events.sort_by_key(|(event, _)| *event);
+    let list = lua.create_table()?;
+    for (event, handlers) in events {
+        for handler in handlers {
+            let entry = lua.create_table()?;
+            entry.set("event", event)?;
+            entry.set("owner", &*handler.owner)?;
+            set_source(&entry, &state.sources, handler.source.as_ref())?;
+            list.push(entry)?;
+        }
+    }
+    Ok(list)
 }

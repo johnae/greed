@@ -71,6 +71,7 @@ pub struct OptionDef {
     pub name: Arc<str>,
     pub doc: Arc<str>,
     pub owner: PluginId,
+    pub source: Option<Source>,
     pub default: Value,
 }
 
@@ -103,6 +104,15 @@ impl std::error::Error for OptionError {}
 struct OptionSlot {
     def: OptionDef,
     value: Value,
+    /// The plugin that last set it, if anything has since it was defined.
+    set_by: Option<PluginId>,
+}
+
+/// An option as it stands: how it was defined, its value, and who set it.
+pub struct OptionState<'a> {
+    pub def: &'a OptionDef,
+    pub value: &'a Value,
+    pub set_by: Option<&'a PluginId>,
 }
 
 #[derive(Debug)]
@@ -176,27 +186,56 @@ impl<H> Registry<H> {
         self.events.get(event).map_or(&[], Vec::as_slice)
     }
 
+    /// Every event something listens for, with its handlers, in no
+    /// particular order.
+    pub fn events(&self) -> impl Iterator<Item = (&str, &[EventHandler<H>])> {
+        self.events
+            .iter()
+            .map(|(event, handlers)| (&**event, handlers.as_slice()))
+    }
+
     /// Defines an option, set to its default.
     pub fn define_option(&mut self, def: OptionDef) {
         let value = def.default.clone();
-        self.options
-            .insert(def.name.clone(), OptionSlot { def, value });
+        self.options.insert(
+            def.name.clone(),
+            OptionSlot {
+                def,
+                value,
+                set_by: None,
+            },
+        );
     }
 
     pub fn option(&self, name: &str) -> Option<&Value> {
         self.options.get(name).map(|slot| &slot.value)
     }
 
-    /// Every option and its current value, in no particular order.
-    pub fn options(&self) -> impl Iterator<Item = (&OptionDef, &Value)> {
-        self.options.values().map(|slot| (&slot.def, &slot.value))
-    }
-
     pub fn option_def(&self, name: &str) -> Option<&OptionDef> {
         self.options.get(name).map(|slot| &slot.def)
     }
 
+    /// Every option with its definition, value and who last set it, in no
+    /// particular order.
+    pub fn option_states(&self) -> impl Iterator<Item = OptionState<'_>> {
+        self.options.values().map(|slot| OptionState {
+            def: &slot.def,
+            value: &slot.value,
+            set_by: slot.set_by.as_ref(),
+        })
+    }
+
     pub fn set_option(&mut self, name: &str, value: Value) -> Result<(), OptionError> {
+        self.set_option_by(name, value, None)
+    }
+
+    /// Sets an option, noting `by` as the plugin that set it.
+    pub fn set_option_by(
+        &mut self,
+        name: &str,
+        value: Value,
+        by: Option<PluginId>,
+    ) -> Result<(), OptionError> {
         let slot = self
             .options
             .get_mut(name)
@@ -209,6 +248,7 @@ impl<H> Registry<H> {
             });
         }
         slot.value = value;
+        slot.set_by = by;
         Ok(())
     }
 
