@@ -270,17 +270,45 @@ kern.tab.set_layout({
 
 ## Waiting
 
-Commands and event handlers can wait without freezing the editor:
-`kern.sleep(ms)`, `kern.next_key()`, `kern.lsp.request(...)` and
-`kern.fs.grep(...)` pause the command until the result is there, and
-`kern.signal()` lets one piece of code wait for a value another sends.
-`kern.animate(ms, step)` calls `step(t)` once a frame, which is all the
-flash on copy is. `kern.fs.watch(path)` makes a "file.changed" event come
-whenever that file changes, from anywhere; it's how your config reloads.
+Commands and event handlers can wait without freezing the editor, and
+waiting always looks the same: the call returns once the answer is there.
+
+```luau
+kern.command({
+	name = "rename-file",
+	run = function(ctx)
+		local name = core.prompt.ask("New name", ctx.buffer:path())
+		if name == nil then
+			return -- cancelled
+		end
+		local moved = kern.process.run({ "git", "mv", ctx.buffer:path(), name })
+		if moved == nil or moved.code ~= 0 then
+			kern.echo(moved and moved.stderr or "git isn't installed")
+			return
+		end
+		local choice = picker.choose("Open it?", { { label = "yes" }, { label = "no" } })
+		if choice and choice.label == "yes" then
+			kern.open(name)
+		end
+	end,
+})
+```
+
+`kern.sleep(ms)`, `kern.next_key()`, `kern.process.run(...)`,
+`kern.lsp.request(...)`, `kern.fs.grep(...)` and `kern.plugin.check(...)`
+wait like this, and so do `picker.choose(title, items)` and
+`core.prompt.ask(title)`, which give nil when you close them. (`picker.pick`
+and `core.prompt.open` take callbacks instead, for pickers that stay open
+while you work.) `kern.signal()` lets one piece of code wait for a value
+another sends. `kern.animate(ms, step)` calls `step(t)` once a frame, which
+is all the flash on copy is. `kern.fs.watch(path)` makes a "file.changed"
+event come whenever that file changes, from anywhere; it's how your config
+reloads.
 
 Language servers ask things too: `kern.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
-handler returns.
+handler returns, and the handler can wait, e.g. on a picker, before it
+answers.
 
 ## Events and options
 

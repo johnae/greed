@@ -210,6 +210,23 @@ kern.command({
 	run = close_info,
 })
 
+-- A server asking you to pick, e.g. "Reload the project?" with buttons:
+-- the actions show in a picker titled with its message, and the server
+-- hears which one you chose, or nothing if you closed it.
+kern.lsp.on_request("window/showMessageRequest", function(params)
+	local actions = params.actions or {}
+	if #actions == 0 then
+		kern.echo(params.message)
+		return nil
+	end
+	local items = {}
+	for _, action in actions do
+		table.insert(items, { label = action.title, value = action })
+	end
+	local item = picker.choose(params.message, items)
+	return if item then item.value else nil
+end)
+
 kern.keymap.bind({ mode = "normal", kind = "info" }, { esc = "info-close", q = "info-close" })
 kern.keymap.bind("normal", {
 	["space k"] = "hover",

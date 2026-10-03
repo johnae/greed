@@ -847,7 +847,7 @@ export type Lsp = {
 	--- or nil without a running server.
 	capabilities: (buffer: Buffer) -> any,
 	--- Answers requests of `method` from servers, e.g. "workspace/applyEdit",
-	--- with what `handler` returns. It can't wait for anything.
+	--- with what `handler` returns. It can wait, e.g. to ask you; the server gets the answer when it returns.
 	on_request: (method: string, handler: (params: any) -> any) -> (),
 }
 

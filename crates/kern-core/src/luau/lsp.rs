@@ -58,7 +58,8 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
 }
 
 /// Answers a request from a server with the handler a plugin set for it,
-/// or with null when there's none.
+/// or with null when there's none. The handler runs as a coroutine, so it
+/// can wait, e.g. to ask you; the server gets the answer when it returns.
 fn answer(
     lua: &Lua,
     server: lsp::ServerId,
@@ -70,23 +71,32 @@ fn answer(
         .lsp_handlers
         .get(method)
         .map(|(owner, handler)| (owner.clone(), handler.clone()));
-    let result = match handler {
-        Some((owner, handler)) => {
-            let answered = super::capabilities::running_as(lua, Some(owner), || {
-                handler.call::<Value>(to_lua(lua, params)?)
-            });
-            match answered {
-                Ok(value) => lua.from_value(value)?,
-                Err(err) => {
-                    state_mut(lua).editor.echo(format!("{method}: {err}"));
-                    serde_json::Value::Null
-                }
-            }
-        }
-        None => serde_json::Value::Null,
+    let Some((owner, handler)) = handler else {
+        state_mut(lua)
+            .lsp
+            .respond(server, id, &serde_json::Value::Null);
+        return Ok(());
     };
-    state_mut(lua).lsp.respond(server, id, &result);
-    Ok(())
+    let (id, method) = (id.clone(), method.to_owned());
+    let reply = lua.create_function(move |lua, (ok, value): (bool, Value)| {
+        let result = if ok {
+            lua.from_value(value)?
+        } else {
+            state_mut(lua)
+                .editor
+                .echo(format!("{method}: {}", api::display(&value)));
+            serde_json::Value::Null
+        };
+        state_mut(lua).lsp.respond(server, &id, &result);
+        Ok(())
+    })?;
+    let run: Function = lua
+        .load(
+            "local handler, reply = ...\nreturn function(params) reply(pcall(handler, params)) end",
+        )
+        .set_name("=lsp.on_request")
+        .call((handler, reply))?;
+    tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)
 }
 
 fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {

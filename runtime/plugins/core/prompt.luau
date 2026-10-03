@@ -59,15 +59,27 @@ kern.command({
 	end,
 })
 
+local function cancel(options: Options)
+	if options.on_cancel then
+		options.on_cancel()
+	end
+end
+
+-- Closed some other way, it counts as cancelled.
+kern.on("view.closed", function(event: kern.ViewClosed)
+	local o = open
+	if o and o.view:id() == event.view then
+		open = nil
+		kern.mode.set(o.mode)
+		cancel(o.options)
+	end
+end)
+
 kern.command({
 	name = "prompt-cancel",
 	doc = "Close the prompt without accepting",
 	run = function()
-		close(function(options)
-			if options.on_cancel then
-				options.on_cancel()
-			end
-		end)
+		close(cancel)
 	end,
 })
 
@@ -92,6 +104,24 @@ function M.open(options: Options)
 	open = { view = view, buffer = buffer, options = options, mode = kern.mode.get() }
 	kern.mode.set("insert")
 	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })
+end
+
+--- Like `open`, but waits for the answer and returns what was typed, or
+--- nil when the prompt is cancelled. Works in commands and handlers.
+function M.ask(title: string, text: string?): string?
+	local done = kern.signal()
+	M.open({
+		title = title,
+		text = text,
+		on_submit = function(typed)
+			done.send(typed)
+		end,
+		on_cancel = function()
+			done.send(false)
+		end,
+	})
+	local typed = done.wait()
+	return if typed then typed else nil
 end
 
 return M

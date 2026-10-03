@@ -114,6 +114,14 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 opened = Opened::from(&message["params"]);
                 publish_diagnostics(&mut output, &opened);
             }
+            // "ask" asks the user to pick, then writes their answer over
+            // the first word once it comes back.
+            "workspace/executeCommand" if message["params"]["command"] == "ask" => {
+                ask(&mut output, id.as_ref(), &message, &opened);
+            }
+            "(response)" if id == Some(json!("pick")) => {
+                ask(&mut output, id.as_ref(), &message, &opened);
+            }
             // Shouting asks the editor to apply an edit, as servers do for
             // commands, then answers.
             "workspace/executeCommand" => {
@@ -276,4 +284,32 @@ pub fn start() -> (
     let (log_tx, log) = crossbeam_channel::unbounded();
     std::thread::spawn(move || fake_server(server_in, server_out, &log_tx));
     (client_out, client_in, log)
+}
+
+/// The "ask" command: sends the user a choice, and once the answer (the
+/// response with id "pick") comes back, writes its title over the first word.
+fn ask(output: &mut impl Write, id: Option<&Value>, message: &Value, opened: &Opened) {
+    if message.get("method").is_some() {
+        write(
+            output,
+            &json!({ "jsonrpc": "2.0", "id": "pick", "method": "window/showMessageRequest", "params": {
+                "type": 3, "message": "Which word?", "actions": [{ "title": "Yes" }, { "title": "No" }],
+            } }),
+        );
+        write(
+            output,
+            &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
+        );
+        return;
+    }
+    let title = message["result"]["title"].as_str().unwrap_or("nothing");
+    write(
+        output,
+        &json!({ "jsonrpc": "2.0", "id": "apply", "method": "workspace/applyEdit", "params": { "edit": {
+            "documentChanges": [{
+                "textDocument": { "uri": opened.uri, "version": null },
+                "edits": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 3 } }, "newText": title }],
+            }],
+        } } }),
+    );
 }

@@ -41,7 +41,8 @@ export type Options = {
 	--- Called with the current item whenever it changes, e.g. to try it out
 	--- as you move, as the theme picker does.
 	on_move: ((item: Item) -> ())?,
-	--- Called when the picker closes without choosing (esc).
+	--- Called when the picker ends without choosing: esc, another picker
+	--- opening, or its view closing.
 	on_cancel: (() -> ())?,
 	--- Lets you type a path: a query starting with "/", "~", "./" or "../"
 	--- lists what's in that folder instead of the items, narrowed by what's
@@ -265,17 +266,28 @@ kern.on("buffer.changed", function(event: kern.BufferChanged)
 	end
 end)
 
-local function close()
+-- Closes the picker. Unless an item was chosen, `on_cancel` hears that it
+-- ended, however it did: esc, another picker, or its view closing.
+local function close(chosen: boolean?)
 	if open then
-		local view, mode, preview = open.view, open.mode, open.preview_view
+		local view, mode, preview, cancel = open.view, open.mode, open.preview_view, open.on_cancel
 		open = nil
 		view:close()
 		if preview then
 			preview:close()
 		end
 		kern.mode.set(mode)
+		if cancel and not chosen then
+			cancel()
+		end
 	end
 end
+
+kern.on("view.closed", function(event: kern.ViewClosed)
+	if open and open.view:id() == event.view then
+		close()
+	end
+end)
 
 local function move(delta: number)
 	if open and #open.matches > 0 then
@@ -321,7 +333,8 @@ kern.command({
 			return
 		end
 		local index = o.matches[o.current]
-		close()
+		local typed = if o.fallback and o.query and o.query ~= "" then o.query else nil
+		close(index ~= nil or typed ~= nil)
 		local paths = o.paths
 		if index and paths and o.given then
 			-- Folders are listed with a "/" to show what they are.
@@ -329,8 +342,8 @@ kern.command({
 			paths.choose(path)
 		elseif index then
 			o.choose(o.items[index])
-		elseif o.fallback and o.query and o.query ~= "" then
-			o.fallback(o.query)
+		elseif typed and o.fallback then
+			o.fallback(typed)
 		end
 	end,
 })
@@ -356,11 +369,7 @@ kern.command({
 	name = "picker-close",
 	doc = "Close the picker without choosing",
 	run = function()
-		local cancel = open and open.on_cancel
 		close()
-		if cancel then
-			cancel()
-		end
 	end,
 })
 
@@ -385,7 +394,8 @@ kern.command({
 			table.insert(items, o.items[index])
 		end
 		local current = items[o.current]
-		close()
+		-- A key of its own is another way of choosing.
+		close(true)
 		action(items, current)
 	end,
 })
@@ -448,6 +458,28 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 	open = o
 	kern.mode.set("insert")
 	refresh(o)
+end
+
+--- Like `pick`, but waits for the answer and returns the chosen item, or
+--- nil when the picker ends without one. Works in commands and handlers:
+---
+---     local item = picker.choose("Model", items)
+---     if item then ... end
+function M.choose(title: string, items: { Item }, options: Options?): Item?
+	local done = kern.signal()
+	local given: Options = if options then table.clone(options) else {}
+	local cancel = given.on_cancel
+	given.on_cancel = function()
+		if cancel then
+			cancel()
+		end
+		done.send(false)
+	end
+	M.pick(title, items, function(item)
+		done.send(item)
+	end, given)
+	local item = done.wait()
+	return if item then item else nil
 end
 
 return M

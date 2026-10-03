@@ -567,3 +567,24 @@ fn signature_help_follows_the_parameter_being_typed_and_closes_after_the_call() 
     h.press_keys("esc").unwrap();
     assert!(signature(&h).is_none(), "leaving insert mode closes it");
 }
+
+#[test]
+fn a_server_asking_to_pick_waits_for_the_picker_and_hears_the_answer() {
+    let h = with_plugin();
+    h.load_str(
+        "ask",
+        r#"
+        local kern = require("@kern")
+        kern.command { name = "ask-server", run = function(ctx)
+            kern.lsp.request(ctx.buffer, "workspace/executeCommand", { command = "ask" })
+        end }
+        "#,
+    )
+    .unwrap();
+    h.run("ask-server").unwrap();
+    pump(&h, |h| picker_items(h).is_some());
+    assert_eq!(picker_items(&h).unwrap(), ["Yes", "No"]);
+    h.press_keys("down enter").unwrap();
+    pump(&h, |h| main_text(h).starts_with("No"));
+    assert_eq!(main_text(&h), "No x = bad;");
+}

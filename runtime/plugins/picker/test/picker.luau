@@ -332,3 +332,48 @@ test("a picker that takes paths lists the folders in a typed one, and tab goes o
 	t:keys("backspace backspace backspace backspace backspace a enter")
 	assert(chosen == dir .. "/alpha", tostring(chosen))
 end)
+
+-- Runs `f` as a command, so it can wait, and returns what it gave back
+-- once it has.
+local function waiting(t: test.TestContext, f: () -> any): () -> (boolean, any)
+	local done, result = false, nil
+	kern.command({
+		name = "test-waiting",
+		run = function()
+			result = f()
+			done = true
+		end,
+	})
+	t:run("test-waiting")
+	return function()
+		return done, result
+	end
+end
+
+test("choose waits for the item, and gives nil when the picker ends without one", function(t)
+	local picker = require("@picker")
+	t:buffer("|x")
+	local items = { { label = "one", value = 1 }, { label = "two", value = 2 } }
+	local answer = waiting(t, function()
+		return picker.choose("Numbers", items)
+	end)
+	assert(not (answer()), "still waiting")
+	t:keys("t w enter")
+	local done, item = answer()
+	assert(done and item and item.value == 2, "the chosen item")
+
+	answer = waiting(t, function()
+		return picker.choose("Numbers", items)
+	end)
+	t:keys("esc")
+	done, item = answer()
+	assert(done and item == nil, "esc gives nil")
+
+	answer = waiting(t, function()
+		return picker.choose("Numbers", items)
+	end)
+	picker.pick("Another", items, function() end)
+	done, item = answer()
+	assert(done and item == nil, "another picker taking its place gives nil")
+	t:keys("esc")
+end)
