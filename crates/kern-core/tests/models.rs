@@ -166,3 +166,43 @@ fn a_refused_request_says_what_the_server_said() {
         ["the model's server said 401: invalid x-api-key"]
     );
 }
+
+#[test]
+fn a_model_pipe_rewrites_the_selection_as_one_operation() {
+    let address = serve();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "hi there", None);
+    let host = Host::new(editor).unwrap();
+    host.load_dirs(&[
+        plugin("core"),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("operations"),
+        plugin("models"),
+        plugin("pipe"),
+    ])
+    .unwrap();
+    host.load_str(
+        "config",
+        &format!(
+            r#"
+            local kern = require("@kern")
+            local models = require("@models")
+            models.providers.fake = {{ kind = "anthropic", url = "{address}" }}
+            models.roles.fast = {{ provider = "fake", model = "m1" }}
+            kern.command {{ name = "pipe-test", run = function(ctx)
+                ctx.view:set_selection({{ ranges = {{ {{ anchor = 0, head = 8 }} }}, primary = 1 }})
+                local ok, err = require("@pipe").pipe(ctx.view, "model: shout it")
+                kern.echo(if ok then "piped" else tostring(err))
+                kern.echo(require("@operations").list()[1].name)
+            end }}
+            "#
+        ),
+    )
+    .unwrap();
+    host.run("pipe-test").unwrap();
+    let said = messages(&host, 3);
+    assert_eq!(said[1..], ["piped", "model: shout it"], "{said:?}");
+    let text = host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string());
+    assert_eq!(text, "Hello");
+}

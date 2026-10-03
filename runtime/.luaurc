@@ -17,6 +17,7 @@
 		"hints": "./plugins/hints",
 		"statusline": "./plugins/statusline",
 		"models": "./plugins/models",
+		"pipe": "./plugins/pipe",
 		"operations": "./plugins/operations",
 		"approvals": "./plugins/approvals",
 		"vcs": "./plugins/vcs"

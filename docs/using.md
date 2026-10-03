@@ -162,6 +162,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
 | `>` `<` | Indent or dedent the lines by one level of the language's indent |
 | `J` | Join lines with one space |
+| `\|` | Pipe each selection through a shell command, a Luau filter or a model (below) |
 | `ctrl-c` | Comment the lines, or uncomment them |
 | `y` `p` `P` | Copy, paste after, paste before |
 | `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
@@ -170,6 +171,20 @@ There is always a selection; a cursor is a selection one character wide.
 | `esc` | Back to normal mode |
 
 A number before a motion repeats it: `3 j`, `2 w`.
+
+`|` asks what to pipe the selections through, and puts back what comes out,
+each selection its own:
+
+| Type | What it does |
+|---|---|
+| `sort -u` | Runs a shell command, with the selection as its input |
+| `luau: snake_case` | Runs a Luau filter: `upper`, `lower`, `trim`, `snake_case`, `kebab_case`, `camel_case`, `pascal_case`, `sort`, `reverse`, or one you add with `require("@pipe").define` |
+| `model: add doc comments` | Asks a language model (the `fast` role, or `:set pipe-model-role reasoning`) |
+
+All the selections change in one step, so `u` takes them back. A model's
+changes are also an operation you can review with `space u o`, and if you
+edit while the model works, the answers still land where the selections
+were. See [Models](#models) to set one up.
 
 New lines from `enter`, `o` and `O` start at the indent the code calls
 for: a level in inside a block, bracket or `let`, and lined up with the
