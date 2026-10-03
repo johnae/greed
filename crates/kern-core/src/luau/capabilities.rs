@@ -26,6 +26,7 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("clipboard", "read what you copied"),
     ("eval", "run Luau with every capability"),
     ("plugins", "load, unload and check other plugins"),
+    ("secrets", "read and keep any secret, like API keys"),
 ];
 
 /// The parts of `@kern` each capability opens, as paths into the table.
@@ -69,7 +70,7 @@ impl Grant {
         if let Some(unknown) = listed.iter().find(|c| what(c).is_none()) {
             let known: Vec<&str> = KNOWN.iter().map(|(name, _)| *name).collect();
             return Err(format!(
-                "there is no capability {unknown:?}; there are {} and net:HOST",
+                "there is no capability {unknown:?}; there are {}, net:HOST and secrets:NAME",
                 known.join(", ")
             ));
         }
@@ -91,6 +92,9 @@ impl Grant {
 
 /// What `capability` lets a plugin do, in words; `None` if it isn't one.
 pub fn what(capability: &str) -> Option<String> {
+    if let Some(name) = super::secrets::named(capability) {
+        return Some(format!("read the secret {name}"));
+    }
     if let Some(host) = capability.strip_prefix("net:") {
         return (!host.is_empty()).then(|| format!("use the network, only {host}"));
     }

@@ -322,6 +322,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("keys", keys_module(lua)?)?;
     kern.set("process", super::process::module(lua)?)?;
     kern.set("http", super::http::module(lua, owner)?)?;
+    kern.set("secrets", super::secrets::module(lua, owner)?)?;
     kern.set("terminal", super::terminal::module(lua, owner)?)?;
     kern.set("image", super::images::module(lua)?)?;
     kern.set("diff", super::diff::diff_function(lua)?)?;
@@ -855,7 +856,10 @@ fn workspace_functions(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<(
 
     kern.set(
         "open",
-        lua.create_function(|lua, path: String| open_file(lua, &path))?,
+        lua.create_function(|lua, path: String| {
+            super::secrets::guard(lua, Path::new(&path))?;
+            open_file(lua, &path)
+        })?,
     )?;
 
     kern.set(
@@ -1198,6 +1202,7 @@ fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
 fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, path: String| {
+        super::secrets::guard(lua, Path::new(&path))?;
         let buffer = state_mut(lua)
             .editor
             .open_file(Path::new(&path))

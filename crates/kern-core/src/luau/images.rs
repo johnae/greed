@@ -24,9 +24,12 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let image = lua.create_table()?;
     image.set(
         "load",
-        lua.create_function(|lua, path: String| match std::fs::read(&path) {
-            Ok(bytes) => keep(lua, Image::from_file_bytes(&bytes)),
-            Err(err) => (Value::Nil, format!("can't read {path}: {err}")).into_lua_multi(lua),
+        lua.create_function(|lua, path: String| {
+            super::secrets::guard(lua, std::path::Path::new(&path))?;
+            match std::fs::read(&path) {
+                Ok(bytes) => keep(lua, Image::from_file_bytes(&bytes)),
+                Err(err) => (Value::Nil, format!("can't read {path}: {err}")).into_lua_multi(lua),
+            }
         })?,
     )?;
     image.set(

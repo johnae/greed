@@ -201,6 +201,7 @@ impl BufferRef {
         if let Some(path) = &path {
             super::capabilities::check(lua, "fs.write")?;
             super::approvals::guard(lua, Path::new(path))?;
+            super::secrets::guard(lua, Path::new(path))?;
         }
         {
             let mut state = state_mut(lua);

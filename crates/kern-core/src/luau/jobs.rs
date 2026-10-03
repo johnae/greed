@@ -20,6 +20,8 @@ pub enum Output {
     StreamHead(u64, u64, Result<super::http::Head, String>),
     /// A piece of stream `id`'s body, its end, or why it failed.
     StreamChunk(u64, super::http::Chunk),
+    /// A secret, or where one was kept; nil when there's none.
+    Secret(Result<Option<String>, String>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -124,6 +126,9 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Grep(Ok(lines)) => tasks::wake(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::wake(lua, done.token, (Value::Nil, err.to_string())),
         Output::Check(check) => tasks::wake(lua, done.token, super::plugin::to_lua(lua, check)?),
+        Output::Secret(result) => {
+            tasks::wake(lua, done.token, super::secrets::to_lua(lua, result)?)
+        }
         Output::Process(result) => {
             tasks::wake(lua, done.token, super::process::to_lua(lua, result)?)
         }

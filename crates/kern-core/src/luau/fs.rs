@@ -50,6 +50,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     fs.set(
         "read",
         lua.create_function(|lua, (path, limit): (String, Option<usize>)| {
+            super::secrets::guard(lua, Path::new(&path))?;
             match read(Path::new(&path), limit) {
                 Ok(text) => text.into_lua_multi(lua),
                 Err(err) => failure(lua, format!("can't read {path}: {err}")),
@@ -83,6 +84,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "write",
         lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
             super::approvals::guard(lua, Path::new(&path))?;
+            super::secrets::guard(lua, Path::new(&path))?;
             let written = Path::new(&path)
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)

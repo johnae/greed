@@ -12,6 +12,8 @@ export type Options = {
 	on_change: ((text: string) -> ())?,
 	on_submit: (text: string) -> (),
 	on_cancel: (() -> ())?,
+	--- Shows a dot for each character typed, for passwords and keys.
+	secret: boolean?,
 }
 
 type Open = {
@@ -42,9 +44,25 @@ local function close(finish: (options: Options, typed: string) -> ())
 	finish(o.options, typed)
 end
 
+-- Dots over what's typed in a secret prompt, so it never shows.
+local function mask(o: Open)
+	if o.options.secret then
+		local typed = text(o)
+		local dots = string.rep("•", utf8.len(typed) or #typed)
+		o.buffer:decorate(
+			"prompt-secret",
+			{ { from = 0, to = #typed, text = dots, overlay = true, style = "ui.text" } }
+		)
+	end
+end
+
 kern.on("buffer.changed", function(event: kern.BufferChanged)
 	local o = open
-	if o and event.buffer:id() == o.buffer:id() and o.options.on_change then
+	if o == nil or event.buffer:id() ~= o.buffer:id() then
+		return
+	end
+	mask(o)
+	if o.options.on_change then
 		o.options.on_change(text(o))
 	end
 end)
@@ -104,15 +122,18 @@ function M.open(options: Options)
 	open = { view = view, buffer = buffer, options = options, mode = kern.mode.get() }
 	kern.mode.set("insert")
 	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })
+	mask(open :: Open)
 end
 
 --- Like `open`, but waits for the answer and returns what was typed, or
---- nil when the prompt is cancelled. Works in commands and handlers.
-function M.ask(title: string, text: string?): string?
+--- nil when the prompt is cancelled. Works in commands and handlers. With
+--- `secret`, dots show instead of what's typed.
+function M.ask(title: string, text: string?, options: { secret: boolean? }?): string?
 	local done = kern.signal()
 	M.open({
 		title = title,
 		text = text,
+		secret = options and options.secret,
 		on_submit = function(typed)
 			done.send(typed)
 		end,

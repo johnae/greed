@@ -46,8 +46,8 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (kern.process.run,
   kern.terminal.spawn, kern.lsp.server), "fs.read" (kern.fs reads, kern.load, kern.open,
   kern.files), "fs.write" (kern.fs.write, buffer:save(path)), "clipboard" (reading it),
-  "net" or "net:HOST" (kern.http), "eval", "plugins". Ask only for what the plugin needs; the
-  user sees the list.
+  "net" or "net:HOST" (kern.http), "secrets:NAME" (kern.secrets.get), "eval", "plugins". Ask
+  only for what the plugin needs; the user sees the list.
   Editing buffers, commands, keys and the rest of the editor need none.
 
 Tests:

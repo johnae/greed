@@ -39,6 +39,8 @@ capabilities = ["proc", "fs.read"]
 | `clipboard` | Reading what you copied (`kern.clipboard.get`, `history`); setting it needs nothing |
 | `net` | The network: `kern.http` to any host, and the Claude Code connection |
 | `net:HOST` | `kern.http` to one host, e.g. `net:api.anthropic.com` |
+| `secrets:NAME` | `kern.secrets.get("NAME")`, e.g. `secrets:anthropic` for an API key |
+| `secrets` | Every secret, and keeping new ones |
 | `eval` | `kern.eval`, which runs Luau with every capability |
 | `plugins` | Loading, unloading and checking other plugins |
 
@@ -387,6 +389,13 @@ end
 Each request runs on a thread of its own and both wait like `kern.sleep`,
 so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.
+
+Keys for those servers come from `kern.secrets.get("anthropic")`, never from
+config or plugin source. It looks in the environment (`KERN_SECRET_ANTHROPIC`,
+or the usual `ANTHROPIC_API_KEY`), then the system keyring, then Kern's own
+secrets file, and waits like the rest. A plugin declares each secret it
+reads as `secrets:NAME`, and Kern's file APIs refuse to read the secrets file
+itself.
 
 ## Agents
 

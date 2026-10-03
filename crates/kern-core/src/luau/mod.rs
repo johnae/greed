@@ -23,6 +23,7 @@ mod plugin;
 mod process;
 mod projects;
 mod requests;
+mod secrets;
 mod sessions;
 mod stalls;
 mod syntax;

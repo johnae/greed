@@ -284,6 +284,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
 | `:reload` | Load the file again from disk |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
+| `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Kern's own secrets file where there's none); what you type shows as dots |
 
 Closing a terminal's buffer ends its program.
 

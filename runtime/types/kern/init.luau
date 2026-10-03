@@ -384,6 +384,17 @@ export type Http = {
 	stream: (request: HttpRequest) -> (HttpStream?, string?),
 }
 
+--- Secrets like API keys, kept out of config and plugin source: from the
+--- environment (KERN_SECRET_NAME, or the usual variable, e.g. ANTHROPIC_API_KEY),
+--- the system keyring, or Kern's own secrets file. Both wait like kern.sleep. A
+--- plugin needs "secrets:NAME" for each secret it reads, or "secrets" for all.
+export type Secrets = {
+	--- The secret `name`, or nil if it isn't set anywhere.
+	get: (name: string) -> (string?, string?),
+	--- Keeps `value` as the secret `name`: in the keyring if there is one, otherwise in Kern's secrets file. Returns where it went, or nil and why not.
+	set: (name: string, value: string) -> (string?, string?),
+}
+
 --- Running other programs.
 export type Process = {
 	--- Runs `command` (the program, then its arguments), with `stdin` as its
@@ -1126,6 +1137,7 @@ export type Kern = {
 	keys: Keys,
 	process: Process,
 	http: Http,
+	secrets: Secrets,
 	terminal: Terminals,
 	image: Images,
 	--- A one-shot value that one piece of code waits for and another sends,
