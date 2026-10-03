@@ -669,8 +669,9 @@ panes, tabs and terminals are where you left them.
 | Keys | |
 |---|---|
 | `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane on that side (and on to the next tab) |
-| `alt-n` | A terminal in a new pane |
-| `alt-f` | The tab's floating terminal, shown and hidden |
+| `alt-n` | A terminal in a new pane, or a floating one while floating views are shown |
+| `alt-f` | Hide the tab's floating views or show them again; with none, open a floating terminal |
+| `alt-F` | This file in a new floating view |
 | `alt-=` `alt--` | More room for the pane (or floating view), or less |
 | `alt-[` `alt-]`, `alt-1`... | Tabs |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
@@ -688,13 +689,16 @@ each pane; type one to go there, and you're still in the pane mode, so
 and `space w g` label them too.
 
 Floating views belong to the tab they opened in: switching tabs hides them
-and closing the tab closes them. `alt-f` shows the tab's floating terminal,
-and `alt-p W` opens another. `alt-p F` takes the pane you're in out to
-float over the tab, or puts a floating view back in as a pane. `alt-p z`
-hides the tab's floats and shows them again (terminals keep running),
-`alt-p T` lays them out side by side and `alt-p C` stacks them in a
-cascade. Otherwise they stay where you put them; drag one by its top
-border to move it, or use the resize mode (`alt-r`).
+and closing the tab closes them. As in zellij, `alt-f` hides all of the
+tab's floats and shows them again where they were (terminals keep
+running), and opens a floating terminal when there are none. While floats
+are shown, `alt-n` opens another floating terminal rather than a pane.
+`alt-F` opens the file you're in as a floating view (`:float-file PATH`
+for another), and `alt-p e` takes the pane you're in out to float over the
+tab, or puts a floating view back in as a pane. `alt-p T` lays the floats
+out side by side and `alt-p C` stacks them in a cascade. Otherwise they
+stay where you put them; drag one by its top border to move it or by an
+edge to resize it, or use the resize mode (`alt-r`).
 
 To put a new pane somewhere particular, `alt-p p` shows a frame where it
 would go, on the right of the pane you're in. `h j k l` move the frame to

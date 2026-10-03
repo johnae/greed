@@ -146,6 +146,20 @@ test("pane f zooms in on a pane, and again shows them all", function(t)
 	assert(not kern.tab.current().zoomed)
 end)
 
+test("alt-f brings the floating terminal back where it was moved and how big", function(t)
+	cat()
+	t:buffer("|hello")
+	t:keys("alt-f")
+	kern.view():configure({ width = 30, height = 8, x = 2, y = 1 })
+	t:keys("alt-f alt-f")
+	local spec = kern.view():float_spec() :: kern.FloatSpec
+	assert(spec.width == 30 and spec.height == 8 and spec.x == 2 and spec.y == 1, "kept its place")
+	t:keys("ctrl-d")
+	t:wait_for(function()
+		return #t:floats() == 0
+	end)
+end)
+
 test("alt-f shows a floating terminal and hides it, still running", function(t)
 	cat()
 	t:buffer("|hello")
@@ -562,4 +576,29 @@ test("ctrl-w L swaps the pane with the one on its right, ctrl-w n v opens an emp
 	assert(kern.view():id() == panes[2]:id(), "following it")
 	t:keys("ctrl-w n v")
 	assert(#kern.tab.current().panes == 3 and kern.view():buffer():text() == "", "a new empty pane")
+end)
+
+test("alt-f hides every float in the tab and shows them all again", function(t)
+	t:buffer("|hello")
+	local floats = require("@panes").floats
+	kern.float(kern.create_buffer("scratch", "a"), { tab = true })
+	kern.float(kern.create_buffer("scratch", "b"), { tab = true })
+	t:keys("alt-f")
+	assert(#floats.list() == 0, "both hidden")
+	t:keys("alt-f")
+	assert(#floats.list() == 2, "both shown again")
+end)
+
+test("alt-n opens a floating terminal while floats are shown; alt-F floats this file", function(t)
+	cat()
+	t:buffer("|hello")
+	local floats = require("@panes").floats
+	t:keys("alt-F")
+	assert(#floats.list() == 1 and kern.view():buffer():text() == "hello", "the file, floating")
+	t:keys("esc alt-n")
+	assert(#floats.list() == 2 and #kern.tab.current().panes == 1, "another float, no new pane")
+	t:keys("ctrl-d")
+	t:wait_for(function()
+		return #floats.list() == 1
+	end)
 end)

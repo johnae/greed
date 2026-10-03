@@ -5,8 +5,10 @@
 --
 -- - alt keys work everywhere, in every editing style and in terminals:
 --   alt-h/j/k/l move between panes (and to the next tab at the edge),
---   alt-n opens a terminal pane, alt-f a floating terminal, alt-= and alt--
---   resize, alt-[ and alt-] or alt-1..9 change tabs.
+--   alt-n opens a terminal pane (a floating one while floats are shown),
+--   alt-f shows or hides the tab's floating views (opening a floating
+--   terminal when there are none), alt-F floats this file, alt-= and
+--   alt-- resize, alt-[ and alt-] or alt-1..9 change tabs.
 -- - alt-p and alt-t open the pane and tab modes, where single keys act until
 --   esc.
 -- - In normal mode, ctrl-w (and space w) is the window prefix Vim and Helix
@@ -454,9 +456,14 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	},
 	{
 		name = "pane-terminal",
-		doc = "Open a terminal in a new pane",
+		doc = "Open a terminal in a new pane, or a floating one while floating views are shown",
 		run = function()
-			M.terminal_pane()
+			-- As in zellij: with floats shown, the new pane floats too.
+			if #M.floats.list() > 0 then
+				M.floats.new_terminal()
+			else
+				M.terminal_pane()
+			end
 		end,
 	},
 	{
@@ -699,7 +706,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	},
 	{
 		name = "floats-toggle",
-		doc = "Hide this tab's floating views, or show them again",
+		doc = "Hide this tab's floating views or show them again; with none, open a floating terminal",
 		run = function()
 			M.floats.toggle()
 		end,
@@ -760,6 +767,16 @@ kern.command({
 	args = { { name = "n", doc = "The tab's number, from 1" } },
 	run = function(ctx)
 		M.go_to_tab(tonumber(ctx.args[1] or ctx.keys and string.match(ctx.keys, "%d+$") or "") or 1)
+	end,
+})
+
+kern.command({
+	name = "float-file",
+	doc = "Open a file (this one if none is given) in a new floating view",
+	args = { { name = "path", complete = "file" } },
+	run = function(ctx)
+		local path = ctx.args[1]
+		M.focus(M.floats.open(if path then kern.load(path) else ctx.buffer))
 	end,
 })
 
@@ -843,7 +860,8 @@ M.keys = {
 		["alt-up"] = "pane-up",
 		["alt-right"] = "pane-right",
 		["alt-n"] = "pane-terminal",
-		["alt-f"] = "terminal-float",
+		["alt-f"] = "floats-toggle",
+		["alt-F"] = "float-file",
 		["alt-="] = "pane-grow",
 		["alt-+"] = "pane-grow",
 		["alt--"] = "pane-shrink",
@@ -902,7 +920,9 @@ M.keys = {
 		x = "pane-close-done",
 		f = "pane-zoom",
 		g = "pane-pick",
-		w = "terminal-float",
+		w = "floats-toggle",
+		e = "float-flip",
+		E = "float-file",
 		space = "layout-next",
 		m = "layout-swap-main",
 		o = "layout-rotate",

@@ -77,19 +77,32 @@ function M.cascade()
 	end
 end
 
---- Opens another floating terminal in the tab, a step down and right from
---- the float in front, if there is one.
-function M.new_terminal()
+-- Where a new float goes: a step down and right from the one in front, at
+-- its size (its area is inside the border), or nil when there's none.
+local function cascaded(): kern.FloatSpec?
 	local front = M.list()
 	local last = front[#front]
 	local area = last and last:area()
 	if area == nil then
-		terminal.open(nil, { float = true })
-		return
+		return nil
 	end
-	terminal.open(nil, {
-		float = { x = area.x + 3, y = area.y + 1, width = area.width + 2, height = area.height + 2 },
-	})
+	return { x = area.x + 3, y = area.y + 1, width = area.width + 2, height = area.height + 2 }
+end
+
+--- Opens another floating terminal in the tab, a step down and right from
+--- the float in front, if there is one.
+function M.new_terminal()
+	terminal.open(nil, { float = cascaded() or true })
+end
+
+--- Opens `buffer` in a new floating view over the tab, a little down and
+--- right of the one in front.
+function M.open(buffer: kern.Buffer): kern.View
+	local spec: kern.FloatSpec = cascaded() or { width = "80%", height = "80%" }
+	spec.tab = true
+	local path = buffer:path()
+	spec.title = if path then string.match(path, "[^/]+$") else nil
+	return kern.float(buffer, spec)
 end
 
 -- What each tab hid, to show again: the buffer, how its float was shown,
@@ -98,8 +111,9 @@ type Hidden =
 	{ buffer: kern.Buffer, spec: kern.FloatSpec, selection: kern.Selection, kept: boolean }
 local hidden: { [number]: { Hidden } } = {}
 
---- Hides the tab's floats, or shows the ones it hid. Hidden terminals keep
---- running.
+--- Hides the tab's floats, or shows the ones it hid, as zellij's alt-f
+--- does; with none, opens a floating terminal. Hidden terminals keep
+--- running, and floats come back where they were.
 function M.toggle()
 	local tab = kern.tab.current().id
 	local stored = hidden[tab]
@@ -115,7 +129,7 @@ function M.toggle()
 	end
 	local floats = M.list()
 	if #floats == 0 then
-		kern.echo("no floating views in this tab")
+		M.new_terminal()
 		return
 	end
 	local list: { Hidden } = {}

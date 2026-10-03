@@ -394,8 +394,10 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	return term
 end
 
--- The floating terminal alt-f shows in each tab, by tab id.
+-- The floating terminal alt-f shows in each tab, by tab id, and where it
+-- was when hidden, so it comes back as moved or resized.
 local floats: { [number]: Term } = {}
+local float_specs: { [number]: kern.FloatSpec } = {}
 
 --- Shows the tab's floating terminal, starting it the first time, or hides
 --- it, leaving it running.
@@ -404,16 +406,19 @@ function M.toggle_float()
 	local term = floats[tab]
 	if term == nil or terms[term.buffer:id()] == nil then
 		floats[tab] = M.open(nil, { float = true })
+		float_specs[tab] = nil
 		return
 	end
 	for _, view in term.buffer:views() do
-		if not view:is_pane() then
+		local spec = view:float_spec()
+		if spec then
+			float_specs[tab] = spec
 			view:close()
 			M.settle(kern.view())
 			return
 		end
 	end
-	M.enter(kern.float(term.buffer, FLOAT))
+	M.enter(kern.float(term.buffer, float_specs[tab] or FLOAT))
 end
 
 local function find(terminal: kern.Terminal): Term?
