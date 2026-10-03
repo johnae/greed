@@ -375,8 +375,13 @@ can review it in one buffer.
 The review is a multibuffer of the operation's changes, with the programs
 it ran (a test run, a formatter) and how they exited at the top. Edit it
 like any multibuffer, `space g r` puts a change back, and `space u u` in it
-undoes that operation. Undo refuses, and changes nothing, when you've
-edited one of its files on top of it since; undo those edits first.
+undoes that operation.
+
+If you've edited its files since, undo keeps your edits: it puts back each
+of the operation's changes you haven't touched, leaves the ones you have,
+and says how many it left. Operations are kept across restarts (in the
+cache folder), so you can still review and undo yesterday's agent work
+the same way.
 
 `space u c` turns an operation into a commit of its own (a jj change, or a
 git commit): it saves the operation's files and commits only them, with the

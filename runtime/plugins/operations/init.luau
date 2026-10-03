@@ -19,8 +19,8 @@ local kern = require("@kern")
 local multibuffer = require("@multibuffer")
 local picker = require("@picker")
 
---- A file an operation changed, and its text before.
-export type File = { path: string, before: string }
+--- A file an operation changed: its text before, and right after.
+export type File = { path: string, before: string, after: string }
 
 --- A program an operation ran, and how it went.
 export type Command = { argv: { string }, code: number?, output: string }
@@ -35,14 +35,19 @@ export type Operation = {
 	time: number,
 	files: { File },
 	commands: { Command },
-	--- "running", "done" or "undone".
+	--- "running", "done", "undone" or "partly undone".
 	status: string,
+	--- Saved before Kern last restarted: its undo group is gone, so undo
+	--- puts its changes back by comparing texts.
+	restored: boolean?,
 }
 
 -- How many operations are remembered.
 local KEEP = 50
 -- How much of a program's output is kept.
 local OUTPUT = 4000
+-- Files bigger than this aren't saved for after a restart.
+local SAVED_FILE = 512 * 1024
 
 local M = {}
 
@@ -52,6 +57,61 @@ local operations: { Operation } = {}
 local outer: { [number]: number? } = {}
 -- The operation each review buffer shows.
 local reviews: { [number]: Operation } = {}
+
+-- Where operations are kept for after a restart.
+local function saved_path(): string?
+	local cache = kern.fs.dirs().cache
+	return cache and `{cache}/operations.json`
+end
+
+-- Keeps the finished operations for after a restart.
+local function save()
+	local path = saved_path()
+	if path == nil then
+		return
+	end
+	local list: { any } = {}
+	for _, op in operations do
+		if op.status ~= "running" then
+			local files = {}
+			for _, file in op.files do
+				if #file.before + #file.after <= SAVED_FILE then
+					table.insert(files, file)
+				end
+			end
+			table.insert(list, {
+				name = op.name,
+				author = op.author,
+				time = op.time,
+				status = op.status,
+				files = kern.json.array(files),
+				commands = kern.json.array(op.commands),
+			})
+		end
+	end
+	kern.fs.write(path, kern.json.encode(kern.json.array(list)))
+end
+
+--- Loads the operations saved before a restart, in place of the ones
+--- known now. Kern does this when it starts.
+function M.restore()
+	local path = saved_path()
+	local text = path and kern.fs.read(path)
+	local list = if text then kern.json.decode(text) else nil
+	operations = {}
+	for _, saved in list or {} do
+		table.insert(operations, {
+			id = 0,
+			name = saved.name,
+			author = saved.author,
+			time = saved.time,
+			files = saved.files or {},
+			commands = saved.commands or {},
+			status = saved.status,
+			restored = true,
+		})
+	end
+end
 
 --- Starts an operation: edits from here until `finish` belong to it.
 function M.start(name: string, author: string?): Operation
@@ -73,7 +133,7 @@ function M.start(name: string, author: string?): Operation
 	return op
 end
 
--- The files `op` changed so far, with their text before it.
+-- The files `op` changed so far, with their text before it and now.
 local function changed_files(op: Operation): { File }
 	local files: { File } = {}
 	for _, buffer in kern.buffers() do
@@ -81,7 +141,7 @@ local function changed_files(op: Operation): { File }
 		local entries = buffer:history({ group = op.id })
 		if path and #entries > 0 then
 			local before = buffer:text_before(entries[#entries].id) or ""
-			table.insert(files, { path = path, before = before })
+			table.insert(files, { path = path, before = before, after = buffer:text() })
 		end
 	end
 	table.sort(files, function(a: File, b: File)
@@ -98,6 +158,7 @@ function M.finish(op: Operation)
 	outer[op.id] = nil
 	op.files = changed_files(op)
 	op.status = "done"
+	save()
 end
 
 --- Runs `f` as an operation called `name` and returns it. If `f` fails,
@@ -120,6 +181,7 @@ function M.join(op: Operation, f: () -> ())
 	local ok, err = pcall(f)
 	kern.history.set_group(current)
 	op.files = changed_files(op)
+	save()
 	if not ok then
 		error(err, 0)
 	end
@@ -146,6 +208,7 @@ function M.forget(op: Operation)
 	local index = table.find(operations, op)
 	if index then
 		table.remove(operations, index)
+		save()
 	end
 end
 
@@ -156,20 +219,6 @@ function M.list(): { Operation }
 		table.insert(list, operations[i])
 	end
 	return list
-end
-
---- Undoes `op` in every file it changed, as one step. Returns false and
---- why not when something was done on top of it since.
-function M.undo(op: Operation): (boolean, string?)
-	if op.status == "running" then
-		M.finish(op)
-	end
-	local n, why = kern.history.undo_group(op.id)
-	if n == nil then
-		return false, why
-	end
-	op.status = "undone"
-	return true, nil
 end
 
 -- `n` of `word`, with an "s" for more than one.
@@ -196,6 +245,86 @@ local function text_now(path: string): string
 		end
 	end
 	return kern.fs.read(path) or ""
+end
+
+type Revert = { from: number, to: number, text: string }
+
+-- What puts `file`'s changes back in `now`, its text now, leaving those
+-- that were edited since: where each change's text is in `now`, and the
+-- text it replaced. Also how many were left.
+local function reverts(file: File, now: string): ({ Revert }, number)
+	-- Changes since the operation, by where they are in its text after.
+	local later = kern.diff(file.after, now)
+	local out: { Revert }, left = {}, 0
+	local shift = 0
+	for _, change in kern.diff(file.before, file.after) do
+		local old = string.sub(file.before, change.from + 1, change.to)
+		-- Where its text is in the operation's text after.
+		local from = change.from + shift
+		local to = from + #change.text
+		shift += #change.text - #old
+		local moved, edited = 0, false
+		for _, l in later do
+			if l.from < to and l.to > from then
+				edited = true
+			elseif l.to <= from then
+				moved += #l.text - (l.to - l.from)
+			end
+		end
+		if edited then
+			left += 1
+		else
+			table.insert(out, { from = from + moved, to = to + moved, text = old })
+		end
+	end
+	return out, left
+end
+
+-- Puts back what's left of `op`'s changes that nobody edited since, all
+-- as one undo step. Returns how many changes it put back and left.
+local function revert_what_remains(op: Operation): (number, number)
+	local put, left = 0, 0
+	local group = kern.history.new_group()
+	local current = kern.history.group()
+	kern.history.set_group(group)
+	for _, file in op.files do
+		local buffer = kern.load(file.path)
+		local list, kept = reverts(file, buffer:text())
+		left += kept
+		put += #list
+		if #list > 0 then
+			buffer:edit(function(e)
+				for _, r in list do
+					e:replace(r.from, r.to, r.text)
+				end
+			end)
+		end
+	end
+	kern.history.set_group(current)
+	return put, left
+end
+
+--- Undoes `op` in every file it changed, as one step. When something was
+--- done on top of it since (or Kern restarted), it puts back the changes
+--- nobody edited since and leaves the rest. Returns whether it changed
+--- anything, and a word on what it left or why it couldn't.
+function M.undo(op: Operation): (boolean, string?)
+	if op.status == "running" then
+		M.finish(op)
+	end
+	if not op.restored and op.status == "done" and kern.history.undo_group(op.id) then
+		op.status = "undone"
+		save()
+		return true, nil
+	end
+	local put, left = revert_what_remains(op)
+	if put == 0 then
+		return false,
+			if left > 0 then "every change it made was edited since" else "nothing left to undo"
+	end
+	op.status = if left == 0 then "undone" else "partly undone"
+	save()
+	return true, if left > 0 then `left {count(left, "change")} edited since` else nil
 end
 
 --- Shows `op` for review: every change it made, then the programs it ran.
@@ -282,7 +411,8 @@ kern.command({
 			kern.echo(`can't undo "{op.name}": {why}`)
 			return
 		end
-		kern.echo(`undid "{op.name}" in {count(#op.files, "file")}`)
+		local what = if why then `; {why}` else ` in {count(#op.files, "file")}`
+		kern.echo(`undid "{op.name}"{what}`)
 		if reviews[ctx.buffer:id()] then
 			M.review(op)
 		end
@@ -297,5 +427,7 @@ kern.keymap.bind("normal", {
 	["space u o"] = "operations",
 	["space u u"] = "operation-undo",
 })
+
+M.restore()
 
 return M
