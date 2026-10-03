@@ -95,10 +95,11 @@ the keys are the ones most editors use.
 |---|---|
 | arrows, `home` `end`, `ctrl-left` `ctrl-right` | Move |
 | `pageup` `pagedown` | A screen up or down |
-| `shift` + any of those | Select |
+| `shift` + arrows, `home` `end`, `ctrl-left` `ctrl-right` | Select |
 | `ctrl-a` | Select all |
 | `ctrl-c` `ctrl-x` `ctrl-v` | Copy, cut, paste |
-| `ctrl-z` `ctrl-y` | Undo, redo |
+| `ctrl-z` `ctrl-y` | Undo, redo (`ctrl-shift-z` redoes too, where the terminal can tell it from `ctrl-z`) |
+| `tab` `shift-tab` | Indent or dedent the selected lines; `tab` alone types a level of indent |
 | `ctrl-p` `ctrl-b` | Find a file, switch to an open file |
 | `ctrl-P` or `alt-x` | Run a command |
 | `ctrl-s` | Save |

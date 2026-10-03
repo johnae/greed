@@ -108,9 +108,16 @@ kern.command({
 
 kern.command({
 	name = "type-tab",
-	doc = "Type a tab, replacing any selection",
+	doc = "Indent the selected lines when a selection spans lines, otherwise type a level of indent",
 	run = function(ctx)
-		type_text(ctx, "\t")
+		local buffer = ctx.buffer
+		for _, range in ctx.view:selection().ranges do
+			if buffer:line_of(from(range)) ~= buffer:line_of(to(range)) then
+				kern.run("indent")
+				return
+			end
+		end
+		type_text(ctx, indent.unit(buffer))
 	end,
 })
 
@@ -171,6 +178,7 @@ kern.keymap.bind("edit", {
 	["ctrl-shift-end"] = "extend-end",
 	enter = "type-newline",
 	tab = "type-tab",
+	["shift-tab"] = "dedent",
 	backspace = "erase-back",
 	delete = "erase-forward",
 	esc = "collapse",
