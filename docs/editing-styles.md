@@ -76,6 +76,11 @@ character, and `v` starts a visual mode for selecting by hand.
 | `v` `V` `ctrl-v` | Visual mode, by character, line or block; `i`/`a` there select a text object |
 | `o` `r` `J` `p` in visual mode | Go to the other end, replace every character, join the lines, paste over the selection |
 | `g v` `g n` | Select the last visual selection again, or the next search match (`c g n` then `.` changes match after match) |
+| `y s` + a motion or object + a character, `d s` `c s`, `S` in visual mode | Surround, as vim-surround does: `ysiw)` wraps the word in brackets (`(` with spaces inside), `ds"` takes the quotes away, `cs"'` changes them, `yss` wraps the line |
+| `alt-o` `alt-i` | Select the syntax node around the cursor, growing it in visual mode, or shrink it back |
+| `alt-shift-right` `alt-shift-left` | Move the selected syntax node past the next or previous one |
+| `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
+| `g s` | Label the words on screen and jump to the one you type |
 | `Z Z` `Z Q` | Save and close, close without saving |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |

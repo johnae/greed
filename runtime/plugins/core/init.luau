@@ -10,7 +10,7 @@ require("@self/edit")
 local file = require("@self/file")
 local search = require("@self/search")
 require("@self/select")
-require("@self/jump")
+local jump = require("@self/jump")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
@@ -204,6 +204,7 @@ return {
 	again = again,
 	comment = comment,
 	jumps = jumps,
+	jump = jump,
 	objects = objects,
 	syntax = syntax,
 	words = words,

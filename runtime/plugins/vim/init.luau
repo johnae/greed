@@ -841,8 +841,55 @@ local function store(op: string, taken: { text: string, linewise: boolean })
 end
 
 -- Applies operator `op` (one of "d", "c", "y" or LINE_OPERATORS) to `from`..`to`.
+-- What ys and visual S wrap text in for each key, as vim-surround has it:
+-- an opening bracket adds spaces inside, a closing one doesn't, and b B r a
+-- stand for ( { [ <. Any other character goes on both sides.
+local SURROUND: { [string]: { string } } = {
+	["("] = { "( ", " )" },
+	[")"] = { "(", ")" },
+	b = { "(", ")" },
+	["["] = { "[ ", " ]" },
+	["]"] = { "[", "]" },
+	r = { "[", "]" },
+	["{"] = { "{ ", " }" },
+	["}"] = { "{", "}" },
+	B = { "{", "}" },
+	["<"] = { "<", ">" },
+	[">"] = { "<", ">" },
+	a = { "<", ">" },
+}
+-- The brackets b B r a stand for in ds and cs.
+local PAIR_ALIASES: { [string]: string } = { b = "(", B = "{", r = "[", a = "<" }
+
+-- Wraps `from`..`to` in the pair for the key typed next; whole lines wrap
+-- from their first non-blank to their end.
+local function surround(ctx: kern.Context, from: number, to: number, linewise: boolean)
+	local char = kern.next_key()
+	if utf8.len(char) ~= 1 then
+		return
+	end
+	local buffer = ctx.buffer
+	if linewise then
+		local first =
+			buffer:line_of(if buffer:char_at(from) == "\n" and from < to then from + 1 else from)
+		local last = buffer:line_of(math.max(from, to - 1))
+		from, to = first_non_blank(buffer, first), buffer:line_end(last)
+	end
+	local pair = SURROUND[char] or { char, char }
+	local start, finish = from, to :: number
+	buffer:edit(function(e)
+		e:insert(start, pair[1])
+		e:insert(finish, pair[2])
+	end)
+	ctx.view:set_selection(point(from))
+end
+
 local function apply(ctx: kern.Context, op: string, from: number, to: number, linewise: boolean)
 	local buffer = ctx.buffer
+	if op == "ys" then
+		surround(ctx, from, to, linewise)
+		return
+	end
 	local line_command = LINE_OPERATORS[op]
 	if line_command then
 		on_lines(ctx, line_command, from, to, op)
@@ -937,6 +984,27 @@ local function operate(ctx: kern.Context, op: string)
 	local key, inner_count = read_count()
 	local count = (ctx.count or 1) * (inner_count or 1)
 	local buffer, pos = ctx.buffer, cursor(ctx)
+	-- vim-surround's keys: ds( deletes a pair, cs"' changes one, and ys
+	-- takes a motion or object and then the pair to wrap it in.
+	if (op == "d" or op == "c") and key == "s" then
+		local char = kern.next_key()
+		local with = if op == "c" then kern.next_key() else nil
+		local open, close = core.objects.around(buffer, pos, PAIR_ALIASES[char] or char)
+		if open == nil or close == nil then
+			return
+		end
+		local pair = if with then SURROUND[with] or { with, with } else { "", "" }
+		local start, finish = open :: number, close :: number
+		buffer:edit(function(e)
+			e:replace(start, buffer:next_char(start), pair[1])
+			e:replace(finish, buffer:next_char(finish), pair[2])
+		end)
+		ctx.view:set_selection(point(on_char(buffer, start)))
+		return
+	elseif op == "y" and key == "s" then
+		operate(ctx, "ys")
+		return
+	end
 	local from: number, to: number, linewise: boolean
 	-- The operator's last key again (dd, >>, gcc) means whole lines.
 	if key == string.sub(op, -1) then
@@ -1555,6 +1623,38 @@ command(
 	end
 )
 
+command("visual-surround", "Wrap the selection in the pair typed next", function(ctx)
+	local mode = kern.mode.get()
+	local range = ctx.view:selection().ranges[1]
+	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	kern.mode.set("vim")
+	surround(ctx, from, to, mode == "vim-visual-line")
+end)
+
+-- alt-o and alt-i: Helix's growing and shrinking by syntax node, which
+-- goes on in visual mode.
+for _, grow in { true, false } do
+	command(
+		if grow then "expand-selection" else "shrink-selection",
+		if grow
+			then "Select the syntax node around the cursor or selection, in visual mode"
+			else "Shrink the selection back, or to the first syntax node inside it",
+		function()
+			kern.run(if grow then "expand-selection" else "shrink-selection")
+			if kern.mode.get() == "vim" then
+				kern.mode.set("vim-visual")
+			end
+		end
+	)
+end
+
+command("jump-to-word", "Label every word on screen and jump to the one typed", function(ctx)
+	local from = core.jump.pick(ctx.view)
+	if from then
+		ctx.view:set_selection(point(from))
+	end
+end)
+
 command("reselect", "Select the last visual selection again", function(ctx)
 	if last_visual == nil then
 		return
@@ -1934,8 +2034,8 @@ end
 -- Panels like the file tree and help keep their keys.
 kern.keymap.inherit_kinds("vim", "normal")
 -- Keys other plugins put in normal mode that work the same here: the
--- space-leader keys, the command line, search, and going to definitions,
--- references and problems. Plugins loaded later get them too.
+-- space-leader keys, search, and going to definitions and problems.
+-- Plugins loaded later get them too.
 kern.keymap.inherit("vim", "normal", {
 	"space",
 	"/",
@@ -1943,7 +2043,6 @@ kern.keymap.inherit("vim", "normal", {
 	"n",
 	"N",
 	"g d",
-	"g r",
 	"]",
 	"[",
 	"ctrl-f",
@@ -2025,6 +2124,18 @@ local keys: { [string]: string } = {
 	["Z Q"] = "vim-quit-unsaved",
 	R = "vim-replace-mode",
 	U = "vim-undo-line",
+	K = "hover",
+	["g r n"] = "rename",
+	["g r a"] = "code-action",
+	["g r r"] = "goto-references",
+	["g r i"] = "goto-implementation",
+	["g r t"] = "goto-type-definition",
+	["g O"] = "pick-outline",
+	["g s"] = "vim-jump-to-word",
+	["alt-o"] = "vim-expand-selection",
+	["alt-i"] = "vim-shrink-selection",
+	["alt-shift-right"] = "swap-node-next",
+	["alt-shift-left"] = "swap-node-prev",
 	[":"] = "vim-command-line",
 	["g ;"] = "vim-change-older",
 	["g ,"] = "vim-change-newer",
@@ -2056,6 +2167,11 @@ local visual: { [string]: string } = {
 	["!"] = "vim-operator-!",
 	["z f"] = "vim-operator-zf",
 	[":"] = "vim-command-line",
+	S = "vim-visual-surround",
+	["alt-o"] = "vim-expand-selection",
+	["alt-i"] = "vim-shrink-selection",
+	["alt-shift-right"] = "swap-node-next",
+	["alt-shift-left"] = "swap-node-prev",
 	i = "vim-visual-inside",
 	a = "vim-visual-around",
 	o = "vim-visual-swap",

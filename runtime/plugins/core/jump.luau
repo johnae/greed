@@ -66,37 +66,46 @@ local function show(buffer: kern.Buffer, targets: { Target }, typed: string)
 	buffer:decorate("jump", marks)
 end
 
+local M = {}
+
+--- Labels the words on screen in `view` and waits for one to be typed:
+--- returns where that word starts and ends, or nil.
+function M.pick(view: kern.View): (number?, number?)
+	if #letters() == 0 then
+		kern.echo("jump-label-alphabet is empty")
+		return nil, nil
+	end
+	local buffer = view:buffer()
+	local selection = view:selection()
+	local found = targets(view, selection.ranges[selection.primary].head)
+	if #found == 0 then
+		kern.echo("no words to jump to")
+		return nil, nil
+	end
+	-- Two keys, whatever their length in bytes.
+	local typed = ""
+	for _ = 1, 2 do
+		show(buffer, found, typed)
+		typed ..= kern.next_key()
+	end
+	buffer:decorate("jump", {})
+	for _, target in found do
+		if target.label == typed then
+			return target.from, target.to
+		end
+	end
+	return nil, nil
+end
+
 kern.command({
 	name = "jump-to-word",
 	doc = "Label the words on screen and select the one whose label is typed",
 	run = function(ctx)
-		if #letters() == 0 then
-			kern.echo("jump-label-alphabet is empty")
-			return
-		end
-		local selection = ctx.view:selection()
-		local found = targets(ctx.view, selection.ranges[selection.primary].head)
-		if #found == 0 then
-			kern.echo("no words to jump to")
-			return
-		end
-		-- Two keys, whatever their length in bytes.
-		local typed = ""
-		for _ = 1, 2 do
-			show(ctx.buffer, found, typed)
-			typed ..= kern.next_key()
-		end
-		ctx.buffer:decorate("jump", {})
-		for _, target in found do
-			if target.label == typed then
-				ctx.view:set_selection({
-					ranges = { { anchor = target.from, head = target.to } },
-					primary = 1,
-				})
-				return
-			end
+		local from, to = M.pick(ctx.view)
+		if from and to then
+			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 		end
 	end,
 })
 
-return {}
+return M
