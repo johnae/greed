@@ -30,6 +30,19 @@ local function class_at(buffer: Buffer, pos: number): string?
 	return M.class(buffer:char_at(pos))
 end
 
+-- The word (or run of punctuation or blanks) at `pos`, as a start and end.
+function M.word_at(buffer: Buffer, pos: number): (number, number)
+	local of = class_at(buffer, pos)
+	local from, to = pos, pos
+	while from > 0 and class_at(buffer, buffer:prev_char(from)) == of do
+		from = buffer:prev_char(from)
+	end
+	while to < buffer:len() and class_at(buffer, to) == of do
+		to = buffer:next_char(to)
+	end
+	return from, to
+end
+
 -- Skips forward over characters for which `keep(class)` holds.
 local function skip_forward(buffer: Buffer, pos: number, keep: (string?) -> boolean): number
 	local len = buffer:len()

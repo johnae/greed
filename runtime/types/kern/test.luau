@@ -33,8 +33,8 @@ export type TestContext = {
 	--- Does what a client sends for the mouse at screen cell (`col`, `row`),
 	--- against the last `draw`: `kind` is "press", "release", "drag",
 	--- "move" or "scroll", `which` a button (default "left") or a scroll
-	--- direction.
-	mouse: (self: TestContext, kind: string, col: number, row: number, which: string?) -> (),
+	--- direction, and `mods` the keys held with it.
+	mouse: (self: TestContext, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> (),
 	--- True once something asked the editor to exit.
 	quitting: (self: TestContext) -> boolean,
 	--- True if something asked to let the client go since the last call.

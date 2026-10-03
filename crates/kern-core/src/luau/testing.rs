@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use kern_text::ClientId;
-use mlua::{Function, Lua, UserData, UserDataMethods};
+use mlua::{Function, Lua, Table, UserData, UserDataMethods};
 
 use super::modules::Modules;
 use super::{
@@ -177,18 +177,32 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
 
 /// Does what a client sends for the mouse at (`col`, `row`), against the
 /// last frame drawn: `kind` is "press", "release", "drag", "move" or
-/// "scroll", with a button (default "left") or a scroll direction.
-fn mouse(lua: &Lua, kind: &str, col: u16, row: u16, which: Option<&str>) -> mlua::Result<()> {
+/// "scroll", with a button (default "left") or a scroll direction, and
+/// `mods` the keys held (`{ shift = true }`).
+fn mouse(
+    lua: &Lua,
+    kind: &str,
+    col: u16,
+    row: u16,
+    which: Option<&str>,
+    mods: Option<&Table>,
+) -> mlua::Result<()> {
     use crate::mouse::{Mouse, MouseKind};
     let kind = MouseKind::parse(kind, which)
         .ok_or_else(|| mlua::Error::runtime(format!("{kind:?} {which:?} isn't a mouse event")))?;
+    let held = |name: &str| -> mlua::Result<bool> {
+        Ok(match mods {
+            Some(mods) => mods.get::<Option<bool>>(name)?.unwrap_or(false),
+            None => false,
+        })
+    };
     let event = Mouse {
         kind,
         col,
         row,
-        ctrl: false,
-        alt: false,
-        shift: false,
+        ctrl: held("ctrl")?,
+        alt: held("alt")?,
+        shift: held("shift")?,
     };
     let hit = renderer(lua).hit(&state(lua).editor, col, row);
     super::mouse_event(lua, event, &hit)?;
@@ -209,8 +223,10 @@ fn renderer(lua: &Lua) -> mlua::AppDataRef<'_, crate::render::Renderer<crate::re
 fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     methods.add_method(
         "mouse",
-        |lua, _, (kind, col, row, which): (String, u16, u16, Option<String>)| {
-            mouse(lua, &kind, col, row, which.as_deref())
+        |lua,
+         _,
+         (kind, col, row, which, mods): (String, u16, u16, Option<String>, Option<Table>)| {
+            mouse(lua, &kind, col, row, which.as_deref(), mods.as_ref())
         },
     );
     methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
