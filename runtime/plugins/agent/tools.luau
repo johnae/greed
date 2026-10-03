@@ -218,24 +218,37 @@ agent.tool({
 	end,
 })
 
+local EDITS = {
+	type = "array",
+	items = object(
+		{ old_text = { type = "string" }, new_text = { type = "string" } },
+		{ "old_text", "new_text" }
+	),
+}
+
 agent.tool({
 	name = "propose",
-	description = "Propose changes to a file for the user to review in the editor. Each change "
-		.. "replaces old_text, which must appear exactly once in the file (quote enough "
-		.. "around it), with new_text. Waits for the user and says which changes they accepted",
+	description = "Propose changes for the user to review in the editor: to one file with path "
+		.. "and edits, or to several with files. Each change replaces old_text, which must "
+		.. "appear exactly once in its file (quote enough around it), with new_text. Changes "
+		.. "to several files make one operation the user can undo in one step. Waits for the "
+		.. "user and says which changes they accepted",
 	input = object({
 		path = { type = "string" },
-		edits = {
+		edits = EDITS,
+		files = {
 			type = "array",
-			items = object(
-				{ old_text = { type = "string" }, new_text = { type = "string" } },
-				{ "old_text", "new_text" }
-			),
+			items = object({ path = { type = "string" }, edits = EDITS }, { "path", "edits" }),
 		},
 		reason = { type = "string", description = "One line on why, shown to the user" },
-	}, { "path", "edits" }),
+	}),
 	run = function(args)
-		return proposals.propose(args.path, args.edits, args.reason)
+		if args.files then
+			return proposals.propose_files(args.files, args.reason)
+		elseif args.path and args.edits then
+			return proposals.propose(args.path, args.edits :: { proposals.Edit }, args.reason)
+		end
+		error("give path and edits, or files", 0)
 	end,
 })
 

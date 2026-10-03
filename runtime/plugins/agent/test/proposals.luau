@@ -150,3 +150,43 @@ test("each change has accept and reject buttons to click", function(t)
 	assert(buffer:text() == "1\ntwo\nthree\n")
 	assert(answer() == `accepted 1 of 2 changes to {path}; the user rejected change 2`, answer())
 end)
+
+test("changes to several files are one operation, undone in one step", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n", ["b.txt"] = "two\n" })
+	local answer: string? = nil
+	kern.command({
+		name = "test-propose-files",
+		run = function()
+			answer = agent.propose_files({
+				{ path = dir .. "/a.txt", edits = { { old_text = "one", new_text = "1" } } },
+				{ path = dir .. "/b.txt", edits = { { old_text = "two", new_text = "2" } } },
+			}, "numbers")
+		end,
+	})
+	t:run("test-propose-files")
+	assert(agent.pending() == 2)
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "2 changes to 2 files", 1, true), messages[#messages])
+	kern.open(dir .. "/a.txt")
+	t:keys("space o A")
+	kern.open(dir .. "/b.txt")
+	t:keys("space o A")
+	local a, b = kern.load(dir .. "/a.txt"), kern.load(dir .. "/b.txt")
+	assert(a:text() == "1\n" and b:text() == "2\n", a:text() .. b:text())
+	assert(
+		answer and string.find(answer, "accepted 1 of 1 changes to " .. dir .. "/b.txt", 1, true),
+		answer
+	)
+	t:keys("space u u")
+	assert(a:text() == "one\n" and b:text() == "two\n", a:text() .. b:text())
+end)
+
+test("one file's bad edit stops the whole proposal before anything shows", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n", ["b.txt"] = "two\n" })
+	local ok, err = pcall(agent.propose_files, {
+		{ path = dir .. "/a.txt", edits = { { old_text = "one", new_text = "1" } } },
+		{ path = dir .. "/b.txt", edits = { { old_text = "missing", new_text = "2" } } },
+	}, nil)
+	assert(not ok and string.find(tostring(err), "isn't in", 1, true), tostring(err))
+	assert(agent.pending() == 0)
+end)

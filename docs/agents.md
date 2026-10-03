@@ -39,7 +39,7 @@ claude mcp add kern -- kern mcp
 | `outline` | A file's functions and types with their lines, from its syntax tree |
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |
-| `propose` | Propose edits for you to review |
+| `propose` | Propose edits to one or more files for you to review |
 | `project` | The project's root folder |
 | `eval` | Run Luau inside the editor |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
@@ -51,12 +51,13 @@ tools if you don't want that.
 
 ## Reviewing proposed edits
 
-`propose` takes a file and a list of edits, each replacing some exact text
-with new text. The old text is struck through in the buffer and the new
-text shows after it; when whole lines change, as in Claude Code's diffs,
-the new lines show under the old ones, with the words that changed picked
-out on both. Nothing changes until you decide, with the keys or by
-clicking `accept` or `reject` after each change:
+`propose` takes a file and a list of edits, or several files each with its
+own, each edit replacing some exact text with new text. The old text is
+struck through in the buffer and the new text shows after it; when whole
+lines change, as in Claude Code's diffs, the new lines show under the old
+ones, with the words that changed picked out on both. Nothing changes
+until you decide, with the keys or by clicking `accept` or `reject` after
+each change:
 
 | Keys | |
 |---|---|
@@ -67,8 +68,9 @@ clicking `accept` or `reject` after each change:
 | `space o d` | Show the file with every change in, beside it; again to hide |
 
 Changes follow the edits you make while they wait. The agent waits too, and
-then hears which changes went in. Accepted changes are ordinary edits you
-can undo.
+then hears which changes went in. What you accept from one proposal is an
+operation (see [Using Kern](using.md#operations)): `space u u` undoes it in
+every file at once, and `space u o` reviews it.
 
 Side by side, the two panes scroll together, matching lines across the
 changes, and the right one keeps up as you edit, accept and reject.

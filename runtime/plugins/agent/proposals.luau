@@ -17,6 +17,7 @@
 local kern = require("@kern")
 local core = require("@core")
 local picker = require("@picker")
+local operations = require("@operations")
 
 type Span = { from: number, to: number }
 
@@ -38,6 +39,8 @@ type Proposal = {
 	done: kern.Signal,
 	-- What Claude Code calls the diff, so it can withdraw it.
 	tab: string?,
+	-- The operation its accepted changes join, so they undo as one.
+	op: operations.Operation,
 }
 
 local proposals: { Proposal } = {}
@@ -247,10 +250,12 @@ local function decide(p: Proposal, chosen: (at: kern.Mark) -> boolean, accept: b
 	end
 	p.pending = pending
 	if #edits > 0 then
-		p.buffer:edit(function(e)
-			for _, edit in edits do
-				e:replace(edit.at.from, edit.at.to, edit.text)
-			end
+		operations.join(p.op, function()
+			p.buffer:edit(function(e)
+				for _, edit in edits do
+					e:replace(edit.at.from, edit.at.to, edit.text)
+				end
+			end)
 		end)
 	end
 	if #pending == 0 then
@@ -420,15 +425,15 @@ kern.keymap.bind("normal", {
 	["space o o"] = "proposals",
 })
 
--- Shows `hunks` (at `at`, and in file order as `pending`) for review, and
--- waits until every one is decided.
+-- Shows `hunks` (at `at`, and in file order as `pending`) for review as
+-- part of `op`. Wait on its `done` for the user's decision.
 local function start(
+	op: operations.Operation,
 	path: string,
 	buffer: kern.Buffer,
 	pending: { Hunk },
 	hunks: { Hunk },
 	at: { Span },
-	reason: string?,
 	tab: string?
 ): Proposal
 	local p: Proposal = {
@@ -438,25 +443,42 @@ local function start(
 		pending = pending,
 		done = kern.signal(),
 		tab = tab,
+		op = op,
 	}
 	table.insert(proposals, p)
 	for i, hunk in hunks do
 		draw(p, hunk, at[i])
 	end
 	changed(buffer)
+	return p
+end
+
+local function where(files: { string }): string
+	return if #files == 1 then files[1] else `{#files} files`
+end
+
+-- Tells the user what came in to review.
+local function announce(changes: number, files: { string }, reason: string?)
 	local why = if reason then `: {reason}` else ""
-	kern.echo(`an agent proposes {#hunks} changes to {path}{why} - space o o to review`)
-	return p.done.wait()
+	kern.echo(`an agent proposes {changes} changes to {where(files)}{why} - space o o to review`)
 end
 
 local M = {}
 
 export type Edit = { old_text: string, new_text: string }
+export type FileEdits = { path: string, edits: { Edit } }
 
---- Proposes `edits` to the file at `path`, then waits until the user has
---- decided on every one and returns what they decided, in words. Each
---- `old_text` has to appear exactly once in the file.
-function M.propose(path: string, edits: { Edit }, reason: string?): string
+type Prepared = {
+	path: string,
+	buffer: kern.Buffer,
+	pending: { Hunk },
+	hunks: { Hunk },
+	at: { Span },
+}
+
+-- The hunks of `edits` to the file at `path`, checked: each `old_text`
+-- has to appear exactly once, and no two may overlap.
+local function prepare(path: string, edits: { Edit }): Prepared
 	local root = core.project.root()
 	local full = if string.sub(path, 1, 1) == "/" then path else core.project.path(root, path)
 	local buffer = kern.load(full)
@@ -496,7 +518,40 @@ function M.propose(path: string, edits: { Edit }, reason: string?): string
 		end
 		pending[n] = hunks[i]
 	end
-	return summary(start(full, buffer, pending, hunks, at, reason, nil))
+	return { path = full, buffer = buffer, pending = pending, hunks = hunks, at = at }
+end
+
+--- Proposes edits to several files as one operation, then waits until the
+--- user has decided on every change and returns what they decided, in
+--- words. Nothing shows unless every file's edits check out. What the user
+--- accepts undoes in one step, from any of the files.
+function M.propose_files(files: { FileEdits }, reason: string?): string
+	local prepared: { Prepared } = {}
+	local paths, changes = {}, 0
+	for _, file in files do
+		local checked = prepare(file.path, file.edits)
+		table.insert(prepared, checked)
+		table.insert(paths, checked.path)
+		changes += #checked.hunks
+	end
+	local op = operations.run(reason or `changes to {where(paths)}`, function() end, "agent")
+	local started: { Proposal } = {}
+	for _, file in prepared do
+		table.insert(started, start(op, file.path, file.buffer, file.pending, file.hunks, file.at))
+	end
+	announce(changes, paths, reason)
+	local answers = {}
+	for _, p in started do
+		table.insert(answers, summary(p.done.wait()))
+	end
+	return table.concat(answers, "\n")
+end
+
+--- Proposes `edits` to the file at `path`, then waits until the user has
+--- decided on every one and returns what they decided, in words. Each
+--- `old_text` has to appear exactly once in the file.
+function M.propose(path: string, edits: { Edit }, reason: string?): string
+	return M.propose_files({ { path = path, edits = edits } }, reason)
 end
 
 --- Proposes `changes` (byte ranges of `buffer` and their new text, sorted
@@ -516,7 +571,10 @@ function M.propose_changes(
 		table.insert(hunks, { id = next_id, old = old, new = change.text, status = "pending" })
 		table.insert(at, { from = change.from, to = change.to })
 	end
-	local p = start(path, buffer, table.clone(hunks), hunks, at, reason, tab)
+	local op = operations.run(reason or `changes to {path}`, function() end, "agent")
+	local p = start(op, path, buffer, table.clone(hunks), hunks, at, tab)
+	announce(#hunks, { path }, reason)
+	p = p.done.wait()
 	local accepted = 0
 	for _, hunk in p.hunks do
 		accepted += if hunk.status == "accepted" then 1 else 0

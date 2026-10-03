@@ -17,11 +17,13 @@ local extend = require("@self/extend")
 
 export type Tool = registry.Tool
 export type Edit = proposals.Edit
+export type FileEdits = proposals.FileEdits
 
 return {
 	tool = registry.tool,
 	tools = registry.tools,
 	propose = proposals.propose,
+	propose_files = proposals.propose_files,
 	pending = proposals.pending,
 	try = extend.try,
 	install = extend.install,
