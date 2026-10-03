@@ -1,0 +1,319 @@
+-- Language models by role. Plugins ask for a role, like "fast" or
+-- "reasoning", and your config says which provider and model plays it, so
+-- no plugin hard-codes a provider and switching to a local model is one line.
+--
+--   :models   each role's provider and model, and whether its key is found
+--
+-- In your config:
+--
+--     local models = require("@models")
+--     models.roles.fast = { provider = "ollama", model = "llama3.2" }
+--     models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", secret = "work" }
+--
+-- Keys come from kern.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
+
+local kern = require("@kern")
+local sse = require("@self/sse")
+
+--- Where a model is served: `kind` is "anthropic" or "openai" (any server
+--- with OpenAI's chat completions API, like Ollama or vLLM), `secret` the
+--- name of its key in kern.secrets, if it needs one.
+export type Provider = { kind: string, url: string, secret: string? }
+
+--- Which provider and model play a role.
+export type Role = { provider: string, model: string }
+
+export type Message = { role: "user" | "assistant", content: string }
+
+--- What to ask: the conversation so far, and optionally instructions and
+--- how long the answer may be (in tokens).
+export type Request = {
+	messages: { Message },
+	system: string?,
+	max_tokens: number?,
+	temperature: number?,
+}
+
+--- An answer arriving piece by piece. `next` waits for the next piece of
+--- text and returns it, nil at the end, or nil and why it failed; `text` is
+--- everything so far.
+export type Stream = {
+	next: () -> (string?, string?),
+	text: string,
+	close: () -> (),
+}
+
+local M = {}
+
+M.providers = {
+	anthropic = { kind = "anthropic", url = "https://api.anthropic.com", secret = "anthropic" },
+	openai = { kind = "openai", url = "https://api.openai.com/v1", secret = "openai" },
+	ollama = { kind = "openai", url = "http://localhost:11434/v1" },
+} :: { [string]: Provider }
+
+M.roles = {
+	fast = { provider = "anthropic", model = "claude-haiku-4-5-20251001" },
+	reasoning = { provider = "anthropic", model = "claude-opus-5-5" },
+	["local"] = { provider = "ollama", model = "llama3.2" },
+} :: { [string]: Role }
+
+-- How long an answer may be when the request doesn't say.
+local MAX_TOKENS = 4096
+
+--- The provider and model playing `role`, or why there are none.
+function M.resolve(role: string): (Role?, Provider?, string?)
+	local chosen = M.roles[role]
+	if chosen == nil then
+		return nil, nil, `no model plays the role "{role}"; set models.roles.{role} in your config`
+	end
+	local provider = M.providers[chosen.provider]
+	if provider == nil then
+		return nil,
+			nil,
+			`the role "{role}" uses the provider "{chosen.provider}", which isn't set up`
+	end
+	return chosen, provider, nil
+end
+
+-- The request to send, as the provider's API wants it.
+local function http_request(
+	provider: Provider,
+	model: string,
+	request: Request,
+	key: string?
+): kern.HttpRequest
+	local headers: { [string]: string } = { ["content-type"] = "application/json" }
+	local body: { [string]: any } = {
+		model = model,
+		messages = request.messages,
+		max_tokens = request.max_tokens or MAX_TOKENS,
+		temperature = request.temperature,
+		stream = true,
+	}
+	if provider.kind == "anthropic" then
+		headers["anthropic-version"] = "2023-06-01"
+		if key then
+			headers["x-api-key"] = key
+		end
+		body.system = request.system
+		return {
+			url = provider.url .. "/v1/messages",
+			headers = headers,
+			body = kern.json.encode(body),
+		}
+	end
+	if key then
+		headers.authorization = `Bearer {key}`
+	end
+	if request.system then
+		local messages: { any } = { { role = "system", content = request.system } }
+		for _, message in request.messages do
+			table.insert(messages, message)
+		end
+		body.messages = messages
+	end
+	return {
+		url = provider.url .. "/chat/completions",
+		headers = headers,
+		body = kern.json.encode(body),
+	}
+end
+
+-- The text an event carries, whether the answer is done, and an error if
+-- it reports one.
+local function read_event(kind: string, event: sse.Event): (string?, boolean, string?)
+	if event.data == "[DONE]" then
+		return nil, true, nil
+	end
+	local decoded = kern.json.decode(event.data)
+	if type(decoded) ~= "table" then
+		return nil, false, nil
+	end
+	if decoded.error then
+		local err = decoded.error
+		return nil,
+			true,
+			if type(err) == "table" then err.message or kern.json.encode(err) else tostring(err)
+	end
+	if kind == "anthropic" then
+		if decoded.type == "content_block_delta" and decoded.delta then
+			return decoded.delta.text, false, nil
+		end
+		return nil, decoded.type == "message_stop", nil
+	end
+	local choice = decoded.choices and decoded.choices[1]
+	local text = choice and choice.delta and choice.delta.content
+	return if type(text) == "string" then text else nil, false, nil
+end
+
+-- Why a request the server refused failed, from its body.
+local function refusal(status: number, body: string): string
+	local decoded = kern.json.decode(body)
+	local err = type(decoded) == "table" and decoded.error
+	local message = if type(err) == "table"
+		then err.message
+		elseif type(err) == "string" then err
+		else nil
+	return `the model's server said {status}: {message or string.sub(body, 1, 200)}`
+end
+
+--- Asks the model playing `role`, and returns the answer as it arrives.
+--- Waits for the server to start answering. Works in commands, event
+--- handlers and kern.spawn.
+function M.stream(role: string, request: Request): (Stream?, string?)
+	local chosen, provider, why = M.resolve(role)
+	if chosen == nil or provider == nil then
+		return nil, why
+	end
+	local key: string? = nil
+	if provider.secret then
+		key = kern.secrets.get(provider.secret)
+		if key == nil then
+			return nil,
+				`no key for {chosen.provider}: :secret-set {provider.secret}, or set it in the environment`
+		end
+	end
+	local response, err = kern.http.stream(http_request(provider, chosen.model, request, key))
+	if response == nil then
+		return nil, `can't reach {chosen.provider}: {err}`
+	end
+	if response.status >= 300 then
+		local body = {}
+		while true do
+			local piece = response.read()
+			if piece == nil then
+				break
+			end
+			table.insert(body, piece)
+		end
+		return nil, refusal(response.status, table.concat(body))
+	end
+	local pending: { string } = {}
+	local buffered = ""
+	local done = false
+	local stream: Stream
+	stream = {
+		text = "",
+		next = function(): (string?, string?)
+			while #pending == 0 and not done do
+				local piece, failed = response.read()
+				if piece == nil then
+					done = true
+					if failed then
+						return nil, failed
+					end
+					break
+				end
+				local events
+				events, buffered = sse.parse(buffered .. piece)
+				for _, event in events do
+					local text, finished, problem = read_event(provider.kind, event)
+					if problem then
+						done = true
+						response.close()
+						return nil, problem
+					end
+					if text and text ~= "" then
+						table.insert(pending, text)
+					end
+					if finished then
+						done = true
+						response.close()
+					end
+				end
+			end
+			local text = table.remove(pending, 1)
+			if text then
+				stream.text ..= text
+			end
+			return text, nil
+		end,
+		close = function(): ()
+			done = true
+			response.close()
+		end,
+	}
+	return stream, nil
+end
+
+--- Asks the model playing `role` and waits for the whole answer.
+function M.ask(role: string, request: Request): (string?, string?)
+	local stream, err = M.stream(role, request)
+	if stream == nil then
+		return nil, err
+	end
+	while true do
+		local piece, failed = stream.next()
+		if failed then
+			return nil, failed
+		end
+		if piece == nil then
+			return stream.text, nil
+		end
+	end
+end
+
+-- The list of roles while it's shown.
+local shown: kern.View? = nil
+
+local function close()
+	if shown then
+		shown:close()
+		shown = nil
+	end
+end
+
+kern.on("view.closed", function(event: kern.ViewClosed)
+	if shown and shown:id() == event.view then
+		shown = nil
+	end
+end)
+
+--- One line per role: its model and provider, and whether the key is found.
+function M.describe(): { string }
+	local names = {}
+	for name in M.roles do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local lines = {}
+	for _, name in names do
+		local chosen, provider, why = M.resolve(name)
+		if chosen and provider then
+			local key = "no key needed"
+			if provider.secret then
+				key = if kern.secrets.get(provider.secret)
+					then "key found"
+					else `no key: :secret-set {provider.secret}`
+			end
+			table.insert(
+				lines,
+				`{name}: {chosen.model} at {chosen.provider} ({provider.url}), {key}`
+			)
+		else
+			table.insert(lines, `{name}: {why}`)
+		end
+	end
+	return lines
+end
+
+kern.command({
+	name = "models",
+	doc = "Show which provider and model plays each role, and whether its key is found",
+	run = function()
+		close()
+		local buffer =
+			kern.create_buffer("models", table.concat(M.describe(), "\n"), { readonly = true })
+		shown = kern.float(buffer, { title = "Models by role", width = "80%", height = "40%" })
+	end,
+})
+
+kern.command({
+	name = "models-close",
+	doc = "Close the list of models",
+	run = close,
+})
+
+kern.keymap.bind({ mode = "normal", kind = "models" }, { q = "models-close", esc = "models-close" })
+
+return M

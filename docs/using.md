@@ -394,6 +394,35 @@ Every edit also records who made it (you, a plugin, an agent, or a change
 on disk) and the command it came from. Agents can ask with the
 `history_recent` tool, and plugins with `buffer:history()`.
 
+## Models
+
+Features that use a language model ask for a role, and you choose which
+model plays it. Out of the box:
+
+| Role | Model |
+|---|---|
+| `fast` | Claude Haiku 4.5, at Anthropic |
+| `reasoning` | Claude Opus 5.5, at Anthropic |
+| `local` | Llama 3.2, on [Ollama](https://ollama.com) on this machine |
+
+For Anthropic, give Kern your key with `:secret-set anthropic` (it goes in
+the system keyring), or set `ANTHROPIC_API_KEY`. `:models` shows each role,
+its model and whether its key is found.
+
+Change any of it in your `init.luau`, with OpenAI, Ollama or any server
+that speaks OpenAI's chat completions API:
+
+```luau
+local models = require("@models")
+models.roles.fast = { provider = "ollama", model = "qwen2.5-coder" }
+models.roles.reasoning = { provider = "openai", model = "gpt-5" }
+models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", secret = "work" }
+models.roles.review = { provider = "work", model = "reviewer-1" }
+```
+
+A provider with a `secret` reads its key with `:secret-set NAME`, or from
+`KERN_SECRET_NAME`.
+
 ## Formatting
 
 Saving a file formats it, and `:format` does it without saving. Kern uses

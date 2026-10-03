@@ -16,6 +16,7 @@
 		"theme": "./plugins/theme",
 		"hints": "./plugins/hints",
 		"statusline": "./plugins/statusline",
+		"models": "./plugins/models",
 		"operations": "./plugins/operations",
 		"approvals": "./plugins/approvals",
 		"vcs": "./plugins/vcs"

@@ -397,6 +397,34 @@ secrets file, and waits like the rest. A plugin declares each secret it
 reads as `secrets:NAME`, and Kern's file APIs refuse to read the secrets file
 itself.
 
+## Models
+
+The `models` plugin talks to language models for you. Ask for a role, not a
+provider, and the user's config decides which model plays it:
+
+```luau
+local models = require("@models")
+local stream, err = models.stream("fast", {
+	system = "Answer in one sentence.",
+	messages = { { role = "user", content = "What is a rope data structure?" } },
+})
+if stream == nil then
+	error(err, 0)
+end
+while true do
+	local piece = stream.next()
+	if piece == nil then
+		break
+	end
+	kern.echo(stream.text)
+end
+```
+
+`models.ask(role, request)` waits for the whole answer instead. Both wait
+like the rest of the API. The roles that come set up are `fast`,
+`reasoning` and `local`; a plugin can ask for any role, and the user maps it
+in their config.
+
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up in Claude Code (through

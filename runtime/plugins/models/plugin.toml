@@ -1,0 +1,4 @@
+name = "models"
+requires = ["core"]
+# Providers are yours to choose, local ones too, so any host; keys by provider.
+capabilities = ["net", "secrets"]
