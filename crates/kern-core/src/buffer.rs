@@ -250,8 +250,13 @@ impl Buffer {
         let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
         self.text.write_to(&mut file)?;
         file.flush()?;
-        self.saved = self.version.clone();
+        self.mark_saved();
         Ok(())
+    }
+
+    /// Counts the text as what its file holds, as after a save.
+    pub(crate) fn mark_saved(&mut self) {
+        self.saved = self.version.clone();
     }
 
     pub fn history(&self) -> &History {

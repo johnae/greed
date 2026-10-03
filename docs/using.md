@@ -282,8 +282,14 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:bc` (`:bd`) | Close the file; the one opened before it takes its place. `:bc!` closes it with unsaved changes |
 | `:bco` | Close every other file |
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
+| `:reload` | Load the file again from disk |
 
 Closing a terminal's buffer ends its program.
+
+When a file changes on disk, from another program or an agent, its buffer
+loads the change as an edit you can undo with `u`. A buffer with unsaved
+changes is left alone and Kern tells you; `:reload` loads the file into it
+anyway. `:set auto-reload false` stops loading changes by itself.
 
 ## Language servers
 

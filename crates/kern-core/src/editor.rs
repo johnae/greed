@@ -636,6 +636,38 @@ impl Editor {
         self.buffers.get_mut(&id).expect("buffer exists").save()
     }
 
+    /// Reads a buffer's file again, as an edit by [`Author::External`] that
+    /// undo can take back, and counts the buffer as saved. Returns whether
+    /// the text changed.
+    pub fn reload(&mut self, id: BufferId) -> std::io::Result<bool> {
+        let buffer = &self.buffers[&id];
+        let path = buffer
+            .path()
+            .ok_or_else(|| std::io::Error::other("this buffer has no file"))?;
+        let disk = std::fs::read_to_string(path)?;
+        let text = buffer.text().to_string();
+        let changes = crate::diff::line_changes(&text, &disk);
+        if !changes.is_empty() {
+            let changes = ChangeSet::from_changes(
+                text.len(),
+                changes
+                    .iter()
+                    .map(|(range, new)| (range.start, range.end, Some(new.as_str()))),
+            )
+            .map_err(std::io::Error::other)?;
+            // Not part of whatever the user has going, like an insert.
+            let group = self.undo_group.take();
+            let applied = self.apply_to_buffer(id, changes, Author::External, Some("reload"), None);
+            self.undo_group = group;
+            applied.map_err(std::io::Error::other)?;
+        }
+        self.buffers
+            .get_mut(&id)
+            .expect("buffer exists")
+            .mark_saved();
+        Ok(!changes.is_empty())
+    }
+
     /// Writes the buffer to `path`, which becomes its file.
     pub fn save_as(&mut self, id: BufferId, path: &Path) -> std::io::Result<()> {
         let detected = self.file_types.detect(path);

@@ -93,6 +93,9 @@ export type Buffer = {
 	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.
 	modified: (self: Buffer) -> boolean,
+	--- Reads its file again, as an edit by "external" that undo can take back, and counts
+	--- it as saved. Returns whether the text changed.
+	reload: (self: Buffer) -> boolean,
 	--- Closes the buffer, unsaved changes and all. Errors while a view shows it:
 	--- show something else there first. Plugins hear "buffer.closed".
 	close: (self: Buffer) -> (),

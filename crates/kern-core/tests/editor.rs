@@ -840,3 +840,27 @@ fn edits_carry_the_cause_they_were_made_for() {
     assert_eq!(log[0].meta.cause.as_deref(), Some("format"));
     assert_eq!(log[1].meta.cause.as_deref(), Some("paste"));
 }
+
+#[test]
+fn reloading_a_file_is_an_external_edit_undo_takes_back() {
+    let dir = std::env::temp_dir().join(format!("kern-reload-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.txt");
+    std::fs::write(&path, "one\ntwo\n").unwrap();
+    let mut ed = editor("");
+    let id = ed.open_file(&path).unwrap();
+    assert!(!ed.reload(id).unwrap(), "nothing changed on disk");
+    std::fs::write(&path, "one\nTWO\n").unwrap();
+    assert!(ed.reload(id).unwrap());
+    let buffer = ed.buffer(id);
+    assert_eq!(buffer.text().to_string(), "one\nTWO\n");
+    assert!(!buffer.is_modified(), "the buffer matches its file again");
+    let tx = buffer.history().log().last().unwrap();
+    assert_eq!(tx.meta.author, Author::External);
+    assert_eq!(tx.meta.cause.as_deref(), Some("reload"));
+    let v = ed.focus();
+    ed.show(v, id);
+    assert!(ed.undo(v).unwrap());
+    assert_eq!(ed.buffer(id).text().to_string(), "one\ntwo\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

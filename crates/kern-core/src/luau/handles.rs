@@ -675,6 +675,17 @@ impl UserData for BufferRef {
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.save(lua, path)
         });
+        methods.add_method("reload", |lua, this, ()| {
+            this.with_buffer(lua, |_| Ok(()))?;
+            let changed = state_mut(lua)
+                .editor
+                .reload(this.buffer)
+                .map_err(|err| mlua::Error::runtime(format!("can't reload: {err}")))?;
+            if changed {
+                buffer_changed(lua, this.buffer, &Author::External)?;
+            }
+            Ok(changed)
+        });
         methods.add_method("modified", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))
         });
