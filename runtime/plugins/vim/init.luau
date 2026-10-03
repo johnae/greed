@@ -840,7 +840,6 @@ local function store(op: string, taken: { text: string, linewise: boolean })
 	end
 end
 
--- Applies operator `op` (one of "d", "c", "y" or LINE_OPERATORS) to `from`..`to`.
 -- What ys and visual S wrap text in for each key, as vim-surround has it:
 -- an opening bracket adds spaces inside, a closing one doesn't, and b B r a
 -- stand for ( { [ <. Any other character goes on both sides.
@@ -861,6 +860,10 @@ local SURROUND: { [string]: { string } } = {
 -- The brackets b B r a stand for in ds and cs.
 local PAIR_ALIASES: { [string]: string } = { b = "(", B = "{", r = "[", a = "<" }
 
+local function pair_for(char: string): { string }
+	return SURROUND[char] or { char, char }
+end
+
 -- Wraps `from`..`to` in the pair for the key typed next; whole lines wrap
 -- from their first non-blank to their end.
 local function surround(ctx: kern.Context, from: number, to: number, linewise: boolean)
@@ -875,7 +878,7 @@ local function surround(ctx: kern.Context, from: number, to: number, linewise: b
 		local last = buffer:line_of(math.max(from, to - 1))
 		from, to = first_non_blank(buffer, first), buffer:line_end(last)
 	end
-	local pair = SURROUND[char] or { char, char }
+	local pair = pair_for(char)
 	local start, finish = from, to :: number
 	buffer:edit(function(e)
 		e:insert(start, pair[1])
@@ -884,6 +887,7 @@ local function surround(ctx: kern.Context, from: number, to: number, linewise: b
 	ctx.view:set_selection(point(from))
 end
 
+-- Applies operator `op` (one of "d", "c", "y", "ys" or LINE_OPERATORS) to `from`..`to`.
 local function apply(ctx: kern.Context, op: string, from: number, to: number, linewise: boolean)
 	local buffer = ctx.buffer
 	if op == "ys" then
@@ -993,7 +997,7 @@ local function operate(ctx: kern.Context, op: string)
 		if open == nil or close == nil then
 			return
 		end
-		local pair = if with then SURROUND[with] or { with, with } else { "", "" }
+		local pair = if with then pair_for(with) else { "", "" }
 		local start, finish = open :: number, close :: number
 		buffer:edit(function(e)
 			e:replace(start, buffer:next_char(start), pair[1])
@@ -1655,6 +1659,89 @@ command("jump-to-word", "Label every word on screen and jump to the one typed", 
 	end
 end)
 
+-- ctrl-n's multiple cursors, as vim-visual-multi has them: ctrl-n selects
+-- the word under the cursor, then adds its next match each time; c d y i a
+-- I A act on every selection, and esc goes back to one cursor.
+command("multi-next", "Select the word under the cursor, or add its next match", function(ctx)
+	if kern.mode.get() ~= "vim-multi" then
+		local from, to = word_object(ctx.buffer, cursor(ctx), false)
+		ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+		kern.run("search-selection")
+		kern.mode.set("vim-multi")
+		return
+	end
+	kern.run("search-next-add")
+end)
+
+command("multi-skip", "Drop this match and add the next one instead", function(ctx)
+	local skipped = ctx.view:selection()
+	local old = skipped.ranges[skipped.primary]
+	kern.run("search-next-add")
+	local selection = ctx.view:selection()
+	if #selection.ranges == #skipped.ranges then
+		return
+	end
+	for i, range in selection.ranges do
+		if range.anchor == old.anchor and range.head == old.head then
+			table.remove(selection.ranges, i)
+			if selection.primary > i then
+				selection.primary -= 1
+			end
+			break
+		end
+	end
+	ctx.view:set_selection(selection)
+end)
+
+command("multi-back", "Drop the match added last", function(ctx)
+	if #ctx.view:selection().ranges == 1 then
+		kern.run("vim-normal")
+		return
+	end
+	kern.run("remove-primary")
+end)
+
+-- Back to one cursor, at the primary selection's start.
+local function leave_multi(ctx: kern.Context)
+	local selection = ctx.view:selection()
+	local range = selection.ranges[selection.primary]
+	kern.mode.set("vim")
+	ctx.view:set_selection(point(on_char(ctx.buffer, math.min(range.anchor, range.head))))
+end
+
+command("multi-change", "Delete every selection and type in each place", function()
+	kern.history.start_group()
+	kern.run("delete")
+	kern.mode.set("vim-insert")
+end)
+command("multi-delete", "Delete every selection", function(ctx)
+	kern.run("delete")
+	leave_multi(ctx)
+end)
+command("multi-copy", "Copy every selection", function(ctx)
+	kern.run("copy")
+	leave_multi(ctx)
+end)
+
+for _, at_end in { false, true } do
+	command(
+		if at_end then "multi-append" else "multi-insert",
+		if at_end then "Type after every selection" else "Type before every selection",
+		function(ctx)
+			local selection = ctx.view:selection()
+			for i, range in selection.ranges do
+				local pos = if at_end
+					then math.max(range.anchor, range.head)
+					else math.min(range.anchor, range.head)
+				selection.ranges[i] = { anchor = pos, head = pos }
+			end
+			kern.history.start_group()
+			ctx.view:set_selection(selection)
+			kern.mode.set("vim-insert")
+		end
+	)
+end
+
 command("reselect", "Select the last visual selection again", function(ctx)
 	if last_visual == nil then
 		return
@@ -2124,6 +2211,7 @@ local keys: { [string]: string } = {
 	["Z Q"] = "vim-quit-unsaved",
 	R = "vim-replace-mode",
 	U = "vim-undo-line",
+	["ctrl-n"] = "vim-multi-next",
 	K = "hover",
 	["g r n"] = "rename",
 	["g r a"] = "code-action",
@@ -2195,6 +2283,21 @@ kern.keymap.bind("vim-insert", {
 	["ctrl-n"] = "completion-words",
 	["ctrl-p"] = "completion-words-back",
 })
+kern.keymap.bind("vim-multi", {
+	["ctrl-n"] = "vim-multi-next",
+	["ctrl-x"] = "vim-multi-skip",
+	["ctrl-p"] = "vim-multi-back",
+	c = "vim-multi-change",
+	s = "vim-multi-change",
+	d = "vim-multi-delete",
+	x = "vim-multi-delete",
+	y = "vim-multi-copy",
+	i = "vim-multi-insert",
+	I = "vim-multi-insert",
+	a = "vim-multi-append",
+	A = "vim-multi-append",
+	esc = "vim-normal",
+})
 kern.keymap.inherit("vim-replace", "vim-insert")
 kern.keymap.bind("vim-replace", { backspace = "vim-replace-back" })
 kern.keymap.fallback("vim-replace", "vim-replace-typed")
@@ -2222,6 +2325,7 @@ core.style.define({
 		["vim-visual-line"] = "visual line",
 		["vim-visual-block"] = "visual block",
 		["vim-replace"] = "replace",
+		["vim-multi"] = "multi",
 	},
 	plugin = "vim",
 })

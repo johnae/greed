@@ -81,6 +81,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `alt-shift-right` `alt-shift-left` | Move the selected syntax node past the next or previous one |
 | `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
 | `g s` | Label the words on screen and jump to the one you type |
+| `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last, `esc` goes back to one cursor |
 | `Z Z` `Z Q` | Save and close, close without saving |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
@@ -100,7 +101,7 @@ Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
 go: the Vim style is plain Luau against the same API any plugin uses, with
 its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`,
-`vim-visual-block`, `vim-replace`) beside Helix's.
+`vim-visual-block`, `vim-replace`, `vim-multi`) beside Helix's.
 
 The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
