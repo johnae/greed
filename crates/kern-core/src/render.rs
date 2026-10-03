@@ -620,7 +620,7 @@ impl<M: Measure> Renderer<M> {
             &visible,
         );
         let (marks, styled) = marks_in(editor, view.buffer, decorations, &visible);
-        let head = view.selection.primary().head;
+        let (head, cursors) = cursors(text, view, editor.cursor_shape());
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
         let (mut first_shown, mut last_shown) = (None, None);
@@ -677,7 +677,7 @@ impl<M: Measure> Renderer<M> {
                         .byte
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone());
-                    let cell_tags = cell_tags(view, cell, capture, &styled, &marks);
+                    let cell_tags = cell_tags(view, cell, &cursors, capture, &styled, &marks);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push(&cell.text, cell_tags);
                     }
@@ -895,7 +895,7 @@ impl<M: Measure> Renderer<M> {
         height: usize,
     ) -> Scroll {
         let text = editor.buffer(view.buffer).text();
-        let head = view.selection.primary().head.min(text.len_bytes());
+        let head = cursor_byte(text, view.selection.primary(), editor.cursor_shape());
         let line = text.byte_to_line(head);
         let cursor = Scroll {
             line,
@@ -1061,7 +1061,7 @@ impl<M: Measure> Renderer<M> {
     fn default_status(editor: &Editor, view: &View, message: Option<&str>) -> StatusLine {
         let buffer = editor.buffer(view.buffer);
         let text = buffer.text();
-        let head = view.selection.primary().head;
+        let head = cursor_byte(text, view.selection.primary(), editor.cursor_shape());
         let line = text.byte_to_line(head);
         let column = text.byte_to_char(head) - text.line_to_char(line) + 1;
         let middle = match message {
@@ -1230,6 +1230,7 @@ fn gutter_width(editor: &Editor, view: &View) -> (usize, bool) {
 fn cell_tags(
     view: &View,
     cell: &Cell,
+    cursors: &[usize],
     capture: Option<Arc<str>>,
     marks: &[&Mark],
     diagnostics: &[(Range<usize>, u8)],
@@ -1244,7 +1245,7 @@ fn cell_tags(
     };
     let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
     tags.extend(on_cell(false));
-    tags.extend(selection_tags(view, cell));
+    tags.extend(selection_tags(view, cell, cursors));
     tags.extend(on_cell(true));
     let at_cell =
         |r: &Range<usize>| r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte);
@@ -1255,18 +1256,43 @@ fn cell_tags(
 }
 
 /// Selection and cursor tags for one cell.
-fn selection_tags(view: &View, cell: &Cell) -> SmallVec<[Tag; 2]> {
+fn selection_tags(view: &View, cell: &Cell, cursors: &[usize]) -> SmallVec<[Tag; 2]> {
     let mut out = SmallVec::new();
-    let primary = view.selection.primary_index();
-    for (i, range) in view.selection.ranges().iter().enumerate() {
+    for range in view.selection.ranges() {
         if !cell.end_of_line && range.from() <= cell.byte && cell.byte < range.to() {
             out.push(Tag::SELECTION);
         }
-        if range.is_empty() && range.head == cell.byte && i != primary {
-            out.push(Tag::CURSOR);
-        }
+    }
+    if cursors.contains(&cell.byte) {
+        out.push(Tag::CURSOR);
     }
     out
+}
+
+/// Where a selection's cursor is drawn. A block sits on a character: for a
+/// selection going forward, its last one, as in Helix. A bar sits at the head.
+fn cursor_byte(text: &Rope, range: kern_text::Range, shape: CursorShape) -> usize {
+    let head = range.head.min(text.len_bytes());
+    if shape != CursorShape::Bar && range.anchor < head {
+        text.char_to_byte(text.byte_to_char(head) - 1)
+    } else {
+        head
+    }
+}
+
+/// Where the primary cursor is drawn, and the others: each selection's in
+/// a mode whose cursor sits on characters, otherwise only empty ones'.
+fn cursors(text: &Rope, view: &View, shape: CursorShape) -> (usize, Vec<usize>) {
+    let index = view.selection.primary_index();
+    let others = view
+        .selection
+        .ranges()
+        .iter()
+        .enumerate()
+        .filter(|&(i, range)| i != index && (shape != CursorShape::Bar || range.is_empty()))
+        .map(|(_, &range)| cursor_byte(text, range, shape))
+        .collect();
+    (cursor_byte(text, view.selection.primary(), shape), others)
 }
 
 /// The bytes the rows from `scroll` can show: whole lines, at most one per

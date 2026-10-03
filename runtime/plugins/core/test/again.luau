@@ -7,7 +7,7 @@ local function check(t: test.TestContext, before: string, keys: string, after: s
 end
 
 test(". repeats the last change, typed text and all", function(t)
-	check(t, "^one| two three", "c O N E esc w e .", "ONE ONE| three")
+	check(t, "^one| two three", "c O N E esc w w .", "ONE two ONE|")
 	check(t, "a|b\ncd", "i x esc j .", "axb\ncdx|")
 end)
 

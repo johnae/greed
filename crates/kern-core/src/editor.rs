@@ -927,10 +927,12 @@ impl Editor {
 
     /// The cursor shape for the current mode.
     pub fn cursor_shape(&self) -> CursorShape {
-        self.cursor_shapes
-            .get(&self.mode)
-            .copied()
-            .unwrap_or_default()
+        self.cursor_shape_of(&self.mode)
+    }
+
+    /// The cursor shape for `mode`: a block unless set otherwise.
+    pub fn cursor_shape_of(&self, mode: &str) -> CursorShape {
+        self.cursor_shapes.get(mode).copied().unwrap_or_default()
     }
 
     pub fn keymap(&self) -> &Keymap {

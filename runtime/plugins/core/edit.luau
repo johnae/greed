@@ -18,19 +18,42 @@ local function to(range: kern.Range): number
 	return math.max(range.anchor, range.head)
 end
 
+-- Whether the insert session started with `a`, which Helix leaves with the
+-- cursor on the last character typed rather than the one after it.
+local appending = false
+
 -- Everything typed in one insert session, plus the delete that `change` does
 -- before it, is undone as one step.
-local function enter_insert()
+local function enter_insert(append: boolean?)
+	appending = append == true
 	kern.history.start_group()
 	kern.mode.set("insert")
+end
+
+-- `range`, or for a bare cursor sitting on a character (a block), that
+-- character, which commands like copy and paste act on as Helix does.
+local function on_cursor(buffer: kern.Buffer, range: kern.Range): kern.Range
+	if range.anchor == range.head and range.head < buffer:len() and motions.on_chars() then
+		return { anchor = range.head, head = buffer:next_char(range.head) }
+	end
+	return range
 end
 
 kern.command({
 	name = "normal-mode",
 	doc = "Back to the editing style's own mode (normal, in Helix's)",
-	run = function()
+	run = function(ctx)
 		kern.history.end_group()
 		kern.mode.set(style.home())
+		if appending and motions.on_chars() then
+			each_range(ctx, function(buffer, range)
+				local start = buffer:line_start(buffer:line_of(range.head))
+				return if range.anchor == range.head and range.head > start
+					then point(buffer:prev_char(range.head))
+					else range
+			end)
+		end
+		appending = false
 	end,
 })
 
@@ -55,7 +78,7 @@ kern.command({
 			end
 			return point(math.min(buffer:len(), buffer:next_char(range.head)))
 		end)
-		enter_insert()
+		enter_insert(true)
 	end,
 })
 
@@ -230,6 +253,7 @@ kern.command({
 local function copy_selections(ctx: kern.Context, quiet: boolean?): boolean
 	local pieces = {}
 	for _, range in ctx.view:selection().ranges do
+		range = on_cursor(ctx.buffer, range)
 		if range.anchor ~= range.head then
 			table.insert(pieces, ctx.buffer:slice(from(range), to(range)))
 		end
@@ -285,7 +309,7 @@ local function paste(ctx: kern.Context, after: boolean)
 		local shift = 0
 		for i, range in selection.ranges do
 			local piece = string.rep(if one_each then pieces[i] else joined, ctx.count or 1)
-			local at, inserted = paste_place(ctx.buffer, range, after, piece)
+			local at, inserted = paste_place(ctx.buffer, on_cursor(ctx.buffer, range), after, piece)
 			e:insert(at, inserted)
 			selection.ranges[i] = { anchor = at + shift, head = at + shift + #inserted }
 			shift += #inserted

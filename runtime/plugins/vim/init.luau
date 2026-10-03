@@ -110,9 +110,27 @@ kern.on("command.run", function(event: kern.CommandRun)
 	end
 end)
 
+-- The character the cursor is on. In visual mode the selection includes it,
+-- so going forward it's the selection's last character.
 local function cursor(ctx: kern.Context): number
 	local selection = ctx.view:selection()
-	return selection.ranges[selection.primary].head
+	return core.motions.cursor(ctx.buffer, selection.ranges[selection.primary])
+end
+
+-- A visual selection from the character at `from` to the one at `to`, both
+-- included, whichever way round.
+local function visual(buffer: Buffer, from: number, to: number): kern.Selection
+	local range = if to >= from
+		then { anchor = from, head = buffer:next_char(to) }
+		else { anchor = buffer:next_char(from), head = to }
+	return { ranges = { range }, primary = 1 }
+end
+
+-- The character a visual selection started on.
+local function visual_start(buffer: Buffer, range: kern.Range): number
+	return if range.head > range.anchor or range.anchor == range.head
+		then range.anchor
+		else buffer:prev_char(range.anchor)
 end
 
 local function point(pos: number): kern.Selection
@@ -654,7 +672,7 @@ for key, motion in motions do
 	command("motion-" .. string.gsub(key, " ", ""), "Vim motion " .. key, function(ctx)
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local target = motion(ctx.buffer, range.head, ctx.count or (if key == "G" then 0 else 1))
+		local target = motion(ctx.buffer, cursor(ctx), ctx.count or (if key == "G" then 0 else 1))
 		if target == nil then
 			return
 		end
@@ -664,10 +682,7 @@ for key, motion in motions do
 				lines_selection(ctx.buffer, visual_line, ctx.buffer:line_of(target))
 			)
 		elseif mode == "vim-visual" then
-			ctx.view:set_selection({
-				ranges = { { anchor = range.anchor, head = target } },
-				primary = 1,
-			})
+			ctx.view:set_selection(visual(ctx.buffer, visual_start(ctx.buffer, range), target))
 		else
 			ctx.view:set_selection(point(on_char(ctx.buffer, target)))
 		end
@@ -684,7 +699,14 @@ for _, op in { "d", "c", "y", ">", "<", "gc" } do
 			if mode == "vim-visual-line" then
 				apply(ctx, op, motion_range(ctx.buffer, from, to, "line"))
 			else
-				apply(ctx, op, from, math.min(ctx.buffer:next_char(to), ctx.buffer:len()), false)
+				-- The selection already includes the cursor's character.
+				apply(
+					ctx,
+					op,
+					from,
+					math.max(to, math.min(ctx.buffer:next_char(from), ctx.buffer:len())),
+					false
+				)
 			end
 			return
 		end
@@ -836,7 +858,8 @@ command("normal", "Back to normal mode", function(ctx)
 end)
 
 command("visual", "Select characters, starting here", function(ctx)
-	ctx.view:set_selection(point(cursor(ctx)))
+	local at = cursor(ctx)
+	ctx.view:set_selection(visual(ctx.buffer, at, at))
 	kern.mode.set("vim-visual")
 end)
 
@@ -882,10 +905,7 @@ for _, around in { false, true } do
 	command(`visual-{word}`, `Select {word} the text object typed next`, function(ctx)
 		local from, to = text_object(ctx.buffer, cursor(ctx), kern.next_key(), around)
 		if from and to then
-			ctx.view:set_selection({
-				ranges = { { anchor = from, head = math.max(ctx.buffer:prev_char(to), from) } },
-				primary = 1,
-			})
+			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 		end
 	end)
 end

@@ -239,9 +239,9 @@ end)
 
 test("the command palette shows each command's keys", function(t)
 	t:buffer("|abc")
-	t:keys("space ? g o t o - e n d")
+	t:keys("space ? g o t o - l a s t")
 	assert(
-		string.find(kern.view():buffer():text(), "goto-end  (g e)", 1, true),
+		string.find(kern.view():buffer():text(), "goto-last-line  (g e)", 1, true),
 		kern.view():buffer():text()
 	)
 	t:keys("esc")

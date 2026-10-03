@@ -1,5 +1,7 @@
 -- Buffers are written with markers: `|` is a selection's head and `^` its
--- anchor (left out for cursors). "^hello |world" selects "hello ".
+-- anchor (left out for cursors). "^hello |world" selects "hello ". In
+-- normal mode the cursor is a block on a character, as in Helix: on the
+-- one after a lone `|`, and on a selection's last character going forward.
 
 local test = require("@kern/test")
 
@@ -27,17 +29,20 @@ test("word motions select what they move over", function(t)
 	check(t, "|hello world", "w w", "hello ^world|")
 	check(t, "|foo.bar", "w", "^foo|.bar")
 	check(t, "|héllo wörld", "w", "^héllo |wörld")
-	check(t, "hello wor|ld", "b", "hello |wor^ld")
+	-- The character under the cursor is part of what it moves over.
+	check(t, "hello wor|ld", "b", "hello |worl^d")
 	check(t, "hello |world", "b", "|hello ^world")
 	check(t, "|hello world", "e", "^hello| world")
 	check(t, "hello| world", "e", "hello^ world|")
 end)
 
 test("line and buffer jumps", function(t)
-	check(t, "ab|c\ndef", "g l", "abc|\ndef")
+	-- g l lands on the line's last character.
+	check(t, "a|bc\ndef", "g l", "ab|c\ndef")
 	check(t, "ab|c\ndef", "g h", "|abc\ndef")
 	check(t, "abc\nde|f", "g g", "|abc\ndef")
-	check(t, "a|bc\ndef", "g e", "abc\ndef|")
+	check(t, "a|bc\ndef", "g e", "abc\n|def")
+	check(t, "a|bc\ndef\n", "g e", "abc\n|def\n")
 end)
 
 test("select line includes the line break", function(t)
@@ -46,21 +51,23 @@ test("select line includes the line break", function(t)
 end)
 
 test("collapse and flip", function(t)
-	check(t, "^hello |world", ";", "hello |world")
+	-- ; keeps the cursor on the character it was on.
+	check(t, "^hello |world", ";", "hello| world")
+	check(t, "|a,b", "f , ; d", "a|b")
 	check(t, "^hello |world", "alt-;", "|hello ^world")
 end)
 
 test("extend moves keep the anchor", function(t)
+	-- Both ends stay on whole characters, the cursor's included.
 	t:buffer("ab|cd\nef")
-	t:run("extend-right")
 	t:run("extend-right")
 	t:expect("ab^cd|\nef")
 	t:run("extend-down")
 	t:expect("ab^cd\nef|")
 	t:run("extend-line-start")
-	t:expect("ab^cd\n|ef")
+	t:expect("ab^cd\ne|f")
 	t:run("extend-start")
-	t:expect("|ab^cd\nef")
+	t:expect("|abc^d\nef")
 end)
 
 test("word moves and select all", function(t)
@@ -99,13 +106,16 @@ test("G goes to a line by number, or the last one", function(t)
 	check(t, "a\nb\nc\n|d", "3 g g", "a\nb\n|c\nd")
 end)
 
-test("f and t select to a character on the line, F and T backwards", function(t)
+test("f and t select to a character, F and T backwards, as in Helix", function(t)
 	check(t, "|a,b,c", "f ,", "^a,|b,c")
-	check(t, "|a,b,c", "t ,", "^a|,b,c")
+	-- t skips the character right after the cursor, so pressing it again moves on.
+	check(t, "|a,b,c", "t ,", "^a,b|,c")
+	check(t, "|ab,c", "t ,", "^ab|,c")
 	check(t, "|a,b,c", "2 f ,", "^a,b,|c")
-	check(t, "a,b,|c", "F ,", "a,b|,^c")
+	check(t, "a,b,|c", "F ,", "a,b|,c^")
 	check(t, "a,b,c|", "T ,", "a,b,|c^")
-	check(t, "|abc\nx,y", "f ,", "|abc\nx,y")
+	check(t, "|abc\nx,y", "f ,", "^abc\nx,|y")
+	check(t, "|abc", "f ,", "|abc")
 end)
 
 test("W, B and E move by WORDs, which include punctuation", function(t)

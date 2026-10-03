@@ -20,7 +20,7 @@ end
 
 test("saving formats the file, changing only what the formatter changed", function(t)
 	local path = squeezing(t, "one    two three")
-	t:keys("g e b")
+	t:keys("g l b")
 	t:expect("one    two |three^")
 	t:run("save")
 	assert(kern.fs.read(path) == "one two three", (kern.fs.read(path)))

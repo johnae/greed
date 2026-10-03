@@ -149,9 +149,9 @@ There is always a selection; a cursor is a selection one character wide.
 | `h j k l`, arrows | Move |
 | `w` `b` `e` | Select to the next word, previous word, word end |
 | `W` `B` `E` | The same for WORDs, which include punctuation (`a.b`) |
-| `f` `t` + a character | Select to the next one on the line, or up to it; `F` `T` go back |
+| `f` `t` + a character | Select to the next one, or up to it; `F` `T` go back |
 | `x` | Select the line |
-| `g g` `g e` | Start and end of the file |
+| `g g` `g e` | Start of the file, start of its last line |
 | `G`, `5 G` | The last line, or line 5 |
 | `g h` `g l` `g s` | Start and end of the line, first character that isn't a space |
 | `m m` | The matching bracket |

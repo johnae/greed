@@ -91,8 +91,9 @@ end)
 
 test("acting on the selection leaves select mode", function(t)
 	t:buffer("|abc def")
+	-- The character the cursor started on is part of the selection.
 	t:keys("v l l d")
-	t:expect("|c def")
+	t:expect("| def")
 	t:expect_mode("normal")
 end)
 

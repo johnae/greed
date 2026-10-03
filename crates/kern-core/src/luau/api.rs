@@ -587,6 +587,20 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             Ok(())
         })?,
     )?;
+    mode.set(
+        "shape",
+        lua.create_function(|lua, name: Option<String>| {
+            let state = state(lua);
+            let editor = &state.editor;
+            Ok(
+                match editor.cursor_shape_of(name.as_deref().unwrap_or(editor.mode())) {
+                    CursorShape::Block => "block",
+                    CursorShape::Bar => "bar",
+                    CursorShape::Underline => "underline",
+                },
+            )
+        })?,
+    )?;
     Ok(mode)
 }
 

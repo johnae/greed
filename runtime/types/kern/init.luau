@@ -335,6 +335,8 @@ export type Mode = {
 	set: (name: string) -> (),
 	--- How the cursor looks in `mode`; modes without a shape get a block.
 	cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
+	--- The cursor shape of `mode`, or of the current mode. A block or underline sits on a character, the last of a selection going forward; a bar sits between characters.
+	shape: (mode: string?) -> "block" | "bar" | "underline",
 }
 
 export type OptionValue = boolean | number | string

@@ -38,6 +38,11 @@ x x d      select two lines, delete them
 % s foo    select every "foo" in the file; typing now edits them all
 ```
 
+The cursor sits on a character, as in Helix, and is part of what you
+select: `v l l` selects three characters, `;` leaves the cursor on the
+character it was on, and `d` on a bare cursor deletes that character.
+`w`, `b` and `e` move exactly as Helix's do.
+
 Why it's the default: you see what a command will act on before you run
 it, and many selections are part of the model rather than a separate
 feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then

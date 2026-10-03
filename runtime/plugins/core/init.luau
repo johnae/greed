@@ -32,6 +32,7 @@ local folds = require("@self/folds")
 local config = require("@self/config")
 local effects = require("@self/effects")
 local again = require("@self/again")
+local words = require("@self/words")
 
 kern.keymap.bind("normal", {
 	enter = "press-button",
@@ -51,7 +52,7 @@ kern.keymap.bind("normal", {
 	["g h"] = "line-start",
 	["g l"] = "line-end",
 	["g g"] = "goto-start",
-	["g e"] = "goto-end",
+	["g e"] = "goto-last-line",
 	["g w"] = "jump-to-word",
 	G = "goto-line",
 	["g s"] = "first-non-blank",
@@ -181,5 +182,6 @@ return {
 	jumps = jumps,
 	objects = objects,
 	syntax = syntax,
+	words = words,
 	registers = registers,
 }

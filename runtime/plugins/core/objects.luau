@@ -163,7 +163,7 @@ for _, big in { false, true } do
 			name,
 			`Select the {what}{if outer then " and the space after it" else ""}`,
 			function(buffer, range)
-				return word(buffer, range.head, big, outer)
+				return word(buffer, motions.cursor(buffer, range), big, outer)
 			end
 		)
 		M.keys[`m {if outer then "a" else "i"} {w}`] = name
@@ -184,7 +184,7 @@ for char, label in NAMES do
 		local side = if outer then "around" else "inside"
 		local name = `select-{side}-{label}`
 		object(name, `Select {side} the {label}`, function(buffer, range, count)
-			local from, to = around(buffer, range.head, char, count)
+			local from, to = around(buffer, motions.cursor(buffer, range), char, count)
 			if from == nil or to == nil then
 				return nil
 			end
@@ -238,7 +238,7 @@ local function replace_pairs(ctx: kern.Context, char: string, open: string, clos
 	local buffer = ctx.buffer
 	local found, seen = {}, {}
 	for _, range in ctx.view:selection().ranges do
-		local from, to = around(buffer, range.head, char)
+		local from, to = around(buffer, motions.cursor(buffer, range), char)
 		if from and to and not seen[from] then
 			seen[from] = true
 			table.insert(found, { from, to })

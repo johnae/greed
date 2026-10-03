@@ -86,7 +86,27 @@ fn selections_and_cursors_are_tagged() {
     let f = frame(&mut ed, 20, 2);
     assert_eq!(tagged(&f, &Tag::SELECTION), ["hello"]);
     assert_eq!(tagged(&f, &Tag::CURSOR), ["r"]);
+    // A block cursor sits on the selection's last character, as in Helix.
+    assert_eq!(f.cursor, Some(Position { col: 6, row: 0 }));
+}
+
+#[test]
+fn a_bar_cursor_sits_between_characters_and_shows_only_on_cursors() {
+    let mut ed = editor("^hello| ^wo|rld");
+    ed.set_cursor_shape("normal", kern_core::CursorShape::Bar);
+    let f = frame(&mut ed, 20, 2);
     assert_eq!(f.cursor, Some(Position { col: 7, row: 0 }));
+    assert!(
+        tagged(&f, &Tag::CURSOR).is_empty(),
+        "no cursors drawn on selections"
+    );
+    ed.set_cursor_shape("normal", kern_core::CursorShape::Block);
+    let f = frame(&mut ed, 20, 2);
+    assert_eq!(
+        tagged(&f, &Tag::CURSOR),
+        ["o"],
+        "each selection shows its cursor"
+    );
 }
 
 #[test]

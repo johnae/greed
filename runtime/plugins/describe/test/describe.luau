@@ -39,7 +39,7 @@ test("describing a key waits for the keys and shows their command", function(t)
 	assert(#t:floats() == 0, "g starts longer sequences, so it waits for more")
 	t:keys("e")
 	local help = t:floats()[1]
-	assert(help and string.find(help, "goto-end", 1, true), help)
+	assert(help and string.find(help, "goto-last-line", 1, true), help)
 	-- The keys described didn't run.
 	t:keys("esc")
 	t:expect("|abc")

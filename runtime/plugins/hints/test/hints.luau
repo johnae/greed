@@ -7,7 +7,10 @@ test("a prefix key shows what can follow it", function(t)
 	local floats = t:floats()
 	assert(#floats == 1, "one hint window")
 	assert(string.find(floats[1], "g        Move to the start of the buffer", 1, true), floats[1])
-	assert(string.find(floats[1], "e        Move to the end of the buffer", 1, true), floats[1])
+	assert(
+		string.find(floats[1], "e        Move to the start of the last line", 1, true),
+		floats[1]
+	)
 	t:expect("|abc")
 end)
 
