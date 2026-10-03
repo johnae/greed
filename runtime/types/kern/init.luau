@@ -331,6 +331,8 @@ export type Keymap = {
 	--- Every key sequence that runs `command` (every binding, without one),
 	--- the layer it's bound in (a mode name, or "global") and its command.
 	find: (command: string?) -> { { layer: string, keys: string, command: string } },
+	--- Binds single keys for the next key press only, over every layer, e.g. `{ ["1"] = "hint-1" }`; any other key drops them and does what it always does. Nil drops them now.
+	overlay: (bindings: { [string]: string }?) -> (),
 	--- What `keys` runs in the current mode: the command, or nil and whether
 	--- more keys could still finish a sequence.
 	resolve: (keys: string) -> (string?, boolean),

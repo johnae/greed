@@ -252,6 +252,9 @@ pub struct Editor {
     pending: Vec<Key>,
     /// A count typed before the pending keys.
     count: Option<u32>,
+    /// Single keys bound for the next key press only, over every layer;
+    /// any other key drops them and goes through the keymap as usual.
+    overlay: Option<HashMap<Key, Arc<str>>>,
     messages: Vec<String>,
     /// Edits made while a group is open become one undo step.
     undo_group: Option<u64>,
@@ -296,6 +299,7 @@ impl Editor {
             keymap: Keymap::default(),
             pending: Vec::new(),
             count: None,
+            overlay: None,
             messages: Vec::new(),
             undo_group: None,
             next_group: 0,
@@ -972,9 +976,26 @@ impl Editor {
         &self.pending
     }
 
+    /// Binds `keys` for the next key press only (see `overlay`), or drops
+    /// such bindings with `None`.
+    pub fn set_overlay(&mut self, keys: Option<HashMap<Key, Arc<str>>>) {
+        self.overlay = keys;
+    }
+
     /// Feeds a key press into the keymap for the current mode and focused
     /// buffer.
     pub fn press(&mut self, key: Key) -> KeyOutcome {
+        if self.pending.is_empty()
+            && self.count.is_none()
+            && let Some(overlay) = self.overlay.take()
+            && let Some(name) = overlay.get(&key)
+        {
+            return KeyOutcome::Command {
+                name: name.clone(),
+                keys: vec![key],
+                count: None,
+            };
+        }
         if let Some(digit) = self.count_digit(key) {
             self.count = Some(
                 self.count

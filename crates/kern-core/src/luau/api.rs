@@ -1,6 +1,7 @@
 //! The `kern` module plugins get from `require("@kern")`, and running
 //! commands and emitting events.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -488,6 +489,8 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             })
         })?,
     )?;
+
+    keymap.set("overlay", lua.create_function(set_overlay)?)?;
 
     keymap.set(
         "find",
@@ -1436,4 +1439,23 @@ fn run_function(lua: &Lua) -> LuaResult<Function> {
     )
     .set_name("=kern.run")
     .call(start)
+}
+
+/// `kern.keymap.overlay(bindings)`: binds single keys for the next key
+/// press only, or drops such bindings with nil.
+fn set_overlay(lua: &Lua, bindings: Option<HashMap<String, String>>) -> LuaResult<()> {
+    let overlay = bindings
+        .map(|bindings| {
+            bindings
+                .into_iter()
+                .map(|(key, command)| {
+                    Key::parse(&key)
+                        .map(|key| (key, Arc::<str>::from(command)))
+                        .map_err(mlua::Error::external)
+                })
+                .collect::<LuaResult<HashMap<_, _>>>()
+        })
+        .transpose()?;
+    state_mut(lua).editor.set_overlay(overlay);
+    Ok(())
 }
