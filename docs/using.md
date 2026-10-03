@@ -701,7 +701,8 @@ way puts the text on Kern's clipboard, so `p` pastes it.
 
 A click puts the cursor where you click and focuses that pane, dragging
 selects, and the wheel scrolls whatever's under it. Clicking a tab in the
-tab line shows it.
+tab line shows it. Drag a floating view by its top border (where the title
+is) to move it, or by another edge or a corner to resize it.
 
 Clicking a button (a proposal's accept and reject, a todo's box) presses
 it. So does `enter` in normal mode with the cursor on it; where several

@@ -33,6 +33,7 @@ local config = require("@self/config")
 local effects = require("@self/effects")
 local again = require("@self/again")
 local words = require("@self/words")
+local floats = require("@self/floats")
 
 kern.keymap.bind("normal", {
 	enter = "press-button",
@@ -183,5 +184,6 @@ return {
 	objects = objects,
 	syntax = syntax,
 	words = words,
+	floats = floats,
 	registers = registers,
 }

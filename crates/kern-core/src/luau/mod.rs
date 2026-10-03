@@ -918,6 +918,7 @@ fn mouse_event(lua: &Lua, mouse: Mouse, hit: &Hit) -> mlua::Result<()> {
         payload.set("x", hit.x)?;
         payload.set("y", hit.y)?;
         payload.set("action", hit.action.as_deref())?;
+        payload.set("border", hit.border)?;
     }
     payload.set("tab", hit.tab.map(|t| t.0))?;
     api::emit(lua, "mouse", &payload)

@@ -21,10 +21,35 @@ pub struct Hit {
     pub x: u16,
     pub y: u16,
     pub tab: Option<TabId>,
+    /// On a floating view's border, which part: "top" (where the title
+    /// is), "bottom", "left", "right", or a corner like "bottom-right".
+    pub border: Option<&'static str>,
 }
 
 fn inside(rect: Rect, col: u16, row: u16) -> bool {
     (rect.x..rect.x + rect.width).contains(&col) && (rect.y..rect.y + rect.height).contains(&row)
+}
+
+/// Which part of the border around `area` (one cell outside it) is at
+/// (`col`, `row`), if any.
+fn border_at(area: Rect, col: u16, row: u16) -> Option<&'static str> {
+    let (left, top) = (area.x.checked_sub(1)?, area.y.checked_sub(1)?);
+    let (right, bottom) = (area.x + area.width, area.y + area.height);
+    if !(left..=right).contains(&col) || !(top..=bottom).contains(&row) {
+        return None;
+    }
+    let side = |low: bool, high: bool| match (low, high) {
+        (true, _) => 0,
+        (_, true) => 2,
+        _ => 1,
+    };
+    let names = [
+        ["top-left", "top", "top-right"],
+        ["left", "", "right"],
+        ["bottom-left", "bottom", "bottom-right"],
+    ];
+    let name = names[side(row == top, row == bottom)][side(col == left, col == right)];
+    (!name.is_empty()).then_some(name)
 }
 
 impl<M: Measure> Renderer<M> {
@@ -47,10 +72,10 @@ impl<M: Measure> Renderer<M> {
             .floats()
             .iter()
             .rev()
-            .map(|f| f.view)
-            .chain(editor.panels().iter().map(|p| p.view))
-            .chain(panes);
-        for view_id in candidates {
+            .map(|f| (f.view, true))
+            .chain(editor.panels().iter().map(|p| (p.view, false)))
+            .chain(panes.into_iter().map(|v| (v, false)));
+        for (view_id, floating) in candidates {
             let Some(view) = editor.find_view(view_id) else {
                 continue;
             };
@@ -58,6 +83,14 @@ impl<M: Measure> Renderer<M> {
                 continue;
             };
             if !inside(area, col, row) {
+                // A float's border is part of it, for moving and resizing it.
+                if floating && let Some(border) = border_at(area, col, row) {
+                    return Hit {
+                        view: Some(view_id),
+                        border: Some(border),
+                        ..Hit::default()
+                    };
+                }
                 continue;
             }
             let gutter = area.width.saturating_sub(cols);
@@ -79,7 +112,7 @@ impl<M: Measure> Renderer<M> {
                 action,
                 x,
                 y,
-                tab: None,
+                ..Hit::default()
             };
         }
         Hit::default()

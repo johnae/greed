@@ -165,6 +165,9 @@ impl UserData for ViewRef {
             state_mut(lua).editor.configure_float(this.id, options);
             Ok(())
         });
+        methods.add_method("raise", |lua, this, ()| {
+            Ok(state_mut(lua).editor.raise_float(this.id))
+        });
         add_pane_methods(methods);
         methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
         methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));

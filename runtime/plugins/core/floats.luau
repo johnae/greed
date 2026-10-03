@@ -1,0 +1,83 @@
+-- Floating views move and resize with the mouse: drag the top border (where
+-- the title is) to move one, an edge or a corner to resize it. Pressing on
+-- a float's border brings it to the front.
+
+local kern = require("@kern")
+
+local M = {}
+
+--- The smallest a float gets by dragging, border included.
+M.min_width = 10
+M.min_height = 3
+
+type Area = { x: number, y: number, width: number, height: number }
+
+-- The float being dragged: which part was pressed, where, and the box it
+-- had then, border included.
+local dragging: { view: kern.View, part: string, col: number, row: number, box: Area }? = nil
+
+--- Where `box` would go after dragging its `part` by `dx` and `dy`
+--- cells: the top border moves it, the other edges and the corners resize it.
+function M.dragged(box: Area, part: string, dx: number, dy: number): Area
+	local x, y, width, height = box.x, box.y, box.width, box.height
+	if part == "top" then
+		return { x = math.max(0, x + dx), y = math.max(0, y + dy), width = width, height = height }
+	end
+	if string.find(part, "left", 1, true) then
+		dx = math.min(dx, width - M.min_width)
+		x += dx
+		width -= dx
+	elseif string.find(part, "right", 1, true) then
+		width += dx
+	end
+	if string.find(part, "top", 1, true) then
+		dy = math.min(dy, height - M.min_height)
+		y += dy
+		height -= dy
+	elseif string.find(part, "bottom", 1, true) then
+		height += dy
+	end
+	return {
+		x = math.max(0, x),
+		y = math.max(0, y),
+		width = math.max(M.min_width, width),
+		height = math.max(M.min_height, height),
+	}
+end
+
+kern.on("mouse", function(event: kern.MouseEvent)
+	if event.kind == "press" and event.button == "left" and event.border and event.view then
+		local view = event.view
+		local area = view:area()
+		if area == nil then
+			return
+		end
+		view:raise()
+		view:focus()
+		dragging = {
+			view = view,
+			part = event.border,
+			col = event.col,
+			row = event.row,
+			-- The area is the text inside the border.
+			box = {
+				x = area.x - 1,
+				y = area.y - 1,
+				width = area.width + 2,
+				height = area.height + 2,
+			},
+		}
+	elseif event.kind == "drag" and dragging then
+		local drag = dragging
+		local box = M.dragged(drag.box, drag.part, event.col - drag.col, event.row - drag.row)
+		-- The float may have closed under the mouse.
+		local spec: kern.FloatSpec = { x = box.x, y = box.y, width = box.width, height = box.height }
+		if not pcall(drag.view.configure, drag.view, spec) then
+			dragging = nil
+		end
+	elseif event.kind == "release" then
+		dragging = nil
+	end
+end)
+
+return M

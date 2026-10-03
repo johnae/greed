@@ -225,6 +225,8 @@ export type View = {
 	--- Changes how a floating view is shown; fields left out stay as they
 	--- are. Fails for views that aren't floating.
 	configure: (self: View, spec: FloatSpec) -> (),
+	--- Brings a floating view in front of the other floats; false if it isn't floating.
+	raise: (self: View) -> boolean,
 	--- Whether it's a pane of a tab, rather than a panel or a floating view.
 	is_pane: (self: View) -> boolean,
 	--- Opens a pane beside this one on its `dir` side, showing `buffer`, or
@@ -778,6 +780,8 @@ export type MouseEvent = {
 	y: number?,
 	--- The tab whose name it's over, in the tab line.
 	tab: number?,
+	--- On a floating view's border (with `view` set), which part: "top" (the title's), "bottom", "left", "right", or a corner like "bottom-right".
+	border: ("top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right")?,
 }
 
 --- A view was drawn with room for a different number of rows or columns

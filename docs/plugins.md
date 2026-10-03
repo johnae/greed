@@ -344,7 +344,7 @@ from whichever plugin made it), `option.changed`,
 columns `view:size()` also gives), `view.scrolled` (the line now at the
 top; what the handler changes shows in the same frame, so one view can
 scroll another along), `mouse` (what the mouse did, the view
-and buffer position under it, or a tab) and more. A plugin with buffers of
+and buffer position under it, a floating view's `border`, or a tab) and more. A plugin with buffers of
 its own kind can take their mouse events first with
 `require("@core").mouse.claim(kind, handler)`. `editor.started` comes once, when
 the editor is up with every plugin and config loaded, and `editor.quitting`

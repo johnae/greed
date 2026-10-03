@@ -583,6 +583,17 @@ impl Editor {
         }
     }
 
+    /// Brings a floating view in front of the others. Returns false if
+    /// `view` isn't floating.
+    pub fn raise_float(&mut self, view: ViewId) -> bool {
+        let Some(at) = self.floats.iter().position(|f| f.view == view) else {
+            return false;
+        };
+        let float = self.floats.remove(at);
+        self.floats.push(float);
+        true
+    }
+
     pub fn main(&self) -> ViewId {
         self.current_project().main()
     }
