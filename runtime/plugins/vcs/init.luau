@@ -372,6 +372,42 @@ kern.command({
 	run = M.show_changes,
 })
 
+--- The changes in progress in the repository `dir` is in, as a diff: with
+--- jj the working copy's change; with git what's staged, or everything when
+--- nothing is. Also which it is ("jj" or "git"), or nil and why not.
+function M.diff(dir: string): (string?, string?)
+	local repo = repo_of(dir .. "/.")
+	if repo == nil then
+		return nil, "not in a repository"
+	end
+	if repo.kind == "jj" then
+		return vcs(repo, { "diff", "--git" }, true), "jj"
+	end
+	local staged = vcs(repo, { "diff", "--cached" })
+	if staged and staged ~= "" then
+		return staged, "git"
+	end
+	return vcs(repo, { "diff" }), "git"
+end
+
+--- Describes the changes in progress in the repository `dir` is in with
+--- `message`: with jj the working copy's description; with git a commit of
+--- what's staged. Returns false and why when it can't.
+function M.describe(dir: string, message: string): (boolean, string?)
+	local repo = repo_of(dir .. "/.")
+	if repo == nil then
+		return false, "not in a repository"
+	end
+	local args = if repo.kind == "jj"
+		then { "jj", "describe", "-m", message }
+		else { "git", "commit", "-q", "-m", message }
+	local done, err = kern.process.run(args, { cwd = repo.root })
+	if done == nil or done.code ~= 0 then
+		return false, if done then done.stderr else err
+	end
+	return true, nil
+end
+
 --- Saves the buffers of `paths` (files in one repository) and commits just
 --- them with `message`, leaving any other changes as they were. Returns
 --- false and why when it can't.

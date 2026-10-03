@@ -24,6 +24,7 @@ return {
 	tools = registry.tools,
 	propose = proposals.propose,
 	propose_files = proposals.propose_files,
+	propose_changes = proposals.propose_changes,
 	pending = proposals.pending,
 	try = extend.try,
 	install = extend.install,

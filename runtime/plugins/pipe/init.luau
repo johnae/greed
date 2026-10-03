@@ -136,12 +136,6 @@ local SYSTEM = "You rewrite text as instructed. Reply with only the rewritten te
 	.. "no explanations, no quotes, no code fences. Keep the original's indentation and "
 	.. "line breaks unless told otherwise."
 
--- A model's answer without the code fence it may wrap around it anyway.
-local function unfenced(answer: string): string
-	local inside = string.match(answer, "^%s*```[%w_-]*\n(.-)\n?```%s*$")
-	return inside or answer
-end
-
 local function model(instruction: string): Filter
 	return function(text)
 		local role = kern.option.get("pipe-model-role") :: string
@@ -152,7 +146,7 @@ local function model(instruction: string): Filter
 		if answer == nil then
 			error(err, 0)
 		end
-		return fit(text, unfenced(answer))
+		return fit(text, models.unfenced(answer))
 	end
 end
 

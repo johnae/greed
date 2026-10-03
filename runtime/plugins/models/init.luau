@@ -236,6 +236,12 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	return stream, nil
 end
 
+--- `answer` without the code fence a model may wrap it in, when it was
+--- asked for plain text.
+function M.unfenced(answer: string): string
+	return string.match(answer, "^%s*```[%w_-]*\n(.-)\n?```%s*$") or answer
+end
+
 --- Asks the model playing `role` and waits for the whole answer.
 function M.ask(role: string, request: Request): (string?, string?)
 	local stream, err = M.stream(role, request)

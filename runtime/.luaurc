@@ -18,6 +18,7 @@
 		"statusline": "./plugins/statusline",
 		"models": "./plugins/models",
 		"pipe": "./plugins/pipe",
+		"assist": "./plugins/assist",
 		"operations": "./plugins/operations",
 		"approvals": "./plugins/approvals",
 		"vcs": "./plugins/vcs"

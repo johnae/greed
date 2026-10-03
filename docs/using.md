@@ -438,6 +438,18 @@ models.roles.review = { provider = "work", model = "reviewer-1" }
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `KERN_SECRET_NAME`.
 
+| Keys | |
+|---|---|
+| `space i e` | Explain the selection (or the line) in a panel, as the answer arrives |
+| `space i a` | Ask something about the selection |
+| `space i f` | Fix the problem the language server reports on this line, as proposed changes to review |
+| `space i c` | Draft a description of the changes in progress; `a` uses it (`jj describe`, or a git commit of what's staged) |
+
+Fixes come like an agent's proposals: `] o` goes to each change, `space o a`
+or `space o r` accepts or rejects it, and what you accept undoes as one
+operation. These use the `fast` role; `:set assist-role reasoning` asks
+another.
+
 ## Formatting
 
 Saving a file formats it, and `:format` does it without saving. Kern uses

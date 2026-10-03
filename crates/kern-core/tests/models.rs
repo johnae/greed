@@ -1,6 +1,8 @@
 //! The models plugin against a fake server that streams the way the
 //! Anthropic and `OpenAI` APIs do.
 
+mod support;
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -203,6 +205,161 @@ fn a_model_pipe_rewrites_the_selection_as_one_operation() {
     host.run("pipe-test").unwrap();
     let said = messages(&host, 3);
     assert_eq!(said[1..], ["piped", "model: shout it"], "{said:?}");
+    let text = host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string());
+    assert_eq!(text, "Hello");
+}
+
+/// A host with the assist plugin and what it needs, the fake model server as
+/// the `fast` role, and `text` open as `path`.
+fn assist_host(address: &str, text: &str, path: Option<PathBuf>) -> Host {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", text, path);
+    let host = Host::new(editor).unwrap();
+    load_assist(&host, address);
+    host
+}
+
+/// Loads the assist plugin and what it needs, with the fake model server at
+/// `address` as the `fast` role.
+fn load_assist(host: &Host, address: &str) {
+    host.load_dirs(&[
+        plugin("core"),
+        plugin("picker"),
+        plugin("terminal"),
+        plugin("multibuffer"),
+        plugin("operations"),
+        plugin("approvals"),
+        plugin("agent"),
+        plugin("vcs"),
+        plugin("models"),
+        plugin("assist"),
+    ])
+    .unwrap();
+    host.load_str(
+        "config",
+        &format!(
+            r#"
+            local models = require("@models")
+            models.providers.fake = {{ kind = "anthropic", url = "{address}" }}
+            models.roles.fast = {{ provider = "fake", model = "m1" }}
+            "#
+        ),
+    )
+    .unwrap();
+}
+
+/// Finishes jobs until `done` says so.
+fn until(host: &Host, mut done: impl FnMut(&Host) -> bool) {
+    let jobs = host.finished_jobs();
+    while !done(host) {
+        let job = jobs
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a job finished");
+        host.finish_job(job).unwrap();
+    }
+}
+
+fn buffer_of_kind(host: &Host, kind: &str) -> Option<String> {
+    host.with_editor(|ed| {
+        ed.buffers()
+            .find(|b| b.kind() == kind)
+            .map(|b| b.text().to_string())
+    })
+}
+
+#[test]
+fn explain_writes_the_answer_into_a_panel_as_it_arrives() {
+    let host = assist_host(&serve(), "let x = 1;", None);
+    host.run("explain").unwrap();
+    until(&host, |h| {
+        buffer_of_kind(h, "answer").as_deref() == Some("Hello")
+    });
+}
+
+#[test]
+fn a_drafted_description_commits_what_is_staged() {
+    let dir = std::env::temp_dir().join(format!("kern-assist-git-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "first"]);
+    std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+    git(&["add", "."]);
+    let host = assist_host(&serve(), "two\n", Some(dir.join("a.txt")));
+    host.run("commit-message").unwrap();
+    until(&host, |h| {
+        buffer_of_kind(h, "commit-message").as_deref() == Some("Hello")
+    });
+    // a, in the description buffer.
+    host.load_str(
+        "press-a",
+        r#"
+        local kern = require("@kern")
+        kern.command { name = "press-a", run = function()
+            for _, buffer in kern.buffers() do
+                if buffer:kind() == "commit-message" then
+                    buffer:views()[1]:focus()
+                end
+            end
+            kern.run("commit-message-apply")
+        end }
+        "#,
+    )
+    .unwrap();
+    host.run("press-a").unwrap();
+    until(&host, |_| git(&["log", "-1", "--format=%s"]) == "Hello\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_fix_comes_as_a_proposal_to_review() {
+    let address = serve();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "let x = bad;",
+        Some(std::env::temp_dir().join("kern-assist-fix/main.rs")),
+    );
+    let host = Host::new(editor).unwrap();
+    let (input, output, _log) = support::start();
+    host.connect_lsp("rust", Box::new(input), output).unwrap();
+    load_assist(&host, &address);
+    host.sync_lsp();
+    // Drive both servers: the language server's events and the model's job.
+    let lsp = host.lsp_events();
+    let jobs = host.finished_jobs();
+    let step = |host: &Host| {
+        crossbeam_channel::select! {
+            recv(lsp) -> event => host.handle_lsp(event.unwrap()).unwrap(),
+            recv(jobs) -> job => host.finish_job(job.unwrap()).unwrap(),
+            default(Duration::from_secs(5)) => panic!("nothing happened"),
+        }
+    };
+    while !host.diagnostic_marks().values().any(|d| !d.is_empty()) {
+        step(&host);
+    }
+    host.run("fix").unwrap();
+    let pending = |host: &Host| host.eval("require('@agent').pending()").unwrap();
+    while pending(&host) == "0" {
+        step(&host);
+    }
+    host.press_keys("space o A").unwrap();
     let text = host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string());
     assert_eq!(text, "Hello");
 }
