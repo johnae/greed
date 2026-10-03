@@ -727,6 +727,7 @@ local LINE_OPERATORS: { [string]: string } = {
 	["gw"] = "reflow",
 	["="] = "reindent-lines",
 	["!"] = "pipe",
+	["zf"] = "fold-selection",
 }
 
 -- Operators that rewrite the text they cover, character by character.
@@ -1103,7 +1104,7 @@ local function block_operate(ctx: kern.Context, op: string)
 	kern.mode.set("vim-insert")
 end
 
-for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw", "=", "!" } do
+for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw", "=", "!", "zf" } do
 	command("operator-" .. op, "Vim operator " .. op .. ", followed by a motion", function(ctx)
 		local mode = kern.mode.get()
 		if mode == "vim-visual-block" then
@@ -1276,6 +1277,138 @@ command("open-above", "Open a line above and insert", function(ctx)
 	open_line(ctx, false)
 end)
 
+command("insert-one", "Run one normal mode command, then go on typing", function(ctx)
+	local before = ctx.view:selection()
+	kern.mode.set("vim")
+	local keys: string?, count: number? = nil, nil
+	while true do
+		local key = kern.next_key()
+		if keys == nil and string.match(key, "^%d$") and (count or key ~= "0") then
+			count = (count or 0) * 10 + (tonumber(key) :: number)
+		else
+			keys = if keys then keys .. " " .. key else key
+			local name, more = kern.keymap.resolve(keys :: string)
+			if name then
+				kern.run(name, { count = count })
+				break
+			elseif not more then
+				break
+			end
+		end
+	end
+	-- Back to typing, unless the command went to another mode. A command that
+	-- didn't move leaves the cursor where typing was, even past the line's end.
+	if kern.mode.get() == "vim" then
+		local after = ctx.view:selection()
+		local moved = after.ranges[1].head ~= before.ranges[1].head
+			or after.ranges[1].anchor ~= before.ranges[1].anchor
+		kern.mode.set("vim-insert")
+		ctx.view:set_selection(if moved then point(cursor(ctx)) else before)
+	end
+end)
+
+-- R's replace mode: what each typed character took the place of, put back
+-- by backspace.
+local replaced: { { pos: number, text: string } } = {}
+
+command("replace-mode", "Type over the text", function(ctx)
+	kern.history.start_group()
+	replaced = {}
+	ctx.view:set_selection(point(cursor(ctx)))
+	kern.mode.set("vim-replace")
+end)
+
+command("replace-typed", "Type over the character under the cursor", function(ctx)
+	local char = ctx.char
+	if char == nil then
+		return
+	end
+	local buffer, pos = ctx.buffer, cursor(ctx)
+	local _, _, finish = line_bounds(buffer, pos)
+	local to = if pos < finish then buffer:next_char(pos) else pos
+	table.insert(replaced, { pos = pos, text = buffer:slice(pos, to) })
+	buffer:edit(function(e)
+		e:replace(pos, to, char)
+		e:select(point(pos + #char))
+	end)
+end)
+
+command("replace-back", "Put back the character typed over last, or move left", function(ctx)
+	local buffer, pos = ctx.buffer, cursor(ctx)
+	local last = table.remove(replaced)
+	if last == nil then
+		local _, start = line_bounds(buffer, pos)
+		if pos > start then
+			ctx.view:set_selection(point(buffer:prev_char(pos)))
+		end
+		return
+	end
+	buffer:edit(function(e)
+		e:replace(last.pos, pos, last.text)
+		e:select(point(last.pos))
+	end)
+end)
+
+-- The change list for g; and g,: where the last changes in each buffer
+-- were, kept as marks so they move with edits, numbered oldest first.
+local CHANGES = 100
+local changes_made = 0
+-- How far back g; has gone in each buffer, by its id; 0 is past the newest.
+local changes_back: { [number]: number } = {}
+
+local function changes(buffer: Buffer): { kern.Mark }
+	local marks = buffer:decorations("vim-changes")
+	table.sort(marks, function(a: kern.Mark, b: kern.Mark)
+		return (tonumber(a.style) :: number) < (tonumber(b.style) :: number)
+	end)
+	return marks
+end
+
+kern.on("buffer.changed", function(event: kern.BufferChanged)
+	local view = kern.view()
+	local buffer = event.buffer
+	if view:buffer():id() ~= buffer:id() then
+		return
+	end
+	local selection = view:selection()
+	local pos = math.min(selection.ranges[selection.primary].head, buffer:len())
+	local marks = changes(buffer)
+	-- Another change on the same line takes the place of the last one.
+	local newest = marks[#marks]
+	if newest and buffer:line_of(newest.from) == buffer:line_of(pos) then
+		table.remove(marks)
+	elseif #marks >= CHANGES then
+		table.remove(marks, 1)
+	end
+	changes_made += 1
+	table.insert(marks, { from = pos, to = pos, style = tostring(changes_made) })
+	buffer:decorate("vim-changes", marks)
+	changes_back[buffer:id()] = 0
+end)
+
+-- g; and g,: to an older change, or back to a newer one.
+for _, newer in { false, true } do
+	command(
+		if newer then "change-newer" else "change-older",
+		if newer
+			then "Go to a newer place in the change list"
+			else "Go to an older place in the change list",
+		function(ctx)
+			local buffer = ctx.buffer
+			local marks = changes(buffer)
+			local back = (changes_back[buffer:id()] or 0)
+				+ (ctx.count or 1) * (if newer then -1 else 1)
+			local mark = marks[#marks - back + 1]
+			if back < 1 or mark == nil then
+				kern.echo(if newer then "at the newest change" else "at the oldest change")
+				return
+			end
+			changes_back[buffer:id()] = back
+			ctx.view:set_selection(point(on_char(buffer, mark.from)))
+		end
+	)
+end
+
 -- Types what 3i or 3o typed twice more, ending at `pos`. Returns where the
 -- cursor goes.
 local function repeat_insert(buffer: Buffer, pos: number): number
@@ -1298,8 +1431,10 @@ command("normal", "Back to normal mode", function(ctx)
 	local mode = kern.mode.get()
 	local buffer = ctx.buffer
 	local pos = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
-	if mode == "vim-insert" then
-		pos = repeat_insert(buffer, pos)
+	if mode == "vim-insert" or mode == "vim-replace" then
+		if mode == "vim-insert" then
+			pos = repeat_insert(buffer, pos)
+		end
 		set_mark(buffer, "^", pos)
 		-- Leaving insert mode steps back onto the last character typed.
 		local _, start = line_bounds(buffer, pos)
@@ -1795,6 +1930,15 @@ local keys: { [string]: string } = {
 	["g n"] = "vim-select-match",
 	["Z Z"] = "save-quit",
 	["Z Q"] = "vim-quit-unsaved",
+	R = "vim-replace-mode",
+	["g ;"] = "vim-change-older",
+	["g ,"] = "vim-change-newer",
+	["z f"] = "vim-operator-zf",
+	["z M"] = "fold-close-all",
+	["z j"] = "fold-next",
+	["z k"] = "fold-prev",
+	["z d"] = "fold-open",
+	["z E"] = "fold-open-all",
 }
 local visual: { [string]: string } = {
 	d = "vim-operator-d",
@@ -1815,6 +1959,7 @@ local visual: { [string]: string } = {
 	["g q"] = "vim-operator-gq",
 	["="] = "vim-operator-=",
 	["!"] = "vim-operator-!",
+	["z f"] = "vim-operator-zf",
 	i = "vim-visual-inside",
 	a = "vim-visual-around",
 	o = "vim-visual-swap",
@@ -1830,7 +1975,18 @@ for key in motions do
 end
 kern.keymap.bind("vim", keys)
 kern.keymap.bind("vim-visual", visual)
-kern.keymap.bind("vim-insert", { esc = "vim-normal" })
+kern.keymap.bind("vim-insert", {
+	esc = "vim-normal",
+	["ctrl-o"] = "vim-insert-one",
+	["ctrl-t"] = "indent",
+	["ctrl-d"] = "dedent",
+	["ctrl-n"] = "completion-words",
+	["ctrl-p"] = "completion-words-back",
+})
+kern.keymap.inherit("vim-replace", "vim-insert")
+kern.keymap.bind("vim-replace", { backspace = "vim-replace-back" })
+kern.keymap.fallback("vim-replace", "vim-replace-typed")
+kern.mode.cursor("vim-replace", "underline")
 kern.keymap.counts("vim")
 kern.keymap.counts("vim-visual")
 kern.keymap.inherit("vim-visual-line", "vim-visual")
@@ -1853,6 +2009,7 @@ core.style.define({
 		["vim-visual"] = "visual",
 		["vim-visual-line"] = "visual line",
 		["vim-visual-block"] = "visual block",
+		["vim-replace"] = "replace",
 	},
 	plugin = "vim",
 })

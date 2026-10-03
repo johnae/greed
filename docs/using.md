@@ -308,7 +308,10 @@ In Vim's style the same objects are `if` `af`, `ia` `aa` and `ic` `ac`, as in
 A block is the smallest function, body, table or similar around the
 cursor's line, from the language's grammar. In a language without one,
 it's the lines indented under the nearest line indented less, and in
-Markdown it's the section under a heading. Vim's style has the same keys.
+Markdown it's the section under a heading. Vim's style has the same keys,
+and also `z M` to fold every outermost block, `z f` + a motion to fold
+those lines, `z j` `z k` to go to the next or previous block, and `z d`
+`z E` to unfold.
 
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
 edit` switch to those; [Editing styles](editing-styles.md) explains each.
@@ -406,7 +409,8 @@ after a letter or a `.`. The menu narrows as you keep typing.
 | `ctrl-space` | Ask for completions now |
 
 `:set completion-delay 300` waits longer before asking; `0` stops asking
-while you type, leaving `ctrl-space`.
+while you type, leaving `ctrl-space`. In Vim's style, `ctrl-n` and `ctrl-p`
+in insert mode complete from the words in open files.
 
 Typing `(` or `,` in a call shows what the function takes, above the
 cursor, with the parameter you're on picked out. It follows along as you

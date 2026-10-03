@@ -80,7 +80,10 @@ character, and `v` starts a visual mode for selecting by hand.
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
-| `z z` `z t` `z b`, `z a` `z c` `z o` `z R` | Center the view, cursor line to the top or bottom; folds |
+| `z z` `z t` `z b`, `z a` `z c` `z o` `z R` `z M` `z f` `z j` `z k` `z d` `z E` | Center the view, cursor line to the top or bottom; folds |
+| `R` | Type over the text; `backspace` puts back what it replaced |
+| `g ;` `g ,` | Back and forward through the places you changed |
+| `ctrl-o` `ctrl-t` `ctrl-d` `ctrl-n` `ctrl-p` in insert mode | One normal mode command, indent, dedent, complete from words in open files |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
 | `m` + a letter, `'` `` ` `` + a letter | Set a mark (`a`–`z` in the file, `A`–`Z` across files), go to its line or to it |
 | `.` | Repeat the last change, with what it typed |
@@ -92,7 +95,7 @@ Why it's here: Vim's keys are in a lot of people's hands, and switching
 editors shouldn't mean relearning them. It also shows how far a plugin can
 go: the Vim style is plain Luau against the same API any plugin uses, with
 its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`,
-`vim-visual-block`) beside Helix's.
+`vim-visual-block`, `vim-replace`) beside Helix's.
 
 The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
