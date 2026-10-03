@@ -12,6 +12,7 @@ mod diff;
 mod fs;
 mod handles;
 mod history;
+mod http;
 mod images;
 mod jobs;
 mod json;
@@ -125,6 +126,8 @@ pub(crate) struct State {
     pub approvals: Option<approvals::Approvals>,
     /// The folders of plugins waiting for approval, oldest first.
     pub pending: Vec<PathBuf>,
+    /// HTTP streams being read.
+    pub http: http::Streams,
 }
 
 #[derive(Clone)]
@@ -262,6 +265,7 @@ impl Host {
             running: None,
             approvals: None,
             pending: Vec::new(),
+            http: http::Streams::default(),
         });
         lua.set_app_data(Deadline {
             at: Cell::new(None),
@@ -750,10 +754,7 @@ pub(crate) fn describe(lua: &Lua, dir: &Path) -> mlua::Result<mlua::Table> {
     t.set("requires", manifest.requires)?;
     let list = lua.create_table()?;
     for name in &manifest.capabilities {
-        let what = capabilities::KNOWN
-            .iter()
-            .find(|(known, _)| known == name)
-            .map_or("", |(_, what)| what);
+        let what = capabilities::what(name).unwrap_or_default();
         let entry = lua.create_table()?;
         entry.set("name", name.as_str())?;
         entry.set("what", what)?;

@@ -37,7 +37,8 @@ capabilities = ["proc", "fs.read"]
 | `fs.read` | Files by path: `kern.fs` reads, `kern.files`, `kern.load`, `kern.open`, `kern.image.load` |
 | `fs.write` | `kern.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
 | `clipboard` | Reading what you copied (`kern.clipboard.get`, `history`); setting it needs nothing |
-| `net` | The network, like the Claude Code connection |
+| `net` | The network: `kern.http` to any host, and the Claude Code connection |
+| `net:HOST` | `kern.http` to one host, e.g. `net:api.anthropic.com` |
 | `eval` | `kern.eval`, which runs Luau with every capability |
 | `plugins` | Loading, unloading and checking other plugins |
 
@@ -338,6 +339,36 @@ with `terminal:screen()` and `terminal:scrollback(from)`, and
 cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
 which you can use in your own marks too. A terminal ends with the plugin
 that started it.
+
+## The network
+
+`kern.http.request({ url, method, headers, body, timeout })` returns the
+whole response (`status`, `headers` with lowercase names, `body`), or nil
+and why. `kern.http.stream(...)` returns once the status and headers are
+in, and `read()` gives the body piece by piece as it arrives, which is how
+model APIs stream their answers:
+
+```luau
+local stream, err = kern.http.stream({
+	url = "https://api.example.com/v1/generate",
+	headers = { ["content-type"] = "application/json" },
+	body = kern.json.encode({ prompt = "Hello", stream = true }),
+})
+if stream == nil then
+	error(err, 0)
+end
+while true do
+	local piece = stream.read()
+	if piece == nil then
+		break
+	end
+	kern.echo(piece)
+end
+```
+
+Each request runs on a thread of its own and both wait like `kern.sleep`,
+so they work in commands and event handlers and never hold up the editor.
+A plugin needs `net`, or `net:HOST` for each host it talks to.
 
 ## Agents
 

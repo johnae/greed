@@ -316,6 +316,7 @@ fn submodules(lua: &Lua, kern: &Table, owner: &PluginId) -> LuaResult<()> {
     kern.set("session", super::sessions::module(lua)?)?;
     kern.set("keys", keys_module(lua)?)?;
     kern.set("process", super::process::module(lua)?)?;
+    kern.set("http", super::http::module(lua, owner)?)?;
     kern.set("terminal", super::terminal::module(lua, owner)?)?;
     kern.set("image", super::images::module(lua)?)?;
     kern.set("diff", super::diff::diff_function(lua)?)?;

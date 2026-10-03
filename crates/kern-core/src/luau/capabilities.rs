@@ -64,14 +64,12 @@ pub enum Grant {
 
 impl Grant {
     /// The grant for `listed` capabilities, or why one of them isn't one.
+    /// Besides the known ones, `net:HOST` opens the network to one host.
     pub fn listed(listed: &[String]) -> Result<Grant, String> {
-        if let Some(unknown) = listed
-            .iter()
-            .find(|c| !KNOWN.iter().any(|(name, _)| name == c))
-        {
+        if let Some(unknown) = listed.iter().find(|c| what(c).is_none()) {
             let known: Vec<&str> = KNOWN.iter().map(|(name, _)| *name).collect();
             return Err(format!(
-                "there is no capability {unknown:?}; there are {}",
+                "there is no capability {unknown:?}; there are {} and net:HOST",
                 known.join(", ")
             ));
         }
@@ -84,14 +82,27 @@ impl Grant {
             Grant::Only(set) => set.contains(capability),
         }
     }
+
+    /// Whether it opens the network to `host`: `net`, or `net:HOST`.
+    pub fn allows_host(&self, host: &str) -> bool {
+        self.allows("net") || self.allows(&format!("net:{host}"))
+    }
+}
+
+/// What `capability` lets a plugin do, in words; `None` if it isn't one.
+pub fn what(capability: &str) -> Option<String> {
+    if let Some(host) = capability.strip_prefix("net:") {
+        return (!host.is_empty()).then(|| format!("use the network, only {host}"));
+    }
+    KNOWN
+        .iter()
+        .find(|(name, _)| *name == capability)
+        .map(|(_, what)| (*what).to_owned())
 }
 
 /// The error for `owner` using what `capability` opens.
 fn denied(owner: &str, capability: &str) -> mlua::Error {
-    let what = KNOWN
-        .iter()
-        .find(|(name, _)| *name == capability)
-        .map_or(capability, |(_, what)| what);
+    let what = what(capability).unwrap_or_else(|| capability.to_owned());
     mlua::Error::runtime(format!(
         "{owner} can't {what}: add \"{capability}\" to capabilities in its plugin.toml"
     ))
@@ -141,4 +152,19 @@ pub(super) fn running_as<R>(lua: &Lua, owner: Option<PluginId>, f: impl FnOnce()
     let result = f();
     state_mut(lua).running = outer;
     result
+}
+
+/// Fails unless `owner` may reach `host`, naming the line to add.
+pub(super) fn check_host(lua: &Lua, owner: &PluginId, host: &str) -> LuaResult<()> {
+    let allowed = state(lua)
+        .grants
+        .get(owner)
+        .is_none_or(|g| g.allows_host(host));
+    if allowed {
+        Ok(())
+    } else {
+        Err(mlua::Error::runtime(format!(
+            "{owner} can't use the network: add \"net:{host}\" (or \"net\" for any host) to capabilities in its plugin.toml"
+        )))
+    }
 }

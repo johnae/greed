@@ -346,6 +346,44 @@ export type Keys = {
 	feed: (keys: string) -> (),
 }
 
+--- A request for `kern.http`. `method` defaults to POST with a body and GET
+--- without; `timeout` is in milliseconds, for the whole request.
+export type HttpRequest = {
+	url: string,
+	method: string?,
+	headers: { [string]: string }?,
+	body: string?,
+	timeout: number?,
+}
+
+--- A whole response. Header names are lowercase.
+export type HttpResponse = {
+	status: number,
+	headers: { [string]: string },
+	body: string,
+}
+
+--- A response whose body arrives in pieces. `read` waits for the next piece
+--- and returns it, nil at the end, or nil and why it failed; `close` stops
+--- reading.
+export type HttpStream = {
+	status: number,
+	headers: { [string]: string },
+	read: () -> (string?, string?),
+	close: () -> (),
+}
+
+--- Requests over the network, each on a thread of its own so the editor
+--- never waits. Both wait like kern.sleep, so they work in commands and event
+--- handlers. A plugin needs the "net" capability, or "net:HOST" for one host.
+export type Http = {
+	--- Sends a request and returns the whole response, or nil and why.
+	request: (request: HttpRequest) -> (HttpResponse?, string?),
+	--- Sends a request and returns once the status and headers are in; read
+	--- the body as it arrives, e.g. tokens from a model.
+	stream: (request: HttpRequest) -> (HttpStream?, string?),
+}
+
 --- Running other programs.
 export type Process = {
 	--- Runs `command` (the program, then its arguments), with `stdin` as its
@@ -1082,6 +1120,7 @@ export type Kern = {
 	next_key: () -> string,
 	keys: Keys,
 	process: Process,
+	http: Http,
 	terminal: Terminals,
 	image: Images,
 	--- A one-shot value that one piece of code waits for and another sends,

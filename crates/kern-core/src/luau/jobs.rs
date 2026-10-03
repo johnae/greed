@@ -15,6 +15,11 @@ pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
     Check(super::plugin::Check),
     Process(std::io::Result<super::process::Finished>),
+    Http(Result<super::http::Fetched, String>),
+    /// A stream's status and headers, for the command waiting on `token`.
+    StreamHead(u64, u64, Result<super::http::Head, String>),
+    /// A piece of stream `id`'s body, its end, or why it failed.
+    StreamChunk(u64, super::http::Chunk),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -61,6 +66,25 @@ pub(super) fn start(lua: &Lua, work: impl FnOnce() -> Output + Send + 'static) -
     token
 }
 
+/// Runs `work` on a new thread, giving it the token of the command waiting
+/// and a way to send any number of results, like a stream's pieces. The
+/// job counts as running until it sends its last.
+pub(super) fn start_streaming(
+    lua: &Lua,
+    work: impl FnOnce(u64, &dyn Fn(Output)) + Send + 'static,
+) -> u64 {
+    let mut state = state_mut(lua);
+    let token = state.tasks.token();
+    state.jobs.running += 1;
+    let done = state.jobs.done.clone();
+    std::thread::spawn(move || {
+        work(token, &|output| {
+            let _ = done.send(Done { token, output });
+        });
+    });
+    token
+}
+
 /// A Luau function named `name` that calls `start` and waits for the job it
 /// returns when the caller can yield (in a command), and calls `now` anywhere
 /// else.
@@ -87,8 +111,20 @@ pub(super) fn now_or_job(
 
 /// Wakes the command waiting on a finished job with its result.
 pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
-    state_mut(lua).jobs.running -= 1;
+    // A stream's job goes on after its head, until its body ends.
+    let last = !matches!(
+        done.output,
+        Output::StreamHead(_, _, Ok(_)) | Output::StreamChunk(_, super::http::Chunk::Data(_))
+    );
+    if last {
+        state_mut(lua).jobs.running -= 1;
+    }
     match done.output {
+        Output::Http(result) => {
+            tasks::wake(lua, done.token, super::http::fetched_to_lua(lua, result)?)
+        }
+        Output::StreamHead(token, id, head) => super::http::stream_started(lua, token, id, head),
+        Output::StreamChunk(id, chunk) => super::http::chunk_arrived(lua, id, chunk),
         Output::Grep(Ok(lines)) => tasks::wake(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::wake(lua, done.token, (Value::Nil, err.to_string())),
         Output::Check(check) => tasks::wake(lua, done.token, super::plugin::to_lua(lua, check)?),
