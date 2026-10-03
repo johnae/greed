@@ -238,6 +238,26 @@ kern.command({
 	end,
 })
 
+for _, last in { false, true } do
+	kern.command({
+		name = if last then "last-change" else "first-change",
+		doc = if last
+			then "Go to the last change since the last commit"
+			else "Go to the first change since the last commit",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local found = changes(buffer)
+			local change = found[if last then #found else 1]
+			if change == nil then
+				kern.echo("no changes")
+				return
+			end
+			local at = buffer:line_start((lines_of(buffer, change)))
+			ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		end,
+	})
+end
+
 kern.command({
 	name = "revert-change",
 	doc = "Put the change under the cursor back the way it was at the last commit",
@@ -465,6 +485,8 @@ kern.keymap.bind("normal", {
 	["space g s"] = "changes",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
+	["] G"] = "last-change",
+	["[ G"] = "first-change",
 	["space g r"] = "revert-change",
 	["space g b"] = "blame-line",
 	["space u c"] = "operation-commit",

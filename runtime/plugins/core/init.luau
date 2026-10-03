@@ -135,6 +135,14 @@ kern.keymap.bind("normal", {
 	["alt-."] = "repeat-find",
 	["ctrl-a"] = "increment",
 	["ctrl-x"] = "decrement",
+	["space c"] = "toggle-comment",
+	-- Copies already go to the clipboard; these are Helix's keys for it.
+	["space y"] = "copy",
+	["space Y"] = "copy",
+	["space p"] = "paste-after",
+	["space R"] = "replace-with-copy",
+	["] space"] = "add-newline-below",
+	["[ space"] = "add-newline-above",
 })
 
 kern.keymap.bind("insert", {

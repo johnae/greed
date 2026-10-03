@@ -240,10 +240,77 @@ for _, backward in { false, true } do
 	})
 end
 
--- Bindings for every syntax object, filled in below.
+-- Replaces each selection with `pick(node)`'s nodes, for the node the
+-- selection covers; a selection with nothing to pick stays.
+local function select_nodes(ctx: kern.Context, pick: (kern.Node) -> { kern.Node })
+	local buffer = ctx.buffer
+	local ranges: { kern.Range } = {}
+	for _, range in ctx.view:selection().ranges do
+		local lo, hi = bounds(range)
+		local node = node_in(buffer, lo, hi)
+		local picked = if node then pick(node) else {}
+		if #picked == 0 then
+			table.insert(ranges, range)
+		end
+		for _, found in picked do
+			table.insert(ranges, { anchor = found.from, head = found.to })
+		end
+	end
+	ctx.view:set_selection({ ranges = ranges, primary = 1 })
+end
+
+kern.command({
+	name = "select-all-siblings",
+	doc = "Select every syntax node beside each selection's, its own included",
+	run = function(ctx)
+		select_nodes(ctx, function(node)
+			local parent = node:parent()
+			return if parent then parent:named_children() else {}
+		end)
+	end,
+})
+
+kern.command({
+	name = "select-all-children",
+	doc = "Select every syntax node inside each selection's",
+	run = function(ctx)
+		select_nodes(ctx, function(node)
+			return node:named_children()
+		end)
+	end,
+})
+
+for _, at_end in { false, true } do
+	kern.command({
+		name = if at_end then "goto-parent-end" else "goto-parent-start",
+		doc = if at_end
+			then "Move to the end of the syntax node around each selection's"
+			else "Move to the start of the syntax node around each selection's",
+		run = function(ctx)
+			motions.each_range(ctx, function(buffer, range)
+				local lo, hi = bounds(range)
+				local node = node_in(buffer, lo, hi)
+				local parent = node and node:parent()
+				if parent == nil then
+					return range
+				end
+				return motions.point(if at_end then buffer:prev_char(parent.to) else parent.from)
+			end)
+		end,
+	})
+end
+
+-- Bindings for every syntax object, filled in below. Helix has the sibling
+-- moves on alt-n and alt-p, which are the pane keys here.
 M.keys = {
 	["alt-o"] = "expand-selection",
 	["alt-i"] = "shrink-selection",
+	["] n"] = "select-next-sibling",
+	["[ n"] = "select-prev-sibling",
+	["alt-a"] = "select-all-siblings",
+	["alt-I"] = "select-all-children",
+	["alt-e"] = "goto-parent-end",
+	["alt-b"] = "goto-parent-start",
 } :: { [string]: string }
 
 for key, object in M.OBJECTS do

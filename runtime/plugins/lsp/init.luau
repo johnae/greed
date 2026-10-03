@@ -100,33 +100,45 @@ kern.command({
 	end,
 })
 
-kern.command({
-	name = "goto-definition",
-	doc = "Go to where the thing under the cursor is defined",
-	run = function(ctx)
-		local ok, result, err = ask(ctx.buffer, "textDocument/definition", head(ctx.view))
-		if not ok then
-			return
-		elseif err then
-			kern.echo(`definition: {err.message}`)
-			return
-		end
-		-- A location, a list of locations or links (maybe empty), or nothing.
-		local target = if result and result[1] then result[1] else result
-		if target == nil or (target.uri == nil and target.targetUri == nil) then
-			kern.echo("no definition found")
-			return
-		end
-		local uri = target.uri or target.targetUri
-		local range = target.range or target.targetSelectionRange
-		local path = kern.lsp.path(uri)
-		if path == nil then
-			kern.echo(`can't open {uri}`)
-			return
-		end
-		common.open_at(path, range.start)
-	end,
-})
+-- Commands that go to where the language server says something under the
+-- cursor is: its definition, declaration, type or implementation.
+for _, place in
+	{
+		{ "goto-definition", "definition", "defined" },
+		{ "goto-declaration", "declaration", "declared" },
+		{ "goto-type-definition", "typeDefinition", "its type is defined" },
+		{ "goto-implementation", "implementation", "implemented" },
+	}
+do
+	local name, method, what = place[1], place[2], place[3]
+	kern.command({
+		name = name,
+		doc = `Go to where the thing under the cursor is {what}`,
+		run = function(ctx)
+			local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, head(ctx.view))
+			if not ok then
+				return
+			elseif err then
+				kern.echo(`{method}: {err.message}`)
+				return
+			end
+			-- A location, a list of locations or links (maybe empty), or nothing.
+			local target = if result and result[1] then result[1] else result
+			if target == nil or (target.uri == nil and target.targetUri == nil) then
+				kern.echo(`no {method} found`)
+				return
+			end
+			local uri = target.uri or target.targetUri
+			local range = target.range or target.targetSelectionRange
+			local path = kern.lsp.path(uri)
+			if path == nil then
+				kern.echo(`can't open {uri}`)
+				return
+			end
+			common.open_at(path, range.start)
+		end,
+	})
+end
 
 local function sorted_diagnostics(buffer: kern.Buffer): { kern.Diagnostic }
 	local list = kern.lsp.diagnostics(buffer)
@@ -178,6 +190,25 @@ kern.command({
 		jump(ctx, false)
 	end,
 })
+
+for _, last in { false, true } do
+	kern.command({
+		name = if last then "last-diagnostic" else "first-diagnostic",
+		doc = if last
+			then "Go to the last problem in this file"
+			else "Go to the first problem in this file",
+		run = function(ctx)
+			local list = sorted_diagnostics(ctx.buffer)
+			local target = list[if last then #list else 1]
+			if target then
+				move_to(ctx.view, target.from)
+				kern.echo(describe(target))
+			else
+				kern.echo("no problems")
+			end
+		end,
+	})
+end
 
 kern.command({
 	name = "pick-diagnostic",
@@ -231,9 +262,14 @@ kern.keymap.bind({ mode = "normal", kind = "info" }, { esc = "info-close", q = "
 kern.keymap.bind("normal", {
 	["space k"] = "hover",
 	["g d"] = "goto-definition",
+	["g D"] = "goto-declaration",
+	["g y"] = "goto-type-definition",
+	["g i"] = "goto-implementation",
 	["space d"] = "pick-diagnostic",
 	["] d"] = "next-diagnostic",
 	["[ d"] = "prev-diagnostic",
+	["] D"] = "last-diagnostic",
+	["[ D"] = "first-diagnostic",
 })
 
 kern.option.define({

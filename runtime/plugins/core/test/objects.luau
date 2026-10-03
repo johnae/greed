@@ -37,3 +37,8 @@ test("a count picks brackets further out", function(t)
 	check(t, "f((a)(b|))", "2 m a (", "f^((a)(b))|")
 	check(t, "(a|)", "2 m i (", "(a|)")
 end)
+
+test("m i m and m a m take the nearest brackets or quotes of any kind", function(t)
+	check(t, [[f("a|b", [c])]], "m i m", [[f("^ab|", [c])]])
+	check(t, "f([c|])", "m a m", "f(^[c]|)")
+end)

@@ -169,4 +169,7 @@ core.file.before_save("format", function(buffer)
 	end
 end)
 
+-- Helix formats on =; this formats the whole buffer.
+kern.keymap.bind("normal", { ["="] = "format" })
+
 return M

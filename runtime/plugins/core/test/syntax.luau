@@ -77,3 +77,18 @@ test("buffers without a grammar or a query are left alone", function(t)
 	kern.syntax.set_query("rust", "textobjects", "(line_comment) @comment.around")
 	check(t, "fn one() {|}", "m a f", "fn one() {|}")
 end)
+
+test("] n and [ n select the next and previous node, alt-a every one beside it", function(t)
+	check(t, "fn f(^a: u8|, b: u8, c: u8) {}", "] n", "fn f(a: u8, ^b: u8|, c: u8) {}")
+	check(t, "fn f(a: u8, ^b: u8|, c: u8) {}", "[ n", "fn f(^a: u8|, b: u8, c: u8) {}")
+	check(t, "fn f(^a: u8|, b: u8, c: u8) {}", "alt-a", "fn f(^a: u8|, ^b: u8|, ^c: u8|) {}")
+end)
+
+test(
+	"alt-I selects every node inside, alt-b and alt-e go to the start and end of the one around",
+	function(t)
+		check(t, "fn f(^a: u8, b: u8|) {}", "alt-o alt-I", "fn f(^a: u8|, ^b: u8|) {}")
+		check(t, "fn f(^a: u8|, b: u8) {}", "alt-b", "fn f|(a: u8, b: u8) {}")
+		check(t, "fn f(^a: u8|, b: u8) {}", "alt-e", "fn f(a: u8, b: u8|) {}")
+	end
+)

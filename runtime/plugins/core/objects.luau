@@ -201,6 +201,37 @@ for char, label in NAMES do
 	end
 end
 
+-- The innermost pair of any kind around `pos`, as Helix's m i m finds it.
+local function nearest(buffer: Buffer, pos: number, count: number?): (number?, number?)
+	local best_from, best_to: number? = nil, nil
+	for char in NAMES do
+		local from, to = around(buffer, pos, char, count)
+		if from and to and (best_from == nil or from > best_from) then
+			best_from, best_to = from, to
+		end
+	end
+	return best_from, best_to
+end
+
+for _, outer in { false, true } do
+	local side = if outer then "around" else "inside"
+	object(
+		`select-{side}-pair`,
+		`Select {side} the nearest brackets or quotes`,
+		function(buffer, range, count)
+			local from, to = nearest(buffer, motions.cursor(buffer, range), count)
+			if from == nil or to == nil then
+				return nil
+			end
+			if outer then
+				return { anchor = from, head = buffer:next_char(to) }
+			end
+			return { anchor = buffer:next_char(from), head = to }
+		end
+	)
+	M.keys[`m {if outer then "a" else "i"} m`] = `select-{side}-pair`
+end
+
 -- Reads a character to stand for a pair; nil for keys like esc.
 local function pair_key(): string?
 	local key = kern.next_key()

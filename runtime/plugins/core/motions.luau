@@ -654,12 +654,13 @@ function M.selected_lines(ctx: kern.Context): { number }
 end
 
 -- Inserts `text` at each of `points`, moving the selections along so that
--- ones that began at a point keep the new text inside them.
-function M.insert_at(ctx: kern.Context, points: { number }, text: string)
+-- ones that began at a point keep the new text inside them, or (`push`) go
+-- after it.
+function M.insert_at(ctx: kern.Context, points: { number }, text: string, push: boolean?)
 	local function moved(pos: number): number
 		local before = 0
 		for _, p in points do
-			if p < pos then
+			if p < pos or (push and p == pos) then
 				before += 1
 			end
 		end

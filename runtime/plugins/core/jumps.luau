@@ -146,4 +146,18 @@ function M.add(name: string)
 	JUMPS[name] = true
 end
 
+--- The places in the jumplist, newest first: each one's buffer id, file
+--- path if it has one, and position.
+function M.list(): { Place }
+	local out = {}
+	for i = #list, 1, -1 do
+		table.insert(out, table.clone(list[i]))
+	end
+	return out
+end
+
+--- Goes to `place`, one of `list()`'s; false if its buffer is gone and it
+--- had no file.
+M.go = go
+
 return M

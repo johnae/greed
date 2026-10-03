@@ -548,3 +548,18 @@ test("pane mode T tiles a tab's floats side by side, W opens another floating te
 	t:keys("alt-p W esc")
 	assert(#floats.list() == 3, "a third float, a terminal")
 end)
+
+test("ctrl-w L swaps the pane with the one on its right, ctrl-w n v opens an empty one", function(t)
+	t:buffer("|left")
+	local left = kern.view():buffer()
+	local right = kern.create_buffer("file", "right")
+	kern.view():split("right", right)
+	kern.tab.current().panes[1]:focus()
+	t:draw(80, 20)
+	t:keys("ctrl-w L")
+	local panes = kern.tab.current().panes
+	assert(panes[1]:buffer():id() == right:id() and panes[2]:buffer():id() == left:id(), "swapped")
+	assert(kern.view():id() == panes[2]:id(), "following it")
+	t:keys("ctrl-w n v")
+	assert(#kern.tab.current().panes == 3 and kern.view():buffer():text() == "", "a new empty pane")
+end)

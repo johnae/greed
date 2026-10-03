@@ -183,7 +183,9 @@ There is always a selection; a cursor is a selection one character wide.
 | `>` `<` | Indent or dedent the lines by one level of the language's indent |
 | `J` | Join lines with one space |
 | `\|` | Pipe each selection through a shell command, a Luau filter or a model (below) |
-| `ctrl-c` | Comment the lines, or uncomment them |
+| `space c`, `ctrl-c` | Comment the lines, or uncomment them |
+| `=` | Format the file |
+| `] space` `[ space` | Add an empty line below or above, staying put |
 | `y` `p` `P` | Copy, paste after, paste before; copied lines paste above or below the line |
 | `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
 | `Q` `q` | Start or stop recording a macro, play it (`3 q` three times) |
@@ -193,7 +195,7 @@ There is always a selection; a cursor is a selection one character wide.
 
 In insert mode, `tab` types a level of indent, `ctrl-w` (or
 `alt-backspace`) and `alt-d` delete a word back or forward, `ctrl-u` and
-`ctrl-k` delete to the start or end of the line, and `ctrl-r` + a
+`ctrl-k` delete to the start or end of the line, `ctrl-x` asks for completions, and `ctrl-r` + a
 register inserts what it holds.
 
 A number before a motion repeats it: `3 j`, `2 w`. It also counts for `x`
@@ -212,6 +214,11 @@ each selection its own:
 | `sort -u` | Runs a shell command, with the selection as its input |
 | `luau: snake_case` | Runs a Luau filter: `upper`, `lower`, `trim`, `snake_case`, `kebab_case`, `camel_case`, `pascal_case`, `sort`, `reverse`, or one you add with `require("@pipe").define` |
 | `model: add doc comments` | Asks a language model (the `fast` role, or `:set pipe-model-role reasoning`) |
+
+Helix's other shell keys work too: `!` puts what a command prints before
+each selection and `alt-!` after it, `alt-|` gives each selection to a
+command without changing it, and `$` keeps the selections a command
+succeeds on (`$ grep -q TODO`).
 
 All the selections change in one step, so `u` takes them back. A model's
 changes are also an operation you can review with `space u o`, and if you
@@ -262,6 +269,7 @@ selects every place it appears.
 | `m i w` `m a w` | The word, or the word and the space after it (`W` for WORDs) |
 | `m i (` `m a (` | Inside or around the brackets; also `[` `{` `<` |
 | `m i "` `m a "` | Inside or around the quotes; also `'` and `` ` `` |
+| `m i m` `m a m` | Inside or around the nearest brackets or quotes, whichever they are |
 | `m s (` | Wrap each selection in brackets, quotes, or any character |
 | `m d (` | Take away the brackets or quotes around each selection |
 | `m r ( [` | Swap them for others |
@@ -276,11 +284,13 @@ selects every place it appears.
 | `m a c` | The comment |
 | `] f` `[ f` | The next or previous function; also `t`, `a` and `c` |
 | `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
+| `] n` `[ n` | The next or previous node beside it (Helix has these on `alt-n` `alt-p`, which are pane keys here) |
+| `alt-a` `alt-I` | Every node beside it, or every node inside it |
+| `alt-b` `alt-e` | The start or end of the node around it |
 | `space s` | Jump to a function or type in the file |
 
-`:select-next-sibling` and `:select-prev-sibling` move to the node beside
-the selection. In Vim's style the same objects are `if` `af`, `ia` `aa` and
-`ic` `ac`, as in `daf` or `cia`.
+In Vim's style the same objects are `if` `af`, `ia` `aa` and `ic` `ac`, as in
+`daf` or `cia`.
 
 **Folding**
 
@@ -328,6 +338,8 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 |---|---|
 | `space f` | Find a file in the project |
 | `space b` | Switch to an open file |
+| `space j` | Pick a place from the jumplist |
+| `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
 | `:w` `:w PATH` | Save, or save as |
 | `:e PATH` | Open a file |
@@ -356,12 +368,13 @@ and whether it was found.
 |---|---|
 | `space k` | What's under the cursor, with any problems there |
 | `g d` | Go to the definition |
+| `g D` `g y` `g i` | Go to the declaration, the type's definition, an implementation |
 | `g r` | Pick a place it's used, with a preview |
 | `space r` | Rename it everywhere it's used |
 | `space a` | Pick a fix or refactor for the cursor or selection |
 | `space d` | Pick a problem in this file |
 | `space D` | Pick a problem in any file the server checked, open or not |
-| `] d` `[ d` | Next and previous problem |
+| `] d` `[ d` | Next and previous problem; `] D` `[ D` the last and first |
 
 In the `g r` and `space D` lists, `ctrl-e` puts the places shown in a panel
 like the project search's: each reference with a line around it, or each
@@ -400,7 +413,7 @@ the working copy's parent, so the signs show what your current change does.
 
 | Keys | |
 |---|---|
-| `] g` `[ g` | Next and previous change |
+| `] g` `[ g` | Next and previous change; `] G` `[ G` the last and first |
 | `space g r` | Put the change under the cursor back the way it was |
 | `space g b` | Who last changed this line, and when |
 | `space g s` (`:changes`) | Every change in the project, in one buffer |
@@ -643,7 +656,7 @@ panes, tabs and terminals are where you left them.
 | `alt-[` `alt-]`, `alt-1`... | Tabs |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
 | `alt-r` | The resize mode: `h j k l` grow the pane or floating view toward that side, `H J K L` shrink it, the arrows move a floating view |
-| `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix |
+| `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix; `ctrl-w H J K L` swap with the pane on that side, `ctrl-w f` the file under the cursor in a split, `ctrl-w n s` an empty one |
 
 The `alt` keys work everywhere, including inside terminals. Moving to a
 terminal pane types into it; moving to a file goes back to normal mode.

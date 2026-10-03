@@ -173,6 +173,30 @@ function M.split(dir: Direction)
 	M.focus(M.pane():split(dir))
 end
 
+--- Swaps what this pane shows with the pane on the `dir` side, and follows
+--- it there.
+function M.swap(dir: Direction)
+	local here = M.pane()
+	local there = here:neighbor(dir)
+	if there == nil then
+		return
+	end
+	local mine, theirs = here:buffer(), there:buffer()
+	local my_selection, their_selection = here:selection(), there:selection()
+	-- Kept while they change places, so a scratch buffer isn't dropped in
+	-- the moment nothing shows it.
+	local kept_mine, kept_theirs = mine:kept(), theirs:kept()
+	mine:set_kept(true)
+	theirs:set_kept(true)
+	here:show(theirs)
+	here:set_selection(their_selection)
+	there:show(mine)
+	there:set_selection(my_selection)
+	mine:set_kept(kept_mine)
+	theirs:set_kept(kept_theirs)
+	M.focus(there)
+end
+
 --- Closes the pane, unless it's the last one.
 function M.close_pane()
 	local pane = M.pane()
@@ -457,6 +481,64 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Label the panes and go to the one whose label you type next",
 		run = function()
 			M.pick()
+		end,
+	},
+	{
+		name = "pane-swap-left",
+		doc = "Swap this pane with the one on its left",
+		run = function()
+			M.swap("left")
+		end,
+	},
+	{
+		name = "pane-swap-right",
+		doc = "Swap this pane with the one on its right",
+		run = function()
+			M.swap("right")
+		end,
+	},
+	{
+		name = "pane-swap-up",
+		doc = "Swap this pane with the one above",
+		run = function()
+			M.swap("up")
+		end,
+	},
+	{
+		name = "pane-swap-down",
+		doc = "Swap this pane with the one below",
+		run = function()
+			M.swap("down")
+		end,
+	},
+	{
+		name = "pane-new-down",
+		doc = "Open a pane below with a new, empty buffer",
+		run = function()
+			M.focus(M.pane():split("down", kern.create_buffer("file", "")))
+		end,
+	},
+	{
+		name = "pane-new-right",
+		doc = "Open a pane on the right with a new, empty buffer",
+		run = function()
+			M.focus(M.pane():split("right", kern.create_buffer("file", "")))
+		end,
+	},
+	{
+		name = "pane-file-down",
+		doc = "Open the file named under the cursor in a pane below",
+		run = function()
+			M.split("down")
+			kern.run("goto-file")
+		end,
+	},
+	{
+		name = "pane-file-right",
+		doc = "Open the file named under the cursor in a pane on the right",
+		run = function()
+			M.split("right")
+			kern.run("goto-file")
 		end,
 	},
 	{
@@ -882,6 +964,14 @@ M.keys = {
 		t = "pane-terminal",
 		z = "pane-zoom",
 		g = "pane-pick",
+		H = "pane-swap-left",
+		J = "pane-swap-down",
+		K = "pane-swap-up",
+		L = "pane-swap-right",
+		f = "pane-file-down",
+		F = "pane-file-right",
+		["n s"] = "pane-new-down",
+		["n v"] = "pane-new-right",
 	} :: { [string]: string },
 }
 

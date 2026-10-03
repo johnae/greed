@@ -135,4 +135,45 @@ kern.command({
 	end,
 })
 
+kern.command({
+	name = "pick-jump",
+	doc = "Pick a place from the jumplist and go there",
+	run = function()
+		local jumps = require("@core").jumps
+		local root = project.root() .. "/"
+		local items = {}
+		for _, place in jumps.list() do
+			local buffer: kern.Buffer? = nil
+			for _, open in kern.buffers() do
+				if open:id() == place.buffer then
+					buffer = open
+				end
+			end
+			local path = place.path
+			local name = if path == nil
+				then "[scratch]"
+				elseif string.sub(path, 1, #root) == root then string.sub(path, #root + 1)
+				else path
+			local where, line = "?", ""
+			if buffer then
+				local row = buffer:line_of(math.min(place.pos, buffer:len()))
+				where = tostring(row + 1)
+				line = string.gsub(
+					buffer:slice(buffer:line_start(row), buffer:line_end(row)),
+					"^%s+",
+					""
+				)
+			end
+			table.insert(items, { label = `{name}:{where}  {line}`, value = place })
+		end
+		if #items == 0 then
+			kern.echo("the jumplist is empty")
+			return
+		end
+		picker.pick("Jumplist", items, function(item)
+			jumps.go(item.value)
+		end)
+	end,
+})
+
 return {}

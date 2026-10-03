@@ -30,6 +30,10 @@ export type Filter = (text: string) -> string
 
 local M = {}
 
+local function span(range: kern.Range): (number, number)
+	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+end
+
 -- Words of `text`, split at spaces, dashes, underscores and case changes.
 local function words(text: string): { string }
 	local spaced = string.gsub(text, "(%l)(%u)", "%1 %2")
@@ -119,12 +123,22 @@ local function fit(selected: string, output: string): string
 	return output
 end
 
+-- Runs `command` through the shell with `input`, or fails with why.
+local function run(
+	command: string,
+	input: string?
+): { code: number?, stdout: string, stderr: string }
+	local done, err = kern.process.run({ "sh", "-c", command }, { stdin = input })
+	if done == nil then
+		error(err, 0)
+	end
+	return done
+end
+
 local function shell(command: string): Filter
 	return function(text)
-		local done, err = kern.process.run({ "sh", "-c", command }, { stdin = text })
-		if done == nil then
-			error(err, 0)
-		elseif done.code ~= 0 then
+		local done = run(command, text)
+		if done.code ~= 0 then
 			error(`{command} failed: {done.stderr}`, 0)
 		end
 		return fit(text, done.stdout)
@@ -182,7 +196,7 @@ local function gather(view: kern.View, filter: Filter): ((() -> ())?, string?)
 	local ns = "pipe"
 	local marks: { kern.Mark } = {}
 	for _, range in view:selection().ranges do
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = span(range)
 		table.insert(marks, { from = from, to = to, style = "pipe" })
 	end
 	buffer:decorate(ns, marks)
@@ -238,15 +252,19 @@ function M.pipe(view: kern.View, target: string): (boolean, string?)
 	return true, nil
 end
 
+-- Asks for what to run, or takes it from the command line.
+local function command_from(ctx: kern.Context, title: string): string?
+	local given = if #ctx.args > 0 then table.concat(ctx.args, " ") else core.prompt.ask(title)
+	return if given == nil or given == "" then nil else given
+end
+
 kern.command({
 	name = "pipe",
 	doc = "Pipe each selection through a shell command, a Luau filter (luau: name) or a model (model: what to do)",
 	args = { { name = "target", doc = "e.g. sort -u, luau: snake_case, model: add doc comments" } },
 	run = function(ctx)
-		local target = if #ctx.args > 0
-			then table.concat(ctx.args, " ")
-			else core.prompt.ask("Pipe through")
-		if target == nil or target == "" then
+		local target = command_from(ctx, "Pipe through")
+		if target == nil then
 			return
 		end
 		local ok, err = M.pipe(ctx.view, target)
@@ -258,6 +276,98 @@ kern.command({
 	end,
 })
 
-kern.keymap.bind("normal", { ["|"] = "pipe" })
+-- Puts what `command` prints before (or after) each selection, and selects it.
+local function insert_output(ctx: kern.Context, after: boolean)
+	local command = command_from(ctx, if after then "Append output of" else "Insert output of")
+	if command == nil then
+		return
+	end
+	local done = run(command)
+	if done.code ~= 0 then
+		kern.echo(`{command} failed: {done.stderr}`)
+		return
+	end
+	local output = done.stdout
+	local selection = ctx.view:selection()
+	ctx.buffer:edit(function(e)
+		local shift = 0
+		for i, range in selection.ranges do
+			local from, to = span(range)
+			local at = if after then to else from
+			e:insert(at, output)
+			selection.ranges[i] = { anchor = at + shift, head = at + shift + #output }
+			shift += #output
+		end
+		e:select(selection)
+	end)
+end
+
+kern.command({
+	name = "insert-output",
+	doc = "Insert what a shell command prints before each selection",
+	args = { { name = "command", doc = "e.g. date" } },
+	run = function(ctx)
+		insert_output(ctx, false)
+	end,
+})
+
+kern.command({
+	name = "append-output",
+	doc = "Insert what a shell command prints after each selection",
+	args = { { name = "command", doc = "e.g. date" } },
+	run = function(ctx)
+		insert_output(ctx, true)
+	end,
+})
+
+kern.command({
+	name = "pipe-to",
+	doc = "Give each selection to a shell command as input, leaving the text as it is",
+	args = { { name = "command", doc = "e.g. xclip" } },
+	run = function(ctx)
+		local command = command_from(ctx, "Pipe to")
+		if command == nil then
+			return
+		end
+		for _, range in ctx.view:selection().ranges do
+			local done = run(command, ctx.buffer:slice(span(range)))
+			if done.code ~= 0 then
+				kern.echo(`{command} failed: {done.stderr}`)
+				return
+			end
+		end
+	end,
+})
+
+kern.command({
+	name = "keep-pipe",
+	doc = "Keep the selections a shell command succeeds on, given each as input",
+	args = { { name = "command", doc = "e.g. grep -q TODO" } },
+	run = function(ctx)
+		local command = command_from(ctx, "Keep where")
+		if command == nil then
+			return
+		end
+		local kept = {}
+		for _, range in ctx.view:selection().ranges do
+			if run(command, ctx.buffer:slice(span(range))).code == 0 then
+				table.insert(kept, range)
+			end
+		end
+		if #kept == 0 then
+			kern.echo(`{command} failed on every selection`)
+			return
+		end
+		ctx.view:set_selection({ ranges = kept, primary = 1 })
+	end,
+})
+
+kern.keymap.bind("normal", {
+	["|"] = "pipe",
+	["!"] = "insert-output",
+	["alt-!"] = "append-output",
+	["alt-|"] = "pipe-to",
+	["$"] = "keep-pipe",
+})
 
 return M

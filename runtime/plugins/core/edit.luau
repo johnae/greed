@@ -516,6 +516,34 @@ kern.command({
 	end,
 })
 
+-- Adds an empty line above or below each selection's lines, `count` of
+-- them, leaving the selections where they are.
+for _, above in { false, true } do
+	kern.command({
+		name = if above then "add-newline-above" else "add-newline-below",
+		doc = if above
+			then "Add an empty line above each selection, staying put"
+			else "Add an empty line below each selection, staying put",
+		run = function(ctx)
+			local buffer = ctx.buffer
+			local points, seen = {}, {}
+			for _, range in ctx.view:selection().ranges do
+				local line = buffer:line_of(
+					if above then from(range) else math.max(from(range), to(range) - 1)
+				)
+				local at = if above then buffer:line_start(line) else buffer:line_end(line)
+				if not seen[at] then
+					seen[at] = true
+					table.insert(points, at)
+				end
+			end
+			local breaks = string.rep(text.line_break(buffer), ctx.count or 1)
+			-- Lines added above a selection's start go before it.
+			motions.insert_at(ctx, points, breaks, above)
+		end,
+	})
+end
+
 kern.command({
 	name = "join-lines",
 	doc = "Join the next line onto each cursor's, or the lines of each selection, with one space",
