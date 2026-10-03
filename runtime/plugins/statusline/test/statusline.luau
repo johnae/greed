@@ -212,3 +212,35 @@ test("dark letters on a light pill light up too", function(t)
 	t:wait(500)
 	kern.option.set("effects", false)
 end)
+
+test("an async piece shows what its last refresh found, without the line waiting", function(t)
+	local statusline = require("@statusline")
+	local runs = 0
+	statusline.add_async("right", "slow", {
+		refresh = function()
+			-- Stands in for a slow program, like a status in a big repository.
+			kern.sleep(200)
+			runs += 1
+			return `run {runs}`
+		end,
+		every = 1000,
+	}, "position")
+	t:buffer("|abc")
+	local _, right = t:status()
+	assert(
+		right and not string.find(right, "run", 1, true),
+		"nothing yet, and no waiting: " .. tostring(right)
+	)
+	t:wait(250)
+	_, right = t:status()
+	assert(right and string.find(right, "run 1", 1, true), right)
+	t:wait(1250)
+	_, right = t:status()
+	assert(
+		right and string.find(right, "run 2", 1, true),
+		"it refreshes every second: " .. tostring(right)
+	)
+	statusline.remove("slow")
+	t:wait(2000)
+	assert(runs == 2, "taken away, it stops refreshing")
+end)

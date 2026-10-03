@@ -329,3 +329,28 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
     .set_name("=kern.signal")
     .call((new, send, take))
 }
+
+/// Runs `f` as a coroutine and sees it to its end, finishing the jobs and
+/// firing the timers it waits on, for code that has no event loop around it:
+/// a test's body. Fails if it waits for something nothing will bring, like
+/// a key.
+pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> LuaResult<()> {
+    let thread = lua.create_thread(f)?;
+    resume(lua, thread.clone(), args)?;
+    while thread.status() == ThreadStatus::Resumable {
+        let waited = Instant::now();
+        super::jobs::settle(lua)?;
+        if thread.status() == ThreadStatus::Resumable {
+            match next_timer(lua) {
+                Some(at) => advance(lua, at)?,
+                None => {
+                    return Err(mlua::Error::runtime(
+                        "the test waits for something nothing will bring, like a key; use t:keys",
+                    ));
+                }
+            }
+        }
+        super::extend_deadline(lua, waited.elapsed());
+    }
+    Ok(())
+}

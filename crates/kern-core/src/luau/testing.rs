@@ -31,7 +31,7 @@ use mlua::{Function, Lua, UserData, UserDataMethods};
 
 use super::modules::Modules;
 use super::{
-    Host, HostError, api, budgeted, deadline, jobs, state, state_mut, tasks, terminal, watch,
+    Host, HostError, api, budgeted, extend_deadline, jobs, state, state_mut, tasks, terminal, watch,
 };
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
@@ -123,9 +123,10 @@ impl Host {
         let target = name.to_owned();
         let test = self
             .lua
-            .create_function(move |_, (name, body): (String, Function)| {
+            .create_function(move |lua, (name, body): (String, Function)| {
                 if name == target {
-                    body.call::<()>(TestContext)?;
+                    // As a coroutine, so the test can wait like any command.
+                    super::tasks::run_to_end(lua, body, TestContext)?;
                 }
                 Ok(())
             })?;
@@ -170,10 +171,7 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
             )));
         }
         std::thread::sleep(STEP);
-        let deadline = deadline(lua);
-        if let Some(at) = deadline.at.get() {
-            deadline.at.set(Some(at + STEP));
-        }
+        extend_deadline(lua, STEP);
     }
 }
 

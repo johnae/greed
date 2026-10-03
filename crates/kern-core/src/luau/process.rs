@@ -92,16 +92,10 @@ pub(super) fn to_lua(lua: &Lua, result: std::io::Result<Finished>) -> LuaResult<
 
 pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let process = lua.create_table()?;
-    let now = lua.create_function(|lua, (command, opts): (Vec<String>, Option<Table>)| {
-        to_lua(lua, run(run_from_lua(command, opts.as_ref())?))
-    })?;
     let start = lua.create_function(|lua, (command, opts): (Vec<String>, Option<Table>)| {
         let how = run_from_lua(command, opts.as_ref())?;
         Ok(jobs::start(lua, move || Output::Process(run(how))))
     })?;
-    process.set(
-        "run",
-        jobs::now_or_job(lua, "kern.process.run", now, start)?,
-    )?;
+    process.set("run", jobs::waiting(lua, "kern.process.run", start)?)?;
     Ok(process)
 }

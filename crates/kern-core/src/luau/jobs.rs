@@ -86,27 +86,23 @@ pub(super) fn start_streaming(
 }
 
 /// A Luau function named `name` that calls `start` and waits for the job it
-/// returns when the caller can yield (in a command), and calls `now` anywhere
-/// else.
-pub(super) fn now_or_job(
-    lua: &Lua,
-    name: &str,
-    now: Function,
-    start: Function,
-) -> LuaResult<Function> {
+/// returns. It only works where code can wait: in a command, an event
+/// handler or `kern.spawn`. It never does the work on the editor's thread,
+/// so nothing that calls it can hold the editor up.
+pub(super) fn waiting(lua: &Lua, name: &str, start: Function) -> LuaResult<Function> {
     lua.load(
         r"
-        local now, start = ...
+        local name, start = ...
         return function(...)
-            if coroutine.isyieldable() then
-                return coroutine.yield(start(...))
+            if not coroutine.isyieldable() then
+                error(name .. ' waits, so it only works in a command, an event handler or kern.spawn', 2)
             end
-            return now(...)
+            return coroutine.yield(start(...))
         end
         ",
     )
     .set_name(format!("={name}"))
-    .call((now, start))
+    .call((name, start))
 }
 
 /// Wakes the command waiting on a finished job with its result.

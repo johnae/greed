@@ -388,8 +388,9 @@ export type Http = {
 export type Process = {
 	--- Runs `command` (the program, then its arguments), with `stdin` as its
 	--- input and `cwd` as its folder, and returns how it exited and what it
-	--- printed; nil and the error if it couldn't start. In a command it waits
-	--- without holding up the editor.
+	--- printed; nil and the error if it couldn't start. It runs in the
+	--- background and waits like kern.sleep, so only in commands, event
+	--- handlers and kern.spawn.
 	run: (
 		command: { string },
 		opts: { stdin: string?, cwd: string? }?
@@ -938,8 +939,8 @@ export type Fs = {
 	--- were read from) and its cache folder.
 	dirs: () -> { home: string?, config: string?, cache: string? },
 	--- The lines matching the regex `pattern` in the text files under `dir`
-	--- (default: the current directory), sorted by path and line. In a
-	--- command it searches in the background and waits, like kern.sleep.
+	--- (default: the current directory), sorted by path and line. It searches
+	--- in the background and waits like kern.sleep (commands, handlers, kern.spawn).
 	--- Hidden and ignored files are skipped unless asked for; `limit`
 	--- (default 10000) caps the lines returned. A bad pattern gives nil and
 	--- why.
@@ -1108,6 +1109,8 @@ export type Kern = {
 	--- Waits `ms` milliseconds without blocking the editor. Works in commands
 	--- and event handlers.
 	sleep: (ms: number) -> (),
+	--- Runs `f` on its own, the way a command runs, and returns at once: it can wait (kern.sleep, kern.process.run, ...) while the editor and the code that started it go on. For work in the background, like a status line piece refreshing.
+	spawn: (f: (...any) -> ...any, ...any) -> (),
 	--- Milliseconds on the editor's clock, for timing animations. While a
 	--- timer wakes code, it reads the time the timer was due.
 	now: () -> number,

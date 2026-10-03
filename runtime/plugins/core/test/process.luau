@@ -28,3 +28,14 @@ test("in a command a program runs without holding up the editor", function(t)
 	t:run("process-test")
 	assert(got == "from a command\n", tostring(got))
 end)
+
+test("kern.spawn runs code that waits, and returns at once", function(t)
+	local said = nil
+	kern.spawn(function(word: string)
+		local done = kern.process.run({ "echo", word })
+		said = done and done.stdout
+	end, "hi")
+	assert(said == nil, "spawn returned before the program ran")
+	t:wait(100)
+	assert(said == "hi\n", tostring(said))
+end)

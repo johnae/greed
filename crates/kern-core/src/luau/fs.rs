@@ -127,19 +127,9 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     Ok(fs)
 }
 
-/// `kern.fs.grep`, which waits for a background search when it can, so a
-/// command searching a big project doesn't hold up the editor, and
-/// searches right away anywhere else.
+/// `kern.fs.grep`, which searches in the background and waits, so a command
+/// searching a big project never holds up the editor.
 fn grep_function(lua: &Lua) -> LuaResult<Function> {
-    let now = lua.create_function(
-        |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
-            let (dir, options) = grep_args(dir, opts.as_ref())?;
-            match search::grep(Path::new(&dir), &pattern, options) {
-                Ok(lines) => grep_to_lua(lua, lines)?.into_lua_multi(lua),
-                Err(err) => failure(lua, err),
-            }
-        },
-    )?;
     let start = lua.create_function(
         |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
             let (dir, options) = grep_args(dir, opts.as_ref())?;
@@ -148,7 +138,7 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
             }))
         },
     )?;
-    jobs::now_or_job(lua, "kern.fs.grep", now, start)
+    jobs::waiting(lua, "kern.fs.grep", start)
 }
 
 /// The directory and options from `kern.fs.grep`'s arguments.

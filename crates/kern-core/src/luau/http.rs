@@ -333,23 +333,14 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             }
         }))
     })?;
-    let waiting = |name: &str, start: Function| -> LuaResult<Function> {
-        lua.load(
-            r"
-            local name, start = ...
-            return function(opts)
-                if not coroutine.isyieldable() then
-                    error(name .. ' can only be used in a command or event handler', 2)
-                end
-                return coroutine.yield(start(opts))
-            end
-            ",
-        )
-        .set_name(format!("={name}"))
-        .call((name, start))
-    };
-    http.set("request", waiting("kern.http.request", start_request)?)?;
-    http.set("stream", waiting("kern.http.stream", start_stream)?)?;
+    http.set(
+        "request",
+        jobs::waiting(lua, "kern.http.request", start_request)?,
+    )?;
+    http.set(
+        "stream",
+        jobs::waiting(lua, "kern.http.stream", start_stream)?,
+    )?;
     Ok(http)
 }
 

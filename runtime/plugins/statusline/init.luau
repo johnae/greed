@@ -59,8 +59,70 @@ function M.add(side: "left" | "right", name: string, build: Piece, before: strin
 	table.insert(list, at, { name = name, build = build })
 end
 
+--- How a piece that takes time to find refreshes: `refresh` runs the way a
+--- command does, so it can wait on `kern.process.run`, `kern.http` and the
+--- rest, and returns what to show. It runs when the editor starts, every
+--- `every` milliseconds if given, and on each event in `on`.
+export type AsyncPiece = {
+	refresh: () -> Part?,
+	every: number?,
+	on: { string }?,
+}
+
+-- What each async piece last found, and whether a refresh is running.
+local found: { [string]: Part? } = {}
+local refreshing: { [string]: boolean } = {}
+-- Async pieces taken away, so their timers stop.
+local stopped: { [string]: boolean } = {}
+
+-- Runs `spec.refresh` for the piece `name` unless it's already running, and
+-- keeps what it returns. A failing refresh shows nothing.
+local function refresh(name: string, spec: AsyncPiece)
+	if refreshing[name] or stopped[name] then
+		return
+	end
+	refreshing[name] = true
+	local ok, part = pcall(spec.refresh)
+	refreshing[name] = false
+	found[name] = if ok then part else nil
+end
+
+--- Adds a piece whose text takes time to find, like a repository's state in
+--- a big monorepo, without the status line ever waiting for it: drawing shows
+--- what the last refresh found.
+---
+---     statusline.add_async("right", "change", {
+---         refresh = function()
+---             local done = kern.process.run({ "jj", "log", "-r", "@", "--no-graph", "-T", "change_id.short()" })
+---             return done and done.code == 0 and done.stdout or nil
+---         end,
+---         every = 5000,
+---         on = { "buffer.saved" },
+---     })
+function M.add_async(side: "left" | "right", name: string, spec: AsyncPiece, before: string?)
+	stopped[name] = nil
+	M.add(side, name, function()
+		return found[name]
+	end, before)
+	local on = kern.on :: (event: string, handler: (any) -> ()) -> ()
+	for _, event in spec.on or {} do
+		on(event, function()
+			refresh(name, spec)
+		end)
+	end
+	kern.spawn(function()
+		refresh(name, spec)
+		while spec.every and not stopped[name] do
+			kern.sleep(spec.every)
+			refresh(name, spec)
+		end
+	end)
+end
+
 --- Takes the piece called `name` away, from either side.
 function M.remove(name: string)
+	stopped[name] = true
+	found[name] = nil
 	for _, list in { M.left, M.right } do
 		for i, entry in list do
 			if entry.name == name then

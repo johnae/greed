@@ -296,15 +296,22 @@ kern.command({
 ```
 
 `kern.sleep(ms)`, `kern.next_key()`, `kern.process.run(...)`,
-`kern.lsp.request(...)`, `kern.fs.grep(...)` and `kern.plugin.check(...)`
-wait like this, and so do `picker.choose(title, items)` and
-`core.prompt.ask(title)`, which give nil when you close them. (`picker.pick`
-and `core.prompt.open` take callbacks instead, for pickers that stay open
-while you work.) `kern.signal()` lets one piece of code wait for a value
-another sends. `kern.animate(ms, step)` calls `step(t)` once a frame, which
-is all the flash on copy is. `kern.fs.watch(path)` makes a "file.changed"
-event come whenever that file changes, from anywhere; it's how your config
-reloads.
+`kern.http.request(...)`, `kern.lsp.request(...)`, `kern.fs.grep(...)` and
+`kern.plugin.check(...)` wait like this, and so do
+`picker.choose(title, items)` and `core.prompt.ask(title)`, which give nil
+when you close them. (`picker.pick` and `core.prompt.open` take callbacks
+instead, for pickers that stay open while you work.) `kern.signal()` lets
+one piece of code wait for a value another sends. `kern.animate(ms, step)`
+calls `step(t)` once a frame, which is all the flash on copy is.
+`kern.fs.watch(path)` makes a "file.changed" event come whenever that file
+changes, from anywhere; it's how your config reloads.
+
+Waiting only works where code runs as a coroutine: commands, event
+handlers, and `kern.spawn(f, ...)`, which runs `f` that way and returns at
+once, for work in the background. Called anywhere else, like a status line
+piece or a plugin's top level, the calls that wait raise an error instead of
+running on the editor's thread, so no plugin can freeze the editor on a
+slow program or server.
 
 Language servers ask things too: `kern.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the

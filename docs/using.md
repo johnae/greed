@@ -725,6 +725,25 @@ returns text, a pill (`{ text, style }`), a list of pills shown joined, or
 nil to show nothing. The pills' colors are the theme's
 `ui.statusline.mode`, `.tab`, `.tab.number`, `.host` and `.session`.
 
+A piece is drawn with every frame, so it has to be quick and can't run
+programs. For anything that takes time, like a repository's state in a big
+monorepo, add an async piece: its `refresh` runs in the background and can
+run programs, and the status line shows what it last found, never waiting
+for it.
+
+```luau
+statusline.add_async("right", "change", {
+	refresh = function()
+		local done = require("@kern").process.run({
+			"jj", "log", "-r", "@", "--no-graph", "-T", "change_id.short()",
+		})
+		return done and done.code == 0 and done.stdout or nil
+	end,
+	every = 5000, -- milliseconds
+	on = { "buffer.saved" }, -- and whenever these happen
+})
+```
+
 ### Themes
 
 `:theme` lists the themes and tries each one as you move through the list.

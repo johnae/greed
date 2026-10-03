@@ -615,22 +615,35 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
         ],
     );
     let h = host("");
+    // In a command, since grep searches in the background and waits.
     let grep = |args: &str| {
-        eval_in(
-            &h,
-            &dir,
+        h.load_str(
+            "grep-test",
             &format!(
-                "local found, err = kern.fs.grep({args})
-                 if not found then return err end
-                 local out = {{}}
-                 for _, m in found do
-                   local spans = {{}}
-                   for _, r in m.matches do table.insert(spans, r.from .. '-' .. r.to) end
-                   table.insert(out, `{{m.path}}:{{m.line}}:{{m.text}}:{{table.concat(spans, ' ')}}`)
-                 end
-                 return table.concat(out, ',')"
+                "local kern = require('@kern')
+                 local DIR = {:?}
+                 kern.command {{ name = 'grep-test', run = function()
+                   local found, err = kern.fs.grep({args})
+                   if not found then kern.echo(err) return end
+                   local out = {{}}
+                   for _, m in found do
+                     local spans = {{}}
+                     for _, r in m.matches do table.insert(spans, r.from .. '-' .. r.to) end
+                     table.insert(out, `{{m.path}}:{{m.line}}:{{m.text}}:{{table.concat(spans, ' ')}}`)
+                   end
+                   kern.echo(table.concat(out, ','))
+                 end }}",
+                dir.to_str().unwrap()
             ),
         )
+        .unwrap();
+        h.run("grep-test").unwrap();
+        let done = h
+            .finished_jobs()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        h.finish_job(done).unwrap();
+        h.with_editor_mut(Editor::take_messages).join("")
     };
     assert_eq!(
         grep("'foo', DIR"),
@@ -1585,4 +1598,25 @@ fn marks_lines_can_be_pieces_with_styles() {
         .eval("local l = require('@kern').view():buffer():decorations('d')[1].lines; return l[1] .. '|' .. l[2][2].text .. '|' .. l[2][2].style")
         .unwrap();
     assert_eq!(back, "plain|2|diff.plus.change");
+}
+
+#[test]
+fn waiting_calls_refuse_to_run_where_they_would_hold_up_the_editor() {
+    let host = host("");
+    for call in [
+        "require('@kern').process.run({ 'sleep', '5' })",
+        "require('@kern').fs.grep('x')",
+        "require('@kern').http.request({ url = 'http://127.0.0.1:1/' })",
+    ] {
+        let started = std::time::Instant::now();
+        let err = host.eval(call).unwrap_err().to_string();
+        assert!(
+            err.contains("waits, so it only works in a command"),
+            "{call}: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{call} didn't block"
+        );
+    }
 }

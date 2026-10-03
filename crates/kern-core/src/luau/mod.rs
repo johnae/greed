@@ -1058,6 +1058,15 @@ fn budgeted<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
     result
 }
 
+/// Moves the current call's deadline `by` later, for time spent waiting on
+/// something other than Luau, which shouldn't count against its budget.
+fn extend_deadline(lua: &Lua, by: Duration) {
+    let deadline = deadline(lua);
+    if let Some(at) = deadline.at.get() {
+        deadline.at.set(Some(at + by));
+    }
+}
+
 fn deadline(lua: &Lua) -> mlua::AppDataRef<'_, Deadline> {
     lua.app_data_ref().expect("deadline is set")
 }

@@ -271,6 +271,7 @@ pub(super) fn kern_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         tasks::animate_function(lua, now.clone(), sleep.clone())?,
     )?;
     kern.set("sleep", sleep)?;
+    kern.set("spawn", spawn_function(lua, owner)?)?;
     kern.set("now", now)?;
     kern.set("next_key", tasks::next_key_function(lua)?)?;
 
@@ -1177,6 +1178,15 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
             Ok(Span { text, tags })
         })
         .collect()
+}
+
+/// `kern.spawn(f, ...)`: runs `f` as a coroutine of `owner`'s, so it can
+/// wait, and returns at once.
+fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
+    lua.create_function(move |lua, (f, args): (Function, mlua::MultiValue)| {
+        tasks::spawn(lua, f, args, owner.clone(), None)
+    })
 }
 
 /// `kern.load(path)`: the buffer for a file, opened without being shown.
