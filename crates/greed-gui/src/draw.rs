@@ -4,17 +4,18 @@
 //! or a ligature never pushes the rest of the line off the grid.
 
 use bytemuck::{Pod, Zeroable};
+use cosmic_text::PhysicalGlyph;
 use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
-use greed_core::theme::{Style, Surface};
+use greed_core::theme::{Checkbox, Style, Surface};
 use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
 use crate::columns::{Columns, lay_out, style_of};
-use crate::text::{Atlas, Fonts, Full, TextStyle};
+use crate::text::{Atlas, Fonts, Full, Slot, TextStyle};
 
 /// One quad on screen, in pixels from the top left.
 #[repr(C)]
@@ -276,10 +277,31 @@ fn text_row(
     let baseline = top + at.height as f32 * fonts.baseline;
     let mut run: Option<Run> = None;
     for (x, cell) in row.iter().enumerate() {
+        let l = looks[x];
+        // A checkbox goes over its cells, in place of their text.
+        if let Some(kind) = l.checkbox {
+            if let Some(done) = run.take() {
+                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+            }
+            if x == 0 || looks[x - 1].checkbox != Some(kind) {
+                let end = (x..looks.len())
+                    .find(|&e| looks[e].checkbox != Some(kind))
+                    .unwrap_or(looks.len());
+                checkbox(
+                    kind,
+                    at.columns.span(at.y, x, end),
+                    at,
+                    &l,
+                    fonts,
+                    atlas,
+                    out,
+                )?;
+            }
+            continue;
+        }
         if cell.text.is_empty() {
             continue;
         }
-        let l = looks[x];
         let left = at.columns.x(at.y, x);
         let k = f32::from(cell.scale.max(1));
         let mut chars = cell.text.chars();
@@ -355,25 +377,70 @@ fn shape_run(
         };
         let offset = at.columns.x(at.y, col) - cluster_x;
         let physical = glyph.physical((offset, baseline), 1.0);
-        let Some(slot) = atlas.slot(physical.cache_key, fonts)? else {
-            continue;
-        };
-        let (x, y) = (
+        if let Some(slot) = atlas.slot(physical.cache_key, fonts)? {
+            out.push(glyph_quad(&physical, &slot, size, looks[col].fg));
+        }
+    }
+    Ok(())
+}
+
+/// The quad that draws a glyph from its place in the atlas, in `color`
+/// unless it has colors of its own.
+fn glyph_quad(physical: &PhysicalGlyph, slot: &Slot, size: f32, color: Rgba) -> Instance {
+    Instance {
+        pos: [
             (physical.x + slot.left) as f32,
             (physical.y - slot.top) as f32,
-        );
-        out.push(Instance {
-            pos: [x, y],
-            size: [slot.w as f32, slot.h as f32],
-            uv: [
-                slot.x as f32 / size,
-                slot.y as f32 / size,
-                (slot.x + slot.w) as f32 / size,
-                (slot.y + slot.h) as f32 / size,
-            ],
-            color: looks[col].fg,
-            kind: if slot.color { COLOR } else { MASK },
-        });
+        ],
+        size: [slot.w as f32, slot.h as f32],
+        uv: [
+            slot.x as f32 / size,
+            slot.y as f32 / size,
+            (slot.x + slot.w) as f32 / size,
+            (slot.y + slot.h) as f32 / size,
+        ],
+        color,
+        kind: if slot.color { COLOR } else { MASK },
+    }
+}
+
+/// A checkbox over the cells from `left` across `width`: an outlined box,
+/// or for a checked one a filled box with a tick in the background's color.
+fn checkbox(
+    kind: Checkbox,
+    (left, width): (f32, f32),
+    at: &RowAt,
+    look: &Look,
+    fonts: &mut Fonts,
+    atlas: &mut Atlas,
+    out: &mut Vec<Instance>,
+) -> Result<(), Full> {
+    let ch = fonts.cell_h;
+    let side = (ch * 0.62).min(width);
+    let (x, y) = (
+        left + (width - side) / 2.0,
+        at.y as f32 * ch + (ch - side) / 2.0,
+    );
+    let radius = side * 0.22;
+    if kind == Checkbox::Empty {
+        let line = (ch / 14.0).round().max(1.0);
+        out.push(rounded(x, y, side, side, radius, line, look.fg));
+        return Ok(());
+    }
+    out.push(rounded(x, y, side, side, radius, 0.0, look.fg));
+    let bold = TextStyle {
+        bold: true,
+        ..TextStyle::default()
+    };
+    let (glyphs, _) = fonts.shape("✓", bold);
+    let atlas_size = atlas.size as f32;
+    for glyph in &glyphs {
+        // In the middle of the box: a tick is about 0.7 of the font's size.
+        let baseline = y + side / 2.0 + 0.35 * glyph.font_size;
+        let physical = glyph.physical((x + (side - glyph.w) / 2.0 - glyph.x, baseline), 1.0);
+        if let Some(slot) = atlas.slot(physical.cache_key, fonts)? {
+            out.push(glyph_quad(&physical, &slot, atlas_size, look.bg));
+        }
     }
     Ok(())
 }

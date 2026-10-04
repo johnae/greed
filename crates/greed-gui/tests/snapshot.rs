@@ -731,3 +731,84 @@ fn what_is_under_a_rounded_floats_border_goes_on_behind_it_and_its_title_is_a_pi
     );
     assert_eq!(at(title as f32 - 0.5, 3.5)[..3], fill, "the title's pill");
 }
+
+#[test]
+fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    let yellow = [0xe5, 0xc8, 0x90];
+    for (name, kind) in [
+        ("todo", greed_core::theme::Checkbox::Empty),
+        ("done", greed_core::theme::Checkbox::Checked),
+    ] {
+        theme.set(
+            name,
+            Entry {
+                style: Style {
+                    fg: Some(Color::Rgb(yellow[0], yellow[1], yellow[2])),
+                    ..Style::default()
+                },
+                gui: Style {
+                    checkbox: Some(kind),
+                    ..Style::default()
+                },
+                ..Entry::default()
+            },
+        );
+    }
+    frame.theme = Arc::new(theme);
+    // A todo's box as notes shows it: a symbol and a space, then the text.
+    frame.rows[4] = row(&[("☐ ", "todo"), ("buy milk", "")]);
+    frame.rows[5] = row(&[("☑ ", "done"), ("call mum", "")]);
+    let grid = compose(&frame, Surface::Gui);
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::of(&frame),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("checkbox.png", size, &rgba);
+    // The box is centred on the two cells, 0.62 of a row tall.
+    let box_side = ch * 0.62;
+    let (left, middle) = (cw - box_side / 2.0, ch / 2.0);
+    let at = |x: f32, y: f32| pixel(&rgba, size.0, x as u32, y as u32);
+    // Empty: the outline in the todo's color (smoothed at its edges), the
+    // middle the background.
+    let edge = at(left + 1.0, 4.0 * ch + middle);
+    assert!(
+        edge[..3]
+            .iter()
+            .zip(&yellow)
+            .all(|(a, b)| a.abs_diff(*b) < 40),
+        "the empty box's edge: {edge:?}"
+    );
+    assert_eq!(
+        at(cw, 4.0 * ch + middle)[..3],
+        palette.bg,
+        "the empty box's inside"
+    );
+    // Checked: filled, away from the tick in its middle.
+    assert_eq!(
+        at(left + 2.0, 5.0 * ch + middle)[..3],
+        yellow,
+        "the checked box's fill"
+    );
+    // The text after it starts where it always did.
+    let inked = ((2.0 * cw) as u32..(3.0 * cw) as u32)
+        .flat_map(|x| ((4.0 * ch) as u32..(5.0 * ch) as u32).map(move |y| (x, y)))
+        .any(|(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg);
+    assert!(inked, "the todo's text after the box");
+}

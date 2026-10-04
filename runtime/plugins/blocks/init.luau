@@ -268,7 +268,7 @@ function run_block(buffer: greed.Buffer, block: Block, chain: { [string]: boolea
 	runs += 1
 	local run: Running = { buffer = buffer, ns = `blocks-run-{runs}`, stopped = false }
 	table.insert(running, run)
-	show(run, block.from, " ■ running")
+	show(run, block.from, "■ running")
 	draw(buffer)
 	-- Running the block its input comes from moves this one, which the
 	-- run's mark follows.
@@ -307,7 +307,7 @@ function run_block(buffer: greed.Buffer, block: Block, chain: { [string]: boolea
 					show(
 						run,
 						at,
-						` ■ running, {lines} line{if lines == 1 then "" else "s"} so far`
+						`■ running, {lines} line{if lines == 1 then "" else "s"} so far`
 					)
 				end
 			end,
@@ -517,7 +517,7 @@ function draw(buffer: greed.Buffer)
 					from = block.from,
 					to = buffer:line_end(block.open),
 					style = "blocks.run",
-					text = " ▶ run",
+					text = "▶ run",
 					eol = true,
 					action = "block-run",
 				})

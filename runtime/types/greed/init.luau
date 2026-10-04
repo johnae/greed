@@ -1160,6 +1160,8 @@ export type Style = {
 	shadow: boolean?,
 	--- For text in the window: its background as a badge, a box with rounded corners a little inside its cells, as motion hints have.
 	badge: boolean?,
+	--- For a todo's box in the window: drawn as a checkbox, "empty" or "checked", over the cells of its text. Terminals show the text.
+	checkbox: ("empty" | "checked")?,
 	--- The window's font for the text: "mono", the grid's (`gui-font`), or "prose", a proportional one (`gui-font-prose`) fitted into the same cells. Terminals have only the one.
 	font: ("mono" | "prose")?,
 }

@@ -833,7 +833,13 @@ impl<M: Measure> Renderer<M> {
                     };
                     self.record_action(view, place, used - 1, action, mark.range.start);
                 }
-                row.push(&shown, smallvec![Tag::from(mark.style.clone())]);
+                // The space goes in unstyled, so buttons side by side stay
+                // apart.
+                let (space, text) = shown.split_at(1);
+                row.push(space, SmallVec::new());
+                if !text.is_empty() {
+                    row.push(text, smallvec![Tag::from(mark.style.clone())]);
+                }
             }
         }
     }

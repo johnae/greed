@@ -750,9 +750,10 @@ require("@greed").option.set("notes-folder", "~/Documents/notes")
 
 ### How notes look
 
-A note's markup shows as symbols: todo boxes as ☐ and ☑ (done ones dimmed
-and struck through), headings as a symbol for their level, list dashes as
-bullets, and `due:2026-10-03` as 📅 3 Oct, in red once it's past. The file
+A note's markup shows as symbols: todo boxes as ☐ and ☑ (real checkboxes in
+the window; done ones dimmed and struck through), headings as a symbol for
+their level, list dashes as bullets, and `due:2026-10-03` as 📅 3 Oct, in
+red once it's past. The file
 stays plain Markdown: while you type on a line (insert mode), it shows as
 written; in edit mode, markup shows once the cursor is inside it. Click a
 box to tick it, or press `enter` on it, and a heading's symbol folds its
@@ -1170,11 +1171,12 @@ them.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-`rounded`, `shadow`, `badge` and `font` are for the window only: the first
-two make floats boxes with rounded corners and a soft shadow, `badge` draws
-a style's background as a small box with rounded corners, like a key cap
-(motion hints use it), and `font = "prose"` sets text in the proportional
-font.
+`rounded`, `shadow`, `badge`, `checkbox` and `font` are for the window
+only: the first two make floats boxes with rounded corners and a soft
+shadow, `badge` draws a style's background as a small box with rounded
+corners, like a key cap (motion hints and buttons use it), `checkbox =
+"empty"` or `"checked"` draws a checkbox over the text (todo boxes use it),
+and `font = "prose"` sets text in the proportional font.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors

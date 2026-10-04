@@ -2,7 +2,7 @@
 //! terminal does (its own default foreground and background, 16 numbered
 //! colors, or RGB); the window has a palette for the first two kinds.
 
-use greed_core::theme::{Color, Font, Style, Underline};
+use greed_core::theme::{Checkbox, Color, Font, Style, Underline};
 
 /// RGBA, 0 to 1.
 pub type Rgba = [f32; 4];
@@ -87,6 +87,8 @@ pub struct Look {
     pub prose: bool,
     /// The background drawn as a badge.
     pub badge: bool,
+    /// Drawn as a checkbox over its cells, in place of its text.
+    pub checkbox: Option<Checkbox>,
 }
 
 /// `style` as `palette` shows it: reversed and dimmed as asked.
@@ -117,6 +119,7 @@ pub fn look(style: &Style, palette: &Palette) -> Look {
         strikethrough: style.strikethrough == Some(true),
         prose: style.font == Some(Font::Prose),
         badge: style.badge == Some(true),
+        checkbox: style.checkbox,
     }
 }
 

@@ -14,7 +14,7 @@ use mlua::{Lua, Table, Value};
 
 use super::{State, state, state_mut};
 use crate::registry::PluginId;
-use crate::theme::{Color, Entry, Font, Style, Underline};
+use crate::theme::{Checkbox, Color, Entry, Font, Style, Underline};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -112,7 +112,7 @@ fn entry_from_lua(spec: &Table) -> LuaResult<Entry> {
     })
 }
 
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 14] = [
     "fg",
     "bg",
     "underline",
@@ -125,6 +125,7 @@ const KEYS: [&str; 13] = [
     "rounded",
     "shadow",
     "badge",
+    "checkbox",
     "font",
 ];
 
@@ -178,6 +179,16 @@ fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
         rounded: t.get("rounded")?,
         shadow: t.get("shadow")?,
         badge: t.get("badge")?,
+        checkbox: match t.get::<Option<String>>("checkbox")?.as_deref() {
+            None => None,
+            Some("empty") => Some(Checkbox::Empty),
+            Some("checked") => Some(Checkbox::Checked),
+            Some(other) => {
+                return Err(mlua::Error::runtime(format!(
+                    "checkbox is \"empty\" or \"checked\", not {other:?}"
+                )));
+            }
+        },
         font: match t.get::<Option<String>>("font")?.as_deref() {
             None => None,
             Some("mono") => Some(Font::Mono),
@@ -208,6 +219,13 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     t.set("rounded", style.rounded)?;
     t.set("shadow", style.shadow)?;
     t.set("badge", style.badge)?;
+    t.set(
+        "checkbox",
+        style.checkbox.map(|c| match c {
+            Checkbox::Empty => "empty",
+            Checkbox::Checked => "checked",
+        }),
+    )?;
     t.set(
         "font",
         style.font.map(|f| match f {

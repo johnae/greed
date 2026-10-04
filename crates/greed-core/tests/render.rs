@@ -441,7 +441,7 @@ fn marks_add_text_that_isnt_in_the_buffer() {
     assert_eq!(tagged(&f, &Tag::from("hint")), [": i32"]);
     assert_eq!(
         tagged(&f, &Tag::from("diagnostic.error")),
-        ["foo", " not found"]
+        ["foo", "not found"]
     );
     // The cursor counts the inserted text's width but can't land in it.
     assert_eq!(f.cursor, Some(Position { col: 16, row: 0 }));

@@ -79,6 +79,16 @@ pub enum Font {
     Prose,
 }
 
+/// A checkbox the window draws in place of the text's own symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Checkbox {
+    /// An outlined box.
+    Empty,
+    /// A filled box with a tick.
+    Checked,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Underline {
     Line,
@@ -146,6 +156,10 @@ pub struct Style {
     /// Terminals draw a block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<bool>,
+    /// For a todo's box in the window: drawn as a checkbox, empty or
+    /// checked, over the cells of its text. Terminals show the text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkbox: Option<Checkbox>,
     /// The window's font for the text: the grid's, or a proportional one for
     /// prose, fitted into the same cells. Terminals have only the one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -169,6 +183,7 @@ impl Style {
             rounded: over.rounded.or(self.rounded),
             shadow: over.shadow.or(self.shadow),
             badge: over.badge.or(self.badge),
+            checkbox: over.checkbox.or(self.checkbox),
             font: over.font.or(self.font),
         }
     }
