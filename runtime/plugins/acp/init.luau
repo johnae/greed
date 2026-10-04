@@ -42,7 +42,11 @@ end
 M.register({
 	name = "claude",
 	title = "Claude Code",
-	commands = { { "claude-code-acp" }, { "npx", "-y", "@zed-industries/claude-code-acp" } },
+	commands = {
+		{ "claude-agent-acp" },
+		{ "claude-code-acp" },
+		{ "npx", "-y", "@agentclientprotocol/claude-agent-acp" },
+	},
 })
 M.register({
 	name = "gemini",
@@ -450,6 +454,31 @@ greed.command({
 })
 
 greed.command({
+	name = "agent-fold",
+	doc = "Show all of the output of the tool call under the cursor, or fold it again",
+	run = function(ctx)
+		local s = by_buffer[ctx.buffer:id()]
+		if s == nil then
+			return
+		end
+		local cursor = ctx.buffer:line_of(ctx.view:selection().ranges[1].head)
+		local id = transcript.tool_at(ctx.buffer, cursor)
+		local tool = id and s.tools[id]
+		if tool == nil then
+			return
+		end
+		tool.open = not tool.open
+		transcript.render(ctx.buffer, s)
+		-- Redrawing moved what followed the tool's line; the cursor stays on it.
+		local line = transcript.line_of_tool(ctx.buffer, tool.id)
+		if line then
+			local pos = ctx.buffer:line_start(line)
+			ctx.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+		end
+	end,
+})
+
+greed.command({
 	name = "agent-stop",
 	doc = "Stop the agent's turn",
 	run = function(ctx)
@@ -564,6 +593,7 @@ for _, mode in { "normal", "vim" } do
 	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
 		enter = "agent-answer",
 		["ctrl-c"] = "agent-stop",
+		tab = "agent-fold",
 	})
 	greed.keymap.bind({ mode = mode, kind = "agents" }, {
 		enter = "agents-open",

@@ -10,8 +10,10 @@
 --
 --   ▍ Claude
 --     Found it in pager.rs.
---     ▸ Edit pager.rs                       done
---       pager.rs: 40 lines → 41
+--     · Edit pager.rs   completed
+--       src/pager.rs  +1 -1
+--     ▸ Run cargo test   failed
+--       1 test failed  (+12 lines, tab shows them)
 --     ? Allow Run cargo test?   enter to answer
 --
 --   ── alt-enter sends · ctrl-c stops ──
@@ -43,7 +45,8 @@ local function shorten(path: string): string
 end
 
 --- The history's text and styles, for `s` as it is now.
-function M.history(s: Session): (string, { Style })
+--- Also the tool call on each line, by 0-based line number.
+function M.history(s: Session): (string, { Style }, { [number]: string })
 	local lines: { string } = {}
 	local styles: { Style } = {}
 	local at = 0
@@ -68,20 +71,25 @@ function M.history(s: Session): (string, { Style })
 		title ..= ` (workspace {s.workspace.name})`
 	end
 	add(title, "markup.heading")
+	-- A heading each time the speaker changes; the agent's text, tools and
+	-- plans run on under one.
 	local speaker: string? = nil
+	local function heading(who: "user" | "agent")
+		if speaker ~= who then
+			add("")
+			add(`▍ {if who == "user" then "You" else s.name}`, "markup.heading")
+			speaker = who
+		end
+	end
+	local tools: { [number]: string } = {}
 	for _, entry in s.entries do
 		local e = entry :: any
 		if e.kind == "user" or e.kind == "agent" then
-			local who = if e.kind == "user" then "You" else s.name
-			add("")
-			add(`▍ {who}`, "markup.heading")
-			speaker = e.kind
+			heading(e.kind)
 			body(e.text)
 		else
-			if speaker ~= "agent" and e.kind ~= "note" then
-				add("")
-				add(`▍ {s.name}`, "markup.heading")
-				speaker = "agent"
+			if e.kind ~= "note" then
+				heading("agent")
 			end
 			if e.kind == "thought" then
 				local first = string.match(e.text, "^%s*([^\n]*)") or ""
@@ -89,14 +97,25 @@ function M.history(s: Session): (string, { Style })
 			elseif e.kind == "tool" then
 				local tool = e.tool
 				local status = string.gsub(tool.status or "pending", "_", " ")
-				local line = `  ▸ {tool.title}`
+				local fold = if #tool.output > 1 then (if tool.open then "▾" else "▸") else "·"
+				local line = `  {fold} {tool.title}`
+				local first = #lines
 				add(
 					`{line}   {status}`,
 					STATUS_STYLE[tool.status or "pending"] or "comment",
 					#line + 3
 				)
-				for _, detail in tool.detail do
-					add(`    {detail}`, "comment")
+				if tool.open then
+					for _, output in tool.output do
+						add(`    {output}`, "comment")
+					end
+				else
+					for _, detail in tool.detail do
+						add(`    {detail}`, "comment")
+					end
+				end
+				for i = first, #lines - 1 do
+					tools[i] = tool.id
 				end
 			elseif e.kind == "plan" then
 				for _, item in e.items do
@@ -123,13 +142,33 @@ function M.history(s: Session): (string, { Style })
 		add(if s.tool then `  working: {s.tool}` else "  working…", "comment")
 	end
 	add("")
-	return table.concat(lines, "\n") .. "\n", styles
+	return table.concat(lines, "\n") .. "\n", styles, tools
 end
 
 -- Where the prompt line starts in `buffer`, if it's still there.
 local function prompt_at(buffer: greed.Buffer): number?
 	local mark = buffer:decorations("acp-prompt")[1]
 	return mark and mark.from
+end
+
+-- The tool call on each line of each transcript, as last drawn.
+local rows: { [number]: { [number]: string } } = {}
+
+--- The id of the tool call drawn on `line` of `buffer`, if any.
+function M.tool_at(buffer: greed.Buffer, line: number): string?
+	local tools = rows[buffer:id()]
+	return tools and tools[line]
+end
+
+--- The first line tool call `id` is drawn on in `buffer`, if it is.
+function M.line_of_tool(buffer: greed.Buffer, id: string): number?
+	local found = nil
+	for line, tool in rows[buffer:id()] or {} do
+		if tool == id and (found == nil or line < found) then
+			found = line
+		end
+	end
+	return found
 end
 
 local function mark_prompt(buffer: greed.Buffer, at: number)
@@ -139,7 +178,8 @@ end
 --- Redraws the history of `s` in `buffer`, changing only what changed so a
 --- reply streaming in only adds to the end.
 function M.render(buffer: greed.Buffer, s: Session)
-	local history, styles = M.history(s)
+	local history, styles, tools = M.history(s)
+	rows[buffer:id()] = tools
 	local stop = prompt_at(buffer)
 	if stop == nil then
 		-- The prompt line went; everything there was is history now.

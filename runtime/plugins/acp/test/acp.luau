@@ -77,8 +77,8 @@ test("the agent asks before an edit; enter answers, and an open file is edited",
 	assert(not file:modified(), "and saved")
 	local text = shown()
 	assert(string.find(text, "? Edit a.txt: Allow once", 1, true), text)
-	assert(string.find(text, "▸ Edit a.txt   completed", 1, true), text)
-	assert(string.find(text, "a.txt: 1 lines → 1", 1, true), text)
+	assert(string.find(text, "· Edit a.txt   completed", 1, true), text)
+	assert(string.find(text, "    a.txt  +1 -1", 1, true), text)
 	assert(string.find(text, "Edited it.", 1, true), text)
 end)
 
@@ -92,7 +92,7 @@ test("rejecting an edit leaves the file alone", function(t)
 	end)
 	t:wait(30)
 	assert(greed.fs.read(dir .. "/a.txt") == "a\n")
-	assert(string.find(shown(), "▸ Edit a.txt   failed", 1, true), shown())
+	assert(string.find(shown(), "· Edit a.txt   failed", 1, true), shown())
 	assert(string.find(shown(), "Left it alone.", 1, true), shown())
 end)
 
@@ -137,7 +137,27 @@ test("plans and failed tool calls show in the transcript", function(t)
 		text
 	)
 	assert(string.find(text, "▸ Run tests   failed", 1, true), text)
-	assert(string.find(text, "    1 test failed", 1, true), text)
+	assert(string.find(text, "    1 test failed  (+2 lines, tab shows them)", 1, true), text)
+	local _, headings = string.gsub(text, "▍ Fake", "")
+	assert(headings == 1, "one heading for the agent's turn: " .. text)
+	-- tab on the tool call shows all its output, without the code fences.
+	local view = greed.view()
+	local at = (string.find(text, "▸ Run tests", 1, true) :: number) - 1
+	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	t:keys("tab")
+	text = shown()
+	assert(
+		string.find(
+			text,
+			"▾ Run tests   failed\n    1 test failed\n    at pager.rs:3\n    expected 2\n",
+			1,
+			true
+		),
+		text
+	)
+	assert(not string.find(text, "```", 1, true), text)
+	t:keys("tab")
+	assert(string.find(shown(), "▸ Run tests", 1, true), "folded again")
 end)
 
 test("when the agent exits, the transcript says so with what it said last", function(t)

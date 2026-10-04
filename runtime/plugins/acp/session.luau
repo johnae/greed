@@ -17,6 +17,9 @@ export type Tool = {
 	status: string?,
 	--- A line or two about what it did: a diff's size, a bit of output.
 	detail: { string },
+	--- All of its output, shown when it's unfolded.
+	output: { string },
+	open: boolean,
 }
 
 --- A question the agent waits on you for.
@@ -96,39 +99,56 @@ local function text_of(content: any): string
 	return `[{content.type}]`
 end
 
-local function count_lines(text: string?): number
-	if text == nil or text == "" then
-		return 0
-	end
-	local _, n = string.gsub(text, "\n", "")
-	return if string.sub(text, -1) == "\n" then n else n + 1
+-- The most of a tool's output kept to show when it's unfolded.
+local OUTPUT_KEPT = 200
+
+-- `path` from `cwd` when it's inside it.
+local function relative(path: string, cwd: string): string
+	return if string.sub(path, 1, #cwd + 1) == cwd .. "/" then string.sub(path, #cwd + 2) else path
 end
 
--- A line or two for each piece of a tool call's content.
-local function detail_of(content: any): { string }
-	local out = {}
+-- How many lines a diff from `old` to `new` adds and removes.
+local function diff_size(old: string, new: string): (number, number)
+	local added, removed = 0, 0
+	for _, hunk in greed.diff(old, new) do
+		local _, gone = string.gsub(string.sub(old, hunk.from + 1, hunk.to), "\n", "")
+		local _, came = string.gsub(hunk.text, "\n", "")
+		added += came
+		removed += gone
+	end
+	return added, removed
+end
+
+-- A tool call's content as a short summary, and as all its lines to show
+-- when it's unfolded. Code fences around output are left out.
+local function detail_of(content: any, cwd: string): ({ string }, { string })
+	local summary, output = {}, {}
 	for _, item in (if type(content) == "table" then content else {}) do
 		if item.type == "diff" then
-			table.insert(
-				out,
-				`{item.path}: {count_lines(item.oldText)} lines → {count_lines(item.newText)}`
-			)
+			local added, removed = diff_size(item.oldText or "", item.newText or "")
+			table.insert(summary, `{relative(item.path or "", cwd)}  +{added} -{removed}`)
 		elseif item.type == "content" then
-			local text = text_of(item.content)
-			local lines = string.split(text, "\n")
-			for i = 1, math.min(#lines, 3) do
-				if lines[i] ~= "" then
-					table.insert(out, lines[i])
+			local lines = {}
+			for _, line in string.split(text_of(item.content), "\n") do
+				if not string.match(line, "^```") then
+					table.insert(lines, line)
 				end
 			end
-			if #lines > 3 then
-				table.insert(out, `… {#lines - 3} more lines`)
+			while lines[#lines] == "" do
+				table.remove(lines)
+			end
+			if #lines > 0 then
+				local more = if #lines > 1 then `  (+{#lines - 1} lines, tab shows them)` else ""
+				table.insert(summary, lines[1] .. more)
+			end
+			for i = 1, math.min(#lines, OUTPUT_KEPT) do
+				table.insert(output, lines[i])
 			end
 		elseif item.type == "terminal" then
-			table.insert(out, "(in a terminal)")
+			table.insert(summary, "(in a terminal)")
 		end
 	end
-	return out
+	return summary, output
 end
 
 -- Applies one session/update notification.
@@ -141,12 +161,15 @@ local function update(session: Session, u: any)
 	elseif kind == "user_message_chunk" then
 		append(session, "user", text_of(u.content))
 	elseif kind == "tool_call" then
+		local detail, output = detail_of(u.content, session.cwd)
 		local tool: Tool = {
 			id = u.toolCallId,
 			title = u.title or "a tool",
 			kind = u.kind,
 			status = u.status or "pending",
-			detail = detail_of(u.content),
+			detail = detail,
+			output = output,
+			open = false,
 		}
 		session.tools[tool.id] = tool
 		table.insert(session.entries, { kind = "tool", tool = tool })
@@ -160,7 +183,7 @@ local function update(session: Session, u: any)
 		tool.kind = u.kind or tool.kind
 		tool.status = u.status or tool.status
 		if u.content then
-			tool.detail = detail_of(u.content)
+			tool.detail, tool.output = detail_of(u.content, session.cwd)
 		end
 		if tool.status == "completed" or tool.status == "failed" then
 			if session.tool == tool.title then

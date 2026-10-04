@@ -105,7 +105,7 @@ while IFS= read -r line; do
 		plan*)
 			update '{"sessionUpdate":"plan","entries":[{"content":"look around","priority":"high","status":"completed"},{"content":"fix it","priority":"high","status":"in_progress"}]}'
 			update '{"sessionUpdate":"tool_call","toolCallId":"t2","title":"Run tests","kind":"execute","status":"in_progress"}'
-			update '{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"1 test failed"}}]}'
+			update '{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"```\n1 test failed\nat pager.rs:3\nexpected 2\n```"}}]}'
 			turn_done "$id" end_turn
 			;;
 		quit*)

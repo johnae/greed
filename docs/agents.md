@@ -100,8 +100,9 @@ removes it when the session ends.
 ## Agents inside Greed
 
 Greed can also run agents itself, over the Agent Client Protocol (ACP): Claude
-Code (through `claude-code-acp`), Gemini CLI, Codex, or any agent that
-speaks it. Each gets a transcript buffer, and several can work at once.
+Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), or any
+agent that speaks it, found on your `PATH`. Each gets a transcript buffer,
+and several can work at once.
 
 | Keys | |
 |---|---|
@@ -109,8 +110,9 @@ speaks it. Each gets a transcript buffer, and several can work at once.
 | `space i o` (`:agents`) | The agents: what each is doing, and their changes |
 
 The transcript shows what you and the agent said, the tools it ran and how
-they went, and its plan. Write below the prompt line at the bottom and
-press `alt-enter` to send; `ctrl-c` stops the agent's turn. When it asks
+they went (`tab` on a tool shows all its output), and its plan. Write
+below the prompt line at the bottom and press `alt-enter` to send;
+`ctrl-c` stops the agent's turn. When it asks
 before doing something, `enter` (or `alt-p`) answers: `y` allows once, `a`
 always, `n` rejects. The agent reads open files as you have them, unsaved
 changes included, and its edits to an open file are made in the buffer and
