@@ -29,8 +29,11 @@ use crate::text::{self, Atlas, Fonts};
 const ATLAS_SIZE: u32 = 2048;
 
 /// What reaches the event loop from the session's thread.
-enum Event {
+pub(crate) enum Event {
     Output(Output),
+    /// A menu bar item was chosen: the command to run.
+    #[cfg(target_os = "macos")]
+    Menu(String),
 }
 
 thread_local! {
@@ -74,6 +77,10 @@ pub fn run(
             }
         });
         let mut app = App::new(input.clone());
+        #[cfg(target_os = "macos")]
+        {
+            app.menubar = Some(crate::menubar::MenuBar::new(event_loop.create_proxy()));
+        }
         app.size = size_file.and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
         event_loop.run_app_on_demand(&mut app)?;
         let _ = stop.send(());
@@ -115,6 +122,9 @@ struct App {
     ended: Option<Output>,
     /// The window's size, before the screen's scale.
     size: Option<LogicalSize<f64>>,
+    /// The system's menu bar, filled with the frame's menus.
+    #[cfg(target_os = "macos")]
+    menubar: Option<crate::menubar::MenuBar>,
 }
 
 impl App {
@@ -136,6 +146,8 @@ impl App {
             clipboard: arboard::Clipboard::new().ok(),
             ended: None,
             size: None,
+            #[cfg(target_os = "macos")]
+            menubar: None,
         }
     }
 
@@ -262,6 +274,10 @@ impl App {
             }
         }
         self.follow_options();
+        #[cfg(target_os = "macos")]
+        if let (Some(bar), Some(frame)) = (&mut self.menubar, &self.frame) {
+            bar.show(&frame.menus);
+        }
         if let Some(shown) = &self.shown {
             shown.window.request_redraw();
         }
@@ -310,8 +326,13 @@ impl ApplicationHandler<Event> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
-        let Event::Output(output) = event;
-        self.handle(event_loop, output);
+        match event {
+            Event::Output(output) => self.handle(event_loop, output),
+            #[cfg(target_os = "macos")]
+            Event::Menu(command) => {
+                let _ = self.input.send(Input::Run(command));
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

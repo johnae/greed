@@ -60,6 +60,12 @@ a terminal with kitty graphics, PDFs included. Dead keys and input methods
 type as they do elsewhere, and the window opens at the size it last had. On
 Linux it needs Wayland or X11 and a Vulkan or GL driver.
 
+On macOS the menu bar holds Greed's menus (File, Edit, View, Pane, Help),
+each item a command. Elsewhere there's no menu bar, and the command
+palette (`space ?`, or `ctrl-P` in edit mode) lists every command. Plugins
+and your config add items:
+`require("@core").menus.add("Tools", "Run tests", "test-run")`.
+
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
 it back to the size it had before. Pick another font and size in your
 `init.luau`; the window follows as soon as they change:
