@@ -12,20 +12,55 @@ use cosmic_text::{
 /// `gui-font-size` option says otherwise.
 pub const DEFAULT_SIZE: f32 = 15.0;
 
-/// The font a frame's options ask for: `gui-font`, a family (none, or
-/// empty, for the system's monospaced font), and `gui-font-size`.
-pub fn chosen(options: &BTreeMap<String, String>) -> (Option<String>, f32) {
-    let family = options
-        .get("gui-font")
-        .map(|f| f.trim())
-        .filter(|f| !f.is_empty())
-        .map(str::to_owned);
+/// The fonts a frame's options ask for: `gui-font`, the grid's family, and
+/// `gui-font-prose`, prose's (none, or empty, for the system's monospaced
+/// and sans-serif fonts), at `gui-font-size`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Choice {
+    pub family: Option<String>,
+    pub prose: Option<String>,
+    pub size: f32,
+}
+
+impl Default for Choice {
+    fn default() -> Self {
+        Choice {
+            family: None,
+            prose: None,
+            size: DEFAULT_SIZE,
+        }
+    }
+}
+
+/// What `options` choose.
+pub fn chosen(options: &BTreeMap<String, String>) -> Choice {
+    let family = |name: &str| {
+        options
+            .get(name)
+            .map(|f| f.trim())
+            .filter(|f| !f.is_empty())
+            .map(str::to_owned)
+    };
     let size = options
         .get("gui-font-size")
         .and_then(|s| s.trim().parse::<f32>().ok())
         .filter(|s| (4.0..=200.0).contains(s))
         .unwrap_or(DEFAULT_SIZE);
-    (family, size)
+    Choice {
+        family: family("gui-font"),
+        prose: family("gui-font-prose"),
+        size,
+    }
+}
+
+/// How a run of text is drawn: its weight and slant, how many times bigger,
+/// and whether in the prose font.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TextStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub scale: u8,
+    pub prose: bool,
 }
 
 /// The monospaced font text is drawn in, and the cell it sets.
@@ -34,6 +69,8 @@ pub struct Fonts {
     cache: SwashCache,
     buffer: Buffer,
     family: Option<String>,
+    /// Prose's family, or the system's sans-serif.
+    prose: Option<String>,
     /// The size and line height at scale 1.
     metrics: Metrics,
     /// A cell's width and height in pixels.
@@ -55,6 +92,7 @@ impl Fonts {
             cache: SwashCache::new(),
             buffer,
             family: None,
+            prose: None,
             metrics,
             cell_w: 0.0,
             cell_h: 0.0,
@@ -74,31 +112,43 @@ impl Fonts {
         self.cell_h = line;
         self.baseline = size;
         // A cell is as wide as a digit; the baseline is where the font puts it.
-        let (glyphs, baseline) = self.shape("0", false, false, 1);
+        let (glyphs, baseline) = self.shape("0", TextStyle::default());
         if let Some(glyph) = glyphs.first() {
             self.cell_w = glyph.w;
         }
         self.baseline = baseline;
     }
 
-    /// Shapes one line `scale` times the size: its glyphs, each knowing the
-    /// byte range of the text it draws, and the baseline from the line's top.
-    pub fn shape(
-        &mut self,
-        text: &str,
-        bold: bool,
-        italic: bool,
-        scale: u8,
-    ) -> (Vec<LayoutGlyph>, f32) {
-        let family = self
-            .family
-            .as_deref()
-            .map_or(Family::Monospace, Family::Name);
+    /// Switches prose to `family`, or the system's sans-serif.
+    pub fn set_prose(&mut self, family: Option<String>) {
+        self.prose = family;
+    }
+
+    /// Shapes one line as `style` says: its glyphs, each knowing the byte
+    /// range of the text it draws, and the baseline from the line's top.
+    pub fn shape(&mut self, text: &str, style: TextStyle) -> (Vec<LayoutGlyph>, f32) {
+        let family = if style.prose {
+            self.prose
+                .as_deref()
+                .map_or(Family::SansSerif, Family::Name)
+        } else {
+            self.family
+                .as_deref()
+                .map_or(Family::Monospace, Family::Name)
+        };
         let attrs = Attrs::new()
             .family(family)
-            .weight(if bold { Weight::BOLD } else { Weight::NORMAL })
-            .style(if italic { Style::Italic } else { Style::Normal });
-        let k = f32::from(scale.max(1));
+            .weight(if style.bold {
+                Weight::BOLD
+            } else {
+                Weight::NORMAL
+            })
+            .style(if style.italic {
+                Style::Italic
+            } else {
+                Style::Normal
+            });
+        let k = f32::from(style.scale.max(1));
         self.buffer.set_metrics(Metrics::new(
             self.metrics.font_size * k,
             self.metrics.line_height * k,
@@ -267,22 +317,27 @@ mod tests {
     }
 
     #[test]
-    fn the_options_choose_the_font_and_its_size() {
-        assert_eq!(chosen(&options(&[])), (None, DEFAULT_SIZE));
+    fn the_options_choose_the_fonts_and_their_size() {
+        assert_eq!(chosen(&options(&[])), Choice::default());
         assert_eq!(
             chosen(&options(&[
                 ("gui-font", "Fira Code"),
+                ("gui-font-prose", "Inter"),
                 ("gui-font-size", "13.5")
             ])),
-            (Some("Fira Code".to_owned()), 13.5)
+            Choice {
+                family: Some("Fira Code".to_owned()),
+                prose: Some("Inter".to_owned()),
+                size: 13.5
+            }
         );
         assert_eq!(
             chosen(&options(&[("gui-font", " "), ("gui-font-size", "0")])),
-            (None, DEFAULT_SIZE),
+            Choice::default(),
             "empty and silly values are the defaults"
         );
         assert_eq!(
-            chosen(&options(&[("gui-font-size", "big")])).1,
+            chosen(&options(&[("gui-font-size", "big")])).size,
             DEFAULT_SIZE
         );
     }

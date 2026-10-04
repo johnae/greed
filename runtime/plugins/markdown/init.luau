@@ -164,6 +164,8 @@ local function marks(buffer: greed.Buffer): { greed.Mark }
 			end
 			continue
 		end
+		-- Outside code, text is prose: in the window, in the prose font.
+		paint(line, 1, #text, "markdown.text")
 		local hashes, space = string.match(text, "^(#+)()%s")
 		local quote = string.match(text, "^%s*>%s?()")
 		local bullet = string.match(text, "^%s*()[-*+]%s")

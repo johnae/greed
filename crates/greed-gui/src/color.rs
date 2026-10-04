@@ -2,7 +2,7 @@
 //! terminal does (its own default foreground and background, 16 numbered
 //! colors, or RGB); the window has a palette for the first two kinds.
 
-use greed_core::theme::{Color, Style, Underline};
+use greed_core::theme::{Color, Font, Style, Underline};
 
 /// RGBA, 0 to 1.
 pub type Rgba = [f32; 4];
@@ -72,6 +72,10 @@ impl Palette {
 
 /// How a cell looks on screen.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each is an attribute of its own, on or off"
+)]
 pub struct Look {
     pub fg: Rgba,
     pub bg: Rgba,
@@ -79,6 +83,8 @@ pub struct Look {
     pub italic: bool,
     pub underline: Option<(Underline, Rgba)>,
     pub strikethrough: bool,
+    /// Drawn in the prose font.
+    pub prose: bool,
 }
 
 /// `style` as `palette` shows it: reversed and dimmed as asked.
@@ -107,6 +113,7 @@ pub fn look(style: &Style, palette: &Palette) -> Look {
             )
         }),
         strikethrough: style.strikethrough == Some(true),
+        prose: style.font == Some(Font::Prose),
     }
 }
 

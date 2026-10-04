@@ -14,6 +14,7 @@
 
 mod boxdraw;
 mod color;
+pub mod columns;
 pub mod draw;
 pub mod gpu;
 #[cfg(target_os = "macos")]

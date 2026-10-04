@@ -22,6 +22,7 @@ use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{Window, WindowId};
 
 use crate::color::Palette;
+use crate::columns::Columns;
 use crate::draw;
 use crate::gpu::Gpu;
 use crate::text::{self, Atlas, Fonts};
@@ -104,14 +105,16 @@ struct App {
     input: Sender<Input>,
     shown: Option<Shown>,
     fonts: Fonts,
-    /// The font the options chose, a family and a size before the scale.
-    font: (Option<String>, f32),
+    /// The fonts the options chose, with their size before the scale.
+    font: text::Choice,
     scale: f64,
     atlas: Atlas,
     palette: Palette,
     frame: Option<Frame>,
     /// Every image the session sent, as PNG: it sends each only once.
     images: HashMap<ImageId, Vec<u8>>,
+    /// Where the last frame put each row's cells, for the mouse.
+    columns: Columns,
     mods: ModifiersState,
     /// The cell the mouse is over, and the button held, for drags.
     mouse: (u16, u16),
@@ -133,12 +136,13 @@ impl App {
             input,
             shown: None,
             fonts: Fonts::new(None, text::DEFAULT_SIZE),
-            font: (None, text::DEFAULT_SIZE),
+            font: text::Choice::default(),
             scale: 1.0,
             atlas: Atlas::new(ATLAS_SIZE),
             palette: Palette::default(),
             frame: None,
             images: HashMap::new(),
+            columns: Columns::default(),
             mods: ModifiersState::empty(),
             mouse: (0, 0),
             held: None,
@@ -159,8 +163,10 @@ impl App {
 
     /// The chosen font at the window's scale, from a fresh atlas.
     fn refont(&mut self) {
-        let (family, size) = &self.font;
-        self.fonts.set(family.clone(), size * self.scale as f32);
+        let choice = &self.font;
+        self.fonts
+            .set(choice.family.clone(), choice.size * self.scale as f32);
+        self.fonts.set_prose(choice.prose.clone());
         self.atlas.clear();
     }
 
@@ -238,11 +244,13 @@ impl App {
         // An input method shows what it's composing by the cursor.
         if let Some(at) = frame.cursor {
             let (cw, ch) = (f64::from(self.fonts.cell_w), f64::from(self.fonts.cell_h));
+            let x = scene.columns.x(usize::from(at.row), usize::from(at.col));
             shown.window.set_ime_cursor_area(
-                PhysicalPosition::new(f64::from(at.col) * cw, f64::from(at.row) * ch),
+                PhysicalPosition::new(f64::from(x), f64::from(at.row) * ch),
                 PhysicalSize::new(cw, ch),
             );
         }
+        self.columns = scene.columns;
     }
 
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
@@ -283,10 +291,15 @@ impl App {
         }
     }
 
+    /// The cell under `position`, as the last frame placed its text: in a
+    /// row with prose, the cell of the character there.
     fn cell_at(&self, position: PhysicalPosition<f64>) -> (u16, u16) {
-        let col = (position.x / f64::from(self.fonts.cell_w)).max(0.0) as u16;
-        let row = (position.y / f64::from(self.fonts.cell_h)).max(0.0) as u16;
-        (col, row)
+        let row = (position.y / f64::from(self.fonts.cell_h)).max(0.0) as usize;
+        let col = self.columns.col_at(row, position.x as f32);
+        (
+            u16::try_from(col).unwrap_or(u16::MAX),
+            u16::try_from(row).unwrap_or(u16::MAX),
+        )
     }
 
     fn mouse(&self, kind: MouseKind) {

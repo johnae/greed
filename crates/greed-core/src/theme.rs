@@ -69,6 +69,16 @@ impl Color {
     }
 }
 
+/// Which of the window's fonts text is drawn in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Font {
+    /// The monospaced font that sets the grid (`gui-font`).
+    Mono,
+    /// A proportional font for prose (`gui-font-prose`).
+    Prose,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Underline {
     Line,
@@ -131,6 +141,10 @@ pub struct Style {
     pub rounded: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
+    /// The window's font for the text: the grid's, or a proportional one for
+    /// prose, fitted into the same cells. Terminals have only the one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<Font>,
 }
 
 impl Style {
@@ -149,6 +163,7 @@ impl Style {
             strikethrough: over.strikethrough.or(self.strikethrough),
             rounded: over.rounded.or(self.rounded),
             shadow: over.shadow.or(self.shadow),
+            font: over.font.or(self.font),
         }
     }
 

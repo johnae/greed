@@ -17,6 +17,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "gui-font-prose",
+	doc = "The proportional font the window draws prose in (styles with font = \"prose\", like Markdown's text), by family name; empty for the system's sans-serif",
+	default = "",
+})
+
+greed.option.define({
 	name = "gui-font-size",
 	doc = "The size of the window's text in pixels, before the screen's scale",
 	default = SIZE,

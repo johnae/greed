@@ -176,7 +176,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     // Fira Code joins "->" with contextual alternates: the same number of
     // glyphs, but other ones than "-" and ">" on their own.
     let ids = |fonts: &mut Fonts, text: &str| {
-        let (glyphs, _) = fonts.shape(text, false, false, 1);
+        let (glyphs, _) = fonts.shape(text, greed_gui::text::TextStyle::default());
         glyphs.iter().map(|g| g.glyph_id).collect::<Vec<_>>()
     };
     let joined = ids(&mut fonts, "->");
@@ -481,5 +481,70 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     assert!(
         shade[..3].iter().zip(&palette.bg).all(|(s, b)| s < b),
         "shadow under the float: {shade:?}"
+    );
+}
+
+#[test]
+fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    frame.floats.clear();
+    let mut theme = (*frame.theme).clone();
+    theme.set(
+        "prose",
+        Entry {
+            gui: Style {
+                font: Some(greed_core::theme::Font::Prose),
+                ..Style::default()
+            },
+            ..Entry::default()
+        },
+    );
+    frame.theme = Arc::new(theme);
+    let words = "Illuminating paragraphs of prose";
+    frame.rows[0] = row(&[(words, "prose"), ("|", "")]);
+    let col = words.len() as u16;
+    frame.cursor = Some(Position { col, row: 0 });
+    let grid = compose(&frame, Surface::Gui);
+    let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
+    let scene = build(
+        &grid,
+        cursor,
+        &Chrome::default(),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file = std::fs::File::create(std::path::Path::new(&dir).join("prose.png")).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    let x = scene.columns.x(0, usize::from(col));
+    assert!(
+        x < f32::from(col) * cw,
+        "prose is narrower: {x} < {}",
+        f32::from(col) * cw
+    );
+    // The block cursor is where the "|" is drawn, after the prose.
+    let at = pixel(&rgba, size.0, (x + cw * 0.15) as u32, (ch * 0.1) as u32);
+    assert_eq!(at[..3], palette.fg, "the cursor at {x}");
+    // And nothing is drawn where the grid would have put it.
+    let grid_x = f32::from(col) * cw + cw / 2.0;
+    assert_eq!(
+        pixel(&rgba, size.0, grid_x as u32, (ch / 2.0) as u32)[..3],
+        palette.bg
     );
 }

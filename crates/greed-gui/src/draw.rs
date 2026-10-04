@@ -13,7 +13,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
-use crate::text::{Atlas, Fonts, Full};
+use crate::columns::{Columns, lay_out, style_of};
+use crate::text::{Atlas, Fonts, Full, TextStyle};
 
 /// One quad on screen, in pixels from the top left.
 #[repr(C)]
@@ -47,6 +48,8 @@ pub struct Scene {
     pub background: Rgba,
     pub instances: Vec<Instance>,
     pub images: Vec<(ImageId, Instance)>,
+    /// Where each row's cells went, for the mouse.
+    pub columns: Columns,
 }
 
 /// Where each image goes, `COLOR` quads to draw with the image's own
@@ -153,12 +156,12 @@ pub fn build(
     // float's shadow, so none falls on another float, then their fills and
     // outlines, then the backgrounds inside them (a picker's current line,
     // a title over the outline).
-    let size = (cw, ch);
-    let boxes = float_boxes(chrome, &looks, size);
+    let columns = lay_out(grid, &looks, fonts);
+    let boxes = float_boxes(chrome, &looks, (cw, ch));
     let regions = regions(grid, chrome);
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
-        backgrounds(&looks, &regions, pass, size, background, out);
+        backgrounds(&looks, &regions, pass, &columns, ch, background, out);
     };
     fill(Pass::Under, &mut instances);
     let rounded = chrome.rounded;
@@ -188,32 +191,31 @@ pub fn build(
         let top = y as f32 * ch;
         let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
         for (x, l) in row.iter().enumerate() {
+            let (left, w) = columns.span(y, x, x + 1);
             if let Some((_, color)) = l.underline {
                 let under = (top + baseline + thickness).min(top + bottom - thickness);
-                instances.push(rect(x as f32 * cw, under, cw, thickness, color));
+                instances.push(rect(left, under, w, thickness, color));
             }
             if l.strikethrough {
                 let middle = top + (baseline * 0.65).round();
-                instances.push(rect(x as f32 * cw, middle, cw, thickness, l.fg));
+                instances.push(rect(left, middle, w, thickness, l.fg));
             }
         }
     }
     for (y, (row, row_looks)) in grid.iter().zip(&looks).enumerate() {
         if let Some(height) = heights[y] {
-            text_row(
-                row,
-                row_looks,
-                (y, height),
-                &border[y],
-                fonts,
-                atlas,
-                &mut instances,
-            )?;
+            let at = RowAt {
+                y,
+                height,
+                columns: &columns,
+                outlined: &border[y],
+            };
+            text_row(row, row_looks, &at, fonts, atlas, &mut instances)?;
         }
     }
     if let Some((shape, col, row, w, h)) = cursor {
-        let (x, y) = (col as f32 * cw, row as f32 * ch);
-        let (w, h) = (w as f32 * cw, h as f32 * ch);
+        let (x, w) = columns.span(row, col, col + w);
+        let (y, h) = (row as f32 * ch, h as f32 * ch);
         let color = looks
             .get(row)
             .and_then(|r| r.get(col))
@@ -229,6 +231,7 @@ pub fn build(
         background,
         instances,
         images: images(chrome.images, cw, ch),
+        columns,
     })
 }
 
@@ -237,99 +240,103 @@ struct Run {
     text: String,
     /// The byte offset of each cell's text, with its column, in order.
     starts: Vec<(usize, usize)>,
-    bold: bool,
-    italic: bool,
-    scale: u8,
+    style: TextStyle,
 }
 
-/// The glyphs of row `y`, `height` rows tall, in runs of one weight, slant
-/// and size so ligatures and shaping work across them; box-drawing
-/// characters as rectangles, except in cells `outlined` says a float's
-/// rounded outline takes. Text of every size sits on one baseline.
+/// Where a row's text goes: row `y`, `height` rows tall, its cells placed
+/// as `columns` says, and which cells a float's rounded outline takes.
+struct RowAt<'a> {
+    y: usize,
+    height: usize,
+    columns: &'a Columns,
+    outlined: &'a [bool],
+}
+
+/// The glyphs of a row, in runs of one weight, slant, size and font so
+/// ligatures and shaping work across them; box-drawing characters as
+/// rectangles, except where a float's outline is. Text of every size sits
+/// on one baseline.
 fn text_row(
     row: &[Cell],
     looks: &[Look],
-    (y, height): (usize, usize),
-    outlined: &[bool],
+    at: &RowAt,
     fonts: &mut Fonts,
     atlas: &mut Atlas,
     out: &mut Vec<Instance>,
 ) -> Result<(), Full> {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
-    let top = y as f32 * ch;
-    let baseline = top + height as f32 * fonts.baseline;
+    let top = at.y as f32 * ch;
+    let baseline = top + at.height as f32 * fonts.baseline;
     let mut run: Option<Run> = None;
     for (x, cell) in row.iter().enumerate() {
         if cell.text.is_empty() {
             continue;
         }
         let l = looks[x];
+        let left = at.columns.x(at.y, x);
         let k = f32::from(cell.scale.max(1));
         let mut chars = cell.text.chars();
         let one = match (chars.next(), chars.next()) {
             (Some(c), None) => Some(c),
             _ => None,
         };
-        if let Some(cap) = one.and_then(|c| round_cap(c, x as f32 * cw, top, cw * k, ch * k, l.fg))
-        {
+        if let Some(cap) = one.and_then(|c| round_cap(c, left, top, cw * k, ch * k, l.fg)) {
             if let Some(done) = run.take() {
-                shape_run(&done, looks, baseline, fonts, atlas, out)?;
+                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
             }
             out.push(cap);
             continue;
         }
         if let Some(rects) = one.and_then(|c| boxdraw::rects(c, cw * k, ch * k)) {
             if let Some(done) = run.take() {
-                shape_run(&done, looks, baseline, fonts, atlas, out)?;
+                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
             }
-            if !outlined.get(x).copied().unwrap_or(false) {
+            if !at.outlined.get(x).copied().unwrap_or(false) {
                 for r in rects {
-                    out.push(rect(x as f32 * cw + r.x, top + r.y, r.w, r.h, l.fg));
+                    out.push(rect(left + r.x, top + r.y, r.w, r.h, l.fg));
                 }
             }
             continue;
         }
-        if run
-            .as_ref()
-            .is_some_and(|r| r.bold != l.bold || r.italic != l.italic || r.scale != cell.scale)
+        let style = style_of(cell, &l);
+        if run.as_ref().is_some_and(|r| r.style != style)
             && let Some(done) = run.take()
         {
-            shape_run(&done, looks, baseline, fonts, atlas, out)?;
+            shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
         }
         let r = run.get_or_insert_with(|| Run {
             text: String::new(),
             starts: Vec::new(),
-            bold: l.bold,
-            italic: l.italic,
-            scale: cell.scale,
+            style,
         });
         r.starts.push((r.text.len(), x));
         r.text.push_str(&cell.text);
     }
     if let Some(done) = run {
-        shape_run(&done, looks, baseline, fonts, atlas, out)?;
+        shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
     }
     Ok(())
 }
 
-/// `run`'s glyphs, each cluster at its cell, on the baseline at `baseline`
-/// pixels down.
+/// `run`'s glyphs, each cluster where its cell's text goes, on the baseline
+/// at `baseline` pixels down.
 fn shape_run(
     run: &Run,
+    at: &RowAt,
     looks: &[Look],
     baseline: f32,
     fonts: &mut Fonts,
     atlas: &mut Atlas,
     out: &mut Vec<Instance>,
 ) -> Result<(), Full> {
-    let (glyphs, _) = fonts.shape(&run.text, run.bold, run.italic, run.scale);
+    let (glyphs, _) = fonts.shape(&run.text, run.style);
     let size = atlas.size as f32;
     // Where each cluster starts in the shaped line, so marks drawn after
     // their base keep their place.
     let mut cluster: Option<(usize, f32)> = None;
     for glyph in &glyphs {
-        let at = run.starts.partition_point(|&(byte, _)| byte <= glyph.start);
-        let Some(&(_, col)) = run.starts.get(at.saturating_sub(1)) else {
+        let i = run.starts.partition_point(|&(byte, _)| byte <= glyph.start);
+        let Some(&(_, col)) = run.starts.get(i.saturating_sub(1)) else {
             continue;
         };
         let cluster_x = match cluster {
@@ -339,7 +346,7 @@ fn shape_run(
                 glyph.x
             }
         };
-        let offset = col as f32 * fonts.cell_w - cluster_x;
+        let offset = at.columns.x(at.y, col) - cluster_x;
         let physical = glyph.physical((offset, baseline), 1.0);
         let Some(slot) = atlas.slot(physical.cache_key, fonts)? else {
             continue;
@@ -547,7 +554,8 @@ fn backgrounds(
     looks: &[Vec<Look>],
     regions: &[Vec<Region>],
     pass: Pass,
-    (cw, ch): (f32, f32),
+    columns: &Columns,
+    ch: f32,
     background: Rgba,
     out: &mut Vec<Instance>,
 ) {
@@ -563,7 +571,7 @@ fn backgrounds(
             .collect();
         let mut x = 0;
         for same in bgs.chunk_by(|a, b| a == b) {
-            let (left, w) = (x as f32 * cw, same.len() as f32 * cw);
+            let (left, w) = columns.span(y, x, x + same.len());
             x += same.len();
             if let Some(bg) = same[0] {
                 out.push(rect(left, top, w, ch, bg));

@@ -74,7 +74,13 @@ it back to the size it had before. Pick another font and size in your
 local greed = require("@greed")
 greed.option.set("gui-font", "JetBrains Mono")
 greed.option.set("gui-font-size", 14) -- pixels, before the screen's scale
+greed.option.set("gui-font-prose", "Inter") -- prose, like Markdown's text
 ```
+
+Prose (Markdown's text, and any style with `font = "prose"`) is set in a
+proportional font, the system's sans-serif unless `gui-font-prose` names
+one, at its own width; code stays in the grid's font. The cursor,
+selections and clicks follow the text where it's drawn.
 
 Floats (pickers, prompts, hover info) show as boxes with rounded corners
 and a soft shadow, as the theme says for the window; terminals draw box
@@ -645,8 +651,9 @@ heading twice the size), `**bold**`, `*italic*`, `~~struck~~` and
 code on a background of its own, quotes with a bar, `---` as a line and
 list dashes as bullets. The file stays plain Markdown: while you type on a
 line (insert mode) it shows as written, and in edit mode markup shows once
-the cursor is inside it. The window draws big headings big; terminals other
-than kitty show them at the normal size. `:set markdown-look false` turns it
+the cursor is inside it. The window draws big headings big and sets the
+text in a proportional font (code stays monospaced); terminals other than
+kitty show headings at the normal size. `:set markdown-look false` turns it
 off.
 
 ## Notes
@@ -1087,8 +1094,9 @@ them.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-`rounded` and `shadow` are for the window only, where they make floats
-boxes with rounded corners and a soft shadow.
+`rounded`, `shadow` and `font` are for the window only: the first two make
+floats boxes with rounded corners and a soft shadow, and `font = "prose"`
+sets text in the proportional font.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors
