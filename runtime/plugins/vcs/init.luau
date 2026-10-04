@@ -28,6 +28,9 @@ local repo_of, absolute, locate, vcs = repos.repo_of, repos.absolute, repos.loca
 
 local M = {}
 
+--- Diffs as text: buffers showing them, and patches for single hunks.
+M.diffs = require("@self/diffs")
+
 greed.option.define({
 	name = "vcs-signs",
 	doc = "Show signs beside lines changed since the last commit",

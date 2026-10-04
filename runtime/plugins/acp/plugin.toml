@@ -1,0 +1,3 @@
+name = "acp"
+requires = ["core", "picker", "vcs"]
+capabilities = ["proc", "fs.read", "fs.write"]

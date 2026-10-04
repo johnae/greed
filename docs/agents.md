@@ -97,6 +97,51 @@ next to any other editors. Once connected:
 Greed writes a lock file to `~/.claude/ide` so Claude Code can find it, and
 removes it when the session ends.
 
+## Agents inside Greed
+
+Greed can also run agents itself, over the Agent Client Protocol (ACP): Claude
+Code (through `claude-code-acp`), Gemini CLI, Codex, or any agent that
+speaks it. Each gets a transcript buffer, and several can work at once.
+
+| Keys | |
+|---|---|
+| `space i n` (`:agent-new`) | Start an agent: pick which, and where it works |
+| `space i o` (`:agents`) | The agents: what each is doing, and their changes |
+
+The transcript shows what you and the agent said, the tools it ran and how
+they went, and its plan. Write below the prompt line at the bottom and
+press `alt-enter` to send; `ctrl-c` stops the agent's turn. When it asks
+before doing something, `enter` (or `alt-p`) answers: `y` allows once, `a`
+always, `n` rejects. The agent reads open files as you have them, unsaved
+changes included, and its edits to an open file are made in the buffer and
+saved, so undo takes them back.
+
+An agent works either in the project with you, or in a workspace of its
+own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
+cache folder. There it can change what it likes without touching your
+files. In the agents overview:
+
+| Keys | |
+|---|---|
+| `enter` | Open its transcript |
+| `d` | What it changed in its workspace, as a diff |
+| `b` | Bring that into your working copy: with jj its change is squashed into yours, with git its diff is applied |
+| `s` | Stop its turn |
+| `x` | Stop it and remove its workspace, after asking |
+| `n` | Start another |
+
+A jj workspace starts from your working copy's parent, so it doesn't see
+changes you haven't committed. Add an agent that isn't in the list in your
+`init.luau`; the first of its commands that's installed is used:
+
+```luau
+require("@acp").register({
+	name = "goose",
+	title = "Goose",
+	commands = { { "goose", "acp" } },
+})
+```
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

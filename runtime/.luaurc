@@ -24,6 +24,7 @@
 		"approvals": "./plugins/approvals",
 		"cli": "./plugins/cli",
 		"vcs": "./plugins/vcs",
-		"describe": "./plugins/describe"
+		"describe": "./plugins/describe",
+		"acp": "./plugins/acp"
 	}
 }
