@@ -198,3 +198,65 @@ test("in a git repository it lists commits and shows them", function(t)
 	t:keys("enter")
 	assert(string.find(greed.view():buffer():text(), "+a", 1, true) ~= nil)
 end)
+
+-- What `rev` changes, as jj's summary.
+local function summary(jj: Jj, rev: string): string
+	return jj("diff", "--summary", "-r", rev)
+end
+
+test("S splits a change: the hunks picked go in a change before it", function(t)
+	if not has_jj() then
+		return
+	end
+	local jj = repo(t)
+	local dir = string.match(jj("root"), "^(.-)%s*$") :: string
+	greed.fs.write(dir .. "/first.txt", "FIRST\n")
+	greed.fs.write(dir .. "/x.txt", "x\n")
+	t:keys("space g l S")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "[ ] first.txt  line 1  +1 -1", 1, true), text)
+	assert(string.find(text, "[ ] x.txt  line 1  +1 -0", 1, true), text)
+	t:keys("space")
+	assert(string.find(greed.view():buffer():text(), "[x] first.txt", 1, true), "picked")
+	t:keys("enter u p p e r enter")
+	assert(
+		table.concat(descriptions(jj), ",") == "-,upper,third,second,first",
+		table.concat(descriptions(jj), ",")
+	)
+	assert(summary(jj, "@-") == "M first.txt\n", summary(jj, "@-"))
+	assert(summary(jj, "@") == "A x.txt\n", summary(jj, "@"))
+	assert(string.match(rows()[2], "upper$"), "the stack shows it: " .. rows()[2])
+	assert(not greed.fs.stat(dir .. "/.jj/greed-split"), "the files it wrote are gone")
+end)
+
+test("S splits hunks of one file apart", function(t)
+	if not has_jj() then
+		return
+	end
+	local jj = repo(t)
+	local dir = string.match(jj("root"), "^(.-)%s*$") :: string
+	greed.fs.write(dir .. "/long.txt", "a\nb\nc\nd\ne\nf\ng\nh\n")
+	jj("commit", "-m", "long")
+	greed.fs.write(dir .. "/long.txt", "A\nb\nc\nd\ne\nf\ng\nH\n")
+	t:keys("space g l S j j j space enter")
+	-- The prompt starts with the description, empty here.
+	t:keys("h enter")
+	assert(jj("file", "show", "-r", "@-", "long.txt") == "a\nb\nc\nd\ne\nf\ng\nH\n")
+	assert(jj("file", "show", "-r", "@", "long.txt") == "A\nb\nc\nd\ne\nf\ng\nH\n")
+end)
+
+test("S with none or all picked, or q, leaves the change alone", function(t)
+	if not has_jj() then
+		return
+	end
+	local jj = repo(t)
+	t:keys("space g l j S enter")
+	local messages = t:messages()
+	assert(messages[#messages] == "pick some of the hunks, not none or all", messages[#messages])
+	t:keys("S a enter")
+	assert(#descriptions(jj) == 4)
+	t:keys("S q")
+	assert(greed.view():buffer():kind() == "change-stack")
+	assert(string.match(line(), "third$"), line())
+	assert(#descriptions(jj) == 4)
+end)

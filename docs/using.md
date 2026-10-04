@@ -469,6 +469,7 @@ and descriptions. On the change under the cursor:
 | `n` | Start a new change on top of it |
 | `e` | Make it the working copy, to edit it |
 | `s` | Squash it into its parent, keeping the parent's description |
+| `S` | Split it: pick the hunks for a new change before it |
 | `a` | Abandon it, after asking |
 | `alt-k` `alt-j` | Move it up or down the stack |
 | `u` | Undo the last jj operation |

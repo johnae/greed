@@ -1,7 +1,8 @@
 -- The change stack, like Magit's log for jj: the changes between what's
 -- pushed and the working copy, newest first, with keys to look at,
--- describe, squash, move and abandon them. `space g l` opens it and `?`
--- lists the keys. In a git repository it lists recent commits to look at.
+-- describe, split, squash, move and abandon them. `space g l` opens it and
+-- `?` lists the keys. In a git repository it lists recent commits to look
+-- at.
 --
 --   Changes in ~/src/greed    ? for keys
 --
@@ -12,6 +13,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local diff_text = require("./diffs")
+local hunks = require("./hunks")
 local repos = require("./repo")
 
 type Repo = repos.Repo
@@ -281,6 +283,114 @@ local function jj(stack: Stack, args: { string }, select: string?): boolean
 	return true
 end
 
+-- The files `change` touches, by path from the root: both names of a
+-- renamed one.
+local function touched(repo: Repo, change: Change): { string }
+	local out = {}
+	local summary = repos.run(repo, { "diff", "--summary", "-r", change.id }, true) or ""
+	for line in string.gmatch(summary, "[^\n]+") do
+		local kind, path = string.match(line, "^(%a) (.+)$")
+		if kind == "R" or kind == "C" then
+			local before, old, new, after = string.match(path :: string, "^(.-){(.-) => (.-)}(.*)$")
+			if before then
+				-- "{a => }" names a file moved up a folder, leaving "//".
+				local function name(middle: string): string
+					return (string.gsub(`{before}{middle}{after}`, "//", "/"))
+				end
+				if kind == "R" then
+					table.insert(out, name(old :: string))
+				end
+				table.insert(out, name(new :: string))
+			end
+		elseif path then
+			table.insert(out, path)
+		end
+	end
+	return out
+end
+
+-- Quoted for a TOML string.
+local function toml(text: string): string
+	return '"' .. (string.gsub(text, '["\\]', "\\%0")) .. '"'
+end
+
+-- Copies the files written under the folder given second into the folder
+-- jj gives first (what the first change will hold), and removes the ones
+-- listed in its `deleted`.
+local SPLIT_TOOL = 'right=$1; prep=$2; if [ -d "$prep/files" ]; then cp -R "$prep/files/." "$right/"; fi; '
+	.. 'while IFS= read -r p; do rm -f "$right/$p"; done < "$prep/deleted"'
+
+-- Splits `change` in two: the hunks picked go in a new change before it,
+-- the rest stay. jj runs a diff editor for this, so the picked files are
+-- written to a folder in .jj that a small shell script copies in.
+local function split(stack: Stack, change: Change)
+	if stack.repo.kind ~= "jj" then
+		greed.echo("that needs a jj repository")
+		return
+	end
+	local files: { hunks.File } = {}
+	for _, path in touched(stack.repo, change) do
+		local file = `root-file:{toml(path)}`
+		table.insert(files, {
+			path = path,
+			old = repos.run(stack.repo, { "file", "show", "-r", change.id .. "-", "--", file }),
+			new = repos.run(stack.repo, { "file", "show", "-r", change.id, "--", file }),
+		})
+	end
+	if #files == 0 then
+		greed.echo("nothing in it to split")
+		return
+	end
+	hunks.pick(stack.view, {
+		title = `Split {change.short}: pick what goes in the first change`,
+		files = files,
+		cancel = function()
+			render(stack, change.id)
+		end,
+		done = function(picked, count, total)
+			if count == 0 or count == total then
+				greed.echo("pick some of the hunks, not none or all")
+				render(stack, change.id)
+				return
+			end
+			local message = core.prompt.ask("Describe the first change", change.description)
+			if message == nil then
+				render(stack, change.id)
+				return
+			end
+			local prep = `{stack.repo.root}/.jj/greed-split`
+			greed.process.run({ "rm", "-rf", prep })
+			local deleted = {}
+			for path, text in picked do
+				if text then
+					greed.fs.write(`{prep}/files/{path}`, text)
+				else
+					table.insert(deleted, path)
+				end
+			end
+			greed.fs.write(
+				`{prep}/deleted`,
+				if #deleted > 0 then table.concat(deleted, "\n") .. "\n" else ""
+			)
+			local edit_args = `["-c", {toml(SPLIT_TOOL)}, "sh", "$right", {toml(prep)}]`
+			jj(stack, {
+				"split",
+				"-r",
+				change.id,
+				"-m",
+				message,
+				"--tool",
+				"greed-split",
+				"--config",
+				"merge-tools.greed-split.program=sh",
+				"--config",
+				`merge-tools.greed-split.edit-args={edit_args}`,
+			}, change.id)
+			greed.process.run({ "rm", "-rf", prep })
+		end,
+	})
+end
+
 -- Commands on the change under the cursor: each gets the stack and the
 -- change, and is bound in change-stack buffers.
 type Action = { name: string, key: string, doc: string, run: (Stack, Change) -> () }
@@ -333,6 +443,12 @@ local ACTIONS: { Action } = {
 		run = function(stack, change)
 			jj(stack, { "squash", "-u", "-r", change.id })
 		end,
+	},
+	{
+		name = "change-stack-split",
+		key = "S",
+		doc = "Split it: pick the hunks that go in a change of their own before it",
+		run = split,
 	},
 	{
 		name = "change-stack-abandon",
