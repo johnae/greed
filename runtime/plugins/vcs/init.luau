@@ -20,6 +20,7 @@ local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
 local repos = require("@self/repo")
+local statusline = require("@statusline")
 local staging = require("@self/staging")
 require("@self/stack")
 
@@ -59,14 +60,40 @@ local function base_text(repo: Repo, relative: string): string
 	return text or ""
 end
 
--- The file at the last commit: its text, "" if it's new, or false outside a
--- repository.
-local function fetch_base(buffer: greed.Buffer): string | false
-	local repo, relative = locate(buffer)
-	if repo == nil or relative == nil then
-		return false
+-- The repository each buffer's file is in, by buffer id.
+local located: { [number]: Repo } = {}
+-- Lines added, changed and removed in each buffer, by id.
+local counts: { [number]: { [string]: number } } = {}
+-- Each repository's branch by root: with jj the nearest bookmark and the
+-- working copy's change, e.g. "main · nwpr".
+local branches: { [string]: string } = {}
+
+-- `text` without the whitespace around it, or nil if nothing's left.
+local function trimmed(text: string?): string?
+	local inner = text and string.match(text, "^%s*(.-)%s*$")
+	return if inner and inner ~= "" then inner else nil
+end
+
+local function read_branch(repo: Repo)
+	local name
+	if repo.kind == "jj" then
+		local change =
+			trimmed(vcs(repo, { "log", "-r", "@", "--no-graph", "-T", "change_id.shortest(4)" }))
+		local bookmark = trimmed(vcs(repo, {
+			"log",
+			"-r",
+			"latest(heads(::@ & bookmarks()))",
+			"--no-graph",
+			"-T",
+			'local_bookmarks.map(|b| b.name()).join(" ")',
+		}))
+		name = if bookmark and change then `{bookmark} · {change}` else change
+	else
+		-- Detached: the commit instead.
+		name = trimmed(vcs(repo, { "branch", "--show-current" }))
+			or trimmed(vcs(repo, { "rev-parse", "--short", "HEAD" }))
 	end
-	return base_text(repo, relative)
+	branches[repo.root] = name
 end
 
 -- The changes since the last commit, in order.
@@ -104,9 +131,14 @@ local STYLE: { [string]: string } =
 
 local function mark(buffer: greed.Buffer)
 	local marks: { greed.Mark } = {}
-	if greed.option.get("vcs-signs") == true then
-		for _, change in changes(buffer) do
-			local first, last = lines_of(buffer, change)
+	local signs = greed.option.get("vcs-signs") == true
+	local count = { ["+"] = 0, ["~"] = 0, ["-"] = 0 }
+	for _, change in changes(buffer) do
+		local first, last = lines_of(buffer, change)
+		count[change.kind] += if change.kind == "-"
+			then math.max(1, select(2, string.gsub(change.old, "\n", "")))
+			else last - first + 1
+		if signs then
 			for line = first, last do
 				-- Only the sign is styled; the text keeps its own colours.
 				local start = buffer:line_start(line)
@@ -119,13 +151,56 @@ local function mark(buffer: greed.Buffer)
 			end
 		end
 	end
+	counts[buffer:id()] = count
 	buffer:decorate("vcs", marks)
 end
 
 local function refresh(buffer: greed.Buffer)
-	bases[buffer:id()] = fetch_base(buffer)
+	local repo, relative = locate(buffer)
+	local id = buffer:id()
+	located[id] = repo
+	bases[id] = if repo and relative then base_text(repo, relative) else false
+	if repo then
+		read_branch(repo)
+	end
 	mark(buffer)
 end
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	bases[event.id], located[event.id], counts[event.id] = nil, nil, nil
+end)
+
+-- Commits and checkouts made elsewhere show within a few seconds.
+greed.spawn(function()
+	while true do
+		greed.sleep(5000)
+		local roots: { [string]: Repo } = {}
+		for _, repo in located do
+			roots[repo.root] = repo
+		end
+		for _, repo in roots do
+			pcall(read_branch, repo)
+		end
+	end
+end)
+
+-- The branch and the lines changed in the buffer, e.g. "main +3 ~1 -2".
+statusline.add("right", "branch", function(ctx)
+	local id = ctx.buffer:id()
+	local repo = located[id]
+	local branch = repo and branches[repo.root]
+	if branch == nil then
+		return nil
+	end
+	local parts = { branch }
+	for _, kind in { "+", "~", "-" } do
+		local n = counts[id] and counts[id][kind] or 0
+		if n > 0 then
+			table.insert(parts, `{kind}{n}`)
+		end
+	end
+	return table.concat(parts, " ")
+end, "problems")
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	refresh(event.buffer)

@@ -215,6 +215,19 @@ M.add("right", "problems", function(ctx)
 	return if #parts > 0 then table.concat(parts, " ") else nil
 end)
 
+-- The language and the features on for the buffer, e.g. "markdown · notes".
+M.add("right", "language", function(ctx)
+	local language = ctx.buffer:language()
+	if language == nil then
+		return nil
+	end
+	local parts = { language }
+	for _, feature in core.features.of(ctx.buffer) do
+		table.insert(parts, feature)
+	end
+	return table.concat(parts, " · ")
+end)
+
 M.add("right", "position", function(ctx)
 	local selection = ctx.view:selection()
 	local head = selection.ranges[selection.primary].head

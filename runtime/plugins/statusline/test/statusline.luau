@@ -244,3 +244,22 @@ test("an async piece shows what its last refresh found, without the line waiting
 	t:wait(2000)
 	assert(runs == 2, "taken away, it stops refreshing")
 end)
+
+test("shows the language, and the features on for the buffer", function(t)
+	local dir = t:tempdir({ ["main.rs"] = "fn main() {}" })
+	greed.open(dir .. "/main.rs")
+	local _, right = t:status()
+	assert(right and string.find(right, " rust ", 1, true), right)
+	local remove = require("@core").features.add("demo", function(buffer)
+		return buffer:language() == "rust"
+	end)
+	_, right = t:status()
+	assert(right and string.find(right, " rust · demo ", 1, true), right)
+	remove()
+	t:buffer("plain|")
+	_, right = t:status()
+	assert(
+		right and not string.find(right, "rust", 1, true),
+		"none for plain text: " .. tostring(right)
+	)
+end)

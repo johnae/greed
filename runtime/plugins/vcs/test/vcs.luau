@@ -341,7 +341,7 @@ test("with jj, space g a says to split instead", function(t)
 end)
 
 test("space g w shows the commits that made the selected lines", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\n" })
+	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
 	greed.fs.write(dir .. "/a.txt", "one\nTWO\nthree\n")
 	local done = greed.process.run(
 		{ "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "shout two" },
@@ -383,4 +383,40 @@ test("with jj, the changes that last touched the lines, newest first", function(
 	local newest = string.find(text, "shout two", 1, true) :: number
 	local oldest = string.find(text, "first", 1, true) :: number
 	assert(newest and oldest and newest < oldest, text)
+end)
+
+test("the status line shows the branch and the lines changed in the file", function(t)
+	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
+	local done = greed.process.run({ "git", "checkout", "-q", "-b", "topic" }, { cwd = dir })
+	assert(done and done.code == 0, done and done.stderr)
+	greed.open(dir .. "/a.txt")
+	t:wait(300)
+	local _, right = t:status()
+	assert(right and string.find(right, " topic ", 1, true), right)
+	-- "one" changes, "three" goes, and a line is added at the end.
+	t:keys("e c O N E esc j j x d g e o n e w esc")
+	t:wait(500)
+	_, right = t:status()
+	assert(right and string.find(right, " topic +1 ~1 -1 ", 1, true), right)
+end)
+
+test("with jj, the status line shows the nearest bookmark and the change", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local function jj(...: string)
+		local done = greed.process.run(
+			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+	end
+	jj("git", "init")
+	jj("commit", "-m", "first")
+	jj("bookmark", "create", "-r", "@-", "trunk")
+	greed.open(dir .. "/a.txt")
+	t:wait(300)
+	local _, right = t:status()
+	assert(right and string.match(right, " trunk · %w+ "), right)
 end)

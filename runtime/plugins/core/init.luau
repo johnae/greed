@@ -30,6 +30,7 @@ local registers = require("@self/registers")
 require("@self/macro_commands")
 require("@self/window")
 local menu = require("@self/menu")
+local features = require("@self/features")
 local menus = require("@self/menus")
 local reveal = require("@self/reveal")
 local prompt = require("@self/prompt")
@@ -205,6 +206,7 @@ return {
 	text = text,
 	motions = motions,
 	menu = menu,
+	features = features,
 	menus = menus,
 	reveal = reveal,
 	prompt = prompt,

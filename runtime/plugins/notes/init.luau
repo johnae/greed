@@ -17,6 +17,7 @@
 --     local greed = require("@greed")
 --     greed.option.set("notes-folder", "~/Documents/notes")
 
+local core = require("@core")
 local greed = require("@greed")
 local notes = require("@self/notes")
 require("@self/links")
@@ -34,5 +35,7 @@ greed.keymap.bind("normal", {
 	["space n x"] = "todo-toggle",
 	["g d"] = "notes-follow",
 })
+
+core.features.add("notes", notes.is_note, "notes")
 
 return notes

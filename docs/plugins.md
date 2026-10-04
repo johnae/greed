@@ -370,6 +370,11 @@ greed.tab.set_layout({
   the theme plugin switches themes.
 - The status line is pieces you can add to or take away from with
   `require("@statusline").add` and `.remove`, or replace with `greed.statusline`.
+- Features are what a plugin turns on for some buffers beyond their
+  language, like notes for Markdown in the notes folder. Name yours with
+  `require("@core").features.add("todos", function(buffer) return ... end, "my-plugin")`,
+  and the status line shows it after the language (`markdown · todos`).
+  `core.features.of(buffer)` lists the ones on.
 
 ## Waiting
 

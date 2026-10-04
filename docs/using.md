@@ -987,9 +987,16 @@ greed.plugin.unload("hints")
 ### The status line
 
 The status line shows the mode, the tab, the file and whether a macro is
-recording on the left, and problems, the cursor's place, the machine and
-the session on the right. Two options make it livelier, both off unless you
-turn them on:
+recording on the left. On the right it shows:
+
+- the branch and the lines added, changed and removed in the file, like
+  `main +3 ~1 -2` (with jj the nearest bookmark and the change you're on,
+  like `main · nwpr`)
+- problems
+- the language and the features on for the file, like `markdown · notes`
+- the cursor's place, the machine and the session
+
+Two options make it livelier, both off unless you turn them on:
 
 ```luau
 local option = require("@greed").option
@@ -1014,8 +1021,8 @@ statusline.add("right", "clock", function()
 	return os.date("%H:%M")
 end)
 -- A pill in a theme style
-statusline.add("left", "branch", function()
-	return { text = "main", style = "ui.statusline.tab" }
+statusline.add("left", "env", function()
+	return { text = "staging", style = "ui.statusline.tab" }
 end)
 statusline.remove("host")
 ```
