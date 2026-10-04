@@ -612,3 +612,15 @@ runs in its own environment and owns what it registers: reloading a plugin
 replaces its commands, keys, options, handlers and theme entries, and
 `greed.plugin.unload(name)` removes them. A plugin that runs too long is
 stopped, so a mistake in a loop can't hang the editor.
+
+## Trying code
+
+`:lua CODE` runs Luau in a scratch environment whose globals last, and
+`:= EXPR` shows what an expression is. In any buffer, `space l e` runs the
+selection, or the line the cursor is on, the same way, and shows what it
+returned at the end of its last line (or the error); the next edit takes
+it away. Handy while writing a plugin or your `init.luau`:
+
+```luau
+#greed.buffers()  -- space l e here shows how many are open, like  ⇒ 3
+```

@@ -28,6 +28,7 @@ local greed = require("@greed")
 local parse = require("@self/parse")
 local complete = require("@self/complete")
 local ex = require("@self/ex")
+require("@self/eval")
 local core = require("@core")
 local menu = core.menu
 
