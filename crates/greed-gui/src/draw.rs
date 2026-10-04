@@ -8,6 +8,7 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
 use greed_core::render::{ImagePlacement, Position};
+use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
@@ -96,13 +97,23 @@ pub fn build(
         .iter()
         .map(|row| row.iter().map(|cell| look(&cell.style, palette)).collect())
         .collect();
-    // A block cursor shows its cell reversed.
-    if let Some((at, CursorShape::Block)) = cursor
-        && let Some(l) = looks
-            .get_mut(usize::from(at.row))
-            .and_then(|r| r.get_mut(usize::from(at.col)))
-    {
-        std::mem::swap(&mut l.fg, &mut l.bg);
+    let heights = row_heights(grid);
+    // The cursor takes the cells of what it's on: a scaled character's are
+    // wider and taller.
+    let cursor = cursor.map(|(at, shape)| {
+        let (col, row) = (usize::from(at.col), usize::from(at.row));
+        let cell = grid.get(row).and_then(|r| r.get(col));
+        let k = cell.map_or(1, |c| usize::from(c.scale.max(1)));
+        let wide = cell.map_or(1, |c| c.text.width().max(1));
+        (shape, col, row, wide * k, k)
+    });
+    // A block cursor shows its cells reversed.
+    if let Some((CursorShape::Block, col, row, w, h)) = cursor {
+        for line in looks.iter_mut().skip(row).take(h) {
+            for l in line.iter_mut().skip(col).take(w) {
+                std::mem::swap(&mut l.fg, &mut l.bg);
+            }
+        }
     }
     let mut instances = Vec::new();
     // Backgrounds, a rectangle for each run of one color.
@@ -117,35 +128,41 @@ pub fn build(
             x += same.len();
         }
     }
-    // Underlines and strikethroughs, under the glyphs.
+    // Underlines and strikethroughs, under the glyphs, on each row's shared
+    // baseline. Rows under scaled text have none of their own.
     let thickness = (ch / 16.0).round().max(1.0);
     for (y, row) in looks.iter().enumerate() {
+        let Some(height) = heights[y] else { continue };
         let top = y as f32 * ch;
+        let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
         for (x, l) in row.iter().enumerate() {
             if let Some((_, color)) = l.underline {
-                let under = (top + fonts.baseline + thickness).min(top + ch - thickness);
+                let under = (top + baseline + thickness).min(top + bottom - thickness);
                 instances.push(rect(x as f32 * cw, under, cw, thickness, color));
             }
             if l.strikethrough {
-                let middle = top + (fonts.baseline * 0.65).round();
+                let middle = top + (baseline * 0.65).round();
                 instances.push(rect(x as f32 * cw, middle, cw, thickness, l.fg));
             }
         }
     }
     for (y, (row, row_looks)) in grid.iter().zip(&looks).enumerate() {
-        text_row(row, row_looks, y, fonts, atlas, &mut instances)?;
+        if let Some(height) = heights[y] {
+            text_row(row, row_looks, (y, height), fonts, atlas, &mut instances)?;
+        }
     }
-    if let Some((at, shape)) = cursor {
-        let (x, y) = (f32::from(at.col) * cw, f32::from(at.row) * ch);
+    if let Some((shape, col, row, w, h)) = cursor {
+        let (x, y) = (col as f32 * cw, row as f32 * ch);
+        let (w, h) = (w as f32 * cw, h as f32 * ch);
         let color = looks
-            .get(usize::from(at.row))
-            .and_then(|r| r.get(usize::from(at.col)))
+            .get(row)
+            .and_then(|r| r.get(col))
             .map_or(background, |l| l.fg);
         let line = (cw / 8.0).round().max(1.0);
         match shape {
             CursorShape::Block => {}
-            CursorShape::Bar => instances.push(rect(x, y, line, ch, color)),
-            CursorShape::Underline => instances.push(rect(x, y + ch - line, cw, line, color)),
+            CursorShape::Bar => instances.push(rect(x, y, line, h, color)),
+            CursorShape::Underline => instances.push(rect(x, y + h - line, w, line, color)),
         }
     }
     Ok(Scene {
@@ -162,32 +179,36 @@ struct Run {
     starts: Vec<(usize, usize)>,
     bold: bool,
     italic: bool,
+    scale: u8,
 }
 
-/// The glyphs of row `y`, in runs of one weight and slant so ligatures and
-/// shaping work across them; box-drawing characters as rectangles.
+/// The glyphs of row `y`, `height` rows tall, in runs of one weight, slant
+/// and size so ligatures and shaping work across them; box-drawing
+/// characters as rectangles. Text of every size sits on one baseline.
 fn text_row(
     row: &[Cell],
     looks: &[Look],
-    y: usize,
+    (y, height): (usize, usize),
     fonts: &mut Fonts,
     atlas: &mut Atlas,
     out: &mut Vec<Instance>,
 ) -> Result<(), Full> {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let top = y as f32 * ch;
+    let baseline = top + height as f32 * fonts.baseline;
     let mut run: Option<Run> = None;
     for (x, cell) in row.iter().enumerate() {
         if cell.text.is_empty() {
             continue;
         }
         let l = looks[x];
+        let k = f32::from(cell.scale.max(1));
         let mut chars = cell.text.chars();
         if let (Some(c), None) = (chars.next(), chars.next())
-            && let Some(rects) = boxdraw::rects(c, cw, ch)
+            && let Some(rects) = boxdraw::rects(c, cw * k, ch * k)
         {
             if let Some(done) = run.take() {
-                shape_run(&done, looks, top, fonts, atlas, out)?;
+                shape_run(&done, looks, baseline, fonts, atlas, out)?;
             }
             for r in rects {
                 out.push(rect(x as f32 * cw + r.x, top + r.y, r.w, r.h, l.fg));
@@ -196,35 +217,38 @@ fn text_row(
         }
         if run
             .as_ref()
-            .is_some_and(|r| r.bold != l.bold || r.italic != l.italic)
+            .is_some_and(|r| r.bold != l.bold || r.italic != l.italic || r.scale != cell.scale)
             && let Some(done) = run.take()
         {
-            shape_run(&done, looks, top, fonts, atlas, out)?;
+            shape_run(&done, looks, baseline, fonts, atlas, out)?;
         }
         let r = run.get_or_insert_with(|| Run {
             text: String::new(),
             starts: Vec::new(),
             bold: l.bold,
             italic: l.italic,
+            scale: cell.scale,
         });
         r.starts.push((r.text.len(), x));
         r.text.push_str(&cell.text);
     }
     if let Some(done) = run {
-        shape_run(&done, looks, top, fonts, atlas, out)?;
+        shape_run(&done, looks, baseline, fonts, atlas, out)?;
     }
     Ok(())
 }
 
+/// `run`'s glyphs, each cluster at its cell, on the baseline at `baseline`
+/// pixels down.
 fn shape_run(
     run: &Run,
     looks: &[Look],
-    top: f32,
+    baseline: f32,
     fonts: &mut Fonts,
     atlas: &mut Atlas,
     out: &mut Vec<Instance>,
 ) -> Result<(), Full> {
-    let (glyphs, baseline) = fonts.shape(&run.text, run.bold, run.italic);
+    let (glyphs, _) = fonts.shape(&run.text, run.bold, run.italic, run.scale);
     let size = atlas.size as f32;
     // Where each cluster starts in the shaped line, so marks drawn after
     // their base keep their place.
@@ -242,7 +266,7 @@ fn shape_run(
             }
         };
         let offset = col as f32 * fonts.cell_w - cluster_x;
-        let physical = glyph.physical((offset, top + baseline), 1.0);
+        let physical = glyph.physical((offset, baseline), 1.0);
         let Some(slot) = atlas.slot(physical.cache_key, fonts)? else {
             continue;
         };
@@ -264,4 +288,25 @@ fn shape_run(
         });
     }
     Ok(())
+}
+
+/// How many rows each row's text takes, as many as its largest scale; `None`
+/// for rows that text above them covers.
+fn row_heights(grid: &[Vec<Cell>]) -> Vec<Option<usize>> {
+    let mut covered_until = 0;
+    grid.iter()
+        .enumerate()
+        .map(|(y, row)| {
+            if y < covered_until {
+                return None;
+            }
+            let height = row
+                .iter()
+                .map(|c| usize::from(c.scale.max(1)))
+                .max()
+                .unwrap_or(1);
+            covered_until = y + height;
+            Some(height)
+        })
+        .collect()
 }

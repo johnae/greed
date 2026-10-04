@@ -175,7 +175,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     // Fira Code joins "->" with contextual alternates: the same number of
     // glyphs, but other ones than "-" and ">" on their own.
     let ids = |fonts: &mut Fonts, text: &str| {
-        let (glyphs, _) = fonts.shape(text, false, false);
+        let (glyphs, _) = fonts.shape(text, false, false, 1);
         glyphs.iter().map(|g| g.glyph_id).collect::<Vec<_>>()
     };
     let joined = ids(&mut fonts, "->");
@@ -298,4 +298,64 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
     gpu.place_images(&frame.images, &pngs);
     let again = gpu.snapshot(size, &scene);
     assert_eq!(again, rgba);
+}
+
+#[test]
+fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    frame.floats.clear();
+    // "Hi" twice the size over columns 0-3 and rows 0-1, then "x" at the
+    // normal size on the same baseline.
+    frame.rows[0] = Row {
+        spans: vec![
+            Span {
+                scale: 2,
+                ..Span::new("Hi", SmallVec::default())
+            },
+            Span::new("x", SmallVec::default()),
+        ],
+        covers: 1,
+        ..Row::default()
+    };
+    frame.rows[1] = Row::default();
+    frame.cursor = Some(Position { col: 0, row: 0 });
+    let grid = compose(&frame, Surface::Gui);
+    let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
+    let scene = build(&grid, cursor, &[], &mut fonts, &mut atlas, &palette).unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file = std::fs::File::create(std::path::Path::new(&dir).join("scaled.png")).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    let inked = |cols: std::ops::Range<f32>, rows: std::ops::Range<f32>| {
+        ((cols.start * cw) as u32..(cols.end * cw) as u32)
+            .flat_map(|x| ((rows.start * ch) as u32..(rows.end * ch) as u32).map(move |y| (x, y)))
+            .filter(|&(x, y)| pixel(&rgba, size.0, x, y)[..3] == palette.fg)
+            .count()
+    };
+    // The block cursor covers all four cells of the big "H".
+    assert_ne!(
+        pixel(&rgba, size.0, (1.5 * cw) as u32, (1.5 * ch) as u32)[..3],
+        palette.bg
+    );
+    // The big "i" reaches down into the second row.
+    assert!(inked(2.0..4.0, 1.0..2.0) > 0, "the big text spans two rows");
+    // The small "x" sits on the shared baseline, in the lower row.
+    assert_eq!(inked(4.0..5.0, 0.0..0.9), 0, "nothing small up top");
+    assert!(
+        inked(4.0..5.0, 1.0..2.0) > 0,
+        "the small x is down on the baseline"
+    );
 }

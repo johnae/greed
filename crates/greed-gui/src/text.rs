@@ -34,6 +34,8 @@ pub struct Fonts {
     cache: SwashCache,
     buffer: Buffer,
     family: Option<String>,
+    /// The size and line height at scale 1.
+    metrics: Metrics,
     /// A cell's width and height in pixels.
     pub cell_w: f32,
     pub cell_h: f32,
@@ -45,13 +47,15 @@ impl Fonts {
     /// `family` at `size` pixels, or the system's monospaced font.
     pub fn new(family: Option<String>, size: f32) -> Self {
         let mut system = FontSystem::new();
-        let mut buffer = Buffer::new(&mut system, Metrics::new(size, size));
+        let metrics = Metrics::new(size, size);
+        let mut buffer = Buffer::new(&mut system, metrics);
         buffer.set_wrap(Wrap::None);
         let mut fonts = Self {
             system,
             cache: SwashCache::new(),
             buffer,
             family: None,
+            metrics,
             cell_w: 0.0,
             cell_h: 0.0,
             baseline: 0.0,
@@ -64,22 +68,28 @@ impl Fonts {
     /// has, which take a while to find.
     pub fn set(&mut self, family: Option<String>, size: f32) {
         let line = (size * 1.3).round();
-        self.buffer.set_metrics(Metrics::new(size, line));
+        self.metrics = Metrics::new(size, line);
         self.family = family;
         self.cell_w = size * 0.6;
         self.cell_h = line;
         self.baseline = size;
         // A cell is as wide as a digit; the baseline is where the font puts it.
-        let (glyphs, baseline) = self.shape("0", false, false);
+        let (glyphs, baseline) = self.shape("0", false, false, 1);
         if let Some(glyph) = glyphs.first() {
             self.cell_w = glyph.w;
         }
         self.baseline = baseline;
     }
 
-    /// Shapes one line: its glyphs, each knowing the byte range of the text
-    /// it draws, and the baseline from the line's top.
-    pub fn shape(&mut self, text: &str, bold: bool, italic: bool) -> (Vec<LayoutGlyph>, f32) {
+    /// Shapes one line `scale` times the size: its glyphs, each knowing the
+    /// byte range of the text it draws, and the baseline from the line's top.
+    pub fn shape(
+        &mut self,
+        text: &str,
+        bold: bool,
+        italic: bool,
+        scale: u8,
+    ) -> (Vec<LayoutGlyph>, f32) {
         let family = self
             .family
             .as_deref()
@@ -88,10 +98,15 @@ impl Fonts {
             .family(family)
             .weight(if bold { Weight::BOLD } else { Weight::NORMAL })
             .style(if italic { Style::Italic } else { Style::Normal });
+        let k = f32::from(scale.max(1));
+        self.buffer.set_metrics(Metrics::new(
+            self.metrics.font_size * k,
+            self.metrics.line_height * k,
+        ));
         self.buffer.set_text(text, &attrs, Shaping::Advanced, None);
         self.buffer.shape_until_scroll(&mut self.system, false);
         let mut glyphs = Vec::new();
-        let mut baseline = self.baseline;
+        let mut baseline = self.baseline * k;
         for run in self.buffer.layout_runs() {
             baseline = run.line_y;
             glyphs.extend(run.glyphs.iter().cloned());
