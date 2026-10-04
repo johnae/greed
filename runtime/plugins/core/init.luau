@@ -14,6 +14,7 @@ local jump = require("@self/jump")
 local hints = require("@self/hints")
 local actions = require("@self/actions")
 require("@self/undo")
+local transient = require("@self/transient")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
@@ -192,6 +193,8 @@ greed.mode.cursor("insert", "bar")
 
 --- A thing to act on, from a finder or a picker item (see actions.luau).
 export type Target = actions.Target
+export type TransientItem = transient.Item
+export type TransientMenu = transient.Menu
 
 -- Other plugins can use these with `require("@core")`.
 return {
@@ -215,6 +218,7 @@ return {
 	jump = jump,
 	hints = hints,
 	actions = actions,
+	transient = transient,
 	objects = objects,
 	syntax = syntax,
 	words = words,

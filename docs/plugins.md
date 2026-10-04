@@ -146,6 +146,44 @@ The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
+### Menus of keys
+
+`core.transient.show` puts a menu at the bottom of the screen listing what
+each key does, in groups, like Emacs's Transient. Switches flip and stay
+while you pick; an action runs with the switches that are on and closes
+the menu, and any other key closes it. It waits for keys, so call it from
+a command. The change stack's `?` is one.
+
+```luau
+local transient = require("@core").transient
+
+greed.command({
+	name = "push-menu",
+	run = function()
+		transient.show({
+			title = "Push",
+			groups = {
+				{ title = "Switches", items = { { key = "f", doc = "force", switch = "force" } } },
+				{
+					title = "Push",
+					items = {
+						{
+							key = "p",
+							doc = "to origin",
+							run = function(on)
+								greed.process.run(if on.force then { "git", "push", "-f" } else { "git", "push" })
+							end,
+						},
+					},
+				},
+			},
+		})
+	end,
+})
+```
+
+Switch keys show as `-f` and can be typed as `f` or `- f`.
+
 ## Buffers, views and edits
 
 Positions are byte offsets, lines are counted from 0, and a selection is a
