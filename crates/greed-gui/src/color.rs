@@ -31,7 +31,9 @@ impl Default for Palette {
                 [0xb2, 0x94, 0xbb],
                 [0x8a, 0xbe, 0xb7],
                 [0xc5, 0xc8, 0xc6],
-                [0x96, 0x98, 0x96],
+                // Darker than Tomorrow Night's own, as terminals have it, so bars in
+                // bright black with white text read well.
+                [0x5f, 0x62, 0x66],
                 [0xd5, 0x4e, 0x53],
                 [0xb9, 0xca, 0x4a],
                 [0xe7, 0xc5, 0x47],
@@ -139,5 +141,47 @@ mod tests {
         let l = look(&style, &palette);
         assert_eq!(l.fg, rgba(palette.ansi[9]));
         assert_eq!(l.bg, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// How far apart two colors are in brightness, as WCAG measures it: 1
+    /// for the same, 21 for black on white.
+    fn contrast(a: Rgba, b: Rgba) -> f32 {
+        let luminance = |c: Rgba| {
+            let lin = |v: f32| {
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+        };
+        let (l1, l2) = (luminance(a), luminance(b));
+        (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
+    }
+
+    #[test]
+    fn bars_in_bright_black_read_well_and_bright_black_text_stays_dim() {
+        let palette = Palette::default();
+        // The default theme's status line and tab line.
+        let bar = look(
+            &Style {
+                fg: Some(Color::Ansi(7)),
+                bg: Some(Color::Ansi(8)),
+                ..Style::default()
+            },
+            &palette,
+        );
+        let c = contrast(bar.fg, bar.bg);
+        assert!(c >= 3.5, "{c}");
+        let dim = look(
+            &Style {
+                fg: Some(Color::Ansi(8)),
+                ..Style::default()
+            },
+            &palette,
+        );
+        let c = contrast(dim.fg, dim.bg);
+        assert!((2.5..4.5).contains(&c), "{c}");
     }
 }
