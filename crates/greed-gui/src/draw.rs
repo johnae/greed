@@ -8,7 +8,7 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
-use greed_core::theme::Surface;
+use greed_core::theme::{Style, Surface};
 use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
@@ -101,6 +101,9 @@ pub struct Chrome<'a> {
     pub rounded: bool,
     /// Floats casting a soft shadow on what's under them.
     pub shadows: bool,
+    /// How text looks where nothing says otherwise (`ui.text`): its
+    /// background is the window's, behind every cell.
+    pub text: Style,
 }
 
 impl<'a> Chrome<'a> {
@@ -113,6 +116,7 @@ impl<'a> Chrome<'a> {
             floats: frame.floats.iter().map(|f| f.rect).collect(),
             rounded: float.rounded == Some(true),
             shadows: float.shadow == Some(true),
+            text: frame.theme.style("ui.text", Surface::Gui),
         }
     }
 }
@@ -129,7 +133,7 @@ pub fn build(
     palette: &Palette,
 ) -> Result<Scene, Full> {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
-    let background = palette.background();
+    let background = look(&chrome.text, palette).bg;
     let mut looks: Vec<Vec<Look>> = grid
         .iter()
         .map(|row| row.iter().map(|cell| look(&cell.style, palette)).collect())

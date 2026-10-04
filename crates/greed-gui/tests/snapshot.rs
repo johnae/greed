@@ -105,6 +105,18 @@ fn frame() -> Frame {
     }
 }
 
+/// Writes `rgba`, `size` pixels, as `name` in the folder `GREED_GUI_SNAPSHOTS`
+/// names, if it names one, to look at.
+fn save(name: &str, size: (u32, u32), rgba: &[u8]) {
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file = std::fs::File::create(std::path::Path::new(&dir).join(name)).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(rgba).unwrap();
+    }
+}
+
 fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     let i = ((y * width + x) * 4) as usize;
     [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
@@ -134,13 +146,7 @@ fn a_frame_draws_text_on_its_grid_with_the_cursor_status_line_and_a_float() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("frame.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("frame.png", size, &rgba);
     let bg = palette.bg;
     // The block cursor's cell is the text color.
     let cursor = pixel(&rgba, size.0, (3.5 * cw) as u32, (0.15 * ch) as u32);
@@ -205,13 +211,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
         (7.0 * fonts.cell_h).ceil() as u32,
     );
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("ligatures.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("ligatures.png", size, &rgba);
     // The ";" after the ligatures is still in column 15.
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let semicolon = ((15.0 * cw) as u32..(16.0 * cw) as u32)
@@ -287,13 +287,7 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("images.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("images.png", size, &rgba);
     let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
     assert_eq!(
         at(2.5, 4.5)[..3],
@@ -357,13 +351,7 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("scaled.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("scaled.png", size, &rgba);
     let inked = |cols: std::ops::Range<f32>, rows: std::ops::Range<f32>| {
         ((cols.start * cw) as u32..(cols.end * cw) as u32)
             .flat_map(|x| ((rows.start * ch) as u32..(rows.end * ch) as u32).map(move |y| (x, y)))
@@ -429,6 +417,13 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     );
     let mut theme = (*frame.theme).clone();
     theme.set(
+        "ui.text",
+        Entry::new(Style {
+            bg: Some(Color::Rgb(0x30, 0x34, 0x46)),
+            ..Style::default()
+        }),
+    );
+    theme.set(
         "ui.float",
         Entry {
             gui: Style {
@@ -449,13 +444,7 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("chrome.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("chrome.png", size, &rgba);
     let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
     let green = [0xb5, 0xbd, 0x68];
     // The ends are half circles: green in the middle of their cells, not
@@ -475,11 +464,18 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     // The float's box goes through the middle of its border cells, rounded:
     // the border's outer corner shows what's under it.
     let corner = at(25.05, 3.05);
-    assert_eq!(corner[..3], palette.bg, "outside the rounded corner");
+    assert_eq!(
+        corner[..3],
+        [0x30, 0x34, 0x46],
+        "outside the rounded corner, the text's background, not the window's default"
+    );
     // Its shadow darkens the text area below it.
     let shade = at(30.0, 5.9);
     assert!(
-        shade[..3].iter().zip(&palette.bg).all(|(s, b)| s < b),
+        shade[..3]
+            .iter()
+            .zip(&[0x30, 0x34, 0x46])
+            .all(|(s, b)| s < b),
         "shadow under the float: {shade:?}"
     );
 }
@@ -525,13 +521,7 @@ fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file = std::fs::File::create(std::path::Path::new(&dir).join("prose.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("prose.png", size, &rgba);
     let x = scene.columns.x(0, usize::from(col));
     assert!(
         x < f32::from(col) * cw,
@@ -586,14 +576,7 @@ fn a_float_over_prose_keeps_its_place() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
-        let file =
-            std::fs::File::create(std::path::Path::new(&dir).join("float-over-prose.png")).unwrap();
-        let mut png = png::Encoder::new(file, size.0, size.1);
-        png.set_color(png::ColorType::Rgba);
-        png.set_depth(png::BitDepth::Eight);
-        png.write_header().unwrap().write_image_data(&rgba).unwrap();
-    }
+    save("float-over-prose.png", size, &rgba);
     assert!(
         scene.columns.x(4, 20) < 20.0 * cw,
         "the prose before it flows"
