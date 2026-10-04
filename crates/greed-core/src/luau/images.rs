@@ -64,6 +64,10 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     image.set(
+        "cell_size",
+        lua.create_function(|lua, ()| Ok(state(lua).editor.cell_size()))?,
+    )?;
+    image.set(
         "forget",
         lua.create_function(|lua, id: u64| {
             state_mut(lua).editor.images_mut().remove(ImageId(id));

@@ -20,6 +20,7 @@ mod json;
 mod languages;
 mod lsp;
 mod modules;
+mod pdf;
 mod plugin;
 mod process;
 mod projects;

@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+hayro = "0.8"
 crossbeam-channel.workspace = true
 ignore.workspace = true
 greed-text.workspace = true

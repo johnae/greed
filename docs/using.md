@@ -837,6 +837,15 @@ protocol or iTerm2's: `kitten icat picture.png`, `imgcat`, chafa's and
 yazi's previews. They scroll with the output, and text written over them
 takes their place, as in any terminal.
 
+### PDFs
+
+Opening a PDF shows its first page, as wide as the pane. `]` and `[` go to
+the next and previous page (with a count, that many), `+` and `-` draw it
+bigger and smaller, and `=` as wide as the pane again. `t` switches to the
+text of every page, which reads in any terminal and searches with `/`; `t`
+again shows the page the cursor is on. Other files that aren't text open
+read-only, so saving can't change them.
+
 ## The command line
 
 `:` (or `alt-x` in edit mode) runs any command by name, with completion.

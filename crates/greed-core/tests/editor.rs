@@ -243,6 +243,14 @@ fn files_open_once_and_show_in_a_view() {
 
     let missing = ed.open_file(&dir.join("new.txt")).unwrap();
     assert_eq!(ed.buffer(missing).text().len_bytes(), 0);
+
+    // A file that isn't text opens read-only, so saving can't mangle it,
+    // and plugins can show it their own way (a PDF, an image).
+    std::fs::write(dir.join("b.bin"), b"%PDF\xff\xfe").unwrap();
+    let binary = ed.open_file(&dir.join("b.bin")).unwrap();
+    assert!(ed.buffer(binary).is_readonly());
+    assert_eq!(ed.buffer(binary).text().to_string(), "%PDF\u{fffd}\u{fffd}");
+    assert!(!ed.buffer(first).is_readonly());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

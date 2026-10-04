@@ -337,6 +337,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("secrets", super::secrets::module(lua, owner)?)?;
     greed.set("terminal", super::terminal::module(lua, owner)?)?;
     greed.set("image", super::images::module(lua)?)?;
+    greed.set("pdf", super::pdf::module(lua)?)?;
     greed.set("diff", super::diff::diff_function(lua)?)?;
     greed.set("signal", tasks::signal_function(lua)?)?;
     greed.set(

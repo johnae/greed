@@ -26,6 +26,7 @@ pub enum Output {
     /// its exit. Programs run for as long as they like, so they don't count
     /// as running jobs.
     Child(u64, super::process::Piece),
+    Pdf(super::pdf::Done),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -156,6 +157,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
             tasks::wake(lua, done.token, super::process::to_lua(lua, result)?)
         }
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
+        Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
     }
 }
 

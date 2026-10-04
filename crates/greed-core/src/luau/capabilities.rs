@@ -44,6 +44,7 @@ const GATED: &[(&str, &str)] = &[
     ("load", "fs.read"),
     ("open", "fs.read"),
     ("image.load", "fs.read"),
+    ("pdf.open", "fs.read"),
     ("fs.write", "fs.write"),
     ("clipboard.get", "clipboard"),
     ("clipboard.history", "clipboard"),

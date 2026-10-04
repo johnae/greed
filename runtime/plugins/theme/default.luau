@@ -38,6 +38,7 @@ return {
 	["notes.done.box"] = { fg = "green" },
 	["notes.heading"] = { fg = "blue", bold = true },
 	["notes.bullet"] = { fg = "blue" },
+	["pdf.page"] = { fg = "bright-black", italic = true },
 	["notes.due"] = { fg = "cyan" },
 	["notes.overdue"] = { fg = "red", bold = true },
 	["notes.tag"] = { fg = "magenta" },

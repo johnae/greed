@@ -712,7 +712,26 @@ export type Images = {
 	size: (id: number) -> (number?, number?),
 	--- How many cells it covers at its own size on the attached screen.
 	cells: (id: number) -> (number?, number?),
+	--- A cell's width and height in pixels on the attached screen.
+	cell_size: () -> (number, number),
 	forget: (id: number) -> (),
+}
+
+--- PDF documents.
+export type Pdfs = {
+	--- Reads the PDF at `path`. Returns the document, or nil and why not. It waits like greed.sleep, so only in commands, event handlers and greed.spawn.
+	open: (path: string) -> (PdfDocument?, string?),
+}
+
+--- A PDF read with `greed.pdf.open`. Pages count from 1.
+export type PdfDocument = {
+	pages: number,
+	--- A page's width and height in points (1/72 inch).
+	size: (page: number) -> (number?, number?),
+	--- Draws a page at `scale` pixels per point (1 if not given) and returns it as a `greed.image` id, or nil and why not. Forget the image when done with it. Waits like greed.sleep.
+	render: (page: number, scale: number?) -> (number?, string?),
+	--- The text on a page, line by line from the top, or nil and why not. Waits like greed.sleep.
+	text: (page: number) -> (string?, string?),
 }
 
 --- A tab of the shown project: panes laid out side by side and one above
@@ -1244,6 +1263,7 @@ export type Greed = {
 	secrets: Secrets,
 	terminal: Terminals,
 	image: Images,
+	pdf: Pdfs,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

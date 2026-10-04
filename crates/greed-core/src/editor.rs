@@ -488,7 +488,8 @@ impl Editor {
     }
 
     /// The buffer for the file at `path`: the open one, or a new buffer
-    /// with the file's text (empty if the file doesn't exist yet).
+    /// with the file's text (empty if the file doesn't exist yet). A file
+    /// that isn't UTF-8 opens read-only, with what can't be read replaced.
     pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {
         // Files are known by their absolute path, so one opened as
         // "src/a.rs" and as "/home/me/src/a.rs" is the same buffer.
@@ -496,13 +497,18 @@ impl Editor {
         if let Some(buffer) = self.buffers.values().find(|b| b.path() == Some(path)) {
             return Ok(buffer.id());
         }
-        let text = match std::fs::read_to_string(path) {
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-            other => other?,
+        let (text, binary) = match std::fs::read(path) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
+            Err(err) => return Err(err),
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(text) => (text, false),
+                Err(err) => (String::from_utf8_lossy(err.as_bytes()).into_owned(), true),
+            },
         };
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, "file", &text).with_path(path);
         buffer.set_detected(self.file_types.detect(path));
+        buffer.set_readonly(binary);
         self.insert_buffer(buffer);
         Ok(id)
     }

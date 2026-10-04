@@ -34,7 +34,7 @@ capabilities = ["proc", "fs.read"]
 | Capability | What it opens |
 |---|---|
 | `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`. A program can do anything you can, so this is full access |
-| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load` |
+| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open` |
 | `fs.write` | `greed.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
 | `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
 | `net` | The network: `greed.http` to any host, and the Claude Code connection |
@@ -343,7 +343,12 @@ greed.tab.set_layout({
 - Images: `greed.image.load(path)` reads a PNG, JPEG or GIF and gives an id,
   and a mark with `image = { id = id, cols = 20, rows = 8 }` draws it over
   that many cells from its start. `greed.image.cells(id)` says how many
-  cells it covers at its own size.
+  cells it covers at its own size, and `greed.image.cell_size()` how many
+  pixels a cell is.
+- PDFs: `local doc = greed.pdf.open(path)` reads one, `doc.pages` counts
+  its pages, `doc.render(page, scale)` draws one as an image id at `scale`
+  pixels per point, and `doc.text(page)` gives its text, line by line. All
+  three wait, like `greed.sleep`.
 - Floats show a buffer over the main view, and panels beside it:
   `greed.float(buffer, { title = "Info", width = "60%" })`,
   `greed.panel(buffer, { side = "right", width = 40 })`.
