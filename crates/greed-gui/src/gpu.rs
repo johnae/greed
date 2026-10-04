@@ -31,6 +31,8 @@ struct Out {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) @interpolate(flat) kind: u32,
+    @location(3) local: vec2<f32>,
+    @location(4) @interpolate(flat) size: vec2<f32>,
 };
 
 @vertex
@@ -42,11 +44,30 @@ fn vs(@builtin(vertex_index) v: u32, q: Quad) -> Out {
     o.uv = mix(q.uv.xy, q.uv.zw, corner);
     o.color = q.color;
     o.kind = q.kind;
+    o.local = corner * q.size;
+    o.size = q.size;
     return o;
+}
+
+// How far `p` (from the box's center) is outside a box `half` its size with
+// corners rounded by `r`; negative inside.
+fn rounded(p: vec2<f32>, half: vec2<f32>, r: f32) -> f32 {
+    let q = abs(p) - half + vec2<f32>(r);
+    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 @fragment
 fn fs(o: Out) -> @location(0) vec4<f32> {
+    if o.kind == 3u {
+        // A rounded box: `uv.x` its corners' radius, `uv.y` the width of its
+        // outline, or 0 to fill it. Edges blend over a pixel.
+        let d = rounded(o.local - o.size * 0.5, o.size * 0.5, o.uv.x);
+        var a = clamp(0.5 - d, 0.0, 1.0);
+        if o.uv.y > 0.0 {
+            a = a * clamp(0.5 + d + o.uv.y, 0.0, 1.0);
+        }
+        return vec4<f32>(o.color.rgb, o.color.a * a);
+    }
     let t = textureSampleLevel(atlas, pick, o.uv, 0.0);
     if o.kind == 0u {
         return o.color;

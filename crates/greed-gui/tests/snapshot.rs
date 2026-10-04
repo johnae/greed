@@ -20,7 +20,7 @@ use greed_core::render::grid::compose;
 use greed_core::render::{FloatFrame, Frame, ImagePlacement, Position, Rect, Row, Size, Span, Tag};
 use greed_core::theme::{Color, Entry, Style, Surface, Theme};
 use greed_gui::Palette;
-use greed_gui::draw::build;
+use greed_gui::draw::{Chrome, build};
 use greed_gui::gpu::Gpu;
 use greed_gui::text::{Atlas, Fonts};
 
@@ -123,7 +123,7 @@ fn a_frame_draws_text_on_its_grid_with_the_cursor_status_line_and_a_float() {
     let scene = build(
         &grid,
         frame.cursor.map(|c| (c, frame.cursor_shape)),
-        &frame.images,
+        &Chrome::of(&frame),
         &mut fonts,
         &mut atlas,
         &palette,
@@ -189,7 +189,15 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     let mut frame = frame();
     frame.rows[1] = row(&[("    a -> b != c;", "")]);
     let grid = compose(&frame, Surface::Gui);
-    let scene = build(&grid, None, &[], &mut fonts, &mut atlas, &palette).unwrap();
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::default(),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
     gpu.upload(&mut atlas);
     let size = (
         (40.0 * fonts.cell_w).ceil() as u32,
@@ -264,7 +272,15 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
     frame.images = vec![placement(whole, 2, 0), placement(cut, 30, 2)];
     let pngs = HashMap::from([(whole, halves(40, 20)), (cut, halves(40, 20))]);
     let grid = compose(&frame, Surface::Gui);
-    let scene = build(&grid, None, &frame.images, &mut fonts, &mut atlas, &palette).unwrap();
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::of(&frame),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
     gpu.upload(&mut atlas);
     gpu.place_images(&frame.images, &pngs);
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
@@ -327,7 +343,15 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
     frame.cursor = Some(Position { col: 0, row: 0 });
     let grid = compose(&frame, Surface::Gui);
     let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
-    let scene = build(&grid, cursor, &[], &mut fonts, &mut atlas, &palette).unwrap();
+    let scene = build(
+        &grid,
+        cursor,
+        &Chrome::default(),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
     gpu.upload(&mut atlas);
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
@@ -358,4 +382,75 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
         inked(4.0..5.0, 1.0..2.0) > 0,
         "the small x is down on the baseline"
     );
+}
+
+#[test]
+fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    theme.set(
+        "ui.statusline.mode",
+        Entry::new(Style {
+            bg: Some(Color::Rgb(0xb5, 0xbd, 0x68)),
+            ..Style::default()
+        }),
+    );
+    frame.theme = Arc::new(theme);
+    let status = frame.rows.len() - 1;
+    frame.rows[status] = Row {
+        spans: vec![
+            Span::new(" NORMAL ", [Tag::MODE].into_iter().collect()),
+            Span::new(" main.rs", SmallVec::default()),
+        ],
+        tags: [Tag::STATUS].into_iter().collect(),
+        ..Row::default()
+    };
+    let grid = compose(&frame, Surface::Gui);
+    let chrome = Chrome::of(&frame);
+    assert!(
+        chrome.rounded && chrome.shadows,
+        "both on unless turned off"
+    );
+    let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file = std::fs::File::create(std::path::Path::new(&dir).join("chrome.png")).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
+    let green = [0xb5, 0xbd, 0x68];
+    // The mode is a pill: its middle is green, its very corner isn't.
+    assert_eq!(at(4.0, status as f32 + 0.5)[..3], green);
+    assert_ne!(at(0.0, status as f32 + 0.05)[..3], green, "a rounded end");
+    // The float's box goes through the middle of its border cells, rounded:
+    // the border's outer corner shows what's under it.
+    let corner = at(25.05, 3.05);
+    assert_eq!(corner[..3], palette.bg, "outside the rounded corner");
+    // Its shadow darkens the text area below it.
+    let shade = at(30.0, 5.9);
+    assert!(
+        shade[..3].iter().zip(&palette.bg).all(|(s, b)| s < b),
+        "shadow under the float: {shade:?}"
+    );
+    // Turned off, there are no shadows or pills, and the box lines come back.
+    frame
+        .gui
+        .insert("gui-shadows".to_owned(), "false".to_owned());
+    frame
+        .gui
+        .insert("gui-rounded".to_owned(), "false".to_owned());
+    let chrome = Chrome::of(&frame);
+    assert!(!chrome.rounded && !chrome.shadows && chrome.status.is_none());
 }

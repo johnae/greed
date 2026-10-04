@@ -184,10 +184,11 @@ impl App {
         };
         let grid = grid::compose(frame, Surface::Gui);
         let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
+        let chrome = draw::Chrome::of(frame);
         let Ok(scene) = draw::build(
             &grid,
             cursor,
-            &frame.images,
+            &chrome,
             &mut self.fonts,
             &mut self.atlas,
             &self.palette,
@@ -198,7 +199,7 @@ impl App {
             draw::build(
                 &grid,
                 cursor,
-                &frame.images,
+                &chrome,
                 &mut self.fonts,
                 &mut self.atlas,
                 &self.palette,

@@ -70,6 +70,11 @@ greed.option.set("gui-font", "JetBrains Mono")
 greed.option.set("gui-font-size", 14) -- pixels, before the screen's scale
 ```
 
+Floats (pickers, prompts, hover info) show as boxes with rounded corners
+and a soft shadow, and the status line's parts as pills.
+`greed.option.set("gui-rounded", false)` brings back square corners and
+box lines, and `gui-shadows` turns the shadows off.
+
 ## Projects
 
 A project is a folder you work in: the nearest folder above a file that
