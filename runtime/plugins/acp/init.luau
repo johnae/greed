@@ -77,6 +77,64 @@ function M.servers(name: string?, program: string?): { any }
 	}
 end
 
+greed.option.define({
+	name = "agent-workspace-edits",
+	doc = "Let agents in a workspace of their own edit, move and delete files there without asking",
+	default = true,
+})
+
+--- A rule that answers an agent's question for you: an option's id, or nil
+--- to leave it to the next rule, and in the end to you.
+export type Policy = (s: Session, permission: session.Permission) -> string?
+
+local policies: { Policy } = {}
+
+--- Adds a rule that answers agents' questions for you. Rules added later
+--- are asked first. Returns a function that takes the rule away again.
+function M.policy(rule: Policy): () -> ()
+	table.insert(policies, 1, rule)
+	return function()
+		local at = table.find(policies, rule)
+		if at then
+			table.remove(policies, at)
+		end
+	end
+end
+
+-- The option of `kind` ("allow_once", ...) among a question's, if any.
+local function option_of(permission: session.Permission, kind: string): string?
+	for _, option in permission.options do
+		if option.kind == kind then
+			return option.id
+		end
+	end
+	return nil
+end
+
+-- What the agent does in a workspace of its own is for you to bring in or
+-- not, so its edits there needn't wait for you.
+local EDITS = { edit = true, delete = true, move = true }
+local function workspace_edits(s: Session, permission: session.Permission): string?
+	if
+		s.workspace
+		and EDITS[permission.kind or ""]
+		and greed.option.get("agent-workspace-edits") == true
+	then
+		return option_of(permission, "allow_once")
+	end
+	return nil
+end
+
+local function decide(s: Session, permission: session.Permission): string?
+	for _, rule in policies do
+		local chosen = rule(s, permission)
+		if chosen then
+			return chosen
+		end
+	end
+	return workspace_edits(s, permission)
+end
+
 --- The command that runs `agent`: the first one installed.
 local function command_of(agent: Agent): { string }?
 	for _, command in agent.commands do
@@ -197,6 +255,9 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 		cwd = if workspace then workspace.path else root,
 		workspace = workspace,
 		servers = M.servers(greed.session.current(), greed.session.program()),
+		decide = function(permission)
+			return decide(s, permission)
+		end,
 		changed = function()
 			changed(s)
 		end,
@@ -502,6 +563,33 @@ greed.command({
 })
 
 greed.command({
+	name = "agent-mode",
+	doc = "Pick the mode the agent works in, like plan or accept edits",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			return
+		elseif #s.modes == 0 then
+			greed.echo(`{s.name} has no modes to pick from`)
+			return
+		end
+		local items = {}
+		for _, mode in s.modes do
+			local now = if mode.id == s.mode then "  (now)" else ""
+			local about = if mode.description then `: {mode.description}` else ""
+			table.insert(items, { label = `{mode.name}{about}{now}`, value = mode.id })
+		end
+		local chosen = picker.choose("Mode", items)
+		if chosen then
+			local ok, err = session.set_mode(s, chosen.value)
+			if not ok then
+				greed.echo(`can't: {err}`)
+			end
+		end
+	end,
+})
+
+greed.command({
 	name = "agent-stop",
 	doc = "Stop the agent's turn",
 	run = function(ctx)
@@ -632,6 +720,7 @@ for _, mode in { "normal", "vim", "insert", "vim-insert", "edit" } do
 	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
 		["alt-enter"] = "agent-send",
 		["alt-p"] = "agent-answer",
+		["alt-m"] = "agent-mode",
 	})
 end
 greed.keymap.bind("normal", {

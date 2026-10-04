@@ -70,6 +70,11 @@ function M.history(s: Session): (string, { Style }, { [number]: string })
 	if s.workspace then
 		title ..= ` (workspace {s.workspace.name})`
 	end
+	for _, mode in s.modes do
+		if mode.id == s.mode then
+			title ..= ` · {mode.name}`
+		end
+	end
 	add(title, "markup.heading")
 	-- A heading each time the speaker changes; the agent's text, tools and
 	-- plans run on under one.

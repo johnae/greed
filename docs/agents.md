@@ -122,6 +122,31 @@ Agents also get Greed's own tools, the ones `greed mcp` offers above
 (diagnostics, outlines, `syntax_query`, `propose`, ...), connected to this
 session. `:set agent-greed-tools false` leaves them out.
 
+`alt-m` picks the mode the agent works in, when it has modes (Claude Code
+has Manual, Accept edits and Plan); the transcript's first line shows the
+one it's in.
+
+Some questions can be answered for you. An agent in a workspace of its own
+edits, moves and deletes files there without asking, since nothing reaches
+your files until you bring it in (`:set agent-workspace-edits false` to be
+asked anyway). Rules of your own go in `init.luau`; the first that returns
+an option's id answers, and `nil` leaves it to the next, and in the end to
+you:
+
+```luau
+require("@acp").policy(function(session, question)
+	-- Reading files never needs asking.
+	if question.kind == "read" then
+		for _, option in question.options do
+			if option.kind == "allow_once" then
+				return option.id
+			end
+		end
+	end
+	return nil
+end)
+```
+
 An agent works either in the project with you, or in a workspace of its
 own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
 cache folder. There it can change what it likes without touching your

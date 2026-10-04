@@ -44,7 +44,10 @@ while IFS= read -r line; do
 	*'"method":"session/new"'*)
 		cwd=$(field "$line" cwd)
 		servers=$(printf "%s" "$line" | sed -n "s/.*\"mcpServers\":\(\[[^]]*\]\).*/\1/p")
-		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\"}}"
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\",\"modes\":{\"currentModeId\":\"default\",\"availableModes\":[{\"id\":\"default\",\"name\":\"Manual\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before doing\"}]}}}"
+		;;
+	*'"method":"session/set_mode"'*)
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
 		;;
 	*'"method":"session/prompt"'*)
 		text=$(field "$line" text)

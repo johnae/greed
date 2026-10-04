@@ -25,9 +25,14 @@ export type Tool = {
 --- A question the agent waits on you for.
 export type Permission = {
 	title: string,
+	--- The kind of tool call it's for: "edit", "execute", ...
+	kind: string?,
 	options: { { id: string, name: string, kind: string } },
 	answer: greed.Signal,
 }
+
+--- A mode the agent works in, like "plan" or "accept edits".
+export type Mode = { id: string, name: string, description: string? }
 
 --- What a transcript shows, in order. `kind` says which fields it has:
 --- "user", "agent", "thought" and "note" have `text`, "tool" a `tool`,
@@ -62,6 +67,12 @@ export type Session = {
 	tools: { [string]: Tool },
 	conn: rpc.Conn?,
 	session_id: string?,
+	--- The modes the agent offers, and the one it's in.
+	modes: { Mode },
+	mode: string?,
+	--- Answers a question without asking you, with an option's id, when
+	--- it returns one.
+	decide: ((permission: Permission) -> string?)?,
 	--- Called whenever there's something new to show.
 	changed: () -> (),
 }
@@ -192,6 +203,8 @@ local function update(session: Session, u: any)
 		else
 			session.tool = tool.title
 		end
+	elseif kind == "current_mode_update" then
+		session.mode = u.currentModeId
 	elseif kind == "plan" then
 		local items = {}
 		for _, entry in u.entries or {} do
@@ -242,11 +255,22 @@ local function handlers(session: Session): rpc.Handlers
 		local tool = session.tools[call.toolCallId or ""]
 		local permission: Permission = {
 			title = call.title or (tool and tool.title) or "a tool call",
+			kind = call.kind or (tool and tool.kind),
 			options = options,
 			answer = greed.signal(),
 		}
 		local entry: Entry = { kind = "permission", permission = permission }
 		table.insert(session.entries, entry)
+		local decided = session.decide and session.decide(permission)
+		if decided then
+			for _, option in options do
+				if option.id == decided then
+					entry.chosen = `{option.name} (by policy)`
+				end
+			end
+			session.changed()
+			return { outcome = { outcome = "selected", optionId = decided } }
+		end
 		local before = session.status
 		session.status = "waiting"
 		session.changed()
@@ -410,6 +434,7 @@ function M.start(
 		workspace: Workspace?,
 		--- MCP servers the agent should use, as ACP describes them.
 		servers: { any }?,
+		decide: ((permission: Permission) -> string?)?,
 		changed: () -> (),
 	}
 ): Session
@@ -424,6 +449,8 @@ function M.start(
 		status = "starting",
 		entries = {},
 		tools = {},
+		modes = {},
+		decide = opts.decide,
 		changed = opts.changed,
 	}
 	local function note(text: string)
@@ -464,6 +491,15 @@ function M.start(
 			return
 		end
 		session.session_id = new.sessionId
+		if type(new.modes) == "table" then
+			for _, mode in new.modes.availableModes or {} do
+				table.insert(
+					session.modes,
+					{ id = mode.id, name = mode.name or mode.id, description = mode.description }
+				)
+			end
+			session.mode = new.modes.currentModeId
+		end
 		if session.status == "starting" then
 			session.status = "idle"
 		end
@@ -503,6 +539,21 @@ function M.prompt(session: Session, text: string): (boolean, string?)
 			{ kind = "note", text = `stopped: {string.gsub(result.stopReason, "_", " ")}` }
 		)
 	end
+	session.changed()
+	return true, nil
+end
+
+--- Puts the agent in the mode `id`. False and why when it won't.
+function M.set_mode(session: Session, id: string): (boolean, string?)
+	local conn = session.conn
+	if conn == nil or session.session_id == nil then
+		return false, "the agent isn't running"
+	end
+	local _, err = conn.request("session/set_mode", { sessionId = session.session_id, modeId = id })
+	if err then
+		return false, err
+	end
+	session.mode = id
 	session.changed()
 	return true, nil
 end

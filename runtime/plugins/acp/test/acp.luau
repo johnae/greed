@@ -16,6 +16,7 @@ local function start(t: test.TestContext, root: string, own: boolean?): any
 	t:wait_for(function()
 		return s.status == "idle" or s.status == "exited"
 	end)
+	t:wait(30)
 	return s
 end
 
@@ -189,6 +190,38 @@ test("agents get greed mcp for this session, unless the option is off", function
 	assert(string.find(shown(), "servers: 0", 1, true), shown())
 end)
 
+test("alt-m picks the agent's mode, and the transcript says which it's in", function(t)
+	local s = start(t, t:tempdir({}))
+	assert(string.find(shown(), "^Fake in [^\n]* · Manual\n"), shown())
+	t:keys("alt-m")
+	t:keys("P l a n enter")
+	t:wait_for(function()
+		return s.mode == "plan"
+	end)
+	t:wait(30)
+	assert(string.find(shown(), "^Fake in [^\n]* · Plan\n"), shown())
+end)
+
+test("policies answer questions for you; rules added later come first", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	local remove = acp.policy(function(_, permission)
+		if permission.title == "Edit a.txt" then
+			for _, option in permission.options do
+				if option.kind == "reject_once" then
+					return option.id
+				end
+			end
+		end
+		return nil
+	end)
+	local s = start(t, dir)
+	send(t, s, "edit a.txt")
+	assert(s.status == "idle", "nothing to wait for")
+	assert(string.find(shown(), "? Edit a.txt: Reject (by policy)", 1, true), shown())
+	assert(greed.fs.read(dir .. "/a.txt") == "a\n")
+	remove()
+end)
+
 test("an agent that isn't installed says how it would run", function(t)
 	local s, err = acp.start(
 		{ name = "nope", commands = { { "no-such-agent-here", "--acp" } } },
@@ -220,7 +253,10 @@ test("in a jj workspace of its own, the agent's change is brought in with b", fu
 	assert(ws and ws.kind == "jj" and greed.fs.stat(ws.path), "it has a workspace")
 	assert(s.cwd == ws.path)
 	send(t, s, "edit a.txt")
-	t:keys("alt-p y")
+	assert(
+		string.find(shown(), "? Edit a.txt: Allow once (by policy)", 1, true),
+		"its own edits needn't wait: " .. shown()
+	)
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
@@ -256,7 +292,6 @@ test("in a git worktree of its own, b applies what the agent changed", function(
 	local ws = s.workspace
 	assert(ws and ws.kind == "git", "a worktree")
 	send(t, s, "edit a.txt")
-	t:keys("alt-p y")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
