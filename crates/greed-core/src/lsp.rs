@@ -101,6 +101,13 @@ pub enum Handled {
         method: String,
         params: Value,
     },
+    /// The server told the editor something it doesn't deal with itself,
+    /// like `$/progress`, for plugins to hear.
+    Notification {
+        language: String,
+        method: String,
+        params: Value,
+    },
     Nothing,
 }
 
@@ -449,7 +456,15 @@ impl Lsp {
             } if method == "textDocument/publishDiagnostics" => {
                 self.store_diagnostics(server, &params, editor)
             }
-            Event::Notification { .. } => Handled::Nothing,
+            Event::Notification {
+                server,
+                method,
+                params,
+            } => Handled::Notification {
+                language: self.servers[server].language.clone(),
+                method,
+                params,
+            },
             Event::Request {
                 server,
                 id,
@@ -587,6 +602,7 @@ fn severity(diagnostic: &Value) -> u8 {
 fn client_capabilities() -> Value {
     json!({
         "general": { "positionEncodings": ["utf-8", "utf-16"] },
+        "window": { "workDoneProgress": true },
         "workspace": {
             "applyEdit": true,
             "workspaceEdit": { "documentChanges": true },

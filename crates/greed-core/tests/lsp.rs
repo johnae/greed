@@ -33,7 +33,8 @@ fn setup(text: &str) -> Setup {
 }
 
 impl Setup {
-    /// Handles events until one is handled as something other than nothing.
+    /// Handles events until one is handled as something other than nothing
+    /// or a notification for plugins.
     fn next(&mut self) -> Handled {
         loop {
             let event = self
@@ -42,7 +43,7 @@ impl Setup {
                 .recv_timeout(Duration::from_secs(5))
                 .expect("server answered");
             match self.lsp.handle(event, &self.editor) {
-                Handled::Nothing => {}
+                Handled::Nothing | Handled::Notification { .. } => {}
                 handled => return handled,
             }
         }

@@ -1019,6 +1019,8 @@ export type Lsp = {
 	--- Answers requests of `method` from servers, e.g. "workspace/applyEdit",
 	--- with what `handler` returns. It can wait, e.g. to ask you; the server gets the answer when it returns.
 	on_request: (method: string, handler: (params: any) -> any) -> (),
+	--- Hears notifications of `method` from servers that the editor doesn't deal with itself, e.g. "$/progress", with the language of the server that sent it.
+	on_notification: (method: string, handler: (params: any, language: string) -> ()) -> (),
 }
 
 export type LspProblem = {

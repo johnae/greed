@@ -994,6 +994,9 @@ recording on the left. On the right it shows:
   like `main · nwpr`)
 - problems
 - the language and the features on for the file, like `markdown · notes`
+- the language server: its name, what it's working on
+  (`rust-analyzer: indexing 40%`), or that it's starting, stopped or not
+  installed
 - the cursor's place, the machine and the session
 
 Two options make it livelier, both off unless you turn them on:

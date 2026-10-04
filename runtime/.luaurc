@@ -27,6 +27,7 @@
 		"describe": "./plugins/describe",
 		"acp": "./plugins/acp",
 		"markdown": "./plugins/markdown",
-		"tree": "./plugins/tree"
+		"tree": "./plugins/tree",
+		"lsp": "./plugins/lsp"
 	}
 }

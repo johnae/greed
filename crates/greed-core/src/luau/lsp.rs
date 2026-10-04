@@ -53,6 +53,11 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
             method,
             params,
         } => answer(lua, server, &id, &method, &params),
+        Handled::Notification {
+            language,
+            method,
+            params,
+        } => tell(lua, &language, &method, &params),
         Handled::Nothing => Ok(()),
     }
 }
@@ -99,6 +104,25 @@ fn answer(
     tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)
 }
 
+/// Passes a notification from `language`'s server to the handlers plugins
+/// set for its method, each run the way a command is.
+fn tell(lua: &Lua, language: &str, method: &str, params: &serde_json::Value) -> LuaResult<()> {
+    let listeners: Vec<(PluginId, Function)> = state(lua)
+        .lsp_listeners
+        .iter()
+        .filter(|(m, _, _)| m == method)
+        .map(|(_, owner, handler)| (owner.clone(), handler.clone()))
+        .collect();
+    for (owner, handler) in listeners {
+        let run: Function = lua
+            .load("local handler, language = ...\nreturn function(params) handler(params, language) end")
+            .set_name("=lsp.on_notification")
+            .call((handler, language))?;
+        tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)?;
+    }
+    Ok(())
+}
+
 fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {
     let payload = lua.create_table()?;
     payload.set(
@@ -119,8 +143,8 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     Ok(lsp)
 }
 
-/// What servers ask, can do and found: `on_request`, `capabilities` and
-/// `problems`.
+/// What servers ask, tell, can do and found: `on_request`,
+/// `on_notification`, `capabilities` and `problems`.
 fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     lsp.set(
@@ -129,6 +153,17 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             state_mut(lua)
                 .lsp_handlers
                 .insert(method, (o.clone(), handler));
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    lsp.set(
+        "on_notification",
+        lua.create_function(move |lua, (method, handler): (String, Function)| {
+            state_mut(lua)
+                .lsp_listeners
+                .push((method, o.clone(), handler));
             Ok(())
         })?,
     )?;

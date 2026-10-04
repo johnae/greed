@@ -106,10 +106,7 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
                 } } }),
             ),
-            "initialized" => write(
-                &mut output,
-                &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [{}, {}] } }),
-            ),
+            "initialized" => initialized(&mut output),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 opened = Opened::from(&message["params"]);
                 publish_diagnostics(&mut output, &opened);
@@ -187,6 +184,24 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 }
             }
         }
+    }
+}
+
+/// What the server does once started: asks for its settings, and reports
+/// some work, begun and done, as servers report indexing.
+fn initialized(output: &mut impl Write) {
+    write(
+        output,
+        &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [{}, {}] } }),
+    );
+    for value in [
+        json!({ "kind": "begin", "title": "Indexing", "percentage": 0 }),
+        json!({ "kind": "end" }),
+    ] {
+        write(
+            output,
+            &json!({ "jsonrpc": "2.0", "method": "$/progress", "params": { "token": "index", "value": value } }),
+        );
     }
 }
 

@@ -92,6 +92,8 @@ pub(crate) struct State {
     pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
     /// What answers each kind of request from servers, and its plugin.
     pub lsp_handlers: HashMap<String, (PluginId, Function)>,
+    /// What hears each kind of notification from servers, and its plugin.
+    pub lsp_listeners: Vec<(String, PluginId, Function)>,
     /// The theme entries plugins set, each with the plugin that set it last,
     /// so it goes with the plugin. Each patches the base theme's entry.
     pub theme_set: HashMap<Arc<str>, (PluginId, crate::theme::Entry)>,
@@ -274,6 +276,7 @@ impl Host {
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
             lsp_handlers: HashMap::new(),
+            lsp_listeners: Vec::new(),
             theme_set: HashMap::new(),
             theme_base: None,
             jobs: jobs::Jobs::default(),
@@ -999,6 +1002,7 @@ fn unregister(lua: &Lua, name: &str) {
     state.terminals.remove_owned_by(name);
     state.children.remove_owned_by(name);
     state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
+    state.lsp_listeners.retain(|(_, owner, _)| &**owner != name);
     state.cli.retain(|_, command| &*command.owner != name);
     state.editor.keymap_mut().remove_owned_by(name);
     let mut restyled: Vec<Arc<str>> = state

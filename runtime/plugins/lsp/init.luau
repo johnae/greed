@@ -24,6 +24,7 @@ require("@self/edits")
 require("@self/places")
 require("@self/actions")
 require("@self/signature")
+local status = require("@self/status")
 
 local head, move_to, ask, describe = common.head, common.move_to, common.ask, common.describe
 
@@ -374,3 +375,9 @@ actions.action({
 		greed.clipboard.set(target.value)
 	end,
 })
+
+-- Other plugins can use these with `require("@lsp")`.
+return {
+	--- The language server piece of the status line, and the progress it shows.
+	status = status,
+}

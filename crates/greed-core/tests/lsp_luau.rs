@@ -123,6 +123,7 @@ fn with_plugin() -> Host {
         plugin("core"),
         plugin("picker"),
         plugin("multibuffer"),
+        plugin("statusline"),
         plugin("lsp"),
     ])
     .unwrap();
@@ -587,4 +588,21 @@ fn a_server_asking_to_pick_waits_for_the_picker_and_hears_the_answer() {
     h.press_keys("down enter").unwrap();
     pump(&h, |h| main_text(h).starts_with("No"));
     assert_eq!(main_text(&h), "No x = bad;");
+}
+
+#[test]
+fn notifications_reach_the_plugins_listening_with_the_servers_language() {
+    let h = host();
+    h.load_str(
+        "listen",
+        "local greed = require('@greed')\ngreed.lsp.on_notification('$/progress', function(params, language)\n  greed.echo(language .. ' ' .. params.token .. ' ' .. params.value.kind)\nend)",
+    )
+    .unwrap();
+    h.sync_lsp();
+    let mut messages = Vec::new();
+    pump(&h, |h| {
+        messages.extend(h.with_editor_mut(Editor::take_messages));
+        messages.len() == 2
+    });
+    assert_eq!(messages, ["rust index begin", "rust index end"]);
 }

@@ -116,6 +116,7 @@ fn vim_plugin_tests_pass() {
         core(),
         plugin("picker"),
         plugin("multibuffer"),
+        plugin("statusline"),
         plugin("lsp"),
         plugin("cmdline"),
         plugin("vim"),
@@ -140,6 +141,7 @@ fn lsp_plugin_tests_pass() {
         core(),
         plugin("picker"),
         plugin("multibuffer"),
+        plugin("statusline"),
         plugin("lsp"),
     ];
     assert_all_pass(&plugins, &plugin("lsp"));
