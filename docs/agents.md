@@ -48,6 +48,7 @@ claude mcp add greed -- greed mcp
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
+| `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
 
 `eval` can do anything a plugin can. Leave it out of an agent's allowed
 tools if you don't want that.

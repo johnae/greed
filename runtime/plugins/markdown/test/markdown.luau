@@ -61,6 +61,12 @@ test("code blocks, quotes, rules and bullets", function(t)
 	assert(rows[6] == "• item", rows[6])
 end)
 
+test("a code block's result looks a little apart from code", function(t)
+	shown(t, "```sh\nls\n```\n\n```result\na\n```")
+	assert(#styled("markdown.code.block") == 3, "the code block")
+	assert(#styled("markdown.code.block.result") == 3, "its result")
+end)
+
 test("typing on a line shows it as written", function(t)
 	shown(t, "# Title\n**bold**")
 	greed.view():set_selection({ ranges = { { anchor = 10, head = 10 } }, primary = 1 })

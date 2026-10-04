@@ -141,16 +141,21 @@ local function marks(buffer: greed.Buffer): { greed.Mark }
 	local parts = claimed(buffer)
 	local shows = core.reveal()
 	local fence: string? = nil
+	-- What code blocks look like: a block's output (```` ```result ````) a
+	-- little apart from code.
+	local block_style = "markdown.code.block"
 	for n = 0, buffer:line_count() - 1 do
 		local at = buffer:line_start(n)
 		local text = buffer:slice(at, buffer:line_end(n))
 		local line: Line = { text = text, at = at, out = out, shows = shows, taken = {} }
 		local ticks = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
+		if fence == nil and ticks then
+			block_style = if string.match(text, "^%s*[`~]+%s*result")
+				then "markdown.code.block.result"
+				else "markdown.code.block"
+		end
 		if fence or ticks then
-			table.insert(
-				out,
-				{ from = at, to = at + #text, style = "markdown.code.block", line = true }
-			)
+			table.insert(out, { from = at, to = at + #text, style = block_style, line = true })
 			if fence == nil then
 				fence = ticks
 				paint(line, 1, #text, "markdown.fence")

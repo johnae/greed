@@ -656,6 +656,68 @@ text in a proportional font (code stays monospaced); terminals other than
 kitty show headings at the normal size. `:set markdown-look false` turns it
 off.
 
+### Runnable code blocks
+
+A fenced block in a language Greed can run runs when you ask, and its
+output is saved in a `result` block right under it. That way the file
+shows the output anywhere, from GitHub to your phone, and a diff shows
+what changed. Running a block again replaces its result.
+
+````markdown
+```sh id=files
+ls *.md
+```
+
+```result
+README.md
+using.md
+```
+````
+
+| Keys | |
+|---|---|
+| `space m r`, or `enter` on the fence | Run the block under the cursor |
+| `space m R` | Run every block in the file, in order |
+| `space m c` | Clear the block's result (`:blocks-results-clear` clears them all) |
+| `space m s` | Stop the block running under the cursor |
+
+Blocks run as `sh`, `bash`, `zsh`, `fish`, `python`, `node`, `ruby`,
+`luau` and `http`:
+
+- A program gets the code to run, and prints the result. When it fails,
+  the result block says how it exited (`result exit=1`).
+- A `luau` block runs in the editor, with the whole API: its result is what
+  it prints and what it returns. A one-line expression like `6 * 7` is its
+  own result.
+- An `http` block is a request: the method and URL on its first line (or
+  just a URL, for GET), then header lines, then after a blank line the
+  body. The result is the status and the body; `headers=true` adds the
+  response's headers.
+
+Options go after the language:
+
+- `id=NAME` names a block, and `input=NAME` gives another block that
+  block's result: on stdin for a program, as `input` in Luau. The named
+  block runs first if it has no result yet, so a page of blocks works like
+  a small pipeline.
+- `dir=PATH` runs a program in another folder than the file's.
+- `timeout=SECONDS` stops it after that long.
+
+Nothing runs when a file opens. The first time you run a block in a file,
+Greed asks whether to: `y` for now, `a` to always trust that file
+(`:blocks-untrust` takes it back). Trusted files, and files whose front
+matter says `greed: run`, show a `▶ run` button after each block's fence.
+Front matter only shows the buttons; running still asks. The status line
+shows `markdown · blocks` when they're on. Agents can list and run blocks
+too (`blocks_list`, `blocks_run`), but only in files you trust.
+
+Add a language from Luau:
+
+```luau
+local blocks = require("@blocks")
+blocks.runner("lua", blocks.program({ "lua", "-e" }))
+```
+
 ## Notes
 
 Notes are Markdown files in a folder (`~/notes` unless you set
