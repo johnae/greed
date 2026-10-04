@@ -339,3 +339,48 @@ test("with jj, space g a says to split instead", function(t)
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "jj has no staging", 1, true), messages[#messages])
 end)
+
+test("space g w shows the commits that made the selected lines", function(t)
+	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\n" })
+	greed.fs.write(dir .. "/a.txt", "one\nTWO\nthree\n")
+	local done = greed.process.run(
+		{ "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "shout two" },
+		{ cwd = dir }
+	)
+	assert(done and done.code == 0, done and done.stderr)
+	greed.open(dir .. "/a.txt")
+	t:keys("j space g w")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "^Why line 2 of a.txt are as they are"), text)
+	assert(string.find(text, "shout two", 1, true) and string.find(text, "first", 1, true), text)
+	assert(string.find(text, "+TWO", 1, true), text)
+	-- Agents get the same.
+	local why = vcs.why
+	local same = why.history(dir .. "/a.txt", 2, 2) :: string
+	assert(string.find(same, "shout two", 1, true), same)
+end)
+
+test("with jj, the changes that last touched the lines, newest first", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+	local function jj(...: string)
+		local done = greed.process.run(
+			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+	end
+	jj("git", "init")
+	jj("commit", "-m", "first")
+	greed.fs.write(dir .. "/a.txt", "one\nTWO\n")
+	jj("commit", "-m", "shout two")
+	greed.open(dir .. "/a.txt")
+	t:keys("x x space g w")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "^Why lines 1%-2 of a.txt are as they are"), text)
+	local newest = string.find(text, "shout two", 1, true) :: number
+	local oldest = string.find(text, "first", 1, true) :: number
+	assert(newest and oldest and newest < oldest, text)
+end)

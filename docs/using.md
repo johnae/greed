@@ -440,6 +440,7 @@ against what's staged, so a change loses its sign once you stage it.
 | `space g r` | Put the change under the cursor back the way it was |
 | `space g a` | Stage the change under the cursor (git) |
 | `space g b` | Who last changed this line, and when |
+| `space g w` | Why the selected lines are as they are: each change that made them, with its description and diff |
 | `space g g` | Pick a file changed since the last commit |
 | `space g s` (`:changes`) | Every change in the project, in one buffer |
 | `space g S` (`:staged`) | What's staged, to unstage hunks and commit (git) |

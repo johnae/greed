@@ -1,3 +1,3 @@
 name = "vcs"
-requires = ["core", "multibuffer", "operations", "picker"]
+requires = ["core", "agent", "multibuffer", "operations", "picker"]
 capabilities = ["proc", "fs.read", "fs.write"]

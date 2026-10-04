@@ -30,6 +30,8 @@ local M = {}
 
 --- Diffs as text: buffers showing them, and patches for single hunks.
 M.diffs = require("@self/diffs")
+--- The history of some lines: why they're as they are.
+M.why = require("@self/why")
 
 greed.option.define({
 	name = "vcs-signs",
