@@ -60,8 +60,9 @@ a terminal with kitty graphics, PDFs included. Dead keys and input methods
 type as they do elsewhere, and the window opens at the size it last had. On
 Linux it needs Wayland or X11 and a Vulkan or GL driver.
 
-Pick another font and size in your `init.luau`; the window follows as soon
-as they change:
+`ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
+it back to the size it had before. Pick another font and size in your
+`init.luau`; the window follows as soon as they change:
 
 ```luau
 local greed = require("@greed")

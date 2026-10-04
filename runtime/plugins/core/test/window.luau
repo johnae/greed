@@ -1,0 +1,40 @@
+local test = require("@greed/test")
+local greed = require("@greed")
+
+local function size(): number
+	return greed.option.get("gui-font-size") :: number
+end
+
+test("ctrl-= and ctrl-- make the window's text bigger and smaller, ctrl-0 puts it back", function(t)
+	t:buffer("|hello")
+	t:keys("ctrl-=")
+	assert(size() == 16, `bigger: {size()}`)
+	t:keys("ctrl-+")
+	assert(size() == 17, "ctrl-+ too, where + takes shift")
+	t:keys("ctrl-- ctrl-- ctrl--")
+	assert(size() == 14, `smaller: {size()}`)
+	t:keys("ctrl-0")
+	assert(size() == 15, `the size it starts at: {size()}`)
+	t:keys("i ctrl-= esc")
+	assert(size() == 16, "in any mode")
+	t:expect("|hello")
+end)
+
+test("the size stays between 6 and 72", function(t)
+	t:buffer("|")
+	greed.option.set("gui-font-size", 72)
+	t:keys("ctrl-=")
+	assert(size() == 72, `{size()}`)
+	greed.option.set("gui-font-size", 6)
+	t:keys("ctrl--")
+	assert(size() == 6, `{size()}`)
+end)
+
+test("ctrl-0 goes back to the size set before zooming, not the default", function(t)
+	t:buffer("|")
+	greed.option.set("gui-font-size", 13)
+	t:keys("ctrl-= ctrl-=")
+	assert(size() == 15)
+	t:keys("ctrl-0")
+	assert(size() == 13, `{size()}`)
+end)
