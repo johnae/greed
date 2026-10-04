@@ -1,7 +1,18 @@
-# Builds the docs as a website with mdBook: `mdbook build docs`.
+# Builds the docs as a website with mdBook. `site/build.sh` builds them into
+# greed.rs, with the reference pages generated first; `mdbook build docs`
+# alone works too.
 [book]
 title = "Greed"
 src = "."
 
 [build]
 build-dir = "../target/book"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-css = ["theme/greed.css"]
+additional-js = ["theme/greed.js"]
+site-url = "/docs/"
+no-section-label = true
+git-repository-url = "https://github.com/johnae/greed"

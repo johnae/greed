@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greed: a modal editor you can change while it runs</title>
+<meta name="description" content="Greed is a modal editor for the terminal and the window: a small Rust core, with keys, modes, commands, themes and the agent integration in Luau plugins you can read, change or replace while it runs.">
+<meta property="og:title" content="Greed">
+<meta property="og:description" content="A modal editor with a small Rust core and everything else in Luau plugins.">
+<meta property="og:image" content="https://greed.rs/assets/social.jpg">
+<meta property="og:url" content="https://greed.rs/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" href="assets/favicon-64.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="./"><img src="assets/icon-256.png" alt="" width="28" height="28">Greed</a>
+  <nav>
+    <a href="docs/using.html">Docs</a>
+    <a href="docs/plugins.html">Plugins</a>
+    <a href="docs/reference/api.html">API</a>
+    <a href="https://github.com/johnae/greed">Source</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <h1 class="visually-hidden">Greed is good. General Runtime for Editing, Extending and Delegating.</h1>
+    <picture>
+      <source media="(max-width: 900px)" srcset="assets/hero-900.jpg">
+      <img src="assets/hero.jpg" width="1672" height="941" alt="The Greed logo and the line “Greed is good.” beside a laptop showing a Greed config file, at a window over a fjord at sunrise.">
+    </picture>
+  </section>
+
+  <section class="intro">
+    <p class="lead">Greed is a modal editor for the terminal and the window. The core is a
+    small amount of Rust. Keys, modes, commands, pickers, themes and the agent
+    integration are Luau plugins you can read, change or replace while it runs.</p>
+    <p class="actions">
+      <a class="button primary" href="docs/using.html">Get started</a>
+      <a class="button" href="docs/plugins.html">Write a plugin</a>
+    </p>
+  </section>
+
+  <section class="demo">
+    <pre class="term"><code><span class="prompt">$</span> greed src/main.rs          <span class="c"># edit; the session keeps running if you detach</span>
+<span class="prompt">:</span>detach                      <span class="c"># leave it running in the background</span>
+<span class="prompt">$</span> greed attach               <span class="c"># come back to it</span>
+<span class="prompt">$</span> greed ssh build-box        <span class="c"># or edit on another machine, your config along</span>
+<span class="prompt">$</span> greed ctl focus            <span class="c"># ask the running editor what you're looking at</span>
+{ "path": "src/main.rs", "mode": "normal", "selections": [ ... ] }</code></pre>
+  </section>
+
+  <section class="features">
+    <article>
+      <h2>Select, then act</h2>
+      <p>Editing works like Helix: <kbd>w</kbd> selects a word, <kbd>x</kbd> a line,
+      <kbd>s</kbd> every match of a regex, and typing then edits all of them at once.
+      Prefer Vim, or no modes at all? <code>:style vim</code> and <code>:style edit</code>
+      switch while it runs.</p>
+    </article>
+    <article>
+      <h2>Plugins all the way down</h2>
+      <p>Everything you see comes from plugins in Luau, written against the same
+      typed API yours use. Each runs in a sandbox with a time budget, and unloading
+      one takes away everything it added.</p>
+    </article>
+    <article>
+      <h2>Sessions that keep running</h2>
+      <p>The editor runs as a session with thin clients. Detach and come back to your
+      open files, undo history and language servers, or use <code>greed ssh</code> to
+      edit on another machine with your config brought along.</p>
+    </article>
+    <article>
+      <h2>Agents as clients</h2>
+      <p>Agents reach the editor over MCP, <code>greed ctl</code> and Claude Code's
+      <code>/ide</code>. They see what you have open and propose edits you review in
+      the buffer. They can write plugins too, which Greed type checks and tests
+      before you approve them.</p>
+    </article>
+    <article>
+      <h2>Terminal or window</h2>
+      <p>The same session shows in your terminal or in a window drawn on the GPU,
+      with ligatures, images, PDFs, prose in a proportional font and Markdown shown
+      as a document. One theme styles both.</p>
+    </article>
+    <article>
+      <h2>Notes and todos</h2>
+      <p>Markdown notes with links, todos and an agenda, kept as plain files in a
+      folder of your choosing, with tools agents can use to read and add to
+      them.</p>
+    </article>
+  </section>
+
+  <section class="example">
+    <div class="text">
+      <h2>A plugin is a folder</h2>
+      <p>This one adds a command and binds it to <kbd>g u</kbd>. Put it in
+      <code>~/.config/greed/plugins/upper/</code>, or run <code>greed new upper</code>
+      there to get one with a test. <code>greed test upper</code> runs its tests in a
+      headless editor.</p>
+      <p><a href="docs/plugins.html">Writing plugins</a> ·
+      <a href="docs/reference/api.html">The Luau API</a></p>
+    </div>
+    <pre class="code"><code><span class="k">local</span> greed <span class="o">=</span> <span class="f">require</span>(<span class="s">"@greed"</span>)
+
+greed.<span class="f">command</span>({
+	name <span class="o">=</span> <span class="s">"upper"</span>,
+	doc <span class="o">=</span> <span class="s">"Upper-case the selections"</span>,
+	run <span class="o">=</span> <span class="k">function</span>(ctx)
+		ctx.buffer:<span class="f">edit</span>(<span class="k">function</span>(e)
+			<span class="k">for</span> _, r <span class="k">in</span> ctx.view:<span class="f">selection</span>().ranges <span class="k">do</span>
+				<span class="k">local</span> from, to <span class="o">=</span> math.<span class="f">min</span>(r.anchor, r.head), math.<span class="f">max</span>(r.anchor, r.head)
+				e:<span class="f">replace</span>(from, to, string.<span class="f">upper</span>(ctx.buffer:<span class="f">slice</span>(from, to)))
+			<span class="k">end</span>
+		<span class="k">end</span>)
+	<span class="k">end</span>,
+})
+
+greed.keymap.<span class="f">bind</span>(<span class="s">"normal"</span>, { [<span class="s">"g u"</span>] <span class="o">=</span> <span class="s">"upper"</span> })</code></pre>
+  </section>
+
+  <section class="install">
+    <h2>Try it</h2>
+    <p>Greed builds with a recent stable Rust and cmake:</p>
+    <pre class="term"><code><span class="prompt">$</span> git clone https://github.com/johnae/greed &amp;&amp; cd greed
+<span class="prompt">$</span> cargo build --release
+<span class="prompt">$</span> ./target/release/greed README.md</code></pre>
+    <p>To install it, <code>cargo install --path crates/greed-editor</code>, or with Nix,
+    <code>nix-build</code>. The default plugins are built into the binary, so it runs
+    from anywhere.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Greed is early and changes often.</p>
+  <p><a href="docs/using.html">Using Greed</a> · <a href="docs/reference/plugins.html">Plugins</a> ·
+  <a href="docs/reference/options.html">Options</a> · <a href="docs/agents.html">Agents</a> ·
+  <a href="docs/design.html">How it's built</a></p>
+</footer>
+</body>
+</html>

@@ -16,4 +16,4 @@ and propose edits you review in the buffer.
   and why.
 
 These pages are plain Markdown, readable in a terminal or in Greed itself,
-and `mdbook build docs` turns them into a website.
+and they make the documentation at [greed.rs](https://greed.rs).

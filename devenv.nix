@@ -27,6 +27,10 @@
     pkgs.tree-sitter
     # wasmtime, which loads downloaded grammars, builds its C API with it
     pkgs.cmake
+
+    # The website: site/build.sh and site/serve.sh
+    pkgs.mdbook
+    pkgs.miniserve
   ];
 
   # What the window client (`greed --gui`) loads at run time: the display

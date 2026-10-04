@@ -1,0 +1,67 @@
+/* The docs in greed.rs's colors: the light theme like the front page, the
+   dark one (navy) like it at night. */
+
+:root {
+  --mono-font: ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --code-font-size: 0.9em;
+}
+
+.light {
+  --bg: #fbfaff;
+  --fg: #1e2130;
+  --sidebar-bg: #f1eef8;
+  --sidebar-fg: #3a3d50;
+  --sidebar-non-existant: #a3a6bb;
+  --sidebar-active: #6a45c9;
+  --sidebar-spacer: #dcd8e6;
+  --links: #6a45c9;
+  --inline-code-color: #4a3196;
+  --theme-popup-bg: #ffffff;
+  --theme-popup-border: #dcd8e6;
+  --theme-hover: #ebe8f2;
+  --quote-bg: #f1eef8;
+  --quote-border: #dcd8e6;
+  --table-border-color: #dcd8e6;
+  --table-header-bg: #ebe8f2;
+  --table-alternate-bg: #f6f4fb;
+  --searchbar-border-color: #dcd8e6;
+  --searchresults-header-fg: #5b5f73;
+  --icons: #6f7287;
+  --icons-hover: #1e2130;
+}
+
+.navy {
+  --bg: #171925;
+  --fg: #e6e3f0;
+  --sidebar-bg: #1e2131;
+  --sidebar-fg: #c9c6d8;
+  --sidebar-non-existant: #6f7287;
+  --sidebar-active: #a68cf0;
+  --sidebar-spacer: #34374b;
+  --links: #a68cf0;
+  --inline-code-color: #cdbcff;
+  --theme-popup-bg: #232638;
+  --theme-popup-border: #34374b;
+  --theme-hover: #2a2d41;
+  --quote-bg: #1e2131;
+  --quote-border: #34374b;
+  --table-border-color: #34374b;
+  --table-header-bg: #232638;
+  --table-alternate-bg: #1b1e2c;
+  --searchbar-bg: #232638;
+  --searchbar-border-color: #34374b;
+  --icons: #8d90a6;
+  --icons-hover: #e6e3f0;
+}
+
+.content h1, .content h2, .content h3, .menu-title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+}
+
+.menu-title .home { color: inherit; text-decoration: none; }
+
+.content table { display: block; overflow-x: auto; }
+
+.content td code { white-space: nowrap; }
+
+.content td { vertical-align: top; }

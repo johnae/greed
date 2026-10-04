@@ -1,0 +1,217 @@
+/* greed.rs: the landing page. Colors come from the hero image: its morning
+   sky, the logo's purple and the ink of the wordmark. */
+
+:root {
+  --bg: #f4f2f7;
+  --bg-soft: #ebe8f2;
+  --surface: #ffffff;
+  --ink: #1e2130;
+  --muted: #5b5f73;
+  --line: #dcd8e6;
+  --accent: #6a45c9;
+  --accent-ink: #ffffff;
+  --code-bg: #303446;
+  --code-ink: #c6d0f5;
+  --code-dim: #838ba7;
+  --code-key: #ca9ee6;
+  --code-str: #a6d189;
+  --code-fn: #8caaee;
+  --code-op: #99d1db;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171925;
+    --bg-soft: #1e2131;
+    --surface: #232638;
+    --ink: #e6e3f0;
+    --muted: #a3a6bb;
+    --line: #34374b;
+    --accent: #a68cf0;
+    --accent-ink: #171925;
+    --code-bg: #232634;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.6 var(--sans);
+}
+
+a { color: var(--accent); text-underline-offset: 0.15em; }
+
+code, kbd, pre { font-family: var(--mono); font-size: 0.92em; }
+
+code {
+  background: var(--bg-soft);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+
+kbd {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 0.35em;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The bar across the top. */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font: 600 22px/1 var(--serif);
+  text-decoration: none;
+}
+
+.bar nav { display: flex; gap: 22px; flex-wrap: wrap; }
+
+.bar nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+
+.bar nav a:hover { color: var(--ink); }
+
+section { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+/* The picture, wide but not wall to wall. */
+.hero { max-width: 1400px; }
+
+.hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  box-shadow: 0 18px 50px -24px rgba(30, 33, 48, 0.45);
+}
+
+.intro { text-align: center; padding-top: 48px; }
+
+.lead {
+  max-width: 720px;
+  margin: 0 auto;
+  font: 400 24px/1.5 var(--serif);
+}
+
+.actions { display: flex; justify-content: center; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+
+.button {
+  display: inline-block;
+  padding: 11px 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.button:hover { filter: brightness(1.06); }
+
+/* Terminal sessions and code, in the editor's own colors. */
+pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 20px 22px;
+  border-radius: 12px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+pre code { background: none; padding: 0; font-size: 15px; }
+
+.prompt { color: var(--code-key); }
+.c { color: var(--code-dim); font-style: italic; }
+.k { color: var(--code-key); }
+.s { color: var(--code-str); }
+.f { color: var(--code-fn); }
+.o { color: var(--code-op); }
+
+.demo { padding-top: 48px; max-width: 860px; }
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  padding-top: 64px;
+}
+
+.features article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 24px;
+}
+
+h2 { font: 600 24px/1.25 var(--serif); margin: 0 0 10px; }
+
+.features p { margin: 0; color: var(--muted); }
+
+.example {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 36px;
+  align-items: center;
+  padding-top: 72px;
+}
+
+.example .text p { color: var(--muted); }
+
+.install { padding-top: 72px; max-width: 760px; }
+
+.install p { color: var(--muted); }
+
+footer {
+  max-width: 1100px;
+  margin: 80px auto 0;
+  padding: 28px 24px 48px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+footer p { margin: 6px 0; }
+
+@media (max-width: 800px) {
+  body { font-size: 16px; }
+  .bar, section { padding-left: 16px; padding-right: 16px; }
+  .bar nav { gap: 14px; }
+  .lead { font-size: 20px; }
+  .example { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  pre code { font-size: 13px; }
+}

@@ -15,3 +15,9 @@ devenv.local.yaml
 
 # nix-build output
 /result
+
+# reference pages site/build.sh generates from the editor
+/docs/reference
+
+# screenshots from browser checks
+/.playwright-mcp
