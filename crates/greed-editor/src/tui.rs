@@ -80,6 +80,11 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
 
     let mut screen = Screen {
         graphics: Graphics::new(graphics::detect()),
+        sized: text_sizing(
+            var("GREED_TEXT_SIZING").as_deref(),
+            var("TERM").as_deref(),
+            std::env::var_os("KITTY_WINDOW_ID").is_some(),
+        ),
         ..Screen::default()
     };
     let mut out = io::BufWriter::new(io::stdout());
@@ -348,11 +353,14 @@ fn restore() {
     let _ = terminal::disable_raw_mode();
 }
 
-/// One terminal cell. The second cell of a wide character has empty text.
+/// One terminal cell. The second cell of a wide character has empty text,
+/// and so do the cells scaled text takes after its first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cell {
     text: String,
     style: ContentStyle,
+    /// How many times bigger its text is, in a terminal that can draw it so.
+    scale: u8,
 }
 
 impl Default for Cell {
@@ -360,6 +368,7 @@ impl Default for Cell {
         Self {
             text: " ".to_owned(),
             style: ContentStyle::new(),
+            scale: 1,
         }
     }
 }
@@ -369,11 +378,13 @@ impl Default for Cell {
 struct Screen {
     grid: Vec<Vec<Cell>>,
     graphics: Graphics,
+    /// Whether the terminal draws text bigger (kitty's text sizing).
+    sized: bool,
 }
 
 impl Screen {
     fn draw(&mut self, out: &mut impl Write, frame: &Frame) -> io::Result<()> {
-        let grid = compose(frame);
+        let grid = compose(frame, self.sized);
         // The terminal shows the frame whole once it's written, never half drawn;
         // terminals without synchronized output ignore this.
         queue!(out, terminal::BeginSynchronizedUpdate)?;
@@ -406,15 +417,27 @@ impl Screen {
     }
 }
 
-/// The frame's shared cell grid, with terminal styles.
-fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
-    grid::compose(frame, Surface::Tui)
+/// Whether the terminal draws text bigger, with kitty's text sizing
+/// protocol: as `$GREED_TEXT_SIZING` says ("on" or "off"), or in kitty.
+fn text_sizing(setting: Option<&str>, term: Option<&str>, in_kitty: bool) -> bool {
+    match setting {
+        Some("on") => true,
+        Some("off") => false,
+        _ => in_kitty || term.is_some_and(|t| t.contains("kitty")),
+    }
+}
+
+/// The frame's shared cell grid, with terminal styles; scaled text drawn
+/// big when the terminal can (`sized`).
+fn compose(frame: &Frame, sized: bool) -> Vec<Vec<Cell>> {
+    grid::compose_with(frame, Surface::Tui, sized)
         .into_iter()
         .map(|row| {
             row.into_iter()
                 .map(|cell| Cell {
                     text: cell.text,
                     style: terminal_style(cell.style),
+                    scale: cell.scale,
                 })
                 .collect()
         })
@@ -438,13 +461,36 @@ fn uncertain_width(grapheme: &str) -> bool {
 /// that after a grapheme of uncertain width the cursor is put where the
 /// next cell starts, with the grapheme's cells blanked first, so a terminal
 /// drawing it narrower or wider than Greed counted doesn't shift the rest of
-/// the row (like a float's border).
+/// the row (like a float's border). Scaled text goes out with kitty's text
+/// sizing, and the cursor skips the cells scaled text above covers.
 fn write_row(out: &mut impl Write, y: u16, row: &[Cell]) -> io::Result<()> {
     queue!(out, cursor::MoveTo(0, y))?;
     let mut run = String::new();
     let mut run_style = ContentStyle::new();
+    // Where the terminal's cursor is once `run` is out.
+    let mut col = 0;
     for (x, cell) in row.iter().enumerate() {
         if cell.text.is_empty() {
+            continue;
+        }
+        if x != col {
+            queue!(
+                out,
+                PrintStyledContent(run_style.apply(run.as_str())),
+                cursor::MoveTo(cursor_col(x), y)
+            )?;
+            run.clear();
+        }
+        let wide = cell.text.width().max(1) * usize::from(cell.scale.max(1));
+        col = x + wide;
+        if cell.scale > 1 {
+            let sized = format!("\x1b]66;s={};{}\x07", cell.scale, cell.text);
+            queue!(
+                out,
+                PrintStyledContent(run_style.apply(run.as_str())),
+                PrintStyledContent(cell.style.apply(sized)),
+            )?;
+            run.clear();
             continue;
         }
         if !uncertain_width(&cell.text) {
@@ -463,6 +509,7 @@ fn write_row(out: &mut impl Write, y: u16, row: &[Cell]) -> io::Result<()> {
             .take_while(|c| c.text.is_empty())
             .count();
         let (at, next) = (cursor_col(x), cursor_col(x + cells));
+        col = x + cells;
         queue!(
             out,
             cursor::MoveTo(at, y),
@@ -583,11 +630,13 @@ mod tests {
             line.push(Cell {
                 text: grapheme.to_owned(),
                 style: ContentStyle::new(),
+                scale: 1,
             });
             for _ in 1..grapheme.width().max(1) {
                 line.push(Cell {
                     text: String::new(),
                     style: ContentStyle::new(),
+                    scale: 1,
                 });
             }
         }
@@ -614,6 +663,45 @@ mod tests {
             out[moved..].contains("x|"),
             "the rest follows the move: {out:?}"
         );
+    }
+
+    #[test]
+    fn scaled_text_goes_out_with_kitty_text_sizing_and_the_rest_keeps_its_column() {
+        // "H" twice the size takes cells 0-1, then "x".
+        let mut row = cells("H x ", 4);
+        row[0].scale = 2;
+        row[1].text = String::new();
+        let out = written(&row);
+        assert!(out.contains("\u{1b}]66;s=2;H\u{7}"), "{out:?}");
+        let sized = out.find("\u{1b}]66").unwrap();
+        assert!(out[sized..].contains('x'), "x follows: {out:?}");
+        assert_eq!(
+            out.matches("\u{1b}[4;").count(),
+            1,
+            "no extra moves: {out:?}"
+        );
+    }
+
+    #[test]
+    fn rows_under_scaled_text_skip_the_cells_it_covers() {
+        // Cells 0-1 belong to the scaled text above; "ab" starts at cell 2.
+        let mut row = cells("  ab", 4);
+        row[0].text = String::new();
+        row[1].text = String::new();
+        let out = written(&row);
+        assert!(out.contains("\u{1b}[4;3Hab"), "{out:?}");
+    }
+
+    #[test]
+    fn text_sizing_is_for_kitty_unless_greed_text_sizing_says() {
+        assert!(text_sizing(None, Some("xterm-kitty"), false));
+        assert!(
+            text_sizing(None, Some("xterm-256color"), true),
+            "KITTY_WINDOW_ID"
+        );
+        assert!(!text_sizing(None, Some("xterm-ghostty"), false));
+        assert!(!text_sizing(Some("off"), Some("xterm-kitty"), true));
+        assert!(text_sizing(Some("on"), Some("screen"), false));
     }
 
     #[test]
@@ -747,7 +835,7 @@ mod tests {
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
         };
-        let text: Vec<String> = compose(&frame)
+        let text: Vec<String> = compose(&frame, false)
             .iter()
             .map(|row| row.iter().map(|c| c.text.as_str()).collect())
             .collect();
@@ -811,7 +899,7 @@ mod tests {
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
         };
-        let text: Vec<String> = compose(&frame)
+        let text: Vec<String> = compose(&frame, false)
             .iter()
             .map(|row| row.iter().map(|c| c.text.as_str()).collect())
             .collect();
@@ -889,7 +977,7 @@ mod tests {
             theme: std::sync::Arc::new(theme),
             gui: std::collections::BTreeMap::new(),
         };
-        let cell = &compose(&frame)[0][0];
+        let cell = &compose(&frame, false)[0][0];
         assert_eq!(cell.style.foreground_color, Some(Color::Magenta));
         assert_eq!(
             cell.style.background_color,
@@ -897,7 +985,7 @@ mod tests {
         );
         assert!(cell.style.attributes.has(Attribute::Bold));
         // The row's own style fills past its text.
-        let end = &compose(&frame)[0][3];
+        let end = &compose(&frame, false)[0][3];
         assert_eq!(end.style.background_color, Some(Color::DarkGrey));
     }
 }

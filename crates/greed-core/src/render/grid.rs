@@ -22,9 +22,31 @@ pub struct Cell {
     pub scale: u8,
 }
 
-/// `frame` as rows of cells, with styles as `surface` has them.
+/// How a client draws: the frame's theme for `surface`, and whether it can
+/// draw text bigger (the window, kitty) or keeps it one size.
+#[derive(Clone, Copy)]
+struct Paint<'a> {
+    theme: &'a Theme,
+    surface: Surface,
+    scaled: bool,
+}
+
+/// `frame` as rows of cells, with styles as `surface` has them; scaled text
+/// is drawn big in the window and one size in a terminal.
 pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
+    compose_with(frame, surface, surface == Surface::Gui)
+}
+
+/// `frame` as rows of cells, with styles as `surface` has them. With
+/// `scaled`, scaled text takes cells marked with its scale; without it, its
+/// text is one size at the start of the cells it takes.
+pub fn compose_with(frame: &Frame, surface: Surface, scaled: bool) -> Vec<Vec<Cell>> {
     let theme = &frame.theme;
+    let paint = Paint {
+        theme,
+        surface,
+        scaled,
+    };
     let look = |tag: &Tag| theme.style(tag.name(), surface);
     let width = usize::from(frame.size.width);
     let text = look(&Tag::TEXT);
@@ -37,11 +59,11 @@ pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
     if let Some((status, rows)) = frame.rows.split_last() {
         let (x, w) = (usize::from(frame.main.x), usize::from(frame.main.width));
         for (line, row) in grid.iter_mut().zip(rows) {
-            put_row(line, x, w, row, text, theme, surface);
+            put_row(line, x, w, row, text, paint);
         }
         spread_scaled(&mut grid, 0..rows.len(), x..x + w);
         if let Some(line) = grid.get_mut(rows.len()) {
-            put_row(line, 0, width, status, text, theme, surface);
+            put_row(line, 0, width, status, text, paint);
         }
     }
     let panel = text.patch(&look(&Tag::PANEL));
@@ -57,7 +79,7 @@ pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
             put(line, x, w, &format!("{title:<w$}"), style, 1);
         }
         for (line, row) in grid.iter_mut().skip(usize::from(p.rect.y)).zip(&p.rows) {
-            put_row(line, x, w, row, panel, theme, surface);
+            put_row(line, x, w, row, panel, paint);
         }
     }
     let body = text.patch(&look(&Tag::FLOAT));
@@ -96,7 +118,7 @@ pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
             put(top, x + 1, w.saturating_sub(2), &title, style, 1);
         }
         for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
-            put_row(line, x, w, row, body, theme, surface);
+            put_row(line, x, w, row, body, paint);
         }
     }
     grid
@@ -104,18 +126,10 @@ pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
 
 /// Draws `row` over `base`, each span styled by the row's tags and then its
 /// own, in order. A row with tags of its own fills its whole width.
-fn put_row(
-    line: &mut [Cell],
-    x: usize,
-    width: usize,
-    row: &Row,
-    base: Style,
-    theme: &Theme,
-    surface: Surface,
-) {
+fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, paint: Paint) {
     let layer = |style: Style, tags: &[Tag]| {
         tags.iter().fold(style, |style, tag| {
-            style.patch(&theme.style(tag.name(), surface))
+            style.patch(&paint.theme.style(tag.name(), paint.surface))
         })
     };
     let base = layer(base, &row.tags);
@@ -123,17 +137,16 @@ fn put_row(
     for span in &row.spans {
         let style = layer(base, &span.tags);
         let scale = span.scale.max(1);
-        match surface {
-            // A terminal draws text one size; scaled text keeps its cells,
-            // with the text at the start of them.
-            Surface::Tui => {
-                let cells = put(line, x + used, width - used, &span.text, style, 1);
-                let wide = cells * usize::from(scale);
-                let rest = wide.min(width - used) - cells;
-                put(line, x + used + cells, rest, &" ".repeat(rest), style, 1);
-                used += cells + rest;
-            }
-            Surface::Gui => used += put(line, x + used, width - used, &span.text, style, scale),
+        if paint.scaled {
+            used += put(line, x + used, width - used, &span.text, style, scale);
+        } else {
+            // One size: scaled text keeps its cells, with the text at the
+            // start of them.
+            let cells = put(line, x + used, width - used, &span.text, style, 1);
+            let wide = cells * usize::from(scale);
+            let rest = wide.min(width - used) - cells;
+            put(line, x + used + cells, rest, &" ".repeat(rest), style, 1);
+            used += cells + rest;
         }
     }
     if !row.tags.is_empty() {

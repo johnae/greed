@@ -847,6 +847,11 @@ protocol or iTerm2's: `kitten icat picture.png`, `imgcat`, chafa's and
 yazi's previews. They scroll with the output, and text written over them
 takes their place, as in any terminal.
 
+Bigger text, like a heading a plugin scales up, is drawn big in the window
+and in kitty, which can size text. Other terminals show it at the normal
+size on the rows it takes. `GREED_TEXT_SIZING=on` or `off` decides it for
+another terminal that can size text, or turns it off in kitty.
+
 ### PDFs
 
 Opening a PDF shows its first page, as wide as the pane. `]` and `[` go to

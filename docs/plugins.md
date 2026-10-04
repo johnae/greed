@@ -333,7 +333,7 @@ greed.tab.set_layout({
   mode, puts the cursor at the mark and runs the command. `scale = 2`
   (up to 4) makes its text bigger, like a heading: each character takes
   twice the cells across and its row two rows down. The window draws it
-  big; a terminal shows it at the normal size on those rows.
+  big, and so does kitty; other terminals show it at the normal size.
   `buffer:marks_at(pos)` gives the marks over a place in every namespace.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
