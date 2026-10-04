@@ -8,6 +8,9 @@ local FAKE: acp.Agent = {
 	commands = { { "sh", `{greed.plugin.dirs().acp}/test/fake-agent.sh` } },
 }
 
+-- Registered, so sessions with it can be taken up again.
+acp.register(FAKE)
+
 -- A session of the fake agent in `root`, its transcript shown and ready.
 local function start(t: test.TestContext, root: string, own: boolean?): any
 	local s, err = acp.start(FAKE, root, own)
@@ -240,6 +243,75 @@ test("where an agent works shows in your file and the status line while it works
 	t:wait(30)
 	assert(#file:decorations("agents") == 0, "gone once it's done")
 	assert(acp.status() == nil)
+	acp.close(s)
+end)
+
+test("sessions are kept to take up again, until closed", function(t)
+	local dir = t:tempdir({})
+	local s = start(t, dir)
+	send(t, s, "hello")
+	local saved = acp.saved(dir)
+	assert(#saved == 0, "a running session isn't offered")
+	-- As after a restart: the agent stopped, but the session was kept.
+	acp.stop(s)
+	saved = acp.saved(dir)
+	assert(#saved == 1 and saved[1].title == "hello" and saved[1].agent == "fake", "kept")
+	local again, err = acp.resume(saved[1])
+	assert(again, err)
+	acp.show(again)
+	t:wait_for(function()
+		return again.status == "idle"
+	end)
+	t:wait(30)
+	local text = shown()
+	assert(string.find(text, "▍ You\n  an earlier question\n", 1, true), text)
+	assert(string.find(text, "▍ Fake 2\n  an earlier answer\n", 1, true), text)
+	acp.close(again)
+	acp.close(s)
+	assert(#acp.saved(dir) == 0, "closing forgets it")
+end)
+
+test("a fork starts with everything said so far", function(t)
+	local dir = t:tempdir({})
+	local s = start(t, dir)
+	send(t, s, "hello")
+	local fork, err = acp.fork(s)
+	assert(fork, err)
+	acp.show(fork)
+	t:wait_for(function()
+		return fork.status == "idle"
+	end)
+	t:wait(30)
+	assert(fork.session_id == "s2", tostring(fork.session_id))
+	local text = shown()
+	assert(
+		string.find(text, "Hello there", 1, true) and string.find(text, "forked from Fake", 1, true),
+		text
+	)
+	acp.close(fork)
+	acp.close(s)
+end)
+
+test("a fork of an agent in a jj workspace gets a workspace with its edits", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	for _, args in { { "git", "init" }, { "commit", "-m", "first" } } do
+		local done = greed.process.run(
+			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", table.unpack(args) },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+	end
+	local s = start(t, dir, true)
+	send(t, s, "edit a.txt")
+	local fork, err = acp.fork(s)
+	assert(fork, err)
+	local ws = fork.workspace
+	assert(ws and s.workspace and ws.path ~= s.workspace.path, "a workspace of its own")
+	assert(greed.fs.read(ws.path .. "/a.txt") == "edited\n", "with the edits made so far")
+	acp.close(fork)
 	acp.close(s)
 end)
 

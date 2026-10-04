@@ -39,12 +39,22 @@ while IFS= read -r line; do
 	id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 	case "$line" in
 	*'"method":"initialize"'*)
-		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{},\"authMethods\":[]}}"
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"loadSession\":true,\"sessionCapabilities\":{\"fork\":{}}},\"authMethods\":[]}}"
 		;;
 	*'"method":"session/new"'*)
 		cwd=$(field "$line" cwd)
 		servers=$(printf "%s" "$line" | sed -n "s/.*\"mcpServers\":\(\[[^]]*\]\).*/\1/p")
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\",\"modes\":{\"currentModeId\":\"default\",\"availableModes\":[{\"id\":\"default\",\"name\":\"Manual\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before doing\"}]}}}"
+		;;
+	*'"method":"session/load"'*)
+		cwd=$(field "$line" cwd)
+		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"an earlier question"}}'
+		update '{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"an earlier answer"}}'
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+		;;
+	*'"method":"session/fork"'*)
+		cwd=$(field "$line" cwd)
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s2\"}}"
 		;;
 	*'"method":"session/set_mode"'*)
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"

@@ -75,6 +75,8 @@ export type Session = {
 	--- Answers a question without asking you, with an option's id, when
 	--- it returns one.
 	decide: ((permission: Permission) -> string?)?,
+	--- While set, updates from the agent are left out.
+	quiet: boolean?,
 	--- Called whenever there's something new to show.
 	changed: () -> (),
 }
@@ -248,7 +250,9 @@ local function handlers(session: Session): rpc.Handlers
 	local h: rpc.Handlers = {}
 
 	h["session/update"] = function(params: any): (any, string?)
-		update(session, params.update)
+		if not session.quiet then
+			update(session, params.update)
+		end
 		session.changed()
 		return nil
 	end
@@ -444,6 +448,12 @@ function M.start(
 		--- MCP servers the agent should use, as ACP describes them.
 		servers: { any }?,
 		decide: ((permission: Permission) -> string?)?,
+		--- An earlier ACP session to take up instead of starting one, or
+		--- one to fork.
+		load: string?,
+		fork: string?,
+		--- What the transcript starts with, for a fork.
+		entries: { Entry }?,
 		changed: () -> (),
 	}
 ): Session
@@ -456,12 +466,17 @@ function M.start(
 		cwd = opts.cwd,
 		workspace = opts.workspace,
 		status = "starting",
-		entries = {},
+		entries = opts.entries or {},
 		tools = {},
 		modes = {},
 		decide = opts.decide,
 		changed = opts.changed,
 	}
+	for _, entry in session.entries do
+		if entry.tool then
+			session.tools[entry.tool.id] = entry.tool
+		end
+	end
 	local function note(text: string)
 		table.insert(session.entries, { kind = "note", text = text })
 		session.changed()
@@ -491,15 +506,42 @@ function M.start(
 			note(`the agent didn't start: {problem}`)
 			return
 		end
-		local new, failed = conn.request(
-			"session/new",
-			{ cwd = opts.cwd, mcpServers = greed.json.array(opts.servers) }
-		)
+		local can = init.agentCapabilities or {}
+		local params: any = { cwd = opts.cwd, mcpServers = greed.json.array(opts.servers) }
+		local method = "session/new"
+		if opts.load then
+			if not can.loadSession then
+				note("the agent can't take up an earlier session")
+				return
+			end
+			-- The agent tells the conversation so far again, as updates.
+			method, params.sessionId = "session/load", opts.load
+		elseif opts.fork then
+			if not (can.sessionCapabilities and can.sessionCapabilities.fork) then
+				note("the agent can't fork a session")
+				return
+			end
+			method, params.sessionId = "session/fork", opts.fork
+		end
+		local new, failed = conn.request(method, params)
 		if new == nil then
 			note(`the agent couldn't start a session: {failed}`)
 			return
 		end
-		session.session_id = new.sessionId
+		session.session_id = new.sessionId or opts.load
+		-- A fork is a new session the agent hasn't opened yet: it's taken up,
+		-- without telling the conversation again where the agent can.
+		if opts.fork and new.sessionId then
+			local open: any = table.clone(params)
+			open.sessionId = new.sessionId
+			if can.sessionCapabilities and can.sessionCapabilities.resume then
+				conn.request("session/resume", open)
+			elseif can.loadSession then
+				session.quiet = true
+				conn.request("session/load", open)
+				session.quiet = false
+			end
+		end
 		if type(new.modes) == "table" then
 			for _, mode in new.modes.availableModes or {} do
 				table.insert(

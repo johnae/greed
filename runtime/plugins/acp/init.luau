@@ -150,12 +150,15 @@ end
 -- Sessions, oldest first, and each transcript's session by buffer id.
 local sessions: { Session } = {}
 local by_buffer: { [number]: Session } = {}
+-- The agent each session runs, by session id, for forking it.
+local agent_of: { [number]: Agent } = {}
 local buffers: { [number]: greed.Buffer } = {}
 
 -- The overview buffers open, to redraw when a session changes.
 local overviews: { [number]: { buffer: greed.Buffer, rows: { [number]: Session } } } = {}
 
 local render_overviews: () -> ()
+local keep: (s: Session) -> ()
 
 -- Redraws everything that shows `s`, soon: changes come in bursts while an
 -- agent streams.
@@ -174,6 +177,7 @@ local function changed(s: Session)
 		end
 		render_overviews()
 		participants.draw(sessions)
+		keep(s)
 	end)
 end
 
@@ -200,35 +204,151 @@ local function repo_kind(root: string): ("jj" | "git")?
 	return nil
 end
 
--- A workspace of its own for an agent named `name`, outside the project.
-local function make_workspace(root: string, name: string): (session.Workspace?, string?)
+-- A workspace of its own for an agent `agent` runs, outside the project:
+-- from your working copy's parent, or from `from`'s working copy, edits
+-- and all, for a fork.
+local function make_workspace(
+	root: string,
+	agent: string,
+	from: session.Workspace?
+): (session.Workspace?, string?)
 	local kind = repo_kind(root)
 	if kind == nil then
 		return nil, "the project isn't in a jj or git repository"
 	end
 	local base = greed.fs.dirs().cache or (root .. "/..")
 	local project = string.match(root, "([^/]+)/*$") or "project"
-	local path = `{base}/workspaces/{project}-{name}`
 	greed.process.run({ "mkdir", "-p", `{base}/workspaces` })
+	-- Earlier sessions' workspaces may still be there to take up again.
+	local n, name, path = 0, "", ""
+	repeat
+		n += 1
+		name = `greed-{agent}-{n}`
+		path = `{base}/workspaces/{project}-{name}`
+	until not greed.fs.stat(path)
 	if kind == "jj" then
-		local _, err = run({ "jj", "workspace", "add", "--name", name, path }, root)
+		local args = { "jj", "workspace", "add", "--name", name, path }
+		if from then
+			-- Any jj command there takes in what the agent wrote since.
+			run({ "jj", "status" }, from.path)
+			table.insert(args, "-r")
+			table.insert(args, `{from.name}@`)
+		end
+		local _, err = run(args, root)
 		if err then
 			return nil, err
 		end
 		return { kind = "jj", name = name, path = path }, nil
 	end
+	local start = if from then `greed/{from.name}` else "HEAD"
 	local head = run({ "git", "rev-parse", "HEAD" }, root)
-	local _, err = run({ "git", "worktree", "add", "-q", "-b", `greed/{name}`, path }, root)
+	local _, err = run({ "git", "worktree", "add", "-q", "-b", `greed/{name}`, path, start }, root)
 	if err then
 		return nil, err
 	end
-	return { kind = "git", name = name, path = path, base = head and string.match(head, "%x+") },
-		nil
+	local based = if from then from.base else head and string.match(head, "%x+")
+	return { kind = "git", name = name, path = path, base = based }, nil
 end
 
---- Starts a session of `agent` for the project at `root`, in a workspace
---- of its own if `own` is set.
-function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
+-- Sessions you can take up again, kept in the cache folder: which agent,
+-- where it worked, its ACP session and what you asked it first.
+export type Saved = {
+	agent: string,
+	root: string,
+	workspace: session.Workspace?,
+	session_id: string,
+	title: string,
+	time: number,
+}
+
+local function saved_file(): string?
+	local cache = greed.fs.dirs().cache
+	return if cache then `{cache}/agents.json` else nil
+end
+
+local function read_saved(file: string?): { any }
+	local text = if file then greed.fs.read(file) else nil
+	local all = if text then greed.json.decode(text) else nil
+	return if type(all) == "table" then all else {}
+end
+
+--- The sessions you can take up again for the project at `root`, newest
+--- first, leaving out the ones running now.
+function M.saved(root: string): { Saved }
+	local out: { Saved } = {}
+	for _, entry in read_saved(saved_file()) do
+		local running = false
+		for _, s in sessions do
+			running = running or (s.session_id == entry.session_id and s.status ~= "exited")
+		end
+		if entry.root == root and not running then
+			table.insert(out, entry)
+		end
+	end
+	table.sort(out, function(a: Saved, b: Saved)
+		return a.time > b.time
+	end)
+	return out
+end
+
+-- Keeps `s` to take up again, or with `forget`, stops keeping it.
+local function remember(s: Session, forget: boolean?)
+	local file = saved_file()
+	if file == nil or s.session_id == nil then
+		return
+	end
+	local kept: { any } = {}
+	for _, entry in read_saved(file) do
+		if entry.session_id ~= s.session_id then
+			table.insert(kept, entry)
+		end
+	end
+	if not forget then
+		local title = "(nothing asked yet)"
+		for _, entry in s.entries do
+			if entry.kind == "user" and entry.text then
+				title = string.match(entry.text, "^%s*([^\n]*)") or title
+				break
+			end
+		end
+		table.insert(kept, {
+			agent = s.agent,
+			root = s.root,
+			workspace = s.workspace,
+			session_id = s.session_id,
+			title = title,
+			time = os.time(),
+		})
+	end
+	greed.fs.write(file, greed.json.encode(greed.json.array(kept)))
+end
+
+-- What each session was last kept as, so it's written only when that changes.
+local kept_as: { [number]: string } = {}
+
+function keep(s: Session)
+	local first = ""
+	for _, entry in s.entries do
+		if entry.kind == "user" then
+			first = entry.text or ""
+			break
+		end
+	end
+	local key = `{s.session_id}\0{first}`
+	if s.session_id and kept_as[s.id] ~= key then
+		kept_as[s.id] = key
+		remember(s)
+	end
+end
+
+-- Starts a session of `agent` in `workspace` (or the project at `root`),
+-- with `extra` saying what to take up or fork.
+local function launch(
+	agent: Agent,
+	root: string,
+	workspace: session.Workspace?,
+	extra: { load: string?, fork: string?, entries: { session.Entry }? }?
+): (Session?, string?)
 	local command = command_of(agent)
 	if command == nil then
 		return nil,
@@ -239,15 +359,6 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 		if s.agent == agent.name then
 			count += 1
 		end
-	end
-	local name = `{agent.name}-{count}`
-	local workspace = nil
-	if own then
-		local made, err = make_workspace(root, `greed-{name}`)
-		if made == nil then
-			return nil, err
-		end
-		workspace = made
 	end
 	local s: Session
 	s = session.start({
@@ -261,16 +372,81 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 		decide = function(permission)
 			return decide(s, permission)
 		end,
+		load = extra and extra.load,
+		fork = extra and extra.fork,
+		entries = extra and extra.entries,
 		changed = function()
 			changed(s)
 		end,
 	})
 	table.insert(sessions, s)
+	agent_of[s.id] = agent
 	local buffer = transcript.create(s)
 	buffers[s.id] = buffer
 	by_buffer[buffer:id()] = s
 	render_overviews()
 	return s, nil
+end
+
+--- Starts a session of `agent` for the project at `root`, in a workspace
+--- of its own if `own` is set.
+function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
+	local workspace = nil
+	if own then
+		local made, err = make_workspace(root, agent.name)
+		if made == nil then
+			return nil, err
+		end
+		workspace = made
+	end
+	return launch(agent, root, workspace)
+end
+
+--- Takes up a session kept from before: the agent tells the conversation
+--- again, into a new transcript.
+function M.resume(entry: Saved): (Session?, string?)
+	local agent = nil
+	for _, known in agents do
+		if known.name == entry.agent then
+			agent = known
+		end
+	end
+	if agent == nil then
+		return nil, `no agent called {entry.agent} is registered`
+	end
+	local ws = entry.workspace
+	if ws and not greed.fs.stat(ws.path) then
+		return nil, `its workspace is gone: {ws.path}`
+	end
+	return launch(agent, entry.root, ws, { load = entry.session_id })
+end
+
+--- Forks `s`: a new session that starts with everything said so far, in a
+--- workspace of its own made from `s`'s if it has one.
+function M.fork(s: Session): (Session?, string?)
+	local agent = agent_of[s.id]
+	if agent == nil or s.session_id == nil then
+		return nil, "it hasn't started yet"
+	end
+	local workspace = nil
+	if s.workspace then
+		local made, err = make_workspace(s.root, agent.name, s.workspace)
+		if made == nil then
+			return nil, err
+		end
+		workspace = made
+	end
+	local entries: { session.Entry } = {}
+	for _, entry in s.entries do
+		local copy = table.clone(entry)
+		-- Folding one shouldn't fold the other.
+		if entry.tool then
+			copy.tool = table.clone(entry.tool)
+		end
+		table.insert(entries, copy)
+	end
+	table.insert(entries, { kind = "note", text = `forked from {s.name}` })
+	return launch(agent, s.root, workspace, { fork = s.session_id, entries = entries })
 end
 
 --- Shows the transcript of `s` in a panel on the right, with the cursor in
@@ -349,8 +525,16 @@ function M.bring(s: Session): (boolean, string?)
 	return true, nil
 end
 
+--- Stops the agent of `s`, keeping its transcript, its workspace and the
+--- session to take up again.
+function M.stop(s: Session)
+	session.stop(s)
+	changed(s)
+end
+
 --- Stops `s` and, if it had a workspace, removes it.
 function M.close(s: Session)
+	remember(s, true)
 	session.stop(s)
 	local ws = s.workspace
 	if ws then
@@ -594,6 +778,50 @@ greed.command({
 })
 
 greed.command({
+	name = "agent-resume",
+	doc = "Take up an earlier session with an agent in this project, where it left off",
+	run = function()
+		local root = core.project.root()
+		local items = {}
+		for _, entry in M.saved(root) do
+			local where = if entry.workspace then `  (workspace {entry.workspace.name})` else ""
+			table.insert(items, { label = `{entry.agent}: {entry.title}{where}`, value = entry })
+		end
+		if #items == 0 then
+			greed.echo("no earlier sessions in this project")
+			return
+		end
+		local chosen = picker.choose("Take up", items)
+		if chosen == nil then
+			return
+		end
+		local s, err = M.resume(chosen.value)
+		if s == nil then
+			greed.echo(err :: string)
+			return
+		end
+		M.show(s)
+	end,
+})
+
+greed.command({
+	name = "agent-fork",
+	doc = "Fork the agent: a new session that starts with everything said so far",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			return
+		end
+		local fork, err = M.fork(s)
+		if fork == nil then
+			greed.echo(`can't fork: {err}`)
+			return
+		end
+		M.show(fork)
+	end,
+})
+
+greed.command({
 	name = "agent-stop",
 	doc = "Stop the agent's turn",
 	run = function(ctx)
@@ -733,6 +961,7 @@ for _, mode in { "normal", "vim" } do
 		b = "agents-bring",
 		s = "agent-stop",
 		x = "agents-close",
+		f = "agent-fork",
 		q = "buffer-close",
 	})
 end
@@ -746,6 +975,7 @@ end
 greed.keymap.bind("normal", {
 	["space i n"] = "agent-new",
 	["space i o"] = "agents",
+	["space i r"] = "agent-resume",
 })
 
 return M

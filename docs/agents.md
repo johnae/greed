@@ -108,15 +108,17 @@ and several can work at once.
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent: pick which, and where it works |
 | `space i o` (`:agents`) | The agents: what each is doing, and their changes |
+| `space i r` (`:agent-resume`) | Take up an earlier session with an agent, where it left off |
+| `:agent-fork` | Fork the agent of the transcript you're in |
 
 The transcript shows what you and the agent said, the tools it ran and how
 they went (`tab` on a tool shows all its output), and its plan. Write
 below the prompt line at the bottom and press `alt-enter` to send;
-`ctrl-c` stops the agent's turn. When it asks
-before doing something, `enter` (or `alt-p`) answers: `y` allows once, `a`
-always, `n` rejects. The agent reads open files as you have them, unsaved
-changes included, and its edits to an open file are made in the buffer and
-saved, so undo takes them back.
+`ctrl-c` stops the agent's turn. When it asks before doing something,
+`enter` (or `alt-p`) answers: `y` allows once, `a` always, `n` rejects.
+The agent reads open files as you have them, unsaved changes included,
+and its edits to an open file are made in the buffer and saved, so undo
+takes them back.
 
 Agents also get Greed's own tools, the ones `greed mcp` offers above
 (diagnostics, outlines, `syntax_query`, `propose`, ...), connected to this
@@ -166,9 +168,20 @@ files. In the agents overview:
 | `s` | Stop its turn |
 | `x` | Stop it and remove its workspace, after asking |
 | `n` | Start another |
+| `f` | Fork it: a new session that starts with everything said so far |
 
 A jj workspace starts from your working copy's parent, so it doesn't see
-changes you haven't committed. Add an agent that isn't in the list in your
+changes you haven't committed. A fork of an agent in a jj workspace gets a
+workspace of its own with the edits made so far; in a git worktree, it
+starts from the branch's last commit.
+
+Sessions are kept in the cache folder until you close them with `x`, so
+after a restart `space i r` lists them, with what you asked first, and
+takes one up: the agent tells the conversation again into a new
+transcript, and its workspace is still there. Agents that can't take up a
+session (or fork one) say so.
+
+Add an agent that isn't in the list in your
 `init.luau`; the first of its commands that's installed is used:
 
 ```luau
