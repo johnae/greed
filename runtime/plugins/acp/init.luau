@@ -55,6 +55,28 @@ M.register({
 })
 M.register({ name = "codex", title = "Codex", commands = { { "codex-acp" } } })
 
+greed.option.define({
+	name = "agent-greed-tools",
+	doc = "Give agents Greed's own tools (buffers, diagnostics, syntax queries, proposals) through greed mcp",
+	default = true,
+})
+
+--- The MCP servers an agent gets: `greed mcp` for the session `name`, run
+--- as `program`, when the editor runs as a session and the option is on.
+function M.servers(name: string?, program: string?): { any }
+	if name == nil or program == nil or greed.option.get("agent-greed-tools") ~= true then
+		return {}
+	end
+	return {
+		{
+			name = "greed",
+			command = program,
+			args = { "mcp" },
+			env = { { name = "GREED_SESSION", value = name } },
+		},
+	}
+end
+
 --- The command that runs `agent`: the first one installed.
 local function command_of(agent: Agent): { string }?
 	for _, command in agent.commands do
@@ -174,6 +196,7 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 		root = root,
 		cwd = if workspace then workspace.path else root,
 		workspace = workspace,
+		servers = M.servers(greed.session.current(), greed.session.program()),
 		changed = function()
 			changed(s)
 		end,

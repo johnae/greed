@@ -170,6 +170,25 @@ test("when the agent exits, the transcript says so with what it said last", func
 	assert(string.find(shown(), "the agent exited: bye from the fake agent", 1, true), shown())
 end)
 
+test("agents get greed mcp for this session, unless the option is off", function(t)
+	local servers = acp.servers("work", "/bin/greed")
+	assert(#servers == 1, "one server")
+	local server = servers[1]
+	assert(server.command == "/bin/greed" and server.args[1] == "mcp", "greed mcp")
+	assert(
+		server.env[1].name == "GREED_SESSION" and server.env[1].value == "work",
+		"for this session"
+	)
+	assert(#acp.servers(nil, "/bin/greed") == 0, "outside a session there's nothing to connect to")
+	greed.option.set("agent-greed-tools", false)
+	assert(#acp.servers("work", "/bin/greed") == 0, "the option turns it off")
+	greed.option.set("agent-greed-tools", true)
+	-- Tests don't run as a session, so the agent is given none, as an array.
+	local s = start(t, t:tempdir({}))
+	send(t, s, "servers")
+	assert(string.find(shown(), "servers: 0", 1, true), shown())
+end)
+
 test("an agent that isn't installed says how it would run", function(t)
 	local s, err = acp.start(
 		{ name = "nope", commands = { { "no-such-agent-here", "--acp" } } },

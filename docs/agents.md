@@ -118,6 +118,10 @@ always, `n` rejects. The agent reads open files as you have them, unsaved
 changes included, and its edits to an open file are made in the buffer and
 saved, so undo takes them back.
 
+Agents also get Greed's own tools, the ones `greed mcp` offers above
+(diagnostics, outlines, `syntax_query`, `propose`, ...), connected to this
+session. `:set agent-greed-tools false` leaves them out.
+
 An agent works either in the project with you, or in a workspace of its
 own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
 cache folder. There it can change what it likes without touching your

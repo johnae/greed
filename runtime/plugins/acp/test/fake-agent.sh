@@ -8,6 +8,7 @@
 #   run          runs `echo from a terminal` and says what it printed
 #   wait         says nothing until it's cancelled
 #   plan         reports a plan and a tool call that fails
+#   servers      says what MCP servers it was given
 #   quit         exits
 
 cwd=""
@@ -42,6 +43,7 @@ while IFS= read -r line; do
 		;;
 	*'"method":"session/new"'*)
 		cwd=$(field "$line" cwd)
+		servers=$(printf "%s" "$line" | sed -n "s/.*\"mcpServers\":\(\[[^]]*\]\).*/\1/p")
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\"}}"
 		;;
 	*'"method":"session/prompt"'*)
@@ -106,6 +108,11 @@ while IFS= read -r line; do
 			update '{"sessionUpdate":"plan","entries":[{"content":"look around","priority":"high","status":"completed"},{"content":"fix it","priority":"high","status":"in_progress"}]}'
 			update '{"sessionUpdate":"tool_call","toolCallId":"t2","title":"Run tests","kind":"execute","status":"in_progress"}'
 			update '{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"```\n1 test failed\nat pager.rs:3\nexpected 2\n```"}}]}'
+			turn_done "$id" end_turn
+			;;
+		servers*)
+			count=$(printf '%s' "$servers" | grep -o '"command"' | wc -l | tr -d ' ')
+			say "servers: $count"
 			turn_done "$id" end_turn
 			;;
 		quit*)

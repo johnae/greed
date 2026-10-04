@@ -400,15 +400,19 @@ local next_id = 0
 --- A session of the agent `command` (registered as `agent`) working in
 --- `cwd` for the project at `root`, starting now. `changed` is called
 --- whenever there's something new to show.
-function M.start(opts: {
-	name: string,
-	agent: string,
-	command: { string },
-	root: string,
-	cwd: string,
-	workspace: Workspace?,
-	changed: () -> (),
-}): Session
+function M.start(
+	opts: {
+		name: string,
+		agent: string,
+		command: { string },
+		root: string,
+		cwd: string,
+		workspace: Workspace?,
+		--- MCP servers the agent should use, as ACP describes them.
+		servers: { any }?,
+		changed: () -> (),
+	}
+): Session
 	next_id += 1
 	local session: Session = {
 		id = next_id,
@@ -451,8 +455,10 @@ function M.start(opts: {
 			note(`the agent didn't start: {problem}`)
 			return
 		end
-		local new, failed =
-			conn.request("session/new", { cwd = opts.cwd, mcpServers = greed.json.array() })
+		local new, failed = conn.request(
+			"session/new",
+			{ cwd = opts.cwd, mcpServers = greed.json.array(opts.servers) }
+		)
 		if new == nil then
 			note(`the agent couldn't start a session: {failed}`)
 			return

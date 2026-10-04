@@ -34,6 +34,14 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|lua, ()| Ok(state(lua).session_name.clone()))?,
     )?;
     session.set(
+        "program",
+        lua.create_function(|_, ()| {
+            Ok(std::env::current_exe()
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned()))
+        })?,
+    )?;
+    session.set(
         "switch",
         lua.create_function(|lua, spec: Table| {
             let mut to = SwitchTo {

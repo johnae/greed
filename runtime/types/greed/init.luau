@@ -781,6 +781,8 @@ export type Sessions = {
 	list: () -> { SessionInfo },
 	--- This session's name, when the editor runs as one.
 	current: () -> string?,
+	--- Where the greed program running this editor is, to start `greed mcp` or `greed ctl` for this session.
+	program: () -> string?,
 	--- Sends the attached client to the session `name`, or to the session for
 	--- the project `path` is in (opening it there), starting it if it isn't
 	--- running. This session goes on without the client. With `new`, a new
