@@ -17,7 +17,7 @@ return {
 	["ui.statusline.host"] = { bg = "cyan", fg = "black" },
 	["ui.statusline.session"] = { bg = "blue", fg = "black", bold = true },
 	-- Floats and panels keep the terminal's own background.
-	["ui.float"] = {},
+	["ui.float"] = { gui = { rounded = true, shadow = true } },
 	["ui.panel"] = {},
 	["ui.float.border"] = { fg = "bright-black" },
 	["ui.float.title"] = { fg = "white", bold = true },

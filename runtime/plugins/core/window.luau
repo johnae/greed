@@ -17,18 +17,6 @@ greed.option.define({
 })
 
 greed.option.define({
-	name = "gui-rounded",
-	doc = "Floats in the window as boxes with rounded corners",
-	default = true,
-})
-
-greed.option.define({
-	name = "gui-shadows",
-	doc = "Floats in the window cast a soft shadow",
-	default = true,
-})
-
-greed.option.define({
 	name = "gui-font-size",
 	doc = "The size of the window's text in pixels, before the screen's scale",
 	default = SIZE,

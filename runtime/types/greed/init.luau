@@ -1153,6 +1153,9 @@ export type Style = {
 	dim: boolean?,
 	reverse: boolean?,
 	strikethrough: boolean?,
+	--- For floats in the window (`ui.float`, in its `gui` part): rounded corners and an outline instead of box lines, and a soft shadow.
+	rounded: boolean?,
+	shadow: boolean?,
 }
 
 --- A theme entry: a style for every surface, with changes for the terminal

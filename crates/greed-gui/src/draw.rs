@@ -8,6 +8,7 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
+use greed_core::theme::Surface;
 use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
@@ -97,15 +98,15 @@ pub struct Chrome<'a> {
 }
 
 impl<'a> Chrome<'a> {
-    /// What `frame` has besides its cells, looking as its `gui-rounded` and
-    /// `gui-shadows` options say (both on unless "false").
+    /// What `frame` has besides its cells, its floats looking as the theme's
+    /// `ui.float` says for the window (`rounded`, `shadow`).
     pub fn of(frame: &'a Frame) -> Self {
-        let on = |name: &str| frame.gui.get(name).is_none_or(|v| v != "false");
+        let float = frame.theme.style("ui.float", Surface::Gui);
         Chrome {
             images: &frame.images,
             floats: frame.floats.iter().map(|f| f.rect).collect(),
-            rounded: on("gui-rounded"),
-            shadows: on("gui-shadows"),
+            rounded: float.rounded == Some(true),
+            shadows: float.shadow == Some(true),
         }
     }
 }

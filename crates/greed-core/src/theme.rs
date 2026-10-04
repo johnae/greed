@@ -125,6 +125,12 @@ pub struct Style {
     pub dim: Option<bool>,
     pub reverse: Option<bool>,
     pub strikethrough: Option<bool>,
+    /// For floats in the window: rounded corners and an outline instead of
+    /// box lines, and a soft shadow. Terminals draw neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rounded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<bool>,
 }
 
 impl Style {
@@ -141,6 +147,8 @@ impl Style {
             dim: over.dim.or(self.dim),
             reverse: over.reverse.or(self.reverse),
             strikethrough: over.strikethrough.or(self.strikethrough),
+            rounded: over.rounded.or(self.rounded),
+            shadow: over.shadow.or(self.shadow),
         }
     }
 

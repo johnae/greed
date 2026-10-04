@@ -579,6 +579,7 @@ fn cell_style(cell: &Cell) -> Style {
         dim: flag(Flags::DIM),
         reverse: flag(Flags::INVERSE),
         strikethrough: flag(Flags::STRIKEOUT),
+        ..Style::default()
     }
 }
 

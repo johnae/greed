@@ -425,9 +425,24 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     let grid = compose(&frame, Surface::Gui);
     let chrome = Chrome::of(&frame);
     assert!(
-        chrome.rounded && chrome.shadows,
-        "both on unless turned off"
+        !chrome.rounded && !chrome.shadows,
+        "only where the theme says"
     );
+    let mut theme = (*frame.theme).clone();
+    theme.set(
+        "ui.float",
+        Entry {
+            gui: Style {
+                rounded: Some(true),
+                shadow: Some(true),
+                ..Style::default()
+            },
+            ..Entry::default()
+        },
+    );
+    frame.theme = Arc::new(theme);
+    let chrome = Chrome::of(&frame);
+    assert!(chrome.rounded && chrome.shadows);
     let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();
     gpu.upload(&mut atlas);
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
@@ -466,13 +481,4 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         shade[..3].iter().zip(&palette.bg).all(|(s, b)| s < b),
         "shadow under the float: {shade:?}"
     );
-    // Turned off, there are no shadows, and the box lines come back.
-    frame
-        .gui
-        .insert("gui-shadows".to_owned(), "false".to_owned());
-    frame
-        .gui
-        .insert("gui-rounded".to_owned(), "false".to_owned());
-    let chrome = Chrome::of(&frame);
-    assert!(!chrome.rounded && !chrome.shadows);
 }

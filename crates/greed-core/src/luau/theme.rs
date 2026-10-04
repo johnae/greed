@@ -112,7 +112,7 @@ fn entry_from_lua(spec: &Table) -> LuaResult<Entry> {
     })
 }
 
-const KEYS: [&str; 9] = [
+const KEYS: [&str; 11] = [
     "fg",
     "bg",
     "underline",
@@ -122,6 +122,8 @@ const KEYS: [&str; 9] = [
     "dim",
     "reverse",
     "strikethrough",
+    "rounded",
+    "shadow",
 ];
 
 fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
@@ -171,6 +173,8 @@ fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
         dim: t.get("dim")?,
         reverse: t.get("reverse")?,
         strikethrough: t.get("strikethrough")?,
+        rounded: t.get("rounded")?,
+        shadow: t.get("shadow")?,
     })
 }
 
@@ -188,5 +192,7 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     t.set("dim", style.dim)?;
     t.set("reverse", style.reverse)?;
     t.set("strikethrough", style.strikethrough)?;
+    t.set("rounded", style.rounded)?;
+    t.set("shadow", style.shadow)?;
     Ok(t)
 }
