@@ -3,6 +3,7 @@
 -- link, and the notes linking to a note are listed at its end.
 
 local greed = require("@greed")
+local core = require("@core")
 local notes = require("./notes")
 
 type Link = { from: number, to: number, target: string, text_from: number, text_to: number }
@@ -67,7 +68,7 @@ local shown_backlinks: { [number]: { string } } = {}
 local function mark(buffer: greed.Buffer)
 	local marks: { greed.Mark } = {}
 	local conceal = greed.option.get("notes-conceal") == true
-	local shows = notes.reveal()
+	local shows = core.reveal()
 	for _, link in M.links(buffer) do
 		table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
 		if conceal then

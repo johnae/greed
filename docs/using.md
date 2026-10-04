@@ -637,6 +637,18 @@ require("@greed").option.set("format-on-save", false)
 A formatter gets the text on its input and prints it formatted; `{path}` in
 its command stands for the file's path.
 
+## Markdown
+
+Markdown files show as documents: headings without their hashes (a `#`
+heading twice the size), `**bold**`, `*italic*`, `~~struck~~` and
+`` `code` `` without their markers, links as their underlined text, fenced
+code on a background of its own, quotes with a bar, `---` as a line and
+list dashes as bullets. The file stays plain Markdown: while you type on a
+line (insert mode) it shows as written, and in edit mode markup shows once
+the cursor is inside it. The window draws big headings big; terminals other
+than kitty show them at the normal size. `:set markdown-look false` turns it
+off.
+
 ## Notes
 
 Notes are Markdown files in a folder (`~/notes` unless you set

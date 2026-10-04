@@ -31,6 +31,7 @@ require("@self/macro_commands")
 require("@self/window")
 local menu = require("@self/menu")
 local menus = require("@self/menus")
+local reveal = require("@self/reveal")
 local prompt = require("@self/prompt")
 local project = require("@self/project")
 local style = require("@self/style")
@@ -205,6 +206,7 @@ return {
 	motions = motions,
 	menu = menu,
 	menus = menus,
+	reveal = reveal,
 	prompt = prompt,
 	file = file,
 	search = search,

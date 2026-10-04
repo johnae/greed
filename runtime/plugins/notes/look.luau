@@ -1,7 +1,7 @@
 -- How notes look: Markdown's markup shows as symbols. Todo boxes become ☐
 -- and ☑, headings a symbol for their level, list dashes bullets, and due
 -- dates a calendar and the day. The file stays plain Markdown; typing on a
--- line shows what's really there (see `notes.reveal`). The symbols are
+-- line shows what's really there (see `core.reveal`). The symbols are
 -- buttons too: clicking a box ticks it, a heading's symbol folds its
 -- section.
 --
@@ -15,6 +15,8 @@
 --     require("@greed").theme.set({ ["notes.tag"] = { fg = "magenta" } })
 
 local greed = require("@greed")
+local core = require("@core")
+local markdown = require("@markdown")
 local notes = require("./notes")
 
 local M = {}
@@ -31,7 +33,7 @@ end
 
 -- The marks for one line of text starting at `at`.
 local function line_marks(text: string, at: number, out: { greed.Mark })
-	local shows = notes.reveal()
+	local shows = core.reveal()
 	local function show(
 		from: number,
 		to: number,
@@ -138,9 +140,20 @@ greed.on("mode.changed", function()
 	M.refresh()
 end)
 
+-- Notes draw headings and bullets as symbols; the Markdown plugin draws
+-- the rest of their markup.
+markdown.claim(function(buffer: greed.Buffer): markdown.Parts?
+	if notes.is_note(buffer) and greed.option.get("notes-conceal") == true then
+		return { headings = true, bullets = true }
+	end
+	return nil
+end)
+
 greed.on("option.changed", function(event)
 	if event.name == "notes-conceal" or event.name == "notes-everywhere" then
 		M.refresh()
+		-- Which buffers are notes changed, and with it what Markdown draws.
+		markdown.refresh()
 	end
 end)
 

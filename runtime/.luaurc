@@ -25,6 +25,8 @@
 		"cli": "./plugins/cli",
 		"vcs": "./plugins/vcs",
 		"describe": "./plugins/describe",
-		"acp": "./plugins/acp"
+		"acp": "./plugins/acp",
+		"markdown": "./plugins/markdown",
+		"tree": "./plugins/tree"
 	}
 }
