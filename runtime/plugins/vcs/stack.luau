@@ -11,6 +11,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local diff_text = require("./diffs")
 local repos = require("./repo")
 
 type Repo = repos.Repo
@@ -293,25 +294,7 @@ local ACTIONS: { Action } = {
 			local args = if stack.repo.kind == "jj"
 				then { "diff", "--git", "--color", "never", "-r", change.id }
 				else { "show", "--format=%H%n%an  %ad%n%n%B", change.id }
-			local text = repos.run(stack.repo, args, true) or ""
-			local buffer = greed.create_buffer("change-diff", text, { readonly = true })
-			local marks: { greed.Mark } = {}
-			local at = 0
-			for line in string.gmatch(text .. "\n", "([^\n]*)\n") do
-				local style = if string.match(line, "^%+%+%+")
-						or string.match(line, "^%-%-%-")
-						or string.match(line, "^diff ")
-					then "markup.heading"
-					elseif string.match(line, "^@@") then "comment"
-					elseif string.match(line, "^%+") then "diff.plus"
-					elseif string.match(line, "^%-") then "diff.minus"
-					else nil
-				if style then
-					table.insert(marks, { from = at, to = at + #line, style = style })
-				end
-				at += #line + 1
-			end
-			buffer:decorate("change-diff", marks)
+			local buffer = diff_text.buffer("change-diff", repos.run(stack.repo, args, true) or "")
 			diffs[buffer:id()] = { stack = stack, change = change.id }
 			stack.view:show(buffer)
 		end,

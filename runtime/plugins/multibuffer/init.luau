@@ -552,10 +552,12 @@ local function line_at(starts: { number }, pos: number): number
 end
 
 type Hunk = {
-	-- Where its new text is in the file now, and the old text it replaced.
+	-- Where its new text is in the file now, and the old text it replaced,
+	-- which started at `at` in the base.
 	from: number,
 	to: number,
 	old: string,
+	at: number,
 	-- The lines it covers now; `first` is the one removed lines show under
 	-- when it only removes.
 	first: number,
@@ -574,10 +576,14 @@ local function hunks(base: string, text: string): { Hunk }
 		shift += #hunk.text - #old
 		local first = line_at(starts, from)
 		local last = if hunk.text ~= "" then line_at(starts, from + #hunk.text - 1) else first
-		table.insert(
-			out,
-			{ from = from, to = from + #hunk.text, old = old, first = first, last = last }
-		)
+		table.insert(out, {
+			from = from,
+			to = from + #hunk.text,
+			old = old,
+			at = hunk.from,
+			first = first,
+			last = last,
+		})
 	end
 	return out
 end
@@ -622,32 +628,57 @@ function M.diff(path: string, label: string?, base: string, text: string): { Exc
 	return out
 end
 
---- Puts the change under `pos` back to the multibuffer's `base`, in its
---- file, and shows the view again. Returns false and why when there's no
---- change there to put back.
-function M.revert(buffer: greed.Buffer, pos: number): (boolean, string?)
+-- The change under `pos` in a multibuffer made by `diff`: its file's
+-- buffer, the file's base, and the hunk.
+local function hunk_at(buffer: greed.Buffer, pos: number): (greed.Buffer?, string?, Hunk?)
 	local state = states[buffer:id()]
 	local base_of = state and state.options.base
 	local path, line = M.location(buffer, pos)
 	local base = if base_of and path then base_of(path) else nil
 	if path == nil or base == nil then
-		return false, "no change here"
+		return nil, nil, nil
 	end
 	local file = greed.load(path)
-	for _, hunk in hunks(base :: string, file:text()) do
+	local text = base :: string
+	for _, hunk in hunks(text, file:text()) do
 		-- Lines only removed show under the line before where they were.
 		local first = if hunk.to == hunk.from then math.max(hunk.first - 1, 0) else hunk.first
 		if first <= line and line <= hunk.last then
-			file:edit(function(e)
-				e:replace(hunk.from, hunk.to, hunk.old)
-			end)
-			if state.options.refresh then
-				state.options.refresh()
-			end
-			return true, nil
+			return file, text, hunk
 		end
 	end
-	return false, "no change here"
+	return nil, nil, nil
+end
+
+--- Puts the change under `pos` back to the multibuffer's `base`, in its
+--- file, and shows the view again. Returns false and why when there's no
+--- change there to put back.
+function M.revert(buffer: greed.Buffer, pos: number): (boolean, string?)
+	local file, _, hunk = hunk_at(buffer, pos)
+	if file == nil or hunk == nil then
+		return false, "no change here"
+	end
+	file:edit(function(e)
+		e:replace(hunk.from, hunk.to, hunk.old)
+	end)
+	local refresh = states[buffer:id()].options.refresh
+	if refresh then
+		refresh()
+	end
+	return true, nil
+end
+
+--- The change under `pos` in a multibuffer made by `diff`: its file's path,
+--- and the file's base with only that change made, e.g. to stage just it.
+--- Nil when there's no change there.
+function M.change_at(buffer: greed.Buffer, pos: number): (string?, string?)
+	local file, base, hunk = hunk_at(buffer, pos)
+	if file == nil or base == nil or hunk == nil then
+		return nil, nil
+	end
+	local new = string.sub(file:text(), hunk.from + 1, hunk.to)
+	return file:path(),
+		string.sub(base, 1, hunk.at) .. new .. string.sub(base, hunk.at + #hunk.old + 1)
 end
 
 -- Each project's results panel, while it's open.

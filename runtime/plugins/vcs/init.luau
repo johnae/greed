@@ -7,9 +7,12 @@
 --   space g b   who last changed this line, and when
 --   space g s   every change since the last commit, in one multibuffer
 --   space u c   commit just the latest operation's files, named after it
+--   space g a   stage the change under the cursor (git)
+--   space g S   what's staged (git), to unstage hunks and commit
 --
 -- With jj the comparison is with the working copy's parent (@-), so the
--- signs show what the change you're working on does to the file.
+-- signs show what the change you're working on does to the file. With git
+-- it's with what's staged, so staged changes lose their signs.
 
 local core = require("@core")
 local greed = require("@greed")
@@ -17,6 +20,7 @@ local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
 local repos = require("@self/repo")
+local staging = require("@self/staging")
 require("@self/stack")
 
 type Repo = repos.Repo
@@ -32,7 +36,7 @@ greed.option.define({
 
 -- A change since the last commit, in the buffer as it is now: where it is,
 -- and what was there before.
-type Change = { from: number, to: number, old: string, kind: "+" | "~" | "-" }
+type Change = { from: number, to: number, old: string, at: number, kind: "+" | "~" | "-" }
 
 -- What each buffer's file was at the last commit, by buffer id; false for
 -- files outside a repository.
@@ -40,11 +44,13 @@ local bases: { [number]: string | false } = {}
 -- Goes up with each edit, so only the latest edit's redraw runs.
 local generation = 0
 
--- The file at `relative` in `repo` as of the last commit, or "" if it's new.
+-- The file at `relative` in `repo` as changes are counted from: with jj the
+-- working copy's parent, with git what's staged (the last commit unless
+-- something was staged). "" if it's new.
 local function base_text(repo: Repo, relative: string): string
 	local text = if repo.kind == "jj"
 		then vcs(repo, { "file", "show", "-r", "@-", "--", `root-file:"{relative}"` })
-		else vcs(repo, { "show", `HEAD:{relative}` })
+		else vcs(repo, { "show", `:{relative}` })
 	return text or ""
 end
 
@@ -71,7 +77,10 @@ local function changes(buffer: greed.Buffer): { Change }
 		local from = hunk.from + shift
 		local old = string.sub(base, hunk.from + 1, hunk.to)
 		local kind: "+" | "~" | "-" = if old == "" then "+" elseif hunk.text == "" then "-" else "~"
-		table.insert(out, { from = from, to = from + #hunk.text, old = old, kind = kind })
+		table.insert(
+			out,
+			{ from = from, to = from + #hunk.text, old = old, at = hunk.from, kind = kind }
+		)
 		shift += #hunk.text - #old
 	end
 	return out
@@ -229,6 +238,21 @@ local function change_here(ctx: greed.Context): Change?
 	return nil
 end
 
+-- The change shown on `line`, with the lines it shows on: lines only
+-- removed show under the line before where they were.
+local function change_shown_at(buffer: greed.Buffer, line: number): (Change?, number, number)
+	for _, change in changes(buffer) do
+		local first, last = lines_of(buffer, change)
+		if change.kind == "-" then
+			first = math.max(first - 1, 0)
+		end
+		if first <= line and line <= last then
+			return change, first, last
+		end
+	end
+	return nil, 0, 0
+end
+
 for _, around in { false, true } do
 	greed.command({
 		name = if around then "select-around-change" else "select-inside-change",
@@ -266,21 +290,57 @@ greed.command({
 			end
 			return
 		end
-		local line = buffer:line_of(head(ctx.view))
-		for _, change in changes(buffer) do
-			local first, last = lines_of(buffer, change)
-			-- Removed lines show under the line before where they were.
-			if change.kind == "-" then
-				first = math.max(first - 1, 0)
-			end
-			if first <= line and line <= last then
-				buffer:edit(function(e)
-					e:replace(change.from, change.to, change.old)
-				end)
-				return
+		local change = change_shown_at(buffer, buffer:line_of(head(ctx.view)))
+		if change == nil then
+			greed.echo("no change here")
+			return
+		end
+		buffer:edit(function(e)
+			e:replace(change.from, change.to, change.old)
+		end)
+	end,
+})
+
+greed.command({
+	name = "stage-change",
+	doc = "Stage the change under the cursor for the next git commit, leaving the rest",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local pos = head(ctx.view)
+		local path, text
+		if buffer:kind() == "multibuffer" then
+			path, text = multibuffer.change_at(buffer, pos)
+		else
+			local change = change_shown_at(buffer, buffer:line_of(pos))
+			local base = bases[buffer:id()]
+			if change and base then
+				path = buffer:path()
+				local new = string.sub(buffer:text(), change.from + 1, change.to)
+				text = string.sub(base, 1, change.at)
+					.. new
+					.. string.sub(base, change.at + #change.old + 1)
 			end
 		end
-		greed.echo("no change here")
+		local repo = if path then repo_of(absolute(path)) else nil
+		if repo and repo.kind == "jj" then
+			greed.echo(
+				"jj has no staging; split the change in the change stack (space g l) instead"
+			)
+			return
+		elseif repo == nil or path == nil or text == nil then
+			greed.echo("no change here")
+			return
+		end
+		path, text = path :: string, text :: string
+		local ok, why = staging.stage(repo, string.sub(absolute(path), #repo.root + 2), text)
+		if not ok then
+			greed.echo(`can't stage: {why}`)
+			return
+		end
+		refresh(greed.load(path))
+		if buffer:kind() == "multibuffer" then
+			M.show_changes(true)
+		end
 	end,
 })
 
@@ -290,30 +350,23 @@ core.actions.finder({
 	plugin = "vcs",
 	find = function(view, range)
 		local buffer = view:buffer()
-		local line = buffer:line_of(range.head)
-		for _, change in changes(buffer) do
-			local first, last = lines_of(buffer, change)
-			if change.kind == "-" then
-				first = math.max(first - 1, 0)
-			end
-			if first <= line and line <= last then
-				local what = if change.kind == "+"
-					then "added"
-					elseif change.kind == "-" then "removed"
-					else "changed"
-				local label = `{what} line{if last > first then "s" else ""} {first + 1}`
-				return {
-					{
-						kind = "change",
-						label = label,
-						value = change,
-						from = change.from,
-						to = change.to,
-					},
-				}
-			end
+		local change, first, last = change_shown_at(buffer, buffer:line_of(range.head))
+		if change == nil then
+			return nil
 		end
-		return nil
+		local what = if change.kind == "+"
+			then "added"
+			elseif change.kind == "-" then "removed"
+			else "changed"
+		return {
+			{
+				kind = "change",
+				label = `{what} line{if last > first then "s" else ""} {first + 1}`,
+				value = change,
+				from = change.from,
+				to = change.to,
+			},
+		}
 	end,
 })
 core.actions.command(
@@ -324,6 +377,7 @@ core.actions.command(
 	"vcs"
 )
 core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when", "vcs")
+core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit", "vcs")
 
 greed.command({
 	name = "blame-line",
@@ -366,8 +420,9 @@ local function changed_files(repo: Repo): { string }
 		end
 	else
 		for line in string.gmatch(vcs(repo, { "status", "--porcelain", "-uall" }) or "", "[^\n]+") do
-			local state, path = string.sub(line, 1, 2), string.sub(line, 4)
-			if not string.find(state, "D", 1, true) then
+			-- The second column is the file against what's staged.
+			local unstaged, path = string.sub(line, 2, 2), string.sub(line, 4)
+			if unstaged ~= " " and unstaged ~= "D" then
 				table.insert(files, string.match(path, " %-> (.+)$") or path)
 			end
 		end
@@ -381,10 +436,12 @@ local function count(n: number, word: string): string
 	return `{n} {word}{if n == 1 then "" else "s"}`
 end
 
---- Shows every change since the last commit in the repository the project
---- is in, as a multibuffer: edit it to change the files, `space g r` puts
---- the change under the cursor back.
-function M.show_changes()
+--- Shows every change in the repository the project is in, as a
+--- multibuffer: with jj since the working copy's parent, with git what's
+--- not staged. Edit it to change the files; `space g r` puts the change
+--- under the cursor back and `space g a` stages it. `refreshing` closes it
+--- when nothing's left.
+function M.show_changes(refreshing: boolean?)
 	local repo = repo_of(greed.project.current().root .. "/.")
 	if repo == nil then
 		error("the project isn't in a repository", 0)
@@ -406,19 +463,32 @@ function M.show_changes()
 			end
 		end
 	end
+	local staged = ""
+	if repo.kind == "git" then
+		local names = vcs(repo, { "diff", "--cached", "--name-only" }) or ""
+		local _, n = string.gsub(names, "\n", "")
+		staged = if n > 0 then `; {count(n, "file")} staged (space g S)` else ""
+	end
 	if #excerpts == 0 then
-		greed.echo(`nothing changed since {if repo.kind == "jj" then "@-" else "HEAD"}`)
+		greed.echo(
+			if repo.kind == "jj" then "nothing changed since @-" else `nothing to stage{staged}`
+		)
+		if refreshing then
+			multibuffer.close()
+		end
 		return
 	end
-	local against = if repo.kind == "jj" then "the working copy's parent" else "HEAD"
-	local summary = `{count(#excerpts, "change")} in {count(#files, "file")} since {against}`
+	local since = if repo.kind == "jj" then "since the working copy's parent" else "not staged"
+	local summary = `{count(#excerpts, "change")} in {count(#files, "file")} {since}{staged}`
 	local view = multibuffer.open(excerpts, {
 		summary = summary,
 		context = 2,
 		base = function(path)
 			return base_text(repo, string.sub(path, #repo.root + 2))
 		end,
-		refresh = M.show_changes,
+		refresh = function()
+			M.show_changes(true)
+		end,
 	})
 	multibuffer.show(view, "Changes")
 end
@@ -426,7 +496,9 @@ end
 greed.command({
 	name = "changes",
 	doc = "Show every change since the last commit in one buffer, to read, edit or put back",
-	run = M.show_changes,
+	run = function()
+		M.show_changes()
+	end,
 })
 
 --- The files changed in the repository `dir` is in, as absolute paths: with
@@ -570,6 +642,8 @@ greed.keymap.bind("normal", {
 	["m a g"] = "select-around-change",
 	["space g g"] = "pick-changed-file",
 	["space g r"] = "revert-change",
+	["space g a"] = "stage-change",
+	["space g S"] = "staged",
 	["space g b"] = "blame-line",
 	["space u c"] = "operation-commit",
 })

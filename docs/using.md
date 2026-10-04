@@ -429,19 +429,34 @@ with a key, bind `signature-help` in insert mode, e.g.
 ## Version control
 
 In a jj or git repository, lines added (`+`), changed (`~`) and removed
-(`-`) since the last commit get a sign beside them. With jj that's against
-the working copy's parent, so the signs show what your current change does.
+(`-`) get a sign beside them. With jj that's against the working copy's
+parent, so the signs show what your current change does. With git it's
+against what's staged, so a change loses its sign once you stage it.
 
 | Keys | |
 |---|---|
 | `] g` `[ g` | Next and previous change; `] G` `[ G` the last and first |
 | `space g r` | Put the change under the cursor back the way it was |
+| `space g a` | Stage the change under the cursor (git) |
 | `space g b` | Who last changed this line, and when |
 | `space g g` | Pick a file changed since the last commit |
 | `space g s` (`:changes`) | Every change in the project, in one buffer |
-| `space g l` (`:change-stack`) | The change stack: describe, squash, move and abandon changes |
+| `space g S` (`:staged`) | What's staged, to unstage hunks and commit (git) |
+| `space g l` (`:change-stack`) | The change stack: describe, split, squash, move and abandon changes |
 
 `:set vcs-signs false` hides the signs.
+
+`space g s` shows each change in every file, with a couple of lines around
+it: added lines in green, and removed ones in red where they were, under
+each file's name. With git it shows what's not staged yet. It's a
+multibuffer like the project search's results, so you can edit the
+changes there and `:w` saves the files; `space g r` on a change puts it
+back, `space g a` stages just that change, and `enter` goes to it in its
+file. New files show whole, and deleted ones are left out.
+
+`space g S` shows what's staged as a diff: `u` on a hunk unstages it, `c`
+commits with a message you type, `r` reads it again and `q` closes it.
+jj has no staging area; split a change in the change stack instead.
 
 `space g l` lists your changes with jj, newest first: from the working
 copy (`@`) down to the last immutable change (`◆`), with their bookmarks
@@ -462,13 +477,6 @@ and descriptions. On the change under the cursor:
 | `?` | A menu of these keys |
 
 In a git repository it lists the last 30 commits, and `enter` shows one.
-
-`space g s` shows each change since the last commit, in every file, with a
-couple of lines around it: added lines in green, and removed ones in red
-where they were, under each file's name. It's a multibuffer like the
-project search's results, so you can edit the changes there and `:w`
-saves the files; `space g r` on a change puts it back, and `enter` goes to
-it in its file. New files show whole, and deleted ones are left out.
 
 ## Operations
 
