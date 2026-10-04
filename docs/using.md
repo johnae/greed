@@ -1059,6 +1059,10 @@ recording on the left. On the right it shows:
 - the language server: its name, what it's working on
   (`rust-analyzer: indexing 40%`), or that it's starting, stopped or not
   installed
+- anything unusual about the file, and only then: `CRLF` line breaks,
+  `tabs` (or `spaces`) where its language indents the other way, or
+  `read-only`
+- how many selections there are, once there's more than one
 - the cursor's place, the machine and the session
 
 Two options make it livelier, both off unless you turn them on:

@@ -263,3 +263,37 @@ test("shows the language, and the features on for the buffer", function(t)
 		"none for plain text: " .. tostring(right)
 	)
 end)
+
+test("shows how many selections there are, once there's more than one", function(t)
+	t:buffer("|one two three")
+	local _, right = t:status()
+	assert(right and not string.find(right, "selections", 1, true), right)
+	t:keys("%")
+	t:keys("s o enter")
+	_, right = t:status()
+	assert(right and string.find(right, " 2 selections ", 1, true), right)
+end)
+
+test(
+	"says when a file is read-only, has Windows line breaks or indents unlike its language",
+	function(t)
+		t:buffer("|a\r\nb\r\n")
+		local _, right = t:status()
+		assert(right and string.find(right, " CRLF ", 1, true), right)
+		greed.view():buffer():set_readonly(true)
+		_, right = t:status()
+		assert(right and string.find(right, " CRLF · read-only ", 1, true), right)
+		-- Tabs where the indent is spaces.
+		t:buffer("|fn\n\tx\n\ty\n")
+		_, right = t:status()
+		assert(right and string.find(right, " tabs ", 1, true), right)
+		t:buffer("|fn\n    x\n")
+		_, right = t:status()
+		assert(
+			right
+				and not string.find(right, "tabs", 1, true)
+				and not string.find(right, "CRLF", 1, true),
+			right
+		)
+	end
+)

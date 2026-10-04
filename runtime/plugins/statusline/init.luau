@@ -1,6 +1,8 @@
 -- The status line: on the left the mode, the tab, the file (or the latest
--- message) and whether keys are being recorded; on the right problems the
--- language server found, where the cursor is, the machine and the session.
+-- message) and whether keys are being recorded; on the right the branch,
+-- problems, the language and its server, anything unusual about the file,
+-- how many selections there are, where the cursor is, the machine and the
+-- session.
 -- With the statusline-pills option some are pills, with rounded ends drawn
 -- in the theme's colors, and with the effects option light goes through the
 -- tab or the file when you go to another, and the mode when it changes.
@@ -226,6 +228,44 @@ M.add("right", "language", function(ctx)
 		table.insert(parts, feature)
 	end
 	return table.concat(parts, " · ")
+end)
+
+-- What's unusual about the file, and only that: Windows line breaks,
+-- indented with tabs where its language indents with spaces (or the other
+-- way round), or read-only, e.g. "CRLF · read-only".
+M.add("right", "file-settings", function(ctx)
+	local buffer = ctx.buffer
+	local parts = {}
+	local lines = buffer:line_count()
+	if lines > 1 and buffer:char_at(buffer:line_end(0)) == "\r" then
+		table.insert(parts, "CRLF")
+	end
+	-- How the first 200 lines start.
+	local tabs, spaces = 0, 0
+	for n = 0, math.min(lines, 200) - 1 do
+		local first = buffer:char_at(buffer:line_start(n))
+		if first == "\t" then
+			tabs += 1
+		elseif first == " " then
+			spaces += 1
+		end
+	end
+	local unit = core.indent.unit(buffer)
+	if tabs > spaces and unit ~= "\t" then
+		table.insert(parts, "tabs")
+	elseif spaces > tabs and unit == "\t" then
+		table.insert(parts, "spaces")
+	end
+	if buffer:readonly() then
+		table.insert(parts, "read-only")
+	end
+	return if #parts > 0 then table.concat(parts, " · ") else nil
+end)
+
+-- How many selections there are, once there's more than one.
+M.add("right", "selections", function(ctx)
+	local count = #ctx.view:selection().ranges
+	return if count > 1 then `{count} selections` else nil
 end)
 
 M.add("right", "position", function(ctx)
