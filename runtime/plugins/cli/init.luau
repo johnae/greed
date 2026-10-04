@@ -1,5 +1,5 @@
--- Greed's command line commands that are only Luau: `greed ls`, `greed new`
--- and `greed bring`. Plugins add their own the same way:
+-- Greed's command line commands that are only Luau: `greed ls`, `greed new`,
+-- `greed bring` and `greed reference`. Plugins add their own the same way:
 --
 --     greed.cli({
 --         name = "hello",
@@ -187,6 +187,22 @@ greed.cli({
 			error(`copying {plugin} failed: {if done then done.stderr else failed}`, 0)
 		end
 		return `copied {plugin} from {host} into {target}/{plugin}; Greed asks you to approve it when it next starts`
+	end,
+})
+
+--- Reference pages from the running editor (see docs.luau).
+M.docs = require("@self/docs")
+
+greed.cli({
+	name = "reference",
+	doc = "Write reference pages for the loaded plugins, their commands, keys and options, and the Luau API, as Markdown",
+	usage = "DIR",
+	run = function(args)
+		local dir = args[1]
+		if dir == nil then
+			error("usage: greed reference DIR", 0)
+		end
+		return `wrote {table.concat(M.docs.write(dir), ", ")} in {dir}`
 	end,
 })
 

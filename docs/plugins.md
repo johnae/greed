@@ -623,6 +623,11 @@ The API is fully typed in `runtime/types/greed`. `greed new` sets up a
 `.luaurc` so `luau-lsp` in your editor and `luau-analyze --mode=strict`
 check your plugin against it.
 
+`greed reference DIR` writes the reference pages this site has, as
+Markdown: every loaded plugin with its commands, keys and options, every
+option, and the whole API. With your config and plugins loaded, they
+describe your own setup.
+
 ## Loading and reloading
 
 Greed loads the default plugins, then yours, then `init.luau`. Each plugin
