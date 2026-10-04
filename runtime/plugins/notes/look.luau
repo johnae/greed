@@ -1,9 +1,9 @@
--- How notes look: on every line but the cursor's, Markdown's markup shows
--- as symbols, the way org-mode shows its own. Todo boxes become ☐ and ☑,
--- headings a symbol for their level, list dashes bullets, and due dates a
--- calendar and the day. The file stays plain Markdown; move the cursor onto
--- a line to edit what's really there. The symbols are buttons too:
--- clicking a box ticks it, a heading's symbol folds its section.
+-- How notes look: Markdown's markup shows as symbols. Todo boxes become ☐
+-- and ☑, headings a symbol for their level, list dashes bullets, and due
+-- dates a calendar and the day. The file stays plain Markdown; typing on a
+-- line shows what's really there (see `notes.reveal`). The symbols are
+-- buttons too: clicking a box ticks it, a heading's symbol folds its
+-- section.
 --
 -- Change the symbols, add rules of your own, and style both from your
 -- config:
@@ -31,6 +31,7 @@ end
 
 -- The marks for one line of text starting at `at`.
 local function line_marks(text: string, at: number, out: { greed.Mark })
+	local shows = notes.reveal()
 	local function show(
 		from: number,
 		to: number,
@@ -44,6 +45,7 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 			style = style,
 			text = replacement,
 			conceal = true,
+			reveal = shows,
 			action = action,
 		})
 	end
@@ -130,6 +132,11 @@ end
 
 greed.on("buffer.opened", on_buffer)
 greed.on("buffer.changed", on_buffer)
+
+-- Typing shows markup as written, so it's drawn again as modes change.
+greed.on("mode.changed", function()
+	M.refresh()
+end)
 
 greed.on("option.changed", function(event)
 	if event.name == "notes-conceal" or event.name == "notes-everywhere" then

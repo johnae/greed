@@ -28,8 +28,8 @@ use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
-    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, Mark, Panel, Scroll, Side, View,
-    ViewId, VirtualLine,
+    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, Mark, Panel, Reveal, Scroll, Side,
+    View, ViewId, VirtualLine,
 };
 
 /// Highlights and marks drawn over a buffer's text.
@@ -865,12 +865,12 @@ impl<M: Measure> Renderer<M> {
         let content = content.trim_end_matches(['\n', '\r']);
         let end = start + content.len();
 
-        let (revealed, concealed) = concealed(buffer, view, line, start..end);
+        let concealed = concealed(buffer, view, line, start..end);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
             .all_marks()
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
-            .filter(|m| !m.conceal || !revealed)
+            .filter(|m| !m.conceal || !reveals(text, view, m, line))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
@@ -1631,22 +1631,32 @@ fn virtual_lines<'a>(
         .flat_map(|m| m.lines.iter().map(move |l| (m, l)))
 }
 
-/// Whether a cursor is on `line`, which shows concealed text, and otherwise
-/// the marks concealing parts of it (`bytes`).
+/// Whether concealing mark `mark` on `line` shows its text now, as its
+/// `reveal` says.
+fn reveals(text: &Rope, view: &View, mark: &Mark, line: usize) -> bool {
+    match mark.reveal {
+        Reveal::Line => cursor_lines(text, view).any(|l| l == line),
+        Reveal::Cursor => view
+            .selection
+            .ranges()
+            .iter()
+            .any(|r| mark.range.start < r.head && r.head < mark.range.end),
+        Reveal::Never => false,
+    }
+}
+
+/// The marks hiding parts of `line` (its `bytes`) now.
 fn concealed<'a>(
     buffer: &'a crate::Buffer,
     view: &View,
     line: usize,
     bytes: Range<usize>,
-) -> (bool, Vec<&'a Mark>) {
-    if cursor_lines(buffer.text(), view).any(|l| l == line) {
-        return (true, Vec::new());
-    }
-    let marks = buffer
+) -> Vec<&'a Mark> {
+    buffer
         .all_marks()
         .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
-        .collect();
-    (false, marks)
+        .filter(|m| !reveals(buffer.text(), view, m, line))
+        .collect()
 }
 
 /// The lines `view`'s cursors are on.

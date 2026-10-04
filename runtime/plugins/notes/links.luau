@@ -1,6 +1,6 @@
 -- Links between notes: [[note]] and [[note|what to show]]. In notes the
--- brackets are hidden (except on the cursor's line), `g d` follows a link,
--- and the notes linking to a note are listed at its end.
+-- brackets are hidden (except while typing on their line), `g d` follows a
+-- link, and the notes linking to a note are listed at its end.
 
 local greed = require("@greed")
 local notes = require("./notes")
@@ -67,17 +67,24 @@ local shown_backlinks: { [number]: { string } } = {}
 local function mark(buffer: greed.Buffer)
 	local marks: { greed.Mark } = {}
 	local conceal = greed.option.get("notes-conceal") == true
+	local shows = notes.reveal()
 	for _, link in M.links(buffer) do
 		table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
 		if conceal then
-			table.insert(
-				marks,
-				{ from = link.from, to = link.text_from, style = "markup.link", conceal = true }
-			)
-			table.insert(
-				marks,
-				{ from = link.text_to, to = link.to, style = "markup.link", conceal = true }
-			)
+			table.insert(marks, {
+				from = link.from,
+				to = link.text_from,
+				style = "markup.link",
+				conceal = true,
+				reveal = shows,
+			})
+			table.insert(marks, {
+				from = link.text_to,
+				to = link.to,
+				style = "markup.link",
+				conceal = true,
+				reveal = shows,
+			})
 		end
 	end
 	local backlinks = shown_backlinks[buffer:id()]
@@ -104,6 +111,16 @@ local function refresh(buffer: greed.Buffer)
 	shown_backlinks[buffer:id()] = M.backlinks(notes.name(buffer:path() :: string))
 	mark(buffer)
 end
+
+-- Typing shows link brackets as written, so notes are drawn again as modes
+-- change.
+greed.on("mode.changed", function()
+	for _, buffer in greed.buffers() do
+		if notes.is_note(buffer) then
+			mark(buffer)
+		end
+	end
+end)
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	refresh(event.buffer)

@@ -325,8 +325,10 @@ greed.tab.set_layout({
   `buffer:decorate("my-plugin", { { from = 0, to = 5, style = "diagnostic.error" } })`.
   A mark can style whole lines, add virtual text inside or after a line,
   put a sign in the gutter, or draw text over the buffer's (like jump
-  labels). It can also hide text (`conceal`, like a link's brackets, shown
-  again on the cursor's line), fold lines away under the first one (`fold`),
+  labels). It can also hide text (`conceal`, like a link's brackets), shown
+  again as `reveal` says: `"line"` (the default) when a cursor is on its
+  line, `"cursor"` when one is inside it, or `"never"`, which notes uses
+  outside insert mode. A mark can fold lines away under the first one (`fold`),
   or show lines that aren't in the buffer under its own (`lines`), whole
   or in pieces with styles of their own. A mark's text with an `action`
   (a command name) is a button: clicking it, or `enter` on it in normal

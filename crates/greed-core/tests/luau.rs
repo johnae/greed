@@ -1672,3 +1672,26 @@ fn marks_can_scale_text_up_from_one_to_four_times() {
         );
     }
 }
+
+#[test]
+fn marks_say_when_concealed_text_shows() {
+    let h = host("- [ ] task");
+    h.eval(
+        "require('@greed').view():buffer():decorate('md', { { from = 2, to = 5, style = 'x', conceal = true, reveal = 'never' } })",
+    )
+    .unwrap();
+    h.with_editor(|ed| {
+        let marks = ed.buffer(ed.view(ed.focus()).buffer).marks("md");
+        assert_eq!(marks[0].reveal, greed_core::Reveal::Never);
+    });
+    assert_eq!(
+        h.eval("return require('@greed').view():buffer():decorations('md')[1].reveal")
+            .unwrap(),
+        "never"
+    );
+    let err = h
+        .eval("require('@greed').view():buffer():decorate('md', { { from = 0, to = 1, style = 'x', reveal = 'sometimes' } })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("reveal is"), "{err}");
+}

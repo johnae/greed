@@ -164,14 +164,19 @@ local function shown(t: test.TestContext, text: string): { string }
 	return t:draw(50, 8)
 end
 
-test("markup in notes shows as symbols, except on the cursor's line", function(t)
+test("markup in notes shows as symbols, as written only while typing on its line", function(t)
 	local rows =
 		shown(t, "# Plans\n- [ ] call the bank due:2020-01-01\n- [x] pay rent\n- milk\n- [ ] here")
 	assert(rows[1] == "◉ Plans", rows[1])
 	assert(rows[2] == "☐ call the bank 📅 1 Jan 2020", rows[2])
 	assert(rows[3] == "☑ pay rent", rows[3])
 	assert(rows[4] == "• milk", rows[4])
-	assert(rows[5] == "- [ ] here", `the cursor's line as written: {rows[5]}`)
+	assert(rows[5] == "☐ here", `the cursor's line too, in normal mode: {rows[5]}`)
+	t:keys("i")
+	assert(t:draw(50, 8)[5] == "- [ ] here", "typing on it shows it as written")
+	assert(t:draw(50, 8)[2] == "☐ call the bank 📅 1 Jan 2020", "other lines stay")
+	t:keys("esc")
+	assert(t:draw(50, 8)[5] == "☐ here", "and back")
 	local styles: { [string]: boolean } = {}
 	for _, mark in greed.view():buffer():decorations("notes-look") do
 		styles[mark.style] = true
@@ -179,11 +184,34 @@ test("markup in notes shows as symbols, except on the cursor's line", function(t
 	assert(styles["notes.overdue"] and styles["notes.done"], "overdue and done have their styles")
 end)
 
-test("clicking a todo's box ticks it", function(t)
+test("clicking a todo's box ticks it, and it stays a box", function(t)
 	shown(t, "- [ ] call the bank\n\n")
 	t:mouse("press", 0, 0)
 	local text = greed.view():buffer():text()
 	assert(string.sub(text, 1, 6) == "- [x] ", text)
+	local row = t:draw(50, 8)[1]
+	assert(row == "☑ call the bank", row)
+end)
+
+test("enter on a todo's box ticks it", function(t)
+	shown(t, "- [ ] call the bank\n")
+	greed.view():set_selection({ ranges = { { anchor = 2, head = 2 } }, primary = 1 })
+	t:keys("enter")
+	local text = greed.view():buffer():text()
+	assert(string.sub(text, 1, 6) == "- [x] ", text)
+	assert(t:draw(50, 8)[1] == "☑ call the bank")
+end)
+
+test("without modes, markup shows once the cursor is inside it", function(t)
+	shown(t, "- [ ] call the bank\n")
+	greed.mode.set("edit")
+	local function at(pos: number): string
+		greed.view():set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+		return t:draw(50, 8)[1]
+	end
+	assert(at(0) == "☐ call the bank", "at its start, where a click puts it")
+	assert(at(3) == "- [ ] call the bank", "inside it")
+	assert(at(10) == "☐ call the bank", "elsewhere on the line")
 end)
 
 test("symbols can change and rules of your own add styles and symbols", function(t)

@@ -177,9 +177,11 @@ export type Mark = {
 	--- Draw `text` over the characters from `from` instead of inserting it,
 	--- like a jump label. The text doesn't move.
 	overlay: boolean?,
-	--- Hide the text, showing `text` (if any) in its place, except on lines
-	--- a cursor is on, e.g. the brackets of a `[[link]]`.
+	--- Hide the text, showing `text` (if any) in its place, e.g. the
+	--- brackets of a `[[link]]`, except where `reveal` says.
 	conceal: boolean?,
+	--- When concealed text shows: "line" (the default) when a cursor is on its line, "cursor" when a cursor is inside it past its start (a click leaves it hidden), "never".
+	reveal: ("line" | "cursor" | "never")?,
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,

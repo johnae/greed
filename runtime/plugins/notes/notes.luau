@@ -125,6 +125,21 @@ function M.append(name: string, text: string)
 	end
 end
 
+--- When hidden markup (a todo's box, a link's brackets) shows as written,
+--- for a mark's `reveal`: while typing (an insert mode) on its line; in a
+--- style without modes, once the cursor is inside it rather than at its
+--- start, where a click puts it; otherwise never, so moving around and
+--- clicking keep the symbols.
+function M.reveal(): "line" | "cursor" | "never"
+	local mode = greed.mode.get()
+	if string.find(mode, "insert", 1, true) then
+		return "line"
+	elseif mode == "edit" then
+		return "cursor"
+	end
+	return "never"
+end
+
 --- Today's date, as notes write it: "2026-10-01".
 function M.today(): string
 	return os.date("%Y-%m-%d") :: string

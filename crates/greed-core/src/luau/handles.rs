@@ -19,7 +19,7 @@ use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::layout::Direction;
 use crate::search::{self, Direction as SearchDirection};
-use crate::{Buffer, BufferId, Mark, MarkImage, Scroll, View, ViewId, VirtualLine};
+use crate::{Buffer, BufferId, Mark, MarkImage, Reveal, Scroll, View, ViewId, VirtualLine};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -487,6 +487,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     above: flag("above")?,
                     overlay: flag("overlay")?,
                     conceal: flag("conceal")?,
+                    reveal: reveal_from_lua(t.get("reveal"))?,
                     fold: flag("fold")?,
                     lines: t
                         .get::<Option<Vec<Value>>>("lines")?
@@ -530,6 +531,18 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     });
 }
 
+/// A mark's `reveal`: "line" when not given, "cursor" or "never".
+fn reveal_from_lua(value: LuaResult<Option<String>>) -> LuaResult<Reveal> {
+    match value?.as_deref() {
+        None | Some("line") => Ok(Reveal::Line),
+        Some("cursor") => Ok(Reveal::Cursor),
+        Some("never") => Ok(Reveal::Never),
+        Some(_) => Err(mlua::Error::runtime(
+            "a mark's reveal is \"line\", \"cursor\" or \"never\"",
+        )),
+    }
+}
+
 /// A mark's `scale`: 1 when not given, else a whole number from 1 to 4.
 fn scale_from_lua(value: LuaResult<Option<f64>>) -> LuaResult<u8> {
     let invalid = || mlua::Error::runtime("a mark's scale is a whole number from 1 to 4");
@@ -554,6 +567,14 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("above", mark.above)?;
     t.set("overlay", mark.overlay)?;
     t.set("conceal", mark.conceal)?;
+    t.set(
+        "reveal",
+        match mark.reveal {
+            Reveal::Line => "line",
+            Reveal::Cursor => "cursor",
+            Reveal::Never => "never",
+        },
+    )?;
     t.set("fold", mark.fold)?;
     t.set("action", mark.action.as_deref())?;
     if mark.scale > 1 {

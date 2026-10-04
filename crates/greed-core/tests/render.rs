@@ -1093,3 +1093,49 @@ fn a_scaled_button_is_clicked_on_any_row_it_takes() {
     }
     assert_eq!(renderer.hit(&ed, 3, 2).action, None);
 }
+
+#[test]
+fn concealed_text_shows_as_its_mark_says_on_the_cursors_line() {
+    use greed_core::{Mark, Reveal};
+    // "- [ ] task": the box is bytes 2-5.
+    let mut ed = editor("|- [ ] task");
+    let buffer = ed.view(ed.main()).buffer;
+    let shown = |ed: &mut Editor, reveal: Reveal, at: usize| {
+        ed.decorate(
+            buffer,
+            "md",
+            vec![Mark {
+                range: 2..5,
+                style: "notes.todo".into(),
+                conceal: true,
+                text: Some("☐".into()),
+                reveal,
+                ..Mark::default()
+            }],
+        );
+        let main = ed.main();
+        ed.view_mut(main).selection = greed_text::Selection::point(at);
+        body(&frame(ed, 20, 2))[0].clone()
+    };
+    assert_eq!(
+        shown(&mut ed, Reveal::Line, 0),
+        "- [ ] task",
+        "line: the cursor's line"
+    );
+    assert_eq!(shown(&mut ed, Reveal::Never, 3), "- ☐ task", "never");
+    assert_eq!(
+        shown(&mut ed, Reveal::Cursor, 2),
+        "- ☐ task",
+        "cursor: at the start, as a click puts it, it stays"
+    );
+    assert_eq!(
+        shown(&mut ed, Reveal::Cursor, 3),
+        "- [ ] task",
+        "cursor: inside it shows"
+    );
+    assert_eq!(
+        shown(&mut ed, Reveal::Cursor, 8),
+        "- ☐ task",
+        "cursor: elsewhere on the line"
+    );
+}

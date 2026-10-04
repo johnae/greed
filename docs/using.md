@@ -635,7 +635,7 @@ to show other words.
 
 A todo is a list item with a box, `- [ ] call the bank`, and
 `due:2026-10-03` anywhere in it gives it a date for the agenda. In a note,
-links show without their brackets (except on the cursor's line) and the
+links show without their brackets (except while typing on their line) and the
 notes linking to it are listed at its end. Other Markdown files, like a
 project's README, look as they always do; `:set notes-everywhere true`
 treats every Markdown file as a note, and `:set notes-conceal false` shows
@@ -647,12 +647,13 @@ require("@greed").option.set("notes-folder", "~/Documents/notes")
 
 ### How notes look
 
-On every line but the cursor's, a note's markup shows as symbols: todo
-boxes as ☐ and ☑ (done ones dimmed and struck through), headings as a
-symbol for their level, list dashes as bullets, and `due:2026-10-03` as
-📅 3 Oct, in red once it's past. The file stays plain Markdown; move the
-cursor onto a line to edit what's really there. Click a box to tick it, or
-a heading's symbol to fold its section.
+A note's markup shows as symbols: todo boxes as ☐ and ☑ (done ones dimmed
+and struck through), headings as a symbol for their level, list dashes as
+bullets, and `due:2026-10-03` as 📅 3 Oct, in red once it's past. The file
+stays plain Markdown: while you type on a line (insert mode), it shows as
+written; in edit mode, markup shows once the cursor is inside it. Click a
+box to tick it, or press `enter` on it, and a heading's symbol folds its
+section.
 
 The symbols, rules of your own and how they all look are set from your
 config:

@@ -61,9 +61,11 @@ pub struct Mark {
     /// Draw `text` over the characters from the start of the range, like a
     /// jump label, instead of inserting it.
     pub overlay: bool,
-    /// Hide the range's text, showing `text` (if any) in its place, except on
-    /// lines a cursor is on, e.g. the brackets of a `[[link]]`.
+    /// Hide the range's text, showing `text` (if any) in its place, e.g. the
+    /// brackets of a `[[link]]`, except where `reveal` says.
     pub conceal: bool,
+    /// When a concealing mark shows its text after all.
+    pub reveal: Reveal,
     /// Hide the lines after the range's first line, up to its last, unless a
     /// cursor is in them, e.g. a section folded under its heading.
     pub fold: bool,
@@ -79,6 +81,19 @@ pub struct Mark {
     /// each character takes that many cells across, and its row that many
     /// rows down. 0 and 1 are the normal size.
     pub scale: u8,
+}
+
+/// When a concealing mark shows the text it hides, so it can be edited.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Reveal {
+    /// When a cursor is on its line.
+    #[default]
+    Line,
+    /// When a cursor is inside it, past its start: a click, which puts the
+    /// cursor at the start, leaves it hidden.
+    Cursor,
+    /// Never.
+    Never,
 }
 
 /// A line a mark shows under the text: drawn in the mark's style, with
