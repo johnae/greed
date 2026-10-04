@@ -141,10 +141,11 @@ pub struct Style {
     pub rounded: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
-    /// For text in the window: its background as a pill with round ends
-    /// rather than a block, as motion hints have. Terminals draw a block.
+    /// For text in the window: its background as a badge, a box with
+    /// rounded corners a little inside its cells, as motion hints have.
+    /// Terminals draw a block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pill: Option<bool>,
+    pub badge: Option<bool>,
     /// The window's font for the text: the grid's, or a proportional one for
     /// prose, fitted into the same cells. Terminals have only the one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,7 +168,7 @@ impl Style {
             strikethrough: over.strikethrough.or(self.strikethrough),
             rounded: over.rounded.or(self.rounded),
             shadow: over.shadow.or(self.shadow),
-            pill: over.pill.or(self.pill),
+            badge: over.badge.or(self.badge),
             font: over.font.or(self.font),
         }
     }

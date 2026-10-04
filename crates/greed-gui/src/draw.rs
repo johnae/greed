@@ -156,10 +156,10 @@ pub fn build(
             }
         }
     }
-    // Floats are boxes over what's under them: its backgrounds, then every
-    // float's shadow, so none falls on another float, then their fills and
-    // outlines, then the backgrounds inside them (a picker's current line,
-    // a title over the outline).
+    // Floats are boxes over what's under them: its backgrounds (going on
+    // under rounded borders), then every float's shadow, so none falls on
+    // another float, then their fills and outlines, then the backgrounds
+    // inside them (a picker's current line, a title over the outline).
     let regions = regions(grid, chrome);
     let columns = lay_out(grid, &looks, &snaps(grid, &regions), fonts);
     let boxes = float_boxes(chrome, &looks, (cw, ch));
@@ -169,15 +169,18 @@ pub fn build(
     };
     fill(Pass::Under, &mut instances);
     let rounded = chrome.rounded;
-    if chrome.shadows {
-        instances.extend(boxes.iter().map(FloatBox::shadow));
+    if rounded {
+        beneath_borders(
+            &looks,
+            &regions,
+            &chrome.floats,
+            &columns,
+            ch,
+            background,
+            &mut instances,
+        );
     }
-    for b in &boxes {
-        instances.push(b.fill());
-        if rounded {
-            b.outline(&mut instances);
-        }
-    }
+    float_shapes(&boxes, chrome, &mut instances);
     fill(Pass::Floats { border: !rounded }, &mut instances);
     let border: Vec<Vec<bool>> = regions
         .iter()
@@ -407,6 +410,20 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, outline: f32, color: Rgb
     }
 }
 
+/// The floats' boxes: every shadow first, so none falls on another float,
+/// then each fill, and its outline when rounded.
+fn float_shapes(boxes: &[FloatBox], chrome: &Chrome, out: &mut Vec<Instance>) {
+    if chrome.shadows {
+        out.extend(boxes.iter().map(FloatBox::shadow));
+    }
+    for b in boxes {
+        out.push(b.fill());
+        if chrome.rounded {
+            b.outline(out);
+        }
+    }
+}
+
 /// A float as the window draws it: where its box goes in pixels (through
 /// the middle of its border cells when rounded, around them when not), and
 /// its colors.
@@ -494,6 +511,8 @@ enum Region {
     Outside,
     /// In a float's border, the cells around its text.
     Border,
+    /// Text in a float's border, like its title.
+    Title,
     Inside,
 }
 
@@ -519,10 +538,10 @@ fn regions(grid: &[Vec<Cell>], chrome: &Chrome) -> Vec<Vec<Region>> {
                     .chars()
                     .next()
                     .is_none_or(|c| boxdraw::rects(c, 1.0, 1.0).is_some());
-                *cell = if (edge || col == left || col == x + w) && line {
-                    Region::Border
-                } else {
-                    Region::Inside
+                *cell = match (edge || col == left || col == x + w, line) {
+                    (true, true) => Region::Border,
+                    (true, false) => Region::Title,
+                    (false, _) => Region::Inside,
                 };
             }
         }
@@ -546,15 +565,26 @@ impl Pass {
     fn draws(self, region: Region) -> Option<bool> {
         match (self, region) {
             (Pass::Under, Region::Outside) => Some(false),
-            (Pass::Floats { .. }, Region::Inside)
+            (Pass::Floats { .. }, Region::Inside | Region::Title)
             | (Pass::Floats { border: true }, Region::Border) => Some(true),
             _ => None,
         }
     }
 }
 
+/// How a run of cells' background is drawn.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Shape {
+    Block,
+    /// A box with rounded corners inside the cells, for a style that asks
+    /// for one, like a key cap.
+    Badge,
+    /// A pill as tall as the text, for a title on a rounded float's outline.
+    Title,
+}
+
 /// The backgrounds `pass` draws, a rectangle for each run of one color, or
-/// a pill for a run whose style asks for one, over the background beside it.
+/// a badge or pill over the background beside it.
 fn backgrounds(
     looks: &[Vec<Look>],
     regions: &[Vec<Region>],
@@ -564,28 +594,41 @@ fn backgrounds(
     background: Rgba,
     out: &mut Vec<Instance>,
 ) {
+    let titled = pass == Pass::Floats { border: false };
     for (y, row) in looks.iter().enumerate() {
         let top = y as f32 * ch;
-        let bgs: Vec<Option<(Rgba, bool)>> = row
+        let bgs: Vec<Option<(Rgba, Shape)>> = row
             .iter()
             .zip(&regions[y])
             .map(|(l, &r)| match pass.draws(r) {
-                Some(always) if always || l.bg != background => Some((l.bg, l.pill)),
+                Some(always) if always || l.bg != background => {
+                    let shape = if l.badge {
+                        Shape::Badge
+                    } else if titled && r == Region::Title {
+                        Shape::Title
+                    } else {
+                        Shape::Block
+                    };
+                    Some((l.bg, shape))
+                }
                 _ => None,
             })
             .collect();
         let mut x = 0;
         for same in bgs.chunk_by(|a, b| a == b) {
             let (left, w) = columns.span(y, x, x + same.len());
-            let beside = x.checked_sub(1).and_then(|b| bgs[b]).filter(|b| !b.1);
+            let beside = x
+                .checked_sub(1)
+                .and_then(|b| bgs[b])
+                .filter(|b| b.1 == Shape::Block);
             x += same.len();
             match same[0] {
-                Some((bg, false)) => out.push(rect(left, top, w, ch, bg)),
-                Some((bg, true)) => {
+                Some((bg, Shape::Block)) => out.push(rect(left, top, w, ch, bg)),
+                Some((bg, shape)) => {
                     if let Some((under, _)) = beside {
                         out.push(rect(left, top, w, ch, under));
                     }
-                    out.push(pill(left, top, w, ch, bg));
+                    out.push(badge(left, top, w, ch, shape == Shape::Title, bg));
                 }
                 None => {}
             }
@@ -593,18 +636,63 @@ fn backgrounds(
     }
 }
 
-/// A pill behind text from `x` to `x + w` in a row at `top`: a little
-/// shorter than the row, so pills on rows above and below stay apart, and a
-/// little wider than its text, so a single digit isn't squeezed.
-fn pill(x: f32, top: f32, w: f32, ch: f32, color: Rgba) -> Instance {
-    let (h, grow) = (ch * 0.76, ch * 0.08);
-    let w = w + 2.0 * grow;
+/// Under the border cells of rounded floats, whose box goes through their
+/// middle, what's beside the float on the same row: the floats took the
+/// place of those cells, and a code block's color, say, should go on
+/// behind the border.
+fn beneath_borders(
+    looks: &[Vec<Look>],
+    regions: &[Vec<Region>],
+    floats: &[Rect],
+    columns: &Columns,
+    ch: f32,
+    background: Rgba,
+    out: &mut Vec<Instance>,
+) {
+    for r in floats {
+        let (x0, y0) = (usize::from(r.x), usize::from(r.y));
+        let (Some(left), Some(top)) = (x0.checked_sub(1), y0.checked_sub(1)) else {
+            continue;
+        };
+        let (right, bottom) = (x0 + usize::from(r.width), y0 + usize::from(r.height));
+        for (y, row) in looks.iter().enumerate().take(bottom + 1).skip(top) {
+            let outside =
+                |x: usize| (regions[y].get(x) == Some(&Region::Outside)).then(|| row[x].bg);
+            let color = left
+                .checked_sub(1)
+                .and_then(outside)
+                .or_else(|| outside(right + 1))
+                .unwrap_or(background);
+            if color == background {
+                continue;
+            }
+            let edge = y == top || y == bottom;
+            for x in (left..=right.min(row.len().saturating_sub(1)))
+                .filter(|&x| edge || x == left || x == right)
+            {
+                let (cx, w) = columns.span(y, x, x + 1);
+                out.push(rect(cx, y as f32 * ch, w, ch, color));
+            }
+        }
+    }
+}
+
+/// A badge behind text from `x` to `x + w` in a row at `top`: a box with
+/// rounded corners a little inside its cells, so badges side by side stay
+/// apart; or for a `title`, a pill with round ends.
+fn badge(x: f32, top: f32, w: f32, ch: f32, title: bool, color: Rgba) -> Instance {
+    let (h, gap, round) = if title {
+        (ch * 0.84, 0.0, 0.5)
+    } else {
+        (ch * 0.8, ch * 0.02, 0.3)
+    };
+    let w = w - 2.0 * gap;
     rounded(
-        x - grow,
+        x + gap,
         top + (ch - h) / 2.0,
         w,
         h,
-        w.min(h) / 2.0,
+        w.min(h) * round,
         0.0,
         color,
     )

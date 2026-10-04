@@ -58,3 +58,15 @@ test("a key overlay binds keys for the next press only", function(t)
 	t:keys("g h x")
 	t:expect("^abc|")
 end)
+
+test("a number goes on the space beside a word rather than over its letters", function(t)
+	greed.option.set("motion-hints", true)
+	t:buffer("one two three four five|")
+	t:keys("b")
+	-- b lands on each word's first letter; its number takes the space before
+	-- it, and the first word, with none, keeps its own.
+	assert(labels() == "1@13 2@7 3@3 4@0", labels())
+	t:keys("2")
+	t:expect("one two |three ^four five")
+	greed.option.set("motion-hints", false)
+end)

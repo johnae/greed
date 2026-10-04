@@ -85,8 +85,8 @@ pub struct Look {
     pub strikethrough: bool,
     /// Drawn in the prose font.
     pub prose: bool,
-    /// The background drawn as a pill.
-    pub pill: bool,
+    /// The background drawn as a badge.
+    pub badge: bool,
 }
 
 /// `style` as `palette` shows it: reversed and dimmed as asked.
@@ -116,7 +116,7 @@ pub fn look(style: &Style, palette: &Palette) -> Look {
         }),
         strikethrough: style.strikethrough == Some(true),
         prose: style.font == Some(Font::Prose),
-        pill: style.pill == Some(true),
+        badge: style.badge == Some(true),
     }
 }
 

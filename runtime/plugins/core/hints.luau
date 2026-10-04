@@ -37,6 +37,25 @@ local function clear()
 	end
 end
 
+-- Where the number for a place at `at` goes: there if it's a space, else
+-- on the space just before or after it, so it covers none of the text,
+-- unless another number already took that space.
+local function label_at(buffer: greed.Buffer, at: number, taken: { [number]: boolean }): number
+	local function free(pos: number): boolean
+		local char = pos >= 0 and buffer:char_at(pos)
+		return (char == " " or char == "\t") and not taken[pos]
+	end
+	if free(at) then
+		return at
+	end
+	local before = if at > 0 then buffer:prev_char(at) else -1
+	if free(before) then
+		return before
+	end
+	local after = buffer:next_char(at)
+	return if free(after) then after else at
+end
+
 --- Shows the hints for motion `command` from the primary selection, each
 --- next place found by `step`. Does nothing with the option off.
 function M.after(ctx: greed.Context, command: string, step: Step)
@@ -48,6 +67,7 @@ function M.after(ctx: greed.Context, command: string, step: Step)
 	local range = selection.ranges[selection.primary]
 	local marks: { greed.Mark } = {}
 	local keys: { [string]: string } = {}
+	local taken: { [number]: boolean } = {}
 	for n = 1, SHOWN do
 		local next, at = step(buffer, range)
 		if
@@ -58,9 +78,11 @@ function M.after(ctx: greed.Context, command: string, step: Step)
 			break
 		end
 		range = next
+		local label = label_at(buffer, at, taken)
+		taken[label] = true
 		table.insert(marks, {
-			from = at,
-			to = math.min(buffer:next_char(at), buffer:len()),
+			from = label,
+			to = math.min(buffer:next_char(label), buffer:len()),
 			text = tostring(n),
 			overlay = true,
 			style = if n <= NEAR then "ui.motion.hint" else "ui.motion.hint.far",

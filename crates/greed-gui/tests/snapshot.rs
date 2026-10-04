@@ -596,7 +596,7 @@ fn a_float_over_prose_keeps_its_place() {
 }
 
 #[test]
-fn a_pill_style_draws_its_background_with_round_ends_over_the_one_beside_it() {
+fn a_badge_style_draws_a_box_inside_its_cells_over_the_background_beside_it() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;
     };
@@ -605,17 +605,17 @@ fn a_pill_style_draws_its_background_with_round_ends_over_the_one_beside_it() {
     let palette = Palette::default();
     let mut frame = frame();
     let mut theme = (*frame.theme).clone();
-    let pill = [0x51, 0x57, 0x6d];
+    let badge = [0x51, 0x57, 0x6d];
     let line = [0x29, 0x2c, 0x3c];
     theme.set(
         "hint",
         Entry {
             style: Style {
-                bg: Some(Color::Rgb(pill[0], pill[1], pill[2])),
+                bg: Some(Color::Rgb(badge[0], badge[1], badge[2])),
                 ..Style::default()
             },
             gui: Style {
-                pill: Some(true),
+                badge: Some(true),
                 ..Style::default()
             },
             ..Entry::default()
@@ -646,16 +646,88 @@ fn a_pill_style_draws_its_background_with_round_ends_over_the_one_beside_it() {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
     let rgba = gpu.snapshot(size, &scene);
-    save("pill.png", size, &rgba);
+    save("badge.png", size, &rgba);
     let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
-    // The left edge of the pill's middle, beside the digit, and its rounded
-    // top corner, which shows the row's own background.
-    assert_eq!(at(3.05, 4.5)[..3], pill);
+    // Just inside the badge's left edge, halfway down, beside its digit;
+    // and its cell's top corner, outside it, which shows the row's own
+    // background.
+    let edge = |row: f32| {
+        let x = 3.0 * cw + 0.05 * ch + 2.0;
+        pixel(&rgba, size.0, x as u32, (row * ch) as u32)
+    };
+    assert_eq!(edge(4.5)[..3], badge);
     assert_eq!(at(3.0, 4.02)[..3], palette.bg[..3]);
-    assert_eq!(at(3.05, 5.5)[..3], pill);
+    assert_eq!(edge(5.5)[..3], badge);
     assert_eq!(
         at(3.0, 5.02)[..3],
         line,
         "the background beside it, under the corner"
     );
+}
+
+#[test]
+fn what_is_under_a_rounded_floats_border_goes_on_behind_it_and_its_title_is_a_pill() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    let block = [0x29, 0x2c, 0x3c];
+    let fill = [0x41, 0x45, 0x59];
+    theme.set(
+        "block",
+        Entry::new(Style {
+            bg: Some(Color::Rgb(block[0], block[1], block[2])),
+            ..Style::default()
+        }),
+    );
+    for name in ["ui.float", "ui.float.border", "ui.float.title"] {
+        theme.set(
+            name,
+            Entry::new(Style {
+                bg: Some(Color::Rgb(fill[0], fill[1], fill[2])),
+                rounded: Some(true),
+                ..Style::default()
+            }),
+        );
+    }
+    frame.theme = Arc::new(theme);
+    // A code block's rows over and under the float's top border (row 3).
+    for y in [2, 3] {
+        frame.rows[y] = row(&[(&" ".repeat(40), "block")]);
+    }
+    let grid = compose(&frame, Surface::Gui);
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::of(&frame),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("float-edge.png", size, &rgba);
+    let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
+    // Above the outline, through the middle of the border row, the block
+    // goes on; below it, the float's fill.
+    assert_eq!(at(36.5, 3.1)[..3], block, "above the outline");
+    assert_eq!(at(36.5, 3.9)[..3], fill, "inside the float");
+    // The title's cells: the block at their very top, the pill below.
+    let title = grid[3]
+        .iter()
+        .position(|c| c.text == "p")
+        .expect("the title is on the border row");
+    assert_eq!(
+        at(title as f32 + 0.5, 3.02)[..3],
+        block,
+        "over the title's pill"
+    );
+    assert_eq!(at(title as f32 - 0.5, 3.5)[..3], fill, "the title's pill");
 }
