@@ -295,3 +295,82 @@ greed.on("option.changed", function(event)
 		end
 	end
 end)
+
+-- Symbols and problems, as things to act on.
+local actions = require("@core").actions
+
+actions.finder({
+	name = "symbol",
+	plugin = "lsp",
+	find = function(view, range)
+		local buffer = view:buffer()
+		if greed.lsp.capabilities(buffer) == nil then
+			return nil
+		end
+		local line = buffer:line_of(range.head)
+		local start = buffer:line_start(line)
+		local text = buffer:slice(start, buffer:line_end(line))
+		local at = range.head - start + 1
+		local init = 1
+		while true do
+			local from, to = string.find(text, "[%w_]+", init)
+			if from == nil or to == nil or from > at then
+				return nil
+			end
+			if at <= to then
+				local name = string.sub(text, from, to)
+				return {
+					{
+						kind = "symbol",
+						label = name,
+						value = name,
+						from = start + from - 1,
+						to = start + to,
+					},
+				}
+			end
+			init = to + 1
+		end
+	end,
+})
+
+actions.command("symbol", "definition", "goto-definition", "Go to where it's defined", "lsp")
+actions.command("symbol", "references", "goto-references", "Find everywhere it's used", "lsp")
+actions.command("symbol", "rename", "rename", "Rename it everywhere", "lsp")
+actions.command("symbol", "hover", "hover", "Show its type and docs", "lsp")
+actions.command(
+	"symbol",
+	"code-action",
+	"code-action",
+	"The language server's fixes and refactorings here",
+	"lsp"
+)
+
+actions.finder({
+	name = "problem",
+	plugin = "lsp",
+	find = function(view, range)
+		local found = {}
+		for _, d in greed.lsp.diagnostics(view:buffer()) do
+			if d.from <= range.head and range.head <= d.to then
+				local label = string.gsub(string.sub(d.message, 1, 60), "\n", " ")
+				table.insert(
+					found,
+					{ kind = "problem", label = label, value = d.message, from = d.from, to = d.to }
+				)
+			end
+		end
+		return found
+	end,
+})
+
+actions.command("problem", "fix", "code-action", "The language server's fixes for it", "lsp")
+actions.action({
+	kind = "problem",
+	name = "copy",
+	doc = "Copy the message",
+	plugin = "lsp",
+	run = function(target)
+		greed.clipboard.set(target.value)
+	end,
+})

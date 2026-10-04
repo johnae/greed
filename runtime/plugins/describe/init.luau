@@ -429,4 +429,21 @@ greed.keymap.bind("normal", {
 	["space h k"] = "describe-key",
 })
 
+-- Commands, wherever they show up as things to act on (the command
+-- palette's items): describe one.
+require("@core").actions.action({
+	kind = "command",
+	name = "describe",
+	doc = "What it does, its keys and where it's defined",
+	plugin = "describe",
+	run = function(target)
+		for _, entry in commands() do
+			if entry.name == target.value then
+				M.show(entry)
+				return
+			end
+		end
+	end,
+})
+
 return M

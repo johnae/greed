@@ -780,6 +780,26 @@ greed.command({
 	end,
 })
 
+-- Files, as things to act on: in a float, or in a pane beside this one.
+core.actions.action({
+	kind = "file",
+	name = "float",
+	doc = "Open it in a floating view",
+	plugin = "panes",
+	run = function(target)
+		M.focus(M.floats.open(greed.load(target.value)))
+	end,
+})
+core.actions.action({
+	kind = "file",
+	name = "split",
+	doc = "Open it in a new pane beside this one",
+	plugin = "panes",
+	run = function(target)
+		M.focus(M.pane():split(longer_side(M.pane()), greed.load(target.value)))
+	end,
+})
+
 -- Saves the tab as the layout named in `args`, or asks for a name.
 local function save_layout(args: { string }, mine: boolean)
 	local function save(name: string)

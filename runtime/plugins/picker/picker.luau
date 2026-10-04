@@ -7,6 +7,9 @@ local menu = core.menu
 export type Item = {
 	label: string,
 	value: any,
+	--- What the item is, for `alt-.` to list its actions (see core's
+	--- actions): "file" for a path, "command" for a command's name, ...
+	kind: string?,
 }
 
 --- What to show beside the picker for the current item.
@@ -306,6 +309,7 @@ local KEYS: { [string]: string } = {
 	enter = "picker-choose",
 	esc = "picker-close",
 	tab = "picker-complete",
+	["alt-."] = "picker-act",
 }
 
 greed.command({
@@ -419,6 +423,48 @@ function M.resume(): boolean
 	M.pick(again.title, again.items, again.choose, again.options)
 	return true
 end
+
+--- Lists the actions for `targets` (see core's actions) and runs the one
+--- chosen. With several things, each action says which it's for.
+function M.act(targets: { core.Target })
+	local items = {}
+	for _, target in targets do
+		for _, action in core.actions.for_kind(target.kind) do
+			local label = action.name
+			if #targets > 1 then
+				label ..= `  {target.kind}: {target.label}`
+			end
+			if action.doc then
+				label ..= `  {action.doc}`
+			end
+			table.insert(items, { label = label, value = { action = action, target = target } })
+		end
+	end
+	if #items == 0 then
+		greed.echo("nothing here to act on")
+		return
+	end
+	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
+	M.pick(title, items, function(item)
+		item.value.action.run(item.value.target)
+	end)
+end
+
+greed.command({
+	name = "picker-act",
+	doc = "List what you can do with the current item, and do it",
+	run = function()
+		local o = open
+		local index = o and o.matches[o.current]
+		local item = o and index and o.items[index]
+		if item == nil or item.kind == nil then
+			greed.echo("no actions for this item")
+			return
+		end
+		close()
+		M.act({ { kind = item.kind, label = item.label, value = item.value } })
+	end,
+})
 
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
 -- `options.preview` shows the current item beside the list, and

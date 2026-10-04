@@ -103,6 +103,49 @@ command)` runs a command for any single key nothing else takes, and
 `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
 the way a terminal takes every key.
 
+### Actions on things
+
+`space .` lists what you can do with what's under the cursor, and `alt-.`
+in a picker with the current item. A plugin adds both halves: a finder
+that says what's at the cursor, and actions for a kind of thing. Picker
+items get actions by giving a `kind`, like `{ label = path, value = path,
+kind = "file" }`.
+
+```luau
+local actions = require("@core").actions
+
+actions.finder({
+	name = "ticket",
+	plugin = "jira",
+	find = function(view, range)
+		local buffer = view:buffer()
+		local line = buffer:line_of(range.head)
+		local text = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+		local id = string.match(text, "%u+%-%d+")
+		return if id then { { kind = "ticket", label = id, value = id } } else nil
+	end,
+})
+
+actions.action({
+	kind = "ticket",
+	name = "open",
+	doc = "Open it in the browser",
+	plugin = "jira",
+	run = function(target)
+		require("@terminal").open_link(`https://example.atlassian.net/browse/{target.value}`)
+	end,
+})
+```
+
+An action that is an existing command has a short form:
+`actions.command("text", "search", "search-selection", "Search for it",
+"core")` (kind, name, command, doc, plugin).
+
+The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
+`problem`, `change`, `button`, `text` (the selection) and `command`, so a
+plugin can add actions to those too. A plugin's finders and actions go
+when it's unloaded.
+
 ## Buffers, views and edits
 
 Positions are byte offsets, lines are counted from 0, and a selection is a

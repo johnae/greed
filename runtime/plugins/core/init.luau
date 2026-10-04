@@ -12,6 +12,7 @@ local search = require("@self/search")
 require("@self/select")
 local jump = require("@self/jump")
 local hints = require("@self/hints")
+local actions = require("@self/actions")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
@@ -186,6 +187,9 @@ greed.keymap.counts("normal")
 greed.keymap.fallback("insert", "insert-char")
 greed.mode.cursor("insert", "bar")
 
+--- A thing to act on, from a finder or a picker item (see actions.luau).
+export type Target = actions.Target
+
 -- Other plugins can use these with `require("@core")`.
 return {
 	text = text,
@@ -207,6 +211,7 @@ return {
 	jumps = jumps,
 	jump = jump,
 	hints = hints,
+	actions = actions,
 	objects = objects,
 	syntax = syntax,
 	words = words,

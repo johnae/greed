@@ -29,6 +29,25 @@ core.buttons.choose = function(buttons, press)
 	end)
 end
 
+greed.command({
+	name = "act",
+	doc = "List what you can do with what's under the cursor (a file, link, symbol, problem, change or the selection), and do it",
+	run = function(ctx)
+		picker.act(core.actions.at(ctx.view))
+	end,
+})
+
+-- Commands, as the command palette lists them.
+core.actions.action({
+	kind = "command",
+	name = "run",
+	doc = "Run it",
+	plugin = "picker",
+	run = function(target)
+		greed.run(target.value)
+	end,
+})
+
 greed.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 -- A picker takes typing; if something leaves it in another mode, esc still
 -- closes it.
@@ -45,6 +64,9 @@ greed.keymap.bind("normal", {
 	["space F"] = "pick-file-here",
 	["space '"] = "picker-resume",
 	["space ?"] = "command-palette",
+	["space ."] = "act",
 })
+-- In edit mode space types, and ctrl-. is the language server's code actions.
+greed.keymap.bind("edit", { ["alt-."] = "act" })
 
 return picker

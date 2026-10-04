@@ -640,6 +640,35 @@ greed.command({
 	end,
 })
 
+-- Links, in terminals and in any text, as things to act on.
+core.actions.finder({
+	name = "link",
+	plugin = "terminal",
+	find = function(view, range)
+		local uri = M.link_at(view:buffer(), range.head)
+		return if uri then { { kind = "link", label = uri, value = uri } } else nil
+	end,
+})
+core.actions.action({
+	kind = "link",
+	name = "open",
+	doc = "Open it with the link-opener",
+	plugin = "terminal",
+	run = function(target)
+		M.open_link(target.value)
+	end,
+})
+core.actions.action({
+	kind = "link",
+	name = "copy",
+	doc = "Copy it",
+	plugin = "terminal",
+	run = function(target)
+		greed.clipboard.set(target.value)
+		greed.echo(`copied {target.value}`)
+	end,
+})
+
 --- Shows `term` in the main view and types into it.
 function M.show(term: Term)
 	local view = greed.view()

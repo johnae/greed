@@ -34,7 +34,7 @@ end
 local function pick_file(title: string, root: string)
 	local items = {}
 	for _, path in greed.files(root) do
-		table.insert(items, { label = path, value = project.path(root, path) })
+		table.insert(items, { label = path, value = project.path(root, path), kind = "file" })
 	end
 	picker.pick(title, items, function(item)
 		greed.open(item.value)
@@ -71,11 +71,11 @@ greed.command({
 	name = "pick-buffer",
 	doc = "Switch to an open file",
 	run = function()
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path then
-				table.insert(items, { label = path, value = path })
+				table.insert(items, { label = path, value = path, kind = "file" })
 			end
 		end
 		picker.pick("Buffers", items, function(item)
@@ -107,7 +107,10 @@ greed.command({
 			if #keys > 0 then
 				label ..= `  ({table.concat(keys, ", ")})`
 			end
-			table.insert(items, { label = `{label}  {command.doc}`, value = command.name })
+			table.insert(
+				items,
+				{ label = `{label}  {command.doc}`, value = command.name, kind = "command" }
+			)
 		end
 		picker.pick("Commands", items, function(item)
 			greed.run(item.value)

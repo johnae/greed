@@ -117,7 +117,10 @@ test("a source follows the query once typing pauses, keeping only the latest ans
 	)
 	t:wait(100)
 	assert(table.concat(asked, ",") == "ab,abc,abcd", table.concat(asked, ","))
-	assert(string.find(greed.view():buffer():text(), " abcd!", 1, true), greed.view():buffer():text())
+	assert(
+		string.find(greed.view():buffer():text(), " abcd!", 1, true),
+		greed.view():buffer():text()
+	)
 end)
 
 test("a picker's own keys don't take over the same keys in later pickers", function(t)
@@ -386,4 +389,28 @@ test("space ' opens the last picker again", function(t)
 	t:expect_mode("insert")
 	assert(current() ~= nil, "the palette is back")
 	t:keys("esc")
+end)
+
+test("space . lists the actions for what's under the cursor, and runs the one chosen", function(t)
+	local dir = t:tempdir({ ["notes.txt"] = "the notes" })
+	t:buffer(`see {dir}/no|tes.txt`)
+	t:keys("space .")
+	local shown = t:floats()[1]
+	assert(shown and string.find(shown, "copy-path", 1, true), shown)
+	t:keys("o p e n enter")
+	assert(greed.view():buffer():text() == "the notes", "opened it")
+end)
+
+test("alt-. in a picker lists the actions for the current item", function(t)
+	t:buffer("|x")
+	t:keys("space ?")
+	t:keys("g o t o - e n d")
+	t:keys("alt-.")
+	local shown = t:floats()[1]
+	assert(shown and string.find(shown, "run  Run it", 1, true), shown)
+	if greed.plugin.dirs().describe then
+		assert(string.find(shown, "describe", 1, true), "the describe plugin adds one: " .. shown)
+	end
+	t:keys("r u n enter")
+	t:expect("x|")
 end)

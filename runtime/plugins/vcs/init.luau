@@ -329,6 +329,47 @@ greed.command({
 	end,
 })
 
+-- The change under the cursor, as a thing to act on.
+core.actions.finder({
+	name = "change",
+	plugin = "vcs",
+	find = function(view, range)
+		local buffer = view:buffer()
+		local line = buffer:line_of(range.head)
+		for _, change in changes(buffer) do
+			local first, last = lines_of(buffer, change)
+			if change.kind == "-" then
+				first = math.max(first - 1, 0)
+			end
+			if first <= line and line <= last then
+				local what = if change.kind == "+"
+					then "added"
+					elseif change.kind == "-" then "removed"
+					else "changed"
+				local label = `{what} line{if last > first then "s" else ""} {first + 1}`
+				return {
+					{
+						kind = "change",
+						label = label,
+						value = change,
+						from = change.from,
+						to = change.to,
+					},
+				}
+			end
+		end
+		return nil
+	end,
+})
+core.actions.command(
+	"change",
+	"revert",
+	"revert-change",
+	"Put it back the way it was at the last commit",
+	"vcs"
+)
+core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when", "vcs")
+
 greed.command({
 	name = "blame-line",
 	doc = "Show who last changed the line under the cursor, and when",
