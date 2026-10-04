@@ -158,6 +158,17 @@ impl UserData for ViewRef {
         add_float_methods(methods);
         add_pane_methods(methods);
         methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
+        methods.add_method("undo_to", |lua, this, node: usize| {
+            let buffer = this.buffer(lua)?;
+            let changed = state_mut(lua)
+                .editor
+                .undo_to(this.id, node)
+                .map_err(mlua::Error::external)?;
+            if changed {
+                buffer_changed(lua, buffer, &this.author)?;
+            }
+            Ok(changed)
+        });
         methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
     }
 }

@@ -839,6 +839,31 @@ impl Editor {
         self.history_step(view, Buffer::redo)
     }
 
+    /// Takes `view`'s buffer to node `target` of its undo tree, undoing up
+    /// to where the two paths meet and redoing down the other branch, which
+    /// redo follows from then on. Returns false if there's no such node or
+    /// the text is there already.
+    pub fn undo_to(&mut self, view: ViewId, target: usize) -> Result<bool, Error> {
+        let id = self.view(view).buffer;
+        let Some((up, down)) = self.buffers[&id].history().path_to(target) else {
+            return Ok(false);
+        };
+        if up == 0 && down.is_empty() {
+            return Ok(false);
+        }
+        for _ in 0..up {
+            self.undo(view)?;
+        }
+        for node in down {
+            self.buffers
+                .get_mut(&id)
+                .expect("view's buffer exists")
+                .prefer_branch(node);
+            self.redo(view)?;
+        }
+        Ok(true)
+    }
+
     /// Starts grouping edits into one undo step, e.g. for an insert mode
     /// session. Does nothing if a group is already open.
     pub fn start_group(&mut self) {

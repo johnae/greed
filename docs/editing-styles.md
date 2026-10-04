@@ -81,6 +81,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `p P` | Paste after or before |
 | `i a I A o O`, `g i` | Insert; with a count (`3 i`) what you type goes in that many times; `g i` where you last stopped typing |
 | `u` `ctrl-r` `U` | Undo, redo, put back the last changed line |
+| `g -` `g +` | Back or on through every state of the text, across undo branches (`space u t` shows them all) |
 | `v` `V` `ctrl-v` | Visual mode, by character, line or block; `i`/`a` there select a text object |
 | `o` `r` `J` `p` in visual mode | Go to the other end, replace every character, join the lines, paste over the selection |
 | `g v` `g n` | Select the last visual selection again, or the next search match (`c g n` then `.` changes match after match) |

@@ -200,6 +200,12 @@ greed.history.undo_group(group) -- every buffer back, or nil and why not
 Undoing a group refuses, and changes nothing, when something was done on
 top of it in one of the buffers since.
 
+Undo keeps every branch. `buffer:undo_tree()` gives every state the text
+has been in, `{ nodes = { { id, parent, children, time } }, current }`,
+where node 0 is the text as loaded and undo goes to a node's parent; and
+`view:undo_to(id)` takes the text to any of them, on any branch, which is
+what `alt-u` and the `undo-tree` plugin's viewer are built on.
+
 The `operations` plugin builds on groups: it names the work, remembers the
 files it changed and the programs it ran, and gives it a review and an
 undo key.

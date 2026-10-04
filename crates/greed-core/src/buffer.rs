@@ -263,6 +263,11 @@ impl Buffer {
         &self.history
     }
 
+    /// Makes redo follow undo-tree node `child` (see `History::prefer`).
+    pub(crate) fn prefer_branch(&mut self, child: usize) {
+        self.history.prefer(child);
+    }
+
     /// True if the text changed since it was loaded or last saved.
     pub fn is_modified(&self) -> bool {
         self.version != self.saved

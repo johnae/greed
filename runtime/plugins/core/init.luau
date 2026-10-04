@@ -13,6 +13,7 @@ require("@self/select")
 local jump = require("@self/jump")
 local hints = require("@self/hints")
 local actions = require("@self/actions")
+require("@self/undo")
 require("@self/reload")
 require("@self/stalls")
 require("@self/secrets")
@@ -138,6 +139,8 @@ greed.keymap.bind("normal", {
 	["alt-."] = "repeat-find",
 	["ctrl-a"] = "increment",
 	["ctrl-x"] = "decrement",
+	["alt-u"] = "earlier",
+	["alt-U"] = "later",
 	["ctrl-h"] = "selection-undo",
 	["ctrl-k"] = "selection-redo",
 	["space c"] = "toggle-comment",

@@ -125,6 +125,8 @@ export type Buffer = {
 	--- The text as it was before transaction `id`, or nil if the buffer has none by
 	--- that id.
 	text_before: (self: Buffer, id: number) -> string?,
+	--- The undo tree: every state the text has been in, from node 0 (as it was loaded) on, each with the step before it as `parent`; undo goes to the parent and redo to the last child. `current` is the node the text is at.
+	undo_tree: (self: Buffer) -> { nodes: { UndoNode }, current: number },
 }
 
 --- A node in a buffer's syntax tree, from `buffer:tree()`, `buffer:node_at()` or
@@ -246,6 +248,8 @@ export type View = {
 	resize: (self: View, dir: "left" | "right" | "up" | "down", cells: number) -> boolean,
 	--- Undoes the last change. Returns false if there was nothing to undo.
 	undo: (self: View) -> boolean,
+	--- Takes the buffer to node `id` of its undo tree, undoing and redoing on the way, as one move; redo follows that branch from then on. False if there's no such node or the text is there already.
+	undo_to: (self: View, id: number) -> boolean,
 	redo: (self: View) -> boolean,
 }
 
@@ -535,6 +539,17 @@ export type TerminalOutput = {
 export type TerminalExited = {
 	terminal: Terminal,
 	code: number,
+}
+
+--- A state of a buffer's text in its undo tree, from `buffer:undo_tree()`.
+export type UndoNode = {
+	--- 0 is the text as loaded; later states have higher ids.
+	id: number,
+	parent: number?,
+	--- Oldest first; redo follows the last.
+	children: { number },
+	--- When the step was last added to, in seconds like `os.time()`; nil for node 0.
+	time: number?,
 }
 
 --- A transaction applied to a buffer, from `buffer:history()`.

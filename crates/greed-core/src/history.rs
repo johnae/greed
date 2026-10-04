@@ -5,6 +5,8 @@
 //! new transactions (with cause `"undo"` / `"redo"`) and move a pointer in
 //! the tree.
 
+use std::time::SystemTime;
+
 use greed_text::{Author, ChangeSet, Rope, Selection, Transaction, TxId};
 
 #[derive(Debug)]
@@ -29,6 +31,21 @@ struct Node {
     before: Selection,
     after: Selection,
     group: Option<u64>,
+    /// When it was last added to: the step's latest transaction. The root,
+    /// the buffer as loaded, has none.
+    time: Option<SystemTime>,
+}
+
+/// A node of the undo tree, as `History::tree` shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeNode {
+    /// Its index; 0 is the root, the buffer as it was loaded, and later
+    /// steps have higher ones.
+    pub id: usize,
+    pub parent: Option<usize>,
+    /// Oldest first; redo follows the last.
+    pub children: Vec<usize>,
+    pub time: Option<SystemTime>,
 }
 
 /// Where a group stands in a buffer's undo tree.
@@ -63,6 +80,7 @@ impl Default for History {
                 before: Selection::point(0),
                 after: Selection::point(0),
                 group: None,
+                time: None,
             }],
             current: 0,
         }
@@ -130,6 +148,7 @@ impl History {
         after: Selection,
     ) {
         let group = tx.meta.group;
+        let time = Some(tx.meta.time);
         let index = self.nodes.len();
         let node = &mut self.nodes[self.current];
         let merge =
@@ -143,6 +162,7 @@ impl History {
                 .compose(std::mem::take(&mut node.inverse))
                 .expect("inverse applies before this node's inverse");
             node.after = after;
+            node.time = time;
         } else {
             node.children.push(index);
             self.nodes.push(Node {
@@ -153,6 +173,7 @@ impl History {
                 before,
                 after,
                 group,
+                time,
             });
             self.current = index;
         }
@@ -192,6 +213,65 @@ impl History {
     pub(crate) fn move_down(&mut self) {
         if let Some(&child) = self.nodes[self.current].children.last() {
             self.current = child;
+        }
+    }
+
+    /// The undo tree's nodes, by id.
+    pub fn tree(&self) -> Vec<TreeNode> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(id, node)| TreeNode {
+                id,
+                parent: (id != 0).then_some(node.parent),
+                children: node.children.clone(),
+                time: node.time,
+            })
+            .collect()
+    }
+
+    /// The node the text is at now.
+    pub fn current(&self) -> usize {
+        self.current
+    }
+
+    /// How to get from the current node to `target`: how many undos up to
+    /// where their paths meet, then the nodes to redo down to it. `None` if
+    /// there's no such node.
+    pub fn path_to(&self, target: usize) -> Option<(usize, Vec<usize>)> {
+        if target >= self.nodes.len() {
+            return None;
+        }
+        let ancestors = |mut node: usize| {
+            let mut chain = vec![node];
+            while node != 0 {
+                node = self.nodes[node].parent;
+                chain.push(node);
+            }
+            chain
+        };
+        let from = ancestors(self.current);
+        let mut down = Vec::new();
+        let mut node = target;
+        let up = loop {
+            if let Some(up) = from.iter().position(|&n| n == node) {
+                break up;
+            }
+            down.push(node);
+            node = self.nodes[node].parent;
+        };
+        down.reverse();
+        Some((up, down))
+    }
+
+    /// Makes redo from `child`'s parent follow `child`, as it does after
+    /// going down that branch.
+    pub(crate) fn prefer(&mut self, child: usize) {
+        let parent = self.nodes[child].parent;
+        let children = &mut self.nodes[parent].children;
+        if let Some(at) = children.iter().position(|&c| c == child) {
+            let child = children.remove(at);
+            children.push(child);
         }
     }
 }

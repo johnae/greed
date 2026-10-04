@@ -1,6 +1,7 @@
 //! A buffer's history for plugins: `buffer:history(filter)` lists the
 //! transactions applied to it, newest first, and `buffer:text_before(id)`
-//! gives the text as it was before one of them.
+//! gives the text as it was before one of them. `buffer:undo_tree()` shows
+//! the undo tree, and `view:undo_to(node)` goes to a node of it.
 
 use std::time::UNIX_EPOCH;
 
@@ -38,6 +39,27 @@ pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 .find(|tx| tx.meta.id.seq == id)
                 .and_then(|tx| history.text_before(b.text(), tx.meta.id))
                 .map(|text| text.to_string()))
+        })
+    });
+    methods.add_method("undo_tree", |lua, this, ()| {
+        this.with_buffer(lua, |b| {
+            let history = b.history();
+            let nodes = lua.create_table()?;
+            for node in history.tree() {
+                let entry = lua.create_table()?;
+                entry.set("id", node.id)?;
+                entry.set("parent", node.parent)?;
+                entry.set("children", node.children)?;
+                if let Some(time) = node.time {
+                    let since = time.duration_since(UNIX_EPOCH).unwrap_or_default();
+                    entry.set("time", since.as_secs_f64())?;
+                }
+                nodes.push(entry)?;
+            }
+            let tree = lua.create_table()?;
+            tree.set("nodes", nodes)?;
+            tree.set("current", history.current())?;
+            Ok(tree)
         })
     });
 }

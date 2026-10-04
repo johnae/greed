@@ -192,6 +192,8 @@ There is always a selection; a cursor is a selection one character wide.
 | `"` + a letter | Use that register for the next copy, paste, delete or macro, instead of the clipboard |
 | `Q` `q` | Start or stop recording a macro, play it (`3 q` three times) |
 | `u` `U` | Undo, redo |
+| `alt-u` `alt-U` | Back or on through every state the text has been in, in the order it was made, including what an undo followed by an edit left on another branch |
+| `space u t` | The undo tree: every state and branch; moving takes the text there, `enter` keeps it, `esc` goes back |
 | `.` | Repeat the last change at the selections, with what it typed (`3 .` with a new count) |
 | `esc` | Back to normal mode |
 
