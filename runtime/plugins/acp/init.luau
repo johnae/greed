@@ -19,6 +19,8 @@ local picker = require("@picker")
 local vcs = require("@vcs")
 local session = require("@self/session")
 local transcript = require("@self/transcript")
+local participants = require("@self/participants")
+local statusline = require("@statusline")
 
 type Session = session.Session
 
@@ -171,6 +173,7 @@ local function changed(s: Session)
 			pcall(transcript.render, buffer, s)
 		end
 		render_overviews()
+		participants.draw(sessions)
 	end)
 end
 
@@ -370,6 +373,7 @@ function M.close(s: Session)
 		buffer:set_kept(false)
 	end
 	render_overviews()
+	participants.draw(sessions)
 end
 
 -- The overview ---------------------------------------------------------------
@@ -695,6 +699,22 @@ greed.command({
 		end
 	end,
 })
+
+-- A file opened while an agent works in it shows where at once.
+greed.on("buffer.opened", function()
+	participants.draw(sessions)
+end)
+
+--- How many agents work and wait for you, as the status line shows it;
+--- nil when none do.
+function M.status(): string?
+	return participants.status(sessions)
+end
+
+statusline.add("right", "agents", function()
+	local text = M.status()
+	return if text then { text = text, style = "ui.statusline.message" } else nil
+end, "position")
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	overviews[event.id] = nil

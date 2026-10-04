@@ -222,6 +222,27 @@ test("policies answer questions for you; rules added later come first", function
 	remove()
 end)
 
+test("where an agent works shows in your file and the status line while it works", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	local file = greed.load(dir .. "/a.txt")
+	local s = start(t, dir)
+	assert(acp.status() == nil, "nothing to say while it's idle")
+	send(t, s, "edit a.txt")
+	local marks = file:decorations("agents")
+	assert(#marks == 1, "a mark in the file it works on")
+	assert(marks[1].sign == "◆" and marks[1].eol, "a sign and a note at the end of the line")
+	assert(marks[1].text == "  ◆ Fake: waiting for you", tostring(marks[1].text))
+	assert(acp.status() == "◆ 1 waiting for you", tostring(acp.status()))
+	t:keys("alt-p y")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(30)
+	assert(#file:decorations("agents") == 0, "gone once it's done")
+	assert(acp.status() == nil)
+	acp.close(s)
+end)
+
 test("an agent that isn't installed says how it would run", function(t)
 	local s, err = acp.start(
 		{ name = "nope", commands = { { "no-such-agent-here", "--acp" } } },

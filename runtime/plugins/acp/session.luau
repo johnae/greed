@@ -63,6 +63,8 @@ export type Session = {
 	status: Status,
 	--- The tool call running now, if any.
 	tool: string?,
+	--- The file it works in now, and the line (from 1) when it says.
+	where: { path: string, line: number? }?,
 	entries: { Entry },
 	tools: { [string]: Tool },
 	conn: rpc.Conn?,
@@ -165,6 +167,11 @@ end
 -- Applies one session/update notification.
 local function update(session: Session, u: any)
 	local kind = u.sessionUpdate
+	-- Tool calls say which files they touch.
+	local place = type(u.locations) == "table" and u.locations[1]
+	if place and type(place.path) == "string" then
+		session.where = { path = place.path, line = place.line }
+	end
 	if kind == "agent_message_chunk" then
 		append(session, "agent", text_of(u.content))
 	elseif kind == "agent_thought_chunk" then
@@ -293,6 +300,7 @@ local function handlers(session: Session): rpc.Handlers
 	end
 
 	h["fs/read_text_file"] = function(params: any): (any, string?)
+		session.where = { path = params.path, line = params.line }
 		local buffer = open_buffer(params.path)
 		local text: string? = if buffer then buffer:text() else greed.fs.read(params.path)
 		if text == nil then
@@ -308,6 +316,7 @@ local function handlers(session: Session): rpc.Handlers
 	end
 
 	h["fs/write_text_file"] = function(params: any): (any, string?)
+		session.where = { path = params.path }
 		-- An open file is edited as you would, so undo takes it back.
 		local buffer = open_buffer(params.path)
 		if buffer then

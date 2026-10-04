@@ -122,6 +122,12 @@ Agents also get Greed's own tools, the ones `greed mcp` offers above
 (diagnostics, outlines, `syntax_query`, `propose`, ...), connected to this
 session. `:set agent-greed-tools false` leaves them out.
 
+While an agent works you see where: the line it's on in an open file gets
+a `◆` beside it and the agent's name and what it's doing at the end, in a
+colour of its own (an agent in a workspace shows on your copy of the
+file). The status line says how many agents are working and how many wait
+for you.
+
 `alt-m` picks the mode the agent works in, when it has modes (Claude Code
 has Manual, Accept edits and Plan); the transcript's first line shows the
 one it's in.

@@ -59,7 +59,7 @@ while IFS= read -r line; do
 			;;
 		edit*)
 			file=${text#edit }
-			update "{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"t1\",\"title\":\"Edit $file\",\"kind\":\"edit\",\"status\":\"pending\"}"
+			update "{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"t1\",\"title\":\"Edit $file\",\"kind\":\"edit\",\"status\":\"pending\",\"locations\":[{\"path\":\"$cwd/$file\",\"line\":1}]}"
 			send "{\"jsonrpc\":\"2.0\",\"id\":900,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"t1\"},\"options\":[{\"optionId\":\"yes\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"no\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
 			await 900
 			case "$reply" in
