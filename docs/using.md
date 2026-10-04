@@ -439,8 +439,29 @@ the working copy's parent, so the signs show what your current change does.
 | `space g b` | Who last changed this line, and when |
 | `space g g` | Pick a file changed since the last commit |
 | `space g s` (`:changes`) | Every change in the project, in one buffer |
+| `space g l` (`:change-stack`) | The change stack: describe, squash, move and abandon changes |
 
 `:set vcs-signs false` hides the signs.
+
+`space g l` lists your changes with jj, newest first: from the working
+copy (`@`) down to the last immutable change (`◆`), with their bookmarks
+and descriptions. On the change under the cursor:
+
+| Keys | |
+|---|---|
+| `enter` | Show its diff; `q` goes back |
+| `d` | Describe it |
+| `n` | Start a new change on top of it |
+| `e` | Make it the working copy, to edit it |
+| `s` | Squash it into its parent, keeping the parent's description |
+| `a` | Abandon it, after asking |
+| `alt-k` `alt-j` | Move it up or down the stack |
+| `u` | Undo the last jj operation |
+| `r` | Read the stack again |
+| `q` | Close it |
+| `?` | A menu of these keys |
+
+In a git repository it lists the last 30 commits, and `enter` shows one.
 
 `space g s` shows each change since the last commit, in every file, with a
 couple of lines around it: added lines in green, and removed ones in red

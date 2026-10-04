@@ -17,6 +17,7 @@ local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
 local repos = require("@self/repo")
+require("@self/stack")
 
 type Repo = repos.Repo
 local repo_of, absolute, locate, vcs = repos.repo_of, repos.absolute, repos.locate, repos.run
@@ -560,6 +561,7 @@ greed.command({
 
 greed.keymap.bind("normal", {
 	["space g s"] = "changes",
+	["space g l"] = "change-stack",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
 	["] G"] = "last-change",
