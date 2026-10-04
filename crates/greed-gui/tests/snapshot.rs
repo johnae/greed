@@ -385,7 +385,7 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
 }
 
 #[test]
-fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
+fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;
     };
@@ -401,11 +401,22 @@ fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
             ..Style::default()
         }),
     );
+    theme.set(
+        "cap",
+        Entry::new(Style {
+            fg: Some(Color::Rgb(0xb5, 0xbd, 0x68)),
+            ..Style::default()
+        }),
+    );
     frame.theme = Arc::new(theme);
     let status = frame.rows.len() - 1;
+    // A pill as the status line plugin makes one: round ends from a
+    // Powerline font around the mode.
     frame.rows[status] = Row {
         spans: vec![
+            Span::new("\u{e0b6}", [Tag::from("cap")].into_iter().collect()),
             Span::new(" NORMAL ", [Tag::MODE].into_iter().collect()),
+            Span::new("\u{e0b4}", [Tag::from("cap")].into_iter().collect()),
             Span::new(" main.rs", SmallVec::default()),
         ],
         tags: [Tag::STATUS].into_iter().collect(),
@@ -431,9 +442,20 @@ fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
     }
     let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
     let green = [0xb5, 0xbd, 0x68];
-    // The mode is a pill: its middle is green, its very corner isn't.
-    assert_eq!(at(4.0, status as f32 + 0.5)[..3], green);
-    assert_ne!(at(0.0, status as f32 + 0.05)[..3], green, "a rounded end");
+    // The ends are half circles: green in the middle of their cells, not
+    // in their outer corners.
+    assert_eq!(at(0.9, status as f32 + 0.5)[..3], green);
+    assert_ne!(
+        at(0.05, status as f32 + 0.05)[..3],
+        green,
+        "a round left end"
+    );
+    assert_eq!(at(9.1, status as f32 + 0.5)[..3], green);
+    assert_ne!(
+        at(9.95, status as f32 + 0.95)[..3],
+        green,
+        "a round right end"
+    );
     // The float's box goes through the middle of its border cells, rounded:
     // the border's outer corner shows what's under it.
     let corner = at(25.05, 3.05);
@@ -444,7 +466,7 @@ fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
         shade[..3].iter().zip(&palette.bg).all(|(s, b)| s < b),
         "shadow under the float: {shade:?}"
     );
-    // Turned off, there are no shadows or pills, and the box lines come back.
+    // Turned off, there are no shadows, and the box lines come back.
     frame
         .gui
         .insert("gui-shadows".to_owned(), "false".to_owned());
@@ -452,5 +474,5 @@ fn floats_are_rounded_boxes_with_shadows_and_the_status_line_has_pills() {
         .gui
         .insert("gui-rounded".to_owned(), "false".to_owned());
     let chrome = Chrome::of(&frame);
-    assert!(!chrome.rounded && !chrome.shadows && chrome.status.is_none());
+    assert!(!chrome.rounded && !chrome.shadows);
 }

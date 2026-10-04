@@ -84,14 +84,12 @@ fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
 }
 
 /// What the window draws besides the grid's cells: images, and the floats
-/// and status line it gives a look of its own.
+/// it gives a look of its own.
 #[derive(Debug, Default)]
 pub struct Chrome<'a> {
     pub images: &'a [ImagePlacement],
     /// Each float's text, which its border goes around one cell out.
     pub floats: Vec<Rect>,
-    /// The status line's row, to draw with its parts as pills.
-    pub status: Option<usize>,
     /// Floats with rounded corners and an outline instead of box lines.
     pub rounded: bool,
     /// Floats casting a soft shadow on what's under them.
@@ -103,12 +101,10 @@ impl<'a> Chrome<'a> {
     /// `gui-shadows` options say (both on unless "false").
     pub fn of(frame: &'a Frame) -> Self {
         let on = |name: &str| frame.gui.get(name).is_none_or(|v| v != "false");
-        let rounded = on("gui-rounded");
         Chrome {
             images: &frame.images,
             floats: frame.floats.iter().map(|f| f.rect).collect(),
-            status: frame.rows.len().checked_sub(1).filter(|_| rounded),
-            rounded,
+            rounded: on("gui-rounded"),
             shadows: on("gui-shadows"),
         }
     }
@@ -157,7 +153,7 @@ pub fn build(
     let regions = regions(grid, chrome);
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
-        backgrounds(&looks, &regions, pass, chrome.status, size, background, out);
+        backgrounds(&looks, &regions, pass, size, background, out);
     };
     fill(Pass::Under, &mut instances);
     let rounded = chrome.rounded;
@@ -262,9 +258,19 @@ fn text_row(
         let l = looks[x];
         let k = f32::from(cell.scale.max(1));
         let mut chars = cell.text.chars();
-        if let (Some(c), None) = (chars.next(), chars.next())
-            && let Some(rects) = boxdraw::rects(c, cw * k, ch * k)
+        let one = match (chars.next(), chars.next()) {
+            (Some(c), None) => Some(c),
+            _ => None,
+        };
+        if let Some(cap) = one.and_then(|c| round_cap(c, x as f32 * cw, top, cw * k, ch * k, l.fg))
         {
+            if let Some(done) = run.take() {
+                shape_run(&done, looks, baseline, fonts, atlas, out)?;
+            }
+            out.push(cap);
+            continue;
+        }
+        if let Some(rects) = one.and_then(|c| boxdraw::rects(c, cw * k, ch * k)) {
             if let Some(done) = run.take() {
                 shape_run(&done, looks, baseline, fonts, atlas, out)?;
             }
@@ -530,14 +536,11 @@ impl Pass {
     }
 }
 
-/// The backgrounds `pass` draws, a rectangle for each run of one color. On
-/// the status line, each part with a color of its own is a pill on the
-/// line's color.
+/// The backgrounds `pass` draws, a rectangle for each run of one color.
 fn backgrounds(
     looks: &[Vec<Look>],
     regions: &[Vec<Region>],
     pass: Pass,
-    status: Option<usize>,
     (cw, ch): (f32, f32),
     background: Rgba,
     out: &mut Vec<Instance>,
@@ -552,32 +555,26 @@ fn backgrounds(
                 _ => None,
             })
             .collect();
-        let pills = status == Some(y);
-        // The status line's own color is the one most of it has.
-        let line = pills
-            .then(|| {
-                bgs.chunk_by(|a, b| a == b)
-                    .max_by_key(|run| run.len())
-                    .and_then(|run| run[0])
-            })
-            .flatten();
-        if let Some(line) = line {
-            out.push(rect(0.0, top, bgs.len() as f32 * cw, ch, line));
-        }
         let mut x = 0;
         for same in bgs.chunk_by(|a, b| a == b) {
             let (left, w) = (x as f32 * cw, same.len() as f32 * cw);
             x += same.len();
-            let Some(bg) = same[0].filter(|&bg| Some(bg) != line) else {
-                continue;
-            };
-            if pills {
-                let inset = (ch / 10.0).round();
-                let h = ch - 2.0 * inset;
-                out.push(rounded(left, top + inset, w, h, h / 2.0, 0.0, bg));
-            } else {
+            if let Some(bg) = same[0] {
                 out.push(rect(left, top, w, ch, bg));
             }
         }
+    }
+}
+
+/// The round ends Powerline fonts have for pills (U+E0B6 on the left, U+E0B4
+/// on the right) as half circles in `color`, drawn crisp at any size rather
+/// than from whatever font has them. The box reaches into the cell beside,
+/// the pill's own, which is the same color.
+fn round_cap(c: char, x: f32, top: f32, cw: f32, ch: f32, color: Rgba) -> Option<Instance> {
+    let radius = cw.min(ch / 2.0);
+    match c {
+        '\u{e0b6}' => Some(rounded(x, top, 2.0 * cw, ch, radius, 0.0, color)),
+        '\u{e0b4}' => Some(rounded(x - cw, top, 2.0 * cw, ch, radius, 0.0, color)),
+        _ => None,
     }
 }

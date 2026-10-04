@@ -18,7 +18,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "gui-rounded",
-	doc = "Floats in the window as boxes with rounded corners and the status line's parts as pills",
+	doc = "Floats in the window as boxes with rounded corners",
 	default = true,
 })
 

@@ -71,9 +71,10 @@ greed.option.set("gui-font-size", 14) -- pixels, before the screen's scale
 ```
 
 Floats (pickers, prompts, hover info) show as boxes with rounded corners
-and a soft shadow, and the status line's parts as pills.
-`greed.option.set("gui-rounded", false)` brings back square corners and
-box lines, and `gui-shadows` turns the shadows off.
+and a soft shadow. `greed.option.set("gui-rounded", false)` brings back
+square corners and box lines, and `gui-shadows` turns the shadows off. The
+window draws the round ends of the status line's pills itself, so they need
+no Powerline font.
 
 ## Projects
 
