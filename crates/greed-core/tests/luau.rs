@@ -1642,3 +1642,33 @@ fn waiting_calls_refuse_to_run_where_they_would_hold_up_the_editor() {
         );
     }
 }
+
+#[test]
+fn marks_can_scale_text_up_from_one_to_four_times() {
+    let h = host("# Big");
+    h.eval(
+        "require('@greed').view():buffer():decorate('rich', { { from = 0, to = 5, style = 'markup.heading', scale = 2 } })",
+    )
+    .unwrap();
+    h.with_editor(|ed| {
+        let marks = ed.buffer(ed.view(ed.focus()).buffer).marks("rich");
+        assert_eq!(marks[0].scale, 2);
+    });
+    assert_eq!(
+        h.eval("return require('@greed').view():buffer():decorations('rich')[1].scale")
+            .unwrap(),
+        "2"
+    );
+    for bad in ["0", "5", "1.5", "'big'"] {
+        let err = h
+            .eval(&format!(
+                "require('@greed').view():buffer():decorate('rich', {{ {{ from = 0, to = 1, style = 'x', scale = {bad} }} }})"
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("scale is a whole number from 1 to 4"),
+            "{bad}: {err}"
+        );
+    }
+}

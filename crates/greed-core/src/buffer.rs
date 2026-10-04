@@ -75,6 +75,10 @@ pub struct Mark {
     /// A command that clicking the mark's `text` runs, with the cursor put
     /// at the start of the range first, like a button.
     pub action: Option<Arc<str>>,
+    /// How many times bigger the range's text (and the mark's `text`) is:
+    /// each character takes that many cells across, and its row that many
+    /// rows down. 0 and 1 are the normal size.
+    pub scale: u8,
 }
 
 /// A line a mark shows under the text: drawn in the mark's style, with

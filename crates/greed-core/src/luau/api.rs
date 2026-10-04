@@ -1287,7 +1287,7 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
             if let Some(style) = style {
                 tags.push(Tag::from(style.as_str()));
             }
-            Ok(Span { text, tags })
+            Ok(Span::new(text, tags))
         })
         .collect()
 }

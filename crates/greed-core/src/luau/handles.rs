@@ -499,6 +499,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         .map(|i| mark_image_from_lua(&i))
                         .transpose()?,
                     action: t.get::<Option<String>>("action")?.map(Into::into),
+                    scale: scale_from_lua(t.get("scale"))?,
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -529,6 +530,17 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     });
 }
 
+/// A mark's `scale`: 1 when not given, else a whole number from 1 to 4.
+fn scale_from_lua(value: LuaResult<Option<f64>>) -> LuaResult<u8> {
+    let invalid = || mlua::Error::runtime("a mark's scale is a whole number from 1 to 4");
+    match value.map_err(|_| invalid())? {
+        None => Ok(1),
+        Some(n) => (1..=4)
+            .find(|&k| (f64::from(k) - n).abs() < f64::EPSILON)
+            .ok_or_else(invalid),
+    }
+}
+
 /// A mark as the table plugins give `decorate`.
 fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     let t = lua.create_table()?;
@@ -544,6 +556,9 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("conceal", mark.conceal)?;
     t.set("fold", mark.fold)?;
     t.set("action", mark.action.as_deref())?;
+    if mark.scale > 1 {
+        t.set("scale", mark.scale)?;
+    }
     if !mark.lines.is_empty() {
         let lines = lua.create_table()?;
         for line in &mark.lines {

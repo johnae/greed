@@ -196,6 +196,8 @@ export type Mark = {
 	--- A command that clicking `text` runs, with the cursor put at `from`
 	--- first, so the text works as a button, e.g. "proposal-accept".
 	action: string?,
+	--- How many times bigger the range's text (and `text`) is, 1 to 4, e.g. 2 for a heading: each character takes that many cells across, and its row that many rows down. In the window it's drawn big; terminals show it at the normal size.
+	scale: number?,
 }
 
 --- A buffer shown on screen, with its own selection.

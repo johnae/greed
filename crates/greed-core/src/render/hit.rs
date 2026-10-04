@@ -159,7 +159,10 @@ impl<M: Measure> Renderer<M> {
                 .into_iter()
                 .skip(skip)
             {
-                if row == usize::from(y) {
+                // A scaled row takes more than one screen row; any of them
+                // finds it.
+                let height = super::row_height(&cells);
+                if (row..row + height).contains(&usize::from(y)) {
                     let mut left = 0;
                     let mut last = None;
                     for cell in cells.iter().filter(|c| c.inserted.is_none()) {
@@ -171,7 +174,7 @@ impl<M: Measure> Renderer<M> {
                     }
                     return last;
                 }
-                row += 1;
+                row += height;
             }
             row += super::virtual_lines(editor, view, line).count();
             if row > usize::from(y) {

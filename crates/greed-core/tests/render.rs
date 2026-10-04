@@ -301,10 +301,7 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
 
 #[test]
 fn plugin_status_lines_are_padded_and_trimmed() {
-    let span = |text: &str, tag: Tag| Span {
-        text: text.into(),
-        tags: [tag].into_iter().collect(),
-    };
+    let span = |text: &str, tag: Tag| Span::new(text, [tag].into_iter().collect());
     let line = StatusLine {
         left: vec![
             span(" N ", Tag::MODE),
@@ -964,4 +961,135 @@ fn image_marks_place_their_image_cut_to_the_view() {
     ed.view_mut(main).selection = greed_text::Selection::point(line(7));
     ed.view_mut(main).scroll = Scroll { line: 5, row: 0 };
     assert_eq!(placed(&mut ed), []);
+}
+
+/// `ranges` of the focused buffer drawn `scale` times bigger.
+fn scaled(ed: &mut Editor, ranges: &[(std::ops::Range<usize>, u8)]) {
+    use greed_core::Mark;
+    let buffer = ed.view(ed.focus()).buffer;
+    let marks = ranges
+        .iter()
+        .map(|(range, scale)| Mark {
+            range: range.clone(),
+            style: "markup.heading".into(),
+            scale: *scale,
+            ..Mark::default()
+        })
+        .collect();
+    ed.decorate(buffer, "rich", marks);
+}
+
+/// Each row's spans as (text, scale), without the gutter.
+fn scales(row: &Row) -> Vec<(String, u8)> {
+    row.spans
+        .iter()
+        .filter(|s| !s.tags.contains(&Tag::GUTTER))
+        .map(|s| (s.text.clone(), s.scale))
+        .collect()
+}
+
+#[test]
+fn scaled_text_takes_that_many_cells_across_and_rows_down() {
+    let mut ed = editor("|# Big\nnext");
+    scaled(&mut ed, &[(0..5, 2)]);
+    let f = frame(&mut ed, 20, 5);
+    assert_eq!(rows(&f), ["1 # Big", "", "2 next", ""]);
+    assert_eq!(scales(&f.rows[0]), [("# Big".to_owned(), 2)]);
+    assert_eq!(f.rows[0].covers, 1, "the row below is part of it");
+    assert_eq!(f.rows[1].covers, 0);
+    assert_eq!(f.rows[2].covers, 0);
+}
+
+#[test]
+fn sizes_mix_in_a_line_and_the_row_is_as_tall_as_the_largest() {
+    let mut ed = editor("|ab cd");
+    scaled(&mut ed, &[(0..2, 3)]);
+    let f = frame(&mut ed, 20, 5);
+    assert_eq!(
+        scales(&f.rows[0]),
+        [("ab".to_owned(), 3), (" cd".to_owned(), 1)]
+    );
+    assert_eq!(f.rows[0].covers, 2);
+    assert_eq!(rows(&f), ["1 ab cd", "", "", ""]);
+}
+
+#[test]
+fn scaled_text_wraps_by_the_cells_it_takes() {
+    // Eight cells of text: four characters at twice the size.
+    let mut ed = editor("|abcdefgh");
+    scaled(&mut ed, &[(0..8, 2)]);
+    let f = frame(&mut ed, 10, 5);
+    assert_eq!(rows(&f), ["1 abcd", "", "  efgh", ""]);
+    assert_eq!((f.rows[0].covers, f.rows[2].covers), (1, 1));
+}
+
+#[test]
+fn scrolling_counts_the_rows_scaled_lines_take() {
+    let text = "one\ntwo\nthree\nfour\nfive";
+    let mut ed = editor(&format!("{text}|"));
+    let ranges: Vec<_> = [0..3, 4..7, 8..13, 14..18, 19..23]
+        .into_iter()
+        .map(|r| (r, 2))
+        .collect();
+    scaled(&mut ed, &ranges);
+    let f = frame(&mut ed, 20, 5);
+    assert_eq!(rows(&f), ["4 four", "", "5 five", ""]);
+    assert_eq!(f.cursor.map(|c| c.row), Some(2));
+    assert_eq!(ed.view(ed.focus()).scroll, Scroll { line: 3, row: 0 });
+}
+
+#[test]
+fn the_mouse_finds_scaled_text_in_any_of_its_cells() {
+    let mut ed = editor("|ab\ncd");
+    scaled(&mut ed, &[(0..2, 2)]);
+    let renderer = Renderer::new(CellWidth);
+    renderer.frame(
+        &mut ed,
+        Size {
+            width: 20,
+            height: 5,
+        },
+        &Status::Default { message: None },
+        &Plain,
+    );
+    let view = ed.focus();
+    // "a" takes text cells 0-1 and "b" 2-3, on rows 0 and 1.
+    assert_eq!(renderer.byte_at(&ed, view, 1, 0), Some(0));
+    assert_eq!(renderer.byte_at(&ed, view, 2, 1), Some(1));
+    assert_eq!(renderer.byte_at(&ed, view, 0, 2), Some(3), "the next line");
+}
+
+#[test]
+fn a_scaled_button_is_clicked_on_any_row_it_takes() {
+    use greed_core::Mark;
+    let mut ed = editor("|x");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "rich",
+        vec![Mark {
+            range: 0..0,
+            style: "button".into(),
+            text: Some("go".into()),
+            action: Some("run-it".into()),
+            scale: 2,
+            ..Mark::default()
+        }],
+    );
+    let renderer = Renderer::new(CellWidth);
+    renderer.frame(
+        &mut ed,
+        Size {
+            width: 20,
+            height: 5,
+        },
+        &Status::Default { message: None },
+        &Plain,
+    );
+    // "1 " is the gutter, then "go" takes columns 2-5 on rows 0 and 1.
+    for row in [0, 1] {
+        let hit = renderer.hit(&ed, 3, row);
+        assert_eq!(hit.action.as_deref(), Some("run-it"), "row {row}");
+    }
+    assert_eq!(renderer.hit(&ed, 3, 2).action, None);
 }

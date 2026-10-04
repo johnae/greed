@@ -28,16 +28,18 @@ fn row(spans: &[(&str, &str)]) -> Row {
     Row {
         spans: spans
             .iter()
-            .map(|(text, tag)| Span {
-                text: (*text).to_owned(),
-                tags: if tag.is_empty() {
-                    SmallVec::default()
-                } else {
-                    [Tag::from(*tag)].into_iter().collect()
-                },
+            .map(|(text, tag)| {
+                Span::new(
+                    *text,
+                    if tag.is_empty() {
+                        SmallVec::default()
+                    } else {
+                        [Tag::from(*tag)].into_iter().collect()
+                    },
+                )
             })
             .collect(),
-        tags: SmallVec::default(),
+        ..Row::default()
     }
 }
 

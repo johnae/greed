@@ -182,6 +182,33 @@ impl<'de> Deserialize<'de> for Tag {
 pub struct Span {
     pub text: String,
     pub tags: SmallVec<[Tag; 2]>,
+    /// How many times bigger the text is drawn: each character takes that
+    /// many times its cells across, and the row takes `scale` rows down.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub scale: u8,
+}
+
+impl Span {
+    /// `text` at the normal size.
+    pub fn new(text: impl Into<String>, tags: SmallVec<[Tag; 2]>) -> Self {
+        Span {
+            text: text.into(),
+            tags,
+            scale: 1,
+        }
+    }
+}
+
+const fn one() -> u8 {
+    1
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_one(n: &u8) -> bool {
+    *n == 1
 }
 
 /// One screen row.
@@ -190,6 +217,18 @@ pub struct Row {
     pub spans: Vec<Span>,
     /// Styles for the whole row, under its spans and across its empty end.
     pub tags: SmallVec<[Tag; 1]>,
+    /// How many rows below this one its scaled text also takes; those rows
+    /// come empty.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub covers: u8,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_zero(n: &u8) -> bool {
+    *n == 0
 }
 
 impl Row {
@@ -198,11 +237,16 @@ impl Row {
     }
 
     fn push(&mut self, text: &str, tags: SmallVec<[Tag; 2]>) {
+        self.push_scaled(text, tags, 1);
+    }
+
+    fn push_scaled(&mut self, text: &str, tags: SmallVec<[Tag; 2]>, scale: u8) {
         match self.spans.last_mut() {
-            Some(last) if last.tags == tags => last.text.push_str(text),
+            Some(last) if last.tags == tags && last.scale == scale => last.text.push_str(text),
             _ => self.spans.push(Span {
                 text: text.to_owned(),
                 tags,
+                scale,
             }),
         }
     }
@@ -303,6 +347,31 @@ struct Cell {
     inserted: Option<Arc<str>>,
     /// For inserted text: the mark's action and where the mark starts.
     action: Option<(Arc<str>, usize)>,
+    /// How many times bigger it's drawn; `width` already counts it.
+    scale: u8,
+}
+
+/// Adds `row`, `height` screen rows tall as far as `limit` rows allow, and
+/// the empty rows its scaled text covers, which keep the line's styles so
+/// a whole-line background still fills them.
+fn push_covering(rows: &mut Vec<Row>, mut row: Row, height: usize, limit: usize) {
+    let height = height.min(limit - rows.len());
+    let covered = Row {
+        tags: row.tags.clone(),
+        ..Row::default()
+    };
+    row.covers = u8::try_from(height - 1).unwrap_or(u8::MAX);
+    rows.push(row);
+    rows.extend(std::iter::repeat_n(covered, height - 1));
+}
+
+/// How many screen rows a row of cells takes: as many as its largest scale.
+fn row_height(cells: &[Cell]) -> usize {
+    cells
+        .iter()
+        .map(|c| usize::from(c.scale))
+        .max()
+        .unwrap_or(1)
 }
 
 /// Where a mark with an action drew its text, so a click there finds it.
@@ -530,11 +599,8 @@ impl<M: Measure> Renderer<M> {
             }
         }
         let border = |text: String| Row {
-            spans: vec![Span {
-                text,
-                tags: smallvec![Tag::PANE_BORDER],
-            }],
-            tags: SmallVec::new(),
+            spans: vec![Span::new(text, smallvec![Tag::PANE_BORDER])],
+            ..Row::default()
         };
         for line in lines {
             if line.down {
@@ -676,7 +742,7 @@ impl<M: Measure> Renderer<M> {
                         cursor = Some(screen_position(area, x, rows.len()));
                     }
                     if let Some((text, tag)) = overlay.over(&styled, cell) {
-                        row.push(&text, smallvec![tag]);
+                        row.push_scaled(&text, smallvec![tag], cell.scale);
                         x += cell.width;
                         continue;
                     }
@@ -686,7 +752,7 @@ impl<M: Measure> Renderer<M> {
                         .and_then(|i| syntax.get(i)?.clone());
                     let cell_tags = cell_tags(view, cell, &cursors, capture, &styled, &marks);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
-                        row.push(&cell.text, cell_tags);
+                        row.push_scaled(&cell.text, cell_tags, cell.scale);
                     }
                     x += cell.width;
                 }
@@ -696,7 +762,7 @@ impl<M: Measure> Renderer<M> {
                     let screen_row = area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX);
                     self.push_eol_text(&mut row, (view_id, area.x, screen_row), room, eol);
                 }
-                rows.push(row);
+                push_covering(&mut rows, row, row_height(&cells), text_rows);
             }
             let room = usize::from(area.width).saturating_sub(gutter);
             let lines = virtual_lines(editor, view, line);
@@ -757,10 +823,17 @@ impl<M: Measure> Renderer<M> {
     /// Draws a cell of a mark's text at screen position `place`.
     fn push_inserted(&self, row: &mut Row, cell: &Cell, view: ViewId, place: Position) {
         if let Some(style) = &cell.inserted {
-            row.push(&cell.text, smallvec![Tag::from(style.clone())]);
+            row.push_scaled(&cell.text, smallvec![Tag::from(style.clone())], cell.scale);
         }
         if let Some((action, at)) = &cell.action {
-            self.record_action(view, place, cell.width, action, *at);
+            // Scaled text is a button on every row it takes.
+            for down in 0..u16::from(cell.scale) {
+                let place = Position {
+                    row: place.row + down,
+                    ..place
+                };
+                self.record_action(view, place, cell.width, action, *at);
+            }
         }
     }
 
@@ -802,6 +875,19 @@ impl<M: Measure> Renderer<M> {
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
         let mut inserted = inserted.into_iter().peekable();
+        // Text scaled up by marks: each byte at the largest scale over it.
+        let scaled: Vec<&Mark> = buffer
+            .all_marks()
+            .filter(|m| m.scale > 1 && m.range.start < end && m.range.end > start)
+            .collect();
+        let scale_at = |byte: usize| {
+            scaled
+                .iter()
+                .filter(|m| m.range.contains(&byte))
+                .map(|m| m.scale)
+                .max()
+                .unwrap_or(1)
+        };
 
         let mut cells = Vec::new();
         let mut x = 0;
@@ -811,8 +897,9 @@ impl<M: Measure> Renderer<M> {
         {
             let byte = start + offset;
             while let Some((mark, extra)) = inserted.next_if(|(m, _)| m.range.start <= byte) {
+                let scale = mark.scale.max(1);
                 for g in extra.graphemes(true) {
-                    let w = self.measure.width(g);
+                    let w = self.measure.width(g) * usize::from(scale);
                     cells.push(Cell {
                         byte,
                         text: g.to_owned(),
@@ -820,6 +907,7 @@ impl<M: Measure> Renderer<M> {
                         end_of_line: false,
                         inserted: Some(mark.style.clone()),
                         action: mark.action.clone().map(|a| (a, mark.range.start)),
+                        scale,
                     });
                     x += w;
                 }
@@ -830,11 +918,13 @@ impl<M: Measure> Renderer<M> {
             if concealed.iter().any(|m| m.range.contains(&byte)) {
                 continue;
             }
+            let scale = scale_at(byte);
             let (text, w) = if grapheme == "\t" {
                 let w = self.tab_width - x % self.tab_width;
                 (" ".repeat(w), w)
             } else {
-                (grapheme.to_owned(), self.measure.width(grapheme))
+                let w = self.measure.width(grapheme) * usize::from(scale);
+                (grapheme.to_owned(), w)
             };
             cells.push(Cell {
                 byte,
@@ -843,45 +933,12 @@ impl<M: Measure> Renderer<M> {
                 end_of_line: false,
                 inserted: None,
                 action: None,
+                scale,
             });
             x += w;
         }
 
-        let mut rows = vec![Vec::new()];
-        let mut x = 0;
-        // Where the current row may break: just after its last whitespace.
-        let mut last_break = 0;
-        for cell in cells {
-            let row = rows.last_mut().expect("at least one row");
-            if x + cell.width > width && !row.is_empty() {
-                let carried = if last_break > 0 && last_break < row.len() {
-                    row.split_off(last_break)
-                } else {
-                    Vec::new()
-                };
-                x = carried.iter().map(|c: &Cell| c.width).sum();
-                rows.push(carried);
-                last_break = 0;
-            }
-            let row = rows.last_mut().expect("at least one row");
-            let breaks = cell.inserted.is_none() && cell.text.chars().all(char::is_whitespace);
-            x += cell.width;
-            row.push(cell);
-            if breaks {
-                last_break = row.len();
-            }
-        }
-        if x < width {
-            rows.last_mut().expect("at least one row").push(Cell {
-                byte: end,
-                text: " ".to_owned(),
-                width: 1,
-                end_of_line: true,
-                inserted: None,
-                action: None,
-            });
-        }
-        rows
+        wrap(cells, width, end)
     }
 
     /// Which row of its line `pos` is on.
@@ -913,16 +970,24 @@ impl<M: Measure> Renderer<M> {
             return cursor;
         }
 
-        // Is the cursor within `height` rows of the current scroll?
+        // Is the cursor's row within `height` screen rows of the current
+        // scroll? Rows count as many screen rows as their scale makes them.
         let hidden = hidden_lines(editor, view);
+        let cursor_heights = self.heights(editor, view, cursor.line, width);
         let mut seen = 0;
         for l in current.line..=cursor.line {
             let rows = if l == cursor.line {
-                cursor.row + 1
+                cursor_heights[..=cursor.row].iter().sum()
             } else {
                 self.line_rows(editor, view, l, width, &hidden)
             };
-            let skip = if l == current.line { current.row } else { 0 };
+            let skip = if l == current.line {
+                self.heights(editor, view, l, width)[..current.row]
+                    .iter()
+                    .sum()
+            } else {
+                0
+            };
             seen += rows.saturating_sub(skip);
             if seen > height {
                 break;
@@ -932,43 +997,45 @@ impl<M: Measure> Renderer<M> {
             return current;
         }
 
-        // Scroll so the cursor's row is the last one on screen: take whole
-        // lines above it while they fit, then as many rows of the next one
-        // as are left, after its virtual lines.
-        if cursor.row >= height - 1 {
-            return Scroll {
-                line: cursor.line,
-                row: cursor.row - (height - 1),
-            };
+        // Scroll so the cursor's row is the last one on screen: take the
+        // rows above it in its line while they fit, then whole lines while
+        // they fit, then as many rows of the next one as are left, after
+        // its virtual lines.
+        let mut above = height.saturating_sub(cursor_heights[cursor.row]);
+        let mut top = cursor;
+        top.row = fitting_from_end(&cursor_heights[..cursor.row], &mut above).unwrap_or(cursor.row);
+        if top.row > 0 {
+            return top;
         }
-        let mut top = Scroll {
-            line: cursor.line,
-            row: 0,
-        };
-        let mut above = height - 1 - cursor.row;
         let mut l = cursor.line;
         while above > 0 && l > 0 {
             l -= 1;
             if is_hidden(&hidden, l) {
                 continue;
             }
-            let layout = self.layout(editor, view, l, width).len();
-            let total = layout + virtual_lines(editor, view, l).count();
+            let heights = self.heights(editor, view, l, width);
+            let virtual_rows = virtual_lines(editor, view, l).count();
+            let total = heights.iter().sum::<usize>() + virtual_rows;
             if total <= above {
                 above -= total;
                 top = Scroll { line: l, row: 0 };
                 continue;
             }
-            let room = above.saturating_sub(total - layout);
-            if room > 0 {
-                top = Scroll {
-                    line: l,
-                    row: layout - room,
-                };
+            let mut room = above.saturating_sub(virtual_rows);
+            if let Some(row) = fitting_from_end(&heights, &mut room) {
+                top = Scroll { line: l, row };
             }
             break;
         }
         top
+    }
+
+    /// The screen rows each row of `line` takes.
+    fn heights(&self, editor: &Editor, view: &View, line: usize, width: usize) -> Vec<usize> {
+        self.layout(editor, view, line, width)
+            .iter()
+            .map(|cells| row_height(cells))
+            .collect()
     }
 
     /// How many screen rows `line` takes: none when a fold hides it, or its
@@ -984,7 +1051,10 @@ impl<M: Measure> Renderer<M> {
         if is_hidden(hidden, line) {
             return 0;
         }
-        self.layout(editor, view, line, width).len() + virtual_lines(editor, view, line).count()
+        self.heights(editor, view, line, width)
+            .iter()
+            .sum::<usize>()
+            + virtual_lines(editor, view, line).count()
     }
 
     fn text_width(&self, text: &str) -> usize {
@@ -1121,10 +1191,7 @@ impl<M: Measure> Renderer<M> {
 }
 
 fn span(text: &str, tag: Tag) -> Span {
-    Span {
-        text: text.to_owned(),
-        tags: smallvec![tag],
-    }
+    Span::new(text, smallvec![tag])
 }
 
 /// Overlay text still to draw, one grapheme per cell it covers.
@@ -1599,4 +1666,60 @@ fn last_line(text: &Rope, range: &Range<usize>) -> usize {
 
 fn is_hidden(hidden: &[Range<usize>], line: usize) -> bool {
     hidden.iter().any(|h| h.contains(&line))
+}
+
+/// The first of the last rows of `heights` that fit in `room` screen rows,
+/// taking what they use from it; `None` if not even the last one fits.
+fn fitting_from_end(heights: &[usize], room: &mut usize) -> Option<usize> {
+    let mut first = None;
+    for (i, &h) in heights.iter().enumerate().rev() {
+        if h > *room {
+            break;
+        }
+        *room -= h;
+        first = Some(i);
+    }
+    first
+}
+
+/// A line's `cells` in rows `width` cells wide, breaking after whitespace
+/// where it can, with a cell for the end of the line (byte `end`) where a
+/// cursor can sit after it, if there's room.
+fn wrap(cells: Vec<Cell>, width: usize, end: usize) -> Vec<Vec<Cell>> {
+    let mut rows = vec![Vec::new()];
+    let mut x = 0;
+    // Where the current row may break: just after its last whitespace.
+    let mut last_break = 0;
+    for cell in cells {
+        let row = rows.last_mut().expect("at least one row");
+        if x + cell.width > width && !row.is_empty() {
+            let carried = if last_break > 0 && last_break < row.len() {
+                row.split_off(last_break)
+            } else {
+                Vec::new()
+            };
+            x = carried.iter().map(|c: &Cell| c.width).sum();
+            rows.push(carried);
+            last_break = 0;
+        }
+        let row = rows.last_mut().expect("at least one row");
+        let breaks = cell.inserted.is_none() && cell.text.chars().all(char::is_whitespace);
+        x += cell.width;
+        row.push(cell);
+        if breaks {
+            last_break = row.len();
+        }
+    }
+    if x < width {
+        rows.last_mut().expect("at least one row").push(Cell {
+            byte: end,
+            text: " ".to_owned(),
+            width: 1,
+            end_of_line: true,
+            inserted: None,
+            action: None,
+            scale: 1,
+        });
+    }
+    rows
 }

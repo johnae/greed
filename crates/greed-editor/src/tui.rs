@@ -823,10 +823,10 @@ mod tests {
 
     fn plain(text: &str) -> Row {
         Row {
-            spans: vec![greed_core::render::Span {
-                text: text.into(),
-                tags: std::iter::empty().collect(),
-            }],
+            spans: vec![greed_core::render::Span::new(
+                text,
+                std::iter::empty().collect(),
+            )],
             ..Row::default()
         }
     }
@@ -873,13 +873,14 @@ mod tests {
             main: main_rect(4, 0),
             panels: Vec::new(),
             rows: vec![Row {
-                spans: vec![Span {
-                    text: "fn".into(),
-                    tags: [Tag::from("keyword.function"), Tag::SELECTION]
+                spans: vec![Span::new(
+                    "fn",
+                    [Tag::from("keyword.function"), Tag::SELECTION]
                         .into_iter()
                         .collect(),
-                }],
+                )],
                 tags: [Tag::from("current")].into_iter().collect(),
+                covers: 0,
             }],
             floats: Vec::new(),
             images: Vec::new(),
