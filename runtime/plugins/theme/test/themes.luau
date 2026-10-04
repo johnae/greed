@@ -26,6 +26,23 @@ test("every theme Greed comes with styles the editor's own names", function()
 	theme.use("default")
 end)
 
+test("a picker's current line and selections stand out from floats, even raised ones", function()
+	for _, name in theme.list() do
+		theme.use(name)
+		local selected = (greed.theme.get("ui.menu.selected") :: greed.ThemeEntry).bg
+		local float = greed.theme.get("ui.float") :: greed.ThemeEntry
+		assert(selected, `{name} has no background for the current line`)
+		assert(selected ~= float.bg and selected ~= (float.gui and float.gui.bg), name)
+		local selection = (greed.theme.get("ui.selection") :: greed.ThemeEntry).bg
+		assert(selection ~= float.bg, `{name}'s selection disappears in a float`)
+		-- Configs often raise floats to the palette's raised colour.
+		if name ~= "default" then
+			assert(selected ~= (greed.theme.get("ui.button") :: greed.ThemeEntry).bg, name)
+		end
+	end
+	theme.use("default")
+end)
+
 test(":theme switches and remembers the theme for next time", function(t)
 	t:run("theme", { "dracula" })
 	assert(theme.current() == "dracula")

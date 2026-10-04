@@ -80,7 +80,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.pane.label"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.tabline"] = { bg = p.bg_alt, fg = p.comment },
 		["ui.tabline.active"] = { bg = accent, fg = p.bg, bold = true },
-		["ui.menu.selected"] = { bg = p.bg_high, fg = p.fg },
+		["ui.menu.selected"] = { bg = p.selection, fg = p.fg },
 		["ui.menu.match"] = { fg = p.yellow, bold = true },
 		["ui.menu.doc"] = { fg = p.comment },
 		["ui.button"] = { bg = p.bg_high, fg = p.fg },
