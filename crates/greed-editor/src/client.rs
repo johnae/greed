@@ -28,7 +28,12 @@ pub fn run(
 ) -> Result<Output, Box<dyn std::error::Error>> {
     #[cfg(feature = "gui")]
     if GUI.load(Ordering::Relaxed) {
-        return greed_gui::run(input, output);
+        // The window opens at the size it last had.
+        let size_file = crate::runtime::cache_dir().and_then(|dir| {
+            std::fs::create_dir_all(&dir).ok()?;
+            Some(dir.join("window-size"))
+        });
+        return greed_gui::run(input, output, size_file.as_deref());
     }
     tui::run(input, output)
 }

@@ -45,25 +45,36 @@ impl Fonts {
     /// `family` at `size` pixels, or the system's monospaced font.
     pub fn new(family: Option<String>, size: f32) -> Self {
         let mut system = FontSystem::new();
-        let line = (size * 1.3).round();
-        let mut buffer = Buffer::new(&mut system, Metrics::new(size, line));
+        let mut buffer = Buffer::new(&mut system, Metrics::new(size, size));
         buffer.set_wrap(Wrap::None);
         let mut fonts = Self {
             system,
             cache: SwashCache::new(),
             buffer,
-            family,
-            cell_w: size * 0.6,
-            cell_h: line,
-            baseline: size,
+            family: None,
+            cell_w: 0.0,
+            cell_h: 0.0,
+            baseline: 0.0,
         };
-        // A cell is as wide as a digit; the baseline is where the font puts it.
-        let (glyphs, baseline) = fonts.shape("0", false, false);
-        if let Some(glyph) = glyphs.first() {
-            fonts.cell_w = glyph.w;
-        }
-        fonts.baseline = baseline;
+        fonts.set(family, size);
         fonts
+    }
+
+    /// Switches to `family` at `size` pixels, keeping the fonts the system
+    /// has, which take a while to find.
+    pub fn set(&mut self, family: Option<String>, size: f32) {
+        let line = (size * 1.3).round();
+        self.buffer.set_metrics(Metrics::new(size, line));
+        self.family = family;
+        self.cell_w = size * 0.6;
+        self.cell_h = line;
+        self.baseline = size;
+        // A cell is as wide as a digit; the baseline is where the font puts it.
+        let (glyphs, baseline) = self.shape("0", false, false);
+        if let Some(glyph) = glyphs.first() {
+            self.cell_w = glyph.w;
+        }
+        self.baseline = baseline;
     }
 
     /// Shapes one line: its glyphs, each knowing the byte range of the text
@@ -259,5 +270,18 @@ mod tests {
             chosen(&options(&[("gui-font-size", "big")])).1,
             DEFAULT_SIZE
         );
+    }
+
+    #[test]
+    fn switching_size_sets_the_cells_a_new_font_would() {
+        let mut fonts = Fonts::new(None, 15.0);
+        let small = (fonts.cell_w, fonts.cell_h);
+        fonts.set(None, 30.0);
+        let fresh = Fonts::new(None, 30.0);
+        assert_eq!(
+            (fonts.cell_w, fonts.cell_h, fonts.baseline),
+            (fresh.cell_w, fresh.cell_h, fresh.baseline)
+        );
+        assert!(fonts.cell_w > small.0 && fonts.cell_h > small.1);
     }
 }

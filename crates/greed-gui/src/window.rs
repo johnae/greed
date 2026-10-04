@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -14,7 +15,7 @@ use greed_core::server::{Input, Output};
 use greed_core::theme::Surface;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -40,10 +41,13 @@ thread_local! {
 
 /// Runs the window until the session exits or lets it go, or the window is
 /// closed (`Output::Detached`), sending keys and sizes to `input` and
-/// drawing the frames from `output`. Returns how it ended.
+/// drawing the frames from `output`. Returns how it ended. The window opens
+/// at the size kept in `size_file`, if there is one, and keeps its size
+/// there when it closes.
 pub fn run(
     input: &Sender<Input>,
     output: &Receiver<Output>,
+    size_file: Option<&Path>,
 ) -> Result<Output, Box<dyn std::error::Error>> {
     LOOP.with(|cell| {
         let mut slot = cell.borrow_mut();
@@ -70,9 +74,13 @@ pub fn run(
             }
         });
         let mut app = App::new(input.clone());
+        app.size = size_file.and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
         event_loop.run_app_on_demand(&mut app)?;
         let _ = stop.send(());
         let _ = forward.join();
+        if let (Some(path), Some(size)) = (size_file, app.size) {
+            let _ = std::fs::write(path, format!("{} {}\n", size.width, size.height));
+        }
         Ok(app.ended.unwrap_or(Output::Detached))
     })
 }
@@ -105,6 +113,8 @@ struct App {
     scrolled: f64,
     clipboard: Option<arboard::Clipboard>,
     ended: Option<Output>,
+    /// The window's size, before the screen's scale.
+    size: Option<LogicalSize<f64>>,
 }
 
 impl App {
@@ -125,6 +135,7 @@ impl App {
             scrolled: 0.0,
             clipboard: arboard::Clipboard::new().ok(),
             ended: None,
+            size: None,
         }
     }
 
@@ -137,7 +148,7 @@ impl App {
     /// The chosen font at the window's scale, from a fresh atlas.
     fn refont(&mut self) {
         let (family, size) = &self.font;
-        self.fonts = Fonts::new(family.clone(), size * self.scale as f32);
+        self.fonts.set(family.clone(), size * self.scale as f32);
         self.atlas.clear();
     }
 
@@ -211,6 +222,14 @@ impl App {
             .render(&view, (shown.config.width, shown.config.height), &scene);
         shown.window.pre_present_notify();
         shown.gpu.queue.present(texture);
+        // An input method shows what it's composing by the cursor.
+        if let Some(at) = frame.cursor {
+            let (cw, ch) = (f64::from(self.fonts.cell_w), f64::from(self.fonts.cell_h));
+            shown.window.set_ime_cursor_area(
+                PhysicalPosition::new(f64::from(at.col) * cw, f64::from(at.row) * ch),
+                PhysicalSize::new(cw, ch),
+            );
+        }
     }
 
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
@@ -272,11 +291,12 @@ impl ApplicationHandler<Event> for App {
         }
         let attributes = Window::default_attributes()
             .with_title("Greed")
-            .with_inner_size(LogicalSize::new(1100.0, 720.0));
+            .with_inner_size(self.size.unwrap_or(LogicalSize::new(1100.0, 720.0)));
         let Ok(window) = event_loop.create_window(attributes) else {
             event_loop.exit();
             return;
         };
+        window.set_ime_allowed(true);
         let window = Arc::new(window);
         let Some(shown) = Shown::new(window.clone(), event_loop) else {
             eprintln!("greed: no GPU to draw the window with");
@@ -305,6 +325,7 @@ impl ApplicationHandler<Event> for App {
                     shown.config.height = size.height.max(1);
                     shown.surface.configure(&shown.gpu.device, &shown.config);
                 }
+                self.size = Some(size.to_logical(self.scale));
                 self.send_size(size);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
@@ -317,6 +338,15 @@ impl ApplicationHandler<Event> for App {
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if let Some(key) = key(&event, self.mods) {
                     let _ = self.input.send(Input::Key(key));
+                }
+            }
+            // Text an input method made, as keys typed one by one.
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                for c in text.chars().filter(|c| !c.is_control()) {
+                    let _ = self.input.send(Input::Key(Key {
+                        code: KeyCode::Char(c),
+                        mods: Mods::NONE,
+                    }));
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -415,10 +445,27 @@ impl Shown {
     }
 }
 
+/// A window size kept as "WIDTH HEIGHT", if it's one a screen could have.
+fn parse_size(text: &str) -> Option<LogicalSize<f64>> {
+    let mut parts = text.split_whitespace().map(str::parse::<f64>);
+    let (Some(Ok(width)), Some(Ok(height)), None) = (parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    let fits = |v: f64| (200.0..=20_000.0).contains(&v);
+    (fits(width) && fits(height)).then(|| LogicalSize::new(width, height))
+}
+
 /// A key press as Greed names keys: shifted characters are the character
-/// itself ("G"), so shift only counts for other keys.
+/// itself ("G"), so shift only counts for other keys. Without ctrl or alt,
+/// a character key is the text it types, which is what a dead key before it
+/// made of it ("é" from "´" then "e").
 fn key(event: &KeyEvent, mods: ModifiersState) -> Option<Key> {
-    let code = match &event.logical_key {
+    key_from(&event.logical_key, event.text.as_deref(), mods)
+}
+
+fn key_from(logical: &WinitKey, text: Option<&str>, mods: ModifiersState) -> Option<Key> {
+    let code = match logical {
         WinitKey::Named(named) => match named {
             NamedKey::Enter => KeyCode::Enter,
             NamedKey::Escape => KeyCode::Esc,
@@ -449,10 +496,11 @@ fn key(event: &KeyEvent, mods: ModifiersState) -> Option<Key> {
             NamedKey::F12 => KeyCode::F(12),
             _ => return None,
         },
-        WinitKey::Character(text) => {
-            let mut chars = text.chars();
+        WinitKey::Character(logical) => {
+            let typed = text.filter(|_| !mods.control_key() && !mods.alt_key());
+            let mut chars = typed.unwrap_or(logical).chars();
             match (chars.next(), chars.next()) {
-                (Some(c), None) => KeyCode::Char(c),
+                (Some(c), None) if !c.is_control() => KeyCode::Char(c),
                 _ => return None,
             }
         }
@@ -469,4 +517,60 @@ fn key(event: &KeyEvent, mods: ModifiersState) -> Option<Key> {
         out = out | Mods::SHIFT;
     }
     Some(Key { code, mods: out })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn char_key(logical: &str, text: Option<&str>, mods: ModifiersState) -> Option<Key> {
+        key_from(&WinitKey::Character(logical.into()), text, mods)
+    }
+
+    #[test]
+    fn character_keys_are_the_text_they_type_unless_ctrl_or_alt_is_held() {
+        let typed = |c| {
+            Some(Key {
+                code: KeyCode::Char(c),
+                mods: Mods::NONE,
+            })
+        };
+        // A dead key's accent and then "e" type "é".
+        assert_eq!(
+            char_key("e", Some("é"), ModifiersState::empty()),
+            typed('é')
+        );
+        assert_eq!(char_key("G", Some("G"), ModifiersState::SHIFT), typed('G'));
+        assert_eq!(
+            char_key("c", Some("\u{3}"), ModifiersState::CONTROL),
+            Some(Key {
+                code: KeyCode::Char('c'),
+                mods: Mods::CTRL,
+            }),
+            "ctrl-c is the key, not the control character it types"
+        );
+        assert_eq!(char_key("´", None, ModifiersState::empty()), typed('´'));
+        assert_eq!(char_key("e", Some("\u{7f}"), ModifiersState::empty()), None);
+    }
+
+    #[test]
+    fn dead_keys_wait_for_the_next_key() {
+        let dead = WinitKey::Dead(Some('´'));
+        assert_eq!(key_from(&dead, None, ModifiersState::empty()), None);
+    }
+
+    #[test]
+    fn a_kept_size_is_two_numbers_a_screen_could_have() {
+        assert_eq!(
+            parse_size("1280 800\n"),
+            Some(LogicalSize::new(1280.0, 800.0))
+        );
+        assert_eq!(
+            parse_size("1280.5 800"),
+            Some(LogicalSize::new(1280.5, 800.0))
+        );
+        for bad in ["", "1280", "1280 800 3", "wide tall", "10 10", "1e9 800"] {
+            assert_eq!(parse_size(bad), None, "{bad:?}");
+        }
+    }
 }

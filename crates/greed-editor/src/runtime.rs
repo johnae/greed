@@ -35,7 +35,7 @@ pub fn dir() -> io::Result<PathBuf> {
 }
 
 /// Greed's cache folder: `$XDG_CACHE_HOME/greed` or `~/.cache/greed`.
-fn cache_dir() -> Option<PathBuf> {
+pub(crate) fn cache_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
