@@ -402,6 +402,12 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 
 Closing a terminal's buffer ends its program.
 
+In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
+the folder you're in, `r` reads the disk again and `q` closes it. A click
+does what `enter` does, and the row under the mouse lights up. With a
+[Nerd Font](https://www.nerdfonts.com), `:set tree-icons nerd` shows an icon
+by each name.
+
 When a file changes on disk, from another program or an agent, its buffer
 loads the change as an edit you can undo with `u`. A buffer with unsaved
 changes is left alone and Greed tells you; `:reload` loads the file into it

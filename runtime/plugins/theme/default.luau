@@ -59,6 +59,8 @@ return {
 	["ui.tabline.active"] = { bg = "blue", fg = "black", bold = true },
 	["ui.tree.directory"] = { fg = "blue", bold = true },
 	["ui.tree.open"] = { bg = "bright-black" },
+	["ui.tree.guide"] = { fg = "bright-black" },
+	["ui.tree.hover"] = { bg = "#282a2e" },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

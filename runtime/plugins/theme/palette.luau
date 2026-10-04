@@ -93,6 +93,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.health.missing"] = { fg = p.comment },
 		["ui.tree.directory"] = { fg = p.blue, bold = true },
 		["ui.tree.open"] = { bg = p.bg_high },
+		["ui.tree.guide"] = { fg = p.gutter },
+		["ui.tree.hover"] = { bg = p.selection },
 		["ui.multibuffer.file"] = { fg = p.blue, bold = true },
 		["ui.multibuffer.note"] = { fg = p.comment, italic = true },
 		fold = { fg = p.comment },

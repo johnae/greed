@@ -40,10 +40,7 @@ test("enter unfolds and folds a folder, h folds from inside it", function(t)
 	local dir = "src"
 	t:keys("enter")
 	assert(lines()[1] == "▾ " .. dir .. "/", lines()[1])
-	assert(
-		string.match(lines()[2], "^%s+lib%.rs$") and string.match(lines()[3], "^%s+main%.rs$"),
-		lines()[2]
-	)
+	assert(lines()[2] == "│   lib.rs" and lines()[3] == "│   main.rs", lines()[2])
 	t:keys("j h")
 	assert(lines()[1] == "▸ " .. dir .. "/", "h folds the parent")
 	t:keys("enter enter")
@@ -116,4 +113,62 @@ test("the tree marks the file you came from", function(t)
 	t:keys("space e")
 	assert(marked_open() == "  notes.md", tostring(marked_open()))
 	t:keys("q")
+end)
+
+-- Where the tree's line `n` (from 1) is on the screen, once drawn.
+local function cell(t: any, n: number): (number, number)
+	t:draw(80, 20)
+	local area = assert(greed.view():area())
+	return area.x + 2, area.y + n - 1
+end
+
+test("folders' contents have a guide down their side", function(t)
+	project(t)
+	greed.run("tree")
+	t:keys("enter")
+	local guides = 0
+	for _, mark in greed.view():buffer():decorations("tree") do
+		if mark.style == "ui.tree.guide" then
+			guides += 1
+		end
+	end
+	assert(guides == 2, `a guide on each of src's two files: {guides}`)
+end)
+
+test("a click opens a file or folds a folder, and the row under the mouse lights up", function(t)
+	project(t)
+	greed.run("tree")
+	local col, row = cell(t, 1)
+	t:mouse("move", col, row)
+	local hover = greed.view():buffer():decorations("tree-hover")
+	assert(#hover == 1 and hover[1].line, "the row under the mouse")
+	t:mouse("press", col, row)
+	assert(lines()[1] == "▾ src/", `a click unfolds it: {lines()[1]}`)
+	t:mouse("press", col, row)
+	assert(lines()[1] == "▸ src/", "and folds it")
+	col, row = cell(t, 2)
+	t:mouse("press", col, row)
+	local path = greed.view():buffer():path() or ""
+	assert(string.sub(path, -8) == "notes.md", `a click opens a file: {path}`)
+end)
+
+test("the row under the mouse goes dark once it leaves the tree", function(t)
+	project(t)
+	greed.run("tree")
+	local tree = greed.view()
+	local col, row = cell(t, 1)
+	t:mouse("move", col, row)
+	t:mouse("move", 70, 5)
+	assert(#tree:buffer():decorations("tree-hover") == 0)
+end)
+
+test("with tree-icons set to nerd, Nerd Font icons show by each name", function(t)
+	project(t)
+	greed.option.set("tree-icons", "nerd")
+	greed.run("tree")
+	assert(lines()[1] == "\u{f07b} src/", lines()[1])
+	assert(lines()[2] == "\u{e609} notes.md", lines()[2])
+	t:keys("enter")
+	assert(lines()[1] == "\u{f07c} src/", "an open folder")
+	assert(lines()[2] == "│ \u{e7a8} lib.rs", lines()[2])
 end)
