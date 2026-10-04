@@ -4,8 +4,31 @@
   stdenv,
   rustPlatform,
   cmake,
+  makeWrapper,
+  libGL,
+  libxkbcommon,
+  vulkan-loader,
+  wayland,
+  xorg,
 }:
 
+let
+  # The window client, `greed --gui`, stays out of the static build that
+  # runs on servers.
+  gui = !stdenv.hostPlatform.isStatic;
+  # What the window loads at run time on Linux: the display server's
+  # libraries and the GPU driver's loader.
+  guiLibraries = [
+    libGL
+    libxkbcommon
+    vulkan-loader
+    wayland
+    xorg.libX11
+    xorg.libXcursor
+    xorg.libXi
+    xorg.libXrandr
+  ];
+in
 rustPlatform.buildRustPackage {
   pname = "greed";
   version = (lib.importTOML ../Cargo.toml).workspace.package.version;
@@ -25,7 +48,7 @@ rustPlatform.buildRustPackage {
 
   # wasmtime, which loads downloaded grammars, builds its C API with cmake;
   # it runs cmake itself, so the usual cmake configure step stays out.
-  nativeBuildInputs = [ cmake ];
+  nativeBuildInputs = [ cmake ] ++ lib.optional (gui && stdenv.hostPlatform.isLinux) makeWrapper;
   dontUseCmakeConfigure = true;
 
   # A static binary is linked without PIE: the static C++ library Luau
@@ -34,12 +57,17 @@ rustPlatform.buildRustPackage {
     RUSTFLAGS = "-C relocation-model=static";
   };
   cargoBuildFlags = [ "--package" "greed-editor" ];
+  buildNoDefaultFeatures = !gui;
 
   # The runtime is built into the binary too; installing it lets editors
   # find the Luau types for plugins.
   postInstall = ''
     mkdir -p $out/share/greed
     cp -r runtime $out/share/greed/runtime
+  '';
+
+  postFixup = lib.optionalString (gui && stdenv.hostPlatform.isLinux) ''
+    wrapProgram $out/bin/greed --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath guiLibraries}
   '';
 
   # The tests need luau-analyze, a terminal and sockets; run them with cargo.

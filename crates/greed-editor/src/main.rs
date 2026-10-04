@@ -5,6 +5,7 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod client;
 mod ctl;
 mod graphics;
 mod runtime;
@@ -18,7 +19,7 @@ use greed_core::luau::{Host, HostError, run_tests};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too";
+const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -35,6 +36,14 @@ fn main() -> ExitCode {
     // Anywhere on the line: attach with a terminal open in the session.
     let terminal = args.iter().any(|arg| arg == "--terminal");
     args.retain(|arg| arg != "--terminal");
+    // Anywhere on the line too: show the editor in a window.
+    if args.iter().any(|arg| arg == "--gui") {
+        args.retain(|arg| arg != "--gui");
+        if let Err(err) = client::use_gui() {
+            eprintln!("greed: {err}");
+            return ExitCode::FAILURE;
+        }
+    }
     let result = match args.as_slice() {
         [] => edit(None, None, terminal),
         [flag, name, rest @ ..] if flag == "--session" => {
@@ -243,7 +252,13 @@ fn edit(
 fn edit_here(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     let text = read(file.as_deref())?;
     let conn = server::spawn(move || host(&text, file, None));
-    tui::run(&conn.input, &conn.output)?;
+    // Closing a window leaves the editor; here that means quitting it.
+    if matches!(
+        client::run(&conn.input, &conn.output)?,
+        server::Output::Detached
+    ) {
+        let _ = conn.input.send(server::Input::Quit);
+    }
     conn.server.join().map_err(|_| "the editor crashed")??;
     Ok(())
 }

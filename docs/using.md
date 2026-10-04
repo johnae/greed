@@ -45,6 +45,20 @@ down when it quits and whenever you save a file, in the cache folder
 (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. Turn
 it off with `greed.option.set("restore-session", false)`.
 
+### In a window
+
+`greed --gui [FILE]` shows the session in a window instead of the terminal,
+drawn on the GPU. It's the same session either way: attach from a terminal
+later and you see the same files, and `greed ssh HOST --gui` shows a session
+on another machine in a window here. Closing the window lets the session
+go, as `:detach` does.
+
+The window draws with your system's monospaced font, ligatures included
+when the font has them (Fira Code, JetBrains Mono, Cascadia Code), and
+draws box lines itself so borders join cleanly. Images and choosing the
+font are still to come. On Linux it needs Wayland or X11 and a Vulkan or
+GL driver.
+
 ## Projects
 
 A project is a folder you work in: the nearest folder above a file that

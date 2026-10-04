@@ -1,0 +1,25 @@
+[package]
+name = "greed-gui"
+description = "Greed's GUI client: draws a session's frames in a window, on the GPU"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+bytemuck = { version = "1", features = ["derive"] }
+cosmic-text = "0.19"
+crossbeam-channel.workspace = true
+greed-core.workspace = true
+pollster = "0.4"
+unicode-width.workspace = true
+wgpu = "30"
+winit = "0.30"
+
+[dev-dependencies]
+png = "0.18"
+smallvec.workspace = true
+wgpu = "30"
+
+[lints]
+workspace = true

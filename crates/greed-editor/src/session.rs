@@ -14,7 +14,7 @@ use greed_core::project;
 use greed_core::server::{self, Input, Output};
 use serde_json::{Value, json};
 
-use crate::{ctl, host, read, tui};
+use crate::{ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -212,7 +212,7 @@ fn show(
             }
         }
     });
-    tui::run(&input, &output)
+    crate::client::run(&input, &output)
 }
 
 /// Starts `greed serve` for the session called `name` in the background, its

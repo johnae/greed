@@ -29,6 +29,19 @@
     pkgs.cmake
   ];
 
+  # What the window client (`greed --gui`) loads at run time: the display
+  # server's libraries and the GPU driver's loader.
+  env.LD_LIBRARY_PATH = lib.makeLibraryPath [
+    pkgs.libGL
+    pkgs.libxkbcommon
+    pkgs.vulkan-loader
+    pkgs.wayland
+    pkgs.xorg.libX11
+    pkgs.xorg.libXcursor
+    pkgs.xorg.libXi
+    pkgs.xorg.libXrandr
+  ];
+
   git-hooks.hooks = {
     rustfmt.enable = true;
     clippy = {
