@@ -32,6 +32,7 @@ pub const KNOWN: &[(&str, &str)] = &[
 /// The parts of `@greed` each capability opens, as paths into the table.
 const GATED: &[(&str, &str)] = &[
     ("process.run", "proc"),
+    ("process.spawn", "proc"),
     ("terminal.spawn", "proc"),
     ("lsp.server", "proc"),
     ("fs.read", "fs.read"),

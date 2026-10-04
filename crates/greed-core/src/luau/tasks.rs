@@ -448,6 +448,7 @@ pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> Lua
         if thread.status() == ThreadStatus::Resumable {
             match next_timer(lua) {
                 Some(at) => advance(lua, at)?,
+                None if super::jobs::await_child(lua)? => {}
                 None => {
                     return Err(mlua::Error::runtime(
                         "the test waits for something nothing will bring, like a key; use t:keys",

@@ -455,6 +455,21 @@ cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
 which you can use in your own marks too. A terminal ends with the plugin
 that started it.
 
+`greed.process.spawn(command, { cwd, env })` starts a program to talk to
+over its input and output, like an agent or a server speaking JSON-RPC.
+`child.write(text)` sends it input, `child.read()` waits for the next
+piece it prints (nil once it exited), `child.close()` closes its input,
+and `child.wait()` waits for its exit code. It ends with the plugin that
+started it, too.
+
+```luau
+greed.spawn(function()
+	local child = assert(greed.process.spawn({ "sh", "-c", "read x; echo got $x" }))
+	child.write("hello\n")
+	greed.echo(child.read()) -- got hello
+end)
+```
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

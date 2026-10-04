@@ -135,6 +135,8 @@ pub(crate) struct State {
     pub pending: Vec<PathBuf>,
     /// HTTP streams being read.
     pub http: http::Streams,
+    /// Programs started with `greed.process.spawn`.
+    pub children: process::Children,
     /// Command line commands plugins added.
     pub cli: cli::Commands,
     /// Runs of plugin code that held the editor up.
@@ -291,6 +293,7 @@ impl Host {
             approvals: None,
             pending: Vec::new(),
             http: http::Streams::default(),
+            children: process::Children::default(),
             cli: cli::Commands::default(),
             stalls: stalls::Stalls::default(),
         });
@@ -982,6 +985,7 @@ fn unregister(lua: &Lua, name: &str) {
     let state = &mut *state;
     state.registry.remove_owned_by(name);
     state.terminals.remove_owned_by(name);
+    state.children.remove_owned_by(name);
     state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
     state.cli.retain(|_, command| &*command.owner != name);
     state.editor.keymap_mut().remove_owned_by(name);

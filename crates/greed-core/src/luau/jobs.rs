@@ -22,12 +22,28 @@ pub enum Output {
     StreamChunk(u64, super::http::Chunk),
     /// A secret, or where one was kept; nil when there's none.
     Secret(Result<Option<String>, String>),
+    /// What program `id`, started with `greed.process.spawn`, printed, or
+    /// its exit. Programs run for as long as they like, so they don't count
+    /// as running jobs.
+    Child(u64, super::process::Piece),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
 pub struct Done {
     token: u64,
     output: Output,
+}
+
+impl Done {
+    /// Output that wakes no job of its own, like a program's.
+    pub(super) fn uncounted(output: Output) -> Self {
+        Self { token: 0, output }
+    }
+}
+
+/// Where output from other threads goes, for work that isn't a job.
+pub(super) fn sender(lua: &Lua) -> Sender<Done> {
+    state(lua).jobs.done.clone()
 }
 
 pub(crate) struct Jobs {
@@ -117,7 +133,9 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     // A stream's job goes on after its head, until its body ends.
     let last = !matches!(
         done.output,
-        Output::StreamHead(_, _, Ok(_)) | Output::StreamChunk(_, super::http::Chunk::Data(_))
+        Output::StreamHead(_, _, Ok(_))
+            | Output::StreamChunk(_, super::http::Chunk::Data(_))
+            | Output::Child(..)
     );
     if last {
         state_mut(lua).jobs.running -= 1;
@@ -137,7 +155,23 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Process(result) => {
             tasks::wake(lua, done.token, super::process::to_lua(lua, result)?)
         }
+        Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
     }
+}
+
+/// Waits for what a program prints next when code waits on one, for tests,
+/// up to a while. Returns whether there was something to wait for.
+pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    if !super::process::awaited(lua) {
+        return Ok(false);
+    }
+    let finished = state(lua).jobs.finished.clone();
+    let done = finished
+        .recv_timeout(LIMIT)
+        .map_err(|_| mlua::Error::runtime("a program waited on said nothing for 10s"))?;
+    finish(lua, done)?;
+    Ok(true)
 }
 
 /// Waits for every running job and finishes it, and lets work cut into time
@@ -149,8 +183,14 @@ pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
             let done = finished.recv().map_err(mlua::Error::external)?;
             finish(lua, done)?;
         }
+        // What programs printed so far, without waiting for more.
+        let mut more = false;
+        for done in finished.try_iter() {
+            finish(lua, done)?;
+            more = true;
+        }
         // Work cut into time slices finishes too, which may start more jobs.
-        if !super::tasks::resume_sliced(lua)? {
+        if !super::tasks::resume_sliced(lua)? && !more {
             return Ok(());
         }
     }

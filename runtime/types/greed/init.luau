@@ -462,6 +462,24 @@ export type Process = {
 		command: { string },
 		opts: { stdin: string?, cwd: string? }?
 	) -> ({ code: number?, stdout: string, stderr: string }?, string?),
+	--- Starts `command` to talk to over its input and output, like an agent speaking JSON-RPC, and returns at once; nil and the error if it couldn't start. It runs until it exits, is killed, or the plugin that started it unloads.
+	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string }? }?) -> (Child?, string?),
+}
+
+--- A program started with `greed.process.spawn`.
+export type Child = {
+	pid: number,
+	--- Sends `text` to its input; false once that's closed.
+	write: (text: string) -> boolean,
+	--- Waits for the next piece of what it prints, and returns it; nil once it exited and everything was read. Only in commands, event handlers and greed.spawn.
+	read: () -> string?,
+	--- Closes its input, which tells most programs to finish.
+	close: () -> (),
+	kill: () -> (),
+	--- Waits for it to exit and returns its exit code, nil if a signal ended it.
+	wait: () -> number?,
+	--- The end of what it printed as errors so far.
+	stderr: () -> string,
 }
 
 --- A line of a terminal: its text, and the parts with a style of their own

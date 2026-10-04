@@ -39,3 +39,49 @@ test("greed.spawn runs code that waits, and returns at once", function(t)
 	t:wait(100)
 	assert(said == "hi\n", tostring(said))
 end)
+
+test("a spawned program is talked to over its input and output until it exits", function(t)
+	local child, err = greed.process.spawn({ "sh", "-c", "echo ready; echo oops >&2; cat; exit 4" })
+	assert(child, err)
+	assert(child.pid > 0)
+	assert(child.read() == "ready\n", "it reads what the program printed")
+	assert(child.write("one\n"))
+	assert(child.read() == "one\n", "and what it echoed back")
+	child.close()
+	local rest = ""
+	while true do
+		local piece = child.read()
+		if piece == nil then
+			break
+		end
+		rest ..= piece
+	end
+	assert(rest == "", "nothing more: " .. rest)
+	assert(child.wait() == 4, "the exit code")
+	assert(child.read() == nil, "reading after the end gives nil")
+	assert(not child.write("late"), "its input is closed")
+	assert(child.stderr() == "oops\n", child.stderr())
+end)
+
+test("a spawned program can be killed, and one that can't start says why", function(t)
+	local child = greed.process.spawn({ "sleep", "30" })
+	assert(child)
+	child.kill()
+	assert(child.wait() == nil, "a signal ended it")
+	local missing, err = greed.process.spawn({ "no-such-program-here" })
+	assert(missing == nil and err, "a program that can't start")
+end)
+
+test("output arrives while the editor goes on, for code waiting in a command", function(t)
+	local child = greed.process.spawn({ "sh", "-c", "sleep 0.1; echo late" })
+	assert(child)
+	local got = nil
+	greed.spawn(function()
+		got = child.read()
+	end)
+	assert(got == nil, "it waits")
+	t:wait_for(function()
+		return got ~= nil
+	end)
+	assert(got == "late\n", tostring(got))
+end)
