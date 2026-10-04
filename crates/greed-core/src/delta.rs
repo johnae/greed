@@ -9,7 +9,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::CursorShape;
-use crate::render::{FloatFrame, Frame, ImagePlacement, PanelFrame, Position, Rect, Row, Size};
+use crate::render::{
+    FloatFrame, Frame, ImagePlacement, Menu, PanelFrame, Position, Rect, Row, Size,
+};
 use crate::theme::Theme;
 
 /// The parts of a frame that changed. Anything left out is as it was.
@@ -40,6 +42,8 @@ pub struct FrameDelta {
     pub theme: Option<Arc<Theme>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gui: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menus: Option<Vec<Menu>>,
 }
 
 /// `new` if it differs from `old`.
@@ -73,6 +77,7 @@ impl FrameDelta {
             cursor_shape: changed(&old.cursor_shape, &new.cursor_shape),
             theme,
             gui: changed(&old.gui, &new.gui),
+            menus: changed(&old.menus, &new.menus),
         };
         (!delta.is_empty()).then_some(delta)
     }
@@ -89,6 +94,7 @@ impl FrameDelta {
             && self.cursor_shape.is_none()
             && self.theme.is_none()
             && self.gui.is_none()
+            && self.menus.is_none()
     }
 
     /// Turns `frame` (the old frame this delta was made against) into the
@@ -128,6 +134,9 @@ impl FrameDelta {
         }
         if let Some(gui) = self.gui {
             frame.gui = gui;
+        }
+        if let Some(menus) = self.menus {
+            frame.menus = menus;
         }
     }
 }

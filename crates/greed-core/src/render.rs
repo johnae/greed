@@ -274,6 +274,23 @@ pub struct Frame {
     /// The options for a window to read, those named `gui-...`, as text.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub gui: BTreeMap<String, String>,
+    /// The menus plugins set, for a window to show as its menu bar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menus: Vec<Menu>,
+}
+
+/// A menu in a window's menu bar: its title and what's in it, in order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Menu {
+    pub title: String,
+    pub items: Vec<MenuItem>,
+}
+
+/// An item in a menu: what it says, and the command it runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MenuItem {
+    pub label: String,
+    pub command: String,
 }
 
 /// A panel: its rows fill `rect`. The client draws a line down column
@@ -477,6 +494,7 @@ impl<M: Measure> Renderer<M> {
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
             gui: BTreeMap::new(),
+            menus: editor.menus().to_vec(),
         }
     }
 

@@ -1277,6 +1277,8 @@ export type Greed = {
 	signal: () -> Signal,
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
+	--- Sets the menus a window shows as its menu bar (on macOS, the system's), replacing those before; each item runs its command. The core plugin keeps them, so add to `require("@core").menus` rather than calling this.
+	set_menus: (menus: { { title: string, items: { { label: string, command: string } } } }) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last
 	--- view showing it closes.
 	create_buffer: (kind: string, text: string?, opts: { readonly: boolean?, language: string? }?) -> Buffer,

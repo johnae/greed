@@ -255,6 +255,7 @@ mod tests {
             cursor_shape: CursorShape::Block,
             theme: Arc::new(theme),
             gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
         }
     }
 

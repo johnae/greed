@@ -793,6 +793,7 @@ mod tests {
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
         };
         let mut screen = Screen::default();
         let mut out = Vec::new();
@@ -834,6 +835,7 @@ mod tests {
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
         };
         let text: Vec<String> = compose(&frame, false)
             .iter()
@@ -898,6 +900,7 @@ mod tests {
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
         };
         let text: Vec<String> = compose(&frame, false)
             .iter()
@@ -976,6 +979,7 @@ mod tests {
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::new(theme),
             gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
         };
         let cell = &compose(&frame, false)[0][0];
         assert_eq!(cell.style.foreground_color, Some(Color::Magenta));

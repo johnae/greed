@@ -275,6 +275,8 @@ pub struct Editor {
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     file_types: FileTypes,
     theme: Arc<Theme>,
+    /// The menus for a window's menu bar, as plugins set them.
+    menus: Vec<crate::render::Menu>,
     /// Images marks can show.
     images: crate::image::Images,
     /// How many pixels wide and high a cell is on the client's screen, for
@@ -312,6 +314,7 @@ impl Editor {
             cursor_shapes: HashMap::new(),
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
+            menus: Vec::new(),
             images: crate::image::Images::default(),
             cell_size: (8, 16),
         }
@@ -950,6 +953,15 @@ impl Editor {
         self.pending.clear();
         self.count = None;
         true
+    }
+
+    /// The menus for a window's menu bar.
+    pub fn menus(&self) -> &[crate::render::Menu] {
+        &self.menus
+    }
+
+    pub fn set_menus(&mut self, menus: Vec<crate::render::Menu>) {
+        self.menus = menus;
     }
 
     pub fn theme(&self) -> &Arc<Theme> {

@@ -220,3 +220,32 @@ fn frames_carry_the_options_a_window_reads() {
     assert_eq!(f.gui.get("gui-font").map(String::as_str), Some(""));
     assert!(f.gui.keys().all(|k| k.starts_with("gui-")), "{:?}", f.gui);
 }
+
+#[test]
+fn frames_carry_the_menus_and_a_window_runs_their_commands() {
+    let conn = start("hello", None);
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 2,
+        }))
+        .unwrap();
+    let f = frame(&conn);
+    let file = f
+        .menus
+        .iter()
+        .find(|m| m.title == "File")
+        .expect("a File menu");
+    assert!(file.items.iter().any(|i| i.command == "save"), "{file:?}");
+    conn.input
+        .send(Input::Run("select-all".to_owned()))
+        .unwrap();
+    let mut f = frame(&conn);
+    while !f.rows[0]
+        .spans
+        .iter()
+        .any(|s| s.text == "hello" && s.tags.contains(&greed_core::render::Tag::SELECTION))
+    {
+        f = frame(&conn);
+    }
+}

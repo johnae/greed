@@ -15,7 +15,7 @@ use super::tasks;
 use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
-use crate::render::{Span, StatusLine, Tag};
+use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, PanelOptions, Side};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -312,9 +312,38 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
+    greed.set("set_menus", menus_function(lua)?)?;
+
     workspace_functions(lua, &greed, owner)?;
     submodules(lua, &greed, owner)?;
     Ok(greed)
+}
+
+/// `greed.set_menus(menus)`: the menus a window shows as its menu bar.
+fn menus_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, list: Vec<Table>| {
+        let menus = list
+            .iter()
+            .map(|menu| {
+                let items = menu
+                    .get::<Vec<Table>>("items")?
+                    .iter()
+                    .map(|item| {
+                        Ok(MenuItem {
+                            label: item.get("label")?,
+                            command: item.get("command")?,
+                        })
+                    })
+                    .collect::<LuaResult<_>>()?;
+                Ok(Menu {
+                    title: menu.get("title")?,
+                    items,
+                })
+            })
+            .collect::<LuaResult<_>>()?;
+        state_mut(lua).editor.set_menus(menus);
+        Ok(())
+    })
 }
 
 /// `greed.keymap`, `greed.mode` and the other tables in `greed`.

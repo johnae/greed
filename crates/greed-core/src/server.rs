@@ -32,6 +32,8 @@ pub enum Input {
     Mouse(Mouse),
     /// How many pixels wide and high a cell is on the client's screen.
     CellSize(u16, u16),
+    /// Run the command by this name, as from a window's menu.
+    Run(String),
     Quit,
 }
 
@@ -365,6 +367,10 @@ impl Server<'_> {
             }
             Input::CellSize(w, h) => {
                 self.host.with_editor_mut(|ed| ed.set_cell_size((w, h)));
+            }
+            Input::Run(ref name) => {
+                let ran = self.host.run(name);
+                self.report(ran);
             }
             Input::Quit => return false,
         }
