@@ -127,6 +127,8 @@ where
             }),
             inputs,
             watched_at: Instant::now(),
+            drawn_at: Instant::now(),
+            owed: false,
         };
         if let Some(session) = &session {
             host.set_session_name(&session.name);
@@ -183,10 +185,18 @@ struct Server<'a> {
     inputs: Sender<Input>,
     /// When the watched files were last looked at.
     watched_at: Instant,
+    /// When the last frame was drawn, and whether work since wants another.
+    drawn_at: Instant,
+    owed: bool,
 }
 
 /// How often watched files are looked at.
 const WATCH_EVERY: Duration = Duration::from_millis(500);
+
+/// The least time between frames, about a fast screen's refresh. Work that
+/// wakes the server more often than this (a program flooding a terminal, a
+/// language server's burst of messages) is drawn once for each.
+const FRAME_EVERY: Duration = Duration::from_millis(8);
 
 impl Server<'_> {
     /// With files watched, when to wake up to look at them.
@@ -196,6 +206,25 @@ impl Server<'_> {
         } else {
             crossbeam_channel::never()
         }
+    }
+
+    /// With a frame owed, when to wake up to draw it.
+    fn frame_timer(&self) -> Receiver<Instant> {
+        if self.owed {
+            crossbeam_channel::at(self.drawn_at + FRAME_EVERY)
+        } else {
+            crossbeam_channel::never()
+        }
+    }
+
+    /// Whether to draw a frame now, after keys (`typed`) or other work. A
+    /// frame too soon after the last is owed until [`FRAME_EVERY`] is up.
+    fn frame_due(&mut self, typed: bool) -> bool {
+        self.owed = !typed && self.drawn_at.elapsed() < FRAME_EVERY;
+        if !self.owed {
+            self.drawn_at = Instant::now();
+        }
+        !self.owed
     }
 
     /// Tells plugins about watched files that changed, at most every
@@ -228,9 +257,12 @@ impl Server<'_> {
                 .next_timer()
                 .map_or_else(crossbeam_channel::never, crossbeam_channel::at);
             let look = self.watch_timer();
+            // What the client sends is drawn at once; other work waits its turn.
+            let mut typed = false;
             select! {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
+                    typed = true;
                     for input in std::iter::once(first).chain(inbox.try_iter()) {
                         if !self.input(&input) {
                             return;
@@ -273,6 +305,7 @@ impl Server<'_> {
                 }
                 recv(timer) -> _ => {}
                 recv(look) -> _ => {}
+                recv(self.frame_timer()) -> _ => {}
             }
             let fired = self.host.fire_timers(Instant::now());
             self.report(fired);
@@ -306,7 +339,7 @@ impl Server<'_> {
                 }
                 self.detach();
             }
-            if !self.draw() {
+            if self.frame_due(typed) && !self.draw() {
                 return;
             }
         }

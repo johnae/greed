@@ -166,3 +166,42 @@ fn the_server_wakes_up_for_timers() {
         f = frame(&conn);
     }
 }
+
+#[test]
+fn frames_come_at_most_once_a_redraw_while_work_keeps_waking_the_server() {
+    // A command that changes the text every millisecond for a while: each
+    // wake-up is work, but frames come at a screen's pace.
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor)?;
+        host.load_str(
+            "busy",
+            "local greed = require('@greed')\ngreed.command { name = 'busy', run = function(ctx) for i = 1, 200 do greed.sleep(1) ctx.buffer:edit(function(e) e:replace(0, #ctx.buffer:text(), tostring(i)) end) end end }\ngreed.keymap.bind('normal', { z = 'busy' })",
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    let started = std::time::Instant::now();
+    keys(&conn, "z");
+    let mut frames = 0;
+    loop {
+        frames += 1;
+        if frame(&conn).rows[0].text() == "1 200" {
+            break;
+        }
+    }
+    let elapsed = started.elapsed();
+    // A frame every 8ms at most, and one more for the key.
+    let most = elapsed.as_millis() / 8 + 2;
+    assert!(
+        frames <= most,
+        "{frames} frames in {elapsed:?}, more than {most}"
+    );
+}

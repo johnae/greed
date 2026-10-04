@@ -86,21 +86,38 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     // Deltas change the last whole frame into the next.
     let mut current: Option<Frame> = None;
     let ended = loop {
-        match output.recv() {
-            Ok(Output::Image(image)) => screen.graphics.add(image),
-            Ok(Output::Clipboard(text)) => copy_to_system(&mut out, &text)?,
-            Ok(Output::Frame(frame)) => {
-                screen.draw(&mut out, &frame)?;
-                current = Some(frame);
-            }
-            Ok(Output::Delta(delta)) => {
-                if let Some(frame) = &mut current {
-                    delta.apply(frame);
-                    screen.draw(&mut out, frame)?;
+        let Ok(first) = output.recv() else {
+            break Output::Exit;
+        };
+        // Frames that queued up while the terminal was busy are drawn as
+        // the last of them, once.
+        let mut changed = false;
+        let mut ended = None;
+        for message in std::iter::once(first).chain(output.try_iter()) {
+            match message {
+                Output::Image(image) => screen.graphics.add(image),
+                Output::Clipboard(text) => copy_to_system(&mut out, &text)?,
+                Output::Frame(frame) => {
+                    current = Some(frame);
+                    changed = true;
+                }
+                Output::Delta(delta) => {
+                    if let Some(frame) = &mut current {
+                        delta.apply(frame);
+                        changed = true;
+                    }
+                }
+                other => {
+                    ended = Some(other);
+                    break;
                 }
             }
-            Ok(other) => break other,
-            Err(_) => break Output::Exit,
+        }
+        if changed && let Some(frame) = &current {
+            screen.draw(&mut out, frame)?;
+        }
+        if let Some(ended) = ended {
+            break ended;
         }
     };
     reading.store(false, Ordering::Relaxed);
