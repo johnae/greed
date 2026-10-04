@@ -2,9 +2,11 @@
 //! keys, the mouse and its size back, as the TUI does in a terminal.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
+use greed_core::image::ImageId;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
 use greed_core::render::{Frame, Size, grid};
@@ -92,6 +94,8 @@ struct App {
     atlas: Atlas,
     palette: Palette,
     frame: Option<Frame>,
+    /// Every image the session sent, as PNG: it sends each only once.
+    images: HashMap<ImageId, Vec<u8>>,
     mods: ModifiersState,
     /// The cell the mouse is over, and the button held, for drags.
     mouse: (u16, u16),
@@ -111,6 +115,7 @@ impl App {
             atlas: Atlas::new(ATLAS_SIZE),
             palette: Palette::default(),
             frame: None,
+            images: HashMap::new(),
             mods: ModifiersState::empty(),
             mouse: (0, 0),
             held: None,
@@ -146,6 +151,7 @@ impl App {
         let Ok(scene) = draw::build(
             &grid,
             cursor,
+            &frame.images,
             &mut self.fonts,
             &mut self.atlas,
             &self.palette,
@@ -156,6 +162,7 @@ impl App {
             draw::build(
                 &grid,
                 cursor,
+                &frame.images,
                 &mut self.fonts,
                 &mut self.atlas,
                 &self.palette,
@@ -164,6 +171,7 @@ impl App {
             return;
         };
         shown.gpu.upload(&mut self.atlas);
+        shown.gpu.place_images(&frame.images, &self.images);
         let (wgpu::CurrentSurfaceTexture::Success(texture)
         | wgpu::CurrentSurfaceTexture::Suboptimal(texture)) = shown.surface.get_current_texture()
         else {
@@ -194,8 +202,14 @@ impl App {
                 }
                 return;
             }
-            // Images aren't drawn yet.
-            Output::Image(_) => return,
+            // Kept as PNG; frames that place it make its texture.
+            Output::Image(image) => {
+                use base64::Engine;
+                if let Ok(png) = base64::engine::general_purpose::STANDARD.decode(&image.png) {
+                    self.images.insert(image.id, png);
+                }
+                return;
+            }
             other => {
                 self.ended = Some(other);
                 event_loop.exit();

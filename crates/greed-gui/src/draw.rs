@@ -5,8 +5,9 @@
 
 use bytemuck::{Pod, Zeroable};
 use greed_core::CursorShape;
-use greed_core::render::Position;
+use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
+use greed_core::render::{ImagePlacement, Position};
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
@@ -32,10 +33,40 @@ pub const MASK: u32 = 1;
 /// A glyph with colors of its own, like an emoji.
 pub const COLOR: u32 = 2;
 
-/// What one frame draws: the background, then the quads in order.
+/// What one frame draws: the background, then the quads in order, then the
+/// images over them.
 pub struct Scene {
     pub background: Rgba,
     pub instances: Vec<Instance>,
+    pub images: Vec<(ImageId, Instance)>,
+}
+
+/// Where each image goes, `COLOR` quads to draw with the image's own
+/// texture: the part of it from its cell (`col`, `row`) on, stretched over
+/// the cells it's placed on.
+fn images(placements: &[ImagePlacement], cell_w: f32, cell_h: f32) -> Vec<(ImageId, Instance)> {
+    placements
+        .iter()
+        .map(|p| {
+            let (cols, rows) = (f32::from(p.cols.max(1)), f32::from(p.rows.max(1)));
+            let instance = Instance {
+                pos: [f32::from(p.rect.x) * cell_w, f32::from(p.rect.y) * cell_h],
+                size: [
+                    f32::from(p.rect.width) * cell_w,
+                    f32::from(p.rect.height) * cell_h,
+                ],
+                uv: [
+                    f32::from(p.col) / cols,
+                    f32::from(p.row) / rows,
+                    ((f32::from(p.col) + f32::from(p.rect.width)) / cols).min(1.0),
+                    ((f32::from(p.row) + f32::from(p.rect.height)) / rows).min(1.0),
+                ],
+                color: [1.0; 4],
+                kind: COLOR,
+            };
+            (p.id, instance)
+        })
+        .collect()
 }
 
 fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
@@ -48,11 +79,13 @@ fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
     }
 }
 
-/// `grid` drawn with `fonts`, the cursor at `cursor` in `shape` if given.
-/// Fails when the atlas fills up; clear it and build again.
+/// `grid` drawn with `fonts`, the cursor at `cursor` in `shape` if given,
+/// and `placements`' images over it. Fails when the atlas fills up; clear
+/// it and build again.
 pub fn build(
     grid: &[Vec<Cell>],
     cursor: Option<(Position, CursorShape)>,
+    placements: &[ImagePlacement],
     fonts: &mut Fonts,
     atlas: &mut Atlas,
     palette: &Palette,
@@ -118,6 +151,7 @@ pub fn build(
     Ok(Scene {
         background,
         instances,
+        images: images(placements, cw, ch),
     })
 }
 

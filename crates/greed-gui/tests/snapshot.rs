@@ -9,13 +9,15 @@
     clippy::float_cmp
 )]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use smallvec::SmallVec;
 
 use greed_core::CursorShape;
+use greed_core::image::ImageId;
 use greed_core::render::grid::compose;
-use greed_core::render::{FloatFrame, Frame, Position, Rect, Row, Size, Span, Tag};
+use greed_core::render::{FloatFrame, Frame, ImagePlacement, Position, Rect, Row, Size, Span, Tag};
 use greed_core::theme::{Color, Entry, Style, Surface, Theme};
 use greed_gui::Palette;
 use greed_gui::draw::build;
@@ -118,6 +120,7 @@ fn a_frame_draws_text_on_its_grid_with_the_cursor_status_line_and_a_float() {
     let scene = build(
         &grid,
         frame.cursor.map(|c| (c, frame.cursor_shape)),
+        &frame.images,
         &mut fonts,
         &mut atlas,
         &palette,
@@ -183,7 +186,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     let mut frame = frame();
     frame.rows[1] = row(&[("    a -> b != c;", "")]);
     let grid = compose(&frame, Surface::Gui);
-    let scene = build(&grid, None, &mut fonts, &mut atlas, &palette).unwrap();
+    let scene = build(&grid, None, &[], &mut fonts, &mut atlas, &palette).unwrap();
     gpu.upload(&mut atlas);
     let size = (
         (40.0 * fonts.cell_w).ceil() as u32,
@@ -203,4 +206,93 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
         .flat_map(|x| ((1.0 * ch) as u32..(2.0 * ch) as u32).map(move |y| (x, y)))
         .any(|(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg);
     assert!(semicolon, "text after a ligature stays on its column");
+}
+
+/// A PNG `width` by `height`, its left half red and its right half blue.
+fn halves(width: u32, height: u32) -> Vec<u8> {
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let pixels: Vec<u8> = (0..height)
+        .flat_map(|_| {
+            (0..width).flat_map(|x| {
+                if x < width / 2 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                }
+            })
+        })
+        .collect();
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&pixels)
+        .unwrap();
+    png
+}
+
+#[test]
+fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    frame.floats.clear();
+    let (whole, cut) = (ImageId(1), ImageId(2));
+    let placement = |id, x, col| ImagePlacement {
+        id,
+        rect: Rect {
+            x,
+            y: 4,
+            width: 4 - col,
+            height: 2,
+        },
+        col,
+        row: 0,
+        cols: 4,
+        rows: 2,
+    };
+    // The whole image at column 2; only the right half of the other at 30.
+    frame.images = vec![placement(whole, 2, 0), placement(cut, 30, 2)];
+    let pngs = HashMap::from([(whole, halves(40, 20)), (cut, halves(40, 20))]);
+    let grid = compose(&frame, Surface::Gui);
+    let scene = build(&grid, None, &frame.images, &mut fonts, &mut atlas, &palette).unwrap();
+    gpu.upload(&mut atlas);
+    gpu.place_images(&frame.images, &pngs);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file = std::fs::File::create(std::path::Path::new(&dir).join("images.png")).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
+    assert_eq!(
+        at(2.5, 4.5)[..3],
+        [255, 0, 0],
+        "the whole image's left half"
+    );
+    assert_eq!(at(5.5, 5.5)[..3], [0, 0, 255], "and its right half");
+    assert_eq!(at(6.5, 4.5)[..3], palette.bg, "nothing past it");
+    assert_eq!(
+        at(30.5, 4.5)[..3],
+        [0, 0, 255],
+        "the cut one starts halfway"
+    );
+    assert_eq!(at(31.5, 5.5)[..3], [0, 0, 255]);
+
+    // A frame without the image drops its texture; placing it again makes
+    // it again from the PNG.
+    gpu.place_images(&[], &pngs);
+    gpu.place_images(&frame.images, &pngs);
+    let again = gpu.snapshot(size, &scene);
+    assert_eq!(again, rgba);
 }

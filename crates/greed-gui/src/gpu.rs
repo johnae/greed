@@ -1,7 +1,12 @@
 //! Drawing scenes with wgpu: one pipeline draws every quad, colored
 //! rectangles and glyphs from the atlas texture alike, as instances of a
-//! four-vertex strip.
+//! four-vertex strip. Images are quads too, each drawn with its own
+//! texture in place of the atlas.
 
+use std::collections::HashMap;
+
+use greed_core::image::ImageId;
+use greed_core::render::ImagePlacement;
 use wgpu::util::DeviceExt;
 
 use crate::draw::{Instance, Scene};
@@ -11,7 +16,7 @@ const SHADER: &str = r"
 struct Screen { size: vec2<f32>, pad: vec2<f32> };
 @group(0) @binding(0) var<uniform> screen: Screen;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
-@group(0) @binding(2) var nearest: sampler;
+@group(0) @binding(2) var pick: sampler;
 
 struct Quad {
     @location(0) pos: vec2<f32>,
@@ -42,7 +47,7 @@ fn vs(@builtin(vertex_index) v: u32, q: Quad) -> Out {
 
 @fragment
 fn fs(o: Out) -> @location(0) vec4<f32> {
-    let t = textureSampleLevel(atlas, nearest, o.uv, 0.0);
+    let t = textureSampleLevel(atlas, pick, o.uv, 0.0);
     if o.kind == 0u {
         return o.color;
     }
@@ -53,15 +58,19 @@ fn fs(o: Out) -> @location(0) vec4<f32> {
 }
 ";
 
-/// The GPU state for drawing: the pipeline, the atlas texture and a buffer
-/// for each frame's quads.
+/// The GPU state for drawing: the pipeline, the atlas texture, the images'
+/// textures and a buffer for each frame's quads.
 pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     screen: wgpu::Buffer,
     atlas: wgpu::Texture,
+    /// Images are scaled to fit their cells, so they're sampled smoothly.
+    smooth: wgpu::Sampler,
+    images: HashMap<ImageId, wgpu::BindGroup>,
     quads: wgpu::Buffer,
     capacity: usize,
 }
@@ -112,26 +121,14 @@ impl Gpu {
             label: Some("nearest"),
             ..Default::default()
         });
-        let layout = bind_group_layout(&device);
-        let view = atlas.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("greed"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: screen.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
+        let smooth = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("smooth"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
+        let layout = bind_group_layout(&device);
+        let bind_group = bind(&device, &layout, &screen, &atlas, &sampler);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("greed"),
             bind_group_layouts: &[Some(&layout)],
@@ -178,11 +175,70 @@ impl Gpu {
             device,
             queue,
             pipeline,
+            layout,
             bind_group,
             screen,
             atlas,
+            smooth,
+            images: HashMap::new(),
             quads,
             capacity,
+        }
+    }
+
+    /// Makes textures for the images `placements` show, from their PNGs in
+    /// `pngs`, and drops those of images no longer shown. One too big for
+    /// the GPU is scaled down to fit.
+    pub fn place_images(
+        &mut self,
+        placements: &[ImagePlacement],
+        pngs: &HashMap<ImageId, Vec<u8>>,
+    ) {
+        self.images
+            .retain(|id, _| placements.iter().any(|p| p.id == *id));
+        let limit = self.device.limits().max_texture_dimension_2d;
+        for p in placements {
+            if self.images.contains_key(&p.id) {
+                continue;
+            }
+            let Some(decoded) = pngs.get(&p.id).and_then(|png| {
+                image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()
+            }) else {
+                continue;
+            };
+            let decoded = if decoded.width().max(decoded.height()) > limit {
+                decoded.resize(limit, limit, image::imageops::FilterType::Triangle)
+            } else {
+                decoded
+            };
+            let rgba = decoded.into_rgba8();
+            let texture = self.device.create_texture_with_data(
+                &self.queue,
+                &wgpu::TextureDescriptor {
+                    label: Some("image"),
+                    size: wgpu::Extent3d {
+                        width: rgba.width(),
+                        height: rgba.height(),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                &rgba,
+            );
+            let group = bind(
+                &self.device,
+                &self.layout,
+                &self.screen,
+                &texture,
+                &self.smooth,
+            );
+            self.images.insert(p.id, group);
         }
     }
 
@@ -229,12 +285,20 @@ impl Gpu {
         let screen = [size.0 as f32, size.1 as f32, 0.0, 0.0];
         self.queue
             .write_buffer(&self.screen, 0, bytemuck::cast_slice(&screen));
-        if scene.instances.len() > self.capacity {
-            self.capacity = scene.instances.len().next_power_of_two();
+        // The images' quads go after the rest, those without a texture left out.
+        let images: Vec<(&wgpu::BindGroup, Instance)> = scene
+            .images
+            .iter()
+            .filter_map(|(id, quad)| Some((self.images.get(id)?, *quad)))
+            .collect();
+        let mut quads = scene.instances.clone();
+        quads.extend(images.iter().map(|(_, quad)| *quad));
+        if quads.len() > self.capacity {
+            self.capacity = quads.len().next_power_of_two();
             self.quads = Self::quad_buffer(&self.device, self.capacity);
         }
         self.queue
-            .write_buffer(&self.quads, 0, bytemuck::cast_slice(&scene.instances));
+            .write_buffer(&self.quads, 0, bytemuck::cast_slice(&quads));
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -261,10 +325,12 @@ impl Gpu {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, self.quads.slice(..));
-            pass.draw(
-                0..4,
-                0..u32::try_from(scene.instances.len()).unwrap_or(u32::MAX),
-            );
+            let first = u32::try_from(scene.instances.len()).unwrap_or(u32::MAX);
+            pass.draw(0..4, 0..first);
+            for (at, (group, _)) in (first..).zip(&images) {
+                pass.set_bind_group(0, *group, &[]);
+                pass.draw(0..4, at..at + 1);
+            }
         }
         self.queue.submit([encoder.finish()]);
     }
@@ -327,7 +393,8 @@ impl Gpu {
     }
 }
 
-/// What the pipeline reads: the screen's size, the atlas and its sampler.
+/// The layout of what the pipeline reads: the screen's size, a texture and
+/// its sampler.
 fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("greed"),
@@ -357,6 +424,36 @@ fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
+            },
+        ],
+    })
+}
+
+/// What the pipeline reads for a set of quads: the screen's size, and
+/// `texture` sampled with `sampler`.
+fn bind(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    screen: &wgpu::Buffer,
+    texture: &wgpu::Texture,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("greed"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: screen.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
             },
         ],
     })

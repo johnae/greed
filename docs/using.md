@@ -55,9 +55,9 @@ go, as `:detach` does.
 
 The window draws with your system's monospaced font, ligatures included
 when the font has them (Fira Code, JetBrains Mono, Cascadia Code), and
-draws box lines itself so borders join cleanly. Images and choosing the
-font are still to come. On Linux it needs Wayland or X11 and a Vulkan or
-GL driver.
+draws box lines itself so borders join cleanly. Images show as they do in
+a terminal with kitty graphics, PDFs included. Choosing the font is still
+to come. On Linux it needs Wayland or X11 and a Vulkan or GL driver.
 
 ## Projects
 

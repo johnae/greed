@@ -7,10 +7,12 @@ rust-version.workspace = true
 
 [dependencies]
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }
 cosmic-text = "0.19"
 crossbeam-channel.workspace = true
 greed-core.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
 pollster = "0.4"
 unicode-width.workspace = true
 wgpu = "30"
