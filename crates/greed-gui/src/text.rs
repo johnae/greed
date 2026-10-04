@@ -1,12 +1,32 @@
 //! Fonts: shaping runs of text with cosmic-text (ligatures, fallback for
 //! missing glyphs) and rasterizing glyphs into an atlas the GPU draws from.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, LayoutGlyph, Metrics, Shaping, Style, SwashCache,
     SwashContent, Weight, Wrap,
 };
+
+/// The font size in logical pixels, before the screen's scale, unless the
+/// `gui-font-size` option says otherwise.
+pub const DEFAULT_SIZE: f32 = 15.0;
+
+/// The font a frame's options ask for: `gui-font`, a family (none, or
+/// empty, for the system's monospaced font), and `gui-font-size`.
+pub fn chosen(options: &BTreeMap<String, String>) -> (Option<String>, f32) {
+    let family = options
+        .get("gui-font")
+        .map(|f| f.trim())
+        .filter(|f| !f.is_empty())
+        .map(str::to_owned);
+    let size = options
+        .get("gui-font-size")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .filter(|s| (4.0..=200.0).contains(s))
+        .unwrap_or(DEFAULT_SIZE);
+    (family, size)
+}
 
 /// The monospaced font text is drawn in, and the cell it sets.
 pub struct Fonts {
@@ -208,3 +228,36 @@ impl Atlas {
 /// The atlas has no room left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Full;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn options(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn the_options_choose_the_font_and_its_size() {
+        assert_eq!(chosen(&options(&[])), (None, DEFAULT_SIZE));
+        assert_eq!(
+            chosen(&options(&[
+                ("gui-font", "Fira Code"),
+                ("gui-font-size", "13.5")
+            ])),
+            (Some("Fira Code".to_owned()), 13.5)
+        );
+        assert_eq!(
+            chosen(&options(&[("gui-font", " "), ("gui-font-size", "0")])),
+            (None, DEFAULT_SIZE),
+            "empty and silly values are the defaults"
+        );
+        assert_eq!(
+            chosen(&options(&[("gui-font-size", "big")])).1,
+            DEFAULT_SIZE
+        );
+    }
+}

@@ -205,3 +205,18 @@ fn frames_come_at_most_once_a_redraw_while_work_keeps_waking_the_server() {
         "{frames} frames in {elapsed:?}, more than {most}"
     );
 }
+
+#[test]
+fn frames_carry_the_options_a_window_reads() {
+    let conn = start("", None);
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 2,
+        }))
+        .unwrap();
+    let f = frame(&conn);
+    assert_eq!(f.gui.get("gui-font-size").map(String::as_str), Some("15"));
+    assert_eq!(f.gui.get("gui-font").map(String::as_str), Some(""));
+    assert!(f.gui.keys().all(|k| k.starts_with("gui-")), "{:?}", f.gui);
+}

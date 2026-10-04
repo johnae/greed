@@ -37,7 +37,7 @@ mod theme;
 mod watch;
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -370,6 +370,17 @@ impl Host {
 
     pub fn with_registry<R>(&self, f: impl FnOnce(&Registry<Function>) -> R) -> R {
         f(&state(&self.lua).registry)
+    }
+
+    /// The options named `gui-...`, as text, for a window to read.
+    pub fn gui_options(&self) -> BTreeMap<String, String> {
+        self.with_registry(|registry| {
+            registry
+                .option_states()
+                .filter(|o| o.def.name.starts_with("gui-"))
+                .map(|o| (o.def.name.to_string(), o.value.to_string()))
+                .collect()
+        })
     }
 
     /// Loads the plugin in `dir`, described by its `plugin.toml`.

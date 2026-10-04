@@ -112,3 +112,18 @@ fn deltas_are_much_smaller_than_frames() {
     let small = serde_json::to_string(&delta).unwrap().len();
     assert!(small * 3 < full, "{small} bytes against {full}");
 }
+
+#[test]
+fn window_options_go_along_when_they_change() {
+    let mut ed = editor("|one");
+    let before = frame(&mut ed);
+    let mut after = frame(&mut ed);
+    after
+        .gui
+        .insert("gui-font".to_owned(), "Fira Code".to_owned());
+    let delta = FrameDelta::between(&before, &after).unwrap();
+    assert!(delta.rows.is_empty() && delta.gui.is_some());
+    let mut applied = before.clone();
+    delta.apply(&mut applied);
+    assert_eq!(applied, after);
+}

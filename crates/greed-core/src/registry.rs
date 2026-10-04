@@ -66,6 +66,17 @@ impl Value {
     }
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Bool(b) => write!(f, "{b}"),
+            Value::Int(i) => write!(f, "{i}"),
+            Value::Float(x) => write!(f, "{x}"),
+            Value::String(s) => f.write_str(s),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OptionDef {
     pub name: Arc<str>,

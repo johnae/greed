@@ -9,6 +9,7 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -226,6 +227,9 @@ pub struct Frame {
     pub cursor_shape: CursorShape,
     /// What the tags look like.
     pub theme: Arc<Theme>,
+    /// The options for a window to read, those named `gui-...`, as text.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub gui: BTreeMap<String, String>,
 }
 
 /// A panel: its rows fill `rect`. The client draws a line down column
@@ -403,6 +407,7 @@ impl<M: Measure> Renderer<M> {
             cursor,
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
+            gui: BTreeMap::new(),
         }
     }
 

@@ -3,6 +3,7 @@
 //! two rows, not the whole screen. This matters most for clients far away,
 //! like a terminal attached over SSH.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,8 @@ pub struct FrameDelta {
     pub cursor_shape: Option<CursorShape>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<Arc<Theme>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gui: Option<BTreeMap<String, String>>,
 }
 
 /// `new` if it differs from `old`.
@@ -69,6 +72,7 @@ impl FrameDelta {
             cursor: changed(&old.cursor, &new.cursor),
             cursor_shape: changed(&old.cursor_shape, &new.cursor_shape),
             theme,
+            gui: changed(&old.gui, &new.gui),
         };
         (!delta.is_empty()).then_some(delta)
     }
@@ -84,6 +88,7 @@ impl FrameDelta {
             && self.cursor.is_none()
             && self.cursor_shape.is_none()
             && self.theme.is_none()
+            && self.gui.is_none()
     }
 
     /// Turns `frame` (the old frame this delta was made against) into the
@@ -120,6 +125,9 @@ impl FrameDelta {
         }
         if let Some(theme) = self.theme {
             frame.theme = theme;
+        }
+        if let Some(gui) = self.gui {
+            frame.gui = gui;
         }
     }
 }

@@ -23,10 +23,8 @@ use winit::window::{Window, WindowId};
 use crate::color::Palette;
 use crate::draw;
 use crate::gpu::Gpu;
-use crate::text::{Atlas, Fonts};
+use crate::text::{self, Atlas, Fonts};
 
-/// The font size in logical pixels, before the screen's scale.
-const FONT_SIZE: f32 = 15.0;
 const ATLAS_SIZE: u32 = 2048;
 
 /// What reaches the event loop from the session's thread.
@@ -91,6 +89,9 @@ struct App {
     input: Sender<Input>,
     shown: Option<Shown>,
     fonts: Fonts,
+    /// The font the options chose, a family and a size before the scale.
+    font: (Option<String>, f32),
+    scale: f64,
     atlas: Atlas,
     palette: Palette,
     frame: Option<Frame>,
@@ -111,7 +112,9 @@ impl App {
         Self {
             input,
             shown: None,
-            fonts: Fonts::new(None, FONT_SIZE),
+            fonts: Fonts::new(None, text::DEFAULT_SIZE),
+            font: (None, text::DEFAULT_SIZE),
+            scale: 1.0,
             atlas: Atlas::new(ATLAS_SIZE),
             palette: Palette::default(),
             frame: None,
@@ -127,8 +130,30 @@ impl App {
 
     /// Fonts at the window's scale.
     fn set_scale(&mut self, scale: f64) {
-        self.fonts = Fonts::new(None, FONT_SIZE * scale as f32);
+        self.scale = scale;
+        self.refont();
+    }
+
+    /// The chosen font at the window's scale, from a fresh atlas.
+    fn refont(&mut self) {
+        let (family, size) = &self.font;
+        self.fonts = Fonts::new(family.clone(), size * self.scale as f32);
         self.atlas.clear();
+    }
+
+    /// Takes up the font the frame's options choose, if it's another one,
+    /// and tells the session the cells' new size.
+    fn follow_options(&mut self) {
+        let Some(frame) = &self.frame else { return };
+        let font = text::chosen(&frame.gui);
+        if font == self.font {
+            return;
+        }
+        self.font = font;
+        self.refont();
+        if let Some(shown) = &self.shown {
+            self.send_size(shown.window.inner_size());
+        }
     }
 
     /// Tells the session how many cells fit in `size`, and how big a cell is.
@@ -216,6 +241,7 @@ impl App {
                 return;
             }
         }
+        self.follow_options();
         if let Some(shown) = &self.shown {
             shown.window.request_redraw();
         }

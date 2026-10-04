@@ -56,8 +56,17 @@ go, as `:detach` does.
 The window draws with your system's monospaced font, ligatures included
 when the font has them (Fira Code, JetBrains Mono, Cascadia Code), and
 draws box lines itself so borders join cleanly. Images show as they do in
-a terminal with kitty graphics, PDFs included. Choosing the font is still
-to come. On Linux it needs Wayland or X11 and a Vulkan or GL driver.
+a terminal with kitty graphics, PDFs included. On Linux it needs Wayland or
+X11 and a Vulkan or GL driver.
+
+Pick another font and size in your `init.luau`; the window follows as soon
+as they change:
+
+```luau
+local greed = require("@greed")
+greed.option.set("gui-font", "JetBrains Mono")
+greed.option.set("gui-font-size", 14) -- pixels, before the screen's scale
+```
 
 ## Projects
 

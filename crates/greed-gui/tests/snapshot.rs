@@ -98,6 +98,7 @@ fn frame() -> Frame {
         cursor: Some(Position { col: 3, row: 0 }),
         cursor_shape: CursorShape::Block,
         theme: Arc::new(theme),
+        gui: std::collections::BTreeMap::new(),
     }
 }
 

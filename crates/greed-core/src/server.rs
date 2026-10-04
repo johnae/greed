@@ -475,6 +475,7 @@ impl Server<'_> {
         if let Err(err) = reported {
             self.message = Some(first_line(&err.to_string()));
         }
+        frame.gui = host.gui_options();
         let Some(client) = &mut self.client else {
             return true;
         };
