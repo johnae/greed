@@ -21,6 +21,7 @@ use greed_text::Rope;
 
 mod hit;
 pub use hit::Hit;
+pub mod grid;
 
 use crate::image::ImageId;
 use crate::syntax::Highlight;

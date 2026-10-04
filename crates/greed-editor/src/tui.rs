@@ -20,10 +20,9 @@ use crossterm::{execute, queue};
 use greed_core::CursorShape;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
-use greed_core::render::{Frame, Row, Size, Tag};
+use greed_core::render::{Frame, Size, grid};
 use greed_core::server::{Input, Output};
-use greed_core::theme::{Color as ThemeColor, Style, Surface, Theme, Underline};
-use unicode_segmentation::UnicodeSegmentation;
+use greed_core::theme::{Color as ThemeColor, Style, Surface, Underline};
 use unicode_width::UnicodeWidthStr;
 
 type Error = Box<dyn std::error::Error>;
@@ -390,114 +389,19 @@ impl Screen {
     }
 }
 
-/// Lays the frame out as cells: the main view, then each floating view in a
-/// box on top, styled by the frame's theme.
+/// The frame's shared cell grid, with terminal styles.
 fn compose(frame: &Frame) -> Vec<Vec<Cell>> {
-    let theme = &frame.theme;
-    let look = |tag: &Tag| theme.style(tag.name(), Surface::Tui);
-    let width = usize::from(frame.size.width);
-    let text = look(&Tag::TEXT);
-    let blank = Cell {
-        text: " ".to_owned(),
-        style: terminal_style(text),
-    };
-    let mut grid = vec![vec![blank; width]; usize::from(frame.size.height)];
-    if let Some((status, rows)) = frame.rows.split_last() {
-        let (x, w) = (usize::from(frame.main.x), usize::from(frame.main.width));
-        for (line, row) in grid.iter_mut().zip(rows) {
-            put_row(line, x, w, row, text, theme);
-        }
-        if let Some(line) = grid.get_mut(rows.len()) {
-            put_row(line, 0, width, status, text, theme);
-        }
-    }
-    let panel = text.patch(&look(&Tag::PANEL));
-    let separator = terminal_style(panel.patch(&look(&Tag::PANEL_BORDER)));
-    for p in &frame.panels {
-        let (x, w) = (usize::from(p.rect.x), usize::from(p.rect.width));
-        let top = usize::from(p.rect.y) - usize::from(p.title.is_some());
-        for line in grid.iter_mut().skip(top).take(frame.rows.len() - 1 - top) {
-            put(line, usize::from(p.separator), 1, "│", separator);
-        }
-        if let (Some(title), Some(line)) = (&p.title, grid.get_mut(top)) {
-            let style = terminal_style(panel.patch(&look(&Tag::PANEL_TITLE)));
-            put(line, x, w, &format!("{title:<w$}"), style);
-        }
-        for (line, row) in grid.iter_mut().skip(usize::from(p.rect.y)).zip(&p.rows) {
-            put_row(line, x, w, row, panel, theme);
-        }
-    }
-    for float in &frame.floats {
-        let r = float.rect;
-        let (x, y, w, h) = (
-            usize::from(r.x),
-            usize::from(r.y),
-            usize::from(r.width),
-            usize::from(r.height),
-        );
-        let body = text.patch(&look(&Tag::FLOAT));
-        let border = body.patch(&look(&Tag::FLOAT_BORDER));
-        for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
-            let (left, fill, right) = match dy {
-                d if d == y - 1 => ('┌', '─', '┐'),
-                d if d == y + h => ('└', '─', '┘'),
-                _ => ('│', ' ', '│'),
-            };
-            let mut cells = std::iter::once(left)
-                .chain(std::iter::repeat_n(fill, w))
-                .chain(std::iter::once(right));
-            for cell in line.iter_mut().skip(x - 1).take(w + 2) {
-                let c = cells.next().unwrap_or(' ');
-                let style = if c == ' ' { body } else { border };
-                *cell = Cell {
-                    text: c.to_string(),
-                    style: terminal_style(style),
-                };
-            }
-        }
-        if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1))
-            && !title.is_empty()
-        {
-            let style = terminal_style(border.patch(&look(&Tag::FLOAT_TITLE)));
-            put(
-                top,
-                x + 1,
-                w.saturating_sub(2),
-                &format!(" {title} "),
-                style,
-            );
-        }
-        for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
-            put_row(line, x, w, row, body, theme);
-        }
-    }
-    grid
-}
-
-/// Draws `row` over `base`, each span styled by the row's tags and then its
-/// own, in order. A row with tags of its own fills its whole width.
-fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, theme: &Theme) {
-    let layer = |style: Style, tags: &[Tag]| {
-        tags.iter().fold(style, |style, tag| {
-            style.patch(&theme.style(tag.name(), Surface::Tui))
+    grid::compose(frame, Surface::Tui)
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|cell| Cell {
+                    text: cell.text,
+                    style: terminal_style(cell.style),
+                })
+                .collect()
         })
-    };
-    let base = layer(base, &row.tags);
-    let mut used = 0;
-    for span in &row.spans {
-        let style = layer(base, &span.tags);
-        used += put(
-            line,
-            x + used,
-            width - used,
-            &span.text,
-            terminal_style(style),
-        );
-    }
-    if !row.tags.is_empty() {
-        let fill = " ".repeat(width - used);
-        put(line, x + used, width - used, &fill, terminal_style(base));
-    }
+        .collect()
 }
 
 /// Whether terminals may disagree about how many cells `grapheme` takes:
@@ -562,30 +466,6 @@ fn cursor_col(x: usize) -> u16 {
     u16::try_from(x).unwrap_or(u16::MAX)
 }
 
-/// Writes `text` into `line` from cell `x`, within `width` cells. Returns how
-/// many cells it used.
-fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: ContentStyle) -> usize {
-    let mut used = 0;
-    for grapheme in text.graphemes(true) {
-        let w = grapheme.width().max(1);
-        if used + w > width || x + used + w > line.len() {
-            break;
-        }
-        line[x + used] = Cell {
-            text: grapheme.to_owned(),
-            style,
-        };
-        for extra in 1..w {
-            line[x + used + extra] = Cell {
-                text: String::new(),
-                style,
-            };
-        }
-        used += w;
-    }
-    used
-}
-
 /// A theme style as the terminal draws it.
 fn terminal_style(style: Style) -> ContentStyle {
     let mut out = ContentStyle::new();
@@ -648,6 +528,8 @@ fn terminal_color(color: ThemeColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use greed_core::render::{Row, Tag};
+    use greed_core::theme::Theme;
 
     #[test]
     fn truecolor_is_what_greed_colors_or_the_terminal_says() {
@@ -675,10 +557,24 @@ mod tests {
         assert_eq!(nearest_256(0x5f, 0x87, 0xaf), 67, "a cube color exactly");
     }
 
-    /// A row of plain cells for `text`, as `put` lays it out.
+    /// A row of plain cells for `text`: each grapheme in its cells, a wide
+    /// one's later cells empty.
     fn cells(text: &str, width: usize) -> Vec<Cell> {
-        let mut line = vec![Cell::default(); width];
-        put(&mut line, 0, width, text, ContentStyle::new());
+        use unicode_segmentation::UnicodeSegmentation;
+        let mut line = Vec::new();
+        for grapheme in text.graphemes(true) {
+            line.push(Cell {
+                text: grapheme.to_owned(),
+                style: ContentStyle::new(),
+            });
+            for _ in 1..grapheme.width().max(1) {
+                line.push(Cell {
+                    text: String::new(),
+                    style: ContentStyle::new(),
+                });
+            }
+        }
+        line.resize(width, Cell::default());
         line
     }
 
