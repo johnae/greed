@@ -548,3 +548,66 @@ fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
         palette.bg
     );
 }
+
+#[test]
+fn a_float_over_prose_keeps_its_place() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    theme.set(
+        "prose",
+        Entry {
+            gui: Style {
+                font: Some(greed_core::theme::Font::Prose),
+                ..Style::default()
+            },
+            ..Entry::default()
+        },
+    );
+    frame.theme = Arc::new(theme);
+    // Prose all along the row the float ("a float", from cell 26) is on.
+    frame.rows[4] = row(&[("Illuminating paragraphs of prose run under", "prose")]);
+    let grid = compose(&frame, Surface::Gui);
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::of(&frame),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    if let Some(dir) = std::env::var_os("GREED_GUI_SNAPSHOTS") {
+        let file =
+            std::fs::File::create(std::path::Path::new(&dir).join("float-over-prose.png")).unwrap();
+        let mut png = png::Encoder::new(file, size.0, size.1);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    assert!(
+        scene.columns.x(4, 20) < 20.0 * cw,
+        "the prose before it flows"
+    );
+    for col in 25..39 {
+        assert_eq!(
+            scene.columns.x(4, col),
+            col as f32 * cw,
+            "the float's cell {col}"
+        );
+    }
+    // "a float"'s "a" is drawn in its own cell.
+    let inked = ((26.0 * cw) as u32..(27.0 * cw) as u32)
+        .flat_map(|x| ((4.0 * ch) as u32..(5.0 * ch) as u32).map(move |y| (x, y)))
+        .any(|(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg);
+    assert!(inked, "the float's text where its box is");
+}

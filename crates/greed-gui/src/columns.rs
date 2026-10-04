@@ -44,33 +44,46 @@ impl Columns {
     }
 }
 
-/// Where every cell of `grid` goes, its prose shaped with `fonts`.
-pub fn lay_out(grid: &[Vec<Cell>], looks: &[Vec<Look>], fonts: &mut Fonts) -> Columns {
+/// Where every cell of `grid` goes, its prose shaped with `fonts`. Cells
+/// `snaps` marks (where something else starts: a float, a pane's border)
+/// go back to their column, and the flow starts again from there.
+pub fn lay_out(
+    grid: &[Vec<Cell>],
+    looks: &[Vec<Look>],
+    snaps: &[Vec<bool>],
+    fonts: &mut Fonts,
+) -> Columns {
     let cell_w = fonts.cell_w;
     let rows = grid
         .iter()
         .zip(looks)
-        .map(|(row, looks)| {
+        .zip(snaps)
+        .map(|((row, looks), snaps)| {
             let prose = row
                 .iter()
                 .zip(looks)
                 .any(|(c, l)| l.prose && !c.text.is_empty());
-            prose.then(|| flow(row, looks, fonts))
+            prose.then(|| flow(row, looks, snaps, fonts))
         })
         .collect();
     Columns { cell_w, rows }
 }
 
 /// The x of each cell of a row with prose in it, and of its end.
-fn flow(row: &[Cell], looks: &[Look], fonts: &mut Fonts) -> Vec<f32> {
+fn flow(row: &[Cell], looks: &[Look], snaps: &[bool], fonts: &mut Fonts) -> Vec<f32> {
     let cw = fonts.cell_w;
     let mut xs = vec![0.0; row.len() + 1];
-    let mut x = 0.0;
+    // How far left of its column the flow has put the next cell: never
+    // right of it, and none at all on the grid.
+    let mut shift: f32 = 0.0;
     let mut col = 0;
     while col < row.len() {
+        if snaps[col] {
+            shift = 0.0;
+        }
+        let x = col as f32 * cw - shift;
         if !looks[col].prose || row[col].text.is_empty() {
             xs[col] = x;
-            x += cw;
             col += 1;
             continue;
         }
@@ -79,8 +92,9 @@ fn flow(row: &[Cell], looks: &[Look], fonts: &mut Fonts) -> Vec<f32> {
         let style = style_of(&row[col], &looks[col]);
         let end = (col + 1..row.len())
             .find(|&c| {
-                !row[c].text.is_empty()
-                    && (!looks[c].prose || style_of(&row[c], &looks[c]) != style)
+                snaps[c]
+                    || !row[c].text.is_empty()
+                        && (!looks[c].prose || style_of(&row[c], &looks[c]) != style)
             })
             .unwrap_or(row.len());
         let mut text = String::new();
@@ -110,7 +124,7 @@ fn flow(row: &[Cell], looks: &[Look], fonts: &mut Fonts) -> Vec<f32> {
             let at = if next < end { xs[next] } else { run_end };
             xs[c + 1..next].fill(at);
         }
-        x = run_end;
+        shift = end as f32 * cw - run_end;
         col = end;
     }
     // The row's end stays at the screen's edge, under the last cell.
@@ -161,7 +175,8 @@ mod tests {
         let (code, code_looks) = cells("ab", None);
         row.extend(code);
         looks.extend(code_looks);
-        let columns = lay_out(&[row], &[looks], &mut fonts);
+        let snaps = vec![false; row.len()];
+        let columns = lay_out(&[row], &[looks], &[snaps], &mut fonts);
         let xs: Vec<f32> = (0..=12).map(|c| columns.x(0, c)).collect();
         assert!(xs.windows(2).all(|w| w[0] <= w[1]), "left to right: {xs:?}");
         // Prose is narrower than the grid, and never wider.
@@ -177,11 +192,30 @@ mod tests {
     }
 
     #[test]
+    fn something_else_on_the_row_starts_back_on_the_grid() {
+        let mut fonts = Fonts::new(None, 16.0);
+        let cw = fonts.cell_w;
+        // Prose, then a float over the row from cell 12: its border and text.
+        let (mut row, mut looks) = cells("Illuminating", Some(Font::Prose));
+        let (float, float_looks) = cells("│new terminal", None);
+        row.extend(float);
+        looks.extend(float_looks);
+        let mut snaps = vec![false; row.len()];
+        snaps[12] = true;
+        let columns = lay_out(&[row], &[looks], &[snaps], &mut fonts);
+        assert!(columns.x(0, 11) < 11.0 * cw, "the prose still flows");
+        for col in 12..25 {
+            assert_eq!(columns.x(0, col), col as f32 * cw, "the float's cell {col}");
+        }
+    }
+
+    #[test]
     fn rows_without_prose_stay_on_the_grid() {
         let mut fonts = Fonts::new(None, 16.0);
         let cw = fonts.cell_w;
         let (row, looks) = cells("plain", None);
-        let columns = lay_out(&[row], &[looks], &mut fonts);
+        let snaps = vec![false; row.len()];
+        let columns = lay_out(&[row], &[looks], &[snaps], &mut fonts);
         assert_eq!(columns.x(0, 3), 3.0 * cw);
         assert_eq!(columns.col_at(0, 3.5 * cw), 3);
     }

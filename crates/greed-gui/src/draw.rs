@@ -156,9 +156,9 @@ pub fn build(
     // float's shadow, so none falls on another float, then their fills and
     // outlines, then the backgrounds inside them (a picker's current line,
     // a title over the outline).
-    let columns = lay_out(grid, &looks, fonts);
-    let boxes = float_boxes(chrome, &looks, (cw, ch));
     let regions = regions(grid, chrome);
+    let columns = lay_out(grid, &looks, &snaps(grid, &regions), fonts);
+    let boxes = float_boxes(chrome, &looks, (cw, ch));
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
         backgrounds(&looks, &regions, pass, &columns, ch, background, out);
@@ -591,4 +591,26 @@ fn round_cap(c: char, x: f32, top: f32, cw: f32, ch: f32, color: Rgba) -> Option
         '\u{e0b4}' => Some(rounded(x - cw, top, 2.0 * cw, ch, radius, 0.0, color)),
         _ => None,
     }
+}
+
+/// Where a row's flowing prose must leave off and its cells go back to
+/// their columns: where it goes into or out of a float, and at box-drawing
+/// characters, the borders between panes and panels.
+fn snaps(grid: &[Vec<Cell>], regions: &[Vec<Region>]) -> Vec<Vec<bool>> {
+    grid.iter()
+        .zip(regions)
+        .map(|(row, regions)| {
+            row.iter()
+                .enumerate()
+                .map(|(x, cell)| {
+                    let border = cell
+                        .text
+                        .chars()
+                        .next()
+                        .is_some_and(|c| boxdraw::rects(c, 1.0, 1.0).is_some());
+                    border || (x > 0 && regions[x] != regions[x - 1])
+                })
+                .collect()
+        })
+        .collect()
 }
