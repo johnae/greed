@@ -112,7 +112,7 @@ fn entry_from_lua(spec: &Table) -> LuaResult<Entry> {
     })
 }
 
-const KEYS: [&str; 12] = [
+const KEYS: [&str; 13] = [
     "fg",
     "bg",
     "underline",
@@ -124,6 +124,7 @@ const KEYS: [&str; 12] = [
     "strikethrough",
     "rounded",
     "shadow",
+    "pill",
     "font",
 ];
 
@@ -176,6 +177,7 @@ fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
         strikethrough: t.get("strikethrough")?,
         rounded: t.get("rounded")?,
         shadow: t.get("shadow")?,
+        pill: t.get("pill")?,
         font: match t.get::<Option<String>>("font")?.as_deref() {
             None => None,
             Some("mono") => Some(Font::Mono),
@@ -205,6 +207,7 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     t.set("strikethrough", style.strikethrough)?;
     t.set("rounded", style.rounded)?;
     t.set("shadow", style.shadow)?;
+    t.set("pill", style.pill)?;
     t.set(
         "font",
         style.font.map(|f| match f {

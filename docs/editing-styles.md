@@ -49,7 +49,9 @@ would take you, and typing a number goes there in one key: `w 3` instead
 of `w w w w`. In select mode it extends the selection. Right after such a
 motion a digit is then a number to jump to rather than the start of a
 count; any other key drops the numbers. Vim's style has the same option
-for `w b e W B E g e g E`, in normal and visual mode.
+for `w b e W B E g e g E`, in normal and visual mode. The nearest three
+numbers use the theme's `ui.motion.hint` style and the rest the quieter
+`ui.motion.hint.far`; in the window both are drawn as small pills.
 
 Why it's the default: you see what a command will act on before you run
 it, and many selections are part of the model rather than a separate

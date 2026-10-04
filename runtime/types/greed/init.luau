@@ -1156,6 +1156,8 @@ export type Style = {
 	--- For floats in the window (`ui.float`, in its `gui` part): rounded corners and an outline instead of box lines, and a soft shadow.
 	rounded: boolean?,
 	shadow: boolean?,
+	--- For text in the window: its background as a pill with round ends rather than a block, as motion hints have.
+	pill: boolean?,
 	--- The window's font for the text: "mono", the grid's (`gui-font`), or "prose", a proportional one (`gui-font-prose`) fitted into the same cells. Terminals have only the one.
 	font: ("mono" | "prose")?,
 }

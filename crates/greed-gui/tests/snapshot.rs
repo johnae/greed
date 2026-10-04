@@ -594,3 +594,68 @@ fn a_float_over_prose_keeps_its_place() {
         .any(|(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg);
     assert!(inked, "the float's text where its box is");
 }
+
+#[test]
+fn a_pill_style_draws_its_background_with_round_ends_over_the_one_beside_it() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    let pill = [0x51, 0x57, 0x6d];
+    let line = [0x29, 0x2c, 0x3c];
+    theme.set(
+        "hint",
+        Entry {
+            style: Style {
+                bg: Some(Color::Rgb(pill[0], pill[1], pill[2])),
+                ..Style::default()
+            },
+            gui: Style {
+                pill: Some(true),
+                ..Style::default()
+            },
+            ..Entry::default()
+        },
+    );
+    theme.set(
+        "line",
+        Entry::new(Style {
+            bg: Some(Color::Rgb(line[0], line[1], line[2])),
+            ..Style::default()
+        }),
+    );
+    frame.theme = Arc::new(theme);
+    // A hint between words, on a plain row and on one with a background.
+    frame.rows[4] = row(&[("one", ""), ("2", "hint"), ("two", "")]);
+    frame.rows[5] = row(&[("one", "line"), ("2", "hint"), ("two", "line")]);
+    let grid = compose(&frame, Surface::Gui);
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::of(&frame),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("pill.png", size, &rgba);
+    let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
+    // The left edge of the pill's middle, beside the digit, and its rounded
+    // top corner, which shows the row's own background.
+    assert_eq!(at(3.05, 4.5)[..3], pill);
+    assert_eq!(at(3.0, 4.02)[..3], palette.bg[..3]);
+    assert_eq!(at(3.05, 5.5)[..3], pill);
+    assert_eq!(
+        at(3.0, 5.02)[..3],
+        line,
+        "the background beside it, under the corner"
+    );
+}

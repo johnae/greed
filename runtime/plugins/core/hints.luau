@@ -17,6 +17,8 @@ local M = {}
 
 -- How many places get a number.
 local SHOWN = 9
+-- How many of them, the nearest, stand out; the rest are quieter.
+local NEAR = 3
 
 --- One more of the motion from `range`: the range it gives and the
 --- character the cursor lands on, or nil when it goes nowhere new.
@@ -61,7 +63,7 @@ function M.after(ctx: greed.Context, command: string, step: Step)
 			to = math.min(buffer:next_char(at), buffer:len()),
 			text = tostring(n),
 			overlay = true,
-			style = "ui.jump.label",
+			style = if n <= NEAR then "ui.motion.hint" else "ui.motion.hint.far",
 		})
 		keys[tostring(n)] = `motion-hint-{n}`
 	end

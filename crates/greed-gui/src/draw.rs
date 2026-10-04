@@ -553,7 +553,8 @@ impl Pass {
     }
 }
 
-/// The backgrounds `pass` draws, a rectangle for each run of one color.
+/// The backgrounds `pass` draws, a rectangle for each run of one color, or
+/// a pill for a run whose style asks for one, over the background beside it.
 fn backgrounds(
     looks: &[Vec<Look>],
     regions: &[Vec<Region>],
@@ -565,23 +566,48 @@ fn backgrounds(
 ) {
     for (y, row) in looks.iter().enumerate() {
         let top = y as f32 * ch;
-        let bgs: Vec<Option<Rgba>> = row
+        let bgs: Vec<Option<(Rgba, bool)>> = row
             .iter()
             .zip(&regions[y])
             .map(|(l, &r)| match pass.draws(r) {
-                Some(always) if always || l.bg != background => Some(l.bg),
+                Some(always) if always || l.bg != background => Some((l.bg, l.pill)),
                 _ => None,
             })
             .collect();
         let mut x = 0;
         for same in bgs.chunk_by(|a, b| a == b) {
             let (left, w) = columns.span(y, x, x + same.len());
+            let beside = x.checked_sub(1).and_then(|b| bgs[b]).filter(|b| !b.1);
             x += same.len();
-            if let Some(bg) = same[0] {
-                out.push(rect(left, top, w, ch, bg));
+            match same[0] {
+                Some((bg, false)) => out.push(rect(left, top, w, ch, bg)),
+                Some((bg, true)) => {
+                    if let Some((under, _)) = beside {
+                        out.push(rect(left, top, w, ch, under));
+                    }
+                    out.push(pill(left, top, w, ch, bg));
+                }
+                None => {}
             }
         }
     }
+}
+
+/// A pill behind text from `x` to `x + w` in a row at `top`: a little
+/// shorter than the row, so pills on rows above and below stay apart, and a
+/// little wider than its text, so a single digit isn't squeezed.
+fn pill(x: f32, top: f32, w: f32, ch: f32, color: Rgba) -> Instance {
+    let (h, grow) = (ch * 0.76, ch * 0.08);
+    let w = w + 2.0 * grow;
+    rounded(
+        x - grow,
+        top + (ch - h) / 2.0,
+        w,
+        h,
+        w.min(h) / 2.0,
+        0.0,
+        color,
+    )
 }
 
 /// The round ends Powerline fonts have for pills (U+E0B6 on the left, U+E0B4

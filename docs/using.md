@@ -1094,9 +1094,10 @@ them.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-`rounded`, `shadow` and `font` are for the window only: the first two make
-floats boxes with rounded corners and a soft shadow, and `font = "prose"`
-sets text in the proportional font.
+`rounded`, `shadow`, `pill` and `font` are for the window only: the first
+two make floats boxes with rounded corners and a soft shadow, `pill` draws
+a style's background as a pill with round ends (motion hints use it), and
+`font = "prose"` sets text in the proportional font.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors

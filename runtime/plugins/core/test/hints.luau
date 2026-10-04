@@ -16,6 +16,15 @@ test("with motion-hints on, w numbers the next words and a digit goes there", fu
 	t:expect("^one |two three four five")
 	-- Each number is where the cursor would land: after the word, as Helix has it.
 	assert(labels() == "1@7 2@13 3@18 4@22", labels())
+	-- The nearest stand out, the rest are quieter.
+	local styles = {}
+	for _, mark in greed.view():buffer():decorations("motion-hints") do
+		table.insert(styles, mark.style)
+	end
+	assert(
+		styles[3] == "ui.motion.hint" and styles[4] == "ui.motion.hint.far",
+		table.concat(styles, " ")
+	)
 	t:keys("2")
 	t:expect("one two ^three |four five")
 	assert(labels() == "1@18 2@22", "numbered again from there: " .. labels())

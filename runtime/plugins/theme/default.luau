@@ -65,6 +65,13 @@ return {
 	["ui.glow"] = { fg = "bright-white" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
 	["ui.jump.label"] = { fg = "red", bold = true },
+	["ui.motion.hint"] = { fg = "bright-yellow", bg = "bright-black", gui = { pill = true } },
+	["ui.motion.hint.far"] = {
+		fg = "white",
+		bg = "bright-black",
+		dim = true,
+		gui = { pill = true },
+	},
 	["ui.health.found"] = { fg = "green" },
 	["ui.health.missing"] = { fg = "bright-black" },
 	["ui.panel.border"] = { fg = "bright-black" },
