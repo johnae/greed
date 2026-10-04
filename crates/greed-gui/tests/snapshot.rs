@@ -423,10 +423,8 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         tags: [Tag::STATUS].into_iter().collect(),
         ..Row::default()
     };
-    let grid = compose(&frame, Surface::Gui);
-    let chrome = Chrome::of(&frame);
     assert!(
-        !chrome.rounded && !chrome.shadows,
+        !Chrome::of(&frame).rounded && !Chrome::of(&frame).shadows,
         "only where the theme says"
     );
     let mut theme = (*frame.theme).clone();
@@ -434,6 +432,7 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         "ui.float",
         Entry {
             gui: Style {
+                bg: Some(Color::Rgb(0x41, 0x45, 0x59)),
                 rounded: Some(true),
                 shadow: Some(true),
                 ..Style::default()
@@ -442,6 +441,7 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         },
     );
     frame.theme = Arc::new(theme);
+    let grid = compose(&frame, Surface::Gui);
     let chrome = Chrome::of(&frame);
     assert!(chrome.rounded && chrome.shadows);
     let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();

@@ -68,6 +68,14 @@ fn fs(o: Out) -> @location(0) vec4<f32> {
         }
         return vec4<f32>(o.color.rgb, o.color.a * a);
     }
+    if o.kind == 4u {
+        // A shadow: a rounded box (`uv.x` its radius) inset `uv.y` from the
+        // quad's edges, fading out smoothly over `uv.y` either side of it.
+        let blur = o.uv.y;
+        let d = rounded(o.local - o.size * 0.5, o.size * 0.5 - vec2<f32>(blur), o.uv.x);
+        let a = 1.0 - smoothstep(-blur, blur, d);
+        return vec4<f32>(o.color.rgb, o.color.a * a);
+    }
     let t = textureSampleLevel(atlas, pick, o.uv, 0.0);
     if o.kind == 0u {
         return o.color;

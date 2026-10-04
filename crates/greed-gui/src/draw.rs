@@ -24,7 +24,7 @@ pub struct Instance {
     /// The atlas region, as 0-1 coordinates: left, top, right, bottom.
     pub uv: [f32; 4],
     pub color: [f32; 4],
-    /// `RECT`, `MASK`, `COLOR` or `ROUND`.
+    /// `RECT`, `MASK`, `COLOR`, `ROUND` or `SHADOW`.
     pub kind: u32,
 }
 
@@ -37,6 +37,9 @@ pub const COLOR: u32 = 2;
 /// A box with rounded corners: `uv[0]` their radius, `uv[1]` the width of
 /// its outline, or 0 to fill it.
 pub const ROUND: u32 = 3;
+/// A soft shadow: a box with corners `uv[0]` round, inset `uv[1]` from the
+/// quad's edges and fading out over `uv[1]` either side of its edge.
+pub const SHADOW: u32 = 4;
 
 /// What one frame draws: the background, then the quads in order, then the
 /// images over them.
@@ -146,9 +149,10 @@ pub fn build(
             }
         }
     }
-    // Floats are boxes over what's under them: its backgrounds, then their
-    // shadows, fills and outlines, then the backgrounds inside them (a
-    // picker's current line, a title over the outline).
+    // Floats are boxes over what's under them: its backgrounds, then every
+    // float's shadow, so none falls on another float, then their fills and
+    // outlines, then the backgrounds inside them (a picker's current line,
+    // a title over the outline).
     let size = (cw, ch);
     let boxes = float_boxes(chrome, &looks, size);
     let regions = regions(grid, chrome);
@@ -158,8 +162,11 @@ pub fn build(
     };
     fill(Pass::Under, &mut instances);
     let rounded = chrome.rounded;
+    if chrome.shadows {
+        instances.extend(boxes.iter().map(FloatBox::shadow));
+    }
     for b in &boxes {
-        b.under(chrome, &mut instances);
+        instances.push(b.fill());
         if rounded {
             b.outline(&mut instances);
         }
@@ -399,32 +406,29 @@ struct FloatBox {
     h: f32,
     radius: f32,
     line: f32,
+    /// How far its shadow fades out.
+    blur: f32,
     fill: Rgba,
     border: Rgba,
 }
 
 impl FloatBox {
-    /// Its shadow, if `chrome` has them, and its fill over whatever the
-    /// shadow fell on.
-    fn under(&self, chrome: &Chrome, out: &mut Vec<Instance>) {
-        if chrome.shadows {
-            // Layers a little bigger and fainter each, lower than the box,
-            // make a soft edge.
-            for i in 1..=4 {
-                let grow = i as f32 * self.line * 1.5;
-                let alpha = 0.30 - i as f32 * 0.06;
-                out.push(rounded(
-                    self.x - grow,
-                    self.y - grow + self.line * 3.0,
-                    self.w + 2.0 * grow,
-                    self.h + 2.0 * grow,
-                    self.radius + grow,
-                    0.0,
-                    [0.0, 0.0, 0.0, alpha],
-                ));
-            }
+    /// Its shadow: one soft edge, a little lower than the box, so it falls
+    /// mostly below it, as from a light above.
+    fn shadow(&self) -> Instance {
+        let blur = self.blur;
+        Instance {
+            pos: [self.x - blur, self.y - blur + blur / 2.0],
+            size: [self.w + 2.0 * blur, self.h + 2.0 * blur],
+            uv: [self.radius, blur, self.radius, blur],
+            color: [0.0, 0.0, 0.0, 0.45],
+            kind: SHADOW,
         }
-        out.push(self.shape(0.0, self.fill));
+    }
+
+    /// Its fill, over whatever shadows fell on it.
+    fn fill(&self) -> Instance {
+        self.shape(0.0, self.fill)
     }
 
     /// Its rounded outline, in its border's color.
@@ -465,6 +469,7 @@ fn float_boxes(chrome: &Chrome, looks: &[Vec<Look>], (cw, ch): (f32, f32)) -> Ve
                 h: h - 2.0 * dy,
                 radius,
                 line,
+                blur: ch * 0.6,
                 fill,
                 border,
             })
