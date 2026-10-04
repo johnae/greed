@@ -16,6 +16,10 @@ local greed = require("@greed")
 local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
+local repos = require("@self/repo")
+
+type Repo = repos.Repo
+local repo_of, absolute, locate, vcs = repos.repo_of, repos.absolute, repos.locate, repos.run
 
 local M = {}
 
@@ -24,8 +28,6 @@ greed.option.define({
 	doc = "Show signs beside lines changed since the last commit",
 	default = true,
 })
-
-type Repo = { kind: "jj" | "git", root: string }
 
 -- A change since the last commit, in the buffer as it is now: where it is,
 -- and what was there before.
@@ -36,54 +38,6 @@ type Change = { from: number, to: number, old: string, kind: "+" | "~" | "-" }
 local bases: { [number]: string | false } = {}
 -- Goes up with each edit, so only the latest edit's redraw runs.
 local generation = 0
-
-local function parent(path: string): string?
-	return string.match(path, "^(.*)/[^/]*$")
-end
-
--- The repository `path` is in, if any.
-local function repo_of(path: string): Repo?
-	local dir = parent(path)
-	while dir and dir ~= "" do
-		if greed.fs.stat(dir .. "/.jj") then
-			return { kind = "jj", root = dir }
-		elseif greed.fs.stat(dir .. "/.git") then
-			return { kind = "git", root = dir }
-		end
-		dir = parent(dir)
-	end
-	return nil
-end
-
-local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
-end
-
--- The repository `buffer`'s file is in, and the file's path from its root.
-local function locate(buffer: greed.Buffer): (Repo?, string?)
-	local path = buffer:path()
-	local repo = path and repo_of(absolute(path))
-	if path == nil or repo == nil then
-		return nil, nil
-	end
-	return repo, string.sub(absolute(path), #repo.root + 2)
-end
-
--- Runs a jj or git command in `repo`'s root and returns what it printed, or
--- nil if it failed. jj doesn't look at the files on disk unless `snapshot`
--- says to, for commands that only read what's committed.
-local function vcs(repo: Repo, args: { string }, snapshot: boolean?): string?
-	local command: { string } = { repo.kind }
-	if repo.kind == "jj" and not snapshot then
-		-- Reading only: don't snapshot the working copy as a side effect.
-		table.insert(command, "--ignore-working-copy")
-	end
-	for _, arg in args do
-		table.insert(command, arg)
-	end
-	local done = greed.process.run(command, { cwd = repo.root })
-	return if done and done.code == 0 then done.stdout else nil
-end
 
 -- The file at `relative` in `repo` as of the last commit, or "" if it's new.
 local function base_text(repo: Repo, relative: string): string
