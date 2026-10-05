@@ -438,6 +438,12 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 
 Closing a terminal's buffer ends its program.
 
+`greed bench [FILE]` measures how quickly keys show: it starts a session
+with your plugins and config on the file (a large generated Rust file
+without one), types and moves around as you would, and prints how long
+each kind of key took from leaving the client to the frame showing it
+arriving, with the slowest named. Your terminal's drawing comes on top.
+
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
 the folder you're in, `r` reads the disk again and `q` closes it. A click
 does what `enter` does, and the row under the mouse lights up. With a
