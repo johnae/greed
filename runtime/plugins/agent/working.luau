@@ -85,8 +85,12 @@ end
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local buffer = event.buffer
-	local last = buffer:history({ limit = 1 })[1]
-	if last == nil or last.cause == "undo" or last.cause == "redo" then
+	-- A buffer can be closed by the time an event about it is handled.
+	local ok, history = pcall(function()
+		return buffer:history({ limit = 1 })
+	end)
+	local last = ok and history[1]
+	if not last or last.cause == "undo" or last.cause == "redo" then
 		return
 	end
 	local line = if last.changes[1]
