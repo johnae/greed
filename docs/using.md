@@ -1046,6 +1046,14 @@ is taken away and set up anew, and the status line says "config reloaded"
 or what went wrong. Options it set keep their values until it sets them
 again. `:config-reload` does the same by hand.
 
+For `luau-lsp` to check your config and complete it, it has to know what
+`require("@greed")`, `require("@theme")` and the other plugins are. Greed
+writes a `.luaurc` that tells it, beside the config folder
+(`~/.config/.luaurc`, since luau-lsp looks for an `init.luau`'s settings
+in the folder above), and keeps it pointing at the Greed you run. It only
+writes over a `.luaurc` it wrote itself: if you had one there or change
+it, it's yours, and `:config-types` says so.
+
 Config runs in layers, each after the one before, so later ones win:
 
 1. The default plugins.

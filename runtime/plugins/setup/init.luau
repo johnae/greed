@@ -12,6 +12,7 @@ local greed = require("@greed")
 local markdown = require("@markdown")
 local picker = require("@picker")
 local theme = require("@theme")
+local types = require("@self/types")
 
 local M = {}
 
@@ -243,6 +244,7 @@ greed.command({
 					else "couldn't add Greed's tools to Claude Code; run: claude mcp add greed -- greed mcp"
 			)
 		end
+		types.update()
 		if file and greed.fs.read(file) == config then
 			greed.open(file)
 		else
@@ -273,5 +275,8 @@ greed.on("client.attached", function()
 	end
 	M.open()
 end)
+
+--- Type checking for your config (types.luau).
+M.types = types
 
 return M
