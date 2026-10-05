@@ -91,5 +91,5 @@ pub(super) fn finish(lua: &Lua, token: u64, done: Done) -> LuaResult<()> {
             (Value::Nil, err).into_lua_multi(lua)?
         }
     };
-    tasks::wake(lua, token, value)
+    tasks::deliver(lua, token, value)
 }

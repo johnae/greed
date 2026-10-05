@@ -144,23 +144,23 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     }
     match done.output {
         Output::Http(result) => {
-            tasks::wake(lua, done.token, super::http::fetched_to_lua(lua, result)?)
+            tasks::deliver(lua, done.token, super::http::fetched_to_lua(lua, result)?)
         }
         Output::StreamHead(token, id, head) => super::http::stream_started(lua, token, id, head),
         Output::StreamChunk(id, chunk) => super::http::chunk_arrived(lua, id, chunk),
-        Output::Grep(Ok(lines)) => tasks::wake(lua, done.token, fs::grep_to_lua(lua, lines)?),
-        Output::Grep(Err(err)) => tasks::wake(lua, done.token, (Value::Nil, err.to_string())),
-        Output::Check(check) => tasks::wake(lua, done.token, super::plugin::to_lua(lua, check)?),
+        Output::Grep(Ok(lines)) => tasks::deliver(lua, done.token, fs::grep_to_lua(lua, lines)?),
+        Output::Grep(Err(err)) => tasks::deliver(lua, done.token, (Value::Nil, err.to_string())),
+        Output::Check(check) => tasks::deliver(lua, done.token, super::plugin::to_lua(lua, check)?),
         Output::Secret(result) => {
-            tasks::wake(lua, done.token, super::secrets::to_lua(lua, result)?)
+            tasks::deliver(lua, done.token, super::secrets::to_lua(lua, result)?)
         }
         Output::Process(result) => {
-            tasks::wake(lua, done.token, super::process::to_lua(lua, result)?)
+            tasks::deliver(lua, done.token, super::process::to_lua(lua, result)?)
         }
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
         Output::Tags(files) => {
-            tasks::wake(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
+            tasks::deliver(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
         }
     }
 }

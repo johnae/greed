@@ -210,7 +210,7 @@ pub(super) fn stream_started(
         Ok(head) => head,
         Err(err) => {
             state_mut(lua).http.open.remove(&id);
-            return tasks::wake(lua, token, (Value::Nil, err));
+            return tasks::deliver(lua, token, (Value::Nil, err));
         }
     };
     let stream = lua.create_table()?;
@@ -241,7 +241,7 @@ pub(super) fn stream_started(
             Ok(())
         })?,
     )?;
-    tasks::wake(lua, token, stream)
+    tasks::deliver(lua, token, stream)
 }
 
 /// The values a read of stream `id` gives for `chunk`: the text, nil at the

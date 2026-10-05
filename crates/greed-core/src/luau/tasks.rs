@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mlua::thread::ThreadStatus;
-use mlua::{Function, IntoLuaMulti, Lua, Thread, Value};
+use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Thread, Value};
 
 use super::{state, state_mut};
 use crate::registry::PluginId;
@@ -26,6 +26,9 @@ pub(crate) struct Tasks {
     waiting: HashMap<u64, Thread>,
     /// Values sent to signals nobody waits on yet.
     sent: HashMap<u64, Value>,
+    /// Results of jobs that finished before the coroutine that started them
+    /// waited, because its time slice ran out in between.
+    early: HashMap<u64, MultiValue>,
     timers: Vec<(Instant, u64)>,
     /// What `greed.now` counts from.
     epoch: Instant,
@@ -56,6 +59,7 @@ impl Default for Tasks {
             next_token: 0,
             waiting: HashMap::new(),
             sent: HashMap::new(),
+            early: HashMap::new(),
             timers: Vec::new(),
             epoch: now,
             firing: None,
@@ -204,6 +208,10 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     .ok_or_else(|| {
         mlua::Error::runtime("a command can only wait through greed functions like greed.sleep")
     })?;
+    let early = state_mut(lua).tasks.early.remove(&token);
+    if let Some(result) = early {
+        return resume(lua, thread, result);
+    }
     state_mut(lua).tasks.waiting.insert(token, thread);
     Ok(())
 }
@@ -233,6 +241,18 @@ pub(super) fn wake(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult
         Some(thread) => resume(lua, thread, value),
         None => Ok(()),
     }
+}
+
+/// Wakes the coroutine waiting on job `token` with its result. If it isn't
+/// waiting yet, its slice having run out between starting the job and
+/// waiting for it, the result is kept until it does.
+pub(super) fn deliver(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult<()> {
+    if state(lua).tasks.waiting.contains_key(&token) {
+        return wake(lua, token, value);
+    }
+    let value = value.into_lua_multi(lua)?;
+    state_mut(lua).tasks.early.insert(token, value);
+    Ok(())
 }
 
 /// Carries on every coroutine whose time slice ran out, without waiting for
@@ -459,4 +479,27 @@ pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> Lua
         super::extend_deadline(lua, waited.elapsed());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Editor;
+    use greed_text::ClientId;
+
+    #[test]
+    fn a_job_done_before_its_coroutine_waits_still_wakes_it() {
+        let host = super::super::Host::new(Editor::new(ClientId(1))).unwrap();
+        let lua = &host.lua;
+        // As when a coroutine's slice runs out between starting a job and
+        // waiting for it, and the job finishes in between.
+        let token = state_mut(lua).tasks.token();
+        deliver(lua, token, 42).unwrap();
+        let waits = lua
+            .load("local token = ...; result = coroutine.yield(token)")
+            .into_function()
+            .unwrap();
+        resume(lua, lua.create_thread(waits).unwrap(), token).unwrap();
+        assert_eq!(lua.globals().get::<i64>("result").unwrap(), 42);
+    }
 }
