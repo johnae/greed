@@ -26,7 +26,9 @@ type Session = session.Session
 
 local M = {}
 
-export type Agent = { name: string, title: string?, commands: { { string } } }
+--- An agent to start: `commands` are tried in order, the first installed
+--- runs, and `model` is the model to have it use, when it offers models.
+export type Agent = { name: string, title: string?, commands: { { string } }, model: string? }
 
 local agents: { Agent } = {}
 
@@ -385,6 +387,21 @@ local function launch(
 	buffers[s.id] = buffer
 	by_buffer[buffer:id()] = s
 	render_overviews()
+	local model = agent.model
+	if model then
+		-- The model asked for, once the agent says which it has.
+		greed.spawn(function()
+			while s.status == "starting" do
+				greed.sleep(50)
+			end
+			if s.status ~= "exited" and s.model ~= model then
+				local ok, err = session.set_model(s, model)
+				if not ok then
+					greed.echo(`{s.name} can't use the model {model}: {err}`)
+				end
+			end
+		end)
+	end
 	return s, nil
 end
 
@@ -778,6 +795,33 @@ greed.command({
 })
 
 greed.command({
+	name = "agent-model",
+	doc = "Pick the model the agent uses, from those it offers",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			return
+		elseif #s.models == 0 then
+			greed.echo(`{s.name} has no models to pick from`)
+			return
+		end
+		local items = {}
+		for _, model in s.models do
+			local now = if model.id == s.model then "  (now)" else ""
+			local about = if model.description then `: {model.description}` else ""
+			table.insert(items, { label = `{model.name}{about}{now}`, value = model.id })
+		end
+		local chosen = picker.choose("Model", items)
+		if chosen then
+			local ok, err = session.set_model(s, chosen.value)
+			if not ok then
+				greed.echo(`can't: {err}`)
+			end
+		end
+	end,
+})
+
+greed.command({
 	name = "agent-resume",
 	doc = "Take up an earlier session with an agent in this project, where it left off",
 	run = function()
@@ -970,6 +1014,7 @@ for _, mode in { "normal", "vim", "insert", "vim-insert", "edit" } do
 		["alt-enter"] = "agent-send",
 		["alt-p"] = "agent-answer",
 		["alt-m"] = "agent-mode",
+		["alt-M"] = "agent-model",
 	})
 end
 greed.keymap.bind("normal", {

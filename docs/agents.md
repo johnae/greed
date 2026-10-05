@@ -211,8 +211,11 @@ file). The status line says how many agents are working and how many wait
 for you.
 
 `alt-m` picks the mode the agent works in, when it has modes (Claude Code
-has Manual, Accept edits and Plan); the transcript's first line shows the
-one it's in.
+has Manual, Accept edits and Plan), and `alt-M` the model, when it offers
+a choice; the transcript's first line shows both. The transcript is a
+buffer in a panel: move and copy in it as in any other, and `:q` or
+`ctrl-w q` closes the panel while the agent goes on (`space i o` brings it
+back).
 
 Some questions can be answered for you. An agent in a workspace of its own
 edits, moves and deletes files there without asking, since nothing reaches
@@ -270,15 +273,20 @@ things like any other; the caller gets its last answer as a report. At
 most three work at once, so helpers starting helpers can't run away.
 
 Add an agent that isn't in the list in your
-`init.luau`; the first of its commands that's installed is used:
+`init.luau`; the first of its commands that's installed is used, and
+`model` is the model it starts with, when it offers models:
 
 ```luau
 require("@acp").register({
-	name = "goose",
-	title = "Goose",
-	commands = { { "goose", "acp" } },
+	name = "opencode",
+	title = "opencode",
+	commands = { { "opencode", "acp" } },
+	model = "berget/llama-3.3-70b",
 })
 ```
+
+Which models an agent offers is up to the agent: opencode, for example,
+offers the ones its own config sets up.
 
 ## Plugins written by agents
 

@@ -195,14 +195,57 @@ end)
 
 test("alt-m picks the agent's mode, and the transcript says which it's in", function(t)
 	local s = start(t, t:tempdir({}))
-	assert(string.find(shown(), "^Fake in [^\n]* · Manual\n"), shown())
+	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
 	t:keys("alt-m")
 	t:keys("P l a n enter")
 	t:wait_for(function()
 		return s.mode == "plan"
 	end)
 	t:wait(30)
-	assert(string.find(shown(), "^Fake in [^\n]* · Plan\n"), shown())
+	assert(string.find(shown(), "^Fake in [^\n]* · Plan · Small\n"), shown())
+end)
+
+test("alt-M picks the agent's model, and the transcript says which", function(t)
+	local s = start(t, t:tempdir({}))
+	assert(s.model == "small" and #s.models == 2, tostring(s.model))
+	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
+	t:keys("alt-M")
+	t:keys("B i g enter")
+	t:wait_for(function()
+		return s.model == "berget/big"
+	end)
+	t:wait(30)
+	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Big\n"), shown())
+end)
+
+test("an agent registered with a model starts with it", function(t)
+	local agent: acp.Agent = table.clone(FAKE)
+	agent.model = "berget/big"
+	local s = assert(acp.start(agent, t:tempdir({})))
+	t:wait_for(function()
+		return s.status ~= "starting"
+	end)
+	t:wait(200)
+	t:wait_for(function()
+		return s.model == "berget/big"
+	end)
+end)
+
+test("agents that offer models as a config option get theirs picked that way", function(t)
+	local agent: acp.Agent = {
+		name = "fake-config",
+		commands = { { "sh", `{greed.plugin.dirs().acp}/test/fake-agent.sh`, "config" } },
+		model = "berget/big",
+	}
+	local s = assert(acp.start(agent, t:tempdir({})))
+	t:wait_for(function()
+		return s.status ~= "starting"
+	end)
+	t:wait(200)
+	t:wait_for(function()
+		return s.model == "berget/big"
+	end)
+	assert(s.model_option == "model" and #s.models == 2, tostring(s.model_option))
 end)
 
 test("policies answer questions for you; rules added later come first", function(t)

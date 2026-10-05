@@ -13,6 +13,13 @@
 
 cwd=""
 
+# Its models: as `models` by default, or as a config option when started
+# with "config".
+models='"models":{"currentModelId":"small","availableModels":[{"modelId":"small","name":"Small"},{"modelId":"berget/big","name":"Big","description":"The big one"}]}'
+if [ "$1" = config ]; then
+	models='"configOptions":[{"id":"model","name":"Model","category":"model","type":"select","currentValue":"small","options":[{"value":"small","name":"Small"},{"value":"berget/big","name":"Big"}]}]'
+fi
+
 send() { printf '%s\n' "$1"; }
 
 update() {
@@ -44,7 +51,7 @@ while IFS= read -r line; do
 	*'"method":"session/new"'*)
 		cwd=$(field "$line" cwd)
 		servers=$(printf "%s" "$line" | sed -n "s/.*\"mcpServers\":\(\[[^]]*\]\).*/\1/p")
-		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\",\"modes\":{\"currentModeId\":\"default\",\"availableModes\":[{\"id\":\"default\",\"name\":\"Manual\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before doing\"}]}}}"
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\",\"modes\":{\"currentModeId\":\"default\",\"availableModes\":[{\"id\":\"default\",\"name\":\"Manual\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before doing\"}]},$models}}"
 		;;
 	*'"method":"session/load"'*)
 		cwd=$(field "$line" cwd)
@@ -56,8 +63,12 @@ while IFS= read -r line; do
 		cwd=$(field "$line" cwd)
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s2\"}}"
 		;;
-	*'"method":"session/set_mode"'*)
+	*'"method":"session/set_mode"'* | *'"method":"session/set_model"'*)
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+		;;
+	*'"method":"session/set_config_option"'*)
+		value=$(field "$line" value)
+		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"configOptions\":[{\"id\":\"model\",\"name\":\"Model\",\"category\":\"model\",\"type\":\"select\",\"currentValue\":\"$value\",\"options\":[{\"value\":\"small\",\"name\":\"Small\"},{\"value\":\"berget/big\",\"name\":\"Big\"}]}]}}"
 		;;
 	*'"method":"session/prompt"'*)
 		text=$(field "$line" text)

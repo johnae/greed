@@ -75,6 +75,11 @@ function M.history(s: Session): (string, { Style }, { [number]: string })
 			title ..= ` · {mode.name}`
 		end
 	end
+	for _, model in s.models do
+		if model.id == s.model then
+			title ..= ` · {model.name}`
+		end
+	end
 	add(title, "markup.heading")
 	-- A heading each time the speaker changes; the agent's text, tools and
 	-- plans run on under one.

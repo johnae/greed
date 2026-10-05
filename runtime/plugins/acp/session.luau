@@ -72,6 +72,12 @@ export type Session = {
 	--- The modes the agent offers, and the one it's in.
 	modes: { Mode },
 	mode: string?,
+	--- The models the agent offers, and the one it uses. `model_option` is
+	--- the id of the config option that picks it, for agents that offer
+	--- models that way rather than with `session/set_model`.
+	models: { Mode },
+	model: string?,
+	model_option: string?,
 	--- Answers a question without asking you, with an option's id, when
 	--- it returns one.
 	decide: ((permission: Permission) -> string?)?,
@@ -166,6 +172,39 @@ local function detail_of(content: any, cwd: string): ({ string }, { string })
 	return summary, output
 end
 
+-- Takes in the models `from` offers: a session's start or an update. Agents
+-- say them as `models` (with `session/set_model` to pick one), or as a
+-- config option in the "model" category (`session/set_config_option`).
+local function take_models(session: Session, from: any)
+	local models = type(from.models) == "table" and from.models
+	if models then
+		session.models = {}
+		for _, model in models.availableModels or {} do
+			table.insert(session.models, {
+				id = model.modelId,
+				name = model.name or model.modelId,
+				description = model.description,
+			})
+		end
+		session.model = models.currentModelId
+		session.model_option = nil
+	end
+	for _, option in (type(from.configOptions) == "table" and from.configOptions) or {} do
+		if option.category == "model" and type(option.options) == "table" then
+			session.models = {}
+			for _, choice in option.options do
+				table.insert(session.models, {
+					id = choice.value,
+					name = choice.name or choice.value,
+					description = choice.description,
+				})
+			end
+			session.model = option.currentValue
+			session.model_option = option.id
+		end
+	end
+end
+
 -- Applies one session/update notification.
 local function update(session: Session, u: any)
 	local kind = u.sessionUpdate
@@ -212,6 +251,8 @@ local function update(session: Session, u: any)
 		else
 			session.tool = tool.title
 		end
+	elseif kind == "config_option_update" or kind == "config_options_update" then
+		take_models(session, u)
 	elseif kind == "current_mode_update" then
 		session.mode = u.currentModeId
 	elseif kind == "plan" then
@@ -469,6 +510,7 @@ function M.start(
 		entries = opts.entries or {},
 		tools = {},
 		modes = {},
+		models = {},
 		decide = opts.decide,
 		changed = opts.changed,
 	}
@@ -551,6 +593,7 @@ function M.start(
 			end
 			session.mode = new.modes.currentModeId
 		end
+		take_models(session, new)
 		if session.status == "starting" then
 			session.status = "idle"
 		end
@@ -605,6 +648,34 @@ function M.set_mode(session: Session, id: string): (boolean, string?)
 		return false, err
 	end
 	session.mode = id
+	session.changed()
+	return true, nil
+end
+
+--- Has the agent use the model `id`. False and why when it won't.
+function M.set_model(session: Session, id: string): (boolean, string?)
+	local conn = session.conn
+	if conn == nil or session.session_id == nil then
+		return false, "the agent isn't running"
+	end
+	local result, err
+	if session.model_option then
+		result, err = conn.request("session/set_config_option", {
+			sessionId = session.session_id,
+			configId = session.model_option,
+			value = id,
+		})
+		if result then
+			take_models(session, result)
+		end
+	else
+		result, err =
+			conn.request("session/set_model", { sessionId = session.session_id, modelId = id })
+	end
+	if err then
+		return false, err
+	end
+	session.model = id
 	session.changed()
 	return true, nil
 end
