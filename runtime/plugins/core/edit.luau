@@ -98,7 +98,7 @@ greed.command({
 		if ctx.char then
 			insert_at_heads(ctx, ctx.char)
 			-- A closing bracket at a line's start lines up with its block.
-			if string.match(ctx.char, "^[%)%]}]$") then
+			if string.match(ctx.char, "^[%)%]}]$") and indent.typed_first(ctx.view) then
 				indent.reindent(ctx.view)
 			end
 		end
@@ -129,7 +129,11 @@ greed.command({
 
 -- Adds command `name`, which deletes from each cursor to where
 -- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w.
-local function delete_to_command(name: string, doc: string, target: (greed.Buffer, number) -> number)
+local function delete_to_command(
+	name: string,
+	doc: string,
+	target: (greed.Buffer, number) -> number
+)
 	greed.command({
 		name = name,
 		doc = doc,

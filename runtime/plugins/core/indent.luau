@@ -170,6 +170,21 @@ function M.at(buffer: Buffer, pos: number): (string, boolean)
 	return from_line(buffer, pos, openers or OPENERS, language and M.closers[language] or CLOSERS)
 end
 
+--- Whether the character just typed starts its line at some cursor: only
+--- blanks before it. A closing bracket typed there lines up with its
+--- block; anywhere else there's nothing to work out.
+function M.typed_first(view: greed.View): boolean
+	local buffer = view:buffer()
+	for _, range in view:selection().ranges do
+		local start = buffer:line_start(buffer:line_of(range.head))
+		local typed = buffer:prev_char(range.head)
+		if typed >= start and string.match(buffer:slice(start, typed), "^[ \t]*$") then
+			return true
+		end
+	end
+	return false
+end
+
 --- Lines up each cursor's line with its block when what's on it before
 --- the cursor closes one, like `end` or `}` typed at its start.
 function M.reindent(view: greed.View)

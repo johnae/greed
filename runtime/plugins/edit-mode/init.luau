@@ -84,7 +84,7 @@ greed.command({
 		if ctx.char then
 			type_text(ctx, ctx.char)
 			-- A closing bracket at a line's start lines up with its block.
-			if string.match(ctx.char, "^[%)%]}]$") then
+			if string.match(ctx.char, "^[%)%]}]$") and indent.typed_first(ctx.view) then
 				indent.reindent(ctx.view)
 			end
 		end
