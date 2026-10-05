@@ -45,6 +45,17 @@ down when it quits and whenever you save a file, in the cache folder
 (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. Turn
 it off with `greed.option.set("restore-session", false)`.
 
+### The first time
+
+Started without a config (`~/.config/greed/init.luau`), Greed shows a page
+with a few questions: how you like to edit, which theme, whether your font
+has icons, and whether to add Greed's tools to Claude Code. A style or
+theme you pick switches at once, so you can try it on the page. **Save**
+writes a short `init.luau` from your answers and opens it; **Not now**
+closes the page. Either way it doesn't show again by itself, and `:setup`
+brings it back. Save never replaces a config that's there; it shows what to
+add instead.
+
 ### In a window
 
 `greed --gui [FILE]` shows the session in a window instead of the terminal,

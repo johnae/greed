@@ -14,7 +14,8 @@ it runs:
 :style            show the style in use and the others
 ```
 
-To start in a style every time, set it in `~/.config/greed/init.luau`:
+The first time you start Greed it asks which you'd like (`:setup` asks
+again). To start in a style every time, set it in `~/.config/greed/init.luau`:
 
 ```luau
 require("@greed").option.set("editing-style", "vim")

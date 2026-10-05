@@ -29,6 +29,7 @@
 		"markdown": "./plugins/markdown",
 		"tree": "./plugins/tree",
 		"blocks": "./plugins/blocks",
-		"lsp": "./plugins/lsp"
+		"lsp": "./plugins/lsp",
+		"setup": "./plugins/setup"
 	}
 }
