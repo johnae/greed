@@ -844,6 +844,11 @@ export type ClientAttached = {
 	terminal: boolean,
 }
 
+--- Text pasted into the client from the system clipboard: a terminal's paste, or a window's paste keys (ctrl-shift-v, shift-insert, cmd-v). The core plugin puts it at the cursors.
+export type ClientPaste = {
+	text: string,
+}
+
 --- A view was closed. Its handle no longer works, but its id can be
 --- compared with `view:id()`.
 export type ViewClosed = {
@@ -1245,6 +1250,7 @@ export type Greed = {
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
+		& ((event: "client.paste", handler: (event: ClientPaste) -> ()) -> ())
 		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.closed", handler: (event: BufferClosed) -> ()) -> ())

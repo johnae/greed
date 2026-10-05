@@ -131,6 +131,15 @@ struct App {
 }
 
 impl App {
+    /// The text on the system clipboard, if there's any.
+    fn clipboard_text(&mut self) -> Option<String> {
+        self.clipboard
+            .as_mut()?
+            .get_text()
+            .ok()
+            .filter(|text| !text.is_empty())
+    }
+
     fn new(input: Sender<Input>) -> Self {
         Self {
             input,
@@ -371,8 +380,19 @@ impl ApplicationHandler<Event> for App {
             }
             WindowEvent::ModifiersChanged(mods) => self.mods = mods.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                if let Some(key) = key(&event, self.mods) {
+                if is_paste(&event.logical_key, self.mods) {
+                    if let Some(text) = self.clipboard_text() {
+                        let _ = self.input.send(Input::Paste(text));
+                    }
+                } else if let Some(key) = key(&event, self.mods) {
                     let _ = self.input.send(Input::Key(key));
+                }
+            }
+            // What you copied in another program becomes Greed's clipboard
+            // too, for its own paste keys.
+            WindowEvent::Focused(true) => {
+                if let Some(text) = self.clipboard_text() {
+                    let _ = self.input.send(Input::Clipboard(text));
                 }
             }
             // Text an input method made, as keys typed one by one.
@@ -491,6 +511,19 @@ fn parse_size(text: &str) -> Option<LogicalSize<f64>> {
     (fits(width) && fits(height)).then(|| LogicalSize::new(width, height))
 }
 
+/// Whether a key press is the system's paste: ctrl-shift-v or shift-insert,
+/// and cmd-v on macOS.
+fn is_paste(logical: &WinitKey, mods: ModifiersState) -> bool {
+    match logical {
+        WinitKey::Named(NamedKey::Insert) => mods == ModifiersState::SHIFT,
+        WinitKey::Character(c) if c.eq_ignore_ascii_case("v") => {
+            mods == ModifiersState::CONTROL | ModifiersState::SHIFT
+                || (cfg!(target_os = "macos") && mods == ModifiersState::SUPER)
+        }
+        _ => false,
+    }
+}
+
 /// A key press as Greed names keys: shifted characters are the character
 /// itself ("G"), so shift only counts for other keys. Without ctrl or alt,
 /// a character key is the text it types, which is what a dead key before it
@@ -557,6 +590,28 @@ fn key_from(logical: &WinitKey, text: Option<&str>, mods: ModifiersState) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ctrl_shift_v_and_shift_insert_paste_and_plain_v_types() {
+        let v = WinitKey::Character("V".into());
+        assert!(is_paste(
+            &v,
+            ModifiersState::CONTROL | ModifiersState::SHIFT
+        ));
+        assert!(is_paste(
+            &WinitKey::Named(NamedKey::Insert),
+            ModifiersState::SHIFT
+        ));
+        assert!(
+            !is_paste(&v, ModifiersState::CONTROL),
+            "ctrl-v is the editor's"
+        );
+        assert!(!is_paste(&v, ModifiersState::SHIFT));
+        assert!(!is_paste(
+            &WinitKey::Named(NamedKey::Insert),
+            ModifiersState::empty()
+        ));
+    }
 
     fn char_key(logical: &str, text: Option<&str>, mods: ModifiersState) -> Option<Key> {
         key_from(&WinitKey::Character(logical.into()), text, mods)

@@ -555,6 +555,15 @@ greed.command({
 	end,
 })
 
+-- Text pasted into the client goes to the program in the terminal pane
+-- you're in, marked as a paste if it asked for that.
+greed.on("client.paste", function(event: greed.ClientPaste)
+	local term = term_of(greed.view():buffer())
+	if term then
+		term.terminal:paste(event.text)
+	end
+end)
+
 greed.command({
 	name = "terminal-paste",
 	doc = "Paste the latest copy into the terminal's program",

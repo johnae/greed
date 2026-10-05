@@ -1758,3 +1758,35 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
         "true\t2"
     );
 }
+
+#[test]
+fn a_paste_reaches_plugins_and_the_system_clipboard_becomes_the_editors() {
+    let host = host("");
+    host.load_str(
+        "pastes",
+        "require('@greed').on('client.paste', function(e) require('@greed').echo('pasted ' .. e.text) end)",
+    )
+    .unwrap();
+    host.paste("from the browser").unwrap();
+    let said = host.with_editor_mut(greed_core::Editor::take_messages);
+    assert!(
+        said.iter().any(|m| m == "pasted from the browser"),
+        "{said:?}"
+    );
+
+    host.with_editor_mut(|ed| ed.take_system_clipboard("copied elsewhere"));
+    assert_eq!(
+        host.eval("return require('@greed').clipboard.get()[1]")
+            .unwrap(),
+        "copied elsewhere"
+    );
+    let copied = host.with_editor_mut(|ed| {
+        ed.take_system_clipboard("copied elsewhere");
+        (ed.clipboard_history().count(), ed.take_copied())
+    });
+    assert_eq!(
+        copied,
+        (1, None),
+        "taken once, and not sent back to the client"
+    );
+}

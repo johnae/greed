@@ -579,6 +579,16 @@ impl Host {
         })
     }
 
+    /// Tells plugins text was pasted into the client, with "client.paste";
+    /// the core plugin puts it at the cursors.
+    pub fn paste(&self, text: &str) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            payload.set("text", text)?;
+            api::emit(&self.lua, "client.paste", &payload).map_err(HostError::from)
+        })
+    }
+
     /// Tells plugins the editor is up and about to show itself, with
     /// "editor.started": once per run, so reloading a plugin doesn't repeat
     /// what it does then.

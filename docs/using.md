@@ -77,6 +77,12 @@ palette (`space ?`, or `ctrl-P` in edit mode) lists every command. Plugins
 and your config add items:
 `require("@core").menus.add("Tools", "Run tests", "test-run")`.
 
+What you copy in Greed goes on the system clipboard, and what you copied in
+another program becomes Greed's clipboard when the window gets focus, so
+`p` (or `ctrl-v` in edit mode) pastes it. `ctrl-shift-v` and `shift-insert`
+(`cmd-v` on macOS) paste the system clipboard at the cursors in any mode,
+as a terminal's paste does.
+
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
 it back to the size it had before. Pick another font and size in your
 `init.luau`; the window follows as soon as they change:

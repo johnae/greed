@@ -34,6 +34,12 @@ pub enum Input {
     CellSize(u16, u16),
     /// Run the command by this name, as from a window's menu.
     Run(String),
+    /// Text pasted into the client, from the system clipboard: a terminal's
+    /// bracketed paste, or a window's paste keys.
+    Paste(String),
+    /// What's on the system clipboard, which becomes the editor's clipboard,
+    /// e.g. when a window gets focus after you copied in another program.
+    Clipboard(String),
     Quit,
 }
 
@@ -371,6 +377,15 @@ impl Server<'_> {
             Input::Run(ref name) => {
                 let ran = self.host.run(name);
                 self.report(ran);
+            }
+            Input::Paste(ref text) => {
+                self.message = None;
+                let pasted = self.host.paste(text);
+                self.report(pasted);
+            }
+            Input::Clipboard(ref text) => {
+                self.host
+                    .with_editor_mut(|ed| ed.take_system_clipboard(text));
             }
             Input::Quit => return false,
         }

@@ -44,6 +44,7 @@ local config = require("@self/config")
 local effects = require("@self/effects")
 local again = require("@self/again")
 local words = require("@self/words")
+local paste = require("@self/paste")
 local floats = require("@self/floats")
 
 greed.keymap.bind("normal", {
@@ -229,6 +230,8 @@ return {
 	objects = objects,
 	syntax = syntax,
 	words = words,
+	--- Pasted text going in at the cursors (paste.luau).
+	paste = paste,
 	floats = floats,
 	registers = registers,
 }

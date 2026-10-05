@@ -1,0 +1,41 @@
+local test = require("@greed/test")
+local greed = require("@greed")
+local core = require("@core")
+
+local function paste(text: string)
+	core.paste.paste(greed.view(), text)
+end
+
+test("a paste in normal mode goes in before the cursor instead of running as keys", function(t)
+	t:buffer("ab|c")
+	paste("dd x\r\nyy")
+	t:expect("abdd x\nyy|c")
+end)
+
+test("a paste goes in at every cursor", function(t)
+	t:buffer("^one| ^two|")
+	t:keys("i")
+	paste("X")
+	t:expect("X|one X|two")
+end)
+
+test("in edit mode a paste replaces the selection, as typing does", function(t)
+	t:buffer("^one| ^two|")
+	greed.mode.set("edit")
+	paste("X")
+	t:expect("X| X|")
+end)
+
+test("a paste is one change undo takes back", function(t)
+	t:buffer("a|b")
+	paste("one\ntwo\nthree")
+	t:keys("u")
+	t:expect("a|b")
+end)
+
+test("a read-only buffer takes no paste", function(t)
+	t:buffer("a|b")
+	greed.view():buffer():set_readonly(true)
+	paste("x")
+	t:expect("a|b")
+end)

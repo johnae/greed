@@ -65,6 +65,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                         convert(key).map(Input::Key)
                     }
                     Event::Mouse(mouse) => Some(Input::Mouse(convert_mouse(mouse))),
+                    Event::Paste(text) => Some(Input::Paste(text)),
                     Event::Resize(width, height) => {
                         send_cell_size(&input);
                         Some(Input::Resize(Size { width, height }))
@@ -316,7 +317,11 @@ impl Terminal {
             hook(info);
         }));
         terminal::enable_raw_mode()?;
-        execute!(io::stdout(), terminal::EnterAlternateScreen)?;
+        execute!(
+            io::stdout(),
+            terminal::EnterAlternateScreen,
+            event::EnableBracketedPaste
+        )?;
         if mouse_wanted() {
             execute!(io::stdout(), event::EnableMouseCapture)?;
         }
@@ -348,6 +353,7 @@ fn restore() {
         SetCursorStyle::DefaultUserShape,
         cursor::Show,
         event::DisableMouseCapture,
+        event::DisableBracketedPaste,
         terminal::LeaveAlternateScreen
     );
     let _ = terminal::disable_raw_mode();

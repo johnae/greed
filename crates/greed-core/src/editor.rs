@@ -1114,9 +1114,22 @@ impl Editor {
     /// Puts text on the clipboard: one piece per selection it came from.
     pub fn copy(&mut self, pieces: Vec<String>) {
         self.copied = Some(pieces.join("\n"));
+        self.remember_copy(pieces);
+    }
+
+    fn remember_copy(&mut self, pieces: Vec<String>) {
         self.clipboard.push(pieces);
         let extra = self.clipboard.len().saturating_sub(Self::CLIPBOARD_HISTORY);
         self.clipboard.drain(..extra);
+    }
+
+    /// Makes `text`, from the system clipboard, the latest copy, unless it
+    /// already is. It isn't sent back to the client.
+    pub fn take_system_clipboard(&mut self, text: &str) {
+        if self.clipboard().is_some_and(|last| last.join("\n") == text) {
+            return;
+        }
+        self.remember_copy(vec![text.to_owned()]);
     }
 
     /// The latest copy, once, as one text, for the client to put on the
