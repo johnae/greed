@@ -56,6 +56,7 @@ claude mcp add greed -- greed mcp
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
+| `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
 
 ### The repo map
@@ -259,6 +260,14 @@ after a restart `space i r` lists them, with what you asked first, and
 takes one up: the agent tells the conversation again into a new
 transcript, and its workspace is still there. Agents that can't take up a
 session (or fork one) say so.
+
+An agent can start another with the `subagent` tool: for a search across
+the project, a side task or a second opinion, without filling its own
+context. The helper is an agent from the list here (the first installed,
+or the one asked for), in a workspace of its own unless the caller says
+otherwise. Its transcript shows in `:agents` and it asks you before doing
+things like any other; the caller gets its last answer as a report. At
+most three work at once, so helpers starting helpers can't run away.
 
 Add an agent that isn't in the list in your
 `init.luau`; the first of its commands that's installed is used:

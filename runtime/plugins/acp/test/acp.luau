@@ -410,3 +410,49 @@ test("the overview shows what each agent is doing and what it waits on", functio
 	acp.close(first)
 	acp.close(second)
 end)
+
+-- Runs the subagent tool with `args`, as an agent's call would.
+local function subagent(args: { [string]: any }): (boolean, any)
+	for _, tool in require("@agent").tools() do
+		if tool.name == "subagent" then
+			return pcall(tool.run, args, nil)
+		end
+	end
+	error("no subagent tool")
+end
+
+test("a subagent works on a task in a session of its own and reports back", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	local ok, result = subagent({ task = "hello", agent = "fake", here = true })
+	assert(ok, tostring(result))
+	assert(result.report == "Hello there", result.report)
+	assert(result.note == nil, "no workspace")
+	local s = acp.sessions()[#acp.sessions()]
+	assert(s.name == result.session and s.status == "idle", s.status)
+	local sent = s.entries[1].text or ""
+	assert(string.find(sent, "^hello\n\n%(You're a helper"), sent)
+end)
+
+test("subagents are limited, so they can't start an endless chain", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	local limit = acp.subagent.LIMIT
+	for _ = 1, limit do
+		greed.spawn(function()
+			subagent({ task = "wait", agent = "fake", here = true })
+		end)
+	end
+	t:wait(100)
+	local ok, err = subagent({ task = "hello", agent = "fake", here = true })
+	assert(not ok and string.find(tostring(err), "working already", 1, true), tostring(err))
+	for _, s in acp.sessions() do
+		acp.stop(s)
+	end
+	t:wait(100)
+end)
+
+test("asking for an agent that isn't installed says so", function(t)
+	local ok, err = subagent({ task = "hello", agent = "nobody" })
+	assert(not ok and string.find(tostring(err), "nobody isn't installed", 1, true), tostring(err))
+end)

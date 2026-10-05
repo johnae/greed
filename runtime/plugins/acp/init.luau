@@ -978,4 +978,18 @@ greed.keymap.bind("normal", {
 	["space i r"] = "agent-resume",
 })
 
+-- The agent called `name`, or the first installed one, if it's installed.
+local function installed(name: string?): Agent?
+	for _, known in agents do
+		if (name == nil or known.name == name) and command_of(known) then
+			return known
+		end
+	end
+	return nil
+end
+
+--- Agents handing tasks to other agents (subagent.luau).
+M.subagent = require("@self/subagent")
+M.subagent.offer(M, installed)
+
 return M
