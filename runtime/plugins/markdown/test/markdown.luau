@@ -93,3 +93,43 @@ test("a plugin can draw headings its own way", function(t)
 	undo()
 	assert(t:draw(60, 12)[1] == "Title")
 end)
+
+-- The hidden line ranges in the main view, e.g. "2-3".
+local function hidden(): string
+	local out = {}
+	for _, lines in greed.view():hidden_lines() do
+		table.insert(out, `{lines.from}-{lines.to}`)
+	end
+	return table.concat(out, " ")
+end
+
+test("tab folds the code block, list item or section around the cursor", function(t)
+	local function at(line: number)
+		local start = greed.view():buffer():line_start(line)
+		greed.view():set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+	end
+	shown(
+		t,
+		"# Plan\n\n```sh\necho a\necho b\n```\n\n- [ ] ship it\n  - [ ] tests\n  - [ ] docs\n- [ ] rest\n\n# Later"
+	)
+	-- In the code: the block folds under its opening fence.
+	at(3)
+	t:keys("tab")
+	assert(hidden() == "3-5", "the code block: " .. hidden())
+	t:keys("tab")
+	assert(hidden() == "", hidden())
+	-- On a todo with subtasks: the subtasks fold under it.
+	at(7)
+	t:keys("tab")
+	assert(hidden() == "8-9", "the subtasks: " .. hidden())
+	t:keys("tab")
+	-- On a line that's in neither: the section under the heading.
+	at(1)
+	t:keys("tab")
+	assert(hidden() == "1-10", "the section, up to the blank line before the next: " .. hidden())
+	-- shift-tab unfolds everything, and folds everything when nothing is.
+	t:keys("shift-tab")
+	assert(hidden() == "", hidden())
+	t:keys("shift-tab")
+	assert(hidden() ~= "", "folded again")
+end)

@@ -1,13 +1,13 @@
--- Folding: `z c` folds the block the cursor is in under its first line,
--- `z o` unfolds it, `z a` does whichever it isn't, and `z R` unfolds
--- everything.
+-- Folding: `tab` (or `z a`) folds the block the cursor is in under its
+-- first line, or unfolds it; `z C` only folds and `z o` only unfolds.
+-- `shift-tab` folds or unfolds everything, and `z R` unfolds everything.
 --
 -- A block is what the language's "folds" query captures as `@fold` (read
 -- from `queries/<language>/folds.scm`): the smallest one around the
 -- cursor's line that spans more than one line. Without a query it's the
 -- lines indented under the nearest line indented less. A plugin can fold a
--- language its own way with `providers`, as notes does for Markdown
--- sections.
+-- language its own way with `providers`, as markdown does for sections,
+-- code blocks and lists.
 
 local greed = require("@greed")
 local syntax = require("./syntax")
@@ -239,6 +239,18 @@ greed.command({
 })
 
 greed.command({
+	name = "fold-toggle-all",
+	doc = "Unfold everything when anything is folded, or else fold every outermost block",
+	run = function(ctx)
+		if #ctx.buffer:decorations("folds") > 0 then
+			greed.run("fold-open-all")
+		else
+			greed.run("fold-close-all")
+		end
+	end,
+})
+
+greed.command({
 	name = "fold-selection",
 	doc = "Fold the selected lines under the first",
 	run = function(ctx)
@@ -277,6 +289,8 @@ for _, back in { false, true } do
 end
 
 M.keys = {
+	["tab"] = "fold-toggle",
+	["shift-tab"] = "fold-toggle-all",
 	["z a"] = "fold-toggle",
 	["z C"] = "fold-close",
 	["z o"] = "fold-open",

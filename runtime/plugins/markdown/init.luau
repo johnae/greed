@@ -3,13 +3,15 @@
 -- markers, links as their text, fenced code on a background of its own,
 -- quotes with a bar, `---` as a line and list dashes as bullets. The file
 -- stays plain Markdown: typing on a line shows it as written (see
--- `core.reveal`). Turn it off with `:set markdown-look false`.
+-- `core.reveal`). Turn it off with `:set markdown-look false`. `tab` folds
+-- the section, list item or code block around the cursor (folds.luau).
 --
 -- Other plugins can draw some parts their own way: notes draws headings and
 -- bullets as symbols, and claims them with `require("@markdown").claim`.
 
 local greed = require("@greed")
 local core = require("@core")
+require("@self/folds")
 
 local M = {}
 

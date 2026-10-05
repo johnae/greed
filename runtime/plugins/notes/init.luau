@@ -7,7 +7,8 @@
 --   space n a   the agenda: open todos, soonest due first
 --   space n x   tick a todo, or untick it
 --   g d         follow the [[link]] under the cursor (making the note)
---   z a         fold the section under the cursor, or unfold it (core's folds)
+--   tab, z a    fold the section, list item or code block under the cursor,
+--               or unfold it (Markdown's folds)
 --
 -- In notes (Markdown files in the notes folder, or every Markdown file with
 -- `notes-everywhere`), links show without their brackets, markup shows as
@@ -22,7 +23,6 @@ local greed = require("@greed")
 local notes = require("@self/notes")
 require("@self/links")
 require("@self/todos")
-require("@self/folds")
 require("@self/tools")
 require("@self/look")
 

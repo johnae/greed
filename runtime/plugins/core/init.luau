@@ -83,7 +83,6 @@ greed.keymap.bind("normal", {
 	q = "play-macro",
 	["ctrl-o"] = "jump-back",
 	["ctrl-i"] = "jump-forward",
-	tab = "jump-forward",
 	["alt-d"] = "delete-without-copy",
 	["alt-c"] = "change-without-copy",
 	r = "replace-char",

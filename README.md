@@ -21,22 +21,6 @@ Language servers start on their own when they're installed; `:health` shows
 which ones were found.
 
 
-```sh id=shell
-date
-```
-
-```result
-Mon Oct  5 10:57:44 AM CEST 2026
-```
-
-```sh input=shell
-cat
-```
-
-```result
-32
-```
-
 ## Plugins in Luau
 
 A plugin is a folder with an `init.luau`. This one adds a command and binds

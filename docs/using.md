@@ -213,7 +213,7 @@ There is always a selection; a cursor is a selection one character wide.
 | `g n` `g p`, `g a`, `g m` | The next or previous open file, the one you were in before, the one you changed last |
 | `g .` `g \|`, `g f` | Where the file last changed, column N (`8 g \|`), the file named under the cursor |
 | `alt-.` | Do the last `f` or `t` again |
-| `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again |
+| `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |
 
 **Changing**
 
@@ -356,14 +356,17 @@ In Vim's style the same objects are `if` `af`, `ia` `aa` and `ic` `ac`, as in
 
 | Keys | |
 |---|---|
-| `z a` | Fold the block the cursor is in under its first line, or unfold it |
+| `tab` or `z a` | Fold the block the cursor is in under its first line, or unfold it |
+| `shift-tab` | Unfold everything when anything is folded, or else fold every outermost block |
 | `z C` `z o` | Fold it, or unfold the folds the cursor is in (`z c` in the Vim style) |
 | `z R` | Unfold everything |
 
 A block is the smallest function, body, table or similar around the
 cursor's line, from the language's grammar. In a language without one,
 it's the lines indented under the nearest line indented less, and in
-Markdown it's the section under a heading. Vim's style has the same keys,
+Markdown it's a fenced code block, a list item with lines under it (a todo
+and its subtasks) or the section under a heading, whichever is innermost.
+Vim's style has the same `z` keys (`tab` stays `ctrl-i` there),
 and also `z M` to fold every outermost block, `z f` + a motion to fold
 those lines, `z j` `z k` to go to the next or previous block, and `z d`
 `z E` to unfold.
