@@ -1,0 +1,4 @@
+name = "plan"
+requires = ["core", "agent", "picker"]
+# The plan and decisions are files in the project's .greed folder.
+capabilities = ["fs.read", "fs.write"]

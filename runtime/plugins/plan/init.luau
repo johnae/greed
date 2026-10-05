@@ -1,0 +1,334 @@
+-- A plan and decisions you share with agents, as Markdown files in the
+-- project's `.greed` folder.
+--
+-- The plan (`.greed/plan.md`) is an agent's checklist where you can see
+-- and change it: tick, reorder, add or delete items, and the agent reads
+-- what you did. An agent replaces the whole plan when it writes, giving the
+-- version it read, so it can't write over changes you made since.
+--
+-- Decisions (`.greed/decisions/*.md`) are what you settled, kept across
+-- sessions: "use sqlite", "never touch the generated code". Ones an agent
+-- adds stay proposed until you accept them, and agents are told so, so an
+-- agent can't make itself rules the next one follows.
+
+local greed = require("@greed")
+local core = require("@core")
+local agent = require("@agent")
+local picker = require("@picker")
+
+local M = {}
+
+local PLAN_START = "# Plan\n\n"
+
+-- The project's `.greed` folder.
+local function folder(): string
+	return `{core.project.root()}/.greed`
+end
+
+--- Where the plan is.
+function M.plan_path(): string
+	return `{folder()}/plan.md`
+end
+
+--- Where decisions are.
+function M.decisions_dir(): string
+	return `{folder()}/decisions`
+end
+
+-- Where the decision kept as `name` is.
+local function decision_path(name: string): string
+	return `{M.decisions_dir()}/{name}`
+end
+
+-- The open buffer for `path`, if there is one.
+local function open_buffer(path: string): greed.Buffer?
+	for _, buffer in greed.buffers() do
+		if buffer:path() == path then
+			return buffer
+		end
+	end
+	return nil
+end
+
+-- `path`'s text as you have it, unsaved changes included.
+local function read(path: string): string?
+	local buffer = open_buffer(path)
+	if buffer then
+		return buffer:text()
+	end
+	return (greed.fs.read(path))
+end
+
+-- Writes `text` to `path`: through its buffer if it's open, so it can be
+-- undone and shows at once, otherwise to the file.
+local function write(path: string, text: string)
+	local buffer = open_buffer(path)
+	if buffer then
+		buffer:edit(function(e)
+			e:replace(0, buffer:len(), text)
+		end)
+		buffer:save()
+	else
+		greed.fs.write(path, text)
+	end
+end
+
+--- A short fingerprint of `text`, for telling whether it changed.
+function M.version(text: string): string
+	local hash = 5381
+	for i = 1, #text do
+		hash = (hash * 33 + string.byte(text, i)) % 4294967296
+	end
+	return string.format("%08x", hash)
+end
+
+export type Task = { line: number, done: boolean, text: string, depth: number }
+
+--- The checklist items in `text`, with their 1-based lines.
+function M.tasks(text: string): { Task }
+	local tasks = {}
+	local n = 0
+	for line in string.gmatch(text .. "\n", "([^\n]*)\n") do
+		n += 1
+		local indent, mark, rest = string.match(line, "^(%s*)[-*] %[([ xX])%] (.*)$")
+		if indent and mark and rest then
+			table.insert(tasks, { line = n, done = mark ~= " ", text = rest, depth = #indent // 2 })
+		end
+	end
+	return tasks
+end
+
+--- The plan as you have it, and its version; empty if there's none yet.
+function M.read_plan(): (string, string)
+	local text = read(M.plan_path()) or ""
+	return text, M.version(text)
+end
+
+--- Replaces the plan with `text`, unless it changed since `version` was
+--- read. Returns whether it did, and the plan as it is if it didn't.
+function M.write_plan(text: string, version: string): (boolean, string?)
+	local current, now = M.read_plan()
+	if now ~= version then
+		return false, current
+	end
+	write(M.plan_path(), text)
+	return true, nil
+end
+
+export type Decision = { name: string, title: string, status: string, text: string }
+
+-- The decision in `text`, kept as `name`.
+local function decision(name: string, text: string): Decision
+	return {
+		name = name,
+		title = string.match(text, "^#%s*([^\n]+)") or name,
+		status = string.lower(string.match(text, "\nStatus:%s*(%a+)") or "accepted"),
+		text = text,
+	}
+end
+
+--- Every decision, oldest first.
+function M.decisions(): { Decision }
+	local list = {}
+	for _, entry in greed.fs.list(M.decisions_dir(), { hidden = true, ignored = true }) or {} do
+		if not entry.dir and string.match(entry.name, "%.md$") then
+			local text = read(decision_path(entry.name))
+			if text then
+				table.insert(list, decision(entry.name, text))
+			end
+		end
+	end
+	table.sort(list, function(a: Decision, b: Decision)
+		return a.name < b.name
+	end)
+	return list
+end
+
+-- `title` as a file name: lowercase words joined by dashes.
+local function slug(title: string): string
+	local words = string.gsub(string.lower(title), "[^%w]+", "-")
+	words = string.gsub(words, "^%-+", "")
+	words = string.gsub(words, "%-+$", "")
+	return string.sub(if words == "" then "decision" else words, 1, 60)
+end
+
+--- Adds a decision, `proposed` (by an agent) or accepted (by you), and
+--- returns its file name.
+function M.decide(title: string, text: string, proposed: boolean): string
+	local name = string.format("%04d-%s.md", #M.decisions() + 1, slug(title))
+	local status = if proposed then "proposed" else "accepted"
+	local body = `# {title}\n\nStatus: {status}\nDate: {os.date("%Y-%m-%d")}\n\n{text}\n`
+	write(decision_path(name), body)
+	return name
+end
+
+local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
+	return { type = "object", properties = properties, required = required }
+end
+
+agent.tool({
+	name = "plan_read",
+	description = "The plan you share with the user, a Markdown checklist in .greed/plan.md, as "
+		.. "they have it: they may have ticked, reordered, added or removed items. Returns its "
+		.. "text, its tasks and a version to give plan_write",
+	run = function()
+		local text, version = M.read_plan()
+		return { text = text, version = version, tasks = greed.json.array(M.tasks(text)) }
+	end,
+})
+
+agent.tool({
+	name = "plan_write",
+	description = "Replace the plan with new Markdown: a checklist ('- [ ] step', '- [x] done', "
+		.. "indented for sub-steps) and any notes. Give the version plan_read returned; if the "
+		.. "user changed the plan since, nothing is written and you get the plan as it is now, "
+		.. "to read and try again. Keep their changes",
+	input = object({
+		text = { type = "string" },
+		version = { type = "string" },
+	}, { "text", "version" }),
+	run = function(args)
+		local text = args.text
+		if not string.match(text, "^#") then
+			text = PLAN_START .. text
+		end
+		local done, current = M.write_plan(text, args.version)
+		if done then
+			return "written"
+		end
+		local _, version = M.read_plan()
+		return {
+			written = false,
+			reason = "the user changed the plan since you read it",
+			text = current,
+			version = version,
+		}
+	end,
+})
+
+-- A decision as agents see it: proposed ones say so.
+local function shown(d: Decision): { [string]: any }
+	return {
+		name = d.name,
+		title = d.title,
+		status = d.status,
+		note = if d.status == "proposed"
+			then "proposed by an agent and not accepted by the user: don't rely on it"
+			else nil,
+	}
+end
+
+agent.tool({
+	name = "decisions",
+	description = "Decisions settled for this project, kept in .greed/decisions: what was "
+		.. "decided and why. Follow the accepted ones; proposed ones aren't agreed yet. With "
+		.. "`query`, only those whose text has it",
+	input = object({ query = { type = "string" } }),
+	run = function(args)
+		local list = {}
+		for _, d in M.decisions() do
+			if
+				args.query == nil
+				or string.find(string.lower(d.text), string.lower(args.query), 1, true)
+			then
+				table.insert(list, shown(d))
+			end
+		end
+		return greed.json.array(list)
+	end,
+})
+
+agent.tool({
+	name = "decision_read",
+	description = "One decision's whole text, by the name `decisions` gave",
+	input = object({ name = { type = "string" } }, { "name" }),
+	run = function(args)
+		for _, d in M.decisions() do
+			if d.name == args.name then
+				local result = shown(d)
+				result.text = d.text
+				return result
+			end
+		end
+		error(`no decision called {args.name}`, 0)
+	end,
+})
+
+agent.tool({
+	name = "decision_propose",
+	description = "Propose a decision to keep for later sessions, e.g. after the user settled a "
+		.. "question. It stays proposed until the user accepts it",
+	input = object({
+		title = { type = "string", description = "What was decided, in a line" },
+		text = { type = "string", description = "Why, and anything that goes with it" },
+	}, { "title", "text" }),
+	run = function(args)
+		return M.decide(args.title, args.text, true)
+	end,
+})
+
+-- Opens `path` beside your files, made with `start` if it isn't there.
+local function show(path: string, start: string)
+	if greed.fs.stat(path) == nil and open_buffer(path) == nil then
+		greed.fs.write(path, start)
+	end
+	greed.open(path)
+end
+
+greed.command({
+	name = "plan",
+	doc = "Open the plan you share with agents (.greed/plan.md)",
+	run = function()
+		show(M.plan_path(), PLAN_START)
+	end,
+})
+
+greed.command({
+	name = "decisions",
+	doc = "Pick a decision kept for this project to open it",
+	run = function()
+		local items = {}
+		for _, d in M.decisions() do
+			local status = if d.status == "accepted" then "" else ` ({d.status})`
+			table.insert(items, { label = d.title .. status, value = decision_path(d.name) })
+		end
+		picker.pick("Decisions", items, function(item)
+			greed.open(item.value)
+		end)
+	end,
+})
+
+greed.command({
+	name = "decision-new",
+	doc = "Write down a decision for this project, kept for you and agents",
+	args = { { name = "title", doc = "What was decided, in a line" } },
+	run = function(ctx)
+		local title = table.concat(ctx.args, " ")
+		if title == "" then
+			greed.echo("say what was decided: :decision-new use sqlite for storage")
+			return
+		end
+		local name = M.decide(title, "Why: ", false)
+		greed.open(decision_path(name))
+	end,
+})
+
+greed.command({
+	name = "decision-accept",
+	doc = "Accept the proposed decision you're in, so agents follow it",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local text = buffer:text()
+		local from, to = string.find(text, "\nStatus:%s*%a+")
+		if from == nil or to == nil then
+			greed.echo("this isn't a decision")
+			return
+		end
+		buffer:edit(function(e)
+			e:replace(from, to, "\nStatus: accepted")
+		end)
+		buffer:save()
+	end,
+})
+
+return M

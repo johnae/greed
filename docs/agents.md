@@ -54,6 +54,8 @@ claude mcp add greed -- greed mcp
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
+| `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
+| `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
 
 ### The repo map
@@ -129,6 +131,30 @@ The agent sends questions as plain data, and Greed writes the page itself.
 Its words go on lines of their own, with anything that could start
 Markdown's syntax escaped, so a question can't add a button, a code block
 or a choice of its own, and only you can send the page.
+
+## A plan and decisions you share
+
+An agent can keep its plan in `.greed/plan.md` in the project, a Markdown
+checklist you see and change while it works: tick steps (`todo-toggle`),
+reorder them, add or delete them. `:plan` opens it. The agent reads the
+plan as you have it, and when it writes a new one it gives the version it
+read; if you changed the plan since, its write is refused and it gets
+yours to work from, so it can't write over your changes.
+
+Decisions are kept in `.greed/decisions`, a file each: what was decided
+and why, like "use SQLite" or "never edit the generated code". Agents read
+them in later sessions and follow the accepted ones.
+
+| Command | |
+|---|---|
+| `:decision-new TITLE` | Write down a decision, accepted |
+| `:decisions` | Pick one to open |
+| `:decision-accept` | Accept the proposed decision you're in |
+
+A decision an agent adds is `Status: proposed` until you accept it, and
+agents are told not to rely on proposed ones, so one agent can't make
+rules for the next. These are plain files, though: an agent that can write
+files can write here too, so check `.greed` changes as you would code.
 
 ## Claude Code's `/ide`
 
