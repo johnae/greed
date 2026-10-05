@@ -20,6 +20,7 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree, WasmStor
 use crate::{Buffer, BufferId, Editor};
 use injections::{InjectionQuery, Injections, Layer};
 
+mod incremental;
 mod injections;
 mod tags;
 
@@ -263,6 +264,7 @@ pub struct Parsed {
     buffer: BufferId,
     version: usize,
     tree: Tree,
+    text: Rope,
     layers: Vec<Layer>,
 }
 
@@ -270,8 +272,9 @@ struct BufferSyntax {
     language: Arc<Language>,
     /// The last version sent to the worker.
     sent: Option<usize>,
-    /// The newest tree, and the version it was parsed from.
-    tree: Option<(usize, Tree)>,
+    /// The newest tree, and the version and text it was parsed from, to
+    /// parse the next version from.
+    tree: Option<(usize, Tree, Rope)>,
     /// The languages inside it, from the same parse.
     layers: Vec<Layer>,
 }
@@ -512,30 +515,37 @@ impl Syntax {
             && state
                 .tree
                 .as_ref()
-                .is_none_or(|(v, _)| *v <= parsed.version)
+                .is_none_or(|(v, _, _)| *v <= parsed.version)
         {
-            state.tree = Some((parsed.version, parsed.tree));
+            state.tree = Some((parsed.version, parsed.tree, parsed.text));
             state.layers = parsed.layers;
         }
     }
 
     /// The syntax tree of `buffer` as its text is now, and its language.
     /// When the worker hasn't caught up with the latest edit, the buffer is
-    /// parsed here and then. `None` if it has no language Greed knows or is
-    /// too big to parse.
+    /// parsed here and then, from the tree before the edit, so only what
+    /// changed is parsed again. `None` if it has no language Greed knows or
+    /// is too big to parse.
     pub fn tree(&mut self, buffer: &Buffer) -> Option<(Arc<Language>, Tree)> {
         let version = buffer.history().log().len();
         let state = self.state_for(buffer)?;
-        if let Some((v, tree)) = &state.tree
+        if let Some((v, tree, _)) = &state.tree
             && *v == version
         {
             return Some((state.language.clone(), tree.clone()));
         }
         let language = state.language.clone();
+        let before = state.tree.clone();
         self.parser.set_language(&language.grammar).ok()?;
-        let tree = parse(&mut self.parser, buffer.text())?;
+        let tree = match &before {
+            Some((_, old, old_text)) => {
+                incremental::reparse(&mut self.parser, old, old_text, buffer.text())?
+            }
+            None => parse(&mut self.parser, buffer.text())?,
+        };
         let state = self.buffers.get_mut(&buffer.id())?;
-        state.tree = Some((version, tree.clone()));
+        state.tree = Some((version, tree.clone(), buffer.text().clone()));
         // The layers were for the text before; the worker brings new ones.
         state.layers.clear();
         Some((language, tree))
@@ -644,7 +654,7 @@ impl Syntax {
     pub fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         let Some(BufferSyntax {
             language,
-            tree: Some((_, tree)),
+            tree: Some((_, tree, _)),
             layers,
             ..
         }) = self.buffers.get(&buffer)
@@ -696,6 +706,9 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
     // Whether the parser can run loaded grammars, which it gets a store of
     // its own for with the first request after one was loaded.
     let mut can_run_loaded = false;
+    // Each buffer's last tree, with its language and text, to parse the
+    // next version from.
+    let mut last: HashMap<BufferId, (&'static str, Tree, Rope)> = HashMap::new();
     while let Ok(first) = inbox.recv() {
         let mut latest: HashMap<BufferId, Request> = HashMap::new();
         for request in std::iter::once(first).chain(inbox.try_iter()) {
@@ -711,9 +724,24 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
             if parser.set_language(&request.language.grammar).is_err() {
                 continue;
             }
-            let Some(tree) = parse(&mut parser, &request.text) else {
+            let tree = match last.get(&request.buffer) {
+                Some((language, old, old_text)) if *language == request.language.name => {
+                    incremental::reparse(&mut parser, old, old_text, &request.text)
+                }
+                _ => parse(&mut parser, &request.text),
+            };
+            let Some(tree) = tree else {
                 continue;
             };
+            // Closed buffers' trees aren't wanted again; letting them all go
+            // now and then costs a whole parse of each open one.
+            if last.len() >= 64 {
+                last.clear();
+            }
+            last.insert(
+                request.buffer,
+                (request.language.name, tree.clone(), request.text.clone()),
+            );
             let layers = injections::layers(
                 &mut parser,
                 &request.text,
@@ -725,6 +753,7 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
                 buffer: request.buffer,
                 version: request.version,
                 tree,
+                text: request.text,
                 layers,
             };
             if outbox.send(parsed).is_err() {
@@ -736,12 +765,18 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
 
 /// Parses `text` from scratch with the parser's language.
 fn parse(parser: &mut Parser, text: &Rope) -> Option<Tree> {
+    parse_from(parser, text, None)
+}
+
+/// Parses `text` with the parser's language, reusing `old` (already told
+/// about the edits since) where the text didn't change.
+fn parse_from(parser: &mut Parser, text: &Rope, old: Option<&Tree>) -> Option<Tree> {
     parser.parse_with_options(
         &mut |byte, _| {
             let (chunk, start, _, _) = text.chunk_at_byte(byte);
             &chunk.as_bytes()[byte - start..]
         },
-        None,
+        old,
         None,
     )
 }

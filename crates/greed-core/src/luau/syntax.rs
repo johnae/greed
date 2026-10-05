@@ -94,15 +94,37 @@ fn child_index(parent: Node, node: Node) -> u32 {
         .expect("a node is one of its parent's children")
 }
 
-/// The way down from the root to `node`.
-fn path_to(node: Node) -> Vec<u32> {
+/// The way down from `root` to `node`. Each step goes to the child holding
+/// `node` by its position, so a node among thousands of siblings (the
+/// items of a long file) costs a few steps, not a scan of the siblings.
+fn path_to(root: Node, node: Node) -> Vec<u32> {
     let mut path = Vec::new();
-    let mut node = node;
-    while let Some(parent) = node.parent() {
-        path.push(child_index(parent, node));
-        node = parent;
+    let mut cursor = root.walk();
+    let mut at = root;
+    while at.id() != node.id() {
+        let Some(child) = at.child_with_descendant(node) else {
+            break;
+        };
+        // The first child ending after where `node` starts, then on to
+        // `child`: past any empty ones that start there too.
+        let index = cursor
+            .goto_first_child_for_byte(node.start_byte())
+            .and_then(|mut index| {
+                while cursor.node().id() != child.id() && cursor.goto_next_sibling() {
+                    index += 1;
+                }
+                (cursor.node().id() == child.id()).then_some(index)
+            });
+        if let Some(index) = index {
+            path.push(u32::try_from(index).expect("a node has fewer than 2^32 children"));
+        } else {
+            // No child ends after `node` starts, or an empty node at the end
+            // of `child` sits past where that looks.
+            path.push(child_index(at, child));
+            cursor.reset(child);
+        }
+        at = child;
     }
-    path.reverse();
     path
 }
 
@@ -216,7 +238,7 @@ fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> L
         for capture in m.captures() {
             let name = names[capture.index as usize];
             if !captures.contains_key(name)? {
-                captures.set(name, base.at(path_to(capture.node)))?;
+                captures.set(name, base.at(path_to(tree.root_node(), capture.node)))?;
             }
         }
         matches.push(captures)?;
@@ -348,7 +370,7 @@ pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             let path = tree
                 .root_node()
                 .named_descendant_for_byte_range(from, to)
-                .map(path_to);
+                .map(|node| path_to(tree.root_node(), node));
             Ok(path.map(|path| NodeRef::new(this.buffer, version, tree, path)))
         },
     );
