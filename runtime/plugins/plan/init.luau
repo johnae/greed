@@ -1,18 +1,19 @@
--- A plan and decisions you share with agents, as Markdown files in the
--- project's `.greed` folder.
+-- A plan and decisions you share with agents, as notes in the project's
+-- notes folder (`.greed/notes`, see the notes plugin), so they're searched,
+-- linked and in the agenda like any note.
 --
--- The plan (`.greed/plan.md`) is an agent's checklist where you can see
--- and change it: tick, reorder, add or delete items, and the agent reads
--- what you did. An agent replaces the whole plan when it writes, giving the
+-- The plan (`project:plan`) is an agent's checklist where you can see and
+-- change it: tick, reorder, add or delete items, and the agent reads what
+-- you did. An agent replaces the whole plan when it writes, giving the
 -- version it read, so it can't write over changes you made since.
 --
--- Decisions (`.greed/decisions/*.md`) are what you settled, kept across
+-- Decisions (`project:decisions/*`) are what you settled, kept across
 -- sessions: "use sqlite", "never touch the generated code". Ones an agent
 -- adds stay proposed until you accept them, and agents are told so, so an
 -- agent can't make itself rules the next one follows.
 
 local greed = require("@greed")
-local core = require("@core")
+local notes = require("@notes")
 local agent = require("@agent")
 local picker = require("@picker")
 
@@ -20,19 +21,14 @@ local M = {}
 
 local PLAN_START = "# Plan\n\n"
 
--- The project's `.greed` folder.
-local function folder(): string
-	return `{core.project.root()}/.greed`
-end
-
 --- Where the plan is.
 function M.plan_path(): string
-	return `{folder()}/plan.md`
+	return `{notes.project_folder()}/plan.md`
 end
 
 --- Where decisions are.
 function M.decisions_dir(): string
-	return `{folder()}/decisions`
+	return `{notes.project_folder()}/decisions`
 end
 
 -- Where the decision kept as `name` is.
@@ -168,9 +164,9 @@ end
 
 agent.tool({
 	name = "plan_read",
-	description = "The plan you share with the user, a Markdown checklist in .greed/plan.md, as "
-		.. "they have it: they may have ticked, reordered, added or removed items. Returns its "
-		.. "text, its tasks and a version to give plan_write",
+	description = "The plan you share with the user, a Markdown checklist in the project's notes "
+		.. "(project:plan), as they have it: they may have ticked, reordered, added or removed "
+		.. "items. Returns its text, its tasks and a version to give plan_write",
 	run = function()
 		local text, version = M.read_plan()
 		return { text = text, version = version, tasks = greed.json.array(M.tasks(text)) }
@@ -220,9 +216,9 @@ end
 
 agent.tool({
 	name = "decisions",
-	description = "Decisions settled for this project, kept in .greed/decisions: what was "
-		.. "decided and why. Follow the accepted ones; proposed ones aren't agreed yet. With "
-		.. "`query`, only those whose text has it",
+	description = "Decisions settled for this project, kept in the project's notes "
+		.. "(project:decisions/...): what was decided and why. Follow the accepted ones; proposed "
+		.. "ones aren't agreed yet. With `query`, only those whose text has it",
 	input = object({ query = { type = "string" } }),
 	run = function(args)
 		local list = {}
@@ -277,7 +273,7 @@ end
 
 greed.command({
 	name = "plan",
-	doc = "Open the plan you share with agents (.greed/plan.md)",
+	doc = "Open the plan you share with agents, in the project's notes",
 	run = function()
 		show(M.plan_path(), PLAN_START)
 	end,

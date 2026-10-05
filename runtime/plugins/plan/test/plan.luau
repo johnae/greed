@@ -3,9 +3,10 @@ local greed = require("@greed")
 local agent = require("@agent")
 local plan = require("@plan")
 
--- Opens a file in a fresh project, so it's the shown one.
+-- A fresh project with a file open, its notes in `.greed/notes`.
 local function project(t: any): string
 	local dir = t:tempdir({ [".git/HEAD"] = "ref: refs/heads/main\n", ["a.txt"] = "a\n" })
+	greed.option.set("notes-project-folder", `{dir}/.greed/notes`)
 	greed.open(`{dir}/a.txt`)
 	return dir
 end
@@ -28,7 +29,7 @@ test("an agent writes the plan and reads back what you changed", function(t)
 			== "written"
 	)
 	assert(
-		greed.fs.read(`{dir}/.greed/plan.md`) == "# Plan\n\n- [ ] parse\n- [ ] print\n",
+		greed.fs.read(`{dir}/.greed/notes/plan.md`) == "# Plan\n\n- [ ] parse\n- [ ] print\n",
 		"with a heading"
 	)
 	-- You tick the first step in the editor.
@@ -65,7 +66,7 @@ test("decisions agents propose stay proposed until you accept them", function(t)
 	assert(name == "0001-use-sqlite.md", name)
 	local listed = tool("decisions")
 	assert(listed[1].status == "proposed" and listed[1].note, "marked proposed")
-	greed.open(`{dir}/.greed/decisions/{name}`)
+	greed.open(`{dir}/.greed/notes/decisions/{name}`)
 	t:run("decision-accept")
 	listed = tool("decisions")
 	assert(listed[1].status == "accepted" and listed[1].note == nil, listed[1].status)
@@ -91,4 +92,16 @@ test("decisions you write are accepted, and searchable", function(t)
 	assert(#tool("decisions", { query = "GENERATED" }) == 1, "found ignoring case")
 	assert(#tool("decisions", { query = "sqlite" }) == 0, "only matches")
 	assert(plan.decisions()[1].status == "accepted", plan.decisions()[1].status)
+end)
+
+test("the plan's steps are project todos, in the agenda with yours", function(t)
+	project(t)
+	local first = tool("plan_read")
+	tool("plan_write", { text = "- [ ] parse\n- [x] lex\n", version = first.version })
+	local open = {}
+	for _, todo in tool("notes_todos") do
+		table.insert(open, `{todo.note}: {todo.text}`)
+	end
+	assert(table.concat(open, ", ") == "project:plan: parse", table.concat(open, ", "))
+	assert(tool("notes_read", { name = "project:plan" }).text:find("- [x] lex", 1, true), "a note")
 end)

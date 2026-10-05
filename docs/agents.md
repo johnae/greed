@@ -135,16 +135,22 @@ or a choice of its own, and only you can send the page.
 
 ## A plan and decisions you share
 
-An agent can keep its plan in `.greed/plan.md` in the project, a Markdown
-checklist you see and change while it works: tick steps (`todo-toggle`),
-reorder them, add or delete them. `:plan` opens it. The agent reads the
+An agent can keep its plan in the project's notes (`.greed/notes/plan.md`,
+the note `project:plan`; see [Using Greed](using.md#notes-in-a-project-and-other-places)),
+a Markdown checklist you see and change while it works: tick steps
+(`space n x`), reorder them, add or delete them. `:plan` opens it, and its
+open steps are in your agenda with your other todos. The agent reads the
 plan as you have it, and when it writes a new one it gives the version it
 read; if you changed the plan since, its write is refused and it gets
 yours to work from, so it can't write over your changes.
 
-Decisions are kept in `.greed/decisions`, a file each: what was decided
-and why, like "use SQLite" or "never edit the generated code". Agents read
-them in later sessions and follow the accepted ones.
+Agents like Claude Code and opencode keep todo lists of their own. To have
+them use this plan instead, say so in the project's `AGENTS.md` or
+`CLAUDE.md`, e.g. "Keep your plan with the plan_read and plan_write tools."
+
+Decisions are notes too, in `.greed/notes/decisions/`, one each: what was
+decided and why, like "use SQLite" or "never edit the generated code".
+Agents read them in later sessions and follow the accepted ones.
 
 | Command | |
 |---|---|
