@@ -952,6 +952,7 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
     greed.set(
         "open",
         lua.create_function(|lua, path: String| {
+            let path = super::fs::expand_home(lua, path);
             super::secrets::guard(lua, Path::new(&path))?;
             open_file(lua, &path)
         })?,
@@ -1343,6 +1344,7 @@ fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
 fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, path: String| {
+        let path = super::fs::expand_home(lua, path);
         super::secrets::guard(lua, Path::new(&path))?;
         let buffer = state_mut(lua)
             .editor

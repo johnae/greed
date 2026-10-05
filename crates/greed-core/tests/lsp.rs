@@ -205,6 +205,16 @@ fn project_roots_come_from_markers_or_the_files_directory() {
         project_root(Path::new("notes.md"), &[]),
         std::env::current_dir().unwrap()
     );
+    // A new file in folders not made yet: the nearest one there is, and its
+    // markers.
+    assert_eq!(
+        project_root(&dir.join("crate/src/new/deeper/a.rs"), &markers),
+        dir.join("crate")
+    );
+    assert_eq!(
+        project_root(&dir.join("crate/src/new/deeper/a.rs"), &[]),
+        dir.join("crate/src")
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

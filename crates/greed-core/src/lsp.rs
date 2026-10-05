@@ -657,9 +657,17 @@ pub fn project_root(path: &Path, markers: &[String]) -> PathBuf {
         _ => PathBuf::from("."),
     };
     let dir = std::path::absolute(&dir).unwrap_or(dir);
-    dir.ancestors()
-        .find(|d| markers.iter().any(|m| d.join(m).exists()))
+    // A new file can be in folders that don't exist yet; the server runs
+    // in the nearest one that does.
+    let existing = dir
+        .ancestors()
+        .find(|d| d.is_dir())
         .unwrap_or(&dir)
+        .to_owned();
+    existing
+        .ancestors()
+        .find(|d| markers.iter().any(|m| d.join(m).exists()))
+        .unwrap_or(&existing)
         .to_owned()
 }
 

@@ -224,6 +224,24 @@ fn user_dir(var: &str, fallback: &str) -> Option<String> {
     Some(base.join("greed").to_string_lossy().into_owned())
 }
 
+/// `path` with a leading `~` as the home folder (a test's own, in tests), as
+/// a shell would have it, so `:open ~/notes.md` opens that file and not one
+/// in a folder called `~`.
+pub(super) fn expand_home(lua: &Lua, path: String) -> String {
+    let rest = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => return path,
+    };
+    let home = match &state(lua).dirs {
+        Some(root) => Some(root.clone()),
+        None => std::env::var_os("HOME").map(std::path::PathBuf::from),
+    };
+    match home {
+        Some(home) => format!("{}{rest}", home.to_string_lossy().trim_end_matches('/')),
+        None => path,
+    }
+}
+
 /// `greed.fs.dirs()`: home, config, cache and data folders, and the config
 /// greed ssh brought; for tests, folders of their own.
 fn dirs(lua: &Lua) -> LuaResult<Table> {
