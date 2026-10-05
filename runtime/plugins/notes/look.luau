@@ -72,7 +72,9 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 		local level = math.min(#hashes, #symbols.headings)
 		show(0, #hashes + 1, symbols.headings[level] .. " ", "notes.heading", "fold-toggle")
 	else
-		local spaces = string.match(text, "^(%s*)[-*] ")
+		-- Choices, `- ( )`, are Markdown's to draw.
+		local spaces = not string.match(text, "^%s*[-*] %([ xX]%) ")
+			and string.match(text, "^(%s*)[-*] ")
 		if spaces then
 			show(#spaces, #spaces + 2, symbols.bullet .. " ", "notes.bullet")
 		end

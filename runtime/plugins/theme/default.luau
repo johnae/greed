@@ -36,6 +36,8 @@ return {
 	["notes.todo"] = { fg = "yellow", gui = { checkbox = "empty" } },
 	["notes.done"] = { fg = "bright-black", strikethrough = true },
 	["notes.done.box"] = { fg = "green", gui = { checkbox = "checked" } },
+	["markdown.choice"] = { fg = "bright-black", gui = { checkbox = "choice" } },
+	["markdown.chosen"] = { fg = "blue", gui = { checkbox = "chosen" } },
 	["notes.heading"] = { fg = "blue", bold = true },
 	["notes.bullet"] = { fg = "blue" },
 	["pdf.page"] = { fg = "bright-black", italic = true },

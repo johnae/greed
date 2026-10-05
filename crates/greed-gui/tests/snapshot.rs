@@ -746,6 +746,8 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
     for (name, kind) in [
         ("todo", greed_core::theme::Checkbox::Empty),
         ("done", greed_core::theme::Checkbox::Checked),
+        ("choice", greed_core::theme::Checkbox::Choice),
+        ("chosen", greed_core::theme::Checkbox::Chosen),
     ] {
         theme.set(
             name,
@@ -766,6 +768,9 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
     // A todo's box as notes shows it: a symbol and a space, then the text.
     frame.rows[4] = row(&[("☐ ", "todo"), ("buy milk", "")]);
     frame.rows[5] = row(&[("☑ ", "done"), ("call mum", "")]);
+    // Choices, a ring and a ring with a dot.
+    frame.rows[2] = row(&[("◯ ", "choice"), ("dark", "")]);
+    frame.rows[3] = row(&[("◉ ", "chosen"), ("light", "")]);
     let grid = compose(&frame, Surface::Gui);
     let scene = build(
         &grid,
@@ -811,4 +816,15 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
         .flat_map(|x| ((4.0 * ch) as u32..(5.0 * ch) as u32).map(move |y| (x, y)))
         .any(|(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg);
     assert!(inked, "the todo's text after the box");
+    // The ring is empty in the middle; the picked one has a dot there.
+    assert_eq!(
+        at(cw, 2.0 * ch + middle)[..3],
+        palette.bg,
+        "the choice's middle"
+    );
+    assert_eq!(
+        at(cw, 3.0 * ch + middle)[..3],
+        yellow,
+        "the chosen one's dot"
+    );
 }

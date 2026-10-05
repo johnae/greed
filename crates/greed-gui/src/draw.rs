@@ -405,7 +405,8 @@ fn glyph_quad(physical: &PhysicalGlyph, slot: &Slot, size: f32, color: Rgba) -> 
 }
 
 /// A checkbox over the cells from `left` across `width`: an outlined box,
-/// or for a checked one a filled box with a tick in the background's color.
+/// or for a checked one a filled box with a tick in the background's color,
+/// or for a choice a ring, with a dot in it when chosen.
 fn checkbox(
     kind: Checkbox,
     (left, width): (f32, f32),
@@ -422,10 +423,30 @@ fn checkbox(
         at.y as f32 * ch + (ch - side) / 2.0,
     );
     let radius = side * 0.22;
-    if kind == Checkbox::Empty {
-        let line = (ch / 14.0).round().max(1.0);
-        out.push(rounded(x, y, side, side, radius, line, look.fg));
-        return Ok(());
+    let line = (ch / 14.0).round().max(1.0);
+    match kind {
+        Checkbox::Empty => {
+            out.push(rounded(x, y, side, side, radius, line, look.fg));
+            return Ok(());
+        }
+        Checkbox::Choice | Checkbox::Chosen => {
+            out.push(rounded(x, y, side, side, side / 2.0, line, look.fg));
+            if kind == Checkbox::Chosen {
+                let dot = side * 0.45;
+                let inset = (side - dot) / 2.0;
+                out.push(rounded(
+                    x + inset,
+                    y + inset,
+                    dot,
+                    dot,
+                    dot / 2.0,
+                    0.0,
+                    look.fg,
+                ));
+            }
+            return Ok(());
+        }
+        Checkbox::Checked => {}
     }
     out.push(rounded(x, y, side, side, radius, 0.0, look.fg));
     let bold = TextStyle {

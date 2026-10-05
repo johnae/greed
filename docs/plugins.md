@@ -375,6 +375,11 @@ greed.tab.set_layout({
   `require("@core").features.add("todos", function(buffer) return ... end, "my-plugin")`,
   and the status line shows it after the language (`markdown · todos`).
   `core.features.of(buffer)` lists the ones on.
+- Choices in Markdown (`- ( )`, `- (x)`) are read with
+  `require("@markdown").choices.list(buffer)`: each group with its question
+  (the line above it) and its options, `picked` or not. `choices.on_pick(fn,
+  "my-plugin")` hears each pick, after the text has changed. A pick only
+  edits text; what it does is up to the plugin listening.
 
 ## Waiting
 

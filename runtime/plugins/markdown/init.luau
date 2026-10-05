@@ -12,8 +12,12 @@
 local greed = require("@greed")
 local core = require("@core")
 require("@self/folds")
+local choices = require("@self/choices")
 
 local M = {}
+
+--- Choices, `- ( )` and `- (x)`: reading them and hearing picks.
+M.choices = choices
 
 greed.option.define({
 	name = "markdown-look",
@@ -176,6 +180,22 @@ local function marks(buffer: greed.Buffer): { greed.Mark }
 		local hashes, space = string.match(text, "^(#+)()%s")
 		local quote = string.match(text, "^%s*>%s?()")
 		local bullet = string.match(text, "^%s*()[-*+]%s")
+		local choice, picked = string.match(text, "^%s*()[-*+] %(([ xX])%) ")
+		if choice then
+			-- A choice, `- ( )` or `- (x)`: a button that picks it.
+			local chosen = picked ~= " "
+			table.insert(out, {
+				from = at + (choice :: number) - 1,
+				to = at + (choice :: number) + 5,
+				style = if chosen then "markdown.chosen" else "markdown.choice",
+				text = if chosen then "◉ " else "◯ ",
+				conceal = true,
+				reveal = shows,
+				action = "choice-pick",
+			})
+			inline(line)
+			continue
+		end
 		if
 			string.match(text, "^%s*([-*_])%s*%1%s*%1[%s%-*_]*$") and not string.match(text, "%w")
 		then

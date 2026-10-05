@@ -659,6 +659,23 @@ text in a proportional font (code stays monospaced); terminals other than
 kitty show headings at the normal size. `:set markdown-look false` turns it
 off.
 
+### Choices
+
+A list whose items start with `( )`, one of them `(x)`, is a set of
+choices. They show as ◯ and ◉ (round buttons in the window), and pressing
+one (a click, or `enter` on it) picks it and unpicks the others. The answer
+is the text itself, so it reads the same anywhere:
+
+```markdown
+How do you like to edit?
+
+- (x) Helix: select first, then act
+- ( ) Vim: say what, then where
+```
+
+Picking only changes the text. Plugins read the answers and act on them
+(see [Writing plugins](plugins.md)).
+
 ### Runnable code blocks
 
 A fenced block in a language Greed can run runs when you ask, and its

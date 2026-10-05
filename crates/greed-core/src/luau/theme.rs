@@ -183,9 +183,11 @@ fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
             None => None,
             Some("empty") => Some(Checkbox::Empty),
             Some("checked") => Some(Checkbox::Checked),
+            Some("choice") => Some(Checkbox::Choice),
+            Some("chosen") => Some(Checkbox::Chosen),
             Some(other) => {
                 return Err(mlua::Error::runtime(format!(
-                    "checkbox is \"empty\" or \"checked\", not {other:?}"
+                    "checkbox is \"empty\", \"checked\", \"choice\" or \"chosen\", not {other:?}"
                 )));
             }
         },
@@ -224,6 +226,8 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
         style.checkbox.map(|c| match c {
             Checkbox::Empty => "empty",
             Checkbox::Checked => "checked",
+            Checkbox::Choice => "choice",
+            Checkbox::Chosen => "chosen",
         }),
     )?;
     t.set(

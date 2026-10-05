@@ -87,6 +87,10 @@ pub enum Checkbox {
     Empty,
     /// A filled box with a tick.
     Checked,
+    /// An outlined circle, one choice of several.
+    Choice,
+    /// An outlined circle with a dot: the choice picked.
+    Chosen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

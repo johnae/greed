@@ -135,6 +135,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["notes.todo"] = { fg = p.yellow, gui = { checkbox = "empty" } },
 		["notes.done"] = { fg = p.comment, strikethrough = true },
 		["notes.done.box"] = { fg = p.green, gui = { checkbox = "checked" } },
+		["markdown.choice"] = { fg = p.comment, gui = { checkbox = "choice" } },
+		["markdown.chosen"] = { fg = p.blue, gui = { checkbox = "chosen" } },
 		["notes.heading"] = { fg = p.blue, bold = true },
 		["notes.bullet"] = { fg = p.blue },
 		["notes.due"] = { fg = p.cyan },

@@ -133,3 +133,47 @@ test("tab folds the code block, list item or section around the cursor", functio
 	t:keys("shift-tab")
 	assert(hidden() ~= "", "folded again")
 end)
+
+test("choices show as buttons, and pressing one picks it and unpicks the rest", function(t)
+	shown(t, "## How do you like to edit?\n\n- (x) Helix\n- ( ) Vim\n- ( ) No modes\n\nAfter")
+	assert(
+		#styled("markdown.chosen") == 1 and #styled("markdown.choice") == 2,
+		"one picked, two not"
+	)
+	local buffer = greed.view():buffer()
+	local heard: { string } = {}
+	local stop = require("@markdown").choices.on_pick(function(_, group)
+		for _, option in group.options do
+			if option.picked then
+				table.insert(heard, `{group.question}: {option.text}`)
+			end
+		end
+	end)
+	-- enter on a choice presses it, as a click does.
+	local vim = buffer:line_start(3)
+	greed.view():set_selection({ ranges = { { anchor = vim, head = vim } }, primary = 1 })
+	t:keys("enter")
+	assert(
+		string.find(buffer:text(), "- ( ) Helix\n- (x) Vim\n- ( ) No modes", 1, true),
+		buffer:text()
+	)
+	assert(heard[1] == "How do you like to edit?: Vim", heard[1])
+	stop()
+	local groups = require("@markdown").choices.list(buffer)
+	assert(
+		#groups == 1 and groups[1].question == "How do you like to edit?",
+		"one group, its question"
+	)
+	assert(groups[1].options[2].picked and groups[1].options[2].text == "Vim")
+end)
+
+test("two lists of choices are two groups, each picked on its own", function(t)
+	shown(t, "Light or dark?\n\n- (x) Dark\n- ( ) Light\n\nIcons?\n\n- ( ) Yes\n- (x) No")
+	local buffer = greed.view():buffer()
+	require("@markdown").choices.pick(buffer, 7)
+	assert(
+		string.find(buffer:text(), "- (x) Dark\n- ( ) Light", 1, true),
+		"the first group is untouched"
+	)
+	assert(string.find(buffer:text(), "- (x) Yes\n- ( ) No", 1, true), buffer:text())
+end)
