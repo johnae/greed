@@ -1139,3 +1139,27 @@ fn concealed_text_shows_as_its_mark_says_on_the_cursors_line() {
         "cursor: elsewhere on the line"
     );
 }
+
+#[test]
+fn a_cursor_on_hidden_text_shows_on_the_first_character_after_it() {
+    use greed_core::{Mark, Reveal};
+    // "# Plan" with its "# " hidden, as Markdown shows a heading.
+    let mut ed = editor("|# Plan\nnext");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "md",
+        vec![Mark {
+            range: 0..2,
+            style: "markdown.marker".into(),
+            conceal: true,
+            reveal: Reveal::Never,
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 20, 3);
+    assert_eq!(body(&f)[0], "Plan");
+    // Line numbers take two cells; "P" is the first shown.
+    let cursor = f.cursor.expect("the cursor shows");
+    assert_eq!((cursor.col, cursor.row), (2, 0));
+}

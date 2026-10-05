@@ -756,7 +756,7 @@ impl<M: Measure> Renderer<M> {
                     if !cell.end_of_line {
                         last_shown = Some(cell.byte);
                     }
-                    if cell.byte == head {
+                    if cursor_here(cell.byte, head, &lines, cursor.is_some()) {
                         cursor = Some(screen_position(area, x, rows.len()));
                     }
                     if let Some((text, tag)) = overlay.over(&styled, cell) {
@@ -1622,6 +1622,13 @@ fn shown_bytes(text: &Rope, first: Option<usize>, last: Option<usize>) -> Range<
     last.map_or(first..first, |last| {
         first..text.char_to_byte(text.byte_to_char(last) + 1)
     })
+}
+
+/// Whether the cursor at `head` goes on the cell for `byte` of the line
+/// `lines`: its own cell, or when it's on hidden text (a heading's `#`), the
+/// first cell shown after it, unless it's `placed` already.
+fn cursor_here(byte: usize, head: usize, lines: &Range<usize>, placed: bool) -> bool {
+    byte == head || (!placed && byte > head && lines.contains(&head))
 }
 
 /// The lines folds hide in `view`: each fold's lines after its first, unless
