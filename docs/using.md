@@ -699,7 +699,8 @@ Options go after the language:
 - `id=NAME` names a block, and `input=NAME` gives another block that
   block's result: on stdin for a program, as `input` in Luau. The named
   block runs first if it has no result yet, so a page of blocks works like
-  a small pipeline.
+  a small pipeline. With `rerun=true` on the block taking the input, its
+  input runs again every time, so it never reads a stale result.
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
 

@@ -16,9 +16,10 @@
 --
 -- Options go in the info string: `id=NAME` names a block's result, and
 -- `input=NAME` gives another block that result (on stdin, or as `input` in
--- Luau), running the named block first if it has no result yet. `dir=PATH`
--- runs a program elsewhere than the file's folder, and `timeout=SECONDS`
--- stops it after that long. Add a language from Luau:
+-- Luau), running the named block first if it has no result yet, or every
+-- time with `rerun=true`. `dir=PATH` runs a program elsewhere than the
+-- file's folder, and `timeout=SECONDS` stops it after that long. Add a
+-- language from Luau:
 --
 --     require("@blocks").runner("lua", require("@blocks").program({ "lua", "-e" }))
 
@@ -237,7 +238,8 @@ local function input_for(
 	if source == nil then
 		return nil, `there's no block with id={id}`
 	end
-	local result = source.result
+	-- With `rerun=true`, the input runs every time, not only without a result.
+	local result = if block.opts.rerun == "true" then nil else source.result
 	if result == nil then
 		chain[id] = true
 		if not run_block(buffer, source, chain) then

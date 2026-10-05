@@ -200,3 +200,19 @@ test("agents list a file's blocks and run one, in files the user let run", funct
 	assert(ran.result == "hi", tostring(ran.result))
 	assert(has("```result\nhi\n```")(), "saved in the buffer too")
 end)
+
+test("rerun=true runs the input again even when it has a result", function(t)
+	t:buffer("```sh id=n\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n\ncat|\n```\n")
+	t:run("block-run")
+	-- Without the flag, the saved result is used as it is.
+	t:wait_for(has("```sh input=n\ncat\n```\n\n```result\nstale\n```"))
+	t:buffer(
+		"```sh id=n\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n rerun=true\ncat|\n```\n"
+	)
+	t:run("block-run")
+	t:wait_for(has("```sh input=n rerun=true\ncat\n```\n\n```result\nfresh\n```"))
+	assert(
+		string.find(text(), "```sh id=n\necho fresh\n```\n\n```result\nfresh\n```", 1, true),
+		text()
+	)
+end)
