@@ -1190,6 +1190,19 @@ export type Syntax = {
 	--- is the grammar's own name when it differs, e.g. "c_sharp" for "c-sharp";
 	--- by default the language with "-" as "_". Queries come separately.
 	load_grammar: (language: string, path: string, symbol: string?) -> (),
+	--- What the source files under `dir` (default: the current directory) define and use, from their syntax trees: the functions and types their "textobjects" query finds and how often each name appears, sorted by path. Hidden and ignored files are skipped; `limit` (default 10000) caps the files. It parses in the background and waits like greed.sleep. Needs "fs.read".
+	tags: (dir: string?, opts: { limit: number? }?) -> { FileTags },
+}
+
+--- What one file defines and uses, from `greed.syntax.tags`.
+export type FileTags = {
+	--- Relative to the directory searched.
+	path: string,
+	language: string,
+	--- Each with its 0-based line and its first line as `signature`.
+	definitions: { { name: string, kind: "function" | "type", line: number, signature: string } },
+	--- How often each name appears in the file.
+	references: { [string]: number },
 }
 
 --- What style names look like. Everything on screen has one: "ui.text",

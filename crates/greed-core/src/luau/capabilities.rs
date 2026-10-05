@@ -42,6 +42,7 @@ const GATED: &[(&str, &str)] = &[
     ("fs.grep", "fs.read"),
     ("fs.watch", "fs.read"),
     ("files", "fs.read"),
+    ("syntax.tags", "fs.read"),
     ("load", "fs.read"),
     ("open", "fs.read"),
     ("image.load", "fs.read"),

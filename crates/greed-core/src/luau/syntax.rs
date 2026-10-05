@@ -2,17 +2,19 @@
 //! and `buffer:query(source)`. A node describes the buffer as it was when
 //! the node was found; after an edit, ask again.
 
-use mlua::{Lua, MetaMethod, Table, UserData, UserDataFields, UserDataMethods};
+use mlua::{Function, Lua, MetaMethod, Table, UserData, UserDataFields, UserDataMethods};
+use std::path::Path;
 use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 
 use tree_sitter::{Node, QueryCursor, Tree};
 
 use super::handles::BufferRef;
+use super::jobs::{self, Output};
 use super::{state, state_mut};
 use crate::BufferId;
 use crate::registry::PluginId;
-use crate::syntax::{Language, RopeText};
+use crate::syntax::{FileTags, Language, RopeText};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -283,7 +285,51 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             Ok(state(lua).syntax.query_source(&language, &kind))
         })?,
     )?;
+    syntax.set("tags", tags_function(lua)?)?;
     Ok(syntax)
+}
+
+/// `greed.syntax.tags`, which parses a project's files in the background
+/// and waits, like `greed.fs.grep`.
+fn tags_function(lua: &Lua) -> LuaResult<Function> {
+    let start = lua.create_function(|lua, (dir, opts): (Option<String>, Option<Table>)| {
+        let limit: Option<usize> = match &opts {
+            Some(opts) => opts.get("limit")?,
+            None => None,
+        };
+        let dir = dir.unwrap_or_else(|| ".".to_owned());
+        let tagger = state(lua).syntax.tagger();
+        Ok(jobs::start(lua, move || {
+            Output::Tags(tagger.tags(Path::new(&dir), limit.unwrap_or(10_000)))
+        }))
+    })?;
+    jobs::waiting(lua, "greed.syntax.tags", start)
+}
+
+pub(super) fn tags_to_lua(lua: &Lua, files: Vec<FileTags>) -> LuaResult<Table> {
+    let list = lua.create_table()?;
+    for file in files {
+        let entry = lua.create_table()?;
+        entry.set("path", file.path)?;
+        entry.set("language", file.language)?;
+        let definitions = lua.create_table()?;
+        for d in file.definitions {
+            let definition = lua.create_table()?;
+            definition.set("name", d.name)?;
+            definition.set("kind", d.kind)?;
+            definition.set("line", d.line)?;
+            definition.set("signature", d.signature)?;
+            definitions.push(definition)?;
+        }
+        entry.set("definitions", definitions)?;
+        let references = lua.create_table()?;
+        for (name, count) in file.references {
+            references.set(name, count)?;
+        }
+        entry.set("references", references)?;
+        list.push(entry)?;
+    }
+    Ok(list)
 }
 
 /// `buffer:tree()`, `buffer:node_at()` and `buffer:query()`.

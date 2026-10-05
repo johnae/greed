@@ -27,6 +27,7 @@ pub enum Output {
     /// as running jobs.
     Child(u64, super::process::Piece),
     Pdf(super::pdf::Done),
+    Tags(Vec<crate::syntax::FileTags>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -158,6 +159,9 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         }
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
+        Output::Tags(files) => {
+            tasks::wake(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
+        }
     }
 }
 

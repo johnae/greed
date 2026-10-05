@@ -21,6 +21,9 @@ use crate::{Buffer, BufferId, Editor};
 use injections::{InjectionQuery, Injections, Layer};
 
 mod injections;
+mod tags;
+
+pub use tags::{Definition, FileTags, Tagger};
 
 /// Buffers larger than this aren't parsed, so huge files stay responsive.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;

@@ -37,6 +37,10 @@ claude mcp add greed -- greed mcp
 | `diagnostics` | Errors and warnings from language servers |
 | `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
 | `context_get` | What you pinned for agents: selections, files, problems, the changes in progress |
+| `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward the files you have open (below) |
+| `symbols` | Functions and types anywhere in the project whose names match, with their files and lines |
+| `grep` | The lines matching a regex in the project, with open files searched as you have them, unsaved changes included |
+| `files` | The project's files, or those whose paths match a fuzzy query |
 | `outline` | A file's functions and types with their lines, from its syntax tree |
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |
@@ -50,6 +54,15 @@ claude mcp add greed -- greed mcp
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
+
+### The repo map
+
+`repo_map` gives an agent a few thousand tokens' worth of the project's
+layout: the first line of each function and type that matters most,
+grouped by file. Greed reads every source file's syntax tree, links each
+file to the files defining the names it uses, and ranks them toward the
+files you have open, so the map changes with what you're working on.
+`:repo-map` shows what an agent would get now.
 
 ### What `eval` may do
 

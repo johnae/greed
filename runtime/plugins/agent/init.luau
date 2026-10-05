@@ -13,6 +13,7 @@ require("@self/tools")
 require("@self/ide")
 require("@self/claude")
 require("@self/compare")
+local map = require("@self/map")
 local ask = require("@self/ask")
 local eval = require("@self/eval")
 local extend = require("@self/extend")
@@ -34,4 +35,6 @@ return {
 	ask = ask.ask,
 	--- How Luau from agents runs: the reviewer, the log (eval.luau).
 	eval = eval,
+	--- The repo map, symbols and grep agents get (map.luau).
+	map = map,
 }
