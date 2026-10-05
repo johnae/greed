@@ -199,6 +199,7 @@ impl BufferRef {
     /// "buffer.saved".
     fn save(&self, lua: &Lua, path: Option<String>) -> LuaResult<()> {
         self.with_buffer(lua, |_| Ok(()))?;
+        super::capabilities::unless_sandboxed(lua, "write a file")?;
         // Its own file is the buffer's to write; another path is any file.
         if let Some(path) = &path {
             super::capabilities::check(lua, "fs.write")?;

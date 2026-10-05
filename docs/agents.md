@@ -41,8 +41,9 @@ claude mcp add greed -- greed mcp
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |
 | `propose` | Propose edits to one or more files for you to review |
+| `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
-| `eval` | Run Luau inside the editor; what it edits is one operation you can review and undo |
+| `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |
 | `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
@@ -50,8 +51,27 @@ claude mcp add greed -- greed mcp
 | `notes_todos`, `notes_add_todo` | The todos in your notes, soonest due first, and adding one |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
 
-`eval` can do anything a plugin can. Leave it out of an agent's allowed
-tools if you don't want that.
+### What `eval` may do
+
+`greed ctl eval` from a shell runs as you: whoever runs it can already run
+anything. For agents, through `greed mcp`, Claude Code's `/ide` or Greed's
+own agents, `eval` runs as the `agent-eval` option says:
+
+| Value | |
+|---|---|
+| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project and edit buffers, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins), a reviewer decides: the model playing the `review` role, or `fast` (see `:models`). If the reviewer isn't sure, or there's none, you're asked. |
+| `"ask"` | You see the code and press **Run** every time |
+| `"allow"` | It runs with every capability, as a plugin would |
+| `"off"` | There's no `eval` |
+
+The sandbox is enforced by the editor, so what it keeps out doesn't depend
+on anyone reading the code right. Its edits are taken back before the code
+runs again with more, so nothing happens twice. The reviewer reads the code
+as data and answers in a fixed form, so the most a sneaky comment in the
+code can do is make it ask you. When you're asked, the page shows the code,
+what it would do and the reviewer's reason, with **Run**, **Allow for this
+session** and **Deny**; closing it, or leaving it five minutes, denies.
+`:eval-log` lists every run past the sandbox and who let it.
 
 ## Reviewing proposed edits
 
@@ -78,6 +98,18 @@ every file at once, and `space u o` reviews it.
 
 Side by side, the two panes scroll together, matching lines across the
 changes, and the right one keeps up as you edit, accept and reject.
+
+## Questions from agents
+
+An agent that needs to know something can `ask`. Greed shows its questions
+as a page in a float: each with choices to pick one of (`enter` or a click),
+or a line to type after `Answer:`. **Send** gives your answers back to the
+agent, and **Cancel**, or closing the page, tells it you didn't answer.
+
+The agent sends questions as plain data, and Greed writes the page itself.
+Its words go on lines of their own, with anything that could start
+Markdown's syntax escaped, so a question can't add a button, a code block
+or a choice of its own, and only you can send the page.
 
 ## Claude Code's `/ide`
 

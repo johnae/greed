@@ -1695,3 +1695,66 @@ fn marks_say_when_concealed_text_shows() {
         .to_string();
     assert!(err.contains("reveal is"), "{err}");
 }
+
+#[test]
+fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
+    let h = host("hello");
+    // What a sandbox may do: read the editor, edit the buffer.
+    let ran = h
+        .eval(
+            r#"require('@greed').eval([[
+                local greed = require("@greed")
+                local b = greed.view():buffer()
+                b:edit(function(e) e:insert(b:len(), " world") end)
+                return b:len()
+            ]], { sandbox = true })"#,
+        )
+        .unwrap();
+    assert_eq!(ran, "true\t11");
+    assert_eq!(text(&h), "hello world");
+    // Reading how the editor is set up is fine too.
+    let read = h
+        .eval(
+            r#"require('@greed').eval([[
+                local greed = require("@greed")
+                return #greed.plugin.list() >= 0 and #greed.option.list() >= 0
+            ]], { sandbox = true })"#,
+        )
+        .unwrap();
+    assert_eq!(read, "true\ttrue");
+    // What it may not: each says what it would do, and that it needs approval.
+    for (code, would) in [
+        ("greed.process.run({ 'true' })", "run programs"),
+        ("greed.run('save')", "run a command"),
+        ("greed.keys.feed('x')", "type keys"),
+        ("greed.option.set('indent', '  ')", "change options"),
+        ("greed.fs.read('/etc/hostname')", "read or write files"),
+        ("greed.view():buffer():save()", "write a file"),
+        ("require('@core')", "require @core"),
+        (
+            "greed.load('/etc/hostname')",
+            "open a file outside the project",
+        ),
+        (
+            "greed.load('../escape.txt')",
+            "open a file outside the project",
+        ),
+    ] {
+        let source = format!("local greed = require('@greed')\n{code}");
+        let lua = format!(
+            "local ok, err = require('@greed').eval({source:?}, {{ sandbox = true }}) return tostring(ok) .. ' ' .. err"
+        );
+        let said = h.eval(&lua).unwrap();
+        assert!(
+            said.starts_with("false ")
+                && said.contains("needs approval: it would")
+                && said.contains(would),
+            "{code}: {said}"
+        );
+    }
+    // Without the sandbox, the same code runs with every capability.
+    assert_eq!(
+        h.eval("require('@greed').eval('1 + 1')").unwrap(),
+        "true\t2"
+    );
+}

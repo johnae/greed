@@ -295,8 +295,17 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     greed.set(
         "eval",
-        lua.create_function(|lua, source: String| {
-            Ok(match super::eval_repl(lua, &source) {
+        lua.create_function(|lua, (source, opts): (String, Option<Table>)| {
+            let sandbox = match opts {
+                Some(opts) => opts.get::<Option<bool>>("sandbox")?.unwrap_or(false),
+                None => false,
+            };
+            let ran = if sandbox {
+                super::eval_sandboxed(lua, &source)
+            } else {
+                super::eval_repl(lua, &source)
+            };
+            Ok(match ran {
                 Ok(values) => (true, values),
                 Err(err) => (false, err.to_string()),
             })

@@ -100,14 +100,22 @@ pub fn live_sessions() -> io::Result<Vec<String>> {
     Ok(control::sessions()?.into_iter().map(|s| s.name).collect())
 }
 
-/// A connection to `$GREED_SESSION`, or to the only running editor.
+/// A shell's connection, for `greed ctl`: to `$GREED_SESSION`, or to the only
+/// running editor. Whoever runs `greed ctl` can run anything already, so the
+/// editor treats its requests as yours.
 fn connect() -> Result<Client, Box<dyn std::error::Error>> {
-    connect_to(None)
+    session_client(None, true)
 }
 
 /// A connection to the session called `name`, or without one to
 /// `$GREED_SESSION` or the only running editor.
 pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Error>> {
+    session_client(name, false)
+}
+
+/// A connection to the session called `name`, or `$GREED_SESSION` or the
+/// only running editor, as a shell's if `shell`.
+fn session_client(name: Option<&str>, shell: bool) -> Result<Client, Box<dyn std::error::Error>> {
     let name = match name
         .map(str::to_owned)
         .or_else(|| std::env::var("GREED_SESSION").ok())
@@ -128,12 +136,13 @@ pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Erro
     let (socket, token_file) = control::session_files(&name);
     let token = std::fs::read_to_string(&token_file)
         .map_err(|err| format!("can't read the token for session {name}: {err}"))?;
-    Ok(Client::connect(&socket, token.trim())?)
+    Ok(Client::connect_as(&socket, token.trim(), shell)?)
 }
 
 /// `greed mcp`: an MCP server on stdin and stdout for the running editor, for
 /// agents like Claude Code (`claude mcp add greed -- greed mcp`).
 pub fn mcp() -> Result<(), Box<dyn std::error::Error>> {
-    connect()?.pipe(io::BufReader::new(io::stdin()), io::stdout())?;
+    // Not a shell's: what comes through is an agent's.
+    connect_to(None)?.pipe(io::BufReader::new(io::stdin()), io::stdout())?;
     Ok(())
 }

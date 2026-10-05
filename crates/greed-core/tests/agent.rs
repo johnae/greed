@@ -34,6 +34,8 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
                 plugin("operations"),
                 plugin("approvals"),
                 plugin("describe"),
+                plugin("markdown"),
+                plugin("models"),
                 plugin("agent"),
             ])?;
             Ok(host)

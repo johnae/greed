@@ -13,6 +13,8 @@ require("@self/tools")
 require("@self/ide")
 require("@self/claude")
 require("@self/compare")
+local ask = require("@self/ask")
+local eval = require("@self/eval")
 local extend = require("@self/extend")
 
 export type Tool = registry.Tool
@@ -29,4 +31,7 @@ return {
 	try = extend.try,
 	install = extend.install,
 	dirs = extend.dirs,
+	ask = ask.ask,
+	--- How Luau from agents runs: the reviewer, the log (eval.luau).
+	eval = eval,
 }

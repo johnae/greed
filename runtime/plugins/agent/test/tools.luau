@@ -129,6 +129,8 @@ test("history_recent says who changed which files lately, with a diff", function
 end)
 
 test("eval's edits are one operation, and an eval that edits nothing leaves none", function(t)
+	-- Files outside the project need approval in auto, which this isn't about.
+	greed.option.set("agent-eval", "allow")
 	local operations = require("@operations")
 	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
 	t:buffer("|x")
@@ -146,6 +148,7 @@ test("eval's edits are one operation, and an eval that edits nothing leaves none
 	assert(string.find(op.name, "^eval: local greed"), op.name)
 	assert(operations.undo(op))
 	assert(greed.load(dir .. "/a.txt"):text() == "a\n")
+	greed.option.set("agent-eval", "auto")
 end)
 
 test("describe tells an agent what something is, or the names like it", function(t)

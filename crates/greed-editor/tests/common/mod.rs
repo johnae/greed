@@ -27,6 +27,12 @@ impl World {
         for dir in ["run", "config/greed", "cache", "claude", "remote-home"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
+        // A config of their own, so the first-run setup page stays away.
+        std::fs::write(
+            root.join("config/greed/init.luau"),
+            "-- A test world's config.\n",
+        )
+        .unwrap();
         Some(World { root })
     }
 

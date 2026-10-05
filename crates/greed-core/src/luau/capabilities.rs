@@ -9,6 +9,7 @@
 //! counts against that plugin, which `requires` makes visible.
 
 use std::collections::BTreeSet;
+use std::path::{Component, Path};
 
 use mlua::{Lua, Table, Value};
 
@@ -109,9 +110,147 @@ pub fn what(capability: &str) -> Option<String> {
 /// The error for `owner` using what `capability` opens.
 fn denied(owner: &str, capability: &str) -> mlua::Error {
     let what = what(capability).unwrap_or_else(|| capability.to_owned());
+    if owner == SANDBOX {
+        return needs_approval(&what);
+    }
     mlua::Error::runtime(format!(
         "{owner} can't {what}: add \"{capability}\" to capabilities in its plugin.toml"
     ))
+}
+
+/// Who sandboxed code runs as: with no capabilities, and without the parts
+/// of `@greed` that act beyond the buffers' text.
+pub const SANDBOX: &str = "sandbox";
+
+/// What sandboxed code can't use, with what using it would do: what runs
+/// other code (commands, handlers, keys, tasks), changes how the editor
+/// works, or reaches outside it. A module's listed functions only read, and
+/// stay; the rest of it, including what's added to it later, is refused.
+const SANDBOXED: &[(&str, &str, &[&str])] = &[
+    ("run", "run a command", &[]),
+    ("command", "add a command", &[]),
+    ("cli", "add a command line command", &[]),
+    ("on", "add an event handler", &[]),
+    ("spawn", "start work in the background", &[]),
+    ("eval", "run Luau with every capability", &[]),
+    ("quit", "quit the editor", &[]),
+    ("detach", "let the client go", &[]),
+    ("statusline", "replace the status line", &[]),
+    ("set_menus", "replace the menus", &[]),
+    ("keys", "type keys or record them", &[]),
+    ("keymap", "change the keys", &["next", "find", "resolve"]),
+    ("option", "change options", &["get", "list"]),
+    ("theme", "change the theme", &["get"]),
+    (
+        "plugin",
+        "load, unload or check plugins",
+        &["list", "dirs", "describe", "pending"],
+    ),
+    ("process", "run programs", &[]),
+    ("terminal", "use terminals", &[]),
+    ("http", "use the network", &[]),
+    ("secrets", "read or keep secrets", &[]),
+    ("fs", "read or write files", &["cwd", "dirs"]),
+    ("files", "read files", &[]),
+    ("image", "read files", &[]),
+    ("pdf", "read files", &[]),
+    (
+        "lsp",
+        "talk to language servers",
+        &[
+            "servers",
+            "uri",
+            "path",
+            "position",
+            "offset",
+            "diagnostics",
+            "problems",
+            "capabilities",
+        ],
+    ),
+    ("control", "use the session's connections", &[]),
+    ("session", "use other sessions", &["current", "list"]),
+    ("clipboard", "use the clipboard", &[]),
+];
+
+/// The error for sandboxed code doing `what`, which says it needs approval;
+/// the agent plugin reads the start of it to ask for that.
+pub(super) fn needs_approval(what: &str) -> mlua::Error {
+    mlua::Error::runtime(format!("needs approval: it would {what}"))
+}
+
+/// Replaces what sandboxed code can't use in its `@greed` with functions
+/// that say it needs approval: whole modules as tables of them, single
+/// functions as one. What's left reads the editor and edits buffers.
+pub(super) fn sandbox(lua: &Lua, greed: &Table) -> LuaResult<()> {
+    for &(key, what, readable) in SANDBOXED {
+        let deny = lua.create_function(move |_, _: mlua::MultiValue| -> LuaResult<()> {
+            Err(needs_approval(what))
+        })?;
+        if let Value::Table(original) = greed.get::<Value>(key)? {
+            let module = lua.create_table()?;
+            for name in readable {
+                module.set(*name, original.get::<Value>(*name)?)?;
+            }
+            let meta = lua.create_table()?;
+            meta.set(
+                "__index",
+                lua.create_function(move |_, _: mlua::MultiValue| Ok(deny.clone()))?,
+            )?;
+            module.set_metatable(Some(meta))?;
+            greed.set(key, module)?;
+        } else {
+            greed.set(key, deny)?;
+        }
+    }
+    // Files in the project open as buffers, to read and edit; others need
+    // approval.
+    for key in ["load", "open"] {
+        let original: mlua::Function = greed.get(key)?;
+        greed.set(
+            key,
+            lua.create_function(move |lua, (path, rest): (String, mlua::MultiValue)| {
+                if !in_project(lua, &path) {
+                    return Err(needs_approval("open a file outside the project"));
+                }
+                original.call::<mlua::MultiValue>((path, rest))
+            })?,
+        )?;
+    }
+    Ok(())
+}
+
+/// Whether `path` is in the current project's folder, without `..` to
+/// climb out of it.
+fn in_project(lua: &Lua, path: &str) -> bool {
+    let path = Path::new(path);
+    if path.components().any(|c| c == Component::ParentDir) {
+        return false;
+    }
+    let state = state(lua);
+    let root = state.editor.current_project().root();
+    // A relative path is read from the editor's folder.
+    let full = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    full.starts_with(root)
+}
+
+/// What sandboxed code is granted: `fs.read`, which only its `load` and
+/// `open` keep, for files in the project; [`sandbox`] takes the rest out.
+pub(super) fn sandbox_grant() -> Grant {
+    Grant::Only(BTreeSet::from(["fs.read".to_owned()]))
+}
+
+/// Fails if the code running now is sandboxed, which can't do `what`.
+pub(super) fn unless_sandboxed(lua: &Lua, what: &str) -> LuaResult<()> {
+    if state(lua).running.as_deref() == Some(SANDBOX) {
+        Err(needs_approval(what))
+    } else {
+        Ok(())
+    }
 }
 
 /// Replaces what `grant` doesn't open in `greed`, `owner`'s `@greed`, with

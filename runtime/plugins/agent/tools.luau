@@ -4,7 +4,6 @@ local greed = require("@greed")
 local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
-local operations = require("@operations")
 local describe = require("@describe")
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
@@ -267,28 +266,6 @@ agent.tool({
 			view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 		end
 		return `opened {args.path}`
-	end,
-})
-
-agent.tool({
-	name = "eval",
-	description = "Run Luau inside the editor with the full plugin API "
-		.. "(require('@greed')), and get back what it returns. Edits it makes are one "
-		.. "operation the user can review and undo in one step",
-	input = object({ code = { type = "string" } }, { "code" }),
-	run = function(args)
-		local ok, result = false, ""
-		local first = string.match(args.code, "^%s*([^\n]*)") :: string
-		local op = operations.run(`eval: {string.sub(first, 1, 40)}`, function()
-			ok, result = greed.eval(args.code)
-		end, "agent")
-		if #op.files == 0 then
-			operations.forget(op)
-		end
-		if not ok then
-			error(result, 0)
-		end
-		return result
 	end,
 })
 

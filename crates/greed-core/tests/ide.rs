@@ -151,6 +151,8 @@ fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
                 plugins.join("operations"),
                 plugins.join("approvals"),
                 plugins.join("describe"),
+                plugins.join("markdown"),
+                plugins.join("models"),
                 plugins.join("agent"),
             ])?;
             // Only now, so the agent plugin's own start (into ~/.claude/ide)
@@ -307,7 +309,7 @@ fn wait_for_proposal(label: &str) {
     let name = format!("ide-{label}-{}", std::process::id());
     let (socket, token) = control::session_files(&name);
     let token = std::fs::read_to_string(token).unwrap();
-    let mut client = control::Client::connect(&socket, &token).unwrap();
+    let mut client = control::Client::connect_as(&socket, &token, true).unwrap();
     let ask = json!({
         "name": "eval",
         "arguments": { "code": "return require('@agent').pending()" },

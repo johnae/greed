@@ -47,7 +47,8 @@ fn mismatch(theirs: Option<u64>) -> String {
 /// [`Request::respond`].
 #[derive(Debug)]
 pub struct Request {
-    /// Who asked: "socket" for the session socket, "ide" for Claude Code's
+    /// Who asked: "shell" for `greed ctl`, "socket" for other connections to
+    /// the session socket (like `greed mcp`), "ide" for Claude Code's
     /// IDE connection.
     pub client: &'static str,
     pub method: String,
@@ -305,6 +306,8 @@ fn serve_connection(
     };
     let mut reader = BufReader::new(stream);
     let mut authed = false;
+    // Whether the connection said at its first auth that it's a shell's.
+    let mut shell = false;
     let mut line = String::new();
     loop {
         line.clear();
@@ -335,7 +338,7 @@ fn serve_connection(
                 }
                 return;
             }
-            Ok(message) => answer(&message, token, &mut authed, requests),
+            Ok(message) => answer(&message, token, &mut authed, &mut shell, requests),
             Err(err) => Some(error_response(&Value::Null, -32700, &err.to_string())),
         };
         let Some(response) = response else { continue };
@@ -345,11 +348,16 @@ fn serve_connection(
     }
 }
 
-/// The response to one message, or `None` for a notification.
+/// The response to one message, or `None` for a notification. A
+/// connection that says `"shell": true` at its first auth is a shell's,
+/// like `greed ctl`'s, and its requests come from "shell"; one that later
+/// sends more, like what `greed mcp` passes on from an agent, can't become
+/// one.
 fn answer(
     message: &Value,
     token: &str,
     authed: &mut bool,
+    shell: &mut bool,
     requests: &Sender<Request>,
 ) -> Option<Value> {
     let id = message.get("id").cloned();
@@ -363,6 +371,9 @@ fn answer(
         })
     };
     if method == "auth" {
+        if !*authed {
+            *shell = params.get("shell").and_then(Value::as_bool) == Some(true);
+        }
         *authed = params.get("token").and_then(Value::as_str) == Some(token);
         return respond(if *authed {
             Ok(Value::Bool(true))
@@ -375,7 +386,7 @@ fn answer(
     }
     let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
-        client: "socket",
+        client: if *shell { "shell" } else { "socket" },
         method: method.to_owned(),
         params,
         reply,
@@ -403,6 +414,13 @@ pub struct Client {
 impl Client {
     /// Connects to the socket at `socket` and authenticates with `token`.
     pub fn connect(socket: &Path, token: &str) -> io::Result<Self> {
+        Self::connect_as(socket, token, false)
+    }
+
+    /// Like [`Client::connect`], saying with `shell` that it's a shell's
+    /// connection, like `greed ctl`'s: whoever runs it can run anything
+    /// already, so the editor treats its requests as yours.
+    pub fn connect_as(socket: &Path, token: &str, shell: bool) -> io::Result<Self> {
         let writer = UnixStream::connect(socket)?;
         let reader = BufReader::new(writer.try_clone()?);
         let mut client = Self {
@@ -411,7 +429,7 @@ impl Client {
             next_id: 0,
         };
         client
-            .call("auth", &json!({ "token": token }))?
+            .call("auth", &json!({ "token": token, "shell": shell }))?
             .map_err(io::Error::other)?;
         Ok(client)
     }

@@ -1088,12 +1088,41 @@ pub(crate) fn eval_repl(lua: &Lua, source: &str) -> mlua::Result<String> {
         state_mut(lua).repl = Some(modules.clone());
         modules
     };
+    eval_as_text(lua, source, |chunk| modules.eval(lua, chunk, "=repl"))
+}
+
+/// Evaluates Luau sandboxed, in a fresh environment each time: it runs as
+/// [`capabilities::SANDBOX`], which may read the editor and edit buffers and
+/// nothing more. What it would do beyond that fails with an error starting
+/// "needs approval:". Expressions return their values as text, separated by
+/// tabs.
+pub(crate) fn eval_sandboxed(lua: &Lua, source: &str) -> mlua::Result<String> {
+    let owner: PluginId = capabilities::SANDBOX.into();
+    state_mut(lua)
+        .grants
+        .entry(owner.clone())
+        .or_insert_with(capabilities::sandbox_grant);
+    let modules = Modules::sandbox(lua)?;
+    eval_as_text(lua, source, |chunk| {
+        capabilities::running_as(lua, Some(&owner), "sandboxed eval", || {
+            modules.eval(lua, chunk, "=sandbox")
+        })
+    })
+}
+
+/// Runs `source` with `eval`, as an expression if it is one, and returns its
+/// values as text, separated by tabs.
+fn eval_as_text(
+    lua: &Lua,
+    source: &str,
+    eval: impl FnOnce(&str) -> mlua::Result<mlua::MultiValue>,
+) -> mlua::Result<String> {
     let expression = format!("return {source}");
     let chunk = match lua.load(&expression).into_function() {
         Ok(_) => expression.as_str(),
         Err(_) => source,
     };
-    let values = modules.eval(lua, chunk, "=repl")?;
+    let values = eval(chunk)?;
     let parts: Vec<String> = values.iter().map(api::display).collect();
     Ok(parts.join("\t"))
 }

@@ -15,7 +15,9 @@ export type Tool = {
 	--- Does the work. It can wait, e.g. for the user. A string result goes
 	--- to the agent as is, a table with `content` as an MCP result, anything
 	--- else as JSON. Errors go back as errors.
-	run: (args: { [string]: any }) -> any,
+	--- It gets who called as `client`: "shell" for `greed ctl`, whose caller
+	--- can run anything already, or the set it was offered to.
+	run: (args: { [string]: any }, client: string?) -> any,
 }
 
 -- The tools offered, by client and name.
@@ -32,10 +34,15 @@ function M.tool(spec: Tool)
 	tools[client][spec.name] = spec
 end
 
+-- The set of tools `client` gets: a shell (`greed ctl`) gets the socket's.
+local function offered(client: string): string
+	return if client == "shell" then "socket" else client
+end
+
 --- The tools offered to `client` (default "socket"), sorted by name.
 function M.tools(client: string?): { Tool }
 	local list = {}
-	for _, tool in tools[client or "socket"] or {} do
+	for _, tool in tools[offered(client or "socket")] or {} do
 		table.insert(list, tool)
 	end
 	table.sort(list, function(a: Tool, b: Tool)
@@ -50,11 +57,11 @@ end
 
 -- Runs a tool for tools/call and wraps what it returns the way MCP wants.
 local function call(params: { name: string, arguments: { [string]: any }? }, client: string)
-	local tool = (tools[client] or {})[params.name]
+	local tool = (tools[offered(client)] or {})[params.name]
 	if tool == nil then
 		return text_result(`there is no tool called {params.name}`, true)
 	end
-	local ok, result = pcall(tool.run, params.arguments or {})
+	local ok, result = pcall(tool.run, params.arguments or {}, client)
 	if not ok then
 		return text_result(tostring(result), true)
 	end

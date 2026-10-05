@@ -32,6 +32,8 @@ pub(super) struct Modules {
     root: Option<PathBuf>,
     /// Loaded modules, by path.
     loaded: Table,
+    /// Sandboxed code, which can require nothing but `@greed`.
+    sandboxed: bool,
 }
 
 impl Modules {
@@ -56,7 +58,24 @@ impl Modules {
             test,
             root,
             loaded: lua.create_table()?,
+            sandboxed: false,
         })
+    }
+
+    /// Fresh modules for sandboxed code: no capabilities, none of the parts
+    /// of `@greed` that act beyond the buffers' text, and no other plugin to
+    /// require, since a plugin's code runs with its own capabilities.
+    pub fn sandbox(lua: &Lua) -> LuaResult<Self> {
+        let mut modules = Self::new(
+            lua,
+            capabilities::SANDBOX,
+            None,
+            None,
+            &capabilities::sandbox_grant(),
+        )?;
+        capabilities::sandbox(lua, &modules.greed)?;
+        modules.sandboxed = true;
+        Ok(modules)
     }
 
     /// Runs a file of this plugin, returning what it returns.
@@ -111,6 +130,11 @@ impl Modules {
     fn require(&self, lua: &Lua, from: Option<&Path>, name: &str) -> LuaResult<Value> {
         match name {
             "@greed" => return Ok(Value::Table(self.greed.clone())),
+            _ if self.sandboxed => {
+                return Err(capabilities::needs_approval(&format!(
+                    "require {name}, whose code has capabilities of its own"
+                )));
+            }
             "@greed/test" => {
                 return self.test.clone().map(Value::Function).ok_or_else(|| {
                     mlua::Error::runtime("@greed/test is only available in test files")

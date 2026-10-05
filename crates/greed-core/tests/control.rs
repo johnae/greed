@@ -31,6 +31,8 @@ local greed = require("@greed")
 greed.on("control.request", function(req)
   if req.method == "echo" then
     greed.control.reply(req.id, { got = req.params, text = greed.view():buffer():text() })
+  elseif req.method == "who" then
+    greed.control.reply(req.id, req.client)
   elseif req.method == "later" then
     greed.sleep(10)
     greed.control.reply(req.id, "done")
@@ -115,4 +117,28 @@ fn a_session_says_which_project_it_is_for_as_soon_as_it_listens() {
         !control::sessions().unwrap().iter().any(|s| s.name == name),
         "gone with the session"
     );
+}
+
+#[test]
+fn greed_ctls_connections_are_a_shells_and_nothing_else_can_become_one() {
+    let (conn, socket, token) = start(&name("shell"), ECHO);
+    let mut shell = Client::connect_as(&socket, &token, true).unwrap();
+    assert_eq!(shell.call("who", &json!(null)).unwrap(), Ok(json!("shell")));
+    // A plain connection, like greed mcp's, stays one even if what comes
+    // through it says otherwise later.
+    let mut plain = Client::connect(&socket, &token).unwrap();
+    assert_eq!(
+        plain.call("who", &json!(null)).unwrap(),
+        Ok(json!("socket"))
+    );
+    plain
+        .call("auth", &json!({ "token": token, "shell": true }))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        plain.call("who", &json!(null)).unwrap(),
+        Ok(json!("socket"))
+    );
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
 }

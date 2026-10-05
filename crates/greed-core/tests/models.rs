@@ -230,6 +230,7 @@ fn load_assist(host: &Host, address: &str) {
         plugin("operations"),
         plugin("approvals"),
         plugin("describe"),
+        plugin("markdown"),
         plugin("agent"),
         plugin("statusline"),
         plugin("vcs"),
