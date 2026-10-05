@@ -63,8 +63,15 @@ local function all_unsaved(): { string }
 end
 
 -- Leaves the shown project: with others open it closes and the terminal
--- lets go, leaving the rest running; the last one quits the editor.
+-- lets go, leaving the rest running; the last one quits the editor. In a
+-- panel or a float, like an agent's transcript or a help page, it closes
+-- just that, as `:q` closes a window in Vim.
 local function quit(force: boolean)
+	local view = greed.view()
+	if not view:is_pane() then
+		view:close()
+		return
+	end
 	if #greed.project.list() == 1 then
 		check_unsaved(all_unsaved(), force)
 		greed.quit()

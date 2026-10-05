@@ -201,6 +201,12 @@ end
 
 --- Closes the pane, unless it's the last one.
 function M.close_pane()
+	-- A panel or a float closes like a pane would.
+	local view = greed.view()
+	if not view:is_pane() then
+		view:close()
+		return
+	end
 	local pane = M.pane()
 	local buffer = pane:buffer()
 	if not pane:close() then

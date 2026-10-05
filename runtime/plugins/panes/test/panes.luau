@@ -575,7 +575,10 @@ test("ctrl-w L swaps the pane with the one on its right, ctrl-w n v opens an emp
 	assert(panes[1]:buffer():id() == right:id() and panes[2]:buffer():id() == left:id(), "swapped")
 	assert(greed.view():id() == panes[2]:id(), "following it")
 	t:keys("ctrl-w n v")
-	assert(#greed.tab.current().panes == 3 and greed.view():buffer():text() == "", "a new empty pane")
+	assert(
+		#greed.tab.current().panes == 3 and greed.view():buffer():text() == "",
+		"a new empty pane"
+	)
 end)
 
 test("alt-f hides every float in the tab and shows them all again", function(t)
@@ -601,4 +604,13 @@ test("alt-n opens a floating terminal while floats are shown; alt-F floats this 
 	t:wait_for(function()
 		return #floats.list() == 1
 	end)
+end)
+
+test("ctrl-w q in a panel closes the panel", function(t)
+	t:buffer("|hello")
+	local main = greed.view()
+	greed.panel(greed.create_buffer("notes", "a panel"), { side = "right" }):focus()
+	t:keys("ctrl-w q")
+	assert(greed.view():id() == main:id(), "back in the file")
+	assert(count() == 1, "the pane stays")
 end)

@@ -20,7 +20,7 @@ alone.
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
 | `greed ls` | List running sessions and their projects |
 | `greed serve [PATH]` | Run a project's session with no terminal |
-| `:q` | Close the shown project and leave; on the last one, quit the session |
+| `:q` | Close the shown project and leave; on the last one, quit the session. In a panel or a float (an agent's transcript, help) it closes just that |
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
