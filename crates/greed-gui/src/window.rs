@@ -480,8 +480,10 @@ impl Shown {
             format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
-            desired_maximum_frame_latency: 2,
+            present_mode: present_mode(&caps.present_modes),
+            // One frame queued at most, so a key shows on the next refresh
+            // rather than behind frames drawn before it.
+            desired_maximum_frame_latency: 1,
             alpha_mode: caps
                 .alpha_modes
                 .first()
@@ -509,6 +511,17 @@ fn parse_size(text: &str) -> Option<LogicalSize<f64>> {
     };
     let fits = |v: f64| (200.0..=20_000.0).contains(&v);
     (fits(width) && fits(height)).then(|| LogicalSize::new(width, height))
+}
+
+/// How frames go to the screen: Mailbox where the system has it, which
+/// shows the newest frame at the next refresh without tearing and never
+/// waits behind older ones; otherwise Fifo, which every system has.
+fn present_mode(available: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+    if available.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else {
+        wgpu::PresentMode::Fifo
+    }
 }
 
 /// Whether a key press is the system's paste: ctrl-shift-v or shift-insert,
