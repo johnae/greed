@@ -766,7 +766,7 @@ to show other words.
 | Keys | |
 |---|---|
 | `space n d` | Today's note, in `daily/` |
-| `space n c` | Add a todo to `inbox.md`, from wherever you are |
+| `space n c` | Add a todo to the inbox, from wherever you are: the project's when it keeps notes, otherwise yours (`:notes-capture-mine` always yours) |
 | `space n a` | The agenda: open todos from every note, soonest due first |
 | `space n f` | Find a note; a name that isn't one yet makes it |
 | `space n /` | Search every note as you type |
@@ -784,6 +784,25 @@ the brackets and the markup below as written.
 
 ```luau
 require("@greed").option.set("notes-folder", "~/Documents/notes")
+```
+
+### Notes in a project, and other places
+
+A project can keep notes of its own in `.greed/notes/` (or wherever
+`notes-project-folder` says, inside the project). Make the folder and its
+notes count: they're found, searched and linked with yours, their todos
+are in the agenda, and capture puts todos in the project's inbox. Their
+names start with `project:`, like `project:plan`; a link in a project note
+goes to a note beside it first, so `[[design]]` there means
+`project:design` when there is one. The plan and decisions you share with
+agents (see [Agents](agents.md#a-plan-and-decisions-you-share)) are notes
+there too. Commit the folder to share it, or leave it out of the
+repository to keep it yours.
+
+More folders of your own, each with a name for its notes:
+
+```luau
+require("@notes").add_place("work", "~/work/notes") -- notes named work:NAME
 ```
 
 ### How notes look

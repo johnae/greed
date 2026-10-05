@@ -25,16 +25,16 @@ function M.due(text: string): string?
 	return string.match(text, "due:(%d%d%d%d%-%d%d%-%d%d)")
 end
 
---- Every todo in the notes, open ones only unless `all`, soonest due first
---- (undated last), then by note and line.
+--- Every todo in the notes, in every place, open ones only unless `all`,
+--- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
-	local found = greed.fs.grep("^\\s*[-*] \\[[ xX]\\] ", notes.folder()) or {}
+	local found = notes.grep("^\\s*[-*] \\[[ xX]\\] ") or {}
 	local out: { Todo } = {}
 	for _, line in found do
 		local done, text = M.parse(line.text)
 		if text and (all or not done) then
 			table.insert(out, {
-				note = notes.name(`{notes.folder()}/{line.path}`),
+				note = line.note,
 				line = line.line,
 				text = text,
 				done = done == true,
@@ -54,13 +54,22 @@ function M.list(all: boolean?): { Todo }
 	return out
 end
 
+--- The inbox todos are captured to: the project's, when it keeps notes
+--- (its notes folder is there), otherwise yours.
+function M.inbox(): string
+	if greed.fs.stat(notes.project_folder()) and notes.place("project") then
+		return "project:inbox"
+	end
+	return "inbox"
+end
+
 --- Adds a todo to note `name` (the inbox by default).
 function M.add(text: string, name: string?, due: string?)
 	local line = `- [ ] {text}`
 	if due then
 		line ..= ` due:{due}`
 	end
-	notes.append(name or "inbox", line)
+	notes.append(name or M.inbox(), line)
 end
 
 local function open_at(name: string, line: number)
@@ -116,19 +125,32 @@ greed.command({
 	end,
 })
 
+-- Asks for a todo and adds it to note `inbox`.
+local function capture(inbox: string)
+	prompt.open({
+		title = `todo for {inbox}`,
+		on_submit = function(text)
+			if string.match(text, "%S") then
+				M.add(text, inbox)
+				greed.echo(`added to {inbox}`)
+			end
+		end,
+	})
+end
+
 greed.command({
 	name = "notes-capture",
-	doc = "Add a todo to the inbox note, from wherever you are",
+	doc = "Add a todo to the inbox note, from wherever you are: the project's when it keeps notes",
 	run = function()
-		prompt.open({
-			title = "todo",
-			on_submit = function(text)
-				if string.match(text, "%S") then
-					M.add(text)
-					greed.echo("added to the inbox")
-				end
-			end,
-		})
+		capture(M.inbox())
+	end,
+})
+
+greed.command({
+	name = "notes-capture-mine",
+	doc = "Add a todo to your own inbox note, even in a project that keeps notes",
+	run = function()
+		capture("inbox")
 	end,
 })
 
@@ -176,11 +198,10 @@ greed.command({
 		end, {
 			source = function(query)
 				local items = {}
-				for _, line in greed.fs.grep(query, notes.folder()) or {} do
-					local note = notes.name(`{notes.folder()}/{line.path}`)
+				for _, line in notes.grep(query) or {} do
 					table.insert(items, {
-						label = `{note}:{line.line + 1}: {line.text}`,
-						value = { note = note, line = line.line },
+						label = `{line.note}:{line.line + 1}: {line.text}`,
+						value = { note = line.note, line = line.line },
 					})
 				end
 				return items

@@ -45,16 +45,26 @@ local function escape(text: string): string
 	return (string.gsub(text, "[%^%$%(%)%.%[%]%*%+%-%?{}|\\]", "\\%0"))
 end
 
---- The names of the notes that link to note `name`.
+--- The names of the notes that link to note `name`: by its full name from
+--- anywhere, or by its name in its place from a note there.
 function M.backlinks(name: string): { string }
-	local found = greed.fs.grep(`\\[\\[\\s*{escape(name)}\\s*(\\|[^\\]]*)?\\]\\]`, notes.folder())
-		or {}
+	local function linking(target: string): { notes.Found }
+		return notes.grep(`\\[\\[\\s*{escape(target)}\\s*(\\|[^\\]]*)?\\]\\]`) or {}
+	end
+	local place, rest = notes.split(name)
+	local found = linking(name)
+	if rest ~= name then
+		for _, line in linking(rest) do
+			if (notes.split(line.note)).name == place.name then
+				table.insert(found, line)
+			end
+		end
+	end
 	local seen, out = {}, {}
 	for _, line in found do
-		local from = notes.name(`{notes.folder()}/{line.path}`)
-		if from ~= name and not seen[from] then
-			seen[from] = true
-			table.insert(out, from)
+		if line.note ~= name and not seen[line.note] then
+			seen[line.note] = true
+			table.insert(out, line.note)
 		end
 	end
 	table.sort(out)
@@ -157,7 +167,9 @@ greed.command({
 		local head = selection.ranges[selection.primary].head
 		for _, link in M.links(ctx.buffer) do
 			if link.from <= head and head < link.to then
-				greed.open(notes.path(link.target))
+				local path = ctx.buffer:path()
+				local from = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
+				greed.open(notes.path(notes.resolve(link.target, from)))
 				return
 			end
 		end

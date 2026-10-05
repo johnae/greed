@@ -231,3 +231,82 @@ test("symbols can change and rules of your own add styles and symbols", function
 	assert(tagged, "the tag is styled")
 	notes.symbols({ todo = "☐", bullet = "•" })
 end)
+
+-- Your notes in one folder and the project's in another.
+local function places(
+	t: test.TestContext,
+	mine: { [string]: string },
+	project: { [string]: string }
+): (string, string)
+	local dir = folder(t, mine)
+	local project_dir = t:tempdir(project)
+	greed.option.set("notes-project-folder", project_dir)
+	return dir, project_dir
+end
+
+test("the project's notes are named project:NAME and listed with yours", function(t)
+	local _, project_dir = places(
+		t,
+		{ ["ideas.md"] = "mine\n" },
+		{ ["plan.md"] = "- [ ] ship it\n" }
+	)
+	local all = table.concat(require("@notes").all(), " ")
+	assert(all == "ideas project:plan", all)
+	assert(
+		run_tool("notes_read", { name = "project:plan" }).text == "- [ ] ship it\n",
+		"read by name"
+	)
+	assert(require("@notes").path("project:plan") == `{project_dir}/plan.md`, "its file")
+	greed.open(`{project_dir}/plan.md`)
+	assert(require("@notes").is_note(greed.view():buffer()), "a note")
+end)
+
+test("todos and search cover every place", function(t)
+	places(t, { ["inbox.md"] = "- [ ] call the bank\n" }, { ["plan.md"] = "- [ ] ship it\n" })
+	local found = {}
+	for _, todo in run_tool("notes_todos") do
+		table.insert(found, `{todo.note}: {todo.text}`)
+	end
+	table.sort(found)
+	assert(
+		table.concat(found, ", ") == "inbox: call the bank, project:plan: ship it",
+		table.concat(found, ", ")
+	)
+	local hits = run_tool("notes_search", { pattern = "ship" })
+	assert(#hits == 1 and hits[1].note == "project:plan", tostring(#hits))
+end)
+
+test("capture goes to the project's inbox when it keeps notes, otherwise yours", function(t)
+	local dir, project_dir = places(t, {}, {})
+	run_tool("notes_add_todo", { text = "for the project" })
+	assert(greed.fs.read(`{project_dir}/inbox.md`) == "- [ ] for the project\n", "the project's")
+	greed.option.set("notes-project-folder", project_dir .. "/missing")
+	run_tool("notes_add_todo", { text = "for me" })
+	assert(greed.fs.read(`{dir}/inbox.md`) == "- [ ] for me\n", "mine")
+end)
+
+test("a link goes to its own place first, and backlinks find it", function(t)
+	local dir, project_dir = places(t, { ["ideas.md"] = "mine\n", ["shared.md"] = "personal\n" }, {
+		["plan.md"] = "see [[design]] and [[ideas]] and [[project:design]]\n",
+		["design.md"] = "the design\n",
+	})
+	local notes = require("@notes")
+	assert(notes.resolve("design", "project:plan") == "project:design", "same place")
+	assert(notes.resolve("ideas", "project:plan") == "ideas", "only in yours")
+	assert(notes.resolve("new", "project:plan") == "project:new", "a new one is made beside it")
+	assert(notes.resolve("design", "ideas") == "design", "from yours, yours")
+	local back = run_tool("notes_read", { name = "project:design" }).linked_from
+	assert(#back == 1 and back[1] == "project:plan", table.concat(back, " "))
+	local _ = dir
+end)
+
+test("places added in the config are searched and named too", function(t)
+	places(t, {}, {})
+	local work = t:tempdir({ ["meeting.md"] = "- [ ] send notes\n" })
+	require("@notes").add_place("work", work)
+	assert(
+		table.concat(require("@notes").all(), " ") == "work:meeting",
+		table.concat(require("@notes").all(), " ")
+	)
+	assert(run_tool("notes_todos")[1].note == "work:meeting", "its todos")
+end)

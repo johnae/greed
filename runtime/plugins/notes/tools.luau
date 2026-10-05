@@ -14,7 +14,8 @@ end
 
 agent.tool({
 	name = "notes_list",
-	description = 'The names of every note, like "ideas" or "daily/2026-10-01"',
+	description = 'The names of every note, like "ideas" or "daily/2026-10-01". The user\'s own '
+		.. 'notes go by their names; the project\'s start with "project:", like "project:plan"',
 	run = function()
 		return greed.json.array(notes.all())
 	end,
@@ -22,20 +23,17 @@ agent.tool({
 
 agent.tool({
 	name = "notes_search",
-	description = "Search every note for a regex; each match with its note and 1-based line",
+	description = "Search every note, the user's and the project's, for a regex; each match "
+		.. "with its note and 1-based line",
 	input = object({ pattern = { type = "string" } }, { "pattern" }),
 	run = function(args)
-		local found, err = greed.fs.grep(args.pattern, notes.folder())
+		local found, err = notes.grep(args.pattern)
 		if found == nil then
 			error(err, 0)
 		end
 		local out = {}
 		for _, line in found do
-			table.insert(out, {
-				note = notes.name(`{notes.folder()}/{line.path}`),
-				line = line.line + 1,
-				text = line.text,
-			})
+			table.insert(out, { note = line.note, line = line.line + 1, text = line.text })
 		end
 		return greed.json.array(out)
 	end,
@@ -57,7 +55,8 @@ agent.tool({
 agent.tool({
 	name = "notes_write",
 	description = "Write a note's whole text, making it if it's new, or with append add lines "
-		.. "at its end. Link to other notes with [[name]].",
+		.. "at its end. Link to other notes with [[name]]. Notes about the project go in its "
+		.. 'notes, named "project:NAME", which live in the repository',
 	input = object({
 		name = { type = "string" },
 		text = { type = "string" },
@@ -105,15 +104,18 @@ agent.tool({
 
 agent.tool({
 	name = "notes_add_todo",
-	description = "Add a todo to a note (the inbox if left out), optionally due on a date (YYYY-MM-DD)",
+	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD). Left out, the "
+		.. 'note is the inbox: the project\'s ("project:inbox") when it keeps notes, otherwise '
+		.. "the user's",
 	input = object({
 		text = { type = "string" },
 		note = { type = "string" },
 		due = { type = "string" },
 	}, { "text" }),
 	run = function(args)
-		todos.add(args.text, args.note, args.due)
-		return `added to {args.note or "inbox"}`
+		local note = args.note or todos.inbox()
+		todos.add(args.text, note, args.due)
+		return `added to {note}`
 	end,
 })
 
