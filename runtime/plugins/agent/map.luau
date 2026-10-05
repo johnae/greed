@@ -4,13 +4,14 @@
 -- unsaved changes.
 --
 -- The map follows Aider's: each file is a node, a file using a name another
--- defines is an edge to it, and PageRank, biased toward the files you have
--- open and the ones asked about, ranks them. A definition's rank is the
--- share of rank that comes to it through its name.
+-- defines is an edge to it, and PageRank, biased toward your working set
+-- (working.luau) and the files asked about, ranks them. A definition's
+-- rank is the share of rank that comes to it through its name.
 
 local greed = require("@greed")
 local core = require("@core")
 local registry = require("./registry")
+local working = require("./working")
 
 local M = {}
 
@@ -39,22 +40,32 @@ function M.tags(): { greed.FileTags }
 	return files
 end
 
--- `path` relative to the project, as tags have them.
-local function relative(path: string): string
-	local prefix = root() .. "/"
-	return if string.sub(path, 1, #prefix) == prefix then string.sub(path, #prefix + 1) else path
-end
+local relative = working.relative
 
--- The files you're working in: the current one and the other open ones.
-local function open_files(): { [string]: boolean }
-	local open = {}
+-- What an open file counts for, worked on or not.
+local OPEN = 0.1
+
+--- What the map ranks toward, by path: the working set, the open files a
+--- little, and `asked` (paths an agent named) as much as the file worked
+--- on most.
+function M.focus(asked: { string }?): { [string]: number }
+	local focus = working.scores()
+	local most = 1
+	for _, score in focus do
+		most = math.max(most, score)
+	end
 	for _, buffer in greed.buffers() do
 		local path = buffer:path()
 		if path then
-			open[relative(path)] = true
+			local key = relative(path)
+			focus[key] = (focus[key] or 0) + OPEN
 		end
 	end
-	return open
+	for _, path in asked or {} do
+		local key = relative(path)
+		focus[key] = (focus[key] or 0) + most
+	end
+	return focus
 end
 
 -- Languages whose files use each other's names.
@@ -94,9 +105,9 @@ local function ranked(path: string, d: Definition, rank: number): Ranked
 	}
 end
 
---- The definitions in `files`, best first, ranked toward `focus` (paths
---- relative to the project).
-function M.rank(files: { greed.FileTags }, focus: { [string]: boolean }): { Ranked }
+--- The definitions in `files`, best first, ranked toward `focus`: weights
+--- by path, relative to the project.
+function M.rank(files: { greed.FileTags }, focus: { [string]: number }): { Ranked }
 	-- Who defines each name, by language family, counting only what other
 	-- files can use.
 	local definers: { [string]: { string } } = {}
@@ -147,17 +158,15 @@ function M.rank(files: { greed.FileTags }, focus: { [string]: boolean }): { Rank
 		edges[file.path] = list
 		out[file.path] = total
 	end
-	-- PageRank, starting from and coming back to the focus files.
-	local n = #files
+	-- PageRank, starting from and coming back to the focus files, each as
+	-- much as its weight.
 	local start: { [string]: number } = {}
 	local focused = 0
 	for _, file in files do
-		if focus[file.path] then
-			focused += 1
-		end
+		focused += focus[file.path] or 0
 	end
 	for _, file in files do
-		start[file.path] = if focused == 0 then 1 / n elseif focus[file.path] then 1 / focused else 0
+		start[file.path] = if focused == 0 then 1 / #files else (focus[file.path] or 0) / focused
 	end
 	local rank = table.clone(start)
 	for _ = 1, 30 do
@@ -212,10 +221,7 @@ type MapOptions = { focus: { string }?, budget: number? }
 --- file, within about `budget` tokens (a token is about 4 characters).
 function M.map(opts: MapOptions?): string
 	local options: MapOptions = opts or {}
-	local focus = open_files()
-	for _, path in options.focus or {} do
-		focus[relative(path)] = true
-	end
+	local focus = M.focus(options.focus)
 	local budget = (options.budget or 2048) * 4
 	local by_file: { [string]: { Ranked } } = {}
 	local order: { string } = {}

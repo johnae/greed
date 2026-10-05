@@ -14,6 +14,7 @@ require("@self/ide")
 require("@self/claude")
 require("@self/compare")
 local map = require("@self/map")
+local working = require("@self/working")
 local ask = require("@self/ask")
 local eval = require("@self/eval")
 local extend = require("@self/extend")
@@ -21,6 +22,7 @@ local extend = require("@self/extend")
 export type Tool = registry.Tool
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
+export type WorkingEntry = working.Entry
 
 return {
 	tool = registry.tool,
@@ -37,4 +39,6 @@ return {
 	eval = eval,
 	--- The repo map, symbols and grep agents get (map.luau).
 	map = map,
+	--- The files you worked in lately (working.luau).
+	working = working,
 }

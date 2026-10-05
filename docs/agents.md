@@ -37,7 +37,8 @@ claude mcp add greed -- greed mcp
 | `diagnostics` | Errors and warnings from language servers |
 | `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
 | `context_get` | What you pinned for agents: selections, files, problems, the changes in progress |
-| `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward the files you have open (below) |
+| `working_set` | The files you've worked in lately, most active first, with how much you and agents edited each and the lines you were on |
+| `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward what you're working on (below) |
 | `symbols` | Functions and types anywhere in the project whose names match, with their files and lines |
 | `grep` | The lines matching a regex in the project, with open files searched as you have them, unsaved changes included |
 | `files` | The project's files, or those whose paths match a fuzzy query |
@@ -60,9 +61,14 @@ claude mcp add greed -- greed mcp
 `repo_map` gives an agent a few thousand tokens' worth of the project's
 layout: the first line of each function and type that matters most,
 grouped by file. Greed reads every source file's syntax tree, links each
-file to the files defining the names it uses, and ranks them toward the
-files you have open, so the map changes with what you're working on.
+file to the files defining the names it uses, and ranks them toward your
+working set, so the map changes with what you're working on.
 `:repo-map` shows what an agent would get now.
+
+The working set is the files you've worked in lately. Your edits count
+most, an agent's edits less, and moving around in a file a little; what you
+did 15 minutes ago counts half as much as what you do now. `:working-set`
+shows it.
 
 ### What `eval` may do
 
