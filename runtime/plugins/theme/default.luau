@@ -41,6 +41,7 @@ return {
 	["notes.heading"] = { fg = "blue", bold = true },
 	["notes.bullet"] = { fg = "blue" },
 	["pdf.page"] = { fg = "bright-black", italic = true },
+	["image.title"] = { fg = "bright-black", italic = true },
 	["markdown.text"] = { gui = { font = "prose" } },
 	["markdown.marker"] = { fg = "bright-black" },
 	["markdown.heading"] = { fg = "blue", bold = true },

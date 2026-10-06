@@ -1153,6 +1153,13 @@ and in kitty, which can size text. Other terminals show it at the normal
 size on the rows it takes. `GREED_TEXT_SIZING=on` or `off` decides it for
 another terminal that can size text, or turns it off in kitty.
 
+### Image files
+
+Opening a PNG, JPEG or GIF shows the image, as wide as the pane at most,
+under a line with its name, its size in pixels and the zoom. `+` and `-`
+draw it bigger and smaller, `=` fits it to the pane again and `0` draws it
+at its own size. It shows in the window and in terminals that show images.
+
 ### PDFs
 
 Opening a PDF shows its first page, as wide as the pane. `]` and `[` go to
