@@ -75,6 +75,14 @@ plugin to another:
   ships that run other plugins' hooks, like core and picker, declare what
   those hooks need. Code a plugin loads with `loadstring` counts as that
   plugin's, and plugins don't get `getfenv` or `setfenv`.
+- A plugin that offers a service can vouch for one of its own operations
+  with `greed.vouch(f, ...)`: then only its own capabilities count for
+  what `f` does, not those of the plugin that asked. The models plugin
+  vouches for sending a request with your key, so any plugin can ask a
+  model without being able to read the key, and the key goes only where
+  you let it. Code handed to a vouched function still counts as its own
+  plugin's. Anything you vouch for, any plugin can make you do, so vouch
+  only for narrow operations you check yourself.
 
 And they limit plugins only: an agent that runs commands in a shell of its
 own isn't affected.

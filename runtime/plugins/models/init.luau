@@ -233,7 +233,9 @@ local function may_send(name: string, url: string): string?
 	return nil
 end
 
--- The role's model and provider, and its key if it needs one.
+-- The role's model and provider, and its key if it needs one. Callers vouch
+-- for it (greed.vouch): plugins asking a model never see the key, and it
+-- only goes where `may_send` lets it.
 local function connect(role: string): (Role?, Provider?, string?, string?)
 	local chosen, provider, why = M.resolve(role)
 	if chosen == nil or provider == nil then
@@ -286,11 +288,12 @@ end
 --- Waits for the server to start answering. Works in commands, event
 --- handlers and greed.spawn.
 function M.stream(role: string, request: Request): (Stream?, string?)
-	local chosen, provider, key, why = connect(role)
+	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
 		return nil, why
 	end
-	local response, err = open(chosen, http_request(provider, chosen.model, request, key))
+	local response, err =
+		greed.vouch(open, chosen, http_request(provider, chosen.model, request, key))
 	if response == nil then
 		return nil, err
 	end
@@ -350,13 +353,13 @@ function M.turn(
 	request: turn.Request,
 	on_text: ((text: string) -> ())?
 ): (turn.Turn?, string?)
-	local chosen, provider, key, why = connect(role)
+	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
 		return nil, why
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, MAX_TOKENS))
-	local response, err = open(chosen, sent)
+	local response, err = greed.vouch(open, chosen, sent)
 	if response == nil then
 		return nil, err
 	end

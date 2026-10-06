@@ -150,6 +150,9 @@ pub(crate) struct State {
     /// Whose code made each coroutine plugins made, by the coroutine; weak,
     /// so they go with it.
     pub makers: mlua::Table,
+    /// The plugins vouching for what runs in each coroutine (`greed.vouch`),
+    /// innermost last, by the coroutine; weak, so they go with it.
+    pub vouches: mlua::Table,
     /// Approved capabilities, when plugins need approving.
     pub approvals: Option<approvals::Approvals>,
     /// The folders of plugins waiting for approval, oldest first.
@@ -283,7 +286,9 @@ impl Host {
         let makers = lua.create_table()?;
         let weak = lua.create_table()?;
         weak.set("__mode", "k")?;
-        makers.set_metatable(Some(weak))?;
+        makers.set_metatable(Some(weak.clone()))?;
+        let vouches = lua.create_table()?;
+        vouches.set_metatable(Some(weak))?;
         lua.set_app_data(State {
             editor,
             registry: Registry::default(),
@@ -322,6 +327,7 @@ impl Host {
             limit: Vec::new(),
             floor: Vec::new(),
             makers,
+            vouches,
             approvals: None,
             pending: Vec::new(),
             http: http::Streams::default(),

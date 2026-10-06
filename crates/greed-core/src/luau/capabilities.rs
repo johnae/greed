@@ -19,6 +19,9 @@
 //! - Event handlers run with their own plugin's capabilities whatever caused
 //!   the event: they're that plugin reacting to what happened, and plugins
 //!   can't send events of their own.
+//! - A plugin can vouch for an operation of its own with `greed.vouch`:
+//!   then only its capabilities count, as for a service like the models
+//!   plugin sending a request with your key. Code handed to it still counts.
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
@@ -176,7 +179,7 @@ pub(crate) type Limit = Vec<(PluginId, Grant)>;
 pub(super) fn limit_for(lua: &Lua, caller: &PluginId) -> Limit {
     let limit = inherited(lua, caller);
     if limit.iter().all(|(_, grant)| grant.allows("commands")) {
-        state(lua).limit.clone()
+        current_limit(lua)
     } else {
         limit
     }
@@ -187,8 +190,8 @@ pub(super) fn limit_for(lua: &Lua, caller: &PluginId) -> Limit {
 /// and of every plugin whose code is on the stack.
 pub(super) fn inherited(lua: &Lua, caller: &PluginId) -> Limit {
     let callers = on_stack(lua);
+    let mut limit = current_limit(lua);
     let state = state(lua);
-    let mut limit = state.limit.clone();
     for name in std::iter::once(caller).chain(&callers) {
         if let Some(grant @ Grant::Only(_)) = state.grants.get(name)
             && !limit.iter().any(|(by, _)| by == name)
@@ -215,8 +218,15 @@ pub(super) fn refused_answer<'a>(fed: &'a Limit, waiting: &Limit) -> Option<&'a 
 /// like Greed's own, add nothing, so a stack of only those still counts the
 /// plugin it runs for.
 fn on_stack(lua: &Lua) -> Vec<PluginId> {
+    let vouch = vouched(lua);
+    // Frames outside what a plugin vouches for don't count: only it does,
+    // and code its vouched function calls into.
+    let levels = match &vouch {
+        Some((outside, _)) => depth(lua).saturating_sub(*outside),
+        None => usize::MAX,
+    };
     let mut chunks: Vec<String> = Vec::new();
-    for level in 0.. {
+    for level in 0..levels {
         let Some(source) = lua.inspect_stack(level, |debug| {
             debug.source().source.map(std::borrow::Cow::into_owned)
         }) else {
@@ -247,6 +257,12 @@ fn on_stack(lua: &Lua) -> Vec<PluginId> {
             found.push(owner.clone());
         }
     }
+    if let Some((_, owner)) = vouch {
+        if !found.contains(&owner) {
+            found.push(owner);
+        }
+        return found;
+    }
     let makers: Option<Vec<String>> = state.makers.get(lua.current_thread()).ok().flatten();
     for maker in makers.unwrap_or_default() {
         if !found.iter().any(|f| **f == *maker) {
@@ -259,6 +275,83 @@ fn on_stack(lua: &Lua) -> Vec<PluginId> {
         found.push(running.clone());
     }
     found
+}
+
+/// How many frames the running coroutine's stack has.
+fn depth(lua: &Lua) -> usize {
+    let mut levels = 0;
+    while lua.inspect_stack(levels, |_| ()).is_some() {
+        levels += 1;
+    }
+    levels
+}
+
+/// The plugin vouching for what runs now (`greed.vouch`), innermost, and
+/// how many frames of the stack lie outside what it vouches for.
+fn vouched(lua: &Lua) -> Option<(usize, PluginId)> {
+    let list: Table = state(lua).vouches.get(lua.current_thread()).ok()?;
+    let innermost: Table = list.get(list.raw_len()).ok()?;
+    let outside: usize = innermost.get("outside").ok()?;
+    let owner: String = innermost.get("owner").ok()?;
+    Some((outside, owner.into()))
+}
+
+/// What runs within: the limit what started it set, except where a plugin
+/// vouches for it, which sets none.
+fn current_limit(lua: &Lua) -> Limit {
+    if vouched(lua).is_some() {
+        Vec::new()
+    } else {
+        state(lua).limit.clone()
+    }
+}
+
+/// `greed.vouch` for `owner`: runs a function as `owner`'s own action, so
+/// only its capabilities count, not those of the code that called it or
+/// what started that.
+fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let name = owner.to_string();
+    let enter = lua.create_function(move |lua, ()| {
+        // Below this function and the Luau wrapper that called it.
+        let outside = depth(lua).saturating_sub(2);
+        let vouches = state(lua).vouches.clone();
+        let thread = lua.current_thread();
+        let list = if let Some(list) = vouches.get::<Option<Table>>(&thread)? {
+            list
+        } else {
+            let list = lua.create_table()?;
+            vouches.set(&thread, &list)?;
+            list
+        };
+        let entry = lua.create_table()?;
+        entry.set("outside", outside)?;
+        entry.set("owner", name.as_str())?;
+        list.push(entry)
+    })?;
+    let leave = lua.create_function(|lua, ()| {
+        let list: Option<Table> = state(lua).vouches.get(lua.current_thread())?;
+        if let Some(list) = list {
+            list.raw_remove(list.raw_len())?;
+        }
+        Ok(())
+    })?;
+    // In Luau, so what it runs can wait.
+    lua.load(
+        r"
+        local enter, leave = ...
+        return function(f, ...)
+            enter()
+            local results = table.pack(pcall(f, ...))
+            leave()
+            if not results[1] then
+                error(results[2], 0)
+            end
+            return table.unpack(results, 2, results.n)
+        end
+        ",
+    )
+    .set_name("=greed.vouch")
+    .call((enter, leave))
 }
 
 /// Remembers whose code made `thread`, so what runs in it later counts
@@ -310,9 +403,9 @@ fn within_limit(
     allows: impl Fn(&Grant) -> bool,
 ) -> LuaResult<()> {
     let callers = on_stack(lua);
+    let limit = current_limit(lua);
     let state = state(lua);
-    let started = state
-        .limit
+    let started = limit
         .iter()
         .find(|(_, grant)| !allows(grant))
         .map(|(by, _)| by);
@@ -479,6 +572,7 @@ pub(super) fn unless_sandboxed(lua: &Lua, what: &str) -> LuaResult<()> {
 /// functions that say what to declare, and wraps what it does open so it
 /// also checks the limit it runs within.
 pub(super) fn gate(lua: &Lua, greed: &Table, owner: &PluginId, grant: &Grant) -> LuaResult<()> {
+    greed.set("vouch", vouch_function(lua, owner)?)?;
     let o = owner.clone();
     let check = lua.create_function(move |lua, capability: String| {
         within_limit(lua, &o, &capability, |g| g.allows(&capability))

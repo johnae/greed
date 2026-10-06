@@ -1377,6 +1377,8 @@ export type Greed = {
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.
 	signal: () -> Signal,
+	--- Runs `f` with `...` as your plugin's own action: only your capabilities count for what it does, not those of the plugins whose code called you or started what runs. For services that check what they do themselves, like the models plugin sending a key only to its provider. Anything you vouch for, any plugin can make you do: vouch only for narrow, checked operations. It can wait.
+	vouch: <A..., R...>(f: (A...) -> R..., A...) -> R...,
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
 	--- Sets the menus a window shows as its menu bar (on macOS, the system's), replacing those before; each item runs its command. The core plugin keeps them, so add to `require("@core").menus` rather than calling this.
