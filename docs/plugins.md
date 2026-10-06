@@ -452,23 +452,118 @@ tell the editor without asking, like `$/progress`; the handler gets the
 parameters and the server's language. The status line's language server
 piece is built on it.
 
-## Events and options
+## Events
 
-`greed.on(event, handler)` runs a handler on `buffer.changed`,
-`mode.changed`, `command.run`, `keys.pending`, `lsp.diagnostics`,
-`view.closed` (for plugins holding on to a panel), `pane.opened` (a split,
-from whichever plugin made it), `option.changed`,
-`buffer.opened`, `buffer.saved`, `view.resized` (with the rows and
-columns `view:size()` also gives), `view.scrolled` (the line now at the
-top; what the handler changes shows in the same frame, so one view can
-scroll another along), `mouse` (what the mouse did, the view
-and buffer position under it, a floating view's `border`, or a tab) and more. A plugin with buffers of
-its own kind can take their mouse events first with
-`require("@core").mouse.claim(kind, handler)`. `editor.started` comes once, when
-the editor is up with every plugin and config loaded, and `editor.quitting`
-just before it quits.
-`greed.option.define({ name, doc, default })` adds an option users set with
-`greed.option.set` or `:set`.
+A plugin reacts to what happens in the editor with `greed.on(event,
+handler)`. The handler gets one table describing what happened. Format on
+save, the status line, reloading files changed on disk, auto-save and
+following an agent around are all built this way.
+
+```luau
+local greed = require("@greed")
+
+-- Trim spaces at the ends of lines whenever a file is saved.
+greed.on("buffer.saved", function(event)
+	local buffer = event.buffer
+	local trimmed = string.gsub(buffer:text(), "[ \t]+\n", "\n")
+	if trimmed ~= buffer:text() then
+		buffer:edit(function(e)
+			e:replace(0, buffer:len(), trimmed)
+		end)
+		buffer:save()
+	end
+end)
+```
+
+| Event | When | What the handler gets |
+|---|---|---|
+| `buffer.changed` | After every edit to a buffer: yours, a plugin's, an agent's, or the file changing on disk | `buffer` |
+| `buffer.opened` | A buffer was opened | `buffer` |
+| `buffer.saved` | A buffer was written to its file | `buffer` |
+| `buffer.closed` | A buffer was closed | `id`, the closed buffer's |
+| `file.changed` | A file watched with `greed.fs.watch(path)` was written, created or removed, by anything | `path` |
+| `mode.changed` | The mode changed | `from`, `to` |
+| `command.run` | A command is about to run | `name`, the `keys` that ran it, `count` |
+| `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
+| `option.changed` | An option was set | `name`, `value` |
+| `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
+| `view.resized` | A view has room for a different number of rows or columns | `view`, `rows`, `cols` |
+| `view.scrolled` | A view starts at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |
+| `view.closed` | A view was closed, e.g. a plugin's panel | `view`, the closed view's id |
+| `pane.opened` | A split opened, from whichever plugin made it | `view`, and `from`, the pane beside it |
+| `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a floating view's `border`, or a `tab` |
+| `terminal.output` | A terminal's program printed something | `terminal`; read it with `terminal:screen()` |
+| `terminal.exited` | A terminal's program ended | `terminal`, `code` |
+| `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal` |
+| `client.paste` | Text was pasted from the system clipboard | `text` |
+| `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
+| `plugin.loaded` | A plugin was loaded or reloaded | `name`, `dir` |
+| `plugin.unloaded` | A plugin was unloaded | `name` |
+| `editor.started` | Once, when the editor is up with every plugin and your config loaded | nothing |
+| `editor.quitting` | Just before the editor quits | nothing |
+
+`space h e` (`:describe-event`) shows any event's fields, and
+`runtime/types/greed` has them all typed.
+
+Who made an edit is in the buffer's history: `buffer:history({ limit = 1
+})[1].author` is `"user"`, `"plugin"`, `"agent"` or `"external"` (the disk),
+so a handler can skip the edits it doesn't care about, or its own.
+
+A plugin with buffers of its own kind can take their mouse events first
+with `require("@core").mouse.claim(kind, handler)`.
+
+### Writing handlers that stay fast
+
+Each handler runs in a coroutine of its own as soon as the event happens,
+so it can wait like a command (see [Waiting](#waiting)) and a slow one is
+paused after 15 ms instead of holding up the editor. Still, some events
+come often: `buffer.changed` on every key you type in insert mode,
+`mouse` on every move, `view.scrolled` on every line scrolled. Handlers
+for those should do little each time, and leave heavy work until things
+are quiet.
+
+The usual way is to count, wait, and only act if nothing came since. This
+is how auto-save works:
+
+```luau
+local edits = {}
+
+greed.on("buffer.changed", function(event)
+	local id = event.buffer:id()
+	local this = (edits[id] or 0) + 1
+	edits[id] = this
+	greed.sleep(1000)
+	if edits[id] == this then
+		-- A second without edits: do the heavy work now.
+	end
+end)
+```
+
+A handler that edits the buffer that changed makes another
+`buffer.changed`, so check whether there's anything to do first, as the
+trimming example does, or it goes round forever.
+
+## Options
+
+`greed.option.define({ name, doc, default })` adds an option users set
+with `:set name value` or `greed.option.set(name, value)` in their config.
+The default fixes its type, a boolean, a number or a string, and setting it
+to anything else is refused. `greed.option.get(name)` reads it, and
+`option.changed` says when it changes.
+
+```luau
+greed.option.define({
+	name = "trim-on-save",
+	default = true,
+	doc = "Trim spaces at the ends of lines when saving",
+})
+
+greed.on("buffer.saved", function(event)
+	if greed.option.get("trim-on-save") then
+		-- ...
+	end
+end)
+```
 
 ## Programs and terminals
 

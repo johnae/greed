@@ -44,7 +44,13 @@ else c` expressions, string interpolation with backticks, `+=`, and
   `ctx.buffer` and `ctx.view` are where the command runs.
 - Keys: `greed.keymap.bind("normal", { ["g x"] = "command-name" })`.
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
-- Agents: `require("@agent").tool({ name, description, input, run })` offers a tool over MCP.
+- Events: `greed.on("buffer.saved", function(event) ... end)`; also "buffer.changed" (every
+  edit, so keep it cheap and wait for a quiet moment before heavy work), "buffer.opened",
+  "mode.changed", "lsp.diagnostics", "option.changed", "editor.started" and more.
+- Options: `greed.option.define({ name = "my-option", default = true, doc = "..." })`, read with
+  `greed.option.get`.
+- Agents: `require("@agent").tool({ name, description, input, group, run })` offers a tool over
+  MCP; a plugin with several puts them in a group (`require("@agent").group(name, line)`).
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
 - Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (greed.process.run,
   greed.terminal.spawn, greed.lsp.server), "fs.read" (greed.fs reads, greed.load, greed.open,
