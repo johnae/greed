@@ -334,3 +334,30 @@ fn programs_can_ask_for_keys_as_kitty_sends_them() {
     let screen = until(&terminal, |screen| screen.rows[0].text.contains("[99;5u"));
     assert_eq!(screen.rows[0].text, "^[[?1u^[[99;5u", "{:?}", text(&screen));
 }
+
+#[test]
+fn the_shells_marks_are_kept_by_line_counting_scrolled_off_ones() {
+    use greed_core::terminal::{Mark, MarkKind};
+    // Three rows: the second prompt comes after two lines scrolled off.
+    let script = "printf '\\033]133;A\\007$ \\033]133;B\\007ls\\n\\033]133;C\\007a\\nb\\nc\\n\\033]133;D;2\\007\\033]133;A\\007$ '; sleep 0.2";
+    let (terminal, events) = start(&["sh", "-c", script], 3, 20);
+    exited(&events);
+    let at = |line, col, kind| Mark { line, col, kind };
+    assert_eq!(
+        terminal.marks(0),
+        [
+            at(0, 0, MarkKind::Prompt),
+            at(0, 2, MarkKind::Command),
+            at(1, 0, MarkKind::Output),
+            at(4, 0, MarkKind::Done(Some(2))),
+            at(4, 0, MarkKind::Prompt),
+        ]
+    );
+    assert_eq!(terminal.marks(4).len(), 2, "from a line on");
+    assert_eq!(terminal.marks_made(), 5);
+    assert_eq!(
+        terminal.scrollback(0).rows[0].text,
+        "$ ls",
+        "line 0 is the first prompt"
+    );
+}

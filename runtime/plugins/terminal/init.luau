@@ -71,6 +71,10 @@ type Term = {
 	screen_links: { [number]: { greed.TerminalLink } },
 	-- Scrollback lines trimmed from the top of the buffer.
 	dropped: number,
+	-- How many marks the shell had made when `failures` was worked out, and
+	-- the commands that failed: where each starts, and its exit code.
+	marks_made: number,
+	failures: { { mark: greed.TerminalMark, code: number } },
 }
 
 local M = {}
@@ -198,6 +202,101 @@ local function follow(term: Term, screen: greed.TerminalScreen, before: number)
 	end
 end
 
+--- A command run in a terminal's shell, from the marks the shell made
+--- (OSC 133): where its prompt, the command and its output start and
+--- where it ended, as byte positions in the buffer, and its exit code.
+--- Parts the shell didn't mark, or that are above what the buffer holds,
+--- are nil.
+export type Command = {
+	prompt: number?,
+	command: number?,
+	output: number?,
+	done: number?,
+	code: number?,
+}
+
+-- Where `mark` is in the buffer, or nil above what it holds.
+local function mark_position(term: Term, mark: greed.TerminalMark): number?
+	local buffer = term.buffer
+	local line = mark.line - term.next + term.history
+	if line < 0 or line >= buffer:line_count() then
+		return nil
+	end
+	return math.min(buffer:line_start(line) + mark.col, buffer:line_end(line))
+end
+
+local function commands_of(term: Term): { Command }
+	local list: { Command } = {}
+	local current: Command? = nil
+	for _, mark in term.terminal:marks(term.next - term.history) do
+		local at = mark_position(term, mark)
+		if mark.kind == "prompt" or current == nil then
+			current = {}
+			table.insert(list, current :: Command)
+		end
+		local c = current :: Command
+		if mark.kind == "prompt" then
+			c.prompt = at
+		elseif mark.kind == "command" then
+			c.command = at
+		elseif mark.kind == "output" then
+			c.output = at
+		else
+			c.done = at
+			c.code = mark.code
+		end
+	end
+	return list
+end
+
+--- The commands run in the terminal shown in `buffer`, oldest first, as
+--- far back as the buffer goes. Empty for a shell that doesn't mark its
+--- prompts.
+function M.commands(buffer: greed.Buffer): { Command }
+	local term = term_of(buffer)
+	return if term then commands_of(term) else {}
+end
+
+-- Where the command `c` starts, for moving to it.
+local function start_of(c: Command): number?
+	return c.command or c.prompt
+end
+
+-- Shows the exit code by each command that failed.
+-- Which commands failed is worked out again only when the shell made new
+-- marks; output replaces the screen's text, so the marks showing them are
+-- placed on every update.
+local function mark_failures(term: Term)
+	local made = term.terminal:marks_made()
+	if made ~= term.marks_made then
+		term.marks_made = made
+		local failures = {}
+		local start: greed.TerminalMark? = nil
+		for _, mark in term.terminal:marks(term.next - term.history) do
+			if mark.kind == "prompt" or mark.kind == "command" then
+				start = mark
+			elseif mark.kind == "done" and start and mark.code and mark.code ~= 0 then
+				table.insert(failures, { mark = start, code = mark.code })
+			end
+		end
+		term.failures = failures
+	end
+	local marks: { greed.Mark } = {}
+	for _, failure in term.failures do
+		local at = mark_position(term, failure.mark)
+		if at then
+			table.insert(marks, {
+				from = at,
+				to = at,
+				style = "diagnostic.message.error",
+				text = `exit {failure.code}`,
+				eol = true,
+			})
+		end
+	end
+	term.buffer:decorate("terminal.exits", marks)
+end
+
 --- Shows the terminal's latest output in its buffer.
 function M.update(term: Term)
 	local buffer = term.buffer
@@ -239,6 +338,7 @@ function M.update(term: Term)
 	local marked = table.clone(term.images)
 	buffer:decorate("terminal.screen", marks(buffer, screen.rows, term.history, marked))
 	term.alternate = screen.alternate
+	mark_failures(term)
 	follow(term, screen, before)
 end
 
@@ -391,6 +491,8 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		links = {},
 		screen_links = {},
 		dropped = 0,
+		marks_made = 0,
+		failures = {},
 	}
 	terms[buffer:id()] = term
 	M.enter(view)
@@ -692,6 +794,87 @@ function M.show(term: Term)
 	M.enter(view)
 end
 
+-- Moves the cursor to the next command's start after the cursor's line,
+-- or with `back` the one before it.
+local function to_command(ctx: greed.Context, back: boolean)
+	local buffer = ctx.buffer
+	local selection = ctx.view:selection()
+	local line = buffer:line_of(selection.ranges[selection.primary].head)
+	local commands = M.commands(buffer)
+	local found: number? = nil
+	for _, c in commands do
+		local at = start_of(c)
+		if at then
+			local their = buffer:line_of(at)
+			if back and their < line then
+				found = at
+			elseif not back and their > line then
+				found = at
+				break
+			end
+		end
+	end
+	if found == nil then
+		greed.echo(
+			if #commands == 0
+				then "no commands marked: the shell has to mark its prompts (see Terminals in the docs)"
+				else `no command {if back then "before" else "after"} this one`
+		)
+		return
+	end
+	ctx.view:set_selection({ ranges = { { anchor = found, head = found } }, primary = 1 })
+end
+
+greed.command({
+	name = "terminal-prev-command",
+	doc = "Go to the command before the cursor in a terminal, where its shell marks commands",
+	run = function(ctx)
+		to_command(ctx, true)
+	end,
+})
+
+greed.command({
+	name = "terminal-next-command",
+	doc = "Go to the command after the cursor in a terminal, where its shell marks commands",
+	run = function(ctx)
+		to_command(ctx, false)
+	end,
+})
+
+--- The output of the command at `pos` in the terminal shown in `buffer`,
+--- as a byte range, or nil when its shell didn't mark any there.
+function M.output_at(buffer: greed.Buffer, pos: number): (number?, number?)
+	local list = M.commands(buffer)
+	for i, c in list do
+		local from = start_of(c) or c.output
+		local after = list[i + 1]
+		local to = after and (after.prompt or after.command) or buffer:len()
+		if from and from <= pos and pos < to and c.output then
+			local stop = c.done or to
+			-- Not the line break before the next prompt.
+			if stop > c.output and buffer:slice(stop - 1, stop) == "\n" then
+				stop -= 1
+			end
+			return c.output, stop
+		end
+	end
+	return nil, nil
+end
+
+greed.command({
+	name = "terminal-select-output",
+	doc = "Select the output of the command at the cursor in a terminal, to copy or search",
+	run = function(ctx)
+		local selection = ctx.view:selection()
+		local from, to = M.output_at(ctx.buffer, selection.ranges[selection.primary].head)
+		if from == nil or to == nil then
+			greed.echo("no output marked here")
+			return
+		end
+		ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+	end,
+})
+
 greed.command({
 	name = "pick-terminal",
 	doc = "Switch to a terminal, or open a new one",
@@ -824,6 +1007,9 @@ for _, mode in { "normal", "vim" } do
 		enter = "terminal-input",
 		p = "terminal-paste",
 		["g x"] = "open-link",
+		["[ p"] = "terminal-prev-command",
+		["] p"] = "terminal-next-command",
+		["g o"] = "terminal-select-output",
 	})
 end
 greed.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })

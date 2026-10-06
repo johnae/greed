@@ -6,6 +6,9 @@
 //! the cells under the cursor, as an [`ImagePiece`] on every cell it
 //! covers. From there the emulator treats them like text: they scroll with
 //! their rows, and text written over them or an erase removes them.
+//!
+//! The splitter also cuts out the marks shells put around prompts and
+//! commands (`OSC 133`), which the emulator doesn't know.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,6 +35,9 @@ pub enum Piece<'a> {
     Kitty(Vec<u8>),
     /// What came after `OSC 1337;File=`.
     Iterm(Vec<u8>),
+    /// A place the shell marked (`OSC 133`): what came after `133;`, like
+    /// `A` where a prompt starts or `D;1` where a command ended with 1.
+    Prompt(Vec<u8>),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -141,8 +147,8 @@ impl Splitter {
         }
     }
 
-    /// iTerm2's images come out; every other OSC goes on to the emulator,
-    /// as it came.
+    /// iTerm2's images and the shell's marks come out; every other OSC goes
+    /// on to the emulator, as it came.
     fn end_osc(&mut self, emit: &mut impl FnMut(Piece<'_>), terminator: &[u8]) {
         self.state = State::Text;
         let held = std::mem::take(&mut self.held);
@@ -151,6 +157,8 @@ impl Splitter {
         }
         if let Some(rest) = held.strip_prefix(b"1337;File=") {
             emit(Piece::Iterm(rest.to_vec()));
+        } else if let Some(rest) = held.strip_prefix(b"133;") {
+            emit(Piece::Prompt(rest.to_vec()));
         } else {
             let whole = [b"\x1b]", held.as_slice(), terminator].concat();
             emit(Piece::Bytes(&whole));
@@ -525,6 +533,7 @@ mod tests {
                 Piece::Bytes(b) => format!("text {}", String::from_utf8_lossy(b)),
                 Piece::Kitty(k) => format!("kitty {}", String::from_utf8_lossy(&k)),
                 Piece::Iterm(i) => format!("iterm {}", String::from_utf8_lossy(&i)),
+                Piece::Prompt(p) => format!("prompt {}", String::from_utf8_lossy(&p)),
             });
         });
         out.retain(|p| p != "text ");
@@ -552,6 +561,18 @@ mod tests {
         assert_eq!(
             pieces(&mut s, b"\x1b]1337;File=inline=1:AA\x1b\\"),
             ["iterm inline=1:AA"]
+        );
+    }
+
+    #[test]
+    fn the_shells_marks_come_out() {
+        let mut s = Splitter::default();
+        assert_eq!(
+            pieces(
+                &mut s,
+                b"\x1b]133;A\x07$ \x1b]133;B\x1b\\ls\n\x1b]133;D;1\x07"
+            ),
+            ["prompt A", "text $ ", "prompt B", "text ls\n", "prompt D;1"]
         );
     }
 

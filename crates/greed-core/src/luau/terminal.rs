@@ -14,7 +14,7 @@ use crate::image::ImageId;
 use crate::keymap::Key;
 use crate::mouse::{Mouse, MouseKind};
 use crate::registry::PluginId;
-use crate::terminal::{Event, Options, Row, Terminal, TerminalId};
+use crate::terminal::{Event, MarkKind, Options, Row, Terminal, TerminalId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -215,6 +215,30 @@ impl UserData for TerminalRef {
             t.set("first", scrollback.first)?;
             t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
             Ok(t)
+        });
+        methods.add_method("marks_made", |lua, this, ()| {
+            this.with(lua, |t| t.marks_made())
+        });
+        methods.add_method("marks", |lua, this, from: Option<u64>| {
+            let marks = this.with(lua, |t| t.marks(from.unwrap_or(0)))?;
+            let list = lua.create_table()?;
+            for mark in marks {
+                let t = lua.create_table()?;
+                t.set("line", mark.line)?;
+                t.set("col", mark.col)?;
+                let kind = match mark.kind {
+                    MarkKind::Prompt => "prompt",
+                    MarkKind::Command => "command",
+                    MarkKind::Output => "output",
+                    MarkKind::Done(code) => {
+                        t.set("code", code)?;
+                        "done"
+                    }
+                };
+                t.set("kind", kind)?;
+                list.push(t)?;
+            }
+            Ok(list)
         });
         methods.add_method("write", |lua, this, text: mlua::LuaString| {
             let bytes = text.as_bytes().to_vec();

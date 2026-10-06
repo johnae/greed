@@ -304,3 +304,38 @@ test("esc goes to the program, and esc twice quickly stops typing into it", func
 	assert(greed.mode.get() == "normal", "two quickly leave")
 	t:keys("i ctrl-d")
 end)
+
+-- A shell session the way a shell that marks its prompts prints it: a
+-- command with output that fails with 2, then another prompt.
+local MARKED = table.concat({
+	"printf '\\033]133;A\\007$ \\033]133;B\\007ls\\n\\033]133;C\\007one\\ntwo\\n\\033]133;D;2\\007",
+	"\\033]133;A\\007$ \\033]133;B\\007pwd\\n\\033]133;C\\007/tmp\\n\\033]133;D;0\\007",
+	"\\033]133;A\\007$ \\033]133;B\\007'; sleep 5",
+})
+
+test("a shell's marked commands: go between them, select their output, see what failed", function(t)
+	t:run("terminal", { "sh", "-c", MARKED })
+	shows(t, "/tmp\n$ ")
+	t:keys("ctrl-\\")
+	local buffer = greed.view():buffer()
+	local commands = require("@terminal").commands(buffer)
+	assert(#commands == 3, tostring(#commands))
+	assert(commands[1].code == 2 and commands[2].code == 0)
+	t:keys("g g ] p")
+	t:expect((buffer:text():gsub("pwd", "|pwd", 1)))
+	t:keys("[ p")
+	t:expect((buffer:text():gsub("ls", "|ls", 1)))
+	t:keys("g o")
+	local selection = greed.view():selection().ranges[1]
+	assert(buffer:slice(selection.anchor, selection.head) == "one\ntwo", "the output")
+	local exits = buffer:decorations("terminal.exits")
+	assert(#exits == 1 and exits[1].text == "exit 2", "only the failure shows")
+end)
+
+test("without marks, going between commands says why", function(t)
+	t:run("terminal", { "sh", "-c", "echo plain; sleep 5" })
+	shows(t, "plain")
+	t:keys("ctrl-\\ ] p")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "no commands marked", 1, true), messages[#messages])
+end)

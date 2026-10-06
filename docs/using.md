@@ -886,6 +886,8 @@ goes to the program, including ones the editor would otherwise take, like
 | `i`, `a`, `enter` | Type into it again |
 | `p` | Paste the latest copy into the program |
 | `g x`, `ctrl-click` | Open the link under the cursor (or the mouse) |
+| `[ p` `] p` | The command before or after the cursor, where your shell marks them (below) |
+| `g o` | Select the output of the command at the cursor, to copy or search it |
 | `:terminal-close` | End the program and close the terminal |
 
 Out of the terminal, its output is text like any other: select it, search
@@ -906,6 +908,34 @@ turns that off.
 Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
 URLs written in the output open too. They open with `xdg-open` (`open` on
 macOS), or whatever `:set link-opener firefox` names.
+
+### Commands your shell marks
+
+A shell can mark where each prompt, command and its output start, and how
+the command ended. Greed then knows the commands in a terminal: `[ p` and
+`] p` go between them, `g o` selects one's output, and a command that
+failed shows its exit code at the end of its line.
+
+fish 4 marks them on its own. For zsh, add this to `~/.zshrc`:
+
+```zsh
+_greed_precmd() { local code=$?; print -n "\e]133;D;$code\a\e]133;A\a" }
+_greed_preexec() { print -n "\e]133;C\a" }
+precmd_functions+=(_greed_precmd)
+preexec_functions+=(_greed_preexec)
+PS1="$PS1%{\e]133;B\a%}"
+```
+
+and for bash, to `~/.bashrc`:
+
+```bash
+PROMPT_COMMAND='printf "\e]133;D;%s\a\e]133;A\a" "$?"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+PS1="$PS1\[\e]133;B\a\]"
+PS0='\e]133;C\a'
+```
+
+These are the same marks kitty, WezTerm, Ghostty and iTerm2 read, so they
+work there too.
 
 ## Panes and tabs
 

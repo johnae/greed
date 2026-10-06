@@ -10,7 +10,7 @@
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use alacritty_terminal::event::{Event as TermEvent, EventListener};
@@ -104,6 +104,49 @@ pub struct Screen {
     pub alternate: bool,
 }
 
+/// What a shell marked, with `OSC 133`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkKind {
+    /// Where its prompt starts (`A`).
+    Prompt,
+    /// Where the command you type starts, after the prompt (`B`).
+    Command,
+    /// Where the command's output starts, once it runs (`C`).
+    Output,
+    /// Where the command ended (`D`), with its exit code if the shell said.
+    Done(Option<i32>),
+}
+
+impl MarkKind {
+    /// The kind `OSC 133;...` names, from what follows `133;`.
+    fn parse(sequence: &[u8]) -> Option<Self> {
+        let mut parts = sequence.split(|&b| b == b';');
+        Some(match parts.next()? {
+            b"A" => Self::Prompt,
+            b"B" => Self::Command,
+            b"C" => Self::Output,
+            b"D" => Self::Done(
+                parts
+                    .next()
+                    .and_then(|code| std::str::from_utf8(code).ok()?.parse().ok()),
+            ),
+            _ => return None,
+        })
+    }
+}
+
+/// A place a shell marked, on line `line`, counting from the terminal's
+/// first line as scrollback does, at byte `col` of that line's text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mark {
+    pub line: u64,
+    pub col: usize,
+    pub kind: MarkKind,
+}
+
+/// The most marks a terminal keeps, the oldest going first.
+const MARKS: usize = 10_000;
+
 /// Lines of scrollback: `rows[0]` is line `first`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scrollback {
@@ -130,6 +173,10 @@ struct Shared {
     /// Locked after `term` when both are.
     graphics: Mutex<Graphics>,
     scrollback: Mutex<Lines>,
+    /// The shell's marks, oldest first.
+    marks: Mutex<VecDeque<Mark>>,
+    /// How many marks the shell has made, kept or not.
+    made: AtomicU64,
     unread: AtomicBool,
     /// A cell's size in pixels on the client's screen.
     cell: Mutex<(u16, u16)>,
@@ -203,6 +250,8 @@ impl Terminal {
                 limit: options.scrollback,
             }),
             graphics: Mutex::new(Graphics::default()),
+            marks: Mutex::new(VecDeque::new()),
+            made: AtomicU64::new(0),
             unread: AtomicBool::new(false),
             cell: Mutex::new(options.cell),
         });
@@ -266,6 +315,21 @@ impl Terminal {
                 .max(from.min(lines.first + lines.rows.len() as u64)),
             rows: lines.rows.iter().skip(skip).cloned().collect(),
         }
+    }
+
+    /// How many marks the shell has made so far, to tell when there are new
+    /// ones without asking for them all.
+    pub fn marks_made(&self) -> u64 {
+        self.shared.made.load(Ordering::Acquire)
+    }
+
+    /// The marks the shell made on line `from` and after, oldest first.
+    pub fn marks(&self, from: u64) -> Vec<Mark> {
+        lock(&self.shared.marks)
+            .iter()
+            .filter(|mark| mark.line >= from)
+            .copied()
+            .collect()
     }
 
     /// Sends `bytes` to the program as if typed.
@@ -426,6 +490,11 @@ fn pump(
                     }
                 }
                 Piece::Iterm(command) => graphics.iterm(&command, &mut term, cell),
+                Piece::Prompt(sequence) => {
+                    if let Some(kind) = MarkKind::parse(&sequence) {
+                        mark(&term, &graphics, &lock(&shared.scrollback), shared, kind);
+                    }
+                }
             });
             keep_scrollback(&mut term, &graphics, &mut lock(&shared.scrollback));
         }
@@ -433,6 +502,41 @@ fn pump(
             let _ = events.send(Event::Output(id));
         }
     }
+}
+
+/// Keeps a mark of `kind` where the cursor is. Lines that scrolled off but
+/// haven't moved to `lines` yet count, so the number is the one the line
+/// will have in the scrollback. A full screen program's screen has no
+/// lines to keep, so marks there are dropped.
+fn mark(
+    term: &Term<Listener>,
+    graphics: &Graphics,
+    lines: &Lines,
+    shared: &Shared,
+    kind: MarkKind,
+) {
+    if term.mode().contains(TermMode::ALT_SCREEN) {
+        return;
+    }
+    let grid = term.grid();
+    let point = grid.cursor.point;
+    let line = lines.first
+        + lines.rows.len() as u64
+        + grid.history_size() as u64
+        + u64::try_from(point.line.0).unwrap_or(0);
+    let col = row(
+        &grid[point.line],
+        grid.columns(),
+        Some(point.column.0),
+        graphics,
+    )
+    .1;
+    let mut marks = lock(&shared.marks);
+    marks.push_back(Mark { line, col, kind });
+    if marks.len() > MARKS {
+        marks.pop_front();
+    }
+    shared.made.fetch_add(1, Ordering::Release);
 }
 
 /// Moves the lines that scrolled off the emulator's screen into `lines`.
@@ -872,6 +976,14 @@ mod tests {
         assert_eq!(sent("f12"), b"\x1b[24~");
         assert_eq!(sent("ctrl-space"), [0]);
         assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn marks_are_read_with_or_without_their_extras() {
+        assert_eq!(MarkKind::parse(b"A;aid=7"), Some(MarkKind::Prompt));
+        assert_eq!(MarkKind::parse(b"D"), Some(MarkKind::Done(None)));
+        assert_eq!(MarkKind::parse(b"D;130"), Some(MarkKind::Done(Some(130))));
+        assert_eq!(MarkKind::parse(b"P;k=i"), None, "kinds it doesn't use");
     }
 
     #[test]

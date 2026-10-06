@@ -524,6 +524,15 @@ export type Terminal = {
 	--- the terminal's first line) on, or from the oldest one kept. `first` is
 	--- the number of the first line returned.
 	scrollback: (self: Terminal, from: number?) -> { first: number, rows: { TerminalRow } },
+	--- The places the shell marked (OSC 133) on line `from` (counting as
+	--- `scrollback` does) and after, oldest first: where a prompt starts,
+	--- where the typed command starts, where its output starts, and where it
+	--- was done, with its exit code if the shell said. `col` is a byte in the
+	--- line's text.
+	marks: (self: Terminal, from: number?) -> { TerminalMark },
+	--- How many marks the shell has made so far, to tell when there are new
+	--- ones without asking for them all.
+	marks_made: (self: Terminal) -> number,
 	--- Sends text to the program as if typed.
 	write: (self: Terminal, text: string) -> (),
 	--- Sends a key, e.g. "ctrl-c" or "up", as a terminal encodes it.
@@ -554,6 +563,15 @@ export type Terminals = {
 	--- "terminal.output" events and its end as "terminal.exited".
 	--- `scrollback` lines are kept above the screen (default 10000).
 	spawn: (spec: { command: { string }?, cwd: string?, env: { [string]: string }?, rows: number, cols: number, scrollback: number? }) -> Terminal,
+}
+
+--- A place a shell marked in a terminal, from `terminal:marks()`.
+export type TerminalMark = {
+	line: number,
+	col: number,
+	kind: "prompt" | "command" | "output" | "done",
+	--- The exit code, for "done", if the shell said.
+	code: number?,
 }
 
 --- A terminal printed something; read it with `terminal:screen()`.
