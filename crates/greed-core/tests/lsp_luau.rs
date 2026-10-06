@@ -606,3 +606,120 @@ fn notifications_reach_the_plugins_listening_with_the_servers_language() {
     });
     assert_eq!(messages, ["rust index begin", "rust index end"]);
 }
+
+/// A host with the lsp and agent plugins, and a "probe" plugin whose
+/// `call(tool, args)` runs an agent tool in the background and keeps what
+/// it said in `out`.
+fn with_agent() -> Host {
+    let h = host();
+    h.load_dirs(&[
+        plugin("core"),
+        plugin("picker"),
+        plugin("terminal"),
+        plugin("multibuffer"),
+        plugin("operations"),
+        plugin("approvals"),
+        plugin("describe"),
+        plugin("markdown"),
+        plugin("models"),
+        plugin("agent"),
+        plugin("statusline"),
+        plugin("lsp"),
+    ])
+    .unwrap();
+    h.load_str(
+        "probe",
+        r#"
+        local greed = require("@greed")
+        local agent = require("@agent")
+        local probe = {}
+        function probe.call(name, args)
+            for _, tool in agent.tools() do
+                if tool.name == name then
+                    greed.spawn(function()
+                        local ok, out = pcall(tool.run, args, "socket")
+                        probe.out = if ok then out else "error: " .. tostring(out)
+                    end)
+                end
+            end
+        end
+        return probe
+        "#,
+    )
+    .unwrap();
+    h.sync_lsp();
+    pump(&h, |h| h.diagnostic_marks().values().any(|d| !d.is_empty()));
+    h
+}
+
+fn probe_out(h: &Host) -> Option<String> {
+    let out = h.eval("require('@probe').out").unwrap();
+    (out != "nil").then_some(out)
+}
+
+fn pending(h: &Host) -> String {
+    h.eval("require('@agent').pending()").unwrap()
+}
+
+#[test]
+fn an_agent_renames_through_the_server_as_a_proposal() {
+    let h = with_agent();
+    h.eval(r#"require("@probe").call("rename", { path = "main.rs", line = 1, name = "bad", new_name = "good" })"#)
+        .unwrap();
+    pump(&h, |h| pending(h) != "0");
+    assert_eq!(
+        main_text(&h),
+        "let x = bad;",
+        "nothing changes before it's accepted"
+    );
+    h.press_keys("space o A").unwrap();
+    assert_eq!(main_text(&h), "let x = good;");
+    let out = probe_out(&h).unwrap();
+    assert!(out.starts_with("accepted 1 of 1 changes"), "{out}");
+}
+
+#[test]
+fn an_agent_rename_needs_the_name_on_that_line() {
+    let h = with_agent();
+    h.eval(r#"require("@probe").call("rename", { path = "main.rs", line = 1, name = "ba", new_name = "x" })"#)
+        .unwrap();
+    let out = probe_out(&h).unwrap();
+    assert!(out.contains("ba isn't on line 1"), "{out}");
+}
+
+#[test]
+fn an_agent_lists_code_actions_and_proposes_one_by_title() {
+    let h = with_agent();
+    h.eval(r#"require("@probe").call("code_actions", { path = "main.rs", line = 1 })"#)
+        .unwrap();
+    pump(&h, |h| probe_out(h).is_some());
+    assert_eq!(
+        probe_out(&h).unwrap(),
+        "Shout\nMake it good (1 known) (quickfix), preferred\nAdd a comment"
+    );
+
+    // One that needs resolving first.
+    h.eval(r#"require("@probe").out = nil; require("@probe").call("code_action", { path = "main.rs", line = 1, title = "Add a comment" })"#)
+        .unwrap();
+    pump(&h, |h| pending(h) != "0" || probe_out(h).is_some());
+    assert_eq!(probe_out(&h), None, "it waits for the user");
+    h.press_keys("space o A").unwrap();
+    assert_eq!(main_text(&h), "// resolved\nlet x = bad;");
+    assert!(probe_out(&h).unwrap().starts_with("accepted 1 of 1"));
+}
+
+#[test]
+fn an_agent_code_action_that_runs_a_command_is_refused() {
+    let h = with_agent();
+    h.eval(
+        r#"require("@probe").call("code_action", { path = "main.rs", line = 1, title = "Shout" })"#,
+    )
+    .unwrap();
+    pump(&h, |h| probe_out(h).is_some());
+    let out = probe_out(&h).unwrap();
+    assert!(
+        out.contains("runs a command in the language server"),
+        "{out}"
+    );
+    assert_eq!(main_text(&h), "let x = bad;");
+}

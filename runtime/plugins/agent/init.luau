@@ -13,6 +13,7 @@ require("@self/tools")
 require("@self/ide")
 require("@self/claude")
 require("@self/compare")
+require("@self/refactor")
 local map = require("@self/map")
 local working = require("@self/working")
 local ask = require("@self/ask")
@@ -22,6 +23,7 @@ local extend = require("@self/extend")
 export type Tool = registry.Tool
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
+export type FileChanges = proposals.FileChanges
 export type WorkingEntry = working.Entry
 
 return {
@@ -30,6 +32,7 @@ return {
 	propose = proposals.propose,
 	propose_files = proposals.propose_files,
 	propose_changes = proposals.propose_changes,
+	propose_ranges = proposals.propose_ranges,
 	pending = proposals.pending,
 	try = extend.try,
 	install = extend.install,

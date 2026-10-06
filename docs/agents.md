@@ -46,6 +46,8 @@ claude mcp add greed -- greed mcp
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |
 | `propose` | Propose edits to one or more files for you to review |
+| `rename` | Rename a name everywhere it's used, as the language server works it out, proposed for you to review |
+| `code_actions`, `code_action` | The language server's quick fixes and refactors for some lines, and proposing one; actions that would run a command in the server are refused, since they can't be shown first |
 | `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
 | `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |

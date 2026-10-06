@@ -521,30 +521,70 @@ local function prepare(path: string, edits: { Edit }): Prepared
 	return { path = full, buffer = buffer, pending = pending, hunks = hunks, at = at }
 end
 
+-- Shows `prepared` for review as one operation, announced, and waits for
+-- the user. Returns each file's proposal once it's decided.
+local function offer(prepared: { Prepared }, reason: string?, tab: string?): { Proposal }
+	local paths, changes = {}, 0
+	for _, file in prepared do
+		table.insert(paths, file.path)
+		changes += #file.hunks
+	end
+	local op = operations.run(reason or `changes to {where(paths)}`, function() end, "agent")
+	local started: { Proposal } = {}
+	for _, file in prepared do
+		table.insert(
+			started,
+			start(op, file.path, file.buffer, file.pending, file.hunks, file.at, tab)
+		)
+	end
+	announce(changes, paths, reason)
+	local decided: { Proposal } = {}
+	for _, p in started do
+		table.insert(decided, p.done.wait())
+	end
+	return decided
+end
+
+-- What the user decided on each of `decided`, in words.
+local function summaries(decided: { Proposal }): string
+	local answers = {}
+	for _, p in decided do
+		table.insert(answers, summary(p))
+	end
+	return table.concat(answers, "\n")
+end
+
+export type Change = { from: number, to: number, text: string }
+export type FileChanges = { buffer: greed.Buffer, path: string, changes: { Change } }
+
+-- The hunks of `file`'s changes, which are byte ranges, sorted and apart.
+local function ranged(file: FileChanges): Prepared
+	local hunks: { Hunk }, at: { Span } = {}, {}
+	for _, change in file.changes do
+		next_id += 1
+		local old = file.buffer:slice(change.from, change.to)
+		table.insert(hunks, { id = next_id, old = old, new = change.text, status = "pending" })
+		table.insert(at, { from = change.from, to = change.to })
+	end
+	return {
+		path = file.path,
+		buffer = file.buffer,
+		pending = table.clone(hunks),
+		hunks = hunks,
+		at = at,
+	}
+end
+
 --- Proposes edits to several files as one operation, then waits until the
 --- user has decided on every change and returns what they decided, in
 --- words. Nothing shows unless every file's edits check out. What the user
 --- accepts undoes in one step, from any of the files.
 function M.propose_files(files: { FileEdits }, reason: string?): string
 	local prepared: { Prepared } = {}
-	local paths, changes = {}, 0
 	for _, file in files do
-		local checked = prepare(file.path, file.edits)
-		table.insert(prepared, checked)
-		table.insert(paths, checked.path)
-		changes += #checked.hunks
+		table.insert(prepared, prepare(file.path, file.edits))
 	end
-	local op = operations.run(reason or `changes to {where(paths)}`, function() end, "agent")
-	local started: { Proposal } = {}
-	for _, file in prepared do
-		table.insert(started, start(op, file.path, file.buffer, file.pending, file.hunks, file.at))
-	end
-	announce(changes, paths, reason)
-	local answers = {}
-	for _, p in started do
-		table.insert(answers, summary(p.done.wait()))
-	end
-	return table.concat(answers, "\n")
+	return summaries(offer(prepared, reason))
 end
 
 --- Proposes `edits` to the file at `path`, then waits until the user has
@@ -560,26 +600,27 @@ end
 function M.propose_changes(
 	buffer: greed.Buffer,
 	path: string,
-	changes: { { from: number, to: number, text: string } },
+	changes: { Change },
 	reason: string?,
 	tab: string?
 ): { accepted: number, rejected: number }
-	local hunks: { Hunk }, at: { Span } = {}, {}
-	for _, change in changes do
-		next_id += 1
-		local old = buffer:slice(change.from, change.to)
-		table.insert(hunks, { id = next_id, old = old, new = change.text, status = "pending" })
-		table.insert(at, { from = change.from, to = change.to })
-	end
-	local op = operations.run(reason or `changes to {path}`, function() end, "agent")
-	local p = start(op, path, buffer, table.clone(hunks), hunks, at, tab)
-	announce(#hunks, { path }, reason)
-	p = p.done.wait()
+	local p = offer({ ranged({ buffer = buffer, path = path, changes = changes }) }, reason, tab)[1]
 	local accepted = 0
 	for _, hunk in p.hunks do
 		accepted += if hunk.status == "accepted" then 1 else 0
 	end
 	return { accepted = accepted, rejected = #p.hunks - accepted }
+end
+
+--- Proposes changes by byte range to several files as one operation, as
+--- `propose_changes` does for one, and returns what the user decided, in
+--- words, as `propose_files` does. Each file's changes are sorted and apart.
+function M.propose_ranges(files: { FileChanges }, reason: string?): string
+	local prepared: { Prepared } = {}
+	for _, file in files do
+		table.insert(prepared, ranged(file))
+	end
+	return summaries(offer(prepared, reason))
 end
 
 --- Rejects what's left of the proposal Claude Code called `tab`, e.g.
@@ -604,8 +645,6 @@ function M.withdraw_all(): number
 	end
 	return n
 end
-
-type Change = { from: number, to: number, text: string }
 
 --- The changes waiting in `buffer`, where their old text is now, in the
 --- order they appear.
