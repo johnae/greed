@@ -14,6 +14,13 @@
 
 local greed = require("@greed")
 local sse = require("@self/sse")
+local turn = require("@self/turn")
+
+export type ToolSpec = turn.ToolSpec
+export type Call = turn.Call
+export type Said = turn.Said
+export type Turn = turn.Turn
+export type TurnRequest = turn.Request
 
 --- Where a model is served: `kind` is "anthropic" or "openai" (any server
 --- with OpenAI's chat completions API, like Ollama or vLLM), `secret` the
@@ -157,23 +164,28 @@ local function refusal(status: number, body: string): string
 	return `the model's server said {status}: {message or string.sub(body, 1, 200)}`
 end
 
---- Asks the model playing `role`, and returns the answer as it arrives.
---- Waits for the server to start answering. Works in commands, event
---- handlers and greed.spawn.
-function M.stream(role: string, request: Request): (Stream?, string?)
+-- The role's model and provider, and its key if it needs one.
+local function connect(role: string): (Role?, Provider?, string?, string?)
 	local chosen, provider, why = M.resolve(role)
 	if chosen == nil or provider == nil then
-		return nil, why
+		return nil, nil, nil, why
 	end
 	local key: string? = nil
 	if provider.secret then
 		key = greed.secrets.get(provider.secret)
 		if key == nil then
 			return nil,
+				nil,
+				nil,
 				`no key for {chosen.provider}: :secret-set {provider.secret}, or set it in the environment`
 		end
 	end
-	local response, err = greed.http.stream(http_request(provider, chosen.model, request, key))
+	return chosen, provider, key, nil
+end
+
+-- Sends `request` and waits for the answer to start, or says why it won't.
+local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream?, string?)
+	local response, err = greed.http.stream(request)
 	if response == nil then
 		return nil, `can't reach {chosen.provider}: {err}`
 	end
@@ -187,6 +199,21 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 			table.insert(body, piece)
 		end
 		return nil, refusal(response.status, table.concat(body))
+	end
+	return response, nil
+end
+
+--- Asks the model playing `role`, and returns the answer as it arrives.
+--- Waits for the server to start answering. Works in commands, event
+--- handlers and greed.spawn.
+function M.stream(role: string, request: Request): (Stream?, string?)
+	local chosen, provider, key, why = connect(role)
+	if chosen == nil or provider == nil then
+		return nil, why
+	end
+	local response, err = open(chosen, http_request(provider, chosen.model, request, key))
+	if response == nil then
+		return nil, err
 	end
 	local pending: { string } = {}
 	local buffered = ""
@@ -235,6 +262,55 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	}
 	return stream, nil
 end
+
+--- One turn of a conversation with tools, by the model playing `role`:
+--- `on_text` gets its text as it arrives, and the turn says what it said,
+--- the tool calls it asked for and why it stopped. Waits like greed.sleep.
+function M.turn(
+	role: string,
+	request: turn.Request,
+	on_text: ((text: string) -> ())?
+): (turn.Turn?, string?)
+	local chosen, provider, key, why = connect(role)
+	if chosen == nil or provider == nil then
+		return nil, why
+	end
+	local sent = http_request(provider, chosen.model, { messages = {} }, key)
+	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, MAX_TOKENS))
+	local response, err = open(chosen, sent)
+	if response == nil then
+		return nil, err
+	end
+	local reader = turn.reader(provider.kind)
+	local buffered = ""
+	while true do
+		local piece, failed = response.read()
+		if piece == nil then
+			if failed then
+				return nil, failed
+			end
+			return reader.turn(), nil
+		end
+		local events
+		events, buffered = sse.parse(buffered .. piece)
+		for _, event in events do
+			local text, finished, problem = reader.feed(event)
+			if problem then
+				response.close()
+				return nil, problem
+			end
+			if text and on_text then
+				on_text(text)
+			end
+			if finished then
+				response.close()
+				return reader.turn(), nil
+			end
+		end
+	end
+end
+
+M.tools = turn
 
 --- `answer` without the code fence a model may wrap it in, when it was
 --- asked for plain text.
@@ -320,6 +396,9 @@ greed.command({
 	run = close,
 })
 
-greed.keymap.bind({ mode = "normal", kind = "models" }, { q = "models-close", esc = "models-close" })
+greed.keymap.bind(
+	{ mode = "normal", kind = "models" },
+	{ q = "models-close", esc = "models-close" }
+)
 
 return M

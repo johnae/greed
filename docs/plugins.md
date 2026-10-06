@@ -585,6 +585,17 @@ like the rest of the API. The roles that come set up are `fast`,
 `reasoning` and `local`; a plugin can ask for any role, and the user maps it
 in their config.
 
+For a model that calls tools, `models.turn(role, request, on_text)` runs
+one turn: `request` has the conversation as `said` (each `{ role = "user",
+text = ... }`, `{ role = "assistant", text = ..., calls = ... }` or `{ role =
+"tool", call = ID, text = ... }`), `tools` (each a `name`, a
+`description` and a JSON schema as `input`) and an optional `system`.
+`on_text` gets the answer's text as it arrives, and the turn comes back as
+its `text`, the `calls` it asks for (`id`, `name`, `input`) and `stop`:
+`"done"`, or `"tools"` when it wants them run and their results sent in the
+next turn. It works the same with Anthropic and with servers that speak
+OpenAI's chat completions.
+
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up in Claude Code (through
