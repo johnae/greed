@@ -43,6 +43,9 @@ pub(crate) struct Tasks {
     /// The plugin each running coroutine's code belongs to, for capability
     /// checks while it runs.
     owners: HashMap<usize, PluginId>,
+    /// What each running coroutine does, when it says, like "on buffer.changed"
+    /// for an event handler: how the watchdog and the profile name it.
+    labels: HashMap<usize, Arc<str>>,
     /// How long each coroutine has worked across the slices it was cut into.
     worked: HashMap<usize, Duration>,
     /// Tokens to resolve when a coroutine finishes, by its id.
@@ -66,6 +69,7 @@ impl Default for Tasks {
             latest: now,
             causes: HashMap::new(),
             owners: HashMap::new(),
+            labels: HashMap::new(),
             worked: HashMap::new(),
             finished: HashMap::new(),
             sliced: HashSet::new(),
@@ -90,6 +94,7 @@ impl Tasks {
     fn forget(&mut self, id: usize) {
         self.causes.remove(&id);
         self.owners.remove(&id);
+        self.labels.remove(&id);
         self.worked.remove(&id);
     }
 }
@@ -107,6 +112,18 @@ pub(super) fn spawn(
     spawn_running(lua, f, args, owner, cause).map(|_| ())
 }
 
+/// `spawn`, naming what the coroutine does as `label` for the watchdog and
+/// the profile, like "on buffer.changed".
+pub(super) fn spawn_labelled(
+    lua: &Lua,
+    f: Function,
+    args: impl IntoLuaMulti,
+    owner: PluginId,
+    label: Arc<str>,
+) -> LuaResult<()> {
+    spawn_with(lua, f, args, owner, None, Some(label)).map(|_| ())
+}
+
 /// `spawn`, returning the coroutine's id if it's still running (waiting on
 /// something), for `wait_for`.
 pub(super) fn spawn_running(
@@ -116,6 +133,17 @@ pub(super) fn spawn_running(
     owner: PluginId,
     cause: Option<Arc<str>>,
 ) -> LuaResult<Option<usize>> {
+    spawn_with(lua, f, args, owner, cause, None)
+}
+
+fn spawn_with(
+    lua: &Lua,
+    f: Function,
+    args: impl IntoLuaMulti,
+    owner: PluginId,
+    cause: Option<Arc<str>>,
+    label: Option<Arc<str>>,
+) -> LuaResult<Option<usize>> {
     let thread = lua.create_thread(f)?;
     let id = key(&thread);
     {
@@ -124,6 +152,9 @@ pub(super) fn spawn_running(
             state.tasks.causes.insert(id, cause);
         }
         state.tasks.owners.insert(id, owner);
+        if let Some(label) = label {
+            state.tasks.labels.insert(id, label);
+        }
     }
     resume(lua, thread.clone(), args)?;
     Ok((thread.status() == ThreadStatus::Resumable).then_some(id))
@@ -155,16 +186,17 @@ fn key(thread: &Thread) -> usize {
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let id = key(&thread);
-    let (outer, outer_owner, owner, cause) = {
+    let (outer, outer_owner, owner, cause, label) = {
         let state = &mut *state_mut(lua);
         let cause = state.tasks.causes.get(&id).cloned();
         let owner = state.tasks.owners.get(&id).cloned();
+        let label = state.tasks.labels.get(&id).cloned();
         let outer = state.editor.cause().cloned();
         state.editor.set_cause(cause.clone());
         let outer_owner = std::mem::replace(&mut state.running, owner.clone());
-        (outer, outer_owner, owner, cause)
+        (outer, outer_owner, owner, cause, label)
     };
-    let what = cause.as_deref().unwrap_or("a handler");
+    let what = label.as_deref().or(cause.as_deref()).unwrap_or("a handler");
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
         super::sliced(lua, id, || thread.resume::<Value>(args))
     });

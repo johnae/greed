@@ -209,8 +209,10 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
         .map(|h| (h.handler.clone(), h.owner.clone()))
         .collect();
     let mut first_error = None;
+    let label: Arc<str> = format!("on {event}").into();
     for (handler, owner) in handlers {
-        if let Err(err) = tasks::spawn(lua, handler, payload.clone(), owner, None) {
+        if let Err(err) = tasks::spawn_labelled(lua, handler, payload.clone(), owner, label.clone())
+        {
             first_error.get_or_insert(err);
         }
     }
@@ -288,6 +290,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         "stalls",
         lua.create_function(|lua, ()| super::stalls::list(lua))?,
     )?;
+    greed.set("profile", super::stalls::profile_module(lua)?)?;
     greed.set("now", now)?;
     greed.set("next_key", tasks::next_key_function(lua)?)?;
 

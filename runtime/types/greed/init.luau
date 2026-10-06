@@ -75,8 +75,9 @@ export type Buffer = {
 	--- Sets the language, or with nil goes back to the one the file's
 	--- extension implies.
 	set_language: (self: Buffer, language: string?) -> (),
-	--- The root of the syntax tree, or nil if the language has no grammar
-	--- (or the buffer is too big to parse).
+	--- The root of the syntax tree, or nil if the language has no grammar,
+	--- the buffer is too big to parse, or just after an edit when parsing it
+	--- again would hold the editor up (a moment later there's one again).
 	tree: (self: Buffer) -> Node?,
 	--- The smallest named node covering `from`..`to` (default: just `from`).
 	node_at: (self: Buffer, from: number, to: number?) -> Node?,
@@ -836,6 +837,9 @@ export type Control = {
 	notify: (method: string, params: any) -> (),
 }
 
+--- One row of `greed.profile.stop()`: what a plugin (nil for the editor itself) spent doing one thing, in all and at most once, in milliseconds.
+export type ProfileRow = { plugin: string?, what: string, ms: number, longest: number, runs: number }
+
 --- A client attached, e.g. `greed FILE` in a session that was running.
 export type ClientAttached = {
 	--- The file or folder it asked to open, if any.
@@ -1284,6 +1288,8 @@ export type Greed = {
 	spawn: (f: (...any) -> ...any, ...any) -> (),
 	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading".
 	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
+	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken.
+	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean },
 	--- Milliseconds on the editor's clock, for timing animations. While a
 	--- timer wakes code, it reads the time the timer was due.
 	now: () -> number,

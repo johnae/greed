@@ -434,6 +434,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
 | `:reload` | Load the file again from disk |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
+| `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
 
 Closing a terminal's buffer ends its program.
@@ -442,7 +443,8 @@ Closing a terminal's buffer ends its program.
 with your plugins and config on the file (a large generated Rust file
 without one), types and moves around as you would, and prints how long
 each kind of key took from leaving the client to the frame showing it
-arriving, with the slowest named. Your terminal's drawing comes on top.
+arriving, with the slowest named, and where the time went per key (as
+`:profile` shows it). Your terminal's drawing comes on top.
 
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
 the folder you're in, `r` reads the disk again and `q` closes it. A click

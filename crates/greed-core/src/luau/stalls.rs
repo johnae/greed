@@ -3,7 +3,7 @@
 //! running, so a freeze can be traced to its cause. `greed.stalls()` lists
 //! them; long ones are also said right away.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mlua::{Lua, Table};
@@ -31,16 +31,34 @@ pub(crate) struct Stall {
 }
 
 /// The stalls kept, oldest first, and the time nested runs took during the
-/// run being timed now, which counts against them rather than it.
+/// run being timed now, which counts against them rather than it. While a
+/// profile is being taken, every run is added to it too.
 #[derive(Default)]
 pub(crate) struct Stalls {
     kept: VecDeque<Stall>,
     inner: Duration,
+    profile: Option<HashMap<(Option<String>, String), Spent>>,
+}
+
+/// What one plugin doing one thing took while a profile was taken.
+#[derive(Default, Clone, Copy)]
+struct Spent {
+    total: Duration,
+    longest: Duration,
+    runs: u32,
 }
 
 /// Notes that `plugin`'s code ran for `took` running `what` (a command's
 /// name, "the status line", ...), keeping it if that held the editor up.
 fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
+    if let Some(profile) = &mut state_mut(lua).stalls.profile {
+        let spent = profile
+            .entry((plugin.map(str::to_owned), what.to_owned()))
+            .or_default();
+        spent.total += took;
+        spent.longest = spent.longest.max(took);
+        spent.runs += 1;
+    }
     if took < STALL {
         return;
     }
@@ -79,6 +97,44 @@ pub(super) fn list(lua: &Lua) -> LuaResult<Table> {
         list.push(t)?;
     }
     Ok(list)
+}
+
+/// `greed.profile`: `start()` begins counting how long every run of plugin
+/// code and the editor's own drawing takes; `stop()` ends it and returns
+/// what was counted, the most time first.
+pub(super) fn profile_module(lua: &Lua) -> LuaResult<Table> {
+    let profile = lua.create_table()?;
+    profile.set(
+        "start",
+        lua.create_function(|lua, ()| {
+            state_mut(lua).stalls.profile = Some(HashMap::new());
+            Ok(())
+        })?,
+    )?;
+    profile.set(
+        "stop",
+        lua.create_function(|lua, ()| {
+            let counted = state_mut(lua).stalls.profile.take().unwrap_or_default();
+            let mut rows: Vec<_> = counted.into_iter().collect();
+            rows.sort_by_key(|(_, spent)| std::cmp::Reverse(spent.total));
+            let list = lua.create_table()?;
+            for ((plugin, what), spent) in rows {
+                let row = lua.create_table()?;
+                row.set("plugin", plugin)?;
+                row.set("what", what)?;
+                row.set("ms", spent.total.as_secs_f64() * 1000.0)?;
+                row.set("longest", spent.longest.as_secs_f64() * 1000.0)?;
+                row.set("runs", spent.runs)?;
+                list.push(row)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+    profile.set(
+        "running",
+        lua.create_function(|lua, ()| Ok(state(lua).stalls.profile.is_some()))?,
+    )?;
+    Ok(profile)
 }
 
 /// Runs `f`, `plugin`'s code doing `what` (a command's name, "the status

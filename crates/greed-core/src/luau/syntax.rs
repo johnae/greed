@@ -195,16 +195,21 @@ impl UserData for NodeRef {
 
 /// The buffer's current tree and its version, or `None` without one.
 fn tree_of(lua: &Lua, buffer: &BufferRef) -> LuaResult<Option<(Arc<Language>, Tree, usize)>> {
-    let state = &mut *state_mut(lua);
-    let found = state
-        .editor
-        .find_buffer(buffer.buffer)
-        .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
-    let version = found.history().log().len();
-    Ok(state
-        .syntax
-        .tree(found)
-        .map(|(language, tree)| (language, tree, version)))
+    // Parsing here, when the worker hasn't caught up, is the editor's own
+    // work, timed apart from the plugin code that asked.
+    super::stalls::timed(lua, None, "parsing", || {
+        let state = &mut *state_mut(lua);
+        let found = state
+            .editor
+            .find_buffer(buffer.buffer)
+            .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
+        let version = found.history().log().len();
+        Ok(state
+            .syntax
+            .tree(found)
+            .map(|(language, tree)| (language, tree, version)))
+    })
+    .0
 }
 
 /// Runs `source` over the buffer (or `from`..`to` of it): one table per

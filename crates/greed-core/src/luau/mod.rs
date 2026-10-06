@@ -732,6 +732,13 @@ impl Host {
         Ok(cli::run(&self.lua, name, args, say)?)
     }
 
+    /// Runs `f`, the editor's own work doing `what` (handling a key, drawing),
+    /// timed like plugin code: a stall if it holds the editor up, and in the
+    /// profile while one is taken.
+    pub fn timed<R>(&self, what: &str, f: impl FnOnce() -> R) -> R {
+        stalls::timed(&self.lua, None, what, f).0
+    }
+
     /// Feeds one key press through the keymap, running whatever it resolves
     /// to.
     pub fn press(&self, key: Key) -> Result<(), HostError> {

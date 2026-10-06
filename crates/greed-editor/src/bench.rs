@@ -53,10 +53,23 @@ fn scenarios() -> Vec<Scenario> {
         .collect::<Vec<_>>()
         .join(" ");
     vec![
+        // In a function's body, where most typing goes.
         Scenario {
             name: "typing",
-            setup: "g g 2 0 0 j o",
+            setup: "g g 2 1 0 j o",
             keys: [line.as_str(), "enter"].repeat(6).join(" "),
+        },
+        // Between an attribute and its struct, where the line is a syntax
+        // error: tree-sitter's error recovery makes each parse slower.
+        Scenario {
+            name: "broken code",
+            setup: "esc g g 6 0 0 j o",
+            keys: [line.as_str(), "enter"].repeat(3).join(" "),
+        },
+        Scenario {
+            name: "new line",
+            setup: "esc g g 3 0 0 j A",
+            keys: vec!["enter"; 40].join(" "),
         },
         Scenario {
             name: "line down",
@@ -137,11 +150,14 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
         "", "keys", "median", "p95", "p99", "worst", "> 16ms"
     );
     let mut all = Vec::new();
+    let mut shell = Client::connect_as(&socket, token.trim(), true)?;
+    let mut profiles = Vec::new();
     for scenario in scenarios() {
         for key in Key::parse_sequence(scenario.setup)? {
             client.send(&Input::Key(key))?;
         }
         client.drain(Duration::from_millis(300));
+        eval(&mut shell, "require('@greed').profile.start()")?;
         let mut times = Vec::new();
         let mut slow = Vec::new();
         for (i, key) in Key::parse_sequence(&scenario.keys)?.into_iter().enumerate() {
@@ -157,6 +173,7 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
             std::thread::sleep(BETWEEN);
         }
         client.drain(Duration::from_millis(100));
+        profiles.push((scenario.name, times.len(), eval(&mut shell, PROFILE)?));
         report(scenario.name, &mut times);
         if !slow.is_empty() {
             println!("{:<14} slow: {}", "", slow.join(", "));
@@ -165,10 +182,57 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
     }
     println!();
     report("all", &mut all);
+    for (name, keys, profile) in profiles {
+        println!(
+            "\nwhere the time went, {name}, per key (plugin: what)\n{}",
+            per_key(&profile, keys)
+        );
+    }
     let _ = conn.input.send(Input::Quit);
     let _ = conn.server.join();
     let _ = std::fs::remove_dir_all(&scratch);
     Ok(())
+}
+
+/// Ends the profile and gives back each row as "ms runs longest plugin
+/// what", tab separated, the most time first.
+const PROFILE: &str = "local out = {}
+for _, row in require('@greed').profile.stop() do
+    table.insert(out, string.format('%f\\t%d\\t%f\\t%s\\t%s', row.ms, row.runs, row.longest, row.plugin or 'greed', row.what))
+end
+return table.concat(out, '\\n')";
+
+/// Runs `code` in the session, as `greed ctl eval` does, and returns what it
+/// returned.
+fn eval(shell: &mut Client, code: &str) -> Result<String, Error> {
+    let call = serde_json::json!({ "name": "eval", "arguments": { "code": code } });
+    let answer = shell.call("tools/call", &call)??;
+    Ok(answer["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned())
+}
+
+/// The profile's ten biggest rows, as time per key, with the longest run.
+fn per_key(profile: &str, keys: usize) -> String {
+    let keys = f64::from(u32::try_from(keys.max(1)).unwrap_or(u32::MAX));
+    profile
+        .lines()
+        .take(10)
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let ms: f64 = fields.next()?.parse().ok()?;
+            let runs: f64 = fields.next()?.parse().ok()?;
+            let longest: f64 = fields.next()?.parse().ok()?;
+            let (plugin, what) = (fields.next()?, fields.next()?);
+            Some(format!(
+                "  {:>7.3}ms  {:>5.1} runs  {longest:>7.2}ms longest  {plugin}: {what}",
+                ms / keys,
+                runs / keys
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn report(name: &str, times: &mut [Duration]) {

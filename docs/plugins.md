@@ -439,7 +439,10 @@ paused this way. One that works for a whole minute without finishing is
 stopped and Greed says so. Code that can't be paused, like a status line
 piece or a plugin's top level, is timed instead: anything that holds the
 editor up for 50 ms or more is kept with its plugin and what it was doing,
-`:stalls` lists them, and over 250 ms Greed tells you right away.
+`:stalls` lists them, and over 250 ms Greed tells you right away. To see
+where time goes when nothing stalls, `:profile` (or `greed.profile.start()`
+and `stop()`) counts every run of plugin code and the editor's own work by
+plugin and what it did, the most time first.
 
 Language servers ask things too: `greed.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the

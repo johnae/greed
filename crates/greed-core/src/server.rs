@@ -19,7 +19,7 @@ use crate::image::{Image, ImageId};
 use crate::keymap::Key;
 use crate::luau::{Host, HostError};
 use crate::mouse::Mouse;
-use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
+use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status, StatusLine};
 use crate::syntax::{Highlight, Syntax};
 use crate::{BufferId, Editor, SwitchTo};
 use greed_text::Rope;
@@ -137,6 +137,8 @@ where
             watched_at: Instant::now(),
             drawn_at: Instant::now(),
             owed: false,
+            status: None,
+            reuse_status: false,
         };
         if let Some(session) = &session {
             host.set_session_name(&session.name);
@@ -196,6 +198,10 @@ struct Server<'a> {
     /// When the last frame was drawn, and whether work since wants another.
     drawn_at: Instant,
     owed: bool,
+    /// The status line a plugin built for the last frame, to draw again when
+    /// only highlighting changed since: no plugin code ran to change it.
+    status: Option<StatusLine>,
+    reuse_status: bool,
 }
 
 /// How often watched files are looked at.
@@ -235,6 +241,17 @@ impl Server<'_> {
         !self.owed
     }
 
+    /// Wakes the code waiting on timers that are due. The next frame can show
+    /// the last status line again when all that happened since was a parse
+    /// (`only_parsed`): timers wake plugin code, which may change it.
+    fn fire_timers(&mut self, only_parsed: bool) {
+        let now = Instant::now();
+        let due = self.host.next_timer().is_some_and(|due| due <= now);
+        self.reuse_status = only_parsed && !due;
+        let fired = self.host.fire_timers(now);
+        self.report(fired);
+    }
+
     /// Tells plugins about watched files that changed, at most every
     /// [`WATCH_EVERY`].
     fn look_at_watched_files(&mut self) {
@@ -266,7 +283,7 @@ impl Server<'_> {
                 .map_or_else(crossbeam_channel::never, crossbeam_channel::at);
             let look = self.watch_timer();
             // What the client sends is drawn at once; other work waits its turn.
-            let mut typed = false;
+            let (mut typed, mut only_parsed) = (false, false);
             select! {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
@@ -280,6 +297,7 @@ impl Server<'_> {
                 recv(trees) -> parsed => {
                     if let Ok(parsed) = parsed {
                         self.host.receive_parse(parsed);
+                        only_parsed = true;
                     }
                 }
                 recv(lsp_events) -> event => {
@@ -315,8 +333,7 @@ impl Server<'_> {
                 recv(look) -> _ => {}
                 recv(self.frame_timer()) -> _ => {}
             }
-            let fired = self.host.fire_timers(Instant::now());
-            self.report(fired);
+            self.fire_timers(only_parsed);
             self.look_at_watched_files();
             if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
                 self.message = Some(latest);
@@ -360,7 +377,7 @@ impl Server<'_> {
                 // A message lasts until the next key, unless that key
                 // brings another.
                 self.message = None;
-                let pressed = self.host.press(key);
+                let pressed = self.host.timed("a key", || self.host.press(key));
                 self.report(pressed);
             }
             Input::Resize(new) => self.size = Some(new),
@@ -463,11 +480,21 @@ impl Server<'_> {
             return true;
         };
         let host = self.host;
-        let status = match host.status_line(self.message.as_deref(), size.width) {
-            Ok(Some(line)) => Status::Line(line),
-            Ok(None) => Status::Default {
-                message: self.message.as_deref(),
-            },
+        let built = match (&self.status, self.reuse_status) {
+            (Some(line), true) => Ok(Some(line.clone())),
+            _ => host.status_line(self.message.as_deref(), size.width),
+        };
+        let status = match built {
+            Ok(Some(line)) => {
+                self.status = Some(line.clone());
+                Status::Line(line)
+            }
+            Ok(None) => {
+                self.status = None;
+                Status::Default {
+                    message: self.message.as_deref(),
+                }
+            }
             Err(err) => {
                 self.message = Some(format!("status line: {}", first_line(&err.to_string())));
                 Status::Default {
@@ -485,12 +512,12 @@ impl Server<'_> {
                 self.renderer.frame(ed, size, &status, &shown)
             })
         };
-        let mut frame = render();
+        let mut frame = host.timed("drawing", render);
         // Plugins may change views in answer (one scrolling another along),
         // which should show now rather than after the next key.
         let mut reported = host.report_views();
         if let Ok(true) = reported {
-            frame = render();
+            frame = host.timed("drawing", render);
             reported = host.report_views();
         }
         if let Err(err) = reported {
@@ -516,7 +543,7 @@ impl Server<'_> {
                 .send(Output::Image(ImageData::from(&**image)))
                 .is_ok()
         });
-        let Some(output) = client.output_for(frame) else {
+        let Some(output) = host.timed("what changed on screen", || client.output_for(frame)) else {
             return true;
         };
         if sent && client.output.send(output).is_ok() {
