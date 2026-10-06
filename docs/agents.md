@@ -143,7 +143,9 @@ each change:
 | `space o d` | Show the file with every change in, beside it; again to hide |
 
 Changes follow the edits you make while they wait. The agent waits too, and
-then hears which changes went in. What you accept from one proposal is an
+then hears which changes went in, with the errors and warnings the language
+server reports in those files once it has seen them, so it can fix what it
+broke without running the compiler. What you accept from one proposal is an
 operation (see [Using Greed](using.md#operations)): `space u u` undoes it in
 every file at once, and `space u o` reviews it.
 
@@ -237,7 +239,9 @@ It has every tool the list above gives agents (the repo map, working set,
 grep, symbols, diagnostics, the plan, proposals, ...) plus `edit_file`,
 `write_file` and `run` for shell commands. Reading never asks; editing and
 running ask the way other agents' questions do (`y` once, `a` for the rest
-of the session, `n` no), and your policies answer them too. Its system
+of the session, `n` no), and your policies answer them too. Its edits go
+through the file's buffer, so `u` takes them back, and it hears what the
+language server reports about the file right after. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
 in the project itself, without a workspace of its own, and its sessions
 aren't kept to take up after a restart.

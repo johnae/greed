@@ -9,6 +9,7 @@
 
 local registry = require("@self/registry")
 local proposals = require("@self/proposals")
+local problems = require("@self/problems")
 require("@self/tools")
 require("@self/ide")
 require("@self/claude")
@@ -56,6 +57,8 @@ return {
 	propose_files = proposals.propose_files,
 	propose_changes = proposals.propose_changes,
 	propose_ranges = proposals.propose_ranges,
+	--- What the language servers report in buffers just changed (problems.luau).
+	problems_after = problems.after_edits,
 	pending = proposals.pending,
 	try = extend.try,
 	install = extend.install,

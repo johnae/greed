@@ -71,21 +71,31 @@ local function read(path: string): string?
 	return (greed.fs.read(path))
 end
 
--- Writes `text` to `path` through its buffer when it's open, so undo takes
--- it back, and saves it.
-local function write(path: string, text: string)
-	local buffer = open_buffer(path)
-	if buffer then
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), text)
-		end)
-		buffer:save()
-		return
+-- Puts `text` in place of `from`..`to` (0-based bytes; without them, the
+-- whole text) of the file at `path`, through its buffer, so undo takes it
+-- back and its language server sees it, and saves it. A new file is
+-- written to disk. Returns the buffer, if there is one.
+local function write(path: string, text: string, from: number?, to: number?): greed.Buffer?
+	if greed.fs.stat(path) == nil then
+		local ok, err = greed.fs.write(path, text)
+		if not ok then
+			error(err, 0)
+		end
+		return nil
 	end
-	local ok, err = greed.fs.write(path, text)
-	if not ok then
-		error(err, 0)
-	end
+	local buffer = open_buffer(path) or greed.load(path)
+	buffer:edit(function(e)
+		e:replace(from or 0, to or buffer:len(), text)
+	end)
+	buffer:save()
+	return buffer
+end
+
+-- What a tool says after changing `buffer`, with what its language server
+-- reports about it then.
+local function changed(said: string, buffer: greed.Buffer?): string
+	local found = if buffer then agent.problems_after({ buffer }) else nil
+	return if found then `{said}\n{found}` else said
 end
 
 -- A tool of the agent's own: what the model is told, the kind of call it
@@ -131,8 +141,7 @@ local OWN: { Own } = {
 			if string.find(text, args.old_text, to + 1, true) then
 				error(`old_text is in {args.path} more than once; give more of it`, 0)
 			end
-			write(path, string.sub(text, 1, from - 1) .. args.new_text .. string.sub(text, to + 1))
-			return `edited {args.path}`
+			return changed(`edited {args.path}`, write(path, args.new_text, from - 1, to))
 		end,
 	},
 	{
@@ -149,8 +158,7 @@ local OWN: { Own } = {
 			return `Write {args.path}`
 		end,
 		run = function(s, args)
-			write(absolute(s, args.path), args.text)
-			return `wrote {args.path}`
+			return changed(`wrote {args.path}`, write(absolute(s, args.path), args.text))
 		end,
 	},
 	{

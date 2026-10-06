@@ -18,6 +18,7 @@ local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local operations = require("@operations")
+local problems = require("./problems")
 
 type Span = { from: number, to: number }
 
@@ -548,8 +549,20 @@ end
 -- What the user decided on each of `decided`, in words.
 local function summaries(decided: { Proposal }): string
 	local answers = {}
+	local changed: { greed.Buffer } = {}
 	for _, p in decided do
 		table.insert(answers, summary(p))
+		for _, hunk in p.hunks do
+			if hunk.status == "accepted" then
+				table.insert(changed, p.buffer)
+				break
+			end
+		end
+	end
+	-- What the language server makes of what went in.
+	local found = problems.after_edits(changed)
+	if found then
+		table.insert(answers, found)
 	end
 	return table.concat(answers, "\n")
 end

@@ -672,10 +672,25 @@ fn an_agent_renames_through_the_server_as_a_proposal() {
         "let x = bad;",
         "nothing changes before it's accepted"
     );
-    h.press_keys("space o A").unwrap();
+    accept_and_wait(&h);
     assert_eq!(main_text(&h), "let x = good;");
     let out = probe_out(&h).unwrap();
     assert!(out.starts_with("accepted 1 of 1 changes"), "{out}");
+    assert!(
+        out.ends_with("the language server reports no errors or warnings in main.rs"),
+        "it heard what the server made of it: {out}"
+    );
+}
+
+#[test]
+fn an_agent_hears_the_errors_its_accepted_change_made() {
+    let h = with_agent();
+    h.eval(r#"require("@probe").call("propose", { path = "main.rs", edits = { { old_text = "let x", new_text = "let bad" } } })"#)
+        .unwrap();
+    pump(&h, |h| pending(h) != "0" || probe_out(h).is_some());
+    accept_and_wait(&h);
+    let out = probe_out(&h).unwrap();
+    assert!(out.contains("\nmain.rs:1: error: bad word"), "{out}");
 }
 
 #[test]
@@ -703,7 +718,7 @@ fn an_agent_lists_code_actions_and_proposes_one_by_title() {
         .unwrap();
     pump(&h, |h| pending(h) != "0" || probe_out(h).is_some());
     assert_eq!(probe_out(&h), None, "it waits for the user");
-    h.press_keys("space o A").unwrap();
+    accept_and_wait(&h);
     assert_eq!(main_text(&h), "// resolved\nlet x = bad;");
     assert!(probe_out(&h).unwrap().starts_with("accepted 1 of 1"));
 }
@@ -722,4 +737,12 @@ fn an_agent_code_action_that_runs_a_command_is_refused() {
         "{out}"
     );
     assert_eq!(main_text(&h), "let x = bad;");
+}
+
+/// Accepts every proposed change, sends the edit to the server, and waits
+/// for the tool, which waits for what the server makes of it.
+fn accept_and_wait(h: &Host) {
+    h.press_keys("space o A").unwrap();
+    h.sync_lsp();
+    pump(h, |h| probe_out(h).is_some());
 }
