@@ -82,6 +82,9 @@ local M = {}
 -- Terminals by the id of their buffer.
 local terms: { [number]: Term } = {}
 
+-- The terminal last typed into, where text sent from files goes.
+local last_used: Term? = nil
+
 local function term_of(buffer: greed.Buffer): Term?
 	local ok, id = pcall(buffer.id, buffer)
 	return if ok then terms[id] else nil
@@ -354,6 +357,7 @@ end
 function M.enter(view: greed.View)
 	local term = term_of(view:buffer())
 	if term and term.terminal:exit_code() == nil then
+		last_used = term
 		greed.mode.set(MODE)
 		M.update(term)
 	end
@@ -374,6 +378,9 @@ end
 --- before.
 function M.close(term: Term)
 	terms[term.buffer:id()] = nil
+	if last_used == term then
+		last_used = nil
+	end
 	term.terminal:close()
 	for _, view in term.buffer:views() do
 		if not (term.owns and view:close()) then
@@ -1072,6 +1079,48 @@ greed.command({
 	end,
 })
 
+--- Sends `text` to the terminal last typed into, as if pasted, then enter,
+--- so a shell or a REPL runs it. False when there's no terminal to send it
+--- to.
+function M.send(text: string): boolean
+	local term = last_used
+	if term == nil or term.terminal:exit_code() ~= nil then
+		return false
+	end
+	term.terminal:paste(text)
+	term.terminal:key("enter")
+	return true
+end
+
+greed.command({
+	name = "terminal-send",
+	doc = "Send the selection, or the cursor's line, to the terminal you used last, and run it",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		if term_of(buffer) then
+			greed.echo("this is a terminal; send from a file")
+			return
+		end
+		local parts = {}
+		for _, range in ctx.view:selection().ranges do
+			local from = math.min(range.anchor, range.head)
+			local to = math.max(range.anchor, range.head)
+			-- A cursor sends its line.
+			if to - from <= 1 then
+				local line = buffer:line_of(range.head)
+				from = buffer:line_start(line)
+				to = buffer:line_end(line)
+			end
+			table.insert(parts, (string.gsub(buffer:slice(from, to), "\r?\n$", "")))
+		end
+		if not M.send(table.concat(parts, "\n")) then
+			greed.echo("no terminal to send to: space t opens one")
+			return
+		end
+		greed.echo(`sent to {(last_used :: Term).command}`)
+	end,
+})
+
 greed.command({
 	name = "pick-terminal",
 	doc = "Switch to a terminal, or open a new one",
@@ -1097,7 +1146,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space t"] = "pick-terminal" })
+greed.keymap.bind("normal", { ["space t"] = "pick-terminal", ["space T"] = "terminal-send" })
 
 -- The mouse in a terminal. A program that asked for it gets it. Otherwise
 -- the wheel scrolls back through the output, as tmux does: up stops typing

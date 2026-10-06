@@ -884,6 +884,7 @@ goes to the program, including ones the editor would otherwise take, like
 | Keys | |
 |---|---|
 | `space t` | Switch to a terminal, or open a new one |
+| `space T` (in a file) | Send the selection, or the cursor's line, to the terminal you used last and run it: for a REPL or a shell beside your code |
 | `ctrl-\`, `esc esc` | Stop typing into the program, to move around its output; one `esc` still goes to the program |
 | `ctrl-space` | The same, then `space`: `ctrl-space f` finds a file from inside a terminal |
 | `alt-p` and the other `alt` pane keys | Work as in any pane: `alt-p x` closes the terminal's pane |

@@ -388,3 +388,33 @@ test("files and lines the output names: go between them, pick one to open", func
 	assert(greed.view():buffer():path() == dir .. "/src/main.rs")
 	t:expect("fn main() {\n    let x: u8 = |300;\n}\n")
 end)
+
+test("space T sends the line, or the selection, to the terminal used last and runs it", function(t)
+	local dir = t:tempdir({ ["a.sh"] = "echo first\necho second\n" })
+	t:run("terminal", { "cat" })
+	local terminal = greed.view():buffer()
+	t:keys("ctrl-\\")
+	greed.open(dir .. "/a.sh")
+	t:keys("space T")
+	t:wait_for(function()
+		return string.find(terminal:text(), "echo first\necho first", 1, true) ~= nil
+	end)
+	t:keys("x x space T")
+	t:wait_for(function()
+		return string.find(
+			terminal:text(),
+			"echo first\necho second\necho first\necho second",
+			1,
+			true
+		) ~= nil
+	end)
+	local messages = t:messages()
+	assert(messages[#messages] == "sent to cat", messages[#messages])
+end)
+
+test("space T without a terminal says how to get one", function(t)
+	t:buffer("|hello")
+	t:keys("space T")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "no terminal to send to", 1, true), messages[#messages])
+end)
