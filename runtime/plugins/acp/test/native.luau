@@ -223,3 +223,10 @@ test("notes-connect starts Greed's agent on the inbox with the notes tools on", 
 	end
 	assert(names["notes_search"] and names["notes_add_thought"], "the notes tools are on")
 end)
+
+test("the agent knows what day it is, for dates like next Friday", function(t)
+	local asked = script({ { text = "ok", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	local today = os.date("%A %Y-%m-%d") :: string
+	assert(string.find(asked[1].system, `Today is {today}.`, 1, true), asked[1].system)
+end)
