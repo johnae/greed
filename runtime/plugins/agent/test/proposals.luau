@@ -78,9 +78,9 @@ test("new whole lines show as lines under the ones they replace", function(t)
 	greed.open(path)
 	greed.view():buffer():set_line_numbers(false)
 	propose(t, path, { { old_text = "two\n", new_text = "2\nzwei\n" } })
-	local rows = t:draw(20, 8)
+	local rows = t:draw(30, 8)
 	assert(rows[1] == "one", rows[1])
-	assert(rows[2] == "two accept reject", "the old line stays, marked: " .. rows[2])
+	assert(rows[2] == "two accept reject note", "the old line stays, marked: " .. rows[2])
 	assert(rows[3] == "2" and rows[4] == "zwei", `then the new ones: {rows[3]} / {rows[4]}`)
 	assert(rows[5] == "three", rows[5])
 
@@ -127,7 +127,7 @@ test("in a changed line, the words that changed stand out on both sides", functi
 	assert(new[1].text == "let total = " and new[3].text == " + 1", new[1].text)
 end)
 
-test("each change has accept and reject buttons to click", function(t)
+test("each change has accept, reject and note buttons to click", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
 	local path = dir .. "/a.txt"
 	greed.open(path)
@@ -137,13 +137,13 @@ test("each change has accept and reject buttons to click", function(t)
 		{ old_text = "three\n", new_text = "3\n" },
 	})
 	local rows = t:draw(30, 8)
-	assert(rows[1] == "one accept reject", rows[1])
+	assert(rows[1] == "one accept reject note", rows[1])
 	-- "accept" after "one ".
 	t:mouse("press", 5, 0)
 	local buffer = greed.view():buffer()
 	assert(buffer:text() == "1\ntwo\nthree\n", buffer:text())
 	rows = t:draw(30, 8)
-	local line = table.find(rows, "three accept reject")
+	local line = table.find(rows, "three accept reject note")
 	assert(line, table.concat(rows, " / "))
 	-- "reject" after "three accept ".
 	t:mouse("press", 14, line - 1)
@@ -189,4 +189,35 @@ test("one file's bad edit stops the whole proposal before anything shows", funct
 	}, nil)
 	assert(not ok and string.find(tostring(err), "isn't in", 1, true), tostring(err))
 	assert(agent.pending() == 0)
+end)
+
+test("rejecting with a note tells the agent what to do instead", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	local answer = propose(t, path, {
+		{ old_text = "one", new_text = "1" },
+		{ old_text = "two", new_text = "2" },
+	})
+	t:keys("] o space o n")
+	t:keys("w o r d s space p l e a s e enter")
+	local buffer = greed.view():buffer()
+	assert(buffer:text() == "one two\n", "rejected")
+	assert(answer() == nil, "the other change still waits")
+	t:keys("space o A")
+	assert(buffer:text() == "1 two\n", buffer:text())
+	assert(
+		answer()
+			== `accepted 1 of 2 changes to {path}; the user rejected change 2\nabout change 2, the user said: words please`,
+		answer()
+	)
+end)
+
+test("a note with nothing written leaves the change waiting", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	local answer = propose(t, path, { { old_text = "one", new_text = "1" } })
+	t:keys("] o space o n esc")
+	assert(agent.pending() == 1 and answer() == nil)
 end)

@@ -6,6 +6,7 @@
 --   ] o  [ o   the next or previous proposed change
 --   space o a  accept the changes your selections touch
 --   space o r  reject them
+--   space o n  reject them, telling the agent what to do instead
 --   space o A  accept every change in the file
 --   space o R  reject every change in the file
 --   space o o  pick from every pending change
@@ -28,6 +29,8 @@ type Hunk = {
 	id: number,
 	-- "pending", "accepted", "rejected", or "gone" if its text was deleted.
 	status: string,
+	-- What the user said about it, for the agent.
+	note: string?,
 }
 
 type Proposal = {
@@ -184,7 +187,11 @@ local function buttons(at: Span): { greed.Mark }
 			action = action,
 		}
 	end
-	return { button("accept", "proposal-accept"), button("reject", "proposal-reject") }
+	return {
+		button("accept", "proposal-accept"),
+		button("reject", "proposal-reject"),
+		button("note", "proposal-note"),
+	}
 end
 
 local function draw(p: Proposal, hunk: Hunk, at: Span)
@@ -227,12 +234,23 @@ local function summary(p: Proposal): string
 	if #gone > 0 then
 		text ..= `; the user deleted the text of change {table.concat(gone, ", ")}`
 	end
+	for i, hunk in p.hunks do
+		if hunk.note then
+			text ..= `\nabout change {i}, the user said: {hunk.note}`
+		end
+	end
 	return text
 end
 
 -- Accepts or rejects the pending hunks of `p` for which `chosen(position)`
--- is true, and tells the agent once none are left.
-local function decide(p: Proposal, chosen: (at: greed.Mark) -> boolean, accept: boolean)
+-- is true, a rejection with the user's `note` if they gave one, and tells
+-- the agent once none are left.
+local function decide(
+	p: Proposal,
+	chosen: (at: greed.Mark) -> boolean,
+	accept: boolean,
+	note: string?
+)
 	local edits, pending = {}, {}
 	for _, hunk in p.pending do
 		local at = position(p, hunk)
@@ -241,6 +259,7 @@ local function decide(p: Proposal, chosen: (at: greed.Mark) -> boolean, accept: 
 			clear(p, hunk)
 		elseif chosen(at) then
 			hunk.status = if accept then "accepted" else "rejected"
+			hunk.note = if accept then nil else note
 			clear(p, hunk)
 			if accept then
 				table.insert(edits, { at = at, text = hunk.new })
@@ -295,13 +314,18 @@ local function touches_selection(view: greed.View): (at: greed.Mark) -> boolean
 	end
 end
 
-local function decide_here(ctx: greed.Context, chosen: (at: greed.Mark) -> boolean, accept: boolean)
+local function decide_here(
+	ctx: greed.Context,
+	chosen: (at: greed.Mark) -> boolean,
+	accept: boolean,
+	note: string?
+)
 	local found = in_buffer(ctx.buffer)
 	if #found == 0 then
 		greed.echo("no proposed changes in this file")
 	end
 	for _, p in found do
-		decide(p, chosen, accept)
+		decide(p, chosen, accept, note)
 	end
 end
 
@@ -322,6 +346,34 @@ greed.command({
 	doc = "Reject the proposed changes your selections touch",
 	run = function(ctx)
 		decide_here(ctx, touches_selection(ctx.view), false)
+	end,
+})
+
+greed.command({
+	name = "proposal-note",
+	doc = "Reject the proposed changes your selections touch, telling the agent what to do instead",
+	run = function(ctx)
+		local chosen = touches_selection(ctx.view)
+		local function any_chosen(): boolean
+			for _, p in in_buffer(ctx.buffer) do
+				for _, hunk in p.pending do
+					local at = position(p, hunk)
+					if at and chosen(at) then
+						return true
+					end
+				end
+			end
+			return false
+		end
+		if not any_chosen() then
+			greed.echo("no proposed change here")
+			return
+		end
+		local note = core.prompt.ask("Tell the agent")
+		if note == nil or note == "" then
+			return
+		end
+		decide_here(ctx, chosen, false, note)
 	end,
 })
 
@@ -421,6 +473,7 @@ greed.keymap.bind("normal", {
 	["[ o"] = "proposal-prev",
 	["space o a"] = "proposal-accept",
 	["space o r"] = "proposal-reject",
+	["space o n"] = "proposal-note",
 	["space o A"] = "proposal-accept-all",
 	["space o R"] = "proposal-reject-all",
 	["space o o"] = "proposals",

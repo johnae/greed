@@ -131,13 +131,14 @@ own, each edit replacing some exact text with new text. The old text is
 struck through in the buffer and the new text shows after it; when whole
 lines change, as in Claude Code's diffs, the new lines show under the old
 ones, with the words that changed picked out on both. Nothing changes
-until you decide, with the keys or by clicking `accept` or `reject` after
-each change:
+until you decide, with the keys or by clicking `accept`, `reject` or `note`
+after each change:
 
 | Keys | |
 |---|---|
 | `] o` `[ o` | Next and previous proposed change |
 | `space o a` `space o r` | Accept or reject the changes your selections touch |
+| `space o n` | Reject them and tell the agent what to do instead: what you type goes back to it with the change, so it can propose again |
 | `space o A` `space o R` | Accept or reject every change in the file |
 | `space o o` | Pick from every pending change |
 | `space o d` | Show the file with every change in, beside it; again to hide |
