@@ -15,6 +15,7 @@
 local greed = require("@greed")
 local sse = require("@self/sse")
 local turn = require("@self/turn")
+local login = require("@self/login")
 
 export type ToolSpec = turn.ToolSpec
 export type Call = turn.Call
@@ -24,8 +25,10 @@ export type TurnRequest = turn.Request
 
 --- Where a model is served: `kind` is "anthropic" or "openai" (any server
 --- with OpenAI's chat completions API, like Ollama or vLLM), `secret` the
---- name of its key in greed.secrets, if it needs one.
-export type Provider = { kind: string, url: string, secret: string? }
+--- name of its key in greed.secrets, if it needs one. A provider you can
+--- sign in to names its `login` (login.luau); once signed in, that's used
+--- instead of the key.
+export type Provider = { kind: string, url: string, secret: string?, login: string? }
 
 --- Which provider and model play a role.
 export type Role = { provider: string, model: string }
@@ -56,6 +59,12 @@ M.providers = {
 	anthropic = { kind = "anthropic", url = "https://api.anthropic.com", secret = "anthropic" },
 	openai = { kind = "openai", url = "https://api.openai.com/v1", secret = "openai" },
 	ollama = { kind = "openai", url = "http://localhost:11434/v1" },
+	berget = {
+		kind = "openai",
+		url = "https://api.berget.ai/v1",
+		secret = "berget",
+		login = "berget",
+	},
 } :: { [string]: Provider }
 
 M.roles = {
@@ -171,7 +180,13 @@ local function connect(role: string): (Role?, Provider?, string?, string?)
 		return nil, nil, nil, why
 	end
 	local key: string? = nil
-	if provider.secret then
+	if provider.login and login.signed_in(provider.login) then
+		local token, err = login.token(provider.login)
+		if token == nil then
+			return nil, nil, nil, err
+		end
+		key = token
+	elseif provider.secret then
 		key = greed.secrets.get(provider.secret)
 		if key == nil then
 			return nil,
@@ -311,6 +326,8 @@ function M.turn(
 end
 
 M.tools = turn
+--- Signing in to providers instead of using keys (login.luau).
+M.login = login
 
 --- `answer` without the code fence a model may wrap it in, when it was
 --- asked for plain text.
@@ -363,7 +380,9 @@ function M.describe(): { string }
 		local chosen, provider, why = M.resolve(name)
 		if chosen and provider then
 			local key = "no key needed"
-			if provider.secret then
+			if provider.login and login.signed_in(provider.login) then
+				key = "signed in"
+			elseif provider.secret then
 				key = if greed.secrets.get(provider.secret)
 					then "key found"
 					else `no key: :secret-set {provider.secret}`
@@ -394,6 +413,72 @@ greed.command({
 	name = "models-close",
 	doc = "Close the list of models",
 	run = close,
+})
+
+-- The login named on the command line, or the only one there is.
+local function login_named(ctx: greed.Context): string?
+	local name = ctx.args[1]
+	if name == nil then
+		local names = {}
+		for known in login.logins do
+			table.insert(names, known)
+		end
+		if #names ~= 1 then
+			table.sort(names)
+			greed.echo(`sign in to which: {table.concat(names, ", ")}`)
+			return nil
+		end
+		name = names[1]
+	end
+	if login.logins[name] == nil then
+		greed.echo(`there's no login called {name}`)
+		return nil
+	end
+	return name
+end
+
+greed.command({
+	name = "login",
+	doc = "Sign in to a provider whose plan comes with an account, like Berget Code, instead of using an API key",
+	args = { { name = "provider", doc = "e.g. berget" } },
+	run = function(ctx)
+		local name = login_named(ctx)
+		if name == nil then
+			return
+		end
+		local title = login.logins[name].title
+		local float: greed.View? = nil
+		local ok, err = login.sign_in(name, function(started)
+			local lines = {
+				`Sign in to {title}: open`,
+				"",
+				`  {started.complete or started.url}`,
+				"",
+				`and enter the code {started.code} if it asks. It works for {started.minutes} minutes;`,
+				"this closes once you've signed in.",
+			}
+			local buffer =
+				greed.create_buffer("login", table.concat(lines, "\n"), { readonly = true })
+			float = greed.float(buffer, { title = `Sign in to {title}`, width = "80%", height = 8 })
+		end)
+		if float then
+			pcall(float.close, float)
+		end
+		greed.echo(if ok then `signed in to {title}` else `can't sign in to {title}: {err}`)
+	end,
+})
+
+greed.command({
+	name = "logout",
+	doc = "Forget the sign-in kept for a provider",
+	args = { { name = "provider", doc = "e.g. berget" } },
+	run = function(ctx)
+		local name = login_named(ctx)
+		if name then
+			login.sign_out(name)
+			greed.echo(`signed out of {login.logins[name].title}`)
+		end
+	end,
 })
 
 greed.keymap.bind(

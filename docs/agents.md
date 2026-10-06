@@ -202,9 +202,8 @@ transcript picks another role.
 
 ```luau
 local models = require("@models")
-models.providers.berget = { kind = "openai", url = "https://api.berget.ai/v1", secret = "berget" }
 models.roles.agent = { provider = "berget", model = "the model you want" }
--- then :secret-set berget, or set GREED_SECRET_BERGET
+-- then :login berget for a Berget Code plan, or :secret-set berget for an API key
 ```
 
 It has every tool the list above gives agents (the repo map, working set,

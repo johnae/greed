@@ -436,6 +436,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
+| `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider whose plan comes with an account, like Berget Code, instead of using a key (see [Models](#models)) |
 
 Closing a terminal's buffer ends its program.
 
@@ -624,6 +625,16 @@ models.roles.review = { provider = "work", model = "reviewer-1" }
 
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`.
+
+Some plans come with an account instead of a key, like Berget Code's fixed
+monthly price. `:login berget` signs you in: it shows a link and a code,
+you approve it in a browser on any device, and the `berget` provider uses
+that sign-in from then on, renewing it as needed. `:models` says "signed
+in"; `:logout berget` forgets it, and the provider goes back to its key.
+
+```luau
+models.roles.agent = { provider = "berget", model = "the model you want" }
+```
 
 | Keys | |
 |---|---|
