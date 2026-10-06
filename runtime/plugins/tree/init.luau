@@ -31,15 +31,8 @@ type Tree = {
 -- Each project has its own tree, in its own panel.
 local trees: { [number]: Tree } = {}
 
-local function absolute(path: string?): string?
-	if path == nil or string.sub(path, 1, 1) == "/" then
-		return path
-	end
-	return `{greed.fs.cwd()}/{path}`
-end
-
 local function join(dir: string, name: string): string
-	return if dir == "." then name else dir .. "/" .. name
+	return if dir == "/" then "/" .. name else dir .. "/" .. name
 end
 
 local function collect(t: Tree, dir: string, depth: number)
@@ -98,7 +91,7 @@ local function render(t: Tree, keep: string?)
 	local pos, cursor = 0, 0
 	-- Outside the tree, the file shown is the one to mark.
 	if greed.view():id() ~= t.view:id() then
-		t.open = absolute(greed.view():buffer():path())
+		t.open = greed.view():buffer():path()
 	end
 	local nerd = greed.option.get("tree-icons") == "nerd"
 	for _, node in t.nodes do
@@ -121,7 +114,7 @@ local function render(t: Tree, keep: string?)
 				{ from = pos + #prefix, to = pos + #line, style = "ui.tree.directory" }
 			)
 		end
-		if t.open and absolute(node.path) == t.open then
+		if node.path == t.open then
 			table.insert(
 				marks,
 				{ from = pos, to = pos + #line, style = "ui.tree.open", line = true }
@@ -166,15 +159,11 @@ end
 --- Opens the tree on `root` (default: the project's root) and focuses it.
 function M.open(root: string?)
 	M.close()
-	local dir = root or core.project.root()
-	-- Paths under the starting directory stay relative, so files opened
-	-- from the tree and from the file picker are the same buffer.
-	if dir == greed.fs.cwd() then
-		dir = "."
-	end
-	local open = absolute(greed.view():buffer():path())
+	local dir = if root then core.project.resolve(root) else core.project.root()
+	local open = greed.view():buffer():path()
 	local buffer = greed.create_buffer("tree", "", { readonly = true })
-	local view = greed.panel(buffer, { title = if dir == "." then "Files" else dir, width = 32 })
+	local title = if root then core.project.tilde(dir) else "Files"
+	local view = greed.panel(buffer, { title = title, width = 32 })
 	local t: Tree =
 		{ view = view, buffer = buffer, root = dir, expanded = {}, nodes = {}, open = open }
 	trees[greed.project.current().id] = t

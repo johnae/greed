@@ -535,8 +535,7 @@ type Prepared = {
 -- The hunks of `edits` to the file at `path`, checked: each `old_text`
 -- has to appear exactly once, and no two may overlap.
 local function prepare(path: string, edits: { Edit }): Prepared
-	local root = core.project.root()
-	local full = if string.sub(path, 1, 1) == "/" then path else core.project.path(root, path)
+	local full = core.project.resolve(path)
 	local buffer = greed.load(full)
 	local text = buffer:text()
 	local hunks: { Hunk }, at: { Span } = {}, {}

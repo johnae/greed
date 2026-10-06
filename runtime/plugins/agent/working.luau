@@ -50,8 +50,7 @@ end
 --- `path` relative to the project, as the working set and the repo map key
 --- files.
 function M.relative(path: string): string
-	local prefix = core.project.root() .. "/"
-	return if string.sub(path, 1, #prefix) == prefix then string.sub(path, #prefix + 1) else path
+	return core.project.relative(path, core.project.root())
 end
 
 -- Notes `kind` of activity in `buffer` at `line`.

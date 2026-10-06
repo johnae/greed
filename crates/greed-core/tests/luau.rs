@@ -1535,7 +1535,12 @@ fn files_open_before_plugins_load_are_announced_once_they_have() {
     .unwrap();
     host.announce_open_files().unwrap();
     let messages = host.with_editor_mut(Editor::take_messages);
-    assert_eq!(messages, ["opened notes.md"], "only buffers with files");
+    let full = std::env::current_dir().unwrap().join("notes.md");
+    assert_eq!(
+        messages,
+        [format!("opened {}", full.display())],
+        "only buffers with files, by full path"
+    );
 }
 
 #[test]

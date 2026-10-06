@@ -743,11 +743,7 @@ end
 local function resolve(buffer: greed.Buffer, text: string): (string?, number?, number?)
 	local before, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
 	local name = before or text
-	local home = greed.fs.dirs().home
-	local path = if string.sub(name, 1, 1) == "/"
-		then name
-		elseif string.sub(name, 1, 2) == "~/" and home then home .. string.sub(name, 2)
-		else `{M.cwd(buffer) or greed.project.current().root}/{name}`
+	local path = core.project.resolve(name, M.cwd(buffer))
 	local info = greed.fs.stat(path)
 	if info == nil or info.kind ~= "file" then
 		return nil, nil, nil
@@ -892,12 +888,9 @@ greed.command({
 			greed.echo("the output names no file and line")
 			return
 		end
-		local root = greed.project.current().root .. "/"
 		local items = {}
 		for _, ref in list do
-			local shown = if string.sub(ref.path, 1, #root) == root
-				then string.sub(ref.path, #root + 1)
-				else ref.path
+			local shown = core.project.relative(ref.path)
 			table.insert(items, { label = `{shown}:{ref.line}  {ref.text}`, value = ref })
 		end
 		picker.pick("In the output", items, function(item)

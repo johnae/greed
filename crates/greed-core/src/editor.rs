@@ -2,7 +2,7 @@
 //! the keymap. Everything here is plain Rust; the Luau host drives it.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use greed_text::{
@@ -369,6 +369,7 @@ impl Editor {
         let id = BufferId(self.next_id());
         let mut buffer = Buffer::new(id, kind, text);
         if let Some(path) = path {
+            let path = file_path(&path).unwrap_or(path);
             buffer.set_detected(self.file_types.detect(&path));
             buffer = buffer.with_path(path);
         }
@@ -540,11 +541,9 @@ impl Editor {
     /// that isn't UTF-8 opens read-only, with what can't be read replaced,
     /// and can't be saved over.
     pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {
-        // Files are known by their absolute path, so one opened as
-        // "src/a.rs" and as "/home/me/src/a.rs" is the same buffer.
-        let path = &std::path::absolute(path)?;
-        if let Some(buffer) = self.buffers.values().find(|b| b.path() == Some(path)) {
-            return Ok(buffer.id());
+        let path = &file_path(path)?;
+        if let Some(buffer) = self.buffer_for(path) {
+            return Ok(buffer);
         }
         let (text, binary) = match std::fs::read(path) {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
@@ -561,6 +560,16 @@ impl Editor {
         buffer.set_lossy(binary);
         self.insert_buffer(buffer);
         Ok(id)
+    }
+
+    /// The open buffer for the file at `path`, however it's spelled (see
+    /// [`file_path`]), without opening it.
+    pub fn buffer_for(&self, path: &Path) -> Option<BufferId> {
+        let path = file_path(path).ok()?;
+        self.buffers
+            .values()
+            .find(|b| b.path() == Some(&path))
+            .map(Buffer::id)
     }
 
     /// Makes `extensions` and whole file `names` mean `language`, replacing
@@ -759,11 +768,12 @@ impl Editor {
         let detected = self.file_types.detect(path);
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
         let lossy = buffer.is_lossy();
-        if lossy && buffer.path() == Some(&std::path::absolute(path)?) {
+        let path = file_path(path)?;
+        if lossy && buffer.path() == Some(&path) {
             // Refused, as saving over it would be.
             return buffer.save();
         }
-        let old = buffer.set_path(Some(path.to_path_buf()));
+        let old = buffer.set_path(Some(path));
         buffer.set_lossy(false);
         let saved = buffer.save();
         if saved.is_err() {
@@ -1333,6 +1343,24 @@ impl Editor {
             }
         }
     }
+}
+
+/// `path` as buffers know their files: absolute (from the current
+/// directory when relative), with `.` and `..` worked out without following
+/// symbolic links, so "src/a.rs", "./src/../src/a.rs" and "/home/me/src/a.rs"
+/// are one buffer.
+pub fn file_path(path: &Path) -> std::io::Result<PathBuf> {
+    let mut clean = PathBuf::new();
+    for part in std::path::absolute(path)?.components() {
+        match part {
+            Component::ParentDir => {
+                clean.pop();
+            }
+            Component::CurDir => {}
+            other => clean.push(other),
+        }
+    }
+    Ok(clean)
 }
 
 /// Parses text written with [`Editor::marked_text`]'s markers: `|` at each

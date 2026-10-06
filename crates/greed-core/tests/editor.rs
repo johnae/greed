@@ -255,6 +255,49 @@ fn files_open_once_and_show_in_a_view() {
 }
 
 #[test]
+fn every_spelling_of_a_file_is_one_buffer() {
+    let dir = std::env::temp_dir().join(format!("greed-spellings-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    let path = dir.join("src/a.txt");
+    std::fs::write(&path, "a").unwrap();
+
+    let mut ed = editor("");
+    let buffer = ed.open_file(&path).unwrap();
+    let roundabout = dir.join("src/../src/./a.txt");
+    assert_eq!(ed.open_file(&roundabout).unwrap(), buffer);
+    assert_eq!(ed.buffer_for(&roundabout), Some(buffer));
+    assert_eq!(ed.buffer_for(&dir.join("x/../src//a.txt")), Some(buffer));
+    assert_eq!(ed.buffer(buffer).path(), Some(path.as_path()), "kept clean");
+    assert_eq!(ed.buffer_for(&dir.join("src/b.txt")), None);
+    assert!(
+        !ed.buffers()
+            .any(|b| b.path() == Some(dir.join("src/b.txt").as_path())),
+        "finding doesn't open"
+    );
+
+    // Saving under a new name keeps that name clean too.
+    let scratch = ed.create_buffer("file", "s");
+    ed.save_as(scratch, &dir.join("src/../b.txt")).unwrap();
+    assert_eq!(ed.buffer(scratch).path(), Some(dir.join("b.txt").as_path()));
+    assert_eq!(ed.buffer_for(&dir.join("b.txt")), Some(scratch));
+
+    // A relative path is from the current directory.
+    let cwd = std::env::current_dir().unwrap();
+    assert_eq!(
+        greed_core::file_path(std::path::Path::new("./x/../y.txt")).unwrap(),
+        cwd.join("y.txt")
+    );
+    let mut started = Editor::new(ClientId(1));
+    started.open("file", "", Some("./x/../y.txt".into()));
+    let first = started.view(started.focus()).buffer;
+    assert_eq!(
+        started.buffer(first).path(),
+        Some(cwd.join("y.txt").as_path())
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn extents_resolve_against_the_screen() {
     use greed_core::Extent;
     assert_eq!(Extent::Cells(10).resolve(80), 10);

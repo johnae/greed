@@ -24,19 +24,14 @@ function M.repo_of(path: string): Repo?
 	return nil
 end
 
---- `path` from the root, as given if it already is.
-function M.absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
-end
-
 --- The repository `buffer`'s file is in, and the file's path from its root.
 function M.locate(buffer: greed.Buffer): (Repo?, string?)
 	local path = buffer:path()
-	local repo = path and M.repo_of(M.absolute(path))
+	local repo = path and M.repo_of(path)
 	if path == nil or repo == nil then
 		return nil, nil
 	end
-	return repo, string.sub(M.absolute(path), #repo.root + 2)
+	return repo, string.sub(path, #repo.root + 2)
 end
 
 --- Runs a jj or git command in `repo`'s root and returns what it printed, or

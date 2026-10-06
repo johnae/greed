@@ -632,13 +632,20 @@ fn with_agent() -> Host {
         plugin("lsp"),
     ])
     .unwrap();
+    // The file is outside the project, so the agent names it in full.
+    let dir = std::env::temp_dir().join("greed-lsp-luau");
+    let dir = dir.display().to_string();
     h.load_str(
         "probe",
-        r#"
+        &format!(
+            r#"
         local greed = require("@greed")
         local agent = require("@agent")
-        local probe = {}
+        local probe = {{}}
         function probe.call(name, args)
+            if args.path then
+                args.path = "{dir}/" .. args.path
+            end
             for _, tool in agent.tools() do
                 if tool.name == name then
                     greed.spawn(function()
@@ -649,7 +656,8 @@ fn with_agent() -> Host {
             end
         end
         return probe
-        "#,
+        "#
+        ),
     )
     .unwrap();
     h.sync_lsp();

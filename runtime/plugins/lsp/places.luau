@@ -7,6 +7,7 @@ local greed = require("@greed")
 local picker = require("@picker")
 local multibuffer = require("@multibuffer")
 local common = require("./common")
+local core = require("@core")
 
 type Place = { path: string, position: greed.LspPosition, ending: greed.LspPosition }
 
@@ -56,7 +57,7 @@ local function pick(
 )
 	local texts: { [string]: string } = {}
 	local function text(path: string): string
-		texts[path] = texts[path] or common.file_text(path) or ""
+		texts[path] = texts[path] or core.file.text(path) or ""
 		return texts[path]
 	end
 	local function line_of(place: Place): string
@@ -97,7 +98,7 @@ local function pick(
 					table.insert(excerpts, {
 						path = place.path,
 						from = start.line,
-						label = common.shown_path(place.path),
+						label = core.project.relative(place.path),
 						note = how.note,
 						marks = {
 							{
@@ -172,7 +173,7 @@ greed.command({
 		table.sort(places, by_place)
 		pick("References", places, function(place, line)
 			local trimmed = string.match(line, "^%s*(.-)%s*$")
-			return `{common.shown_path(place.path)}:{place.position.line + 1}: {trimmed}`
+			return `{core.project.relative(place.path)}:{place.position.line + 1}: {trimmed}`
 		end, function()
 			return { style = "ui.search.match" }
 		end, 1)
@@ -226,7 +227,7 @@ greed.command({
 					local path = location and greed.lsp.path(location.uri)
 					if path and location.range then
 						table.insert(items, {
-							label = `{symbol.name}  {common.shown_path(path)}:{location.range.start.line + 1}`,
+							label = `{symbol.name}  {core.project.relative(path)}:{location.range.start.line + 1}`,
 							value = { path = path, position = location.range.start },
 						})
 					end
@@ -269,7 +270,7 @@ greed.command({
 			return common.describe({ severity = about[place].severity, message = first })
 		end
 		pick("Problems", places, function(place)
-			return `{common.shown_path(place.path)}:{place.position.line + 1}: {described(place)}`
+			return `{core.project.relative(place.path)}:{place.position.line + 1}: {described(place)}`
 		end, function(place)
 			return {
 				style = `diagnostic.{common.severity(about[place].severity)}`,

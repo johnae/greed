@@ -6,6 +6,7 @@
 local greed = require("@greed")
 local motions = require("./motions")
 local text = require("./text")
+local project = require("./project")
 
 local M = {}
 
@@ -164,16 +165,9 @@ greed.command({
 			greed.echo("no file name under the cursor")
 			return
 		end
-		local home = greed.fs.dirs().home
-		if home and string.sub(path, 1, 2) == "~/" then
-			path = home .. string.sub(path, 2)
-		end
-		if string.sub(path, 1, 1) ~= "/" then
-			-- Relative to the file it's named in, else to where Greed runs.
-			local own = ctx.buffer:path()
-			local dir = if own then string.match(own, "^(.*)/[^/]*$") else greed.fs.cwd()
-			path = `{dir}/{path}`
-		end
+		-- Relative to the file it's named in, else to the project's root.
+		local own = ctx.buffer:path()
+		path = project.resolve(path, if own then string.match(own, "^(.*)/[^/]*$") else nil)
 		if greed.fs.stat(path) == nil then
 			greed.echo(`no file {path}`)
 			return

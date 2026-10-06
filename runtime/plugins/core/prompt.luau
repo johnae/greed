@@ -117,8 +117,10 @@ function M.open(options: Options)
 	end
 	local text = options.text or ""
 	local buffer = greed.create_buffer("prompt", text)
-	local view =
-		greed.float(buffer, { title = options.title, width = "100%", height = 3, anchor = "bottom" })
+	local view = greed.float(
+		buffer,
+		{ title = options.title, width = "100%", height = 3, anchor = "bottom" }
+	)
 	open = { view = view, buffer = buffer, options = options, mode = greed.mode.get() }
 	greed.mode.set("insert")
 	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })

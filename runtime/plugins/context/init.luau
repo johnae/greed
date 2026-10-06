@@ -18,6 +18,7 @@
 --     require("@context").add({ kind = "computed", name = "todos" })
 
 local greed = require("@greed")
+local core = require("@core")
 local agent = require("@agent")
 local vcs = require("@vcs")
 
@@ -64,11 +65,6 @@ local function mark(buffer: greed.Buffer, item: Item, from: number, to: number)
 	buffer:decorate(ns(item), { { from = from, to = to, style = "context" } })
 end
 
-local function relative(path: string): string
-	local base = root() .. "/"
-	return if string.sub(path, 1, #base) == base then string.sub(path, #base + 1) else path
-end
-
 -- Where a selection is now: its mark, or where it was if the mark went. One
 -- restored from the last session gets its mark back here.
 local function span(item: Item): (greed.Buffer, number, number)
@@ -90,9 +86,9 @@ function M.read(item: Item): (string, string)
 	if item.kind == "selection" then
 		local buffer, from, to = span(item)
 		local first, last = buffer:line_of(from) + 1, buffer:line_of(math.max(from, to - 1)) + 1
-		return buffer:slice(from, to), `{relative(item.path :: string)}:{first}-{last}`
+		return buffer:slice(from, to), `{core.project.relative(item.path :: string)}:{first}-{last}`
 	elseif item.kind == "file" then
-		return greed.load(item.path :: string):text(), relative(item.path :: string)
+		return greed.load(item.path :: string):text(), core.project.relative(item.path :: string)
 	elseif item.kind == "problems" then
 		local buffer = greed.load(item.path :: string)
 		local lines = {}
@@ -100,7 +96,7 @@ function M.read(item: Item): (string, string)
 			table.insert(lines, `line {buffer:line_of(d.from) + 1}: {d.message}`)
 		end
 		local text = if #lines > 0 then table.concat(lines, "\n") else "(no problems)"
-		return text, `problems in {relative(item.path :: string)}`
+		return text, `problems in {core.project.relative(item.path :: string)}`
 	elseif item.kind == "diff" then
 		local diff = vcs.diff(root())
 		return diff or "(not in a repository)", "changes in progress"
@@ -273,10 +269,10 @@ greed.command({
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		if to - from > 1 then
 			M.add({ kind = "selection", path = path, from = from, to = to })
-			greed.echo(`pinned {to - from} characters of {relative(path)}`)
+			greed.echo(`pinned {to - from} characters of {core.project.relative(path)}`)
 		else
 			M.add({ kind = "file", path = path })
-			greed.echo(`pinned {relative(path)}`)
+			greed.echo(`pinned {core.project.relative(path)}`)
 		end
 	end,
 })
@@ -288,7 +284,7 @@ greed.command({
 		local path = ctx.buffer:path()
 		if path then
 			M.add({ kind = "problems", path = path })
-			greed.echo(`pinned the problems in {relative(path)}`)
+			greed.echo(`pinned the problems in {core.project.relative(path)}`)
 		end
 	end,
 })

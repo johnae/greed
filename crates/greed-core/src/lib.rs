@@ -33,7 +33,7 @@ pub use buffer::{Buffer, BufferId, Mark, MarkImage, Reveal, VirtualLine};
 pub use editor::{
     Anchor, CursorShape, Editor, Extent, Float, FloatOptions, KeyOutcome, LineNumbers, Notice,
     Panel, PanelOptions, Project, ProjectId, Scroll, Side, SwitchTo, Tab, TabId, View, ViewId,
-    parse_marked,
+    file_path, parse_marked,
 };
 pub use history::{GroupState, History};
 

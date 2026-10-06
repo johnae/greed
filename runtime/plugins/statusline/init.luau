@@ -187,12 +187,9 @@ M.add("left", "file", function(ctx)
 	if ctx.message then
 		return pill(ctx.message, "ui.statusline.message")
 	end
-	local name = ctx.buffer:path() or "[scratch]"
+	local path = ctx.buffer:path()
 	-- Files in the project show from its root.
-	local root = greed.project.current().root .. "/"
-	if string.sub(name, 1, #root) == root then
-		name = string.sub(name, #root + 1)
-	end
+	local name = if path then core.project.relative(path) else "[scratch]"
 	return if ctx.buffer:modified() then name .. " [+]" else name
 end)
 

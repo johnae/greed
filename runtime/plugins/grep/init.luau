@@ -31,17 +31,10 @@ local function grep(pattern: string, root: string): Found
 	return found
 end
 
--- The file at `path` relative to `root`, as an absolute path, the way open
--- buffers know their files.
-local function absolute(root: string, path: string): string
-	local full = core.project.path(root, path)
-	return if string.sub(full, 1, 1) == "/" then full else `{greed.fs.cwd()}/{full}`
-end
-
 -- Opens `path` (relative to `root`) in the main view with the cursor at
 -- `column` on 0-based `line`.
 local function go_to(root: string, path: string, line: number, column: number)
-	greed.open(core.project.path(root, path))
+	greed.open(core.project.resolve(path, root))
 	local view = greed.view()
 	local buffer = view:buffer()
 	local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
@@ -65,7 +58,7 @@ local function show(pattern: string, root: string, found: Found)
 			)
 		end
 		table.insert(excerpts, {
-			path = absolute(root, f.path),
+			path = core.project.resolve(f.path, root),
 			from = f.line,
 			label = f.path,
 			marks = marks,
@@ -110,7 +103,7 @@ greed.command({
 			source = lines,
 			preview = function(item)
 				local f = item.value :: greed.GrepLine
-				local path = core.project.path(root, f.path)
+				local path = core.project.resolve(f.path, root)
 				local text = greed.fs.read(path)
 				if text == nil then
 					return nil

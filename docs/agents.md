@@ -17,7 +17,9 @@ greed ctl eval code='return require("@greed").mode.get()'
 ```
 
 Arguments are `key=value` pairs (values that parse as JSON are JSON) or one
-JSON object. `greed ctl` talks to the running session: the one named by
+JSON object. A relative path is from the root of the project Greed shows,
+wherever Greed or the agent was started, and `~` is your home folder.
+`greed ctl` talks to the running session: the one named by
 `$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
 

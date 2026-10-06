@@ -15,15 +15,6 @@ greed.option.define({
 -- saves aren't taken for changes.
 local known: { [number]: string } = {}
 
-local function file_buffer(path: string): greed.Buffer?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer
-		end
-	end
-	return nil
-end
-
 local function name(path: string): string
 	return string.match(path, "[^/]+$") or path
 end
@@ -54,7 +45,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 end)
 
 greed.on("file.changed", function(event: greed.FileChanged)
-	local buffer = file_buffer(event.path)
+	local buffer = greed.buffer_for(event.path)
 	local disk = greed.fs.read(event.path)
 	if buffer == nil or disk == nil or disk == known[buffer:id()] then
 		return

@@ -3,6 +3,7 @@
 -- of the line; and the status line says how many agents work and wait.
 -- An agent in a workspace of its own shows on your copy of the file.
 local greed = require("@greed")
+local core = require("@core")
 local session = require("./session")
 
 type Session = session.Session
@@ -12,10 +13,6 @@ local M = {}
 -- A style for each agent, by its number, so several can be told apart.
 local STYLES = { "diff.plus", "keyword", "constant", "string" }
 
-local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
-end
-
 -- Where `s` works, in your project: a file in its workspace is the same
 -- file in yours.
 local function place(s: Session): (string?, number?)
@@ -23,10 +20,10 @@ local function place(s: Session): (string?, number?)
 	if where == nil then
 		return nil, nil
 	end
-	local path = where.path
+	local path = core.project.resolve(where.path, s.cwd)
 	local ws = s.workspace
-	if ws and string.sub(path, 1, #ws.path + 1) == ws.path .. "/" then
-		path = s.root .. string.sub(path, #ws.path + 1)
+	if ws and core.project.inside(path, ws.path) then
+		path = core.project.resolve(core.project.relative(path, ws.path), s.root)
 	end
 	return path, where.line
 end
@@ -38,40 +35,27 @@ end
 --- Marks where each of `sessions` works in the open files, and takes the
 --- marks away from agents that stopped.
 function M.draw(sessions: { Session })
-	local open: { [string]: greed.Buffer } = {}
-	for _, buffer in greed.buffers() do
-		local path = buffer:path()
-		if path then
-			open[absolute(path)] = buffer
-		end
-	end
-	local by_path: { [string]: { greed.Mark } } = {}
+	local by_buffer: { [number]: { greed.Mark } } = {}
 	for _, s in sessions do
 		local path, line = place(s)
-		if path and active(s) then
-			local buffer = open[path]
-			if buffer then
-				local at =
-					buffer:line_start(math.clamp((line or 1) - 1, 0, buffer:line_count() - 1))
-				local doing = if s.status == "waiting"
-					then "waiting for you"
-					else s.tool or "working"
-				local marks = by_path[path] or {}
-				table.insert(marks, {
-					from = at,
-					to = at,
-					style = STYLES[(s.id - 1) % #STYLES + 1],
-					sign = "◆",
-					text = `  ◆ {s.name}: {doing}`,
-					eol = true,
-				})
-				by_path[path] = marks
-			end
+		local buffer = if path and active(s) then greed.buffer_for(path) else nil
+		if buffer then
+			local at = buffer:line_start(math.clamp((line or 1) - 1, 0, buffer:line_count() - 1))
+			local doing = if s.status == "waiting" then "waiting for you" else s.tool or "working"
+			local marks = by_buffer[buffer:id()] or {}
+			table.insert(marks, {
+				from = at,
+				to = at,
+				style = STYLES[(s.id - 1) % #STYLES + 1],
+				sign = "◆",
+				text = `  ◆ {s.name}: {doing}`,
+				eol = true,
+			})
+			by_buffer[buffer:id()] = marks
 		end
 	end
 	for _, buffer in greed.buffers() do
-		local path = buffer:path()
-		local marks = if path then by_path[absolute(path)] else nil
+		local marks = by_buffer[buffer:id()]
 		if marks or #buffer:decorations("agents") > 0 then
 			buffer:decorate("agents", marks or {})
 		end

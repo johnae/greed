@@ -25,7 +25,7 @@ local staging = require("@self/staging")
 require("@self/stack")
 
 type Repo = repos.Repo
-local repo_of, absolute, locate, vcs = repos.repo_of, repos.absolute, repos.locate, repos.run
+local repo_of, locate, vcs = repos.repo_of, repos.locate, repos.run
 
 local M = {}
 
@@ -407,13 +407,7 @@ function M.show_changes(refreshing: boolean?)
 	local files = changed_files(repo)
 	for _, relative in files do
 		local path = `{repo.root}/{relative}`
-		local open = nil
-		for _, buffer in greed.buffers() do
-			if buffer:path() and absolute(buffer:path() :: string) == path then
-				open = buffer
-			end
-		end
-		local text = if open then open:text() else greed.fs.read(path)
+		local text = core.file.text(path)
 		if text then
 			for _, excerpt in multibuffer.diff(path, relative, base_text(repo, relative), text) do
 				table.insert(excerpts, excerpt)
@@ -501,7 +495,7 @@ greed.command({
 					.. string.sub(base, change.at + #change.old + 1)
 			end
 		end
-		local repo = if path then repo_of(absolute(path)) else nil
+		local repo = if path then repo_of(core.project.resolve(path)) else nil
 		if repo and repo.kind == "jj" then
 			greed.echo(
 				"jj has no staging; split the change in the change stack (space g l) instead"
@@ -512,7 +506,8 @@ greed.command({
 			return
 		end
 		path, text = path :: string, text :: string
-		local ok, why = staging.stage(repo, string.sub(absolute(path), #repo.root + 2), text)
+		local ok, why =
+			staging.stage(repo, string.sub(core.project.resolve(path), #repo.root + 2), text)
 		if not ok then
 			greed.echo(`can't stage: {why}`)
 			return
@@ -614,10 +609,7 @@ greed.command({
 		end
 		local items = {}
 		for _, path in files do
-			local shown = if string.sub(path, 1, #root + 1) == root .. "/"
-				then string.sub(path, #root + 2)
-				else path
-			table.insert(items, { label = shown, value = path })
+			table.insert(items, { label = core.project.relative(path, root), value = path })
 		end
 		picker.pick("Changed files", items, function(item)
 			greed.open(item.value)
@@ -677,7 +669,7 @@ function M.commit(paths: { string }, message: string): (boolean, string?)
 		if buffer:modified() then
 			buffer:save()
 		end
-		local from_root = string.sub(absolute(path), #repo.root + 2)
+		local from_root = string.sub(core.project.resolve(path), #repo.root + 2)
 		table.insert(relative, from_root)
 		table.insert(exact, `file:"{(string.gsub(from_root, '["\\]', "\\%0"))}"`)
 	end

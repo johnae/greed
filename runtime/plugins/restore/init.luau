@@ -40,10 +40,6 @@ local function file(): string?
 	return `{cache}/sessions/{name}.json`
 end
 
-local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
-end
-
 -- What each project's main view showed when it was last the shown one, by
 -- root: only the shown project's main view can be asked.
 local shown: { [string]: { path: string, cursor: number } } = {}
@@ -58,7 +54,7 @@ function M.save()
 	local view = greed.view()
 	local main = view:buffer():path()
 	if main then
-		shown[current.root] = { path = absolute(main), cursor = view:selection().ranges[1].head }
+		shown[current.root] = { path = main, cursor = view:selection().ranges[1].head }
 	end
 	local projects: { Project } = {}
 	local by_id: { [number]: Project } = {}
@@ -77,7 +73,7 @@ function M.save()
 		local p = buffer:path()
 		local project = by_id[buffer:project() or current.id]
 		if p and project and buffer:kind() == "file" then
-			table.insert(project.files, absolute(p))
+			table.insert(project.files, p)
 		end
 	end
 	for _, project in projects do

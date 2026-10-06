@@ -322,4 +322,70 @@ greed.command({
 	end,
 })
 
+--- The open buffer for the file at `path`, or nil if it isn't open. A
+--- relative path is from `root`, the shown project's root by default (see
+--- `project.resolve`).
+function M.buffer(path: string, root: string?): greed.Buffer?
+	return greed.buffer_for(project.resolve(path, root))
+end
+
+--- The text of the file at `path` as you have it: its buffer's, unsaved
+--- changes included, when it's open, otherwise what's on disk; nil and why
+--- when there's neither. Paths are taken as `M.buffer` takes them.
+function M.text(path: string, root: string?): (string?, string?)
+	local full = project.resolve(path, root)
+	local buffer = greed.buffer_for(full)
+	if buffer then
+		return buffer:text(), nil
+	end
+	return greed.fs.read(full)
+end
+
+export type WriteOptions = {
+	--- What a relative path is from (see `M.buffer`).
+	root: string?,
+	--- Replace only `from`..`to` (0-based byte offsets) with the text.
+	from: number?,
+	to: number?,
+	--- Open the file in a buffer to write through if it exists but isn't
+	--- open, so its language server sees the change.
+	load: boolean?,
+}
+
+--- Writes `text` to the file at `path`. An open file is changed through its
+--- buffer, so undo takes it back and its language server sees it, and
+--- saved; otherwise the file is written. Returns the buffer when it went
+--- through one, and fails with why when it can't write.
+function M.write(path: string, text: string, opts: WriteOptions?): greed.Buffer?
+	local o: WriteOptions = opts or {}
+	local full = project.resolve(path, o.root)
+	local buffer = greed.buffer_for(full)
+	if buffer == nil and o.load and greed.fs.stat(full) then
+		buffer = greed.load(full)
+	end
+	if buffer then
+		local open = buffer
+		open:edit(function(e)
+			e:replace(o.from or 0, o.to or open:len(), text)
+		end)
+		open:save()
+		return open
+	end
+	local new = text
+	if o.from or o.to then
+		-- A file that isn't there yet is empty.
+		local read, err = greed.fs.read(full)
+		if read == nil and greed.fs.stat(full) then
+			error(err, 0)
+		end
+		local old = read or ""
+		new = string.sub(old, 1, o.from or 0) .. text .. string.sub(old, (o.to or #old) + 1)
+	end
+	local ok, err = greed.fs.write(full, new)
+	if not ok then
+		error(err, 0)
+	end
+	return nil
+end
+
 return M

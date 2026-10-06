@@ -97,7 +97,9 @@ fn tools_read_the_editor_including_unsaved_text_and_selections() {
     let (conn, mut client) = start("tools", "one two three\nfour");
     let (focus, _) = call(&mut client, "focus", &json!({}));
     let focus: Value = serde_json::from_str(&focus).unwrap();
-    assert_eq!(focus["path"], "notes.md");
+    // Buffers know their files by full path, however they were opened.
+    let full = std::env::current_dir().unwrap().join("notes.md");
+    assert_eq!(focus["path"], full.to_str().unwrap());
     assert_eq!(focus["selections"][0]["text"], "two");
     assert_eq!(
         focus["selections"][0]["from"],

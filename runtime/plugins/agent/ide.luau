@@ -23,24 +23,8 @@ local function json(value: any)
 	return text(greed.json.encode(value))
 end
 
-local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else greed.fs.cwd() .. "/" .. path
-end
-
 local function uri(path: string): string
-	return "file://" .. absolute(path)
-end
-
--- The open buffer for the file at `path`, however either path is written.
-local function find_buffer(path: string): greed.Buffer?
-	local wanted = absolute(path)
-	for _, buffer in greed.buffers() do
-		local own = buffer:path()
-		if own and absolute(own) == wanted then
-			return buffer
-		end
-	end
-	return nil
+	return "file://" .. core.project.resolve(path)
 end
 
 -- A position as LSP and Claude Code count it: 0-based line and column.
@@ -67,7 +51,7 @@ local function current_selection(): { [string]: any }?
 	local from, to = primary_range(view)
 	return {
 		text = buffer:slice(from, to),
-		filePath = absolute(path),
+		filePath = core.project.resolve(path),
 		fileUrl = uri(path),
 		selection = {
 			start = lsp_position(buffer, from),
@@ -85,12 +69,12 @@ local function tool(
 end
 
 tool("openFile", function(args)
-	local path = args.filePath
+	local path = core.project.resolve(args.filePath)
 	if args.makeFrontmost == false then
 		local buffer = greed.load(path)
 		return json({
 			success = true,
-			filePath = absolute(path),
+			filePath = path,
 			languageId = buffer:language(),
 			lineCount = buffer:line_count(),
 		})
@@ -113,18 +97,18 @@ tool("openFile", function(args)
 			view:set_selection({ ranges = { { anchor = from - 1, head = to } }, primary = 1 })
 		end
 	end
-	return text(`Opened file: {absolute(path)}`)
+	return text(`Opened file: {path}`)
 end)
 
 tool("openDiff", function(args)
 	local path = args.new_file_path or args.old_file_path
-	local buffer = greed.load(path)
+	local buffer = greed.load(core.project.resolve(path))
 	local before = buffer:text()
 	local changes = greed.diff(before, args.new_file_contents)
 	if #changes == 0 then
 		return text("FILE_SAVED", before)
 	end
-	greed.open(path)
+	greed.open(core.project.resolve(path))
 	local unsaved = buffer:modified()
 	local decided = proposals.propose_changes(buffer, path, changes, args.tab_name, args.tab_name)
 	if decided.accepted == 0 then
@@ -212,7 +196,7 @@ tool("getDiagnostics", function(args)
 end)
 
 tool("checkDocumentDirty", function(args)
-	local buffer = find_buffer(args.filePath)
+	local buffer = core.file.buffer(args.filePath)
 	if buffer == nil then
 		return json({ success = false, message = `Document not open: {args.filePath}` })
 	end
@@ -225,7 +209,7 @@ tool("checkDocumentDirty", function(args)
 end)
 
 tool("saveDocument", function(args)
-	local buffer = find_buffer(args.filePath)
+	local buffer = core.file.buffer(args.filePath)
 	if buffer == nil then
 		return json({ success = false, message = `Document not open: {args.filePath}` })
 	end
@@ -276,7 +260,7 @@ greed.command({
 			then ctx.buffer:line_of(ctx.buffer:prev_char(to))
 			else ctx.buffer:line_of(to)
 		greed.control.notify("at_mentioned", {
-			filePath = absolute(path),
+			filePath = core.project.resolve(path),
 			lineStart = ctx.buffer:line_of(from),
 			lineEnd = last,
 		})

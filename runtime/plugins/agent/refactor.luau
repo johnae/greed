@@ -15,8 +15,7 @@ end
 -- The file at `path` (relative to the project, or absolute), opened
 -- without showing it if it isn't open.
 local function load(path: string): greed.Buffer
-	local root = core.project.root()
-	return greed.load(if string.sub(path, 1, 1) == "/" then path else core.project.path(root, path))
+	return greed.load(core.project.resolve(path))
 end
 
 -- Asks the buffer's server, failing with why when there's no server or it

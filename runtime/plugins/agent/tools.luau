@@ -11,19 +11,6 @@ local function object(properties: { [string]: any }, required: { string }?): { [
 	return { type = "object", properties = properties, required = required }
 end
 
--- The open buffer for `path`, matching it as given, against the project,
--- or by its end; nil if it isn't open.
-local function find_buffer(path: string): greed.Buffer?
-	local cwd = greed.fs.cwd()
-	for _, buffer in greed.buffers() do
-		local own = buffer:path()
-		if own and (own == path or cwd .. "/" .. own == path or own == cwd .. "/" .. path) then
-			return buffer
-		end
-	end
-	return nil
-end
-
 -- 1-based line and column, as people and agents count them.
 local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }
 	local line = buffer:line_of(pos)
@@ -70,16 +57,15 @@ agent.tool({
 	}),
 	run = function(args)
 		local path: string? = args.path
-		local buffer = if path then find_buffer(path) else greed.view():buffer()
 		local text: string
-		if buffer then
-			text = buffer:text()
-		else
-			local read, err = greed.fs.read(path :: string)
+		if path then
+			local read, err = core.file.text(path)
 			if read == nil then
 				error(err, 0)
 			end
 			text = read
+		else
+			text = greed.view():buffer():text()
 		end
 		if args.from_line == nil and args.to_line == nil then
 			return text
@@ -99,7 +85,9 @@ agent.tool({
 	}),
 	run = function(args)
 		local list = {}
-		local wanted: greed.Buffer? = if args.path then find_buffer(args.path :: string) else nil
+		local wanted: greed.Buffer? = if args.path
+			then core.file.buffer(args.path :: string)
+			else nil
 		for _, buffer in greed.buffers() do
 			local path = buffer:path()
 			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
@@ -170,7 +158,9 @@ agent.tool({
 		elseif args.author then
 			filter.plugin = args.author
 		end
-		local wanted: greed.Buffer? = if args.path then find_buffer(args.path :: string) else nil
+		local wanted: greed.Buffer? = if args.path
+			then core.file.buffer(args.path :: string)
+			else nil
 		local list = {}
 		for _, buffer in greed.buffers() do
 			local path = buffer:path()
@@ -240,7 +230,7 @@ agent.tool({
 	description = "Open a file in the editor for the user, optionally at a 1-based line",
 	input = object({ path = { type = "string" }, line = { type = "integer" } }, { "path" }),
 	run = function(args)
-		greed.open(args.path)
+		greed.open(core.project.resolve(args.path))
 		if args.line then
 			local view = greed.view()
 			local buffer = view:buffer()
@@ -262,7 +252,7 @@ agent.tool({
 -- The buffer for `path` (the current one if nil), opening the file without
 -- showing it if it isn't open, and failing without a syntax tree.
 local function syntax_buffer(path: string?): greed.Buffer
-	local buffer = if path then find_buffer(path) or greed.load(path) else greed.view():buffer()
+	local buffer = if path then greed.load(core.project.resolve(path)) else greed.view():buffer()
 	if buffer:tree() == nil then
 		error(`no syntax tree for {buffer:path() or "this buffer"}: Greed has no grammar for it`, 0)
 	end

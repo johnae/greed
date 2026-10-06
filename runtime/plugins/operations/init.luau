@@ -16,6 +16,7 @@
 --     end)
 
 local greed = require("@greed")
+local core = require("@core")
 local multibuffer = require("@multibuffer")
 local picker = require("@picker")
 
@@ -237,16 +238,6 @@ local function ago(time: number): string
 	return `{seconds // 3600} h ago`
 end
 
--- A file's text now: its buffer's if open, otherwise the disk's.
-local function text_now(path: string): string
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer:text()
-		end
-	end
-	return greed.fs.read(path) or ""
-end
-
 type Revert = { from: number, to: number, text: string }
 
 -- What puts `file`'s changes back in `now`, its text now, leaving those
@@ -334,7 +325,9 @@ function M.review(op: Operation)
 	local before: { [string]: string } = {}
 	for _, file in op.files do
 		before[file.path] = file.before
-		for _, excerpt in multibuffer.diff(file.path, nil, file.before, text_now(file.path)) do
+		for _, excerpt in
+			multibuffer.diff(file.path, nil, file.before, core.file.text(file.path) or "")
+		do
 			table.insert(excerpts, excerpt)
 		end
 	end

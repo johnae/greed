@@ -1163,12 +1163,15 @@ impl<M: Measure> Renderer<M> {
         let head = cursor_byte(text, view.selection.primary(), editor.cursor_shape());
         let line = text.byte_to_line(head);
         let column = text.byte_to_char(head) - text.line_to_char(line) + 1;
+        // Files in the project show from its root.
+        let root = editor.current_project().root();
         let middle = match message {
             Some(message) => span(message, Tag::MESSAGE),
             None => span(
-                &buffer
-                    .path()
-                    .map_or_else(|| "[scratch]".to_owned(), |p| p.display().to_string()),
+                &buffer.path().map_or_else(
+                    || "[scratch]".to_owned(),
+                    |p| p.strip_prefix(root).unwrap_or(p).display().to_string(),
+                ),
                 Tag::STATUS,
             ),
         };

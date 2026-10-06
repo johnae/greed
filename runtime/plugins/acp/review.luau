@@ -8,6 +8,7 @@
 -- and named, for you to look at in its diff.
 
 local greed = require("@greed")
+local core = require("@core")
 local agent = require("@agent")
 local session = require("./session")
 
@@ -95,17 +96,6 @@ local function changed(s: Session): ({ string }?, ((string) -> string)?, string?
 	return list, base, nil
 end
 
--- The text of your file at `path`: its buffer's if it's open, otherwise
--- what's on disk, or "" if there's none.
-local function yours(path: string): string
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer:text()
-		end
-	end
-	return greed.fs.read(path) or ""
-end
-
 export type Reviewed = {
 	--- What you decided, in words; nil when there was nothing to propose.
 	decided: string?,
@@ -133,7 +123,7 @@ function M.review(s: Session): (Reviewed?, string?)
 		if theirs == nil then
 			table.insert(left, `{name}: deleted`)
 		else
-			local changes, clashes = M.merge(base(name), theirs, yours(path))
+			local changes, clashes = M.merge(base(name), theirs, core.file.text(path) or "")
 			if clashes > 0 then
 				table.insert(left, `{name}: {clashes} changes to lines you changed too`)
 			end

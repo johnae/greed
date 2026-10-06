@@ -22,19 +22,15 @@ end
 
 -- An open buffer's text as it is now, saved or not.
 local function buffer_preview(item: picker.Item): picker.Preview?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == item.value then
-			return { text = buffer:text(), language = buffer:language() }
-		end
-	end
-	return nil
+	local buffer = greed.buffer_for(item.value)
+	return if buffer then { text = buffer:text(), language = buffer:language() } else nil
 end
 
 -- Picks a file under `root`, skipping ignored files, and opens it.
 local function pick_file(title: string, root: string)
 	local items = {}
 	for _, path in greed.files(root) do
-		table.insert(items, { label = path, value = project.path(root, path), kind = "file" })
+		table.insert(items, { label = path, value = project.resolve(path, root), kind = "file" })
 	end
 	picker.pick(title, items, function(item)
 		greed.open(item.value)
@@ -170,7 +166,7 @@ greed.command({
 	doc = "Pick a place from the jumplist and go there",
 	run = function()
 		local jumps = require("@core").jumps
-		local root = project.root() .. "/"
+		local root = project.root()
 		local items = {}
 		for _, place in jumps.list() do
 			local buffer: greed.Buffer? = nil
@@ -180,10 +176,7 @@ greed.command({
 				end
 			end
 			local path = place.path
-			local name = if path == nil
-				then "[scratch]"
-				elseif string.sub(path, 1, #root) == root then string.sub(path, #root + 1)
-				else path
+			local name = if path == nil then "[scratch]" else project.relative(path, root)
 			local where, line = "?", ""
 			if buffer then
 				local row = buffer:line_of(math.min(place.pos, buffer:len()))

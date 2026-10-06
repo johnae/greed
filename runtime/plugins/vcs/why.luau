@@ -8,6 +8,7 @@
 -- it's the changes that last touched each line, from `jj file annotate`,
 -- each with its whole diff to the file.
 local greed = require("@greed")
+local core = require("@core")
 local agent = require("@agent")
 local multibuffer = require("@multibuffer")
 local diffs = require("./diffs")
@@ -99,7 +100,7 @@ end
 --- The history of lines `first` to `last` (from 1) of the file at `path`:
 --- each change that made them as they are, newest first. Nil and why not.
 function M.history(path: string, first: number, last: number): (string?, string?)
-	local absolute = repos.absolute(path)
+	local absolute = core.project.resolve(path)
 	local repo = repos.repo_of(absolute)
 	if repo == nil then
 		return nil, "the file isn't in a repository"

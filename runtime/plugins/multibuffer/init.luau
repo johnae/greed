@@ -17,14 +17,14 @@ local greed = require("@greed")
 local core = require("@core")
 
 export type Excerpt = {
-	--- The file.
+	--- The file; a relative path is from the project's root.
 	path: string,
 	--- Its first line, 0-based.
 	from: number,
 	--- Its last line, included; `from` if left out.
 	to: number?,
-	--- What to show above it; the path, relative to the folder Greed runs
-	--- in, if left out.
+	--- What to show above it; the path, relative to the project's root, if
+	--- left out.
 	label: string?,
 	--- More to show above it, after the line number, like the problem a
 	--- line has.
@@ -88,15 +88,6 @@ local syncing = false
 
 local next_id = 0
 
-local function open_buffer(path: string): greed.Buffer?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer
-		end
-	end
-	return nil
-end
-
 -- `text` split into lines that keep their line breaks.
 local function lines_of(text: string): { string }
 	local lines = {}
@@ -106,11 +97,6 @@ local function lines_of(text: string): { string }
 		end
 	end
 	return lines
-end
-
-local function relative(path: string): string
-	local cwd = greed.fs.cwd() .. "/"
-	return if string.sub(path, 1, #cwd) == cwd then string.sub(path, #cwd + 1) else path
 end
 
 -- Byte offsets of lines `from`..`to` of `buffer`, as a mark that also takes
@@ -224,7 +210,7 @@ local function ensure_source(part: Part): boolean
 	if part.source then
 		return true
 	end
-	local buffer = open_buffer(part.path) or greed.load(part.path)
+	local buffer = greed.load(part.path)
 	local to = part.start + #lines_of(part.text) - 1
 	if to >= buffer:line_count() then
 		return false
@@ -296,7 +282,7 @@ local function joined(excerpts: { Excerpt }, context: number): { Excerpt }
 	local sorted = {}
 	for _, excerpt in excerpts do
 		table.insert(sorted, {
-			path = excerpt.path,
+			path = core.project.resolve(excerpt.path),
 			from = math.max(0, excerpt.from - context),
 			to = (excerpt.to or excerpt.from) + context,
 			label = excerpt.label,
@@ -328,9 +314,7 @@ end
 -- The lines of each file, read once, from its buffer if it's open.
 local function file_lines(path: string, cache: { [string]: { string } }): { string }
 	if cache[path] == nil then
-		local buffer = open_buffer(path)
-		local text = if buffer then buffer:text() else greed.fs.read(path)
-		cache[path] = lines_of(text or "")
+		cache[path] = lines_of(core.file.text(path) or "")
 	end
 	return cache[path]
 end
@@ -353,7 +337,7 @@ function M.open(excerpts: { Excerpt }, options: Options): greed.Buffer
 			local text = table.concat(lines, "", excerpt.from + 1, to + 1)
 			local part: Part = {
 				path = excerpt.path,
-				label = excerpt.label or relative(excerpt.path),
+				label = excerpt.label or core.project.relative(excerpt.path),
 				note = excerpt.note,
 				ns = `multibuffer.{id}.{i}`,
 				start = excerpt.from,
@@ -398,7 +382,7 @@ function M.open(excerpts: { Excerpt }, options: Options): greed.Buffer
 	states[buffer:id()] = state
 	-- Files already open are kept in step from the start.
 	for _, part in parts do
-		local source = open_buffer(part.path)
+		local source = greed.buffer_for(part.path)
 		if source then
 			attach(part, source, part.start, part.start + #lines_of(part.text) - 1)
 		end

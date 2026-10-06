@@ -47,39 +47,6 @@ notes.guard(function(path: string): string?
 	return nil
 end)
 
--- The open buffer for `path`, if there is one.
-local function open_buffer(path: string): greed.Buffer?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer
-		end
-	end
-	return nil
-end
-
--- `path`'s text as you have it, unsaved changes included.
-local function read(path: string): string?
-	local buffer = open_buffer(path)
-	if buffer then
-		return buffer:text()
-	end
-	return (greed.fs.read(path))
-end
-
--- Writes `text` to `path`: through its buffer if it's open, so it can be
--- undone and shows at once, otherwise to the file.
-local function write(path: string, text: string)
-	local buffer = open_buffer(path)
-	if buffer then
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), text)
-		end)
-		buffer:save()
-	else
-		greed.fs.write(path, text)
-	end
-end
-
 --- A short fingerprint of `text`, for telling whether it changed.
 function M.version(text: string): string
 	local hash = 5381
@@ -107,7 +74,7 @@ end
 
 --- The plan as you have it, and its version; empty if there's none yet.
 function M.read_plan(): (string, string)
-	local text = read(M.plan_path()) or ""
+	local text = core.file.text(M.plan_path()) or ""
 	return text, M.version(text)
 end
 
@@ -118,7 +85,7 @@ function M.write_plan(text: string, version: string): (boolean, string?)
 	if now ~= version then
 		return false, current
 	end
-	write(M.plan_path(), text)
+	core.file.write(M.plan_path(), text)
 	return true, nil
 end
 
@@ -143,7 +110,7 @@ function M.decisions(): { Decision }
 	) or {}
 	for _, entry in entries do
 		if not entry.dir and string.match(entry.name, "%.md$") then
-			local text = read(decision_path(entry.name))
+			local text = core.file.text(decision_path(entry.name))
 			if text then
 				table.insert(list, decision(entry.name, text))
 			end
@@ -169,7 +136,7 @@ function M.decide(title: string, text: string, proposed: boolean): string
 	local name = string.format("%04d-%s.md", #M.decisions() + 1, slug(title))
 	local status = if proposed then "proposed" else "accepted"
 	local body = `# {title}\n\nStatus: {status}\nDate: {os.date("%Y-%m-%d")}\n\n{text}\n`
-	write(decision_path(name), body)
+	core.file.write(decision_path(name), body)
 	return name
 end
 
@@ -289,7 +256,7 @@ agent.tool({
 
 -- Opens `path` beside your files, made with `start` if it isn't there.
 local function show(path: string, start: string)
-	if greed.fs.stat(path) == nil and open_buffer(path) == nil then
+	if greed.fs.stat(path) == nil and greed.buffer_for(path) == nil then
 		greed.fs.write(path, start)
 	end
 	greed.open(path)

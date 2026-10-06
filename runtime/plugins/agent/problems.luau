@@ -30,8 +30,7 @@ end)
 -- The errors and warnings reported in `buffer` now, as lines for an agent.
 local function report(buffer: greed.Buffer): string
 	local path = buffer:path() :: string
-	local root = core.project.root(path) .. "/"
-	local shown = if string.sub(path, 1, #root) == root then string.sub(path, #root + 1) else path
+	local shown = core.project.relative(path, core.project.root(path))
 	local lines: { string } = {}
 	for _, d in greed.lsp.diagnostics(buffer) do
 		local severity = SEVERITY[d.severity]

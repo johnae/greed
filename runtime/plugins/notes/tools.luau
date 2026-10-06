@@ -100,7 +100,7 @@ agent.tool({
 			return `wrote {args.name}`
 		end
 		-- Rewriting what's there is for the user to review.
-		local buffer = notes.buffer(args.name) or greed.load(path)
+		local buffer = greed.load(path)
 		local changes = greed.diff(buffer:text(), args.text)
 		if #changes == 0 then
 			return `{args.name} says that already`

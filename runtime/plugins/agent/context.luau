@@ -3,6 +3,7 @@
 -- as data; `describe` writes it as a short block to send with a prompt.
 
 local greed = require("@greed")
+local core = require("@core")
 local untrusted = require("./untrusted")
 
 local M = {}
@@ -82,10 +83,7 @@ end
 
 -- `path` from `root` when it's inside it.
 local function relative(path: string, root: string?): string
-	if root and string.sub(path, 1, #root + 1) == root .. "/" then
-		return string.sub(path, #root + 2)
-	end
-	return path
+	return if root then core.project.relative(path, root) else path
 end
 
 -- `text` cut to `max` characters, and how many were cut.

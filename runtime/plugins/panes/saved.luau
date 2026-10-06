@@ -46,12 +46,6 @@ local function layout_dirs(): { string }
 	return dirs
 end
 
--- `path` relative to the project when it's inside it.
-local function relative(path: string): string
-	local root = core.project.root() .. "/"
-	return if string.sub(path, 1, #root) == root then string.sub(path, #root + 1) else path
-end
-
 local function describe(node: any): Saved
 	if type(node) == "table" then
 		local children = {}
@@ -65,7 +59,7 @@ local function describe(node: any): Saved
 		return { terminal = terminal.asked(buffer) or true }
 	end
 	local path = buffer:path()
-	return if path then { file = relative(path) } else {}
+	return if path then { file = core.project.relative(path, core.project.root()) } else {}
 end
 
 --- Saves the shown tab as layout `name`, in the project or with `mine` in
@@ -128,12 +122,6 @@ local function leaves(node: Saved, into: { Saved }): { Saved }
 	return into
 end
 
-local function full(path: string): string
-	return if string.sub(path, 1, 1) == "/"
-		then path
-		else core.project.path(core.project.root(), path)
-end
-
 -- What a saved pane runs, for `terminal.open`: its command, or nil for the
 -- shell.
 local function command_of(leaf: Saved): { string }?
@@ -154,7 +142,7 @@ local function open_leaf(leaf: Saved, base: greed.View, here: boolean): greed.Vi
 		return greed.view()
 	end
 	local buffer = if leaf.file
-		then greed.load(full(leaf.file))
+		then greed.load(core.project.resolve(leaf.file, core.project.root()))
 		else greed.create_buffer("file", "")
 	if here then
 		base:show(buffer)

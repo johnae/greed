@@ -7,6 +7,7 @@
 -- the transcript, the agents overview and subagents work the same.
 
 local greed = require("@greed")
+local core = require("@core")
 local agent = require("@agent")
 local models = require("@models")
 local session = require("./session")
@@ -49,50 +50,6 @@ type State = {
 
 local states: { [number]: State } = {}
 
--- `path` in the session's folder.
-local function absolute(s: Session, path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{s.cwd}/{path}`
-end
-
--- The open buffer for `path`, if there is one.
-local function open_buffer(path: string): greed.Buffer?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer
-		end
-	end
-	return nil
-end
-
--- `path`'s text as you have it, unsaved changes included.
-local function read(path: string): string?
-	local buffer = open_buffer(path)
-	if buffer then
-		return buffer:text()
-	end
-	return (greed.fs.read(path))
-end
-
--- Puts `text` in place of `from`..`to` (0-based bytes; without them, the
--- whole text) of the file at `path`, through its buffer, so undo takes it
--- back and its language server sees it, and saves it. A new file is
--- written to disk. Returns the buffer, if there is one.
-local function write(path: string, text: string, from: number?, to: number?): greed.Buffer?
-	if greed.fs.stat(path) == nil then
-		local ok, err = greed.fs.write(path, text)
-		if not ok then
-			error(err, 0)
-		end
-		return nil
-	end
-	local buffer = open_buffer(path) or greed.load(path)
-	buffer:edit(function(e)
-		e:replace(from or 0, to or buffer:len(), text)
-	end)
-	buffer:save()
-	return buffer
-end
-
 -- What a tool says after changing `buffer`, with what its language server
 -- reports about it then.
 local function changed(said: string, buffer: greed.Buffer?): string
@@ -131,8 +88,7 @@ local OWN: { Own } = {
 			return `Edit {args.path}`
 		end,
 		run = function(s, args)
-			local path = absolute(s, args.path)
-			local text = read(path)
+			local text = core.file.text(args.path, s.cwd)
 			if text == nil then
 				error(`there's no file {args.path}`, 0)
 			end
@@ -143,7 +99,14 @@ local OWN: { Own } = {
 			if string.find(text, args.old_text, to + 1, true) then
 				error(`old_text is in {args.path} more than once; give more of it`, 0)
 			end
-			return changed(`edited {args.path}`, write(path, args.new_text, from - 1, to))
+			-- Through its buffer, opened if need be, so undo takes it back and
+			-- its language server sees it.
+			local buffer = core.file.write(
+				args.path,
+				args.new_text,
+				{ root = s.cwd, from = from - 1, to = to, load = true }
+			)
+			return changed(`edited {args.path}`, buffer)
 		end,
 	},
 	{
@@ -160,7 +123,10 @@ local OWN: { Own } = {
 			return `Write {args.path}`
 		end,
 		run = function(s, args)
-			return changed(`wrote {args.path}`, write(absolute(s, args.path), args.text))
+			return changed(
+				`wrote {args.path}`,
+				core.file.write(args.path, args.text, { root = s.cwd, load = true })
+			)
 		end,
 	},
 	{
@@ -330,10 +296,7 @@ local function title_of(s: Session, c: models.Call): string
 		local value = c.input[key]
 		if type(value) == "string" and value ~= "" then
 			if key == "path" or key == "file" then
-				local root = s.root .. "/"
-				if string.sub(value, 1, #root) == root then
-					value = string.sub(value, #root + 1)
-				end
+				value = core.project.relative(value, s.root)
 			end
 			local line = string.match(value, "^[^\n]*") or value
 			if (utf8.len(line) or #line) > 50 then
@@ -373,7 +336,7 @@ local function call(
 	table.insert(s.entries, { kind = "tool", tool = tool })
 	s.tool = tool.title
 	if type(c.input.path) == "string" then
-		s.where = { path = absolute(s, c.input.path) }
+		s.where = { path = core.project.resolve(c.input.path, s.cwd) }
 	end
 	s.changed()
 	-- Its own tools all change something; Greed's ask unless they only

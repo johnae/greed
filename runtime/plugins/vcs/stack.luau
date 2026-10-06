@@ -160,11 +160,7 @@ local function render(stack: Stack, select: string?)
 	local was_on = under_cursor(stack)
 	local keep = select or (was_on and was_on.id)
 	local changes, err = M.changes(stack.repo)
-	local root, home = stack.repo.root, greed.fs.dirs().home
-	local where = if home and string.sub(root, 1, #home + 1) == home .. "/"
-		then "~" .. string.sub(root, #home + 1)
-		else root
-	local title = `Changes in {where}`
+	local title = `Changes in {core.project.tilde(stack.repo.root)}`
 	local header = title .. "    ? for keys"
 	local lines = { header, "" }
 	local marks: { greed.Mark } = {

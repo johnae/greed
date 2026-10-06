@@ -1416,6 +1416,11 @@ export type Greed = {
 	open: (path: string) -> (),
 	--- The buffer for the file at `path`, opening it without showing it.
 	load: (path: string) -> Buffer,
+	--- The open buffer for the file at `path`, or nil when it isn't open; it
+	--- doesn't open it. `~`, `.` and `..` are worked out and a relative path
+	--- is from the folder Greed started in, so every spelling of a file
+	--- finds its buffer.
+	buffer_for: (path: string) -> Buffer?,
 	--- The changes that turn `old` into `new`, whole lines at a time: each
 	--- replaces `from`..`to` (byte offsets into `old`) with `text`. Sorted.
 	diff: (old: string, new: string) -> { { from: number, to: number, text: string } },

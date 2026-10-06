@@ -146,9 +146,10 @@ end
 -- The most of a tool's output kept to show when it's unfolded.
 local OUTPUT_KEPT = 200
 
--- `path` from `cwd` when it's inside it.
+-- `path` from `cwd` when it's a full path inside it; anything else (a
+-- name, a URI) as it is.
 local function relative(path: string, cwd: string): string
-	return if string.sub(path, 1, #cwd + 1) == cwd .. "/" then string.sub(path, #cwd + 2) else path
+	return if string.sub(path, 1, 1) == "/" then core.project.relative(path, cwd) else path
 end
 
 -- How many lines a diff from `old` to `new` adds and removes.
@@ -297,7 +298,7 @@ local function paths_of(call: any, cwd: string): { string }?
 	local found: { string } = {}
 	local function add(path: any)
 		if type(path) == "string" and path ~= "" then
-			table.insert(found, if string.sub(path, 1, 1) == "/" then path else `{cwd}/{path}`)
+			table.insert(found, core.project.resolve(path, cwd))
 		end
 	end
 	for _, place in (if type(call.locations) == "table" then call.locations else {}) :: { any } do
@@ -313,8 +314,7 @@ end
 
 --- Whether `path` is in the folder `session` works in.
 function M.within(session: Session, path: string): boolean
-	local full = if string.sub(path, 1, 1) == "/" then path else `{session.cwd}/{path}`
-	return core.project.inside(full, session.cwd)
+	return core.project.inside(core.project.resolve(path, session.cwd), session.cwd)
 end
 
 -- Applies one session/update notification.
@@ -391,16 +391,6 @@ local function update(session: Session, u: any)
 	end
 end
 
--- The open buffer for `path`, if any.
-local function open_buffer(path: string): greed.Buffer?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer
-		end
-	end
-	return nil
-end
-
 -- What the agent asks of the editor, by method.
 local function handlers(session: Session): rpc.Handlers
 	local terms: { [string]: Term } = {}
@@ -437,8 +427,7 @@ local function handlers(session: Session): rpc.Handlers
 
 	h["fs/read_text_file"] = function(params: any): (any, string?)
 		session.where = { path = params.path, line = params.line }
-		local buffer = open_buffer(params.path)
-		local text: string? = if buffer then buffer:text() else greed.fs.read(params.path)
+		local text = core.file.text(params.path, session.cwd)
 		if text == nil then
 			return nil, `can't read {params.path}`
 		end
@@ -471,18 +460,9 @@ local function handlers(session: Session): rpc.Handlers
 		end
 		session.where = { path = params.path }
 		-- An open file is edited as you would, so undo takes it back.
-		local buffer = open_buffer(params.path)
-		if buffer then
-			local content = params.content
-			buffer:edit(function(e)
-				e:replace(0, buffer:len(), content)
-			end)
-			buffer:save()
-		else
-			local ok, err = greed.fs.write(params.path, params.content)
-			if not ok then
-				return nil, err
-			end
+		local ok, err = pcall(core.file.write, params.path, params.content)
+		if not ok then
+			return nil, tostring(err)
 		end
 		return nil
 	end

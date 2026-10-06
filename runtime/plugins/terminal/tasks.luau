@@ -9,6 +9,7 @@
 --     require("@terminal").tasks.lint = { command = "ruff check ." }
 
 local greed = require("@greed")
+local core = require("@core")
 local picker = require("@picker")
 
 --- A command to run: a shell command line, or a program and its
@@ -86,11 +87,7 @@ function M.run(terminal: any, name: string): (boolean, string?)
 	local command = if type(task.command) == "string"
 		then { "sh", "-c", task.command }
 		else task.command :: { string }
-	local cwd = task.cwd
-	local home = greed.fs.dirs().home
-	if cwd and home and (cwd == "~" or string.sub(cwd, 1, 2) == "~/") then
-		cwd = home .. string.sub(cwd, 2)
-	end
+	local cwd = if task.cwd then core.project.resolve(task.cwd) else nil
 	running[name] = terminal.open(command, { split = "down", keep = true, cwd = cwd })
 	remember(name)
 	return true, nil

@@ -75,13 +75,10 @@ local function save_trusted()
 	greed.fs.write(trust_file, table.concat(paths, "\n") .. "\n")
 end
 
--- The buffer's file as an absolute path, if it has one.
+-- The buffer's file, if it has one and is still open.
 local function path_of(buffer: greed.Buffer): string?
 	local ok, path = pcall(buffer.path, buffer)
-	if not ok or path == nil then
-		return nil
-	end
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
+	return if ok then path else nil
 end
 
 --- Whether blocks in `buffer` may run without asking: its file is trusted
@@ -312,15 +309,11 @@ local function save(buffer: greed.Buffer, block: Block, outcome: runners.Outcome
 end
 
 -- The folder a block runs in: its `dir` option (from the file's folder),
--- or the file's folder, or the editor's.
+-- or the file's folder, or the project's root.
 local function dir_for(buffer: greed.Buffer, block: Block): string
 	local path = path_of(buffer)
-	local base = if path then string.match(path, "^(.*)/[^/]*$") or "/" else greed.fs.cwd()
-	local dir = block.opts.dir
-	if dir == nil then
-		return base
-	end
-	return if string.sub(dir, 1, 1) == "/" then dir else `{base}/{dir}`
+	local base = if path then string.match(path, "^(.*)/[^/]*$") or "/" else nil
+	return core.project.resolve(block.opts.dir or ".", base)
 end
 
 -- Says why a block may not run, when it may not; agents' runs have one.

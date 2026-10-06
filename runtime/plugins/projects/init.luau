@@ -48,16 +48,6 @@ local sources: { Source } = {}
 local found: { Found } = {}
 local looking = false
 
--- "~/src/greed" for a folder in the home directory, since that's how
--- people say it.
-local function short(path: string): string
-	local home = greed.fs.dirs().home
-	if home and string.sub(path, 1, #home + 1) == home .. "/" then
-		return "~" .. string.sub(path, #home + 1)
-	end
-	return path
-end
-
 local expand = core.project.expand
 
 local function is_dir(path: string): boolean
@@ -202,20 +192,21 @@ local function items(): { picker.Item }
 		table.insert(list, { label = label, value = value })
 	end
 	for _, p in greed.project.list() do
-		local label = short(p.root) .. if p.current then "  (shown)" else ""
+		local label = core.project.tilde(p.root) .. if p.current then "  (shown)" else ""
 		add(p.root, label, { project = p.id, root = p.root })
 	end
 	for _, s in greed.session.list() do
 		if not s.current then
-			local label = `{if s.root then short(s.root) else s.name}  (session {s.name})`
+			local label =
+				`{if s.root then core.project.tilde(s.root) else s.name}  (session {s.name})`
 			add(s.root, label, { session = s.name, root = s.root })
 		end
 	end
 	for _, root in core.project.recent() do
-		add(root, `{short(root)}  (recent)`, { path = root, root = root })
+		add(root, `{core.project.tilde(root)}  (recent)`, { path = root, root = root })
 	end
 	for _, f in found do
-		add(f.path, `{short(f.path)}  ({f.from})`, { path = f.path, root = f.path })
+		add(f.path, `{core.project.tilde(f.path)}  ({f.from})`, { path = f.path, root = f.path })
 	end
 	return list
 end

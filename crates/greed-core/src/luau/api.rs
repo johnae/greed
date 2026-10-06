@@ -984,6 +984,21 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
         })?,
     )?;
     greed.set("load", load_function(lua, owner)?)?;
+    let o = owner.clone();
+    greed.set(
+        "buffer_for",
+        lua.create_function(move |lua, path: String| {
+            let path = super::fs::expand_home(lua, path);
+            Ok(state(lua)
+                .editor
+                .buffer_for(Path::new(&path))
+                .map(|buffer| BufferRef {
+                    buffer,
+                    view: None,
+                    author: Author::Plugin(o.clone()),
+                }))
+        })?,
+    )?;
 
     greed.set(
         "open",

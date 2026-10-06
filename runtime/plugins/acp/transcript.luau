@@ -72,13 +72,6 @@ local GLYPH_STYLE: { [string]: string } = {
 	pending = "agent.hint",
 }
 
-local function shorten(path: string): string
-	local home = greed.fs.dirs().home
-	return if home and string.sub(path, 1, #home + 1) == home .. "/"
-		then "~" .. string.sub(path, #home + 1)
-		else path
-end
-
 -- How many cells `text` takes.
 local function width(text: string): number
 	return utf8.len(text) or #text
@@ -135,7 +128,7 @@ function M.history(s: Session): History
 			add("  " .. line, style)
 		end
 	end
-	local title = `{s.name} in {shorten(s.root)}`
+	local title = `{s.name} in {core.project.tilde(s.root)}`
 	if s.workspace then
 		title ..= ` (workspace {s.workspace.name})`
 	end

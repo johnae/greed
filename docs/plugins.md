@@ -246,6 +246,31 @@ it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
+### Paths and the files behind them
+
+Buffers know their files by full path, with `.` and `..` worked out, so
+`greed.buffer_for(path)` finds a file's open buffer however the path is
+written (or gives nil, without opening it). Paths an agent or a user gives
+a plugin are relative to the project, and `core.project` turns them into
+full paths and back:
+
+```luau
+local core = require("@core")
+core.project.resolve("src/main.rs")    -- the shown project's root/src/main.rs; ~ is home
+core.project.resolve("a.rs", "/tmp/x") -- from another folder
+core.project.relative(path)            -- "src/main.rs", or the full path outside the project
+core.project.short(path)               -- like relative, but "~/..." under your home folder
+core.project.tilde(path)               -- "~/src/greed" for a path in your home folder
+```
+
+`core.file` reads and writes files the way you'd want an agent to:
+`core.file.text(path)` is the text as you have it, unsaved changes included,
+and `core.file.write(path, text)` goes through the open buffer, so undo takes
+it back and the language server sees it, then saves; a closed file is
+written to disk. `{ from, to }` replaces just that part, and `{ load = true }`
+opens the file first. Both take paths as `core.project.resolve` does, and
+`core.file.buffer(path)` is the open buffer for one.
+
 ### History
 
 Every edit is recorded with who made it and why. `buffer:history()` lists

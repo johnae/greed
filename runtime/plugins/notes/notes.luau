@@ -35,27 +35,14 @@ local M = {}
 --- "project:plan".
 export type Place = { name: string, folder: string }
 
--- `folder` with ~ filled in and no slash at the end.
-local function expand(folder: string): string
-	local home = greed.fs.dirs().home
-	if home and (folder == "~" or string.sub(folder, 1, 2) == "~/") then
-		folder = home .. string.sub(folder, 2)
-	end
-	return (string.gsub(folder, "/+$", ""))
-end
-
 --- Your notes folder, with ~ filled in.
 function M.folder(): string
-	return expand(greed.option.get("notes-folder") :: string)
+	return core.project.resolve(greed.option.get("notes-folder") :: string)
 end
 
 --- The project's notes folder: `notes-project-folder` in the project shown.
 function M.project_folder(): string
-	local folder = greed.option.get("notes-project-folder") :: string
-	if string.match(folder, "^[/~]") then
-		return expand(folder)
-	end
-	return expand(`{greed.project.current().root}/{folder}`)
+	return core.project.resolve(greed.option.get("notes-project-folder") :: string)
 end
 
 -- Places added with `M.add_place`, by name.
@@ -71,7 +58,7 @@ function M.add_place(name: string, folder: string)
 			table.remove(added, i)
 		end
 	end
-	table.insert(added, { name = name, folder = expand(folder) })
+	table.insert(added, { name = name, folder = core.project.resolve(folder) })
 end
 
 --- Every place notes are: yours first (named ""), those added, then the
@@ -115,14 +102,10 @@ local function qualified(place: Place, rest: string): string
 	return if place.name == "" then rest else `{place.name}:{rest}`
 end
 
-local function absolute(path: string): string
-	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
-end
-
 --- The place the file at `path` is in, and its path there; nil outside
 --- every place. The deepest place wins, for one inside another.
 function M.place_of(path: string): (Place?, string?)
-	local full = absolute(path)
+	local full = core.project.resolve(path)
 	local best: Place? = nil
 	for _, place in M.places() do
 		local inside = string.sub(full, 1, #place.folder + 1) == place.folder .. "/"
@@ -173,7 +156,7 @@ function M.name(path: string): string
 	if place and rest then
 		return qualified(place, (string.gsub(rest, "%.md$", "")))
 	end
-	return (string.gsub(absolute(path), "%.md$", ""))
+	return (string.gsub(core.project.resolve(path), "%.md$", ""))
 end
 
 --- Every note's name, sorted, from every place.
@@ -240,23 +223,12 @@ end
 
 --- The buffer note `name` is open in, if it is.
 function M.buffer(name: string): greed.Buffer?
-	local path = M.path(name)
-	for _, buffer in greed.buffers() do
-		local p = buffer:path()
-		if p and absolute(p) == path then
-			return buffer
-		end
-	end
-	return nil
+	return greed.buffer_for(M.path(name))
 end
 
 --- Note `name`'s text, as the editor has it if it's open.
 function M.read(name: string): string?
-	local buffer = M.buffer(name)
-	if buffer then
-		return buffer:text()
-	end
-	return (greed.fs.read(M.path(name)))
+	return (core.file.text(M.path(name)))
 end
 
 -- Checks on what agents may write, each saying why not for a note's path.
@@ -282,53 +254,26 @@ end
 --- Adds `text` as a line at the end of note `name`, making the note if
 --- there isn't one. An open note is changed in the editor (and saved).
 function M.append(name: string, text: string)
-	local buffer = M.buffer(name)
-	if buffer then
-		local current = buffer:text()
-		local line = if current == "" or string.sub(current, -1) == "\n" then text else "\n" .. text
-		buffer:edit(function(e)
-			e:insert(buffer:len(), line .. "\n")
-		end)
-		buffer:save()
-		return
-	end
 	local path = M.path(name)
-	local current: string = greed.fs.read(path) or ""
-	local before = if current ~= "" and string.sub(current, -1) ~= "\n"
-		then current .. "\n"
-		else current
-	local ok, err = greed.fs.write(path, before .. text .. "\n")
-	if not ok then
-		error(err, 0)
-	end
+	local current = core.file.text(path) or ""
+	local line = if current == "" or string.sub(current, -1) == "\n" then text else "\n" .. text
+	core.file.write(path, line .. "\n", { from = #current, to = #current })
 end
 
 --- Replaces line `line` (0-based) of note `name` with `text`. An open note
 --- is changed in the editor (and saved).
 function M.set_line(name: string, line: number, text: string)
-	local buffer = M.buffer(name)
-	if buffer then
-		if line >= buffer:line_count() then
-			error(`{name} has no line {line + 1}`, 0)
-		end
-		local start = buffer:line_start(line)
-		buffer:edit(function(e)
-			e:replace(start, buffer:line_end(line), text)
-		end)
-		buffer:save()
-		return
-	end
 	local path = M.path(name)
-	local current = greed.fs.read(path)
+	local current = core.file.text(path)
 	local lines = string.split(current or "", "\n")
 	if current == nil or line >= #lines or (line == #lines - 1 and lines[#lines] == "") then
 		error(`{name} has no line {line + 1}`, 0)
 	end
-	lines[line + 1] = text
-	local ok, err = greed.fs.write(path, table.concat(lines, "\n"))
-	if not ok then
-		error(err, 0)
+	local from = 0
+	for i = 1, line do
+		from += #lines[i] + 1
 	end
+	core.file.write(path, text, { from = from, to = from + #lines[line + 1] })
 end
 
 --- The time now, in seconds. Tests set a clock of their own.

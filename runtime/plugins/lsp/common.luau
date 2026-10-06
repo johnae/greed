@@ -1,7 +1,6 @@
 -- Helpers the language server commands share.
 
 local greed = require("@greed")
-local core = require("@core")
 
 local M = {}
 
@@ -59,31 +58,11 @@ function M.describe(problem: { severity: number, message: string }): string
 	return `{M.severity(problem.severity)}: {problem.message}`
 end
 
---- `path` relative to the project's root, when it's inside it.
-function M.shown_path(path: string): string
-	local root = core.project.root() .. "/"
-	if string.sub(path, 1, #root) == root then
-		return string.sub(path, #root + 1)
-	end
-	return path
-end
-
 --- Opens `path` in the main view at an LSP `position`.
 function M.open_at(path: string, position: greed.LspPosition)
 	greed.open(path)
 	local view = greed.view()
 	M.move_to(view, greed.lsp.offset(view:buffer(), position))
-end
-
---- The text of the file at `path`: its buffer's if it's open, otherwise
---- what's on disk.
-function M.file_text(path: string): string?
-	for _, buffer in greed.buffers() do
-		if buffer:path() == path then
-			return buffer:text()
-		end
-	end
-	return (greed.fs.read(path))
 end
 
 return M
