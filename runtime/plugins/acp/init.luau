@@ -18,6 +18,7 @@ local core = require("@core")
 local picker = require("@picker")
 local vcs = require("@vcs")
 local session = require("@self/session")
+local native = require("@self/native")
 local transcript = require("@self/transcript")
 local participants = require("@self/participants")
 local statusline = require("@statusline")
@@ -28,7 +29,15 @@ local M = {}
 
 --- An agent to start: `commands` are tried in order, the first installed
 --- runs, and `model` is the model to have it use, when it offers models.
-export type Agent = { name: string, title: string?, commands: { { string } }, model: string? }
+--- A `native` agent is Greed's own, run in the editor; its `model` is the
+--- role of the model it uses (see the models plugin).
+export type Agent = {
+	name: string,
+	title: string?,
+	commands: { { string } },
+	model: string?,
+	native: boolean?,
+}
 
 local agents: { Agent } = {}
 
@@ -58,6 +67,7 @@ M.register({
 	commands = { { "gemini", "--experimental-acp" } },
 })
 M.register({ name = "codex", title = "Codex", commands = { { "codex-acp" } } })
+M.register({ name = "greed", title = "Greed", commands = {}, native = true })
 
 greed.option.define({
 	name = "agent-greed-tools",
@@ -139,8 +149,12 @@ local function decide(s: Session, permission: session.Permission): string?
 	return workspace_edits(s, permission)
 end
 
---- The command that runs `agent`: the first one installed.
+--- The command that runs `agent`: the first one installed. Greed's own
+--- agent needs none.
 local function command_of(agent: Agent): { string }?
+	if agent.native then
+		return {}
+	end
 	for _, command in agent.commands do
 		if greed.which(command[1]) then
 			return command
@@ -362,32 +376,50 @@ local function launch(
 			count += 1
 		end
 	end
+	local name = (agent.title or agent.name) .. (if count > 1 then ` {count}` else "")
 	local s: Session
-	s = session.start({
-		name = (agent.title or agent.name) .. (if count > 1 then ` {count}` else ""),
-		agent = agent.name,
-		command = command,
-		root = root,
-		cwd = if workspace then workspace.path else root,
-		workspace = workspace,
-		servers = M.servers(greed.session.current(), greed.session.program()),
-		decide = function(permission)
-			return decide(s, permission)
-		end,
-		load = extra and extra.load,
-		fork = extra and extra.fork,
-		entries = extra and extra.entries,
-		changed = function()
-			changed(s)
-		end,
-	})
+	local function decides(permission: session.Permission): string?
+		return decide(s, permission)
+	end
+	local function changes()
+		changed(s)
+	end
+	if agent.native then
+		if workspace or extra then
+			return nil,
+				`{name} works in the project itself; it can't have a workspace, be taken up or forked yet`
+		end
+		s = native.start({
+			name = name,
+			agent = agent.name,
+			root = root,
+			role = agent.model,
+			decide = decides,
+			changed = changes,
+		})
+	else
+		s = session.start({
+			name = name,
+			agent = agent.name,
+			command = command,
+			root = root,
+			cwd = if workspace then workspace.path else root,
+			workspace = workspace,
+			servers = M.servers(greed.session.current(), greed.session.program()),
+			decide = decides,
+			load = extra and extra.load,
+			fork = extra and extra.fork,
+			entries = extra and extra.entries,
+			changed = changes,
+		})
+	end
 	table.insert(sessions, s)
 	agent_of[s.id] = agent
 	local buffer = transcript.create(s)
 	buffers[s.id] = buffer
 	by_buffer[buffer:id()] = s
 	render_overviews()
-	local model = agent.model
+	local model = if agent.native then nil else agent.model
 	if model then
 		-- The model asked for, once the agent says which it has.
 		greed.spawn(function()
@@ -409,7 +441,10 @@ end
 --- of its own if `own` is set.
 function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 	local workspace = nil
-	if own then
+	if own and agent.native then
+		return nil,
+			`{agent.title or agent.name} works in the project itself; it can't have a workspace yet`
+	elseif own then
 		local made, err = make_workspace(root, agent.name)
 		if made == nil then
 			return nil, err
@@ -686,17 +721,23 @@ greed.command({
 		local items = {}
 		for _, agent in agents do
 			local command = command_of(agent)
-			local how = if command then table.concat(command, " ") else "not installed"
+			local how = if agent.native
+				then "in the editor, with the model in :models"
+				elseif command then table.concat(command, " ")
+				else "not installed"
 			table.insert(items, { label = `{agent.title or agent.name}  ({how})`, value = agent })
 		end
 		local agent = picker.choose("Agent", items)
 		if agent == nil then
 			return
 		end
-		local place = picker.choose("Where it works", {
-			{ label = "In a workspace of its own", value = "own" },
-			{ label = "In the project, with you", value = "here" },
-		})
+		-- Greed's own agent works in the project; there's nothing to ask.
+		local place = if agent.value.native
+			then { value = "here" }
+			else picker.choose("Where it works", {
+				{ label = "In a workspace of its own", value = "own" },
+				{ label = "In the project, with you", value = "here" },
+			})
 		if place == nil then
 			return
 		end

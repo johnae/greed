@@ -188,7 +188,31 @@ removes it when the session ends.
 Greed can also run agents itself, over the Agent Client Protocol (ACP): Claude
 Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), or any
 agent that speaks it, found on your `PATH`. Each gets a transcript buffer,
-and several can work at once.
+and several can work at once. Greed has an agent of its own too, below.
+
+### Greed's own agent
+
+Pick "Greed" in `space i n` for an agent that runs in the editor itself,
+with any model the [models](using.md#models) setup knows: Anthropic's, or
+any server with OpenAI's API, like berget or a local Ollama. It uses the
+model playing the `agent` role (or `reasoning` without one); `alt-M` in its
+transcript picks another role.
+
+```luau
+local models = require("@models")
+models.providers.berget = { kind = "openai", url = "https://api.berget.ai/v1", secret = "berget" }
+models.roles.agent = { provider = "berget", model = "the model you want" }
+-- then :secret-set berget, or set GREED_SECRET_BERGET
+```
+
+It has every tool the list above gives agents (the repo map, working set,
+grep, symbols, diagnostics, the plan, proposals, ...) plus `edit_file`,
+`write_file` and `run` for shell commands. Reading never asks; editing and
+running ask the way other agents' questions do (`y` once, `a` for the rest
+of the session, `n` no), and your policies answer them too. Its system
+prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
+in the project itself, without a workspace of its own, and its sessions
+aren't kept to take up after a restart.
 
 | Keys | |
 |---|---|

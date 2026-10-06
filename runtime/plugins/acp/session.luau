@@ -85,6 +85,16 @@ export type Session = {
 	quiet: boolean?,
 	--- Called whenever there's something new to show.
 	changed: () -> (),
+	--- What runs an agent that isn't a program speaking ACP, like Greed's
+	--- own: prompts, stops and model changes go to it instead.
+	driver: Driver?,
+}
+
+--- An agent run in the editor rather than as an ACP program.
+export type Driver = {
+	prompt: (session: Session, text: string) -> (boolean, string?),
+	cancel: (session: Session) -> (),
+	set_model: (session: Session, id: string) -> (boolean, string?),
 }
 
 -- A terminal the agent asked for: a program and what it printed.
@@ -305,42 +315,15 @@ local function handlers(session: Session): rpc.Handlers
 		end
 		local call: any = params.toolCall or {}
 		local tool = session.tools[call.toolCallId or ""]
-		local permission: Permission = {
-			title = call.title or (tool and tool.title) or "a tool call",
-			kind = call.kind or (tool and tool.kind),
-			options = options,
-			answer = greed.signal(),
-		}
-		local entry: Entry = { kind = "permission", permission = permission }
-		table.insert(session.entries, entry)
-		local decided = session.decide and session.decide(permission)
-		if decided then
-			for _, option in options do
-				if option.id == decided then
-					entry.chosen = `{option.name} (by policy)`
-				end
-			end
-			session.changed()
-			return { outcome = { outcome = "selected", optionId = decided } }
-		end
-		local before = session.status
-		session.status = "waiting"
-		session.changed()
-		local chosen = permission.answer.wait()
-		if session.status == "waiting" then
-			session.status = before
-		end
+		local chosen = M.ask(
+			session,
+			call.title or (tool and tool.title) or "a tool call",
+			call.kind or (tool and tool.kind),
+			options
+		)
 		if chosen == nil then
-			entry.chosen = "cancelled"
-			session.changed()
 			return { outcome = { outcome = "cancelled" } }
 		end
-		for _, option in options do
-			if option.id == chosen then
-				entry.chosen = option.name
-			end
-		end
-		session.changed()
 		return { outcome = { outcome = "selected", optionId = chosen } }
 	end
 
@@ -473,6 +456,48 @@ local function handlers(session: Session): rpc.Handlers
 	return h
 end
 
+--- Asks you whether the agent may do `title` (a tool call of `kind`),
+--- with `options` to answer by, unless a policy answers first. Returns the
+--- option chosen, or nil if the question was cancelled.
+function M.ask(
+	session: Session,
+	title: string,
+	kind: string?,
+	options: { { id: string, name: string, kind: string } }
+): string?
+	local permission: Permission =
+		{ title = title, kind = kind, options = options, answer = greed.signal() }
+	local entry: Entry = { kind = "permission", permission = permission }
+	table.insert(session.entries, entry)
+	local function chose(id: string, how: string)
+		for _, option in options do
+			if option.id == id then
+				entry.chosen = option.name .. how
+			end
+		end
+	end
+	local decided = session.decide and session.decide(permission)
+	if decided then
+		chose(decided, " (by policy)")
+		session.changed()
+		return decided
+	end
+	local before = session.status
+	session.status = "waiting"
+	session.changed()
+	local chosen = permission.answer.wait()
+	if session.status == "waiting" then
+		session.status = before
+	end
+	if chosen == nil then
+		entry.chosen = "cancelled"
+	else
+		chose(chosen, "")
+	end
+	session.changed()
+	return chosen
+end
+
 local next_id = 0
 
 --- A session of the agent `command` (registered as `agent`) working in
@@ -602,9 +627,40 @@ function M.start(
 	return session
 end
 
+--- A session of an agent `driver` runs in the editor, ready at once.
+function M.start_driven(opts: {
+	name: string,
+	agent: string,
+	root: string,
+	cwd: string,
+	decide: ((permission: Permission) -> string?)?,
+	changed: () -> (),
+	driver: Driver,
+}): Session
+	next_id += 1
+	return {
+		id = next_id,
+		name = opts.name,
+		agent = opts.agent,
+		root = opts.root,
+		cwd = opts.cwd,
+		status = "idle",
+		entries = {},
+		tools = {},
+		modes = {},
+		models = {},
+		decide = opts.decide,
+		changed = opts.changed,
+		driver = opts.driver,
+	}
+end
+
 --- Sends `text` to the agent and waits for its turn to end; what it says
 --- and does meanwhile arrives as entries. False and why when it can't.
 function M.prompt(session: Session, text: string): (boolean, string?)
+	if session.driver then
+		return session.driver.prompt(session, text)
+	end
 	local conn = session.conn
 	if conn == nil or session.session_id == nil then
 		return false,
@@ -654,6 +710,9 @@ end
 
 --- Has the agent use the model `id`. False and why when it won't.
 function M.set_model(session: Session, id: string): (boolean, string?)
+	if session.driver then
+		return session.driver.set_model(session, id)
+	end
 	local conn = session.conn
 	if conn == nil or session.session_id == nil then
 		return false, "the agent isn't running"
@@ -684,6 +743,9 @@ end
 function M.cancel(session: Session)
 	for _, permission in M.pending(session) do
 		permission.answer.send(nil)
+	end
+	if session.driver then
+		session.driver.cancel(session)
 	end
 	local conn = session.conn
 	if conn and session.session_id then

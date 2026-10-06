@@ -1,3 +1,3 @@
 name = "acp"
-requires = ["core", "picker", "statusline", "vcs", "agent"]
+requires = ["core", "picker", "statusline", "vcs", "agent", "models"]
 capabilities = ["proc", "fs.read", "fs.write"]

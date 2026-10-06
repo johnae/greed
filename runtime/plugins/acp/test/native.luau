@@ -1,0 +1,186 @@
+local test = require("@greed/test")
+local greed = require("@greed")
+local acp = require("@acp")
+local models: any = require("@models")
+
+local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, native = true }
+
+-- Stands in for the model: each turn returns the next of `turns`, and the
+-- requests it got are kept.
+local function script(turns: { any }): { any }
+	local asked: { any } = {}
+	local at = 0
+	models.turn = function(_role, request, on_text)
+		table.insert(asked, table.clone(request))
+		at += 1
+		local turn = turns[at] or { text = "", calls = {}, stop = "done" }
+		if on_text and turn.text ~= "" then
+			on_text(turn.text)
+		end
+		return turn, nil
+	end
+	return asked
+end
+
+-- Starts Greed's agent in a project and sends `text`, in the background,
+-- as the transcript does.
+local function ask(t: test.TestContext, text: string): (any, string)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+	local s = assert(acp.start(GREED, dir))
+	greed.spawn(function()
+		acp.prompt(s, text)
+	end)
+	t:wait(10)
+	return s, dir
+end
+
+-- The question the agent waits on.
+local function waiting(s: any): any
+	for _, entry in s.entries do
+		if entry.kind == "permission" and entry.chosen == nil then
+			return entry.permission
+		end
+	end
+	error("nothing asked")
+end
+
+local function said(s: any): string
+	local out = {}
+	for _, entry in s.entries do
+		table.insert(out, `{entry.kind}: {entry.text or (entry.tool and entry.tool.title) or ""}`)
+	end
+	return table.concat(out, " | ")
+end
+
+test("a prompt gets the model's answer in the transcript", function(t)
+	local asked = script({ { text = "Hello there", calls = {}, stop = "done" } })
+	local s = ask(t, "hi")
+	assert(s.status == "idle", s.status)
+	assert(said(s) == "user: hi | agent: Hello there", said(s))
+	assert(asked[1].said[1].text == "hi", "the prompt went to the model")
+	assert(#asked[1].tools > 3, "with tools")
+	assert(string.find(asked[1].system or "", "Greed's coding agent", 1, true), "and who it is")
+end)
+
+test("an edit asks first, and once allowed it's made and the model hears so", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "two", new_text = "TWO" },
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "shout two")
+	assert(s.status == "waiting", s.status)
+	local question = waiting(s)
+	assert(question.title == "Edit a.txt", question.title)
+	question.answer.send("once")
+	t:wait(10)
+	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\n", "edited")
+	assert(asked[2].said[3].role == "tool" and asked[2].said[3].text == "edited a.txt", "told")
+	assert(s.status == "idle" and string.find(said(s), "agent: Done.", 1, true), said(s))
+end)
+
+test("a rejected edit isn't made, and the model hears it wasn't allowed", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "x" } } },
+			stop = "tools",
+		},
+		{ text = "OK, I won't.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "make b")
+	waiting(s).answer.send("no")
+	t:wait(10)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "not written")
+	assert(s.tool == nil, "and it's not shown as running")
+	local result = asked[2].said[3]
+	assert(result.error and string.find(result.text, "didn't allow", 1, true), result.text)
+end)
+
+test("allowed always, the next edit of that kind doesn't ask", function(t)
+	script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "1" } } },
+			stop = "tools",
+		},
+		{
+			text = "",
+			calls = { { id = "c2", name = "write_file", input = { path = "c.txt", text = "2" } } },
+			stop = "tools",
+		},
+		{ text = "Both.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "make two")
+	waiting(s).answer.send("always")
+	t:wait(10)
+	assert(greed.fs.read(`{dir}/c.txt`) == "2" and s.status == "idle", s.status)
+end)
+
+test(
+	"Greed's tools for agents run without asking, and a failing tool tells the model why",
+	function(t)
+		local asked = script({
+			{
+				text = "",
+				calls = {
+					{ id = "c1", name = "project", input = {} },
+					{
+						id = "c2",
+						name = "edit_file",
+						input = { path = "a.txt", old_text = "nope", new_text = "x" },
+					},
+				},
+				stop = "tools",
+			},
+			{ text = "", calls = {}, stop = "done" },
+		})
+		local s = ask(t, "where are we")
+		waiting(s).answer.send("once")
+		t:wait(10)
+		local results = asked[2].said
+		assert(results[3].text and not results[3].error, "the project tool ran")
+		assert(
+			results[4].error and string.find(results[4].text, "isn't in a.txt", 1, true),
+			results[4].text
+		)
+	end
+)
+
+test("the model is a role, and alt-M's list is the roles", function(t)
+	models.roles.agent = { provider = "anthropic", model = "test-model" }
+	local used = {}
+	models.turn = function(role)
+		table.insert(used, role)
+		return { text = "ok", calls = {}, stop = "done" }, nil
+	end
+	local s = ask(t, "hi")
+	assert(used[1] == "agent" and s.model == "agent", tostring(used[1]))
+	local names = {}
+	for _, m in s.models do
+		table.insert(names, m.id)
+	end
+	assert(table.find(names, "fast") and table.find(names, "agent"), table.concat(names, " "))
+	s.driver.set_model(s, "fast")
+	acp.prompt(s, "again")
+	assert(used[2] == "fast", tostring(used[2]))
+	models.roles.agent = nil
+end)
+
+test("Greed's agent says it can't have a workspace yet", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "ref: refs/heads/main\n" })
+	local s, err = acp.start(GREED, dir, true)
+	assert(
+		s == nil and string.find(tostring(err), "works in the project itself", 1, true),
+		tostring(err)
+	)
+end)
