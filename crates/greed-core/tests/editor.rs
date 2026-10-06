@@ -785,6 +785,67 @@ fn closing_a_project_that_isnt_shown_keeps_the_shown_one() {
 }
 
 #[test]
+fn tabs_of_a_project_that_isnt_shown_work_by_id() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let kept = ed.tabs()[0].id();
+    let tab = ed.new_tab(None);
+    let pane = ed.current_tab().active();
+    let second = ed.open_project("/b".into());
+    let second_main = ed.main();
+
+    assert!(ed.rename_tab(tab, Some("logs".into())));
+    let project = ed.projects().iter().find(|p| p.id() == first).unwrap();
+    assert_eq!(project.tabs()[1].name(), Some("logs"));
+    let layout = ed.tab_layout(tab).cloned().unwrap();
+    assert_eq!(layout.panes(), [pane]);
+    ed.set_tab_layout(tab, layout).unwrap();
+    assert_eq!(ed.current_project().id(), second, "none of those switch");
+
+    assert!(ed.switch_tab(kept));
+    assert_eq!(ed.current_project().id(), first);
+    assert_eq!(ed.current_tab().id(), kept);
+    assert_eq!(ed.focus(), ed.main());
+
+    assert!(ed.switch_project(second));
+    assert_eq!(ed.close_tab(tab), Some(vec![pane]));
+    assert!(ed.find_view(pane).is_none());
+    assert_eq!(ed.focus(), second_main, "the shown project keeps focus");
+    assert_eq!(ed.close_tab(kept), None, "a project's last tab stays");
+    assert!(!ed.switch_tab(tab) && !ed.rename_tab(tab, None));
+    assert!(ed.tab_layout(tab).is_none());
+}
+
+#[test]
+fn focusing_a_view_of_another_project_shows_that_project() {
+    let mut ed = editor("first");
+    let first = ed.current_project().id();
+    let first_main = ed.main();
+    let tree = ed.create_buffer("tree", "");
+    let panel = ed.panel(tree, panel_options());
+    let other_tab = ed.new_tab(None);
+    let pane = ed.current_tab().active();
+    assert!(ed.switch_tab(ed.tabs()[0].id()));
+    let second = ed.open_project("/b".into());
+
+    ed.set_focus(pane);
+    assert_eq!(ed.current_project().id(), first);
+    assert_eq!(ed.current_tab().id(), other_tab);
+    assert_eq!(ed.focus(), pane);
+
+    assert!(ed.switch_project(second));
+    ed.set_focus(panel);
+    assert_eq!(ed.current_project().id(), first);
+    assert_eq!(ed.focus(), panel);
+
+    assert!(ed.switch_project(second));
+    let float = ed.float(tree, float_options());
+    ed.set_focus(float);
+    assert_eq!(ed.current_project().id(), second, "floats show over any");
+    assert_ne!(first_main, ed.main());
+}
+
+#[test]
 fn files_opened_belong_to_the_shown_project() {
     let dir = std::env::temp_dir().join(format!("greed-project-file-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

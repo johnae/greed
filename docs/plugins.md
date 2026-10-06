@@ -339,7 +339,9 @@ Each project has tabs (`greed.tab.list`, `new`, `switch`, `close`,
 another. `view:split("right", buffer)` opens a pane, `view:neighbor("left")`
 finds the one beside it, `view:resize("down", 2)` moves its edge, and
 `view:close()` closes it. `greed.view()` is the focused view, and the
-shown tab's active pane is where `greed.open` opens files.
+shown tab's active pane is where `greed.open` opens files. Tab ids work
+whichever project the tab is in: `greed.tab.switch` and `view:focus()` on a
+tab or view of another project show that project.
 
 `greed.tab.layout()` gives a tab's arrangement as a tree, and
 `greed.tab.set_layout(tree)` arranges its panes another way:

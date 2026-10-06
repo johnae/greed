@@ -230,7 +230,7 @@ export type View = {
 	buffer: (self: View) -> Buffer,
 	--- Shows another buffer in this view.
 	show: (self: View, buffer: Buffer) -> (),
-	--- Focuses this view, so keys go to it.
+	--- Focuses this view, so keys go to it, showing its tab and project if it's a pane or panel.
 	focus: (self: View) -> (),
 	--- Closes the view. Closing a tab's last pane closes the tab; the
 	--- project's last pane can't be closed, and returns false.
@@ -796,7 +796,7 @@ export type Tabs = {
 	--- Opens a tab after the shown one, with a pane showing `buffer` (or an
 	--- empty buffer), and shows it. Returns its id.
 	new: (buffer: Buffer?) -> number,
-	--- Shows tab `id`. False if there's no such tab.
+	--- Shows tab `id`, of whichever project, and its project. False if there's no such tab.
 	switch: (id: number) -> boolean,
 	--- Closes tab `id` and its panes. The last tab can't be closed; false
 	--- then.
