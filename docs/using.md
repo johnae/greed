@@ -734,13 +734,41 @@ its command stands for the file's path.
 Markdown files show as documents: headings without their hashes (a `#`
 heading twice the size), `**bold**`, `*italic*`, `~~struck~~` and
 `` `code` `` without their markers, links as their underlined text, fenced
-code on a background of its own, quotes with a bar, `---` as a line and
-list dashes as bullets. The file stays plain Markdown: while you type on a
-line (insert mode) it shows as written, and in edit mode markup shows once
-the cursor is inside it. The window draws big headings big and sets the
-text in a proportional font (code stays monospaced); terminals other than
-kitty show headings at the normal size. `:set markdown-look false` turns it
-off.
+code on a background of its own, quotes with a bar, `---` as a line, list
+dashes as bullets and tables in aligned columns with borders. The file
+stays plain Markdown: while you type on a line (insert mode) it shows as
+written, and in edit mode markup shows once the cursor is inside it. The
+window draws big headings big and sets the text in a proportional font
+(code and tables stay monospaced); terminals other than kitty show
+headings at the normal size.
+
+`:set markdown-look false` turns the look off everywhere. To see one file
+as written, or one file as a document while the option is off, toggle it
+for that file with `space m l` (`alt-V` in edit mode, or
+`:markdown-look-toggle`). The status line shows `markdown · plain` while a
+file shows as written.
+
+### Reading view
+
+`space m v` (`alt-v` in edit mode, or `:markdown-read`) shows the file for
+reading: read-only, without line numbers, and with no markup showing
+anywhere, even on the cursor's line. Images on a line of their own show in
+place (in the window, and in terminals that show images; elsewhere you see
+their description), and links show as their text. `esc`, `q` or the same
+key again goes back to editing, at the same place.
+
+| Keys | |
+|---|---|
+| `j` `k` `h` `l`, arrows | Move |
+| `pagedown` `pageup`, `ctrl-f` `ctrl-b`, `ctrl-d` `ctrl-u` | Page and half page |
+| `/`, `n`, `N` | Search |
+| `enter` or a click on a link | Follow it |
+| `esc`, `q` | Back to editing |
+
+A link to `#a-heading` goes to that heading, a link to another Markdown
+file opens it in the reading view too (at its heading, with
+`other.md#a-heading`), and a web link opens in your browser (the
+`link-opener` option says which).
 
 ### Choices
 
