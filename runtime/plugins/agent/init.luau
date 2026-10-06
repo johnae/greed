@@ -21,6 +21,7 @@ local working = require("@self/working")
 local ask = require("@self/ask")
 local eval = require("@self/eval")
 local extend = require("@self/extend")
+local context = require("@self/context")
 
 registry.group(
 	"refactor",
@@ -73,4 +74,6 @@ return {
 	working = working,
 	--- Searching the web and reading pages for agents (web.luau).
 	web = web,
+	--- What the user has on screen, to send with prompts (context.luau).
+	context = context,
 }

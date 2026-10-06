@@ -5,6 +5,7 @@ local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
 local describe = require("@describe")
+local context = require("./context")
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
 	return { type = "object", properties = properties, required = required }
@@ -36,29 +37,7 @@ agent.tool({
 	description = "What the user is looking at: the current file, their selections "
 		.. "with the selected text, and the lines on screen",
 	run = function()
-		local view = greed.view()
-		local buffer = view:buffer()
-		local selection = view:selection()
-		local selections = {}
-		for i, range in selection.ranges do
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-			table.insert(selections, {
-				primary = i == selection.primary,
-				from = position(buffer, from),
-				to = position(buffer, to),
-				text = buffer:slice(from, to),
-			})
-		end
-		local first, last = view:visible()
-		return {
-			path = buffer:path(),
-			kind = buffer:kind(),
-			language = buffer:language(),
-			modified = buffer:modified(),
-			mode = greed.mode.get(),
-			selections = selections,
-			visible = { from = position(buffer, first).line, to = position(buffer, last).line },
-		}
+		return context.focus(context.view() or greed.view())
 	end,
 })
 

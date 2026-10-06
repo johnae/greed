@@ -31,7 +31,7 @@ claude mcp add greed -- greed mcp
 
 | Tool | What it does |
 |---|---|
-| `focus` | The current file, your selections with their text, the lines on screen |
+| `focus` | The file you are in (the last one, while an agent's pane has focus), your selections with their text, the lines on screen |
 | `buffers` | Open files and which have unsaved changes |
 | `read` | A file as the editor has it, unsaved changes included |
 | `diagnostics` | Errors and warnings from language servers |
@@ -286,6 +286,14 @@ below the prompt line at the bottom and press `alt-enter` to send;
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo
 takes them back.
+
+Each message you send takes along what you have on screen: the file you
+were last in (the one beside the agent's pane while you type there), the
+cursor's line and column, the selected text (cut after 4000 characters)
+and the other files showing. It's marked as context from the editor, so
+the agent treats the file text in it as data. When nothing changed since
+your last message it isn't sent again. `:set agent-editor-context false`
+turns it off.
 
 Agents also get Greed's own tools, the ones `greed mcp` offers above
 (diagnostics, outlines, `syntax_query`, `propose`, ...), connected to this

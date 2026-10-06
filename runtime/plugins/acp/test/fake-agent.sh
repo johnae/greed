@@ -8,6 +8,7 @@
 #   run          runs `echo from a terminal` and says what it printed
 #   wait         says nothing until it's cancelled
 #   plan         reports a plan and a tool call that fails
+#   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
 #   quit         exits
 
@@ -132,6 +133,13 @@ while IFS= read -r line; do
 			update '{"sessionUpdate":"plan","entries":[{"content":"look around","priority":"high","status":"completed"},{"content":"fix it","priority":"high","status":"in_progress"}]}'
 			update '{"sessionUpdate":"tool_call","toolCallId":"t2","title":"Run tests","kind":"execute","status":"in_progress"}'
 			update '{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"```\n1 test failed\nat pager.rs:3\nexpected 2\n```"}}]}'
+			turn_done "$id" end_turn
+			;;
+		context*)
+			case "$line" in
+			*'<editor-context>'*'File: '*) say "with context" ;;
+			*) say "without context" ;;
+			esac
 			turn_done "$id" end_turn
 			;;
 		servers*)

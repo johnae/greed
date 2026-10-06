@@ -249,6 +249,8 @@ local function system(s: Session, env: string?): string
 		`The project is at {s.root}; paths are relative to it. It's {os.date(
 			"%A %Y-%m-%d %H:%M %Z"
 		)}.` .. (if env and env ~= "" then " " .. env else ""),
+		"A user's message may start with an <editor-context> block: what they had on screen as "
+			.. "they wrote it. It's left out when nothing changed since their last message.",
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
 			.. "Edit with edit_file, giving enough of the old text to match once.",
@@ -385,14 +387,16 @@ end
 
 -- Turns a prompt into an answer: the model's turns, and the tools it asks
 -- for between them, until it's done.
-local function prompt(s: Session, text: string): (boolean, string?)
+local function prompt(s: Session, text: string, context: string?): (boolean, string?)
 	local state = states[s.id]
 	if s.status == "working" or s.status == "waiting" then
 		return false, "the agent is still working; stop it first"
 	end
 	state.cancelled = false
 	table.insert(s.entries, { kind = "user", text = text })
-	table.insert(state.said, { role = "user", text = text } :: models.Said)
+	local fresh = session.fresh_context(s, context)
+	local said = if fresh then `{fresh}\n\n{text}` else text
+	table.insert(state.said, { role = "user", text = said } :: models.Said)
 	s.status = "working"
 	s.changed()
 	state.env = state.env or environment(s.root)

@@ -12,6 +12,16 @@ local function run(name: string, args: { [string]: any }?, caller: agent.Caller?
 	error(`no tool {name}`)
 end
 
+test("focus tells the file you were in while a pane without one has focus", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+	greed.open(dir .. "/a.txt")
+	greed.view():set_selection({ ranges = { { anchor = 4, head = 7 } }, primary = 1 })
+	greed.panel(greed.create_buffer("notes", "x"), { side = "right" })
+	local focus = run("focus")
+	assert(focus.path == dir .. "/a.txt", tostring(focus.path))
+	assert(focus.selections[1].text == "two", focus.selections[1].text)
+end)
+
 test("read falls back to the disk for files that aren't open", function(t)
 	local dir = t:tempdir({ ["closed.txt"] = "a\nb\nc" })
 	t:buffer("|x")

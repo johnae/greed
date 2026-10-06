@@ -88,11 +88,13 @@ export type Session = {
 	--- What runs an agent that isn't a program speaking ACP, like Greed's
 	--- own: prompts, stops and model changes go to it instead.
 	driver: Driver?,
+	--- The editor context the last prompt took, so the same isn't sent again.
+	context_sent: string?,
 }
 
 --- An agent run in the editor rather than as an ACP program.
 export type Driver = {
-	prompt: (session: Session, text: string) -> (boolean, string?),
+	prompt: (session: Session, text: string, context: string?) -> (boolean, string?),
 	cancel: (session: Session) -> (),
 	set_model: (session: Session, id: string) -> (boolean, string?),
 }
@@ -655,11 +657,22 @@ function M.start_driven(opts: {
 	}
 end
 
+--- `context` (what you have on screen) to send with a prompt now, or nil
+--- when it's what the last prompt took. Call it once the prompt is going.
+function M.fresh_context(session: Session, context: string?): string?
+	if context == nil or context == session.context_sent then
+		return nil
+	end
+	session.context_sent = context
+	return context
+end
+
 --- Sends `text` to the agent and waits for its turn to end; what it says
---- and does meanwhile arrives as entries. False and why when it can't.
-function M.prompt(session: Session, text: string): (boolean, string?)
+--- and does meanwhile arrives as entries. `context` goes along before it,
+--- unless the last prompt took the same. False and why when it can't.
+function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
 	if session.driver then
-		return session.driver.prompt(session, text)
+		return session.driver.prompt(session, text, context)
 	end
 	local conn = session.conn
 	if conn == nil or session.session_id == nil then
@@ -673,9 +686,14 @@ function M.prompt(session: Session, text: string): (boolean, string?)
 	table.insert(session.entries, { kind = "user", text = text })
 	session.status = "working"
 	session.changed()
+	local blocks = { { type = "text", text = text } }
+	local fresh = M.fresh_context(session, context)
+	if fresh then
+		table.insert(blocks, 1, { type = "text", text = fresh })
+	end
 	local result, err = conn.request("session/prompt", {
 		sessionId = session.session_id,
-		prompt = { { type = "text", text = text } },
+		prompt = blocks,
 	})
 	if session.status ~= "exited" then
 		session.status = "idle"

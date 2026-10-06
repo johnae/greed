@@ -23,6 +23,7 @@ local transcript = require("@self/transcript")
 local participants = require("@self/participants")
 local review = require("@self/review")
 local statusline = require("@statusline")
+local agent_context = require("@agent").context
 
 type Session = session.Session
 
@@ -91,6 +92,12 @@ function M.servers(name: string?, program: string?): { any }
 		},
 	}
 end
+
+greed.option.define({
+	name = "agent-editor-context",
+	doc = "Send agents the file you're in, the cursor, the selection and the other files on screen with each message",
+	default = true,
+})
 
 greed.option.define({
 	name = "agent-workspace-edits",
@@ -779,7 +786,10 @@ greed.command({
 			return
 		end
 		transcript.clear_prompt(ctx.buffer)
-		local ok, err = session.prompt(s, text)
+		local context = if greed.option.get("agent-editor-context") == true
+			then agent_context.describe(s.root)
+			else nil
+		local ok, err = session.prompt(s, text, context)
 		if not ok then
 			greed.echo(err :: string)
 		end

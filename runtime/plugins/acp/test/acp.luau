@@ -196,6 +196,16 @@ test("agents get greed mcp for this session, unless the option is off", function
 	assert(string.find(shown(), "servers: 0", 1, true), shown())
 end)
 
+test("the file you're in goes with a prompt as a block before it, once", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(dir .. "/a.txt")
+	local s = start(t, dir)
+	send(t, s, "context")
+	assert(string.find(shown(), "  with context\n", 1, true), shown())
+	send(t, s, "context")
+	assert(string.find(shown(), "  without context\n", 1, true), "unchanged: " .. shown())
+end)
+
 test("alt-m picks the agent's mode, and the transcript says which it's in", function(t)
 	local s = start(t, t:tempdir({}))
 	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
