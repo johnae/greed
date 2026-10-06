@@ -215,6 +215,30 @@ pub enum CursorShape {
     Underline,
 }
 
+/// How line numbers count.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LineNumbers {
+    /// Each line's own number.
+    #[default]
+    Absolute,
+    /// How far each line is from the cursor's, 0 on the cursor's own.
+    Relative,
+    /// As `Relative`, with the cursor's line showing its own number.
+    Hybrid,
+}
+
+impl LineNumbers {
+    /// The number shown by line `line` (0-based) with the cursor on line
+    /// `cursor`.
+    pub fn number(self, line: usize, cursor: usize) -> usize {
+        match self {
+            LineNumbers::Absolute => line + 1,
+            LineNumbers::Hybrid if line == cursor => line + 1,
+            LineNumbers::Relative | LineNumbers::Hybrid => line.abs_diff(cursor),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyOutcome {
     /// Run this command. `keys` is the sequence that triggered it, and
@@ -273,6 +297,8 @@ pub struct Editor {
     copied: Option<String>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
+    /// How line numbers count, where buffers show them.
+    line_numbers: LineNumbers,
     file_types: FileTypes,
     theme: Arc<Theme>,
     /// The menus for a window's menu bar, as plugins set them.
@@ -312,6 +338,7 @@ impl Editor {
             clipboard: Vec::new(),
             copied: None,
             cursor_shapes: HashMap::new(),
+            line_numbers: LineNumbers::default(),
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
             menus: Vec::new(),
@@ -1001,6 +1028,15 @@ impl Editor {
 
     pub fn set_cursor_shape(&mut self, mode: &str, shape: CursorShape) {
         self.cursor_shapes.insert(mode.into(), shape);
+    }
+
+    /// How line numbers count, where buffers show them.
+    pub fn line_numbers(&self) -> LineNumbers {
+        self.line_numbers
+    }
+
+    pub fn set_line_numbers_style(&mut self, style: LineNumbers) {
+        self.line_numbers = style;
     }
 
     /// The cursor shape for the current mode.

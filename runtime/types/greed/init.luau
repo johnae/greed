@@ -1309,6 +1309,10 @@ export type Greed = {
 	view: () -> View,
 	--- Asks the editor to exit.
 	quit: () -> (),
+	--- How line numbers count, where buffers show them: each line's own
+	--- number, "relative" to the cursor's line (0 on it), or "hybrid", relative
+	--- with the cursor's line showing its own.
+	line_numbers: (style: "absolute" | "relative" | "hybrid") -> (),
 	--- Lets the attached terminal go and keeps the editor running in the
 	--- background, for `greed attach` to come back to.
 	detach: () -> (),

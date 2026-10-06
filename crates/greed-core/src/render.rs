@@ -28,8 +28,8 @@ use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
-    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, Mark, Panel, Reveal, Scroll, Side,
-    View, ViewId, VirtualLine,
+    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, LineNumbers, Mark, Panel, Reveal,
+    Scroll, Side, View, ViewId, VirtualLine,
 };
 
 /// Highlights and marks drawn over a buffer's text.
@@ -712,6 +712,7 @@ impl<M: Measure> Renderer<M> {
         );
         let (marks, styled) = marks_in(editor, view.buffer, decorations, &visible);
         let (head, cursors) = cursors(text, view, editor.cursor_shape());
+        let number = line_number(editor.line_numbers(), text, head);
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
         let (mut first_shown, mut last_shown) = (None, None);
@@ -742,7 +743,7 @@ impl<M: Measure> Renderer<M> {
                     ..Row::default()
                 };
                 if line_numbers {
-                    line_gutter.push(&mut row, (i == 0).then_some(line + 1));
+                    line_gutter.push(&mut row, (i == 0).then(|| number(line)));
                 }
                 let mut x = gutter;
                 for cell in &cells {
@@ -776,9 +777,7 @@ impl<M: Measure> Renderer<M> {
                 }
                 if i == last {
                     let eol = styled.iter().filter(on_line).filter(|m| m.eol);
-                    let room = usize::from(area.width).saturating_sub(x);
-                    let screen_row = area.y + u16::try_from(rows.len()).unwrap_or(u16::MAX);
-                    self.push_eol_text(&mut row, (view_id, area.x, screen_row), room, eol);
+                    self.push_eol_text(&mut row, (view_id, area, rows.len()), x, eol);
                 }
                 push_covering(&mut rows, row, row_height(&cells), text_rows);
             }
@@ -797,17 +796,20 @@ impl<M: Measure> Renderer<M> {
         (rows, cursor)
     }
 
-    /// Adds each mark's text after the end of a line, a space before each,
-    /// cut off at `room` cells rather than wrapped. `at` is the view, its
-    /// left edge and the row's line on screen, for marks with actions.
+    /// Adds each mark's text after the end of a line that reaches column
+    /// `x`, a space before each, cut off at the edge rather than wrapped.
+    /// `at` is the view, its area and the row's index in it, for marks with
+    /// actions.
     fn push_eol_text<'a>(
         &self,
         row: &mut Row,
-        at: (ViewId, u16, u16),
-        mut room: usize,
+        at: (ViewId, Rect, usize),
+        x: usize,
         marks: impl Iterator<Item = &'a &'a Mark>,
     ) {
-        let (view, left, screen_row) = at;
+        let (view, area, row_index) = at;
+        let (left, mut room) = (area.x, usize::from(area.width).saturating_sub(x));
+        let screen_row = area.y + u16::try_from(row_index).unwrap_or(u16::MAX);
         for mark in marks {
             let Some(text) = &mark.text else { continue };
             let mut shown = String::new();
@@ -1312,6 +1314,13 @@ impl<'a> Gutter<'a> {
         }
         row.push(&text, tags);
     }
+}
+
+/// The number each line shows in `style`: its own, or how far it is from
+/// the line of `head`, the byte the cursor is drawn on.
+fn line_number(style: LineNumbers, text: &Rope, head: usize) -> impl Fn(usize) -> usize + use<> {
+    let cursor = text.byte_to_line(head.min(text.len_bytes()));
+    move |line| style.number(line, cursor)
 }
 
 /// The gutter's width: line numbers plus one space, after a sign column if

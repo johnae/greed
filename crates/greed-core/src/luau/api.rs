@@ -16,7 +16,9 @@ use super::{HostError, state, state_mut};
 use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
-use crate::{Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, PanelOptions, Side};
+use crate::{
+    Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, PanelOptions, Side,
+};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -295,6 +297,8 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("next_key", tasks::next_key_function(lua)?)?;
 
     greed.set("quit", quit_function(lua)?)?;
+
+    greed.set("line_numbers", line_numbers_function(lua)?)?;
 
     greed.set(
         "eval",
@@ -1358,6 +1362,24 @@ fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
             view: None,
             author: Author::Plugin(owner.clone()),
         })
+    })
+}
+
+/// `greed.line_numbers(style)`: how line numbers count.
+fn line_numbers_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, style: String| {
+        let style = match style.as_str() {
+            "absolute" => LineNumbers::Absolute,
+            "relative" => LineNumbers::Relative,
+            "hybrid" => LineNumbers::Hybrid,
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "line numbers are \"absolute\", \"relative\" or \"hybrid\", not {other:?}"
+                )));
+            }
+        };
+        state_mut(lua).editor.set_line_numbers_style(style);
+        Ok(())
     })
 }
 

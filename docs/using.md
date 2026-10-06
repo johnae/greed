@@ -232,6 +232,11 @@ There is always a selection; a cursor is a selection one character wide.
 | `alt-.` | Do the last `f` or `t` again |
 | `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |
 
+`:set line-numbers relative` numbers the lines by how far they are from the
+cursor's line, so the line marked 5 below is `5 j` away. `hybrid` does the
+same with the cursor's line showing its own number, and `absolute` goes
+back.
+
 **Changing**
 
 | Keys | |
