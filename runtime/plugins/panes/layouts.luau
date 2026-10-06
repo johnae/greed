@@ -41,12 +41,22 @@ type TabState = { layout: string, panes: { number }, settings: Settings }
 -- Each tab's layout, pane order and settings, by tab id.
 local states: { [number]: TabState } = {}
 
---- Adds layout `name`, or replaces it.
+--- Adds layout `name`, or replaces it, until the plugin (or config) that
+--- added it goes.
 function M.define(name: string, layout: Layout)
 	if layouts[name] == nil then
 		table.insert(order, name)
 	end
 	layouts[name] = layout
+	greed.plugin.tie(function()
+		if layouts[name] == layout then
+			layouts[name] = nil
+			local at = table.find(order, name)
+			if at then
+				table.remove(order, at)
+			end
+		end
+	end)
 end
 
 --- The layouts there are, in the order `next` goes through them.

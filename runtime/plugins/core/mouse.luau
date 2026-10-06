@@ -7,6 +7,7 @@
 
 local greed = require("@greed")
 local text = require("./text")
+local registry = require("./registry")
 
 local M = {}
 
@@ -18,9 +19,10 @@ export type Handler = (event: greed.MouseEvent) -> boolean
 local claims: { [string]: Handler } = {}
 
 --- Gives mouse events over buffers of `kind` to `handler` first; when it
---- returns true, nothing else is done with them.
+--- returns true, nothing else is done with them. It goes when the plugin
+--- that claimed them does.
 function M.claim(kind: string, handler: Handler)
-	claims[kind] = handler
+	greed.plugin.tie(registry.set(claims, kind, handler))
 end
 
 local function point(view: greed.View, pos: number, anchor: number?)

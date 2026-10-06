@@ -432,10 +432,16 @@ export type OpenOptions = {
 	cwd: string?,
 }
 
---- Environment variables every new terminal gets, on top of the editor's.
---- Plugins add to it, e.g. the agent plugin tells Claude Code where to
---- find Greed.
+--- Environment variables every new terminal gets, on top of the editor's;
+--- set with `set_env`.
 M.env = {} :: { [string]: string }
+
+--- Gives every new terminal the environment variable `name`, e.g. the
+--- agent plugin tells Claude Code where to find Greed. It goes when the
+--- plugin (or config) that set it does.
+function M.set_env(name: string, value: string)
+	greed.plugin.tie(core.registry.set(M.env, name, value))
+end
 
 --- Opens a terminal running `command` (the user's shell without) and
 --- types into it: in the focused view, a new pane or a float.
@@ -977,7 +983,6 @@ greed.command({
 -- Links, in terminals and in any text, as things to act on.
 core.actions.finder({
 	name = "link",
-	plugin = "terminal",
 	find = function(view, range)
 		local uri = M.link_at(view:buffer(), range.head)
 		return if uri then { { kind = "link", label = uri, value = uri } } else nil
@@ -987,7 +992,6 @@ core.actions.action({
 	kind = "link",
 	name = "open",
 	doc = "Open it with the link-opener",
-	plugin = "terminal",
 	run = function(target)
 		M.open_link(target.value)
 	end,
@@ -996,7 +1000,6 @@ core.actions.action({
 	kind = "link",
 	name = "copy",
 	doc = "Copy it",
-	plugin = "terminal",
 	run = function(target)
 		greed.clipboard.set(target.value)
 		greed.echo(`copied {target.value}`)

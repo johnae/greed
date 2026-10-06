@@ -7,6 +7,7 @@
 --     require("@greed").option.set("editing-style", "edit")
 
 local greed = require("@greed")
+local registry = require("./registry")
 
 export type Style = {
 	name: string,
@@ -15,7 +16,7 @@ export type Style = {
 	mode: string,
 	--- What the status line calls the style's modes, e.g. { vim = "normal" }.
 	labels: { [string]: string }?,
-	--- The plugin it comes from; unloading that plugin removes the style.
+	--- Once the plugin it came from; ignored.
 	plugin: string?,
 }
 
@@ -34,12 +35,24 @@ end
 
 local M = {}
 
---- Adds a style. If the user already chose it, it starts now.
+--- Adds a style. If the user already chose it, it starts now. It goes
+--- when the plugin that added it does, and Helix's takes over if it was in
+--- use.
 function M.define(style: Style)
 	styles[style.name] = style
 	if greed.option.get("editing-style") == style.name then
 		greed.mode.set(style.mode)
 	end
+	greed.plugin.tie(function()
+		if styles[style.name] ~= style then
+			return
+		end
+		local using = current()
+		styles[style.name] = nil
+		if current() ~= using then
+			greed.mode.set(M.home())
+		end
+	end)
 end
 
 --- The styles, sorted by name.
@@ -72,19 +85,30 @@ function M.is_home(mode: string): boolean
 	return false
 end
 
---- The mode buffers of a kind are used in, when it isn't the style's own,
---- e.g. `core.style.kind_modes.picker = "insert"`: a picker you come back
---- to after a float over it closes takes typing again.
+--- The mode buffers of each kind are used in, when it isn't the style's
+--- own; set with `kind_mode`.
 M.kind_modes = {} :: { [string]: string }
+
+--- Makes buffers of `kind` used in `mode`, e.g.
+--- `core.style.kind_mode("picker", "insert")`: a picker you come back to
+--- after a float over it closes takes typing again.
+function M.kind_mode(kind: string, mode: string)
+	greed.plugin.tie(registry.set(M.kind_modes, kind, mode))
+end
 
 --- The mode to be in with `view` focused: its buffer kind's, or `home()`.
 function M.home_for(view: greed.View): string
 	return M.kind_modes[view:buffer():kind()] or M.home()
 end
 
---- Modes shown as another mode, e.g. a completion menu's mode as the
---- typing mode it came from: `core.style.shown_as["completion-insert"] = "insert"`.
+--- Modes shown as another mode; set with `show_as`.
 M.shown_as = {} :: { [string]: string }
+
+--- Shows `mode` as `as`, e.g. a completion menu's mode as the typing mode
+--- it came from: `core.style.show_as("completion-insert", "insert")`.
+function M.show_as(mode: string, as: string)
+	greed.plugin.tie(registry.set(M.shown_as, mode, as))
+end
 
 --- What the status line shows for `mode`.
 function M.label(mode: string): string
@@ -125,19 +149,6 @@ greed.on("option.changed", function(event)
 	end
 	greed.history.end_group()
 	greed.mode.set(M.home())
-end)
-
--- A style goes with its plugin, and Helix's takes over if it was in use.
-greed.on("plugin.unloaded", function(event)
-	local using = current()
-	for name, style in styles do
-		if style.plugin == event.name then
-			styles[name] = nil
-		end
-	end
-	if current() ~= using then
-		greed.mode.set(M.home())
-	end
 end)
 
 greed.command({

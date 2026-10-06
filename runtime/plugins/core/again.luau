@@ -11,6 +11,7 @@
 
 local greed = require("@greed")
 local style = require("./style")
+local registry = require("./registry")
 
 local M = {}
 
@@ -20,7 +21,7 @@ local ignored: { [string]: boolean } = {}
 --- Leaves the commands `names` out of what `.` repeats, like undo.
 function M.ignore(names: { string })
 	for _, name in names do
-		ignored[name] = true
+		greed.plugin.tie(registry.set(ignored, name, true))
 	end
 end
 

@@ -46,9 +46,15 @@ local current = "default"
 -- The theme in use before tab on `:theme` started trying others.
 local tried_from: string? = nil
 
---- Adds a theme, or replaces the one called `name`.
+--- Adds a theme, or replaces the one called `name`, until the plugin (or
+--- config) that added it goes.
 function M.define(name: string, theme: Theme)
 	themes[name] = theme
+	greed.plugin.tie(function()
+		if themes[name] == theme then
+			themes[name] = nil
+		end
+	end)
 end
 
 --- Every theme's name, sorted.

@@ -735,9 +735,9 @@ function M.changes(buffer: greed.Buffer): { Change }
 end
 
 --- Calls `listener` with the buffer whenever its proposed changes come or
---- go.
+--- go, until the plugin that called this goes.
 function M.on_change(listener: (buffer: greed.Buffer) -> ())
-	table.insert(listeners, listener)
+	greed.plugin.tie(core.registry.put(listeners, listener))
 end
 
 --- How many proposed changes are waiting, across all files.

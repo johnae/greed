@@ -173,9 +173,10 @@ function M.list(): { Item }
 	return table.clone(items())
 end
 
---- Registers a computed item's function, for `{ kind = "computed", name }`.
+--- Registers a computed item's function, for `{ kind = "computed", name }`,
+--- until the plugin that registered it goes.
 function M.define(name: string, f: () -> string)
-	computed[name] = f
+	greed.plugin.tie(core.registry.set(computed, name, f))
 end
 
 --- The whole context as text for a model: each item under a heading with

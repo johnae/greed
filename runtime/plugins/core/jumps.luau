@@ -4,6 +4,7 @@
 -- own jumping commands with `require("@core").jumps.add(name)`.
 
 local greed = require("@greed")
+local registry = require("./registry")
 
 type Place = { buffer: number, path: string?, pos: number }
 
@@ -143,7 +144,7 @@ local M = {}
 
 --- Makes command `name` leave its starting place in the jumplist.
 function M.add(name: string)
-	JUMPS[name] = true
+	greed.plugin.tie(registry.set(JUMPS, name, true))
 end
 
 --- The places in the jumplist, newest first: each one's buffer id, file

@@ -2,6 +2,7 @@
 
 local greed = require("@greed")
 local project = require("./project")
+local registry = require("./registry")
 
 local M = {}
 
@@ -9,9 +10,10 @@ local M = {}
 local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
 
 --- Makes :w on buffers of `kind` call `save` rather than write a file,
---- e.g. for a list of search results that writes its edits back.
+--- e.g. for a list of search results that writes its edits back, until
+--- the plugin that called this goes.
 function M.on_save(kind: string, save: (buffer: greed.Buffer) -> ())
-	savers[kind] = save
+	greed.plugin.tie(registry.set(savers, kind, save))
 end
 
 -- What runs on a file's buffer just before it's written, like a formatter,
@@ -20,9 +22,9 @@ local before_save: { [string]: (buffer: greed.Buffer) -> () } = {}
 
 --- Makes `hook` run on each file's buffer just before it's written,
 --- replacing any hook called `name`. An error in it is shown, and the file
---- is written anyway.
+--- is written anyway. It goes when the plugin that added it does.
 function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
-	before_save[name] = hook
+	greed.plugin.tie(registry.set(before_save, name, hook))
 end
 
 local function save(buffer: greed.Buffer, path: string?)
@@ -86,9 +88,10 @@ local running: { [string]: () -> { string } } = {}
 
 --- Makes `check` say what of yours is running ("cargo test in a
 --- terminal", "an agent at work"), for :q to keep the session while
---- anything does. Replaces any check called `name`.
+--- anything does. Replaces any check called `name`; it goes when the
+--- plugin that added it does.
 function M.running(name: string, check: () -> { string })
-	running[name] = check
+	greed.plugin.tie(registry.set(running, name, check))
 end
 
 --- Everything the checks say is running.

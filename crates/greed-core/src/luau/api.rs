@@ -408,7 +408,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
         })?,
     )?;
     super::languages::register(lua, greed, owner)?;
-    greed.set("plugin", super::plugin::module(lua)?)?;
+    greed.set("plugin", super::plugin::module(lua, owner)?)?;
     greed.set("syntax", super::syntax::module(lua, owner)?)?;
     greed.set("theme", super::theme::module(lua, owner)?)
 }

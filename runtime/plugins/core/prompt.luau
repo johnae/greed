@@ -101,7 +101,7 @@ greed.command({
 	end,
 })
 
-style.kind_modes.prompt = "insert"
+style.kind_mode("prompt", "insert")
 greed.keymap.bind({ mode = "insert", kind = "prompt" }, {
 	enter = "prompt-submit",
 	esc = "prompt-cancel",

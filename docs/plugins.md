@@ -155,7 +155,6 @@ local actions = require("@core").actions
 
 actions.finder({
 	name = "ticket",
-	plugin = "jira",
 	find = function(view, range)
 		local buffer = view:buffer()
 		local line = buffer:line_of(range.head)
@@ -169,7 +168,6 @@ actions.action({
 	kind = "ticket",
 	name = "open",
 	doc = "Open it in the browser",
-	plugin = "jira",
 	run = function(target)
 		require("@terminal").open_link(`https://example.atlassian.net/browse/{target.value}`)
 	end,
@@ -177,8 +175,8 @@ actions.action({
 ```
 
 An action that is an existing command has a short form:
-`actions.command("text", "search", "search-selection", "Search for it",
-"core")` (kind, name, command, doc, plugin).
+`actions.command("text", "search", "search-selection", "Search for it")`
+(kind, name, command, doc).
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change`, `button`, `text` (the selection) and `command`, so a
@@ -355,11 +353,11 @@ A plugin can also ship them as files in its own `queries/LANGUAGE/` folder
 Folding uses a language's `folds` query, or indentation without one. To
 fold a language another way, give core a provider that returns the first
 and last line of the block around a line:
-`require("@core").folds.providers.org = function(buffer, line) ... end`.
-Notes folds Markdown sections this way. New lines' indent works the same
-way, with the `indents` query and `require("@core").indent.providers`,
-whose functions get the buffer and the place a line break goes in and
-return the new line's indent.
+`require("@core").folds.provider("org", function(buffer, line) ... end)`.
+Markdown folds sections this way. New lines' indent works the same way,
+with the `indents` query and `require("@core").indent.provider`, whose
+functions get the buffer and the place a line break goes in and return the
+new line's indent.
 
 The editor can have several projects open. `greed.project.current()` is
 the one shown, with its `root`; `greed.project.open`, `switch` and `close`
@@ -453,14 +451,14 @@ greed.tab.set_layout({
   foot and urxvt) with a bell while it isn't focused.
 - Features are what a plugin turns on for some buffers beyond their
   language, like notes for Markdown in the notes folder. Name yours with
-  `require("@core").features.add("todos", function(buffer) return ... end, "my-plugin")`,
+  `require("@core").features.add("todos", function(buffer) return ... end)`,
   and the status line shows it after the language (`markdown · todos`).
   `core.features.of(buffer)` lists the ones on.
 - Choices in Markdown (`- ( )`, `- (x)`) are read with
   `require("@markdown").choices.list(buffer)`: each group with its question
-  (the line above it) and its options, `picked` or not. `choices.on_pick(fn,
-  "my-plugin")` hears each pick, after the text has changed. A pick only
-  edits text; what it does is up to the plugin listening.
+  (the line above it) and its options, `picked` or not.
+  `choices.on_pick(fn)` hears each pick, after the text has changed. A pick
+  only edits text; what it does is up to the plugin listening.
 
 ## Waiting
 
@@ -986,6 +984,35 @@ floats and panels, forget its images, stop its `greed.fs.watch` watches,
 and put back the file types and language servers it replaced. A plugin
 that runs too long is stopped, so a mistake in a loop can't hang the
 editor.
+
+What a plugin adds through another plugin goes with it too: its agent
+tools, status line pieces, actions, features, styles, command line aliases
+and the like. There's no need to pass your plugin's name or to clean up on
+`plugin.unloaded`.
+
+### Keeping a registry of your own
+
+A plugin that lets others add to it, like a list of handlers, does the
+same with `greed.plugin.tie(remove)`: called in the function others call,
+it runs `remove` when the plugin that called it is unloaded or reloaded,
+and returns that plugin's name. Calls from your own plugin aren't tied,
+since what they added goes with your plugin anyway. `greed.plugin.caller()`
+just says who called. `require("@core").registry` makes the `remove`: `set`
+puts a value in a table under a key, `put` adds to a list, and each returns
+a function that takes the entry out unless it was replaced since. For an
+entry you put in a list yourself, `remover(list, entry)` makes that
+function.
+
+```luau
+local core = require("@core")
+
+local M = {}
+local greeters: { [string]: () -> string } = {}
+
+function M.greeter(name: string, greet: () -> string)
+	greed.plugin.tie(core.registry.set(greeters, name, greet))
+end
+```
 
 ## Trying code
 

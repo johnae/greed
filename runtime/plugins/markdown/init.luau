@@ -496,17 +496,17 @@ function M.refresh()
 end
 
 --- Lets `claim` say, for each buffer, which parts it draws its own way;
---- Markdown leaves those alone there. Returns a function that undoes it.
+--- Markdown leaves those alone there. It's undone when the plugin that
+--- called this goes, or when what it returns is called.
 function M.claim(claim: (buffer: greed.Buffer) -> Parts?): () -> ()
-	table.insert(claims, claim)
+	local take = core.registry.put(claims, claim)
 	M.refresh()
-	return function()
-		local at = table.find(claims, claim)
-		if at then
-			table.remove(claims, at)
-			M.refresh()
-		end
+	local function undo()
+		take()
+		M.refresh()
 	end
+	greed.plugin.tie(undo)
+	return undo
 end
 
 --- Whether `buffer` is in the reading view.

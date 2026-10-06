@@ -322,3 +322,113 @@ fn reloading_keeps_the_options_a_plugin_defines() {
         "2"
     );
 }
+
+const REGISTRY: &str = r#"
+local greed = require("@greed")
+local names: { string } = {}
+greed.command { name = "names", run = function() greed.echo(table.concat(names, ",")) end }
+local function add(name: string)
+  table.insert(names, name)
+  return greed.plugin.tie(function()
+    table.remove(names, table.find(names, name))
+  end)
+end
+add("own")
+return {
+  add = add,
+  caller = function() return greed.plugin.caller() end,
+}
+"#;
+
+fn names(h: &Host) -> String {
+    h.run("names").unwrap();
+    messages(h).join(";")
+}
+
+#[test]
+fn what_a_plugin_adds_to_anothers_registry_goes_when_it_does() {
+    let h = host();
+    h.load_str("registry", REGISTRY).unwrap();
+    h.load_str(
+        "adder",
+        r#"assert(require("@registry").add("mine") == "adder")"#,
+    )
+    .unwrap();
+    assert_eq!(names(&h), "own,mine");
+    h.reload("adder").unwrap();
+    assert_eq!(names(&h), "own,mine", "reloading adds it once");
+    h.unload("adder").unwrap();
+    assert_eq!(names(&h), "own", "the registry's own entry isn't tied");
+}
+
+#[test]
+fn the_caller_is_the_innermost_other_plugin() {
+    let h = host();
+    h.load_str("registry", REGISTRY).unwrap();
+    h.load_str(
+        "helper",
+        r#"return { add = function(name) return require("@registry").add(name) end }"#,
+    )
+    .unwrap();
+    h.load_str(
+        "user",
+        r#"
+        local greed = require("@greed")
+        assert(require("@helper").add("through") == "helper")
+        assert(require("@registry").caller() == "user")
+        assert(greed.plugin.caller() == nil)
+        "#,
+    )
+    .unwrap();
+    h.unload("user").unwrap();
+    assert_eq!(names(&h), "own,through");
+    h.unload("helper").unwrap();
+    assert_eq!(names(&h), "own");
+}
+
+#[test]
+fn ties_go_with_the_registry_without_running() {
+    let h = host();
+    h.load_str("registry", REGISTRY).unwrap();
+    h.load_str("adder", r#"require("@registry").add("mine")"#)
+        .unwrap();
+    h.load_str("registry", REGISTRY).unwrap();
+    // The new registry starts empty, and the old one's ties don't touch it.
+    h.unload("adder").unwrap();
+    assert_eq!(names(&h), "own");
+}
+
+fn runtime(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../runtime/plugins")
+        .join(name)
+}
+
+#[test]
+fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
+    let h = host();
+    h.load_dirs(&[runtime("core"), runtime("statusline")])
+        .unwrap();
+    let start = Instant::now();
+    h.load_str(
+        "clock",
+        r#"
+        require("@statusline").add_async("right", "clock", {
+          refresh = function()
+            require("@greed").echo("refreshed")
+            return "12:00"
+          end,
+          every = 100,
+        })
+        "#,
+    )
+    .unwrap();
+    pass(&h, start, 250);
+    assert_eq!(messages(&h), ["refreshed", "refreshed", "refreshed"]);
+    let pieces = "local names = {} for _, e in require('@statusline').right do table.insert(names, e.name) end return table.concat(names, ' ')";
+    assert!(h.eval(pieces).unwrap().contains("clock"));
+    h.unload("clock").unwrap();
+    assert!(!h.eval(pieces).unwrap().contains("clock"));
+    pass(&h, start, 1000);
+    assert!(messages(&h).is_empty());
+}

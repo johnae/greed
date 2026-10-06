@@ -6,10 +6,11 @@
 -- from `queries/<language>/folds.scm`): the smallest one around the
 -- cursor's line that spans more than one line. Without a query it's the
 -- lines indented under the nearest line indented less. A plugin can fold a
--- language its own way with `providers`, as markdown does for sections,
+-- language its own way with `provider`, as markdown does for sections,
 -- code blocks and lists.
 
 local greed = require("@greed")
+local registry = require("./registry")
 local syntax = require("./syntax")
 
 type Buffer = greed.Buffer
@@ -20,8 +21,14 @@ local M = {}
 --- or nil when there's none.
 export type Provider = (buffer: Buffer, line: number) -> (number?, number)
 
---- Providers by language, used instead of the query and indentation.
+--- Providers by language, used instead of the query and indentation; set
+--- with `provider`.
 M.providers = {} :: { [string]: Provider }
+
+--- Folds `language` with `provider`, until the plugin that set it goes.
+function M.provider(language: string, provider: Provider)
+	greed.plugin.tie(registry.set(M.providers, language, provider))
+end
 
 -- The innermost `@fold` node around `line` spanning several lines.
 local function from_query(buffer: Buffer, line: number, source: string): (number?, number)

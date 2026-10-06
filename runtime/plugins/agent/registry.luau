@@ -7,6 +7,7 @@
 -- that their list changed and fetch it again.
 
 local greed = require("@greed")
+local registry = require("@core").registry
 
 --- Who's calling a tool: the groups they have switched on, which the
 --- `tools` tool adds to, and for MCP clients the connection to tell when
@@ -64,12 +65,13 @@ greed.option.define({
 local M = {}
 
 --- Offers `spec` to agents and `greed ctl`. A tool with the same name is
---- replaced.
+--- replaced. It goes when the plugin that offered it does.
 function M.tool(spec: Tool)
 	assert(string.match(spec.name, "^[%w_%-]+$"), "tool names are letters, digits, _ and -")
 	local client = spec.client or "socket"
-	tools[client] = tools[client] or {}
-	tools[client][spec.name] = spec
+	local named = tools[client] or {}
+	tools[client] = named
+	greed.plugin.tie(registry.set(named, spec.name, spec))
 end
 
 --- Whether an agent should ask you before `tool` runs: it does more than
@@ -92,10 +94,15 @@ end
 local describe_groups = function() end
 
 --- Names a group of tools and says what it's for, in a line the agent
---- reads when deciding whether to switch it on.
+--- reads when deciding whether to switch it on. It goes when the plugin
+--- that named it does.
 function M.group(name: string, description: string)
-	groups[name] = description
+	local remove = registry.set(groups, name, description)
 	describe_groups()
+	greed.plugin.tie(function()
+		remove()
+		describe_groups()
+	end)
 end
 
 -- The set of tools `client` gets: a shell (`greed ctl`) gets the socket's.

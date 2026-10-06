@@ -24,18 +24,11 @@ local languages: { [string]: Language } = {}
 local function apply(name: string, language: Language)
 	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
-	indent.units[name] = if language.indent then string.rep(" ", language.indent) else "\t"
-	-- Unset ones clear what an earlier `apply` left.
-	if language.indent_after then
-		indent.openers[name] = language.indent_after
-	else
-		indent.openers[name] = nil
-	end
-	if language.outdent_before then
-		indent.closers[name] = language.outdent_before
-	else
-		indent.closers[name] = nil
-	end
+	indent.set(name, {
+		unit = if language.indent then string.rep(" ", language.indent) else "\t",
+		openers = language.indent_after,
+		closers = language.outdent_before,
+	})
 	local servers = language.servers
 	if servers and #servers > 0 then
 		greed.lsp.server({ language = name, commands = servers, root_markers = language.roots })

@@ -114,7 +114,7 @@ local function section(buffer: greed.Buffer, line: number): (number?, number)
 	return heading, last
 end
 
-core.folds.providers.markdown = function(buffer: greed.Buffer, line: number): (number?, number)
+core.folds.provider("markdown", function(buffer: greed.Buffer, line: number): (number?, number)
 	local first, last = fence(buffer, line)
 	if first then
 		return first, last
@@ -124,6 +124,6 @@ core.folds.providers.markdown = function(buffer: greed.Buffer, line: number): (n
 		return first, last
 	end
 	return section(buffer, line)
-end
+end)
 
 return {}

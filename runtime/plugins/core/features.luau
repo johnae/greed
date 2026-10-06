@@ -5,27 +5,24 @@
 -- A plugin adds one with a test for the buffers it's on in, and its
 -- features go when it does:
 --
---     require("@core").features.add("notes", is_note, "notes")
+--     require("@core").features.add("notes", is_note)
 
 local greed = require("@greed")
+local registry = require("./registry")
 
 local M = {}
 
 export type Applies = (buffer: greed.Buffer) -> boolean
 
-local added: { { name: string, applies: Applies, plugin: string? } } = {}
+local added: { { name: string, applies: Applies } } = {}
 
---- Adds the feature `name`, on in the buffers `applies` says, from
---- `plugin` if given. Calling what it returns takes it away again.
-function M.add(name: string, applies: Applies, plugin: string?): () -> ()
-	local entry = { name = name, applies = applies, plugin = plugin }
-	table.insert(added, entry)
-	return function()
-		local at = table.find(added, entry)
-		if at then
-			table.remove(added, at)
-		end
-	end
+--- Adds the feature `name`, on in the buffers `applies` says. It goes when
+--- the plugin that added it does, or when what it returns is called. A
+--- third argument, once the plugin's name, is ignored.
+function M.add(name: string, applies: Applies, _plugin: string?): () -> ()
+	local remove = registry.put(added, { name = name, applies = applies })
+	greed.plugin.tie(remove)
+	return remove
 end
 
 --- The features on in `buffer`, in the order they were added. A test that
@@ -40,13 +37,5 @@ function M.of(buffer: greed.Buffer): { string }
 	end
 	return on
 end
-
-greed.on("plugin.unloaded", function(event)
-	for i = #added, 1, -1 do
-		if added[i].plugin == event.name then
-			table.remove(added, i)
-		end
-	end
-end)
 
 return M

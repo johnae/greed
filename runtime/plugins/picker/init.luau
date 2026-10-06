@@ -19,7 +19,7 @@ export type Options = picker.Options
 require("@self/pickers")
 
 -- Several buttons under the cursor: pick which one enter presses.
-core.buttons.choose = function(buttons, press)
+core.buttons.set_chooser(function(buttons, press)
 	local items = {}
 	for _, button in buttons do
 		table.insert(items, { label = button.text, value = button })
@@ -27,7 +27,7 @@ core.buttons.choose = function(buttons, press)
 	picker.pick("Buttons", items, function(item)
 		press(item.value)
 	end)
-end
+end)
 
 greed.command({
 	name = "act",
@@ -42,7 +42,6 @@ core.actions.action({
 	kind = "command",
 	name = "run",
 	doc = "Run it",
-	plugin = "picker",
 	run = function(target)
 		greed.run(target.value)
 	end,
@@ -51,7 +50,7 @@ core.actions.action({
 greed.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
 -- A picker takes typing; if something leaves it in another mode, esc still
 -- closes it.
-core.style.kind_modes.picker = "insert"
+core.style.kind_mode("picker", "insert")
 for _, mode in { "normal", "vim", "edit" } do
 	greed.keymap.bind({ mode = mode, kind = "picker" }, { esc = "picker-close" })
 end

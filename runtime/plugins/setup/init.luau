@@ -181,7 +181,7 @@ markdown.choices.on_pick(function(buffer, group)
 			greed.option.set("editing-style", style)
 		end
 	end
-end, "setup")
+end)
 
 greed.command({
 	name = "setup",

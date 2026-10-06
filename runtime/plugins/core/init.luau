@@ -236,4 +236,6 @@ return {
 	paste = paste,
 	floats = floats,
 	registers = registers,
+	--- Helpers for registries other plugins add to (registry.luau).
+	registry = require("@self/registry"),
 }

@@ -463,7 +463,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
     (
         "plugin",
         "load, unload or check plugins",
-        &["list", "dirs", "describe", "pending"],
+        &["list", "dirs", "describe", "pending", "caller"],
     ),
     ("process", "run programs", &[]),
     ("terminal", "use terminals", &[]),

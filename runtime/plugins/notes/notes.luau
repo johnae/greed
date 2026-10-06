@@ -51,6 +51,7 @@ local added: { Place } = {}
 --- Adds a folder of notes, named `name` (letters, digits, - and _): its
 --- notes are `name:NOTE`, and they're searched, linked and listed with the
 --- rest. E.g. `notes.add_place("work", "~/work/notes")` in your config.
+--- It goes when the plugin (or config) that added it does.
 function M.add_place(name: string, folder: string)
 	assert(string.match(name, "^[%w_-]+$"), "a place's name is letters, digits, - and _")
 	for i, place in added do
@@ -58,7 +59,9 @@ function M.add_place(name: string, folder: string)
 			table.remove(added, i)
 		end
 	end
-	table.insert(added, { name = name, folder = core.project.resolve(folder) })
+	greed.plugin.tie(
+		core.registry.put(added, { name = name, folder = core.project.resolve(folder) })
+	)
 end
 
 --- Every place notes are: yours first (named ""), those added, then the
@@ -236,8 +239,9 @@ local guards: { (path: string) -> string? } = {}
 
 --- Keeps agents' note tools from writing where `check` says why not,
 --- given a note's file; e.g. the plan plugin keeps decisions for you.
+--- It goes when the plugin that added it does.
 function M.guard(check: (path: string) -> string?)
-	table.insert(guards, check)
+	greed.plugin.tie(core.registry.put(guards, check))
 end
 
 --- Errors with why when agents may not write note `name`.
@@ -332,10 +336,15 @@ function M.symbols(changes: { [string]: any })
 end
 
 --- Adds a rule: text matching `pattern` drawn in `style`, shown as `show`
---- and running the command `action` when clicked, if given.
+--- and running the command `action` when clicked, if given. It goes when
+--- the plugin (or config) that added it does.
 function M.rule(rule: Rule)
-	table.insert(M.look.rules, rule)
+	local remove = core.registry.put(M.look.rules, rule)
 	M.look.changed()
+	greed.plugin.tie(function()
+		remove()
+		M.look.changed()
+	end)
 end
 
 return M

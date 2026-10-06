@@ -15,7 +15,7 @@ greed.option.define({
 -- With this set, Claude Code connects to the editor on that port at start,
 -- without `/ide`.
 if ide.port then
-	terminal.env.CLAUDE_CODE_SSE_PORT = tostring(ide.port)
+	terminal.set_env("CLAUDE_CODE_SSE_PORT", tostring(ide.port))
 end
 
 -- The buffer of the Claude pane's terminal, while it runs.

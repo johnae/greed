@@ -43,6 +43,6 @@ greed.keymap.bind("normal", {
 	["g d"] = "notes-follow",
 })
 
-core.features.add("notes", notes.is_note, "notes")
+core.features.add("notes", notes.is_note)
 
 return notes

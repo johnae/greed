@@ -302,7 +302,6 @@ local actions = require("@core").actions
 
 actions.finder({
 	name = "symbol",
-	plugin = "lsp",
 	find = function(view, range)
 		local buffer = view:buffer()
 		if greed.lsp.capabilities(buffer) == nil then
@@ -335,21 +334,19 @@ actions.finder({
 	end,
 })
 
-actions.command("symbol", "definition", "goto-definition", "Go to where it's defined", "lsp")
-actions.command("symbol", "references", "goto-references", "Find everywhere it's used", "lsp")
-actions.command("symbol", "rename", "rename", "Rename it everywhere", "lsp")
-actions.command("symbol", "hover", "hover", "Show its type and docs", "lsp")
+actions.command("symbol", "definition", "goto-definition", "Go to where it's defined")
+actions.command("symbol", "references", "goto-references", "Find everywhere it's used")
+actions.command("symbol", "rename", "rename", "Rename it everywhere")
+actions.command("symbol", "hover", "hover", "Show its type and docs")
 actions.command(
 	"symbol",
 	"code-action",
 	"code-action",
-	"The language server's fixes and refactorings here",
-	"lsp"
+	"The language server's fixes and refactorings here"
 )
 
 actions.finder({
 	name = "problem",
-	plugin = "lsp",
 	find = function(view, range)
 		local found = {}
 		for _, d in greed.lsp.diagnostics(view:buffer()) do
@@ -365,12 +362,11 @@ actions.finder({
 	end,
 })
 
-actions.command("problem", "fix", "code-action", "The language server's fixes for it", "lsp")
+actions.command("problem", "fix", "code-action", "The language server's fixes for it")
 actions.action({
 	kind = "problem",
 	name = "copy",
 	doc = "Copy the message",
-	plugin = "lsp",
 	run = function(target)
 		greed.clipboard.set(target.value)
 	end,

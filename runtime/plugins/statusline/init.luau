@@ -50,16 +50,19 @@ M.right = {} :: { Entry }
 
 --- Adds a piece called `name` to the `side` ("left" or "right"), at its end
 --- or before the piece called `before`. A piece returns nil to show nothing.
+--- It goes when the plugin (or config) that added it does.
 function M.add(side: "left" | "right", name: string, build: Piece, before: string?)
 	local list: { Entry } = if side == "left" then M.left else M.right
+	local entry = { name = name, build = build }
 	local at = #list + 1
-	for i, entry in list do
-		if entry.name == before then
+	for i, other in list do
+		if other.name == before then
 			at = i
 			break
 		end
 	end
-	table.insert(list, at, { name = name, build = build })
+	table.insert(list, at, entry)
+	greed.plugin.tie(core.registry.remover(list, entry))
 end
 
 --- How a piece that takes time to find refreshes: `refresh` runs the way a
@@ -72,27 +75,49 @@ export type AsyncPiece = {
 	on: { string }?,
 }
 
+-- The async pieces shown, by name; one taken away stops refreshing.
+local async: { [string]: AsyncPiece } = {}
 -- What each async piece last found, and whether a refresh is running.
 local found: { [string]: Part? } = {}
 local refreshing: { [string]: boolean } = {}
--- Async pieces taken away, so their timers stop.
-local stopped: { [string]: boolean } = {}
 
--- Runs `spec.refresh` for the piece `name` unless it's already running, and
--- keeps what it returns. A failing refresh shows nothing.
+-- Runs `spec.refresh` for the piece `name` unless it's already running or
+-- was taken away, and keeps what it returns. A failing refresh shows
+-- nothing.
 local function refresh(name: string, spec: AsyncPiece)
-	if refreshing[name] or stopped[name] then
+	if refreshing[name] or async[name] ~= spec then
 		return
 	end
 	refreshing[name] = true
 	local ok, part = pcall(spec.refresh)
 	refreshing[name] = false
-	found[name] = if ok then part else nil
+	if async[name] == spec then
+		found[name] = if ok then part else nil
+	end
+end
+
+-- The events async pieces refresh on, each heard once for all of them.
+local heard: { [string]: boolean } = {}
+
+local function hear(event: string)
+	if heard[event] then
+		return
+	end
+	heard[event] = true
+	local on = greed.on :: (event: string, handler: (any) -> ()) -> ()
+	on(event, function()
+		for name, spec in async do
+			if spec.on and table.find(spec.on, event) then
+				refresh(name, spec)
+			end
+		end
+	end)
 end
 
 --- Adds a piece whose text takes time to find, like a repository's state in
 --- a big monorepo, without the status line ever waiting for it: drawing shows
---- what the last refresh found.
+--- what the last refresh found. It goes, and stops refreshing, when the
+--- plugin (or config) that added it does.
 ---
 ---     statusline.add_async("right", "change", {
 ---         refresh = function()
@@ -103,20 +128,24 @@ end
 ---         on = { "buffer.saved" },
 ---     })
 function M.add_async(side: "left" | "right", name: string, spec: AsyncPiece, before: string?)
-	stopped[name] = nil
+	async[name] = spec
+	found[name] = nil
 	M.add(side, name, function()
 		return found[name]
 	end, before)
-	local on = greed.on :: (event: string, handler: (any) -> ()) -> ()
 	local events: { string } = spec.on or {}
 	for _, event in events do
-		on(event, function()
-			refresh(name, spec)
-		end)
+		hear(event)
 	end
+	greed.plugin.tie(function()
+		if async[name] == spec then
+			async[name] = nil
+			found[name] = nil
+		end
+	end)
 	greed.spawn(function()
 		refresh(name, spec)
-		while spec.every and not stopped[name] do
+		while spec.every and async[name] == spec do
 			greed.sleep(spec.every)
 			refresh(name, spec)
 		end
@@ -125,7 +154,7 @@ end
 
 --- Takes the piece called `name` away, from either side.
 function M.remove(name: string)
-	stopped[name] = true
+	async[name] = nil
 	found[name] = nil
 	for _, list in { M.left, M.right } do
 		for i, entry in list do

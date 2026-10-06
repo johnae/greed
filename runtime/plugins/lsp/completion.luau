@@ -386,7 +386,7 @@ for mode, fallback in TYPING do
 	greed.keymap.bind(completing, KEYS)
 	greed.keymap.fallback(completing, fallback)
 	greed.mode.cursor(completing, "bar")
-	core.style.shown_as[completing] = mode
+	core.style.show_as(completing, mode)
 	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
 end
 -- Helix's own key for it; edit mode keeps ctrl-x for cut.

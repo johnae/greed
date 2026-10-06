@@ -5,6 +5,7 @@
 local greed = require("@greed")
 local prompt = require("./prompt")
 local registers = require("./registers")
+local registry = require("./registry")
 
 -- The last pattern searched for, and which way.
 local last: string? = nil
@@ -264,8 +265,14 @@ greed.command({
 return {
 	smart_case = smart_case,
 	--- Modes where a search puts the cursor at the match's start instead of
-	--- selecting it: `core.search.at_start.vim = true`.
+	--- selecting it; set with `start_at_match`.
 	at_start = at_start,
+	--- Makes a search in `mode` put the cursor at the match's start instead
+	--- of selecting it, like Vim's normal mode, until the plugin that called
+	--- this goes.
+	start_at_match = function(mode: string)
+		greed.plugin.tie(registry.set(at_start, mode, true))
+	end,
 	--- The last pattern searched for, if any.
 	last = function(): string?
 		return last

@@ -800,7 +800,6 @@ core.actions.action({
 	kind = "file",
 	name = "float",
 	doc = "Open it in a floating view",
-	plugin = "panes",
 	run = function(target)
 		M.focus(M.floats.open(greed.load(target.value)))
 	end,
@@ -809,7 +808,6 @@ core.actions.action({
 	kind = "file",
 	name = "split",
 	doc = "Open it in a new pane beside this one",
-	plugin = "panes",
 	run = function(target)
 		M.focus(M.pane():split(longer_side(M.pane()), greed.load(target.value)))
 	end,

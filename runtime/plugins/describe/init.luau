@@ -435,7 +435,6 @@ require("@core").actions.action({
 	kind = "command",
 	name = "describe",
 	doc = "What it does, its keys and where it's defined",
-	plugin = "describe",
 	run = function(target)
 		for _, entry in commands() do
 			if entry.name == target.value then

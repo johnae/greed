@@ -509,9 +509,10 @@ greed.command({
 
 local M = {}
 
---- Makes `name` run `command` on the command line, e.g. `alias("w", "save")`.
+--- Makes `name` run `command` on the command line, e.g. `alias("w", "save")`,
+--- until the plugin (or config) that called this goes.
 function M.alias(name: string, command: string)
-	aliases[name] = command
+	greed.plugin.tie(core.registry.set(aliases, name, command))
 end
 
 --- Adds a way to complete arguments, for commands whose argument specs
@@ -567,7 +568,7 @@ for name, command in defaults do
 	M.alias(name, command)
 end
 
-core.style.kind_modes.cmdline = "insert"
+core.style.kind_mode("cmdline", "insert")
 greed.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 	enter = "command-line-run",
 	esc = "command-line-close",

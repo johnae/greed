@@ -43,15 +43,12 @@ export type Agent = {
 
 local agents: { Agent } = {}
 
---- Adds an agent to pick from, or replaces the one of the same name.
+--- Adds an agent to pick from, or replaces the one of the same name. It
+--- goes when the plugin (or config) that added it does.
 function M.register(agent: Agent)
-	for i, known in agents do
-		if known.name == agent.name then
-			agents[i] = agent
-			return
-		end
-	end
-	table.insert(agents, agent)
+	greed.plugin.tie(core.registry.put(agents, agent, function(known: Agent)
+		return known.name == agent.name
+	end))
 end
 
 M.register({
@@ -112,15 +109,13 @@ export type Policy = (s: Session, permission: session.Permission) -> string?
 local policies: { Policy } = {}
 
 --- Adds a rule that answers agents' questions for you. Rules added later
---- are asked first. Returns a function that takes the rule away again.
+--- are asked first. It goes when the plugin (or config) that added it
+--- does, or when what it returns is called.
 function M.policy(rule: Policy): () -> ()
 	table.insert(policies, 1, rule)
-	return function()
-		local at = table.find(policies, rule)
-		if at then
-			table.remove(policies, at)
-		end
-	end
+	local remove = core.registry.remover(policies, rule)
+	greed.plugin.tie(remove)
+	return remove
 end
 
 -- The option of `kind` ("allow_once", ...) among a question's, if any.

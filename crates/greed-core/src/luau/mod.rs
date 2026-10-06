@@ -141,6 +141,8 @@ pub(crate) struct State {
     /// Marks, images, views, file types and servers, by the plugin that
     /// made them.
     pub owned: owned::Owned,
+    /// What plugins' registries added for other plugins.
+    pub ties: Vec<plugin::Tie>,
     /// What each plugin may use beyond the editor.
     pub grants: HashMap<PluginId, capabilities::Grant>,
     /// The plugin whose code is running, if any: a command or handler it
@@ -327,6 +329,7 @@ impl Host {
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
             owned: owned::Owned::default(),
+            ties: Vec::new(),
             grants: HashMap::new(),
             running: None,
             limit: Vec::new(),
@@ -1075,12 +1078,26 @@ fn report_views(lua: &Lua) -> mlua::Result<bool> {
 
 /// Removes everything plugin `name` registered and stops what it runs.
 fn unregister(lua: &Lua, name: &str) -> mlua::Result<()> {
-    let closed = remove_owned_by(&mut state_mut(lua), name);
+    let (closed, removes) = {
+        let state = &mut *state_mut(lua);
+        (
+            remove_owned_by(state, name),
+            plugin::untie(&mut state.ties, name),
+        )
+    };
     tasks::stop_owned_by(lua, name)?;
     for view in closed {
         handles::view_closed(lua, view)?;
     }
-    Ok(())
+    // Every one runs even if one fails; the first error is returned.
+    let label: Arc<str> = format!("removing what {name} added").into();
+    let mut first_error = None;
+    for (owner, remove) in removes {
+        if let Err(err) = tasks::spawn_labelled(lua, remove, (), owner, label.clone()) {
+            first_error.get_or_insert(err);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 /// Removes what `name` registered and made, returning the views it closed.

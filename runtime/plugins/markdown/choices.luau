@@ -12,6 +12,7 @@
 -- that listens.
 
 local greed = require("@greed")
+local registry = require("@core").registry
 
 local M = {}
 
@@ -78,29 +79,16 @@ function M.at(buffer: greed.Buffer, line: number): Group?
 	return nil
 end
 
-local listeners: { { hear: (buffer: greed.Buffer, group: Group) -> (), plugin: string? } } = {}
+local listeners: { { hear: (buffer: greed.Buffer, group: Group) -> () } } = {}
 
---- Calls `hear` with the buffer and the group after each pick, from
---- `plugin` if given: its listeners go when it does. Calling what it
---- returns stops it.
-function M.on_pick(hear: (buffer: greed.Buffer, group: Group) -> (), plugin: string?): () -> ()
-	local entry = { hear = hear, plugin = plugin }
-	table.insert(listeners, entry)
-	return function()
-		local at = table.find(listeners, entry)
-		if at then
-			table.remove(listeners, at)
-		end
-	end
+--- Calls `hear` with the buffer and the group after each pick, until the
+--- plugin that called this goes or what it returns is called. A second
+--- argument, once the plugin's name, is ignored.
+function M.on_pick(hear: (buffer: greed.Buffer, group: Group) -> (), _plugin: string?): () -> ()
+	local stop = registry.put(listeners, { hear = hear })
+	greed.plugin.tie(stop)
+	return stop
 end
-
-greed.on("plugin.unloaded", function(event)
-	for i = #listeners, 1, -1 do
-		if listeners[i].plugin == event.name then
-			table.remove(listeners, i)
-		end
-	end
-end)
 
 --- Picks the choice on `line` and unpicks the rest of its group.
 function M.pick(buffer: greed.Buffer, line: number)

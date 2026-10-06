@@ -9,11 +9,29 @@ local M = {}
 --- A button: its text, the command it runs and where its mark starts.
 export type Button = { text: string, action: string, from: number }
 
---- Chooses among several buttons under the cursor and calls `press` with
---- the one chosen. Without a picker it's the first; the picker plugin
---- replaces this with a list to pick from.
-M.choose = function(buttons: { Button }, press: (button: Button) -> ())
+export type Chooser = (buttons: { Button }, press: (button: Button) -> ()) -> ()
+
+local function first(buttons: { Button }, press: (button: Button) -> ())
 	press(buttons[1])
+end
+
+local chooser: Chooser = first
+
+--- Chooses among several buttons under the cursor and calls `press` with
+--- the one chosen: the first, unless a plugin set a chooser.
+function M.choose(buttons: { Button }, press: (button: Button) -> ())
+	chooser(buttons, press)
+end
+
+--- Makes `choose` ask with `choose`, like the picker plugin's list to pick
+--- from. It goes when the plugin that set it does.
+function M.set_chooser(choose: Chooser)
+	chooser = choose
+	greed.plugin.tie(function()
+		if chooser == choose then
+			chooser = first
+		end
+	end)
 end
 
 --- The buttons over `pos` in `buffer`, in the order their marks start.

@@ -4,6 +4,7 @@
 
 local greed = require("@greed")
 local motions = require("./motions")
+local registry = require("./registry")
 
 local tokens: { [string]: string? } = {}
 
@@ -11,7 +12,11 @@ local M = {}
 
 --- Sets what starts a line comment in `language`, e.g. "//".
 function M.set(language: string, token: string?)
-	tokens[language] = token
+	if token then
+		greed.plugin.tie(registry.set(tokens, language, token))
+	else
+		tokens[language] = nil
+	end
 end
 
 --- What starts a line comment in `language`, if Greed knows.

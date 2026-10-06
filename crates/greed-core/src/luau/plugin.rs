@@ -7,10 +7,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use mlua::{Lua, Table};
+use mlua::{Function, Lua, Table};
 
 use super::jobs::{self, Output};
-use super::{api, load_dir, plugin_dirs, plugin_name, plugin_names, state};
+use super::{
+    api, capabilities, load_dir, plugin_dirs, plugin_name, plugin_names, state, state_mut,
+};
+use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -25,8 +28,32 @@ pub struct Check {
     pub tests: Result<Vec<(String, String, Option<String>)>, String>,
 }
 
-pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
+/// What a plugin's registry added for another plugin, to take away when
+/// that plugin goes: see `greed.plugin.tie`.
+pub(crate) struct Tie {
+    /// The plugin whose code added it.
+    by: PluginId,
+    /// The plugin whose registry it's in, whose code `remove` is.
+    owner: PluginId,
+    remove: Function,
+}
+
+/// Takes the ties of what `name` added, to run, and drops those of its own
+/// registries, which go with it.
+pub(super) fn untie(ties: &mut Vec<Tie>, name: &str) -> Vec<(PluginId, Function)> {
+    let mut removes = Vec::new();
+    ties.retain(|tie| {
+        if *tie.by == *name {
+            removes.push((tie.owner.clone(), tie.remove.clone()));
+        }
+        *tie.by != *name && *tie.owner != *name
+    });
+    removes
+}
+
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let plugin = lua.create_table()?;
+    add_registry_functions(lua, &plugin, owner)?;
     plugin.set(
         "list",
         lua.create_function(|lua, ()| Ok(plugin_names(lua)))?,
@@ -260,4 +287,30 @@ pub(super) fn to_lua(lua: &Lua, check: Check) -> LuaResult<Table> {
     }
     report.set("tests", tests)?;
     Ok(report)
+}
+
+/// `caller` and `tie`, for registries other plugins add to.
+fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    plugin.set(
+        "caller",
+        lua.create_function(move |lua, ()| {
+            Ok(capabilities::caller(lua, Some(&o)).map(|name| name.to_string()))
+        })?,
+    )?;
+    let o = owner.clone();
+    plugin.set(
+        "tie",
+        lua.create_function(move |lua, remove: Function| {
+            let Some(by) = capabilities::caller(lua, Some(&o)) else {
+                return Ok(None);
+            };
+            state_mut(lua).ties.push(Tie {
+                by: by.clone(),
+                owner: o.clone(),
+                remove,
+            });
+            Ok(Some(by.to_string()))
+        })?,
+    )
 }

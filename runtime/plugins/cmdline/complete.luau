@@ -25,9 +25,16 @@ export type Preview = (text: string?) -> ()
 local completers: { [string]: Completer } = {}
 local previews: { [string]: Preview? } = {}
 
+--- Adds the completer `name`, until the plugin that added it goes.
 function M.register(name: string, completer: Completer, preview: Preview?)
-	completers[name] = completer
+	local remove = core.registry.set(completers, name, completer)
 	previews[name] = preview
+	greed.plugin.tie(function()
+		if completers[name] == completer then
+			remove()
+			previews[name] = nil
+		end
+	end)
 end
 
 -- The items matching `word`: exact matches, then ones starting with it,

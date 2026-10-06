@@ -216,7 +216,7 @@ function M.on(buffer: greed.Buffer): boolean
 	return path ~= nil and (trusted[path] or allowed_now[path]) == true
 end
 
-core.features.add("blocks", M.on, "blocks")
+core.features.add("blocks", M.on)
 
 -- Runs in progress, each with a decoration namespace of its own holding a
 -- mark on its block's fence: the mark moves with edits, so the result goes

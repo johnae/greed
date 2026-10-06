@@ -2086,7 +2086,7 @@ end)
 
 -- `.` is core's, which types the last change's keys again.
 core.again.ignore({ "vim-undo", "vim-redo", "vim-undo-line", "vim-macro", "vim-play-macro" })
-core.search.at_start.vim = true
+core.search.start_at_match("vim")
 for _, name in
 	{
 		"vim-motion-G",
@@ -2314,7 +2314,6 @@ core.style.define({
 		["vim-replace"] = "replace",
 		["vim-multi"] = "multi",
 	},
-	plugin = "vim",
 })
 
 return {}

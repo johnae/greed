@@ -522,7 +522,6 @@ greed.command({
 -- The change under the cursor, as a thing to act on.
 core.actions.finder({
 	name = "change",
-	plugin = "vcs",
 	find = function(view, range)
 		local buffer = view:buffer()
 		local change, first, last = change_shown_at(buffer, buffer:line_of(range.head))
@@ -548,11 +547,10 @@ core.actions.command(
 	"change",
 	"revert",
 	"revert-change",
-	"Put it back the way it was at the last commit",
-	"vcs"
+	"Put it back the way it was at the last commit"
 )
-core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when", "vcs")
-core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit", "vcs")
+core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when")
+core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit")
 
 greed.command({
 	name = "blame-line",

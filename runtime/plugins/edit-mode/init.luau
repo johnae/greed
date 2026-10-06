@@ -571,5 +571,4 @@ require("@core").style.define({
 	name = "edit",
 	doc = "No modes: typing inserts, shift and the arrows select (most editors)",
 	mode = "edit",
-	plugin = "edit-mode",
 })

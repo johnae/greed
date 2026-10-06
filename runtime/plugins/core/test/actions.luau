@@ -34,20 +34,30 @@ test("plugins add finders and actions, and they go with the plugin", function(t)
 	local dir = t:tempdir({
 		["jira/plugin.toml"] = 'name = "jira"\nrequires = ["core"]\n',
 		["jira/init.luau"] = [[
-local actions = require("@core").actions
-actions.finder({ name = "ticket", plugin = "jira", find = function(view, range)
+local core = require("@core")
+core.actions.finder({ name = "ticket", find = function(view, range)
 	return { { kind = "ticket", label = "ABC-12", value = "ABC-12" } }
 end })
-actions.action({ kind = "ticket", name = "open", plugin = "jira", run = function() end })
+core.actions.action({ kind = "ticket", name = "open", run = function() end })
+core.features.add("tickets", function() return true end)
+core.style.kind_mode("tickets", "insert")
 return {}
 ]],
 	})
 	greed.plugin.load(dir .. "/jira")
+	-- Loading it again replaces what it added.
+	greed.plugin.load(dir .. "/jira")
 	t:wait(0)
 	assert(string.find(kinds(), "ticket:ABC-12", 1, true), kinds())
 	assert(#actions.for_kind("ticket") == 1)
+	local core = require("@core")
+	local features = table.concat(core.features.of(greed.view():buffer()), " ")
+	assert(features == "tickets", features)
+	assert(core.style.kind_modes.tickets == "insert")
 	greed.plugin.unload("jira")
 	t:wait(0)
 	assert(not string.find(kinds(), "ticket", 1, true), kinds())
 	assert(#actions.for_kind("ticket") == 0)
+	assert(#core.features.of(greed.view():buffer()) == 0)
+	assert(core.style.kind_modes.tickets == nil)
 end)

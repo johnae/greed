@@ -10,9 +10,10 @@
 -- or where the code doesn't parse yet, a new line keeps the indent of the
 -- line it came from, one level more after a line matching the language's
 -- `openers` (an opening bracket, by default). A plugin can indent a
--- language its own way with `providers`.
+-- language its own way with `provider`.
 
 local greed = require("@greed")
+local registry = require("./registry")
 local syntax = require("./syntax")
 local text = require("./text")
 
@@ -25,12 +26,18 @@ local M = {}
 --- with the block's first line).
 export type Provider = (buffer: Buffer, pos: number) -> (string, boolean)
 
---- Providers by language, used instead of the query and the fallback.
+--- Providers by language, used instead of the query and the fallback; set
+--- with `provider`.
 M.providers = {} :: { [string]: Provider }
 
+--- Indents `language` with `provider`, until the plugin that set it goes.
+function M.provider(language: string, provider: Provider)
+	greed.plugin.tie(registry.set(M.providers, language, provider))
+end
+
 --- One level of indent in each language, e.g. "  " or "\t", as the
---- languages plugin sets it.
-M.units = {} :: { [string]: string }
+--- languages plugin sets it with `set`.
+M.units = {} :: { [string]: string? }
 
 --- One level of indent in `buffer`: its language's, or the "indent" option.
 function M.unit(buffer: Buffer): string
@@ -86,12 +93,35 @@ end
 --- e.g. `{ "[%(%[{:]$" }` for Python. Used without an indents query, and
 --- with one where the code around the break doesn't parse yet, like a
 --- Ruby `def` before its `end` is typed.
-M.openers = {} :: { [string]: { string } }
+M.openers = {} :: { [string]: { string }? }
 
 --- Luau patterns by language for text that goes a level out when it
 --- starts a line, like Ruby's `end` or `else`, matched against what comes
 --- after the break without leading spaces. Used where `openers` are.
-M.closers = {} :: { [string]: { string } }
+M.closers = {} :: { [string]: { string }? }
+
+--- How a language indents: one level (`unit`), and its `openers` and
+--- `closers` (see above).
+export type Indents = { unit: string?, openers: { string }?, closers: { string }? }
+
+--- Sets how `language` indents, replacing what it had: those left out are
+--- cleared. It goes when the plugin that set it does.
+function M.set(language: string, how: Indents)
+	M.units[language] = how.unit
+	M.openers[language] = how.openers
+	M.closers[language] = how.closers
+	greed.plugin.tie(function()
+		if M.units[language] == how.unit then
+			M.units[language] = nil
+		end
+		if M.openers[language] == how.openers then
+			M.openers[language] = nil
+		end
+		if M.closers[language] == how.closers then
+			M.closers[language] = nil
+		end
+	end)
+end
 
 local OPENERS = { "[%(%[{]$" }
 local CLOSERS = { "^[%)%]}]" }

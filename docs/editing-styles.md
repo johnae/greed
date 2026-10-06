@@ -187,7 +187,6 @@ require("@core").style.define({
 	name = "mine",
 	doc = "My own keys",
 	mode = "mine",
-	plugin = "mine",
 })
 ```
 

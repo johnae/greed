@@ -4,6 +4,7 @@
 -- with `add`.
 
 local greed = require("@greed")
+local registry = require("@core").registry
 
 local M = {}
 
@@ -26,18 +27,15 @@ export type Outcome = { output: string, exit: number?, error: string? }
 
 export type Runner = (run: Run) -> Outcome
 
-local runners: { [string]: { run: Runner, plugin: string? } } = {}
+local runners: { [string]: { run: Runner } } = {}
 
---- Makes blocks in language `name` run with `run`, from `plugin` if given:
---- its runners go when it does. Calling what it returns takes it away.
-function M.add(name: string, run: Runner, plugin: string?): () -> ()
-	local entry = { run = run, plugin = plugin }
-	runners[name] = entry
-	return function()
-		if runners[name] == entry then
-			runners[name] = nil
-		end
-	end
+--- Makes blocks in language `name` run with `run`. It goes when the plugin
+--- that added it does, or when what it returns is called. A third
+--- argument, once the plugin's name, is ignored.
+function M.add(name: string, run: Runner, _plugin: string?): () -> ()
+	local remove = registry.set(runners, name, { run = run })
+	greed.plugin.tie(remove)
+	return remove
 end
 
 --- The runner for blocks in language `name`, if there is one.
@@ -55,14 +53,6 @@ function M.names(): { string }
 	table.sort(names)
 	return names
 end
-
-greed.on("plugin.unloaded", function(event)
-	for name, entry in runners do
-		if entry.plugin == event.name then
-			runners[name] = nil
-		end
-	end
-end)
 
 --- A runner for a program that takes code as its last argument, e.g.
 --- `{ "python3", "-c" }`. The input goes to its stdin, and its output and

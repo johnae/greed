@@ -8,6 +8,7 @@
 --     require("@core").menus.add("Tools", "Run tests", "test-run")
 
 local greed = require("@greed")
+local registry = require("./registry")
 
 local M = {}
 
@@ -126,18 +127,17 @@ end
 M.list = current
 
 --- Adds an item running `command` to the menu titled `title`, making the
---- menu if there's none. Returns a function that takes it away again.
+--- menu if there's none. It goes when the plugin (or config) that added
+--- it does, or when what it returns is called.
 function M.add(title: string, label: string, command: string): () -> ()
-	local entry = { title = title, item = { label = label, command = command } }
-	table.insert(added, entry)
+	local take = registry.put(added, { title = title, item = { label = label, command = command } })
 	publish()
-	return function()
-		local at = table.find(added, entry)
-		if at then
-			table.remove(added, at)
-			publish()
-		end
+	local function remove()
+		take()
+		publish()
 	end
+	greed.plugin.tie(remove)
+	return remove
 end
 
 -- Plugins loading and unloading bring commands and take them away.

@@ -1203,6 +1203,10 @@ export type Plugins = {
 	pending: () -> { PluginInfo },
 	--- Approves what the plugin in `dir` declares, loads it, and loads the plugins that waited for it. Returns its name.
 	approve: (dir: string) -> string,
+	--- The plugin whose code called yours: the innermost other plugin on the stack, or the one whose command, handler or task is running; nil if none but yours.
+	caller: () -> string?,
+	--- For registries: runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added goes with it. Returns that plugin's name, or nil (and does nothing) if none but yours called.
+	tie: (remove: () -> ()) -> string?,
 }
 
 --- A plugin, as `greed.plugin.describe` tells it, for a review.

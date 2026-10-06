@@ -8,15 +8,16 @@
 -- Plugins add both:
 --
 --     local actions = require("@core").actions
---     actions.finder({ name = "ticket", plugin = "jira", find = function(view, range)
+--     actions.finder({ name = "ticket", find = function(view, range)
 --         ... return { { kind = "ticket", label = "ABC-12", value = "ABC-12" } }
 --     end })
---     actions.action({ kind = "ticket", name = "open", plugin = "jira", run = function(target)
+--     actions.action({ kind = "ticket", name = "open", run = function(target)
 --         ... end })
 --
 -- A plugin's finders and actions go when it does.
 
 local greed = require("@greed")
+local registry = require("./registry")
 
 local M = {}
 
@@ -32,13 +33,14 @@ export type Target = {
 }
 
 --- Says what's at `range` (the primary selection) in `view`; nil or {}
---- for nothing.
+--- for nothing. `plugin`, once the plugin it came from, is ignored.
 export type Finder = {
 	name: string,
 	plugin: string?,
 	find: (view: greed.View, range: greed.Range) -> { Target }?,
 }
 
+--- `plugin`, once the plugin it came from, is ignored.
 export type Action = {
 	kind: string,
 	name: string,
@@ -52,53 +54,31 @@ local actions: { Action } = {}
 
 --- Adds a finder, replacing one by the same name.
 function M.finder(finder: Finder)
-	for i, other in finders do
-		if other.name == finder.name then
-			finders[i] = finder
-			return
-		end
-	end
-	table.insert(finders, finder)
+	greed.plugin.tie(registry.put(finders, finder, function(other: Finder)
+		return other.name == finder.name
+	end))
 end
 
 --- Adds an action for things of `kind`, replacing one by the same name.
 function M.action(action: Action)
-	for i, other in actions do
-		if other.kind == action.kind and other.name == action.name then
-			actions[i] = action
-			return
-		end
-	end
-	table.insert(actions, action)
+	greed.plugin.tie(registry.put(actions, action, function(other: Action)
+		return other.kind == action.kind and other.name == action.name
+	end))
 end
 
 --- Adds an action for things of `kind` that runs `command`, for the many
---- actions that are a command acting on what's under the cursor.
-function M.command(kind: string, name: string, command: string, doc: string, plugin: string)
+--- actions that are a command acting on what's under the cursor. A fifth
+--- argument, once the plugin's name, is ignored.
+function M.command(kind: string, name: string, command: string, doc: string, _plugin: string?)
 	M.action({
 		kind = kind,
 		name = name,
 		doc = doc,
-		plugin = plugin,
 		run = function()
 			greed.run(command)
 		end,
 	})
 end
-
--- What a plugin added goes with it.
-greed.on("plugin.unloaded", function(event)
-	for i = #finders, 1, -1 do
-		if finders[i].plugin == event.name then
-			table.remove(finders, i)
-		end
-	end
-	for i = #actions, 1, -1 do
-		if actions[i].plugin == event.name then
-			table.remove(actions, i)
-		end
-	end
-end)
 
 --- The actions for things of `kind`, in the order they were added.
 function M.for_kind(kind: string): { Action }
@@ -157,7 +137,6 @@ end
 
 M.finder({
 	name = "file",
-	plugin = "core",
 	find = function(view, range)
 		local buffer = view:buffer()
 		local from, to = path_at(buffer, range.head)
@@ -193,7 +172,6 @@ M.action({
 	kind = "file",
 	name = "open",
 	doc = "Open it here",
-	plugin = "core",
 	run = function(target)
 		greed.open(target.value)
 	end,
@@ -204,7 +182,6 @@ for _, kind in { "file", "folder" } do
 		kind = kind,
 		name = "copy-path",
 		doc = "Copy its full path",
-		plugin = "core",
 		run = function(target)
 			greed.clipboard.set(target.value)
 			greed.echo(`copied {target.value}`)
@@ -214,7 +191,6 @@ end
 
 M.finder({
 	name = "button",
-	plugin = "core",
 	find = function(view, range)
 		local found = {}
 		for _, button in require("./buttons").at(view:buffer(), range.head) do
@@ -228,7 +204,6 @@ M.action({
 	kind = "button",
 	name = "press",
 	doc = "Press it, as enter or a click does",
-	plugin = "core",
 	run = function(target)
 		greed.run(target.value)
 	end,
@@ -236,7 +211,6 @@ M.action({
 
 M.finder({
 	name = "selection",
-	plugin = "core",
 	find = function(view, range)
 		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 		-- A selection of one character is a cursor in the Helix style.
@@ -250,9 +224,9 @@ M.finder({
 	end,
 })
 
-M.command("text", "search", "search-selection", "Search for it", "core")
-M.command("text", "copy", "copy", "Copy it", "core")
-M.command("text", "comment", "toggle-comment", "Comment or uncomment its lines", "core")
-M.command("text", "pipe", "pipe", "Pipe it through a command", "core")
+M.command("text", "search", "search-selection", "Search for it")
+M.command("text", "copy", "copy", "Copy it")
+M.command("text", "comment", "toggle-comment", "Comment or uncomment its lines")
+M.command("text", "pipe", "pipe", "Pipe it through a command")
 
 return M
