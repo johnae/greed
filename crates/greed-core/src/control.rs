@@ -13,6 +13,9 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::{Value, json};
@@ -51,9 +54,59 @@ pub struct Request {
     /// the session socket (like `greed mcp`), "ide" for Claude Code's
     /// IDE connection.
     pub client: &'static str,
+    /// The session socket connection it came on, to send notifications to
+    /// later; `None` for Claude Code's IDE connection.
+    pub connection: Option<Notifier>,
     pub method: String,
     pub params: Value,
     pub(crate) reply: Sender<Result<Value, String>>,
+}
+
+/// A connection to the session socket, for sending it notifications, like
+/// MCP's `notifications/tools/list_changed`, outside any request. It lets
+/// go of the connection once that closes.
+#[derive(Debug, Clone)]
+pub struct Notifier {
+    /// Unique among the session's connections.
+    pub id: u64,
+    writer: Weak<Mutex<UnixStream>>,
+}
+
+impl Notifier {
+    /// Sends a JSON-RPC notification of `method` with `params` (left out
+    /// when null). False if the connection has closed.
+    pub fn notify(&self, method: &str, params: &Value) -> bool {
+        let Some(writer) = self.writer.upgrade() else {
+            return false;
+        };
+        let mut message = json!({ "jsonrpc": "2.0", "method": method });
+        if !params.is_null() {
+            message["params"] = params.clone();
+        }
+        // A client that stops reading mustn't hold up the editor thread,
+        // which sends these; answers, sent from the connection's own
+        // thread, can wait as long as they need.
+        let mut writer = lock(&writer);
+        let _ = writer.set_write_timeout(Some(NOTIFY_TIMEOUT));
+        let sent = writeln!(writer, "{message}").is_ok();
+        let _ = writer.set_write_timeout(None);
+        sent
+    }
+
+    /// Whether the connection is still open.
+    pub fn is_open(&self) -> bool {
+        self.writer.strong_count() > 0
+    }
+}
+
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
+/// How long a write to a connection may wait for it to read.
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// A connection's shared writer, held for one whole line.
+fn lock(writer: &Mutex<UnixStream>) -> MutexGuard<'_, UnixStream> {
+    writer.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl Request {
@@ -301,8 +354,18 @@ fn serve_connection(
     requests: &Sender<Request>,
     attachments: &Sender<Attachment>,
 ) {
-    let Ok(mut writer) = stream.try_clone() else {
+    let Ok(writer) = stream.try_clone() else {
         return;
+    };
+    // Answers and notifications from the editor share the connection, a
+    // line at a time.
+    let Ok(shared) = stream.try_clone() else {
+        return;
+    };
+    let shared = Arc::new(Mutex::new(shared));
+    let notifier = Notifier {
+        id: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
+        writer: Arc::downgrade(&shared),
     };
     let mut reader = BufReader::new(stream);
     let mut authed = false;
@@ -322,11 +385,11 @@ fn serve_connection(
                 let theirs = message["params"]["protocol"].as_u64();
                 if theirs != Some(u64::from(PROTOCOL)) {
                     let refused = error_response(&message["id"], -32001, &mismatch(theirs));
-                    let _ = writeln!(writer, "{refused}");
+                    let _ = writeln!(lock(&shared), "{refused}");
                     return;
                 }
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
-                if writeln!(writer, "{ok}").is_ok() {
+                if writeln!(lock(&shared), "{ok}").is_ok() {
                     let open = message["params"]["open"].as_str().map(str::to_owned);
                     let terminal = message["params"]["terminal"].as_bool() == Some(true);
                     let _ = attachments.send(Attachment {
@@ -338,11 +401,18 @@ fn serve_connection(
                 }
                 return;
             }
-            Ok(message) => answer(&message, token, &mut authed, &mut shell, requests),
+            Ok(message) => answer(
+                &message,
+                token,
+                &mut authed,
+                &mut shell,
+                requests,
+                &notifier,
+            ),
             Err(err) => Some(error_response(&Value::Null, -32700, &err.to_string())),
         };
         let Some(response) = response else { continue };
-        if writeln!(writer, "{response}").is_err() {
+        if writeln!(lock(&shared), "{response}").is_err() {
             return;
         }
     }
@@ -359,6 +429,7 @@ fn answer(
     authed: &mut bool,
     shell: &mut bool,
     requests: &Sender<Request>,
+    notifier: &Notifier,
 ) -> Option<Value> {
     let id = message.get("id").cloned();
     let method = message.get("method").and_then(Value::as_str).unwrap_or("");
@@ -387,6 +458,7 @@ fn answer(
     let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
         client: if *shell { "shell" } else { "socket" },
+        connection: Some(notifier.clone()),
         method: method.to_owned(),
         params,
         reply,
@@ -409,6 +481,8 @@ pub struct Client {
     reader: BufReader<UnixStream>,
     writer: UnixStream,
     next_id: u64,
+    /// Notifications that came while waiting for answers.
+    notifications: Vec<Value>,
 }
 
 impl Client {
@@ -427,6 +501,7 @@ impl Client {
             reader,
             writer,
             next_id: 0,
+            notifications: Vec::new(),
         };
         client
             .call("auth", &json!({ "token": token, "shell": shell }))?
@@ -441,14 +516,20 @@ impl Client {
         let request =
             json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params });
         writeln!(self.writer, "{request}")?;
-        let mut line = String::new();
-        if self.reader.read_line(&mut line)? == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "the session closed the connection",
-            ));
-        }
-        let response: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
+        let response = loop {
+            let mut line = String::new();
+            if self.reader.read_line(&mut line)? == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "the session closed the connection",
+                ));
+            }
+            let message: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
+            if message.get("id").is_some() {
+                break message;
+            }
+            self.notifications.push(message);
+        };
         Ok(match response.get("error") {
             Some(error) => Err(error
                 .get("message")
@@ -457,6 +538,11 @@ impl Client {
                 .to_owned()),
             None => Ok(response.get("result").cloned().unwrap_or(Value::Null)),
         })
+    }
+
+    /// The notifications the session sent since last asked, oldest first.
+    pub fn take_notifications(&mut self) -> Vec<Value> {
+        std::mem::take(&mut self.notifications)
     }
 
     /// Attaches to the editor: from now on the connection carries input

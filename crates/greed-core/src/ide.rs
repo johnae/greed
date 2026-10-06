@@ -198,6 +198,7 @@ fn forward(text: &str, requests: &Sender<Request>, outgoing: &Sender<String>) {
     let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
         client: "ide",
+        connection: None,
         method: message
             .get("method")
             .and_then(Value::as_str)

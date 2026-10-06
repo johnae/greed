@@ -673,6 +673,9 @@ export type ControlRequest = {
 	--- "socket" for the session socket (greed ctl, greed mcp), "ide" for Claude
 	--- Code's IDE connection.
 	client: string,
+	--- The session socket connection it came on, for `greed.control.send`;
+	--- nil for Claude Code's IDE connection.
+	connection: number?,
 	method: string,
 	params: any,
 }
@@ -828,6 +831,10 @@ export type Control = {
 	--- Answers request `id` with `result`, or with an error `message`. Every
 	--- request needs exactly one answer.
 	reply: (id: number, result: any, message: string?) -> (),
+	--- Sends a notification of `method` with `params` to the session socket
+	--- connection a request came on (its `connection`), e.g. MCP's
+	--- "notifications/tools/list_changed". False if that connection has closed.
+	send: (connection: number?, method: string, params: any) -> boolean,
 	--- Lets Claude Code find this editor with /ide: listens on a localhost
 	--- WebSocket and writes a lock file naming `folders` as open, in `lock_dir`
 	--- (default ~/.claude/ide). Its requests come with client "ide". Returns

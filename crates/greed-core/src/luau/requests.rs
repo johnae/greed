@@ -27,8 +27,17 @@ pub(super) fn handle(lua: &Lua, request: Request) -> LuaResult<()> {
     payload.set("client", request.client)?;
     payload.set("method", request.method.as_str())?;
     payload.set("params", lsp::to_lua(lua, &request.params)?)?;
+    if let Some(connection) = &request.connection {
+        payload.set("connection", connection.id)?;
+    }
     let id = {
         let mut state = state_mut(lua);
+        if let Some(connection) = &request.connection
+            && !state.connections.contains_key(&connection.id)
+        {
+            state.connections.retain(|_, known| known.is_open());
+            state.connections.insert(connection.id, connection.clone());
+        }
         state.next_request += 1;
         let id = state.next_request;
         state.requests.insert(id, request);
@@ -75,6 +84,21 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             state_mut(lua).ide = Some(ide);
             Ok(port)
         })?,
+    )?;
+    control.set(
+        "send",
+        lua.create_function(
+            |lua, (connection, method, params): (Option<u64>, String, Value)| {
+                let params: serde_json::Value = lua.from_value(params)?;
+                let sent = connection
+                    .and_then(|id| state(lua).connections.get(&id).cloned())
+                    .is_some_and(|notifier| notifier.notify(&method, &params));
+                if !sent && let Some(id) = connection {
+                    state_mut(lua).connections.remove(&id);
+                }
+                Ok(sent)
+            },
+        )?,
     )?;
     control.set(
         "notify",

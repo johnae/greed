@@ -142,3 +142,49 @@ fn greed_ctls_connections_are_a_shells_and_nothing_else_can_become_one() {
     conn.input.send(Input::Quit).unwrap();
     conn.server.join().unwrap().unwrap();
 }
+
+const NOTIFY: &str = r#"
+local greed = require("@greed")
+local last
+greed.on("control.request", function(req)
+  if req.method == "tell" then
+    last = req.connection
+    local sent = greed.control.send(req.connection, "notifications/tools/list_changed", { n = 1 })
+    greed.control.reply(req.id, sent)
+  elseif req.method == "tell-last" then
+    greed.control.reply(req.id, greed.control.send(last, "notifications/hello", nil))
+  end
+end)
+"#;
+
+#[test]
+fn plugins_send_notifications_to_the_connection_a_request_came_on() {
+    let (conn, socket, token) = start(&name("notify"), NOTIFY);
+    let mut client = Client::connect(&socket, &token).unwrap();
+    assert_eq!(client.call("tell", &json!(null)).unwrap(), Ok(json!(true)));
+    assert_eq!(
+        client.take_notifications(),
+        [
+            json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed", "params": { "n": 1 } })
+        ],
+        "it came before the answer, and the answer still came"
+    );
+    // Once that connection is gone, sending to it says so.
+    drop(client);
+    let mut other = Client::connect(&socket, &token).unwrap();
+    let mut gone = Ok(json!(true));
+    for _ in 0..50 {
+        gone = other.call("tell-last", &json!(null)).unwrap();
+        if gone == Ok(json!(false)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(gone, Ok(json!(false)));
+    assert!(
+        other.take_notifications().is_empty(),
+        "nothing went to another connection"
+    );
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+}

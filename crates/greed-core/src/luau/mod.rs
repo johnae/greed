@@ -105,6 +105,9 @@ pub(crate) struct State {
     /// Requests from the session socket that plugins haven't answered yet.
     pub requests: HashMap<u64, crate::control::Request>,
     pub next_request: u64,
+    /// The session socket connections requests came on, by id, for
+    /// `greed.control.send`; closed ones are dropped as new ones come.
+    pub connections: HashMap<u64, crate::control::Notifier>,
     /// Where requests from other transports go, when there is a session.
     pub request_sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
     /// Claude Code's IDE connection, once a plugin starts it.
@@ -282,6 +285,7 @@ impl Host {
             jobs: jobs::Jobs::default(),
             requests: HashMap::new(),
             next_request: 0,
+            connections: HashMap::new(),
             request_sender: None,
             ide: None,
             session_name: None,
