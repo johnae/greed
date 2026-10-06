@@ -279,11 +279,19 @@ files. In the agents overview:
 |---|---|
 | `enter` | Open its transcript |
 | `d` | What it changed in its workspace, as a diff |
+| `r` | Review that on your files, change by change, as proposed edits (see [Reviewing proposed edits](#reviewing-proposed-edits)) |
 | `b` | Bring that into your working copy: with jj its change is squashed into yours, with git its diff is applied |
 | `s` | Stop its turn |
 | `x` | Stop it and remove its workspace, after asking |
 | `n` | Start another |
 | `f` | Fork it: a new session that starts with everything said so far |
+
+`r` takes the agent's edits and moves them past whatever you've changed
+since it started, so you review only what it did. An edit to lines you
+changed too is left out, and the message says how many files had one;
+`d` shows them. What you accept lands in your buffers, unsaved, and undoes
+in one step. The agent's workspace keeps its change, so after a review
+close it with `x` rather than bringing it in with `b`.
 
 A jj workspace starts from your working copy's parent, so it doesn't see
 changes you haven't committed. A fork of an agent in a jj workspace gets a

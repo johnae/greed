@@ -3,7 +3,7 @@
 -- to and read from, working in the project or in a workspace of its own.
 --
 --   space i n   start an agent: pick which, and where it works
---   space i o   the agents: what each is doing, its changes, bring them in
+--   space i o   the agents: what each is doing, its changes, review or bring them in
 --
 -- In a transcript, alt-enter sends what's below the prompt line, ctrl-c
 -- stops the agent's turn and enter on a question answers it.
@@ -623,8 +623,10 @@ local STATUS: { [string]: string } = {
 }
 
 local function overview_lines(): ({ string }, { greed.Mark }, { [number]: Session })
-	local lines =
-		{ "Agents    enter opens · n new · d diff · b bring in · s stop · x close", "" }
+	local lines = {
+		"Agents    enter opens · n new · d diff · r review · b bring in · s stop · x close",
+		"",
+	}
 	local marks: { greed.Mark } = {
 		{ from = 0, to = 6, style = "markup.heading" },
 		{ from = 6, to = #lines[1], style = "comment" },
@@ -997,6 +999,29 @@ greed.command({
 })
 
 greed.command({
+	name = "agents-review",
+	doc = "Review what the agent under the cursor changed as proposals on your files",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			return
+		end
+		local reviewed, err = M.review.review(s)
+		if reviewed == nil then
+			greed.echo(`can't: {err}`)
+			return
+		end
+		local left = #reviewed.left
+		local note = if left > 0 then `; left out changes to {left} files, d shows them` else ""
+		if reviewed.decided == nil then
+			greed.echo(`nothing to review{note}`)
+		elseif left > 0 then
+			greed.echo(`reviewed what {s.name} changed{note}`)
+		end
+	end,
+})
+
+greed.command({
 	name = "agents-close",
 	doc = "Stop the agent under the cursor and remove its workspace, after asking",
 	run = function(ctx)
@@ -1044,6 +1069,7 @@ for _, mode in { "normal", "vim" } do
 		n = "agent-new",
 		d = "agents-diff",
 		b = "agents-bring",
+		r = "agents-review",
 		s = "agent-stop",
 		x = "agents-close",
 		f = "agent-fork",
@@ -1076,6 +1102,8 @@ end
 
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")
+--- An agent's workspace changes as proposals on your files (review.luau).
+M.review = require("@self/review")
 M.subagent.offer(M, installed)
 
 return M
