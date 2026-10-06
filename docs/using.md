@@ -445,7 +445,8 @@ with your plugins and config on the file (a large generated Rust file
 without one), types and moves around as you would, and prints how long
 each kind of key took from leaving the client to the frame showing it
 arriving, with the slowest named, and where the time went per key (as
-`:profile` shows it). `greed bench --draw` also draws each frame in the
+`:profile` shows it). It types into a terminal too, timing each character
+until its echo shows. `greed bench --draw` also draws each frame in the
 terminal you run it in, the way `greed` does, and says how long that took,
 how many bytes went out, and how long your terminal took to take them in.
 

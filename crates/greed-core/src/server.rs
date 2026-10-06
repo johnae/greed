@@ -137,6 +137,7 @@ where
             watched_at: Instant::now(),
             drawn_at: Instant::now(),
             owed: false,
+            key_at: None,
             status: None,
             reuse_status: false,
         };
@@ -198,6 +199,9 @@ struct Server<'a> {
     /// When the last frame was drawn, and whether work since wants another.
     drawn_at: Instant,
     owed: bool,
+    /// When the last key or paste came, until a terminal's output after it
+    /// was drawn as its echo.
+    key_at: Option<Instant>,
     /// The status line a plugin built for the last frame, to draw again when
     /// only highlighting changed since: no plugin code ran to change it.
     status: Option<StatusLine>,
@@ -211,6 +215,16 @@ const WATCH_EVERY: Duration = Duration::from_millis(500);
 /// wakes the server more often than this (a program flooding a terminal, a
 /// language server's burst of messages) is drawn once for each.
 const FRAME_EVERY: Duration = Duration::from_millis(8);
+
+/// How soon after a key a terminal's output counts as the program echoing
+/// it, drawn at once as the key was instead of waiting its turn. The first
+/// output after each key only, so a flood of output stays paced.
+const ECHO_WITHIN: Duration = Duration::from_millis(100);
+
+/// Whether a terminal's output now is the echo of the key at `key_at`.
+fn is_echo(key_at: Option<Instant>, now: Instant) -> bool {
+    key_at.is_some_and(|at| now.saturating_duration_since(at) < ECHO_WITHIN)
+}
 
 impl Server<'_> {
     /// With files watched, when to wake up to look at them.
@@ -310,6 +324,7 @@ impl Server<'_> {
                     if let Ok(event) = event {
                         let handled = self.host.handle_terminal(event);
                         self.report(handled);
+                        typed = is_echo(self.key_at.take(), Instant::now());
                     }
                 }
                 recv(finished_jobs) -> done => {
@@ -338,36 +353,45 @@ impl Server<'_> {
             if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
                 self.message = Some(latest);
             }
-            if self.host.with_editor(crate::Editor::quit_requested) {
+            if !self.follow_requests() {
                 return;
-            }
-            if let Some(to) = self
-                .host
-                .with_editor_mut(crate::Editor::take_switch_request)
-            {
-                // A client in this process can't go anywhere else.
-                if self.client.as_ref().is_some_and(|c| c.local) {
-                    return;
-                }
-                self.send(Output::Switch(to));
-                self.client = None;
-                self.size = None;
-            }
-            if self
-                .host
-                .with_editor_mut(crate::Editor::take_detach_request)
-            {
-                // A client in this process has nowhere to detach to: the
-                // editor ends with it.
-                if self.client.as_ref().is_some_and(|c| c.local) {
-                    return;
-                }
-                self.detach();
             }
             if self.frame_due(typed) && !self.draw() {
                 return;
             }
         }
+    }
+
+    /// Does what the editor asked for: quitting, switching the client to
+    /// another session, or letting it go. False when the editor ends.
+    fn follow_requests(&mut self) -> bool {
+        if self.host.with_editor(crate::Editor::quit_requested) {
+            return false;
+        }
+        if let Some(to) = self
+            .host
+            .with_editor_mut(crate::Editor::take_switch_request)
+        {
+            // A client in this process can't go anywhere else.
+            if self.client.as_ref().is_some_and(|c| c.local) {
+                return false;
+            }
+            self.send(Output::Switch(to));
+            self.client = None;
+            self.size = None;
+        }
+        if self
+            .host
+            .with_editor_mut(crate::Editor::take_detach_request)
+        {
+            // A client in this process has nowhere to detach to: the
+            // editor ends with it.
+            if self.client.as_ref().is_some_and(|c| c.local) {
+                return false;
+            }
+            self.detach();
+        }
+        true
     }
 
     /// Handles one message from the client. False when it asked to quit.
@@ -377,6 +401,7 @@ impl Server<'_> {
                 // A message lasts until the next key, unless that key
                 // brings another.
                 self.message = None;
+                self.key_at = Some(Instant::now());
                 let pressed = self.host.timed("a key", || self.host.press(key));
                 self.report(pressed);
             }
@@ -397,6 +422,7 @@ impl Server<'_> {
             }
             Input::Paste(ref text) => {
                 self.message = None;
+                self.key_at = Some(Instant::now());
                 let pasted = self.host.paste(text);
                 self.report(pasted);
             }
@@ -573,5 +599,18 @@ impl Decorations for Shown<'_> {
 
     fn diagnostics(&self, buffer: BufferId) -> &[(Range<usize>, u8)] {
         self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminals_output_right_after_a_key_is_its_echo_and_later_output_is_not() {
+        let now = Instant::now();
+        assert!(is_echo(Some(now), now + Duration::from_millis(2)));
+        assert!(!is_echo(Some(now), now + ECHO_WITHIN));
+        assert!(!is_echo(None, now), "no key, no echo");
     }
 }

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use greed_core::control::{self, Attachment, Client};
 use greed_core::keymap::Key;
-use greed_core::render::{Frame, Size};
+use greed_core::render::{Frame, Row, Size};
 use greed_core::server::{self, Input, Output};
 
 use crate::tui::{Painter, Terminal};
@@ -260,7 +260,64 @@ fn measure(
             drawn,
         });
     }
+    measured.push(terminal_echo(client, shell, &mut screen)?);
     Ok(measured)
+}
+
+/// What's typed into a terminal: a line at a time, each character timed
+/// until it shows.
+const TYPED: &str = "the-quick-brown-fox-jumps-over-the-lazy-dog";
+
+/// Types into a terminal running `cat`, whose echo comes from the terminal
+/// itself, so what's timed is Greed: the key reaching the program, its
+/// output coming back, the buffer and the frame.
+fn terminal_echo(
+    client: &mut Bench,
+    shell: &mut Client,
+    screen: &mut Option<(Terminal, Painter)>,
+) -> Result<Measured, Error> {
+    eval(
+        shell,
+        "require('@greed').run('terminal', { args = { 'cat' } })",
+    )?;
+    client.drain(Duration::from_millis(500));
+    eval(shell, "require('@greed').profile.start()")?;
+    let mut times = Vec::new();
+    let mut slow = Vec::new();
+    let mut drawn = screen.as_ref().map(|_| Drawn::default());
+    for line in 0..3 {
+        // Each line different, so a line echoed before doesn't count.
+        let text = format!("{line}{TYPED}");
+        for (i, c) in text.char_indices() {
+            let key = Key::parse(&c.to_string())?;
+            let typed = &text[..i + c.len_utf8()];
+            let took = client.timed_until(key, |frame| {
+                frame
+                    .rows
+                    .iter()
+                    .any(|row| row.text().trim_end().ends_with(typed))
+            })?;
+            if took > SLOW {
+                slow.push(format!("{c} {:.1}ms", took.as_secs_f64() * 1000.0));
+            }
+            times.push(took);
+            if let (Some((_, painter)), Some(drawn), Some(frame)) =
+                (screen.as_mut(), &mut drawn, &client.current)
+            {
+                drawn.draw(painter, frame)?;
+            }
+            std::thread::sleep(BETWEEN);
+        }
+        client.send(&Input::Key(Key::parse("enter")?))?;
+        client.drain(Duration::from_millis(100));
+    }
+    Ok(Measured {
+        name: "terminal echo",
+        times,
+        slow,
+        profile: eval(shell, PROFILE)?,
+        drawn,
+    })
 }
 
 /// Ends the profile and gives back each row as "ms runs longest plugin
@@ -452,12 +509,32 @@ impl Bench {
 
     /// How long `key` takes to come back as a frame.
     fn timed(&mut self, key: Key) -> Result<Duration, Error> {
+        self.timed_until(key, |_| true)
+    }
+
+    /// How long `key` takes to come back as a frame that `shows` says
+    /// shows it, e.g. a terminal's program echoing it.
+    fn timed_until(&mut self, key: Key, shows: impl Fn(&Frame) -> bool) -> Result<Duration, Error> {
         while let Ok(output) = self.pending.try_recv() {
             self.take(output);
         }
         let start = Instant::now();
         self.send(&Input::Key(key))?;
-        self.frame()?;
-        Ok(start.elapsed())
+        loop {
+            if let Err(err) = self.frame() {
+                let screen = self.current.as_ref().map_or_else(String::new, |frame| {
+                    frame
+                        .rows
+                        .iter()
+                        .map(Row::text)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                });
+                return Err(format!("{key} never showed ({err}); the screen:\n{screen}").into());
+            }
+            if self.current.as_ref().is_some_and(&shows) {
+                return Ok(start.elapsed());
+            }
+        }
     }
 }
