@@ -88,7 +88,9 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             let written = Path::new(&path)
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)
-                .and_then(|()| std::fs::write(&path, text.as_bytes()));
+                .and_then(|()| {
+                    crate::files::write(Path::new(&path), |out| out.write_all(&text.as_bytes()))
+                });
             match written {
                 Ok(()) => true.into_lua_multi(lua),
                 Err(err) => failure(lua, format!("can't write {path}: {err}")),

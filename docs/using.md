@@ -479,6 +479,13 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 
 Closing a terminal's buffer ends its program.
 
+Saving writes a new copy of the file beside it and moves it into place, so a
+crash or a full disk never leaves a file half written. The file keeps its
+permissions, and saving through a symlink writes the file it points to. A
+file that isn't UTF-8 opens read-only, with what can't be read shown as `�`,
+and `:w` refuses to write over it, since that would replace those bytes;
+`:w PATH` saves what you see to another file.
+
 `greed bench [FILE]` measures how quickly keys show: it starts a session
 with your plugins and config on the file (a large generated Rust file
 without one), types and moves around as you would, and prints how long

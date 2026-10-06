@@ -434,6 +434,110 @@ fn buffers_save_to_a_new_path_and_keep_it() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("greed-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn dir_entries(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn files_that_arent_utf8_cant_be_saved_over_but_can_be_saved_elsewhere() {
+    let dir = temp_dir("lossy");
+    let path = dir.join("data.txt");
+    std::fs::write(&path, b"ab\xffcd").unwrap();
+    let mut ed = editor("");
+    let buffer = ed.open_file(&path).unwrap();
+    assert!(ed.buffer(buffer).is_lossy());
+
+    let err = ed.save(buffer).unwrap_err();
+    assert!(err.to_string().contains("isn't UTF-8"), "{err}");
+    let err = ed.save_as(buffer, &path).unwrap_err();
+    assert!(err.to_string().contains("isn't UTF-8"), "{err}");
+    assert_eq!(std::fs::read(&path).unwrap(), b"ab\xffcd");
+
+    let copy = dir.join("copy.txt");
+    ed.save_as(buffer, &copy).unwrap();
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "ab\u{fffd}cd");
+    assert!(!ed.buffer(buffer).is_lossy());
+    ed.save(buffer).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"ab\xffcd");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_failed_save_elsewhere_keeps_a_file_that_isnt_utf8_from_being_saved_over() {
+    let dir = temp_dir("lossy-failed");
+    let path = dir.join("data.txt");
+    std::fs::write(&path, b"ab\xffcd").unwrap();
+    let mut ed = editor("");
+    let buffer = ed.open_file(&path).unwrap();
+    assert!(ed.save_as(buffer, &dir.join("missing/copy.txt")).is_err());
+    assert_eq!(ed.buffer(buffer).path(), Some(path.as_path()));
+    assert!(ed.save(buffer).is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn saving_replaces_the_file_whole_keeping_permissions_and_symlinks() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = temp_dir("atomic-save");
+    let target = dir.join("real.sh");
+    std::fs::write(&target, "old").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o750)).unwrap();
+    let link = dir.join("link.sh");
+    std::os::unix::fs::symlink("real.sh", &link).unwrap();
+
+    let mut ed = editor("");
+    let buffer = ed.open_file(&link).unwrap();
+    let insert = ChangeSet::from_changes(3, [(3, 3, Some(" new"))]).unwrap();
+    let user = Author::User(ClientId(1));
+    ed.apply_to_buffer(buffer, insert, user, None, None)
+        .unwrap();
+    ed.save(buffer).unwrap();
+
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "old new");
+    let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o750);
+    assert_eq!(
+        dir_entries(&dir),
+        ["link.sh", "real.sh"],
+        "no temp file left"
+    );
+
+    // A symlink to a file that doesn't exist yet creates it.
+    let dangling = dir.join("dangling.txt");
+    std::os::unix::fs::symlink("new.txt", &dangling).unwrap();
+    ed.save_as(buffer, &dangling).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("new.txt")).unwrap(),
+        "old new"
+    );
+    assert!(
+        std::fs::symlink_metadata(&dangling)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn each_mode_has_a_cursor_shape() {
     let mut ed = editor("");

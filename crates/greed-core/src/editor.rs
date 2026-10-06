@@ -537,7 +537,8 @@ impl Editor {
 
     /// The buffer for the file at `path`: the open one, or a new buffer
     /// with the file's text (empty if the file doesn't exist yet). A file
-    /// that isn't UTF-8 opens read-only, with what can't be read replaced.
+    /// that isn't UTF-8 opens read-only, with what can't be read replaced,
+    /// and can't be saved over.
     pub fn open_file(&mut self, path: &Path) -> std::io::Result<BufferId> {
         // Files are known by their absolute path, so one opened as
         // "src/a.rs" and as "/home/me/src/a.rs" is the same buffer.
@@ -557,6 +558,7 @@ impl Editor {
         let mut buffer = Buffer::new(id, "file", &text).with_path(path);
         buffer.set_detected(self.file_types.detect(path));
         buffer.set_readonly(binary);
+        buffer.set_lossy(binary);
         self.insert_buffer(buffer);
         Ok(id)
     }
@@ -750,14 +752,23 @@ impl Editor {
         Ok(!changes.is_empty())
     }
 
-    /// Writes the buffer to `path`, which becomes its file.
+    /// Writes the buffer to `path`, which becomes its file. A buffer whose
+    /// file wasn't UTF-8 can be saved to another path, which then holds
+    /// what it shows, but not over its own file.
     pub fn save_as(&mut self, id: BufferId, path: &Path) -> std::io::Result<()> {
         let detected = self.file_types.detect(path);
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
+        let lossy = buffer.is_lossy();
+        if lossy && buffer.path() == Some(&std::path::absolute(path)?) {
+            // Refused, as saving over it would be.
+            return buffer.save();
+        }
         let old = buffer.set_path(Some(path.to_path_buf()));
+        buffer.set_lossy(false);
         let saved = buffer.save();
         if saved.is_err() {
             buffer.set_path(old);
+            buffer.set_lossy(lossy);
         } else {
             buffer.set_detected(detected);
         }

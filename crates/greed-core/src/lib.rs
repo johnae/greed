@@ -5,6 +5,7 @@ pub mod control;
 pub mod delta;
 pub mod diff;
 mod editor;
+pub mod files;
 mod filetypes;
 mod history;
 pub mod ide;

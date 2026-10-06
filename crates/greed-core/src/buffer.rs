@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -15,6 +14,7 @@ pub struct BufferId(pub u32);
 
 /// Open text, backed by a file or not.
 #[derive(Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "independent flags")]
 pub struct Buffer {
     id: BufferId,
     text: Rope,
@@ -27,6 +27,9 @@ pub struct Buffer {
     /// The version last loaded from or written to the file.
     saved: SmallVec<[TxId; 1]>,
     readonly: bool,
+    /// Whether the file wasn't UTF-8 and what couldn't be read was replaced,
+    /// so saving over it would lose that.
+    lossy: bool,
     /// Whether the main view shows line numbers beside it.
     line_numbers: bool,
     /// Kept open while nothing shows it, though it has no file.
@@ -139,6 +142,7 @@ impl Buffer {
             version: SmallVec::new(),
             saved: SmallVec::new(),
             readonly: false,
+            lossy: false,
             line_numbers: true,
             kept: false,
             language: None,
@@ -229,6 +233,16 @@ impl Buffer {
         self.readonly = readonly;
     }
 
+    /// Whether the file wasn't UTF-8 when opened, so the text has
+    /// replacements in it and saving over the file is refused.
+    pub fn is_lossy(&self) -> bool {
+        self.lossy
+    }
+
+    pub(crate) fn set_lossy(&mut self, lossy: bool) {
+        self.lossy = lossy;
+    }
+
     pub fn line_numbers(&self) -> bool {
         self.line_numbers
     }
@@ -260,15 +274,20 @@ impl Buffer {
         self.detected = language;
     }
 
-    /// Writes the text to the buffer's file.
+    /// Writes the text to the buffer's file, whole (see [`crate::files::write`]).
+    /// Refused if the file didn't open as UTF-8.
     pub fn save(&mut self) -> std::io::Result<()> {
         let path = self
             .path
             .as_deref()
             .ok_or_else(|| std::io::Error::other("this buffer has no file"))?;
-        let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
-        self.text.write_to(&mut file)?;
-        file.flush()?;
+        if self.lossy {
+            return Err(std::io::Error::other(format!(
+                "{} isn't UTF-8, so saving would replace what couldn't be read; save to another path instead",
+                path.display()
+            )));
+        }
+        crate::files::write(path, |out| self.text.write_to(out))?;
         self.mark_saved();
         Ok(())
     }

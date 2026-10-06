@@ -339,7 +339,7 @@ fn write(host: &Host) -> Result<String, Box<dyn std::error::Error>> {
     host.with_editor(|ed| {
         let buffer = ed.buffer(ed.view(ed.focus()).buffer);
         let path = buffer.path().ok_or("this buffer has no file")?;
-        std::fs::write(path, buffer.text().to_string())?;
+        greed_core::files::write(path, |out| buffer.text().write_to(out))?;
         Ok(format!("wrote {}", path.display()))
     })
 }
