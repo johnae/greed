@@ -2,6 +2,8 @@
 //! the old tree for everything outside what changed, which takes well under
 //! a millisecond where a whole parse of a large file takes tens.
 
+use std::time::Instant;
+
 use greed_text::Rope;
 use tree_sitter::{InputEdit, Parser, Point, Tree};
 
@@ -26,19 +28,21 @@ pub(super) fn edit_between(old: &Rope, new: &Rope) -> Option<InputEdit> {
     })
 }
 
-/// Parses `new`, reusing `old`, which was parsed from `old_text`.
+/// Parses `new`, reusing `old`, which was parsed from `old_text`; `None` if
+/// it can't finish by `deadline`.
 pub(super) fn reparse(
     parser: &mut Parser,
     old: &Tree,
     old_text: &Rope,
     new: &Rope,
+    deadline: Option<Instant>,
 ) -> Option<Tree> {
     let Some(edit) = edit_between(old_text, new) else {
         return Some(old.clone());
     };
     let mut edited = old.clone();
     edited.edit(&edit);
-    super::parse_from(parser, new, Some(&edited))
+    super::parse_from(parser, new, Some(&edited), deadline)
 }
 
 fn point(text: &Rope, byte: usize) -> Point {
@@ -148,16 +152,33 @@ mod tests {
     }
 
     #[test]
+    fn a_parse_past_its_deadline_gives_up_and_the_next_starts_fresh() {
+        let language = tree_sitter::Language::new(tree_sitter_rust::LANGUAGE);
+        let mut parser = Parser::new();
+        parser.set_language(&language).unwrap();
+        let text = Rope::from_str(&"fn a() { let x = 1; }\n".repeat(20_000));
+        let past = Some(Instant::now());
+        assert!(super::super::parse_from(&mut parser, &text, None, past).is_none());
+        let small = Rope::from_str("fn b() {}\n");
+        let tree = super::super::parse_from(&mut parser, &small, None, None).unwrap();
+        assert_eq!(
+            tree.root_node().end_byte(),
+            small.len_bytes(),
+            "not the text before"
+        );
+    }
+
+    #[test]
     fn reparsing_gives_the_tree_a_whole_parse_does() {
         let language = tree_sitter::Language::new(tree_sitter_rust::LANGUAGE);
         let mut parser = Parser::new();
         parser.set_language(&language).unwrap();
         let old_text = Rope::from_str(&"fn a() { let x = 1; }\n".repeat(500));
-        let old = super::super::parse_from(&mut parser, &old_text, None).unwrap();
+        let old = super::super::parse_from(&mut parser, &old_text, None, None).unwrap();
         let mut new = old_text.clone();
         new.insert(5_000, "fn b(y: u8) {}\n");
-        let incremental = reparse(&mut parser, &old, &old_text, &new).unwrap();
-        let whole = super::super::parse_from(&mut parser, &new, None).unwrap();
+        let incremental = reparse(&mut parser, &old, &old_text, &new, None).unwrap();
+        let whole = super::super::parse_from(&mut parser, &new, None, None).unwrap();
         assert_eq!(
             incremental.root_node().to_sexp(),
             whole.root_node().to_sexp()

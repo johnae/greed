@@ -6,16 +6,17 @@
 //! worker catches up after an edit, the tree can be one version behind.
 
 use std::collections::HashMap;
-use std::ops::Range;
+use std::ops::{ControlFlow, Range};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use greed_text::Rope;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::wasmtime::Engine;
-use tree_sitter::{Node, Parser, Query, QueryCursor, TextProvider, Tree, WasmStore};
+use tree_sitter::{Node, ParseOptions, Parser, Query, QueryCursor, TextProvider, Tree, WasmStore};
 
 use crate::{Buffer, BufferId, Editor};
 use injections::{InjectionQuery, Injections, Layer};
@@ -28,6 +29,10 @@ pub use tags::{Definition, FileTags, Tagger};
 
 /// Buffers larger than this aren't parsed, so huge files stay responsive.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// How long a parse on the editor's thread may take, when a plugin wants a
+/// tree before the worker has one.
+const IN_TIME: Duration = Duration::from_millis(3);
 
 /// A query that picks out what to highlight, and its capture names, e.g.
 /// "keyword" or "function.macro".
@@ -539,8 +544,12 @@ impl Syntax {
         let before = state.tree.clone();
         self.parser.set_language(&language.grammar).ok()?;
         let tree = match &before {
+            // A parse again after an edit that would hold up the key that
+            // asked for it (in code tree-sitter has to recover from) gives
+            // up, and there's no tree until the worker brings one.
             Some((_, old, old_text)) => {
-                incremental::reparse(&mut self.parser, old, old_text, buffer.text())?
+                let deadline = Some(Instant::now() + IN_TIME);
+                incremental::reparse(&mut self.parser, old, old_text, buffer.text(), deadline)?
             }
             None => parse(&mut self.parser, buffer.text())?,
         };
@@ -726,7 +735,7 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
             }
             let tree = match last.get(&request.buffer) {
                 Some((language, old, old_text)) if *language == request.language.name => {
-                    incremental::reparse(&mut parser, old, old_text, &request.text)
+                    incremental::reparse(&mut parser, old, old_text, &request.text, None)
                 }
                 _ => parse(&mut parser, &request.text),
             };
@@ -765,20 +774,35 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
 
 /// Parses `text` from scratch with the parser's language.
 fn parse(parser: &mut Parser, text: &Rope) -> Option<Tree> {
-    parse_from(parser, text, None)
+    parse_from(parser, text, None, None)
 }
 
 /// Parses `text` with the parser's language, reusing `old` (already told
-/// about the edits since) where the text didn't change.
-fn parse_from(parser: &mut Parser, text: &Rope, old: Option<&Tree>) -> Option<Tree> {
-    parser.parse_with_options(
+/// about the edits since) where the text didn't change. With a `deadline`,
+/// gives up at it and returns `None`.
+fn parse_from(
+    parser: &mut Parser,
+    text: &Rope,
+    old: Option<&Tree>,
+    deadline: Option<Instant>,
+) -> Option<Tree> {
+    let mut in_time = |_: &tree_sitter::ParseState| match deadline {
+        Some(deadline) if Instant::now() > deadline => ControlFlow::Break(()),
+        _ => ControlFlow::Continue(()),
+    };
+    let tree = parser.parse_with_options(
         &mut |byte, _| {
             let (chunk, start, _, _) = text.chunk_at_byte(byte);
             &chunk.as_bytes()[byte - start..]
         },
         old,
-        None,
-    )
+        Some(ParseOptions::new().progress_callback(&mut in_time)),
+    );
+    if tree.is_none() {
+        // Otherwise the next parse would carry on with this one's text.
+        parser.reset();
+    }
+    tree
 }
 
 /// Lets queries read node text straight from a rope.
