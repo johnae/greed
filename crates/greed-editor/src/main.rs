@@ -73,8 +73,12 @@ fn main() -> ExitCode {
         [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dir] if cmd == "test" => test(Path::new(dir)),
         [cmd] if cmd == "commands" => commands(),
-        [cmd] if cmd == "bench" => bench::run(None),
-        [cmd, file] if cmd == "bench" => bench::run(Some(Path::new(file))),
+        [cmd] if cmd == "bench" => bench::run(None, false),
+        [cmd, flag] if cmd == "bench" && flag == "--draw" => bench::run(None, true),
+        [cmd, flag, file] if cmd == "bench" && flag == "--draw" => {
+            bench::run(Some(Path::new(file)), true)
+        }
+        [cmd, file] if cmd == "bench" => bench::run(Some(Path::new(file)), false),
         [name, rest @ ..] if command_name(name) && !Path::new(name).exists() => {
             plugin_command(name, rest, terminal)
         }

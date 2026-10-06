@@ -4,18 +4,20 @@
 //! session socket as `greed` does, types and moves, and reports how long
 //! each key took from being sent to the frame showing it arriving.
 //!
-//! What it leaves out: drawing the frame in the terminal, and the terminal
-//! itself, which `greed`'s client and your terminal emulator add on top.
+//! With `--draw` it also draws each frame in the terminal it runs in,
+//! as `greed` does, and times that and the terminal taking it in.
 
 use std::fmt::Write as _;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use greed_core::control::{self, Attachment, Client};
 use greed_core::keymap::Key;
-use greed_core::render::Size;
+use greed_core::render::{Frame, Size};
 use greed_core::server::{self, Input, Output};
+
+use crate::tui::{Painter, Terminal};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -104,7 +106,10 @@ fn generated() -> String {
 }
 
 /// Runs the benchmark on `file`, or a generated one, and prints a report.
-pub fn run(file: Option<&Path>) -> Result<(), Error> {
+pub fn run(file: Option<&Path>, terminal: bool) -> Result<(), Error> {
+    if terminal && !std::io::stdout().is_terminal() {
+        return Err("greed bench --draw draws in the terminal it runs in".into());
+    }
     let name = format!("bench-{}", std::process::id());
     let scratch = std::env::temp_dir().join(format!("greed-{name}"));
     std::fs::create_dir_all(&scratch)?;
@@ -132,16 +137,30 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
     let (socket, token) = control::session_files(&name);
     let token = std::fs::read_to_string(token)?;
     let mut client = Bench::new(Client::connect(&socket, token.trim())?.attach()?);
-    client.send(&Input::Resize(SIZE))?;
-    client.frame()?;
-    // Let highlighting and language servers settle, as when you open a file.
-    client.drain(Duration::from_millis(1500));
+    let mut shell = Client::connect_as(&socket, token.trim(), true)?;
+    // In the terminal, at its size and drawn as `greed` draws.
+    let screen = if terminal {
+        Some((Terminal::enter()?, Painter::new()))
+    } else {
+        None
+    };
+    let size = if terminal {
+        let (width, height) = crossterm::terminal::size()?;
+        Size { width, height }
+    } else {
+        SIZE
+    };
+    let measured = measure(&mut client, &mut shell, size, screen);
+    let _ = conn.input.send(Input::Quit);
+    let _ = conn.server.join();
+    let _ = std::fs::remove_dir_all(&scratch);
+    let mut measured = measured?;
 
     println!(
         "greed bench: {} ({lines} lines), {}x{}, a key every {} ms",
         path.display(),
-        SIZE.width,
-        SIZE.height,
+        size.width,
+        size.height,
         BETWEEN.as_millis()
     );
     println!("time from a key leaving the client to the frame showing it arriving\n");
@@ -150,16 +169,71 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
         "", "keys", "median", "p95", "p99", "worst", "> 16ms"
     );
     let mut all = Vec::new();
-    let mut shell = Client::connect_as(&socket, token.trim(), true)?;
-    let mut profiles = Vec::new();
+    for scenario in &measured {
+        let mut times = scenario.times.clone();
+        report(scenario.name, &mut times);
+        if !scenario.slow.is_empty() {
+            println!("{:<14} slow: {}", "", scenario.slow.join(", "));
+        }
+        all.extend(times);
+    }
+    println!();
+    report("all", &mut all);
+    if terminal {
+        println!(
+            "\ndrawing each frame in this terminal, medians: greed's client, the bytes\nit wrote, and the terminal taking them in (then its worst)\n"
+        );
+        println!(
+            "{:<14} {:>10} {:>8} {:>11} {:>10}",
+            "", "client", "bytes", "terminal", "worst"
+        );
+        for scenario in &mut measured {
+            if let Some(drawn) = &mut scenario.drawn {
+                drawn.report(scenario.name);
+            }
+        }
+    }
+    for scenario in &measured {
+        println!(
+            "\nwhere the time went, {}, per key (plugin: what)\n{}",
+            scenario.name,
+            per_key(&scenario.profile, scenario.times.len())
+        );
+    }
+    Ok(())
+}
+
+/// What one scenario measured.
+struct Measured {
+    name: &'static str,
+    times: Vec<Duration>,
+    slow: Vec<String>,
+    profile: String,
+    drawn: Option<Drawn>,
+}
+
+/// Runs every scenario at `size`, drawing each frame in the terminal with
+/// `screen`.
+fn measure(
+    client: &mut Bench,
+    shell: &mut Client,
+    size: Size,
+    mut screen: Option<(Terminal, Painter)>,
+) -> Result<Vec<Measured>, Error> {
+    client.send(&Input::Resize(size))?;
+    client.frame()?;
+    // Let highlighting and language servers settle, as when you open a file.
+    client.drain(Duration::from_millis(1500));
+    let mut measured = Vec::new();
     for scenario in scenarios() {
         for key in Key::parse_sequence(scenario.setup)? {
             client.send(&Input::Key(key))?;
         }
         client.drain(Duration::from_millis(300));
-        eval(&mut shell, "require('@greed').profile.start()")?;
+        eval(shell, "require('@greed').profile.start()")?;
         let mut times = Vec::new();
         let mut slow = Vec::new();
+        let mut drawn = screen.as_ref().map(|_| Drawn::default());
         for (i, key) in Key::parse_sequence(&scenario.keys)?.into_iter().enumerate() {
             let took = client.timed(key)?;
             if took > SLOW {
@@ -170,28 +244,23 @@ pub fn run(file: Option<&Path>) -> Result<(), Error> {
                 ));
             }
             times.push(took);
+            if let (Some((_, painter)), Some(drawn), Some(frame)) =
+                (&mut screen, &mut drawn, &client.current)
+            {
+                drawn.draw(painter, frame)?;
+            }
             std::thread::sleep(BETWEEN);
         }
         client.drain(Duration::from_millis(100));
-        profiles.push((scenario.name, times.len(), eval(&mut shell, PROFILE)?));
-        report(scenario.name, &mut times);
-        if !slow.is_empty() {
-            println!("{:<14} slow: {}", "", slow.join(", "));
-        }
-        all.extend(times);
+        measured.push(Measured {
+            name: scenario.name,
+            times,
+            slow,
+            profile: eval(shell, PROFILE)?,
+            drawn,
+        });
     }
-    println!();
-    report("all", &mut all);
-    for (name, keys, profile) in profiles {
-        println!(
-            "\nwhere the time went, {name}, per key (plugin: what)\n{}",
-            per_key(&profile, keys)
-        );
-    }
-    let _ = conn.input.send(Input::Quit);
-    let _ = conn.server.join();
-    let _ = std::fs::remove_dir_all(&scratch);
-    Ok(())
+    Ok(measured)
 }
 
 /// Ends the profile and gives back each row as "ms runs longest plugin
@@ -253,10 +322,61 @@ fn report(name: &str, times: &mut [Duration]) {
     );
 }
 
-/// The attached client, reading what the session sends.
+/// The attached client, reading what the session sends and keeping the
+/// frame it's at.
 struct Bench {
     attachment: Attachment,
     pending: std::sync::mpsc::Receiver<Output>,
+    current: Option<Frame>,
+}
+
+/// Drawing frames in the terminal: what it took `greed`'s client, how many
+/// bytes went out, and how long the terminal took to take them in.
+#[derive(Default)]
+struct Drawn {
+    client: Vec<Duration>,
+    bytes: Vec<usize>,
+    terminal: Vec<Duration>,
+}
+
+impl Drawn {
+    /// Draws `frame` as the terminal client does, then asks the terminal
+    /// where the cursor is: it answers once it has read everything before
+    /// the question, so the answer's time is how long it took.
+    fn draw(&mut self, painter: &mut Painter, frame: &Frame) -> Result<(), Error> {
+        let started = Instant::now();
+        let mut bytes = Vec::new();
+        painter.paint(&mut bytes, frame)?;
+        self.client.push(started.elapsed());
+        self.bytes.push(bytes.len());
+        let started = Instant::now();
+        let mut out = std::io::stdout().lock();
+        out.write_all(&bytes)?;
+        out.flush()?;
+        drop(out);
+        // Gives up after a while if the terminal never answers.
+        crossterm::cursor::position()?;
+        self.terminal.push(started.elapsed());
+        Ok(())
+    }
+
+    fn report(&mut self, name: &str) {
+        let bytes = median(&mut self.bytes);
+        let (client, terminal) = (median(&mut self.client), median(&mut self.terminal));
+        let worst = self.terminal.last().copied().unwrap_or_default();
+        println!(
+            "{name:<14} {:>8.2}ms {:>8} {:>9.2}ms {:>8.2}ms",
+            client.as_secs_f64() * 1000.0,
+            bytes,
+            terminal.as_secs_f64() * 1000.0,
+            worst.as_secs_f64() * 1000.0
+        );
+    }
+}
+
+fn median<T: Ord + Copy + Default>(values: &mut [T]) -> T {
+    values.sort_unstable();
+    values.get(values.len() / 2).copied().unwrap_or_default()
 }
 
 impl Bench {
@@ -283,6 +403,20 @@ impl Bench {
         Bench {
             attachment,
             pending,
+            current: None,
+        }
+    }
+
+    /// Keeps `output`'s frame as the current one.
+    fn take(&mut self, output: Output) {
+        match output {
+            Output::Frame(frame) => self.current = Some(frame),
+            Output::Delta(delta) => {
+                if let Some(frame) = &mut self.current {
+                    delta.apply(frame);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -295,7 +429,10 @@ impl Bench {
     fn frame(&mut self) -> Result<(), Error> {
         loop {
             match self.pending.recv_timeout(Duration::from_secs(10))? {
-                Output::Frame(_) | Output::Delta(_) => return Ok(()),
+                frame @ (Output::Frame(_) | Output::Delta(_)) => {
+                    self.take(frame);
+                    return Ok(());
+                }
                 Output::Exit | Output::Detached => return Err("the session went away".into()),
                 _ => {}
             }
@@ -306,15 +443,18 @@ impl Bench {
     fn drain(&mut self, time: Duration) {
         let until = Instant::now() + time;
         while let Some(left) = until.checked_duration_since(Instant::now()) {
-            if self.pending.recv_timeout(left).is_err() {
-                break;
+            match self.pending.recv_timeout(left) {
+                Ok(output) => self.take(output),
+                Err(_) => break,
             }
         }
     }
 
     /// How long `key` takes to come back as a frame.
     fn timed(&mut self, key: Key) -> Result<Duration, Error> {
-        while self.pending.try_recv().is_ok() {}
+        while let Ok(output) = self.pending.try_recv() {
+            self.take(output);
+        }
         let start = Instant::now();
         self.send(&Input::Key(key))?;
         self.frame()?;

@@ -34,15 +34,7 @@ const KEY_POLL: Duration = Duration::from_millis(50);
 /// keys and sizes to `input` and drawing the frames from `output`. Returns
 /// how it ended.
 pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, Error> {
-    let var = |name| std::env::var(name).ok();
-    TRUECOLOR.store(
-        truecolor(
-            var("GREED_COLORS").as_deref(),
-            var("COLORTERM").as_deref(),
-            var("TERM").as_deref(),
-        ),
-        Ordering::Relaxed,
-    );
+    let mut painter = Painter::new();
     let terminal = Terminal::enter()?;
     let (width, height) = terminal::size()?;
     input.send(Input::Resize(Size { width, height }))?;
@@ -79,15 +71,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
         })
     };
 
-    let mut screen = Screen {
-        graphics: Graphics::new(graphics::detect()),
-        sized: text_sizing(
-            var("GREED_TEXT_SIZING").as_deref(),
-            var("TERM").as_deref(),
-            std::env::var_os("KITTY_WINDOW_ID").is_some(),
-        ),
-        ..Screen::default()
-    };
+    let screen = &mut painter.0;
     let mut out = io::BufWriter::new(io::stdout());
     // Deltas change the last whole frame into the next.
     let mut current: Option<Frame> = None;
@@ -307,10 +291,10 @@ pub fn convert(event: KeyEvent) -> Option<Key> {
 }
 
 /// Raw mode and the alternate screen, restored when dropped or on panic.
-struct Terminal;
+pub(crate) struct Terminal;
 
 impl Terminal {
-    fn enter() -> io::Result<Self> {
+    pub(crate) fn enter() -> io::Result<Self> {
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             restore();
@@ -386,6 +370,36 @@ struct Screen {
     graphics: Graphics,
     /// Whether the terminal draws text bigger (kitty's text sizing).
     sized: bool,
+}
+
+/// Draws frames as the terminal client does, for `greed bench --draw`.
+pub(crate) struct Painter(Screen);
+
+impl Painter {
+    pub(crate) fn new() -> Self {
+        let var = |name| std::env::var(name).ok();
+        TRUECOLOR.store(
+            truecolor(
+                var("GREED_COLORS").as_deref(),
+                var("COLORTERM").as_deref(),
+                var("TERM").as_deref(),
+            ),
+            Ordering::Relaxed,
+        );
+        Painter(Screen {
+            graphics: Graphics::new(graphics::detect()),
+            sized: text_sizing(
+                var("GREED_TEXT_SIZING").as_deref(),
+                var("TERM").as_deref(),
+                std::env::var_os("KITTY_WINDOW_ID").is_some(),
+            ),
+            ..Screen::default()
+        })
+    }
+
+    pub(crate) fn paint(&mut self, out: &mut impl Write, frame: &Frame) -> io::Result<()> {
+        self.0.draw(out, frame)
+    }
 }
 
 impl Screen {
