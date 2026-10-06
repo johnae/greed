@@ -117,6 +117,8 @@ struct OptionSlot {
     value: Value,
     /// The plugin that last set it, if anything has since it was defined.
     set_by: Option<PluginId>,
+    /// Whether anything set it since it was defined.
+    set: bool,
 }
 
 /// An option as it stands: how it was defined, its value, and who set it.
@@ -132,6 +134,9 @@ pub struct Registry<H> {
     commands: HashMap<Arc<str>, Vec<Command<H>>>,
     events: HashMap<Arc<str>, Vec<EventHandler<H>>>,
     options: HashMap<Arc<str>, OptionSlot>,
+    /// The values set on options whose plugin was removed, and who set
+    /// them, for when it defines them again.
+    kept: HashMap<Arc<str>, (Value, Option<PluginId>)>,
 }
 
 impl<H> Default for Registry<H> {
@@ -140,6 +145,7 @@ impl<H> Default for Registry<H> {
             commands: HashMap::new(),
             events: HashMap::new(),
             options: HashMap::new(),
+            kept: HashMap::new(),
         }
     }
 }
@@ -205,15 +211,28 @@ impl<H> Registry<H> {
             .map(|(event, handlers)| (&**event, handlers.as_slice()))
     }
 
-    /// Defines an option, set to its default.
+    /// Defines an option, set to its default. An option of the same name and
+    /// type that was set, even one whose plugin was removed since, as when
+    /// it reloads, keeps its value and who set it.
     pub fn define_option(&mut self, def: OptionDef) {
-        let value = def.default.clone();
+        let earlier = self
+            .options
+            .remove(&def.name)
+            .filter(|slot| slot.set)
+            .map(|slot| (slot.value, slot.set_by))
+            .or_else(|| self.kept.remove(&def.name))
+            .filter(|(value, _)| {
+                std::mem::discriminant(value) == std::mem::discriminant(&def.default)
+            });
+        let set = earlier.is_some();
+        let (value, set_by) = earlier.unwrap_or_else(|| (def.default.clone(), None));
         self.options.insert(
             def.name.clone(),
             OptionSlot {
                 def,
                 value,
-                set_by: None,
+                set_by,
+                set,
             },
         );
     }
@@ -260,6 +279,7 @@ impl<H> Registry<H> {
         }
         slot.value = value;
         slot.set_by = by;
+        slot.set = true;
         Ok(())
     }
 
@@ -273,6 +293,11 @@ impl<H> Registry<H> {
             handlers.retain(|h| &*h.owner != owner);
         }
         self.events.retain(|_, handlers| !handlers.is_empty());
-        self.options.retain(|_, slot| &*slot.def.owner != owner);
+        let removed = self.options.extract_if(|_, slot| &*slot.def.owner == owner);
+        for (name, slot) in removed {
+            if slot.set {
+                self.kept.insert(name, (slot.value, slot.set_by));
+            }
+        }
     }
 }

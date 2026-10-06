@@ -631,7 +631,8 @@ trimming example does, or it goes round forever.
 with `:set name value` or `greed.option.set(name, value)` in their config.
 The default fixes its type, a boolean, a number or a string, and setting it
 to anything else is refused. `greed.option.get(name)` reads it, and
-`option.changed` says when it changes.
+`option.changed` says when it changes. When a plugin is reloaded, an option
+it defines again with the same type keeps the value it was set to.
 
 ```luau
 greed.option.define({

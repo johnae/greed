@@ -304,3 +304,21 @@ fn unloading_puts_back_the_language_servers_a_plugin_replaced() {
     h.unload("base").unwrap();
     assert_eq!(servers(&h), "- -");
 }
+
+#[test]
+fn reloading_keeps_the_options_a_plugin_defines() {
+    let h = host();
+    h.load_str(
+        "opts",
+        r#"require("@greed").option.define { name = "opts-width", default = 4 }"#,
+    )
+    .unwrap();
+    h.eval("require('@greed').option.set('opts-width', 2)")
+        .unwrap();
+    h.reload("opts").unwrap();
+    assert_eq!(
+        h.eval("require('@greed').option.get('opts-width')")
+            .unwrap(),
+        "2"
+    );
+}

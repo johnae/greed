@@ -104,3 +104,53 @@ fn removing_the_owner_removes_its_options() {
     reg.remove_owned_by("user/me");
     assert_eq!(reg.option("wrap"), None);
 }
+
+fn option(name: &str, owner: &str, default: Value) -> OptionDef {
+    OptionDef {
+        name: name.into(),
+        doc: String::new().into(),
+        owner: owner.into(),
+        source: None,
+        default,
+    }
+}
+
+#[test]
+fn defining_an_option_again_keeps_what_it_was_set_to() {
+    let mut reg = Reg::default();
+    reg.define_option(option("width", "user/me", Value::Int(4)));
+    reg.set_option_by("width", Value::Int(2), Some("config".into()))
+        .unwrap();
+    // As when the plugin reloads.
+    reg.remove_owned_by("user/me");
+    reg.define_option(option("width", "user/me", Value::Int(8)));
+    assert_eq!(reg.option("width"), Some(&Value::Int(2)));
+    let state = reg.option_states().next().unwrap();
+    assert_eq!(state.set_by.map(|by| &**by), Some("config"));
+    // Without removing it first, too.
+    reg.define_option(option("width", "user/me", Value::Int(8)));
+    assert_eq!(reg.option("width"), Some(&Value::Int(2)));
+}
+
+#[test]
+fn an_option_never_set_takes_its_new_default() {
+    let mut reg = Reg::default();
+    reg.define_option(option("width", "user/me", Value::Int(4)));
+    reg.remove_owned_by("user/me");
+    reg.define_option(option("width", "user/me", Value::Int(8)));
+    assert_eq!(reg.option("width"), Some(&Value::Int(8)));
+    assert!(reg.option_states().next().unwrap().set_by.is_none());
+}
+
+#[test]
+fn an_option_defined_again_with_another_type_takes_its_default() {
+    let mut reg = Reg::default();
+    reg.define_option(option("wrap", "user/me", Value::Int(1)));
+    reg.set_option("wrap", Value::Int(0)).unwrap();
+    reg.remove_owned_by("user/me");
+    reg.define_option(option("wrap", "user/me", Value::Bool(true)));
+    assert_eq!(reg.option("wrap"), Some(&Value::Bool(true)));
+    reg.set_option("wrap", Value::Bool(false)).unwrap();
+    reg.define_option(option("wrap", "user/me", Value::String("on".into())));
+    assert_eq!(reg.option("wrap"), Some(&Value::String("on".into())));
+}
