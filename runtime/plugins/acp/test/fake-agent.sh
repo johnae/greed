@@ -3,10 +3,12 @@
 # a prompt by its first word.
 #
 #   hello        says "Hello there" in two pieces
+#   usage        says how much of its context it has used
 #   edit FILE    asks to edit FILE in its folder, and writes "edited" if allowed
 #   read FILE    reads FILE through the editor and says what it holds
 #   run          runs `echo from a terminal` and says what it printed
 #   wait         says nothing until it's cancelled
+#   busy         runs a tool call until it's cancelled
 #   plan         reports a plan and a tool call that fails
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
@@ -74,6 +76,11 @@ while IFS= read -r line; do
 	*'"method":"session/prompt"'*)
 		text=$(field "$line" text)
 		case "$text" in
+		usage*)
+			update '{"sessionUpdate":"usage_update","used":14200,"size":200000}'
+			say "Counted."
+			turn_done "$id" end_turn
+			;;
 		hello*)
 			say "Hello"
 			say " there"
@@ -120,6 +127,15 @@ while IFS= read -r line; do
 			out=$(field "$reply" output | sed 's/\\n$//')
 			say "It printed: $out"
 			turn_done "$id" end_turn
+			;;
+		busy*)
+			update '{"sessionUpdate":"tool_call","toolCallId":"t3","title":"Run tests","kind":"execute","status":"in_progress"}'
+			while IFS= read -r next; do
+				case "$next" in
+				*'"session/cancel"'*) break ;;
+				esac
+			done
+			turn_done "$id" cancelled
 			;;
 		wait*)
 			while IFS= read -r next; do

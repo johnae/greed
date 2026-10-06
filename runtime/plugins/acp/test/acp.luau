@@ -50,10 +50,10 @@ test("a message goes to the agent and its reply streams into the transcript", fu
 	assert(greed.view():buffer():kind() == "agent-transcript")
 	send(t, s, "hello")
 	local text = shown()
-	assert(string.find(text, "▍ You\n  hello\n", 1, true), text)
-	assert(string.find(text, "▍ Fake\n  Hello there\n", 1, true), text)
-	local prompt = string.match(text, "── alt%-enter sends · ctrl%-c stops ──\n(.*)$")
-	assert(prompt == "", "the prompt is empty again: " .. tostring(prompt))
+	assert(string.find(text, "  You\n  hello\n", 1, true), text)
+	assert(string.find(text, "  Fake\n  Hello there\n", 1, true), text)
+	local prompt = string.match(text, "alt%-enter sends · ctrl%-c stops ─╮\n(.*)$")
+	assert(prompt == "", "the box is empty again: " .. tostring(prompt))
 end)
 
 test("the agent asks before an edit; enter answers, and an open file is edited", function(t)
@@ -83,8 +83,7 @@ test("the agent asks before an edit; enter answers, and an open file is edited",
 	assert(not file:modified(), "and saved")
 	local text = shown()
 	assert(string.find(text, "? Edit a.txt: Allow once", 1, true), text)
-	assert(string.find(text, "· Edit a.txt   completed", 1, true), text)
-	assert(string.find(text, "    a.txt  +1 -1", 1, true), text)
+	assert(string.find(text, "  ✓ Edit a.txt · +1 -1\n", 1, true), text)
 	assert(string.find(text, "Edited it.", 1, true), text)
 end)
 
@@ -98,7 +97,7 @@ test("rejecting an edit leaves the file alone", function(t)
 	end)
 	t:wait(30)
 	assert(greed.fs.read(dir .. "/a.txt") == "a\n")
-	assert(string.find(shown(), "· Edit a.txt   failed", 1, true), shown())
+	assert(string.find(shown(), "  ✗ Edit a.txt\n", 1, true), shown())
 	assert(string.find(shown(), "Left it alone.", 1, true), shown())
 end)
 
@@ -143,20 +142,19 @@ test("plans and failed tool calls show in the transcript", function(t)
 		string.find(text, "✓ look around", 1, true) and string.find(text, "› fix it", 1, true),
 		text
 	)
-	assert(string.find(text, "▸ Run tests   failed", 1, true), text)
-	assert(string.find(text, "    1 test failed  (+2 lines, tab shows them)", 1, true), text)
-	local _, headings = string.gsub(text, "▍ Fake", "")
+	assert(string.find(text, "  ✗ Run tests · 3 lines ▸\n", 1, true), text)
+	local _, headings = string.gsub(text, "\n  Fake\n", "")
 	assert(headings == 1, "one heading for the agent's turn: " .. text)
 	-- tab on the tool call shows all its output, without the code fences.
 	local view = greed.view()
-	local at = (string.find(text, "▸ Run tests", 1, true) :: number) - 1
+	local at = (string.find(text, "✗ Run tests", 1, true) :: number) - 1
 	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	t:keys("tab")
 	text = shown()
 	assert(
 		string.find(
 			text,
-			"▾ Run tests   failed\n    1 test failed\n    at pager.rs:3\n    expected 2\n",
+			"✗ Run tests · 3 lines ▾\n    1 test failed\n    at pager.rs:3\n    expected 2\n",
 			1,
 			true
 		),
@@ -164,7 +162,7 @@ test("plans and failed tool calls show in the transcript", function(t)
 	)
 	assert(not string.find(text, "```", 1, true), text)
 	t:keys("tab")
-	assert(string.find(shown(), "▸ Run tests", 1, true), "folded again")
+	assert(string.find(shown(), "✗ Run tests · 3 lines ▸\n", 1, true), "folded again")
 end)
 
 test("when the agent exits, the transcript says so with what it said last", function(t)
@@ -208,28 +206,28 @@ end)
 
 test("alt-m picks the agent's mode, and the transcript says which it's in", function(t)
 	local s = start(t, t:tempdir({}))
-	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
+	assert(string.find(shown(), "╭─ Fake · Manual · Small ─"), shown())
 	t:keys("alt-m")
 	t:keys("P l a n enter")
 	t:wait_for(function()
 		return s.mode == "plan"
 	end)
 	t:wait(30)
-	assert(string.find(shown(), "^Fake in [^\n]* · Plan · Small\n"), shown())
+	assert(string.find(shown(), "╭─ Fake · Plan · Small ─"), shown())
 end)
 
 test("alt-M picks the agent's model, and the transcript says which", function(t)
 	local s = start(t, t:tempdir({}))
 	local model = s.model
 	assert(model == "small" and #s.models == 2, tostring(model))
-	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
+	assert(string.find(shown(), "╭─ Fake · Manual · Small ─"), shown())
 	t:keys("alt-M")
 	t:keys("B i g enter")
 	t:wait_for(function()
 		return s.model == "berget/big"
 	end)
 	t:wait(30)
-	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Big\n"), shown())
+	assert(string.find(shown(), "╭─ Fake · Manual · Big ─"), shown())
 end)
 
 test("an agent registered with a model starts with it", function(t)
@@ -321,8 +319,8 @@ test("sessions are kept to take up again, until closed", function(t)
 	end)
 	t:wait(30)
 	local text = shown()
-	assert(string.find(text, "▍ You\n  an earlier question\n", 1, true), text)
-	assert(string.find(text, "▍ Fake 2\n  an earlier answer\n", 1, true), text)
+	assert(string.find(text, "  You\n  an earlier question\n", 1, true), text)
+	assert(string.find(text, "  Fake 2\n  an earlier answer\n", 1, true), text)
 	acp.close(again)
 	acp.close(s)
 	assert(#acp.saved(dir) == 0, "closing forgets it")

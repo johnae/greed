@@ -28,8 +28,9 @@ export type Said = {
 
 --- How a turn ended: "done" (the model has finished), "tools" (it wants
 --- its calls run first), "length" (it ran out of room), or what the
---- provider said.
-export type Turn = { text: string, calls: { Call }, stop: string }
+--- provider said. `tokens` is how much of the model's context the
+--- conversation takes after the turn, when the provider says.
+export type Turn = { text: string, calls: { Call }, stop: string, tokens: number? }
 
 -- A tool's schema, with an empty object for one that takes nothing.
 local function schema(tool: ToolSpec): { [string]: any }
@@ -183,6 +184,8 @@ function M.reader(kind: string): Reader
 	local building: { { id: string, name: string, json: { string } } } = {}
 	local by_index: { [number]: number } = {}
 	local stop: string = "done"
+	-- Tokens read (the prompt, cached or not) and written, as reported.
+	local read: number?, written: number? = nil, nil
 	local function call_at(index: number, id: string?, name: string?)
 		local at = by_index[index]
 		if at == nil then
@@ -222,6 +225,15 @@ function M.reader(kind: string): Reader
 			end
 			if kind == "anthropic" then
 				local t = decoded.type
+				local usage = decoded.usage or (decoded.message and decoded.message.usage)
+				if type(usage) == "table" then
+					if usage.input_tokens then
+						read = usage.input_tokens
+							+ (usage.cache_creation_input_tokens or 0)
+							+ (usage.cache_read_input_tokens or 0)
+					end
+					written = usage.output_tokens or written
+				end
 				if t == "content_block_start" and decoded.content_block then
 					local block = decoded.content_block
 					if block.type == "tool_use" then
@@ -241,6 +253,11 @@ function M.reader(kind: string): Reader
 					return nil, true, nil
 				end
 				return nil, false, nil
+			end
+			-- Servers asked for it, or that send it anyway, say it at the end.
+			local usage = decoded.usage
+			if type(usage) == "table" and usage.prompt_tokens then
+				read, written = usage.prompt_tokens, usage.completion_tokens
 			end
 			local choice = decoded.choices and decoded.choices[1]
 			if choice == nil then
@@ -276,7 +293,8 @@ function M.reader(kind: string): Reader
 			end
 			-- Some servers say "stop" though they asked for tools.
 			local ended = if #calls > 0 and stop == "done" then "tools" else stop
-			return { text = table.concat(text), calls = calls, stop = ended }
+			local tokens = if read then read + (written or 0) else nil
+			return { text = table.concat(text), calls = calls, stop = ended, tokens = tokens }
 		end,
 	}
 	return reader

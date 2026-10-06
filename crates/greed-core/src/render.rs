@@ -1014,10 +1014,18 @@ impl<M: Measure> Renderer<M> {
         // scroll? Rows count as many screen rows as their scale makes them.
         let hidden = hidden_lines(editor, view);
         let cursor_heights = self.heights(editor, view, cursor.line, width);
+        // On the buffer's last row, what's drawn under it stays in sight
+        // too, like the bottom of a box around a prompt.
+        let tail = if cursor.line + 1 == text.len_lines() && cursor.row + 1 == cursor_heights.len()
+        {
+            virtual_lines(editor, view, cursor.line).count()
+        } else {
+            0
+        };
         let mut seen = 0;
         for l in current.line..=cursor.line {
             let rows = if l == cursor.line {
-                cursor_heights[..=cursor.row].iter().sum()
+                cursor_heights[..=cursor.row].iter().sum::<usize>() + tail
             } else {
                 self.line_rows(editor, view, l, width, &hidden)
             };
@@ -1041,7 +1049,7 @@ impl<M: Measure> Renderer<M> {
         // rows above it in its line while they fit, then whole lines while
         // they fit, then as many rows of the next one as are left, after
         // its virtual lines.
-        let mut above = height.saturating_sub(cursor_heights[cursor.row]);
+        let mut above = height.saturating_sub(cursor_heights[cursor.row] + tail);
         let mut top = cursor;
         top.row = fitting_from_end(&cursor_heights[..cursor.row], &mut above).unwrap_or(cursor.row);
         if top.row > 0 {

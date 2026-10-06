@@ -90,6 +90,12 @@ export type Session = {
 	driver: Driver?,
 	--- The editor context the last prompt took, so the same isn't sent again.
 	context_sent: string?,
+	--- When the turn going on now started, on `greed.now()`'s clock.
+	since: number?,
+	--- How many tokens of the model's context the conversation takes, and
+	--- how many it has room for, when the agent says.
+	tokens: number?,
+	window: number?,
 }
 
 --- An agent run in the editor rather than as an ACP program.
@@ -152,14 +158,76 @@ local function diff_size(old: string, new: string): (number, number)
 	return added, removed
 end
 
+-- The most of a line a tool's summary shows, in characters.
+local SUMMARY_WIDTH = 60
+
+-- `text` cut to `width` characters, with an ellipsis when it's longer.
+local function clip(text: string, width: number): string
+	if (utf8.len(text) or #text) <= width then
+		return text
+	end
+	local at = utf8.offset(text, width) or width
+	return string.sub(text, 1, at - 1) .. "…"
+end
+
+--- A tool's output (`lines`, without trailing empty ones) in a few words
+--- for its row in the transcript: a short line as it is, JSON as what it
+--- holds, and anything longer as how many lines it has. Paths are shown
+--- from `cwd`. Nil for no output.
+function M.summary(lines: { string }, cwd: string?): string?
+	if #lines == 0 then
+		return nil
+	end
+	local text = table.concat(lines, "\n")
+	local opening = string.match(text, "^%s*([%[{])")
+	if opening then
+		local ok, value = pcall(greed.json.decode, text)
+		if ok and type(value) == "table" then
+			if opening == "[" then
+				local count = #value
+				return if count == 0
+					then "nothing"
+					else `{count} {if count == 1 then "item" else "items"}`
+			end
+			local parts = {}
+			local place = value.path or value.file or value.uri or value.name or value.title
+			if type(place) == "string" then
+				table.insert(parts, if cwd then relative(place, cwd) else place)
+			end
+			if type(value.text) == "string" then
+				local _, breaks = string.gsub(value.text, "\n", "")
+				table.insert(parts, `{breaks + 1} lines`)
+			end
+			if #parts == 0 then
+				local count = 0
+				for _ in value do
+					count += 1
+				end
+				table.insert(parts, `{count} fields`)
+			end
+			return clip(table.concat(parts, ", "), SUMMARY_WIDTH)
+		end
+	end
+	if #lines == 1 then
+		return clip(lines[1], SUMMARY_WIDTH)
+	end
+	return `{#lines} lines`
+end
+
 -- A tool call's content as a short summary, and as all its lines to show
 -- when it's unfolded. Code fences around output are left out.
 local function detail_of(content: any, cwd: string): ({ string }, { string })
 	local summary, output = {}, {}
-	for _, item in (if type(content) == "table" then content else {}) do
+	local items = if type(content) == "table" then content else {}
+	for _, item in items do
 		if item.type == "diff" then
 			local added, removed = diff_size(item.oldText or "", item.newText or "")
-			table.insert(summary, `{relative(item.path or "", cwd)}  +{added} -{removed}`)
+			-- The tool's title names the file when it changes only one.
+			local size = `+{added} -{removed}`
+			table.insert(
+				summary,
+				if #items == 1 then size else `{relative(item.path or "", cwd)} {size}`
+			)
 		elseif item.type == "content" then
 			local lines = {}
 			for _, line in string.split(text_of(item.content), "\n") do
@@ -170,9 +238,9 @@ local function detail_of(content: any, cwd: string): ({ string }, { string })
 			while lines[#lines] == "" do
 				table.remove(lines)
 			end
-			if #lines > 0 then
-				local more = if #lines > 1 then `  (+{#lines - 1} lines, tab shows them)` else ""
-				table.insert(summary, lines[1] .. more)
+			local said = M.summary(lines, cwd)
+			if said then
+				table.insert(summary, said)
 			end
 			for i = 1, math.min(#lines, OUTPUT_KEPT) do
 				table.insert(output, lines[i])
@@ -263,6 +331,9 @@ local function update(session: Session, u: any)
 		else
 			session.tool = tool.title
 		end
+	elseif kind == "usage_update" then
+		session.tokens = tonumber(u.used) or session.tokens
+		session.window = tonumber(u.size) or session.window
 	elseif kind == "config_option_update" or kind == "config_options_update" then
 		take_models(session, u)
 	elseif kind == "current_mode_update" then
@@ -685,6 +756,7 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	end
 	table.insert(session.entries, { kind = "user", text = text })
 	session.status = "working"
+	session.since = greed.now()
 	session.changed()
 	local blocks = { { type = "text", text = text } }
 	local fresh = M.fresh_context(session, context)

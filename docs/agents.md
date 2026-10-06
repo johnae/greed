@@ -278,11 +278,43 @@ aren't kept to take up after a restart.
 | `space i r` (`:agent-resume`) | Take up an earlier session with an agent, where it left off |
 | `:agent-fork` | Fork the agent of the transcript you're in |
 
-The transcript shows what you and the agent said, the tools it ran and how
-they went (`tab` on a tool shows all its output), and its plan. Write
-below the prompt line at the bottom and press `alt-enter` to send;
-`ctrl-c` stops the agent's turn. When it asks before doing something,
-`enter` (or `alt-p`) answers: `y` allows once, `a` always, `n` rejects.
+```text
+▍ You
+▍ Fix the off-by-one in the pager
+
+▍ Claude
+▍ Found it in pager.rs.
+▍ ✓ Edit pager.rs · +1 -1
+▍ ✗ Run cargo test · 12 lines ▸
+
+╭─ Claude · Plan · Sonnet ────── alt-enter sends · ctrl-c stops ─╮
+│ now add a test                                                 │
+╰─ ● thinking · 12s ─────────────────────── 14.2k / 200k tokens ─╯
+```
+
+The transcript shows what you and the agent said, each with a coloured
+bar beside it (yours on a shaded background), and its plan. Each tool call
+is one row: `○` waiting, `◐` running, `✓` done or `✗` failed, with what
+it was about and what came back in a few words, like `read src/main.rs ·
+120 lines`. A `▸` means there's more: `tab` on the row shows all of its
+output, and `tab` again folds it.
+
+Write in the box at the bottom; it grows as you write, and its top shows
+the agent, its mode and model. `alt-enter` sends and `ctrl-c` stops the
+agent's turn. The box's bottom line says what the agent is doing (the
+tool it runs, or thinking) and for how long this turn has taken, `waiting
+for you` when it asks something, and how many tokens of the model's
+context the conversation takes when the agent says (out of how many it
+has room for, when it says that too). With the effects option on
+(`:set effects true`), running tools spin, the status shimmers while the
+agent thinks and the waiting chip pulses; nothing moves while the agent
+is idle. Themes style it with `agent.you` (your messages' background),
+`agent.you.bar`, `agent.bar`, `agent.box`, `agent.box.title`,
+`agent.hint`, `agent.working`, `agent.waiting`, `agent.done` and
+`agent.failed`.
+
+When the agent asks before doing something, `enter` (or `alt-p`)
+answers: `y` allows once, `a` always, `n` rejects.
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo
 takes them back.
@@ -307,7 +339,7 @@ for you.
 
 `alt-m` picks the mode the agent works in, when it has modes (Claude Code
 has Manual, Accept edits and Plan), and `alt-M` the model, when it offers
-a choice; the transcript's first line shows both. The transcript is a
+a choice; the top of the box you write in shows both. The transcript is a
 buffer in a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i o` brings it
 back).

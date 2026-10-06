@@ -803,6 +803,30 @@ fn virtual_lines_show_under_their_line_and_count_when_scrolling() {
 }
 
 #[test]
+fn virtual_lines_under_the_last_line_stay_on_screen_with_the_cursor_there() {
+    use greed_core::Mark;
+    let mut ed = editor("a\nb\nc\nd\ne\nf|");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "box",
+        vec![Mark {
+            range: 10..11,
+            style: "note".into(),
+            lines: vec!["x".into(), "y".into()],
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 20, 5);
+    let rows = body(&f);
+    let at = rows
+        .iter()
+        .position(|r| r == "f")
+        .expect("the cursor's line");
+    assert_eq!(rows[at..at + 3], ["f", "x", "y"], "{rows:?}");
+}
+
+#[test]
 fn parts_of_virtual_lines_can_have_styles_of_their_own() {
     use greed_core::{Mark, VirtualLine};
     let mut ed = editor("a|");

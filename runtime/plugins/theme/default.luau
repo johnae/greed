@@ -140,4 +140,17 @@ return {
 	["ui.multibuffer.file"] = { fg = "blue", bold = true },
 	-- What an excerpt is about, e.g. a problem's message, after its file.
 	["ui.multibuffer.note"] = { fg = "bright-black", italic = true },
+
+	-- An agent's transcript: your messages' background and bar, the agent's
+	-- bar, the box you write in, and tool calls and the status.
+	["agent.you"] = { bg = "black" },
+	["agent.you.bar"] = { fg = "blue" },
+	["agent.bar"] = { fg = "magenta" },
+	["agent.box"] = { fg = "bright-black" },
+	["agent.box.title"] = { bold = true },
+	["agent.hint"] = { fg = "bright-black" },
+	["agent.working"] = { fg = "yellow" },
+	["agent.waiting"] = { bg = "yellow", fg = "black", bold = true },
+	["agent.done"] = { fg = "green" },
+	["agent.failed"] = { fg = "red" },
 }

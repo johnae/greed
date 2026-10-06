@@ -1378,7 +1378,8 @@ local option = require("@greed").option
 option.set("statusline-pills", true)
 option.set("statusline-caps", "round")
 -- A wave of light through the letters of the tab or the file when you go
--- to another, and a glow from the middle of the mode when it changes
+-- to another, a glow from the middle of the mode when it changes, and in
+-- an agent's pane, spinning tools and a status that moves while it works
 option.set("effects", true)
 ```
 

@@ -319,6 +319,32 @@ local function allowed(s: Session, state: State, title: string, kind: string): b
 	return chosen == "once" or chosen == "always"
 end
 
+-- The arguments that best say what a call of one of Greed's tools is about,
+-- in the order they're looked for.
+local TELLING = { "path", "file", "query", "pattern", "name", "symbol", "group", "url", "command" }
+
+-- A call of one of Greed's tools as its row in the transcript names it:
+-- the tool and what it's about, like "read src/main.rs".
+local function title_of(s: Session, c: models.Call): string
+	for _, key in TELLING do
+		local value = c.input[key]
+		if type(value) == "string" and value ~= "" then
+			if key == "path" or key == "file" then
+				local root = s.root .. "/"
+				if string.sub(value, 1, #root) == root then
+					value = string.sub(value, #root + 1)
+				end
+			end
+			local line = string.match(value, "^[^\n]*") or value
+			if (utf8.len(line) or #line) > 50 then
+				line = string.sub(line, 1, (utf8.offset(line, 50) or 50) - 1) .. "…"
+			end
+			return `{c.name} {line}`
+		end
+	end
+	return c.name
+end
+
 -- Runs one call the model asked for and returns what it gets back, and
 -- whether that's an error.
 local function call(
@@ -334,7 +360,7 @@ local function call(
 	local own = if found.spec then found :: Own else nil
 	local tool: session.Tool = {
 		id = c.id,
-		title = if own then own.title(c.input) else c.name,
+		title = if own then own.title(c.input) else title_of(s, c),
 		kind = if own then own.kind else "read",
 		status = "pending",
 		detail = {},
@@ -364,8 +390,12 @@ local function call(
 	local text = if ok then result else tostring(result)
 	tool.status = if ok then "completed" else "failed"
 	local lines = string.split(text, "\n")
-	tool.detail =
-		{ lines[1] .. (if #lines > 1 then `  (+{#lines - 1} lines, tab shows them)` else "") }
+	while #lines > 0 and lines[#lines] == "" do
+		table.remove(lines)
+	end
+	-- A failure's first line says why; the rest is there unfolded.
+	local summary = session.summary(if ok then lines else { lines[1] }, s.root)
+	tool.detail = if summary then { summary } else {}
 	tool.output = lines
 	s.tool = nil
 	if #text > MAX_RESULT then
@@ -398,6 +428,7 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local said = if fresh then `{fresh}\n\n{text}` else text
 	table.insert(state.said, { role = "user", text = said } :: models.Said)
 	s.status = "working"
+	s.since = greed.now()
 	s.changed()
 	state.env = state.env or environment(s.root)
 	-- The same for every turn of this prompt, so providers can cache it,
@@ -424,6 +455,7 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			state.said,
 			{ role = "assistant", text = turn.text, calls = turn.calls } :: models.Said
 		)
+		s.tokens = turn.tokens or s.tokens
 		if turn.stop ~= "tools" or #turn.calls == 0 then
 			if turn.stop == "length" then
 				table.insert(

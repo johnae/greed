@@ -5,7 +5,7 @@
 --   space i n   start an agent: pick which, and where it works
 --   space i o   the agents: what each is doing, its changes, review or bring them in
 --
--- In a transcript, alt-enter sends what's below the prompt line, ctrl-c
+-- In a transcript, alt-enter sends what's in the box at the bottom, ctrl-c
 -- stops the agent's turn and enter on a question answers it.
 --
 -- Agents are registered by name with the commands that run them; the first
@@ -770,7 +770,7 @@ greed.command({
 
 greed.command({
 	name = "agent-send",
-	doc = "Send what's below the transcript's prompt line to its agent",
+	doc = "Send what's in the transcript's box to its agent",
 	run = function(ctx)
 		local s = by_buffer[ctx.buffer:id()]
 		if s == nil then
@@ -778,7 +778,7 @@ greed.command({
 		end
 		local text = trim(transcript.prompt(ctx.buffer))
 		if text == "" then
-			greed.echo("write a message below the prompt line first")
+			greed.echo("write a message in the box first")
 			return
 		end
 		if s.status == "working" or s.status == "waiting" then

@@ -169,3 +169,28 @@ test(
 		assert(result.stop == "tools" and next(result.calls[1].input) == nil, result.stop)
 	end
 )
+
+test("the tokens the conversation takes come from what the provider reports", function(t)
+	local anthropic = events("anthropic", {
+		{
+			type = "message_start",
+			message = { usage = { input_tokens = 10, cache_read_input_tokens = 1000 } },
+		},
+		{ type = "content_block_delta", index = 0, delta = { type = "text_delta", text = "hi" } },
+		{
+			type = "message_delta",
+			delta = { stop_reason = "end_turn" },
+			usage = { output_tokens = 5 },
+		},
+		{ type = "message_stop" },
+	})
+	assert(anthropic.tokens == 1015, tostring(anthropic.tokens))
+	local openai = events("openai", {
+		{ choices = { { delta = { content = "hi" }, finish_reason = "stop" } } },
+		{ choices = {}, usage = { prompt_tokens = 200, completion_tokens = 7 } },
+		"[DONE]",
+	})
+	assert(openai.tokens == 207, tostring(openai.tokens))
+	local quiet = events("openai", { { choices = { { delta = { content = "hi" } } } } })
+	assert(quiet.tokens == nil, "nothing reported")
+end)
