@@ -170,7 +170,11 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         ],
     ),
     ("control", "use the session's connections", &[]),
-    ("session", "use other sessions", &["current", "list"]),
+    (
+        "session",
+        "use other sessions",
+        &["current", "list", "remote", "attached"],
+    ),
     ("clipboard", "use the clipboard", &[]),
 ];
 

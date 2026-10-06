@@ -27,6 +27,10 @@ use serde_json::{Value, json};
 /// when they attach, and a session refuses one that doesn't match.
 pub const PROTOCOL: u32 = 5;
 
+/// Set in the environment of a session `greed ssh` started, through
+/// `greed bridge`.
+pub const REMOTE_ENV: &str = "GREED_SSH_SESSION";
+
 /// What each side says about itself when a client attaches: the protocol it
 /// speaks and the greed version.
 pub fn handshake() -> Value {
@@ -344,6 +348,8 @@ pub struct Attachment {
     /// Whether the client asked for a terminal, e.g. `greed ssh HOST
     /// --terminal`.
     pub terminal: bool,
+    /// Whether it came over `greed ssh`, through `greed bridge`.
+    pub remote: bool,
 }
 
 /// Answers one connection's requests until it closes, or hands it to the
@@ -392,11 +398,13 @@ fn serve_connection(
                 if writeln!(lock(&shared), "{ok}").is_ok() {
                     let open = message["params"]["open"].as_str().map(str::to_owned);
                     let terminal = message["params"]["terminal"].as_bool() == Some(true);
+                    let remote = message["params"]["remote"].as_bool() == Some(true);
                     let _ = attachments.send(Attachment {
                         reader,
                         writer,
                         open,
                         terminal,
+                        remote,
                     });
                 }
                 return;
@@ -567,6 +575,7 @@ impl Client {
             writer: self.writer,
             open: None,
             terminal: false,
+            remote: false,
         })
     }
 

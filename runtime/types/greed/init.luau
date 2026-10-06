@@ -553,6 +553,8 @@ export type Terminal = {
 	title: (self: Terminal) -> string?,
 	--- The program's exit code, once it has ended.
 	exit_code: (self: Terminal) -> number?,
+	--- Whether a program other than the one it started is in the foreground, like a command its shell runs. False once it has ended.
+	busy: (self: Terminal) -> boolean,
 	--- Asks the program to end.
 	kill: (self: Terminal) -> (),
 	--- Ends the program and lets the terminal go; its handle stops working.
@@ -832,6 +834,10 @@ export type Sessions = {
 	list: () -> { SessionInfo },
 	--- This session's name, when the editor runs as one.
 	current: () -> string?,
+	--- Whether the attached client (or the last one) came over `greed ssh`; before any attached, whether `greed ssh` started the session.
+	remote: () -> boolean,
+	--- Whether a terminal or window is attached to the session.
+	attached: () -> boolean,
 	--- Where the greed program running this editor is, to start `greed mcp` or `greed ctl` for this session.
 	program: () -> string?,
 	--- Sends the attached client to the session `name`, or to the session for
@@ -877,6 +883,8 @@ export type ClientAttached = {
 	path: string?,
 	--- Whether it asked for a terminal, e.g. `greed ssh HOST --terminal`.
 	terminal: boolean,
+	--- Whether it came over `greed ssh`.
+	remote: boolean,
 }
 
 --- Text pasted into the client from the system clipboard: a terminal's paste, or a window's paste keys (ctrl-shift-v, shift-insert, cmd-v). The core plugin puts it at the cursors.
@@ -1287,6 +1295,7 @@ export type Greed = {
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
+		& ((event: "client.detached", handler: (event: {}) -> ()) -> ())
 		& ((event: "client.paste", handler: (event: ClientPaste) -> ()) -> ())
 		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())

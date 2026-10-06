@@ -34,6 +34,19 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|lua, ()| Ok(state(lua).session_name.clone()))?,
     )?;
     session.set(
+        "remote",
+        lua.create_function(|lua, ()| {
+            // Before any client attached, whether `greed ssh` started it.
+            Ok(state(lua)
+                .remote
+                .unwrap_or_else(|| std::env::var_os(control::REMOTE_ENV).is_some()))
+        })?,
+    )?;
+    session.set(
+        "attached",
+        lua.create_function(|lua, ()| Ok(state(lua).attached))?,
+    )?;
+    session.set(
         "program",
         lua.create_function(|_, ()| {
             Ok(std::env::current_exe()

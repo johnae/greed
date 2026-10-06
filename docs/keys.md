@@ -36,6 +36,19 @@ greed.keymap.bind("normal", {
 greed.keymap.bind("insert", { ["ctrl-s"] = "save" })
 ```
 
+The mode names depend on your editing style: `normal` and `insert` are
+the Helix style's, the Vim style's are `vim`, `vim-insert` and
+`vim-visual`, and edit mode has one, `edit`. Bind for the style you use,
+or for each of them (all the modes are listed under
+[Modes and layers](#modes-and-layers)):
+
+```luau
+-- ctrl-s saves in every style
+for _, mode in { "normal", "insert", "vim", "vim-insert", "edit" } do
+	greed.keymap.bind(mode, { ["ctrl-s"] = "save" })
+end
+```
+
 A binding maps a key, or a sequence of keys separated by spaces, to a
 command name. A newer binding replaces an older one for the same keys, so
 your config wins over the default plugins.
@@ -70,7 +83,7 @@ two modes where single keys act until `esc`.
 
 | Keys | |
 |---|---|
-| `alt-h` `alt-j` `alt-k` `alt-l` (or `alt` and an arrow) | Move to the pane on that side; left and right go on to the next tab at the edge |
+| `alt-h` `alt-j` `alt-k` `alt-l` (or `alt` and an arrow) | Move to the pane or panel (the file tree, an agent) on that side; left and right go on to the next tab at the edge |
 | `alt-n` | A terminal in a new pane, on the pane's longer side; while floating views are shown, a floating terminal |
 | `alt-f` | Hide the tab's floating views or show them again, where they were (terminals keep running); with none, open a floating terminal |
 | `alt-F` | This file in a new floating view (`:float-file PATH` for another) |
@@ -80,7 +93,7 @@ two modes where single keys act until `esc`.
 | `alt-m` | Swap the pane with the main one |
 | `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or put a float back, `T` tile the floats, `C` cascade them, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
-| `alt-r` | Resize mode: `h j k l` grow the pane or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
+| `alt-r` | Resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
 
 In normal mode (Helix and Vim), `ctrl-w` and `space w` start the window
 keys from Vim and Helix: `v` and `s` split, `h j k l` move, `w` the next

@@ -165,6 +165,8 @@ pub struct Terminal {
     input: Sender<Vec<u8>>,
     master: Box<dyn MasterPty + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// The program it started, when the system says.
+    pid: Option<u32>,
     title: Arc<Mutex<Option<String>>>,
     copied: Arc<Mutex<Option<String>>>,
     exit: Arc<Mutex<Option<u32>>>,
@@ -215,6 +217,7 @@ impl Terminal {
             .map_err(io::Error::other)?;
         drop(pair.slave);
         let killer = child.clone_killer();
+        let pid = child.process_id();
         let reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
         let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
 
@@ -275,6 +278,7 @@ impl Terminal {
             input,
             master: pair.master,
             killer,
+            pid,
             title,
             copied,
             exit,
@@ -425,6 +429,18 @@ impl Terminal {
     /// The program's exit code, once it has ended.
     pub fn exit_code(&self) -> Option<u32> {
         *lock(&self.exit)
+    }
+
+    /// Whether a program other than the one it started is in the
+    /// foreground, like a command its shell runs. False once it has ended.
+    pub fn busy(&self) -> bool {
+        if self.exit_code().is_some() {
+            return false;
+        }
+        match (self.master.process_group_leader(), self.pid) {
+            (Some(leader), Some(pid)) => u32::try_from(leader).ok() != Some(pid),
+            _ => false,
+        }
     }
 
     pub fn kill(&mut self) {

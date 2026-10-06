@@ -20,7 +20,8 @@ alone.
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
 | `greed ls` | List running sessions and their projects |
 | `greed serve [PATH]` | Run a project's session with no terminal |
-| `:q` | Close the shown project and leave; on the last one, quit the session. In a panel or a float (an agent's transcript, help) it closes just that |
+| `:q` | Close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
+| `:quit-session`, `:qa` | End the session, whatever runs in it |
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
@@ -44,6 +45,32 @@ cursor was, and opens them again the next time it starts. It writes this
 down when it quits and whenever you save a file, in the cache folder
 (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. Turn
 it off with `greed.option.set("restore-session", false)`.
+
+### Quitting or keeping a session
+
+`:q` on the last project ends the session, unless ending it would stop
+something: a command running in one of its terminals, a program like a
+task, or an agent at work. Then it detaches instead and the session keeps
+going, so `greed` comes back to it. A shell waiting at its prompt doesn't
+count. Over `greed ssh`, `:q` always keeps the session, since coming back
+to a running one is quicker than starting again over the network.
+`:quit-session` (or `:qa`) ends it whatever runs in it.
+
+To decide for yourself, set what `:q` does, here and over `greed ssh`:
+
+```luau
+local greed = require("@greed")
+
+-- "auto": end it unless something runs; "end": always end it;
+-- "keep": always leave it running
+greed.option.set("on-quit", "auto")
+greed.option.set("on-quit-remote", "keep")
+```
+
+A session with nothing attached, nothing running and nothing unsaved ends
+by itself after a day, so sessions don't pile up on machines you visit;
+`session-idle-hours` changes how long, and 0 keeps them for good. Plugins
+can say what of theirs is running with `require("@core").file.running`.
 
 ### The first time
 
@@ -123,8 +150,8 @@ picker, project search and tree work within the shown one.
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |
-| `:q` | Close the shown project and leave; on the last one, quit |
-| `:qa` | Quit every project |
+| `:q` | Close the shown project and leave; on the last one, end the session unless something runs in it |
+| `:qa` | End the session and every project in it |
 
 A recent project or a folder typed into `space P` opens in its own session,
 starting it if it isn't running, like `greed FOLDER` from a terminal.

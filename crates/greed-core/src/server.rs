@@ -377,8 +377,7 @@ impl Server<'_> {
                 return false;
             }
             self.send(Output::Switch(to));
-            self.client = None;
-            self.size = None;
+            self.let_client_go();
         }
         if self
             .host
@@ -451,8 +450,16 @@ impl Server<'_> {
     /// Lets the attached client go; the editor carries on without one.
     fn detach(&mut self) {
         self.send(Output::Detached);
-        self.client = None;
+        self.let_client_go();
+    }
+
+    /// Forgets the client, telling plugins if there was one.
+    fn let_client_go(&mut self) {
         self.size = None;
+        if self.client.take().is_some() {
+            let detached = self.host.client_detached();
+            self.report(detached);
+        }
     }
 
     /// Makes `attachment` the client, after telling the one before it.
@@ -463,6 +470,7 @@ impl Server<'_> {
             mut writer,
             open,
             terminal,
+            remote,
         } = attachment;
         let inputs = self.inputs.clone();
         thread::spawn(move || {
@@ -494,7 +502,7 @@ impl Server<'_> {
             last: None,
             images: HashSet::new(),
         });
-        let attached = self.host.client_attached(open.as_deref(), terminal);
+        let attached = self.host.client_attached(open.as_deref(), terminal, remote);
         self.report(attached);
     }
 
@@ -576,8 +584,7 @@ impl Server<'_> {
             return true;
         }
         let local = client.local;
-        self.client = None;
-        self.size = None;
+        self.let_client_go();
         !local
     }
 }

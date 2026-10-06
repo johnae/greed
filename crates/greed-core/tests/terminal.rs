@@ -376,3 +376,16 @@ fn the_folder_the_shell_says_its_in_is_kept() {
     exited(&events);
     assert_eq!(terminal.cwd(), Some(std::path::PathBuf::from("/tmp/a b")));
 }
+
+#[test]
+fn a_shell_is_busy_while_a_command_runs() {
+    let (terminal, _events) = start(&["sh"], 5, 40);
+    until(&terminal, |s| text(s).iter().any(|l| l.starts_with('$')));
+    assert!(!terminal.busy(), "at the prompt");
+    terminal.write(b"sleep 5\n".to_vec());
+    let start = Instant::now();
+    while !terminal.busy() {
+        assert!(start.elapsed() < Duration::from_secs(10), "never busy");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

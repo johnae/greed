@@ -423,3 +423,21 @@ test("space T without a terminal says how to get one", function(t)
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "no terminal to send to", 1, true), messages[#messages])
 end)
+
+test("a program in a terminal, or a command its shell runs, keeps the session", function(t)
+	local file = require("@core").file
+	t:run("terminal", { "cat" })
+	local busy = file.busy()
+	assert(#busy == 1 and string.find(busy[1], "cat", 1, true), busy[1])
+	t:keys("ctrl-d")
+	t:wait_for(function()
+		return #file.busy() == 0
+	end)
+
+	t:run("terminal", { "sh" })
+	t:wait_for(function()
+		return string.find(text(), "$", 1, true) ~= nil
+	end)
+	assert(#file.busy() == 1, "sh was asked for by name, so it counts as a program")
+	t:keys("e x i t enter")
+end)

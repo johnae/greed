@@ -1145,4 +1145,15 @@ M.subagent = require("@self/subagent")
 M.review = review
 M.subagent.offer(M, installed)
 
+-- An agent at work keeps the session on :q (core's on-quit).
+core.file.running("agents", function()
+	local found = {}
+	for _, s in sessions do
+		if s.status == "working" or s.status == "waiting" then
+			table.insert(found, `{s.name} at work`)
+		end
+	end
+	return found
+end)
+
 return M

@@ -192,3 +192,37 @@ test("open and save take ~ as the home folder", function(t)
 	t:run("save", { "~/copy.md" })
 	assert(greed.fs.read(`{home}/copy.md`) == "my notes\n", "saved there")
 end)
+
+test("on-quit keeps the session while something runs, and as told", function()
+	local file = require("@core").file
+	local running = {}
+	file.running("test", function()
+		return running
+	end)
+	assert(not file.keeps(false), "nothing runs: auto ends it")
+	assert(file.keeps(true), "over ssh it's kept by default")
+	running = { "a build" }
+	local keeps, busy = file.keeps(false)
+	assert(keeps and busy[1] == "a build", "kept while a build runs")
+	greed.option.set("on-quit", "end")
+	assert(not file.keeps(false), "end ends it anyway")
+	greed.option.set("on-quit-remote", "auto")
+	assert(file.keeps(true), "auto over ssh keeps it while a build runs")
+	running = {}
+	assert(not file.keeps(true), "and ends it once nothing does")
+	greed.option.set("on-quit", "keep")
+	assert(file.keeps(false), "keep always keeps it")
+	greed.option.set("on-quit", "auto")
+	greed.option.set("on-quit-remote", "keep")
+	file.running("test", function()
+		return {}
+	end)
+end)
+
+test("quit outside a session ends it even with on-quit keep", function(t)
+	t:buffer("|abc")
+	greed.option.set("on-quit", "keep")
+	t:run("quit")
+	assert(t:quitting(), "quit")
+	greed.option.set("on-quit", "auto")
+end)

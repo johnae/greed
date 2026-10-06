@@ -114,6 +114,12 @@ pub(crate) struct State {
     pub ide: Option<crate::ide::Ide>,
     /// The name of the session this editor is, when it is one.
     pub session_name: Option<String>,
+    /// Whether the attached client, or the last one, came over `greed ssh`;
+    /// `None` before any attached.
+    pub remote: Option<bool>,
+    /// Whether a client is attached. The terminal or window a session
+    /// started in counts, until it goes.
+    pub attached: bool,
     /// A folder standing in for the home, config and cache folders, for
     /// tests.
     pub dirs: Option<PathBuf>,
@@ -289,6 +295,8 @@ impl Host {
             request_sender: None,
             ide: None,
             session_name: None,
+            remote: None,
+            attached: true,
             dirs: None,
             terminals: terminal::Terminals::default(),
             view_sizes: HashMap::new(),
@@ -573,13 +581,35 @@ impl Host {
     }
 
     /// Tells plugins a client attached, with the file or folder it asked to
-    /// open, if any, and whether it asked for a terminal.
-    pub fn client_attached(&self, open: Option<&str>, terminal: bool) -> Result<(), HostError> {
+    /// open, if any, whether it asked for a terminal and whether it came
+    /// over `greed ssh`.
+    pub fn client_attached(
+        &self,
+        open: Option<&str>,
+        terminal: bool,
+        remote: bool,
+    ) -> Result<(), HostError> {
+        {
+            let mut state = state_mut(&self.lua);
+            state.remote = Some(remote);
+            state.attached = true;
+        }
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("path", open)?;
             payload.set("terminal", terminal)?;
+            payload.set("remote", remote)?;
             api::emit(&self.lua, "client.attached", &payload).map_err(HostError::from)
+        })
+    }
+
+    /// Tells plugins the attached client went, with "client.detached"; the
+    /// session goes on without one.
+    pub fn client_detached(&self) -> Result<(), HostError> {
+        state_mut(&self.lua).attached = false;
+        budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            api::emit(&self.lua, "client.detached", &payload).map_err(HostError::from)
         })
     }
 

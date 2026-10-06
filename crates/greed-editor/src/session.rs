@@ -166,7 +166,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Re
 fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
     if let Some(name) = &to.session {
         if !ctl::live_sessions()?.contains(name) {
-            spawn_server(name, to.path.as_deref().map(Path::new))?;
+            spawn_server(name, to.path.as_deref().map(Path::new), false)?;
         }
         return Ok((name.clone(), None));
     }
@@ -174,7 +174,7 @@ fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
     if running {
         Ok((name, Some(target)))
     } else {
-        spawn_server(&name, Some(&target))?;
+        spawn_server(&name, Some(&target), false)?;
         Ok((name, None))
     }
 }
@@ -217,7 +217,7 @@ fn show(
 
 /// Starts `greed serve` for the session called `name` in the background, its
 /// output going to a log, and waits until it listens.
-fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
+fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, Error> {
     std::fs::create_dir_all(control::sessions_dir())?;
     let log_path = log_path(name);
     let log = std::fs::File::create(&log_path)?;
@@ -230,6 +230,9 @@ fn spawn_server(name: &str, file: Option<&Path>) -> Result<Child, Error> {
     // in its terminals should have what a login has.
     if let Some(dir) = control::runtime_dir() {
         command.env("XDG_RUNTIME_DIR", dir);
+    }
+    if remote {
+        command.env(control::REMOTE_ENV, "1");
     }
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
@@ -257,7 +260,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
     let open = if running {
         path.map(|_| target)
     } else {
-        spawn_server(&name, Some(&target))
+        spawn_server(&name, Some(&target), false)
             .map_err(|err| format!("{err} (GREED_NO_SESSION=1 runs it in this terminal)"))?;
         None
     };
@@ -270,21 +273,24 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
 /// through is passed on as it is; the client on the other end attaches.
 pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
-    let mut input: Box<dyn BufRead + Send> = Box::new(BufReader::new(std::io::stdin()));
+    let mut stdin = BufReader::new(std::io::stdin());
+    // The client attaches through us: say it's over ssh, and ask a running
+    // session to open the path along the way, since only this end knows
+    // what it means.
+    let mut first = String::new();
+    stdin.read_line(&mut first)?;
+    let mut attach: Value = serde_json::from_str(&first)?;
+    attach["params"]["remote"] = Value::Bool(true);
     if running {
         if path.is_some() {
-            // The client attaches through us; ask the session to open the
-            // path along the way, since only this end knows what it means.
-            let mut first = String::new();
-            input.read_line(&mut first)?;
-            let mut attach: Value = serde_json::from_str(&first)?;
             attach["params"]["open"] = Value::from(target.to_string_lossy());
-            let first = format!("{attach}\n");
-            input = Box::new(std::io::Cursor::new(first.into_bytes()).chain(input));
         }
     } else {
-        spawn_server(&name, Some(&target))?;
+        spawn_server(&name, Some(&target), true)?;
     }
+    let first = format!("{attach}\n");
+    let input: Box<dyn BufRead + Send> =
+        Box::new(std::io::Cursor::new(first.into_bytes()).chain(stdin));
     ctl::connect_to(Some(&name))?.pipe(input, std::io::stdout())?;
     Ok(())
 }

@@ -1300,4 +1300,18 @@ end
 --- Every task for the project at `root` (the shown one by default).
 M.all_tasks = tasks.all
 
+-- A command running in a terminal, or a program other than your shell,
+-- keeps the session on :q (core's on-quit).
+core.file.running("terminals", function()
+	local found = {}
+	for _, term in terms do
+		local t = term.terminal
+		if t:exit_code() == nil and (term.asked or t:busy()) then
+			local what = if term.asked then term.command else t:title() or "a command"
+			table.insert(found, `{what} in a terminal`)
+		end
+	end
+	return found
+end)
+
 return M

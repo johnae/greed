@@ -293,6 +293,7 @@ impl UserData for TerminalRef {
         methods.add_method("exit_code", |lua, this, ()| {
             this.with(lua, |t| t.exit_code())
         });
+        methods.add_method("busy", |lua, this, ()| this.with(lua, |t| t.busy()));
         methods.add_method("kill", |lua, this, ()| this.with(lua, Terminal::kill));
         methods.add_method("close", |lua, this, ()| {
             state_mut(lua).terminals.open.remove(&this.0);

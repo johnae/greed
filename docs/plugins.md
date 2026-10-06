@@ -498,7 +498,8 @@ end)
 | `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a floating view's `border`, or a `tab` |
 | `terminal.output` | A terminal's program printed something | `terminal`; read it with `terminal:screen()` |
 | `terminal.exited` | A terminal's program ended | `terminal`, `code` |
-| `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal` |
+| `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal`, whether it came over `greed ssh` (`remote`) |
+| `client.detached` | The attached terminal or window went; the session goes on without it | nothing |
 | `client.paste` | Text was pasted from the system clipboard | `text` |
 | `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
 | `plugin.loaded` | A plugin was loaded or reloaded | `name`, `dir` |
