@@ -15,6 +15,7 @@ require("@self/ide")
 require("@self/claude")
 require("@self/compare")
 require("@self/refactor")
+local web = require("@self/web")
 local map = require("@self/map")
 local working = require("@self/working")
 local ask = require("@self/ask")
@@ -70,4 +71,6 @@ return {
 	map = map,
 	--- The files you worked in lately (working.luau).
 	working = working,
+	--- Searching the web and reading pages for agents (web.luau).
+	web = web,
 }

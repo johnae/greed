@@ -60,6 +60,7 @@ claude mcp add greed -- greed mcp
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
+| `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
 | `tools` | The groups of tools below, and switching one on |
 
 ### Tool groups
@@ -81,12 +82,33 @@ it needs them. These are always offered: `focus`, `buffers`, `read`,
 | `blocks` | `blocks_list`, `blocks_run` |
 | `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install` |
 | `subagents` | `subagent` |
+| `web` | `web_search`, `web_fetch` |
 
 `:set agent-tool-groups "plan notes"` gives agents those groups from the
 start (the default is `plan`), and `"all"` gives every tool. Claude Code
 and other MCP clients hear that their list changed when a group is
 switched on, and each connection has its own. `greed ctl` always has every
 tool.
+
+### The web
+
+With the `web` group on, an agent can search the web and read pages, for
+documentation and facts the project doesn't hold. `web_fetch` works without
+setup. Searching needs a service:
+
+```luau
+local greed = require("@greed")
+greed.option.set("web-search", "brave") -- or "exa", "tavily", "searxng"
+-- then :secret-set brave (exa, tavily); SearXNG needs no key, only where it is:
+greed.option.set("web-search-url", "https://searx.example.org")
+```
+
+Pages and results are written by strangers and can say anything, including
+"ignore your instructions and…". They reach the agent marked as someone
+else's text to use as information, and everything an agent does with them
+still goes through you: edits come as proposals or ask first, commands ask,
+and `eval` runs in its sandbox. The group is off until an agent switches it
+on, unless `agent-tool-groups` names it.
 
 ### The repo map
 
