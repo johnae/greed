@@ -36,8 +36,10 @@ struct Node {
     children: Vec<usize>,
     changes: ChangeSet,
     inverse: ChangeSet,
-    before: Selection,
-    after: Selection,
+    /// The selections undo and redo restore; `None` for an edit made without
+    /// a view, which views move along with instead.
+    before: Option<Selection>,
+    after: Option<Selection>,
     group: Option<u64>,
     /// When it was last added to: the step's latest transaction. The root,
     /// the buffer as loaded, has none.
@@ -69,10 +71,11 @@ pub enum GroupState {
     Undone,
 }
 
-/// A change set to apply for an undo or redo, and the selection to restore.
+/// A change set to apply for an undo or redo, and the selection to restore,
+/// if the step has one.
 pub(crate) struct Step {
     pub changes: ChangeSet,
-    pub selection: Selection,
+    pub selection: Option<Selection>,
 }
 
 impl Default for History {
@@ -85,8 +88,8 @@ impl Default for History {
                 children: Vec::new(),
                 changes: ChangeSet::default(),
                 inverse: ChangeSet::default(),
-                before: Selection::point(0),
-                after: Selection::point(0),
+                before: None,
+                after: None,
                 group: None,
                 time: None,
             }],
@@ -176,8 +179,8 @@ impl History {
         &mut self,
         tx: Transaction,
         inverse: ChangeSet,
-        before: Selection,
-        after: Selection,
+        before: Option<Selection>,
+        after: Option<Selection>,
     ) {
         if !self.keep {
             self.record(tx, inverse);

@@ -364,6 +364,45 @@ fn read_only_buffers_refuse_the_users_edits_but_not_plugins() {
 }
 
 #[test]
+fn undoing_an_edit_made_without_a_view_keeps_the_cursor() {
+    let mut ed = editor("hello world");
+    let v = ed.focus();
+    let b = ed.view(v).buffer;
+    ed.view_mut(v).selection = Selection::point(8);
+    let changes = ChangeSet::from_changes(11, [(0, 0, Some(">> "))]).unwrap();
+    let plugin = Author::Plugin("p".into());
+    ed.apply_to_buffer(b, changes, plugin, None, None).unwrap();
+    assert_eq!(ed.view(v).selection.primary(), Range::point(11));
+
+    assert!(ed.undo(v).unwrap());
+    assert_eq!(text(&ed), "hello world");
+    assert_eq!(ed.view(v).selection.primary(), Range::point(8));
+    assert!(ed.redo(v).unwrap());
+    assert_eq!(text(&ed), ">> hello world");
+    assert_eq!(ed.view(v).selection.primary(), Range::point(11));
+}
+
+#[test]
+fn redoing_an_edit_made_without_a_view_restores_the_selection_it_set() {
+    let mut ed = editor("hello world");
+    let v = ed.focus();
+    let b = ed.view(v).buffer;
+    ed.view_mut(v).selection = Selection::point(8);
+    let changes = ChangeSet::from_changes(11, [(11, 11, Some("!"))]).unwrap();
+    let plugin = Author::Plugin("p".into());
+    let set = Some(Selection::single(0, 5));
+    ed.apply_to_buffer(b, changes, plugin, None, set).unwrap();
+    assert_eq!(ed.view(v).selection.primary(), Range::new(0, 5));
+
+    assert!(ed.undo(v).unwrap());
+    assert_eq!(text(&ed), "hello world");
+    assert_eq!(ed.view(v).selection.primary(), Range::new(0, 5));
+    ed.view_mut(v).selection = Selection::point(2);
+    assert!(ed.redo(v).unwrap());
+    assert_eq!(ed.view(v).selection.primary(), Range::new(0, 5));
+}
+
+#[test]
 fn buffers_take_their_language_from_the_file_unless_given_one() {
     let mut ed = Editor::new(ClientId(1));
     let (file, _) = ed.open("file", "", Some("main.rs".into()));

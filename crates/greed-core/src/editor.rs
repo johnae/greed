@@ -852,15 +852,13 @@ impl Editor {
         cause: Option<&str>,
         selection: Option<Selection>,
     ) -> Result<(), Error> {
-        let explicit = selection.is_some();
         let tx = Transaction {
             changes,
             selection,
             meta: self.meta(id, author, cause),
         };
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
-        let after = buffer.apply(tx, &Selection::point(0))?;
-        if explicit {
+        if let Some(after) = buffer.apply_detached(tx)? {
             for view in self.views.values_mut().filter(|v| v.buffer == id) {
                 view.selection = after.clone();
             }

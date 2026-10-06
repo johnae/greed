@@ -305,15 +305,32 @@ impl Buffer {
     /// Applies a transaction made against the current version and records it
     /// as an undo step. Returns the selection that follows it.
     pub fn apply(&mut self, tx: Transaction, current: &Selection) -> Result<Selection, Error> {
+        let after = self.commit(tx, Some(current))?;
+        Ok(after.expect("a selection to map gives one back"))
+    }
+
+    /// Applies a transaction made without a view. Undoing or redoing it
+    /// leaves views where the change moves them, unless it sets a selection,
+    /// which is returned and which redo restores.
+    pub fn apply_detached(&mut self, tx: Transaction) -> Result<Option<Selection>, Error> {
+        self.commit(tx, None)
+    }
+
+    fn commit(
+        &mut self,
+        tx: Transaction,
+        current: Option<&Selection>,
+    ) -> Result<Option<Selection>, Error> {
         self.check_author(&tx.meta.author)?;
         self.check_version(&tx.meta)?;
         let before = self.text.clone();
-        let after = tx.apply(&mut self.text, current)?;
+        let mapped = tx.apply(&mut self.text, current.unwrap_or(&Selection::point(0)))?;
+        let after = (current.is_some() || tx.selection.is_some()).then_some(mapped);
         let inverse = tx.changes.invert(&before)?;
         self.map_marks(&tx.changes);
         self.version = SmallVec::from_buf([tx.meta.id]);
         self.history
-            .commit(tx, inverse, current.clone(), after.clone());
+            .commit(tx, inverse, current.cloned(), after.clone());
         Ok(after)
     }
 
@@ -361,7 +378,7 @@ impl Buffer {
         self.check_author(&author)?;
         let tx = Transaction {
             changes: step.changes,
-            selection: Some(step.selection),
+            selection: step.selection,
             meta: TxMeta::new(id, &self.version, author).with_cause(cause),
         };
         let inverse = tx.changes.invert(&self.text)?;
