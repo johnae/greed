@@ -361,3 +361,30 @@ test(
 		t:expect("fn main() {\n    let |x = 1;\n}\n")
 	end
 )
+
+test("files and lines the output names: go between them, pick one to open", function(t)
+	local dir =
+		t:tempdir({ ["src/main.rs"] = "fn main() {\n    let x: u8 = 300;\n}\n", ["notes.md"] = "" })
+	local output = table.concat({
+		"error[E0308]: mismatched types",
+		" --> src/main.rs:2:17",
+		"warning: gone.rs:1:1 is not there",
+		"see notes.md for more",
+	}, "\\n")
+	t:run("terminal", { "sh", "-c", `printf '\\033]7;file://box{dir}\\007{output}'; sleep 5` })
+	shows(t, "for more")
+	local buffer = greed.view():buffer()
+	local refs = require("@terminal").references(buffer)
+	assert(#refs == 1, "only files that are there, with a line: " .. tostring(#refs))
+	assert(refs[1].line == 2 and refs[1].col == 17, tostring(refs[1].line))
+	assert(refs[1].text == "error[E0308]: mismatched types --> src/main.rs:2:17", refs[1].text)
+	t:keys("ctrl-\\ g g ] e")
+	local selection = greed.view():selection().ranges[1]
+	assert(buffer:slice(selection.anchor, selection.head + 1) == "src/main.rs:2:17")
+	t:keys("space d")
+	local floats = table.concat(t:floats(), "\n")
+	assert(string.find(floats, "src/main.rs:2  error[E0308]", 1, true), floats)
+	t:keys("enter")
+	assert(greed.view():buffer():path() == dir .. "/src/main.rs")
+	t:expect("fn main() {\n    let x: u8 = |300;\n}\n")
+end)

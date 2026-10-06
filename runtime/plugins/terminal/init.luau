@@ -709,6 +709,24 @@ local URL = [=[(https?|ftp|file)://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]]=]
 -- print them: `src/main.rs:12:5`.
 local PATH = [=[[^\s:'"`()<>\[\]{},;]+(:\d+){0,2}]=]
 
+-- The file `text` (a match of PATH) names in `buffer`, and the line and
+-- column after it, when that file is there: a relative path is taken from
+-- the folder the terminal's shell is in, or the project's.
+local function resolve(buffer: greed.Buffer, text: string): (string?, number?, number?)
+	local name, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
+	name = name or text
+	local home = greed.fs.dirs().home
+	local path = if string.sub(name, 1, 1) == "/"
+		then name
+		elseif string.sub(name, 1, 2) == "~/" and home then home .. string.sub(name, 2)
+		else `{M.cwd(buffer) or greed.project.current().root}/{name}`
+	local info = greed.fs.stat(path)
+	if info == nil or info.kind ~= "file" then
+		return nil, nil, nil
+	end
+	return path, tonumber(row), tonumber(col)
+end
+
 --- The file named at `pos` in `buffer`, with the line and column after it
 --- if there are any (1-based), when that file is there: a relative path is
 --- taken from the folder the terminal's shell is in, or the project's.
@@ -716,23 +734,137 @@ function M.file_at(buffer: greed.Buffer, pos: number): (string?, number?, number
 	local line = buffer:line_of(pos)
 	for _, found in buffer:find_all(PATH, buffer:line_start(line), buffer:line_end(line)) or {} do
 		if pos >= found.from and pos < found.to then
-			local text = buffer:slice(found.from, found.to)
-			local name, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
-			name = name or text
-			local home = greed.fs.dirs().home
-			local path = if string.sub(name, 1, 1) == "/"
-				then name
-				elseif string.sub(name, 1, 2) == "~/" and home then home .. string.sub(name, 2)
-				else `{M.cwd(buffer) or greed.project.current().root}/{name}`
-			local info = greed.fs.stat(path)
-			if info == nil or info.kind ~= "file" then
-				return nil, nil, nil
-			end
-			return path, tonumber(row), tonumber(col)
+			return resolve(buffer, buffer:slice(found.from, found.to))
 		end
 	end
 	return nil, nil, nil
 end
+
+-- A path with a line after it, as compilers, linters and test runners
+-- point at a problem: `src/main.rs:12:5`.
+local REFERENCE = [=[[^\s:'"`()<>\[\]{},;]+:\d+(:\d+)?]=]
+
+--- A place in a file that a terminal's output points at, like
+--- `src/main.rs:12:5`: where it is in the buffer, the file, its 1-based
+--- line and column, and the text around it, saying what's there.
+export type Reference = {
+	from: number,
+	to: number,
+	path: string,
+	line: number,
+	col: number?,
+	text: string,
+}
+
+-- What a reference on line `line` says: its line's text, and for one on a
+-- line of its own after an arrow (`--> src/main.rs:2:9`, as rustc prints),
+-- the line before it, which says what's wrong.
+local function said_about(buffer: greed.Buffer, line: number): string
+	local function trimmed(at: number): string
+		return string.match(
+			buffer:slice(buffer:line_start(at), buffer:line_end(at)),
+			"^%s*(.-)%s*$"
+		) or ""
+	end
+	local text = trimmed(line)
+	if line > 0 and string.match(text, "^%-%->") then
+		text = `{trimmed(line - 1)} {text}`
+	end
+	return text
+end
+
+--- The places in files that the output in `buffer` points at, in order,
+--- for files that are there.
+function M.references(buffer: greed.Buffer): { Reference }
+	local list: { Reference } = {}
+	-- Files named again and again, as test runs do, are looked for once.
+	local there: { [string]: boolean } = {}
+	for _, found in buffer:find_all(REFERENCE) or {} do
+		local text = buffer:slice(found.from, found.to)
+		local name = string.match(text, "^(.-):%d") :: string
+		local path, line, col = nil, nil, nil
+		if there[name] ~= false then
+			path, line, col = resolve(buffer, text)
+			there[name] = path ~= nil
+		end
+		if path and line then
+			table.insert(list, {
+				from = found.from,
+				to = found.to,
+				path = path,
+				line = line,
+				col = col,
+				text = said_about(buffer, buffer:line_of(found.from)),
+			})
+		end
+	end
+	return list
+end
+
+-- Selects the next reference after the cursor, or with `back` the one
+-- before it.
+local function to_reference(ctx: greed.Context, back: boolean)
+	local selection = ctx.view:selection()
+	local head = selection.ranges[selection.primary].head
+	local list = M.references(ctx.buffer)
+	local found: Reference? = nil
+	for _, ref in list do
+		if back and ref.to <= head then
+			found = ref
+		elseif not back and ref.from > head then
+			found = ref
+			break
+		end
+	end
+	if found == nil then
+		greed.echo(if #list == 0 then "the output names no file and line" else "no more")
+		return
+	end
+	ctx.view:set_selection({
+		ranges = { { anchor = found.from, head = found.to - 1 } },
+		primary = 1,
+	})
+end
+
+greed.command({
+	name = "terminal-next-reference",
+	doc = "Go to the next file and line the output names, like an error's place; g x opens it",
+	run = function(ctx)
+		to_reference(ctx, false)
+	end,
+})
+
+greed.command({
+	name = "terminal-prev-reference",
+	doc = "Go to the file and line the output names before the cursor",
+	run = function(ctx)
+		to_reference(ctx, true)
+	end,
+})
+
+greed.command({
+	name = "terminal-references",
+	doc = "Pick from the files and lines the output names, like a compiler's errors, to open one",
+	run = function(ctx)
+		local list = M.references(ctx.buffer)
+		if #list == 0 then
+			greed.echo("the output names no file and line")
+			return
+		end
+		local root = greed.project.current().root .. "/"
+		local items = {}
+		for _, ref in list do
+			local shown = if string.sub(ref.path, 1, #root) == root
+				then string.sub(ref.path, #root + 1)
+				else ref.path
+			table.insert(items, { label = `{shown}:{ref.line}  {ref.text}`, value = ref })
+		end
+		picker.pick("In the output", items, function(item)
+			local ref = item.value :: Reference
+			M.open_file(ref.path, ref.line, ref.col)
+		end)
+	end,
+})
 
 --- Opens `path` in the main view, at 1-based `line` and `col` if given.
 function M.open_file(path: string, line: number?, col: number?)
@@ -1073,6 +1205,9 @@ for _, mode in { "normal", "vim" } do
 		["[ p"] = "terminal-prev-command",
 		["] p"] = "terminal-next-command",
 		["g o"] = "terminal-select-output",
+		["] e"] = "terminal-next-reference",
+		["[ e"] = "terminal-prev-reference",
+		["space d"] = "terminal-references",
 	})
 end
 greed.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })

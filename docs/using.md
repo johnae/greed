@@ -893,6 +893,8 @@ goes to the program, including ones the editor would otherwise take, like
 | `g x`, `ctrl-click` | Open the link under the cursor (or the mouse), or the file a path there names, at its line |
 | `[ p` `] p` | The command before or after the cursor, where your shell marks them (below) |
 | `g o` | Select the output of the command at the cursor, to copy or search it |
+| `] e` `[ e` | The next or previous file and line the output names, like a compiler's error at `src/main.rs:12:5`; `g x` opens it |
+| `space d` | Pick from every file and line the output names, with what it says there, to open one |
 | `:terminal-close` | End the program and close the terminal |
 
 Out of the terminal, its output is text like any other: select it, search
