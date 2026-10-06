@@ -199,3 +199,21 @@ test("the tools tool lists the groups, saying which are on", function()
 	assert(string.find(listing, "refactor: Renaming", 1, true), listing)
 	assert(string.find(listing, "Tools: code_action, code_actions, rename", 1, true), listing)
 end)
+
+test("the tools tool names its groups, so an agent needn't guess them", function()
+	local tool
+	for _, known in agent.tools() do
+		if known.name == "tools" then
+			tool = known
+		end
+	end
+	assert(tool, "there's a tools tool")
+	assert(string.find(tool.description, "map (Where things are", 1, true), tool.description)
+	local enum = tool.input and tool.input.properties.group.enum
+	assert(
+		enum and table.find(enum, "refactor") and table.find(enum, "notes"),
+		"and allows only those"
+	)
+	local ok, err = pcall(run, "tools", { group = "repo" }, agent.caller())
+	assert(not ok and string.find(tostring(err), "the groups are", 1, true), tostring(err))
+end)

@@ -62,8 +62,12 @@ end
 
 --- Names a group of tools and says what it's for, in a line the agent
 --- reads when deciding whether to switch it on.
+-- Says in the `tools` tool which groups there are; set once it's made.
+local describe_groups = function() end
+
 function M.group(name: string, description: string)
 	groups[name] = description
+	describe_groups()
 end
 
 -- The set of tools `client` gets: a shell (`greed ctl`) gets the socket's.
@@ -237,11 +241,23 @@ local function listing(caller: Caller?): string
 	return table.concat(lines, "\n")
 end
 
-M.tool({
+-- The groups' names, sorted.
+local function group_names(): { string }
+	local names = {}
+	for name in groups do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	return names
+end
+
+local TOOLS = "More of Greed's tools, in groups you switch on when you need them: without "
+	.. "arguments, the groups and what's in each; with group, switches that group on so "
+	.. "its tools are offered from now on."
+
+local tools_tool: Tool = {
 	name = "tools",
-	description = "More of Greed's tools, in groups you switch on when you need them: without "
-		.. "arguments, the groups and what's in each; with group, switches that group on so "
-		.. "its tools are offered from now on",
+	description = TOOLS,
 	input = {
 		type = "object",
 		properties = { group = { type = "string", description = "The group to switch on" } },
@@ -251,7 +267,10 @@ M.tool({
 		if group == nil then
 			return listing(caller)
 		elseif groups[group] == nil then
-			error(`there's no group called {group}; tools without arguments lists them`, 0)
+			error(
+				`there's no group called {group}; the groups are {table.concat(group_names(), ", ")}`,
+				0
+			)
 		elseif caller == nil then
 			return "every tool is offered to you already"
 		end
@@ -261,6 +280,24 @@ M.tool({
 		end
 		return `switched on {group}: {members(group)}`
 	end,
-})
+}
+M.tool(tools_tool)
+
+-- The groups are named in the tool's description and allowed as its
+-- argument, so an agent needn't guess at them or list them first.
+describe_groups = function()
+	local names = group_names()
+	local said = {}
+	for _, known in names do
+		table.insert(said, `{known} ({groups[known]})`)
+	end
+	tools_tool.description = `{TOOLS} The groups: {table.concat(said, "; ")}.`
+	tools_tool.input = {
+		type = "object",
+		properties = {
+			group = { type = "string", description = "The group to switch on", enum = names },
+		},
+	}
+end
 
 return M
