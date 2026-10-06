@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use greed_core::Editor;
-use greed_core::lsp::{Encoding, Handled, Lsp, file_uri, offset, position};
+use greed_core::lsp::{Encoding, Event, Handled, Lsp, diagnostics, file_uri, offset, position};
 use greed_text::{ClientId, Rope};
 use serde_json::{Value, json};
 
@@ -42,7 +42,7 @@ impl Setup {
                 .events()
                 .recv_timeout(Duration::from_secs(5))
                 .expect("server answered");
-            match self.lsp.handle(event, &self.editor) {
+            match self.lsp.handle(event, &mut self.editor) {
                 Handled::Nothing | Handled::Notification { .. } => {}
                 handled => return handled,
             }
@@ -62,10 +62,10 @@ fn documents_open_after_initialize_and_report_diagnostics() {
     let buffer = s.editor.buffers().next().unwrap().id();
     assert_eq!(s.next(), Handled::Diagnostics(buffer));
 
-    let diagnostics = s.lsp.diagnostics(buffer);
-    assert_eq!(diagnostics.len(), 1);
+    let found = diagnostics(s.editor.buffer(buffer));
+    assert_eq!(found.len(), 1);
     let text = s.editor.buffer(buffer).text().to_string();
-    let d = &diagnostics[0];
+    let d = &found[0];
     assert_eq!(&text[d.from..d.to], "bad");
     assert_eq!(
         (d.severity, d.message.as_str(), d.source.as_deref()),
@@ -107,7 +107,7 @@ fn changes_are_sent_once_per_version() {
     s.lsp.sync(&s.editor);
     let buffer = s.editor.buffers().next().unwrap().id();
     assert_eq!(s.next(), Handled::Diagnostics(buffer));
-    assert_eq!(s.lsp.diagnostics(buffer).len(), 1);
+    assert_eq!(diagnostics(s.editor.buffer(buffer)).len(), 1);
     assert!(s.methods().contains(&"textDocument/didChange".to_string()));
 }
 
@@ -295,5 +295,187 @@ fn closed_buffers_are_closed_in_the_server_and_their_diagnostics_go() {
     s.editor.close_buffer(buffer).unwrap();
     s.lsp.sync(&s.editor);
     assert!(s.methods().contains(&"textDocument/didClose".to_string()));
-    assert!(s.lsp.diagnostics(buffer).is_empty());
+    // The file's problems are as the server sent them again.
+    let problems = s.lsp.problems(&s.editor);
+    let main = problems
+        .iter()
+        .find(|p| p.uri == file_uri(&s.path))
+        .unwrap();
+    assert_eq!(main.range["end"], json!({ "line": 0, "character": 3 }));
+}
+
+impl Setup {
+    fn edit(&mut self, from: usize, to: usize, text: &str) {
+        let view = self.editor.focus();
+        let len = self
+            .editor
+            .buffer(self.editor.view(view).buffer)
+            .text()
+            .len_bytes();
+        let changes = greed_text::ChangeSet::from_changes(len, [(from, to, Some(text))]).unwrap();
+        self.editor
+            .apply(
+                view,
+                changes,
+                greed_text::Author::User(ClientId(1)),
+                None,
+                None,
+            )
+            .unwrap();
+    }
+
+    /// Hands the client a `publishDiagnostics` for the file, as if the
+    /// server had sent it.
+    fn publish(&mut self, version: Option<usize>, diagnostics: Value) -> Handled {
+        let mut params = json!({ "uri": file_uri(&self.path) });
+        params["diagnostics"] = diagnostics;
+        if let Some(version) = version {
+            params["version"] = json!(version);
+        }
+        let event = Event::Notification {
+            server: 0,
+            method: "textDocument/publishDiagnostics".into(),
+            params,
+        };
+        self.lsp.handle(event, &mut self.editor)
+    }
+
+    fn found(&self) -> Vec<String> {
+        let buffer = self.editor.buffers().next().unwrap();
+        let text = buffer.text().to_string();
+        diagnostics(buffer)
+            .iter()
+            .map(|d| text[d.from..d.to].to_owned())
+            .collect()
+    }
+}
+
+fn problem(line: u64, from: u64, to: u64, severity: u8) -> Value {
+    json!({
+        "range": { "start": { "line": line, "character": from }, "end": { "line": line, "character": to } },
+        "severity": severity, "message": "here",
+    })
+}
+
+#[test]
+fn diagnostics_move_with_edits_before_them() {
+    let mut s = setup("let x = bad;\n");
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.edit(0, 0, "// note\n");
+    assert_eq!(s.found(), ["bad"]);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(diagnostics(s.editor.buffer(buffer))[0].from, 16);
+    // Problems in open files are where they are now, too.
+    let problems = s.lsp.problems(&s.editor);
+    let main = problems
+        .iter()
+        .find(|p| p.uri == file_uri(&s.path))
+        .unwrap();
+    assert_eq!(
+        main.range,
+        json!({ "start": { "line": 1, "character": 8 }, "end": { "line": 1, "character": 11 } })
+    );
+
+    // Deleting a problem's text deletes the problem.
+    s.edit(16, 19, "");
+    assert!(s.found().is_empty());
+}
+
+#[test]
+fn a_publish_for_an_older_version_is_dropped() {
+    let mut s = setup("bad bad");
+    s.lsp.sync(&s.editor);
+    s.next();
+    let version = s.editor.buffers().next().unwrap().history().applied();
+    s.edit(0, 0, "x");
+
+    let stale = s.publish(Some(version), json!([problem(0, 0, 3, 1)]));
+    assert_eq!(stale, Handled::Nothing);
+    assert_eq!(s.found(), ["bad", "bad"], "the earlier ones stay, moved");
+
+    let buffer = s.editor.buffers().next().unwrap().id();
+    let current = s.editor.buffer(buffer).history().applied();
+    let fresh = s.publish(Some(current), json!([problem(0, 1, 4, 1)]));
+    assert_eq!(fresh, Handled::Diagnostics(buffer));
+    assert_eq!(s.found(), ["bad"]);
+    // Without a version, a publish is taken as being about the text now.
+    s.publish(None, json!([]));
+    assert!(s.found().is_empty());
+}
+
+#[test]
+fn an_empty_diagnostic_covers_a_character_so_it_shows() {
+    let mut s = setup("ab\n\n");
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.publish(
+        None,
+        json!([
+            problem(0, 1, 1, 1),
+            problem(0, 2, 2, 2),
+            problem(1, 0, 0, 3)
+        ]),
+    );
+    // The one on an empty line stays empty.
+    assert_eq!(s.found(), ["b", "b", ""]);
+}
+
+#[test]
+fn diagnostics_underline_their_text_and_color_the_line_number() {
+    use greed_core::render::{CellWidth, Plain, Renderer, Size, Status, Tag};
+    let mut s = setup("ok bad\nfine\n");
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.publish(
+        None,
+        json!([
+            problem(0, 3, 6, 2),
+            problem(0, 4, 5, 1),
+            problem(1, 0, 4, 4)
+        ]),
+    );
+    let frame = Renderer::new(CellWidth).frame(
+        &mut s.editor,
+        Size {
+            width: 20,
+            height: 4,
+        },
+        &Status::Default { message: None },
+        &Plain,
+    );
+    let tagged: Vec<(String, Vec<String>)> = frame
+        .rows
+        .iter()
+        .flat_map(|r| &r.spans)
+        .map(|span| {
+            let names = span
+                .tags
+                .iter()
+                .map(Tag::name)
+                .filter(|n| n.contains("diagnostic"))
+                .map(str::to_owned);
+            (span.text.clone(), names.collect::<Vec<_>>())
+        })
+        .filter(|(_, names)| !names.is_empty())
+        .collect();
+    // The worst problem is drawn on top: last.
+    let expected = [
+        (
+            "1 ",
+            vec!["ui.gutter.diagnostic.warning", "ui.gutter.diagnostic.error"],
+        ),
+        ("b", vec!["diagnostic.warning"]),
+        ("a", vec!["diagnostic.warning", "diagnostic.error"]),
+        ("d", vec!["diagnostic.warning"]),
+        ("2 ", vec!["ui.gutter.diagnostic.hint"]),
+        ("fine", vec!["diagnostic.hint"]),
+    ]
+    .map(|(text, names)| {
+        (
+            text.to_owned(),
+            names.into_iter().map(str::to_owned).collect(),
+        )
+    });
+    assert_eq!(tagged, expected);
 }

@@ -176,6 +176,8 @@ export type Mark = {
 	eol: boolean?,
 	--- A symbol for the sign column next to the line numbers, e.g. "E".
 	sign: string?,
+	--- A style for the line number of each line the mark touches, e.g. "ui.gutter.diagnostic.error".
+	gutter: string?,
 	--- Draw over selections and cursors rather than under them.
 	above: boolean?,
 	--- Draw `text` over the characters from `from` instead of inserting it,
@@ -204,6 +206,8 @@ export type Mark = {
 	action: string?,
 	--- How many times bigger the range's text (and `text`) is, 1 to 4, e.g. 2 for a heading: each character takes that many cells across, and its row that many rows down. In the window it's drawn big; terminals show it at the normal size.
 	scale: number?,
+	--- Anything to keep with the mark, given back where it is read: plain data (tables, strings, numbers, booleans), never drawn.
+	data: any?,
 }
 
 --- A buffer shown on screen, with its own selection.
@@ -1073,10 +1077,13 @@ export type Lsp = {
 	position: (buffer: Buffer, pos: number) -> LspPosition,
 	--- The byte offset of a server position.
 	offset: (buffer: Buffer, position: LspPosition) -> number,
-	--- The buffer's latest diagnostics.
+	--- The buffer's latest diagnostics, where they are now: they move with
+	--- edits. They are marks in the buffer's "diagnostics" namespace, with
+	--- `{ severity, message, source }` as their data.
 	diagnostics: (buffer: Buffer) -> { Diagnostic },
 	--- Every file's latest problems, including files that aren't open, with
-	--- ranges as the server sent them.
+	--- ranges as the server counts positions. Those in open files are where
+	--- they are now.
 	problems: () -> { LspProblem },
 	--- What the buffer's server said it can do (its `ServerCapabilities`),
 	--- or nil without a running server.

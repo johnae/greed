@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -15,7 +16,7 @@ use crossbeam_channel::{Receiver, Sender};
 use greed_text::Rope;
 use serde_json::{Value, json};
 
-use crate::{Buffer, BufferId, Editor};
+use crate::{Buffer, BufferId, Editor, Mark};
 
 pub type ServerId = usize;
 
@@ -111,8 +112,7 @@ pub enum Handled {
     Nothing,
 }
 
-/// A problem a server reported in any file, open or not, as the server sent
-/// it.
+/// A problem a server reported in any file, open or not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Problem {
     pub uri: String,
@@ -128,6 +128,10 @@ pub enum Encoding {
     Utf8,
     Utf16,
 }
+
+/// The mark namespace that holds each buffer's diagnostics, so they move
+/// with edits.
+pub const DIAGNOSTICS: &str = "diagnostics";
 
 /// A problem a server found, in byte offsets.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,9 +226,9 @@ pub struct Lsp {
     by_language: HashMap<String, ServerId>,
     /// Languages whose server couldn't be started; not tried again.
     failed: HashSet<String>,
-    diagnostics: HashMap<BufferId, Vec<Diagnostic>>,
-    /// Every file's latest problems, by URI, including files not open.
-    problems: HashMap<String, Vec<Problem>>,
+    /// Every file's latest problems, by URI, including files not open, with
+    /// how their server counts positions.
+    problems: HashMap<String, (Encoding, Vec<Problem>)>,
     events: Receiver<Event>,
     sender: Sender<Event>,
 }
@@ -237,7 +241,6 @@ impl Default for Lsp {
             servers: Vec::new(),
             by_language: HashMap::new(),
             failed: HashSet::new(),
-            diagnostics: HashMap::new(),
             problems: HashMap::new(),
             events,
             sender,
@@ -293,7 +296,6 @@ impl Lsp {
                 }
             }
         }
-        self.diagnostics.retain(|id, _| open.contains(id));
         errors
     }
 
@@ -441,8 +443,8 @@ impl Lsp {
     }
 
     /// Deals with one event from a server: finishes starting it, answers its
-    /// requests, stores diagnostics, and passes responses back.
-    pub fn handle(&mut self, event: Event, editor: &Editor) -> Handled {
+    /// requests, marks diagnostics, and passes responses back.
+    pub fn handle(&mut self, event: Event, editor: &mut Editor) -> Handled {
         match event {
             Event::Response { server, id, result } if id == self.servers[server].initialize_id => {
                 self.finish_initialize(server, result.as_ref().ok());
@@ -520,11 +522,24 @@ impl Lsp {
         }
     }
 
-    fn store_diagnostics(&mut self, server: ServerId, params: &Value, editor: &Editor) -> Handled {
+    fn store_diagnostics(
+        &mut self,
+        server: ServerId,
+        params: &Value,
+        editor: &mut Editor,
+    ) -> Handled {
         let encoding = self.servers[server].encoding;
         let Some(uri) = params["uri"].as_str() else {
             return Handled::Nothing;
         };
+        let buffer = buffer_at(editor, uri).map(|b| (b.id(), b.history().applied()));
+        // Positions for an older version of the text than the buffer's would
+        // land in the wrong places; the server sends new ones for the latest.
+        if let (Some(version), Some((_, current))) = (params["version"].as_u64(), buffer)
+            && usize::try_from(version).is_ok_and(|v| v < current)
+        {
+            return Handled::Nothing;
+        }
         let reported = params["diagnostics"]
             .as_array()
             .map_or(&[][..], Vec::as_slice);
@@ -541,45 +556,45 @@ impl Lsp {
         if problems.is_empty() {
             self.problems.remove(uri);
         } else {
-            self.problems.insert(uri.to_owned(), problems);
+            self.problems.insert(uri.to_owned(), (encoding, problems));
         }
-        let Some(buffer) = editor
-            .buffers()
-            .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
-        else {
+        let Some((buffer, _)) = buffer else {
             return Handled::Nothing;
         };
-        let text = buffer.text();
-        let diagnostics = reported
-            .iter()
-            .filter_map(|d| {
-                let from = offset(text, &d["range"]["start"], encoding)?;
-                let to = offset(text, &d["range"]["end"], encoding)?;
-                Some(Diagnostic {
-                    from,
-                    to: to.max(from),
-                    severity: severity(d),
-                    message: d["message"].as_str().unwrap_or_default().to_owned(),
-                    source: d["source"].as_str().map(str::to_owned),
-                })
-            })
+        let text = editor.buffer(buffer).text();
+        let mut reported: Vec<&Value> = reported.iter().collect();
+        // The worst last, so its style is drawn on top.
+        reported.sort_by_key(|d| std::cmp::Reverse(severity(d)));
+        let marks = reported
+            .into_iter()
+            .filter_map(|d| diagnostic_mark(text, d, encoding))
             .collect();
-        self.diagnostics.insert(buffer.id(), diagnostics);
-        Handled::Diagnostics(buffer.id())
+        editor.decorate(buffer, DIAGNOSTICS, marks);
+        Handled::Diagnostics(buffer)
     }
 
-    /// Every buffer's latest diagnostics.
-    pub fn all_diagnostics(&self) -> impl Iterator<Item = (BufferId, &[Diagnostic])> {
-        self.diagnostics.iter().map(|(id, d)| (*id, d.as_slice()))
-    }
-
-    /// Every file's latest problems, open or not.
-    pub fn problems(&self) -> impl Iterator<Item = &Problem> {
-        self.problems.values().flatten()
-    }
-
-    pub fn diagnostics(&self, buffer: BufferId) -> &[Diagnostic] {
-        self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
+    /// Every file's latest problems, open or not. Those in open buffers are
+    /// where they are now, after any edits since the server sent them.
+    pub fn problems(&self, editor: &Editor) -> Vec<Problem> {
+        let mut problems = Vec::new();
+        for (uri, (encoding, reported)) in &self.problems {
+            let Some(buffer) = buffer_at(editor, uri) else {
+                problems.extend(reported.iter().cloned());
+                continue;
+            };
+            let text = buffer.text();
+            problems.extend(diagnostics(buffer).into_iter().map(|d| Problem {
+                uri: uri.clone(),
+                range: json!({
+                    "start": position(text, d.from, *encoding),
+                    "end": position(text, d.to, *encoding),
+                }),
+                severity: d.severity,
+                message: d.message,
+                source: d.source,
+            }));
+        }
+        problems
     }
 
     /// How `buffer`'s server counts positions within a line.
@@ -594,6 +609,80 @@ fn severity(diagnostic: &Value) -> u8 {
         .as_u64()
         .and_then(|s| u8::try_from(s).ok())
         .unwrap_or(1)
+}
+
+/// The problems a server found in `buffer`, where they are now, in order.
+pub fn diagnostics(buffer: &Buffer) -> Vec<Diagnostic> {
+    let mut list: Vec<Diagnostic> = buffer
+        .marks(DIAGNOSTICS)
+        .iter()
+        .map(|mark| {
+            let data = mark.data.as_ref().unwrap_or(&Value::Null);
+            Diagnostic {
+                from: mark.range.start,
+                to: mark.range.end,
+                severity: severity(data),
+                message: data["message"].as_str().unwrap_or_default().to_owned(),
+                source: data["source"].as_str().map(str::to_owned),
+            }
+        })
+        .collect();
+    list.sort_by_key(|d| (d.from, d.to));
+    list
+}
+
+/// A diagnostic as a mark: its text underlined and its line number styled
+/// by severity, with the server's details kept in its data.
+fn diagnostic_mark(text: &Rope, diagnostic: &Value, encoding: Encoding) -> Option<Mark> {
+    let from = offset(text, &diagnostic["range"]["start"], encoding)?;
+    let to = offset(text, &diagnostic["range"]["end"], encoding)?;
+    let severity = severity(diagnostic);
+    let name = match severity {
+        1 => "error",
+        2 => "warning",
+        3 => "info",
+        _ => "hint",
+    };
+    Some(Mark {
+        range: shown_range(text, from, to.max(from)),
+        style: format!("diagnostic.{name}").into(),
+        gutter: Some(format!("ui.gutter.diagnostic.{name}").into()),
+        above: true,
+        data: Some(json!({
+            "severity": severity,
+            "message": diagnostic["message"],
+            "source": diagnostic["source"],
+        })),
+        ..Mark::default()
+    })
+}
+
+/// `from..to`, but an empty range covers the character after it, or the one
+/// before it at the end of a line, so that it shows.
+fn shown_range(text: &Rope, from: usize, to: usize) -> Range<usize> {
+    if from < to {
+        return from..to;
+    }
+    let on_line = |c: &char| *c != '\n' && *c != '\r';
+    let at = text.byte_to_char(from);
+    if let Some(c) = text.get_char(at).filter(on_line) {
+        return from..from + c.len_utf8();
+    }
+    match at
+        .checked_sub(1)
+        .and_then(|i| text.get_char(i))
+        .filter(on_line)
+    {
+        Some(c) => from - c.len_utf8()..from,
+        None => from..from,
+    }
+}
+
+/// The open buffer of the file at `uri`.
+fn buffer_at<'a>(editor: &'a Editor, uri: &str) -> Option<&'a Buffer> {
+    editor
+        .buffers()
+        .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
 }
 
 /// What the editor tells servers it can do. Plugins build the features on

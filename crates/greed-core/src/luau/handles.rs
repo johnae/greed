@@ -10,7 +10,8 @@ use std::path::Path;
 
 use greed_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{
-    Function, IntoLuaMulti, Lua, MetaMethod, Table, UserData, UserDataMethods, UserDataRef, Value,
+    Function, IntoLuaMulti, Lua, LuaSerdeExt, MetaMethod, Table, UserData, UserDataMethods,
+    UserDataRef, Value,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -464,7 +465,7 @@ fn span_table(lua: &Lua, span: &std::ops::Range<usize>) -> LuaResult<Table> {
 }
 
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
-/// `{ from, to, style, line, text, eol, sign, above, overlay }`.
+/// `{ from, to, style, line, text, eol, sign, gutter, above, overlay, ... }`.
 fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("decorate", |lua, this, (ns, list): (String, Vec<Table>)| {
         this.with_buffer(lua, |_| Ok(()))?;
@@ -486,6 +487,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     text: t.get::<Option<String>>("text")?.map(Into::into),
                     eol: flag("eol")?,
                     sign: t.get::<Option<String>>("sign")?.map(Into::into),
+                    gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
                     above: flag("above")?,
                     overlay: flag("overlay")?,
                     conceal: flag("conceal")?,
@@ -503,6 +505,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         .transpose()?,
                     action: t.get::<Option<String>>("action")?.map(Into::into),
                     scale: scale_from_lua(t.get("scale"))?,
+                    data: match t.get::<Value>("data")? {
+                        Value::Nil => None,
+                        data => Some(lua.from_value(data)?),
+                    },
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
@@ -566,6 +572,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("text", mark.text.as_deref())?;
     t.set("eol", mark.eol)?;
     t.set("sign", mark.sign.as_deref())?;
+    t.set("gutter", mark.gutter.as_deref())?;
     t.set("above", mark.above)?;
     t.set("overlay", mark.overlay)?;
     t.set("conceal", mark.conceal)?;
@@ -581,6 +588,9 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("action", mark.action.as_deref())?;
     if mark.scale > 1 {
         t.set("scale", mark.scale)?;
+    }
+    if let Some(data) = &mark.data {
+        t.set("data", super::lsp::to_lua(lua, data)?)?;
     }
     if !mark.lines.is_empty() {
         let lines = lua.create_table()?;

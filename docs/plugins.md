@@ -381,7 +381,12 @@ greed.tab.set_layout({
   (up to 4) makes its text bigger, like a heading: each character takes
   twice the cells across and its row two rows down. The window draws it
   big, and so does kitty; other terminals show it at the normal size.
+  `gutter` styles the line numbers of the lines a mark touches, and `data`
+  keeps anything you like with a mark (plain tables, strings, numbers),
+  given back by `buffer:decorations(ns)`.
   `buffer:marks_at(pos)` gives the marks over a place in every namespace.
+  Language servers' diagnostics are marks too, in the `"diagnostics"`
+  namespace, which is how they follow edits.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
   { summary = "3 places" })` gives a buffer to show in a panel or float,

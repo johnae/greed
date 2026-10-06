@@ -49,11 +49,11 @@ use serde::Deserialize;
 pub use jobs::Done as FinishedJob;
 pub use testing::{TestResult, run_tests};
 
+use crate::Editor;
 use crate::keymap::{Key, ParseError};
 use crate::mouse::{Button, Mouse};
 use crate::registry::{PluginId, Registry};
 use crate::render::{Hit, StatusLine};
-use crate::{BufferId, Editor};
 use modules::Modules;
 
 /// How long one call into Luau may run before it is stopped.
@@ -733,20 +733,6 @@ impl Host {
             .sync(&state.editor)
             .iter()
             .map(ToString::to_string)
-            .collect()
-    }
-
-    /// Each buffer's diagnostics, as byte ranges and severities.
-    pub fn diagnostic_marks(&self) -> HashMap<BufferId, Vec<(std::ops::Range<usize>, u8)>> {
-        state(&self.lua)
-            .lsp
-            .all_diagnostics()
-            .map(|(buffer, list)| {
-                (
-                    buffer,
-                    list.iter().map(|d| (d.from..d.to, d.severity)).collect(),
-                )
-            })
             .collect()
     }
 

@@ -63,6 +63,33 @@ test("project and diagnostics answer about the editor", function(t)
 	assert(#run("diagnostics", { path = dir .. "/not-open.txt" }) == 0)
 end)
 
+test("diagnostics are where the problems are now, after edits", function(t)
+	local dir = t:tempdir({ ["a.rs"] = "let x = bad;\n" })
+	greed.open(dir .. "/a.rs")
+	local buffer = greed.view():buffer()
+	-- Language servers' diagnostics are marks in this namespace.
+	buffer:decorate("diagnostics", {
+		{
+			from = 8,
+			to = 11,
+			style = "diagnostic.error",
+			data = { severity = 1, message = "bad word" },
+		},
+	})
+	buffer:edit(function(e)
+		e:insert(0, "// note\n")
+	end)
+	local d = greed.lsp.diagnostics(buffer)[1]
+	assert(
+		buffer:slice(d.from, d.to) == "bad" and d.message == "bad word",
+		buffer:slice(d.from, d.to)
+	)
+	local found = run("diagnostics", { path = dir .. "/a.rs" })
+	assert(#found == 1, tostring(#found))
+	assert(found[1].line == 2 and found[1].column == 9, `{found[1].line}:{found[1].column}`)
+	assert(found[1].severity == "error" and found[1].message == "bad word")
+end)
+
 test("eval returns what the code returns, and fails with its error", function(t)
 	t:buffer("|x")
 	assert(run("eval", { code = "return 6 * 7" }) == "42")

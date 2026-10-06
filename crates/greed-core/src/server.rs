@@ -4,7 +4,7 @@
 //! Clients send input and get back frames, over channels in the same
 //! process or as JSON lines over a session socket.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
@@ -542,14 +542,9 @@ impl Server<'_> {
                 }
             }
         };
-        let diagnostics = host.diagnostic_marks();
         let render = || {
             host.with_editor_and_syntax(|ed, syntax| {
-                let shown = Shown {
-                    syntax,
-                    diagnostics: &diagnostics,
-                };
-                self.renderer.frame(ed, size, &status, &shown)
+                self.renderer.frame(ed, size, &status, &Shown { syntax })
             })
         };
         let mut frame = host.timed("drawing", render);
@@ -599,19 +594,14 @@ fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or_default().to_owned()
 }
 
-/// What's drawn over buffer text: syntax highlighting and diagnostics.
+/// What's drawn over buffer text: syntax highlighting.
 struct Shown<'a> {
     syntax: &'a Syntax,
-    diagnostics: &'a HashMap<BufferId, Vec<(Range<usize>, u8)>>,
 }
 
 impl Decorations for Shown<'_> {
     fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         self.syntax.highlights(buffer, text, range)
-    }
-
-    fn diagnostics(&self, buffer: BufferId) -> &[(Range<usize>, u8)] {
-        self.diagnostics.get(&buffer).map_or(&[], Vec::as_slice)
     }
 }
 

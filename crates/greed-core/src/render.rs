@@ -32,21 +32,15 @@ use crate::{
     Scroll, Side, View, ViewId, VirtualLine,
 };
 
-/// Highlights and marks drawn over a buffer's text.
+/// Syntax highlights drawn over a buffer's text, under its marks.
 pub trait Decorations {
     /// Syntax highlights overlapping `range` of `buffer`.
     fn highlights(&self, _buffer: BufferId, _text: &Rope, _range: Range<usize>) -> Vec<Highlight> {
         Vec::new()
     }
-
-    /// Diagnostics in `buffer`: a byte range and a severity, 1 (error) to 4
-    /// (hint).
-    fn diagnostics(&self, _buffer: BufferId) -> &[(Range<usize>, u8)] {
-        &[]
-    }
 }
 
-/// No highlights or marks.
+/// No highlights.
 pub struct Plain;
 
 impl Decorations for Plain {}
@@ -115,26 +109,6 @@ impl Tag {
 
     pub const fn fixed(name: &'static str) -> Self {
         Tag(Name::Fixed(name))
-    }
-
-    /// A diagnostic, by severity: 1 error, 2 warning, 3 info, 4 hint.
-    pub fn diagnostic(severity: u8) -> Self {
-        Tag::fixed(match severity {
-            1 => "diagnostic.error",
-            2 => "diagnostic.warning",
-            3 => "diagnostic.info",
-            _ => "diagnostic.hint",
-        })
-    }
-
-    /// A line number on a line with a diagnostic of `severity`.
-    pub fn gutter_diagnostic(severity: u8) -> Self {
-        Tag::fixed(match severity {
-            1 => "ui.gutter.diagnostic.error",
-            2 => "ui.gutter.diagnostic.warning",
-            3 => "ui.gutter.diagnostic.info",
-            _ => "ui.gutter.diagnostic.hint",
-        })
     }
 
     pub fn name(&self) -> &str {
@@ -724,7 +698,7 @@ impl<M: Measure> Renderer<M> {
             decorations.highlights(view.buffer, text, visible.clone()),
             &visible,
         );
-        let (marks, styled) = marks_in(editor, view.buffer, decorations, &visible);
+        let styled = marks_in(editor, view.buffer, &visible);
         let (head, cursors) = cursors(text, view, editor.cursor_shape());
         let number = line_number(editor.line_numbers(), text, head);
         let mut rows = Vec::with_capacity(text_rows);
@@ -742,7 +716,7 @@ impl<M: Measure> Renderer<M> {
             let start = text.line_to_byte(line);
             let lines = start..text.line_to_byte(line + 1).max(start + 1);
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
-            let line_gutter = Gutter::for_line(gutter, signs, &styled, &marks, &lines);
+            let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
             let mut overlay = Overlay::default();
             for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
@@ -783,7 +757,7 @@ impl<M: Measure> Renderer<M> {
                         .byte
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone());
-                    let cell_tags = cell_tags(view, cell, &cursors, capture, &styled, &marks);
+                    let cell_tags = cell_tags(view, cell, &cursors, capture, &styled);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push_scaled(&cell.text, cell_tags, cell.scale);
                     }
@@ -1311,29 +1285,26 @@ struct Gutter<'a> {
     width: usize,
     signs: bool,
     sign: Option<&'a Mark>,
-    /// The worst diagnostic on the line.
-    severity: Option<u8>,
+    /// The line number's tags: the gutter's, then those of marks on the line.
+    number: SmallVec<[Tag; 2]>,
 }
 
 impl<'a> Gutter<'a> {
     /// The gutter for the line spanning `lines`: the first mark with a sign
-    /// on it, and its worst diagnostic.
-    fn for_line(
-        width: usize,
-        signs: bool,
-        styled: &[&'a Mark],
-        diagnostics: &[(Range<usize>, u8)],
-        lines: &Range<usize>,
-    ) -> Self {
-        let touches = |r: &Range<usize>| r.start < lines.end && r.end >= lines.start;
+    /// on it, and the line number styles of every mark on it.
+    fn for_line(width: usize, signs: bool, styled: &[&'a Mark], lines: &Range<usize>) -> Self {
+        let on_line = || {
+            styled
+                .iter()
+                .filter(|m| m.range.start < lines.end && m.range.end >= lines.start)
+        };
         Gutter {
             width,
             signs,
-            sign: styled
-                .iter()
-                .find(|m| m.sign.is_some() && touches(&m.range))
-                .copied(),
-            severity: worst(diagnostics, touches),
+            sign: on_line().find(|m| m.sign.is_some()).copied(),
+            number: std::iter::once(Tag::GUTTER)
+                .chain(on_line().filter_map(|m| m.gutter.clone().map(Tag::from)))
+                .collect(),
         }
     }
 
@@ -1355,11 +1326,7 @@ impl<'a> Gutter<'a> {
             Some(n) => format!("{n:>w$} ", w = width - 1),
             None => " ".repeat(width),
         };
-        let mut tags: SmallVec<[Tag; 2]> = smallvec![Tag::GUTTER];
-        if let Some(severity) = self.severity {
-            tags.push(Tag::gutter_diagnostic(severity));
-        }
-        row.push(&text, tags);
+        row.push(&text, self.number.clone());
     }
 }
 
@@ -1387,7 +1354,6 @@ fn cell_tags(
     cursors: &[usize],
     capture: Option<Arc<str>>,
     marks: &[&Mark],
-    diagnostics: &[(Range<usize>, u8)],
 ) -> SmallVec<[Tag; 2]> {
     let on_cell = |above: bool| {
         marks
@@ -1401,11 +1367,6 @@ fn cell_tags(
     tags.extend(on_cell(false));
     tags.extend(selection_tags(view, cell, cursors));
     tags.extend(on_cell(true));
-    let at_cell =
-        |r: &Range<usize>| r.contains(&cell.byte) || (r.is_empty() && r.start == cell.byte);
-    if let Some(severity) = worst(diagnostics, at_cell) {
-        tags.push(Tag::diagnostic(severity));
-    }
     tags
 }
 
@@ -1640,35 +1601,13 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     }
 }
 
-/// The most severe mark (lowest number) whose range matches.
-fn worst(marks: &[(Range<usize>, u8)], matches: impl Fn(&Range<usize>) -> bool) -> Option<u8> {
-    marks
-        .iter()
-        .filter(|(r, _)| matches(r))
-        .map(|(_, s)| *s)
-        .min()
-}
-
-/// The diagnostics and marks of `buffer` that touch `visible`.
-fn marks_in<'a>(
-    editor: &'a Editor,
-    buffer: BufferId,
-    decorations: &dyn Decorations,
-    visible: &Range<usize>,
-) -> (Vec<(Range<usize>, u8)>, Vec<&'a Mark>) {
-    let touches = |range: &Range<usize>| range.start <= visible.end && range.end >= visible.start;
-    let diagnostics = decorations
-        .diagnostics(buffer)
-        .iter()
-        .filter(|(range, _)| touches(range))
-        .cloned()
-        .collect();
-    let marks = editor
+/// The marks of `buffer` that touch `visible`.
+fn marks_in<'a>(editor: &'a Editor, buffer: BufferId, visible: &Range<usize>) -> Vec<&'a Mark> {
+    editor
         .buffer(buffer)
         .all_marks()
-        .filter(|m| touches(&m.range))
-        .collect();
-    (diagnostics, marks)
+        .filter(|m| m.range.start <= visible.end && m.range.end >= visible.start)
+        .collect()
 }
 
 /// The bytes from the `first` drawn to just past the `last` character drawn

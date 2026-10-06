@@ -238,7 +238,6 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
         &Status::Default { message: None },
         &Fixed {
             highlights: highlights.clone(),
-            diagnostics: Vec::new(),
         },
     );
     let syntax: Vec<(String, String)> = f.rows[0]
@@ -352,7 +351,6 @@ fn a_click_on_a_status_segment_finds_its_action() {
 /// Decorations given up front, for tests.
 struct Fixed {
     highlights: Vec<greed_core::syntax::Highlight>,
-    diagnostics: Vec<(std::ops::Range<usize>, u8)>,
 }
 
 impl Decorations for Fixed {
@@ -364,50 +362,40 @@ impl Decorations for Fixed {
     ) -> Vec<greed_core::syntax::Highlight> {
         self.highlights.clone()
     }
-
-    fn diagnostics(&self, _: greed_core::BufferId) -> &[(std::ops::Range<usize>, u8)] {
-        &self.diagnostics
-    }
 }
 
 #[test]
-fn diagnostics_mark_their_text_and_line_number() {
-    let mut ed = editor("|let x = bad;\nok\nworse");
-    let f = Renderer::new(CellWidth).frame(
-        &mut ed,
-        Size {
-            width: 30,
-            height: 4,
-        },
-        &Status::Default { message: None },
-        &Fixed {
-            highlights: Vec::new(),
-            diagnostics: vec![(8..11, 2), (9..10, 1), (16..16, 3)],
-        },
+fn marks_can_style_the_line_numbers_of_their_lines() {
+    use greed_core::Mark;
+    let mut ed = editor("|one\ntwo\nthree");
+    let buffer = ed.view(ed.focus()).buffer;
+    let mark = |range, gutter: &str| Mark {
+        range,
+        style: "x".into(),
+        gutter: Some(gutter.into()),
+        ..Mark::default()
+    };
+    ed.decorate(
+        buffer,
+        "lsp",
+        vec![mark(1..6, "warning"), mark(2..3, "error")],
     );
-    let marked: Vec<(String, String)> = f
+    let f = frame(&mut ed, 20, 4);
+    let gutter: Vec<Vec<&str>> = f
         .rows
         .iter()
-        .flat_map(|r| &r.spans)
-        .filter_map(|s| {
-            s.tags
-                .iter()
-                .find(|t| t.name().contains("diagnostic."))
-                .map(|t| (s.text.clone(), t.name().to_owned()))
-        })
+        .filter_map(|r| r.spans.iter().find(|s| s.tags.contains(&Tag::GUTTER)))
+        .map(|s| s.tags.iter().map(Tag::name).collect())
         .collect();
-    // The worst severity wins where marks overlap; empty marks cover one
-    // character. Line numbers get the gutter's names.
-    let expected = [
-        ("1 ", "ui.gutter.diagnostic.error"),
-        ("b", "diagnostic.warning"),
-        ("a", "diagnostic.error"),
-        ("d", "diagnostic.warning"),
-        ("3 ", "ui.gutter.diagnostic.info"),
-        ("w", "diagnostic.info"),
-    ]
-    .map(|(text, name)| (text.to_owned(), name.to_owned()));
-    assert_eq!(marked, expected);
+    // Every line the mark touches; the last mark's style is on top.
+    assert_eq!(
+        gutter,
+        [
+            vec!["ui.gutter", "warning", "error"],
+            vec!["ui.gutter", "warning"],
+            vec!["ui.gutter"],
+        ]
+    );
 }
 
 #[test]

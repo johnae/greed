@@ -33,7 +33,7 @@ pub(super) fn to_lua(lua: &Lua, json: &serde_json::Value) -> LuaResult<Value> {
 pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
     let handled = {
         let state = &mut *state_mut(lua);
-        state.lsp.handle(event, &state.editor)
+        state.lsp.handle(event, &mut state.editor)
     };
     match handled {
         Handled::Response { server, id, result } => {
@@ -184,7 +184,8 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         "problems",
         lua.create_function(|lua, ()| {
             let list = lua.create_table()?;
-            for p in state(lua).lsp.problems() {
+            let state = state(lua);
+            for p in state.lsp.problems(&state.editor) {
                 let entry = lua.create_table()?;
                 entry.set("uri", p.uri.as_str())?;
                 entry.set("range", to_lua(lua, &p.range)?)?;
@@ -295,7 +296,10 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
             let list = lua.create_table()?;
             let state = state(lua);
-            for d in state.lsp.diagnostics(buffer.buffer) {
+            let Some(b) = state.editor.find_buffer(buffer.buffer) else {
+                return Ok(list);
+            };
+            for d in lsp::diagnostics(b) {
                 let entry = lua.create_table()?;
                 entry.set("from", d.from)?;
                 entry.set("to", d.to)?;

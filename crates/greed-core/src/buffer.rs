@@ -58,6 +58,8 @@ pub struct Mark {
     pub eol: bool,
     /// A symbol for the sign column, next to the line numbers.
     pub sign: Option<Arc<str>>,
+    /// A style for the line number of each line the mark touches.
+    pub gutter: Option<Arc<str>>,
     /// Draw over selections and cursors rather than under them, e.g. for a
     /// flash that must show even on selected text.
     pub above: bool,
@@ -84,6 +86,9 @@ pub struct Mark {
     /// each character takes that many cells across, and its row that many
     /// rows down. 0 and 1 are the normal size.
     pub scale: u8,
+    /// Anything its owner wants kept with it, like a problem's message.
+    /// Never drawn.
+    pub data: Option<serde_json::Value>,
 }
 
 /// When a concealing mark shows the text it hides, so it can be edited.
