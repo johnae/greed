@@ -44,6 +44,8 @@ export type TestContext = {
 	switched: (self: TestContext) -> { session: string?, path: string? }?,
 	--- Messages shown since the last call, oldest first.
 	messages: (self: TestContext) -> { string },
+	--- Desktop notifications sent with `greed.client.notify` since the last call, oldest first.
+	notices: (self: TestContext) -> { { title: string, body: string } },
 	--- Fails unless the buffer, with markers, is `marked`.
 	expect: (self: TestContext, marked: string) -> (),
 	expect_mode: (self: TestContext, mode: string) -> (),

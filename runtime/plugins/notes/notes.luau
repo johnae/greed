@@ -274,9 +274,42 @@ function M.append(name: string, text: string)
 	end
 end
 
+--- Replaces line `line` (0-based) of note `name` with `text`. An open note
+--- is changed in the editor (and saved).
+function M.set_line(name: string, line: number, text: string)
+	local buffer = M.buffer(name)
+	if buffer then
+		if line >= buffer:line_count() then
+			error(`{name} has no line {line + 1}`, 0)
+		end
+		local start = buffer:line_start(line)
+		buffer:edit(function(e)
+			e:replace(start, buffer:line_end(line), text)
+		end)
+		buffer:save()
+		return
+	end
+	local path = M.path(name)
+	local current = greed.fs.read(path)
+	local lines = string.split(current or "", "\n")
+	if current == nil or line >= #lines or (line == #lines - 1 and lines[#lines] == "") then
+		error(`{name} has no line {line + 1}`, 0)
+	end
+	lines[line + 1] = text
+	local ok, err = greed.fs.write(path, table.concat(lines, "\n"))
+	if not ok then
+		error(err, 0)
+	end
+end
+
+--- The time now, in seconds. Tests set a clock of their own.
+M.clock = function(): number
+	return os.time()
+end
+
 --- Today's date, as notes write it: "2026-10-01".
 function M.today(): string
-	return os.date("%Y-%m-%d") :: string
+	return os.date("%Y-%m-%d", M.clock()) :: string
 end
 
 export type Symbols = {
@@ -286,6 +319,7 @@ export type Symbols = {
 	headings: { string },
 	bullet: string,
 	due: string,
+	remind: string,
 }
 
 export type Rule = {
@@ -308,6 +342,7 @@ M.look = {
 		headings = { "◉", "○", "◆", "◇" },
 		bullet = "•",
 		due = "📅",
+		remind = "⏰",
 	} :: Symbols,
 	rules = {} :: { Rule },
 	-- Draws the notes again; look.luau sets it.

@@ -234,21 +234,58 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     });
 }
 
+/// `t:quitting`, `t:detached`, `t:switched` and `t:notices`: what the
+/// editor asked of the client.
+fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
+    methods.add_method("quitting", |lua, _, ()| {
+        Ok(state(lua).editor.quit_requested())
+    });
+    methods.add_method("detached", |lua, _, ()| {
+        Ok(state_mut(lua).editor.take_detach_request())
+    });
+    methods.add_method("switched", |lua, _, ()| {
+        let to = state_mut(lua).editor.take_switch_request();
+        to.map(|to| {
+            let table = lua.create_table()?;
+            table.set("session", to.session)?;
+            table.set("path", to.path)?;
+            Ok::<_, mlua::Error>(table)
+        })
+        .transpose()
+    });
+    methods.add_method("notices", |lua, _, ()| {
+        let notices = state_mut(lua).editor.take_notices();
+        notices
+            .into_iter()
+            .map(|notice| {
+                let table = lua.create_table()?;
+                table.set("title", notice.title)?;
+                table.set("body", notice.body)?;
+                Ok(table)
+            })
+            .collect::<mlua::Result<Vec<_>>>()
+    });
+}
+
 /// The rows of a frame drawn at this size, as text.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
     use crate::render::{Plain, Size, Status};
-    let frame = || {
-        renderer(lua).frame(
+    let frame = || -> mlua::Result<_> {
+        let status = match api::status_line(lua, None, width)? {
+            Some(line) => Status::Line(line),
+            None => Status::Default { message: None },
+        };
+        Ok(renderer(lua).frame(
             &mut state_mut(lua).editor,
             Size { width, height },
-            &Status::Default { message: None },
+            &status,
             &Plain,
-        )
+        ))
     };
-    let mut drawn = frame();
+    let mut drawn = frame()?;
     // As the server does: what plugins do about views changing shows at once.
     if super::report_views(lua)? {
-        drawn = frame();
+        drawn = frame()?;
         super::report_views(lua)?;
     }
     Ok(drawn.rows.iter().map(crate::render::Row::text).collect())
@@ -329,22 +366,7 @@ impl UserData for TestContext {
             }))
         });
         add_screen_methods(methods);
-        methods.add_method("quitting", |lua, _, ()| {
-            Ok(state(lua).editor.quit_requested())
-        });
-        methods.add_method("detached", |lua, _, ()| {
-            Ok(state_mut(lua).editor.take_detach_request())
-        });
-        methods.add_method("switched", |lua, _, ()| {
-            let to = state_mut(lua).editor.take_switch_request();
-            to.map(|to| {
-                let table = lua.create_table()?;
-                table.set("session", to.session)?;
-                table.set("path", to.path)?;
-                Ok::<_, mlua::Error>(table)
-            })
-            .transpose()
-        });
+        add_client_methods(methods);
         methods.add_method("messages", |lua, _, ()| {
             Ok(state_mut(lua).editor.take_messages())
         });

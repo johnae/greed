@@ -340,6 +340,9 @@ pub struct Rect {
 pub struct StatusLine {
     pub left: Vec<Span>,
     pub right: Vec<Span>,
+    /// The command a click on each segment runs, by its place in `left`
+    /// and then `right`; segments past the end have none.
+    pub actions: Vec<Option<Arc<str>>>,
 }
 
 /// What goes on the status line.
@@ -409,6 +412,16 @@ pub struct Renderer<M> {
     images: RefCell<Vec<ImagePlacement>>,
     /// Where marks with actions are on screen, as last drawn.
     actions: RefCell<Vec<ActionArea>>,
+    /// Where status line segments with actions are, as last drawn.
+    status_actions: RefCell<Vec<StatusArea>>,
+}
+
+/// Where a status line segment with an action is on screen.
+#[derive(Debug, Clone)]
+struct StatusArea {
+    row: u16,
+    cols: Range<u16>,
+    action: Arc<str>,
 }
 
 impl<M: Measure> Renderer<M> {
@@ -418,6 +431,7 @@ impl<M: Measure> Renderer<M> {
             tab_width: 4,
             images: RefCell::default(),
             actions: RefCell::default(),
+            status_actions: RefCell::default(),
         }
     }
 
@@ -447,7 +461,7 @@ impl<M: Measure> Renderer<M> {
             }
             Status::Line(line) => line.clone(),
         };
-        rows.push(self.status_row(&status, usize::from(size.width)));
+        rows.push(self.status_row(&status, usize::from(size.width), screen.height));
 
         let mut cursor = main_cursor;
         let mut panels = Vec::new();
@@ -1183,12 +1197,13 @@ impl<M: Measure> Renderer<M> {
                 middle,
             ],
             right: vec![span(&format!("{}:{column} ", line + 1), Tag::STATUS)],
+            actions: Vec::new(),
         }
     }
 
-    /// Lays out a status line across `width` cells. If it doesn't fit, the
-    /// last segment on the left keeps only its end.
-    fn status_row(&self, status: &StatusLine, width: usize) -> Row {
+    /// Lays out a status line across `width` cells, on screen row `y`. If
+    /// it doesn't fit, the last segment on the left keeps only its end.
+    fn status_row(&self, status: &StatusLine, width: usize, y: u16) -> Row {
         let widths = |spans: &[Span]| {
             spans
                 .iter()
@@ -1204,15 +1219,39 @@ impl<M: Measure> Renderer<M> {
         }
         let padding = width.saturating_sub(widths(&left) + right);
 
+        let gap = Span::new(" ".repeat(padding), smallvec![Tag::STATUS]);
+        let action = |i: usize| status.actions.get(i).cloned().flatten();
+        let spans = (left.iter().enumerate().map(|(i, s)| (s, action(i))))
+            .chain([(&gap, None)])
+            .chain((status.right.iter().enumerate()).map(|(i, s)| (s, action(left.len() + i))));
         let mut row = Row::default();
-        for s in &left {
-            row.push(&s.text, s.tags.clone());
-        }
-        row.push(&" ".repeat(padding), smallvec![Tag::STATUS]);
-        for s in &status.right {
+        let mut found = self.status_actions.borrow_mut();
+        found.clear();
+        let mut x = 0;
+        let col = |x: usize| u16::try_from(x).unwrap_or(u16::MAX);
+        for (s, action) in spans {
+            let to = x + self.text_width(&s.text);
+            if let Some(action) = action {
+                found.push(StatusArea {
+                    row: y,
+                    cols: col(x)..col(to),
+                    action,
+                });
+            }
+            x = to;
             row.push(&s.text, s.tags.clone());
         }
         row
+    }
+
+    /// The action of the status line segment at (`col`, `row`), if it has
+    /// one.
+    fn status_action_at(&self, col: u16, row: u16) -> Option<Arc<str>> {
+        self.status_actions
+            .borrow()
+            .iter()
+            .find(|area| area.row == row && area.cols.contains(&col))
+            .map(|area| area.action.clone())
     }
 }
 

@@ -73,6 +73,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.statusline"] = { bg = p.bg_alt, fg = fg_alt },
 		["ui.statusline.mode"] = { bg = p.green, fg = p.bg, bold = true },
 		["ui.statusline.message"] = { fg = p.yellow },
+		["ui.statusline.warning"] = { fg = p.red, bold = true },
 		["ui.statusline.tab"] = { bg = accent, fg = p.bg },
 		["ui.statusline.tab.number"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.statusline.host"] = { bg = p.cyan, fg = p.bg },
@@ -152,6 +153,9 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["notes.bullet"] = { fg = p.blue },
 		["notes.due"] = { fg = p.cyan },
 		["notes.overdue"] = { fg = p.red, bold = true },
+		["notes.due.today"] = { fg = p.yellow, bold = true },
+		["notes.due.soon"] = { fg = p.yellow },
+		["notes.remind"] = { fg = p.purple },
 		["notes.tag"] = { fg = p.purple },
 		["notes.urgent"] = { fg = p.red, bold = true },
 

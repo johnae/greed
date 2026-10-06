@@ -1,9 +1,9 @@
 -- The mouse: a click focuses the view under it and puts the cursor there,
--- or runs the action of a mark's text (a button), dragging selects, a
--- double or triple click selects the word or line, shift extends and alt
--- adds a cursor, and the wheel scrolls the view under it. A plugin can
--- take the mouse in buffers of its own kind with `claim`, as the terminal
--- does to pass it on to the program in it.
+-- or runs the action of a mark's text or a status line piece (a button),
+-- dragging selects, a double or triple click selects the word or line,
+-- shift extends and alt adds a cursor, and the wheel scrolls the view
+-- under it. A plugin can take the mouse in buffers of its own kind with
+-- `claim`, as the terminal does to pass it on to the program in it.
 
 local greed = require("@greed")
 local text = require("./text")
@@ -102,6 +102,9 @@ end
 greed.on("mouse", function(event: greed.MouseEvent)
 	local view = event.view
 	if view == nil then
+		if event.kind == "press" and event.button == "left" and event.action then
+			greed.run(event.action)
+		end
 		return
 	end
 	-- A mark's text with an action is a button: the click runs it.

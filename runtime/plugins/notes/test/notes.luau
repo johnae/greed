@@ -322,3 +322,208 @@ test("space n t jots a thought down in the inbox, with today's date", function(t
 	local text = greed.fs.read(dir .. "/inbox.md")
 	assert(text == `- rope for undo ({today})\n`, text)
 end)
+
+-- The date `days` from today, and with `time` the minute `seconds` from now.
+local function day(days: number): string
+	return os.date("%Y-%m-%d", os.time() + days * 86400) :: string
+end
+local function minute(seconds: number): string
+	return os.date("%Y-%m-%d %H:%M", os.time() + seconds) :: string
+end
+
+-- Whether a float shows text with `text` in it.
+local function floating(t: test.TestContext, text: string): boolean
+	for _, shown in t:floats() do
+		if string.find(shown, text, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+test(
+	"a reminder that came due shows until dismissed, goes to the desktop, and only once",
+	function(t)
+		greed.option.set("notes-remind-desktop", false)
+		folder(t, {
+			["inbox.md"] = `- [ ] call the bank remind:{minute(-3600)}\n`
+				.. `- [x] ticked remind:{minute(-3600)}\n`
+				.. `- [ ] later remind:{minute(7200)}\n`
+				.. `plain line remind:{minute(-60)}\n`,
+		})
+		t:buffer("|x")
+		t:wait(61000)
+		assert(
+			floating(t, "call the bank") and floating(t, "plain line"),
+			table.concat(t:floats(), "|")
+		)
+		assert(
+			not floating(t, "ticked") and not floating(t, "later"),
+			table.concat(t:floats(), "|")
+		)
+		local notices = t:notices()
+		assert(#notices == 1 and notices[1].title == "2 reminders", tostring(#notices))
+		assert(notices[1].body == "call the bank\nplain line", notices[1].body)
+		local record = greed.fs.read(`{greed.fs.dirs().cache}/notes-reminders`) or ""
+		assert(string.find(record, "call the bank", 1, true), record)
+		t:keys("space n r")
+		assert(not floating(t, "call the bank"), "dismissed")
+		t:wait(61000)
+		assert(#t:notices() == 0 and not floating(t, "call the bank"), "once")
+	end
+)
+
+test("a reminder with only a date goes off at notes-remind-time", function(t)
+	greed.option.set("notes-remind-desktop", false)
+	local now = os.date("*t") :: any
+	-- A minute that has passed today, or the first one.
+	local past = string.format("%02d:%02d", now.hour, math.max(now.min - 1, 0))
+	greed.option.set("notes-remind-time", past)
+	folder(t, { ["inbox.md"] = `- [ ] water the plants remind:{day(0)}\n` })
+	t:buffer("|x")
+	t:wait(61000)
+	assert(floating(t, "water the plants"), "it went off")
+	greed.option.set("notes-remind-time", "09:00")
+end)
+
+test("saving a note with a reminder that's due shows it at once; clicking it opens it", function(t)
+	greed.option.set("notes-remind-desktop", false)
+	local dir = folder(t, { ["work.md"] = "# Work\n" })
+	greed.open(dir .. "/work.md")
+	local buffer = greed.view():buffer()
+	buffer:edit(function(e)
+		e:insert(buffer:len(), `- [ ] send the report remind:{minute(-120)}\n`)
+	end)
+	t:run("save")
+	assert(floating(t, "send the report"), "shown on save")
+	t:draw(100, 20)
+	-- Its first line, at the top right, inside the border.
+	t:mouse("press", 97, 1)
+	t:wait(10)
+	assert(not floating(t, "send the report"), "the notice closed")
+	local view = greed.view()
+	assert(view:buffer():path() == dir .. "/work.md", view:buffer():path())
+	local selection = view:selection()
+	assert(view:buffer():line_of(selection.ranges[1].head) == 1, "on the reminder's line")
+end)
+
+test("the status line counts what's due today, warns of overdue, and opens the agenda", function(t)
+	folder(t, {
+		["a.md"] = `- [ ] pay rent due:{day(0)}\n- [ ] renew due:{day(-2)}\n- [ ] later due:{day(5)}\n`,
+	})
+	t:buffer("|x")
+	t:wait(61000)
+	local _, right = t:status()
+	assert(right and string.find(right, "1 overdue, 1 due today", 1, true), right)
+	local rows = t:draw(100, 10)
+	local at = string.find(rows[10], "overdue", 1, true)
+	assert(at, rows[10])
+	t:mouse("press", utf8.len(string.sub(rows[10], 1, at - 1)) or 0, 9)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "pay rent", 1, true), "the agenda opened: " .. text)
+	t:keys("esc")
+
+	folder(t, { ["a.md"] = `- [ ] pay rent due:{day(0)}\n` })
+	t:wait(61000)
+	_, right = t:status()
+	assert(right and string.find(right, " 1 due today ", 1, true), right)
+	assert(not string.find(right, "overdue", 1, true), right)
+	folder(t, { ["a.md"] = "- [ ] someday\n" })
+	t:wait(61000)
+	_, right = t:status()
+	assert(right and not string.find(right, "due", 1, true), right)
+end)
+
+test("space k on a due date or a reminder says when it is in words", function(t)
+	folder(t)
+	t:buffer(`- [ ] x due:{day(0)} due:{day(3)} remind:{day(1)} 18:00 end|`)
+	local buffer = greed.view():buffer()
+	local function words_at(marker: string): string
+		local from = string.find(buffer:text(), marker, 1, true) :: number
+		greed.view():set_selection({ ranges = { { anchor = from, head = from } }, primary = 1 })
+		t:keys("space k")
+		local messages = t:messages()
+		return messages[#messages] or ""
+	end
+	assert(words_at(`due:{day(0)}`) == "due today", words_at(`due:{day(0)}`))
+	local soon = words_at(`due:{day(3)}`)
+	assert(string.find(soon, ", in 3 days", 1, true), soon)
+	local remind = words_at("remind:")
+	assert(string.match(remind, "^remind tomorrow, 18:00, in %d+ hours$"), remind)
+	local elsewhere = words_at("end")
+	assert(not string.find(elsewhere, "due", 1, true), "elsewhere it's the usual hover")
+end)
+
+test("due dates are colored by how close they are, and reminders show their time", function(t)
+	local rows = shown(
+		t,
+		`- [ ] a due:{day(-1)}\n- [ ] b due:{day(0)}\n- [ ] c due:{day(2)}\n`
+			.. `- [ ] d due:{day(30)} remind:2027-01-02 18:00\n- [ ] here`
+	)
+	assert(string.match(rows[4], "^☐ d 📅 %d+ %a+ ?%d* ⏰ 2 Jan 2027 18:00$"), rows[4])
+	local styles: { [string]: boolean } = {}
+	for _, mark in greed.view():buffer():decorations("notes-look") do
+		styles[mark.style] = true
+	end
+	for _, style in
+		{ "notes.overdue", "notes.due.today", "notes.due.soon", "notes.due", "notes.remind" }
+	do
+		assert(styles[style], style)
+	end
+end)
+
+test("agents set reminders and change todos one at a time", function(t)
+	local dir = folder(t, { ["inbox.md"] = "- [ ] call the bank due:2026-10-05\nplain\n" })
+	run_tool("notes_remind", { note = "inbox", line = 1, when = "2026-10-06T18:00" })
+	run_tool("notes_remind", { note = "inbox", line = 1, when = "2026-10-06 19:30" })
+	run_tool("notes_remind", { text = "buy milk", when = "2026-10-07" })
+	local text = greed.fs.read(dir .. "/inbox.md")
+	assert(
+		text
+			== "- [ ] call the bank due:2026-10-05 remind:2026-10-06 19:30\nplain\n"
+				.. "- [ ] buy milk remind:2026-10-07\n",
+		text
+	)
+	assert(
+		not pcall(run_tool, "notes_remind", { text = "x", when = "tonight" }),
+		"a bad time fails"
+	)
+	assert(not pcall(run_tool, "notes_remind", { when = "2026-10-07" }), "neither line nor text")
+	assert(not pcall(run_tool, "notes_remind", { note = "inbox", line = 9, when = "2026-10-07" }))
+
+	local function update(args: { [string]: any }, expected: string)
+		args.note, args.line = "inbox", 1
+		local changed: string = run_tool("notes_update_todo", args)
+		assert(changed == expected, changed)
+	end
+	update(
+		{ text = "call the bank about the loan" },
+		"- [ ] call the bank about the loan due:2026-10-05 remind:2026-10-06 19:30"
+	)
+	update(
+		{ due = "", remind = "2026-10-08 08:00", done = true },
+		"- [x] call the bank about the loan remind:2026-10-08 08:00"
+	)
+	update(
+		{ done = false, due = "2026-11-01" },
+		"- [ ] call the bank about the loan remind:2026-10-08 08:00 due:2026-11-01"
+	)
+	assert(
+		not pcall(run_tool, "notes_update_todo", { note = "inbox", line = 2, done = true }),
+		"not a todo"
+	)
+	assert(
+		not pcall(run_tool, "notes_update_todo", { note = "inbox", line = 1, due = "soon" }),
+		"a bad date"
+	)
+	local todo = run_tool("notes_todos")[1]
+	assert(todo.remind == "2026-10-08 08:00" and todo.due == "2026-11-01", todo.remind)
+	-- An open note changes in the editor.
+	greed.open(dir .. "/inbox.md")
+	run_tool("notes_update_todo", { note = "inbox", line = 3, done = true })
+	assert(
+		string.find(greed.view():buffer():text(), "- [x] buy milk", 1, true),
+		greed.view():buffer():text()
+	)
+	assert(not greed.view():buffer():modified(), "and is saved")
+end)

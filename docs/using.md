@@ -866,6 +866,8 @@ to show other words.
 | `space n /` | Search every note as you type |
 | `space n x` | Tick a todo or untick it; a plain line becomes one |
 | `space n t` | Jot a thought or an idea down in the inbox, with today's date: for things that aren't todos |
+| `space n r` | Dismiss the reminders notice (below) |
+| `space k` | On a due date or a reminder, say when it is in words ("tomorrow, 18:00, in 25 hours") |
 | `space n l` | Have Greed's agent connect the inbox (or the note you're in) to your other notes (below) |
 | `g d` | Follow the link under the cursor, making the note if it's new |
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
@@ -881,6 +883,39 @@ the brackets and the markup below as written.
 ```luau
 require("@greed").option.set("notes-folder", "~/Documents/notes")
 ```
+
+### Reminders
+
+Put `remind:2026-10-06 18:00` on a todo, or on any line of a note, and
+Greed reminds you then. A date alone, `remind:2026-10-06`, goes off at
+09:00 (`:set notes-remind-time 08:30` to change it). Times are your
+computer's local time. Ticked todos don't remind you.
+
+When a reminder comes due:
+
+- A notice opens at the top right and stays until you dismiss it with
+  `space n r`. Click a reminder in it to open its note at that line.
+- Your desktop shows a notification, with `notify-send` on Linux or
+  `osascript` on macOS, when they're installed. `:set notes-remind-desktop
+  false` turns this off.
+- In a terminal that isn't focused, Greed also sends the terminal's
+  notification escape and a bell, so the terminal can tell you even over
+  `greed ssh`. Terminals that understand it (kitty, WezTerm, Ghostty,
+  iTerm2, foot and others) show a notification of their own. Inside tmux
+  only the bell gets through, and only with tmux's `focus-events` on. When the
+  terminal and `notify-send` both show one, `:set notes-remind-desktop
+  false` leaves only the terminal's.
+
+Reminders that came due while Greed wasn't running show the next time it
+starts. Greed remembers which ones went off in its cache folder, so each
+goes off once.
+
+The status line says how many todos are due today, like `2 due today`, in a
+warning color when some are overdue (`1 overdue, 2 due today`). Click it to
+open the agenda.
+
+Agents can set reminders too: ask Greed's agent to "remind me this evening
+to call the bank" (see [Agents](agents.md)).
 
 ### Connecting your notes
 
@@ -919,8 +954,9 @@ require("@notes").add_place("work", "~/work/notes") -- notes named work:NAME
 
 A note's markup shows as symbols: todo boxes as ☐ and ☑ (real checkboxes in
 the window; done ones dimmed and struck through), headings as a symbol for
-their level, list dashes as bullets, and `due:2026-10-03` as 📅 3 Oct, in
-red once it's past. The file
+their level, list dashes as bullets, `due:2026-10-03` as 📅 3 Oct (red
+once it's past, yellow on the day and in the three days before), and
+`remind:2026-10-06 18:00` as ⏰ 6 Oct 18:00. The file
 stays plain Markdown: while you type on a line (insert mode), it shows as
 written; in edit mode, markup shows once the cursor is inside it. Click a
 box to tick it, or press `enter` on it, and a heading's symbol folds its
@@ -947,7 +983,8 @@ A rule's `pattern` is a Luau pattern; with `show` the match is replaced by
 that text, and with `action` (a command name) clicking it or pressing
 `enter` on it runs the command. The styles notes use are `notes.todo`,
 `notes.done`, `notes.done.box`, `notes.heading`, `notes.bullet`,
-`notes.due` and `notes.overdue`.
+`notes.due`, `notes.due.soon`, `notes.due.today`, `notes.overdue` and
+`notes.remind`.
 
 Agents can read and write your notes and todos too; see
 [Agents](agents.md).

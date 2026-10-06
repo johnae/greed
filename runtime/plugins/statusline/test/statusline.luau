@@ -301,3 +301,33 @@ test(
 		)
 	end
 )
+
+test("clicking a piece with an action runs it, in either style", function(t)
+	local statusline = require("@statusline")
+	local clicked = 0
+	greed.command({
+		name = "test-status-click",
+		doc = "Counts clicks",
+		run = function()
+			clicked += 1
+		end,
+	})
+	statusline.add("left", "clicky", function()
+		return { text = "CLICK", style = "ui.statusline.warning", action = "test-status-click" }
+	end)
+	t:buffer("|abc")
+	for _, pills in { false, true } do
+		greed.option.set("statusline-pills", pills)
+		local rows = t:draw(80, 4)
+		local at = string.find(rows[4], "CLICK", 1, true)
+		assert(at, rows[4])
+		-- The cell it's in: pills' rounded ends take more than a byte.
+		local col = utf8.len(string.sub(rows[4], 1, at - 1)) or 0
+		t:mouse("press", col, 3)
+		t:mouse("release", col, 3)
+		t:mouse("press", 0, 3)
+	end
+	assert(clicked == 2, `clicked {clicked} times`)
+	statusline.remove("clicky")
+	greed.option.set("statusline-pills", false)
+end)

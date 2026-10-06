@@ -35,8 +35,9 @@ greed.option.define({
 
 --- What a piece of the status line shows: text, or a pill in a style with
 --- rounded ends. A piece made of several pills, like the tab's number and
---- name, gives a list.
-export type Pill = { text: string, style: string? }
+--- name, gives a list. A pill's `action` is a command a click on the piece
+--- runs (the first pill's, for a list).
+export type Pill = { text: string, style: string?, action: string? }
 export type Part = string | Pill | { Pill }
 export type Piece = (ctx: greed.StatusContext) -> Part?
 
@@ -358,10 +359,18 @@ local function text_in(text: string, look: string?, glow: Glow?, out: { greed.St
 	table.insert(out, if look then { text = text, style = look } else text)
 end
 
+-- The styles pieces keep without the statusline-pills option.
+local KEPT = {
+	["ui.statusline.mode"] = true,
+	["ui.statusline.message"] = true,
+	["ui.statusline.warning"] = true,
+}
+
 -- `part` as segments, lit by `glow` if there is one. With the
 -- statusline-pills option, pills sit side by side between rounded ends in
--- their colors; without, only the mode keeps its colors and the rest is
--- plain text. Each piece has a space either side.
+-- their colors; without, only the mode, messages and warnings
+-- (`ui.statusline.warning`) keep their colors and the rest is plain text.
+-- Each piece has a space either side.
 local function segments(part: Part, glow: Glow?, out: { greed.StatusSegment })
 	local list = pills(part)
 	if list == nil or greed.option.get("statusline-pills") ~= true then
@@ -375,7 +384,7 @@ local function segments(part: Part, glow: Glow?, out: { greed.StatusSegment })
 			end
 			text = table.concat(texts, " ")
 			local look = list[1].style
-			if look == "ui.statusline.mode" or look == "ui.statusline.message" then
+			if KEPT[look :: string] then
 				kept = look
 			end
 		end
@@ -407,14 +416,39 @@ local function segments(part: Part, glow: Glow?, out: { greed.StatusSegment })
 	table.insert(out, " ")
 end
 
+-- The command a click on `part` runs, if it has one.
+local function action_of(part: Part): string?
+	if type(part) == "string" then
+		return nil
+	end
+	local list = part :: { Pill }
+	return (part :: Pill).action or (list[1] and list[1].action)
+end
+
+-- Makes the segments from `first` on run `action` when clicked: the whole
+-- piece, its spaces and ends too.
+local function clickable(out: { greed.StatusSegment }, first: number, action: string)
+	for i = first, #out do
+		local segment = out[i]
+		out[i] = if type(segment) == "string"
+			then { text = segment, action = action }
+			else { text = segment.text, style = segment.style, action = action }
+	end
+end
+
 --- The status line's segments for `ctx`, as built from the pieces.
 function M.build(ctx: greed.StatusContext): greed.StatusParts
 	local function side(list: { Entry }): { greed.StatusSegment }
-		local out = {}
+		local out: { greed.StatusSegment } = {}
 		for _, entry in list do
 			local part = entry.build(ctx)
 			if part then
+				local first = #out + 1
 				segments(part, glows[entry.name], out)
+				local action = action_of(part)
+				if action then
+					clickable(out, first, action)
+				end
 			end
 		end
 		return out

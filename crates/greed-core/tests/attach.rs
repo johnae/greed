@@ -34,7 +34,8 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
                 "keys",
                 "local greed = require('@greed')
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
-                 greed.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go' })",
+                 greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
+                 greed.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -116,6 +117,29 @@ fn clients_attach_over_the_socket_and_see_frames_and_edits() {
 }
 
 #[test]
+fn notifications_go_to_the_attached_client() {
+    let (conn, attach) = start("notify");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-n");
+    loop {
+        match client.next() {
+            Output::Notify(notice) => {
+                assert_eq!(
+                    (notice.title.as_str(), notice.body.as_str()),
+                    ("Reminder", "call the bank")
+                );
+                break;
+            }
+            Output::Frame(_) | Output::Delta(_) => {}
+            other => panic!("expected a notification, got {other:?}"),
+        }
+    }
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
 fn a_new_client_takes_over_from_the_one_before() {
     let (conn, attach) = start("takeover");
     let mut first = attach();
@@ -142,7 +166,11 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
     loop {
         match client.next() {
             Output::Detached => break,
-            Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) => {}
+            Output::Frame(_)
+            | Output::Delta(_)
+            | Output::Image(_)
+            | Output::Clipboard(_)
+            | Output::Notify(_) => {}
             other @ (Output::Exit | Output::Switch(_)) => {
                 panic!("expected a detach, got {other:?}")
             }
@@ -210,7 +238,11 @@ fn a_session_can_send_its_client_to_another_session() {
                 assert_eq!(to.path, None);
                 break;
             }
-            Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) => {}
+            Output::Frame(_)
+            | Output::Delta(_)
+            | Output::Image(_)
+            | Output::Clipboard(_)
+            | Output::Notify(_) => {}
             other => panic!("expected a switch, got {other:?}"),
         }
     }

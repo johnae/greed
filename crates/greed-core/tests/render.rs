@@ -308,6 +308,7 @@ fn plugin_status_lines_are_padded_and_trimmed() {
             span(" a/long/path/file.rs", Tag::STATUS),
         ],
         right: vec![span("3:4 ", Tag::STATUS)],
+        actions: Vec::new(),
     };
     let render = |width| {
         let mut ed = editor("|x");
@@ -321,6 +322,31 @@ fn plugin_status_lines_are_padded_and_trimmed() {
     };
     assert_eq!(render(32), " N  a/long/path/file.rs     3:4 ");
     assert_eq!(render(20), " N …ath/file.rs 3:4 ");
+}
+
+#[test]
+fn a_click_on_a_status_segment_finds_its_action() {
+    let span = |text: &str| Span::new(text, [Tag::STATUS].into_iter().collect());
+    let line = StatusLine {
+        left: vec![span(" N "), span("agenda")],
+        right: vec![span("2 due"), span(" 3:4 ")],
+        actions: vec![None, Some("left".into()), Some("right".into())],
+    };
+    let mut ed = editor("|x");
+    let renderer = Renderer::new(CellWidth);
+    let size = Size {
+        width: 20,
+        height: 3,
+    };
+    renderer.frame(&mut ed, size, &Status::Line(line), &Plain);
+    let at = |col| renderer.hit(&ed, col, 2).action.map(|a| a.to_string());
+    assert_eq!(at(0), None, "a segment without one");
+    assert_eq!(at(3).as_deref(), Some("left"));
+    assert_eq!(at(8).as_deref(), Some("left"));
+    assert_eq!(at(9), None, "the padding");
+    assert_eq!(at(10).as_deref(), Some("right"), "the right side");
+    assert_eq!(at(15), None, "a segment past the actions");
+    assert_eq!(renderer.hit(&ed, 3, 0).action, None, "another row");
 }
 
 /// Decorations given up front, for tests.

@@ -916,7 +916,7 @@ export type MouseEvent = {
 	--- The place in the view's buffer under it: the character there, or the
 	--- end of the line past it. Over a mark's text, where the mark starts.
 	pos: number?,
-	--- The action of the mark whose text it's over, if that has one.
+	--- The action of the mark whose text it's over, or of the status line segment (with no `view`), if that has one.
 	action: string?,
 	--- The cell in the view's text, from its top left, right of the gutter.
 	x: number?,
@@ -988,6 +988,8 @@ export type StatusSegment = string | {
 	text: string,
 	--- A style name, e.g. "ui.statusline.mode", drawn over "ui.statusline".
 	style: string?,
+	--- A command a click on it runs.
+	action: string?,
 }
 
 --- What a status line function gets, for the main view.
@@ -1016,6 +1018,12 @@ export type Clipboard = {
 	get: () -> { string }?,
 	--- Recent copies, newest first.
 	history: () -> { { string } },
+}
+
+--- The client you see the editor through, as your desktop.
+export type Client = {
+	--- Sends a notification to your desktop through the attached client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
+	notify: (title: string, body: string?) -> (),
 }
 
 --- A problem a language server found.
@@ -1407,6 +1415,7 @@ export type Greed = {
 	option: Options,
 	history: History,
 	clipboard: Clipboard,
+	client: Client,
 	lsp: Lsp,
 	fs: Fs,
 	control: Control,

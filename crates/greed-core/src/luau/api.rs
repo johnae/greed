@@ -17,7 +17,7 @@ use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{
-    Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, PanelOptions, Side,
+    Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, Notice, PanelOptions, Side,
 };
 
 type LuaResult<T> = mlua::Result<T>;
@@ -369,6 +369,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("option", option_module(lua, owner)?)?;
     greed.set("history", history_module(lua)?)?;
     greed.set("clipboard", clipboard_module(lua)?)?;
+    greed.set("client", client_module(lua)?)?;
     greed.set("lsp", super::lsp::module(lua, owner)?)?;
     greed.set("fs", super::fs::module(lua)?)?;
     greed.set("control", super::requests::module(lua)?)?;
@@ -697,6 +698,20 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     Ok(clipboard)
+}
+
+/// `greed.client`: the attached client, as the user's desktop.
+fn client_module(lua: &Lua) -> LuaResult<Table> {
+    let client = lua.create_table()?;
+    client.set(
+        "notify",
+        lua.create_function(|lua, (title, body): (String, Option<String>)| {
+            let body = body.unwrap_or_default();
+            state_mut(lua).editor.notify(Notice { title, body });
+            Ok(())
+        })?,
+    )?;
+    Ok(client)
 }
 
 fn history_module(lua: &Lua) -> LuaResult<Table> {
@@ -1307,21 +1322,34 @@ pub(super) fn status_line(
     ctx.set("width", width)?;
     let line: Table =
         super::capabilities::running_as(lua, Some(&owner), "the status line", || build.call(ctx))?;
+    let mut actions = Vec::new();
+    let left = segments(line.get("left")?, &mut actions)?;
+    let right = segments(line.get("right")?, &mut actions)?;
+    if actions.iter().all(Option::is_none) {
+        actions.clear();
+    }
     Ok(Some(StatusLine {
-        left: segments(line.get("left")?)?,
-        right: segments(line.get("right")?)?,
+        left,
+        right,
+        actions,
     }))
 }
 
-fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
+/// The spans of a side of the status line, adding each one's action to
+/// `actions`.
+fn segments(list: Option<Table>, actions: &mut Vec<Option<Arc<str>>>) -> LuaResult<Vec<Span>> {
     let Some(list) = list else {
         return Ok(Vec::new());
     };
     list.sequence_values::<Value>()
         .map(|segment| {
-            let (text, style) = match segment? {
-                Value::String(s) => (s.to_str()?.to_owned(), None),
-                Value::Table(t) => (t.get::<String>("text")?, t.get::<Option<String>>("style")?),
+            let (text, style, action) = match segment? {
+                Value::String(s) => (s.to_str()?.to_owned(), None, None),
+                Value::Table(t) => (
+                    t.get::<String>("text")?,
+                    t.get::<Option<String>>("style")?,
+                    t.get::<Option<String>>("action")?,
+                ),
                 other => {
                     return Err(mlua::Error::runtime(format!(
                         "status line segments are strings or {{ text = ..., style = ... }}, not {}",
@@ -1329,6 +1357,7 @@ fn segments(list: Option<Table>) -> LuaResult<Vec<Span>> {
                     )));
                 }
             };
+            actions.push(action.map(Into::into));
             let mut tags = smallvec::smallvec![Tag::STATUS];
             if let Some(style) = style {
                 tags.push(Tag::from(style.as_str()));

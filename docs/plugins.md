@@ -374,6 +374,12 @@ greed.tab.set_layout({
   the theme plugin switches themes.
 - The status line is pieces you can add to or take away from with
   `require("@statusline").add` and `.remove`, or replace with `greed.statusline`.
+  A piece returning `{ text = "3 due", action = "notes-agenda" }` runs the
+  command when clicked, and `style = "ui.statusline.warning"` draws it as a
+  warning.
+- `greed.client.notify(title, body)` sends a notification to your desktop
+  through the attached client: the terminal shows it (OSC 9, or OSC 777 in
+  foot and urxvt) with a bell while it isn't focused.
 - Features are what a plugin turns on for some buffers beyond their
   language, like notes for Markdown in the notes folder. Name yours with
   `require("@core").features.add("todos", function(buffer) return ... end, "my-plugin")`,

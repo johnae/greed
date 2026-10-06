@@ -21,7 +21,7 @@ use crate::luau::{Host, HostError};
 use crate::mouse::Mouse;
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status, StatusLine};
 use crate::syntax::{Highlight, Syntax};
-use crate::{BufferId, Editor, SwitchTo};
+use crate::{BufferId, Editor, Notice, SwitchTo};
 use greed_text::Rope;
 
 /// A message from a client to the server.
@@ -62,6 +62,8 @@ pub enum Output {
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
+    /// A notification for the user's desktop, from `greed.client.notify`.
+    Notify(Notice),
 }
 
 /// An image as it goes to a client: PNG, in base64, which is how terminal
@@ -367,6 +369,10 @@ impl Server<'_> {
     fn follow_requests(&mut self) -> bool {
         if self.host.with_editor(crate::Editor::quit_requested) {
             return false;
+        }
+        // Without a client attached they go nowhere.
+        for notice in self.host.with_editor_mut(Editor::take_notices) {
+            self.send(Output::Notify(notice));
         }
         if let Some(to) = self
             .host

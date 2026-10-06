@@ -43,9 +43,12 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     // Keys are read until this run ends, so a run that follows (after a
     // switch to another session) gets them all.
     let reading = Arc::new(AtomicBool::new(true));
+    // Terminals that don't report focus count as focused.
+    let focused = Arc::new(AtomicBool::new(true));
     let keys = {
         let input = input.clone();
         let reading = reading.clone();
+        let focused = focused.clone();
         thread::spawn(move || {
             while reading.load(Ordering::Relaxed) {
                 if !event::poll(KEY_POLL).unwrap_or(false) {
@@ -62,7 +65,15 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                         send_cell_size(&input);
                         Some(Input::Resize(Size { width, height }))
                     }
-                    _ => None,
+                    Event::FocusGained => {
+                        focused.store(true, Ordering::Relaxed);
+                        None
+                    }
+                    Event::FocusLost => {
+                        focused.store(false, Ordering::Relaxed);
+                        None
+                    }
+                    Event::Key(_) => None,
                 };
                 if message.is_some_and(|m| input.send(m).is_err()) {
                     break;
@@ -87,6 +98,13 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
             match message {
                 Output::Image(image) => screen.graphics.add(image),
                 Output::Clipboard(text) => copy_to_system(&mut out, &text)?,
+                Output::Notify(notice) => {
+                    if !focused.load(Ordering::Relaxed) {
+                        let term = std::env::var("TERM").unwrap_or_default();
+                        write!(out, "{}", notification(&term, &notice.title, &notice.body))?;
+                        out.flush()?;
+                    }
+                }
                 Output::Frame(frame) => {
                     current = Some(frame);
                     changed = true;
@@ -145,6 +163,26 @@ fn osc52(text: &str) -> String {
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(text);
     format!("\x1b]52;c;{encoded}\x07")
+}
+
+/// A desktop notification as the terminal `term` takes it, then a bell:
+/// OSC 777 for foot and urxvt, OSC 9 for the rest. Control characters are
+/// left out, and in OSC 777 the semicolons that separate its fields.
+fn notification(term: &str, title: &str, body: &str) -> String {
+    let fields = term.starts_with("foot") || term.starts_with("rxvt");
+    let clean = |text: &str| -> String {
+        text.chars()
+            .filter(|&c| !(c.is_control() || (fields && c == ';')))
+            .collect()
+    };
+    let (title, body) = (clean(title), clean(body));
+    if fields {
+        format!("\x1b]777;notify;{title};{body}\x07\x07")
+    } else if body.is_empty() {
+        format!("\x1b]9;{title}\x07\x07")
+    } else {
+        format!("\x1b]9;{title}: {body}\x07\x07")
+    }
 }
 
 /// Whether to take the mouse from the terminal: unless `$GREED_MOUSE` is
@@ -304,7 +342,8 @@ impl Terminal {
         execute!(
             io::stdout(),
             terminal::EnterAlternateScreen,
-            event::EnableBracketedPaste
+            event::EnableBracketedPaste,
+            event::EnableFocusChange
         )?;
         if mouse_wanted() {
             execute!(io::stdout(), event::EnableMouseCapture)?;
@@ -338,6 +377,7 @@ fn restore() {
         cursor::Show,
         event::DisableMouseCapture,
         event::DisableBracketedPaste,
+        event::DisableFocusChange,
         terminal::LeaveAlternateScreen
     );
     let _ = terminal::disable_raw_mode();
@@ -614,6 +654,25 @@ mod tests {
     use super::*;
     use greed_core::render::{Row, Tag};
     use greed_core::theme::Theme;
+
+    #[test]
+    fn notifications_use_the_escape_the_terminal_takes() {
+        assert_eq!(
+            notification("xterm-kitty", "Reminder", "call the bank"),
+            "\x1b]9;Reminder: call the bank\x07\x07"
+        );
+        assert_eq!(notification("", "Done", ""), "\x1b]9;Done\x07\x07");
+        assert_eq!(
+            notification("foot", "Reminder", "a; b"),
+            "\x1b]777;notify;Reminder;a b\x07\x07",
+            "semicolons would split the fields"
+        );
+        assert_eq!(
+            notification("rxvt-unicode-256color", "x\x1b]", "y\n"),
+            "\x1b]777;notify;x];y\x07\x07",
+            "control characters are left out"
+        );
+    }
 
     #[test]
     fn truecolor_is_what_greed_colors_or_the_terminal_says() {

@@ -176,6 +176,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         &["current", "list", "remote", "attached"],
     ),
     ("clipboard", "use the clipboard", &[]),
+    ("client", "send you desktop notifications", &[]),
 ];
 
 /// The error for sandboxed code doing `what`, which says it needs approval;

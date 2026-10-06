@@ -98,9 +98,15 @@ fn edge_at(editor: &Editor, col: u16, row: u16) -> Option<Hit> {
 }
 
 impl<M: Measure> Renderer<M> {
-    /// What's at (`col`, `row`) on screen: floating views first, then
-    /// panels, then the shown tab's panes.
+    /// What's at (`col`, `row`) on screen: a status line segment with an
+    /// action, floating views, then panels, then the shown tab's panes.
     pub fn hit(&self, editor: &Editor, col: u16, row: u16) -> Hit {
+        if let Some(action) = self.status_action_at(col, row) {
+            return Hit {
+                action: Some(action),
+                ..Hit::default()
+            };
+        }
         if let Some(tab) = self.tab_at(editor, col, row) {
             return Hit {
                 tab: Some(tab),

@@ -1,6 +1,7 @@
 -- How notes look: Markdown's markup shows as symbols. Todo boxes become ☐
--- and ☑, headings a symbol for their level, list dashes bullets, and due
--- dates a calendar and the day. The file stays plain Markdown; typing on a
+-- and ☑, headings a symbol for their level, list dashes bullets, due
+-- dates a calendar and the day (colored by how close it is), reminders an
+-- alarm clock and the time. The file stays plain Markdown; typing on a
 -- line shows what's really there (see `core.reveal`). The symbols are
 -- buttons too: clicking a box ticks it, a heading's symbol folds its
 -- section.
@@ -18,17 +19,23 @@ local greed = require("@greed")
 local core = require("@core")
 local markdown = require("@markdown")
 local notes = require("./notes")
+local todos = require("./todos")
+local dates = require("./dates")
 
 local M = {}
 
-local MONTHS =
-	{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
-
--- "3 Oct" for this year, "3 Oct 2027" for another.
-local function day(year: string, month: string, date: string): string
-	local name = MONTHS[tonumber(month) or 0] or month
-	local shown = `{tonumber(date)} {name}`
-	return if year == string.sub(notes.today(), 1, 4) then shown else `{shown} {year}`
+-- How close a due date is, as its style: overdue, today, in the next
+-- three days, or later.
+local function due_style(date: string): string
+	local days = dates.days(date) or 0
+	if days < 0 then
+		return "notes.overdue"
+	elseif days == 0 then
+		return "notes.due.today"
+	elseif days <= 3 then
+		return "notes.due.soon"
+	end
+	return "notes.due"
 end
 
 -- The marks for one line of text starting at `at`.
@@ -80,14 +87,19 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 			show(#spaces, #spaces + 2, symbols.bullet .. " ", "notes.bullet")
 		end
 	end
-	for from, year, month, date, to in string.gmatch(text, "()due:(%d%d%d%d)%-(%d%d)%-(%d%d)()") do
-		local overdue = `{year}-{month}-{date}` < notes.today()
+	for from, date, to in string.gmatch(text, "()due:(%d%d%d%d%-%d%d%-%d%d)()") do
+		local day = date :: string
 		show(
 			(from :: number) - 1,
 			(to :: number) - 1,
-			`{symbols.due} {day(year :: string, month :: string, date :: string)}`,
-			if overdue then "notes.overdue" else "notes.due"
+			`{symbols.due} {dates.short(day)}`,
+			due_style(day)
 		)
+	end
+	local remind_from, remind_to, date, time = todos.marker(text, "remind")
+	if remind_from and remind_to and date then
+		local shown = if time then `{dates.short(date)} {time}` else dates.short(date)
+		show(remind_from - 1, remind_to - 1, `{symbols.remind} {shown}`, "notes.remind")
 	end
 	for _, rule in notes.look.rules do
 		local start = 1

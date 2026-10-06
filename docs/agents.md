@@ -56,6 +56,8 @@ claude mcp add greed -- greed mcp
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
 | `notes_todos`, `notes_add_todo`, `notes_add_thought` | The todos in your notes, soonest due first, and adding a todo or a thought |
+| `notes_update_todo` | Change one todo: its text, due date or reminder, or tick it |
+| `notes_remind` | Set a reminder on a line of a note, or add a todo with one ("remind me this evening") |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |

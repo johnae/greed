@@ -206,6 +206,14 @@ pub struct SwitchTo {
     pub path: Option<String>,
 }
 
+/// A notification for the user's desktop, which the attached client shows
+/// its own way: a terminal's notification escape, or nothing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Notice {
+    pub title: String,
+    pub body: String,
+}
+
 /// How the cursor looks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CursorShape {
@@ -295,6 +303,8 @@ pub struct Editor {
     clipboard: Vec<Vec<String>>,
     /// The latest copy, until the client has been told.
     copied: Option<String>,
+    /// Notifications for the attached client, until it has been told.
+    notices: Vec<Notice>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     /// How line numbers count, where buffers show them.
@@ -337,6 +347,7 @@ impl Editor {
             switch_requested: None,
             clipboard: Vec::new(),
             copied: None,
+            notices: Vec::new(),
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
             file_types: FileTypes::bundled(),
@@ -1179,6 +1190,16 @@ impl Editor {
     /// system clipboard.
     pub fn take_copied(&mut self) -> Option<String> {
         self.copied.take()
+    }
+
+    /// Asks the attached client to notify the user's desktop.
+    pub fn notify(&mut self, notice: Notice) {
+        self.notices.push(notice);
+    }
+
+    /// The notifications not yet sent to the client, oldest first.
+    pub fn take_notices(&mut self) -> Vec<Notice> {
+        std::mem::take(&mut self.notices)
     }
 
     /// The latest copy, if any.
