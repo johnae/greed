@@ -128,6 +128,186 @@ fn shipped_plugins_need_no_approval_and_dependents_wait_with_the_plugin() {
     );
 }
 
+/// Checks the plugin in `dir` from a command, as an agent trying it does,
+/// and returns the messages the tests' failures left.
+fn check(host: &Host, dir: &Path) -> Vec<String> {
+    host.load_str(
+        "user/config",
+        &format!(
+            "local greed = require('@greed')
+            greed.command({{ name = 'check-it', run = function()
+                local report = greed.plugin.check({:?})
+                assert(report.tests.passed, report.tests.error)
+                greed.echo('passed ' .. report.tests.passed)
+                for _, failed in report.tests.failed or {{}} do
+                    greed.echo(failed.message)
+                end
+            end }})",
+            dir.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    host.with_editor_mut(|editor| editor.open("file", "", None));
+    host.run("check-it").unwrap();
+    let job = host
+        .finished_jobs()
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .unwrap();
+    host.finish_job(job).unwrap();
+    host.with_editor_mut(Editor::take_messages)
+}
+
+#[test]
+fn checking_a_plugin_runs_it_with_only_what_you_approved() {
+    let temp = Temp::new("check");
+    let store = temp.0.join("approved.json");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let dir = temp.plugin("runner", "\"proc\"", "");
+    std::fs::write(
+        dir.join("init.luau"),
+        "local greed = require('@greed')
+        greed.command({ name = 'runner-go', run = function() greed.process.run({ 'true' }) end })
+        return {}\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/run.luau"),
+        "local test = require('@greed/test')
+        local greed = require('@greed')
+        test('its command', function(t) t:run('runner-go') end)
+        test('the test itself', function(t) greed.process.run({ 'true' }) end)\n",
+    )
+    .unwrap();
+    let host = host(&store, &shipped);
+    let said = check(&host, &dir);
+    assert_eq!(said[0], "passed 0", "{said:?}");
+    assert_eq!(said.len(), 3, "{said:?}");
+    for message in &said[1..] {
+        assert!(
+            message.starts_with("needs approval: it would run programs")
+                && message.contains("you haven't approved \"proc\" for runner"),
+            "{message}"
+        );
+    }
+
+    // Once approved, its tests get what you approved.
+    host.eval(&format!(
+        "require('@greed').plugin.approve({:?})",
+        dir.to_str().unwrap()
+    ))
+    .unwrap();
+    assert_eq!(check(&host, &dir), ["passed 2"]);
+}
+
+#[test]
+fn checking_a_plugin_greed_ships_runs_it_with_what_it_declares() {
+    let temp = Temp::new("check-shipped");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let dir = shipped.join("own");
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("plugin.toml"),
+        "name = \"own\"\ncapabilities = [\"proc\"]\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
+    std::fs::write(
+        dir.join("test/run.luau"),
+        "local test = require('@greed/test')
+        local greed = require('@greed')
+        test('runs', function(t) assert(greed.process.run({ 'true' })) end)\n",
+    )
+    .unwrap();
+    let host = host(&temp.0.join("approved.json"), &shipped);
+    assert_eq!(check(&host, &dir), ["passed 1"]);
+}
+
+#[test]
+fn checking_a_plugin_covers_what_it_calls_in_the_plugins_it_requires() {
+    let temp = Temp::new("check-reach");
+    let store = temp.0.join("approved.json");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let tools = temp.plugin("tools", "\"proc\"", "");
+    std::fs::write(
+        tools.join("init.luau"),
+        "local greed = require('@greed')
+        return { run = function() return greed.process.run({ 'true' }) end }\n",
+    )
+    .unwrap();
+    let dir = temp.plugin("user", "", "\"tools\"");
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/run.luau"),
+        "local test = require('@greed/test')
+        test('through tools', function(t) require('@tools').run() end)\n",
+    )
+    .unwrap();
+    let host = host(&store, &shipped);
+    host.eval(&format!(
+        "require('@greed').plugin.approve({:?})",
+        tools.to_str().unwrap()
+    ))
+    .unwrap();
+    let said = check(&host, &dir);
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(
+        said[1].contains("you haven't approved \"proc\" for user"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn code_a_plugin_loads_counts_as_its_own_whatever_its_named() {
+    let temp = Temp::new("loadstring");
+    let store = temp.0.join("approved.json");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let tools = temp.plugin("tools", "\"proc\"", "");
+    std::fs::write(
+        tools.join("init.luau"),
+        "local greed = require('@greed')
+        return { run = function() return greed.process.run({ 'true' }) end }\n",
+    )
+    .unwrap();
+    // Declares nothing, so it loads without approval, and names what it
+    // loads after tools to pass as tools' code: as a command, the only
+    // frames on the stack would be tools'.
+    let user = temp.plugin("user", "", "\"tools\"");
+    std::fs::write(
+        user.join("init.luau"),
+        "local greed = require('@greed')
+        local sneak = loadstring('require(\"@tools\").run()', '@tools/x')
+        greed.command({ name = 'user-go', run = sneak })
+        greed.command({ name = 'user-spawn', run = function() greed.spawn(sneak) end })
+        greed.command({ name = 'user-peek', run = function() getfenv(require('@tools').run) end })
+        return {}\n",
+    )
+    .unwrap();
+    let host = host(&store, &shipped);
+    host.with_editor_mut(|editor| editor.open("file", "", None));
+    host.eval(&format!(
+        "require('@greed').plugin.approve({:?})",
+        tools.to_str().unwrap()
+    ))
+    .unwrap();
+    host.load_dir(&user).unwrap();
+    for command in ["user-go", "user-spawn"] {
+        let err = host.run(command).unwrap_err().brief();
+        // Refused for user, through the stack or the limit it started.
+        assert!(
+            err.starts_with("tools can't run programs")
+                && (err.contains("for user") || err.contains("user started it")),
+            "{command}: {err}"
+        );
+    }
+    let err = host.run("user-peek").unwrap_err().brief();
+    assert!(err.contains("getfenv isn't available to plugins"), "{err}");
+}
+
 #[test]
 fn plugins_cant_write_the_approvals_file() {
     let temp = Temp::new("guard");

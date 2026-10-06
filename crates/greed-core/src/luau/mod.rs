@@ -37,7 +37,7 @@ mod theme;
 mod watch;
 
 use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -81,8 +81,9 @@ pub(crate) struct State {
     pub exports: HashMap<PluginId, Value>,
     /// Commands and handlers waiting on a timer or a reply.
     pub tasks: tasks::Tasks,
-    /// The command waiting for the next key press, if any.
-    pub key_waiter: Option<u64>,
+    /// The command waiting for the next key press, if any, and the limit
+    /// it runs within.
+    pub key_waiter: Option<(u64, capabilities::Limit)>,
     /// What each `greed.keys.record` is keeping, by name.
     pub recording: HashMap<String, api::Recording>,
     /// Language servers.
@@ -141,6 +142,14 @@ pub(crate) struct State {
     /// The plugin whose code is running, if any: a command or handler it
     /// registered, or its own file loading.
     pub running: Option<PluginId>,
+    /// What started the code running now, which it may do no more than.
+    pub limit: capabilities::Limit,
+    /// The limit what you start runs within: none, except while checking a
+    /// plugin, when it's that plugin with what you approved for it.
+    pub floor: capabilities::Limit,
+    /// Whose code made each coroutine plugins made, by the coroutine; weak,
+    /// so they go with it.
+    pub makers: mlua::Table,
     /// Approved capabilities, when plugins need approving.
     pub approvals: Option<approvals::Approvals>,
     /// The folders of plugins waiting for approval, oldest first.
@@ -271,6 +280,10 @@ impl Host {
     pub fn new(editor: Editor) -> Result<Self, HostError> {
         let lua = Lua::new();
         lua.sandbox(true)?;
+        let makers = lua.create_table()?;
+        let weak = lua.create_table()?;
+        weak.set("__mode", "k")?;
+        makers.set_metatable(Some(weak))?;
         lua.set_app_data(State {
             editor,
             registry: Registry::default(),
@@ -306,6 +319,9 @@ impl Host {
             watches: watch::Watches::default(),
             grants: HashMap::new(),
             running: None,
+            limit: Vec::new(),
+            floor: Vec::new(),
+            makers,
             approvals: None,
             pending: Vec::new(),
             http: http::Streams::default(),
@@ -839,6 +855,13 @@ fn load_manifest(
     }
     let name: PluginId = manifest.name.into();
     let missing = unapproved(lua, &dir, &grant);
+    // A plugin being checked gets only what you approved for it.
+    let grant = match (grant, state(lua).floor.iter().find(|(by, _)| *by == name)) {
+        (capabilities::Grant::Only(asked), Some((_, capabilities::Grant::Only(approved)))) => {
+            capabilities::Grant::Only(asked.intersection(approved).cloned().collect())
+        }
+        (grant, _) => grant,
+    };
     {
         let pending = &mut state_mut(lua).pending;
         pending.retain(|p| *p != dir);
@@ -865,6 +888,13 @@ fn unapproved(lua: &Lua, dir: &Path, grant: &capabilities::Grant) -> Vec<String>
         .as_ref()
         .map(|a| a.missing(dir, grant))
         .unwrap_or_default()
+}
+
+/// What you approved for the plugin in `dir`, for checking it before it
+/// loads; `None` when it needs no approving.
+pub(crate) fn approved_for(lua: &Lua, dir: &Path) -> Option<BTreeSet<String>> {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_owned());
+    state(lua).approvals.as_ref()?.approved(&dir)
 }
 
 /// What the plugin in `dir` is and asks for, for a review: `{ name, dir,

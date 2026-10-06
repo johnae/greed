@@ -4,14 +4,26 @@
 //! Config (an `init.luau`, a trusted project's `.greed`) and code typed at
 //! the REPL get everything.
 //!
-//! Capabilities follow the code: a plugin's `@greed` is built for it alone,
-//! so what another plugin's exported function does with its own `@greed`
-//! counts against that plugin, which `requires` makes visible.
+//! Capabilities follow the code, and don't pass from one plugin to another:
+//!
+//! - A plugin's `@greed` is built for it alone, with what it didn't declare
+//!   taken out.
+//! - What's left also checks every plugin whose code is on the stack, so a
+//!   plugin calling another's exports, or a function one plugin handed
+//!   another, can do only what both may. Coroutines a plugin makes remember
+//!   whose code made them.
+//! - A command plugin code starts, or keys it feeds, and what it starts with
+//!   `greed.spawn`, run within the [`Limit`] of the code that started them.
+//!   Holders of `commands`, like the command line, pass on what they were
+//!   started with, since they run what you typed.
+//! - Event handlers run with their own plugin's capabilities whatever caused
+//!   the event: they're that plugin reacting to what happened, and plugins
+//!   can't send events of their own.
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
-use mlua::{Lua, Table, Value};
+use mlua::{Function, Lua, Table, Value};
 
 use super::{state, state_mut};
 use crate::registry::PluginId;
@@ -28,6 +40,14 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("eval", "run Luau with every capability"),
     ("plugins", "load, unload and check other plugins"),
     ("secrets", "read and keep any secret, like API keys"),
+    (
+        "commands",
+        "run any command or keys as if you typed them, with what their plugins may do",
+    ),
+    (
+        "control",
+        "answer agents and editors connected to the session, as Greed",
+    ),
 ];
 
 /// The parts of `@greed` each capability opens, as paths into the table.
@@ -43,6 +63,7 @@ const GATED: &[(&str, &str)] = &[
     ("fs.watch", "fs.read"),
     ("files", "fs.read"),
     ("syntax.tags", "fs.read"),
+    ("syntax.load_grammar", "fs.read"),
     ("load", "fs.read"),
     ("open", "fs.read"),
     ("image.load", "fs.read"),
@@ -55,6 +76,10 @@ const GATED: &[(&str, &str)] = &[
     ("plugin.unload", "plugins"),
     ("plugin.check", "plugins"),
     ("plugin.approve", "plugins"),
+    ("control.reply", "control"),
+    ("control.send", "control"),
+    ("control.notify", "control"),
+    ("control.serve_ide", "control"),
     ("control.serve_ide", "net"),
 ];
 
@@ -108,15 +133,206 @@ pub fn what(capability: &str) -> Option<String> {
         .map(|(_, what)| (*what).to_owned())
 }
 
+/// [`what`], falling back to the capability's name.
+fn describe(capability: &str) -> String {
+    what(capability).unwrap_or_else(|| capability.to_owned())
+}
+
 /// The error for `owner` using what `capability` opens.
-fn denied(owner: &str, capability: &str) -> mlua::Error {
-    let what = what(capability).unwrap_or_else(|| capability.to_owned());
+fn denied(lua: &Lua, owner: &str, capability: &str) -> mlua::Error {
+    let what = describe(capability);
     if owner == SANDBOX {
         return needs_approval(&what);
+    }
+    if checking(lua, owner) {
+        return unapproved(owner, &what, capability);
     }
     mlua::Error::runtime(format!(
         "{owner} can't {what}: add \"{capability}\" to capabilities in its plugin.toml"
     ))
+}
+
+/// The error for a plugin being checked before you approved `capability`.
+fn unapproved(owner: &str, what: &str, capability: &str) -> mlua::Error {
+    needs_approval(&format!(
+        "{what}, and you haven't approved \"{capability}\" for {owner}"
+    ))
+}
+
+/// Whether `owner` is the plugin a check runs, with only what you approved
+/// for it: its place in the floor.
+pub(super) fn checking(lua: &Lua, owner: &str) -> bool {
+    state(lua).floor.iter().any(|(by, _)| &**by == owner)
+}
+
+/// The plugins whose code started what runs now, each with its grant: what
+/// runs may use only what every one of them may. Empty for what you
+/// started, by keys, the command line or config.
+pub(crate) type Limit = Vec<(PluginId, Grant)>;
+
+/// The limit for a command `caller`'s code starts, or keys it feeds: what
+/// [`inherited`] gives, unless they all may pass on what you typed
+/// (`commands`), when it's the limit the code runs within.
+pub(super) fn limit_for(lua: &Lua, caller: &PluginId) -> Limit {
+    let limit = inherited(lua, caller);
+    if limit.iter().all(|(_, grant)| grant.allows("commands")) {
+        state(lua).limit.clone()
+    } else {
+        limit
+    }
+}
+
+/// The limit for what `caller`'s code starts that runs on its own, like a
+/// task: the limit the code runs within, narrowed to the grants of `caller`
+/// and of every plugin whose code is on the stack.
+pub(super) fn inherited(lua: &Lua, caller: &PluginId) -> Limit {
+    let callers = on_stack(lua);
+    let state = state(lua);
+    let mut limit = state.limit.clone();
+    for name in std::iter::once(caller).chain(&callers) {
+        if let Some(grant @ Grant::Only(_)) = state.grants.get(name)
+            && !limit.iter().any(|(by, _)| by == name)
+        {
+            limit.push((name.clone(), grant.clone()));
+        }
+    }
+    limit
+}
+
+/// Whether keys fed within `fed` may answer code waiting for a key within
+/// `waiting`: when that code is limited at least as much, as when the same
+/// keys started it. Keys from plugin code never answer what waits for you.
+/// Returns the plugin they're refused for.
+pub(super) fn refused_answer<'a>(fed: &'a Limit, waiting: &Limit) -> Option<&'a PluginId> {
+    fed.iter()
+        .map(|(by, _)| by)
+        .find(|by| !waiting.iter().any(|(other, _)| other == *by))
+}
+
+/// The plugins whose code is on the running coroutine's stack, innermost
+/// first, those whose code made that coroutine, and the plugin it runs for
+/// (whose command, handler or task it is). Frames that aren't a plugin's,
+/// like Greed's own, add nothing, so a stack of only those still counts the
+/// plugin it runs for.
+fn on_stack(lua: &Lua) -> Vec<PluginId> {
+    let mut chunks: Vec<String> = Vec::new();
+    for level in 0.. {
+        let Some(source) = lua.inspect_stack(level, |debug| {
+            debug.source().source.map(std::borrow::Cow::into_owned)
+        }) else {
+            break;
+        };
+        // Plugin files are named "@plugin/file"; Greed's own chunks "=...".
+        if let Some(chunk) = source.as_deref().and_then(|s| s.strip_prefix('@'))
+            && !chunks.iter().any(|c| c == chunk)
+        {
+            chunks.push(chunk.to_owned());
+        }
+    }
+    let state = state(lua);
+    let mut found: Vec<PluginId> = Vec::new();
+    for chunk in &chunks {
+        let owner = state
+            .grants
+            .keys()
+            .filter(|name| {
+                chunk
+                    .strip_prefix(&***name)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+            })
+            .max_by_key(|name| name.len());
+        if let Some(owner) = owner
+            && !found.contains(owner)
+        {
+            found.push(owner.clone());
+        }
+    }
+    let makers: Option<Vec<String>> = state.makers.get(lua.current_thread()).ok().flatten();
+    for maker in makers.unwrap_or_default() {
+        if !found.iter().any(|f| **f == *maker) {
+            found.push(maker.into());
+        }
+    }
+    if let Some(running) = &state.running
+        && !found.contains(running)
+    {
+        found.push(running.clone());
+    }
+    found
+}
+
+/// Remembers whose code made `thread`, so what runs in it later counts
+/// against them as if they were on its stack.
+fn made(lua: &Lua, thread: &mlua::Thread) -> LuaResult<()> {
+    let names: Vec<String> = on_stack(lua).iter().map(ToString::to_string).collect();
+    let makers = state(lua).makers.clone();
+    makers.set(thread, names)
+}
+
+/// `coroutine` for plugins, whose `create` and `wrap` remember whose code
+/// made each coroutine.
+pub(super) fn coroutine_module(lua: &Lua) -> LuaResult<Table> {
+    let tag = lua.create_function(|lua, thread: mlua::Thread| made(lua, &thread))?;
+    lua.load(
+        r"
+        local tag = ...
+        local base = coroutine
+        local co = table.clone(base)
+        function co.create(f)
+            local thread = base.create(f)
+            tag(thread)
+            return thread
+        end
+        function co.wrap(f)
+            local thread = co.create(f)
+            return function(...)
+                local results = table.pack(base.resume(thread, ...))
+                if not results[1] then
+                    error(results[2], 0)
+                end
+                return table.unpack(results, 2, results.n)
+            end
+        end
+        return table.freeze(co)
+        ",
+    )
+    .set_name("=greed.coroutine")
+    .call(tag)
+}
+
+/// Fails unless everything that started the code running now, and every
+/// plugin whose code is on the stack, may do what `allows` checks, which
+/// `capability` opens; `owner` is whose code it is.
+fn within_limit(
+    lua: &Lua,
+    owner: &str,
+    capability: &str,
+    allows: impl Fn(&Grant) -> bool,
+) -> LuaResult<()> {
+    let callers = on_stack(lua);
+    let state = state(lua);
+    let started = state
+        .limit
+        .iter()
+        .find(|(_, grant)| !allows(grant))
+        .map(|(by, _)| by);
+    let called = callers
+        .iter()
+        .find(|name| state.grants.get(*name).is_some_and(|grant| !allows(grant)));
+    let Some(by) = started.or(called) else {
+        return Ok(());
+    };
+    let what = describe(capability);
+    if checking(lua, by) {
+        return Err(unapproved(by, &what, capability));
+    }
+    Err(mlua::Error::runtime(if started.is_some() {
+        format!("{owner} can't {what}: {by} started it, and doesn't have \"{capability}\"")
+    } else {
+        format!(
+            "{owner} can't {what} for {by}: add \"{capability}\" to capabilities in {by}'s plugin.toml"
+        )
+    }))
 }
 
 /// Who sandboxed code runs as: with no capabilities, and without the parts
@@ -260,12 +476,29 @@ pub(super) fn unless_sandboxed(lua: &Lua, what: &str) -> LuaResult<()> {
 }
 
 /// Replaces what `grant` doesn't open in `greed`, `owner`'s `@greed`, with
-/// functions that say what to declare.
+/// functions that say what to declare, and wraps what it does open so it
+/// also checks the limit it runs within.
 pub(super) fn gate(lua: &Lua, greed: &Table, owner: &PluginId, grant: &Grant) -> LuaResult<()> {
+    let o = owner.clone();
+    let check = lua.create_function(move |lua, capability: String| {
+        within_limit(lua, &o, &capability, |g| g.allows(&capability))
+    })?;
+    // In Luau, so what it wraps can still wait.
+    let wrap: Function = lua
+        .load(
+            r"
+            local check = ...
+            return function(f, capability)
+                return function(...)
+                    check(capability)
+                    return f(...)
+                end
+            end
+            ",
+        )
+        .set_name("=greed.gate")
+        .call(check)?;
     for (path, capability) in GATED {
-        if grant.allows(capability) {
-            continue;
-        }
         let (table, key) = match path.split_once('.') {
             Some((module, key)) => match greed.get::<Value>(module)? {
                 Value::Table(table) => (table, key),
@@ -273,28 +506,50 @@ pub(super) fn gate(lua: &Lua, greed: &Table, owner: &PluginId, grant: &Grant) ->
             },
             None => (greed.clone(), *path),
         };
+        if grant.allows(capability) {
+            if let Value::Function(original) = table.get(key)? {
+                table.set(key, wrap.call::<Function>((original, *capability))?)?;
+            }
+            continue;
+        }
         let owner = owner.clone();
         table.set(
             key,
-            lua.create_function(move |_, _: mlua::MultiValue| -> LuaResult<()> {
-                Err(denied(&owner, capability))
+            lua.create_function(move |lua, _: mlua::MultiValue| -> LuaResult<()> {
+                Err(denied(lua, &owner, capability))
             })?,
         )?;
     }
     Ok(())
 }
 
-/// Fails unless the plugin whose code is running may use `capability`.
-/// Code no plugin owns, like the host's own, may.
+/// Fails unless the plugin whose code is running may use `capability`, and
+/// what started it may too. Code no plugin owns, like the host's own, may.
 pub(super) fn check(lua: &Lua, capability: &str) -> LuaResult<()> {
-    let state = state(lua);
-    let Some(owner) = &state.running else {
+    let Some(owner) = state(lua).running.clone() else {
         return Ok(());
     };
-    match state.grants.get(owner) {
-        Some(grant) if !grant.allows(capability) => Err(denied(owner, capability)),
-        _ => Ok(()),
+    check_for(lua, &owner, capability)
+}
+
+/// [`check`] for `owner`'s code, whether or not it's the code running.
+pub(super) fn check_for(lua: &Lua, owner: &PluginId, capability: &str) -> LuaResult<()> {
+    allowed(lua, owner, capability, |g| g.allows(capability))
+}
+
+/// Fails unless `owner` may do what `allows` checks, which `capability`
+/// opens, and what started the code running now may too.
+pub(super) fn allowed(
+    lua: &Lua,
+    owner: &PluginId,
+    capability: &str,
+    allows: impl Fn(&Grant) -> bool,
+) -> LuaResult<()> {
+    let refused = state(lua).grants.get(owner).is_some_and(|g| !allows(g));
+    if refused {
+        return Err(denied(lua, owner, capability));
     }
+    within_limit(lua, owner, capability, allows)
 }
 
 /// Runs `f` as `owner`'s code, for [`check`], doing `what` ("the status
@@ -317,11 +572,10 @@ pub(super) fn check_host(lua: &Lua, owner: &PluginId, host: &str) -> LuaResult<(
         .grants
         .get(owner)
         .is_none_or(|g| g.allows_host(host));
-    if allowed {
-        Ok(())
-    } else {
-        Err(mlua::Error::runtime(format!(
+    if !allowed {
+        return Err(mlua::Error::runtime(format!(
             "{owner} can't use the network: add \"net:{host}\" (or \"net\" for any host) to capabilities in its plugin.toml"
-        )))
+        )));
     }
+    within_limit(lua, owner, &format!("net:{host}"), |g| g.allows_host(host))
 }

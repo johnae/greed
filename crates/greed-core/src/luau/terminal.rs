@@ -75,7 +75,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 .map_err(|err| mlua::Error::runtime(format!("can't start the terminal: {err}")))?;
             terminals.next += 1;
             terminals.open.insert(id, (terminal, owner.clone()));
-            Ok(TerminalRef(id))
+            Ok(TerminalRef(id, Some(owner.clone())))
         })?,
     )?;
     Ok(terminal)
@@ -103,16 +103,17 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
     if let Some(text) = copied {
         state_mut(lua).editor.copy(vec![text]);
     }
-    payload.set("terminal", TerminalRef(id))?;
+    payload.set("terminal", TerminalRef(id, None))?;
     emit(lua, name, &payload)
 }
 
-/// A terminal, for Luau.
-#[derive(Clone, Copy)]
-struct TerminalRef(u64);
+/// A terminal, for Luau, with the plugin that started it when the handle
+/// came from starting it rather than from an event.
+#[derive(Clone)]
+struct TerminalRef(u64, Option<PluginId>);
 
 impl TerminalRef {
-    fn with<T>(self, lua: &Lua, f: impl FnOnce(&mut Terminal) -> T) -> LuaResult<T> {
+    fn with<T>(&self, lua: &Lua, f: impl FnOnce(&mut Terminal) -> T) -> LuaResult<T> {
         let mut state = state_mut(lua);
         let (terminal, _) = state
             .terminals
@@ -120,6 +121,17 @@ impl TerminalRef {
             .get_mut(&self.0)
             .ok_or_else(|| mlua::Error::runtime("this terminal was closed"))?;
         Ok(f(terminal))
+    }
+
+    /// `with`, for sending the program input. Typing into a shell runs
+    /// programs, so it takes `proc`: the starting plugin's, through the
+    /// handle it got, otherwise that of the plugin whose code runs.
+    fn send<T>(&self, lua: &Lua, f: impl FnOnce(&mut Terminal) -> T) -> LuaResult<T> {
+        match &self.1 {
+            Some(owner) => super::capabilities::check_for(lua, owner, "proc")?,
+            None => super::capabilities::check(lua, "proc")?,
+        }
+        self.with(lua, f)
     }
 }
 
@@ -161,7 +173,7 @@ fn row_to_lua(lua: &Lua, row: Row) -> LuaResult<Table> {
 
 /// Gives the editor the images `rows` show that it doesn't have yet, so
 /// marks can show them.
-fn share_images(lua: &Lua, terminal: TerminalRef, rows: &[Row]) -> LuaResult<()> {
+fn share_images(lua: &Lua, terminal: &TerminalRef, rows: &[Row]) -> LuaResult<()> {
     let missing: Vec<ImageId> = {
         let state = state(lua);
         rows.iter()
@@ -217,7 +229,7 @@ impl UserData for TerminalRef {
         methods.add_method("id", |_, this, ()| Ok(this.0));
         methods.add_method("screen", |lua, this, ()| {
             let screen = this.with(lua, |t| t.screen())?;
-            share_images(lua, *this, &screen.rows)?;
+            share_images(lua, this, &screen.rows)?;
             let t = lua.create_table()?;
             t.set("rows", rows_to_lua(lua, screen.rows)?)?;
             if let Some((row, col)) = screen.cursor {
@@ -231,7 +243,7 @@ impl UserData for TerminalRef {
         });
         methods.add_method("scrollback", |lua, this, from: Option<u64>| {
             let scrollback = this.with(lua, |t| t.scrollback(from.unwrap_or(0)))?;
-            share_images(lua, *this, &scrollback.rows)?;
+            share_images(lua, this, &scrollback.rows)?;
             let t = lua.create_table()?;
             t.set("first", scrollback.first)?;
             t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
@@ -249,14 +261,14 @@ impl UserData for TerminalRef {
         });
         methods.add_method("write", |lua, this, text: mlua::LuaString| {
             let bytes = text.as_bytes().to_vec();
-            this.with(lua, |t| t.write(bytes))
+            this.send(lua, |t| t.write(bytes))
         });
         methods.add_method("key", |lua, this, name: String| {
             let key = Key::parse(&name).map_err(mlua::Error::external)?;
-            this.with(lua, |t| t.key(key))
+            this.send(lua, |t| t.key(key))
         });
         methods.add_method("paste", |lua, this, text: String| {
-            this.with(lua, |t| t.paste(&text))
+            this.send(lua, |t| t.paste(&text))
         });
         methods.add_method("resize", |lua, this, (rows, cols): (u16, u16)| {
             let cell = state(lua).editor.cell_size();
@@ -286,7 +298,7 @@ impl UserData for TerminalRef {
                     alt: held("alt")?,
                     shift: held("shift")?,
                 };
-                this.with(lua, |t| t.mouse(mouse))
+                this.send(lua, |t| t.mouse(mouse))
             },
         );
         methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));

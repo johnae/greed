@@ -10,6 +10,7 @@ use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+use super::capabilities::{self, Limit};
 use super::handles::{self, BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
@@ -51,6 +52,9 @@ struct Invocation<'a> {
     force: bool,
     /// The number typed before the keys.
     count: Option<u32>,
+    /// The limit it runs within, when plugin code started it; otherwise
+    /// you did.
+    limit: Option<Limit>,
 }
 
 /// Runs a command as the user.
@@ -66,7 +70,9 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         args,
         force,
         count,
+        limit,
     } = how;
+    let limit = limit.unwrap_or_else(|| state(lua).floor.clone());
     let (handler, owner, author, view, buffer) = {
         let state = state(lua);
         let command = state
@@ -129,6 +135,7 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         ctx,
         owner,
         Some(name.into()),
+        limit,
     )?)
 }
 
@@ -138,7 +145,7 @@ pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
     for recording in state_mut(lua).recording.values_mut() {
         recording.keys.push(key);
     }
-    press_key(lua, key)
+    press_key(lua, key, None)
 }
 
 /// The keys a `greed.keys.record` keeps.
@@ -149,11 +156,17 @@ pub(crate) struct Recording {
 }
 
 /// Feeds one key press through the keymap, running whatever it resolves
-/// to, without recording it.
-fn press_key(lua: &Lua, key: Key) -> Result<(), HostError> {
+/// to, without recording it, within `limit` when plugin code feeds it.
+fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<(), HostError> {
     // A command waiting on greed.next_key gets the key instead of the keymap.
     let waiter = state_mut(lua).key_waiter.take();
-    if let Some(token) = waiter {
+    if let Some((token, waiting)) = waiter {
+        let fed = limit.unwrap_or_else(|| state(lua).floor.clone());
+        if let Some(by) = capabilities::refused_answer(&fed, &waiting) {
+            let error = format!("keys {by} feeds can't answer what waits for you to press a key");
+            state_mut(lua).key_waiter = Some((token, waiting));
+            return Err(HostError::Lua(mlua::Error::runtime(error)));
+        }
         tasks::wake(lua, token, key.to_string())?;
         return Ok(());
     }
@@ -174,6 +187,7 @@ fn press_key(lua: &Lua, key: Key) -> Result<(), HostError> {
                 Invocation {
                     keys: &keys,
                     count,
+                    limit,
                     ..Invocation::default()
                 },
             )
@@ -246,7 +260,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    greed.set("run", run_function(lua)?)?;
+    greed.set("run", run_function(lua, owner)?)?;
 
     let o = owner.clone();
     greed.set(
@@ -377,7 +391,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("project", super::projects::module(lua)?)?;
     greed.set("tab", super::tabs::module(lua, owner)?)?;
     greed.set("session", super::sessions::module(lua)?)?;
-    greed.set("keys", keys_module(lua)?)?;
+    greed.set("keys", keys_module(lua, owner)?)?;
     greed.set("process", super::process::module(lua, owner)?)?;
     greed.set("http", super::http::module(lua, owner)?)?;
     greed.set("secrets", super::secrets::module(lua, owner)?)?;
@@ -1368,11 +1382,12 @@ fn segments(list: Option<Table>, actions: &mut Vec<Option<Arc<str>>>) -> LuaResu
 }
 
 /// `greed.spawn(f, ...)`: runs `f` as a coroutine of `owner`'s, so it can
-/// wait, and returns at once.
+/// wait, and returns at once. It runs within what the code starting it may.
 fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, (f, args): (Function, mlua::MultiValue)| {
-        tasks::spawn(lua, f, args, owner.clone(), None)
+        let limit = capabilities::inherited(lua, &owner);
+        tasks::spawn_running(lua, f, args, owner.clone(), None, limit).map(|_| ())
     })
 }
 
@@ -1422,7 +1437,9 @@ fn quit_function(lua: &Lua) -> LuaResult<Function> {
 }
 
 /// `greed.keys`: recording what's typed and feeding keys back, for macros.
-fn keys_module(lua: &Lua) -> LuaResult<Table> {
+/// What fed keys run is limited to what `owner` may do; see
+/// [`capabilities::limit_for`].
+fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let keys = lua.create_table()?;
     keys.set(
         "record",
@@ -1456,16 +1473,18 @@ fn keys_module(lua: &Lua) -> LuaResult<Table> {
             Ok(state(lua).recording.contains_key(&name.unwrap_or_default()))
         })?,
     )?;
+    let owner = owner.clone();
     keys.set(
         "feed",
-        lua.create_function(|lua, sequence: String| {
+        lua.create_function(move |lua, sequence: String| {
+            let limit = capabilities::limit_for(lua, &owner);
             for key in Key::parse_sequence(&sequence).map_err(mlua::Error::external)? {
                 for recording in state_mut(lua).recording.values_mut() {
                     if recording.fed {
                         recording.keys.push(key);
                     }
                 }
-                press_key(lua, key).map_err(into_lua)?;
+                press_key(lua, key, Some(limit.clone())).map_err(into_lua)?;
             }
             Ok(())
         })?,
@@ -1499,11 +1518,14 @@ fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
 }
 
 /// `greed.run(name, opts)`: starts a command; with `wait`, a command or
-/// handler waits until it has finished.
-fn run_function(lua: &Lua) -> LuaResult<Function> {
+/// handler waits until it has finished. It runs within what `owner` may do;
+/// see [`capabilities::limit_for`].
+fn run_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
     // Returns a token to yield until the command finishes, when it's asked
     // to wait and the command is still running.
-    let start = lua.create_function(|lua, (name, opts): (String, Option<Table>)| {
+    let start = lua.create_function(move |lua, (name, opts): (String, Option<Table>)| {
+        let limit = Some(capabilities::limit_for(lua, &owner));
         let (how, wait) = match opts {
             Some(opts) => (
                 Invocation {
@@ -1516,6 +1538,7 @@ fn run_function(lua: &Lua) -> LuaResult<Function> {
             ),
             None => (Invocation::default(), false),
         };
+        let how = Invocation { limit, ..how };
         let running = invoke_running(lua, &name, how).map_err(into_lua)?;
         Ok(running.filter(|_| wait).map(|id| tasks::wait_for(lua, id)))
     })?;

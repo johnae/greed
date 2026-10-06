@@ -1,3 +1,3 @@
 name = "panes"
 requires = ["core", "picker", "terminal"]
-capabilities = ["fs.read", "fs.write"]
+capabilities = ["fs.read", "fs.write", "proc"]

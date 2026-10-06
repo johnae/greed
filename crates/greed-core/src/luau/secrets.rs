@@ -201,20 +201,13 @@ pub(super) fn keep(places: &Places, name: &str, value: &str) -> Result<String, S
     Ok(places.file.display().to_string())
 }
 
-/// Fails unless `owner` declared the secret `name`.
+/// Fails unless `owner` declared the secret `name`, and what started the
+/// code running now may read it too.
 fn check(lua: &Lua, owner: &PluginId, name: &str) -> LuaResult<()> {
     let capability = format!("secrets:{name}");
-    let allowed = state(lua)
-        .grants
-        .get(owner)
-        .is_none_or(|g| g.allows("secrets") || g.allows(&capability));
-    if allowed {
-        Ok(())
-    } else {
-        Err(mlua::Error::runtime(format!(
-            "{owner} can't read the secret {name:?}: add \"{capability}\" to capabilities in its plugin.toml"
-        )))
-    }
+    super::capabilities::allowed(lua, owner, &capability, |g| {
+        g.allows("secrets") || g.allows(&capability)
+    })
 }
 
 /// Where to look for the secret `name`, once it's a valid name that `owner`

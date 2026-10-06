@@ -1,3 +1,3 @@
 name = "lsp"
 requires = ["core", "picker", "multibuffer", "statusline"]
-capabilities = ["fs.read"]
+capabilities = ["fs.read", "proc"]

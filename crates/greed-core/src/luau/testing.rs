@@ -20,7 +20,7 @@
 //! of a non-empty range.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -29,6 +29,7 @@ use std::time::{Duration, Instant};
 use greed_text::ClientId;
 use mlua::{Function, Lua, Table, UserData, UserDataMethods};
 
+use super::capabilities::Grant;
 use super::modules::Modules;
 use super::{
     Host, HostError, api, budgeted, extend_deadline, jobs, state, state_mut, tasks, terminal, watch,
@@ -48,6 +49,17 @@ pub struct TestResult {
 /// Runs every test in `dir/test/*.luau`. Each test gets a fresh host with
 /// `plugins` loaded, in order.
 pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, HostError> {
+    run_checked(plugins, dir, None)
+}
+
+/// `run_tests`, for checking the plugin in `dir`, the last of `plugins`,
+/// before it's approved: with `approved`, it and what its tests do get no
+/// capabilities but those, and what needs others fails as needing approval.
+pub(super) fn run_checked(
+    plugins: &[PathBuf],
+    dir: &Path,
+    approved: Option<&BTreeSet<String>>,
+) -> Result<Vec<TestResult>, HostError> {
     let dir = &dir.canonicalize().map_err(|err| HostError::Manifest {
         path: dir.to_owned(),
         message: err.to_string(),
@@ -69,8 +81,8 @@ pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, Hos
 
     let mut results = Vec::new();
     for file in files {
-        for name in fresh_host(plugins)?.test_names(dir, &file)? {
-            let failure = fresh_host(plugins)?.run_test(dir, &file, &name)?;
+        for name in fresh_host(plugins, approved)?.test_names(dir, &file)? {
+            let failure = fresh_host(plugins, approved)?.run_test(dir, &file, &name)?;
             results.push(TestResult {
                 file: file.clone(),
                 name,
@@ -81,7 +93,7 @@ pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, Hos
     Ok(results)
 }
 
-fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
+fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Result<Host, HostError> {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", None);
@@ -91,7 +103,22 @@ fn fresh_host(plugins: &[PathBuf]) -> Result<Host, HostError> {
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let dirs = std::env::temp_dir().join(format!("greed-home-{}-{n}", std::process::id()));
     state_mut(&host.lua).dirs = Some(dirs);
-    host.load_dirs(plugins)?;
+    let (Some(approved), Some((checked, others))) = (approved, plugins.split_last()) else {
+        host.load_dirs(plugins)?;
+        return Ok(host);
+    };
+    host.load_dirs(others)?;
+    // From here on, what runs can do no more than the checked plugin may.
+    let floor = vec![(
+        super::plugin_name(checked)?.into(),
+        Grant::Only(approved.clone()),
+    )];
+    {
+        let mut state = state_mut(&host.lua);
+        state.limit.clone_from(&floor);
+        state.floor = floor;
+    }
+    host.load_dir(checked)?;
     Ok(host)
 }
 
@@ -142,7 +169,7 @@ impl Host {
             "test",
             Some(root.to_owned()),
             Some(test),
-            &super::capabilities::Grant::All,
+            &Grant::All,
         )?;
         budgeted(&self.lua, || modules.run_file(&self.lua, file))?;
         Ok(())

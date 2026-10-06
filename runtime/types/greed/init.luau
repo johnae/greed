@@ -406,7 +406,9 @@ export type Keys = {
 	stop: (name: string?) -> { string }?,
 	recording: (name: string?) -> boolean,
 	--- Presses the keys of a space-separated sequence as if they were
-	--- typed. Only recordings started with `fed` keep them.
+	--- typed. Only recordings started with `fed` keep them. What they run
+	--- can do only what this plugin may (unless it has "commands"), and they
+	--- don't answer a command waiting for you to press a key.
 	feed: (keys: string) -> (),
 }
 
@@ -536,7 +538,10 @@ export type Terminal = {
 	--- The folder the shell last said it's in (OSC 7), or the one it started
 	--- in.
 	cwd: (self: Terminal) -> string?,
-	--- Sends text to the program as if typed.
+	--- Sends text to the program as if typed. This and the other methods
+	--- that send input need "proc": the plugin that started the terminal
+	--- has it through the handle it got; others with one from an event need
+	--- their own.
 	write: (self: Terminal, text: string) -> (),
 	--- Sends a key, e.g. "ctrl-c" or "up", as a terminal encodes it.
 	key: (self: Terminal, name: string) -> (),
@@ -857,6 +862,7 @@ export type Json = {
 	array: <T>(items: { T }?) -> { T },
 }
 
+--- Needs the "control" capability (and `serve_ide` "net" too).
 export type Control = {
 	--- Answers request `id` with `result`, or with an error `message`. Every
 	--- request needs exactly one answer.
@@ -1056,7 +1062,8 @@ export type Lsp = {
 	servers: () -> { [string]: { { string } } },
 	--- Sends a request to the buffer's server and waits for the answer.
 	--- Returns the result, or nil and the error. Works in commands and event
-	--- handlers.
+	--- handlers. "workspace/executeCommand" needs "proc", since a server's
+	--- commands can do anything.
 	request: (buffer: Buffer, method: string, params: any) -> (any, any),
 	--- The buffer's file as a URI, for request parameters.
 	uri: (buffer: Buffer) -> string,
@@ -1178,7 +1185,10 @@ export type Plugins = {
 	dirs: () -> { [string]: string },
 	--- Checks the plugin in `dir` without loading it: strict types against
 	--- Greed's API (if luau-analyze is installed), then its tests with the
-	--- loaded plugins. Waits, like greed.sleep, while it runs.
+	--- loaded plugins. Waits, like greed.sleep, while it runs. A plugin that
+	--- needs approving is tested with only what you approved for it, so what
+	--- needs more fails with "needs approval", through the plugins it
+	--- calls and the commands it runs too.
 	check: (dir: string) -> PluginCheck,
 	--- What the plugin in `dir` is and asks for, from its plugin.toml.
 	describe: (dir: string) -> PluginInfo,
@@ -1247,6 +1257,7 @@ export type Syntax = {
 	--- with `tree-sitter build --wasm`, so buffers in it get a syntax tree. `symbol`
 	--- is the grammar's own name when it differs, e.g. "c_sharp" for "c-sharp";
 	--- by default the language with "-" as "_". Queries come separately.
+	--- Needs "fs.read".
 	load_grammar: (language: string, path: string, symbol: string?) -> (),
 	--- What the source files under `dir` (default: the current directory) define and use, from their syntax trees: the functions and types their "textobjects" query finds and how often each name appears, sorted by path. Hidden and ignored files are skipped; `limit` (default 10000) caps the files. It parses in the background and waits like greed.sleep. Needs "fs.read".
 	tags: (dir: string?, opts: { limit: number? }?) -> { FileTags },
@@ -1286,7 +1297,8 @@ export type Greed = {
 	--- Runs a command by name, optionally with arguments, `force` and a count.
 	--- It returns once the command waits for something (a key, a prompt, a
 	--- reply); with `wait`, a command or handler instead waits until it has
-	--- finished, without blocking the editor.
+	--- finished, without blocking the editor. The command can do only what
+	--- this plugin may too, unless it has "commands".
 	run: (name: string, opts: { args: { string }?, force: boolean?, count: number?, wait: boolean? }?) -> (),
 	--- Runs Luau code in a scratch environment whose globals persist, like a
 	--- REPL. Returns true and the values as text (tab-separated), or false

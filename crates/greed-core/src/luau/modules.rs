@@ -48,7 +48,9 @@ impl Modules {
         let meta = lua.create_table()?;
         meta.set("__index", lua.globals())?;
         globals.set_metatable(Some(meta))?;
+        globals.set("coroutine", capabilities::coroutine_module(lua)?)?;
         let owner: PluginId = owner.into();
+        own_code_only(lua, &globals)?;
         let greed = api::greed_module(lua, &owner)?;
         capabilities::gate(lua, &greed, &owner, grant)?;
         Ok(Self {
@@ -124,6 +126,26 @@ impl Modules {
                 modules.require(lua, file.as_deref(), &name)
             })?,
         )?;
+        // Code the plugin loads at runtime is named after it and shares this
+        // environment, so capabilities, which go by whose code runs, count
+        // it as the plugin's whatever name the caller gave.
+        let loaded_env = env.clone();
+        let name = format!("@{}/loadstring", self.owner);
+        env.raw_set(
+            "loadstring",
+            lua.create_function(move |lua, (source, _): (mlua::LuaString, Value)| {
+                let loaded = lua
+                    .load(source.as_bytes().to_vec())
+                    .set_name(&name)
+                    .set_mode(mlua::chunk::ChunkMode::Text)
+                    .set_environment(loaded_env.clone())
+                    .into_function();
+                Ok(match loaded {
+                    Ok(f) => (Some(f), None),
+                    Err(err) => (None, Some(err.to_string())),
+                })
+            })?,
+        )?;
         Ok(env)
     }
 
@@ -197,6 +219,24 @@ impl Modules {
             .find(|p| p.is_file())
             .ok_or_else(|| fail("no such file"))
     }
+}
+
+/// Takes away `getfenv`/`setfenv`, which reach into another plugin's
+/// environment to borrow its `require` and capabilities. `loadstring` is
+/// kept, but each file's [`file_env`](Modules::file_env) names what it
+/// loads after the plugin, so loaded code can't shed its plugin either.
+fn own_code_only(lua: &Lua, globals: &Table) -> LuaResult<()> {
+    for name in ["getfenv", "setfenv"] {
+        globals.set(
+            name,
+            lua.create_function(move |_, _: mlua::MultiValue| -> LuaResult<()> {
+                Err(mlua::Error::runtime(format!(
+                    "{name} isn't available to plugins"
+                )))
+            })?,
+        )?;
+    }
+    Ok(())
 }
 
 /// Resolves `.` and `..` without touching the file system.

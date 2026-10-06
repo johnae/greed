@@ -11,7 +11,7 @@ use mlua::serde::SerializeOptions;
 use mlua::{Function, Lua, LuaSerdeExt, Table, UserDataRef, Value};
 
 use super::handles::BufferRef;
-use super::{api, state, state_mut, tasks};
+use super::{api, capabilities, state, state_mut, tasks};
 use crate::lsp::{self, Event, Handled, ServerConfig};
 use crate::registry::PluginId;
 use crate::{Buffer, BufferId, Editor};
@@ -139,7 +139,7 @@ fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let lsp = lua.create_table()?;
     add_server_side(lua, &lsp, owner)?;
-    add_documents(lua, &lsp)?;
+    add_documents(lua, &lsp, owner)?;
     Ok(lsp)
 }
 
@@ -200,7 +200,7 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
 /// Servers and the documents they're about: setting servers up, requests,
 /// positions and diagnostics.
-fn add_documents(lua: &Lua, lsp: &Table) -> LuaResult<()> {
+fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     lsp.set(
         "server",
         lua.create_function(|lua, spec: Table| {
@@ -245,7 +245,7 @@ fn add_documents(lua: &Lua, lsp: &Table) -> LuaResult<()> {
         })?,
     )?;
 
-    lsp.set("request", request_function(lua)?)?;
+    lsp.set("request", request_function(lua, owner)?)?;
 
     lsp.set(
         "uri",
@@ -316,10 +316,15 @@ fn buffer_ref<'a>(editor: &'a Editor, buffer: &BufferRef) -> LuaResult<&'a Buffe
 }
 
 /// `greed.lsp.request(buffer, method, params)`: sends a request and waits for
-/// the answer, returning `result, error`.
-fn request_function(lua: &Lua) -> LuaResult<Function> {
+/// the answer, returning `result, error`. `workspace/executeCommand` takes
+/// `proc`, since a server's commands run whatever it wants to.
+fn request_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
     let start = lua.create_function(
-        |lua, (buffer, method, params): (UserDataRef<BufferRef>, String, Value)| {
+        move |lua, (buffer, method, params): (UserDataRef<BufferRef>, String, Value)| {
+            if method == "workspace/executeCommand" {
+                capabilities::check_for(lua, &owner, "proc")?;
+            }
             let params: serde_json::Value = lua.from_value(params)?;
             let state = &mut *state_mut(lua);
             let b = buffer_ref(&state.editor, &buffer)?;

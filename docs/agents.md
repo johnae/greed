@@ -429,8 +429,9 @@ An agent can extend Greed while you work:
 
 1. `plugin_guide` gives it the plugin conventions and the full typed API.
 2. `plugin_try` writes a plugin to a staging folder and checks it: strict
-   types against the API, then the plugin's own tests in a headless editor.
-   The agent gets back what failed and tries again.
+   types against the API, then the plugin's own tests in a headless editor,
+   with none of its capabilities until you approve it. The agent gets back
+   what failed and tries again.
 3. `plugin_install` asks you. A panel shows what the plugin may do beyond
    the editor (its [capabilities](plugins.md#capabilities), like running
    programs or reading files), the code and the check results; `a` installs

@@ -43,18 +43,20 @@ impl Approvals {
     /// The capabilities the plugin in `dir` asks for that aren't approved,
     /// sorted; empty when it may load.
     pub fn missing(&self, dir: &Path, grant: &Grant) -> Vec<String> {
-        let Grant::Only(asked) = grant else {
+        let (Grant::Only(asked), Some(approved)) = (grant, self.approved(dir)) else {
             return Vec::new();
         };
+        asked.difference(&approved).cloned().collect()
+    }
+
+    /// What you approved for the plugin in `dir`; `None` for the plugins
+    /// Greed ships, which need no approving.
+    pub fn approved(&self, dir: &Path) -> Option<BTreeSet<String>> {
         if self.shipped.iter().any(|shipped| dir.starts_with(shipped)) {
-            return Vec::new();
+            return None;
         }
         let approved = self.approved.get(&*dir.to_string_lossy());
-        asked
-            .iter()
-            .filter(|c| approved.is_none_or(|a| !a.contains(*c)))
-            .cloned()
-            .collect()
+        Some(approved.cloned().unwrap_or_default())
     }
 
     /// Approves `capabilities` for the plugin in `dir`, adding to what was

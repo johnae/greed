@@ -2,6 +2,7 @@
 //! checking a plugin before it's loaded: strict type checking against
 //! Greed's API, then its tests, the way `greed test` runs them.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use mlua::{Lua, Table};
 
 use super::jobs::{self, Output};
-use super::{api, load_dir, plugin_dirs, plugin_name, plugin_names, run_tests, state};
+use super::{api, load_dir, plugin_dirs, plugin_name, plugin_names, state};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -83,6 +84,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let start = lua.create_function(|lua, dir: String| {
         let dir = PathBuf::from(dir);
         let name = plugin_name(&dir).map_err(api::into_lua)?;
+        let approved = super::approved_for(lua, &dir);
         // Every loaded plugin but an older version of this one, which the
         // checked one replaces.
         let others: Vec<(String, PathBuf)> = plugin_dirs(lua)
@@ -91,7 +93,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             .map(|(other, dir)| (other.to_string(), dir))
             .collect();
         Ok(jobs::start(lua, move || {
-            Output::Check(check(&dir, &others))
+            Output::Check(check(&dir, &others, approved.as_ref()))
         }))
     })?;
     plugin.set(
@@ -113,12 +115,13 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     Ok(plugin)
 }
 
-/// Type checks and tests the plugin in `dir` against the `others`.
-fn check(dir: &Path, others: &[(String, PathBuf)]) -> Check {
+/// Type checks and tests the plugin in `dir` against the `others`. Its
+/// tests run with only what was `approved` for it, when it needs approving.
+fn check(dir: &Path, others: &[(String, PathBuf)], approved: Option<&BTreeSet<String>>) -> Check {
     let types = analyze(dir, others);
     let mut plugins: Vec<PathBuf> = others.iter().map(|(_, dir)| dir.clone()).collect();
     plugins.push(dir.to_owned());
-    let tests = run_tests(&plugins, dir)
+    let tests = super::testing::run_checked(&plugins, dir, approved)
         .map(|results| {
             results
                 .into_iter()

@@ -1,2 +1,3 @@
 name = "assist"
 requires = ["core", "models", "agent", "vcs", "context"]
+capabilities = ["fs.read", "fs.write", "net", "proc"]

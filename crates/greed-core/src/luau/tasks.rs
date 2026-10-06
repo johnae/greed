@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use mlua::thread::ThreadStatus;
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Thread, Value};
 
+use super::capabilities::Limit;
 use super::{state, state_mut};
 use crate::registry::PluginId;
 
@@ -43,6 +44,8 @@ pub(crate) struct Tasks {
     /// The plugin each running coroutine's code belongs to, for capability
     /// checks while it runs.
     owners: HashMap<usize, PluginId>,
+    /// The [`Limit`] each running coroutine runs within.
+    limits: HashMap<usize, Limit>,
     /// What each running coroutine does, when it says, like "on buffer.changed"
     /// for an event handler: how the watchdog and the profile name it.
     labels: HashMap<usize, Arc<str>>,
@@ -69,6 +72,7 @@ impl Default for Tasks {
             latest: now,
             causes: HashMap::new(),
             owners: HashMap::new(),
+            limits: HashMap::new(),
             labels: HashMap::new(),
             worked: HashMap::new(),
             finished: HashMap::new(),
@@ -94,14 +98,16 @@ impl Tasks {
     fn forget(&mut self, id: usize) {
         self.causes.remove(&id);
         self.owners.remove(&id);
+        self.limits.remove(&id);
         self.labels.remove(&id);
         self.worked.remove(&id);
     }
 }
 
 /// Runs `f`, code `owner` registered, as a coroutine whose edits are made
-/// for `cause` (by default, whatever the code starting it edits for). If it
-/// waits, it's parked until its token resolves.
+/// for `cause` (by default, whatever the code starting it edits for), within
+/// the limit of the code starting it. If it waits, it's parked until its
+/// token resolves.
 pub(super) fn spawn(
     lua: &Lua,
     f: Function,
@@ -109,10 +115,12 @@ pub(super) fn spawn(
     owner: PluginId,
     cause: Option<Arc<str>>,
 ) -> LuaResult<()> {
-    spawn_running(lua, f, args, owner, cause).map(|_| ())
+    let limit = state(lua).limit.clone();
+    spawn_running(lua, f, args, owner, cause, limit).map(|_| ())
 }
 
-/// `spawn`, naming what the coroutine does as `label` for the watchdog and
+/// An event handler: `spawn` with no limit, unless `owner` is a plugin being
+/// checked, naming what the coroutine does as `label` for the watchdog and
 /// the profile, like "on buffer.changed".
 pub(super) fn spawn_labelled(
     lua: &Lua,
@@ -121,19 +129,25 @@ pub(super) fn spawn_labelled(
     owner: PluginId,
     label: Arc<str>,
 ) -> LuaResult<()> {
-    spawn_with(lua, f, args, owner, None, Some(label)).map(|_| ())
+    let limit = if super::capabilities::checking(lua, &owner) {
+        state(lua).floor.clone()
+    } else {
+        Vec::new()
+    };
+    spawn_with(lua, f, args, owner, None, Some(label), limit).map(|_| ())
 }
 
-/// `spawn`, returning the coroutine's id if it's still running (waiting on
-/// something), for `wait_for`.
+/// `spawn` within `limit`, returning the coroutine's id if it's still
+/// running (waiting on something), for `wait_for`.
 pub(super) fn spawn_running(
     lua: &Lua,
     f: Function,
     args: impl IntoLuaMulti,
     owner: PluginId,
     cause: Option<Arc<str>>,
+    limit: Limit,
 ) -> LuaResult<Option<usize>> {
-    spawn_with(lua, f, args, owner, cause, None)
+    spawn_with(lua, f, args, owner, cause, None, limit)
 }
 
 fn spawn_with(
@@ -143,6 +157,7 @@ fn spawn_with(
     owner: PluginId,
     cause: Option<Arc<str>>,
     label: Option<Arc<str>>,
+    limit: Limit,
 ) -> LuaResult<Option<usize>> {
     let thread = lua.create_thread(f)?;
     let id = key(&thread);
@@ -152,6 +167,7 @@ fn spawn_with(
             state.tasks.causes.insert(id, cause);
         }
         state.tasks.owners.insert(id, owner);
+        state.tasks.limits.insert(id, limit);
         if let Some(label) = label {
             state.tasks.labels.insert(id, label);
         }
@@ -186,15 +202,23 @@ fn key(thread: &Thread) -> usize {
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let id = key(&thread);
-    let (outer, outer_owner, owner, cause, label) = {
+    let (outer, outer_owner, outer_limit, owner, cause, label) = {
         let state = &mut *state_mut(lua);
         let cause = state.tasks.causes.get(&id).cloned();
         let owner = state.tasks.owners.get(&id).cloned();
         let label = state.tasks.labels.get(&id).cloned();
+        // A test's body, which nothing spawned, runs as what you start does.
+        let limit = state
+            .tasks
+            .limits
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| state.floor.clone());
         let outer = state.editor.cause().cloned();
         state.editor.set_cause(cause.clone());
         let outer_owner = std::mem::replace(&mut state.running, owner.clone());
-        (outer, outer_owner, owner, cause, label)
+        let outer_limit = std::mem::replace(&mut state.limit, limit);
+        (outer, outer_owner, outer_limit, owner, cause, label)
     };
     let what = label.as_deref().or(cause.as_deref()).unwrap_or("a handler");
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
@@ -204,6 +228,7 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         let state = &mut *state_mut(lua);
         state.editor.set_cause(outer);
         state.running = outer_owner;
+        state.limit = outer_limit;
     }
     if thread.status() != ThreadStatus::Resumable {
         finish(lua, id)?;
@@ -419,7 +444,7 @@ pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(|lua, ()| {
         let mut state = state_mut(lua);
         let token = state.tasks.token();
-        state.key_waiter = Some(token);
+        state.key_waiter = Some((token, state.limit.clone()));
         Ok(token)
     })?;
     lua.load(

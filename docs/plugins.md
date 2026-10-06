@@ -33,8 +33,8 @@ capabilities = ["proc", "fs.read"]
 
 | Capability | What it opens |
 |---|---|
-| `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`. A program can do anything you can, so this is full access |
-| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open` |
+| `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`, typing into a terminal, and a language server's `workspace/executeCommand`. A program can do anything you can, so this is full access |
+| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.load_grammar` |
 | `fs.write` | `greed.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
 | `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
 | `net` | The network: `greed.http` to any host, and the Claude Code connection |
@@ -43,11 +43,41 @@ capabilities = ["proc", "fs.read"]
 | `secrets` | Every secret, and keeping new ones |
 | `eval` | `greed.eval`, which runs Luau with every capability |
 | `plugins` | Loading, unloading and checking other plugins |
+| `commands` | Running any command or keys for you with what the command's own plugin may do, as the command line and the command picker do (see below) |
+| `control` | `greed.control`: answering agents and editors connected to the session, as the agent plugin does |
 
 Using something the plugin didn't declare raises an error that says what
 to add, e.g. `greet can't run programs: add "proc" to capabilities in its
 plugin.toml`. Your `init.luau` and a trusted project's `.greed` folder are
 config, not plugins, and can use everything.
+
+Capabilities follow the code that uses them, and don't pass from one
+plugin to another:
+
+- A command runs with its own plugin's capabilities when you start it,
+  with keys, the command line, a menu or your config. When plugin code
+  starts it, with `greed.run` or by feeding keys with `greed.keys.feed`,
+  it can do only what that plugin may too, so a plugin without `proc` can't
+  run programs by running another plugin's command. This carries on through
+  commands those commands run, what they start with `greed.spawn`, and
+  after they wait. A plugin with `commands` passes on whatever it was
+  started with, since it runs what you typed or picked.
+- Keys a plugin feeds never answer a command waiting for you to press a key,
+  like a "y" to confirm.
+- Event handlers run with their own plugin's capabilities, whatever caused
+  the event: they're that plugin reacting to what happened. Plugins can't
+  send events of their own.
+- Calling what another plugin offers (`require("@core").project.open(dir)`)
+  works with what both plugins may: if `open` writes a file, the caller
+  needs `fs.write` too. The same goes for a function one plugin hands
+  another, like a picker callback or a hook, and for coroutines a plugin
+  makes: every plugin whose code is running counts. So the plugins Greed
+  ships that run other plugins' hooks, like core and picker, declare what
+  those hooks need. Code a plugin loads with `loadstring` counts as that
+  plugin's, and plugins don't get `getfenv` or `setfenv`.
+
+And they limit plugins only: an agent that runs commands in a shell of its
+own isn't affected.
 
 A plugin that isn't one of Greed's own and declares capabilities loads once
 you've approved them. Until then Greed says it waits, and
@@ -58,11 +88,12 @@ waits again. Plugins that use nothing beyond the editor load at once, and
 installing a plugin an agent wrote approves it, since its review shows the
 same list. Plugins can't write the approvals file through Greed.
 
-Capabilities follow the code that uses them. A plugin that requires another
-can call what that plugin offers, which works with that plugin's
-capabilities, so `requires` is part of what a plugin can do. And they limit
-plugins only: an agent that runs commands in a shell of its own isn't
-affected.
+Checking a plugin that isn't approved yet (`greed.plugin.check`, or an
+agent's `plugin_try`) runs its tests with only what you approved for it,
+which before you install it is nothing. A test that needs more fails with
+"needs approval", whether the plugin's own code asks or a command or
+plugin it uses does. `greed test` from your shell runs a plugin's tests
+with everything it declares.
 
 Plugins are Luau, a typed dialect of Lua. If you know Lua, the differences
 you'll meet are types (`local n: number = 1`), `if a then b else c` as an
