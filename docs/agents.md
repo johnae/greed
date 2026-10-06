@@ -60,6 +60,33 @@ claude mcp add greed -- greed mcp
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
+| `tools` | The groups of tools below, and switching one on |
+
+### Tool groups
+
+Every tool an agent is offered costs tokens on every request, so most of
+the tools above come in groups that an agent switches on with `tools` when
+it needs them. These are always offered: `focus`, `buffers`, `read`,
+`diagnostics`, `propose`, `open`, `project`, `files`, `grep`, `symbols`,
+`outline`, `ask`, `eval`, `context_get` and `tools`.
+
+| Group | Tools |
+|---|---|
+| `plan` | `plan_read`, `plan_write`, `decisions`, `decision_read`, `decision_propose` |
+| `map` | `repo_map`, `working_set` |
+| `refactor` | `rename`, `code_actions`, `code_action` |
+| `history` | `history_recent`, `why` |
+| `notes` | the `notes_` tools |
+| `syntax` | `syntax_query` |
+| `blocks` | `blocks_list`, `blocks_run` |
+| `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install` |
+| `subagents` | `subagent` |
+
+`:set agent-tool-groups "plan notes"` gives agents those groups from the
+start (the default is `plan`), and `"all"` gives every tool. Claude Code
+and other MCP clients hear that their list changed when a group is
+switched on, and each connection has its own. `greed ctl` always has every
+tool.
 
 ### The repo map
 

@@ -4,6 +4,7 @@
 
 local greed = require("@greed")
 local agent = require("@agent")
+agent.group("blocks", "Runnable code blocks in Markdown files: listing and running them")
 
 -- What these need from the plugin, which loads them after it's set up.
 export type Blocks = {
@@ -32,6 +33,7 @@ return function(blocks: Blocks)
 
 	agent.tool({
 		name = "blocks_list",
+		group = "blocks",
 		description = "The runnable code blocks in a Markdown file: each one's index, 1-based line, language, id, code and saved result",
 		input = object({ path = { type = "string" } }, { "path" }),
 		run = function(args)
@@ -46,6 +48,7 @@ return function(blocks: Blocks)
 
 	agent.tool({
 		name = "blocks_run",
+		group = "blocks",
 		description = "Run a code block in a Markdown file the user has let blocks run in, by its id or its index "
 			.. "from blocks_list, and return its result, which is also saved under the block",
 		input = object({

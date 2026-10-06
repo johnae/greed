@@ -612,6 +612,62 @@ require("@agent").tool({
 })
 ```
 
+A plugin offering tools lists `agent` in `requires`. The tool's parts:
+
+| Field | |
+|---|---|
+| `name` | Letters, digits, `_` and `-` |
+| `description` | What it does, for the agent deciding whether to use it. Say when to use it and what comes back |
+| `input` | A JSON Schema for the arguments, like `{ type = "object", properties = { path = { type = "string" } }, required = { "path" } }`; left out, it takes none |
+| `group` | The group it's offered with; left out, it's always offered (below) |
+| `run` | `run(args, client, caller)` does the work |
+
+`run` gets the arguments as a table. `client` is who called: `"shell"` for
+`greed ctl`, whose user can run anything already, `"agent"` for Greed's own
+agent, otherwise `"socket"`. A string it returns goes to the agent as it
+is, any other value as JSON, and an error goes back as an error, so
+`error("there's no file " .. path, 0)` tells the agent what went wrong.
+
+A tool can wait: for a process, a request, or the user. Changes to files
+are best proposed, so the user reviews them first and the tool hears what
+they decided:
+
+```luau
+local agent = require("@agent")
+
+agent.tool({
+	name = "add_license",
+	description = "Propose adding the license header to a file",
+	input = { type = "object", properties = { path = { type = "string" } }, required = { "path" } },
+	run = function(args)
+		local text = require("@greed").load(args.path):text()
+		local first = string.match(text, "^[^\n]*\n") or text
+		-- Waits until the user has accepted or rejected it.
+		return agent.propose(args.path, {
+			{ old_text = first, new_text = "-- SPDX-License-Identifier: MIT\n" .. first },
+		}, "add the license header")
+	end,
+})
+```
+
+`agent.propose_files` proposes changes to several files as one operation,
+`agent.propose_ranges` does it by byte ranges (for edits from a language
+server or a diff), and `agent.ask(title, questions)` asks the user and
+waits for their answers.
+
+Each tool costs the agent tokens on every request, so a plugin with
+several should put them in a group, which agents switch on with the
+`tools` tool when they need it:
+
+```luau
+agent.group("todo-sync", "Syncing todos with the issue tracker")
+agent.tool({ name = "issues_list", group = "todo-sync", description = "...", run = list })
+```
+
+The group's line is what an agent reads when deciding whether to switch it
+on, so say what it's for. See [Agents](agents.md#tool-groups) for the
+groups Greed has.
+
 ## Tests
 
 ```luau

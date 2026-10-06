@@ -3,10 +3,10 @@ local greed = require("@greed")
 local agent = require("@agent")
 
 -- Runs the socket tool `name` with `args`.
-local function run(name: string, args: { [string]: any }?): any
+local function run(name: string, args: { [string]: any }?, caller: agent.Caller?): any
 	for _, tool in agent.tools() do
 		if tool.name == name then
-			return tool.run(args or {})
+			return tool.run(args or {}, nil, caller)
 		end
 	end
 	error(`no tool {name}`)
@@ -21,7 +21,7 @@ test("read falls back to the disk for files that aren't open", function(t)
 		run("read", { path = dir .. "/closed.txt", from_line = 3, to_line = 1 }) == "",
 		"an empty range"
 	)
-	assert(not pcall(run, "read", { path = dir .. "/missing.txt" }), "a missing file fails")
+	assert(not pcall(run, "read", { path = dir .. "/missing.txt" }, nil), "a missing file fails")
 end)
 
 test("buffers lists open files and which have changes", function(t)
@@ -56,7 +56,7 @@ end)
 test("eval returns what the code returns, and fails with its error", function(t)
 	t:buffer("|x")
 	assert(run("eval", { code = "return 6 * 7" }) == "42")
-	local ok, err = pcall(run, "eval", { code = "error('broken')" })
+	local ok, err = pcall(run, "eval", { code = "error('broken')" }, nil)
 	assert(not ok and string.find(tostring(err), "broken", 1, true), tostring(err))
 end)
 
@@ -108,7 +108,7 @@ test("outline and syntax_query read a file's syntax tree, open or not", function
 	local name = calls[1].name
 	assert(name.text == "run" and name.line == 4 and name.column == 5, name.text)
 
-	local ok, err = pcall(run, "syntax_query", { query = "(x) @y" })
+	local ok, err = pcall(run, "syntax_query", { query = "(x) @y" }, nil)
 	assert(not ok and string.find(tostring(err), "no syntax tree", 1, true), tostring(err))
 end)
 
@@ -159,4 +159,43 @@ test("describe tells an agent what something is, or the names like it", function
 	local like = run("describe", { name = "option.s", kind = "api" })
 	assert(string.find(like, "api greed.option.set", 1, true), like)
 	assert(run("describe", { name = "zzz-nothing" }) == "nothing called zzz-nothing")
+end)
+
+local function names(tools: { agent.Tool }): { [string]: boolean }
+	local set = {}
+	for _, tool in tools do
+		set[tool.name] = true
+	end
+	return set
+end
+
+test("grouped tools are offered once a group is switched on, to that caller only", function()
+	local mine, theirs = agent.caller(), agent.caller()
+	local offered = names(agent.offered(nil, mine))
+	assert(offered.read and offered.tools and not offered.rename, "the core set")
+	assert(offered.plan_read, "the plan group is on from the start")
+	local said = run("tools", { group = "refactor" }, mine)
+	assert(string.find(said, "rename", 1, true), said)
+	assert(names(agent.offered(nil, mine)).rename, "switched on")
+	assert(not names(agent.offered(nil, theirs)).rename, "not for another caller")
+	assert(names(agent.offered("shell", nil)).rename, "a shell gets every tool")
+	assert(not pcall(run, "tools", { group = "nope" }, mine), "an unknown group fails")
+end)
+
+test("agent-tool-groups gives groups from the start, or all of them", function(t)
+	t:run("set", { "agent-tool-groups", "notes" })
+	local offered = names(agent.offered(nil, agent.caller()))
+	assert(offered.notes_read and not offered.plan_read and not offered.rename)
+	t:run("set", { "agent-tool-groups", "all" })
+	offered = names(agent.offered(nil, agent.caller()))
+	assert(offered.rename and offered.notes_read and offered.plan_read)
+end)
+
+test("the tools tool lists the groups, saying which are on", function()
+	local caller = agent.caller()
+	run("tools", { group = "map" }, caller)
+	local listing = run("tools", {}, caller)
+	assert(string.find(listing, "map (on): Where things are", 1, true), listing)
+	assert(string.find(listing, "refactor: Renaming", 1, true), listing)
+	assert(string.find(listing, "Tools: code_action, code_actions, rename", 1, true), listing)
 end)

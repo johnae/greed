@@ -124,6 +124,7 @@ local LOCATION = {
 
 agent.tool({
 	name = "rename",
+	group = "refactor",
 	description = "Rename a function, type, variable or other name everywhere it's used, as the "
 		.. "language server works it out. Give the line it's on and the name as it is now. The "
 		.. "changes go to the user to review as one operation; waits and says what they accepted",
@@ -197,6 +198,7 @@ local RANGE = {
 
 agent.tool({
 	name = "code_actions",
+	group = "refactor",
 	description = "The language server's code actions (quick fixes for the problems there, "
 		.. "refactors) for some lines of a file. Use code_action with one's title to propose it",
 	input = object(RANGE, { "path", "line" }),
@@ -217,6 +219,7 @@ agent.tool({
 
 agent.tool({
 	name = "code_action",
+	group = "refactor",
 	description = "Propose one of the language server's code actions for some lines, by its "
 		.. "title as code_actions lists it. Its changes go to the user to review as one "
 		.. "operation; waits and says what they accepted. Actions that run a command in the "

@@ -164,6 +164,7 @@ end
 
 registry.tool({
 	name = "working_set",
+	group = "map",
 	description = "The files the user has been working in lately, most active first: how "
 		.. "much they edited each (and how much agents did), when, and the 1-based lines they "
 		.. "worked on last. Start here to see what the user is doing",

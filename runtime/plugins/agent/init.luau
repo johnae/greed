@@ -20,7 +20,26 @@ local ask = require("@self/ask")
 local eval = require("@self/eval")
 local extend = require("@self/extend")
 
+registry.group(
+	"refactor",
+	"Renaming and the language server's fixes and refactors, proposed for review"
+)
+registry.group(
+	"map",
+	"Where things are: the repo map ranked toward what the user works on, and their working set"
+)
+registry.group("syntax", "Tree-sitter queries over a file's syntax tree")
+registry.group(
+	"history",
+	"How code came to be: what changed lately and who changed it, and every change behind some lines"
+)
+registry.group(
+	"plugins",
+	"Greed itself: what a command, option or API function is, and writing plugins"
+)
+
 export type Tool = registry.Tool
+export type Caller = registry.Caller
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
 export type FileChanges = proposals.FileChanges
@@ -29,6 +48,10 @@ export type WorkingEntry = working.Entry
 return {
 	tool = registry.tool,
 	tools = registry.tools,
+	--- Groups of tools agents switch on when they need them (registry.luau).
+	group = registry.group,
+	offered = registry.offered,
+	caller = registry.caller,
 	propose = proposals.propose,
 	propose_files = proposals.propose_files,
 	propose_changes = proposals.propose_changes,

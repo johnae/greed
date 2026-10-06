@@ -41,6 +41,8 @@ type State = {
 	cancelled: boolean,
 	--- Kinds of tool calls you allowed for the rest of the session.
 	allowed: { [string]: boolean },
+	--- The tool groups it switched on.
+	caller: agent.Caller,
 }
 
 local states: { [number]: State } = {}
@@ -191,9 +193,12 @@ local function system(s: Session): string
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
 			.. "search the project, edit files and run commands with the tools you have.",
 		`The project is at {s.root}; paths are relative to it.`,
-		"Find your way with working_set (what the user works on), repo_map, symbols, grep and "
-			.. "files before reading whole files. Files are read as the user has them, unsaved "
-			.. "changes included. Edit with edit_file, giving enough of the old text to match once.",
+		"Find your way with focus (what the user is looking at), symbols, grep and files before "
+			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
+			.. "Edit with edit_file, giving enough of the old text to match once.",
+		"More tools come in groups you switch on with the tools tool when you need them: the "
+			.. "repo map and the user's working set, renaming and the language server's fixes, "
+			.. "history, notes and more.",
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
 		"Be brief: say what you did and what's left, not every step.",
@@ -221,16 +226,19 @@ local function as_text(result: any): string
 	return greed.json.encode(result)
 end
 
--- Every tool the model may call: Greed's tools for agents and its own,
--- by name, with what to do for each.
-local function tools(): ({ models.ToolSpec }, { [string]: Own | agent.Tool })
+-- The tools the model is told about now (Greed's tools for agents in the
+-- groups it has, and its own), and every tool it may call, by name, with
+-- what to do for each.
+local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agent.Tool })
 	local specs: { models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
-	for _, tool in agent.tools() do
+	for _, tool in agent.offered(nil, state.caller) do
 		table.insert(
 			specs,
 			{ name = tool.name, description = tool.description, input = tool.input }
 		)
+	end
+	for _, tool in agent.tools() do
 		by_name[tool.name] = tool
 	end
 	for _, own in OWN do
@@ -293,7 +301,7 @@ local function call(
 		if own then
 			return own.run(s, c.input)
 		end
-		return as_text((found :: agent.Tool).run(c.input, "agent"))
+		return as_text((found :: agent.Tool).run(c.input, "agent", state.caller))
 	end)
 	local text = if ok then result else tostring(result)
 	tool.status = if ok then "completed" else "failed"
@@ -331,8 +339,9 @@ local function prompt(s: Session, text: string): (boolean, string?)
 	table.insert(state.said, { role = "user", text = text } :: models.Said)
 	s.status = "working"
 	s.changed()
-	local specs, by_name = tools()
 	for _ = 1, MAX_TURNS do
+		-- Again each turn, for the groups it switched on in the last.
+		local specs, by_name = tools(state)
 		local turn, err = models.turn(state.role, {
 			system = system(s),
 			said = state.said,
@@ -426,7 +435,8 @@ function M.start(opts: {
 		driver = DRIVER,
 	})
 	local role = opts.role or (if models.roles[M.ROLE] then M.ROLE else "reasoning")
-	states[s.id] = { said = {}, role = role, cancelled = false, allowed = {} }
+	states[s.id] =
+		{ said = {}, role = role, cancelled = false, allowed = {}, caller = agent.caller() }
 	s.models = roles()
 	s.model = role
 	return s

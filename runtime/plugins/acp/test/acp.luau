@@ -458,7 +458,7 @@ end)
 local function subagent(args: { [string]: any }): (boolean, any)
 	for _, tool in require("@agent").tools() do
 		if tool.name == "subagent" then
-			return pcall(tool.run, args, nil)
+			return pcall(tool.run, args, nil, nil)
 		end
 	end
 	error("no subagent tool")

@@ -332,6 +332,7 @@ end
 
 registry.tool({
 	name = "repo_map",
+	group = "map",
 	description = "A map of the project: the functions and types that matter most, with their "
 		.. "files and lines, ranked by how files refer to each other and toward the files the user "
 		.. "has open and those in `focus`. Read it first to find your way around",

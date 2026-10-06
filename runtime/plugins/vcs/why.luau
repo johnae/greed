@@ -143,6 +143,7 @@ greed.command({
 
 agent.tool({
 	name = "why",
+	group = "history",
 	description = "How some lines of a file came to be: each change that made them as they are, newest first, with who, when, its description and diff",
 	input = {
 		type = "object",

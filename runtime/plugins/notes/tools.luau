@@ -4,6 +4,7 @@
 
 local greed = require("@greed")
 local agent = require("@agent")
+agent.group("notes", "Your notes and their todos: finding, reading, writing and adding to them")
 local notes = require("./notes")
 local links = require("./links")
 local todos = require("./todos")
@@ -14,6 +15,7 @@ end
 
 agent.tool({
 	name = "notes_list",
+	group = "notes",
 	description = 'The names of every note, like "ideas" or "daily/2026-10-01". The user\'s own '
 		.. 'notes go by their names; the project\'s start with "project:", like "project:plan"',
 	run = function()
@@ -23,6 +25,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_search",
+	group = "notes",
 	description = "Search every note, the user's and the project's, for a regex; each match "
 		.. "with its note and 1-based line",
 	input = object({ pattern = { type = "string" } }, { "pattern" }),
@@ -41,6 +44,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_read",
+	group = "notes",
 	description = "A note's text, and the notes that link to it",
 	input = object({ name = { type = "string" } }, { "name" }),
 	run = function(args)
@@ -54,6 +58,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_write",
+	group = "notes",
 	description = "Write a note's whole text, making it if it's new, or with append add lines "
 		.. "at its end. Link to other notes with [[name]]. Notes about the project go in its "
 		.. 'notes, named "project:NAME", which live in the repository',
@@ -85,6 +90,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_todos",
+	group = "notes",
 	description = "The open todos in every note, soonest due first, or all of them with all",
 	input = object({ all = { type = "boolean" } }),
 	run = function(args)
@@ -104,6 +110,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_add_todo",
+	group = "notes",
 	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD). Left out, the "
 		.. 'note is the inbox: the project\'s ("project:inbox") when it keeps notes, otherwise '
 		.. "the user's",

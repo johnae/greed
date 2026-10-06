@@ -11,7 +11,7 @@ local function call(code: string): () -> string?
 	greed.spawn(function()
 		for _, tool in agent.tools() do
 			if tool.name == "eval" then
-				local ok, value = pcall(tool.run, { code = code }, nil)
+				local ok, value = pcall(tool.run, { code = code }, nil, nil)
 				result = if ok then value else `error: {value}`
 			end
 		end

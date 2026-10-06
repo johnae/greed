@@ -77,7 +77,10 @@ local function current_selection(): { [string]: any }?
 	}
 end
 
-local function tool(name: string, run: (args: { [string]: any }, client: string?) -> any)
+local function tool(
+	name: string,
+	run: (args: { [string]: any }, client: string?, caller: registry.Caller?) -> any
+)
 	registry.tool({ name = name, description = name, client = "ide", run = run })
 end
 

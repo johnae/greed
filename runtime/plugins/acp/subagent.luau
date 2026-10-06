@@ -8,6 +8,10 @@
 local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
+agent.group(
+	"subagents",
+	"Handing a task to a helper agent with an empty context, and getting its report"
+)
 
 local M = {}
 
@@ -78,6 +82,7 @@ end
 function M.offer(acp: any, installed: (name: string?) -> any)
 	agent.tool({
 		name = "subagent",
+		group = "subagents",
 		description = "Hand a task to a helper agent that starts with an empty context and works "
 			.. "on it in a session of its own, then reports back: for a search across the project, "
 			.. "a side task, or a second opinion, without filling your own context. By default it "

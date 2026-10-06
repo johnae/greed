@@ -15,6 +15,7 @@
 local greed = require("@greed")
 local notes = require("@notes")
 local agent = require("@agent")
+agent.group("plan", "The plan you share with the user, and what was decided for the project")
 local picker = require("@picker")
 
 local M = {}
@@ -164,6 +165,7 @@ end
 
 agent.tool({
 	name = "plan_read",
+	group = "plan",
 	description = "The plan you share with the user, a Markdown checklist in the project's notes "
 		.. "(project:plan), as they have it: they may have ticked, reordered, added or removed "
 		.. "items. Returns its text, its tasks and a version to give plan_write",
@@ -175,6 +177,7 @@ agent.tool({
 
 agent.tool({
 	name = "plan_write",
+	group = "plan",
 	description = "Replace the plan with new Markdown: a checklist ('- [ ] step', '- [x] done', "
 		.. "indented for sub-steps) and any notes. Give the version plan_read returned; if the "
 		.. "user changed the plan since, nothing is written and you get the plan as it is now, "
@@ -216,6 +219,7 @@ end
 
 agent.tool({
 	name = "decisions",
+	group = "plan",
 	description = "Decisions settled for this project, kept in the project's notes "
 		.. "(project:decisions/...): what was decided and why. Follow the accepted ones; proposed "
 		.. "ones aren't agreed yet. With `query`, only those whose text has it",
@@ -236,6 +240,7 @@ agent.tool({
 
 agent.tool({
 	name = "decision_read",
+	group = "plan",
 	description = "One decision's whole text, by the name `decisions` gave",
 	input = object({ name = { type = "string" } }, { "name" }),
 	run = function(args)
@@ -252,6 +257,7 @@ agent.tool({
 
 agent.tool({
 	name = "decision_propose",
+	group = "plan",
 	description = "Propose a decision to keep for later sessions, e.g. after the user settled a "
 		.. "question. It stays proposed until the user accepts it",
 	input = object({

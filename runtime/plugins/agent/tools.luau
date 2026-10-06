@@ -170,6 +170,7 @@ end
 
 agent.tool({
 	name = "history_recent",
+	group = "history",
 	description = "What changed lately in the open files and who changed it. For each file, "
 		.. 'its edits, newest first: the author ("user", "external" for changes on disk, or '
 		.. 'the plugin that made them; changes agents made through the editor are "agent"), '
@@ -328,6 +329,7 @@ agent.tool({
 
 agent.tool({
 	name = "syntax_query",
+	group = "syntax",
 	description = "Run a tree-sitter query over a file's syntax tree, e.g. "
 		.. '"(call_expression function: (identifier) @name)". Returns each match\'s captures '
 		.. "with their node kind, 1-based lines and columns and text",
@@ -359,6 +361,7 @@ agent.tool({
 
 agent.tool({
 	name = "describe",
+	group = "plugins",
 	description = "What a command, option, event, API function or type, plugin or mode is: "
 		.. "its doc, keys, current value, who defined it and where. Give a name that "
 		.. "isn't exact and it lists the names that contain it",

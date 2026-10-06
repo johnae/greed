@@ -184,3 +184,26 @@ test("Greed's agent says it can't have a workspace yet", function(t)
 		tostring(err)
 	)
 end)
+
+test("a group switched on in one turn is offered in the next", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "tools", input = { group = "refactor" } } },
+			stop = "tools",
+		},
+		{ text = "ok", calls = {}, stop = "done" },
+	})
+	ask(t, "rename things")
+	local function has(request: any, name: string): boolean
+		for _, tool in request.tools do
+			if tool.name == name then
+				return true
+			end
+		end
+		return false
+	end
+	assert(not has(asked[1], "rename") and has(asked[1], "tools"), "not at first")
+	assert(has(asked[2], "rename"), "then it is")
+	assert(string.find(asked[1].system, "tools tool", 1, true), "and it's told about groups")
+end)

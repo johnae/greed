@@ -68,7 +68,10 @@ fn agents_get_mcp_answers_and_the_tools_list() {
         .unwrap()
         .unwrap();
     assert_eq!(init["serverInfo"]["name"], "greed");
-    assert_eq!(init["capabilities"]["tools"], json!({}));
+    assert_eq!(
+        init["capabilities"]["tools"],
+        json!({ "listChanged": true })
+    );
     assert_eq!(
         client
             .call("notifications/initialized", &Value::Null)
@@ -193,4 +196,35 @@ fn a_proposal_waits_for_the_user_and_tells_the_agent_what_happened() {
     assert!(answer.starts_with("accepted 1 of 1 changes"), "{answer}");
     conn.input.send(Input::Quit).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn tool_names(client: &mut Client) -> Vec<String> {
+    let tools = client.call("tools/list", &Value::Null).unwrap().unwrap();
+    tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn an_agent_switches_on_a_group_of_tools_and_hears_its_list_changed() {
+    let (conn, mut client) = start("groups", "one two three");
+    let names = tool_names(&mut client);
+    assert!(names.contains(&"tools".to_owned()), "{names:?}");
+    assert!(!names.contains(&"history_recent".to_owned()), "{names:?}");
+    let (listing, _) = call(&mut client, "tools", &json!({}));
+    assert!(
+        listing.contains("history: How code came to be"),
+        "{listing}"
+    );
+    let (said, failed) = call(&mut client, "tools", &json!({ "group": "history" }));
+    assert!(!failed && said.contains("history_recent"), "{said}");
+    assert_eq!(
+        client.take_notifications(),
+        [json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" })]
+    );
+    assert!(tool_names(&mut client).contains(&"history_recent".to_owned()));
+    conn.input.send(Input::Quit).unwrap();
 }

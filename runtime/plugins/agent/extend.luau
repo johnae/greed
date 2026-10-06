@@ -258,6 +258,7 @@ end
 
 registry.tool({
 	name = "plugin_guide",
+	group = "plugins",
 	description = "How to write a Greed plugin, with the full typed API. Read this before plugin_try",
 	run = function()
 		local plugins = {}
@@ -271,6 +272,7 @@ registry.tool({
 
 registry.tool({
 	name = "plugin_try",
+	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
 		.. "then its tests. Returns what failed; fix and try again until it passes",
 	input = object({
@@ -289,6 +291,7 @@ registry.tool({
 
 registry.tool({
 	name = "plugin_install",
+	group = "plugins",
 	description = "Ask the user to install the plugin last tried with plugin_try. "
 		.. "They see its code and checks; waits for their answer",
 	input = object({ name = { type = "string" } }, { "name" }),
