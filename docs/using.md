@@ -202,8 +202,15 @@ other machine, and `GREED_SSH` the ssh command to use.
 
 ## Editing
 
-Greed edits the way Helix does: you select text, then say what to do with it.
-There is always a selection; a cursor is a selection one character wide.
+Greed has three editing styles, and you pick the one you like: Helix's
+(select, then act), Vim's (act, then where) or modeless editing as in
+VS Code. Greed asks the first time it starts, `:style vim` switches at any
+time, and [Editing styles](editing-styles.md) has each one's keys and how
+to make one your own.
+
+This page shows the Helix style, Greed's default. In the Helix style you
+select text, then say what to do with it. There is always a selection; a
+cursor is a selection one character wide.
 
 **Moving and selecting** (normal mode)
 

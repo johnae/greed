@@ -13,12 +13,22 @@ $ greed ctl focus            # ask the running editor what you're looking at
 { "path": "src/main.rs", "mode": "normal", "selections": [ ... ], ... }
 ```
 
-Editing works like Helix: select first, then act. `w` selects a word, `x` a
-line, `s` selects every regex match inside the selection, and typing then
-edits all of them at once. `space f` finds files, `space /` searches the
-project as you type, `space e` opens a file tree and `:` runs any command.
-Language servers start on their own when they're installed; `:health` shows
-which ones were found.
+Edit the way you already like to. The first time Greed starts it asks which
+style you want, and `:style` switches while it runs. Each style follows the
+editor it comes from closely, down to text objects, registers, macros and
+counts, so your habits carry over:
+
+- Helix: select first, then act. `x` selects a line, `s` every regex match
+  inside the selection, and typing edits all of them at once.
+- Vim: say what to do, then where: `d w`, `c i w`, `.` to repeat.
+- Edit: no modes. Typing inserts, shift and the arrows select, as in VS Code
+  and most editors.
+
+In Helix and Vim, `space f` finds files, `space /` searches the project as
+you type and `:` runs any command; in edit mode, `ctrl-p` finds files and
+`ctrl-P` runs commands. Language servers start on their own when they're
+installed; `:health` shows which ones were found. [Editing
+styles](docs/editing-styles.md) has the keys for each.
 
 
 ## Plugins in Luau

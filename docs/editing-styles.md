@@ -1,7 +1,11 @@
 # Editing styles
 
 Greed comes with three ways to edit, and you can switch between them while
-it runs:
+it runs. Each one follows the editor it comes from closely, so what your
+hands know works here: Helix's selections and motions, Vim's operators,
+text objects, registers, macros and visual modes, the usual shortcuts of
+modeless editors. Where one still differs from the original, its section
+below says so.
 
 | Style | How it works | Like |
 |---|---|---|
