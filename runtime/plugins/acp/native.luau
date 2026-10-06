@@ -43,6 +43,8 @@ type State = {
 	allowed: { [string]: boolean },
 	--- The tool groups it switched on.
 	caller: agent.Caller,
+	--- Where it works, for its prompt: worked out at its first prompt.
+	env: string?,
 }
 
 local states: { [number]: State } = {}
@@ -195,12 +197,58 @@ local function instructions(root: string): string?
 	return nil
 end
 
+-- What `command` (a shell command line) prints in `cwd`, trimmed, or nil
+-- when it fails.
+local function output(command: string, cwd: string): string?
+	local done = greed.process.run({ "sh", "-c", command }, { cwd = cwd })
+	if done == nil or done.code ~= 0 then
+		return nil
+	end
+	local text = string.match(done.stdout, "^%s*(.-)%s*$")
+	return if text and text ~= "" then text else nil
+end
+
+-- Where the agent works, as lines for its prompt: the system and shell,
+-- and the project's version control. Worked out once a session.
+local function environment(root: string): string
+	local lines = {}
+	local system_name = output("uname -sr", root)
+	local shell_name = output('basename "${SHELL:-sh}"', root)
+	if system_name then
+		table.insert(lines, `The system is {system_name}; the shell is {shell_name or "sh"}.`)
+	end
+	if greed.fs.stat(root .. "/.jj") then
+		local change = output(
+			"jj log -r @ --no-graph --ignore-working-copy -T 'description.first_line()'",
+			root
+		)
+		local changed = output("jj diff --name-only --ignore-working-copy | wc -l", root)
+		table.insert(
+			lines,
+			`The project is a jj repository (use jj, not git). The working copy's change `
+				.. (if change then `is "{change}"` else "has no description yet")
+				.. `, with {changed or "?"} files changed when the session started.`
+		)
+	elseif greed.fs.stat(root .. "/.git") then
+		local branch = output("git rev-parse --abbrev-ref HEAD", root)
+		local changed = output("git status --porcelain | wc -l", root)
+		table.insert(
+			lines,
+			`The project is a git repository on branch {branch or "?"}, with {changed or "?"} `
+				.. "files changed when the session started."
+		)
+	end
+	return table.concat(lines, " ")
+end
+
 -- What the model is told about where it is and how to work.
-local function system(s: Session): string
+local function system(s: Session, env: string?): string
 	local lines = {
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
 			.. "search the project, edit files and run commands with the tools you have.",
-		`The project is at {s.root}; paths are relative to it. Today is {os.date("%A %Y-%m-%d")}.`,
+		`The project is at {s.root}; paths are relative to it. It's {os.date(
+			"%A %Y-%m-%d %H:%M %Z"
+		)}.` .. (if env and env ~= "" then " " .. env else ""),
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
 			.. "Edit with edit_file, giving enough of the old text to match once.",
@@ -347,11 +395,18 @@ local function prompt(s: Session, text: string): (boolean, string?)
 	table.insert(state.said, { role = "user", text = text } :: models.Said)
 	s.status = "working"
 	s.changed()
+	state.env = state.env or environment(s.root)
+	-- The same for every turn of this prompt, so providers can cache it,
+	-- until the hour changes and the time in it with it.
+	local said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
 	for _ = 1, MAX_TURNS do
+		if os.date("%Y-%m-%d %H") ~= said_hour then
+			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
+		end
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
 		local turn, err = models.turn(state.role, {
-			system = system(s),
+			system = said_system,
 			said = state.said,
 			tools = specs,
 		}, function(piece)
