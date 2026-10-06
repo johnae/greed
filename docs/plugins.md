@@ -695,6 +695,75 @@ its `text`, the `calls` it asks for (`id`, `name`, `input`) and `stop`:
 next turn. It works the same with Anthropic and with servers that speak
 OpenAI's chat completions.
 
+### Providers you sign in to
+
+Some plans come with an account instead of an API key, like Berget Code.
+A provider like that names a login, and `:login NAME` signs you in with
+OAuth's device flow: Greed shows a link and a code, you approve it in a
+browser on any device, and the tokens are kept with your other secrets and
+renewed before they run out. Once you're signed in, the provider sends the
+token instead of its key.
+
+Add one in your `init.luau` or a plugin, from what the provider's sign-in
+server says about itself (its OpenID configuration usually lists the two
+endpoints):
+
+```luau
+local models = require("@models")
+
+models.login.logins.acme = {
+	title = "Acme AI",
+	device_url = "https://auth.acme.example/oauth/device/code",
+	token_url = "https://auth.acme.example/oauth/token",
+	client_id = "acme-cli",
+	scope = "openid offline_access",
+}
+models.providers.acme = {
+	kind = "openai",
+	url = "https://api.acme.example/v1",
+	login = "acme",
+	-- Optional: a key to use when you aren't signed in.
+	secret = "acme",
+}
+models.roles.agent = { provider = "acme", model = "acme-large" }
+```
+
+Then `:login acme`, and `:models` says "signed in". `:logout acme` forgets
+the tokens, and the provider goes back to its key. The name is used for the
+secret the tokens are kept in, so it takes lowercase letters, digits and
+dashes.
+
+`scope` needs whatever the server wants for a refresh token, often
+`offline_access`; without one, you'd sign in again whenever the token runs
+out. Tokens are renewed with OAuth's own refresh at `token_url`. A provider
+that renews another way gives a `renew` function, which gets the tokens
+(`access`, `refresh`, `expires` in seconds like `os.time()`) and returns new
+ones, or nil and why. Berget's, in the models plugin's `login.luau`, posts
+the refresh token to its own API:
+
+```luau
+renew = function(tokens)
+	local status, answer = models.login.post(
+		"https://api.acme.example/v1/auth/refresh",
+		{ refresh_token = tokens.refresh },
+		"json"
+	)
+	if status ~= 200 or type(answer.token) ~= "string" then
+		return nil, `Acme said {status}`
+	end
+	return {
+		access = answer.token,
+		refresh = answer.refresh_token or tokens.refresh,
+		expires = os.time() + answer.expires_in,
+	}
+end,
+```
+
+`models.login.post(url, body, "form" | "json")` sends a POST and returns
+the status and the answer decoded from JSON. Only the device flow is
+supported for signing in; a provider that only signs in through the browser
+on your own machine can't be added this way yet.
+
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up in Claude Code (through

@@ -141,3 +141,39 @@ test("not signed in, a token says how to sign in", function()
 	local token, err = login.token("berget")
 	assert(token == nil and string.find(err, ":login berget", 1, true), tostring(err))
 end)
+
+test("a login added from config signs in and renews with OAuth's refresh", function(t)
+	login.logins.acme = {
+		title = "Acme AI",
+		device_url = "https://auth.acme.example/device",
+		token_url = "https://auth.acme.example/token",
+		client_id = "acme-cli",
+		scope = "openid offline_access",
+	}
+	models.providers.acme = { kind = "openai", url = "https://api.acme.example/v1", login = "acme" }
+	models.roles.coding = { provider = "acme", model = "acme-large" }
+	greed.secrets.set(
+		"acme-login",
+		greed.json.encode({ access = "old", refresh = "r0", expires = os.time() - 1 })
+	)
+	local sent = serve({
+		["https://auth.acme.example/token"] = {
+			{
+				status = 200,
+				body = { access_token = "fresh", refresh_token = "r1", expires_in = 600 },
+			},
+		},
+	})
+	assert(login.token("acme") == "fresh")
+	assert(sent[1].body.grant_type == "refresh_token" and sent[1].body.refresh_token == "r0")
+	assert(sent[1].kind == "form")
+	local line = table.concat(models.describe(), "\n")
+	assert(
+		string.find(line, "coding: acme-large at acme", 1, true)
+			and string.find(line, "signed in", 1, true),
+		line
+	)
+	login.logins.acme = nil
+	models.providers.acme = nil
+	models.roles.coding = nil
+end)
