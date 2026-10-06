@@ -97,6 +97,14 @@ function M.terminal(buffer: greed.Buffer): greed.Terminal?
 	return term and term.terminal
 end
 
+--- The folder the shell in `buffer`'s terminal is in, as it last said
+--- (OSC 7), or the one it started in; nil for a buffer that isn't a
+--- terminal.
+function M.cwd(buffer: greed.Buffer): string?
+	local term = term_of(buffer)
+	return term and term.terminal:cwd()
+end
+
 --- What the terminal in `buffer` was asked to run: its command, or nil for
 --- your shell (and for a buffer that isn't a terminal).
 function M.asked(buffer: greed.Buffer): { string }?
@@ -418,6 +426,8 @@ M.env = {} :: { [string]: string }
 --- types into it: in the focused view, a new pane or a float.
 function M.open(command: { string }?, options: OpenOptions?): Term
 	local opts: OpenOptions = options or {}
+	-- Opened from a terminal, it starts in the folder that one's shell is in.
+	local here = M.cwd(greed.view():buffer())
 	local buffer = greed.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
@@ -456,7 +466,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local spawned, started = pcall(function()
 		return greed.terminal.spawn({
 			command = given,
-			cwd = greed.project.current().root,
+			cwd = here or greed.project.current().root,
 			env = env,
 			rows = rows or 24,
 			cols = cols or 80,
@@ -695,6 +705,48 @@ greed.command({
 -- A URL written out in text, for links programs didn't mark.
 local URL = [=[(https?|ftp|file)://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]]=]
 
+-- A path, maybe with a line and column after it, as compilers and grep
+-- print them: `src/main.rs:12:5`.
+local PATH = [=[[^\s:'"`()<>\[\]{},;]+(:\d+){0,2}]=]
+
+--- The file named at `pos` in `buffer`, with the line and column after it
+--- if there are any (1-based), when that file is there: a relative path is
+--- taken from the folder the terminal's shell is in, or the project's.
+function M.file_at(buffer: greed.Buffer, pos: number): (string?, number?, number?)
+	local line = buffer:line_of(pos)
+	for _, found in buffer:find_all(PATH, buffer:line_start(line), buffer:line_end(line)) or {} do
+		if pos >= found.from and pos < found.to then
+			local text = buffer:slice(found.from, found.to)
+			local name, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
+			name = name or text
+			local home = greed.fs.dirs().home
+			local path = if string.sub(name, 1, 1) == "/"
+				then name
+				elseif string.sub(name, 1, 2) == "~/" and home then home .. string.sub(name, 2)
+				else `{M.cwd(buffer) or greed.project.current().root}/{name}`
+			local info = greed.fs.stat(path)
+			if info == nil or info.kind ~= "file" then
+				return nil, nil, nil
+			end
+			return path, tonumber(row), tonumber(col)
+		end
+	end
+	return nil, nil, nil
+end
+
+--- Opens `path` in the main view, at 1-based `line` and `col` if given.
+function M.open_file(path: string, line: number?, col: number?)
+	greed.open(path)
+	if line then
+		local view = greed.view()
+		local buffer = view:buffer()
+		local row = math.clamp(line - 1, 0, buffer:line_count() - 1)
+		local at =
+			math.min(buffer:line_start(row) + math.max((col or 1) - 1, 0), buffer:line_end(row))
+		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	end
+end
+
 --- Where the link at `pos` in `buffer` goes: one a terminal's program
 --- printed, or a URL written there.
 function M.link_at(buffer: greed.Buffer, pos: number): string?
@@ -740,16 +792,29 @@ function M.open_link(uri: string)
 	end
 end
 
+-- Opens the link at `pos` in `buffer`, or else the file named there; false
+-- when there's neither.
+local function open_at(buffer: greed.Buffer, pos: number): boolean
+	local uri = M.link_at(buffer, pos)
+	if uri then
+		M.open_link(uri)
+		return true
+	end
+	local path, line, col = M.file_at(buffer, pos)
+	if path then
+		M.open_file(path, line, col)
+		return true
+	end
+	return false
+end
+
 greed.command({
 	name = "open-link",
-	doc = "Open the link under the cursor",
+	doc = "Open the link under the cursor, or the file it names, at the line it says",
 	run = function(ctx)
 		local selection = ctx.view:selection()
-		local uri = M.link_at(ctx.buffer, selection.ranges[selection.primary].head)
-		if uri then
-			M.open_link(uri)
-		else
-			greed.echo("no link here")
+		if not open_at(ctx.buffer, selection.ranges[selection.primary].head) then
+			greed.echo("no link or file here")
 		end
 	end,
 })
@@ -949,9 +1014,7 @@ local function on_mouse(event: greed.MouseEvent): boolean
 		return true
 	end
 	if event.kind == "press" and event.button == "left" and event.ctrl and event.pos then
-		local uri = M.link_at(view:buffer(), event.pos)
-		if uri then
-			M.open_link(uri)
+		if open_at(view:buffer(), event.pos) then
 			return true
 		end
 	end

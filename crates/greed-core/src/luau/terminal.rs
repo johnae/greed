@@ -14,7 +14,7 @@ use crate::image::ImageId;
 use crate::keymap::Key;
 use crate::mouse::{Mouse, MouseKind};
 use crate::registry::PluginId;
-use crate::terminal::{Event, MarkKind, Options, Row, Terminal, TerminalId};
+use crate::terminal::{Event, Mark, MarkKind, Options, Row, Terminal, TerminalId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -191,6 +191,27 @@ fn rows_to_lua(lua: &Lua, rows: Vec<Row>) -> LuaResult<Table> {
     Ok(t)
 }
 
+fn marks_to_lua(lua: &Lua, marks: Vec<Mark>) -> LuaResult<Table> {
+    let list = lua.create_table_with_capacity(marks.len(), 0)?;
+    for mark in marks {
+        let t = lua.create_table()?;
+        t.set("line", mark.line)?;
+        t.set("col", mark.col)?;
+        let kind = match mark.kind {
+            MarkKind::Prompt => "prompt",
+            MarkKind::Command => "command",
+            MarkKind::Output => "output",
+            MarkKind::Done(code) => {
+                t.set("code", code)?;
+                "done"
+            }
+        };
+        t.set("kind", kind)?;
+        list.push(t)?;
+    }
+    Ok(list)
+}
+
 impl UserData for TerminalRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, ()| Ok(this.0));
@@ -216,29 +237,15 @@ impl UserData for TerminalRef {
             t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
             Ok(t)
         });
+        methods.add_method("cwd", |lua, this, ()| {
+            this.with(lua, |t| t.cwd().map(|p| p.to_string_lossy().into_owned()))
+        });
         methods.add_method("marks_made", |lua, this, ()| {
             this.with(lua, |t| t.marks_made())
         });
         methods.add_method("marks", |lua, this, from: Option<u64>| {
             let marks = this.with(lua, |t| t.marks(from.unwrap_or(0)))?;
-            let list = lua.create_table()?;
-            for mark in marks {
-                let t = lua.create_table()?;
-                t.set("line", mark.line)?;
-                t.set("col", mark.col)?;
-                let kind = match mark.kind {
-                    MarkKind::Prompt => "prompt",
-                    MarkKind::Command => "command",
-                    MarkKind::Output => "output",
-                    MarkKind::Done(code) => {
-                        t.set("code", code)?;
-                        "done"
-                    }
-                };
-                t.set("kind", kind)?;
-                list.push(t)?;
-            }
-            Ok(list)
+            marks_to_lua(lua, marks)
         });
         methods.add_method("write", |lua, this, text: mlua::LuaString| {
             let bytes = text.as_bytes().to_vec();

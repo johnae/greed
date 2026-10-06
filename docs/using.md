@@ -885,7 +885,7 @@ goes to the program, including ones the editor would otherwise take, like
 | `f1` | The keys that work while typing into it |
 | `i`, `a`, `enter` | Type into it again |
 | `p` | Paste the latest copy into the program |
-| `g x`, `ctrl-click` | Open the link under the cursor (or the mouse) |
+| `g x`, `ctrl-click` | Open the link under the cursor (or the mouse), or the file a path there names, at its line |
 | `[ p` `] p` | The command before or after the cursor, where your shell marks them (below) |
 | `g o` | Select the output of the command at the cursor, to copy or search it |
 | `:terminal-close` | End the program and close the terminal |
@@ -936,6 +936,37 @@ PS0='\e]133;C\a'
 
 These are the same marks kitty, WezTerm, Ghostty and iTerm2 read, so they
 work there too.
+
+### The folder your shell is in
+
+A shell can also say which folder it's in. Then a terminal you open from
+a terminal starts in the same folder, and `g x` (or `ctrl-click`) on a path
+in the output, like `src/main.rs:12:5` from a compiler, opens that file at
+that line, finding it from that folder. Without it, paths are found from
+the project's folder.
+
+For fish, add this to `~/.config/fish/config.fish`:
+
+```fish
+function __greed_folder --on-variable PWD
+    printf '\e]7;file://%s%s\a' (hostname) (string escape --style=url $PWD)
+end
+__greed_folder
+```
+
+For zsh:
+
+```zsh
+_greed_folder() { print -n "\e]7;file://$HOST$PWD\a" }
+chpwd_functions+=(_greed_folder)
+_greed_folder
+```
+
+and for bash, in `PROMPT_COMMAND`:
+
+```bash
+PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+```
 
 ## Panes and tabs
 

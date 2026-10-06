@@ -533,6 +533,9 @@ export type Terminal = {
 	--- How many marks the shell has made so far, to tell when there are new
 	--- ones without asking for them all.
 	marks_made: (self: Terminal) -> number,
+	--- The folder the shell last said it's in (OSC 7), or the one it started
+	--- in.
+	cwd: (self: Terminal) -> string?,
 	--- Sends text to the program as if typed.
 	write: (self: Terminal, text: string) -> (),
 	--- Sends a key, e.g. "ctrl-c" or "up", as a terminal encodes it.

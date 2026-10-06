@@ -339,3 +339,25 @@ test("without marks, going between commands says why", function(t)
 	local messages = t:messages()
 	assert(string.find(messages[#messages], "no commands marked", 1, true), messages[#messages])
 end)
+
+test(
+	"the folder the shell says it's in is where new terminals start and paths come from",
+	function(t)
+		local dir = t:tempdir({ ["src/main.rs"] = "fn main() {\n    let x = 1;\n}\n" })
+		t:run(
+			"terminal",
+			{ "sh", "-c", `printf '\\033]7;file://box{dir}\\007src/main.rs:2:9: oops'; sleep 5` }
+		)
+		shows(t, "oops")
+		local buffer = greed.view():buffer()
+		local terminal = require("@terminal")
+		assert(terminal.cwd(buffer) == dir, terminal.cwd(buffer))
+		t:run("terminal", { "sh", "-c", "pwd; sleep 5" })
+		t:keys("esc esc")
+		shows(t, dir)
+		t:run("terminal-close")
+		t:keys("ctrl-\\ g g g x")
+		assert(greed.view():buffer():path() == dir .. "/src/main.rs", greed.view():buffer():path())
+		t:expect("fn main() {\n    let |x = 1;\n}\n")
+	end
+)

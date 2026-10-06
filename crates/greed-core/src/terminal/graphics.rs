@@ -8,7 +8,8 @@
 //! their rows, and text written over them or an erase removes them.
 //!
 //! The splitter also cuts out the marks shells put around prompts and
-//! commands (`OSC 133`), which the emulator doesn't know.
+//! commands (`OSC 133`) and the folder they say they're in (`OSC 7`),
+//! which the emulator doesn't know.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -38,6 +39,9 @@ pub enum Piece<'a> {
     /// A place the shell marked (`OSC 133`): what came after `133;`, like
     /// `A` where a prompt starts or `D;1` where a command ended with 1.
     Prompt(Vec<u8>),
+    /// The folder the shell is in (`OSC 7`): what came after `7;`, like
+    /// `file://host/home/me`.
+    Cwd(Vec<u8>),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +163,8 @@ impl Splitter {
             emit(Piece::Iterm(rest.to_vec()));
         } else if let Some(rest) = held.strip_prefix(b"133;") {
             emit(Piece::Prompt(rest.to_vec()));
+        } else if let Some(rest) = held.strip_prefix(b"7;") {
+            emit(Piece::Cwd(rest.to_vec()));
         } else {
             let whole = [b"\x1b]", held.as_slice(), terminator].concat();
             emit(Piece::Bytes(&whole));
@@ -534,6 +540,7 @@ mod tests {
                 Piece::Kitty(k) => format!("kitty {}", String::from_utf8_lossy(&k)),
                 Piece::Iterm(i) => format!("iterm {}", String::from_utf8_lossy(&i)),
                 Piece::Prompt(p) => format!("prompt {}", String::from_utf8_lossy(&p)),
+                Piece::Cwd(c) => format!("cwd {}", String::from_utf8_lossy(&c)),
             });
         });
         out.retain(|p| p != "text ");
@@ -573,6 +580,10 @@ mod tests {
                 b"\x1b]133;A\x07$ \x1b]133;B\x1b\\ls\n\x1b]133;D;1\x07"
             ),
             ["prompt A", "text $ ", "prompt B", "text ls\n", "prompt D;1"]
+        );
+        assert_eq!(
+            pieces(&mut s, b"\x1b]7;file://box/home/me\x07"),
+            ["cwd file://box/home/me"]
         );
     }
 

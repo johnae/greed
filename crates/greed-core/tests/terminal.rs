@@ -361,3 +361,18 @@ fn the_shells_marks_are_kept_by_line_counting_scrolled_off_ones() {
         "line 0 is the first prompt"
     );
 }
+
+#[test]
+fn the_folder_the_shell_says_its_in_is_kept() {
+    let (terminal, events) = start(
+        &[
+            "sh",
+            "-c",
+            "printf '\\033]7;file://box/tmp/a%%20b\\007'; sleep 0.2",
+        ],
+        3,
+        20,
+    );
+    exited(&events);
+    assert_eq!(terminal.cwd(), Some(std::path::PathBuf::from("/tmp/a b")));
+}

@@ -8,7 +8,9 @@
 //! plugin can ask for just the lines it hasn't shown yet.
 
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -177,6 +179,8 @@ struct Shared {
     marks: Mutex<VecDeque<Mark>>,
     /// How many marks the shell has made, kept or not.
     made: AtomicU64,
+    /// The folder the shell last said it's in, or the one it started in.
+    cwd: Mutex<Option<PathBuf>>,
     unread: AtomicBool,
     /// A cell's size in pixels on the client's screen.
     cell: Mutex<(u16, u16)>,
@@ -252,6 +256,7 @@ impl Terminal {
             graphics: Mutex::new(Graphics::default()),
             marks: Mutex::new(VecDeque::new()),
             made: AtomicU64::new(0),
+            cwd: Mutex::new(options.cwd.clone()),
             unread: AtomicBool::new(false),
             cell: Mutex::new(options.cell),
         });
@@ -315,6 +320,12 @@ impl Terminal {
                 .max(from.min(lines.first + lines.rows.len() as u64)),
             rows: lines.rows.iter().skip(skip).cloned().collect(),
         }
+    }
+
+    /// The folder the shell last said it's in (`OSC 7`), or the one it
+    /// started in.
+    pub fn cwd(&self) -> Option<PathBuf> {
+        lock(&self.shared.cwd).clone()
     }
 
     /// How many marks the shell has made so far, to tell when there are new
@@ -495,6 +506,11 @@ fn pump(
                         mark(&term, &graphics, &lock(&shared.scrollback), shared, kind);
                     }
                 }
+                Piece::Cwd(uri) => {
+                    if let Some(path) = cwd_from(&uri) {
+                        *lock(&shared.cwd) = Some(path);
+                    }
+                }
             });
             keep_scrollback(&mut term, &graphics, &mut lock(&shared.scrollback));
         }
@@ -502,6 +518,29 @@ fn pump(
             let _ = events.send(Event::Output(id));
         }
     }
+}
+
+/// The folder in an `OSC 7` URI, `file://HOST/PATH` with the path
+/// percent-encoded.
+fn cwd_from(uri: &[u8]) -> Option<PathBuf> {
+    let rest = uri.strip_prefix(b"file://")?;
+    let path = &rest[rest.iter().position(|&b| b == b'/')?..];
+    let mut bytes = Vec::with_capacity(path.len());
+    let mut i = 0;
+    while i < path.len() {
+        let hex = path
+            .get(i + 1..i + 3)
+            .filter(|h| path[i] == b'%' && h.iter().all(u8::is_ascii_hexdigit))
+            .and_then(|h| u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok());
+        if let Some(byte) = hex {
+            bytes.push(byte);
+            i += 3;
+        } else {
+            bytes.push(path[i]);
+            i += 1;
+        }
+    }
+    Some(PathBuf::from(OsString::from_vec(bytes)))
 }
 
 /// Keeps a mark of `kind` where the cursor is. Lines that scrolled off but
@@ -976,6 +1015,25 @@ mod tests {
         assert_eq!(sent("f12"), b"\x1b[24~");
         assert_eq!(sent("ctrl-space"), [0]);
         assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn the_shells_folder_is_read_from_its_uri() {
+        assert_eq!(
+            cwd_from(b"file://box/home/me/my%20files"),
+            Some(PathBuf::from("/home/me/my files"))
+        );
+        assert_eq!(
+            cwd_from(b"file:///tmp"),
+            Some(PathBuf::from("/tmp")),
+            "no host"
+        );
+        assert_eq!(
+            cwd_from(b"file://box/a%zz"),
+            Some(PathBuf::from("/a%zz")),
+            "not a byte"
+        );
+        assert_eq!(cwd_from(b"https://example.com/"), None);
     }
 
     #[test]
