@@ -168,7 +168,7 @@ impl UserData for NodeRef {
                 .editor
                 .find_buffer(this.buffer)
                 .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
-            if buffer.history().log().len() != this.version {
+            if buffer.history().applied() != this.version {
                 return Err(mlua::Error::runtime(
                     "the buffer changed since this node was found; find it again",
                 ));
@@ -203,7 +203,7 @@ fn tree_of(lua: &Lua, buffer: &BufferRef) -> LuaResult<Option<(Arc<Language>, Tr
             .editor
             .find_buffer(buffer.buffer)
             .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
-        let version = found.history().log().len();
+        let version = found.history().applied();
         Ok(state
             .syntax
             .tree(found)

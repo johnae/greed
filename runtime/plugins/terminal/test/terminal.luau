@@ -16,6 +16,7 @@ test(":terminal runs a program and shows what it prints", function(t)
 	local buffer = greed.view():buffer()
 	assert(buffer:kind() == "terminal")
 	shows(t, "hello\nthere")
+	assert(#buffer:history() == 0, "its output isn't kept to undo")
 	t:wait_for(function()
 		return #buffer:decorations("terminal.exit") > 0
 	end)

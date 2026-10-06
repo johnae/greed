@@ -321,6 +321,9 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local buffer = greed.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
+	-- Every bit of output replaces the screen; keeping each one to undo
+	-- would grow without end in a long-running terminal.
+	buffer:forget_history()
 	local view, previous
 	if opts.float then
 		local spec = table.clone(FLOAT)

@@ -465,7 +465,7 @@ impl Syntax {
         self.buffers
             .retain(|id, _| editor.find_buffer(*id).is_some());
         for buffer in editor.buffers() {
-            let version = buffer.history().log().len();
+            let version = buffer.history().applied();
             let Some(state) = self.state_for(buffer) else {
                 continue;
             };
@@ -533,7 +533,7 @@ impl Syntax {
     /// changed is parsed again. `None` if it has no language Greed knows or
     /// is too big to parse.
     pub fn tree(&mut self, buffer: &Buffer) -> Option<(Arc<Language>, Tree)> {
-        let version = buffer.history().log().len();
+        let version = buffer.history().applied();
         let state = self.state_for(buffer)?;
         if let Some((v, tree, _)) = &state.tree
             && *v == version

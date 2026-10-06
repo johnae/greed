@@ -70,6 +70,9 @@ export type Buffer = {
 	--- to; with false it goes once nothing shows it (right away if nothing
 	--- does now).
 	set_kept: (self: Buffer, kept: boolean) -> (),
+	--- Stops keeping undo history, for buffers whose edits nobody undoes,
+	--- like a terminal's: what's kept goes, and later edits aren't kept.
+	forget_history: (self: Buffer) -> (),
 	--- The language the text is highlighted as, e.g. "rust".
 	language: (self: Buffer) -> string?,
 	--- Sets the language, or with nil goes back to the one the file's

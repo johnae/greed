@@ -244,6 +244,10 @@ where node 0 is the text as loaded and undo goes to a node's parent; and
 `view:undo_to(id)` takes the text to any of them, on any branch, which is
 what `alt-u` and the `undo-tree` plugin's viewer are built on.
 
+A buffer whose edits nobody undoes, like a terminal's or a log a plugin
+keeps adding to, can stop keeping them with `buffer:forget_history()`, so
+it doesn't grow without end.
+
 The `operations` plugin builds on groups: it names the work, remembers the
 files it changed and the programs it ran, and gives it a review and an
 undo key.

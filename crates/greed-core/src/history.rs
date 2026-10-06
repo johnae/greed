@@ -18,6 +18,14 @@ pub struct History {
     /// Undo tree. Node 0 is the root: the buffer as it was loaded.
     nodes: Vec<Node>,
     current: usize,
+    /// How many transactions were applied, kept or not.
+    applied: usize,
+    /// The changes of the latest transaction, kept or not, for mapping
+    /// other views' selections through it.
+    latest: ChangeSet,
+    /// Whether transactions are kept at all; buffers whose edits nobody
+    /// undoes, like terminals, don't.
+    keep: bool,
 }
 
 /// One undo step: one transaction, or several merged by group.
@@ -83,11 +91,35 @@ impl Default for History {
                 time: None,
             }],
             current: 0,
+            applied: 0,
+            latest: ChangeSet::default(),
+            keep: true,
         }
     }
 }
 
 impl History {
+    /// How many transactions were applied to the buffer, kept in the log or
+    /// not: its version, for caches that follow its edits.
+    pub fn applied(&self) -> usize {
+        self.applied
+    }
+
+    /// The changes of the latest transaction applied, whether it was kept.
+    pub fn latest(&self) -> &ChangeSet {
+        &self.latest
+    }
+
+    /// Stops keeping transactions: the log and undo tree are emptied and stay
+    /// empty, while `applied` and `latest` go on following edits.
+    pub(crate) fn forget(&mut self) {
+        *self = Self {
+            applied: self.applied,
+            keep: false,
+            ..Self::default()
+        };
+    }
+
     /// Every transaction applied to the buffer, oldest first.
     pub fn log(&self) -> &[Transaction] {
         &self.log
@@ -147,6 +179,10 @@ impl History {
         before: Selection,
         after: Selection,
     ) {
+        if !self.keep {
+            self.record(tx, inverse);
+            return;
+        }
         let group = tx.meta.group;
         let time = Some(tx.meta.time);
         let index = self.nodes.len();
@@ -183,8 +219,14 @@ impl History {
     /// Records an undo or redo transaction in the log without touching the
     /// tree.
     pub(crate) fn record(&mut self, tx: Transaction, inverse: ChangeSet) {
-        self.log.push(tx);
-        self.inverses.push(inverse);
+        self.applied += 1;
+        if self.keep {
+            self.latest = tx.changes.clone();
+            self.log.push(tx);
+            self.inverses.push(inverse);
+        } else {
+            self.latest = tx.changes;
+        }
     }
 
     pub(crate) fn undo_step(&self) -> Option<Step> {

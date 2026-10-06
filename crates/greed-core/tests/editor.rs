@@ -873,3 +873,35 @@ fn reloading_a_file_is_an_external_edit_undo_takes_back() {
     assert_eq!(ed.buffer(id).text().to_string(), "one\ntwo\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_buffer_that_forgets_its_history_counts_edits_and_still_maps_other_views() {
+    let mut ed = editor("hello world");
+    let v1 = ed.focus();
+    let v2 = ed.split(v1);
+    ed.view_mut(v2).selection = Selection::single(6, 11);
+    let buffer = ed.view(v1).buffer;
+    let changes = ChangeSet::from_changes(11, [(0, 0, Some("a "))]).unwrap();
+    ed.apply(v1, changes, Author::User(ClientId(1)), None, None)
+        .unwrap();
+    ed.forget_history(buffer);
+    assert!(
+        ed.buffer(buffer).history().log().is_empty(),
+        "what was kept goes"
+    );
+    let changes = ChangeSet::from_changes(13, [(0, 0, Some(">> "))]).unwrap();
+    ed.apply(v1, changes, Author::User(ClientId(1)), None, None)
+        .unwrap();
+    assert_eq!(text(&ed), ">> a hello world");
+    assert!(
+        ed.buffer(buffer).history().log().is_empty(),
+        "and nothing new is kept"
+    );
+    assert_eq!(
+        ed.buffer(buffer).history().applied(),
+        2,
+        "but every edit counts"
+    );
+    assert_eq!(ed.view(v2).selection.primary(), Range::new(11, 16));
+    assert!(!ed.undo(v1).unwrap(), "there's nothing to undo");
+}

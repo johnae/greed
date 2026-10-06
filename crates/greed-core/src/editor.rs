@@ -459,6 +459,13 @@ impl Editor {
         }
     }
 
+    /// Stops keeping `buffer`'s undo history (see [`Buffer::forget_history`]).
+    pub fn forget_history(&mut self, buffer: BufferId) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.forget_history();
+        }
+    }
+
     /// Keeps `buffer` open while nothing shows it, like a terminal you'll
     /// come back to, or lets it go then again (right away if nothing shows
     /// it now).
@@ -1253,12 +1260,7 @@ impl Editor {
     /// Maps the selections of views on `buffer`, other than `except`, through
     /// the buffer's latest transaction.
     fn map_views(&mut self, buffer: BufferId, except: Option<ViewId>) {
-        let changes = &self.buffers[&buffer]
-            .history()
-            .log()
-            .last()
-            .expect("a transaction was just applied")
-            .changes;
+        let changes = self.buffers[&buffer].history().latest();
         for (id, other) in &mut self.views {
             if Some(*id) != except && other.buffer == buffer {
                 other.selection = other.selection.map(changes);

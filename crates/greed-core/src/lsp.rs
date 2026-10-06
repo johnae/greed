@@ -307,7 +307,7 @@ impl Lsp {
         let Some(server) = self.server_for(language, path)? else {
             return Ok(());
         };
-        let version = buffer.history().log().len();
+        let version = buffer.history().applied();
         let server = &mut self.servers[server];
         if !server.alive {
             return Ok(());

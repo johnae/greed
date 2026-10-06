@@ -699,6 +699,11 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("kept", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.is_kept()))
     });
+    methods.add_method("forget_history", |lua, this, ()| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.forget_history(this.buffer);
+        Ok(())
+    });
     methods.add_method("set_kept", |lua, this, kept: bool| {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.set_kept(this.buffer, kept);

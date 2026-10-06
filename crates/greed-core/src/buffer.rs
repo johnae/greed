@@ -282,6 +282,12 @@ impl Buffer {
         &self.history
     }
 
+    /// Stops keeping undo history, for buffers whose edits nobody undoes,
+    /// like a terminal's: what's kept goes, and later edits aren't kept.
+    pub fn forget_history(&mut self) {
+        self.history.forget();
+    }
+
     /// Makes redo follow undo-tree node `child` (see `History::prefer`).
     pub(crate) fn prefer_branch(&mut self, child: usize) {
         self.history.prefer(child);
