@@ -35,15 +35,9 @@ local named: { [string]: { text: string, linewise: boolean } } = {}
 
 -- Text helpers -----------------------------------------------------------
 
+-- core's character classes, with the end of the buffer as a line end.
 local function class(ch: string?): string
-	if ch == nil or ch == "\n" then
-		return "eol"
-	elseif ch == " " or ch == "\t" then
-		return "space"
-	elseif #ch > 1 or string.match(ch, "[%w_]") then
-		return "word"
-	end
-	return "punct"
+	return core.text.class(ch) or "eol"
 end
 
 local function is_blank(buffer: Buffer, pos: number): boolean
@@ -65,42 +59,11 @@ local function on_char(buffer: Buffer, pos: number): number
 	return math.min(pos, finish)
 end
 
-local function first_non_blank(buffer: Buffer, line: number): number
-	local pos, finish = buffer:line_start(line), buffer:line_end(line)
-	while pos < finish and class(buffer:char_at(pos)) == "space" do
-		pos = buffer:next_char(pos)
-	end
-	return pos
-end
-
--- The column of `pos` in characters, and the position `column` characters
--- into `line`, stopping at its end.
-local function column_of(buffer: Buffer, pos: number): number
-	local _, start = line_bounds(buffer, pos)
-	local column = 0
-	while start < pos do
-		start = buffer:next_char(start)
-		column += 1
-	end
-	return column
-end
-
-local function at_column(buffer: Buffer, line: number, column: number): number
-	local pos, finish = buffer:line_start(line), buffer:line_end(line)
-	for _ = 1, column do
-		if pos >= finish then
-			break
-		end
-		pos = buffer:next_char(pos)
-	end
-	return pos
-end
-
 -- The column j and k aim for, kept while moving through shorter lines.
 local wanted: number? = nil
 
 local function wanted_column(buffer: Buffer, pos: number): number
-	local column = wanted or column_of(buffer, pos)
+	local column = wanted or core.text.column(buffer, pos)
 	wanted = column
 	return column
 end
@@ -187,7 +150,7 @@ local function next_word_start(buffer: Buffer, pos: number, big: boolean?): numb
 	while pos < len do
 		local of = class(buffer:char_at(pos))
 		if of == "eol" then
-			pos = buffer:next_char(pos)
+			pos = core.text.after(buffer, pos)
 			if pos < len and class(buffer:char_at(pos)) == "eol" then
 				return pos
 			end
@@ -318,7 +281,7 @@ end
 local function to_line(delta: (count: number) -> number): Motion
 	return function(buffer, pos, count)
 		local line = math.clamp(buffer:line_of(pos) + delta(count), 0, buffer:line_count() - 1)
-		return first_non_blank(buffer, line), "line"
+		return core.text.first_non_blank(buffer, buffer:line_start(line)), "line"
 	end
 end
 
@@ -387,7 +350,7 @@ local function screen_line(where: "top" | "middle" | "bottom"): Motion
 			then math.min(top + count - 1, bottom)
 			elseif where == "bottom" then math.max(bottom - count + 1, top)
 			else (top + bottom) // 2
-		return first_non_blank(buffer, line), "line"
+		return core.text.first_non_blank(buffer, buffer:line_start(line)), "line"
 	end
 end
 
@@ -412,11 +375,11 @@ local motions: { [string]: Motion } = {
 	end,
 	j = function(buffer, pos, count)
 		local line = math.min(buffer:line_of(pos) + count, buffer:line_count() - 1)
-		return at_column(buffer, line, wanted_column(buffer, pos)), "line"
+		return core.text.at_column(buffer, line, wanted_column(buffer, pos)), "line"
 	end,
 	k = function(buffer, pos, count)
 		local line = math.max(buffer:line_of(pos) - count, 0)
-		return at_column(buffer, line, wanted_column(buffer, pos)), "line"
+		return core.text.at_column(buffer, line, wanted_column(buffer, pos)), "line"
 	end,
 	w = repeat_step(next_word_start),
 	b = repeat_step(prev_word_start),
@@ -445,7 +408,7 @@ local motions: { [string]: Motion } = {
 		return count - 1
 	end),
 	["|"] = function(buffer, pos, count)
-		return at_column(buffer, buffer:line_of(pos), count - 1), "exclusive"
+		return core.text.at_column(buffer, buffer:line_of(pos), count - 1), "exclusive"
 	end,
 	["g _"] = function(buffer, pos, count)
 		local line = math.min(buffer:line_of(pos) + count - 1, buffer:line_count() - 1)
@@ -460,7 +423,7 @@ local motions: { [string]: Motion } = {
 		return start, "exclusive"
 	end,
 	["^"] = function(buffer, pos)
-		return first_non_blank(buffer, buffer:line_of(pos)), "exclusive"
+		return core.text.first_non_blank(buffer, pos), "exclusive"
 	end,
 	["$"] = function(buffer, pos, count)
 		-- With a count, the end of the line count - 1 lines down.
@@ -533,7 +496,7 @@ local function to_mark(exact: boolean): Motion
 		if exact then
 			return pos, "exclusive"
 		end
-		return first_non_blank(buffer, buffer:line_of(pos)), "line"
+		return core.text.first_non_blank(buffer, pos), "line"
 	end
 end
 
@@ -542,7 +505,7 @@ local function goto_line(first: boolean): Motion
 	return function(buffer, _, count)
 		local last = buffer:line_count() - 1
 		local line = if count > 0 then math.min(count - 1, last) elseif first then 0 else last
-		return first_non_blank(buffer, line), "line"
+		return core.text.first_non_blank(buffer, buffer:line_start(line)), "line"
 	end
 end
 motions.G = goto_line(false)
@@ -555,7 +518,7 @@ motions["%"] = function(buffer: Buffer, pos: number, count: number): (number?, K
 	if count > 0 then
 		local line =
 			math.clamp((count * buffer:line_count() + 99) // 100 - 1, 0, buffer:line_count() - 1)
-		return first_non_blank(buffer, line), "line"
+		return core.text.first_non_blank(buffer, buffer:line_start(line)), "line"
 	end
 	return core.text.matching_bracket(buffer, pos), "inclusive"
 end
@@ -792,7 +755,8 @@ local function on_lines(ctx: greed.Context, command: string, from: number, to: n
 		-- gw leaves the cursor where it was.
 		at = math.min(at, buffer:len())
 	else
-		at = first_non_blank(buffer, math.min(first, buffer:line_count() - 1))
+		local top = buffer:line_start(math.min(first, buffer:line_count() - 1))
+		at = core.text.first_non_blank(buffer, top)
 	end
 	ctx.view:set_selection(point(on_char(buffer, at)))
 end
@@ -876,7 +840,8 @@ local function surround(ctx: greed.Context, from: number, to: number, linewise: 
 		local first =
 			buffer:line_of(if buffer:char_at(from) == "\n" and from < to then from + 1 else from)
 		local last = buffer:line_of(math.max(from, to - 1))
-		from, to = first_non_blank(buffer, first), buffer:line_end(last)
+		from, to =
+			core.text.first_non_blank(buffer, buffer:line_start(first)), buffer:line_end(last)
 	end
 	local pair = pair_for(char)
 	local start, finish = from, to :: number
@@ -940,7 +905,7 @@ local function apply(ctx: greed.Context, op: string, from: number, to: number, l
 		enter_insert(ctx, from)
 	elseif linewise then
 		ctx.view:set_selection(
-			point(first_non_blank(buffer, buffer:line_of(math.min(from, buffer:len()))))
+			point(core.text.first_non_blank(buffer, math.min(from, buffer:len())))
 		)
 	else
 		ctx.view:set_selection(point(on_char(buffer, from)))
@@ -1100,7 +1065,7 @@ local block = { line = 0, column = 0, cursor = 0, to_end = false }
 -- The selection for the block from its corner to `block.cursor`, both
 -- columns included.
 local function block_selection(buffer: Buffer): greed.Selection
-	local line, column = buffer:line_of(block.cursor), column_of(buffer, block.cursor)
+	local line, column = buffer:line_of(block.cursor), core.text.column(buffer, block.cursor)
 	local top, bottom = math.min(block.line, line), math.max(block.line, line)
 	local left, right = math.min(block.column, column), math.max(block.column, column)
 	local ranges: { greed.Range } = {}
@@ -1108,8 +1073,8 @@ local function block_selection(buffer: Buffer): greed.Selection
 	for row = top, bottom do
 		local head = if block.to_end
 			then buffer:line_end(row)
-			else at_column(buffer, row, right + 1)
-		table.insert(ranges, { anchor = at_column(buffer, row, left), head = head })
+			else core.text.at_column(buffer, row, right + 1)
+		table.insert(ranges, { anchor = core.text.at_column(buffer, row, left), head = head })
 		if row == line then
 			primary = #ranges
 		end
@@ -1260,7 +1225,8 @@ command("change-line", "Change the whole line", function(ctx)
 	local buffer, pos = ctx.buffer, cursor(ctx)
 	local line = buffer:line_of(pos)
 	greed.history.start_group()
-	local from, to = first_non_blank(buffer, line), buffer:line_end(line)
+	local from, to =
+		core.text.first_non_blank(buffer, buffer:line_start(line)), buffer:line_end(line)
 	buffer:edit(function(e)
 		e:delete(from, to)
 	end)
@@ -1329,9 +1295,9 @@ local function paste(ctx: greed.Context, after: boolean)
 	if from.linewise then
 		ctx.view:set_selection(
 			point(
-				first_non_blank(
+				core.text.first_non_blank(
 					buffer,
-					buffer:line_of(if string.sub(text, 1, 1) == "\n" then at + 1 else at)
+					if string.sub(text, 1, 1) == "\n" then at + 1 else at
 				)
 			)
 		)
@@ -1362,7 +1328,7 @@ command("append", "Insert after the cursor", function(ctx)
 	start_insert(ctx, math.min(buffer:next_char(pos), buffer:line_end(buffer:line_of(pos))))
 end)
 command("insert-line-start", "Insert at the first non-blank of the line", function(ctx)
-	start_insert(ctx, first_non_blank(ctx.buffer, ctx.buffer:line_of(cursor(ctx))))
+	start_insert(ctx, core.text.first_non_blank(ctx.buffer, cursor(ctx)))
 end)
 command("append-line-end", "Insert at the end of the line", function(ctx)
 	start_insert(ctx, ctx.buffer:line_end(ctx.buffer:line_of(cursor(ctx))))
@@ -1860,7 +1826,8 @@ command(
 
 command("visual-block", "Select a block of columns across lines", function(ctx)
 	local at = cursor(ctx)
-	block.line, block.column, block.cursor = ctx.buffer:line_of(at), column_of(ctx.buffer, at), at
+	block.line, block.column, block.cursor =
+		ctx.buffer:line_of(at), core.text.column(ctx.buffer, at), at
 	block.to_end = false
 	ctx.view:set_selection(block_selection(ctx.buffer))
 	greed.mode.set("vim-visual-block")
@@ -1894,9 +1861,9 @@ command("visual-swap", "Go to the other end of the selection", function(ctx)
 	local mode = greed.mode.get()
 	local buffer = ctx.buffer
 	if mode == "vim-visual-block" then
-		local corner = at_column(buffer, block.line, block.column)
+		local corner = core.text.at_column(buffer, block.line, block.column)
 		block.line, block.column, block.cursor =
-			buffer:line_of(block.cursor), column_of(buffer, block.cursor), corner
+			buffer:line_of(block.cursor), core.text.column(buffer, block.cursor), corner
 		ctx.view:set_selection(block_selection(buffer))
 	elseif mode == "vim-visual-line" then
 		local line = buffer:line_of(cursor(ctx))
@@ -2083,7 +2050,7 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 	end)
 	if lines or from.linewise then
 		local first = if lines then start else start + 1
-		ctx.view:set_selection(point(first_non_blank(buffer, buffer:line_of(first))))
+		ctx.view:set_selection(point(core.text.first_non_blank(buffer, first)))
 	else
 		ctx.view:set_selection(point(on_char(buffer, buffer:prev_char(start + #text))))
 	end
