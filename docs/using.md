@@ -803,6 +803,8 @@ to show other words.
 | `space n f` | Find a note; a name that isn't one yet makes it |
 | `space n /` | Search every note as you type |
 | `space n x` | Tick a todo or untick it; a plain line becomes one |
+| `space n t` | Jot a thought or an idea down in the inbox, with today's date: for things that aren't todos |
+| `space n l` | Have Greed's agent connect the inbox (or the note you're in) to your other notes (below) |
 | `g d` | Follow the link under the cursor, making the note if it's new |
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
 
@@ -817,6 +819,20 @@ the brackets and the markup below as written.
 ```luau
 require("@greed").option.set("notes-folder", "~/Documents/notes")
 ```
+
+### Connecting your notes
+
+Jot thoughts and todos down as they come (`space n t`, `space n c`), then
+let Greed's agent make sense of them: `space n l` has it go through your
+inbox, or the note you're in, find the notes each item relates to, link
+them with `[[name]]` and add a line of context. It changes notes that are
+there only as proposed edits you accept or reject one by one, makes new
+notes for items that belong together, and ends with a summary. It uses the
+model playing the `agent` role.
+
+Any agent can work with your notes the same way through the `notes` tool
+group (see [Agents](agents.md#tool-groups)); `:set agent-tool-groups "plan
+notes"` gives it to every agent from the start.
 
 ### Notes in a project, and other places
 

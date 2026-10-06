@@ -6,6 +6,7 @@
 --   space n c   capture a todo          space n /   search the notes
 --   space n a   the agenda: open todos, soonest due first
 --   space n x   tick a todo, or untick it
+--   space n t   jot a thought down in the inbox
 --   g d         follow the [[link]] under the cursor (making the note)
 --   tab, z a    fold the section, list item or code block under the cursor,
 --               or unfold it (Markdown's folds)
@@ -29,6 +30,7 @@ require("@self/look")
 greed.keymap.bind("normal", {
 	["space n d"] = "notes-daily",
 	["space n c"] = "notes-capture",
+	["space n t"] = "notes-thought",
 	["space n a"] = "notes-agenda",
 	["space n f"] = "notes-find",
 	["space n /"] = "notes-search",

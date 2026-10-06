@@ -310,3 +310,16 @@ test("places added in the config are searched and named too", function(t)
 	)
 	assert(run_tool("notes_todos")[1].note == "work:meeting", "its todos")
 end)
+
+test("space n t jots a thought down in the inbox, with today's date", function(t)
+	local dir = folder(t)
+	t:buffer("|x")
+	t:keys("space n t")
+	for _, char in string.split("rope for undo", "") do
+		t:keys(if char == " " then "space" else char)
+	end
+	t:keys("enter")
+	local today = os.date("%Y-%m-%d")
+	local text = greed.fs.read(dir .. "/inbox.md")
+	assert(text == `- rope for undo ({today})\n`, text)
+end)

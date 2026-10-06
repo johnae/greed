@@ -450,4 +450,13 @@ function M.start(opts: {
 	return s
 end
 
+--- Switches tool group `group` on for the session `s`, as the agent would
+--- with the tools tool, e.g. to start it with the tools a task needs.
+function M.switch_on(s: Session, group: string)
+	local state = states[s.id]
+	if state then
+		state.caller.groups[group] = true
+	end
+end
+
 return M

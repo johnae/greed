@@ -72,6 +72,12 @@ function M.add(text: string, name: string?, due: string?)
 	notes.append(name or M.inbox(), line)
 end
 
+--- Adds a thought to note `name` (the inbox by default): a plain item with
+--- today's date, for ideas that aren't things to do.
+function M.add_thought(text: string, name: string?)
+	notes.append(name or M.inbox(), `- {text} ({notes.today()})`)
+end
+
 local function open_at(name: string, line: number)
 	greed.open(notes.path(name))
 	local view = greed.view()
@@ -125,13 +131,19 @@ greed.command({
 	end,
 })
 
--- Asks for a todo and adds it to note `inbox`.
-local function capture(inbox: string)
+-- A todo, as capture adds one.
+local function todo(text: string, name: string?)
+	M.add(text, name)
+end
+
+-- Asks for a `what` (a todo, a thought) and adds it to note `inbox` with
+-- `add`.
+local function capture(inbox: string, what: string, add: (text: string, name: string?) -> ())
 	prompt.open({
-		title = `todo for {inbox}`,
+		title = `{what} for {inbox}`,
 		on_submit = function(text)
 			if string.match(text, "%S") then
-				M.add(text, inbox)
+				add(text, inbox)
 				greed.echo(`added to {inbox}`)
 			end
 		end,
@@ -142,7 +154,15 @@ greed.command({
 	name = "notes-capture",
 	doc = "Add a todo to the inbox note, from wherever you are: the project's when it keeps notes",
 	run = function()
-		capture(M.inbox())
+		capture(M.inbox(), "todo", todo)
+	end,
+})
+
+greed.command({
+	name = "notes-thought",
+	doc = "Jot a thought or an idea down in the inbox note, with today's date, from wherever you are",
+	run = function()
+		capture(M.inbox(), "thought", M.add_thought)
 	end,
 })
 
@@ -150,7 +170,7 @@ greed.command({
 	name = "notes-capture-mine",
 	doc = "Add a todo to your own inbox note, even in a project that keeps notes",
 	run = function()
-		capture("inbox")
+		capture("inbox", "todo", todo)
 	end,
 })
 

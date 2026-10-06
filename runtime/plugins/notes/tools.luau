@@ -52,7 +52,12 @@ agent.tool({
 		if text == nil then
 			error(`there's no note called {args.name}`, 0)
 		end
-		return { text = text, linked_from = greed.json.array(links.backlinks(args.name)) }
+		return {
+			text = text,
+			linked_from = greed.json.array(links.backlinks(args.name)),
+			-- For the propose tool, to change it with the user's review.
+			path = notes.path(args.name),
+		}
 	end,
 })
 
@@ -105,6 +110,19 @@ agent.tool({
 			})
 		end
 		return greed.json.array(out)
+	end,
+})
+
+agent.tool({
+	name = "notes_add_thought",
+	group = "notes",
+	description = "Jot a thought or an idea down in a note, as an item with today's date: for "
+		.. "things that aren't todos. Left out, the note is the inbox",
+	input = object({ text = { type = "string" }, note = { type = "string" } }, { "text" }),
+	run = function(args)
+		local note = args.note or todos.inbox()
+		todos.add_thought(args.text, note)
+		return `added to {note}`
 	end,
 })
 

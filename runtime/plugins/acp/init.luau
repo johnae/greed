@@ -1100,6 +1100,44 @@ local function installed(name: string?): Agent?
 	return nil
 end
 
+-- What Greed's agent is asked to do with your notes. Changes to notes that
+-- are there go through proposals, so each one waits for you.
+local CONNECT = [=[
+Go through %s and connect it with the rest of my notes. For each thought, idea or todo:
+find related notes (notes_search, notes_list, notes_read), link them with [[name]], and add a
+line of context where it helps: what it relates to, why it matters, what could come next.
+Where several items belong together, say so, and suggest a note gathering them.
+
+Change notes that already exist only with the propose tool, using the path notes_read gives,
+so I can review each change; make new notes with notes_write. Don't delete anything. End with
+a short summary of what you connected and what you'd suggest next.]=]
+
+greed.command({
+	name = "notes-connect",
+	doc = "Have Greed's agent go through the inbox (or the note you're in), link it to your other notes and add context, as changes you review",
+	run = function(ctx)
+		local agent = installed("greed")
+		if agent == nil then
+			greed.echo("Greed's agent isn't registered")
+			return
+		end
+		local path = ctx.buffer:path()
+		local what = if path and string.match(path, "%.md$")
+			then `the note I have open, {path}`
+			else "my inbox note (the project's when it keeps notes)"
+		local s, err = M.start(agent, core.project.root())
+		if s == nil then
+			greed.echo(`can't start Greed's agent: {err}`)
+			return
+		end
+		native.switch_on(s, "notes")
+		M.show(s)
+		M.prompt(s, string.format(CONNECT, what))
+	end,
+})
+
+greed.keymap.bind("normal", { ["space n l"] = "notes-connect" })
+
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")
 --- An agent's workspace changes as proposals on your files (review.luau).
