@@ -917,6 +917,25 @@ Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
 URLs written in the output open too. They open with `xdg-open` (`open` on
 macOS), or whatever `:set link-opener firefox` names.
 
+### Tasks
+
+`space r` picks a task to run: a command you run again and again, like
+building or testing. It runs in a terminal below the file, which stays
+open when it's done so you can read it, and running it again replaces the
+last run. `] e` and `space d` in its output go to the files and lines it
+names, like a compiler's errors. The last task you ran comes first, so
+`space r enter` runs it again; `:task test` runs one by name.
+
+Greed finds tasks in the project: Cargo's `build`, `test`, `run` and
+`clippy`, a `package.json`'s scripts, and a `Makefile`'s targets. Add your
+own in `init.luau`; they win over found ones with the same name:
+
+```luau
+local terminal = require("@terminal")
+terminal.tasks.lint = { command = "ruff check ." }
+terminal.tasks.serve = { command = { "python", "-m", "http.server" }, cwd = "~/site" }
+```
+
 ### Commands your shell marks
 
 A shell can mark where each prompt, command and its output start, and how

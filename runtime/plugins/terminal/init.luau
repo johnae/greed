@@ -75,6 +75,8 @@ type Term = {
 	-- the commands that failed: where each starts, and its exit code.
 	marks_made: number,
 	failures: { { mark: greed.TerminalMark, code: number } },
+	-- Whether it stays open when its program ends well, to read the output.
+	keep: boolean,
 }
 
 local M = {}
@@ -422,6 +424,12 @@ export type OpenOptions = {
 	from: greed.View?,
 	--- Open it floating over the panes, placed as this spec says if given.
 	float: (boolean | greed.FloatSpec)?,
+	--- Keep it open when its program ends well, as for a task whose output
+	--- you want to read; otherwise only a failure keeps it.
+	keep: boolean?,
+	--- The folder to start in, instead of the focused terminal's or the
+	--- project's.
+	cwd: string?,
 }
 
 --- Environment variables every new terminal gets, on top of the editor's.
@@ -473,7 +481,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local spawned, started = pcall(function()
 		return greed.terminal.spawn({
 			command = given,
-			cwd = here or greed.project.current().root,
+			cwd = opts.cwd or here or greed.project.current().root,
 			env = env,
 			rows = rows or 24,
 			cols = cols or 80,
@@ -510,6 +518,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		dropped = 0,
 		marks_made = 0,
 		failures = {},
+		keep = opts.keep == true,
 	}
 	terms[buffer:id()] = term
 	M.enter(view)
@@ -574,13 +583,14 @@ greed.on("terminal.exited", function(event)
 		return
 	end
 	M.update(term)
-	if event.code == 0 then
+	if event.code == 0 and not term.keep then
 		M.close(term)
 		return
 	end
 	local last = term.buffer:len()
+	local said = if event.code == 0 then "[done]" else `[exited with {event.code}]`
 	term.buffer:decorate("terminal.exit", {
-		{ from = last, to = last, style = "comment", lines = { `[exited with {event.code}]` } },
+		{ from = last, to = last, style = "comment", lines = { said } },
 	})
 	if greed.mode.get() == MODE and shown(term) then
 		greed.mode.set(core.style.home())
@@ -1260,5 +1270,21 @@ for _, mode in { "normal", "vim" } do
 	})
 end
 greed.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })
+
+--- Whether `term` is still open.
+function M.is_open(term: Term): boolean
+	return terms[term.buffer:id()] == term
+end
+
+local tasks = require("@self/tasks")
+tasks.setup(M)
+--- Tasks from your config, by name (tasks.luau).
+M.tasks = tasks.tasks
+--- Runs the task `name`, or says why it can't.
+function M.run_task(name: string): (boolean, string?)
+	return tasks.run(M, name)
+end
+--- Every task for the project at `root` (the shown one by default).
+M.all_tasks = tasks.all
 
 return M
