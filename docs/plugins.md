@@ -977,8 +977,14 @@ describe your own setup.
 Greed loads the default plugins, then yours, then `init.luau`. Each plugin
 runs in its own environment and owns what it registers: reloading a plugin
 replaces its commands, keys, options, handlers and theme entries, and
-`greed.plugin.unload(name)` removes them. A plugin that runs too long is
-stopped, so a mistake in a loop can't hang the editor.
+`greed.plugin.unload(name)` removes them. Both also stop what the plugin
+was running (its tasks from `greed.spawn`, and commands and handlers
+waiting on a timer or a reply), clear the marks it set (in a namespace two
+plugins write to, the marks belong to whichever set them last), close its
+floats and panels, forget its images, stop its `greed.fs.watch` watches,
+and put back the file types and language servers it replaced. A plugin
+that runs too long is stopped, so a mistake in a loop can't hang the
+editor.
 
 ## Trying code
 

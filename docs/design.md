@@ -67,9 +67,10 @@ theme goes along only when it changes.
 
 Each plugin runs in its own environment with a read-only standard library.
 A call that runs too long is stopped, so a buggy loop can't freeze the
-editor. Everything a plugin registers (commands, keys, options, event
-handlers, theme entries, tools) belongs to it, so reloading or unloading a
-plugin cleanly replaces or removes all of it.
+editor. Everything a plugin registers or starts (commands, keys, options,
+event handlers, theme entries, tools, tasks, marks, floats and panels)
+belongs to it, so reloading or unloading a plugin cleanly replaces or
+removes all of it.
 
 Plugins that wait (for a timer, a key, a language server, a search) are
 paused and resumed by the editor. The code reads top to bottom with no

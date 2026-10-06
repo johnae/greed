@@ -576,6 +576,24 @@ impl Editor {
     /// whatever it had, and redetects every open file.
     pub fn set_file_type(&mut self, language: &str, extensions: &[String], names: &[String]) {
         self.file_types.set(language, extensions, names);
+        self.redetect();
+    }
+
+    /// Goes back to the bundled file types, then sets each of `types` as
+    /// `(language, extensions, names)`, in order, and redetects every open
+    /// file.
+    pub fn reset_file_types<'a>(
+        &mut self,
+        types: impl IntoIterator<Item = (&'a str, &'a [String], &'a [String])>,
+    ) {
+        self.file_types = FileTypes::bundled();
+        for (language, extensions, names) in types {
+            self.file_types.set(language, extensions, names);
+        }
+        self.redetect();
+    }
+
+    fn redetect(&mut self) {
         for buffer in self.buffers.values_mut() {
             let detected = buffer.path().and_then(|p| self.file_types.detect(p));
             buffer.set_detected(detected);

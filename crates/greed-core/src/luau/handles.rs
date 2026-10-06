@@ -512,7 +512,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 })
             })
             .collect::<LuaResult<Vec<_>>>()?;
-        state_mut(lua).editor.decorate(this.buffer, &ns, marks);
+        let by = super::capabilities::caller(lua, None);
+        let state = &mut *state_mut(lua);
+        state.owned.marked(this.buffer, &ns, by, marks.is_empty());
+        state.editor.decorate(this.buffer, &ns, marks);
         Ok(())
     });
     methods.add_method("decorations", |lua, this, ns: String| {

@@ -6,10 +6,11 @@ use std::path::Path;
 use mlua::{Lua, Table};
 
 use super::{state, state_mut};
+use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
-pub(super) fn register(lua: &Lua, greed: &Table) -> LuaResult<()> {
+pub(super) fn register(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set(
         "language_of",
         lua.create_function(|lua, path: String| {
@@ -20,16 +21,19 @@ pub(super) fn register(lua: &Lua, greed: &Table) -> LuaResult<()> {
         })?,
     )?;
 
+    let owner = owner.clone();
     greed.set(
         "filetype",
-        lua.create_function(|lua, (language, spec): (String, Table)| {
+        lua.create_function(move |lua, (language, spec): (String, Table)| {
             let list = |key: &str| -> LuaResult<Vec<String>> {
                 Ok(spec.get::<Option<Vec<String>>>(key)?.unwrap_or_default())
             };
             let (extensions, names) = (list("extensions")?, list("names")?);
-            state_mut(lua)
-                .editor
-                .set_file_type(&language, &extensions, &names);
+            let state = &mut *state_mut(lua);
+            state.editor.set_file_type(&language, &extensions, &names);
+            state
+                .owned
+                .file_type(owner.clone(), &language, &extensions, &names);
             Ok(())
         })?,
     )?;

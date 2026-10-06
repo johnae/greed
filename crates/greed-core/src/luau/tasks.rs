@@ -102,6 +102,56 @@ impl Tasks {
         self.labels.remove(&id);
         self.worked.remove(&id);
     }
+
+    /// Stops every coroutine running `owner`'s code: those waiting are
+    /// dropped, and one running now stops when it next waits. Returns the
+    /// tokens they waited on and the tokens of what waits for them to end.
+    fn stop_owned_by(&mut self, owner: &str) -> (Vec<u64>, Vec<u64>) {
+        let ids: HashSet<usize> = self
+            .owners
+            .iter()
+            .filter(|(_, o)| &***o == owner)
+            .map(|(id, _)| *id)
+            .collect();
+        let mut waiters = Vec::new();
+        for &id in &ids {
+            self.forget(id);
+            waiters.extend(self.finished.remove(&id).unwrap_or_default());
+        }
+        let dropped: Vec<u64> = self
+            .waiting
+            .iter()
+            .filter(|(_, thread)| ids.contains(&key(thread)))
+            .map(|(token, _)| *token)
+            .collect();
+        for token in &dropped {
+            self.waiting.remove(token);
+            self.sliced.remove(token);
+        }
+        self.timers.retain(|(_, token)| !dropped.contains(token));
+        (dropped, waiters)
+    }
+}
+
+/// Stops every command, handler and task of plugin `owner`'s, letting what
+/// waits for them to end carry on.
+pub(super) fn stop_owned_by(lua: &Lua, owner: &str) -> LuaResult<()> {
+    let waiters = {
+        let state = &mut *state_mut(lua);
+        let (dropped, waiters) = state.tasks.stop_owned_by(owner);
+        if state
+            .key_waiter
+            .as_ref()
+            .is_some_and(|(token, _)| dropped.contains(token))
+        {
+            state.key_waiter = None;
+        }
+        waiters
+    };
+    for token in waiters {
+        wake(lua, token, ())?;
+    }
+    Ok(())
 }
 
 /// Runs `f`, code `owner` registered, as a coroutine whose edits are made
@@ -224,11 +274,16 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
         super::sliced(lua, id, || thread.resume::<Value>(args))
     });
-    {
+    let stopped = {
         let state = &mut *state_mut(lua);
         state.editor.set_cause(outer);
         state.running = outer_owner;
         state.limit = outer_limit;
+        // Its plugin was unloaded while it ran.
+        owner.is_some() && !state.tasks.owners.contains_key(&id)
+    };
+    if stopped {
+        return Ok(());
     }
     if thread.status() != ThreadStatus::Resumable {
         finish(lua, id)?;

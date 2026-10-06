@@ -139,6 +139,7 @@ fn diagnostics_changed(lua: &Lua, buffer: BufferId) -> LuaResult<()> {
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let lsp = lua.create_table()?;
     add_server_side(lua, &lsp, owner)?;
+    add_servers(lua, &lsp, owner)?;
     add_documents(lua, &lsp, owner)?;
     Ok(lsp)
 }
@@ -199,12 +200,12 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     )
 }
 
-/// Servers and the documents they're about: setting servers up, requests,
-/// positions and diagnostics.
-fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
+/// Setting servers up, each as `owner`'s.
+fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
+    let owner = owner.clone();
     lsp.set(
         "server",
-        lua.create_function(|lua, spec: Table| {
+        lua.create_function(move |lua, spec: Table| {
             let strings = |key: &str| -> LuaResult<Vec<String>> {
                 Ok(spec.get::<Option<Vec<String>>>(key)?.unwrap_or_default())
             };
@@ -222,7 +223,9 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 commands,
                 root_markers: strings("root_markers")?,
             };
-            state_mut(lua).lsp.configure(config);
+            let state = &mut *state_mut(lua);
+            state.owned.server(owner.clone(), config.clone());
+            state.lsp.configure(config);
             Ok(())
         })?,
     )?;
@@ -230,11 +233,16 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     lsp.set(
         "remove",
         lua.create_function(|lua, language: String| {
-            state_mut(lua).lsp.remove(&language);
+            let state = &mut *state_mut(lua);
+            state.lsp.remove(&language);
+            state.owned.remove_server(&language);
             Ok(())
         })?,
-    )?;
+    )
+}
 
+/// The documents servers are about: requests, positions and diagnostics.
+fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     lsp.set(
         "servers",
         lua.create_function(|lua, ()| {

@@ -20,6 +20,7 @@ mod json;
 mod languages;
 mod lsp;
 mod modules;
+mod owned;
 mod pdf;
 mod plugin;
 mod process;
@@ -137,6 +138,9 @@ pub(crate) struct State {
     pub query_owners: HashMap<(String, String), Vec<(PluginId, String)>>,
     /// Files plugins watch for changes.
     pub watches: watch::Watches,
+    /// Marks, images, views, file types and servers, by the plugin that
+    /// made them.
+    pub owned: owned::Owned,
     /// What each plugin may use beyond the editor.
     pub grants: HashMap<PluginId, capabilities::Grant>,
     /// The plugin whose code is running, if any: a command or handler it
@@ -322,6 +326,7 @@ impl Host {
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
+            owned: owned::Owned::default(),
             grants: HashMap::new(),
             running: None,
             limit: Vec::new(),
@@ -518,7 +523,7 @@ impl Host {
         if !state(&self.lua).plugins.contains_key(name) {
             return Err(HostError::UnknownPlugin(name.into()));
         }
-        unregister(&self.lua, name);
+        unregister(&self.lua, name)?;
         run_plugin(&self.lua, name)
     }
 
@@ -945,7 +950,7 @@ pub(crate) fn approve(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
 
 /// Adds or replaces a plugin and runs it.
 fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
-    unregister(lua, name);
+    unregister(lua, name)?;
     let (dir, grant) = match &plugin {
         Plugin::Dir { dir, grant, .. } => (Some(dir.to_string_lossy().into_owned()), grant.clone()),
         Plugin::Inline(_) => (None, capabilities::Grant::All),
@@ -1068,13 +1073,25 @@ fn report_views(lua: &Lua) -> mlua::Result<bool> {
     Ok(reported)
 }
 
-/// Removes everything plugin `name` registered.
-fn unregister(lua: &Lua, name: &str) {
-    let mut state = state_mut(lua);
-    let state = &mut *state;
+/// Removes everything plugin `name` registered and stops what it runs.
+fn unregister(lua: &Lua, name: &str) -> mlua::Result<()> {
+    let closed = remove_owned_by(&mut state_mut(lua), name);
+    tasks::stop_owned_by(lua, name)?;
+    for view in closed {
+        handles::view_closed(lua, view)?;
+    }
+    Ok(())
+}
+
+/// Removes what `name` registered and made, returning the views it closed.
+fn remove_owned_by(state: &mut State, name: &str) -> Vec<crate::ViewId> {
     state.registry.remove_owned_by(name);
     state.terminals.remove_owned_by(name);
     state.children.remove_owned_by(name);
+    state.watches.remove_owned_by(name);
+    let closed = state
+        .owned
+        .remove_owned_by(name, &mut state.editor, &mut state.lsp);
     state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
     state.lsp_listeners.retain(|(_, owner, _)| &**owner != name);
     state.cli.retain(|_, command| &*command.owner != name);
@@ -1110,6 +1127,7 @@ fn unregister(lua: &Lua, name: &str) {
             let _ = state.syntax.set_query(language, kind, source);
         }
     }
+    closed
 }
 
 /// Removes plugin `name` and everything it registered, unless a loaded
@@ -1130,7 +1148,7 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
             });
         }
     }
-    unregister(lua, name);
+    unregister(lua, name)?;
     {
         let mut state = state_mut(lua);
         state.plugins.remove(name);

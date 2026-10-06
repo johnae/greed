@@ -385,7 +385,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("clipboard", clipboard_module(lua)?)?;
     greed.set("client", client_module(lua)?)?;
     greed.set("lsp", super::lsp::module(lua, owner)?)?;
-    greed.set("fs", super::fs::module(lua)?)?;
+    greed.set("fs", super::fs::module(lua, owner)?)?;
     greed.set("control", super::requests::module(lua)?)?;
     greed.set("json", super::json::module(lua)?)?;
     greed.set("project", super::projects::module(lua)?)?;
@@ -396,7 +396,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("http", super::http::module(lua, owner)?)?;
     greed.set("secrets", super::secrets::module(lua, owner)?)?;
     greed.set("terminal", super::terminal::module(lua, owner)?)?;
-    greed.set("image", super::images::module(lua)?)?;
+    greed.set("image", super::images::module(lua, owner)?)?;
     greed.set("pdf", super::pdf::module(lua)?)?;
     greed.set("diff", super::diff::diff_function(lua)?)?;
     greed.set("signal", tasks::signal_function(lua)?)?;
@@ -407,7 +407,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
             Ok(())
         })?,
     )?;
-    super::languages::register(lua, greed)?;
+    super::languages::register(lua, greed, owner)?;
     greed.set("plugin", super::plugin::module(lua)?)?;
     greed.set("syntax", super::syntax::module(lua, owner)?)?;
     greed.set("theme", super::theme::module(lua, owner)?)
@@ -959,8 +959,11 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
             move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
                 let options = float_options(DEFAULT_FLOAT, spec)?;
                 buffer.with_buffer(lua, |_| Ok(()))?;
+                let state = &mut *state_mut(lua);
+                let id = state.editor.float(buffer.buffer, options);
+                state.owned.view(id, o.clone());
                 Ok(ViewRef {
-                    id: state_mut(lua).editor.float(buffer.buffer, options),
+                    id,
                     author: Author::Plugin(o.clone()),
                 })
             },
@@ -1085,8 +1088,11 @@ fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
                 options.title = spec.get::<Option<String>>("title")?.map(Into::into);
                 options.focus = spec.get::<Option<bool>>("focus")?.unwrap_or(options.focus);
             }
+            let state = &mut *state_mut(lua);
+            let id = state.editor.panel(buffer.buffer, options);
+            state.owned.view(id, owner.clone());
             Ok(ViewRef {
-                id: state_mut(lua).editor.panel(buffer.buffer, options),
+                id,
                 author: Author::Plugin(owner.clone()),
             })
         },

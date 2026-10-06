@@ -2,7 +2,7 @@
 //! whenever the file changes, from inside the editor or out. The session
 //! looks every half second; a few `stat`s, so there is no watcher thread.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -10,6 +10,7 @@ use mlua::{Lua, Table};
 
 use super::api::emit;
 use super::{state, state_mut};
+use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -23,21 +24,39 @@ fn stamp(path: &Path) -> Stamp {
         .map(|meta| (meta.modified().ok(), meta.len()))
 }
 
-/// The watched files, each with how it looked when last checked.
+/// The watched files, each with how it looked when last checked and the
+/// plugins watching it.
 #[derive(Default)]
 pub(crate) struct Watches {
-    files: HashMap<PathBuf, Stamp>,
+    files: HashMap<PathBuf, (Stamp, BTreeSet<PluginId>)>,
 }
 
-/// Adds `watch(path)` to `fs`, the `greed.fs` table: starts watching `path`,
-/// if it isn't already.
-pub(super) fn add_to(lua: &Lua, fs: &Table) -> LuaResult<()> {
+impl Watches {
+    /// Stops `owner`'s watches, and those of files nobody else watches.
+    pub fn remove_owned_by(&mut self, owner: &str) {
+        self.files.retain(|_, (_, owners)| {
+            owners.remove(owner);
+            !owners.is_empty()
+        });
+    }
+}
+
+/// Adds `watch(path)` to `fs`, the `greed.fs` table: starts watching `path`
+/// for `owner`, if it isn't already.
+pub(super) fn add_to(lua: &Lua, fs: &Table, owner: &PluginId) -> LuaResult<()> {
+    let owner = owner.clone();
     fs.set(
         "watch",
-        lua.create_function(|lua, path: String| {
+        lua.create_function(move |lua, path: String| {
             let path = PathBuf::from(path);
             let now = stamp(&path);
-            state_mut(lua).watches.files.entry(path).or_insert(now);
+            state_mut(lua)
+                .watches
+                .files
+                .entry(path)
+                .or_insert((now, BTreeSet::new()))
+                .1
+                .insert(owner.clone());
             Ok(())
         })?,
     )
@@ -51,7 +70,7 @@ pub(super) fn check(lua: &Lua) -> LuaResult<()> {
             .watches
             .files
             .iter_mut()
-            .filter_map(|(path, before)| {
+            .filter_map(|(path, (before, _))| {
                 let now = stamp(path);
                 (now != *before).then(|| {
                     *before = now;

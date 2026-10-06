@@ -10,6 +10,7 @@ use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
 
 use super::jobs::{self, Output};
 use super::state;
+use crate::registry::PluginId;
 use crate::search::{self, GrepOptions, LineMatch};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -19,7 +20,7 @@ fn failure(lua: &Lua, err: impl std::fmt::Display) -> LuaResult<MultiValue> {
     (mlua::Value::Nil, err.to_string()).into_lua_multi(lua)
 }
 
-pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let fs = lua.create_table()?;
 
     fs.set(
@@ -78,7 +79,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
 
-    super::watch::add_to(lua, &fs)?;
+    super::watch::add_to(lua, &fs, owner)?;
 
     fs.set(
         "write",

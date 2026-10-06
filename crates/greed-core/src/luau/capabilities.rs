@@ -354,6 +354,15 @@ fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     .call((enter, leave))
 }
 
+/// The plugin whose code called into Greed: the innermost plugin on the
+/// stack other than `except`, falling back to those that made the running
+/// coroutine and the plugin it runs for.
+pub(super) fn caller(lua: &Lua, except: Option<&str>) -> Option<PluginId> {
+    on_stack(lua)
+        .into_iter()
+        .find(|name| except.is_none_or(|except| **name != *except))
+}
+
 /// Remembers whose code made `thread`, so what runs in it later counts
 /// against them as if they were on its stack.
 fn made(lua: &Lua, thread: &mlua::Thread) -> LuaResult<()> {
