@@ -460,6 +460,11 @@ loads the change as an edit you can undo with `u`. A buffer with unsaved
 changes is left alone and Greed tells you; `:reload` loads the file into it
 anyway. `:set auto-reload false` stops loading changes by itself.
 
+`:set auto-save true` saves files on their own a second after you stop
+editing them, so a burst of typing is one save; `:set auto-save-delay 3000`
+waits three seconds instead. Put it in your `init.luau` to keep it:
+`require("@greed").option.set("auto-save", true)`.
+
 ## Language servers
 
 Greed knows the usual languages and their servers and starts a server when a
