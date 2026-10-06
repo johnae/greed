@@ -279,6 +279,7 @@ registry.tool({
 
 registry.tool({
 	name = "plugin_try",
+	kind = "execute",
 	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
 		.. "then its tests. Returns what failed; fix and try again until it passes",
@@ -298,6 +299,8 @@ registry.tool({
 
 registry.tool({
 	name = "plugin_install",
+	kind = "execute",
+	reviews = true,
 	group = "plugins",
 	description = "Ask the user to install the plugin last tried with plugin_try. "
 		.. "They see its code and checks; waits for their answer",

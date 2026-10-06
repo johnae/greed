@@ -1,6 +1,7 @@
 -- Tools for agents: list a Markdown file's runnable blocks and run one,
 -- the way you would, in files you've let run (a runbook, a notes page of
--- queries). Results land under the blocks in the buffer, in front of you.
+-- queries), and only blocks as you last ran them or trusted the file.
+-- Results land under the blocks in the buffer, in front of you.
 
 local greed = require("@greed")
 local agent = require("@agent")
@@ -9,8 +10,8 @@ agent.group("blocks", "Runnable code blocks in Markdown files: listing and runni
 -- What these need from the plugin, which loads them after it's set up.
 export type Blocks = {
 	runnable: (buffer: greed.Buffer) -> { any },
-	run: (buffer: greed.Buffer, block: any) -> boolean,
-	trusted: (buffer: greed.Buffer) -> boolean,
+	run_for_agent: (buffer: greed.Buffer, block: any) -> boolean,
+	refused: (buffer: greed.Buffer, block: any) -> string?,
 }
 
 local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
@@ -48,6 +49,7 @@ return function(blocks: Blocks)
 
 	agent.tool({
 		name = "blocks_run",
+		kind = "execute",
 		group = "blocks",
 		description = "Run a code block in a Markdown file the user has let blocks run in, by its id or its index "
 			.. "from blocks_list, and return its result, which is also saved under the block",
@@ -58,12 +60,6 @@ return function(blocks: Blocks)
 		}, { "path" }),
 		run = function(args)
 			local buffer = greed.load(args.path)
-			if not blocks.trusted(buffer) then
-				error(
-					`the user hasn't let blocks in {args.path} run; they can with :blocks-trust`,
-					0
-				)
-			end
 			local list = blocks.runnable(buffer)
 			local chosen, n = nil, 0
 			for i, block in list do
@@ -75,7 +71,11 @@ return function(blocks: Blocks)
 			if chosen == nil then
 				error("there's no such block; blocks_list shows them", 0)
 			end
-			blocks.run(buffer, chosen)
+			local refused = blocks.refused(buffer, chosen)
+			if refused then
+				error(`{args.path}: {refused}`, 0)
+			end
+			blocks.run_for_agent(buffer, chosen)
 			local after = blocks.runnable(buffer)[n]
 			return describe(buffer, after, n)
 		end,

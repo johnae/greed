@@ -1,4 +1,4 @@
 name = "plan"
-requires = ["agent", "picker", "notes"]
+requires = ["core", "agent", "picker", "notes"]
 # The plan and decisions are notes in the project's notes folder.
 capabilities = ["fs.read", "fs.write"]

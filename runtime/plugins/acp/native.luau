@@ -358,10 +358,12 @@ local function call(
 		return `there's no tool called {c.name}`, true
 	end
 	local own = if found.spec then found :: Own else nil
+	local registered = if own then nil else found :: agent.Tool
+	local kind = if own then own.kind else (registered and registered.kind) or "read"
 	local tool: session.Tool = {
 		id = c.id,
 		title = if own then own.title(c.input) else title_of(s, c),
-		kind = if own then own.kind else "read",
+		kind = kind,
 		status = "pending",
 		detail = {},
 		output = {},
@@ -374,7 +376,10 @@ local function call(
 		s.where = { path = absolute(s, c.input.path) }
 	end
 	s.changed()
-	if own and not allowed(s, state, tool.title, own.kind) then
+	-- Its own tools all change something; Greed's ask unless they only
+	-- read or put what they do in front of you themselves.
+	local asks = own ~= nil or (registered ~= nil and agent.asks(registered))
+	if asks and not allowed(s, state, tool.title, kind) then
 		tool.status = "failed"
 		s.tool = nil
 		return "the user didn't allow it", true
@@ -385,7 +390,7 @@ local function call(
 		if own then
 			return own.run(s, c.input)
 		end
-		return as_text((found :: agent.Tool).run(c.input, "agent", state.caller))
+		return as_text((registered :: agent.Tool).run(c.input, "agent", state.caller))
 	end)
 	local text = if ok then result else tostring(result)
 	tool.status = if ok then "completed" else "failed"

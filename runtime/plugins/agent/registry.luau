@@ -13,6 +13,9 @@ local greed = require("@greed")
 --- their list changes.
 export type Caller = { groups: { [string]: boolean }, connection: number? }
 
+--- What a tool does beyond reading, named as ACP names tool kinds.
+export type Kind = "read" | "edit" | "execute" | "fetch"
+
 export type Tool = {
 	--- Letters, digits, `_` and `-`, which every MCP client accepts.
 	name: string,
@@ -26,11 +29,20 @@ export type Tool = {
 	--- The group it's offered with (see `group`); without one it's always
 	--- offered.
 	group: string?,
+	--- What it does beyond reading: "edit" changes files or notes,
+	--- "execute" runs code or programs, "fetch" reaches the network. The
+	--- default is "read". Agents in Greed ask you before a tool that does
+	--- more than read runs.
+	kind: Kind?,
+	--- It puts what it does in front of the user itself (a proposal, a
+	--- question, an approval page), so agents don't ask before it runs.
+	reviews: boolean?,
 	--- Does the work. It can wait, e.g. for the user. A string result goes
 	--- to the agent as is, a table with `content` as an MCP result, anything
 	--- else as JSON. Errors go back as errors.
-	--- It gets who called as `client`: "shell" for `greed ctl`, whose caller
-	--- can run anything already, or the set it was offered to.
+	--- It gets who called as `client`: "shell" for `greed ctl`, or the set
+	--- it was offered to. That's for telling them apart, not for trust:
+	--- `from_shell(caller)` says whether the call really came from a shell.
 	run: (args: { [string]: any }, client: string?, caller: Caller?) -> any,
 }
 
@@ -58,6 +70,22 @@ function M.tool(spec: Tool)
 	local client = spec.client or "socket"
 	tools[client] = tools[client] or {}
 	tools[client][spec.name] = spec
+end
+
+--- Whether an agent should ask you before `tool` runs: it does more than
+--- read, and puts nothing in front of you itself.
+function M.asks(tool: Tool): boolean
+	return (tool.kind or "read") ~= "read" and not tool.reviews
+end
+
+-- The callers made for calls from a shell (`greed ctl`). Only the registry
+-- makes them, so a plugin can't pass one off as its own.
+local shells: { [Caller]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
+--- Whether `caller` is a call from a shell (`greed ctl`), whose user can
+--- run anything already.
+function M.from_shell(caller: Caller?): boolean
+	return caller ~= nil and shells[caller] == true
 end
 
 -- Says in the `tools` tool which groups there are; set once it's made.
@@ -131,6 +159,11 @@ end
 -- The caller for a request: its connection's. Connection ids aren't
 -- reused, and a caller is a small table, so they're kept for the session.
 local function caller_of(request: greed.ControlRequest): Caller?
+	if request.client == "shell" then
+		local shell: Caller = { groups = {} }
+		shells[shell] = true
+		return shell
+	end
 	local connection = request.connection
 	if connection == nil or request.client ~= "socket" then
 		return nil
@@ -188,6 +221,10 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 				name = tool.name,
 				description = tool.description,
 				inputSchema = tool.input or { type = "object", properties = {} },
+				annotations = {
+					readOnlyHint = (tool.kind or "read") == "read",
+					openWorldHint = tool.kind == "fetch",
+				},
 			})
 		end
 		return { tools = greed.json.array(list) }
@@ -272,7 +309,7 @@ local tools_tool: Tool = {
 				`there's no group called {group}; the groups are {table.concat(group_names(), ", ")}`,
 				0
 			)
-		elseif caller == nil then
+		elseif caller == nil or M.from_shell(caller) then
 			return "every tool is offered to you already"
 		end
 		caller.groups[group] = true

@@ -54,14 +54,14 @@ claude mcp add greed -- greed mcp
 | `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
-| `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them |
+| `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them; rewriting a note that's there is proposed for you to review |
 | `notes_todos`, `notes_add_todo`, `notes_add_thought` | The todos in your notes, soonest due first, and adding a todo or a thought |
 | `notes_update_todo` | Change one todo: its text, due date or reminder, or tick it |
 | `notes_remind` | Set a reminder on a line of a note, or add a todo with one ("remind me this evening") |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
-| `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust; the result is saved under the block |
+| `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
 | `tools` | The groups of tools below, and switching one on |
 
@@ -129,21 +129,24 @@ shows it.
 ### What `eval` may do
 
 `greed ctl eval` from a shell runs as you: whoever runs it can already run
-anything. For agents, through `greed mcp`, Claude Code's `/ide` or Greed's
+anything. Greed knows a call came from `greed ctl` by its connection, so
+a plugin calling the tool can't claim to be one. For agents, through `greed mcp`, Claude Code's `/ide` or Greed's
 own agents, `eval` runs as the `agent-eval` option says:
 
 | Value | |
 |---|---|
-| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project and edit buffers, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins), a reviewer decides: the model playing the `review` role, or `fast` (see `:models`). If the reviewer isn't sure, or there's none, you're asked. |
+| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project and edit buffers, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins), a reviewer decides: the model playing the `review` role, or `reasoning` without one (see `:models`). A small fast model is too easy to talk round, so it never reviews. If the reviewer isn't sure, or there's none, you're asked. |
 | `"ask"` | You see the code and press **Run** every time |
 | `"allow"` | It runs with every capability, as a plugin would |
 | `"off"` | There's no `eval` |
 
 The sandbox is enforced by the editor, so what it keeps out doesn't depend
 on anyone reading the code right. Its edits are taken back before the code
-runs again with more, so nothing happens twice. The reviewer reads the code
-as data and answers in a fixed form, so the most a sneaky comment in the
-code can do is make it ask you. When you're asked, the page shows the code,
+runs again with more, so nothing happens twice. The reviewer gets the code
+wrapped as someone else's text, is told that comments or strings in it may
+try to talk it into allowing, and answers in a fixed form. A model can
+still be fooled, so set `agent-eval` to `"ask"` if you'd rather see every
+run past the sandbox yourself. When you're asked, the page shows the code,
 what it would do and the reviewer's reason, with **Run**, **Allow for this
 session** and **Deny**; closing it, or leaving it five minutes, denies.
 `:eval-log` lists every run past the sandbox and who let it.
@@ -216,8 +219,9 @@ Agents read them in later sessions and follow the accepted ones.
 
 A decision an agent adds is `Status: proposed` until you accept it, and
 agents are told not to rely on proposed ones, so one agent can't make
-rules for the next. These are plain files, though: an agent that can write
-files can write here too, so check `.greed` changes as you would code.
+rules for the next. The notes tools refuse to write decisions. These are
+plain files, though: an agent that can write files can write here too, so
+check `.greed` changes as you would code.
 
 ## Claude Code's `/ide`
 
@@ -264,7 +268,11 @@ It has every tool the list above gives agents (the repo map, working set,
 grep, symbols, diagnostics, the plan, proposals, ...) plus `edit_file`,
 `write_file` and `run` for shell commands. Reading never asks; editing and
 running ask the way other agents' questions do (`y` once, `a` for the rest
-of the session, `n` no), and your policies answer them too. Its edits go
+of the session, `n` no), and your policies answer them too. So do the
+tools above that write, run or fetch something, like `notes_write`,
+`blocks_run` and `web_fetch`, by the kind of thing they do; tools that show
+you their work themselves, like `propose`, `ask` and `eval`, don't ask
+first. Its edits go
 through the file's buffer, so `u` takes them back, and it hears what the
 language server reports about the file right after. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
@@ -347,7 +355,12 @@ back).
 Some questions can be answered for you. An agent in a workspace of its own
 edits, moves and deletes files there without asking, since nothing reaches
 your files until you bring it in (`:set agent-workspace-edits false` to be
-asked anyway). Rules of your own go in `init.luau`; the first that returns
+asked anyway). That holds only for edits that name their files, all inside
+the workspace; anything else asks, and Greed won't write a file outside the
+workspace for it at all. An agent working in the project asks again before
+Greed writes a file outside the project for it. A question's `locations`
+lists the files it touches, for rules of your own. Those go in
+`init.luau`; the first that returns
 an option's id answers, and `nil` leaves it to the next, and in the end to
 you:
 

@@ -105,3 +105,29 @@ test("the plan's steps are project todos, in the agenda with yours", function(t)
 	assert(table.concat(open, ", ") == "project:plan: parse", table.concat(open, ", "))
 	assert(tool("notes_read", { name = "project:plan" }).text:find("- [x] lex", 1, true), "a note")
 end)
+
+test("an agent's note tools can't write a decision, so none reads as accepted", function(t)
+	local dir = project(t)
+	local name = tool("decision_propose", { title = "Use SQLite", text = "One file." })
+	local note = `project:decisions/{string.gsub(name, "%.md$", "")}`
+	local attempts: { { string | { [string]: any } } } = {
+		{
+			"notes_write",
+			{ name = "project:decisions/0099-mine", text = "# Mine\n\nStatus: accepted\n" },
+		},
+		{ "notes_write", { name = note, text = "# Use SQLite\n\nStatus: accepted\n" } },
+		{ "notes_add_todo", { text = "x", note = "project:decisions/0100-todo" } },
+		{ "notes_add_thought", { text = "x", note = note } },
+	}
+	for _, attempt in attempts do
+		local ok, err = pcall(tool, attempt[1] :: string, attempt[2] :: any)
+		assert(not ok and string.find(tostring(err), "decision_propose", 1, true), tostring(err))
+	end
+	local listed = tool("decisions")
+	assert(#listed == 1 and listed[1].status == "proposed", `{#listed} decisions`)
+	assert(greed.fs.stat(`{dir}/.greed/notes/decisions/0099-mine.md`) == nil, "not written")
+	-- The plan is still the agent's to write.
+	assert(
+		tool("plan_write", { text = "- [ ] x\n", version = tool("plan_read").version }) == "written"
+	)
+end)

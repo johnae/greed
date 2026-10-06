@@ -511,3 +511,69 @@ test("asking for an agent that isn't installed says so", function(t)
 	local ok, err = subagent({ task = "hello", agent = "nobody" })
 	assert(not ok and string.find(tostring(err), "nobody isn't installed", 1, true), tostring(err))
 end)
+
+-- The question `s` waits on, if any.
+local function question(s: any): any
+	for _, entry in s.entries do
+		if entry.kind == "permission" and entry.chosen == nil then
+			return entry.permission
+		end
+	end
+	return nil
+end
+
+-- Waits for `s` to ask something, and returns the question.
+local function asked(t: test.TestContext, s: any): any
+	t:wait_for(function()
+		return question(s) ~= nil
+	end)
+	return question(s)
+end
+
+test("an agent in a worktree of its own is let edit only there", function(t)
+	local root = t:tempdir({ ["repo/a.txt"] = "a\n" })
+	local dir = root .. "/repo"
+	for _, args in { { "init", "-q" }, { "add", "." }, { "commit", "-q", "-m", "first" } } do
+		local done = greed.process.run(
+			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
+			{ cwd = dir }
+		)
+		assert(done and done.code == 0, done and done.stderr)
+	end
+	local s = start(t, dir, true)
+	local ws = assert(s.workspace)
+	local outside = `../{string.match(ws.path, "[^/]+$")}-escape.txt`
+	send(t, s, `edit {outside}`)
+	local q = asked(t, s)
+	assert(q.locations and q.locations[1] == `{ws.path}/{outside}`, "it asks, saying where")
+	q.answer.send("yes")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local escaped = require("@core").project.clean(`{ws.path}/{outside}`)
+	assert(greed.fs.read(escaped) == nil, "and even allowed, the editor won't write there")
+	acp.close(s)
+end)
+
+test("an agent in the project asks again before writing outside it", function(t)
+	local root = t:tempdir({ ["repo/a.txt"] = "a\n" })
+	local dir = root .. "/repo"
+	local s = start(t, dir)
+	send(t, s, "edit ../out.txt")
+	asked(t, s).answer.send("yes")
+	local again = asked(t, s)
+	assert(string.find(again.title, "outside the project", 1, true), again.title)
+	again.answer.send("no")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(root .. "/out.txt") == nil, "not written")
+	send(t, s, "edit ../out.txt")
+	asked(t, s).answer.send("yes")
+	asked(t, s).answer.send("once")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(root .. "/out.txt") == "edited\n", "written once you let it")
+	acp.close(s)
+end)

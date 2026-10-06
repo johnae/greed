@@ -17,6 +17,12 @@ local function object(properties: { [string]: any }, required: { string }?): { [
 	return { type = "object", properties = properties, required = required }
 end
 
+-- `name`, once it's a note agents may write; an error saying why if not.
+local function writable(name: string): string
+	notes.check_agent_write(name)
+	return name
+end
+
 agent.tool({
 	name = "notes_list",
 	group = "notes",
@@ -67,9 +73,11 @@ agent.tool({
 
 agent.tool({
 	name = "notes_write",
+	kind = "edit",
 	group = "notes",
 	description = "Write a note's whole text, making it if it's new, or with append add lines "
-		.. "at its end. Link to other notes with [[name]]. Notes about the project go in its "
+		.. "at its end. A note that's there is changed as a proposal the user reviews; this "
+		.. "waits for them. Link to other notes with [[name]]. Notes about the project go in its "
 		.. 'notes, named "project:NAME", which live in the repository',
 	input = object({
 		name = { type = "string" },
@@ -77,23 +85,33 @@ agent.tool({
 		append = { type = "boolean" },
 	}, { "name", "text" }),
 	run = function(args)
+		writable(args.name)
 		if args.append then
 			notes.append(args.name, args.text)
 			return `added to {args.name}`
 		end
-		local buffer = notes.buffer(args.name)
-		if buffer then
-			buffer:edit(function(e)
-				e:replace(0, buffer:len(), args.text)
-			end)
-			buffer:save()
+		local path = notes.path(args.name)
+		local current = notes.read(args.name)
+		if current == nil then
+			local ok, err = greed.fs.write(path, args.text)
+			if not ok then
+				error(err, 0)
+			end
 			return `wrote {args.name}`
 		end
-		local ok, err = greed.fs.write(notes.path(args.name), args.text)
-		if not ok then
-			error(err, 0)
+		-- Rewriting what's there is for the user to review.
+		local buffer = notes.buffer(args.name) or greed.load(path)
+		local changes = greed.diff(buffer:text(), args.text)
+		if #changes == 0 then
+			return `{args.name} says that already`
 		end
-		return `wrote {args.name}`
+		local unsaved = buffer:modified()
+		local decided =
+			agent.propose_changes(buffer, path, changes, `an agent rewrites {args.name}`)
+		if decided.accepted > 0 and not unsaved then
+			buffer:save()
+		end
+		return `the user accepted {decided.accepted} and rejected {decided.rejected} of the changes to {args.name}`
 	end,
 })
 
@@ -120,12 +138,13 @@ agent.tool({
 
 agent.tool({
 	name = "notes_add_thought",
+	kind = "edit",
 	group = "notes",
 	description = "Jot a thought or an idea down in a note, as an item with today's date: for "
 		.. "things that aren't todos. Left out, the note is the inbox",
 	input = object({ text = { type = "string" }, note = { type = "string" } }, { "text" }),
 	run = function(args)
-		local note = args.note or todos.inbox()
+		local note = writable(args.note or todos.inbox())
 		todos.add_thought(args.text, note)
 		return `added to {note}`
 	end,
@@ -155,6 +174,7 @@ end
 
 agent.tool({
 	name = "notes_add_todo",
+	kind = "edit",
 	group = "notes",
 	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD) and with a "
 		.. 'reminder ("YYYY-MM-DD HH:MM", local time). Left out, the note is the inbox: the '
@@ -166,7 +186,7 @@ agent.tool({
 		remind = { type = "string" },
 	}, { "text" }),
 	run = function(args)
-		local note = args.note or todos.inbox()
+		local note = writable(args.note or todos.inbox())
 		todos.add(args.text, note, checked_date(args.due), checked_remind(args.remind))
 		return `added to {note}`
 	end,
@@ -188,6 +208,7 @@ end
 
 agent.tool({
 	name = "notes_remind",
+	kind = "edit",
 	group = "notes",
 	description = "Remind the user at a time: on the line of a note given by note and line "
 		.. "(1-based, as notes_todos and notes_search give them), replacing any reminder it "
@@ -203,13 +224,13 @@ agent.tool({
 	run = function(args)
 		local when = checked_remind(args.when) :: string
 		if args.line then
-			local note = args.note or todos.inbox()
+			local note = writable(args.note or todos.inbox())
 			local current = line_of(note, args.line)
 			local changed = todos.with_marker(current, "remind", when)
 			notes.set_line(note, args.line - 1, changed)
 			return `{note}:{args.line}: {changed}`
 		elseif args.text then
-			local note = args.note or todos.inbox()
+			local note = writable(args.note or todos.inbox())
 			todos.add(args.text, note, nil, when)
 			return `added to {note}`
 		end
@@ -219,6 +240,7 @@ agent.tool({
 
 agent.tool({
 	name = "notes_update_todo",
+	kind = "edit",
 	group = "notes",
 	description = "Change one todo, given by note and line (1-based, as notes_todos gives "
 		.. "them): its text (without its due date and reminder, which stay), its due date "
@@ -233,7 +255,7 @@ agent.tool({
 		done = { type = "boolean" },
 	}, { "note", "line" }),
 	run = function(args)
-		local current = line_of(args.note, args.line)
+		local current = line_of(writable(args.note), args.line)
 		local done, rest = todos.parse(current)
 		if done == nil or rest == nil then
 			error(`{args.note}:{args.line} isn't a todo: {current}`, 0)

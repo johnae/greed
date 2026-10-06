@@ -82,6 +82,7 @@ end
 function M.offer(acp: any, installed: (name: string?) -> any)
 	agent.tool({
 		name = "subagent",
+		kind = "execute",
 		group = "subagents",
 		description = "Hand a task to a helper agent that starts with an empty context and works "
 			.. "on it in a session of its own, then reports back: for a search across the project, "

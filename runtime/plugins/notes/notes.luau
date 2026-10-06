@@ -2,6 +2,7 @@
 -- them by name.
 
 local greed = require("@greed")
+local core = require("@core")
 
 greed.option.define({
 	name = "notes-folder",
@@ -150,11 +151,19 @@ function M.is_note(buffer: greed.Buffer): boolean
 end
 
 --- The file for note `name`, e.g. "ideas", "projects/greed" or
---- "project:plan".
+--- "project:plan". A name that would leave its place, like "../x" or
+--- "/etc/x", is an error: agents name notes too.
 function M.path(name: string): string
 	local place, rest = M.split(name)
+	if string.sub(rest, 1, 1) == "/" or string.find(`/{rest}/`, "/%.%.?/") then
+		error(`{name} isn't a note's name: names stay inside their place, without . or ..`, 0)
+	end
 	local file = if string.match(rest, "%.md$") then rest else rest .. ".md"
-	return `{place.folder}/{file}`
+	local path = `{place.folder}/{file}`
+	if not core.project.inside(path, place.folder) then
+		error(`{name} isn't inside {place.folder}`, 0)
+	end
+	return path
 end
 
 --- The name of the note at `path`: its path in its place, without ".md",
@@ -248,6 +257,26 @@ function M.read(name: string): string?
 		return buffer:text()
 	end
 	return (greed.fs.read(M.path(name)))
+end
+
+-- Checks on what agents may write, each saying why not for a note's path.
+local guards: { (path: string) -> string? } = {}
+
+--- Keeps agents' note tools from writing where `check` says why not,
+--- given a note's file; e.g. the plan plugin keeps decisions for you.
+function M.guard(check: (path: string) -> string?)
+	table.insert(guards, check)
+end
+
+--- Errors with why when agents may not write note `name`.
+function M.check_agent_write(name: string)
+	local path = M.path(name)
+	for _, check in guards do
+		local why = check(path)
+		if why then
+			error(why, 0)
+		end
+	end
 end
 
 --- Adds `text` as a line at the end of note `name`, making the note if

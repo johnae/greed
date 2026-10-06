@@ -3,6 +3,7 @@
 -- and the client side of the protocol: reading and writing files, running
 -- programs and asking you for permission.
 local greed = require("@greed")
+local core = require("@core")
 local rpc = require("./rpc")
 
 local M = {}
@@ -15,6 +16,8 @@ export type Tool = {
 	title: string,
 	kind: string?,
 	status: string?,
+	--- The files it says it touches.
+	locations: { string }?,
 	--- A line or two about what it did: a diff's size, a bit of output.
 	detail: { string },
 	--- All of its output, shown when it's unfolded.
@@ -27,6 +30,8 @@ export type Permission = {
 	title: string,
 	--- The kind of tool call it's for: "edit", "execute", ...
 	kind: string?,
+	--- The files the call touches, as absolute paths, when it says.
+	locations: { string }?,
 	options: { { id: string, name: string, kind: string } },
 	answer: greed.Signal,
 }
@@ -285,6 +290,33 @@ local function take_models(session: Session, from: any)
 	end
 end
 
+-- The files a tool call (or an update of one) says it touches: its
+-- locations and the files its diffs change, made absolute from `cwd`. Nil
+-- when it names none.
+local function paths_of(call: any, cwd: string): { string }?
+	local found: { string } = {}
+	local function add(path: any)
+		if type(path) == "string" and path ~= "" then
+			table.insert(found, if string.sub(path, 1, 1) == "/" then path else `{cwd}/{path}`)
+		end
+	end
+	for _, place in (if type(call.locations) == "table" then call.locations else {}) :: { any } do
+		add(type(place) == "table" and place.path)
+	end
+	for _, item in (if type(call.content) == "table" then call.content else {}) :: { any } do
+		if type(item) == "table" and item.type == "diff" then
+			add(item.path)
+		end
+	end
+	return if #found > 0 then found else nil
+end
+
+--- Whether `path` is in the folder `session` works in.
+function M.within(session: Session, path: string): boolean
+	local full = if string.sub(path, 1, 1) == "/" then path else `{session.cwd}/{path}`
+	return core.project.inside(full, session.cwd)
+end
+
 -- Applies one session/update notification.
 local function update(session: Session, u: any)
 	local kind = u.sessionUpdate
@@ -306,6 +338,7 @@ local function update(session: Session, u: any)
 			title = u.title or "a tool",
 			kind = u.kind,
 			status = u.status or "pending",
+			locations = paths_of(u, session.cwd),
 			detail = detail,
 			output = output,
 			open = false,
@@ -321,6 +354,7 @@ local function update(session: Session, u: any)
 		tool.title = u.title or tool.title
 		tool.kind = u.kind or tool.kind
 		tool.status = u.status or tool.status
+		tool.locations = paths_of(u, session.cwd) or tool.locations
 		if u.content then
 			tool.detail, tool.output = detail_of(u.content, session.cwd)
 		end
@@ -392,7 +426,8 @@ local function handlers(session: Session): rpc.Handlers
 			session,
 			call.title or (tool and tool.title) or "a tool call",
 			call.kind or (tool and tool.kind),
-			options
+			options,
+			paths_of(call, session.cwd) or (tool and tool.locations)
 		)
 		if chosen == nil then
 			return { outcome = { outcome = "cancelled" } }
@@ -417,6 +452,23 @@ local function handlers(session: Session): rpc.Handlers
 	end
 
 	h["fs/write_text_file"] = function(params: any): (any, string?)
+		if type(params.path) ~= "string" or string.sub(params.path, 1, 1) ~= "/" then
+			return nil, "the path must be absolute"
+		end
+		-- An agent in a workspace of its own writes only there; one in the
+		-- project asks before writing anywhere else.
+		if not M.within(session, params.path) then
+			if session.workspace then
+				return nil, `{params.path} is outside the workspace ({session.cwd})`
+			end
+			local chosen = M.ask(session, `Write {params.path}, outside the project`, "edit", {
+				{ id = "once", name = "Allow once", kind = "allow_once" },
+				{ id = "no", name = "Reject", kind = "reject_once" },
+			}, { params.path })
+			if chosen ~= "once" then
+				return nil, "the user didn't allow writing outside the project"
+			end
+		end
 		session.where = { path = params.path }
 		-- An open file is edited as you would, so undo takes it back.
 		local buffer = open_buffer(params.path)
@@ -529,17 +581,24 @@ local function handlers(session: Session): rpc.Handlers
 	return h
 end
 
---- Asks you whether the agent may do `title` (a tool call of `kind`),
---- with `options` to answer by, unless a policy answers first. Returns the
---- option chosen, or nil if the question was cancelled.
+--- Asks you whether the agent may do `title` (a tool call of `kind`,
+--- touching the files at `locations` when it says), with `options` to
+--- answer by, unless a policy answers first. Returns the option chosen, or
+--- nil if the question was cancelled.
 function M.ask(
 	session: Session,
 	title: string,
 	kind: string?,
-	options: { { id: string, name: string, kind: string } }
+	options: { { id: string, name: string, kind: string } },
+	locations: { string }?
 ): string?
-	local permission: Permission =
-		{ title = title, kind = kind, options = options, answer = greed.signal() }
+	local permission: Permission = {
+		title = title,
+		kind = kind,
+		locations = locations,
+		options = options,
+		answer = greed.signal(),
+	}
 	local entry: Entry = { kind = "permission", permission = permission }
 	table.insert(session.entries, entry)
 	local function chose(id: string, how: string)

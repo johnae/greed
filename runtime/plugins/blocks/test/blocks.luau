@@ -216,3 +216,58 @@ test("rerun=true runs the input again even when it has a result", function(t)
 		text()
 	)
 end)
+
+test("an agent can't run a trusted file's block once it's changed, until you run it", function(t)
+	local dir = t:tempdir({
+		["run.md"] = "```sh id=a\necho one\n```\n\n```sh id=b input=a\ncat\n```\n",
+	})
+	local path = dir .. "/run.md"
+	greed.open(path)
+	t:run("blocks-trust")
+	local buffer = greed.view():buffer()
+	-- An agent (or its sandboxed eval) rewrites the block in the buffer.
+	buffer:edit(function(e)
+		local at = assert((string.find(buffer:text(), "echo one", 1, true)))
+		e:replace(at - 1, at - 1 + #"echo one", "echo pwned")
+	end)
+	local ok, err = pcall(tool, "blocks_run", { path = path, id = "a" })
+	assert(not ok and string.find(tostring(err), "changed since", 1, true), tostring(err))
+	-- A block taking its input from a changed one is refused too.
+	ok, err = pcall(tool, "blocks_run", { path = path, id = "b" })
+	assert(not ok and string.find(tostring(err), "line 1 changed", 1, true), tostring(err))
+	assert(not has("result\npwned")(), "nothing ran")
+	-- Once you run it yourself, it's the block you know, and the agent may.
+	greed.view():set_selection({ ranges = { { anchor = 2, head = 2 } }, primary = 1 })
+	t:run("block-run")
+	t:wait_for(has("```result\npwned\n```"))
+	local ran = tool("blocks_run", { path = path, id = "b" })
+	assert(ran.result == "pwned", tostring(ran.result))
+	-- Untrusting forgets the blocks too.
+	t:run("blocks-untrust")
+	t:run("blocks-trust")
+	assert(tool("blocks_run", { path = path, id = "a" }).result == "pwned", "trusted as it is")
+end)
+
+test("a block changed while it waits for its input doesn't run for an agent", function(t)
+	local dir = t:tempdir({
+		["run.md"] = "```sh id=slow\nsleep 0.3; echo in\n```\n\n```sh id=b input=slow\ncat\n```\n",
+	})
+	local path = dir .. "/run.md"
+	greed.open(path)
+	t:run("blocks-trust")
+	local buffer = greed.view():buffer()
+	local result: any = nil
+	greed.spawn(function()
+		result = { pcall(tool, "blocks_run", { path = path, id = "b" }) }
+	end)
+	t:wait(50)
+	buffer:edit(function(e)
+		local at = assert((string.find(buffer:text(), "cat", 1, true)))
+		e:replace(at - 1, at + 2, "echo pwned")
+	end)
+	t:wait_for(function()
+		return result ~= nil
+	end)
+	assert(string.find(buffer:text(), "error: the block on line 9 changed", 1, true), buffer:text())
+	assert(not string.find(buffer:text(), "result\npwned", 1, true), "it didn't run")
+end)

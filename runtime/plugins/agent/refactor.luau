@@ -124,6 +124,8 @@ local LOCATION = {
 
 agent.tool({
 	name = "rename",
+	kind = "edit",
+	reviews = true,
 	group = "refactor",
 	description = "Rename a function, type, variable or other name everywhere it's used, as the "
 		.. "language server works it out. Give the line it's on and the name as it is now. The "
@@ -219,6 +221,8 @@ agent.tool({
 
 agent.tool({
 	name = "code_action",
+	kind = "edit",
+	reviews = true,
 	group = "refactor",
 	description = "Propose one of the language server's code actions for some lines, by its "
 		.. "title as code_actions lists it. Its changes go to the user to review as one "

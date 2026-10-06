@@ -1,7 +1,8 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local models = require("@models")
-local login: any = models.login
+-- The module itself, which the plugin keeps to itself, for its post to stand in for.
+local login: any = require("../login")
 
 -- Stands in for the sign-in server: each POST gets the next answer for its
 -- URL, and what was sent is kept.

@@ -209,6 +209,8 @@ local EDITS = {
 
 agent.tool({
 	name = "propose",
+	kind = "edit",
+	reviews = true,
 	description = "Propose changes for the user to review in the editor: to one file with path "
 		.. "and edits, or to several with files. Each change replaces old_text, which must "
 		.. "appear exactly once in its file (quote enough around it), with new_text. Changes "

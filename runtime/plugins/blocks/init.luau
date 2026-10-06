@@ -12,7 +12,9 @@
 -- Nothing runs when a file opens. The first time you run a block in a file
 -- Greed asks whether to: y for now, a to always trust that file. Files you
 -- trust, and those whose front matter says `greed: run`, show a run button
--- on each block.
+-- on each block. Agents run blocks only in files you trust, and only as
+-- they were when you last ran them or trusted the file, so a block an
+-- agent rewrote waits for you to run it first.
 --
 -- Options go in the info string: `id=NAME` names a block's result, and
 -- `input=NAME` gives another block that result (on stdin, or as `input` in
@@ -89,6 +91,119 @@ function M.trusted(buffer: greed.Buffer): boolean
 	return path == nil or trusted[path] == true or allowed_now[path] == true
 end
 
+-- What you let run, block by block: for each file, the blocks (their info
+-- string and code) as they were when you ran one yourself or trusted the
+-- file. Agents run only those, so one that rewrote a block, in the buffer
+-- or on disk, can't run it. Kept in the data folder as JSON.
+local approved_file = data and `{data}/blocks-approved.json`
+local approved: { [string]: { [string]: boolean } } = {}
+
+local function load_approved()
+	local text = approved_file and greed.fs.read(approved_file)
+	local ok, saved = pcall(greed.json.decode, text or "{}")
+	for path, texts in (if ok and type(saved) == "table" then saved else {}) :: { [string]: any } do
+		approved[path] = {}
+		for _, block in texts do
+			approved[path][block] = true
+		end
+	end
+end
+load_approved()
+
+local function save_approved()
+	if approved_file == nil then
+		return
+	end
+	local out: { [string]: { string } } = {}
+	for path, texts in approved do
+		local list = {}
+		for text in texts do
+			table.insert(list, text)
+		end
+		out[path] = list
+	end
+	greed.fs.write(approved_file, greed.json.encode(out))
+end
+
+-- A block as it's approved: what it runs as and its code.
+local function block_text(buffer: greed.Buffer, block: Block): string
+	return block.info .. "\n" .. buffer:slice(block.code_from, block.code_to)
+end
+
+-- The block named `id` in `buffer`.
+local function named(buffer: greed.Buffer, id: string): Block?
+	for _, block in parse.blocks(buffer) do
+		if block.opts.id == id then
+			return block
+		end
+	end
+	return nil
+end
+
+-- `block` and the blocks it takes input from, and theirs, in `buffer`.
+local function with_inputs(buffer: greed.Buffer, block: Block): { Block }
+	local list: { Block } = { block }
+	local seen: { [string]: boolean } = {}
+	local i = 1
+	while list[i] do
+		local id = list[i].opts.input
+		local source = if id and not seen[id] then named(buffer, id) else nil
+		if id then
+			seen[id] = true
+		end
+		if source then
+			table.insert(list, source)
+		end
+		i += 1
+	end
+	return list
+end
+
+-- Approves `blocks` of `buffer`'s file as they are now, forgetting what
+-- was approved there that's no longer in it.
+local function approve(buffer: greed.Buffer, blocks: { Block })
+	local path = path_of(buffer)
+	if path == nil then
+		return
+	end
+	local now: { [string]: boolean } = {}
+	for _, block in parse.blocks(buffer) do
+		now[block_text(buffer, block)] = true
+	end
+	local kept: { [string]: boolean } = {}
+	for text in approved[path] or {} :: { [string]: boolean } do
+		if now[text] then
+			kept[text] = true
+		end
+	end
+	for _, block in blocks do
+		kept[block_text(buffer, block)] = true
+	end
+	approved[path] = kept
+	save_approved()
+end
+
+--- Why an agent may not run `block` in `buffer`: the file isn't trusted,
+--- or the block (or one it takes input from) isn't as you last ran it or
+--- trusted the file. Nil when it may.
+function M.refused(buffer: greed.Buffer, block: Block): string?
+	if not M.trusted(buffer) then
+		return "the user hasn't let blocks in this file run; they can with :blocks-trust"
+	end
+	local path = path_of(buffer)
+	if path == nil then
+		return nil
+	end
+	local known: { [string]: boolean } = approved[path] or {}
+	for _, needed in with_inputs(buffer, block) do
+		if not known[block_text(buffer, needed)] then
+			return `the block on line {needed.open + 1} changed since the user last ran it or `
+				.. "trusted the file; they can run it themselves (space m r) or :blocks-trust again"
+		end
+	end
+	return nil
+end
+
 --- Whether `buffer` shows its blocks as runnable: Markdown whose front
 --- matter says `greed: run`, or a file you trusted.
 function M.on(buffer: greed.Buffer): boolean
@@ -152,16 +267,6 @@ local function block_at(buffer: greed.Buffer, pos: number): Block?
 	return nil
 end
 
--- The block named `id` in `buffer`.
-local function named(buffer: greed.Buffer, id: string): Block?
-	for _, block in parse.blocks(buffer) do
-		if block.opts.id == id then
-			return block
-		end
-	end
-	return nil
-end
-
 -- The result block's text for `outcome`: the output, cut to the
 -- `blocks-max-lines` option, in a fence longer than any it holds.
 local function result_text(outcome: runners.Outcome): string
@@ -218,14 +323,18 @@ local function dir_for(buffer: greed.Buffer, block: Block): string
 	return if string.sub(dir, 1, 1) == "/" then dir else `{base}/{dir}`
 end
 
-local run_block: (buffer: greed.Buffer, block: Block, chain: { [string]: boolean }) -> boolean
+-- Says why a block may not run, when it may not; agents' runs have one.
+type Check = (block: Block) -> string?
+
+local run_block: (buffer: greed.Buffer, block: Block, chain: { [string]: boolean }, check: Check?) -> boolean
 
 -- The input for `block`: the result of the block its `input` option
 -- names, running that first if it has none. Nil and why when it can't.
 local function input_for(
 	buffer: greed.Buffer,
 	block: Block,
-	chain: { [string]: boolean }
+	chain: { [string]: boolean },
+	check: Check?
 ): (string?, string?)
 	local id = block.opts.input
 	if id == nil then
@@ -242,7 +351,7 @@ local function input_for(
 	local result = if block.opts.rerun == "true" then nil else source.result
 	if result == nil then
 		chain[id] = true
-		if not run_block(buffer, source, chain) then
+		if not run_block(buffer, source, chain, check) then
 			return nil, `block {id} didn't run`
 		end
 		local ran = named(buffer, id)
@@ -256,7 +365,12 @@ end
 
 --- Runs `block` in `buffer` and saves its result under it, waiting until
 --- it's done. Returns whether it ran.
-function run_block(buffer: greed.Buffer, block: Block, chain: { [string]: boolean }): boolean
+function run_block(
+	buffer: greed.Buffer,
+	block: Block,
+	chain: { [string]: boolean },
+	check: Check?
+): boolean
 	local runner = runners.get(block.lang)
 	if runner == nil then
 		greed.echo(
@@ -274,8 +388,10 @@ function run_block(buffer: greed.Buffer, block: Block, chain: { [string]: boolea
 	draw(buffer)
 	-- Running the block its input comes from moves this one, which the
 	-- run's mark follows.
-	local input, failed = input_for(buffer, block, chain)
+	local input, failed = input_for(buffer, block, chain, check)
 	local now = block_at(buffer, where(run) or block.from) or block
+	-- Checked on the block as it is now, after any wait for its input.
+	failed = failed or (check and check(now))
 	if failed then
 		finish(run)
 		save(buffer, now, { output = "", error = failed })
@@ -343,6 +459,14 @@ function M.run(buffer: greed.Buffer, block: Block): boolean
 	return run_block(buffer, block, {})
 end
 
+--- Runs `block` for an agent: as `M.run`, but only blocks as you let them
+--- run (`M.refused`), checked again on each as it starts.
+function M.run_for_agent(buffer: greed.Buffer, block: Block): boolean
+	return run_block(buffer, block, {}, function(now: Block): string?
+		return M.refused(buffer, now)
+	end)
+end
+
 --- The blocks in `buffer` that have a runner, in order.
 function M.runnable(buffer: greed.Buffer): { Block }
 	local list = {}
@@ -368,6 +492,7 @@ local function allow(buffer: greed.Buffer): boolean
 	elseif key == "a" then
 		trusted[path] = true
 		save_trusted()
+		approve(buffer, M.runnable(buffer))
 	else
 		greed.echo("nothing ran")
 		return false
@@ -390,6 +515,7 @@ greed.command({
 		if block == nil then
 			greed.echo("there's no code block here")
 		elseif allow(ctx.buffer) then
+			approve(ctx.buffer, with_inputs(ctx.buffer, block))
 			run_block(ctx.buffer, block, {})
 		end
 	end,
@@ -407,6 +533,7 @@ greed.command({
 		if not allow(buffer) then
 			return
 		end
+		approve(buffer, M.runnable(buffer))
 		-- Each result moves the blocks after it, so they're found again.
 		local i = 1
 		while true do
@@ -478,6 +605,7 @@ greed.command({
 		if path then
 			trusted[path] = true
 			save_trusted()
+			approve(ctx.buffer, M.runnable(ctx.buffer))
 			draw(ctx.buffer)
 		end
 	end,
@@ -489,8 +617,9 @@ greed.command({
 	run = function(ctx)
 		local path = path_of(ctx.buffer)
 		if path then
-			trusted[path], allowed_now[path] = nil, nil
+			trusted[path], allowed_now[path], approved[path] = nil, nil, nil
 			save_trusted()
+			save_approved()
 			draw(ctx.buffer)
 		end
 	end,

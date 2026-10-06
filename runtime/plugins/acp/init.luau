@@ -134,17 +134,25 @@ local function option_of(permission: session.Permission, kind: string): string?
 end
 
 -- What the agent does in a workspace of its own is for you to bring in or
--- not, so its edits there needn't wait for you.
+-- not, so its edits there needn't wait for you. Only there: an edit that
+-- doesn't say which files it touches, or touches one elsewhere, asks.
 local EDITS = { edit = true, delete = true, move = true }
 local function workspace_edits(s: Session, permission: session.Permission): string?
+	local locations = permission.locations
 	if
-		s.workspace
-		and EDITS[permission.kind or ""]
-		and greed.option.get("agent-workspace-edits") == true
+		s.workspace == nil
+		or not EDITS[permission.kind or ""]
+		or greed.option.get("agent-workspace-edits") ~= true
+		or locations == nil
 	then
-		return option_of(permission, "allow_once")
+		return nil
 	end
-	return nil
+	for _, path in locations do
+		if not session.within(s, path) then
+			return nil
+		end
+	end
+	return option_of(permission, "allow_once")
 end
 
 local function decide(s: Session, permission: session.Permission): string?
@@ -1112,7 +1120,8 @@ local function installed(name: string?): Agent?
 end
 
 -- What Greed's agent is asked to do with your notes. Changes to notes that
--- are there go through proposals, so each one waits for you.
+-- are there go through proposals (notes_write proposes them too), so each
+-- one waits for you; adding a line or a todo asks, as edits do.
 local CONNECT = [=[
 Go through %s and connect it with the rest of my notes. For each thought, idea or todo:
 find related notes (notes_search, notes_list, notes_read), link them with [[name]], and add a

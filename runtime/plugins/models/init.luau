@@ -173,27 +173,91 @@ local function refusal(status: number, body: string): string
 	return `the model's server said {status}: {message or string.sub(body, 1, 200)}`
 end
 
+-- Where keys go. Any plugin can add a provider, so a key goes only to an
+-- address you let it go to: the built-in providers' keys to their own
+-- servers, and others once you've said yes, asked the first time. Your
+-- answers are kept with the secrets, by key and address, where only a
+-- plugin allowed that secret could change them.
+local KNOWN: { [string]: string } = {
+	anthropic = "https://api.anthropic.com",
+	openai = "https://api.openai.com",
+	berget = "https://api.berget.ai",
+	["berget sign-in"] = "https://api.berget.ai",
+}
+
+local APPROVALS = "models-key-addresses"
+
+-- What you said yes to, read the first time a key goes somewhere new.
+local approvals: { [string]: { [string]: boolean } }? = nil
+
+local function load_approvals(): { [string]: { [string]: boolean } }
+	local loaded: { [string]: { [string]: boolean } } = {}
+	local ok, saved = pcall(greed.json.decode, greed.secrets.get(APPROVALS) or "{}")
+	for key, origins in (if ok and type(saved) == "table" then saved else {}) :: { [string]: any } do
+		loaded[key] = {}
+		for _, origin in origins do
+			loaded[key][origin] = true
+		end
+	end
+	return loaded
+end
+
+-- Whether the key called `name` may go to `url`, asking you the first time
+-- for an address it isn't known to go to. Nil and why when it may not.
+local function may_send(name: string, url: string): string?
+	local origin = string.lower(string.match(url, "^%a[%w+.-]*://[^/?#]+") or url)
+	if KNOWN[name] == origin then
+		return nil
+	end
+	local known = approvals or load_approvals()
+	approvals = known
+	if known[name] and known[name][origin] then
+		return nil
+	end
+	greed.echo(`send your {name} key to {origin}? y yes, from now on; n no`)
+	local answer = greed.next_key()
+	greed.echo("")
+	if answer ~= "y" then
+		return `you didn't let your {name} key go to {origin}`
+	end
+	known[name] = known[name] or {}
+	known[name][origin] = true
+	local out: { [string]: { string } } = {}
+	for key, origins in known do
+		out[key] = {}
+		for address in origins do
+			table.insert(out[key], address)
+		end
+	end
+	greed.secrets.set(APPROVALS, greed.json.encode(out))
+	return nil
+end
+
 -- The role's model and provider, and its key if it needs one.
 local function connect(role: string): (Role?, Provider?, string?, string?)
 	local chosen, provider, why = M.resolve(role)
 	if chosen == nil or provider == nil then
 		return nil, nil, nil, why
 	end
-	local key: string? = nil
+	local key: string?, name: string? = nil, nil
 	if provider.login and login.signed_in(provider.login) then
 		local token, err = login.token(provider.login)
 		if token == nil then
 			return nil, nil, nil, err
 		end
-		key = token
+		key, name = token, `{provider.login} sign-in`
 	elseif provider.secret then
-		key = greed.secrets.get(provider.secret)
+		key, name = greed.secrets.get(provider.secret), provider.secret
 		if key == nil then
 			return nil,
 				nil,
 				nil,
 				`no key for {chosen.provider}: :secret-set {provider.secret}, or set it in the environment`
 		end
+	end
+	local refused = name and may_send(name, provider.url)
+	if refused then
+		return nil, nil, nil, refused
 	end
 	return chosen, provider, key, nil
 end
@@ -326,8 +390,39 @@ function M.turn(
 end
 
 M.tools = turn
---- Signing in to providers instead of using keys (login.luau).
-M.login = login
+
+-- The logins as plugins see them: a new one can be added, but none taken
+-- over or changed once it's there, so a plugin can't send another's
+-- tokens somewhere else.
+local logins_meta: any = {
+	__index = login.logins,
+	__newindex = function(_, name: string, spec: login.Login)
+		if login.logins[name] then
+			error(`there's a login called {name} already`, 2)
+		end
+		table.freeze(spec)
+		local all: any = login.logins
+		all[name] = spec
+	end,
+	__iter = function()
+		return next, login.logins
+	end,
+}
+local logins = table.freeze(setmetatable({}, logins_meta))
+logins_meta.__metatable = false
+table.freeze(logins_meta)
+for _, known in login.logins do
+	table.freeze(known)
+end
+
+--- Signing in to providers instead of using keys (login.luau): adding a
+--- login, and posting to a sign-in server for a login's `renew`. Its
+--- tokens stay inside this plugin.
+M.login = table.freeze({
+	logins = (logins :: any) :: { [string]: login.Login },
+	post = login.post,
+	signed_in = login.signed_in,
+})
 
 --- `answer` without the code fence a model may wrap it in, when it was
 --- asked for plain text.

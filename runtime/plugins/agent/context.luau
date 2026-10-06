@@ -3,6 +3,7 @@
 -- as data; `describe` writes it as a short block to send with a prompt.
 
 local greed = require("@greed")
+local untrusted = require("./untrusted")
 
 local M = {}
 
@@ -126,9 +127,7 @@ function M.describe(root: string?): string?
 		local text, left = cut(buffer:slice(from, to), M.MAX_SELECTION)
 		local last_line = buffer:line_of(buffer:prev_char(to))
 		table.insert(lines, `Selected, lines {buffer:line_of(from) + 1} to {last_line + 1}:`)
-		table.insert(lines, "<<<")
-		table.insert(lines, text)
-		table.insert(lines, ">>>")
+		table.insert(lines, untrusted(`the user's file {relative(path, root)}`, text))
 		if left > 0 then
 			table.insert(lines, `(the selection goes on for {left} more characters, cut here)`)
 		end

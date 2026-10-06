@@ -22,6 +22,7 @@ local ask = require("@self/ask")
 local eval = require("@self/eval")
 local extend = require("@self/extend")
 local context = require("@self/context")
+local untrusted = require("@self/untrusted")
 
 registry.group(
 	"refactor",
@@ -42,19 +43,30 @@ registry.group(
 )
 
 export type Tool = registry.Tool
+export type Kind = registry.Kind
 export type Caller = registry.Caller
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
 export type FileChanges = proposals.FileChanges
 export type WorkingEntry = working.Entry
+export type EvalEntry = eval.Entry
 
-return {
+-- Frozen, so no plugin can put its own function in place of one of these,
+-- like a `propose` that says the user accepted.
+return table.freeze({
 	tool = registry.tool,
 	tools = registry.tools,
 	--- Groups of tools agents switch on when they need them (registry.luau).
 	group = registry.group,
 	offered = registry.offered,
 	caller = registry.caller,
+	--- Whether an agent asks you before a tool runs, by its kind (registry.luau).
+	asks = registry.asks,
+	--- Whether a tool's caller is a shell, `greed ctl` (registry.luau).
+	from_shell = registry.from_shell,
+	--- Text someone else wrote, wrapped so a model reads it as information
+	--- (untrusted.luau).
+	untrusted = untrusted,
 	propose = proposals.propose,
 	propose_files = proposals.propose_files,
 	propose_changes = proposals.propose_changes,
@@ -66,8 +78,10 @@ return {
 	install = extend.install,
 	dirs = extend.dirs,
 	ask = ask.ask,
-	--- How Luau from agents runs: the reviewer, the log (eval.luau).
-	eval = eval,
+	--- Each run of an agent's code past the sandbox, oldest first (eval.luau).
+	eval_log = function(): { eval.Entry }
+		return table.clone(eval.log)
+	end,
 	--- The repo map, symbols and grep agents get (map.luau).
 	map = map,
 	--- The files you worked in lately (working.luau).
@@ -76,4 +90,4 @@ return {
 	web = web,
 	--- What the user has on screen, to send with prompts (context.luau).
 	context = context,
-}
+})

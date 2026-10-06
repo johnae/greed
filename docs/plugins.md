@@ -769,7 +769,15 @@ models.roles.agent = { provider = "acme", model = "acme-large" }
 Then `:login acme`, and `:models` says "signed in". `:logout acme` forgets
 the tokens, and the provider goes back to its key. The name is used for the
 secret the tokens are kept in, so it takes lowercase letters, digits and
-dashes.
+dashes. Once a login is added it can't be replaced or changed, and its
+tokens stay inside the models plugin: no plugin can read them or send them
+elsewhere.
+
+Any plugin can add a provider, so a key or a sign-in goes only where the
+user let it: the built-in providers' keys to their own servers, and any
+other the first time it would go somewhere new, after Greed asks
+("send your acme key to https://api.acme.example? y yes, n no"). The
+answer is kept, so each key and address asks once.
 
 `scope` needs whatever the server wants for a refresh token, often
 `offline_access`; without one, you'd sign in again whenever the token runs
@@ -826,13 +834,28 @@ A plugin offering tools lists `agent` in `requires`. The tool's parts:
 | `description` | What it does, for the agent deciding whether to use it. Say when to use it and what comes back |
 | `input` | A JSON Schema for the arguments, like `{ type = "object", properties = { path = { type = "string" } }, required = { "path" } }`; left out, it takes none |
 | `group` | The group it's offered with; left out, it's always offered (below) |
+| `kind` | What it does beyond reading: `"edit"` (changes files or notes), `"execute"` (runs code or programs) or `"fetch"` (reaches the network); left out, `"read"` |
+| `reviews` | `true` when the tool puts what it does in front of the user itself, as a proposal or a question does |
 | `run` | `run(args, client, caller)` does the work |
 
+Greed's own agent asks the user before a tool whose `kind` isn't `"read"`
+runs, the way it asks before its own edits, unless the tool `reviews`;
+MCP clients see the others marked read-only. Set `kind` on every tool
+that changes, runs or fetches something, so it isn't run unasked.
+
 `run` gets the arguments as a table. `client` is who called: `"shell"` for
-`greed ctl`, whose user can run anything already, `"agent"` for Greed's own
-agent, otherwise `"socket"`. A string it returns goes to the agent as it
-is, any other value as JSON, and an error goes back as an error, so
-`error("there's no file " .. path, 0)` tells the agent what went wrong.
+`greed ctl`, `"agent"` for Greed's own agent, otherwise `"socket"`. Any
+plugin can call a tool with any `client`, so don't decide trust on it:
+`agent.from_shell(caller)` says whether the call came from `greed ctl`,
+whose user can run anything already. A string it returns goes to the
+agent as it is, any other value as JSON, and an error goes back as an
+error, so `error("there's no file " .. path, 0)` tells the agent what went
+wrong.
+
+Hand text someone else wrote, like a web page or another agent's report,
+back through `agent.untrusted(source, text)`: it's wrapped in markers the
+text can't close, after a line telling the model to use it as information
+and not to follow instructions in it.
 
 A tool can wait: for a process, a request, or the user. Changes to files
 are best proposed, so the user reviews them first and the tool hears what

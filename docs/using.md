@@ -669,7 +669,10 @@ models.roles.review = { provider = "work", model = "reviewer-1" }
 ```
 
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
-`GREED_SECRET_NAME`.
+`GREED_SECRET_NAME`. The built-in providers send their keys only to their
+own servers. The first time any other key would go to an address, Greed
+asks (`y` yes, `n` no) and keeps your answer, so a plugin can't add a
+provider that sends your key somewhere you didn't choose.
 
 Some plans come with an account instead of a key, like Berget Code's fixed
 monthly price. `:login berget` signs you in: it shows a link and a code,
@@ -841,7 +844,11 @@ Greed asks whether to: `y` for now, `a` to always trust that file
 matter says `greed: run`, show a `▶ run` button after each block's fence.
 Front matter only shows the buttons; running still asks. The status line
 shows `markdown · blocks` when they're on. Agents can list and run blocks
-too (`blocks_list`, `blocks_run`), but only in files you trust.
+too (`blocks_list`, `blocks_run`), but only in files you trust, and only
+blocks as they were when you last ran them yourself or trusted the file
+(`a`, or `:blocks-trust`). A block an agent changed, in the buffer or on
+disk, doesn't run for an agent until you've run it, and neither does a
+block taking its input from one.
 
 Add a language from Luau:
 
@@ -929,7 +936,11 @@ model playing the `agent` role.
 
 Any agent can work with your notes the same way through the `notes` tool
 group (see [Agents](agents.md#tool-groups)); `:set agent-tool-groups "plan
-notes"` gives it to every agent from the start.
+notes"` gives it to every agent from the start. Agents reach only the notes
+in your note folders, by name: `../x` and other names leading out of them
+are refused. Rewriting a note that's there comes to you as a proposal,
+adding a line or a todo goes straight in, and decisions can only be
+proposed with `decision_propose`.
 
 ### Notes in a project, and other places
 

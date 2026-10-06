@@ -13,6 +13,7 @@
 -- agent can't make itself rules the next one follows.
 
 local greed = require("@greed")
+local core = require("@core")
 local notes = require("@notes")
 local agent = require("@agent")
 agent.group("plan", "The plan you share with the user, and what was decided for the project")
@@ -36,6 +37,15 @@ end
 local function decision_path(name: string): string
 	return `{M.decisions_dir()}/{name}`
 end
+
+-- An agent's note tools can't write decisions: one it wrote itself would
+-- read as accepted.
+notes.guard(function(path: string): string?
+	if core.project.inside(path, M.decisions_dir()) then
+		return "decisions are the user's to write; propose one with decision_propose"
+	end
+	return nil
+end)
 
 -- The open buffer for `path`, if there is one.
 local function open_buffer(path: string): greed.Buffer?
@@ -181,6 +191,7 @@ agent.tool({
 
 agent.tool({
 	name = "plan_write",
+	kind = "edit",
 	group = "plan",
 	description = "Replace the plan with new Markdown: a checklist ('- [ ] step', '- [x] done', "
 		.. "indented for sub-steps) and any notes. Give the version plan_read returned; if the "
@@ -261,6 +272,9 @@ agent.tool({
 
 agent.tool({
 	name = "decision_propose",
+	kind = "edit",
+	-- It stays proposed until the user accepts it.
+	reviews = true,
 	group = "plan",
 	description = "Propose a decision to keep for later sessions, e.g. after the user settled a "
 		.. "question. It stays proposed until the user accepts it",

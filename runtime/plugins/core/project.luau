@@ -171,6 +171,29 @@ function M.path(root: string, path: string): string
 	return root .. "/" .. path
 end
 
+--- `path` as a full path with `.`, `..` and doubled slashes worked out,
+--- from the folder Greed started in when it's relative. Symbolic links
+--- aren't followed.
+function M.clean(path: string): string
+	local full = if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
+	local parts: { string } = {}
+	for part in string.gmatch(full, "[^/]+") do
+		if part == ".." then
+			table.remove(parts)
+		elseif part ~= "." then
+			table.insert(parts, part)
+		end
+	end
+	return "/" .. table.concat(parts, "/")
+end
+
+--- Whether `path` is `folder` or inside it, once both are cleaned up
+--- (`M.clean`), so "src/../../x" isn't inside "src".
+function M.inside(path: string, folder: string): boolean
+	local p, f = M.clean(path), M.clean(folder)
+	return p == f or f == "/" or string.sub(p, 1, #f + 1) == f .. "/"
+end
+
 greed.command({
 	name = "project",
 	doc = "Open a project, or switch to it if it's open",
