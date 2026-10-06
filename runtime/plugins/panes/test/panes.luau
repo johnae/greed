@@ -213,11 +213,9 @@ test("a tab's layout can be read and set again, arranged another way", function(
 	assert(layout.split == "row" and #layout.children == 3, "three side by side")
 
 	-- a on top, b and c side by side below it, taking three quarters.
-	greed.tab.set_layout({
-		split = "column",
-		sizes = { 1, 3 },
-		children = { a, { split = "row", children = { b, c } } },
-	})
+	-- A pane and a split: `any`, as `set_layout` takes.
+	local children: { any } = { a, { split = "row", children = { b, c } } }
+	greed.tab.set_layout({ split = "column", sizes = { 1, 3 }, children = children })
 	local rows = t:draw(41, 21)
 	local divider = 0
 	for i, row in rows do
@@ -232,7 +230,8 @@ test("a tab's layout can be read and set again, arranged another way", function(
 	assert(math.abs(read.sizes[1] - 0.25) < 0.01, tostring(read.sizes[1]))
 
 	-- Every pane, each once.
-	local ok, err = pcall(greed.tab.set_layout, { split = "row", children = { a, b } })
+	local ok: boolean, err: unknown =
+		pcall(greed.tab.set_layout, { split = "row", children = { a, b } })
 	assert(not ok and string.find(tostring(err), "every pane", 1, true), tostring(err))
 	ok = pcall(greed.tab.set_layout, { split = "row", children = { a, a, b, c } })
 	assert(not ok, "a pane twice")
@@ -613,4 +612,63 @@ test("ctrl-w q in a panel closes the panel", function(t)
 	t:keys("ctrl-w q")
 	assert(greed.view():id() == main:id(), "back in the file")
 	assert(count() == 1, "the pane stays")
+end)
+
+type Area = { x: number, y: number, width: number, height: number }
+
+test("alt-h and alt-l move between the panes and the panels beside them", function(t)
+	t:buffer("|hello")
+	local main = greed.view()
+	local tree = greed.panel(
+		greed.create_buffer("notes", "a panel"),
+		{ side = "left", width = 10, focus = false }
+	)
+	t:draw(80, 20)
+	t:keys("alt-h")
+	assert(greed.view():id() == tree:id(), "alt-h went into the panel")
+	t:keys("alt-l")
+	assert(greed.view():id() == main:id(), "alt-l came back")
+	tree:close()
+end)
+
+test("the resize mode resizes a panel", function(t)
+	t:buffer("|hello")
+	local panel =
+		greed.panel(greed.create_buffer("notes", "a panel"), { side = "right", width = 20 })
+	t:draw(80, 20)
+	local function width(): number
+		t:draw(80, 20)
+		return (panel:area() :: Area).width
+	end
+	local before = width()
+	t:keys("alt-r h")
+	assert(width() == before + 4, "h grows it toward the file")
+	t:keys("l")
+	assert(width() == before, "l, at the screen's edge, shrinks it")
+	t:keys("esc")
+	panel:close()
+end)
+
+test("dragging the line by a panel or between panes resizes them", function(t)
+	t:buffer("|hello")
+	local panel = greed.panel(
+		greed.create_buffer("notes", "a panel"),
+		{ side = "left", width = 10, focus = false }
+	)
+	t:keys("alt-p v esc")
+	t:draw(80, 20)
+	local line = (panel:area() :: Area).width
+	t:mouse("press", line, 5)
+	t:mouse("drag", line + 6, 5)
+	t:mouse("release", line + 6, 5)
+	t:draw(80, 20)
+	assert((panel:area() :: Area).width == 16, "the panel grew")
+	local left = greed.tab.current().panes[1]
+	local a = left:area() :: Area
+	t:mouse("press", a.x + a.width, 5)
+	t:mouse("drag", a.x + a.width - 5, 5)
+	t:mouse("release", a.x + a.width - 5, 5)
+	t:draw(80, 20)
+	assert((left:area() :: Area).width == a.width - 5, "the pane shrank")
+	panel:close()
 end)

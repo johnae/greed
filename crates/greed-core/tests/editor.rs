@@ -792,6 +792,71 @@ mod panes {
         assert_eq!(ed.view(b).area.map(|r| r.width), Some(15));
         assert!(!ed.resize_pane(a, Direction::Left, 5));
     }
+
+    #[test]
+    fn panels_are_neighbors_of_the_panes_beside_them() {
+        let (mut ed, a, b, _) = three();
+        let tree = ed.create_buffer("tree", "");
+        let panel = ed.panel(tree, super::panel_options());
+        draw(&mut ed, 52, 11);
+        assert_eq!(ed.neighbor(a, Direction::Left), Some(panel));
+        assert_eq!(ed.neighbor(panel, Direction::Right), Some(a));
+        assert_eq!(ed.neighbor(panel, Direction::Left), None);
+        assert_eq!(ed.neighbor(b, Direction::Left), Some(a));
+    }
+    #[test]
+    fn a_panel_resizes_toward_the_main_view_only() {
+        let mut ed = super::editor("text");
+        let tree = ed.create_buffer("tree", "");
+        let left = ed.panel(tree, super::panel_options());
+        let notes = ed.create_buffer("notes", "");
+        let right = ed.panel(
+            notes,
+            greed_core::PanelOptions {
+                side: greed_core::Side::Right,
+                width: greed_core::Extent::Percent(25),
+                ..super::panel_options()
+            },
+        );
+        draw(&mut ed, 80, 10);
+        assert!(ed.resize_pane(left, Direction::Right, 4));
+        assert!(ed.resize_pane(right, Direction::Left, -5));
+        assert!(!ed.resize_pane(left, Direction::Left, 4));
+        assert!(!ed.resize_pane(right, Direction::Up, 4));
+        draw(&mut ed, 80, 10);
+        assert_eq!(ed.view(left).area.map(|r| r.width), Some(14));
+        assert_eq!(ed.view(right).area.map(|r| r.width), Some(15));
+    }
+
+    #[test]
+    fn the_mouse_finds_the_lines_between_panes_and_panels() {
+        let (mut ed, a, b, _) = three();
+        let tree = ed.create_buffer("tree", "");
+        let panel = ed.panel(tree, super::panel_options());
+        let renderer = Renderer::new(CellWidth);
+        renderer.frame(
+            &mut ed,
+            Size {
+                width: 52,
+                height: 11,
+            },
+            &Status::Default { message: None },
+            &Plain,
+        );
+        let edge = |col, row| {
+            let hit = renderer.hit(&ed, col, row);
+            (hit.view, hit.edge)
+        };
+        assert_eq!(edge(10, 3), (Some(panel), Some("right")));
+        let a_area = ed.view(a).area.unwrap();
+        assert_eq!(edge(a_area.x + a_area.width, 3), (Some(a), Some("right")));
+        let b_area = ed.view(b).area.unwrap();
+        assert_eq!(
+            edge(b_area.x + 2, b_area.y + b_area.height),
+            (Some(b), Some("down"))
+        );
+        assert_eq!(edge(a_area.x + 1, 3).1, None);
+    }
 }
 
 #[test]

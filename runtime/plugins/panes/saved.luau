@@ -36,6 +36,16 @@ local function my_dir(): string?
 	return if config then `{config}/layouts` else nil
 end
 
+-- Where layouts are looked for: the project's folder, then yours.
+local function layout_dirs(): { string }
+	local dirs = { project_dir() }
+	local mine = my_dir()
+	if mine then
+		table.insert(dirs, mine)
+	end
+	return dirs
+end
+
 -- `path` relative to the project when it's inside it.
 local function relative(path: string): string
 	local root = core.project.root() .. "/"
@@ -79,8 +89,9 @@ end
 --- The saved layouts' names: the project's, then yours, each once.
 function M.names(): { string }
 	local names, seen = {}, {}
-	for _, dir in { project_dir(), my_dir() } do
-		for _, entry in greed.fs.list(dir :: string, { hidden = true }) or {} do
+	for _, dir in layout_dirs() do
+		local entries: { greed.DirEntry } = greed.fs.list(dir, { hidden = true }) or {}
+		for _, entry in entries do
 			local name = string.match(entry.name, "^(.+)%.json$")
 			if name and not entry.dir and not seen[name] then
 				seen[name] = true
@@ -93,7 +104,7 @@ function M.names(): { string }
 end
 
 local function load(name: string): (Saved?, string?)
-	for _, dir in { project_dir(), my_dir() } do
+	for _, dir in layout_dirs() do
 		local text = greed.fs.read(`{dir}/{name}.json`)
 		if text then
 			local saved, err = greed.json.decode(text)
@@ -142,7 +153,9 @@ local function open_leaf(leaf: Saved, base: greed.View, here: boolean): greed.Vi
 		terminal.open(command, { split = "right", from = base })
 		return greed.view()
 	end
-	local buffer = if leaf.file then greed.load(full(leaf.file)) else greed.create_buffer("file", "")
+	local buffer = if leaf.file
+		then greed.load(full(leaf.file))
+		else greed.create_buffer("file", "")
 	if here then
 		base:show(buffer)
 		return base
@@ -189,7 +202,8 @@ function M.open(name: string, opts: { here: boolean? }?)
 		table.insert(views, open_leaf(leaf, base, i == 1))
 	end
 	if #views > 1 then
-		local ok, problem = pcall(greed.tab.set_layout, with_views(saved, views, { 0 }))
+		local ok: boolean, problem: unknown =
+			pcall(greed.tab.set_layout, with_views(saved, views, { 0 }))
 		if not ok then
 			greed.echo(`layout {name}: {problem}`)
 			return

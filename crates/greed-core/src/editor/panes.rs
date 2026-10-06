@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use greed_text::Selection;
 
-use super::{Editor, Project, ViewId};
+use super::{Editor, Extent, Project, Side, ViewId};
 use crate::layout::{Direction, Line, Node};
 use crate::render::Rect;
 use crate::{Buffer, BufferId};
@@ -205,13 +205,21 @@ impl Editor {
     }
 
     /// The pane next to `view` on its `dir` side in its tab, as last drawn:
-    /// of several, the one active most recently.
+    /// of several, the one active most recently. In the shown tab, panels
+    /// count too, and `view` may be one.
     pub fn neighbor(&self, view: ViewId, dir: Direction) -> Option<ViewId> {
-        let (p, t) = self.pane_position(view)?;
-        let tab = &self.projects[p].tabs[t];
+        let panels: Vec<ViewId> = self.panels().iter().map(|p| p.view).collect();
+        let tab = match self.pane_position(view) {
+            Some((p, t)) => &self.projects[p].tabs[t],
+            None if panels.contains(&view) => self.current_tab(),
+            None => return None,
+        };
+        let mut candidates = tab.layout.panes();
+        if tab.id == self.current_tab().id {
+            candidates.extend(panels);
+        }
         let from = self.views.get(&view)?.area?;
-        tab.layout
-            .panes()
+        candidates
             .into_iter()
             .filter(|v| *v != view)
             .filter(|v| {
@@ -224,16 +232,39 @@ impl Editor {
     }
 
     /// Moves pane `view`'s edge on its `dir` side by `cells`. False when
-    /// there's no pane on that side, or the tab hasn't been drawn.
+    /// there's no pane on that side, or the tab hasn't been drawn. A panel
+    /// moves its edge toward the main view, its only side that moves.
     pub fn resize_pane(&mut self, view: ViewId, dir: Direction, cells: i32) -> bool {
         let Some((p, t)) = self.pane_position(view) else {
-            return false;
+            return self.resize_panel(view, dir, cells);
         };
         let tab = &mut self.projects[p].tabs[t];
         let Some(area) = tab.area else {
             return false;
         };
         tab.layout.resize(view, dir, cells, area)
+    }
+
+    /// Moves panel `view`'s edge by the main view by `cells`, when `dir`
+    /// points that way. False otherwise, or before it's drawn.
+    fn resize_panel(&mut self, view: ViewId, dir: Direction, cells: i32) -> bool {
+        let Some(width) = self.find_view(view).and_then(|v| v.area).map(|a| a.width) else {
+            return false;
+        };
+        let project = self.current_project_mut();
+        let Some(panel) = project.panels.iter_mut().find(|p| p.view == view) else {
+            return false;
+        };
+        let inward = match panel.options.side {
+            Side::Left => Direction::Right,
+            Side::Right => Direction::Left,
+        };
+        if dir != inward {
+            return false;
+        }
+        let width = (i32::from(width) + cells).clamp(1, i32::from(u16::MAX));
+        panel.options.width = Extent::Cells(u16::try_from(width).unwrap_or(1));
+        true
     }
 
     /// Shows only the active pane of the shown tab, or all of them again.

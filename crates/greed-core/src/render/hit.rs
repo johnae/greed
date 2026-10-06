@@ -5,7 +5,7 @@
 use super::{Measure, Rect, Renderer, hidden_lines, is_hidden, tab_label};
 use std::sync::Arc;
 
-use crate::{Editor, TabId, ViewId};
+use crate::{Editor, Side, TabId, ViewId};
 
 /// What a screen cell shows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,6 +24,10 @@ pub struct Hit {
     /// On a floating view's border, which part: "top" (where the title
     /// is), "bottom", "left", "right", or a corner like "bottom-right".
     pub border: Option<&'static str>,
+    /// On the line between a pane or panel (`view`) and its neighbor, the
+    /// side of `view` it's on: "right" or "down" for panes, the side
+    /// toward the main view for panels. Dragging it resizes `view`.
+    pub edge: Option<&'static str>,
 }
 
 fn inside(rect: Rect, col: u16, row: u16) -> bool {
@@ -50,6 +54,47 @@ fn border_at(area: Rect, col: u16, row: u16) -> Option<&'static str> {
     ];
     let name = names[side(row == top, row == bottom)][side(col == left, col == right)];
     (!name.is_empty()).then_some(name)
+}
+
+/// The line between panes, or between a panel and the main view, at
+/// (`col`, `row`), if one is there.
+fn edge_at(editor: &Editor, col: u16, row: u16) -> Option<Hit> {
+    let found = |view, edge| Hit {
+        view: Some(view),
+        edge: Some(edge),
+        ..Hit::default()
+    };
+    let area = |view| editor.find_view(view).and_then(|v| v.area);
+    for panel in editor.panels() {
+        let Some(a) = area(panel.view) else {
+            continue;
+        };
+        // A panel's title is on the row above its area.
+        if !(a.y.saturating_sub(1)..a.y + a.height).contains(&row) {
+            continue;
+        }
+        match panel.options.side {
+            Side::Left if col == a.x + a.width => return Some(found(panel.view, "right")),
+            Side::Right if col + 1 == a.x => return Some(found(panel.view, "left")),
+            _ => {}
+        }
+    }
+    let tab = editor.current_tab();
+    if tab.zoomed() {
+        return None;
+    }
+    for view in tab.panes() {
+        let Some(a) = area(view) else {
+            continue;
+        };
+        if col == a.x + a.width && (a.y..a.y + a.height).contains(&row) {
+            return Some(found(view, "right"));
+        }
+        if row == a.y + a.height && (a.x..a.x + a.width).contains(&col) {
+            return Some(found(view, "down"));
+        }
+    }
+    None
 }
 
 impl<M: Measure> Renderer<M> {
@@ -115,7 +160,7 @@ impl<M: Measure> Renderer<M> {
                 ..Hit::default()
             };
         }
-        Hit::default()
+        edge_at(editor, col, row).unwrap_or_default()
     }
 
     /// The tab whose label is at (`col`, `row`) in the tab line, if one is.

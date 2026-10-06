@@ -46,7 +46,7 @@ local function spots(): { Spot }
 	for _, pane in tab.panes do
 		local area = pane:area()
 		if area then
-			for _, side in SIDES do
+			for _, side: Direction in SIDES do
 				table.insert(list, { pane = pane, side = side, rect = part(area, side, 1 / 2) })
 			end
 			local w = whole
@@ -62,7 +62,7 @@ local function spots(): { Spot }
 	end
 	local w = whole
 	if w and #tab.panes > 1 then
-		for _, side in SIDES do
+		for _, side: Direction in SIDES do
 			-- It shows the third the pane gets, but is steered to as the
 			-- edge itself, past every pane's own half beside it.
 			local x = if side == "left"

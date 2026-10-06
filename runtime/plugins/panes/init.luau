@@ -85,10 +85,13 @@ function M.go_to_tab(n: number)
 	end
 end
 
---- Moves to the pane on the `dir` side. Left and right go on to the tab
---- before or after at the edge, as zellij does.
+--- Moves to the pane or panel (the file tree, an agent) on the `dir` side.
+--- Left and right go on to the tab before or after at the edge, as zellij
+--- does.
 function M.move(dir: Direction)
-	local next = M.pane():neighbor(dir)
+	local view = greed.view()
+	local from = if core.floats.is_float(view) then M.pane() else view
+	local next = from:neighbor(dir)
 	if next then
 		M.focus(next)
 	elseif dir == "left" or dir == "right" then
@@ -120,6 +123,10 @@ function M.resize(dir: Direction, steps: number?)
 		core.floats.grow(view, dir, cells)
 		return
 	end
+	-- A panel (the file tree, an agent) moves its edge by the main view.
+	if not view:is_pane() and (view:resize(dir, cells) or view:resize(OPPOSITE[dir], -cells)) then
+		return
+	end
 	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
 	if not pane:resize(dir, cells) then
@@ -141,14 +148,16 @@ end
 --- Grows the pane every way it can (or shrinks it, with a negative `steps`).
 function M.grow(steps: number)
 	local view = greed.view()
+	local ways: { Direction } = { "right", "down" }
 	if core.floats.is_float(view) then
-		core.floats.grow(view, "right", STEP.right * steps)
-		core.floats.grow(view, "down", STEP.down * steps)
+		for _, dir: Direction in ways do
+			core.floats.grow(view, dir, STEP[dir] * steps)
+		end
 		return
 	end
 	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
-	for _, dir in { "right", "down" } :: { Direction } do
+	for _, dir: Direction in ways do
 		local cells = STEP[dir] * steps
 		if not pane:resize(dir, cells) then
 			pane:resize(OPPOSITE[dir], cells)
@@ -1101,11 +1110,44 @@ end
 
 bind()
 
--- Clicking a tab in the tab line shows it.
+-- The line between panes, or by a panel, being dragged: the view whose
+-- edge it is, which edge, and where the mouse was last.
+local dragging: { view: greed.View, edge: "left" | "right" | "down", col: number, row: number }? =
+	nil
+
+-- Clicking a tab in the tab line shows it, and dragging the line between
+-- panes or by a panel resizes them.
 greed.on("mouse", function(event: greed.MouseEvent)
 	if event.kind == "press" and event.tab then
 		greed.tab.switch(event.tab)
 		settle(greed.view())
+	elseif event.kind == "press" and event.button == "left" and event.edge and event.view then
+		dragging = { view = event.view, edge = event.edge, col = event.col, row = event.row }
+	elseif event.kind == "drag" and dragging then
+		local drag = dragging
+		local cells = if drag.edge == "down" then event.row - drag.row else event.col - drag.col
+		if cells == 0 then
+			return
+		end
+		-- Dragging a left edge left grows the view.
+		if drag.edge == "left" then
+			cells = -cells
+		end
+		local dir: Direction = drag.edge
+		-- The view may have closed under the mouse.
+		local ok = pcall(function()
+			if drag.view:is_pane() then
+				layouts.made_manual("a pane was resized by hand")
+			end
+			drag.view:resize(dir, cells)
+		end)
+		if ok then
+			drag.col, drag.row = event.col, event.row
+		else
+			dragging = nil
+		end
+	elseif event.kind == "release" then
+		dragging = nil
 	end
 end)
 

@@ -214,10 +214,12 @@ M.define("main-stack", function(panes, settings)
 	local stack = if #panes == 2
 		then panes[2]
 		else { split = "column", children = { table.unpack(panes, 2) } }
+	-- A pane and a split side by side: `any`, as layouts are (see `Layout`).
+	local children: { any } = { panes[1], stack }
 	return {
 		split = "row",
 		sizes = { settings.main, 1 - settings.main },
-		children = { panes[1], stack },
+		children = children,
 	}
 end)
 

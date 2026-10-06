@@ -1027,14 +1027,14 @@ panes, tabs and terminals are where you left them.
 
 | Keys | |
 |---|---|
-| `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane on that side (and on to the next tab) |
+| `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane or panel (the file tree, an agent) on that side, and on to the next tab |
 | `alt-n` | A terminal in a new pane, or a floating one while floating views are shown |
 | `alt-f` | Hide the tab's floating views or show them again; with none, open a floating terminal |
 | `alt-F` | This file in a new floating view |
 | `alt-=` `alt--` | More room for the pane (or floating view), or less |
 | `alt-[` `alt-]`, `alt-1`... | Tabs |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
-| `alt-r` | The resize mode: `h j k l` grow the pane or floating view toward that side, `H J K L` shrink it, the arrows move a floating view |
+| `alt-r` | The resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it, the arrows move a floating view |
 | `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix; `ctrl-w H J K L` swap with the pane on that side, `ctrl-w f` the file under the cursor in a split, `ctrl-w n s` an empty one |
 
 The `alt` keys work everywhere, including inside terminals. Moving to a
@@ -1119,7 +1119,8 @@ selects, and the wheel scrolls whatever's under it. A double click selects
 the word, a triple click the line, `shift`-click extends the selection to
 where you click and `alt`-click adds a cursor there. Clicking a tab in the
 tab line shows it. Drag a floating view by its top border (where the title
-is) to move it, or by another edge or a corner to resize it.
+is) to move it, or by another edge or a corner to resize it. Drag the line
+between two panes, or beside a panel, to give one more room.
 
 Clicking a button (a proposal's accept and reject, a todo's box) presses
 it. So does `enter` in normal mode with the cursor on it; where several
