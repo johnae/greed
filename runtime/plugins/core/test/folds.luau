@@ -54,6 +54,8 @@ end)
 
 test("a plugin can fold a language its own way", function(t)
 	local core = require("@core")
+	local providers = core.folds.providers
+	core.folds.providers = table.clone(providers)
 	core.folds.providers.klingon = function(_, line: number): (number?, number)
 		return line, line + 2
 	end
@@ -61,7 +63,7 @@ test("a plugin can fold a language its own way", function(t)
 	greed.view():buffer():set_language("klingon")
 	t:keys("z a")
 	assert(hidden() == "1-2", hidden())
-	core.folds.providers.klingon = nil
+	core.folds.providers = providers
 end)
 
 test("fold-close-all folds outermost blocks; fold-next and fold-prev move", function(t)

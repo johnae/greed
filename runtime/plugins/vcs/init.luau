@@ -66,7 +66,7 @@ local located: { [number]: Repo } = {}
 local counts: { [number]: { [string]: number } } = {}
 -- Each repository's branch by root: with jj the nearest bookmark and the
 -- working copy's change, e.g. "main · nwpr".
-local branches: { [string]: string } = {}
+local branches: { [string]: string? } = {}
 
 -- `text` without the whitespace around it, or nil if nothing's left.
 local function trimmed(text: string?): string?
@@ -98,7 +98,7 @@ end
 
 -- The changes since the last commit, in order.
 local function changes(buffer: greed.Buffer): { Change }
-	local base = bases[buffer:id()]
+	local base: (string | false)? = bases[buffer:id()]
 	if not base then
 		return {}
 	end
@@ -142,12 +142,11 @@ local function mark(buffer: greed.Buffer)
 			for line = first, last do
 				-- Only the sign is styled; the text keeps its own colours.
 				local start = buffer:line_start(line)
-				table.insert(marks, {
-					from = start,
-					to = start,
-					style = STYLE[change.kind],
-					sign = change.kind,
-				})
+				local sign: string = change.kind
+				table.insert(
+					marks,
+					{ from = start, to = start, style = STYLE[change.kind], sign = sign }
+				)
 			end
 		end
 	end
@@ -158,7 +157,11 @@ end
 local function refresh(buffer: greed.Buffer)
 	local repo, relative = locate(buffer)
 	local id = buffer:id()
-	located[id] = repo
+	if repo then
+		located[id] = repo
+	else
+		located[id] = nil
+	end
 	bases[id] = if repo and relative then base_text(repo, relative) else false
 	if repo then
 		read_branch(repo)
@@ -358,132 +361,6 @@ for _, around in { false, true } do
 	})
 end
 
-greed.command({
-	name = "revert-change",
-	doc = "Put the change under the cursor back the way it was at the last commit",
-	run = function(ctx)
-		local buffer = ctx.buffer
-		if buffer:kind() == "multibuffer" then
-			local ok, why = multibuffer.revert(buffer, head(ctx.view))
-			if not ok then
-				greed.echo(why :: string)
-			end
-			return
-		end
-		local change = change_shown_at(buffer, buffer:line_of(head(ctx.view)))
-		if change == nil then
-			greed.echo("no change here")
-			return
-		end
-		buffer:edit(function(e)
-			e:replace(change.from, change.to, change.old)
-		end)
-	end,
-})
-
-greed.command({
-	name = "stage-change",
-	doc = "Stage the change under the cursor for the next git commit, leaving the rest",
-	run = function(ctx)
-		local buffer = ctx.buffer
-		local pos = head(ctx.view)
-		local path, text
-		if buffer:kind() == "multibuffer" then
-			path, text = multibuffer.change_at(buffer, pos)
-		else
-			local change = change_shown_at(buffer, buffer:line_of(pos))
-			local base = bases[buffer:id()]
-			if change and base then
-				path = buffer:path()
-				local new = string.sub(buffer:text(), change.from + 1, change.to)
-				text = string.sub(base, 1, change.at)
-					.. new
-					.. string.sub(base, change.at + #change.old + 1)
-			end
-		end
-		local repo = if path then repo_of(absolute(path)) else nil
-		if repo and repo.kind == "jj" then
-			greed.echo(
-				"jj has no staging; split the change in the change stack (space g l) instead"
-			)
-			return
-		elseif repo == nil or path == nil or text == nil then
-			greed.echo("no change here")
-			return
-		end
-		path, text = path :: string, text :: string
-		local ok, why = staging.stage(repo, string.sub(absolute(path), #repo.root + 2), text)
-		if not ok then
-			greed.echo(`can't stage: {why}`)
-			return
-		end
-		refresh(greed.load(path))
-		if buffer:kind() == "multibuffer" then
-			M.show_changes(true)
-		end
-	end,
-})
-
--- The change under the cursor, as a thing to act on.
-core.actions.finder({
-	name = "change",
-	plugin = "vcs",
-	find = function(view, range)
-		local buffer = view:buffer()
-		local change, first, last = change_shown_at(buffer, buffer:line_of(range.head))
-		if change == nil then
-			return nil
-		end
-		local what = if change.kind == "+"
-			then "added"
-			elseif change.kind == "-" then "removed"
-			else "changed"
-		return {
-			{
-				kind = "change",
-				label = `{what} line{if last > first then "s" else ""} {first + 1}`,
-				value = change,
-				from = change.from,
-				to = change.to,
-			},
-		}
-	end,
-})
-core.actions.command(
-	"change",
-	"revert",
-	"revert-change",
-	"Put it back the way it was at the last commit",
-	"vcs"
-)
-core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when", "vcs")
-core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit", "vcs")
-
-greed.command({
-	name = "blame-line",
-	doc = "Show who last changed the line under the cursor, and when",
-	run = function(ctx)
-		local repo, relative = locate(ctx.buffer)
-		if repo == nil or relative == nil then
-			greed.echo("this file isn't in a repository")
-			return
-		end
-		local line = ctx.buffer:line_of(head(ctx.view)) + 1
-		local out = if repo.kind == "jj"
-			then vcs(repo, { "file", "annotate", "-r", "@", "--", `root-file:"{relative}"` })
-			else vcs(repo, { "blame", "-L", `{line},{line}`, "--", relative })
-		if out == nil then
-			greed.echo("no history for this line")
-			return
-		end
-		local text: string = if repo.kind == "jj"
-			then string.split(out :: string, "\n")[line] or ""
-			else out :: string
-		-- Just the who and when, not the line's text again.
-		greed.echo(string.match(text, "^[^)]*%)") or string.match(text, "^[^:]*") or "")
-	end,
-})
-
 -- Every change since the last commit, in one multibuffer -------------------
 
 -- The files changed since the last commit in `repo`, by path from its
@@ -578,6 +455,132 @@ greed.command({
 	doc = "Show every change since the last commit in one buffer, to read, edit or put back",
 	run = function()
 		M.show_changes()
+	end,
+})
+
+greed.command({
+	name = "revert-change",
+	doc = "Put the change under the cursor back the way it was at the last commit",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		if buffer:kind() == "multibuffer" then
+			local ok, why = multibuffer.revert(buffer, head(ctx.view))
+			if not ok then
+				greed.echo(why :: string)
+			end
+			return
+		end
+		local change = change_shown_at(buffer, buffer:line_of(head(ctx.view)))
+		if change == nil then
+			greed.echo("no change here")
+			return
+		end
+		buffer:edit(function(e)
+			e:replace(change.from, change.to, change.old)
+		end)
+	end,
+})
+
+greed.command({
+	name = "stage-change",
+	doc = "Stage the change under the cursor for the next git commit, leaving the rest",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local pos = head(ctx.view)
+		local path, text
+		if buffer:kind() == "multibuffer" then
+			path, text = multibuffer.change_at(buffer, pos)
+		else
+			local change = change_shown_at(buffer, buffer:line_of(pos))
+			local base: (string | false)? = bases[buffer:id()]
+			if change and base then
+				path = buffer:path()
+				local new = string.sub(buffer:text(), change.from + 1, change.to)
+				text = string.sub(base, 1, change.at)
+					.. new
+					.. string.sub(base, change.at + #change.old + 1)
+			end
+		end
+		local repo = if path then repo_of(absolute(path)) else nil
+		if repo and repo.kind == "jj" then
+			greed.echo(
+				"jj has no staging; split the change in the change stack (space g l) instead"
+			)
+			return
+		elseif repo == nil or path == nil or text == nil then
+			greed.echo("no change here")
+			return
+		end
+		path, text = path :: string, text :: string
+		local ok, why = staging.stage(repo, string.sub(absolute(path), #repo.root + 2), text)
+		if not ok then
+			greed.echo(`can't stage: {why}`)
+			return
+		end
+		refresh(greed.load(path))
+		if buffer:kind() == "multibuffer" then
+			M.show_changes(true)
+		end
+	end,
+})
+
+-- The change under the cursor, as a thing to act on.
+core.actions.finder({
+	name = "change",
+	plugin = "vcs",
+	find = function(view, range)
+		local buffer = view:buffer()
+		local change, first, last = change_shown_at(buffer, buffer:line_of(range.head))
+		if change == nil then
+			return nil
+		end
+		local what = if change.kind == "+"
+			then "added"
+			elseif change.kind == "-" then "removed"
+			else "changed"
+		return {
+			{
+				kind = "change",
+				label = `{what} line{if last > first then "s" else ""} {first + 1}`,
+				value = change,
+				from = change.from,
+				to = change.to,
+			},
+		}
+	end,
+})
+core.actions.command(
+	"change",
+	"revert",
+	"revert-change",
+	"Put it back the way it was at the last commit",
+	"vcs"
+)
+core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when", "vcs")
+core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit", "vcs")
+
+greed.command({
+	name = "blame-line",
+	doc = "Show who last changed the line under the cursor, and when",
+	run = function(ctx)
+		local repo, relative = locate(ctx.buffer)
+		if repo == nil or relative == nil then
+			greed.echo("this file isn't in a repository")
+			return
+		end
+		local line = ctx.buffer:line_of(head(ctx.view)) + 1
+		local out = if repo.kind == "jj"
+			then vcs(repo, { "file", "annotate", "-r", "@", "--", `root-file:"{relative}"` })
+			else vcs(repo, { "blame", "-L", `{line},{line}`, "--", relative })
+		if out == nil then
+			greed.echo("no history for this line")
+			return
+		end
+		local text: string = if repo.kind == "jj"
+			then string.split(out :: string, "\n")[line] or ""
+			else out :: string
+		-- Just the who and when, not the line's text again.
+		greed.echo(string.match(text, "^[^)]*%)") or string.match(text, "^[^:]*") or "")
 	end,
 })
 

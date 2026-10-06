@@ -1041,7 +1041,7 @@ local function operate(ctx: greed.Context, op: string)
 		if motion == nil then
 			return
 		end
-		local target, kind = motion(
+		local target: number?, kind: Kind = motion(
 			buffer,
 			pos,
 			if inner_count or ctx.count then count else (if COUNTLESS[key] then 0 else 1)
@@ -1243,7 +1243,7 @@ end
 local function shorthand(name: string, op: string, key: string, doc: string)
 	command(name, doc, function(ctx)
 		local buffer, pos = ctx.buffer, cursor(ctx)
-		local target, kind = motions[key](buffer, pos, ctx.count or 1)
+		local target: number?, kind: Kind = motions[key](buffer, pos, ctx.count or 1)
 		if target == nil or (target == pos and kind == "exclusive") then
 			return
 		end
@@ -2254,7 +2254,7 @@ local keys: { [string]: string } = {
 	["z d"] = "fold-open",
 	["z E"] = "fold-open-all",
 }
-local visual: { [string]: string } = {
+local visual_keys: { [string]: string } = {
 	d = "vim-operator-d",
 	x = "vim-operator-d",
 	c = "vim-operator-c",
@@ -2291,10 +2291,10 @@ local visual: { [string]: string } = {
 }
 for key in motions do
 	keys[key] = "vim-motion-" .. string.gsub(key, " ", "")
-	visual[key] = keys[key]
+	visual_keys[key] = keys[key]
 end
 greed.keymap.bind("vim", keys)
-greed.keymap.bind("vim-visual", visual)
+greed.keymap.bind("vim-visual", visual_keys)
 greed.keymap.bind("vim-insert", {
 	esc = "vim-normal",
 	["ctrl-o"] = "vim-insert-one",

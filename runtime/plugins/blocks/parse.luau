@@ -48,7 +48,9 @@ function M.info(info: string): (string, { [string]: string })
 		opts[key] = string.sub(quoted :: string, 2, -2) .. (plain or "")
 	end
 	for key, value in string.gmatch(rest, '([%w_-]+)=([^%s"][^%s]*)') do
-		opts[key] = opts[key] or value
+		if opts[key] == nil and value then
+			opts[key] = value
+		end
 	end
 	return lang, opts
 end

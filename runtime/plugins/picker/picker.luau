@@ -207,7 +207,7 @@ local function list_path(o: Open, q: string, paths: Paths)
 		-- "~" alone is the home folder.
 		dir, typed = q .. "/", ""
 	end
-	local found = greed.fs.list(core.project.expand(dir :: string), {
+	local found: { greed.DirEntry } = greed.fs.list(core.project.expand(dir :: string), {
 		hidden = string.sub(typed :: string, 1, 1) == ".",
 		ignored = true,
 	}) or {}
@@ -414,58 +414,6 @@ M.KEYS = KEYS
 -- The last picker opened, for `resume`.
 local last: { title: string, items: { Item }, choose: (item: Item) -> (), options: Options? }? = nil
 
---- Opens the last picker again, as Helix's space '. False if there's none.
-function M.resume(): boolean
-	local again = last
-	if again == nil then
-		return false
-	end
-	M.pick(again.title, again.items, again.choose, again.options)
-	return true
-end
-
---- Lists the actions for `targets` (see core's actions) and runs the one
---- chosen. With several things, each action says which it's for.
-function M.act(targets: { core.Target })
-	local items = {}
-	for _, target in targets do
-		for _, action in core.actions.for_kind(target.kind) do
-			local label = action.name
-			if #targets > 1 then
-				label ..= `  {target.kind}: {target.label}`
-			end
-			if action.doc then
-				label ..= `  {action.doc}`
-			end
-			table.insert(items, { label = label, value = { action = action, target = target } })
-		end
-	end
-	if #items == 0 then
-		greed.echo("nothing here to act on")
-		return
-	end
-	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
-	M.pick(title, items, function(item)
-		item.value.action.run(item.value.target)
-	end)
-end
-
-greed.command({
-	name = "picker-act",
-	doc = "List what you can do with the current item, and do it",
-	run = function()
-		local o = open
-		local index = o and o.matches[o.current]
-		local item = o and index and o.items[index]
-		if item == nil or item.kind == nil then
-			greed.echo("no actions for this item")
-			return
-		end
-		close()
-		M.act({ { kind = item.kind, label = item.label, value = item.value } })
-	end,
-})
-
 -- Opens a picker over `items`. `choose` gets the item picked with enter;
 -- `options.preview` shows the current item beside the list, and
 -- `options.source` makes the items follow the query.
@@ -519,6 +467,58 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 	greed.mode.set("insert")
 	refresh(o)
 end
+
+--- Opens the last picker again, as Helix's space '. False if there's none.
+function M.resume(): boolean
+	local again = last
+	if again == nil then
+		return false
+	end
+	M.pick(again.title, again.items, again.choose, again.options)
+	return true
+end
+
+--- Lists the actions for `targets` (see core's actions) and runs the one
+--- chosen. With several things, each action says which it's for.
+function M.act(targets: { core.Target })
+	local items = {}
+	for _, target in targets do
+		for _, action in core.actions.for_kind(target.kind) do
+			local label = action.name
+			if #targets > 1 then
+				label ..= `  {target.kind}: {target.label}`
+			end
+			if action.doc then
+				label ..= `  {action.doc}`
+			end
+			table.insert(items, { label = label, value = { action = action, target = target } })
+		end
+	end
+	if #items == 0 then
+		greed.echo("nothing here to act on")
+		return
+	end
+	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
+	M.pick(title, items, function(item)
+		item.value.action.run(item.value.target)
+	end)
+end
+
+greed.command({
+	name = "picker-act",
+	doc = "List what you can do with the current item, and do it",
+	run = function()
+		local o = open
+		local index = o and o.matches[o.current]
+		local item = o and index and o.items[index]
+		if item == nil or item.kind == nil then
+			greed.echo("no actions for this item")
+			return
+		end
+		close()
+		M.act({ { kind = item.kind, label = item.label, value = item.value } })
+	end,
+})
 
 --- Like `pick`, but waits for the answer and returns the chosen item, or
 --- nil when the picker ends without one. Works in commands and handlers:

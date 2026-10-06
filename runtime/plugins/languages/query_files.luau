@@ -38,9 +38,12 @@ type Query = { language: string, kind: string, source: string }
 -- Every query in `root`'s queries folder.
 local function files(root: string): { Query }
 	local found = {}
-	for _, language in greed.fs.list(`{root}/queries`) or {} do
+	local languages: { greed.DirEntry } = greed.fs.list(`{root}/queries`) or {}
+	for _, language in languages do
 		if language.dir then
-			for _, file in greed.fs.list(`{root}/queries/{language.name}`) or {} do
+			local queries: { greed.DirEntry } = greed.fs.list(`{root}/queries/{language.name}`)
+				or {}
+			for _, file in queries do
 				local kind = string.match(file.name, "^(.+)%.scm$")
 				local source = kind and greed.fs.read(`{root}/queries/{language.name}/{file.name}`)
 				if kind and source then
@@ -72,7 +75,8 @@ function M.load(own: string?): { string }
 	end
 	local problems = {}
 	for key, query in combined do
-		local ok, err = pcall(greed.syntax.set_query, query.language, query.kind, query.source)
+		local ok: boolean, err: unknown =
+			pcall(greed.syntax.set_query, query.language, query.kind, query.source)
 		if not ok then
 			table.insert(problems, `queries/{key}.scm: {err}`)
 		end

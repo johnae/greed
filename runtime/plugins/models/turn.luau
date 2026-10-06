@@ -61,7 +61,8 @@ local function anthropic_messages(said: { Said }): { any }
 			if s.text and s.text ~= "" then
 				add("assistant", { type = "text", text = s.text })
 			end
-			for _, call in s.calls or {} do
+			local calls: { Call } = s.calls or {}
+			for _, call in calls do
 				add(
 					"assistant",
 					{ type = "tool_use", id = call.id, name = call.name, input = call.input }
@@ -122,7 +123,8 @@ function M.body(
 	max_tokens: number
 ): { [string]: any }
 	local tools: { any } = {}
-	for _, tool in request.tools or {} do
+	local specs: { ToolSpec } = request.tools or {}
+	for _, tool in specs do
 		if kind == "anthropic" then
 			table.insert(
 				tools,

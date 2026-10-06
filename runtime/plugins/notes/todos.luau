@@ -7,6 +7,8 @@ local picker = require("@picker")
 local prompt = require("@core").prompt
 local notes = require("./notes")
 
+type Found = notes.Found
+
 export type Todo = { note: string, line: number, text: string, done: boolean, due: string? }
 
 local M = {}
@@ -28,7 +30,7 @@ end
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
-	local found = notes.grep("^\\s*[-*] \\[[ xX]\\] ") or {}
+	local found: { Found } = notes.grep("^\\s*[-*] \\[[ xX]\\] ") or {}
 	local out: { Todo } = {}
 	for _, line in found do
 		local done, text = M.parse(line.text)
@@ -218,7 +220,8 @@ greed.command({
 		end, {
 			source = function(query)
 				local items = {}
-				for _, line in notes.grep(query) or {} do
+				local found: { Found } = notes.grep(query) or {}
+				for _, line in found do
 					table.insert(items, {
 						label = `{line.note}:{line.line + 1}: {line.text}`,
 						value = { note = line.note, line = line.line },

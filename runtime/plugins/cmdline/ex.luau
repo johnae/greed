@@ -42,17 +42,16 @@ local function go_to_line(view: greed.View, line: number)
 end
 M.go_to_line = go_to_line
 
+-- A regex group's span, or false when the group didn't take part.
+type Group = { from: number, to: number } | false
+
 -- `replacement` with Vim's escapes filled in from a match: `&` and `\0`
 -- are the whole match, `\1` to `\9` its groups, `\n` a line break, `\t` a
 -- tab, and a backslash before anything else takes it as is.
-local function expand(
-	replacement: string,
-	buffer: greed.Buffer,
-	groups: { { from: number, to: number } | false }
-): string
+local function expand(replacement: string, buffer: greed.Buffer, groups: { Group }): string
 	local out = {}
 	local function group(n: number): string
-		local span = groups[n + 1]
+		local span: Group? = groups[n + 1]
 		return if span then buffer:slice(span.from, span.to) else ""
 	end
 	local i = 1
@@ -110,7 +109,7 @@ greed.command({
 				error(err, 0)
 			end
 			for i, groups in found do
-				local whole = groups[1]
+				local whole: Group? = groups[1]
 				if whole and (all or i == 1) then
 					table.insert(edits, {
 						from = whole.from,

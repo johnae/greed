@@ -178,7 +178,7 @@ local function rewrite(buffer: greed.Buffer, start: number, old: string, new: st
 		text = string.sub(old, -1) .. text
 	end
 	syncing = true
-	local ok, err = pcall(buffer.edit, buffer, function(e: greed.Edits)
+	local ok: boolean, err: unknown = pcall(buffer.edit, buffer, function(e: greed.Edits)
 		e:replace(start + from, start + to, text)
 	end)
 	syncing = false
@@ -262,7 +262,7 @@ end
 -- beside them, as they are now.
 local function redraw(state: State)
 	local buffer = state.buffer
-	local headers, numbers = {}, {}
+	local headers: { greed.Mark }, numbers: { greed.Mark } = {}, {}
 	local width = 1
 	for _, part in state.parts do
 		width = math.max(width, #tostring(first_line(part) + #lines_of(part.text)))
@@ -272,14 +272,13 @@ local function redraw(state: State)
 		if text then
 			local above = buffer:line_of(start - 1)
 			local line = first_line(part)
+			-- A blank line, then the file's name.
+			local lines: { any } = { "", header(part, line) }
 			table.insert(headers, {
 				from = buffer:line_start(above),
 				to = buffer:line_end(above),
 				style = "multibuffer.excerpt",
-				lines = {
-					"",
-					header(part, line),
-				},
+				lines = lines,
 			})
 			for i = 0, #lines_of(text) - 1 do
 				local at = buffer:line_start(buffer:line_of(start) + i)

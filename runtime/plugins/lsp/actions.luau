@@ -22,7 +22,12 @@ end
 -- give one.
 local function word_at(buffer: greed.Buffer, pos: number): string?
 	local line = buffer:line_of(pos)
-	for _, found in buffer:find_all("\\w+", buffer:line_start(line), buffer:line_end(line)) or {} do
+	local words: { { from: number, to: number } } = buffer:find_all(
+		"\\w+",
+		buffer:line_start(line),
+		buffer:line_end(line)
+	) or {}
+	for _, found in words do
 		if found.from <= pos and pos <= found.to then
 			return buffer:slice(found.from, found.to)
 		end

@@ -127,7 +127,7 @@ local function marks(
 	line: number,
 	marked: { [number]: boolean }
 ): { greed.Mark }
-	local list = {}
+	local list: { greed.Mark } = {}
 	local last = buffer:line_count() - 1
 	for i, row in rows do
 		local start = buffer:line_start(line + i - 1)
@@ -726,12 +726,23 @@ local URL = [=[(https?|ftp|file)://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]]=]
 -- print them: `src/main.rs:12:5`.
 local PATH = [=[[^\s:'"`()<>\[\]{},;]+(:\d+){0,2}]=]
 
+-- The ranges `pattern` matches in `buffer` from `from` to `to`, or none
+-- when it can't be searched for.
+local function find_all(
+	buffer: greed.Buffer,
+	pattern: string,
+	from: number?,
+	to: number?
+): { { from: number, to: number } }
+	return buffer:find_all(pattern, from, to) or {}
+end
+
 -- The file `text` (a match of PATH) names in `buffer`, and the line and
 -- column after it, when that file is there: a relative path is taken from
 -- the folder the terminal's shell is in, or the project's.
 local function resolve(buffer: greed.Buffer, text: string): (string?, number?, number?)
-	local name, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
-	name = name or text
+	local before, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
+	local name = before or text
 	local home = greed.fs.dirs().home
 	local path = if string.sub(name, 1, 1) == "/"
 		then name
@@ -749,7 +760,7 @@ end
 --- taken from the folder the terminal's shell is in, or the project's.
 function M.file_at(buffer: greed.Buffer, pos: number): (string?, number?, number?)
 	local line = buffer:line_of(pos)
-	for _, found in buffer:find_all(PATH, buffer:line_start(line), buffer:line_end(line)) or {} do
+	for _, found in find_all(buffer, PATH, buffer:line_start(line), buffer:line_end(line)) do
 		if pos >= found.from and pos < found.to then
 			return resolve(buffer, buffer:slice(found.from, found.to))
 		end
@@ -796,7 +807,7 @@ function M.references(buffer: greed.Buffer): { Reference }
 	local list: { Reference } = {}
 	-- Files named again and again, as test runs do, are looked for once.
 	local there: { [string]: boolean } = {}
-	for _, found in buffer:find_all(REFERENCE) or {} do
+	for _, found in find_all(buffer, REFERENCE) do
 		local text = buffer:slice(found.from, found.to)
 		local name = string.match(text, "^(.-):%d") :: string
 		local path, line, col = nil, nil, nil
@@ -843,6 +854,19 @@ local function to_reference(ctx: greed.Context, back: boolean)
 	})
 end
 
+--- Opens `path` in the main view, at 1-based `line` and `col` if given.
+function M.open_file(path: string, line: number?, col: number?)
+	greed.open(path)
+	if line then
+		local view = greed.view()
+		local buffer = view:buffer()
+		local row = math.clamp(line - 1, 0, buffer:line_count() - 1)
+		local at =
+			math.min(buffer:line_start(row) + math.max((col or 1) - 1, 0), buffer:line_end(row))
+		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	end
+end
+
 greed.command({
 	name = "terminal-next-reference",
 	doc = "Go to the next file and line the output names, like an error's place; g x opens it",
@@ -883,19 +907,6 @@ greed.command({
 	end,
 })
 
---- Opens `path` in the main view, at 1-based `line` and `col` if given.
-function M.open_file(path: string, line: number?, col: number?)
-	greed.open(path)
-	if line then
-		local view = greed.view()
-		local buffer = view:buffer()
-		local row = math.clamp(line - 1, 0, buffer:line_count() - 1)
-		local at =
-			math.min(buffer:line_start(row) + math.max((col or 1) - 1, 0), buffer:line_end(row))
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
-	end
-end
-
 --- Where the link at `pos` in `buffer` goes: one a terminal's program
 --- printed, or a URL written there.
 function M.link_at(buffer: greed.Buffer, pos: number): string?
@@ -903,16 +914,18 @@ function M.link_at(buffer: greed.Buffer, pos: number): string?
 	local start = buffer:line_start(line)
 	local term = term_of(buffer)
 	if term then
-		local links = if line < term.history
+		local links: { greed.TerminalLink }? = if line < term.history
 			then term.links[term.dropped + line]
 			else term.screen_links[line - term.history]
-		for _, link in links or {} do
-			if pos >= start + link.from and pos < start + link.to then
-				return link.uri
+		if links then
+			for _, link in links do
+				if pos >= start + link.from and pos < start + link.to then
+					return link.uri
+				end
 			end
 		end
 	end
-	for _, found in buffer:find_all(URL, start, buffer:line_end(line)) or {} do
+	for _, found in find_all(buffer, URL, start, buffer:line_end(line)) do
 		if pos >= found.from and pos < found.to then
 			return buffer:slice(found.from, found.to)
 		end

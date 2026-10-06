@@ -61,7 +61,8 @@ function M.focus(asked: { string }?): { [string]: number }
 			focus[key] = (focus[key] or 0) + OPEN
 		end
 	end
-	for _, path in asked or {} do
+	local named: { string } = asked or {}
+	for _, path in named do
 		local key = relative(path)
 		focus[key] = (focus[key] or 0) + most
 	end
@@ -307,7 +308,8 @@ function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, strin
 	for path, buffer in unsaved do
 		if string.sub(path, 1, #prefix) == prefix then
 			local seen = {}
-			for _, m in buffer:find_all(pattern) or {} do
+			local matches: { { from: number, to: number } } = buffer:find_all(pattern) or {}
+			for _, m in matches do
 				local line = buffer:line_of(m.from)
 				if not seen[line] then
 					seen[line] = true

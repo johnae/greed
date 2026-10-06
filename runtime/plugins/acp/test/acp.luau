@@ -61,7 +61,9 @@ test("the agent asks before an edit; enter answers, and an open file is edited",
 	local file = greed.load(dir .. "/a.txt")
 	local s = start(t, dir)
 	send(t, s, "edit a.txt")
-	assert(s.status == "waiting", s.status)
+	-- Through a local, so the check doesn't pin `s.status` for the code after it.
+	local status = s.status
+	assert(status == "waiting", status)
 	assert(string.find(shown(), "? Allow Edit a.txt?   enter to answer", 1, true), shown())
 	local view = greed.view()
 	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
@@ -123,7 +125,8 @@ test("ctrl-c stops the agent's turn", function(t)
 	local pos = view:buffer():len()
 	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
 	t:keys("i w a i t esc alt-enter")
-	assert(s.status == "working", s.status)
+	local status = s.status
+	assert(status == "working", status)
 	t:keys("ctrl-c")
 	t:wait_for(function()
 		return s.status == "idle"
@@ -207,7 +210,8 @@ end)
 
 test("alt-M picks the agent's model, and the transcript says which", function(t)
 	local s = start(t, t:tempdir({}))
-	assert(s.model == "small" and #s.models == 2, tostring(s.model))
+	local model = s.model
+	assert(model == "small" and #s.models == 2, tostring(model))
 	assert(string.find(shown(), "^Fake in [^\n]* · Manual · Small\n"), shown())
 	t:keys("alt-M")
 	t:keys("B i g enter")

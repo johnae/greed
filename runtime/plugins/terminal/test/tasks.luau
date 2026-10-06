@@ -2,6 +2,11 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local terminal = require("@terminal")
 
+-- Takes `name` out of `map`, which doesn't allow nil values.
+local function forget<V>(map: { [string]: V }, name: string)
+	map[name] = nil
+end
+
 local function shows(t: test.TestContext, buffer: greed.Buffer, wanted: string)
 	t:wait_for(function()
 		return string.find(buffer:text(), wanted, 1, true) ~= nil
@@ -20,7 +25,7 @@ test("a task runs in a terminal below that stays open when it's done", function(
 	local lines = buffer:decorations("terminal.exit")[1].lines
 	assert(lines and lines[1] == "[done]", "it says it's done")
 	assert(greed.view():buffer():id() == buffer:id(), "and stays open")
-	terminal.tasks.hello = nil
+	forget(terminal.tasks, "hello")
 end)
 
 test("running a task again replaces its last run", function(t)
@@ -39,7 +44,7 @@ test("running a task again replaces its last run", function(t)
 		end
 	end
 	assert(open == 1, `the first one went: {open}`)
-	terminal.tasks.count = nil
+	forget(terminal.tasks, "count")
 end)
 
 test("tasks come from the project's files, and space r picks one, the last run first", function(t)
@@ -68,7 +73,7 @@ test("a task runs in the folder it names", function(t)
 	t:run("task", { "where" })
 	local buffer = greed.view():buffer()
 	shows(t, buffer, "marker.txt")
-	terminal.tasks.where = nil
+	forget(terminal.tasks, "where")
 end)
 
 test("make targets right after one another, and on the last line, count too", function(t)

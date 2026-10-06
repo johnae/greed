@@ -60,11 +60,11 @@ function M.tool(spec: Tool)
 	tools[client][spec.name] = spec
 end
 
---- Names a group of tools and says what it's for, in a line the agent
---- reads when deciding whether to switch it on.
 -- Says in the `tools` tool which groups there are; set once it's made.
 local describe_groups = function() end
 
+--- Names a group of tools and says what it's for, in a line the agent
+--- reads when deciding whether to switch it on.
 function M.group(name: string, description: string)
 	groups[name] = description
 	describe_groups()
@@ -86,7 +86,8 @@ end
 --- sorted by name.
 function M.tools(client: string?): { Tool }
 	local list = {}
-	for _, tool in tools[offered(client or "socket")] or {} do
+	local group: { [string]: Tool } = tools[offered(client or "socket")] or {}
+	for _, tool in group do
 		table.insert(list, tool)
 	end
 	return sorted(list)

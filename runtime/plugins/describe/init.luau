@@ -117,7 +117,7 @@ local function events(): { Entry }
 	end
 	local out: { Entry } = {}
 	for _, event in types.events do
-		local payload = types.fields[event.payload] or {}
+		local payload: { api.Entry } = types.fields[event.payload] or {}
 		local fields = {}
 		for _, field in payload do
 			table.insert(fields, field.name)
@@ -140,7 +140,7 @@ local function events(): { Entry }
 				end
 				table.insert(lines, "")
 				table.insert(lines, `Listen with greed.on("{event.name}", function(event) ... end)`)
-				local listening = handlers[event.name] or {}
+				local listening: { greed.HandlerInfo } = handlers[event.name] or {}
 				table.insert(
 					lines,
 					if #listening == 0 then "Nothing listens to it now." else "Listening now:"

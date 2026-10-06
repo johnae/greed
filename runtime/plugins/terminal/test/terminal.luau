@@ -5,6 +5,11 @@ local function text(): string
 	return greed.view():buffer():text()
 end
 
+-- Takes `name` out of `map`, which doesn't allow nil values.
+local function forget<V>(map: { [string]: V }, name: string)
+	map[name] = nil
+end
+
 local function shows(t: test.TestContext, wanted: string)
 	t:wait_for(function()
 		return string.find(text(), wanted, 1, true) ~= nil
@@ -265,7 +270,7 @@ test("terminals get the environment plugins add", function(t)
 	local terminal = require("@terminal")
 	terminal.env.GREED_TEST_GREETING = "hello from a plugin"
 	t:run("terminal", { "sh", "-c", "echo $GREED_TEST_GREETING; exit 1" })
-	terminal.env.GREED_TEST_GREETING = nil
+	forget(terminal.env, "GREED_TEST_GREETING")
 	shows(t, "hello from a plugin")
 end)
 

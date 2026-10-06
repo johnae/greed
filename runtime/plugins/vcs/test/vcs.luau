@@ -136,7 +136,8 @@ test("space g s shows every change not staged, removed lines where they were", f
 	assert(not string.find(text, "keep", 1, true), "unchanged files stay out")
 	local removed = {}
 	for _, mark in view:decorations("multibuffer.found") do
-		for _, line in mark.lines or {} do
+		local lines: { any } = mark.lines or {}
+		for _, line in lines do
 			table.insert(removed, line)
 		end
 	end

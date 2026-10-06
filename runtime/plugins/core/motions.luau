@@ -455,7 +455,9 @@ local function find(
 	keep_anchor: boolean?
 )
 	local block = M.on_chars()
-	local search = if block then find_on_char else find_char
+	local search: (Buffer, number, string, boolean, boolean, number) -> number? = if block
+		then find_on_char
+		else find_char
 	each_range(ctx, function(buffer, range)
 		local from = origin(buffer, range, block)
 		local to = search(buffer, from, char, forward, till, ctx.count or 1)

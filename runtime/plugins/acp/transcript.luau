@@ -173,7 +173,8 @@ end
 --- The first line tool call `id` is drawn on in `buffer`, if it is.
 function M.line_of_tool(buffer: greed.Buffer, id: string): number?
 	local found = nil
-	for line, tool in rows[buffer:id()] or {} do
+	local tools: { [number]: string } = rows[buffer:id()] or {}
+	for line, tool in tools do
 		if tool == id and (found == nil or line < found) then
 			found = line
 		end

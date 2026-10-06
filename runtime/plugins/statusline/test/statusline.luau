@@ -75,7 +75,8 @@ test("with effects on, a wave of light goes through the file's letters when it c
 		local ctx =
 			{ view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
 		local lit = 0
-		for _, segment in statusline.build(ctx :: any).left or {} do
+		local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
+		for _, segment in left do
 			if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
 				lit += 1
 			end
@@ -125,7 +126,8 @@ test("opening another file sends the wave by itself", function(t)
 	t:wait(300)
 	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
 	local lit = 0
-	for _, segment in statusline.build(ctx :: any).left or {} do
+	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
+	for _, segment in left do
 		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
 			lit += 1
 		end
@@ -141,7 +143,8 @@ local function lit_now(): number
 	local ctx =
 		{ view = greed.view(), buffer = greed.view():buffer(), mode = greed.mode.get(), width = 80 }
 	local lit = 0
-	for _, segment in statusline.build(ctx :: any).left or {} do
+	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
+	for _, segment in left do
 		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
 			lit += 1
 		end
@@ -192,7 +195,8 @@ test("dark letters on a light pill light up too", function(t)
 	local statusline = require("@statusline")
 	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "insert", width = 80 }
 	local brightest = 0
-	for _, segment in statusline.build(ctx :: any).left or {} do
+	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
+	for _, segment in left do
 		local r, g, b = string.match(
 			type(segment) == "table" and segment.style or "",
 			"^=fg:#(%x%x)(%x%x)(%x%x)"

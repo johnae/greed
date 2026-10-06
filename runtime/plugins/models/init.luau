@@ -65,13 +65,13 @@ M.providers = {
 		secret = "berget",
 		login = "berget",
 	},
-} :: { [string]: Provider }
+} :: { [string]: Provider? }
 
 M.roles = {
 	fast = { provider = "anthropic", model = "claude-haiku-4-5-20251001" },
 	reasoning = { provider = "anthropic", model = "claude-opus-5-5" },
 	["local"] = { provider = "ollama", model = "llama3.2" },
-} :: { [string]: Role }
+} :: { [string]: Role? }
 
 -- How long an answer may be when the request doesn't say.
 local MAX_TOKENS = 4096

@@ -146,7 +146,9 @@ end
 local function line_marks(buffer: greed.Buffer, hunk: Hunk, at: Span, line: number): { greed.Mark }
 	local new_lines = string.split(string.sub(hunk.new, 1, -2), "\n")
 	local old_text = buffer:slice(at.from, at.to)
-	local old_lines = if old_text == "" then {} else string.split(string.sub(old_text, 1, -2), "\n")
+	local old_lines: { string } = if old_text == ""
+		then {}
+		else string.split(string.sub(old_text, 1, -2), "\n")
 	local marks: { greed.Mark } = {}
 	local shown: { any } = table.clone(new_lines)
 	if #old_lines == #new_lines then
@@ -554,7 +556,10 @@ local function prepare(path: string, edits: { Edit }): Prepared
 			)
 		end
 		next_id += 1
-		table.insert(hunks, { id = next_id, old = old, new = edit.new_text, status = "pending" })
+		table.insert(
+			hunks,
+			{ id = next_id, old = edit.old_text, new = edit.new_text, status = "pending" }
+		)
 		table.insert(at, { from = from - 1, to = from - 1 + #old })
 	end
 	-- Sorted by where they are, so overlaps show up as neighbours.

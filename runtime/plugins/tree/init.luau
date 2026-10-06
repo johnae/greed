@@ -43,7 +43,8 @@ local function join(dir: string, name: string): string
 end
 
 local function collect(t: Tree, dir: string, depth: number)
-	for _, entry in greed.fs.list(dir) or {} do
+	local entries: { greed.DirEntry } = greed.fs.list(dir) or {}
+	for _, entry in entries do
 		local path = join(dir, entry.name)
 		table.insert(t.nodes, { path = path, name = entry.name, dir = entry.dir, depth = depth })
 		if entry.dir and t.expanded[path] then
@@ -206,7 +207,11 @@ greed.command({
 			return
 		end
 		if node.dir then
-			t.expanded[node.path] = not t.expanded[node.path] or nil
+			if t.expanded[node.path] then
+				t.expanded[node.path] = nil
+			else
+				t.expanded[node.path] = true
+			end
 		else
 			greed.open(node.path)
 		end

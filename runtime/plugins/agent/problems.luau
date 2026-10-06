@@ -20,9 +20,9 @@ local waiting: { [number]: { greed.Signal } } = {}
 
 greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
 	local id = event.buffer:id()
-	local signals = waiting[id]
+	local signals: { greed.Signal } = waiting[id] or {}
 	waiting[id] = nil
-	for _, signal in signals or {} do
+	for _, signal in signals do
 		signal.send(true)
 	end
 end)

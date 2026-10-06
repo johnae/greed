@@ -97,7 +97,7 @@ end
 
 -- The project folders under `dir`, `depth` levels down at most.
 local function look_in(dir: string, depth: number, markers: { string }?, into: { string })
-	local entries = greed.fs.list(dir) or {}
+	local entries: { greed.DirEntry } = greed.fs.list(dir) or {}
 	for _, entry in entries do
 		if entry.dir and string.sub(entry.name, 1, 1) ~= "." then
 			local path = `{dir}/{entry.name}`
@@ -145,7 +145,8 @@ local function look(source: Source): ({ string }, string)
 		end
 		return paths, source.name or source.command[1]
 	end
-	for _, dir in source.dirs or {} do
+	local dirs: { string } = source.dirs or {}
+	for _, dir in dirs do
 		look_in(expand(dir), source.depth or 1, source.markers, paths)
 	end
 	return paths, source.name or "folders"

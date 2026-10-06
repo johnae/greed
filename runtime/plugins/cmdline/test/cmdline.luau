@@ -10,7 +10,7 @@ local function prompt(t: test.TestContext): string
 end
 
 local function fails(f: () -> ()): string
-	local ok, err = pcall(f)
+	local ok: boolean, err: unknown = pcall(f)
 	assert(not ok, "expected an error")
 	return tostring(err)
 end

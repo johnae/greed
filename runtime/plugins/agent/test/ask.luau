@@ -2,6 +2,8 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local agent = require("@agent")
 
+type Question = { id: string, question: string, choices: { string }? }
+
 -- Calls the ask tool with `args` in the background, as an agent's call
 -- runs, and returns a function giving its result once it has one.
 local function ask(args: { [string]: any }): () -> any
@@ -20,13 +22,11 @@ end
 
 test("ask shows the questions as a page, and Send gives the answers back", function(t)
 	t:buffer("|")
-	local result = ask({
-		title = "Setting up",
-		questions = {
-			{ id = "style", question = "How do you like to edit?", choices = { "Helix", "Vim" } },
-			{ id = "name", question = "What should the plugin be called?" },
-		},
-	})
+	local questions: { Question } = {
+		{ id = "style", question = "How do you like to edit?", choices = { "Helix", "Vim" } },
+		{ id = "name", question = "What should the plugin be called?" },
+	}
+	local result = ask({ title = "Setting up", questions = questions })
 	t:wait(10)
 	local page = greed.view():buffer()
 	local text = page:text()

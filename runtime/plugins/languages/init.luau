@@ -25,8 +25,17 @@ local function apply(name: string, language: Language)
 	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
 	indent.units[name] = if language.indent then string.rep(" ", language.indent) else "\t"
-	indent.openers[name] = language.indent_after
-	indent.closers[name] = language.outdent_before
+	-- Unset ones clear what an earlier `apply` left.
+	if language.indent_after then
+		indent.openers[name] = language.indent_after
+	else
+		indent.openers[name] = nil
+	end
+	if language.outdent_before then
+		indent.closers[name] = language.outdent_before
+	else
+		indent.closers[name] = nil
+	end
 	local servers = language.servers
 	if servers and #servers > 0 then
 		greed.lsp.server({ language = name, commands = servers, root_markers = language.roots })
@@ -161,7 +170,7 @@ local function health_report(): (string, { greed.Mark })
 		else
 			line ..= add("no grammar    ", "ui.health.missing")
 		end
-		local servers = language.servers or {}
+		local servers: { { string } } = language.servers or {}
 		if #servers == 0 then
 			line ..= add("no server set", "ui.health.missing")
 		end
@@ -199,6 +208,9 @@ greed.command({
 	run = close_health,
 })
 
-greed.keymap.bind({ mode = "normal", kind = "health" }, { esc = "health-close", q = "health-close" })
+greed.keymap.bind(
+	{ mode = "normal", kind = "health" },
+	{ esc = "health-close", q = "health-close" }
+)
 
 return M

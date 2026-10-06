@@ -21,7 +21,8 @@ end
 --- The `.luaurc` aliasing `@greed` and each plugin in `runtime`.
 function M.luaurc(runtime: string): string
 	local names = {}
-	for _, entry in greed.fs.list(`{runtime}/plugins`) or {} do
+	local entries: { greed.DirEntry } = greed.fs.list(`{runtime}/plugins`) or {}
+	for _, entry in entries do
 		if entry.dir then
 			table.insert(names, entry.name)
 		end

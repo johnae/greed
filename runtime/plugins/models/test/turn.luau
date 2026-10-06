@@ -3,7 +3,7 @@ local greed = require("@greed")
 local models = require("@models")
 local turn = models.tools
 
-local TOOLS = {
+local TOOLS: { models.ToolSpec } = {
 	{
 		name = "read",
 		description = "Read a file",

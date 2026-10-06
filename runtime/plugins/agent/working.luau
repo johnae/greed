@@ -89,7 +89,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local ok, history = pcall(function()
 		return buffer:history({ limit = 1 })
 	end)
-	local last = ok and history[1]
+	local last = if ok then history[1] else nil
 	if not last or last.cause == "undo" or last.cause == "redo" then
 		return
 	end

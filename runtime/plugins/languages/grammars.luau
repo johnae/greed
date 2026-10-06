@@ -281,7 +281,8 @@ function M.ensure(name: string, provided: (language: string, kind: string) -> bo
 			local own = greed.fs.read(`{dir}/{kind}.scm`)
 			if own and not provided(name, kind) then
 				local parts = {}
-				for _, parent in source.inherits or {} do
+				local parents: { string } = source.inherits or {}
+				for _, parent in parents do
 					table.insert(parts, greed.syntax.query(parent, kind) or "")
 				end
 				table.insert(parts, own)

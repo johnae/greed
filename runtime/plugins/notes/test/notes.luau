@@ -286,7 +286,7 @@ test("capture goes to the project's inbox when it keeps notes, otherwise yours",
 end)
 
 test("a link goes to its own place first, and backlinks find it", function(t)
-	local dir, project_dir = places(t, { ["ideas.md"] = "mine\n", ["shared.md"] = "personal\n" }, {
+	places(t, { ["ideas.md"] = "mine\n", ["shared.md"] = "personal\n" }, {
 		["plan.md"] = "see [[design]] and [[ideas]] and [[project:design]]\n",
 		["design.md"] = "the design\n",
 	})
@@ -297,7 +297,6 @@ test("a link goes to its own place first, and backlinks find it", function(t)
 	assert(notes.resolve("design", "ideas") == "design", "from yours, yours")
 	local back = run_tool("notes_read", { name = "project:design" }).linked_from
 	assert(#back == 1 and back[1] == "project:plan", table.concat(back, " "))
-	local _ = dir
 end)
 
 test("places added in the config are searched and named too", function(t)

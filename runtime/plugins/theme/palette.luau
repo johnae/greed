@@ -58,6 +58,13 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 	local operator = p.operator or p.cyan
 	local severity: { [string]: string } =
 		{ error = p.red, warning = p.yellow, info = p.blue, hint = p.cyan }
+	-- What only the window draws: fonts, and controls in place of text.
+	local prose: greed.Style = { font = "prose" }
+	local mono: greed.Style = { font = "mono" }
+	local empty_box: greed.Style = { checkbox = "empty" }
+	local checked_box: greed.Style = { checkbox = "checked" }
+	local choice: greed.Style = { checkbox = "choice" }
+	local chosen: greed.Style = { checkbox = "chosen" }
 	local styles: { [string]: greed.ThemeEntry } = {
 		["ui.text"] = { fg = p.fg, bg = p.bg },
 		["ui.gutter"] = { fg = p.gutter },
@@ -102,7 +109,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.tree.open"] = { bg = p.bg_high },
 		["ui.tree.guide"] = { fg = p.gutter },
 		["ui.tree.hover"] = { bg = p.selection },
-		["markdown.text"] = { gui = { font = "prose" } },
+		["markdown.text"] = { gui = prose },
 		["markdown.marker"] = { fg = p.comment },
 		["markdown.heading"] = { fg = p.blue, bold = true },
 		["markdown.heading.1"] = { fg = p.purple, bold = true },
@@ -110,7 +117,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["markdown.bold"] = { bold = true },
 		["markdown.italic"] = { italic = true },
 		["markdown.strike"] = { fg = p.comment, strikethrough = true },
-		["markdown.code"] = { fg = p.green, bg = p.bg_high, gui = { font = "mono" } },
+		["markdown.code"] = { fg = p.green, bg = p.bg_high, gui = mono },
 		["markdown.code.block"] = { bg = p.bg_alt },
 		["markdown.code.block.result"] = { bg = p.bg_alt, fg = p.fg_alt or p.fg },
 		["blocks.run"] = { fg = p.green, gui = { bg = p.bg_high, badge = true } },
@@ -132,11 +139,11 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["diff.plus.change"] = { fg = p.green, bold = true },
 		["diff.minus.change"] = { fg = p.red, bold = true },
 
-		["notes.todo"] = { fg = p.yellow, gui = { checkbox = "empty" } },
+		["notes.todo"] = { fg = p.yellow, gui = empty_box },
 		["notes.done"] = { fg = p.comment, strikethrough = true },
-		["notes.done.box"] = { fg = p.green, gui = { checkbox = "checked" } },
-		["markdown.choice"] = { fg = p.comment, gui = { checkbox = "choice" } },
-		["markdown.chosen"] = { fg = p.blue, gui = { checkbox = "chosen" } },
+		["notes.done.box"] = { fg = p.green, gui = checked_box },
+		["markdown.choice"] = { fg = p.comment, gui = choice },
+		["markdown.chosen"] = { fg = p.blue, gui = chosen },
 		["notes.heading"] = { fg = p.blue, bold = true },
 		["notes.bullet"] = { fg = p.blue },
 		["notes.due"] = { fg = p.cyan },

@@ -78,7 +78,7 @@ local shown_backlinks: { [number]: { string } } = {}
 local function mark(buffer: greed.Buffer)
 	local marks: { greed.Mark } = {}
 	local conceal = greed.option.get("notes-conceal") == true
-	local shows = core.reveal()
+	local shows: "line" | "cursor" | "never" = core.reveal()
 	for _, link in M.links(buffer) do
 		table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
 		if conceal then

@@ -32,10 +32,9 @@ local function save(buffer: greed.Buffer, path: string?)
 		return
 	end
 	for _, hook in before_save do
-		local ok, err = pcall(hook, buffer)
-		if not ok then
+		xpcall(hook, function(err)
 			greed.echo(tostring(err))
-		end
+		end, buffer)
 	end
 	buffer:save(path)
 	greed.echo("wrote " .. (buffer:path() or "?"))

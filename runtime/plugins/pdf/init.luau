@@ -119,7 +119,7 @@ function M.open(path: string, file: greed.Buffer?): (greed.Buffer?, string?)
 	buffer:set_line_numbers(false)
 	local v: Viewer = { doc = doc, buffer = buffer, page = 1, zoom = 1, text = false, starts = {} }
 	viewers[buffer:id()] = v
-	local views = if file then file:views() else { greed.view() }
+	local views: { greed.View } = if file then file:views() else { greed.view() }
 	for _, view in views do
 		view:show(buffer)
 	end

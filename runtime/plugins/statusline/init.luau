@@ -50,7 +50,7 @@ M.right = {} :: { Entry }
 --- Adds a piece called `name` to the `side` ("left" or "right"), at its end
 --- or before the piece called `before`. A piece returns nil to show nothing.
 function M.add(side: "left" | "right", name: string, build: Piece, before: string?)
-	local list = if side == "left" then M.left else M.right
+	local list: { Entry } = if side == "left" then M.left else M.right
 	local at = #list + 1
 	for i, entry in list do
 		if entry.name == before then
@@ -107,7 +107,8 @@ function M.add_async(side: "left" | "right", name: string, spec: AsyncPiece, bef
 		return found[name]
 	end, before)
 	local on = greed.on :: (event: string, handler: (any) -> ()) -> ()
-	for _, event in spec.on or {} do
+	local events: { string } = spec.on or {}
+	for _, event in events do
 		on(event, function()
 			refresh(name, spec)
 		end)
@@ -378,7 +379,7 @@ local function segments(part: Part, glow: Glow?, out: { greed.StatusSegment })
 				kept = look
 			end
 		end
-		local space = if kept then { text = " ", style = kept } else " "
+		local space: greed.StatusSegment = if kept then { text = " ", style = kept } else " "
 		table.insert(out, space)
 		text_in(text, kept, glow, out)
 		table.insert(out, space)

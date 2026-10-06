@@ -33,7 +33,7 @@ end
 
 -- The marks for one line of text starting at `at`.
 local function line_marks(text: string, at: number, out: { greed.Mark })
-	local shows = core.reveal()
+	local shows: "line" | "cursor" | "never" = core.reveal()
 	local function show(
 		from: number,
 		to: number,
@@ -73,8 +73,9 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 		show(0, #hashes + 1, symbols.headings[level] .. " ", "notes.heading", "fold-toggle")
 	else
 		-- Choices, `- ( )`, are Markdown's to draw.
-		local spaces = not string.match(text, "^%s*[-*] %([ xX]%) ")
-			and string.match(text, "^(%s*)[-*] ")
+		local spaces = if string.match(text, "^%s*[-*] %([ xX]%) ")
+			then nil
+			else string.match(text, "^(%s*)[-*] ")
 		if spaces then
 			show(#spaces, #spaces + 2, symbols.bullet .. " ", "notes.bullet")
 		end

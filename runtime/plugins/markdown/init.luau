@@ -35,8 +35,11 @@ local claims: { (buffer: greed.Buffer) -> Parts? } = {}
 local function claimed(buffer: greed.Buffer): Parts
 	local parts: Parts = {}
 	for _, claim in claims do
-		for part, yes in claim(buffer) or {} do
-			parts[part] = parts[part] or yes
+		local theirs = claim(buffer)
+		if theirs then
+			for part, yes in theirs do
+				parts[part] = parts[part] or yes
+			end
 		end
 	end
 	return parts
@@ -104,16 +107,15 @@ local function inline(line: Line)
 		end
 	end
 	-- Longest markers first, so ** isn't read as two *.
-	for _, kind in
-		{
-			{ "%*%*", 2, "markdown.bold" },
-			{ "__", 2, "markdown.bold" },
-			{ "~~", 2, "markdown.strike" },
-			{ "%*", 1, "markdown.italic" },
-			{ "_", 1, "markdown.italic" },
-		}
-	do
-		local marker, size, style = kind[1] :: string, kind[2] :: number, kind[3] :: string
+	local kinds: { { marker: string, size: number, style: string } } = {
+		{ marker = "%*%*", size = 2, style = "markdown.bold" },
+		{ marker = "__", size = 2, style = "markdown.bold" },
+		{ marker = "~~", size = 2, style = "markdown.strike" },
+		{ marker = "%*", size = 1, style = "markdown.italic" },
+		{ marker = "_", size = 1, style = "markdown.italic" },
+	}
+	for _, kind in kinds do
+		local marker, size, style = kind.marker, kind.size, kind.style
 		local pattern = `(){marker}([^%s].-){marker}()`
 		local start = 1
 		while true do
@@ -145,7 +147,7 @@ end
 local function marks(buffer: greed.Buffer): { greed.Mark }
 	local out: { greed.Mark } = {}
 	local parts = claimed(buffer)
-	local shows = core.reveal()
+	local shows: "line" | "cursor" | "never" = core.reveal()
 	local fence: string? = nil
 	-- What code blocks look like: a block's output (```` ```result ````) a
 	-- little apart from code.

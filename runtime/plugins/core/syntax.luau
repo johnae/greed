@@ -292,7 +292,7 @@ local function select_nodes(ctx: greed.Context, pick: (greed.Node) -> { greed.No
 	for _, range in ctx.view:selection().ranges do
 		local lo, hi = bounds(range)
 		local node = node_in(buffer, lo, hi)
-		local picked = if node then pick(node) else {}
+		local picked: { Node } = if node then pick(node) else {}
 		if #picked == 0 then
 			table.insert(ranges, range)
 		end

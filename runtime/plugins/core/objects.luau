@@ -219,7 +219,8 @@ end
 --- The innermost XML or HTML element around `pos`: inside it (between its
 --- tags) or around it (the tags too), as `from, to`, or nil.
 function M.tag(buffer: Buffer, pos: number, around: boolean): (number?, number?)
-	local tags = buffer:find_all("</?[A-Za-z][\\w:.-]*[^<>]*>") or {}
+	local tags: { { from: number, to: number } } = buffer:find_all("</?[A-Za-z][\\w:.-]*[^<>]*>")
+		or {}
 	local open: { { name: string, from: number, to: number } } = {}
 	local best: { number }? = nil
 	for _, tag in tags do
@@ -414,7 +415,11 @@ end
 function M.number(buffer: Buffer, pos: number, around: boolean): (number?, number?)
 	local line = buffer:line_of(pos)
 	local start, stop = buffer:line_start(line), buffer:line_end(line)
-	local found = buffer:find_all("-?(0[xX][0-9a-fA-F]+|[0-9]+(\\.[0-9]+)?)", start, stop) or {}
+	local found: { { from: number, to: number } } = buffer:find_all(
+		"-?(0[xX][0-9a-fA-F]+|[0-9]+(\\.[0-9]+)?)",
+		start,
+		stop
+	) or {}
 	for _, m in found do
 		if m.to > pos then
 			local from = m.from

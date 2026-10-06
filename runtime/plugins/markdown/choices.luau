@@ -117,10 +117,9 @@ function M.pick(buffer: greed.Buffer, line: number)
 	end)
 	local picked = M.at(buffer, line) :: Group
 	for _, listener in listeners do
-		local ok, err = pcall(listener.hear, buffer, picked)
-		if not ok then
+		xpcall(listener.hear, function(err)
 			greed.echo(`a choice listener failed: {err}`)
-		end
+		end, buffer, picked)
 	end
 end
 

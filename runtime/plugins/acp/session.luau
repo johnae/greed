@@ -482,7 +482,7 @@ function M.ask(
 		session.changed()
 		return decided
 	end
-	local before = session.status
+	local before: Status = session.status
 	session.status = "waiting"
 	session.changed()
 	local chosen = permission.answer.wait()

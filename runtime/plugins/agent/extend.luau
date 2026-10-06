@@ -114,7 +114,8 @@ local function describe(report: greed.PluginCheck): (string, boolean)
 		passed = false
 		table.insert(lines, `tests: couldn't run: {report.tests.error}`)
 	else
-		local failed = report.tests.failed or {}
+		local failed: { { file: string, name: string, message: string } } = report.tests.failed
+			or {}
 		passed = passed and #failed == 0
 		local passed_count = report.tests.passed or 0
 		if passed_count == 0 and #failed == 0 then

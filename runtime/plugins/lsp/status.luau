@@ -18,24 +18,26 @@ local programs: { [string]: string | false } = {}
 local seen: { [string]: boolean } = {}
 
 local function program(language: string): string | false
-	local found = programs[language]
-	if found == nil then
-		found = false
-		for _, command in greed.lsp.servers()[language] or {} do
-			if greed.which(command[1]) then
-				found = string.match(command[1], "[^/]+$") or command[1]
-				break
-			end
-		end
-		programs[language] = found
+	local known: (string | false)? = programs[language]
+	if known ~= nil then
+		return known
 	end
+	local found: string | false = false
+	local commands: { { string } } = greed.lsp.servers()[language] or {}
+	for _, command in commands do
+		if greed.which(command[1]) then
+			found = string.match(command[1], "[^/]+$") or command[1]
+			break
+		end
+	end
+	programs[language] = found
 	return found
 end
 
 --- Takes in a `$/progress` notification from `language`'s server.
 function M.progress(language: string, params: any)
 	local token, value = tostring(params.token), params.value or {}
-	local list = working[language] or {}
+	local list: { Work } = working[language] or {}
 	working[language] = list
 	local at
 	for i, work in list do
@@ -68,7 +70,7 @@ function M.text(buffer: greed.Buffer): string?
 	if commands == nil then
 		return nil
 	end
-	local name = program(language)
+	local name: string | false = program(language)
 	if not name then
 		local wanted = commands[1]
 		return `{wanted and wanted[1] or "server"} not installed`

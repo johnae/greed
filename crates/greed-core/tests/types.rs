@@ -155,12 +155,39 @@ fn runtime_passes_strict_type_checking() {
         .args(&files)
         .output()
         .unwrap();
+    // Lint warnings, like an unused or shadowed local, print without failing.
+    let said = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
+        output.status.success() && said.trim().is_empty(),
+        "{said}{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// What editors check with: luau-lsp, with every Luau flag on as it starts
+/// by default, which checks differently from luau-analyze in places.
+#[test]
+fn runtime_passes_luau_lsp_checking() {
+    if Command::new("luau-lsp").arg("--help").output().is_err() {
+        eprintln!("luau-lsp not found; skipping (it comes with the devenv shell)");
+        return;
+    }
+    let mut files = Vec::new();
+    collect_luau(&runtime(), &mut files);
+    let output = Command::new("luau-lsp")
+        .args(["analyze", "--platform", "standard"])
+        .current_dir(runtime())
+        .args(&files)
+        .output()
+        .unwrap();
+    // It notes where its configuration came from on lines like "[INFO] ...".
+    let problems: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&output.stderr).lines())
+        .filter(|line| !line.starts_with('[') && !line.trim().is_empty())
+        .map(str::to_owned)
+        .collect();
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 fn collect_luau(dir: &Path, files: &mut Vec<PathBuf>) {

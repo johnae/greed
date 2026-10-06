@@ -78,7 +78,9 @@ test("an edit asks first, and once allowed it's made and the model hears so", fu
 		{ text = "Done.", calls = {}, stop = "done" },
 	})
 	local s, dir = ask(t, "shout two")
-	assert(s.status == "waiting", s.status)
+	-- Through a local, so the check doesn't pin `s.status` for the code after it.
+	local status = s.status
+	assert(status == "waiting", status)
 	local question = waiting(s)
 	assert(question.title == "Edit a.txt", question.title)
 	question.answer.send("once")
@@ -158,7 +160,7 @@ test(
 
 test("the model is a role, and alt-M's list is the roles", function(t)
 	models.roles.agent = { provider = "anthropic", model = "test-model" }
-	local used = {}
+	local used: { string } = {}
 	models.turn = function(role)
 		table.insert(used, role)
 		return { text = "ok", calls = {}, stop = "done" }, nil

@@ -208,8 +208,9 @@ local function copy_lines(ctx: greed.Context): { Block }
 	for _, block in blocks do
 		table.insert(pieces, lines_text(ctx.buffer, block.first, block.last) .. "\n")
 	end
-	copied_lines = table.concat(pieces)
-	greed.clipboard.set(copied_lines)
+	local joined = table.concat(pieces)
+	copied_lines = joined
+	greed.clipboard.set(joined)
 	return blocks
 end
 

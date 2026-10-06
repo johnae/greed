@@ -73,7 +73,8 @@ end
 local function highlight(buffer: greed.Buffer, pattern: string)
 	local marks: { greed.Mark } = {}
 	if pattern ~= "" then
-		for _, m in buffer:find_all(smart_case(pattern)) or {} do
+		local found: { { from: number, to: number } } = buffer:find_all(smart_case(pattern)) or {}
+		for _, m in found do
 			if m.to > m.from then
 				table.insert(marks, { from = m.from, to = m.to, style = "ui.search.match" })
 			end

@@ -282,7 +282,7 @@ function execute(text: string, lines: { first: number, last: number }?)
 	end
 	local view = greed.view()
 	local buffer = view:buffer()
-	local first, last = nil, nil
+	local first: number?, last: number? = nil, nil
 	if lines then
 		first, last = lines.first, lines.last
 	else
@@ -305,12 +305,18 @@ function execute(text: string, lines: { first: number, last: number }?)
 			primary = 1,
 		})
 	end
-	local special, args, inverted = pattern_command(text)
+	local special, pattern_args, inverted = pattern_command(text)
 	if special == "global" then
-		global(args[1], args[2], inverted, first or 0, last or buffer:line_count() - 1)
+		global(
+			pattern_args[1],
+			pattern_args[2],
+			inverted,
+			first or 0,
+			last or buffer:line_count() - 1
+		)
 		return
 	elseif special then
-		greed.run(special, { args = args })
+		greed.run(special, { args = pattern_args })
 		return
 	end
 	local parsed = parse.parse(text)
@@ -477,13 +483,15 @@ complete.register("editing-style", function()
 	return items
 end)
 
+local set_args: { greed.ArgSpec } = {
+	{ name = "option", doc = "The option to set", complete = "option" },
+	{ name = "value", doc = "true, false, a number or text" },
+}
+
 greed.command({
 	name = "set",
 	doc = "Set an option",
-	args = {
-		{ name = "option", doc = "The option to set", complete = "option" },
-		{ name = "value", doc = "true, false, a number or text" },
-	},
+	args = set_args,
 	run = function(ctx)
 		local name = ctx.args[1]
 		-- Text values can have spaces.

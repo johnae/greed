@@ -451,10 +451,12 @@ end
 local function roles(): { session.Mode }
 	local list = {}
 	for name, role in models.roles do
-		table.insert(
-			list,
-			{ id = name, name = name, description = `{role.model} at {role.provider}` }
-		)
+		if role then
+			table.insert(
+				list,
+				{ id = name, name = name, description = `{role.model} at {role.provider}` }
+			)
+		end
 	end
 	table.sort(list, function(a: session.Mode, b: session.Mode)
 		return a.id < b.id

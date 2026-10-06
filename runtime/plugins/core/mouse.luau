@@ -115,14 +115,15 @@ greed.on("mouse", function(event: greed.MouseEvent)
 	if claim and claim(event) then
 		return
 	end
-	if event.kind == "press" and event.button == "left" then
+	local left = event.button == "left"
+	if event.kind == "press" and left then
 		if greed.view():id() ~= view:id() then
 			view:focus()
 		end
 		if event.pos then
 			press(view, event, event.pos)
 		end
-	elseif event.kind == "drag" and event.button == "left" then
+	elseif event.kind == "drag" and left then
 		if pressed and pressed.view == view:id() and event.pos then
 			point(view, event.pos, pressed.pos)
 		end

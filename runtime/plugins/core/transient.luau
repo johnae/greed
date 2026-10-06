@@ -45,7 +45,8 @@ local function draw(menu: Menu, switches: { [string]: boolean }): (string, { gre
 	local at = 0
 	local function add(line: string, styles: { { from: number, to: number, style: string } }?)
 		table.insert(lines, line)
-		for _, style in styles or {} do
+		local list: { { from: number, to: number, style: string } } = styles or {}
+		for _, style in list do
 			table.insert(marks, { from = at + style.from, to = at + style.to, style = style.style })
 		end
 		at += #line + 1

@@ -252,7 +252,7 @@ export type View = {
 	--- several, the one active most recently.
 	neighbor: (self: View, dir: "left" | "right" | "up" | "down") -> View?,
 	--- Moves this pane's edge on its `dir` side by `cells` (negative to
-	--- shrink). False when no pane is on that side.
+	--- shrink). False when no pane is on that side. A panel moves the edge by the main view, and only that.
 	resize: (self: View, dir: "left" | "right" | "up" | "down", cells: number) -> boolean,
 	--- Undoes the last change. Returns false if there was nothing to undo.
 	undo: (self: View) -> boolean,
@@ -917,6 +917,8 @@ export type MouseEvent = {
 	tab: number?,
 	--- On a floating view's border (with `view` set), which part: "top" (the title's), "bottom", "left", "right", or a corner like "bottom-right".
 	border: ("top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right")?,
+	--- On the line between a pane or panel (`view`) and its neighbor, the side of `view` it's on: "right" or "down" for panes, the side by the main view for panels. Dragging it resizes `view` with `resize`.
+	edge: ("left" | "right" | "down")?,
 }
 
 --- A view was drawn with room for a different number of rows or columns
@@ -975,9 +977,9 @@ export type KeysPending = {
 
 --- A piece of the status line: plain text, or text with a style.
 export type StatusSegment = string | {
-	read text: string,
+	text: string,
 	--- A style name, e.g. "ui.statusline.mode", drawn over "ui.statusline".
-	read style: string?,
+	style: string?,
 }
 
 --- What a status line function gets, for the main view.

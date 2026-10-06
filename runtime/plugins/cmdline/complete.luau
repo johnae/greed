@@ -23,7 +23,7 @@ local M = {}
 export type Preview = (text: string?) -> ()
 
 local completers: { [string]: Completer } = {}
-local previews: { [string]: Preview } = {}
+local previews: { [string]: Preview? } = {}
 
 function M.register(name: string, completer: Completer, preview: Preview?)
 	completers[name] = completer
@@ -64,7 +64,10 @@ end)
 M.register("option", function()
 	local items = {}
 	for _, option in greed.option.list() do
-		table.insert(items, { text = option.name, doc = option.doc .. " (now " .. tostring(option.value) .. ")" })
+		table.insert(
+			items,
+			{ text = option.name, doc = option.doc .. " (now " .. tostring(option.value) .. ")" }
+		)
 	end
 	return items
 end)
@@ -85,10 +88,13 @@ end)
 M.register("file", function(word)
 	local dir = string.match(word, "^(.*/)") or ""
 	local typed = string.sub(word, #dir + 1)
-	local entries = greed.fs.list(if dir == "" then "." else core.project.expand(dir), {
-		hidden = string.sub(typed, 1, 1) == ".",
-		ignored = true,
-	}) or {}
+	local entries: { greed.DirEntry } = greed.fs.list(
+		if dir == "" then "." else core.project.expand(dir),
+		{
+			hidden = string.sub(typed, 1, 1) == ".",
+			ignored = true,
+		}
+	) or {}
 	local items = {}
 	for _, entry in entries do
 		table.insert(items, { text = dir .. entry.name .. (if entry.dir then "/" else "") })
@@ -99,7 +105,11 @@ end)
 -- Candidates for the last word of `line`, that word, and the completer's
 -- preview if it has one. `first` lists what the first word can be;
 -- `resolve` turns it into a command name.
-function M.candidates(line: string, first: { Candidate }, resolve: (name: string) -> string): ({ Candidate }, string, Preview?)
+function M.candidates(
+	line: string,
+	first: { Candidate },
+	resolve: (name: string) -> string
+): ({ Candidate }, string, Preview?)
 	local typed = string.match(line, "^%s*(.*)$") or ""
 	if not string.find(typed, "%s") then
 		return rank(typed, first), typed, nil
@@ -118,7 +128,9 @@ function M.candidates(line: string, first: { Candidate }, resolve: (name: string
 			local spec = command.args[index]
 			local key = spec and spec.complete
 			local completer = key and completers[key]
-			return (if completer then rank(word, completer(word)) else {}), word, key and previews[key]
+			return (if completer then rank(word, completer(word)) else {}),
+				word,
+				key and previews[key]
 		end
 	end
 	return {}, "", nil

@@ -165,7 +165,7 @@ end
 --- what it did so far stays (and can be undone) and the error goes on.
 function M.run(name: string, f: (op: Operation) -> (), author: string?): Operation
 	local op = M.start(name, author)
-	local ok, err = pcall(f, op)
+	local ok: boolean, err: unknown = pcall(f, op)
 	M.finish(op)
 	if not ok then
 		error(err, 0)
@@ -178,7 +178,7 @@ end
 function M.join(op: Operation, f: () -> ())
 	local current = greed.history.group()
 	greed.history.set_group(op.id)
-	local ok, err = pcall(f)
+	local ok: boolean, err: unknown = pcall(f)
 	greed.history.set_group(current)
 	op.files = changed_files(op)
 	save()

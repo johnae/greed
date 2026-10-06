@@ -168,8 +168,8 @@ greed.command({
 })
 
 local M = { keys = {} :: { [string]: string } }
-for key, command in VIEW_KEYS do
-	M.keys[`z {key}`] = command
+for key, name in VIEW_KEYS do
+	M.keys[`z {key}`] = name
 end
 M.keys.Z = "view-mode"
 greed.keymap.bind("view", VIEW_KEYS)

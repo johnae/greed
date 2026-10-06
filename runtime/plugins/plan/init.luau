@@ -127,7 +127,11 @@ end
 --- Every decision, oldest first.
 function M.decisions(): { Decision }
 	local list = {}
-	for _, entry in greed.fs.list(M.decisions_dir(), { hidden = true, ignored = true }) or {} do
+	local entries: { greed.DirEntry } = greed.fs.list(
+		M.decisions_dir(),
+		{ hidden = true, ignored = true }
+	) or {}
+	for _, entry in entries do
 		if not entry.dir and string.match(entry.name, "%.md$") then
 			local text = read(decision_path(entry.name))
 			if text then

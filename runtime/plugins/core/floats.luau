@@ -93,9 +93,10 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		if box == nil then
 			return
 		end
+		local part: string = event.border
 		view:raise()
 		view:focus()
-		dragging = { view = view, part = event.border, col = event.col, row = event.row, box = box }
+		dragging = { view = view, part = part, col = event.col, row = event.row, box = box }
 	elseif event.kind == "drag" and dragging then
 		local drag = dragging
 		local box = M.dragged(drag.box, drag.part, event.col - drag.col, event.row - drag.row)

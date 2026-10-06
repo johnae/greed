@@ -5,7 +5,7 @@
 local greed = require("@greed")
 local motions = require("./motions")
 
-local tokens: { [string]: string } = {}
+local tokens: { [string]: string? } = {}
 
 local M = {}
 

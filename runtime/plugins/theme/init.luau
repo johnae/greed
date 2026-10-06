@@ -99,7 +99,8 @@ local function styles(name: string, seen: { [string]: boolean }): Styles
 			out[style] = patch(out[style], entry)
 		end
 	end
-	for style, entry in theme.styles or {} do
+	local own: Styles = theme.styles or {}
+	for style, entry in own do
 		out[style] = patch(out[style], entry)
 	end
 	return out

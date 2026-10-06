@@ -21,6 +21,7 @@ local session = require("@self/session")
 local native = require("@self/native")
 local transcript = require("@self/transcript")
 local participants = require("@self/participants")
+local review = require("@self/review")
 local statusline = require("@statusline")
 
 type Session = session.Session
@@ -1006,7 +1007,7 @@ greed.command({
 		if s == nil then
 			return
 		end
-		local reviewed, err = M.review.review(s)
+		local reviewed, err = review.review(s)
 		if reviewed == nil then
 			greed.echo(`can't: {err}`)
 			return
@@ -1141,7 +1142,7 @@ greed.keymap.bind("normal", { ["space n l"] = "notes-connect" })
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")
 --- An agent's workspace changes as proposals on your files (review.luau).
-M.review = require("@self/review")
+M.review = review
 M.subagent.offer(M, installed)
 
 return M

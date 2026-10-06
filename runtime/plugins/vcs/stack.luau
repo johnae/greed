@@ -361,7 +361,7 @@ local function split(stack: Stack, change: Change)
 			local prep = `{stack.repo.root}/.jj/greed-split`
 			greed.process.run({ "rm", "-rf", prep })
 			local deleted = {}
-			for path, text in picked do
+			for path, text: string | false in picked do
 				if text then
 					greed.fs.write(`{prep}/files/{path}`, text)
 				else

@@ -79,10 +79,8 @@ test("entries set from a config stay on top whichever theme is in use", function
 end)
 
 test("your own themes start from a palette or another theme", function()
-	theme.define(
-		"bolder",
-		{ inherits = "nord", styles = { keyword = { fg = "#ffffff", bold = true } } }
-	)
+	local bolder: theme.Styles = { keyword = { fg = "#ffffff", bold = true } }
+	theme.define("bolder", { inherits = "nord", styles = bolder })
 	theme.use("bolder")
 	assert(fg("keyword") == "#ffffff" and fg("string") == "#a3be8c", "nord underneath")
 	theme.define("loop", { inherits = "loop" })
@@ -91,7 +89,8 @@ test("your own themes start from a palette or another theme", function()
 end)
 
 test("a theme's styles and your own entries change only the fields they give", function()
-	theme.define("plain-comments", { inherits = "nord", styles = { comment = { italic = false } } })
+	local plain: theme.Styles = { comment = { italic = false } }
+	theme.define("plain-comments", { inherits = "nord", styles = plain })
 	theme.use("plain-comments")
 	local comment = greed.theme.get("comment") :: greed.ThemeEntry
 	assert(comment.fg == "#616e88" and comment.italic == false, "nord's color stays")

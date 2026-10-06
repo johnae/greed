@@ -91,8 +91,11 @@ greed.command({
 		local function lines(query: string): { picker.Item }
 			pattern = query
 			-- A half-typed pattern that doesn't parse yet finds nothing.
-			local found = greed.fs.grep(core.search.smart_case(query), root, { limit = LIVE_LIMIT })
-				or {}
+			local found: { greed.GrepLine } = greed.fs.grep(
+				core.search.smart_case(query),
+				root,
+				{ limit = LIVE_LIMIT }
+			) or {}
 			local items = {}
 			for _, f in found do
 				local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`

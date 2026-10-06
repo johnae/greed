@@ -255,7 +255,8 @@ function M.eval(code: string, client: string?): string
 	-- What it edited before it stopped goes, so a full run doesn't do it twice.
 	greed.history.undo_group(op.id)
 	operations.forget(op)
-	local verdict, why = (M.review or review)(code, needs)
+	local reviewer: (string, string) -> (string?, string?) = M.review or review
+	local verdict, why = reviewer(code, needs)
 	if verdict == "allow" then
 		return run_fully(code, needs, `the reviewer: {why}`)
 	end
