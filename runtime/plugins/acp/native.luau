@@ -92,8 +92,56 @@ function M.trim_results(said: { models.Said })
 	end
 end
 
--- The most of a tool's result the model gets back, in characters.
+-- The most of a tool's result the model gets back, in characters and lines;
+-- the rest of a longer one is in a file it can read on in. Such files go
+-- after `OUTPUT_DAYS`.
 local MAX_RESULT = 30000
+local MAX_LINES = 2000
+local OUTPUT_DAYS = 7
+
+-- Takes away results kept longer than OUTPUT_DAYS.
+local function clear_old_output(dir: string)
+	local before = os.time() - OUTPUT_DAYS * 86400
+	local entries = greed.fs.list(dir)
+	if entries == nil then
+		return
+	end
+	for _, entry in entries do
+		local path = `{dir}/{entry.name}`
+		local info = greed.fs.stat(path)
+		if info and info.modified and info.modified < before then
+			greed.fs.remove(path)
+		end
+	end
+end
+
+--- `text`, a tool's result, as the model gets it: whole when it's short
+--- enough, else its start and where the whole of it is kept (under `name`),
+--- to read on with `read` or search with `grep`, so nothing is lost.
+function M.fit(text: string, name: string): string
+	local _, breaks = string.gsub(text, "\n", "")
+	if #text <= MAX_RESULT and breaks < MAX_LINES then
+		return text
+	end
+	local lines = string.split(text, "\n")
+	local shown, size = {}, 0
+	for _, line in lines do
+		if #shown >= MAX_LINES or size + #line + 1 > MAX_RESULT then
+			break
+		end
+		table.insert(shown, line)
+		size += #line + 1
+	end
+	local head = table.concat(shown, "\n")
+	local dir = agent.output_dir()
+	-- Only yours to read, as the conversations kept are.
+	if dir == nil or not greed.fs.write(`{dir}/{name}.txt`, text, { private = true }) then
+		return `{head}\n\n[showing lines 1-{#shown} of {#lines}; the rest was left out]`
+	end
+	clear_old_output(dir)
+	return `{head}\n\n[showing lines 1-{#shown} of {#lines}; the whole result is in {dir}/{name}.txt: `
+		.. `read it from line {#shown + 1} on with read's from_line, or search it with grep and that path]`
+end
 
 -- The most of a project's instructions (AGENTS.md, CLAUDE.md) it reads.
 local MAX_INSTRUCTIONS = 20000
@@ -551,10 +599,7 @@ local function call(
 	tool.detail = if summary then { summary } else {}
 	tool.output = lines
 	s.tool = nil
-	if #text > MAX_RESULT then
-		text = string.sub(text, 1, MAX_RESULT) .. "\n(cut short)"
-	end
-	return text, not ok
+	return M.fit(text, `{s.id}-{c.id}`), not ok
 end
 
 -- Adds `text` to the agent's last words in the transcript, or starts them.

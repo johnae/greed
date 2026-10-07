@@ -368,6 +368,11 @@ older ones deleted (`:set agent-sessions-kept 100` keeps more); closing
 one with `x` in the session list deletes it. Agents don't read other
 sessions' conversations; only you see them in the list.
 
+A tool result longer than 2,000 lines or 30,000 characters reaches
+Greed's agent as its start and where the whole of it is: a file in
+Greed's cache folder (`agent-output`, only yours to read, cleared after a
+week) that it reads on in or searches with `grep`, so nothing is lost.
+
 Every request sends the whole conversation, so a long file read early on
 costs again on every turn after. Providers cache the start of a
 conversation that's the same as last time and charge much less for it, so

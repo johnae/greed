@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local acp = require("@acp")
+local agent = require("@agent")
 local models: any = require("@models")
 
 local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, native = true }
@@ -534,7 +535,7 @@ test("kept sessions are only yours to read, and long output isn't all kept", fun
 	local kept = greed.json.decode(assert(text))
 	local output = kept.entries[2].tool.output
 	assert(#output == 201 and output[201] == "(800 more lines not kept)", output[201])
-	assert(#kept.said[3].text < 30100, "the model's copy is cut too")
+	assert(#kept.said[3].text < 30500, "the model's copy is cut too")
 	acp.close(s)
 	agent.tool({
 		name = "test_long",
@@ -1068,4 +1069,35 @@ test("the system prompt stays the same; the time comes in your message, new tool
 	for i, tool in before do
 		assert(after[i].name == tool.name, `the tools before stay in their place: {i}`)
 	end
+end)
+
+test("a result too long to give whole goes to a file, its start to the model", function(t)
+	local lines = {}
+	for i = 1, 3000 do
+		table.insert(lines, `line {i}`)
+	end
+	local dir = t:tempdir({ ["long.txt"] = table.concat(lines, "\n") .. "\n" })
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "read", input = { path = `{dir}/long.txt` } } },
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "read it")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local result = asked[2].said[3].text :: string
+	assert(string.find(result, "^line 1\n"), "its start")
+	local path = string.match(result, "the whole result is in (%S+%.txt):")
+	assert(path, result:sub(-300))
+	assert(string.find(result, "showing lines 1%-2000 of"), result:sub(-300))
+	assert(not string.find(result, "line 2500", 1, true), "not all of it")
+	local kept = greed.fs.read(path) :: string
+	assert(kept and string.find(kept, "line 3000", 1, true), "the whole of it, kept")
+	assert(string.format("%o", assert(greed.fs.stat(path)).mode) == "600", "only yours to read")
+	local hits = assert(agent.map.grep("^line 2999$", string.match(path, "^(.*)/[^/]+$")))
+	assert(#hits == 1, "and grep finds what's in it")
 end)

@@ -28,6 +28,13 @@ local function root(): string
 	return core.project.root() or greed.fs.cwd()
 end
 
+--- Where an agent's tool results too long to give it whole are kept, to
+--- read on in and grep.
+function M.output_dir(): string?
+	local cache = greed.fs.dirs().cache
+	return cache and `{cache}/agent-output`
+end
+
 -- Greed's runtime folder: its own plugins, and their types in types/.
 local function runtime_dir(): string?
 	local plugin_core = greed.plugin.dirs().core
@@ -292,12 +299,16 @@ function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, strin
 	local where, prefix = base, ""
 	if dir and string.sub(dir, 1, 1) == "/" then
 		local runtime = runtime_dir()
+		local output = M.output_dir()
+		local function inside(folder: string?): boolean
+			return folder ~= nil
+				and (dir == folder or string.sub(dir :: string, 1, #folder + 1) == folder .. "/")
+		end
 		if dir == base or string.sub(dir, 1, #base + 1) == base .. "/" then
 			dir = if dir == base then nil else string.sub(dir, #base + 2)
-		elseif
-			runtime and (dir == runtime or string.sub(dir, 1, #runtime + 1) == runtime .. "/")
-		then
-			-- Greed's own plugins and types, the best examples for a plugin.
+		elseif inside(runtime) or inside(output) then
+			-- Greed's own plugins and types, the best examples for a plugin,
+			-- and tool results too long to have been given whole.
 			where, prefix = dir, dir .. "/"
 			dir = nil
 		else

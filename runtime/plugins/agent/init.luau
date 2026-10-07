@@ -93,6 +93,8 @@ return table.freeze({
 	--- A plugin check in words for an agent, and whether it may go to the
 	--- user to install (extend.luau).
 	describe_check = extend.describe,
+	--- Where tool results too long to give an agent whole are kept (map.luau).
+	output_dir = map.output_dir,
 	dirs = extend.dirs,
 	ask = ask.ask,
 	--- Each run of an agent's code past the sandbox, oldest first (eval.luau).
