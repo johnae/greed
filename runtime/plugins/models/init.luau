@@ -29,11 +29,19 @@ export type TurnRequest = turn.Request
 --- with OpenAI's chat completions API, like Ollama or vLLM), `secret` the
 --- name of its key in greed.secrets, if it needs one. A provider you can
 --- sign in to names its `login` (login.luau); once signed in, that's used
---- instead of the key.
-export type Provider = { kind: string, url: string, secret: string?, login: string? }
+--- instead of the key. `context` is how many tokens its models have room
+--- for, when you'd rather say than have it guessed from the model's name.
+export type Provider = {
+	kind: string,
+	url: string,
+	secret: string?,
+	login: string?,
+	context: number?,
+}
 
---- Which provider and model play a role.
-export type Role = { provider: string, model: string }
+--- Which provider and model play a role, and optionally how many tokens
+--- the model has room for (its context window).
+export type Role = { provider: string, model: string, context: number? }
 
 export type Message = { role: "user" | "assistant", content: string }
 
@@ -103,6 +111,50 @@ function M.resolve(role: string): (Role?, Provider?, string?)
 			`the role "{role}" uses the provider "{chosen.provider}", which isn't set up`
 	end
 	return chosen, provider, nil
+end
+
+-- Context windows of models known by name: the first pattern found in the
+-- model's name (lowercased) says.
+local WINDOWS: { { pattern: string, tokens: number } } = {
+	{ pattern = "claude", tokens = 200000 },
+	{ pattern = "gpt%-4%.1", tokens = 1047576 },
+	{ pattern = "gpt%-5", tokens = 400000 },
+	{ pattern = "gpt%-4o", tokens = 128000 },
+	{ pattern = "gpt%-oss", tokens = 131072 },
+	{ pattern = "^o[134]", tokens = 200000 },
+	{ pattern = "llama%-?3%.[123]", tokens = 131072 },
+	{ pattern = "mistral%-small", tokens = 131072 },
+	{ pattern = "devstral", tokens = 131072 },
+	{ pattern = "glm%-4%.[6-9]", tokens = 200000 },
+	{ pattern = "glm%-4%.5", tokens = 131072 },
+	{ pattern = "qwen3%-coder", tokens = 262144 },
+	{ pattern = "deepseek", tokens = 131072 },
+	{ pattern = "gemma%-?3", tokens = 131072 },
+	{ pattern = "kimi%-k2", tokens = 131072 },
+}
+
+--- What a model of unknown size is taken to have room for, in tokens.
+M.WINDOW = 32000
+
+--- How many tokens the model playing `role` has room for: the role's
+--- `context`, its provider's, what's known of the model by name, or else
+--- `WINDOW`. The second result says whether it's known rather than assumed.
+function M.window(role: string): (number, boolean)
+	local chosen, provider = M.resolve(role)
+	if chosen == nil then
+		return M.WINDOW, false
+	elseif chosen.context then
+		return chosen.context, true
+	elseif provider and provider.context then
+		return provider.context, true
+	end
+	local name = string.lower(chosen.model)
+	for _, known in WINDOWS do
+		if string.find(name, known.pattern) then
+			return known.tokens, true
+		end
+	end
+	return M.WINDOW, false
 end
 
 -- The request to send, as the provider's API wants it.

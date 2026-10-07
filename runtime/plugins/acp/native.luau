@@ -4,7 +4,9 @@
 -- berget or a local Ollama), uses the tools Greed offers every agent plus
 -- editing files and running commands, and asks before it edits or runs
 -- anything, the same way ACP agents ask. Its session is like theirs, so
--- the transcript, the agents overview and subagents work the same.
+-- the transcript, the agents overview and subagents work the same. Each
+-- session is written down as it goes, to take up again (saved.luau), and
+-- compacted as it nears the model's limit (compact.luau).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -12,6 +14,8 @@ local agent = require("@agent")
 local models = require("@models")
 local vcs = require("@vcs")
 local session = require("./session")
+local saved = require("./saved")
+local compact = require("./compact")
 
 type Session = session.Session
 
@@ -41,12 +45,16 @@ type State = {
 	said: { models.Said },
 	role: string,
 	cancelled: boolean,
-	--- Kinds of tool calls you allowed for the rest of the session.
+	--- Kinds of tool calls you allowed for the rest of the session. They
+	--- aren't kept with it: a session taken up again asks again.
 	allowed: { [string]: boolean },
 	--- The tool groups it switched on.
 	caller: agent.Caller,
 	--- Where it works, for its prompt: worked out at its first prompt.
 	env: string?,
+	--- The tokens the provider last said the conversation takes, and how
+	--- many messages of `said` that counted.
+	reported: { tokens: number, at: number }?,
 }
 
 local states: { [number]: State } = {}
@@ -372,6 +380,72 @@ local function say(s: Session, text: string)
 	s.changed()
 end
 
+-- Writes `s` down to take up again, once it has been asked something.
+local function keep(s: Session, state: State)
+	if saved.first_asked(s) == nil then
+		return
+	end
+	local groups = {}
+	for group, on in state.caller.groups do
+		if on then
+			table.insert(groups, group)
+		end
+	end
+	table.sort(groups)
+	saved.store(s, { role = state.role, groups = groups, said = state.said })
+end
+
+-- About how many tokens the next request takes, with `extra` characters
+-- (its system prompt and tools) when the provider hasn't said yet.
+local function estimate(state: State, extra: number): number
+	local reported = state.reported
+	if reported then
+		return reported.tokens + compact.tokens(state.said, reported.at + 1)
+	end
+	return compact.tokens(state.said, 1, extra)
+end
+
+-- Replaces all but the last few turns of what `s` said with the model's
+-- summary of them, shown in the transcript as a folded row with the
+-- summary in it. False and why when it can't.
+local function compact_now(s: Session, state: State): (boolean, string?)
+	local upto = compact.cut(state.said)
+	if upto == nil then
+		return false, "there's too little to compact yet"
+	end
+	local before = s.tool
+	s.tool = "compacting the conversation"
+	s.changed()
+	local role = if models.roles[compact.ROLE] then compact.ROLE else state.role
+	local summary, err = compact.summarise(role, state.said, upto)
+	s.tool = before
+	if summary == nil then
+		table.insert(
+			s.entries,
+			{ kind = "note", text = `couldn't compact the conversation: {err}` }
+		)
+		s.changed()
+		return false, err
+	end
+	state.said = compact.replace(state.said, upto, summary)
+	state.reported = nil
+	s.tokens = compact.tokens(state.said)
+	local tool: session.Tool = {
+		id = `compact-{greed.now()}-{#s.entries}`,
+		title = `conversation compacted ({upto - 1} messages → summary)`,
+		kind = "other",
+		status = "completed",
+		detail = {},
+		output = string.split(summary, "\n"),
+		open = false,
+	}
+	s.tools[tool.id] = tool
+	table.insert(s.entries, { kind = "tool", tool = tool })
+	keep(s, state)
+	s.changed()
+	return true, nil
+end
+
 -- Turns a prompt into an answer: the model's turns, and the tools it asks
 -- for between them, until it's done.
 local function prompt(s: Session, text: string, context: string?): (boolean, string?)
@@ -391,12 +465,19 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	-- The same for every turn of this prompt, so providers can cache it,
 	-- until the hour changes and the time in it with it.
 	local said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
+	-- Once a summary fails, it isn't asked for again until the next prompt.
+	local may_compact = true
 	for _ = 1, MAX_TURNS do
 		if os.date("%Y-%m-%d %H") ~= said_hour then
 			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
 		end
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
+		local room = models.window(state.role) * compact.THRESHOLD
+		local extra = #said_system + #greed.json.encode(specs)
+		if may_compact and estimate(state, extra) > room and compact.cut(state.said) then
+			may_compact = compact_now(s, state)
+		end
 		local turn, err = models.turn(state.role, {
 			system = said_system,
 			said = state.said,
@@ -412,6 +493,9 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			state.said,
 			{ role = "assistant", text = turn.text, calls = turn.calls } :: models.Said
 		)
+		if turn.tokens then
+			state.reported = { tokens = turn.tokens, at = #state.said }
+		end
 		s.tokens = turn.tokens or s.tokens
 		if turn.stop ~= "tools" or #turn.calls == 0 then
 			if turn.stop == "length" then
@@ -430,12 +514,14 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			)
 			s.changed()
 		end
+		keep(s, state)
 		if state.cancelled then
 			table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })
 			break
 		end
 	end
 	s.status = "idle"
+	keep(s, state)
 	s.changed()
 	return true, nil
 end
@@ -457,6 +543,13 @@ local function roles(): { session.Mode }
 	return list
 end
 
+-- Has `s` use the model playing `role`.
+local function use(s: Session, state: State, role: string)
+	state.role = role
+	s.model = role
+	s.window = models.window(role)
+end
+
 local DRIVER: session.Driver = {
 	prompt = prompt,
 	cancel = function(s)
@@ -466,23 +559,36 @@ local DRIVER: session.Driver = {
 		if models.roles[id] == nil then
 			return false, `no model plays the role "{id}"`
 		end
-		states[s.id].role = id
-		s.model = id
+		use(s, states[s.id], id)
 		s.changed()
 		return true, nil
 	end,
 }
 
+-- A new session's id: when it started, and a few letters to tell apart
+-- sessions started in the same second.
+local function new_id(): string
+	local salt = greed.hash.sha256(`{greed.now()} {math.random()}`)
+	return `{os.date("%Y%m%d-%H%M%S")}-{string.sub(salt, 1, 8)}`
+end
+
 --- A session of Greed's own agent for the project at `root`, using the
---- model in role `role` (by default `M.ROLE`, else `reasoning`).
+--- model in role `role` (by default `M.ROLE`, else `reasoning`). With
+--- `resume`, the id of a session kept from before, it takes that up where
+--- it left off: its transcript, what was said, its model and tool groups.
 function M.start(opts: {
 	name: string,
 	agent: string,
 	root: string,
 	role: string?,
+	resume: string?,
 	decide: ((permission: session.Permission) -> string?)?,
 	changed: () -> (),
-}): Session
+}): (Session?, string?)
+	local kept = if opts.resume then saved.load(opts.root, opts.resume) else nil
+	if opts.resume and kept == nil then
+		return nil, "its conversation isn't kept any more"
+	end
 	local s = session.start_driven({
 		name = opts.name,
 		agent = opts.agent,
@@ -493,11 +599,47 @@ function M.start(opts: {
 		driver = DRIVER,
 	})
 	local role = opts.role or (if models.roles[M.ROLE] then M.ROLE else "reasoning")
-	states[s.id] =
+	local state: State =
 		{ said = {}, role = role, cancelled = false, allowed = {}, caller = agent.caller() }
+	states[s.id] = state
+	s.session_id = if kept then kept.id else new_id()
+	if kept then
+		s.entries = kept.entries
+		for _, entry in s.entries do
+			if entry.tool then
+				s.tools[entry.tool.id] = entry.tool
+			end
+		end
+		table.insert(s.entries, { kind = "note", text = "taken up again" })
+		state.said = kept.said
+		if models.roles[kept.role] then
+			role = kept.role
+		end
+		for _, group in kept.groups do
+			state.caller.groups[group] = true
+		end
+	end
 	s.models = roles()
-	s.model = role
-	return s
+	use(s, state, role)
+	return s, nil
+end
+
+--- Compacts the conversation of `s`, a session of Greed's own agent, now:
+--- the model summarises all but its last few turns. False and why when it
+--- can't.
+function M.compact(s: Session): (boolean, string?)
+	local state = states[s.id]
+	if state == nil then
+		return false, "only Greed's own agent can be compacted here"
+	elseif s.status == "working" or s.status == "waiting" then
+		return false, "the agent is working; wait for it or stop it first"
+	end
+	s.status = "working"
+	s.since = greed.now()
+	local ok, err = compact_now(s, state)
+	s.status = "idle"
+	s.changed()
+	return ok, err
 end
 
 --- Switches tool group `group` on for the session `s`, as the agent would

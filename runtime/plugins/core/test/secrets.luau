@@ -28,7 +28,7 @@ test("the secrets file can't be read or written as a file", function(t)
 		not ok and string.find(tostring(err), "only read through greed.secrets", 1, true),
 		tostring(err)
 	)
-	ok = pcall(greed.fs.write, file, "{}")
+	ok = pcall(greed.fs.write, file, "{}", nil)
 	assert(not ok, "nor written")
 end)
 

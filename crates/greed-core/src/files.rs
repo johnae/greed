@@ -1,6 +1,7 @@
 //! Writing users' files.
 
 use std::io::Write;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -14,13 +15,44 @@ pub fn write(
 ) -> std::io::Result<()> {
     let path = resolve(path)?;
     let permissions = std::fs::metadata(&path).ok().map(|m| m.permissions());
-    let (temp, file) = match create_temp(&path) {
+    let (temp, file) = match create_temp(&path, 0o666) {
         Ok(created) => created,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
             return write_in_place(&path, contents);
         }
         Err(err) => return Err(err),
     };
+    replace(&path, &temp, file, permissions, contents)
+}
+
+/// Writes a file whole as [`write`] does, but only you can read or write
+/// it (mode 0600) whatever it was before, and folders made for it are only
+/// yours. It's never written in place.
+pub fn write_private(
+    path: &Path,
+    contents: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let path = resolve(path)?;
+    if let Some(dir) = path.parent() {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+    }
+    let (temp, file) = create_temp(&path, 0o600)?;
+    let private = std::fs::Permissions::from_mode(0o600);
+    replace(&path, &temp, file, Some(private), contents)
+}
+
+/// Writes `contents` to `file`, the temporary file at `temp`, and moves it
+/// over `path` with `permissions`; the temporary file goes if that fails.
+fn replace(
+    path: &Path,
+    temp: &Path,
+    file: std::fs::File,
+    permissions: Option<std::fs::Permissions>,
+    contents: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let written = (|| {
         let mut out = std::io::BufWriter::new(file);
         contents(&mut out)?;
@@ -29,12 +61,12 @@ pub fn write(
             .map_err(std::io::IntoInnerError::into_error)?;
         file.sync_all()?;
         if let Some(permissions) = permissions {
-            std::fs::set_permissions(&temp, permissions)?;
+            std::fs::set_permissions(temp, permissions)?;
         }
-        std::fs::rename(&temp, &path)
+        std::fs::rename(temp, path)
     })();
     if written.is_err() {
-        let _ = std::fs::remove_file(&temp);
+        let _ = std::fs::remove_file(temp);
     }
     written
 }
@@ -70,7 +102,8 @@ fn resolve(path: &Path) -> std::io::Result<PathBuf> {
     )))
 }
 
-fn create_temp(path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+/// A new temporary file beside `path`, made with `mode` (less the umask).
+fn create_temp(path: &Path, mode: u32) -> std::io::Result<(PathBuf, std::fs::File)> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let name = path
         .file_name()
@@ -85,6 +118,7 @@ fn create_temp(path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(mode)
             .open(&temp)
         {
             Ok(file) => return Ok((temp, file)),

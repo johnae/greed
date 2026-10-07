@@ -4,6 +4,7 @@
 
 use std::cmp::Ordering;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
@@ -84,6 +85,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let stat = lua.create_table()?;
             stat.set("kind", kind)?;
             stat.set("size", if meta.is_dir() { 0 } else { meta.len() })?;
+            stat.set("mode", meta.permissions().mode() & 0o7777)?;
             stat.into_lua_multi(lua)
         })?,
     )?;
@@ -109,19 +111,29 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
     fs.set(
         "write",
-        lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
-            guard_write(lua, Path::new(&path))?;
-            let written = Path::new(&path)
-                .parent()
-                .map_or(Ok(()), std::fs::create_dir_all)
-                .and_then(|()| {
-                    crate::files::write(Path::new(&path), |out| out.write_all(&text.as_bytes()))
-                });
-            match written {
-                Ok(()) => true.into_lua_multi(lua),
-                Err(err) => failure(lua, format!("can't write {path}: {err}")),
-            }
-        })?,
+        lua.create_function(
+            |lua, (path, text, opts): (String, mlua::LuaString, Option<Table>)| {
+                guard_write(lua, Path::new(&path))?;
+                let private = match opts {
+                    Some(opts) => opts.get::<Option<bool>>("private")?.unwrap_or(false),
+                    None => false,
+                };
+                let target = Path::new(&path);
+                let contents = |out: &mut dyn std::io::Write| out.write_all(&text.as_bytes());
+                let written = if private {
+                    crate::files::write_private(target, contents)
+                } else {
+                    target
+                        .parent()
+                        .map_or(Ok(()), std::fs::create_dir_all)
+                        .and_then(|()| crate::files::write(target, contents))
+                };
+                match written {
+                    Ok(()) => true.into_lua_multi(lua),
+                    Err(err) => failure(lua, format!("can't write {path}: {err}")),
+                }
+            },
+        )?,
     )?;
 
     fs.set(

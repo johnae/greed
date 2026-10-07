@@ -404,6 +404,7 @@ a plugin needs no `rm` or `mv`. Each returns `true`, or nil and why:
 
 ```luau
 greed.fs.write(path, text)                        -- creates its folders too
+greed.fs.write(path, text, { private = true })    -- readable only by you (0600)
 greed.fs.mkdir(dir)                               -- and the folders above it
 greed.fs.copy(from, to)
 greed.fs.rename(from, to)

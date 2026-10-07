@@ -814,6 +814,25 @@ fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
 }
 
 #[test]
+fn a_private_file_is_only_yours_even_when_it_was_not_before() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = plugin_dir("fs-private", &[("open.txt", "")]);
+    std::fs::set_permissions(dir.join("open.txt"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let h = host("");
+    let modes = eval_in(
+        &h,
+        &dir,
+        "greed.fs.write(DIR .. '/open.txt', 'secret', { private = true })
+         greed.fs.write(DIR .. '/new/deeper/x.txt', 'secret', { private = true })
+         local function mode(p) return string.format('%o', greed.fs.stat(DIR .. p).mode) end
+         return mode('/open.txt') .. ' ' .. mode('/new/deeper/x.txt') .. ' ' .. mode('/new/deeper')
+           .. ' ' .. greed.fs.read(DIR .. '/open.txt')",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(modes, "600 600 700 secret");
+}
+
+#[test]
 fn folders_are_made_and_files_copied_moved_and_removed() {
     let dir = plugin_dir("fs-tree", &[("a.txt", "a\n"), ("full/b.txt", "b\n")]);
     let h = host("");

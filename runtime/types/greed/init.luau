@@ -1218,6 +1218,8 @@ export type FileInfo = {
 	kind: "file" | "dir" | "other",
 	--- Size in bytes; 0 for a directory.
 	size: number,
+	--- Its permission bits, like 420 (644 in octal, as `string.format("%o", mode)` shows).
+	mode: number,
 }
 
 --- SHA-256 digests as lowercase hex, for checking a download or telling
@@ -1239,8 +1241,9 @@ export type Fs = {
 	--- What's at `path`; nil if nothing is, and nil and why when it can't tell, as when a folder above it can't be read.
 	stat: (path: string) -> (FileInfo?, string?),
 	--- Replaces the file's contents with `text`, creating it and its folders
-	--- if needed.
-	write: (path: string, text: string) -> (boolean?, string?),
+	--- if needed. It's written whole or not at all. With `private`, only you
+	--- can read it (mode 0600), and folders made for it are only yours.
+	write: (path: string, text: string, opts: { private: boolean? }?) -> (boolean?, string?),
 	--- Makes the folder at `path` and any missing folders above it. Needs "fs.write".
 	mkdir: (path: string) -> (boolean?, string?),
 	--- Removes the file, link or empty folder at `path`; with `recursive`, a folder and everything in it. Nothing being there counts as removed. It refuses (an error) the root, your home folder, a path with `..` and a folder holding Greed's approvals or secrets. Needs "fs.write".

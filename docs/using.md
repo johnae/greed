@@ -683,6 +683,11 @@ models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", s
 models.roles.review = { provider = "work", model = "reviewer-1" }
 ```
 
+A role or provider can also say how many tokens its model has room for,
+as `context = 128000`. Greed knows that for well-known models by name and
+assumes 32k for others; Greed's own agent uses it to compact long
+conversations (see [Agents](agents.md#greeds-own-agent)).
+
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their
 own servers. The first time any other key would go to an address, Greed

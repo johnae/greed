@@ -280,8 +280,42 @@ first. Its edits go
 through the file's buffer, so `u` takes them back, and it hears what the
 language server reports about the file right after. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
-in the project itself, without a workspace of its own, and its sessions
-aren't kept to take up after a restart.
+in the project itself, without a workspace of its own.
+
+Each session is written down after every turn, so `space i r` lists them
+with the other agents' sessions and takes one up where it left off: the
+transcript comes back and the conversation goes on with everything said
+so far, the same model and the tool groups it had on. Your "allow always"
+answers aren't kept, so a session taken up asks again. The files are in
+Greed's data folder (`~/.local/share/greed/agent-sessions`), one folder
+per project, readable only by you, since they hold what you typed and
+what tools returned. Long tool output is cut there. The newest 50
+sessions of each project are kept and older ones deleted
+(`:set agent-sessions-kept 100` keeps more); closing one with `x` in the
+agents overview deletes it.
+
+When a conversation nears the model's limit (80% of its context window),
+it's compacted before the next request: the model summarises everything
+but the last four turns, and the summary takes their place. The
+transcript shows a folded `conversation compacted (N messages → summary)`
+row; `tab` on it shows the summary. `:agent-compact` does it by hand. The
+summary goes to the model as its own earlier words rather than as
+instructions, and the system prompt (your project's instructions, where
+it works) is built fresh as always. The model playing the `compact` role
+summarises, if you set one, and otherwise the session's own model:
+
+```luau
+models.roles.compact = { provider = "anthropic", model = "claude-haiku-4-5-20251001" }
+```
+
+Greed knows the context window of Claude, GPT and common open models
+(Llama 3, Mistral Small, Qwen, GLM, DeepSeek, gpt-oss) by their names, and
+assumes 32k tokens for any other. Set `context` on the role or provider
+when it's wrong, as for an Ollama model whose context you've raised:
+
+```luau
+models.roles.agent = { provider = "ollama", model = "qwen2.5-coder", context = 128000 }
+```
 
 | Keys | |
 |---|---|
@@ -289,6 +323,7 @@ aren't kept to take up after a restart.
 | `space i o` (`:agents`) | The agents: what each is doing, and their changes |
 | `space i r` (`:agent-resume`) | Take up an earlier session with an agent, where it left off |
 | `:agent-fork` | Fork the agent of the transcript you're in |
+| `:agent-compact` | Compact the conversation with Greed's own agent now |
 
 ```text
 ▍ You
@@ -317,7 +352,7 @@ agent's turn. The box's bottom line says what the agent is doing (the
 tool it runs, or thinking) and for how long this turn has taken, `waiting
 for you` when it asks something, and how many tokens of the model's
 context the conversation takes when the agent says (out of how many it
-has room for, when it says that too). With the effects option on
+has room for, when it says that too; Greed's own agent always does). With the effects option on
 (`:set effects true`), running tools spin, the status shimmers while the
 agent thinks and the waiting chip pulses; nothing moves while the agent
 is idle. Themes style it with `agent.you` (your messages' background),
@@ -414,7 +449,8 @@ Sessions are kept in the cache folder until you close them with `x`, so
 after a restart `space i r` lists them, with what you asked first, and
 takes one up: the agent tells the conversation again into a new
 transcript, and its workspace is still there. Agents that can't take up a
-session (or fork one) say so.
+session (or fork one) say so. Greed's own agent keeps its sessions itself,
+as described above.
 
 An agent can start another with the `subagent` tool: for a search across
 the project, a side task or a second opinion, without filling its own

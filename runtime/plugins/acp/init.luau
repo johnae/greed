@@ -72,6 +72,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-sessions-kept",
+	doc = "How many sessions with Greed's own agent are kept per project to take up again; older ones are deleted",
+	default = 50,
+})
+
+greed.option.define({
 	name = "agent-workspace-edits",
 	doc = "Let agents in a workspace of their own edit, move and delete files there without asking",
 	default = true,
@@ -195,18 +201,23 @@ local function launch(
 		changed(s)
 	end
 	if agent.native then
-		if workspace or extra then
+		if workspace or (extra and extra.fork) then
 			return nil,
-				`{name} works in the project itself; it can't have a workspace, be taken up or forked yet`
+				`{name} works in the project itself; it can't have a workspace or be forked yet`
 		end
-		s = native.start({
+		local started, err = native.start({
 			name = name,
 			agent = agent.name,
 			root = root,
 			role = agent.model,
+			resume = extra and extra.load,
 			decide = decides,
 			changed = changes,
 		})
+		if started == nil then
+			return nil, err
+		end
+		s = started
 	else
 		s = session.start({
 			name = name,
@@ -267,8 +278,8 @@ function M.saved(root: string): { Saved }
 	return saved.list(root, sessions)
 end
 
---- Takes up a session kept from before: the agent tells the conversation
---- again, into a new transcript.
+--- Takes up a session kept from before, in a new transcript: an ACP agent
+--- tells the conversation again, Greed's own reads back what it kept.
 function M.resume(entry: Saved): (Session?, string?)
 	local agent = agents.named(entry.agent)
 	if agent == nil then
@@ -335,6 +346,11 @@ end
 function M.prompt(s: Session, text: string): (boolean, string?)
 	return session.prompt(s, text)
 end
+
+--- Compacts the conversation of `s`, a session of Greed's own agent: the
+--- model summarises all but its last few turns, which saves room in its
+--- context. It happens by itself near the model's limit.
+M.compact = native.compact
 
 --- Switches tool group `group` on for `s`, a session of Greed's own agent,
 --- as the agent would with the tools tool, e.g. to start it with the tools
@@ -575,6 +591,19 @@ greed.command({
 			return
 		end
 		M.show(fork)
+	end,
+})
+
+greed.command({
+	name = "agent-compact",
+	doc = "Compact the conversation with Greed's own agent: the model summarises all but the last few turns",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			return
+		end
+		local ok, err = M.compact(s)
+		greed.echo(if ok then "compacted the conversation" else `can't compact: {err}`)
 	end,
 })
 

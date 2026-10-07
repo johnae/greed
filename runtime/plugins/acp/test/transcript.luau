@@ -222,5 +222,5 @@ test("tool rows say what came back in a few words, never as JSON", function(t)
 			bottom ..= piece.text
 		end
 	end
-	assert(string.find(bottom, " 1.5k tokens ─╯", 1, true), bottom)
+	assert(string.find(bottom, " 1.5k / 200k tokens ─╯", 1, true), bottom)
 end)

@@ -6,12 +6,24 @@ local models: any = require("@models")
 local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, native = true }
 
 -- Stands in for the model: each turn returns the next of `turns`, and the
--- requests it got are kept.
-local function script(turns: { any }): { any }
+-- requests it got are kept, as they were then. Requests to summarise the
+-- conversation are answered with `summary` (false fails them) and kept
+-- apart.
+local function script(turns: { any }, summary: (string | false)?): ({ any }, { any })
 	local asked: { any } = {}
+	local summarised: { any } = {}
 	local at = 0
-	models.turn = function(_role, request, on_text)
-		table.insert(asked, table.clone(request))
+	models.turn = function(_role, request, on_text): (any, string?)
+		local copy = table.clone(request)
+		copy.said = table.move(request.said, 1, #request.said, 1, {})
+		if string.find(request.system or "", "You summarise", 1, true) then
+			table.insert(summarised, copy)
+			if summary == false then
+				return nil, "the model is busy"
+			end
+			return { text = summary or "the summary", calls = {}, stop = "done" }, nil
+		end
+		table.insert(asked, copy)
 		at += 1
 		local turn = turns[at] or { text = "", calls = {}, stop = "done" }
 		if on_text and turn.text ~= "" then
@@ -19,7 +31,7 @@ local function script(turns: { any }): { any }
 		end
 		return turn, nil
 	end
-	return asked
+	return asked, summarised
 end
 
 -- Starts Greed's agent in a project and sends `text`, in the background,
@@ -371,4 +383,244 @@ test("Greed's tools ask by what they do: reading and reviewing don't, the rest d
 			end,
 		})
 	end
+end)
+
+local compact = require("../compact")
+
+-- A turn calling Greed's `project` tool, which runs without asking.
+local function looks(id: string, tokens: number?): any
+	return {
+		text = "",
+		calls = { { id = id, name = "project", input = {} } },
+		stop = "tools",
+		tokens = tokens,
+	}
+end
+
+-- The file the session `s` is kept in, if it is.
+local function kept_file(s: any): string?
+	local base = `{greed.fs.dirs().data}/agent-sessions`
+	local folders: { greed.DirEntry } = greed.fs.list(base) or {}
+	for _, folder in folders do
+		local path = `{base}/{folder.name}/{s.session_id}.json`
+		if greed.fs.stat(path) then
+			return path
+		end
+	end
+	return nil
+end
+
+test("a session is kept as it goes and taken up again where it left off", function(t)
+	local asked = script({
+		looks("c1"),
+		{ text = "It's a project.", calls = {}, stop = "done" },
+		{ text = "Still here.", calls = {}, stop = "done" },
+	})
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = assert(acp.start(GREED, dir))
+	acp.switch_on(s, "refactor")
+	acp.prompt(s, "what is this\nand more")
+	assert(#acp.saved(dir) == 0, "a running session isn't offered")
+	acp.stop(s)
+	local list = acp.saved(dir)
+	assert(#list == 1, `{#list} kept`)
+	assert(list[1].title == "what is this" and list[1].agent == "greed", list[1].title)
+	local again, err = acp.resume(list[1])
+	assert(again, err)
+	assert(again.session_id == s.session_id, "the same session")
+	assert(
+		said(again)
+			== "user: what is this\nand more | tool: project | agent: It's a project. | note: taken up again",
+		said(again)
+	)
+	assert(again.tools.c1 and again.tools.c1.status == "completed", "its tools fold as before")
+	acp.prompt(again, "and now")
+	local history = asked[3].said
+	assert(#history == 5, `{#history} messages`)
+	assert(history[1].text == "what is this\nand more" and history[2].calls[1].id == "c1")
+	assert(history[3].role == "tool" and history[3].call == "c1", "with the tool's result")
+	assert(history[4].text == "It's a project." and history[5].text == "and now")
+	local offered = {}
+	for _, tool in asked[3].tools do
+		offered[tool.name] = true
+	end
+	assert(offered.rename, "the groups it had are on again")
+	acp.close(again)
+	acp.close(s)
+end)
+
+test("kept sessions are only yours to read, and long output isn't all kept", function(t)
+	local agent = require("@agent")
+	agent.tool({
+		name = "test_long",
+		description = "a lot",
+		run = function()
+			return string.rep(string.rep("x", 50) .. "\n", 1000)
+		end,
+	})
+	script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "test_long", input = {} } },
+			stop = "tools",
+		},
+		{ text = "Long.", calls = {}, stop = "done" },
+	})
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "go")
+	local file = assert(kept_file(s), "kept")
+	local folder = assert(string.match(file, "^(.*)/[^/]+$"))
+	local info = assert(greed.fs.stat(file))
+	assert(string.format("%o", info.mode) == "600", string.format("%o", info.mode))
+	assert(string.format("%o", assert(greed.fs.stat(folder)).mode) == "700", "and its folder")
+	local listed = assert(greed.fs.stat(`{folder}/index.json`))
+	assert(string.format("%o", listed.mode) == "600", "and the list of them")
+	local text = greed.fs.read(file)
+	local kept = greed.json.decode(assert(text))
+	local output = kept.entries[2].tool.output
+	assert(#output == 201 and output[201] == "(800 more lines not kept)", output[201])
+	assert(#kept.said[3].text < 30100, "the model's copy is cut too")
+	acp.close(s)
+	agent.tool({
+		name = "test_long",
+		description = "gone",
+		run = function()
+			return nil
+		end,
+	})
+end)
+
+test("closing a session forgets it, and only the newest are kept", function(t)
+	script({})
+	local dir = t:tempdir({})
+	greed.option.set("agent-sessions-kept", 2)
+	local started = {}
+	for i = 1, 3 do
+		local s = assert(acp.start(GREED, dir))
+		acp.prompt(s, `question {i}`)
+		acp.stop(s)
+		table.insert(started, s)
+	end
+	greed.option.set("agent-sessions-kept", 50)
+	local list = acp.saved(dir)
+	assert(#list == 2, `{#list} kept`)
+	assert(kept_file(started[1]) == nil, "the oldest went")
+	local file = assert(kept_file(started[2]))
+	acp.close(started[2])
+	assert(not greed.fs.stat(file), "closing deletes its file")
+	list = acp.saved(dir)
+	assert(#list == 1 and list[1].title == "question 3", "and it's not offered")
+	acp.close(started[3])
+end)
+
+test("a session whose file is gone can't be taken up", function(t)
+	script({})
+	local dir = t:tempdir({})
+	local s = assert(acp.start(GREED, dir))
+	acp.prompt(s, "hi")
+	acp.stop(s)
+	local entry = acp.saved(dir)[1]
+	greed.fs.remove(assert(kept_file(s)))
+	local again, err = acp.resume(entry)
+	assert(again == nil and string.find(tostring(err), "isn't kept", 1, true), tostring(err))
+end)
+
+-- Runs a session with a model that has room for 1000 tokens: a first
+-- prompt of three tool calls, the last turn reporting `tokens`, then a
+-- second prompt. Returns the session, the requests and the summaries asked.
+local function near_limit(t: test.TestContext, tokens: number): (any, { any }, { any })
+	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
+	local asked, summarised = script({
+		looks("c1", 100),
+		looks("c2", 200),
+		looks("c3", 300),
+		{ text = "first done", calls = {}, stop = "done", tokens = tokens },
+		{ text = "second", calls = {}, stop = "done" },
+	}, "they looked at the project three times")
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "hi")
+	acp.prompt(s, "next")
+	models.roles.agent = nil
+	return s, asked, summarised
+end
+
+test("a summary that fails says so, and isn't asked for again that prompt", function(t)
+	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
+	local asked, summarised = script({
+		looks("c1", 100),
+		looks("c2", 200),
+		looks("c3", 900),
+		looks("c4", 910),
+		looks("c5", 920),
+		looks("c6", 930),
+		{ text = "done anyway", calls = {}, stop = "done" },
+	}, false)
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "hi")
+	models.roles.agent = nil
+	assert(#summarised == 1, `{#summarised} summaries asked`)
+	assert(
+		string.find(said(s), "note: couldn't compact the conversation: the model is busy", 1, true),
+		said(s)
+	)
+	assert(#asked[7].said == 13 and asked[7].said[1].text == "hi", "it goes on with all of it")
+	acp.close(s)
+end)
+
+test("below the limit, nothing is compacted", function(t)
+	local s, asked, summarised = near_limit(t, 700)
+	assert(s.window == 1000, tostring(s.window))
+	assert(#summarised == 0, "not summarised")
+	assert(#asked[5].said == 9 and asked[5].said[1].text == "hi", "all of it goes")
+	acp.close(s)
+end)
+
+test("near the model's limit, all but the last turns become the model's summary", function(t)
+	local s, asked, summarised = near_limit(t, 850)
+	assert(#summarised == 1, `{#summarised} summaries`)
+	local quoted = summarised[1].said[1].text :: string
+	assert(string.find(quoted, "User:\nhi", 1, true), quoted)
+	assert(string.find(quoted, "Assistant called project", 1, true), quoted)
+	assert(string.find(quoted, "Result of project", 1, true), quoted)
+	local history = asked[5].said
+	assert(#history == 8, `{#history} messages`)
+	assert(history[1].role == "user" and history[1].text == compact.NOTE, "it says so")
+	assert(history[2].role == "assistant", "the summary is the assistant's words")
+	assert(history[2].text == "they looked at the project three times", history[2].text)
+	assert(
+		history[3].calls[1].id == "c2" and history[4].call == "c2",
+		"the last turns as they were"
+	)
+	assert(history[8].text == "next", "and the new message")
+	local system = asked[5].system :: string
+	assert(string.find(system, "Greed's coding agent", 1, true), "its instructions are fresh")
+	assert(not string.find(system, "three times", 1, true), "and the summary isn't in them")
+	local row = s.entries[#s.entries - 1].tool
+	assert(row and row.title == "conversation compacted (3 messages → summary)", said(s))
+	assert(row.output[1] == "they looked at the project three times" and not row.open, "folded")
+	acp.close(s)
+end)
+
+test("agent-compact compacts by hand, once there's something to compact", function(t)
+	local asked = script({
+		looks("c1"),
+		looks("c2"),
+		looks("c3"),
+		looks("c4"),
+		{ text = "done", calls = {}, stop = "done" },
+	})
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.show(s)
+	t:run("agent-compact")
+	assert(#s.entries == 0, "nothing to compact yet")
+	acp.prompt(s, "hi")
+	t:run("agent-compact")
+	assert(s.status == "idle", s.status)
+	local row = s.entries[#s.entries].tool
+	assert(row and row.title == "conversation compacted (3 messages → summary)", said(s))
+	acp.prompt(s, "next")
+	local history = asked[6].said
+	assert(history[1].text == compact.NOTE and history[2].text == "the summary", "compacted")
+	assert(history[3].calls[1].id == "c2", "from the last turns on")
+	acp.close(s)
 end)

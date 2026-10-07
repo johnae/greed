@@ -23,6 +23,24 @@ test("roles name a provider and model, and a missing one says how to set it", fu
 	models.roles.poetry = nil
 end)
 
+test("a model's context window: the role's, its provider's, known by name, or assumed", function()
+	assert(models.window("reasoning") == 200000, "a Claude model is known")
+	models.roles.poetry = { provider = "ollama", model = "some-model" }
+	local size, known = models.window("poetry")
+	assert(size == models.WINDOW and not known, "an unknown model is assumed small")
+	models.roles.poetry = { provider = "berget", model = "meta-llama/Llama-3.3-70B-Instruct" }
+	assert(models.window("poetry") == 131072, "known by name, whoever serves it")
+	models.providers.small = { kind = "openai", url = "http://localhost:1", context = 8000 }
+	models.roles.poetry = { provider = "small", model = "gpt-5" }
+	assert(models.window("poetry") == 8000, "the provider says")
+	models.roles.poetry = { provider = "small", model = "gpt-5", context = 4000 }
+	size, known = models.window("poetry")
+	assert(size == 4000 and known, "the role says first")
+	assert(models.window("nobody") == models.WINDOW, "no role, assumed")
+	models.roles.poetry = nil
+	models.providers.small = nil
+end)
+
 test(":models lists each role and whether its key is found", function(t)
 	t:buffer("|x")
 	t:run("models")
