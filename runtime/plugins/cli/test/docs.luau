@@ -14,6 +14,12 @@ test("docs writes the plugins, options and API pages from the running editor", f
 			and string.find(plugins, "| Move to the start of the buffer", 1, true),
 		"commands come with their keys"
 	)
+	-- Keys bound by role, after the leader, or for one style's role.
+	assert(string.find(plugins, "`g d` (every style's command mode)", 1, true), "a role")
+	assert(string.find(plugins, "`k` (after the leader)", 1, true), "the leader")
+	greed.keymap.bind({ style = "vim", role = "command" }, { ["z z z"] = "goto-definition" })
+	plugins = greed.fs.read(dir .. "/" .. cli.docs.write(dir)[3]) :: string
+	assert(string.find(plugins, "`z z z` (vim's command mode)", 1, true), "one style's role")
 	local options = greed.fs.read(dir .. "/options.md") :: string
 	assert(string.find(options, "| `motion-hints` | `false` | core |", 1, true), options)
 	local api = greed.fs.read(dir .. "/api.md") :: string

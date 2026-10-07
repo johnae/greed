@@ -18,16 +18,34 @@ local function literal(value: greed.OptionValue): string
 	return if type(value) == "string" then string.format("%q", value) else tostring(value)
 end
 
+-- A keymap layer's mode part in words: a mode ("vim"), a role in every
+-- style ("role:command"), one style's role ("vim:command") or the leader.
+-- nil for a buffer kind alone.
+local function mode_words(name: string): string?
+	local before, after = string.match(name, "^([^:]+):(.+)$")
+	if name == "leader" then
+		return "after the leader"
+	elseif before == "role" then
+		return `every style's {after} mode`
+	elseif before == "kind" then
+		return nil
+	elseif before then
+		return `{before}'s {after} mode`
+	end
+	return name
+end
+
 -- Where a key is bound, from the keymap layers it's in: each a mode, a
--- buffer kind ("kind:tree"), both, or "global". E.g. "normal, vim; in tree
+-- buffer kind ("kind:tree"), both, or "global". E.g. "helix, vim; in tree
 -- buffers".
 local function where(layers: { string }): string
 	local modes: { string } = {}
 	local kinds: { string } = {}
 	for _, layer in layers do
-		local mode = string.match(layer, "^(%S+)")
+		local first = string.match(layer, "^(%S+)")
+		local mode = if first then mode_words(first) else nil
 		local kind = string.match(layer, "kind:(%S+)")
-		if mode and not string.find(mode, ":", 1, true) and not table.find(modes, mode) then
+		if mode and not table.find(modes, mode) then
 			table.insert(modes, mode)
 		end
 		if kind and not table.find(kinds, kind) then
