@@ -24,7 +24,14 @@ M.dirs = {
 	fallback = data .. "/plugins",
 }
 
-type Staged = { files: { [string]: string }, dir: string, report: string, passed: boolean }
+type Staged = {
+	files: { [string]: string },
+	dir: string,
+	report: string,
+	passed: boolean,
+	--- The report as the install review shows it.
+	shown: string,
+}
 
 -- The latest try of each plugin, by name.
 local staged: { [string]: Staged } = {}
@@ -153,7 +160,12 @@ local NEEDS_APPROVAL = "needs approval:"
 --- plugin `declares` don't stop it: before it's installed nothing is
 --- approved, and installing approves what it asks for (and checks it
 --- again). Needing something it doesn't declare is a failure like any.
-function M.describe(report: greed.PluginCheck, declares: { string }?): (string, boolean)
+--- `for_user` words it for the install review rather than the agent.
+function M.describe(
+	report: greed.PluginCheck,
+	declares: { string }?,
+	for_user: boolean?
+): (string, boolean)
 	local declared: { string } = declares or {}
 	local lines, passed = {}, true
 	if report.types.skipped then
@@ -191,10 +203,13 @@ function M.describe(report: greed.PluginCheck, declares: { string }?): (string, 
 			table.insert(lines, `  {f.file}: {f.name}: {f.message}`)
 		end
 		if waiting > 0 then
+			local next_step = if for_user
+				then "they run again once you install it"
+				else "plugin_install may go ahead"
 			table.insert(
 				lines,
 				`  {waiting} of them only need what the plugin asks for, which installing it approves; `
-					.. "plugin_install may go ahead"
+					.. next_step
 			)
 		end
 	end
@@ -229,8 +244,10 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 		dir = `{M.dirs.staging}/{name}-{tries}`
 	until greed.fs.stat(dir) == nil
 	write_files(dir, files)
-	local report, passed = M.describe(greed.plugin.check(dir), declared(dir))
-	staged[name] = { files = files, dir = dir, report = report, passed = passed }
+	local check, declares = greed.plugin.check(dir), declared(dir)
+	local report, passed = M.describe(check, declares)
+	local shown = M.describe(check, declares, true)
+	staged[name] = { files = files, dir = dir, report = report, passed = passed, shown = shown }
 	return report, passed
 end
 
@@ -274,7 +291,7 @@ function M.install(name: string): string
 	for _, line in approvals.lines(greed.plugin.describe(s.dir)) do
 		table.insert(lines, line)
 	end
-	for _, line in { "", s.report, "", "a  install, approve and load it    r  reject it" } do
+	for _, line in { "", s.shown, "", "a  install, approve and load it    r  reject it" } do
 		table.insert(lines, line)
 	end
 	local paths = {}
