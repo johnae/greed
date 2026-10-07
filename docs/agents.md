@@ -646,7 +646,7 @@ An agent can extend Greed while you work:
    files, and tests that fail only because a capability isn't approved yet
    don't stop it going to you: once you install it, they run again with
    what you approved, and the agent hears how they did.
-3. `plugin_install` asks you. A panel shows what the plugin may do beyond
+3. `plugin_install` asks you. A float shows what the plugin may do beyond
    the editor (its [capabilities](plugins.md#capabilities), like running
    programs or reading files), the code and the check results; `a` installs
    it into `~/.config/greed/plugins` (or `~/.local/share/greed/plugins` when

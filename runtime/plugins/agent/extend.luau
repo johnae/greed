@@ -275,7 +275,8 @@ function M.install(name: string): string
 	end
 	local buffer =
 		greed.create_buffer("plugin-review", table.concat(lines, "\n"), { readonly = true })
-	local view = greed.panel(buffer, { side = "right", width = "60%", title = `Install {name}?` })
+	-- A float over everything, so it reads at full width whatever panels are open.
+	local view = greed.float(buffer, { title = `Install {name}?`, width = "80%", height = "85%" })
 	local r = { done = greed.signal(), view = view }
 	review = r
 	greed.echo(`an agent wants to install the plugin {name} - a installs it, r rejects it`)
