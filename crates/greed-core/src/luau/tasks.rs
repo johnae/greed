@@ -56,6 +56,9 @@ pub(crate) struct Tasks {
     /// The timers of coroutines whose time slice ran out, which carry on as
     /// soon as the editor had a turn.
     sliced: HashSet<u64>,
+    /// The coroutine of the command the last key typed ran, while it runs,
+    /// so keys typed after it can wait their turn.
+    key_command: Option<usize>,
 }
 
 impl Default for Tasks {
@@ -77,6 +80,7 @@ impl Default for Tasks {
             worked: HashMap::new(),
             finished: HashMap::new(),
             sliced: HashSet::new(),
+            key_command: None,
         }
     }
 }
@@ -101,6 +105,39 @@ impl Tasks {
         self.limits.remove(&id);
         self.labels.remove(&id);
         self.worked.remove(&id);
+        if self.key_command == Some(id) {
+            self.key_command = None;
+        }
+    }
+
+    /// Whether coroutine `id` is at work: cut into time slices, or waiting
+    /// on a timer, a job, or another coroutine that is. Waiting on anything
+    /// else, like a key or a signal (a prompt's answer), is waiting for the
+    /// user.
+    fn at_work(&self, mut id: usize, jobs: &super::jobs::Jobs) -> bool {
+        // Bounded, in case coroutines wait on each other in a ring.
+        for _ in 0..64 {
+            let Some(token) = self
+                .waiting
+                .iter()
+                .find(|(_, thread)| key(thread) == id)
+                .map(|(token, _)| *token)
+            else {
+                return false;
+            };
+            if self.timers.iter().any(|(_, t)| *t == token) || jobs.is_running(token) {
+                return true;
+            }
+            match self
+                .finished
+                .iter()
+                .find(|(_, tokens)| tokens.contains(&token))
+            {
+                Some((other, _)) => id = *other,
+                None => return false,
+            }
+        }
+        false
     }
 
     /// Stops every coroutine running `owner`'s code: those waiting are
@@ -131,6 +168,28 @@ impl Tasks {
         self.timers.retain(|(_, token)| !dropped.contains(token));
         (dropped, waiters)
     }
+}
+
+/// Whether the command the last key typed ran is still at work (see
+/// `Tasks::at_work`), so the keys typed after it should wait.
+pub(super) fn key_command_at_work(lua: &Lua) -> bool {
+    let state = state(lua);
+    state
+        .tasks
+        .key_command
+        .is_some_and(|id| state.tasks.at_work(id, &state.jobs))
+}
+
+/// Keeps `running`, the coroutine of the command a key typed just ran, as
+/// the one keys wait for.
+pub(super) fn ran_for_key(lua: &Lua, running: Option<usize>) {
+    state_mut(lua).tasks.key_command = running;
+}
+
+/// Stops keys waiting for the command the last key ran, though it's still
+/// at work.
+pub(super) fn let_keys_through(lua: &Lua) {
+    state_mut(lua).tasks.key_command = None;
 }
 
 /// Stops every command, handler and task of plugin `owner`'s, letting what

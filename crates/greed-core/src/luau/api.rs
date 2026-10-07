@@ -141,12 +141,23 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
 }
 
 /// A key typed by the user: kept if keys are being recorded, then fed
-/// through the keymap.
+/// through the keymap. The command it runs is the one keys typed next wait
+/// for while it's at work, unless one before still is. A key a command
+/// waited for leaves that as it was.
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
-    for recording in state_mut(lua).recording.values_mut() {
-        recording.keys.push(key);
+    let answers = {
+        let state = &mut *state_mut(lua);
+        for recording in state.recording.values_mut() {
+            recording.keys.push(key);
+        }
+        state.key_waiter.is_some()
+    };
+    let was_at_work = tasks::key_command_at_work(lua);
+    let running = press_key(lua, key, None)?;
+    if !answers && !was_at_work {
+        tasks::ran_for_key(lua, running);
     }
-    press_key(lua, key, None)
+    Ok(())
 }
 
 /// The keys a `greed.keys.record` keeps.
@@ -158,7 +169,8 @@ pub(crate) struct Recording {
 
 /// Feeds one key press through the keymap, running whatever it resolves
 /// to, without recording it, within `limit` when plugin code feeds it.
-fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<(), HostError> {
+/// Returns the coroutine of the command it ran, if that's still running.
+fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>, HostError> {
     // A command waiting on greed.next_key gets the key instead of the keymap.
     let waiter = state_mut(lua).key_waiter.take();
     if let Some((token, waiting)) = waiter {
@@ -169,20 +181,20 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<(), HostError>
             return Err(HostError::Lua(mlua::Error::runtime(error)));
         }
         tasks::wake(lua, token, key.to_string())?;
-        return Ok(());
+        return Ok(None);
     }
     let outcome = state_mut(lua).editor.press(key);
     match outcome {
         KeyOutcome::Pending => {
             let pending = keys_text(state(lua).editor.pending());
             keys_pending(lua, &pending)?;
-            Ok(())
+            Ok(None)
         }
         KeyOutcome::Command { name, keys, count } => {
             if keys.len() > 1 {
                 keys_pending(lua, "")?;
             }
-            invoke(
+            invoke_running(
                 lua,
                 &name,
                 Invocation {
@@ -197,7 +209,7 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<(), HostError>
             if keys.len() > 1 {
                 keys_pending(lua, "")?;
             }
-            Ok(())
+            Ok(None)
         }
     }
 }

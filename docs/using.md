@@ -240,6 +240,12 @@ VS Code. Greed asks the first time it starts, `:style vim` switches at any
 time, and [Editing styles](editing-styles.md) has each one's keys and how
 to make one your own.
 
+Keys you type while a key's command is still working (say, on a slow
+program) wait for it and then run in order, so typing ahead does what
+typing slowly would. They wait half a second at most; `esc` and `ctrl-c`
+reach a working command at once, unless keys typed before them are
+still waiting.
+
 This page shows the Helix style, Greed's default. In the Helix style you
 select text, then say what to do with it. There is always a selection; a
 cursor is a selection one character wide.

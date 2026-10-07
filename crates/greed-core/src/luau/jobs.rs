@@ -78,6 +78,11 @@ impl Jobs {
     pub(super) fn running(&self) -> usize {
         self.running.len()
     }
+
+    /// Whether the job `token` wakes is still running.
+    pub(super) fn is_running(&self, token: u64) -> bool {
+        self.running.contains_key(&token)
+    }
 }
 
 /// Runs `work`, which does `what`, like "greed.fs.grep", on a new thread and

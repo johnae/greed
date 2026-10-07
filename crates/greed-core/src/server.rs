@@ -4,7 +4,7 @@
 //! Clients send input and get back frames, over channels in the same
 //! process or as JSON lines over a session socket.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::control::{Attachment, Session};
 use crate::delta::FrameDelta;
 use crate::image::{Image, ImageId};
-use crate::keymap::Key;
+use crate::keymap::{Key, KeyCode, Mods};
 use crate::luau::{Host, HostError};
 use crate::mouse::Mouse;
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status, StatusLine};
@@ -141,6 +141,8 @@ where
             drawn_at: Instant::now(),
             owed: false,
             key_at: None,
+            held: VecDeque::new(),
+            held_since: None,
             status: None,
             reuse_status: false,
         };
@@ -205,6 +207,11 @@ struct Server<'a> {
     /// When the last key or paste came, until a terminal's output after it
     /// was drawn as its echo.
     key_at: Option<Instant>,
+    /// What the user typed (keys, pastes, clicks) while the last key's
+    /// command was still at work, to handle in order once it's done.
+    held: VecDeque<Input>,
+    /// Since when `held` has waited for the command at work now.
+    held_since: Option<Instant>,
     /// The status line a plugin built for the last frame, to draw again when
     /// only highlighting changed since: no plugin code ran to change it.
     status: Option<StatusLine>,
@@ -223,6 +230,38 @@ const FRAME_EVERY: Duration = Duration::from_millis(8);
 /// it, drawn at once as the key was instead of waiting its turn. The first
 /// output after each key only, so a flood of output stays paced.
 const ECHO_WITHIN: Duration = Duration::from_millis(100);
+
+/// How long what's typed waits for a key's command still at work, like
+/// one waiting on a slow program or the network, before it's handled
+/// anyway, so the editor never seems frozen.
+const KEYS_WAIT_AT_MOST: Duration = Duration::from_millis(500);
+
+/// How `input` waits behind a key's command at work.
+enum Turn {
+    /// Typed by the user: it waits its turn.
+    Waits,
+    /// Esc and ctrl-c: they get through to cancel or interrupt the command,
+    /// but keep their place behind keys already waiting, so typing ahead
+    /// gives the same result as typing slowly.
+    Interrupts,
+    /// Never waits, like a resize.
+    Never,
+}
+
+fn turn_of(input: &Input) -> Turn {
+    match input {
+        Input::Key(key)
+            if matches!(
+                (key.code, key.mods),
+                (KeyCode::Esc, Mods::NONE) | (KeyCode::Char('c'), Mods::CTRL)
+            ) =>
+        {
+            Turn::Interrupts
+        }
+        Input::Key(_) | Input::Mouse(_) | Input::Paste(_) | Input::Run(_) => Turn::Waits,
+        Input::Resize(_) | Input::CellSize(..) | Input::Clipboard(_) | Input::Quit => Turn::Never,
+    }
+}
 
 /// Whether a terminal's output now is the echo of the key at `key_at`.
 fn is_echo(key_at: Option<Instant>, now: Instant) -> bool {
@@ -256,6 +295,70 @@ impl Server<'_> {
             self.drawn_at = Instant::now();
         }
         !self.owed
+    }
+
+    /// With input held for a key's command, when to stop waiting for it.
+    fn held_timer(&self) -> Receiver<Instant> {
+        match self.held_since {
+            Some(since) if !self.held.is_empty() => {
+                crossbeam_channel::at(since + KEYS_WAIT_AT_MOST)
+            }
+            _ => crossbeam_channel::never(),
+        }
+    }
+
+    /// Handles a batch of messages from the client, or holds them while a
+    /// key's command is at work. False when it asked to quit.
+    fn inputs(&mut self, inputs: impl Iterator<Item = Input>) -> bool {
+        for input in inputs {
+            if self.must_wait(&input) {
+                self.held.push_back(input);
+            } else if !self.input(&input) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Whether `input` has to wait for the input held before it, or for the
+    /// last key's command, which is still at work.
+    fn must_wait(&mut self, input: &Input) -> bool {
+        match turn_of(input) {
+            Turn::Never => return false,
+            Turn::Interrupts => return !self.held.is_empty(),
+            Turn::Waits if !self.held.is_empty() => return true,
+            Turn::Waits => {}
+        }
+        let wait = self.host.key_command_at_work();
+        if wait {
+            self.held_since = Some(Instant::now());
+        }
+        wait
+    }
+
+    /// Handles the input held for a key's command, in order, once it's no
+    /// longer at work or has held it up for [`KEYS_WAIT_AT_MOST`]. Input a
+    /// held key's own command makes wait stays held. Sets `typed` when any
+    /// was handled. False when the editor should stop.
+    fn handle_held(&mut self, typed: &mut bool) -> bool {
+        while !self.held.is_empty() {
+            if self.host.key_command_at_work() {
+                let since = *self.held_since.get_or_insert_with(Instant::now);
+                if since.elapsed() < KEYS_WAIT_AT_MOST {
+                    return true;
+                }
+                self.host.let_keys_through();
+            }
+            let input = self.held.pop_front().expect("not empty");
+            *typed = true;
+            if !self.input(&input) {
+                return false;
+            }
+            // A command this one starts holds up the rest from now.
+            self.held_since = Some(Instant::now());
+        }
+        self.held_since = None;
+        true
     }
 
     /// Wakes the code waiting on timers that are due. The next frame can show
@@ -309,10 +412,8 @@ impl Server<'_> {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
                     typed = true;
-                    for input in std::iter::once(first).chain(inbox.try_iter()) {
-                        if !self.input(&input) {
-                            return;
-                        }
+                    if !self.inputs(std::iter::once(first).chain(inbox.try_iter())) {
+                        return;
                     }
                 }
                 recv(trees) -> parsed => {
@@ -366,9 +467,13 @@ impl Server<'_> {
                 recv(timer) -> _ => {}
                 recv(look) -> _ => {}
                 recv(self.frame_timer()) -> _ => {}
+                recv(self.held_timer()) -> _ => {}
             }
             self.fire_timers(only_parsed);
             self.look_at_watched_files();
+            if !self.handle_held(&mut typed) {
+                return;
+            }
             if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
                 self.message = Some(latest);
             }

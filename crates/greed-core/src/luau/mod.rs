@@ -962,6 +962,20 @@ impl Host {
         budgeted(&self.lua, || api::press(&self.lua, key))
     }
 
+    /// Whether the command the last key ran is still at work: cut into time
+    /// slices, or waiting on a timer, a job, or a command that is. Keys
+    /// typed meanwhile should wait their turn. One waiting for the user, for
+    /// a key or a prompt's answer, isn't at work.
+    pub fn key_command_at_work(&self) -> bool {
+        tasks::key_command_at_work(&self.lua)
+    }
+
+    /// Stops keys waiting for the command the last key ran, though it's
+    /// still at work, once they've waited long enough.
+    pub fn let_keys_through(&self) {
+        tasks::let_keys_through(&self.lua);
+    }
+
     /// Presses each key of a space-separated sequence, e.g. `"g g"`.
     pub fn press_keys(&self, keys: &str) -> Result<(), HostError> {
         Key::parse_sequence(keys)?

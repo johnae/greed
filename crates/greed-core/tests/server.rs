@@ -251,3 +251,159 @@ fn frames_carry_the_menus_and_a_window_runs_their_commands() {
         f = frame(&conn);
     }
 }
+
+/// Commands that take a while, and quick ones, each adding a letter at the
+/// end: `z` sleeps 150ms then adds "a", `x` adds "b" at once, `y` waits 3s
+/// then adds "c", `Z` sleeps 300ms then adds "c", `esc` adds "e", `q` adds
+/// the next key pressed, `j` adds "j" after a program that runs 200ms, `s`
+/// asks with a signal another key answers, `w` runs `z` and waits for it,
+/// and a paste adds its text.
+const KEYS_PLUGIN: &str = r"
+local greed = require('@greed')
+local function add(text)
+    local b = greed.view():buffer()
+    b:edit(function(e) e:insert(#b:text(), text) end)
+end
+local asked = nil
+greed.command { name = 'slow', run = function() greed.sleep(150) add('a') end }
+greed.command { name = 'quick', run = function() add('b') end }
+greed.command { name = 'stuck', run = function() greed.sleep(3000) add('c') end }
+greed.command { name = 'slowish', run = function() greed.sleep(300) add('c') end }
+greed.command { name = 'cancel', run = function() add('e') end }
+greed.command { name = 'ask', run = function() add(greed.next_key()) end }
+greed.command { name = 'job', run = function() greed.process.run({ 'sleep', '0.2' }) add('j') end }
+greed.command { name = 'signal', run = function()
+    asked = greed.signal()
+    add(asked:wait())
+end }
+greed.command { name = 'answer', run = function() if asked then asked:send('s') end end }
+greed.command { name = 'waits', run = function() greed.run('slow', { wait = true }) end }
+greed.on('client.paste', function(event) add(event.text) end)
+greed.keymap.bind('helix', {
+    z = 'slow', x = 'quick', y = 'stuck', Z = 'slowish', esc = 'cancel', q = 'ask',
+    j = 'job', s = 'signal', S = 'answer', w = 'waits',
+})
+";
+
+fn start_keys() -> Connection {
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor)?;
+        host.load_str("keys", KEYS_PLUGIN)?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    conn
+}
+
+/// Reads frames until the first line is `1 TEXT`.
+fn until_text(conn: &Connection, text: &str) {
+    let want = format!("1 {text}");
+    let mut f = frame(conn);
+    while f.rows[0].text() != want {
+        f = frame(conn);
+    }
+}
+
+#[test]
+fn keys_typed_while_a_command_works_run_after_it_in_order() {
+    let conn = start_keys();
+    keys(&conn, "z x z x");
+    until_text(&conn, "abab");
+
+    // Waiting on a program holds keys up the same way.
+    let conn = start_keys();
+    keys(&conn, "j x");
+    until_text(&conn, "jb");
+
+    // So does a paste, after the key before it.
+    let conn = start_keys();
+    keys(&conn, "z");
+    conn.input.send(Input::Paste("p".into())).unwrap();
+    until_text(&conn, "ap");
+}
+
+#[test]
+fn esc_gets_through_while_a_command_works() {
+    let conn = start_keys();
+    keys(&conn, "Z esc x");
+    until_text(&conn, "ecb");
+
+    // Behind keys already waiting, it keeps its place, so typing ahead
+    // "x esc" still ends with what esc does.
+    let conn = start_keys();
+    keys(&conn, "Z x esc");
+    until_text(&conn, "cbe");
+}
+
+#[test]
+fn keys_wait_at_most_half_a_second_for_a_command() {
+    let conn = start_keys();
+    let started = std::time::Instant::now();
+    keys(&conn, "y x");
+    until_text(&conn, "b");
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(400) && waited < Duration::from_millis(2500),
+        "{waited:?}"
+    );
+    // The stuck command doesn't hold up the keys after either.
+    let started = std::time::Instant::now();
+    keys(&conn, "x");
+    until_text(&conn, "bb");
+    assert!(
+        started.elapsed() < Duration::from_millis(400),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn commands_waiting_for_a_key_or_an_answer_get_the_next_keys_at_once() {
+    let conn = start_keys();
+    let started = std::time::Instant::now();
+    keys(&conn, "q k x s S");
+    until_text(&conn, "kbs");
+    assert!(
+        started.elapsed() < Duration::from_millis(400),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn a_keys_command_is_at_work_until_it_finishes_or_waits_for_the_user() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "", None);
+    let host = Host::new(editor).unwrap();
+    host.load_str("keys", KEYS_PLUGIN).unwrap();
+    assert!(!host.key_command_at_work());
+
+    // Sleeping, and still the one keys wait for after a quick key.
+    host.press_keys("z").unwrap();
+    assert!(host.key_command_at_work());
+    host.press_keys("x").unwrap();
+    assert!(host.key_command_at_work());
+    host.let_keys_through();
+    assert!(!host.key_command_at_work());
+
+    host.press_keys("x").unwrap();
+    assert!(!host.key_command_at_work(), "finished at once");
+    host.press_keys("q").unwrap();
+    assert!(!host.key_command_at_work(), "waits for a key");
+    host.press_keys("k s").unwrap();
+    assert!(!host.key_command_at_work(), "waits for an answer");
+    host.press_keys("S").unwrap();
+    host.press_keys("j").unwrap();
+    assert!(host.key_command_at_work(), "waits on a program");
+    host.let_keys_through();
+    host.press_keys("w").unwrap();
+    assert!(host.key_command_at_work(), "waits for a command at work");
+}

@@ -755,6 +755,16 @@ where time goes when nothing stalls, `:profile` (or `greed.profile.start()`
 and `stop()`) counts every run of plugin code and the editor's own work by
 plugin and what it did, the most time first.
 
+Keys typed while a key's command is still at work wait their turn, so
+typing ahead gives the same result as typing slowly. At work means paused
+as above, or waiting on a timer, a program, a request or a command that
+is. A command waiting for you (`greed.next_key()`, a prompt, a picker, any
+`greed.signal()`) isn't at work, and gets the next keys as they come.
+Keys wait half a second at most, then run anyway. `esc` and `ctrl-c` get
+through to a command at work at once, so they can cancel it, but behind
+keys already waiting they keep their place. Pastes and clicks wait in
+line with the keys.
+
 An error your command, handler or task doesn't catch shows on the status
 line with your plugin and what it was running ("myplugin (on
 buffer.opened): ..."). The last 100 are kept with where in your code they
