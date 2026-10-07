@@ -33,11 +33,13 @@ export type Options = {
 }
 
 -- One thing to pick: a hunk of a file, or, for a file that only appears or
--- goes without any lines changing, the file as a whole.
+-- goes without any lines changing, the file as a whole. A file that isn't
+-- text, like an image, is one hunk replacing all of it.
 type Item = {
 	file: File,
 	hunk: { from: number, to: number, text: string }?,
 	picked: boolean,
+	whole: boolean?,
 }
 
 type Picker = {
@@ -53,9 +55,18 @@ type Picker = {
 
 local pickers: { [number]: Picker } = {}
 
+local function is_text(text: string?): boolean
+	return text == nil or utf8.len(text) ~= nil
+end
+
 local function items_of(files: { File }): { Item }
 	local items: { Item } = {}
 	for _, file in files do
+		if not (is_text(file.old) and is_text(file.new)) then
+			local hunk = { from = 0, to = #(file.old or ""), text = file.new or "" }
+			table.insert(items, { file = file, hunk = hunk, picked = false, whole = true })
+			continue
+		end
 		local hunks = greed.diff(file.old or "", file.new or "")
 		for _, hunk in hunks do
 			table.insert(items, { file = file, hunk = hunk, picked = false })
@@ -94,7 +105,9 @@ local function render(picker: Picker)
 		local first = #text
 		local box = if item.picked then "[x] " else "[ ] "
 		local hunk = item.hunk
-		if hunk then
+		if item.whole then
+			add(`{box}{item.file.path}  not text`, "markup.heading", 4)
+		elseif hunk then
 			local old = lines(string.sub(item.file.old or "", hunk.from + 1, hunk.to))
 			local new = lines(hunk.text)
 			local _, before = string.gsub(string.sub(item.file.old or "", 1, hunk.from), "\n", "")

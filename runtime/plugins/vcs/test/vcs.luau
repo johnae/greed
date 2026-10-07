@@ -71,6 +71,15 @@ test("a new file in a repository counts as added", function(t)
 	end
 end)
 
+test("a file whose last commit isn't text, like an image, gets no signs", function(t)
+	local dir = repo(t, { ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
+	greed.fs.write(dir .. "/icon.bin", "now text\n")
+	greed.open(dir .. "/icon.bin")
+	t:wait(10)
+	assert(next(signs()) == nil)
+	assert(#greed.errors() == 0, greed.errors()[1] and greed.errors()[1].message)
+end)
+
 test("files outside a repository get no signs", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
 	greed.open(dir .. "/a.txt")
@@ -155,6 +164,19 @@ test("space g s shows every change not staged, removed lines where they were", f
 	assert(string.find(file:text(), "\ntwo\n", 1, true), file:text())
 	local now = changes_view() :: greed.Buffer
 	assert(string.find(now:text(), "^2 changes in 2 files", 1), now:text())
+end)
+
+test("space g s leaves out files that aren't text", function(t)
+	local dir = repo(t, { ["a.txt"] = "one\n", ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
+	greed.project.open(dir)
+	greed.fs.write(dir .. "/a.txt", "ONE\n")
+	greed.fs.write(dir .. "/icon.bin", "\x89PNG\r\n\x1a\n\1\1")
+	t:buffer("|x")
+	t:run("changes")
+	local view = changes_view() :: greed.Buffer
+	assert(view, "the changes view is open")
+	assert(string.find(view:text(), "^1 change in 1 file not staged\n"), view:text())
+	assert(#greed.errors() == 0, greed.errors()[1] and greed.errors()[1].message)
 end)
 
 test("with nothing changed, it says so", function(t)

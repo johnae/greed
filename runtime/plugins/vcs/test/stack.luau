@@ -229,6 +229,26 @@ test("S splits a change: the hunks picked go in a change before it", function(t)
 	assert(not greed.fs.stat(dir .. "/.jj/greed-split"), "the files it wrote are gone")
 end)
 
+test("S picks a file that isn't text as a whole", function(t)
+	if not has_jj() then
+		return
+	end
+	local jj = repo(t)
+	local dir = string.match(jj("root"), "^(.-)%s*$") :: string
+	greed.fs.write(dir .. "/icon.bin", "\x89PNG\r\n\x1a\n\0\0")
+	jj("commit", "-m", "icon")
+	greed.fs.write(dir .. "/icon.bin", "\x89PNG\r\n\x1a\n\1\1")
+	greed.fs.write(dir .. "/x.txt", "x\n")
+	t:keys("space g l S")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "[ ] icon.bin  not text", 1, true), text)
+	t:keys("space enter i c o n enter")
+	assert(summary(jj, "@-") == "M icon.bin\n", summary(jj, "@-"))
+	assert(summary(jj, "@") == "A x.txt\n", summary(jj, "@"))
+	assert(jj("file", "show", "-r", "@-", "icon.bin") == "\x89PNG\r\n\x1a\n\1\1")
+	assert(#greed.errors() == 0, greed.errors()[1] and greed.errors()[1].message)
+end)
+
 test("S splits hunks of one file apart", function(t)
 	if not has_jj() then
 		return

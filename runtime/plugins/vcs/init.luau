@@ -47,18 +47,22 @@ greed.option.define({
 type Change = { from: number, to: number, old: string, at: number, kind: "+" | "~" | "-" }
 
 -- What each buffer's file was at the last commit, by buffer id; false for
--- files outside a repository.
+-- files outside a repository and files that aren't text.
 local bases: { [number]: string | false } = {}
 -- Goes up with each edit, so only the latest edit's redraw runs.
 local generation = 0
 
 -- The file at `relative` in `repo` as changes are counted from: with jj the
 -- working copy's parent, with git what's staged (the last commit unless
--- something was staged). "" if it's new.
-local function base_text(repo: Repo, relative: string): string
+-- something was staged). "" if it's new, nil if it isn't text, like an
+-- image, which has no lines to compare.
+local function base_text(repo: Repo, relative: string): string?
 	local text = if repo.kind == "jj"
 		then vcs(repo, { "file", "show", "-r", "@-", "--", `root-file:"{relative}"` })
 		else vcs(repo, { "show", `:{relative}` })
+	if text and utf8.len(text) == nil then
+		return nil
+	end
 	return text or ""
 end
 
@@ -159,7 +163,8 @@ local function refresh(buffer: greed.Buffer)
 	else
 		located[id] = nil
 	end
-	bases[id] = if repo and relative then base_text(repo, relative) else false
+	local base = if repo and relative then base_text(repo, relative) else nil
+	bases[id] = base or false
 	if repo then
 		read_branch(repo)
 	end
@@ -396,12 +401,15 @@ function M.show_changes(refreshing: boolean?)
 		error("the project isn't in a repository", 0)
 	end
 	local excerpts: { multibuffer.Excerpt } = {}
-	local files = changed_files(repo)
-	for _, relative in files do
+	-- Files that aren't text, like images, have no lines to show.
+	local files: { string } = {}
+	for _, relative in changed_files(repo) do
 		local path = `{repo.root}/{relative}`
 		local text = core.file.text(path)
-		if text then
-			for _, excerpt in multibuffer.diff(path, relative, base_text(repo, relative), text) do
+		local base = base_text(repo, relative)
+		if text and base and utf8.len(text) then
+			table.insert(files, relative)
+			for _, excerpt in multibuffer.diff(path, relative, base, text) do
 				table.insert(excerpts, excerpt)
 			end
 		end
