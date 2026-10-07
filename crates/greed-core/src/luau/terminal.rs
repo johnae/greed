@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 
 use crossbeam_channel::{Receiver, Sender};
-use mlua::{Lua, Table, UserData, UserDataMethods};
+use mlua::{Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 use super::api::emit;
+use super::handles::same_handle;
 use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::keymap::Key;
@@ -227,6 +228,12 @@ fn marks_to_lua(lua: &Lua, marks: Vec<Mark>) -> LuaResult<Table> {
 impl UserData for TerminalRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, ()| Ok(this.0));
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
+            Ok(same_handle(&other, |o: &TerminalRef| o.0 == this.0))
+        });
+        methods.add_method("valid", |lua, this, ()| {
+            Ok(state(lua).terminals.open.contains_key(&this.0))
+        });
         methods.add_method("screen", |lua, this, ()| {
             let screen = this.with(lua, |t| t.screen())?;
             share_images(lua, this, &screen.rows)?;

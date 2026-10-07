@@ -466,8 +466,7 @@ local function marks(buffer: greed.Buffer, read: Reading?): { greed.Mark }
 end
 
 local function is_markdown(buffer: greed.Buffer): boolean
-	local ok, language = pcall(buffer.language, buffer)
-	return ok and language == "markdown"
+	return buffer:valid() and buffer:language() == "markdown"
 end
 
 -- Whether `buffer` gets the look: its own say, or the option's.
@@ -482,7 +481,9 @@ end
 local function draw(buffer: greed.Buffer)
 	local read = reading[buffer:id()]
 	if not is_markdown(buffer) or not (read or look(buffer)) then
-		pcall(buffer.decorate, buffer, "markdown", {})
+		if buffer:valid() then
+			buffer:decorate("markdown", {})
+		end
 		return
 	end
 	buffer:decorate("markdown", marks(buffer, read))

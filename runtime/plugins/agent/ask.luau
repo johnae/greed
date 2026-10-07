@@ -91,7 +91,7 @@ end
 -- The question being asked in `buffer`, if any.
 local function asked_in(buffer: greed.Buffer): Asking?
 	for _, a in asking do
-		if a.buffer:id() == buffer:id() then
+		if a.buffer == buffer then
 			return a
 		end
 	end

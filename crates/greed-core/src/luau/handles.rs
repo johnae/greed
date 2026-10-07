@@ -1,6 +1,7 @@
 //! The handles Luau code holds: views, buffers, and the edit collector used
 //! inside `buffer:edit`. Handles refer to things by id, so a handle to a
-//! closed view or buffer fails cleanly instead of keeping it alive.
+//! closed view or buffer fails cleanly instead of keeping it alive; only
+//! `id`, `valid` and `==` still work on it.
 //!
 //! Positions are 0-based byte offsets and lines are 0-based, matching LSP.
 //! A range is `{ anchor = n, head = n }`; a selection is
@@ -74,6 +75,12 @@ impl ViewRef {
 impl UserData for ViewRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, ()| Ok(this.id.0));
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
+            Ok(same_handle(&other, |o: &ViewRef| o.id == this.id))
+        });
+        methods.add_method("valid", |lua, this, ()| {
+            Ok(state(lua).editor.find_view(this.id).is_some())
+        });
         methods.add_method("selection", |lua, this, ()| {
             this.with_view(lua, |v| selection_to_lua(lua, &v.selection))
         });
@@ -158,20 +165,25 @@ impl UserData for ViewRef {
         });
         add_float_methods(methods);
         add_pane_methods(methods);
-        methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
-        methods.add_method("undo_to", |lua, this, node: usize| {
-            let buffer = this.buffer(lua)?;
-            let changed = state_mut(lua)
-                .editor
-                .undo_to(this.id, node)
-                .map_err(mlua::Error::external)?;
-            if changed {
-                buffer_changed(lua, buffer, &this.author)?;
-            }
-            Ok(changed)
-        });
-        methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
+        add_history_methods(methods);
     }
+}
+
+/// `view:undo()`, `undo_to(node)` and `redo()`.
+fn add_history_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
+    methods.add_method("undo_to", |lua, this, node: usize| {
+        let buffer = this.buffer(lua)?;
+        let changed = state_mut(lua)
+            .editor
+            .undo_to(this.id, node)
+            .map_err(mlua::Error::external)?;
+        if changed {
+            buffer_changed(lua, buffer, &this.author)?;
+        }
+        Ok(changed)
+    });
+    methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
 }
 
 /// A buffer. When it came from a view, edits map that view's selection;
@@ -737,6 +749,12 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
 impl UserData for BufferRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, ()| Ok(this.buffer.0));
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
+            Ok(same_handle(&other, |o: &BufferRef| o.buffer == this.buffer))
+        });
+        methods.add_method("valid", |lua, this, ()| {
+            Ok(state(lua).editor.find_buffer(this.buffer).is_some())
+        });
         methods.add_method("len", |lua, this, ()| {
             this.with_text(lua, |t| Ok(t.len_bytes()))
         });
@@ -823,6 +841,15 @@ impl UserData for BufferRef {
             payload.set("id", this.buffer.0)?;
             emit(lua, "buffer.closed", &payload)
         });
+    }
+}
+
+/// For `__eq`: whether `other` is a `T` handle that `same` accepts. Luau
+/// calls it for any two userdata, so a buffer compared with a view is false.
+pub(super) fn same_handle<T: UserData + 'static>(other: &Value, same: impl Fn(&T) -> bool) -> bool {
+    match other {
+        Value::UserData(ud) => ud.borrow::<T>().is_ok_and(|o| same(&o)),
+        _ => false,
     }
 }
 

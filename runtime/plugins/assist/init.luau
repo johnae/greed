@@ -32,17 +32,11 @@ end
 -- The panel answers show in, while it's open.
 local panel: greed.View? = nil
 
-greed.on("view.closed", function(event: greed.ViewClosed)
-	if panel and panel:id() == event.view then
-		panel = nil
-	end
-end)
-
 --- Shows a fresh buffer of `kind` in the answer panel, titled `title`.
 local function show(kind: string, title: string, language: string?): greed.Buffer
 	local buffer = greed.create_buffer(kind, "", { readonly = true, language = language })
 	local open = panel
-	if open then
+	if open and open:valid() then
 		open:show(buffer)
 		open:configure({ title = title })
 	else

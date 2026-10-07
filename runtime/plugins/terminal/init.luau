@@ -88,12 +88,11 @@ local terms: { [number]: Term } = {}
 local last_used: Term? = nil
 
 local function term_of(buffer: greed.Buffer): Term?
-	local ok, id = pcall(buffer.id, buffer)
-	return if ok then terms[id] else nil
+	return terms[buffer:id()]
 end
 
 local function shown(term: Term): boolean
-	return greed.view():buffer():id() == term.buffer:id()
+	return greed.view():buffer() == term.buffer
 end
 
 --- The terminal shown in `buffer`, if it's one.
@@ -386,8 +385,10 @@ function M.close(term: Term)
 	term.terminal:close()
 	for _, view in term.buffer:views() do
 		if not (term.owns and view:close()) then
-			local ok = term.previous and pcall(view.show, view, term.previous)
-			if not ok then
+			local previous = term.previous
+			if previous and previous:valid() then
+				view:show(previous)
+			else
 				view:show(greed.create_buffer("file", ""))
 			end
 		end
@@ -560,7 +561,7 @@ end
 
 local function find(terminal: greed.Terminal): Term?
 	for _, term in terms do
-		if term.terminal:id() == terminal:id() then
+		if term.terminal == terminal then
 			return term
 		end
 	end

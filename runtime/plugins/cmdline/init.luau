@@ -155,7 +155,7 @@ end
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local o = open
-	if o == nil or event.buffer:id() ~= o.buffer:id() then
+	if o == nil or event.buffer ~= o.buffer then
 		return
 	end
 	local line = o.buffer:slice(prompt_start(o), o.buffer:len())

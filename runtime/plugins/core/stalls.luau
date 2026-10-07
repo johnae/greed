@@ -13,12 +13,6 @@ local function close()
 	end
 end
 
-greed.on("view.closed", function(event: greed.ViewClosed)
-	if shown and shown:id() == event.view then
-		shown = nil
-	end
-end)
-
 --- The lines of the list, newest first.
 local function lines(): { string }
 	local stalls = greed.stalls()

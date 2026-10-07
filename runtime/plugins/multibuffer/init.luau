@@ -427,7 +427,7 @@ local function from_file(buffer: greed.Buffer)
 		local changed = false
 		for _, part in state.parts do
 			local source = part.source
-			if source and source:id() == buffer:id() then
+			if source and source == buffer then
 				local now = marked(source, part.place)
 				if now and now ~= part.text then
 					local shown, start = marked(state.buffer, part.shown)
@@ -663,20 +663,12 @@ end
 -- Each project's results panel, while it's open.
 local panels: { [number]: greed.View } = {}
 
-greed.on("view.closed", function(event)
-	for project, view in panels do
-		if view:id() == event.view then
-			panels[project] = nil
-		end
-	end
-end)
-
 --- Shows `buffer` in the project's results panel on the right, in place of
 --- what it showed, or in a new one titled `title`, and focuses it.
 function M.show(buffer: greed.Buffer, title: string): greed.View
 	local project = greed.project.current().id
 	local current = panels[project]
-	if current then
+	if current and current:valid() then
 		current:show(buffer)
 		current:focus()
 		return current

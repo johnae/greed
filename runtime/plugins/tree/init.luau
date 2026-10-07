@@ -90,7 +90,7 @@ local function render(t: Tree, keep: string?)
 	local lines, marks = {}, {}
 	local pos, cursor = 0, 0
 	-- Outside the tree, the file shown is the one to mark.
-	if greed.view():id() ~= t.view:id() then
+	if greed.view() ~= t.view then
 		t.open = greed.view():buffer():path()
 	end
 	local nerd = greed.option.get("tree-icons") == "nerd"
@@ -177,7 +177,7 @@ greed.command({
 		local t = shown()
 		if t == nil then
 			M.open()
-		elseif greed.view():id() == t.view:id() then
+		elseif greed.view() == t.view then
 			M.close()
 		else
 			render(t)
@@ -279,7 +279,7 @@ end
 -- the mouse lights up.
 core.mouse.claim("tree", function(event)
 	local t = shown()
-	if t == nil or event.view == nil or event.view:id() ~= t.view:id() then
+	if t == nil or event.view ~= t.view then
 		return false
 	end
 	if event.kind == "move" then

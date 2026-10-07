@@ -235,6 +235,30 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
     first_error.map_or(Ok(()), Err)
 }
 
+/// `greed.on(event, handler)` and `greed.off(event, handler)`, which removes
+/// only `owner`'s own handlers.
+fn add_event_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    greed.set(
+        "on",
+        lua.create_function(move |lua, (event, handler): (String, Function)| {
+            let source = caller(lua);
+            state_mut(lua)
+                .registry
+                .on(event, o.clone(), source, handler);
+            Ok(())
+        })?,
+    )?;
+    let o = owner.clone();
+    greed.set(
+        "off",
+        lua.create_function(move |lua, (event, handler): (String, Function)| {
+            state_mut(lua).registry.off(&event, &o, |h| *h == handler);
+            Ok(())
+        })?,
+    )
+}
+
 pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let greed = lua.create_table()?;
 
@@ -262,17 +286,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     greed.set("run", run_function(lua, owner)?)?;
 
-    let o = owner.clone();
-    greed.set(
-        "on",
-        lua.create_function(move |lua, (event, handler): (String, Function)| {
-            let source = caller(lua);
-            state_mut(lua)
-                .registry
-                .on(event, o.clone(), source, handler);
-            Ok(())
-        })?,
-    )?;
+    add_event_functions(lua, &greed, owner)?;
 
     greed.set(
         "echo",

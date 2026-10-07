@@ -73,8 +73,8 @@ greed.on("command.run", function(event: greed.CommandRun)
 		greed.sleep(duration)
 	end
 	-- The buffer may have gone away while it flashed.
-	if latest == mine then
-		pcall(buffer.decorate, buffer, "flash", {})
+	if latest == mine and buffer:valid() then
+		buffer:decorate("flash", {})
 	end
 end)
 

@@ -144,7 +144,7 @@ function M.start(from: greed.View)
 	end
 	local at = 1
 	for i, spot in list do
-		if spot.pane and spot.pane:id() == from:id() and spot.side == "right" then
+		if spot.pane == from and spot.side == "right" then
 			at = i
 		end
 	end

@@ -221,7 +221,7 @@ end
 -- else closes the menu.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
-	if event.buffer:id() ~= view:buffer():id() then
+	if event.buffer ~= view:buffer() then
 		return
 	end
 	local mode = greed.mode.get()
@@ -250,7 +250,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	greed.sleep(delay)
 	-- The view typed into may have closed meanwhile, like the command line
 	-- on enter; only the one still focused gets asked about.
-	if wanted == generation and open == nil and greed.view():id() == view:id() then
+	if wanted == generation and open == nil and greed.view() == view then
 		ask(view, wanted)
 	end
 end)
@@ -286,7 +286,7 @@ local function words(view: greed.View): { Item }
 	local typed = buffer:slice(word_start(buffer, pos), pos)
 	local texts = { buffer:slice(pos, buffer:len()), buffer:slice(0, pos) }
 	for _, other in greed.buffers() do
-		if other:id() ~= buffer:id() then
+		if other ~= buffer then
 			table.insert(texts, other:text())
 		end
 	end

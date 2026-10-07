@@ -278,7 +278,7 @@ mod from_luau {
             end)
             greed.on("terminal.exited", function(e)
                 seen.code = e.code
-                assert(e.terminal:id() == t:id())
+                assert(e.terminal == t)
             end)
             return seen
             "#,
@@ -304,9 +304,12 @@ mod from_luau {
         )
         .unwrap();
         h.eval("t = require(\"@term\")").unwrap();
+        assert_eq!(h.eval("t:valid()").unwrap(), "true");
         h.unload("term").unwrap();
         let err = h.eval("t:screen()").unwrap_err().to_string();
         assert!(err.contains("closed"), "{err}");
+        assert_eq!(h.eval("t:valid()").unwrap(), "false");
+        assert_eq!(h.eval("t:id() > 0").unwrap(), "true");
     }
 }
 

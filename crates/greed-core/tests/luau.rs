@@ -398,6 +398,63 @@ fn bad_requires_explain_themselves() {
 }
 
 #[test]
+fn handles_compare_by_what_they_refer_to_and_outlive_it() {
+    let h = host("main");
+    h.eval("greed = require('@greed')").unwrap();
+    assert_eq!(h.eval("greed.view() == greed.view()").unwrap(), "true");
+    assert_eq!(
+        h.eval("greed.view():buffer() == greed.view():buffer()")
+            .unwrap(),
+        "true"
+    );
+    h.eval("b = greed.create_buffer('scratch', 'x'); v = greed.float(b)")
+        .unwrap();
+    assert_eq!(h.eval("v == greed.view()").unwrap(), "true");
+    assert_eq!(h.eval("b == greed.view():buffer()").unwrap(), "true");
+    assert_eq!(h.eval("b == v").unwrap(), "false");
+    assert_eq!(h.eval("v == b").unwrap(), "false");
+    assert_eq!(h.eval("b == b:id()").unwrap(), "false");
+    assert_eq!(h.eval("v:valid() and b:valid()").unwrap(), "true");
+    h.eval("ids = { v:id(), b:id() }; v:close()").unwrap();
+    assert_eq!(h.eval("v:valid() or b:valid()").unwrap(), "false");
+    assert_eq!(
+        h.eval("v:id() == ids[1] and b:id() == ids[2]").unwrap(),
+        "true"
+    );
+    assert_eq!(h.eval("v == greed.view()").unwrap(), "false");
+}
+
+#[test]
+fn handlers_can_be_removed() {
+    let h = host("");
+    h.load_str(
+        "watch",
+        r#"
+        local greed = require("@greed")
+        local function first(ev) greed.echo("first " .. ev.to) end
+        greed.on("mode.changed", first)
+        greed.on("mode.changed", function(ev) greed.echo("second " .. ev.to) end)
+        return { first = first, off = function() greed.off("mode.changed", first) end }
+        "#,
+    )
+    .unwrap();
+    // Another plugin can't remove it, even with the function in hand.
+    h.load_str(
+        "other",
+        r#"require("@greed").off("mode.changed", require("@watch").first)"#,
+    )
+    .unwrap();
+    h.eval("require('@greed').mode.set('insert')").unwrap();
+    h.eval("require('@watch').off()").unwrap();
+    h.eval("require('@watch').off()").unwrap();
+    h.eval("require('@greed').mode.set('normal')").unwrap();
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages),
+        ["first insert", "second insert", "second normal"]
+    );
+}
+
+#[test]
 fn scratch_buffers_float_and_go_away_when_closed() {
     let h = host("main");
     h.eval("b = require('@greed').create_buffer('picker', 'one\\ntwo')")

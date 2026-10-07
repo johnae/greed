@@ -90,7 +90,7 @@ agent.tool({
 			else nil
 		for _, buffer in greed.buffers() do
 			local path = buffer:path()
-			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
+			if path and (args.path == nil or wanted == buffer) then
 				for _, d in greed.lsp.diagnostics(buffer) do
 					local at = position(buffer, d.from)
 					table.insert(list, {
@@ -164,7 +164,7 @@ agent.tool({
 		local list = {}
 		for _, buffer in greed.buffers() do
 			local path = buffer:path()
-			if path and (args.path == nil or (wanted and wanted:id() == buffer:id())) then
+			if path and (args.path == nil or wanted == buffer) then
 				local entries = buffer:history(filter)
 				if #entries > 0 then
 					local edits = {}

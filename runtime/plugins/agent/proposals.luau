@@ -296,7 +296,7 @@ end
 local function in_buffer(buffer: greed.Buffer): { Proposal }
 	local found = {}
 	for _, p in proposals do
-		if p.buffer:id() == buffer:id() then
+		if p.buffer == buffer then
 			table.insert(found, p)
 		end
 	end

@@ -175,7 +175,7 @@ function M.open(name: string, opts: { here: boolean? }?)
 	if opts and opts.here then
 		local tab = greed.tab.current()
 		for _, pane in tab.panes do
-			if pane:id() ~= tab.active:id() then
+			if pane ~= tab.active then
 				pane:close()
 			end
 		end

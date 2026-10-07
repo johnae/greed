@@ -133,7 +133,7 @@ end
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
 	local buffer = view:buffer()
-	if event.buffer:id() ~= buffer:id() or not typing(greed.mode.get()) then
+	if event.buffer ~= buffer or not typing(greed.mode.get()) then
 		return
 	end
 	local pos = head(view)

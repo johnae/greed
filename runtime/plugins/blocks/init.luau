@@ -77,8 +77,7 @@ end
 
 -- The buffer's file, if it has one and is still open.
 local function path_of(buffer: greed.Buffer): string?
-	local ok, path = pcall(buffer.path, buffer)
-	return if ok then path else nil
+	return if buffer:valid() then buffer:path() else nil
 end
 
 --- Whether blocks in `buffer` may run without asking: its file is trusted
@@ -204,8 +203,7 @@ end
 --- Whether `buffer` shows its blocks as runnable: Markdown whose front
 --- matter says `greed: run`, or a file you trusted.
 function M.on(buffer: greed.Buffer): boolean
-	local ok, language = pcall(buffer.language, buffer)
-	if not ok or language ~= "markdown" then
+	if not buffer:valid() or buffer:language() ~= "markdown" then
 		return false
 	end
 	local wants = parse.front_matter(buffer)
@@ -573,7 +571,7 @@ greed.command({
 		local block = block_at(ctx.buffer, cursor(ctx))
 		for _, run in running do
 			local at = where(run)
-			if run.buffer:id() == ctx.buffer:id() and block and at == block.from then
+			if run.buffer == ctx.buffer and block and at == block.from then
 				run.stopped = true
 				local child = run.child
 				if child then
@@ -618,15 +616,14 @@ greed.command({
 -- presses too, in files where blocks show as runnable, and how each running
 -- block is doing, which a click stops.
 function draw(buffer: greed.Buffer)
-	local ok = pcall(buffer.line_count, buffer)
-	if not ok then
+	if not buffer:valid() then
 		return
 	end
 	local busy: { [number]: boolean } = {}
 	local marks: { greed.Mark } = {}
 	for _, run in running do
 		local at = where(run)
-		if at and run.buffer:id() == buffer:id() then
+		if at and run.buffer == buffer then
 			busy[at] = true
 			table.insert(marks, {
 				from = at,

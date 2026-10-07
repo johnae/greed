@@ -175,7 +175,7 @@ end
 
 -- Picking a style tries it at once.
 markdown.choices.on_pick(function(buffer, group)
-	if page and buffer:id() == page:id() and group.question == QUESTIONS.style then
+	if buffer == page and group.question == QUESTIONS.style then
 		local style = style_of(picked(buffer, QUESTIONS.style))
 		if style then
 			greed.option.set("editing-style", style)
@@ -223,7 +223,7 @@ greed.command({
 	doc = "Save the setup page's answers as your config, and open it",
 	run = function(ctx)
 		local buffer = page
-		if buffer == nil or buffer:id() ~= ctx.buffer:id() then
+		if buffer == nil or buffer ~= ctx.buffer then
 			greed.echo("the setup page isn't here")
 			return
 		end

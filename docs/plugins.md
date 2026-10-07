@@ -273,6 +273,24 @@ commands tracking the same buffer never get in each other's way. They go
 when you call `forget`, when the buffer closes, or when your plugin is
 unloaded. After that `pos` and `range` give nil.
 
+Buffers, views and terminals are handles: two handles to the same one are
+equal with `==`. A handle you keep can outlive what it refers to.
+`handle:valid()` says whether it's still there, and `handle:id()` keeps
+working after it's gone, while its other methods fail with an error.
+
+```luau
+-- The panel this plugin shows, reused while it's open.
+local panel: greed.View? = nil
+
+local function show(buffer: greed.Buffer)
+	if panel and panel:valid() then
+		panel:show(buffer)
+	else
+		panel = greed.panel(buffer, { side = "right" })
+	end
+end
+```
+
 ### Paths and the files behind them
 
 Buffers know their files by full path, with `.` and `..` worked out, so
@@ -633,6 +651,25 @@ end)
 
 `space h e` (`:describe-event`) shows any event's fields, and
 `runtime/types/greed` has them all typed.
+
+A handler stays until its plugin unloads or `greed.off(event, handler)`
+removes it, given the same function. Removing one that's gone does nothing,
+and a plugin can only remove its own. That lets something listen only while
+it's open:
+
+```luau
+local function show_notes(buffer: greed.Buffer)
+	local view = greed.float(buffer, { title = "Notes" })
+	local function saved(event: greed.BufferChanged)
+		if not view:valid() then
+			greed.off("buffer.saved", saved)
+		elseif event.buffer == buffer then
+			greed.echo("notes saved")
+		end
+	end
+	greed.on("buffer.saved", saved)
+end
+```
 
 Who made an edit is in the buffer's history: `buffer:history({ limit = 1
 })[1].author` is `"user"`, `"plugin"`, `"agent"` or `"external"` (the disk),

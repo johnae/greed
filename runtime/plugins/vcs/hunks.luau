@@ -275,7 +275,9 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	local picker = pickers[event.id]
 	if picker then
 		pickers[event.id] = nil
-		pcall(picker.previous.set_kept, picker.previous, picker.was_kept)
+		if picker.previous:valid() then
+			picker.previous:set_kept(picker.was_kept)
+		end
 	end
 end)
 

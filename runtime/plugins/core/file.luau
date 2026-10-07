@@ -258,7 +258,7 @@ local function replacement(closing: greed.Buffer): greed.Buffer
 	local best: greed.Buffer? = nil
 	for _, buffer in greed.buffers() do
 		if
-			buffer:id() ~= closing:id()
+			buffer ~= closing
 			and buffer:path()
 			and buffer:project() == closing:project()
 			and (best == nil or buffer:id() > best:id())
@@ -304,7 +304,7 @@ greed.command({
 	run = function(ctx)
 		local others = {}
 		for _, buffer in greed.buffers() do
-			if buffer:id() ~= ctx.buffer:id() and buffer:path() then
+			if buffer ~= ctx.buffer and buffer:path() then
 				table.insert(others, buffer)
 			end
 		end

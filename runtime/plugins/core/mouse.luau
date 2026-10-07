@@ -122,7 +122,7 @@ greed.on("mouse", function(event: greed.MouseEvent)
 	end
 	local left = event.button == "left"
 	if event.kind == "press" and left then
-		if greed.view():id() ~= view:id() then
+		if greed.view() ~= view then
 			view:focus()
 		end
 		if event.pos then

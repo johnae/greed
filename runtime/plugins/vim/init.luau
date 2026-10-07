@@ -1445,7 +1445,7 @@ end)
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
-	if undoing_line or view:buffer():id() ~= event.buffer:id() then
+	if undoing_line or view:buffer() ~= event.buffer then
 		return
 	end
 	local now = cursor_line_note(view)
@@ -1489,7 +1489,7 @@ end
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
 	local buffer = event.buffer
-	if view:buffer():id() ~= buffer:id() then
+	if view:buffer() ~= buffer then
 		return
 	end
 	local selection = view:selection()

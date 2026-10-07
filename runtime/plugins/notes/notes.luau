@@ -126,8 +126,8 @@ end
 --- Markdown with `notes-everywhere`.
 function M.is_note(buffer: greed.Buffer): boolean
 	-- A buffer can be closed by the time an event about it is handled.
-	local ok, path = pcall(buffer.path, buffer)
-	if not ok or path == nil or not string.match(path, "%.md$") then
+	local path = if buffer:valid() then buffer:path() else nil
+	if path == nil or not string.match(path, "%.md$") then
 		return false
 	end
 	if greed.option.get("notes-everywhere") == true then

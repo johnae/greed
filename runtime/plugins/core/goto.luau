@@ -60,7 +60,7 @@ local function by_id(id: number?): greed.Buffer?
 end
 
 local function show(view: greed.View, buffer: greed.Buffer?)
-	if buffer and buffer:id() ~= view:buffer():id() then
+	if buffer and buffer ~= view:buffer() then
 		view:show(buffer)
 		seen(buffer)
 	end
@@ -77,7 +77,7 @@ for _, back in { false, true } do
 			end
 			local at = 0
 			for i, buffer in list do
-				if buffer:id() == ctx.buffer:id() then
+				if buffer == ctx.buffer then
 					at = i
 				end
 			end

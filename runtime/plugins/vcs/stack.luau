@@ -196,7 +196,7 @@ local function render(stack: Stack, select: string?)
 	end)
 	buffer:set_readonly(true)
 	buffer:decorate("change-stack", marks)
-	if stack.view:buffer():id() ~= buffer:id() then
+	if stack.view:buffer() ~= buffer then
 		return
 	end
 	local pos = buffer:line_start(cursor or 2)
@@ -212,7 +212,7 @@ function M.open(view: greed.View)
 	for _, stack in stacks do
 		if stack.repo.root == repo.root then
 			stack.view = view
-			if view:buffer():id() ~= stack.buffer:id() then
+			if view:buffer() ~= stack.buffer then
 				view:show(stack.buffer)
 			end
 			render(stack)
@@ -593,7 +593,9 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	if stack then
 		stacks[event.id] = nil
 		-- What it hid may be gone too.
-		pcall(stack.previous.set_kept, stack.previous, stack.was_kept)
+		if stack.previous:valid() then
+			stack.previous:set_kept(stack.was_kept)
+		end
 	end
 	diffs[event.id] = nil
 end)

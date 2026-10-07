@@ -211,7 +211,7 @@ end
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local open = shown
-	if open == nil or event.buffer:id() ~= open.buffer:id() then
+	if open == nil or event.buffer ~= open.buffer then
 		return
 	end
 	-- Lines whose mark went with their text were deleted: drop their items.
@@ -223,12 +223,6 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local _, list, total = render()
 	open.lines = list
 	open.view:configure({ title = title(total) })
-end)
-
-greed.on("view.closed", function(event: greed.ViewClosed)
-	if shown and shown.view:id() == event.view then
-		shown = nil
-	end
 end)
 
 greed.command({

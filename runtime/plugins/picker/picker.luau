@@ -264,7 +264,7 @@ local function refresh(o: Open)
 end
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
-	if open and event.buffer:id() == open.buffer:id() then
+	if open and event.buffer == open.buffer then
 		refresh(open)
 	end
 end)

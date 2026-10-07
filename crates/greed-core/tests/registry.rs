@@ -75,6 +75,26 @@ fn event_handlers_run_in_registration_order_and_are_owned() {
 }
 
 #[test]
+fn only_the_owner_removes_its_handlers() {
+    let mut reg = Reg::default();
+    reg.on("buffer.saved", "core", None, "first");
+    reg.on("buffer.saved", "user/me", None, "first");
+    reg.on("buffer.saved", "core", None, "second");
+    reg.on("buffer.opened", "core", None, "first");
+    assert!(reg.off("buffer.saved", "core", |h| *h == "first"));
+    assert!(!reg.off("buffer.saved", "core", |h| *h == "first"));
+    assert!(!reg.off("mode.changed", "core", |_| true));
+    let left: Vec<(&str, &str)> = reg
+        .handlers("buffer.saved")
+        .iter()
+        .map(|h| (&*h.owner, h.handler))
+        .collect();
+    assert_eq!(left, [("user/me", "first"), ("core", "second")]);
+    assert!(reg.off("buffer.opened", "core", |_| true));
+    assert!(reg.events().all(|(event, _)| event != "buffer.opened"));
+}
+
+#[test]
 fn options_are_typed() {
     let mut reg = Reg::default();
     reg.define_option(OptionDef {

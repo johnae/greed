@@ -30,9 +30,13 @@ export type Edits = {
 	select: (self: Edits, selection: Selection) -> (),
 }
 
---- Open text, backed by a file or not.
+--- Open text, backed by a file or not. Two handles to the same buffer are
+--- equal (`==`).
 export type Buffer = {
+	--- Its id, even after it was closed.
 	id: (self: Buffer) -> number,
+	--- Whether it is still open. Other methods fail once it was closed.
+	valid: (self: Buffer) -> boolean,
 	--- Length in bytes.
 	len: (self: Buffer) -> number,
 	text: (self: Buffer) -> string,
@@ -232,9 +236,13 @@ export type Mark = {
 	data: any?,
 }
 
---- A buffer shown on screen, with its own selection.
+--- A buffer shown on screen, with its own selection. Two handles to the
+--- same view are equal (`==`).
 export type View = {
+	--- Its id, even after it was closed.
 	id: (self: View) -> number,
+	--- Whether it is still open. Other methods fail once it was closed.
+	valid: (self: View) -> boolean,
 	selection: (self: View) -> Selection,
 	set_selection: (self: View, selection: Selection) -> (),
 	--- The start and end of the text on screen when the view was last
@@ -549,9 +557,13 @@ export type TerminalScreen = {
 	alternate: boolean,
 }
 
---- A program running in a terminal.
+--- A program running in a terminal. Two handles to the same terminal are
+--- equal (`==`).
 export type Terminal = {
+	--- Its id, even after it was closed.
 	id: (self: Terminal) -> number,
+	--- Whether it is still open. Other methods fail once it was closed.
+	valid: (self: Terminal) -> boolean,
 	screen: (self: Terminal) -> TerminalScreen,
 	--- The lines that scrolled off the top, from line `from` (counting from
 	--- the terminal's first line) on, or from the oldest one kept. `first` is
@@ -1362,7 +1374,8 @@ export type Greed = {
 	--- beyond that (run programs or commands, change keys, reach files) fails
 	--- with an error starting "needs approval:".
 	eval: (source: string, opts: { sandbox: boolean? }?) -> (boolean, string),
-	--- Calls `handler` every time `event` happens.
+	--- Calls `handler` every time `event` happens, until `greed.off` removes
+	--- it or the plugin unloads.
 	on: ((event: "mode.changed", handler: (event: ModeChanged) -> ()) -> ())
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
@@ -1389,6 +1402,9 @@ export type Greed = {
 		& ((event: "terminal.output", handler: (event: TerminalOutput) -> ()) -> ())
 		& ((event: "terminal.exited", handler: (event: TerminalExited) -> ()) -> ())
 		& ((event: string, handler: (event: any) -> ()) -> ()),
+	--- Removes `handler`, added by this plugin with `greed.on(event, handler)`.
+	--- Does nothing if it's not there.
+	off: (event: string, handler: (event: any) -> ()) -> (),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
 	--- The focused view.

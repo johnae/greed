@@ -152,7 +152,7 @@ end)
 -- view shows.
 local function follow(buffer: greed.Buffer)
 	local c = open
-	if c and buffer:id() == c.source:id() then
+	if c and buffer == c.source then
 		refresh(c)
 	end
 end

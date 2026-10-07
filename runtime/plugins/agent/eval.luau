@@ -163,7 +163,7 @@ end
 -- Closes the page in `buffer`, giving its agent `choice`.
 function answer(buffer: greed.Buffer, choice: string)
 	for i, a in asking do
-		if a.buffer:id() == buffer:id() then
+		if a.buffer == buffer then
 			table.remove(asking, i)
 			local view = a.view
 			a.view = nil

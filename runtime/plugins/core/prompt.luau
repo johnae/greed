@@ -22,6 +22,8 @@ type Open = {
 	options: Options,
 	-- The mode to go back to.
 	mode: string,
+	-- Removes the handlers it listens with while it's open.
+	stop: () -> (),
 }
 
 local open: Open? = nil
@@ -39,6 +41,7 @@ local function close(finish: (options: Options, typed: string) -> ())
 	end
 	local typed = text(o)
 	open = nil
+	o.stop()
 	o.view:close()
 	greed.mode.set(o.mode)
 	finish(o.options, typed)
@@ -56,17 +59,6 @@ local function mask(o: Open)
 	end
 end
 
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	local o = open
-	if o == nil or event.buffer:id() ~= o.buffer:id() then
-		return
-	end
-	mask(o)
-	if o.options.on_change then
-		o.options.on_change(text(o))
-	end
-end)
-
 greed.command({
 	name = "prompt-submit",
 	doc = "Accept what's typed in the prompt",
@@ -82,16 +74,6 @@ local function cancel(options: Options)
 		options.on_cancel()
 	end
 end
-
--- Closed some other way, it counts as cancelled.
-greed.on("view.closed", function(event: greed.ViewClosed)
-	local o = open
-	if o and o.view:id() == event.view then
-		open = nil
-		greed.mode.set(o.mode)
-		cancel(o.options)
-	end
-end)
 
 greed.command({
 	name = "prompt-cancel",
@@ -115,16 +97,46 @@ function M.open(options: Options)
 	if open then
 		greed.run("prompt-cancel")
 	end
-	local text = options.text or ""
-	local buffer = greed.create_buffer("prompt", text)
+	local start = options.text or ""
+	local buffer = greed.create_buffer("prompt", start)
 	local view = greed.float(
 		buffer,
 		{ title = options.title, width = "100%", height = 3, anchor = "bottom" }
 	)
-	open = { view = view, buffer = buffer, options = options, mode = greed.mode.get() }
+	local o: Open = {
+		view = view,
+		buffer = buffer,
+		options = options,
+		mode = greed.mode.get(),
+		stop = function() end,
+	}
+	local function changed(event: greed.BufferChanged)
+		if event.buffer == buffer then
+			mask(o)
+			if options.on_change then
+				options.on_change(text(o))
+			end
+		end
+	end
+	-- Closed some other way, it counts as cancelled.
+	local function closed(event: greed.ViewClosed)
+		if event.view == view:id() then
+			open = nil
+			o.stop()
+			greed.mode.set(o.mode)
+			cancel(options)
+		end
+	end
+	function o.stop()
+		greed.off("buffer.changed", changed)
+		greed.off("view.closed", closed)
+	end
+	greed.on("buffer.changed", changed)
+	greed.on("view.closed", closed)
+	open = o
 	greed.mode.set("insert")
-	view:set_selection({ ranges = { { anchor = #text, head = #text } }, primary = 1 })
-	mask(open :: Open)
+	view:set_selection({ ranges = { { anchor = #start, head = #start } }, primary = 1 })
+	mask(o)
 end
 
 --- Like `open`, but waits for the answer and returns what was typed, or

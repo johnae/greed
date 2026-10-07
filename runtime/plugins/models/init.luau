@@ -473,12 +473,6 @@ local function close()
 	end
 end
 
-greed.on("view.closed", function(event: greed.ViewClosed)
-	if shown and shown:id() == event.view then
-		shown = nil
-	end
-end)
-
 --- One line per role: its model and provider, and whether the key is found.
 function M.describe(): { string }
 	local names = {}

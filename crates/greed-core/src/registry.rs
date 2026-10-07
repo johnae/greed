@@ -198,6 +198,21 @@ impl<H> Registry<H> {
             });
     }
 
+    /// Removes `owner`'s handlers for `event` that `matches` picks. False if
+    /// there were none.
+    pub fn off(&mut self, event: &str, owner: &str, matches: impl Fn(&H) -> bool) -> bool {
+        let Some(handlers) = self.events.get_mut(event) else {
+            return false;
+        };
+        let before = handlers.len();
+        handlers.retain(|h| &*h.owner != owner || !matches(&h.handler));
+        let removed = handlers.len() != before;
+        if handlers.is_empty() {
+            self.events.remove(event);
+        }
+        removed
+    }
+
     /// Handlers for an event, in the order they were registered.
     pub fn handlers(&self, event: &str) -> &[EventHandler<H>] {
         self.events.get(event).map_or(&[], Vec::as_slice)
