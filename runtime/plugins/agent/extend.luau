@@ -302,7 +302,13 @@ registry.tool({
 			table.insert(plugins, name)
 		end
 		table.sort(plugins)
-		return `{GUIDE}\nLoaded plugins: {table.concat(plugins, ", ")}\n\n{read_types()}`
+		local core = greed.plugin.dirs().core
+		local runtime = core and string.match(core, "^(.*)/[^/]+/[^/]+$")
+		local examples = if runtime
+			then `Greed's own plugins, in {runtime}/plugins, are working examples of all of this: `
+				.. `grep with path "{runtime}" searches them and these types, and read opens them.\n`
+			else ""
+		return `{GUIDE}\n{examples}Loaded plugins: {table.concat(plugins, ", ")}\n\n{read_types()}`
 	end,
 })
 

@@ -28,6 +28,12 @@ local function root(): string
 	return core.project.root() or greed.fs.cwd()
 end
 
+-- Greed's runtime folder: its own plugins, and their types in types/.
+local function runtime_dir(): string?
+	local plugin_core = greed.plugin.dirs().core
+	return plugin_core and string.match(plugin_core, "^(.*)/[^/]+/[^/]+$")
+end
+
 --- What each source file in the project defines and uses, kept a while.
 function M.tags(): { greed.FileTags }
 	local dir = root()
@@ -283,8 +289,35 @@ type Hit = { path: string, line: number, text: string }
 --- project; all of it by default), with open files as you have them.
 function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, string?)
 	local base = root()
-	local where = if dir then `{base}/{dir}` else base
-	local prefix = if dir then `{dir}/` else ""
+	local where, prefix = base, ""
+	if dir and string.sub(dir, 1, 1) == "/" then
+		local runtime = runtime_dir()
+		if dir == base or string.sub(dir, 1, #base + 1) == base .. "/" then
+			dir = if dir == base then nil else string.sub(dir, #base + 2)
+		elseif
+			runtime and (dir == runtime or string.sub(dir, 1, #runtime + 1) == runtime .. "/")
+		then
+			-- Greed's own plugins and types, the best examples for a plugin.
+			where, prefix = dir, dir .. "/"
+			dir = nil
+		else
+			local also = if runtime
+				then `, or in Greed's own plugins and types in {runtime}`
+				else ""
+			return nil, `{dir} is outside the project; grep searches in it{also}`
+		end
+	end
+	if dir then
+		where, prefix = `{base}/{dir}`, `{dir}/`
+		if greed.fs.stat(where) == nil then
+			return nil, `there's no {dir} in the project`
+		end
+	end
+	-- A file searched alone is found with an empty path inside it.
+	local info = greed.fs.stat(where)
+	if info and info.kind == "file" then
+		prefix = string.sub(prefix, 1, -2)
+	end
 	local max = limit or 200
 	local lines, err = greed.fs.grep(pattern, where, { limit = max })
 	if lines == nil then
@@ -375,7 +408,11 @@ registry.tool({
 		.. "files are searched as the user has them, unsaved changes included",
 	input = object({
 		pattern = { type = "string" },
-		path = { type = "string", description = "A folder in the project to search in" },
+		path = {
+			type = "string",
+			description = "A folder in the project to search in, or Greed's runtime folder "
+				.. "(its own plugins and their types), given in full",
+		},
 		limit = { type = "number", description = "200 lines by default" },
 	}, { "pattern" }),
 	run = function(args)
