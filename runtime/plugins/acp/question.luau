@@ -104,7 +104,7 @@ function M.row(buffer: greed.Buffer, s: Session, cells: number): (string?, { gre
 		choices ..= `  [{keys[i]}] {option.name}`
 	end
 	local room = cells - 4 - core.text.width(choices) - #"Allow ?"
-	local text = `Allow {core.text.clip(permission.title, room)}?`
+	local text = `Allow {core.text.clip(session.first_line(permission.title), room)}?`
 	local marks: { greed.Mark } = { { from = 0, to = #text, style = "agent.working" } }
 	for i, option in permission.options do
 		local choice = `[{keys[i]}] {option.name}`

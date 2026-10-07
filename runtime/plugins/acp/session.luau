@@ -178,6 +178,13 @@ local SUMMARY_WIDTH = 60
 
 local clip = core.text.clip
 
+--- The first line of `text`, like a command a tool runs, with "…" when
+--- there's more, for places with room for one line.
+function M.first_line(text: string): string
+	local first = string.match(text, "^([^\n]*)\n")
+	return if first then first .. " …" else text
+end
+
 --- A tool's output (`lines`, without trailing empty ones) in a few words
 --- for its row in the transcript: a short line as it is, JSON as what it
 --- holds, and anything longer as how many lines it has. Paths are shown

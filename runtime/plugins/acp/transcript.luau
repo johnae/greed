@@ -176,7 +176,10 @@ function M.history(s: Session): History
 				local tool = e.tool
 				local status = tool.status or "pending"
 				local glyph = GLYPH[status] or GLYPH.pending
-				local line = `  {glyph} {tool.title}`
+				-- A title of several lines, like a script it runs, shows them
+				-- all under its first.
+				local title_lines = string.split(tool.title, "\n")
+				local line = `  {glyph} {title_lines[1]}`
 				local named = #line
 				local summary = table.concat(tool.detail, " · ")
 				if summary ~= "" then
@@ -195,6 +198,9 @@ function M.history(s: Session): History
 				})
 				local first = #lines
 				add(line, "agent.hint", named)
+				for i = 2, #title_lines do
+					add(`    {title_lines[i]}`)
+				end
 				if tool.open then
 					for _, output in tool.output do
 						add(`    {output}`, "comment")
@@ -212,10 +218,12 @@ function M.history(s: Session): History
 					add(`  {mark} {item.text}`, "comment")
 				end
 			elseif e.kind == "permission" then
+				-- The tool's row above shows the whole of a long title.
+				local asked = session.first_line(e.permission.title)
 				if e.chosen then
-					add(`  ? {e.permission.title}: {e.chosen}`, "comment")
+					add(`  ? {asked}: {e.chosen}`, "comment")
 				else
-					add(`  ? Allow {e.permission.title}?`, "agent.working")
+					add(`  ? Allow {asked}?`, "agent.working")
 				end
 			end
 		end
@@ -365,7 +373,7 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	if s.status == "working" then
 		piece(if now then spinner_frame(now) else "●", "agent.working")
 		piece(" ", "agent.box")
-		local doing = s.tool or "thinking"
+		local doing = if s.tool then session.first_line(s.tool) else "thinking"
 		local lit = if now then shimmer(doing, (now % 1600) / 1600) else nil
 		if lit then
 			table.move(lit, 1, #lit, #left + 1, left)
