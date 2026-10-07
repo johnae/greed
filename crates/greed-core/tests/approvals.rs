@@ -399,3 +399,26 @@ fn checking_a_plugin_warns_of_replaced_commands_and_keys_to_missing_ones() {
         ]
     );
 }
+
+#[test]
+fn checking_a_plugin_works_with_a_config_loaded_from_its_folder() {
+    let temp = Temp::new("check-config");
+    let store = temp.0.join("approved.json");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    // A config folder holds an init.luau and no plugin.toml.
+    let config = temp.0.join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("init.luau"), "return {}\n").unwrap();
+    let dir = temp.plugin("plain", "", "");
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/basic.luau"),
+        "local test = require('@greed/test')\ntest('runs', function() end)\n",
+    )
+    .unwrap();
+    let host = host(&store, &shipped);
+    host.load_file("user/file", &config.join("init.luau"))
+        .unwrap();
+    assert_eq!(check(&host, &dir), ["passed 1"]);
+}

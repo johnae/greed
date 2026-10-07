@@ -116,10 +116,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         let name = plugin_name(&dir).map_err(api::into_lua)?;
         let approved = super::approved_for(lua, &dir);
         // Every loaded plugin but an older version of this one, which the
-        // checked one replaces.
+        // checked one replaces. A config's folder has no manifest, and isn't
+        // something other plugins build on.
         let others: Vec<(String, PathBuf)> = plugin_dirs(lua)
             .into_iter()
-            .filter(|(other, _)| **other != *name)
+            .filter(|(other, dir)| **other != *name && dir.join("plugin.toml").is_file())
             .map(|(other, dir)| (other.to_string(), dir))
             .collect();
         Ok(jobs::start(
