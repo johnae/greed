@@ -226,6 +226,12 @@ impl Modules {
         };
         let base = normalize(&base);
         if !base.starts_with(root) {
+            if let (true, Some(rest)) = (is_init, name.strip_prefix("./")) {
+                return Err(fail(&format!(
+                    "init.luau stands for its folder, so \"./\" there is outside it; \
+                     use \"@self/{rest}\""
+                )));
+            }
             return Err(fail("it is outside the plugin"));
         }
         let mut file = base.clone().into_os_string();

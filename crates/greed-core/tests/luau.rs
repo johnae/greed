@@ -483,8 +483,9 @@ fn bad_requires_explain_themselves() {
         (
             "self-outside-init",
             "require('./lib/x')",
-            "outside the plugin",
+            "init.luau stands for its folder, so \"./\" there is outside it; use \"@self/lib/x\"",
         ),
+        ("parent", "require('../x')", "outside the plugin"),
         (
             "test-api",
             "require('@greed/test')",

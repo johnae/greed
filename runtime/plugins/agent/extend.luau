@@ -54,6 +54,10 @@ else c` expressions, string interpolation with backticks, `+=`, and
   MCP; `input = agent.schema.object({ path = { type = "string" } }, { "path" })` describes its
   arguments, and `run(args, caller)` returns text or data. A plugin with several puts them in
   a group (`require("@agent").group(name, line)`).
+- More files: init.luau requires the plugin's other files with `require("@self/blame")`
+  (init.luau stands for the folder); those files require each other with `require("./git")`.
+  Whatever init.luau returns is the plugin's module: other plugins and the plugin's own tests
+  get it with `require("@my-plugin")`, so return what tests need to reach.
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
 - Searching: Greed's own functions (buffer:find, buffer:find_all, greed.fs.grep) take Rust
   regexes (`\bTODO\b`, `a|b`); Luau's string.find and string.match take Lua patterns.
