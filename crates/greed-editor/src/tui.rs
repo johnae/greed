@@ -22,7 +22,7 @@ use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
 use greed_core::render::{Frame, Size, grid};
 use greed_core::server::{Input, Output};
-use greed_core::theme::{Color as ThemeColor, Style, Surface, Underline};
+use greed_core::theme::{Color as ThemeColor, Medium, Style, Underline};
 use unicode_width::UnicodeWidthStr;
 
 type Error = Box<dyn std::error::Error>;
@@ -493,7 +493,7 @@ fn text_sizing(setting: Option<&str>, term: Option<&str>, in_kitty: bool) -> boo
 /// The frame's shared cell grid, with terminal styles; scaled text drawn
 /// big when the terminal can (`sized`).
 fn compose(frame: &Frame, sized: bool) -> Vec<Vec<Cell>> {
-    grid::compose_with(frame, Surface::Tui, sized)
+    grid::compose_with(frame, Medium::Tui, sized)
         .into_iter()
         .map(|row| {
             row.into_iter()

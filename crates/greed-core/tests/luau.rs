@@ -1389,7 +1389,7 @@ fn plugins_unload_unless_another_requires_them() {
 
 #[test]
 fn plugins_set_the_theme() {
-    use greed_core::theme::{Color, Surface, Underline};
+    use greed_core::theme::{Color, Medium, Underline};
     let h = host("");
     h.load_str(
         "colors",
@@ -1402,19 +1402,19 @@ fn plugins_set_the_theme() {
     .unwrap();
     h.with_editor(|ed| {
         let theme = ed.theme();
-        let keyword = theme.style("keyword.control", Surface::Tui);
+        let keyword = theme.style("keyword.control", Medium::Tui);
         assert_eq!(
             (keyword.fg, keyword.bold),
             (Some(Color::Ansi(5)), Some(true))
         );
-        let error = theme.style("diagnostic.error", Surface::Tui);
+        let error = theme.style("diagnostic.error", Medium::Tui);
         assert_eq!(error.underline, Some(Underline::Curl));
         assert_eq!(
-            theme.style("ui.selection", Surface::Tui).bg,
+            theme.style("ui.selection", Medium::Tui).bg,
             Some(Color::Ansi(4))
         );
         assert_eq!(
-            theme.style("ui.selection", Surface::Gui).bg,
+            theme.style("ui.selection", Medium::Gui).bg,
             Some(Color::Rgb(0x20, 0x30, 0x40))
         );
     });

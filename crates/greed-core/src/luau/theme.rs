@@ -129,10 +129,10 @@ const KEYS: [&str; 14] = [
     "font",
 ];
 
-fn style_from_lua(t: &Table, surfaces: bool) -> LuaResult<Style> {
+fn style_from_lua(t: &Table, media: bool) -> LuaResult<Style> {
     for pair in t.pairs::<String, Value>() {
         let (key, _) = pair?;
-        let known = KEYS.contains(&key.as_str()) || (surfaces && (key == "tui" || key == "gui"));
+        let known = KEYS.contains(&key.as_str()) || (media && (key == "tui" || key == "gui"));
         if !known {
             return Err(mlua::Error::runtime(format!(
                 "unknown style key {key:?} (use {})",

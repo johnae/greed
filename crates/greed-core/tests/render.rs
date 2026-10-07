@@ -1265,7 +1265,7 @@ fn a_cursor_on_hidden_text_shows_on_the_first_character_after_it() {
 #[test]
 fn floats_can_hide_go_without_a_border_and_label_their_border() {
     use greed_core::render::grid::compose;
-    use greed_core::theme::Surface;
+    use greed_core::theme::Medium;
     use greed_core::{Anchor, Extent, FloatOptions, VirtualLine};
     let mut ed = editor("|main");
     let options = FloatOptions {
@@ -1315,7 +1315,7 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
         (0, 6, 10, 1),
         "without a border the text takes the whole box"
     );
-    let grid = compose(&f, Surface::Tui);
+    let grid = compose(&f, Medium::Tui);
     let line = |y: usize| grid[y].iter().map(|c| c.text.as_str()).collect::<String>();
     assert_eq!(line(0), "┌─ term ─ ‹ 2/3 › ─┐");
     assert_eq!(line(3), "└────── ○●○ ───────┘");

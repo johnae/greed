@@ -12,7 +12,7 @@ use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
 use greed_core::render::{Frame, Size, grid};
 use greed_core::server::{Input, Output};
-use greed_core::theme::Surface;
+use greed_core::theme::Medium;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -209,7 +209,7 @@ impl App {
         let (Some(shown), Some(frame)) = (&mut self.shown, &self.frame) else {
             return;
         };
-        let grid = grid::compose(frame, Surface::Gui);
+        let grid = grid::compose(frame, Medium::Gui);
         let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
         let chrome = draw::Chrome::of(frame);
         let Ok(scene) = draw::build(

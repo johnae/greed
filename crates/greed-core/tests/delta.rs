@@ -132,7 +132,7 @@ fn window_options_go_along_when_they_change() {
 fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
     use greed_core::render::grid::compose;
     use greed_core::render::{FloatFrame, PanelFrame, Rect};
-    use greed_core::theme::Surface;
+    use greed_core::theme::Medium;
     let mut ed = editor("hel|lo");
     let mut f = frame(&mut ed);
     let rect = Rect {
@@ -156,18 +156,18 @@ fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
         title: Some("p".into()),
         rows: Vec::new(),
     });
-    for surface in [Surface::Tui, Surface::Gui] {
-        compose(&f, surface);
+    for medium in [Medium::Tui, Medium::Gui] {
+        compose(&f, medium);
     }
     // No rows at all, then more than a screen has and the biggest size.
     let delta: FrameDelta =
         serde_json::from_str(r#"{ "row_count": 0, "size": { "width": 65535, "height": 65535 } }"#)
             .unwrap();
     delta.apply(&mut f);
-    compose(&f, Surface::Tui);
+    compose(&f, Medium::Tui);
     let delta: FrameDelta =
         serde_json::from_str(&format!(r#"{{ "row_count": {} }}"#, usize::MAX)).unwrap();
     delta.apply(&mut f);
-    let grid = compose(&f, Surface::Tui);
+    let grid = compose(&f, Medium::Tui);
     assert_eq!(grid.len(), usize::from(Size::MAX.height));
 }

@@ -9,7 +9,7 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::Cell;
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
-use greed_core::theme::{Checkbox, Style, Surface};
+use greed_core::theme::{Checkbox, Medium, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
@@ -111,7 +111,7 @@ impl<'a> Chrome<'a> {
     /// What `frame` has besides its cells, its floats looking as the theme's
     /// `ui.float` says for the window (`rounded`, `shadow`).
     pub fn of(frame: &'a Frame) -> Self {
-        let float = frame.theme.style("ui.float", Surface::Gui);
+        let float = frame.theme.style("ui.float", Medium::Gui);
         Chrome {
             images: &frame.images,
             // A float without a border is plain cells, with no box drawn around it.
@@ -123,7 +123,7 @@ impl<'a> Chrome<'a> {
                 .collect(),
             rounded: float.rounded == Some(true),
             shadows: float.shadow == Some(true),
-            text: frame.theme.style("ui.text", Surface::Gui),
+            text: frame.theme.style("ui.text", Medium::Gui),
         }
     }
 }

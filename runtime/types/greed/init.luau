@@ -1415,7 +1415,7 @@ export type Style = {
 	font: ("mono" | "prose")?,
 }
 
---- A theme entry: a style for every surface, with changes for the terminal
+--- A theme entry: a style for every client, with changes for the terminal
 --- (`tui`) or a graphical client (`gui`).
 export type ThemeEntry = Style & {
 	tui: Style?,

@@ -9,7 +9,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use super::{FloatFrame, Frame, Row, Span, Tag};
-use crate::theme::{Style, Surface, Theme};
+use crate::theme::{Medium, Style, Theme};
 
 /// One cell: a grapheme and its style. A wide grapheme's later cells have
 /// empty text.
@@ -22,32 +22,32 @@ pub struct Cell {
     pub scale: u8,
 }
 
-/// How a client draws: the frame's theme for `surface`, and whether it can
+/// How a client draws: the frame's theme for `medium`, and whether it can
 /// draw text bigger (the window, kitty) or keeps it one size.
 #[derive(Clone, Copy)]
 struct Paint<'a> {
     theme: &'a Theme,
-    surface: Surface,
+    medium: Medium,
     scaled: bool,
 }
 
-/// `frame` as rows of cells, with styles as `surface` has them; scaled text
+/// `frame` as rows of cells, with styles as `medium` has them; scaled text
 /// is drawn big in the window and one size in a terminal.
-pub fn compose(frame: &Frame, surface: Surface) -> Vec<Vec<Cell>> {
-    compose_with(frame, surface, surface == Surface::Gui)
+pub fn compose(frame: &Frame, medium: Medium) -> Vec<Vec<Cell>> {
+    compose_with(frame, medium, medium == Medium::Gui)
 }
 
-/// `frame` as rows of cells, with styles as `surface` has them. With
+/// `frame` as rows of cells, with styles as `medium` has them. With
 /// `scaled`, scaled text takes cells marked with its scale; without it, its
 /// text is one size at the start of the cells it takes.
-pub fn compose_with(frame: &Frame, surface: Surface, scaled: bool) -> Vec<Vec<Cell>> {
+pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell>> {
     let theme = &frame.theme;
     let paint = Paint {
         theme,
-        surface,
+        medium,
         scaled,
     };
-    let look = |tag: &Tag| theme.style(tag.name(), surface);
+    let look = |tag: &Tag| theme.style(tag.name(), medium);
     // A frame from a session is drawn no bigger than any the editor makes.
     let size = frame.size.limited();
     let width = usize::from(size.width);
@@ -206,7 +206,7 @@ fn put_spans(line: &mut [Cell], x: usize, width: usize, spans: &[Span], base: St
     let mut used = put(line, x, width, " ", base, 1);
     for span in spans {
         let style = span.tags.iter().fold(base, |style, tag| {
-            style.patch(&paint.theme.style(tag.name(), paint.surface))
+            style.patch(&paint.theme.style(tag.name(), paint.medium))
         });
         used += put(line, x + used, width - used, &span.text, style, 1);
     }
@@ -218,7 +218,7 @@ fn put_spans(line: &mut [Cell], x: usize, width: usize, spans: &[Span], base: St
 fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, paint: Paint) {
     let layer = |style: Style, tags: &[Tag]| {
         tags.iter().fold(style, |style, tag| {
-            style.patch(&paint.theme.style(tag.name(), paint.surface))
+            style.patch(&paint.theme.style(tag.name(), paint.medium))
         })
     };
     let base = layer(base, &row.tags);
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn a_window_gets_scaled_cells_and_their_style_in_the_rows_they_cover() {
-        let grid = compose(&frame(vec![scaled_row()]), Surface::Gui);
+        let grid = compose(&frame(vec![scaled_row()]), Medium::Gui);
         assert_eq!(texts(&grid, 0), ["a", "", "b", "", "c", " ", " ", " "]);
         assert_eq!(
             (grid[0][0].scale, grid[0][2].scale, grid[0][4].scale),
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn a_terminal_packs_scaled_text_at_the_start_of_its_cells() {
-        let grid = compose(&frame(vec![scaled_row()]), Surface::Tui);
+        let grid = compose(&frame(vec![scaled_row()]), Medium::Tui);
         assert_eq!(texts(&grid, 0), ["a", "b", " ", " ", "c", " ", " ", " "]);
         assert!(grid[0].iter().all(|c| c.scale == 1));
         assert_eq!(

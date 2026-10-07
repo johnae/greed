@@ -3,7 +3,7 @@
 //! Everything the core draws carries style names rather than colors:
 //! `ui.selection`, `ui.statusline.mode`, `keyword`, or whatever a plugin
 //! decorates text with. A theme maps names to styles, and each client
-//! resolves them for its own surface, so a terminal and a GUI can share
+//! resolves them for its own medium, so a terminal and a GUI can share
 //! frames and themes.
 //!
 //! Names are dotted and fall back to their parents: `markup.heading.1`
@@ -248,14 +248,15 @@ impl Style {
     }
 }
 
-/// What draws a frame. Theme entries can style each one differently.
+/// What draws a frame: a terminal or the window. Theme entries can style
+/// each one differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Surface {
+pub enum Medium {
     Tui,
     Gui,
 }
 
-/// One theme entry: a style every surface uses, and changes for each.
+/// One theme entry: a style every medium uses, and changes for each.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub style: Style,
@@ -271,7 +272,7 @@ impl Entry {
         }
     }
 
-    /// This entry with the fields `over` gives changed, surface by surface.
+    /// This entry with the fields `over` gives changed, medium by medium.
     #[must_use]
     pub fn patch(&self, over: &Entry) -> Entry {
         Entry {
@@ -281,10 +282,10 @@ impl Entry {
         }
     }
 
-    fn on(&self, surface: Surface) -> Style {
-        self.style.patch(match surface {
-            Surface::Tui => &self.tui,
-            Surface::Gui => &self.gui,
+    fn on(&self, medium: Medium) -> Style {
+        self.style.patch(match medium {
+            Medium::Tui => &self.tui,
+            Medium::Gui => &self.gui,
         })
     }
 }
@@ -307,15 +308,15 @@ impl Theme {
         self.entries.get(name)
     }
 
-    /// The style for `name` on `surface`: its entry, or its nearest
+    /// The style for `name` on `medium`: its entry, or its nearest
     /// parent's. Without either, a few core names keep a plain look so the
     /// editor stays usable with no theme at all.
-    pub fn style(&self, name: &str, surface: Surface) -> Style {
+    pub fn style(&self, name: &str, medium: Medium) -> Style {
         if let Some(spec) = name.strip_prefix('=') {
             return Style::from_inline(spec);
         }
         if let Some(entry) = lineage(name).find_map(|n| self.entries.get(n)) {
-            return entry.on(surface);
+            return entry.on(medium);
         }
         if lineage(name).any(|n| PLAIN_REVERSED.contains(&n)) {
             return Style {
@@ -356,7 +357,7 @@ mod tests {
         );
         let mut theme = Theme::default();
         theme.set(name.clone(), Entry::new(Style::default()));
-        assert_eq!(theme.style(&name, Surface::Tui), style);
+        assert_eq!(theme.style(&name, Medium::Tui), style);
         assert_eq!(Style::default().inline_name(), "=");
         assert_eq!(
             Style::from_inline("fg:nope wobbly italic").italic,

@@ -1,4 +1,4 @@
-use greed_core::theme::{Color, Entry, Style, Surface, Theme, Underline};
+use greed_core::theme::{Color, Entry, Medium, Style, Theme, Underline};
 
 fn fg(color: Color) -> Style {
     Style {
@@ -25,22 +25,22 @@ fn names_fall_back_to_their_parents() {
     theme.set("markup", Entry::new(fg(Color::Ansi(4))));
     theme.set("markup.heading.1", Entry::new(fg(Color::Ansi(1))));
     assert_eq!(
-        theme.style("markup.heading.1", Surface::Tui).fg,
+        theme.style("markup.heading.1", Medium::Tui).fg,
         Some(Color::Ansi(1))
     );
     assert_eq!(
-        theme.style("markup.heading.2", Surface::Tui).fg,
+        theme.style("markup.heading.2", Medium::Tui).fg,
         Some(Color::Ansi(4))
     );
     assert_eq!(
-        theme.style("markup.link", Surface::Tui).fg,
+        theme.style("markup.link", Medium::Tui).fg,
         Some(Color::Ansi(4))
     );
-    assert_eq!(theme.style("keyword", Surface::Tui), Style::default());
+    assert_eq!(theme.style("keyword", Medium::Tui), Style::default());
 }
 
 #[test]
-fn surfaces_override_the_shared_part() {
+fn media_override_the_shared_part() {
     let mut theme = Theme::default();
     let mut entry = Entry::new(Style {
         fg: Some(Color::Ansi(2)),
@@ -49,9 +49,9 @@ fn surfaces_override_the_shared_part() {
     });
     entry.tui = fg(Color::Ansi(10));
     theme.set("string", entry);
-    let tui = theme.style("string", Surface::Tui);
+    let tui = theme.style("string", Medium::Tui);
     assert_eq!((tui.fg, tui.bold), (Some(Color::Ansi(10)), Some(true)));
-    assert_eq!(theme.style("string", Surface::Gui).fg, Some(Color::Ansi(2)));
+    assert_eq!(theme.style("string", Medium::Gui).fg, Some(Color::Ansi(2)));
 }
 
 #[test]
@@ -76,12 +76,9 @@ fn layered_styles_keep_what_the_top_one_leaves_unset() {
 #[test]
 fn an_empty_theme_still_shows_selections_and_the_status_line() {
     let theme = Theme::default();
+    assert_eq!(theme.style("ui.selection", Medium::Tui).reverse, Some(true));
     assert_eq!(
-        theme.style("ui.selection", Surface::Tui).reverse,
-        Some(true)
-    );
-    assert_eq!(
-        theme.style("ui.statusline", Surface::Tui).reverse,
+        theme.style("ui.statusline", Medium::Tui).reverse,
         Some(true)
     );
 }

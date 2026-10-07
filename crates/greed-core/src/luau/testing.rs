@@ -425,7 +425,7 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     methods.add_method("screen", |lua, _, (width, height): (u16, u16)| {
         use crate::render::grid::compose;
         let frame = draw(lua, width, height)?;
-        Ok(compose(&frame, crate::theme::Surface::Tui)
+        Ok(compose(&frame, crate::theme::Medium::Tui)
             .iter()
             .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
             .collect::<Vec<_>>())

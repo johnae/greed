@@ -18,7 +18,7 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::compose;
 use greed_core::render::{FloatFrame, Frame, ImagePlacement, Position, Rect, Row, Size, Span, Tag};
-use greed_core::theme::{Color, Entry, Style, Surface, Theme};
+use greed_core::theme::{Color, Entry, Medium, Style, Theme};
 use greed_gui::Palette;
 use greed_gui::draw::{Chrome, build};
 use greed_gui::gpu::Gpu;
@@ -135,7 +135,7 @@ fn a_frame_draws_text_on_its_grid_with_the_cursor_status_line_and_a_float() {
     let mut atlas = Atlas::new(1024);
     let palette = Palette::default();
     let frame = frame();
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         frame.cursor.map(|c| (c, frame.cursor_shape)),
@@ -198,7 +198,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     let palette = Palette::default();
     let mut frame = frame();
     frame.rows[1] = row(&[("    a -> b != c;", "")]);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
@@ -275,7 +275,7 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
     // The whole image at column 2; only the right half of the other at 30.
     frame.images = vec![placement(whole, 2, 0), placement(cut, 30, 2)];
     let pngs = HashMap::from([(whole, halves(40, 20)), (cut, halves(40, 20))]);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
@@ -339,7 +339,7 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
     };
     frame.rows[1] = Row::default();
     frame.cursor = Some(Position { col: 0, row: 0 });
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
     let scene = build(
         &grid,
@@ -439,7 +439,7 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         },
     );
     frame.theme = Arc::new(theme);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let chrome = Chrome::of(&frame);
     assert!(chrome.rounded && chrome.shadows);
     let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();
@@ -509,7 +509,7 @@ fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
     frame.rows[0] = row(&[(words, "prose"), ("|", "")]);
     let col = words.len() as u16;
     frame.cursor = Some(Position { col, row: 0 });
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
     let scene = build(
         &grid,
@@ -565,7 +565,7 @@ fn a_float_over_prose_keeps_its_place() {
     frame.theme = Arc::new(theme);
     // Prose all along the row the float ("a float", from cell 26) is on.
     frame.rows[4] = row(&[("Illuminating paragraphs of prose run under", "prose")]);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
@@ -635,7 +635,7 @@ fn a_badge_style_draws_a_box_inside_its_cells_over_the_background_beside_it() {
     // A hint between words, on a plain row and on one with a background.
     frame.rows[4] = row(&[("one", ""), ("2", "hint"), ("two", "")]);
     frame.rows[5] = row(&[("one", "line"), ("2", "hint"), ("two", "line")]);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
@@ -702,7 +702,7 @@ fn what_is_under_a_rounded_floats_border_goes_on_behind_it_and_its_title_is_a_pi
     for y in [2, 3] {
         frame.rows[y] = row(&[(&" ".repeat(40), "block")]);
     }
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
@@ -774,7 +774,7 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
     // Choices, a ring and a ring with a dot.
     frame.rows[2] = row(&[("◯ ", "choice"), ("dark", "")]);
     frame.rows[3] = row(&[("◉ ", "chosen"), ("light", "")]);
-    let grid = compose(&frame, Surface::Gui);
+    let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
         None,
