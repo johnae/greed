@@ -536,7 +536,7 @@ impl Server<'_> {
                 let pressed = self.host.timed("a key", || self.host.press(key));
                 self.report(pressed);
             }
-            Input::Resize(new) => self.size = Some(new),
+            Input::Resize(new) => self.size = Some(new.limited()),
             Input::Mouse(mouse) => {
                 let hit = self
                     .host
@@ -611,10 +611,11 @@ impl Server<'_> {
             remote,
         } = attachment;
         let inputs = self.inputs.clone();
-        thread::spawn(move || {
-            for line in reader.lines() {
+        // A line that isn't input, even one that isn't UTF-8, is skipped.
+        let reading = thread::Builder::new().spawn(move || {
+            for line in reader.split(b'\n') {
                 let Ok(line) = line else { return };
-                let Ok(input) = serde_json::from_str::<Input>(&line) else {
+                let Ok(input) = serde_json::from_slice::<Input>(&line) else {
                     continue;
                 };
                 if inputs.send(input).is_err() {
@@ -623,17 +624,25 @@ impl Server<'_> {
             }
         });
         let (output, outgoing) = crossbeam_channel::unbounded::<Output>();
-        thread::spawn(move || {
-            for message in outgoing {
-                let last = matches!(message, Output::Exit | Output::Detached | Output::Switch(_));
-                let Ok(line) = serde_json::to_string(&message) else {
-                    continue;
-                };
-                if writeln!(writer, "{line}").is_err() || last {
-                    return;
+        // With no thread to spare, the client is let go: it sees the
+        // connection close.
+        let writing = reading.and_then(|_| {
+            thread::Builder::new().spawn(move || {
+                for message in outgoing {
+                    let last =
+                        matches!(message, Output::Exit | Output::Detached | Output::Switch(_));
+                    let Ok(line) = serde_json::to_string(&message) else {
+                        continue;
+                    };
+                    if writeln!(writer, "{line}").is_err() || last {
+                        return;
+                    }
                 }
-            }
+            })
         });
+        if writing.is_err() {
+            return;
+        }
         self.client = Some(Client {
             output,
             local: false,

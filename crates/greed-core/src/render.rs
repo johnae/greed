@@ -106,6 +106,24 @@ pub struct Size {
     pub height: u16,
 }
 
+impl Size {
+    /// The largest screen drawn, in cells: past any real screen, and small
+    /// enough that a frame's rows fit in memory and its sums in a `u16`.
+    pub const MAX: Size = Size {
+        width: 2048,
+        height: 1024,
+    };
+
+    /// This size, cut to [`Size::MAX`].
+    #[must_use]
+    pub fn limited(self) -> Size {
+        Size {
+            width: self.width.min(Self::MAX.width),
+            height: self.height.min(Self::MAX.height),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Position {
     pub col: u16,
@@ -677,16 +695,22 @@ impl<M: Measure> Renderer<M> {
         }
         // Each screen row, as the pieces on it from left to right.
         let mut pieces: Vec<Vec<(u16, u16, Row)>> = vec![Vec::new(); usize::from(area.height)];
-        let index = |y: u16| usize::from(y - area.y);
+        // What falls below a screen too small for it is left out.
+        let mut put = |y: usize, piece: (u16, u16, Row)| {
+            if let Some(row) = pieces.get_mut(y) {
+                row.push(piece);
+            }
+        };
+        let index = |y: u16| usize::from(y.saturating_sub(area.y));
         if let Some(tabline) = tabline {
-            pieces[0].push((area.x, area.width, tabline));
+            put(0, (area.x, area.width, tabline));
         }
         for (view, rect, rows) in drawn {
             for (i, mut row) in rows.into_iter().enumerate() {
                 if view != active {
                     row.tags.insert(0, Tag::PANE_INACTIVE);
                 }
-                pieces[index(rect.y) + i].push((rect.x, rect.width, row));
+                put(index(rect.y) + i, (rect.x, rect.width, row));
             }
         }
         let border = |text: String| Row {
@@ -695,12 +719,12 @@ impl<M: Measure> Renderer<M> {
         };
         for line in lines {
             if line.down {
-                for y in line.y..line.y + line.len {
-                    pieces[index(y)].push((line.x, 1, border("│".to_owned())));
+                for y in line.y..line.y.saturating_add(line.len) {
+                    put(index(y), (line.x, 1, border("│".to_owned())));
                 }
             } else {
                 let text = "─".repeat(usize::from(line.len));
-                pieces[index(line.y)].push((line.x, line.len, border(text)));
+                put(index(line.y), (line.x, line.len, border(text)));
             }
         }
         let rows = pieces
@@ -714,7 +738,7 @@ impl<M: Measure> Renderer<M> {
                         row.push(&" ".repeat(usize::from(x - at)), SmallVec::new());
                     }
                     self.append(&mut row, piece, usize::from(width));
-                    at = x + width;
+                    at = x.saturating_add(width);
                 }
                 row
             })
@@ -928,7 +952,7 @@ impl<M: Measure> Renderer<M> {
             // Scaled text is a button on every row it takes.
             for down in 0..u16::from(cell.scale) {
                 let place = Position {
-                    row: place.row + down,
+                    row: place.row.saturating_add(down),
                     ..place
                 };
                 self.record_action(view, place, cell.width, action, *at);
@@ -944,7 +968,9 @@ impl<M: Measure> Renderer<M> {
         action: &Arc<str>,
         at: usize,
     ) {
-        let end = place.col + u16::try_from(width).unwrap_or(u16::MAX);
+        let end = place
+            .col
+            .saturating_add(u16::try_from(width).unwrap_or(u16::MAX));
         self.actions.borrow_mut().push(ActionArea {
             view,
             row: place.row,
@@ -1090,8 +1116,11 @@ impl<M: Measure> Renderer<M> {
                 self.line_rows(editor, view, l, width, &hidden)
             };
             let skip = if l == current.line {
-                self.heights(editor, view, l, width)[..current.row]
+                // The scroll can be past the line's rows, since the line got
+                // shorter or the view wider.
+                self.heights(editor, view, l, width)
                     .iter()
+                    .take(current.row)
                     .sum()
             } else {
                 0
@@ -1478,7 +1507,7 @@ fn selection_tags(view: &View, cell: &Cell, cursors: &[usize]) -> SmallVec<[Tag;
 fn cursor_byte(text: &Rope, range: greed_text::Range, shape: CursorShape) -> usize {
     let head = range.head.min(text.len_bytes());
     if shape != CursorShape::Bar && range.anchor < head {
-        text.char_to_byte(text.byte_to_char(head) - 1)
+        text.char_to_byte(text.byte_to_char(head).saturating_sub(1))
     } else {
         head
     }
@@ -1529,7 +1558,7 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
         }
         let start = highlight.range.start.clamp(range.start, range.end) - range.start;
         let end = highlight.range.end.clamp(range.start, range.end) - range.start;
-        for byte in &mut painted[start..end] {
+        for byte in &mut painted[start..end.max(start)] {
             *byte = Some(highlight.capture.clone());
         }
         previous = Some(highlight.range);
@@ -1651,8 +1680,9 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     {
         // The text inside starts under the cursor, on the row below it, or
         // ends on the row above it, whichever the anchor prefers and fits.
-        let below = cursor.row + 1;
-        let fits_below = below + outer_height <= area.y + area.height;
+        let below = cursor.row.saturating_add(1);
+        let fits_below = u32::from(below) + u32::from(outer_height)
+            <= u32::from(area.y) + u32::from(area.height);
         let above = cursor
             .row
             .checked_sub(outer_height)

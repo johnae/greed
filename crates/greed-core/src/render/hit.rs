@@ -75,7 +75,9 @@ fn edge_at(editor: &Editor, col: u16, row: u16) -> Option<Hit> {
         }
         match panel.options.side {
             Side::Left if col == a.x + a.width => return Some(found(panel.view, "right")),
-            Side::Right if col + 1 == a.x => return Some(found(panel.view, "left")),
+            Side::Right if a.x.checked_sub(1) == Some(col) => {
+                return Some(found(panel.view, "left"));
+            }
             _ => {}
         }
     }
@@ -173,7 +175,7 @@ impl<M: Measure> Renderer<M> {
     fn tab_at(&self, editor: &Editor, col: u16, row: u16) -> Option<TabId> {
         let tabs = editor.tabs();
         let area = editor.current_tab().area()?;
-        if tabs.len() < 2 || row + 1 != area.y {
+        if tabs.len() < 2 || area.y.checked_sub(1) != Some(row) {
             return None;
         }
         let mut x = usize::from(area.x);

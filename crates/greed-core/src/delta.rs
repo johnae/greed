@@ -107,7 +107,10 @@ impl FrameDelta {
             frame.main = main;
         }
         if let Some(count) = self.row_count {
-            frame.rows.resize_with(count, Row::default);
+            // Rows are numbered in a u16; a delta saying more is broken.
+            frame
+                .rows
+                .resize_with(count.min(usize::from(u16::MAX)), Row::default);
         }
         for (i, row) in self.rows {
             if let Some(slot) = frame.rows.get_mut(usize::from(i)) {

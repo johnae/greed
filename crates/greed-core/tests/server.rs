@@ -407,3 +407,97 @@ fn a_keys_command_is_at_work_until_it_finishes_or_waits_for_the_user() {
     host.press_keys("w").unwrap();
     assert!(host.key_command_at_work(), "waits for a command at work");
 }
+
+#[test]
+fn odd_sizes_and_clicks_far_off_screen_dont_stop_the_server() {
+    use greed_core::mouse::{Button, Mouse, MouseKind};
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "hello\nwörld 日本\n", None);
+        let host = Host::new(editor)?;
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+        let plugins = [
+            "core",
+            "helix",
+            "picker",
+            "terminal",
+            "panes",
+            "statusline",
+            "tree",
+        ];
+        host.load_dirs(&plugins.map(|p| runtime.join(p)))?;
+        Ok(host)
+    });
+    let sizes = [
+        (0, 0),
+        (1, 0),
+        (0, 1),
+        (1, 1),
+        (3, 2),
+        (u16::MAX, 2),
+        (2, 300),
+    ];
+    let kinds = [
+        MouseKind::Press(Button::Left),
+        MouseKind::Drag(Button::Left),
+        MouseKind::Release(Button::Left),
+        MouseKind::Press(Button::Right),
+        MouseKind::Move,
+        MouseKind::ScrollUp,
+        MouseKind::ScrollDown,
+        MouseKind::ScrollLeft,
+        MouseKind::ScrollRight,
+    ];
+    let cells = [
+        (0, 0),
+        (1, 1),
+        (5, 0),
+        (0, 1),
+        (u16::MAX, u16::MAX),
+        (u16::MAX, 0),
+        (0, u16::MAX),
+    ];
+    // A split, a second tab and a floating view, so clicks land on borders,
+    // the tab line and edges too.
+    for command in ["split", "tab-new", "split", "tree", "command-palette"] {
+        conn.input.send(Input::Run(command.to_owned())).unwrap();
+    }
+    for (width, height) in sizes {
+        conn.input
+            .send(Input::Resize(Size { width, height }))
+            .unwrap();
+        conn.input.send(Input::CellSize(0, 0)).unwrap();
+        frame_sized(&conn, width, height);
+        for kind in kinds {
+            for (col, row) in cells {
+                let mouse = Mouse {
+                    kind,
+                    col,
+                    row,
+                    ctrl: false,
+                    alt: false,
+                    shift: false,
+                };
+                conn.input.send(Input::Mouse(mouse)).unwrap();
+            }
+        }
+        conn.input
+            .send(Input::Paste("\u{0}\r\n\u{feff}".to_owned()))
+            .unwrap();
+        conn.input
+            .send(Input::Run("no such command".to_owned()))
+            .unwrap();
+        // Drawn at this size, after the clicks, with the server still going.
+        conn.input
+            .send(Input::Resize(Size { width, height }))
+            .unwrap();
+        frame_sized(&conn, width, height);
+    }
+}
+
+/// The next frame `width` by `height`, after any others; past the biggest
+/// screen the editor draws, that size.
+fn frame_sized(conn: &Connection, width: u16, height: u16) {
+    let size = Size { width, height }.limited();
+    while frame(conn).size != size {}
+}

@@ -89,14 +89,17 @@ impl Tab {
 
 /// Whether `b` touches `a` on its `dir` side, across the line between them.
 fn beside(a: Rect, b: Rect, dir: Direction) -> bool {
-    let overlap = |a0: u16, a1: u16, b0: u16, b1: u16| a0.max(b0) < a1.min(b1);
-    let across = overlap(a.y, a.y + a.height, b.y, b.y + b.height);
-    let down = overlap(a.x, a.x + a.width, b.x, b.x + b.width);
+    // In u32, so a rect at the screen's far edge doesn't overflow.
+    let [ax, ay, aw, ah, bx, by, bw, bh] =
+        [a.x, a.y, a.width, a.height, b.x, b.y, b.width, b.height].map(u32::from);
+    let overlap = |a0: u32, a1: u32, b0: u32, b1: u32| a0.max(b0) < a1.min(b1);
+    let across = overlap(ay, ay + ah, by, by + bh);
+    let down = overlap(ax, ax + aw, bx, bx + bw);
     match dir {
-        Direction::Right => across && b.x == a.x + a.width + 1,
-        Direction::Left => across && a.x == b.x + b.width + 1,
-        Direction::Down => down && b.y == a.y + a.height + 1,
-        Direction::Up => down && a.y == b.y + b.height + 1,
+        Direction::Right => across && bx == ax + aw + 1,
+        Direction::Left => across && ax == bx + bw + 1,
+        Direction::Down => down && by == ay + ah + 1,
+        Direction::Up => down && ay == by + bh + 1,
     }
 }
 
@@ -284,7 +287,9 @@ impl Editor {
         if dir != inward {
             return false;
         }
-        let width = (i32::from(width) + cells).clamp(1, i32::from(u16::MAX));
+        let width = i32::from(width)
+            .saturating_add(cells)
+            .clamp(1, i32::from(u16::MAX));
         panel.options.width = Extent::Cells(u16::try_from(width).unwrap_or(1));
         true
     }

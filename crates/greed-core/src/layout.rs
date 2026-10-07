@@ -149,8 +149,10 @@ impl Node {
         };
         if let Some(i) = children.iter().position(|(c, _)| *c == Node::Pane(view)) {
             let (_, weight) = children.remove(i);
-            let neighbor = i.min(children.len() - 1);
-            children[neighbor].1 += weight;
+            let neighbor = i.min(children.len().saturating_sub(1));
+            if let Some((_, w)) = children.get_mut(neighbor) {
+                *w = w.saturating_add(weight);
+            }
             if children.len() == 1
                 && let Some((only, _)) = children.pop()
             {
@@ -172,14 +174,14 @@ impl Node {
                     if i + 1 < rects.len() {
                         lines.push(match axis {
                             Axis::Across => Line {
-                                x: r.x + r.width,
+                                x: r.x.saturating_add(r.width),
                                 y: rect.y,
                                 len: rect.height,
                                 down: true,
                             },
                             Axis::Down => Line {
                                 x: rect.x,
-                                y: r.y + r.height,
+                                y: r.y.saturating_add(r.height),
                                 len: rect.width,
                                 down: false,
                             },
@@ -217,7 +219,13 @@ impl Node {
             return false;
         };
         let mut sizes: Vec<i32> = rects.iter().map(|r| i32::from(length(*axis, *r))).collect();
-        let change = cells.clamp(-(sizes[i] - 1), sizes[j] - 1);
+        // Each keeps a cell, if the two have one each to keep.
+        let (least, most) = (-(sizes[i] - 1), sizes[j] - 1);
+        let change = if least <= most {
+            cells.clamp(least, most)
+        } else {
+            0
+        };
         sizes[i] += change;
         sizes[j] -= change;
         for ((_, weight), size) in children.iter_mut().zip(sizes) {
@@ -237,8 +245,12 @@ fn length(axis: Axis, rect: Rect) -> u16 {
 /// Shares `rect` between `children` by weight, less a cell between each.
 fn child_rects(axis: Axis, children: &[(Node, u32)], rect: Rect) -> Vec<Rect> {
     let n = u16::try_from(children.len()).unwrap_or(u16::MAX);
-    let room = u32::from(length(axis, rect).saturating_sub(n.saturating_sub(1)));
-    let total: u32 = children.iter().map(|(_, w)| *w).sum::<u32>().max(1);
+    let room = u64::from(length(axis, rect).saturating_sub(n.saturating_sub(1)));
+    let total: u64 = children
+        .iter()
+        .map(|(_, w)| u64::from(*w))
+        .sum::<u64>()
+        .max(1);
     let mut start = match axis {
         Axis::Across => rect.x,
         Axis::Down => rect.y,
@@ -249,7 +261,7 @@ fn child_rects(axis: Axis, children: &[(Node, u32)], rect: Rect) -> Vec<Rect> {
         let size = if i + 1 == children.len() {
             room - given
         } else {
-            (room * weight / total).min(room - given)
+            (room * u64::from(*weight) / total).min(room - given)
         };
         given += size;
         let size = u16::try_from(size).unwrap_or(u16::MAX);
@@ -265,7 +277,7 @@ fn child_rects(axis: Axis, children: &[(Node, u32)], rect: Rect) -> Vec<Rect> {
                 ..rect
             },
         });
-        start += size + 1;
+        start = start.saturating_add(size).saturating_add(1);
     }
     rects
 }

@@ -48,14 +48,16 @@ pub fn compose_with(frame: &Frame, surface: Surface, scaled: bool) -> Vec<Vec<Ce
         scaled,
     };
     let look = |tag: &Tag| theme.style(tag.name(), surface);
-    let width = usize::from(frame.size.width);
+    // A frame from a session is drawn no bigger than any the editor makes.
+    let size = frame.size.limited();
+    let width = usize::from(size.width);
     let text = look(&Tag::TEXT);
     let blank = Cell {
         text: " ".to_owned(),
         style: text,
         scale: 1,
     };
-    let mut grid = vec![vec![blank; width]; usize::from(frame.size.height)];
+    let mut grid = vec![vec![blank; width]; usize::from(size.height)];
     if let Some((status, rows)) = frame.rows.split_last() {
         let (x, w) = (usize::from(frame.main.x), usize::from(frame.main.width));
         for (line, row) in grid.iter_mut().zip(rows) {
@@ -70,8 +72,9 @@ pub fn compose_with(frame: &Frame, surface: Surface, scaled: bool) -> Vec<Vec<Ce
     let separator = panel.patch(&look(&Tag::PANEL_BORDER));
     for p in &frame.panels {
         let (x, w) = (usize::from(p.rect.x), usize::from(p.rect.width));
-        let top = usize::from(p.rect.y) - usize::from(p.title.is_some());
-        for line in grid.iter_mut().skip(top).take(frame.rows.len() - 1 - top) {
+        let top = usize::from(p.rect.y).saturating_sub(usize::from(p.title.is_some()));
+        let rows = frame.rows.len().saturating_sub(1).saturating_sub(top);
+        for line in grid.iter_mut().skip(top).take(rows) {
             put(line, usize::from(p.separator), 1, "│", separator, 1);
         }
         if let (Some(title), Some(line)) = (&p.title, grid.get_mut(top)) {
@@ -131,6 +134,10 @@ fn draw_border(
         usize::from(r.width),
         usize::from(r.height),
     );
+    // The editor leaves a cell for the border; a frame that doesn't gets none.
+    if x == 0 || y == 0 {
+        return;
+    }
     for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
         let (left, fill, right) = match dy {
             d if d == y - 1 => ('┌', '─', '┐'),

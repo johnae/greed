@@ -114,8 +114,8 @@ fn place(out: &mut impl Write, image: &ImageData, p: &ImagePlacement, n: usize) 
     };
     let x = crop(p.col, p.cols, image.width);
     let y = crop(p.row, p.rows, image.height);
-    let w = crop(p.col + p.rect.width, p.cols, image.width) - x;
-    let h = crop(p.row + p.rect.height, p.rows, image.height) - y;
+    let w = crop(p.col.saturating_add(p.rect.width), p.cols, image.width).saturating_sub(x);
+    let h = crop(p.row.saturating_add(p.rect.height), p.rows, image.height).saturating_sub(y);
     queue!(out, cursor::MoveTo(p.rect.x, p.rect.y))?;
     write!(
         out,
