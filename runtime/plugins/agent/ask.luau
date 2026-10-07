@@ -8,6 +8,7 @@
 -- code block or a choice of its own. Only you can send the answers.
 
 local greed = require("@greed")
+local core = require("@core")
 local markdown = require("@markdown")
 local registry = require("./registry")
 
@@ -126,7 +127,17 @@ function M.ask(title: string, questions: { Question }): ({ [string]: string }, b
 		}
 	end
 	buffer:decorate("ask", { button("Send", "ask-send"), button("Cancel", "ask-cancel") })
-	a.view = greed.float(buffer, { title = "Questions", width = "70%", height = "70%" })
+	-- As big as the questions, with room for the buttons and to type an
+	-- answer; a float bigger than the screen is drawn to fit it.
+	local widest = 0
+	for line = 0, buffer:line_count() - 1 do
+		widest = math.max(widest, core.text.width(buffer:line_text(line)))
+	end
+	a.view = greed.float(buffer, {
+		title = "Questions",
+		width = math.max(widest + 24, 50),
+		height = buffer:line_count() + 3,
+	})
 	local result = a.done:wait()
 	return result.answers, result.cancelled
 end

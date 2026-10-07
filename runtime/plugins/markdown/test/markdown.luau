@@ -571,3 +571,16 @@ test("buffer.changed says which lines changed", function(t)
 	assert(seen[1][1] == 2 and seen[1][2] == 3, `{seen[1][1]}-{seen[1][2]}`)
 	assert(seen[2][1] == 1 and seen[2][2] == 1, `{seen[2][1]}-{seen[2][2]}`)
 end)
+
+test("a Markdown buffer made with its text gets the look when it's first shown", function(t)
+	t:buffer("|x")
+	local buffer = greed.create_buffer(
+		"file",
+		"# Questions\n\n- ( ) one\n- ( ) two\n",
+		{ language = "markdown" }
+	)
+	assert(#buffer:decorations("markdown") == 0, "nothing drawn before it shows")
+	greed.float(buffer, { title = "page", width = 40, height = 8, focus = false })
+	t:draw(60, 12)
+	assert(#buffer:decorations("markdown") > 0, "drawn once a view shows it")
+end)

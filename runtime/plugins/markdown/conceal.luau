@@ -97,6 +97,18 @@ greed.on("buffer.opened", function(event: greed.BufferChanged)
 	end
 end)
 
+-- A buffer made with its text already in it (a page a plugin shows, a
+-- preview) never opens or changes, so it's drawn the first time a view
+-- shows it: views report their size when first drawn.
+greed.on("view.resized", function(event: greed.ViewResized)
+	local buffer = event.view:buffer()
+	for _, entry in entries do
+		if not entry.drawn[buffer:id()] then
+			paint(entry, buffer)
+		end
+	end
+end)
+
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	if not buffer:valid() then
