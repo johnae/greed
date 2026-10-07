@@ -189,3 +189,20 @@ test("a try never lands in a folder left from before", function(t)
 	end)()
 	assert(report and string.find(report, "tests: 1 passed, 0 failed", 1, true), report)
 end)
+
+test("the plugin guide carries the API's signatures, not its doc comments", function()
+	local guide: any
+	for _, tool in agent.tools() do
+		if tool.name == "plugin_guide" then
+			guide = tool
+		end
+	end
+	local text = guide.run({}, agent.caller())
+	assert(string.find(text, "export type ThemeEntry", 1, true), "the types are there")
+	assert(
+		string.find(text, "describe a function or type for its doc", 1, true),
+		"and how to get docs"
+	)
+	assert(not string.find(text, "\n%s*%-%-%- "), "without doc comments")
+	assert(#text < 50000, `small enough to carry: {#text}`)
+end)

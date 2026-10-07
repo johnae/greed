@@ -94,10 +94,24 @@ Keep it small and say what each command does in its doc. The API's types
 follow; they're exactly what luau-analyze checks against.
 ]]
 
+-- Greed's types without their doc comments: the signatures are what a
+-- plugin needs at hand, and leaving the comments out takes about two
+-- thirds off what every later turn carries. describe gives any one's doc.
 local function read_types(): string
 	local core = greed.plugin.dirs().core
-	local types = if core then greed.fs.read(core .. "/../../types/greed/init.luau") else nil
-	return types or "(Greed's type definitions weren't found)"
+	local path = if core then core .. "/../../types/greed/init.luau" else nil
+	local types = if path then greed.fs.read(path) else nil
+	if path == nil or types == nil then
+		return "(Greed's type definitions weren't found)"
+	end
+	local kept = {}
+	for _, line in string.split(types, "\n") do
+		if not string.match(line, "^%s*%-%-%-") then
+			table.insert(kept, line)
+		end
+	end
+	return `Greed's API, without its doc comments: describe a function or type for its doc, `
+		.. `or read {path} for all of them.\n\n{table.concat(kept, "\n")}`
 end
 
 -- Plugin names are plain words with dashes; file paths stay inside the
