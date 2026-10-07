@@ -27,7 +27,7 @@ local SAID: { any } = {
 test("Anthropic gets tool uses, results in the next user message, and turns joined", function(t)
 	local body =
 		turn.body("anthropic", "m", { system = "be brief", said = SAID, tools = TOOLS }, 100)
-	assert(body.system == "be brief" and body.max_tokens == 100, "system and length")
+	assert(body.system[1].text == "be brief" and body.max_tokens == 100, "system and length")
 	assert(body.tools[1].input_schema.properties.path, "the schema")
 	assert(body.tools[2].input_schema.type == "object", "an empty one for no input")
 	local messages = body.messages
@@ -196,3 +196,35 @@ test("the tokens the conversation takes come from what the provider reports", fu
 	local quiet = events("openai", { { choices = { { delta = { content = "hi" } } } } })
 	assert(quiet.tokens == nil, "nothing reported")
 end)
+
+test(
+	"Anthropic requests mark the tools, the system prompt and the newest message for caching",
+	function(t)
+		local body =
+			turn.body("anthropic", "m", { system = "be brief", said = SAID, tools = TOOLS }, 100)
+		local marked = 0
+		local function count(block: any)
+			if block.cache_control then
+				assert(block.cache_control.type == "ephemeral", "the kind Anthropic caches")
+				marked += 1
+			end
+		end
+		for _, tool in body.tools do
+			count(tool)
+		end
+		assert(body.tools[#body.tools].cache_control, "the last tool")
+		count(body.system[1])
+		assert(body.system[1].cache_control, "the system prompt")
+		for _, message in body.messages do
+			for _, block in message.content do
+				count(block)
+			end
+		end
+		local last = body.messages[#body.messages].content
+		assert(last[#last].cache_control, "the newest message")
+		assert(marked == 3, `three of the four markers allowed: {marked}`)
+		local openai =
+			turn.body("openai", "m", { system = "be brief", said = SAID, tools = TOOLS }, 100)
+		assert(openai.tools[#openai.tools].cache_control == nil, "OpenAI caches by itself")
+	end
+)

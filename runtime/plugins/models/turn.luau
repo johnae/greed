@@ -157,8 +157,23 @@ function M.body(
 		tools = if #tools > 0 then tools else nil,
 	}
 	if kind == "anthropic" then
-		body.system = request.system
-		body.messages = anthropic_messages(request.said)
+		-- Cache markers on the tools, the system prompt and the newest
+		-- message: the next request starts with all of it, and reads it back
+		-- for a tenth of the price. Other providers cache matching starts
+		-- by themselves.
+		local cached = { type = "ephemeral" }
+		if #tools > 0 then
+			tools[#tools].cache_control = cached
+		end
+		if request.system then
+			body.system = { { type = "text", text = request.system, cache_control = cached } }
+		end
+		local messages = anthropic_messages(request.said)
+		local last = messages[#messages]
+		if last and #last.content > 0 then
+			last.content[#last.content].cache_control = cached
+		end
+		body.messages = messages
 	else
 		body.messages = openai_messages(request.system, request.said)
 	end

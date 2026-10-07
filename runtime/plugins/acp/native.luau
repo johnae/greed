@@ -43,27 +43,20 @@ local REPEATED = "\n\n(You made this same call already and got the same result. 
 
 -- Old tool results are cut down to their start: those from before the
 -- last `KEEP_TURNS` of the model's turns, longer than `TRIM_ABOVE`
--- characters. It's done every `KEEP_TURNS` turns rather than each one, so
--- the start of the conversation stays the same between, as providers
--- that cache it need.
+-- characters. It's done only when that saves `TRIM_LEAST` characters at
+-- once, so the start of the conversation, which providers cache, changes
+-- seldom.
 local KEEP_TURNS = 8
 local TRIM_ABOVE = 2000
 local TRIM_TO = 600
+local TRIM_LEAST = 80000
 local TRIMMED = "\n… (the rest of this result was left out to save room: "
 
 --- Cuts down the tool results in `said` that have served their turn, when
---- it's time to (see `KEEP_TURNS`). Each request sends the whole
---- conversation, so an old file read or listing costs again every turn.
+--- that saves a lot at once (see `TRIM_LEAST`). Each request sends the
+--- whole conversation, so an old file read or listing costs again every
+--- turn.
 function M.trim_results(said: { models.Said })
-	local turns = 0
-	for _, message in said do
-		if message.role == "assistant" then
-			turns += 1
-		end
-	end
-	if turns == 0 or turns % KEEP_TURNS ~= 0 then
-		return
-	end
 	-- Where the last KEEP_TURNS turns start.
 	local seen, keep_from = 0, #said + 1
 	for i = #said, 1, -1 do
@@ -75,6 +68,8 @@ function M.trim_results(said: { models.Said })
 			end
 		end
 	end
+	local cut: { models.Said } = {}
+	local saved = 0
 	for i = 1, keep_from - 1 do
 		local message = said[i]
 		local text = message.text or ""
@@ -83,9 +78,17 @@ function M.trim_results(said: { models.Said })
 			and #text > TRIM_ABOVE
 			and not string.find(text, TRIMMED, 1, true)
 		then
-			message.text = string.sub(text, 1, TRIM_TO)
-				.. `{TRIMMED}{#text - TRIM_TO} more characters; call the tool again if you need it.)`
+			table.insert(cut, message)
+			saved += #text - TRIM_TO
 		end
+	end
+	if saved < TRIM_LEAST then
+		return
+	end
+	for _, message in cut do
+		local text = message.text or ""
+		message.text = string.sub(text, 1, TRIM_TO)
+			.. `{TRIMMED}{#text - TRIM_TO} more characters; call the tool again if you need it.)`
 	end
 end
 
@@ -116,6 +119,8 @@ type State = {
 	--- The tokens the provider last said the conversation takes, and how
 	--- many messages of `said` that counted.
 	reported: { tokens: number, at: number }?,
+	--- The tools' names in the order it first had them, which stays.
+	order: { string },
 }
 
 local states: { [number]: State } = {}
@@ -353,11 +358,11 @@ local function system(s: Session, env: string?): string
 	local lines = {
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
 			.. "search the project, edit files and run commands with the tools you have.",
-		`The project is at {s.root}; paths are relative to it. It's {os.date(
-			"%A %Y-%m-%d %H:%M %Z"
-		)}.` .. (if env and env ~= "" then " " .. env else ""),
-		"A user's message may start with an <editor-context> block: what they had on screen as "
-			.. "they wrote it. It's left out when nothing changed since their last message.",
+		`The project is at {s.root}; paths are relative to it.`
+			.. (if env and env ~= "" then " " .. env else ""),
+		"A user's message starts with a <time> tag, when they sent it, and may have an "
+			.. "<editor-context> block: what they had on screen as they wrote it. That's left out "
+			.. "when nothing changed since their last message.",
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
 			.. "Edit with edit_file, giving enough of the old text to match once.",
@@ -386,20 +391,40 @@ end
 -- groups it has, and its own), and every tool it may call, by name, with
 -- what to do for each.
 local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agent.Tool })
-	local specs: { models.ToolSpec } = {}
+	local offered: { [string]: models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
 	for _, tool in agent.offered(state.caller) do
-		table.insert(
-			specs,
+		offered[tool.name] =
 			{ name = tool.name, description = tool.description, input = tool.input }
-		)
 	end
 	for _, tool in agent.tools() do
 		by_name[tool.name] = tool
 	end
 	for _, own in OWN do
-		table.insert(specs, own.spec)
+		offered[own.spec.name] = own.spec
 		by_name[own.spec.name] = own
+	end
+	-- In the order the session first had them: tools of a group switched on
+	-- later come last, so the list before them, which providers cache, stays.
+	local order = state.order
+	local known: { [string]: boolean } = {}
+	for _, name in order do
+		known[name] = true
+	end
+	local fresh = {}
+	for name in offered do
+		if not known[name] then
+			table.insert(fresh, name)
+		end
+	end
+	table.sort(fresh)
+	table.move(fresh, 1, #fresh, #order + 1, order)
+	local specs: { models.ToolSpec } = {}
+	for _, name in order do
+		local spec = offered[name]
+		if spec then
+			table.insert(specs, spec)
+		end
 	end
 	return specs, by_name
 end
@@ -620,15 +645,16 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	s.failed = nil
 	table.insert(s.entries, { kind = "user", text = text })
 	local fresh = session.fresh_context(s, context)
-	local said = if fresh then `{fresh}\n\n{text}` else text
+	local sent = `<time>{os.date("%A %Y-%m-%d %H:%M %Z")}</time>`
+	local said = if fresh then `{sent}\n{fresh}\n\n{text}` else `{sent}\n{text}`
 	table.insert(state.said, { role = "user", text = said } :: models.Said)
 	s.status = "working"
 	s.since = greed.now()
 	s.changed()
 	state.env = state.env or environment(s.root)
-	-- The same for every turn of this prompt, so providers can cache it,
-	-- until the hour changes and the time in it with it.
-	local said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
+	-- The same from turn to turn, so providers can cache it: the time goes
+	-- in each of your messages instead.
+	local said_system = system(s, state.env)
 	-- Once a summary fails, it isn't asked for again until the next prompt.
 	local may_compact = true
 	-- Answers cut off at their length in a row.
@@ -636,9 +662,6 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	-- What each call (tool and arguments) gave back this prompt.
 	local seen: { [string]: string } = {}
 	for _ = 1, MAX_TURNS do
-		if os.date("%Y-%m-%d %H") ~= said_hour then
-			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
-		end
 		M.trim_results(state.said)
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
@@ -807,8 +830,14 @@ function M.start(opts: {
 		driver = DRIVER,
 	})
 	local role = opts.role or models.playing(M.ROLE)
-	local state: State =
-		{ said = {}, role = role, cancelled = false, allowed = {}, caller = agent.caller() }
+	local state: State = {
+		said = {},
+		role = role,
+		cancelled = false,
+		allowed = {},
+		caller = agent.caller(),
+		order = {},
+	}
 	states[s.id] = state
 	s.session_id = if kept then kept.id else new_id()
 	if kept then

@@ -369,12 +369,17 @@ one with `x` in the session list deletes it. Agents don't read other
 sessions' conversations; only you see them in the list.
 
 Every request sends the whole conversation, so a long file read early on
-costs again on every turn after. Greed's agent cuts tool results that have
-served their turn down to their start: every eight turns, those from
-before the last eight that are longer than 2,000 characters keep their
-first 600, with a note telling the model it can call the tool again.
-Doing it in batches keeps the start of the conversation unchanged between,
-which providers that cache it need.
+costs again on every turn after. Providers cache the start of a
+conversation that's the same as last time and charge much less for it, so
+Greed's agent keeps that start steady: the system prompt doesn't change
+from turn to turn (the time comes in each of your messages instead), a
+tool group switched on adds its tools after the ones there already, and
+requests to Anthropic mark the tools, the system prompt and the newest
+message for caching. Once old tool results take a lot of room, it cuts
+those from before the last eight turns that are longer than 2,000
+characters down to their first 600, with a note telling the model it can
+call the tool again; it waits until that frees at least 80,000
+characters, so the cached start changes seldom.
 
 When a conversation nears the model's limit (80% of its context window),
 it's compacted before the next request: the model summarises everything
