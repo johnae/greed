@@ -478,6 +478,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:close` | Close the pane (the file stays open), like `alt-p x` |
 | `:reload` | Load the file again from disk |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
+| `:errors` | Errors from plugin code that nothing caught, newest first: the plugin, what it was doing, the message and where in its code it failed |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
 | `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider whose plan comes with an account, like Berget Code, instead of using a key (see [Models](#models)) |

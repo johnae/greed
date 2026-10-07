@@ -716,6 +716,12 @@ where time goes when nothing stalls, `:profile` (or `greed.profile.start()`
 and `stop()`) counts every run of plugin code and the editor's own work by
 plugin and what it did, the most time first.
 
+An error your command, handler or task doesn't catch shows on the status
+line with your plugin and what it was running ("myplugin (on
+buffer.opened): ..."). The last 100 are kept with where in your code they
+happened: `:errors` lists them, `greed.errors()` returns them, and a
+session also writes them to its log.
+
 Language servers ask things too: `greed.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it

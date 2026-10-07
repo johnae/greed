@@ -437,6 +437,10 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(|lua, ()| super::stalls::list(lua))?,
     )?;
     greed.set("profile", super::stalls::profile_module(lua)?)?;
+    greed.set(
+        "errors",
+        lua.create_function(|lua, ()| super::errors::list(lua))?,
+    )?;
     greed.set("now", now)?;
     greed.set("next_key", tasks::next_key_function(lua)?)?;
 

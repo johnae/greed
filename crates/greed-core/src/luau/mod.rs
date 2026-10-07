@@ -10,6 +10,7 @@ mod approvals;
 mod capabilities;
 mod cli;
 mod diff;
+mod errors;
 mod fs;
 mod handles;
 pub(crate) mod hash;
@@ -179,6 +180,8 @@ pub(crate) struct State {
     pub cli: cli::Commands,
     /// Runs of plugin code that held the editor up.
     pub stalls: stalls::Stalls,
+    /// Errors from plugin code that nothing caught.
+    pub errors: errors::Errors,
 }
 
 #[derive(Clone)]
@@ -444,6 +447,7 @@ impl Host {
             children: process::Children::default(),
             cli: cli::Commands::default(),
             stalls: stalls::Stalls::default(),
+            errors: errors::Errors::default(),
         });
         lua.set_app_data(Deadline::new(BUDGET));
         lua.set_interrupt(|lua| {
@@ -810,6 +814,12 @@ impl Host {
         budgeted(&self.lua, || {
             mouse_event(&self.lua, mouse, hit).map_err(HostError::from)
         })
+    }
+
+    /// The plugin and what it was running that `message`, an error, came
+    /// from, as "notes (on buffer.opened)", when it's the error kept last.
+    pub fn error_source(&self, message: &str) -> Option<String> {
+        errors::source_of(&self.lua, message)
     }
 
     /// Tells plugins which session this editor is.

@@ -1,5 +1,6 @@
 -- :stalls lists the times plugin code held the editor up, newest first,
--- with the plugin and what it was running, to trace a freeze to its cause.
+-- with the plugin and what it was running, to trace a freeze to its cause;
+-- :errors lists the errors from plugin code that nothing caught.
 
 local greed = require("@greed")
 local floats = require("./floats")
@@ -69,6 +70,31 @@ greed.command({
 		started = nil
 		local text = table.concat(profile_lines(greed.profile.stop(), seconds), "\n")
 		floats.show_text("Profile", text, { kind = "stalls", width = "90%", height = "70%" })
+	end,
+})
+
+-- :errors lists errors from plugin code that nothing caught, newest first,
+-- each with where in its Luau it failed.
+greed.command({
+	name = "errors",
+	doc = "List errors from plugin code that nothing caught, with the plugin, what it ran and where it failed",
+	run = function()
+		local out = {}
+		for _, failure in greed.errors() do
+			local at = os.date("%H:%M:%S", math.floor(failure.time))
+			table.insert(out, `{at}  {failure.plugin or "Greed"} ({failure.what})`)
+			table.insert(out, `  {failure.message}`)
+			for _, line in string.split(failure.traceback, "\n") do
+				if string.match(line, "%S") then
+					table.insert(out, `    {line}`)
+				end
+			end
+			table.insert(out, "")
+		end
+		if #out == 0 then
+			out = { "No errors from plugin code." }
+		end
+		floats.show_text("Errors, newest first", table.concat(out, "\n"), { kind = "errors" })
 	end,
 })
 

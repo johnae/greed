@@ -1537,6 +1537,8 @@ export type Greed = {
 	spawn: (f: (...any) -> ...any, ...any) -> (),
 	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading". `ms` is how long it took; `time` is when, in seconds since 1970 (as `os.time()` counts, with a fraction).
 	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
+	--- Errors from plugin code that nothing caught (a command, an event handler or a task failing), newest first, up to 100: the plugin, what it ran ("on buffer.opened", a command's name), the message, where in its Luau it failed, and when, in seconds since 1970.
+	errors: () -> { { plugin: string?, what: string, message: string, traceback: string, time: number } },
 	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken.
 	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean },
 	--- Milliseconds on the editor's clock, for timing animations. While a

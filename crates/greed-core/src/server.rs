@@ -464,7 +464,13 @@ impl Server<'_> {
     /// Shows what went wrong, if anything did, on the status line.
     fn report(&mut self, result: Result<(), HostError>) {
         if let Err(err) = result {
-            self.message = Some(first_line(&err.to_string()));
+            let text = err.to_string();
+            let line = first_line(&text);
+            // Which plugin failed, and doing what; :errors has the rest.
+            self.message = Some(match self.host.error_source(&text) {
+                Some(source) => format!("{source}: {line}"),
+                None => line,
+            });
         }
     }
 

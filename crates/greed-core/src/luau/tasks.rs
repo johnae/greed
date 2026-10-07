@@ -274,6 +274,9 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
         super::sliced(lua, id, || thread.resume::<Value>(args))
     });
+    // An error nothing caught is kept with who and what ran, and where.
+    let yielded =
+        yielded.map_err(|err| super::errors::record(lua, &thread, owner.as_deref(), what, err));
     let stopped = {
         let state = &mut *state_mut(lua);
         state.editor.set_cause(outer);
