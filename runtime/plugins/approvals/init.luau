@@ -33,6 +33,20 @@ greed.on("editor.started", function()
 	end
 end)
 
+-- Approves and loads the plugin in `dir`, which must be one waiting for
+-- approval. You chose it in a picker, whose code calls this, so it
+-- runs with approvals' own capabilities: only for a plugin that waits,
+-- so nothing can hand it any other folder.
+local function approve(dir: string): (boolean, string?)
+	for _, about in greed.plugin.pending() do
+		if about.dir == dir then
+			local ok, err = pcall(greed.plugin.approve, dir)
+			return ok, if ok then nil else tostring(err)
+		end
+	end
+	return false, `{dir} isn't waiting for approval`
+end
+
 greed.command({
 	name = "plugins-approve",
 	doc = "Review the plugins waiting for approval of what they use, and approve one",
@@ -55,7 +69,7 @@ greed.command({
 		end
 		picker.pick("Approve a plugin", items, function(item)
 			local about = item.value :: greed.PluginInfo
-			local ok, err = pcall(greed.plugin.approve, about.dir)
+			local ok, err = greed.vouch(approve, about.dir)
 			greed.echo(if ok then `approved and loaded {about.name}` else tostring(err))
 		end, {
 			preview = function(item)

@@ -422,3 +422,30 @@ fn checking_a_plugin_works_with_a_config_loaded_from_its_folder() {
         .unwrap();
     assert_eq!(check(&host, &dir), ["passed 1"]);
 }
+
+#[test]
+fn choosing_a_waiting_plugin_in_plugins_approve_approves_and_loads_it() {
+    let temp = Temp::new("approve-picker");
+    let store = temp.0.join("approved.json");
+    let shipped = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    let runner = temp.plugin("runner", "\"proc\"", "");
+    let host = host(&store, &shipped);
+    host.load_dirs(&[
+        shipped.join("core"),
+        shipped.join("picker"),
+        shipped.join("approvals"),
+        runner,
+    ])
+    .unwrap();
+    host.with_editor_mut(|editor| editor.open("file", "", None));
+    assert!(!loaded(&host).contains("runner"), "it waits");
+    host.run(FIRST_CLIENT, "plugins-approve").unwrap();
+    host.settle().unwrap();
+    host.press_keys("enter").unwrap();
+    host.settle().unwrap();
+    let said = host.with_editor_mut(Editor::take_messages);
+    assert!(
+        loaded(&host).contains("runner"),
+        "approved and loaded: {said:?}"
+    );
+}
