@@ -9,14 +9,7 @@ local style = require("./style")
 local text = require("./text")
 
 local each_range, point = motions.each_range, motions.point
-
-local function from(range: greed.Range): number
-	return math.min(range.anchor, range.head)
-end
-
-local function to(range: greed.Range): number
-	return math.max(range.anchor, range.head)
-end
+local span = text.span
 
 -- Whether the insert session started with `a`, which Helix leaves with the
 -- cursor on the last character typed rather than the one after it.
@@ -62,7 +55,7 @@ greed.command({
 	doc = "Insert before each selection",
 	run = function(ctx)
 		each_range(ctx, function(_, range)
-			return point(from(range))
+			return point((span(range)))
 		end)
 		enter_insert()
 	end,
@@ -74,7 +67,8 @@ greed.command({
 	run = function(ctx)
 		each_range(ctx, function(buffer, range)
 			if range.anchor ~= range.head then
-				return point(to(range))
+				local _, to = span(range)
+				return point(to)
 			end
 			return point(math.min(buffer:len(), buffer:next_char(range.head)))
 		end)
@@ -193,9 +187,9 @@ greed.command({
 			return
 		end
 		registers.pick(key)
-		local pieces = registers.paste(ctx)
-		if pieces then
-			insert_at_heads(ctx, table.concat(pieces, "\n"))
+		local register = registers.paste(ctx)
+		if register then
+			insert_at_heads(ctx, registers.join(register))
 		end
 	end,
 })
@@ -205,7 +199,7 @@ local function delete_selections(ctx: greed.Context)
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
-				e:delete(from(range), to(range))
+				e:delete(span(range))
 			elseif range.head < ctx.buffer:len() then
 				e:delete(range.head, text.after(ctx.buffer, range.head))
 			end
@@ -253,13 +247,17 @@ greed.command({
 	end,
 })
 
--- Copies the text of each selection, one piece per selection.
+-- Copies the text of each selection, one piece per selection. Selections
+-- that all end in a line break, as `x` makes them, are whole lines.
 local function copy_selections(ctx: greed.Context, quiet: boolean?): boolean
 	local pieces = {}
+	local linewise = true
 	for _, range in ctx.view:selection().ranges do
 		range = on_cursor(ctx.buffer, range)
 		if range.anchor ~= range.head then
-			table.insert(pieces, ctx.buffer:slice(from(range), to(range)))
+			local piece = ctx.buffer:slice(span(range))
+			table.insert(pieces, piece)
+			linewise = linewise and string.sub(piece, -1) == "\n"
 		end
 	end
 	if #pieces == 0 then
@@ -270,27 +268,29 @@ local function copy_selections(ctx: greed.Context, quiet: boolean?): boolean
 		end
 		return false
 	end
-	registers.copy(pieces)
+	registers.copy(pieces, linewise)
 	return true
 end
 
--- Where `piece` goes before or after `range`: whole lines (text ending in a
--- line break) go above or below the selected lines, anything else right at
--- the selection. Returns the place and the text to insert, with a line break put in
--- front when lines go below a last line that has none.
+-- Where `piece` goes before or after `range`: whole lines go above or below
+-- the selected lines, anything else right at the selection. Returns the
+-- place and the text to insert, with a line break put in front when lines
+-- go below a last line that has none.
 local function paste_place(
 	buffer: greed.Buffer,
 	range: greed.Range,
 	after: boolean,
-	piece: string
+	piece: string,
+	linewise: boolean
 ): (number, string)
-	if string.sub(piece, -1) ~= "\n" then
-		return (if after then to(range) else from(range)), piece
+	local from, to = span(range)
+	if not linewise then
+		return (if after then to else from), piece
 	end
 	if not after then
-		return buffer:line_start(buffer:line_of(from(range))), piece
+		return buffer:line_start(buffer:line_of(from)), piece
 	end
-	local line = buffer:line_of(math.max(from(range), to(range) - 1))
+	local line = buffer:line_of(math.max(from, to - 1))
 	if line + 1 < buffer:line_count() then
 		return buffer:line_start(line + 1), piece
 	end
@@ -301,19 +301,26 @@ end
 -- was pasted. With as many pieces as selections, each selection gets its
 -- own piece.
 local function paste(ctx: greed.Context, after: boolean)
-	local pieces = registers.paste(ctx)
-	if pieces == nil then
+	local register = registers.paste(ctx)
+	if register == nil then
 		return
 	end
+	local pieces = register.pieces
 	local selection = ctx.view:selection()
 	local one_each = #pieces == #selection.ranges
-	local joined = table.concat(pieces, "\n")
+	local joined = registers.join(register)
 	ctx.buffer:edit(function(e)
 		-- Text inserted earlier in the buffer shifts the later selections.
 		local shift = 0
 		for i, range in selection.ranges do
 			local piece = string.rep(if one_each then pieces[i] else joined, ctx.count or 1)
-			local at, inserted = paste_place(ctx.buffer, on_cursor(ctx.buffer, range), after, piece)
+			local at, inserted = paste_place(
+				ctx.buffer,
+				on_cursor(ctx.buffer, range),
+				after,
+				piece,
+				register.linewise
+			)
 			e:insert(at, inserted)
 			selection.ranges[i] = { anchor = at + shift, head = at + shift + #inserted }
 			shift += #inserted
@@ -407,8 +414,8 @@ greed.command({
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
 			for _, range in ctx.view:selection().ranges do
-				local first = buffer:line_of(from(range))
-				local last = buffer:line_of(math.max(from(range), to(range) - 1))
+				local from, to = span(range)
+				local first, last = buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
 				local start, stop = buffer:line_start(first), buffer:line_end(last)
 				e:replace(start, stop, text.reflow(buffer:slice(start, stop), width))
 			end
@@ -450,7 +457,7 @@ local function transform(ctx: greed.Context, change: (string) -> string)
 	buffer:edit(function(e)
 		local shift = 0
 		for i, range in selection.ranges do
-			local a, b = from(range), to(range)
+			local a, b = span(range)
 			if a == b then
 				b = text.after(buffer, a)
 			end
@@ -576,9 +583,8 @@ for _, above in { false, true } do
 			local buffer = ctx.buffer
 			local points, seen = {}, {}
 			for _, range in ctx.view:selection().ranges do
-				local line = buffer:line_of(
-					if above then from(range) else math.max(from(range), to(range) - 1)
-				)
+				local from, to = span(range)
+				local line = buffer:line_of(if above then from else math.max(from, to - 1))
 				local at = if above then buffer:line_start(line) else buffer:line_end(line)
 				if not seen[at] then
 					seen[at] = true
@@ -599,7 +605,8 @@ greed.command({
 		local buffer = ctx.buffer
 		local joins = {}
 		for _, range in ctx.view:selection().ranges do
-			local first, last = buffer:line_of(from(range)), buffer:line_of(to(range))
+			local from, to = span(range)
+			local first, last = buffer:line_of(from), buffer:line_of(to)
 			for line = first, math.max(last - 1, first) do
 				if line + 1 < buffer:line_count() then
 					joins[line] = true
@@ -642,12 +649,13 @@ greed.command({
 	name = "replace-with-copy",
 	doc = "Replace each selection with what was copied",
 	run = function(ctx)
-		local pieces = registers.paste(ctx)
-		if pieces == nil then
+		local register = registers.paste(ctx)
+		if register == nil then
 			return
 		end
+		local pieces = register.pieces
 		local count = #ctx.view:selection().ranges
-		local joined = table.concat(pieces, "\n")
+		local joined = registers.join(register)
 		local i = 0
 		transform(ctx, function()
 			i += 1

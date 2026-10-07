@@ -70,7 +70,7 @@ local function answers(buffer: greed.Buffer, questions: { Question }): { [string
 	local out: { [string]: string } = {}
 	local n = 0
 	for line = 0, buffer:line_count() - 1 do
-		local text = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+		local text = buffer:line_text(line)
 		local number = string.match(text, "^### (%d+)%. ")
 		if number then
 			n = tonumber(number) :: number

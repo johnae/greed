@@ -307,7 +307,7 @@ local function touches_selection(view: greed.View): (at: greed.Mark) -> boolean
 	local ranges = view:selection().ranges
 	return function(at)
 		for _, range in ranges do
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local from, to = core.text.span(range)
 			if from <= at.to and to >= at.from then
 				return true
 			end
@@ -401,8 +401,7 @@ end
 
 -- Selects the old text of the next (or previous) proposed change.
 local function jump(ctx: greed.Context, forward: boolean)
-	local selection = ctx.view:selection()
-	local head = selection.ranges[selection.primary].head
+	local head = ctx.view:cursor()
 	local best: greed.Mark? = nil
 	for _, p in in_buffer(ctx.buffer) do
 		for _, hunk in p.pending do

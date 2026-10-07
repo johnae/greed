@@ -64,7 +64,7 @@ greed.command({
 	name = "rename",
 	doc = "Rename the thing under the cursor everywhere it's used",
 	run = function(ctx)
-		local buffer, pos = ctx.buffer, common.head(ctx.view)
+		local buffer, pos = ctx.buffer, ctx.view:cursor()
 		local ok, name = current_name(buffer, pos)
 		if not ok then
 			return
@@ -153,7 +153,7 @@ greed.command({
 		local buffer = ctx.buffer
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		local ok, result, err = common.request(buffer, "textDocument/codeAction", function()
 			return {
 				textDocument = { uri = greed.lsp.uri(buffer) },

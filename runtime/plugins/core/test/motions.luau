@@ -24,6 +24,13 @@ test("line moves keep the column", function(t)
 	check(t, "é|é\néé", "j", "éé\né|é")
 end)
 
+test("line moves keep the column on screen, across tabs and wide characters", function(t)
+	check(t, "\tab|c\n1234567", "j", "\tabc\n123456|7")
+	check(t, "\tabc\n12|34567", "k", "|\tabc\n1234567")
+	check(t, "界|x\n1234", "j", "界x\n12|34")
+	check(t, "界x\n1|234", "k", "|界x\n1234")
+end)
+
 test("word motions select what they move over", function(t)
 	check(t, "|hello world", "w", "^hello |world")
 	check(t, "|hello world", "w w", "hello ^world|")

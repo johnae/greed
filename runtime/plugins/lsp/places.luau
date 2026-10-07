@@ -135,7 +135,7 @@ end
 local function references(ctx: greed.Context): { any }?
 	local buffer = ctx.buffer
 	local ok, result, err = common.request(buffer, "textDocument/references", function()
-		local params = common.at(buffer, common.head(ctx.view))
+		local params = common.at(buffer, ctx.view:cursor())
 		params.context = { includeDeclaration = true }
 		return params
 	end)

@@ -18,6 +18,7 @@
 
 local greed = require("@greed")
 local registry = require("./registry")
+local span = require("./text").span
 
 local M = {}
 
@@ -212,7 +213,7 @@ M.action({
 M.finder({
 	name = "selection",
 	find = function(view, range)
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = span(range)
 		-- A selection of one character is a cursor in the Helix style.
 		local buffer = view:buffer()
 		if to <= buffer:next_char(from) then

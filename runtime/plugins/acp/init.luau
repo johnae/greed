@@ -708,7 +708,7 @@ function M.overview(view: greed.View)
 	render_overviews()
 	view:show(buffer)
 	local pos = buffer:line_start(math.min(2, buffer:line_count() - 1))
-	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	view:set_cursor(pos)
 end
 
 -- The session on the overview line under the cursor.
@@ -717,7 +717,7 @@ local function overview_session(ctx: greed.Context): Session?
 	if overview == nil then
 		return nil
 	end
-	return overview.rows[ctx.buffer:line_of(ctx.view:selection().ranges[1].head)]
+	return overview.rows[ctx.buffer:line_of(ctx.view:cursor())]
 end
 
 -- The session `ctx` is about: the transcript it's in, or the overview line.
@@ -807,7 +807,7 @@ greed.command({
 		if s == nil then
 			return
 		end
-		local cursor = ctx.buffer:line_of(ctx.view:selection().ranges[1].head)
+		local cursor = ctx.buffer:line_of(ctx.view:cursor())
 		local id = transcript.tool_at(ctx.buffer, cursor)
 		local tool = id and s.tools[id]
 		if tool == nil then
@@ -819,7 +819,7 @@ greed.command({
 		local line = transcript.line_of_tool(ctx.buffer, tool.id)
 		if line then
 			local pos = ctx.buffer:line_start(line)
-			ctx.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+			ctx.view:set_cursor(pos)
 		end
 	end,
 })

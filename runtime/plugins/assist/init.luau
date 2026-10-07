@@ -72,13 +72,12 @@ local function selected(view: greed.View): (string, number)
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local range = selection.ranges[selection.primary]
-	local from = math.min(range.anchor, range.head)
-	local to = math.max(range.anchor, range.head)
+	local from, to = core.text.span(range)
 	if to - from > 1 then
 		return buffer:slice(from, to), buffer:line_of(from) + 1
 	end
 	local line = buffer:line_of(range.head)
-	return buffer:slice(buffer:line_start(line), buffer:line_end(line)), line + 1
+	return buffer:line_text(line), line + 1
 end
 
 -- `content` with what's pinned to the context first, when anything is.
@@ -138,8 +137,7 @@ local AROUND = 20
 -- The most severe problem on the cursor's line.
 local function problem_at(view: greed.View): greed.Diagnostic?
 	local buffer = view:buffer()
-	local selection = view:selection()
-	local line = buffer:line_of(selection.ranges[selection.primary].head)
+	local line = buffer:line_of(view:cursor())
 	local best: greed.Diagnostic? = nil
 	for _, d in greed.lsp.diagnostics(buffer) do
 		if buffer:line_of(d.from) == line and (best == nil or d.severity < best.severity) then

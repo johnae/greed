@@ -18,6 +18,7 @@
 
 local greed = require("@greed")
 local motions = require("./motions")
+local span = require("./text").span
 
 type Buffer = greed.Buffer
 type Node = greed.Node
@@ -104,10 +105,6 @@ function M.range_of(object: string, found: Object, outer: boolean): (number, num
 	return within(found.around)
 end
 
-local function bounds(range: Range): (number, number)
-	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-end
-
 -- The smallest named node covering `lo`..`hi`, or the one under a cursor.
 local function node_in(buffer: Buffer, lo: number, hi: number): Node?
 	return buffer:node_at(lo, math.max(lo, hi - 1))
@@ -115,7 +112,7 @@ end
 
 --- The innermost `object` holding `range`, as the range to select, or nil.
 function M.select(buffer: Buffer, range: Range, object: string, outer: boolean): Range?
-	local lo, hi = bounds(range)
+	local lo, hi = span(range)
 	local best: Object? = nil
 	for _, found in M.objects(buffer, object, lo, hi) do
 		local around = found.around
@@ -139,7 +136,7 @@ end
 --- The next (or with `backward` the previous) `object` starting after (or
 --- ending before) `range`, as the range around it, or nil.
 function M.next(buffer: Buffer, range: Range, object: string, backward: boolean): Range?
-	local lo, hi = bounds(range)
+	local lo, hi = span(range)
 	local pick: Object? = nil
 	for _, found in M.objects(buffer, object) do
 		local around = found.around
@@ -162,7 +159,7 @@ end
 --- The smallest named node strictly larger than `range` (or, for a cursor,
 --- the one under it), or nil at the root.
 function M.enclosing(buffer: Buffer, range: Range): Node?
-	local lo, hi = bounds(range)
+	local lo, hi = span(range)
 	local node = node_in(buffer, lo, hi)
 	while node and node.from >= lo and node.to <= hi and hi > lo do
 		node = node:parent()
@@ -191,7 +188,7 @@ greed.command({
 			if node == nil then
 				return nil
 			end
-			local lo, hi = bounds(range)
+			local lo, hi = span(range)
 			grown[view] = grown[view] or {}
 			table.insert(grown[view], {
 				buffer = buffer:id(),
@@ -210,7 +207,7 @@ greed.command({
 	doc = "Shrink each selection back, or to the first syntax node inside it",
 	run = function(ctx)
 		select_node(ctx, function(buffer, range, view)
-			local lo, hi = bounds(range)
+			local lo, hi = span(range)
 			local stack = grown[view] or {}
 			local last = stack[#stack]
 			if
@@ -240,7 +237,7 @@ for _, backward in { false, true } do
 		doc = `Select the {if backward then "previous" else "next"} syntax node beside each selection`,
 		run = function(ctx)
 			motions.each_range(ctx, function(buffer, range)
-				local lo, hi = bounds(range)
+				local lo, hi = span(range)
 				local node = node_in(buffer, lo, hi)
 				local sibling = node and (if backward then node:prev() else node:next())
 				return if sibling then { anchor = sibling.from, head = sibling.to } else range
@@ -260,7 +257,7 @@ for _, backward in { false, true } do
 		run = function(ctx)
 			local buffer = ctx.buffer
 			local selection = ctx.view:selection()
-			local lo, hi = bounds(selection.ranges[selection.primary])
+			local lo, hi = span(selection.ranges[selection.primary])
 			local node = node_in(buffer, lo, hi)
 			local other = node and (if backward then node:prev() else node:next())
 			if node == nil or other == nil then
@@ -290,7 +287,7 @@ local function select_nodes(ctx: greed.Context, pick: (greed.Node) -> { greed.No
 	local buffer = ctx.buffer
 	local ranges: { greed.Range } = {}
 	for _, range in ctx.view:selection().ranges do
-		local lo, hi = bounds(range)
+		local lo, hi = span(range)
 		local node = node_in(buffer, lo, hi)
 		local picked: { Node } = if node then pick(node) else {}
 		if #picked == 0 then
@@ -332,7 +329,7 @@ for _, at_end in { false, true } do
 			else "Move to the start of the syntax node around each selection's",
 		run = function(ctx)
 			motions.each_range(ctx, function(buffer, range)
-				local lo, hi = bounds(range)
+				local lo, hi = span(range)
 				local node = node_in(buffer, lo, hi)
 				local parent = node and node:parent()
 				if parent == nil then

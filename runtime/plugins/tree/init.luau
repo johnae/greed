@@ -48,8 +48,7 @@ end
 
 -- The node on the cursor's line.
 local function current(t: Tree): Node?
-	local selection = t.view:selection()
-	return t.nodes[t.buffer:line_of(selection.ranges[selection.primary].head) + 1]
+	return t.nodes[t.buffer:line_of(t.view:cursor()) + 1]
 end
 
 local M = {}
@@ -286,7 +285,7 @@ core.mouse.claim("tree", function(event)
 	if event.kind == "move" then
 		hover(t, event.pos)
 	elseif event.kind == "press" and event.button == "left" and event.pos then
-		t.view:set_selection({ ranges = { { anchor = event.pos, head = event.pos } }, primary = 1 })
+		t.view:set_cursor(event.pos)
 		greed.run("tree-open")
 		return true
 	end

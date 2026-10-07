@@ -5,6 +5,7 @@
 -- pastes themselves.
 
 local greed = require("@greed")
+local span = require("./text").span
 
 local M = {}
 
@@ -26,7 +27,7 @@ function M.paste(view: greed.View, text: string)
 		local cursors = {}
 		local shift = 0
 		for _, range in selection.ranges do
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local from, to = span(range)
 			if replace then
 				e:replace(from, to, text)
 			else

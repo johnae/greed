@@ -8,8 +8,9 @@
 --     require("@greed").option.set("editing-style", "edit")
 
 local greed = require("@greed")
-local text = require("@core").text
-local indent = require("@core").indent
+local core = require("@core")
+local text, indent, registers = core.text, core.indent, core.registers
+local span = text.span
 
 -- Commands that type. Typing in a row is undone in one step; any other
 -- command ends the step.
@@ -27,14 +28,6 @@ greed.on("command.run", function(event: greed.CommandRun)
 	end
 end)
 
-local function from(range: greed.Range): number
-	return math.min(range.anchor, range.head)
-end
-
-local function to(range: greed.Range): number
-	return math.max(range.anchor, range.head)
-end
-
 -- Replaces each selection with a piece of text (`text(i)` for the i-th
 -- selection) and leaves a cursor after each.
 local function replace_selections(ctx: greed.Context, text: (i: number) -> string)
@@ -43,7 +36,7 @@ local function replace_selections(ctx: greed.Context, text: (i: number) -> strin
 		-- Earlier edits move the later selections by this much.
 		local shift = 0
 		for i, range in selection.ranges do
-			local start, finish = from(range), to(range)
+			local start, finish = span(range)
 			local piece = text(i)
 			e:replace(start, finish, piece)
 			local cursor = start + shift + #piece
@@ -67,7 +60,7 @@ local function erase(ctx: greed.Context, forward: boolean)
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
-				e:delete(from(range), to(range))
+				e:delete(span(range))
 			elseif forward and range.head < ctx.buffer:len() then
 				e:delete(range.head, text.after(ctx.buffer, range.head))
 			elseif not forward and range.head > 0 then
@@ -112,7 +105,8 @@ greed.command({
 	run = function(ctx)
 		local buffer = ctx.buffer
 		for _, range in ctx.view:selection().ranges do
-			if buffer:line_of(from(range)) ~= buffer:line_of(to(range)) then
+			local from, to = span(range)
+			if buffer:line_of(from) ~= buffer:line_of(to) then
 				greed.run("indent")
 				return
 			end
@@ -138,9 +132,8 @@ greed.command({
 })
 
 -- With nothing selected, copy and cut take whole lines, as in most
--- editors. What such a copy put on the clipboard, so pasting it with
--- nothing selected puts it above the line rather than at the cursor.
-local copied_lines: string? = nil
+-- editors, and pasting whole lines with nothing selected puts them above
+-- the line rather than at the cursor.
 
 local function nothing_selected(selection: greed.Selection): boolean
 	for _, range in selection.ranges do
@@ -159,7 +152,7 @@ type Block = { first: number, last: number }
 local function line_blocks(buffer: greed.Buffer, selection: greed.Selection): { Block }
 	local blocks: { Block } = {}
 	for _, range in selection.ranges do
-		local a, b = from(range), to(range)
+		local a, b = span(range)
 		table.insert(
 			blocks,
 			{ first = buffer:line_of(a), last = buffer:line_of(math.max(a, b - 1)) }
@@ -196,21 +189,15 @@ local function delete_lines(buffer: greed.Buffer, blocks: { Block })
 	end)
 end
 
-local function lines_text(buffer: greed.Buffer, first: number, last: number): string
-	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
-end
-
 -- Copies the lines the cursors are on, each with its line break. Returns
 -- the blocks of lines.
 local function copy_lines(ctx: greed.Context): { Block }
 	local blocks = line_blocks(ctx.buffer, ctx.view:selection())
 	local pieces = {}
 	for _, block in blocks do
-		table.insert(pieces, lines_text(ctx.buffer, block.first, block.last) .. "\n")
+		table.insert(pieces, text.lines(ctx.buffer, block.first, block.last) .. "\n")
 	end
-	local joined = table.concat(pieces)
-	copied_lines = joined
-	greed.clipboard.set(joined)
+	registers.to_clipboard({ table.concat(pieces) }, true)
 	return blocks
 end
 
@@ -221,7 +208,6 @@ greed.command({
 		if nothing_selected(ctx.view:selection()) then
 			copy_lines(ctx)
 		else
-			copied_lines = nil
 			greed.run("copy")
 		end
 	end,
@@ -232,7 +218,6 @@ greed.command({
 	doc = "Cut the selection, or the line when nothing is selected",
 	run = function(ctx)
 		if not nothing_selected(ctx.view:selection()) then
-			copied_lines = nil
 			greed.run("cut")
 			return
 		end
@@ -242,15 +227,16 @@ greed.command({
 
 greed.command({
 	name = "paste-over",
-	doc = "Paste, replacing each selection; lines copied whole go above the cursor's line",
+	doc = "Paste, replacing each selection; whole lines go above the cursor's line",
 	run = function(ctx)
-		local pieces = greed.clipboard.get()
-		if pieces == nil then
+		local register = registers.clipboard()
+		if register == nil then
 			return
 		end
+		local pieces = register.pieces
 		local selection = ctx.view:selection()
-		local joined = table.concat(pieces, "\n")
-		if joined == copied_lines and nothing_selected(selection) then
+		local joined = registers.join(register)
+		if register.linewise and nothing_selected(selection) then
 			local buffer = ctx.buffer
 			buffer:edit(function(e)
 				for _, block in line_blocks(buffer, selection) do
@@ -295,8 +281,8 @@ for _, down in { false, true } do
 				for _, block in blocks do
 					local other = if down then block.last + 1 else block.first - 1
 					local moved, swapped =
-						lines_text(buffer, block.first, block.last),
-						lines_text(buffer, other, other)
+						text.lines(buffer, block.first, block.last),
+						text.lines(buffer, other, other)
 					local top = math.min(block.first, other)
 					local bottom = math.max(block.last, other)
 					e:replace(
@@ -312,8 +298,9 @@ for _, down in { false, true } do
 				end
 			end)
 			for i, range in selection.ranges do
+				local from, to = span(range)
 				for _, shift in shifts do
-					if from(range) >= shift.from and to(range) <= shift.to + 1 then
+					if from >= shift.from and to <= shift.to + 1 then
 						selection.ranges[i] =
 							{ anchor = range.anchor + shift.by, head = range.head + shift.by }
 					end
@@ -342,7 +329,7 @@ for _, down in { false, true } do
 			local ranges = {}
 			local grown = 0
 			for i, block in blocks do
-				local lines = lines_text(buffer, block.first, block.last)
+				local lines = text.lines(buffer, block.first, block.last)
 				copies[i] = lines
 				for _, range in selection.ranges do
 					local line = buffer:line_of(range.head)
@@ -411,7 +398,7 @@ greed.command({
 		local buffer = ctx.buffer
 		local selection = ctx.view:selection()
 		for i, range in selection.ranges do
-			local a, b = from(range), to(range)
+			local a, b = span(range)
 			local first, last = buffer:line_of(a), buffer:line_of(math.max(a, b - 1))
 			local whole = a == buffer:line_start(first)
 				and b > a

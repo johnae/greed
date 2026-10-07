@@ -259,6 +259,13 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
     assert_eq!(eval("b:next_char(1)"), "3");
     assert_eq!(eval("b:prev_char(3)"), "1");
     assert_eq!(eval("b:slice(0, 3)"), "aé");
+    assert_eq!(eval("b:line_text(0)"), "aé");
+    assert_eq!(eval("b:line_text(1)"), "b");
+    assert_eq!(eval("b:line_text(2)"), "last");
+    assert!(
+        h.eval("require('@greed').view():buffer():line_text(3)")
+            .is_err()
+    );
     assert!(
         h.eval("require('@greed').view():buffer():char_at(2)")
             .is_err()
@@ -267,6 +274,60 @@ fn buffer_helpers_use_byte_offsets_and_zero_based_lines() {
         h.eval("require('@greed').view():buffer():slice(0, 99)")
             .is_err()
     );
+}
+
+#[test]
+fn display_columns_count_wide_characters_and_tabs() {
+    // "\t" reaches column 4, "界" takes two columns, "é" one.
+    let h = host("\t界é|\nab\tc\n");
+    let eval = |s: &str| {
+        h.eval(&format!(
+            "(function() local b = require('@greed').view():buffer(); return {s} end)()"
+        ))
+        .unwrap()
+    };
+    assert_eq!(eval("b:display_column(0)"), "0");
+    assert_eq!(eval("b:display_column(1)"), "4");
+    assert_eq!(eval("b:display_column(4)"), "6");
+    assert_eq!(eval("b:display_column(6)"), "7");
+    assert_eq!(eval("b:display_column(1, 8)"), "8");
+    // A tab after two characters only reaches the next stop.
+    assert_eq!(eval("b:display_column(11)"), "4");
+    assert_eq!(eval("b:display_column(11, 3)"), "3");
+
+    assert_eq!(eval("b:at_display_column(0, 0)"), "0");
+    assert_eq!(eval("b:at_display_column(0, 2)"), "0");
+    assert_eq!(eval("b:at_display_column(0, 4)"), "1");
+    assert_eq!(eval("b:at_display_column(0, 5)"), "1");
+    assert_eq!(eval("b:at_display_column(0, 6)"), "4");
+    assert_eq!(eval("b:at_display_column(0, 99)"), "7");
+    assert_eq!(eval("b:at_display_column(1, 3)"), "10");
+    assert_eq!(eval("b:at_display_column(2, 3)"), "13");
+    assert_eq!(eval("b:at_display_column(0, 4, 8)"), "0");
+
+    for bad in [
+        "display_column(2)",
+        "display_column(99)",
+        "display_column(0, 0)",
+        "at_display_column(3, 0)",
+    ] {
+        assert!(
+            h.eval(&format!("require('@greed').view():buffer():{bad}"))
+                .is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn the_cursor_is_the_primary_head() {
+    let h = host("hello world");
+    h.eval("require('@greed').view():set_selection({ ranges = { { anchor = 0, head = 2 }, { anchor = 9, head = 6 } }, primary = 2 })")
+        .unwrap();
+    assert_eq!(h.eval("require('@greed').view():cursor()").unwrap(), "6");
+    h.eval("require('@greed').view():set_cursor(3)").unwrap();
+    assert_eq!(selection(&h), Selection::point(3));
+    assert!(h.eval("require('@greed').view():set_cursor(50)").is_err());
 }
 
 #[test]

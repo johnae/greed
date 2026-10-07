@@ -62,7 +62,7 @@ function M.focus(view: greed.View): { [string]: any }
 	local selection = view:selection()
 	local selections = {}
 	for i, range in selection.ranges do
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		table.insert(selections, {
 			primary = i == selection.primary,
 			from = position(buffer, from),
@@ -120,7 +120,7 @@ function M.describe(root: string?): string?
 		`File: {relative(path, root)}, line {line + 1}, column {column}`
 			.. (if buffer:modified() then " (unsaved changes)" else ""),
 	}
-	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local from, to = core.text.span(range)
 	-- A selection of one character is the cursor, in the styles that have one.
 	if to > from and buffer:next_char(from) < to then
 		local text, left = cut(buffer:slice(from, to), M.MAX_SELECTION)

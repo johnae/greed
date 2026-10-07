@@ -5,10 +5,6 @@
 local greed = require("@greed")
 local core = require("@core")
 
-local function text_of(buffer: greed.Buffer, line: number): string
-	return buffer:slice(buffer:line_start(line), buffer:line_end(line))
-end
-
 -- A fence line's ticks or tildes, and whether nothing but spaces follows,
 -- as on a closing fence.
 local function fence_of(text: string): (string?, boolean)
@@ -23,7 +19,7 @@ end
 local function fence(buffer: greed.Buffer, line: number): (number?, number)
 	local open, ticks = nil :: number?, ""
 	for n = 0, buffer:line_count() - 1 do
-		local found, bare = fence_of(text_of(buffer, n))
+		local found, bare = fence_of(buffer:line_text(n))
 		if open == nil then
 			if n > line then
 				break
@@ -61,12 +57,12 @@ end
 local function item(buffer: greed.Buffer, line: number): (number?, number)
 	local count = buffer:line_count()
 	for top = line, 0, -1 do
-		local text = text_of(buffer, top)
+		local text = buffer:line_text(top)
 		local depth = item_of(text)
 		if depth then
 			local last = top
 			for n = top + 1, count - 1 do
-				local indent = indent_of(text_of(buffer, n))
+				local indent = indent_of(buffer:line_text(n))
 				if indent and indent <= depth then
 					break
 				elseif indent then
@@ -85,7 +81,7 @@ local function item(buffer: greed.Buffer, line: number): (number?, number)
 end
 
 local function heading_level(buffer: greed.Buffer, line: number): number?
-	local hashes = string.match(text_of(buffer, line), "^(#+)%s")
+	local hashes = string.match(buffer:line_text(line), "^(#+)%s")
 	return if hashes then #hashes else nil
 end
 

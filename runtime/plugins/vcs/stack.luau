@@ -146,7 +146,7 @@ end
 
 -- The 0-based line the cursor of `stack`'s view is on.
 local function cursor_line(stack: Stack): number
-	return stack.view:buffer():line_of(stack.view:selection().ranges[1].head)
+	return stack.view:buffer():line_of(stack.view:cursor())
 end
 
 -- The change on the cursor's line, if any.
@@ -200,7 +200,7 @@ local function render(stack: Stack, select: string?)
 		return
 	end
 	local pos = buffer:line_start(cursor or 2)
-	stack.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	stack.view:set_cursor(pos)
 end
 
 --- Opens the change stack of the repository the project is in, in `view`.

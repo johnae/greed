@@ -344,8 +344,7 @@ greed.command({
 	name = "notes-hover",
 	doc = "Say when the due date or reminder under the cursor is, in words, or show what's under it",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local head = selection.ranges[selection.primary].head
+		local head = ctx.view:cursor()
 		local line = ctx.buffer:line_of(head)
 		local start = ctx.buffer:line_start(line)
 		local words =

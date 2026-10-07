@@ -110,6 +110,11 @@ another program becomes Greed's clipboard when the window gets focus, so
 (`cmd-v` on macOS) paste the system clipboard at the cursors in any mode,
 as a terminal's paste does.
 
+Whole lines stay whole lines from one editing style to another: lines
+copied with `y y` in the Vim style, `x y` in Helix's or `ctrl-c` with
+nothing selected in edit mode paste above or below the line in all three.
+Text copied in another program pastes where the cursor is.
+
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
 it back to the size it had before. Pick another font and size in your
 `init.luau`; the window follows as soon as they change:

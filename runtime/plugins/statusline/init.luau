@@ -283,8 +283,7 @@ M.add("right", "selections", function(ctx)
 end)
 
 M.add("right", "position", function(ctx)
-	local selection = ctx.view:selection()
-	local head = selection.ranges[selection.primary].head
+	local head = ctx.view:cursor()
 	local line = ctx.buffer:line_of(head)
 	local column = (utf8.len(ctx.buffer:slice(ctx.buffer:line_start(line), head)) or 0) + 1
 	return `{line + 1}:{column}`

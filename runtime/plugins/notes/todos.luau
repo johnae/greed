@@ -150,7 +150,7 @@ function M.open_at(name: string, line: number)
 	greed.open(notes.path(name))
 	local view = greed.view()
 	local at = view:buffer():line_start(math.min(line, view:buffer():line_count() - 1))
-	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	view:set_cursor(at)
 end
 
 greed.command({
@@ -162,7 +162,7 @@ greed.command({
 		buffer:edit(function(e)
 			for _, line in lines do
 				local start = buffer:line_start(line)
-				local text = buffer:slice(start, buffer:line_end(line))
+				local text = buffer:line_text(line)
 				local box_from = string.find(text, "%[[ xX]%]")
 				local done = M.parse(text)
 				if done ~= nil and box_from then

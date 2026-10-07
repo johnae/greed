@@ -85,7 +85,7 @@ local function render(o: Open)
 	end)
 	buffer:set_readonly(true)
 	local pos = buffer:line_start(at - 1)
-	o.float:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	o.float:set_cursor(pos)
 end
 
 local function close()
@@ -118,7 +118,7 @@ local function move(delta: number)
 	if o == nil then
 		return
 	end
-	local line = o.float:buffer():line_of(o.float:selection().ranges[1].head) + 1
+	local line = o.float:buffer():line_of(o.float:cursor()) + 1
 	local target = math.clamp(line + delta, 1, #o.lines)
 	o.view:undo_to(o.lines[target])
 	render(o)

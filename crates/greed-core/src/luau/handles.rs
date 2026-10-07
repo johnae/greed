@@ -112,17 +112,7 @@ impl UserData for ViewRef {
         methods.add_method("valid", |lua, this, ()| {
             Ok(state(lua).editor.find_view(this.id).is_some())
         });
-        methods.add_method("selection", |lua, this, ()| {
-            this.with_view(lua, |v| selection_to_lua(lua, &v.selection))
-        });
-        methods.add_method("set_selection", |lua, this, t: Table| {
-            let selection = selection_from_lua(&t)?;
-            let buffer = this.buffer(lua)?;
-            let mut state = state_mut(lua);
-            check_selection(state.editor.buffer(buffer).text(), &selection)?;
-            state.editor.view_mut(this.id).selection = selection;
-            Ok(())
-        });
+        add_selection_methods(methods);
         methods.add_method("size", |lua, this, ()| {
             this.with_view(lua, |v| Ok(v.size.unzip()))
         });
@@ -198,6 +188,32 @@ impl UserData for ViewRef {
         add_pane_methods(methods);
         add_history_methods(methods);
     }
+}
+
+/// `view:selection()`, `set_selection(selection)`, `cursor()` and
+/// `set_cursor(pos)`.
+fn add_selection_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    methods.add_method("selection", |lua, this, ()| {
+        this.with_view(lua, |v| selection_to_lua(lua, &v.selection))
+    });
+    methods.add_method("set_selection", |lua, this, t: Table| {
+        let selection = selection_from_lua(&t)?;
+        let buffer = this.buffer(lua)?;
+        let mut state = state_mut(lua);
+        check_selection(state.editor.buffer(buffer).text(), &selection)?;
+        state.editor.view_mut(this.id).selection = selection;
+        Ok(())
+    });
+    methods.add_method("cursor", |lua, this, ()| {
+        this.with_view(lua, |v| Ok(v.selection.primary().head))
+    });
+    methods.add_method("set_cursor", |lua, this, pos: usize| {
+        let buffer = this.buffer(lua)?;
+        let mut state = state_mut(lua);
+        char_index(state.editor.buffer(buffer).text(), pos)?;
+        state.editor.view_mut(this.id).selection = Selection::point(pos);
+        Ok(())
+    });
 }
 
 /// `view:undo()`, `undo_to(node)` and `redo()`.
@@ -884,8 +900,29 @@ pub(super) fn same_handle<T: UserData + 'static>(other: &Value, same: impl Fn(&T
     }
 }
 
-/// `buffer:line_count()`, `line_of(pos)`, `line_start(line)` and
-/// `line_end(line)`.
+/// The end of `line`, before its line break.
+fn line_end(text: &Rope, line: usize) -> usize {
+    let slice = text.line(line);
+    let newline = match (slice.len_chars(), slice.chars().last()) {
+        (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
+        (_, Some('\n')) => 1,
+        _ => 0,
+    };
+    text.line_to_byte(line) + slice.len_bytes() - newline
+}
+
+/// The tab width a display column method was given, or the default.
+fn tab_width(given: Option<usize>) -> LuaResult<usize> {
+    match given {
+        Some(0) => Err(mlua::Error::runtime("a tab width is at least 1")),
+        Some(n) => Ok(n),
+        None => Ok(crate::render::TAB_WIDTH),
+    }
+}
+
+/// `buffer:line_count()`, `line_of(pos)`, `line_start(line)`,
+/// `line_end(line)`, `line_text(line)`, `display_column(pos)` and
+/// `at_display_column(line, col)`.
 fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("line_count", |lua, this, ()| {
         this.with_text(lua, |t| Ok(t.len_lines()))
@@ -905,15 +942,36 @@ fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("line_end", |lua, this, line: usize| {
         this.with_text(lua, |t| {
             check_line(t, line)?;
-            let slice = t.line(line);
-            let newline = match (slice.len_chars(), slice.chars().last()) {
-                (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
-                (_, Some('\n')) => 1,
-                _ => 0,
-            };
-            Ok(t.line_to_byte(line) + slice.len_bytes() - newline)
+            Ok(line_end(t, line))
         })
     });
+    methods.add_method("line_text", |lua, this, line: usize| {
+        this.with_text(lua, |t| {
+            check_line(t, line)?;
+            Ok(t.byte_slice(t.line_to_byte(line)..line_end(t, line))
+                .to_string())
+        })
+    });
+    methods.add_method(
+        "display_column",
+        |lua, this, (pos, tabs): (usize, Option<usize>)| {
+            let tabs = tab_width(tabs)?;
+            this.with_text(lua, |t| {
+                char_index(t, pos)?;
+                Ok(crate::render::display_column(t, pos, tabs))
+            })
+        },
+    );
+    methods.add_method(
+        "at_display_column",
+        |lua, this, (line, col, tabs): (usize, usize, Option<usize>)| {
+            let tabs = tab_width(tabs)?;
+            this.with_text(lua, |t| {
+                check_line(t, line)?;
+                Ok(crate::render::at_display_column(t, line, col, tabs))
+            })
+        },
+    );
 }
 
 /// Collects edits made inside `buffer:edit`.

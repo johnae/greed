@@ -37,7 +37,7 @@ end
 local function primary_range(view: greed.View): (number, number)
 	local selection = view:selection()
 	local range = selection.ranges[selection.primary]
-	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	return core.text.span(range)
 end
 
 -- The primary selection in the main view, as Claude Code describes one.

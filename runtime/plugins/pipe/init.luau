@@ -30,9 +30,7 @@ export type Filter = (text: string) -> string
 
 local M = {}
 
-local function span(range: greed.Range): (number, number)
-	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-end
+local span = core.text.span
 
 -- Words of `text`, split at spaces, dashes, underscores and case changes.
 local function words(text: string): { string }

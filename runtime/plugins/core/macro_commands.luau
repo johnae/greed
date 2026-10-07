@@ -104,7 +104,7 @@ greed.command({
 		local at = string.find(buffer:text(), name_field(name), 1, true)
 		if at then
 			local start = buffer:line_start(buffer:line_of(at - 1))
-			view:set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+			view:set_cursor(start)
 		end
 		greed.echo(`saved as :{name}`)
 	end,

@@ -206,7 +206,7 @@ local function follow(term: Term, screen: greed.TerminalScreen, before: number)
 			local pos = if screen.cursor
 				then buffer:line_start(term.history + screen.cursor.row) + screen.cursor.col
 				else buffer:line_start(term.history)
-			view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+			view:set_cursor(pos)
 			view:set_scroll(term.history)
 		elseif view:scroll() >= before then
 			view:set_scroll(term.history)
@@ -792,10 +792,7 @@ export type Reference = {
 -- the line before it, which says what's wrong.
 local function said_about(buffer: greed.Buffer, line: number): string
 	local function trimmed(at: number): string
-		return string.match(
-			buffer:slice(buffer:line_start(at), buffer:line_end(at)),
-			"^%s*(.-)%s*$"
-		) or ""
+		return string.match(buffer:line_text(at), "^%s*(.-)%s*$") or ""
 	end
 	local text = trimmed(line)
 	if line > 0 and string.match(text, "^%-%->") then
@@ -835,8 +832,7 @@ end
 -- Selects the next reference after the cursor, or with `back` the one
 -- before it.
 local function to_reference(ctx: greed.Context, back: boolean)
-	local selection = ctx.view:selection()
-	local head = selection.ranges[selection.primary].head
+	local head = ctx.view:cursor()
 	local list = M.references(ctx.buffer)
 	local found: Reference? = nil
 	for _, ref in list do
@@ -866,7 +862,7 @@ function M.open_file(path: string, line: number?, col: number?)
 		local row = math.clamp(line - 1, 0, buffer:line_count() - 1)
 		local at =
 			math.min(buffer:line_start(row) + math.max((col or 1) - 1, 0), buffer:line_end(row))
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		view:set_cursor(at)
 	end
 end
 
@@ -974,8 +970,7 @@ greed.command({
 	name = "open-link",
 	doc = "Open the link under the cursor, or the file it names, at the line it says",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		if not open_at(ctx.buffer, selection.ranges[selection.primary].head) then
+		if not open_at(ctx.buffer, ctx.view:cursor()) then
 			greed.echo("no link or file here")
 		end
 	end,
@@ -1022,8 +1017,7 @@ end
 -- or with `back` the one before it.
 local function to_command(ctx: greed.Context, back: boolean)
 	local buffer = ctx.buffer
-	local selection = ctx.view:selection()
-	local line = buffer:line_of(selection.ranges[selection.primary].head)
+	local line = buffer:line_of(ctx.view:cursor())
 	local commands = M.commands(buffer)
 	local found: number? = nil
 	for _, c in commands do
@@ -1046,7 +1040,7 @@ local function to_command(ctx: greed.Context, back: boolean)
 		)
 		return
 	end
-	ctx.view:set_selection({ ranges = { { anchor = found, head = found } }, primary = 1 })
+	ctx.view:set_cursor(found)
 end
 
 greed.command({
@@ -1089,8 +1083,7 @@ greed.command({
 	name = "terminal-select-output",
 	doc = "Select the output of the command at the cursor in a terminal, to copy or search",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local from, to = M.output_at(ctx.buffer, selection.ranges[selection.primary].head)
+		local from, to = M.output_at(ctx.buffer, ctx.view:cursor())
 		if from == nil or to == nil then
 			greed.echo("no output marked here")
 			return
@@ -1123,8 +1116,7 @@ greed.command({
 		end
 		local parts = {}
 		for _, range in ctx.view:selection().ranges do
-			local from = math.min(range.anchor, range.head)
-			local to = math.max(range.anchor, range.head)
+			local from, to = core.text.span(range)
 			-- A cursor sends its line.
 			if to - from <= 1 then
 				local line = buffer:line_of(range.head)

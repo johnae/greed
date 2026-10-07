@@ -235,7 +235,7 @@ agent.tool({
 			local view = greed.view()
 			local buffer = view:buffer()
 			local at = buffer:line_start(math.clamp(args.line - 1, 0, buffer:line_count() - 1))
-			view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+			view:set_cursor(at)
 		end
 		return `opened {args.path}`
 	end,

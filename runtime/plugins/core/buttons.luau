@@ -55,8 +55,7 @@ greed.command({
 	doc = "Run the button under the cursor, as clicking it does",
 	run = function(ctx)
 		local view = ctx.view
-		local selection = view:selection()
-		local buttons = M.at(ctx.buffer, selection.ranges[selection.primary].head)
+		local buttons = M.at(ctx.buffer, view:cursor())
 		-- The cursor goes to the button first, as a click puts it.
 		local function press(button: Button)
 			view:set_selection({

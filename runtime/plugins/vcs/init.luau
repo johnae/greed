@@ -237,14 +237,9 @@ greed.on("option.changed", function(event)
 	end
 end)
 
-local function head(view: greed.View): number
-	local selection = view:selection()
-	return selection.ranges[selection.primary].head
-end
-
 local function goto_change(ctx: greed.Context, forward: boolean)
 	local buffer = ctx.buffer
-	local line = buffer:line_of(head(ctx.view))
+	local line = buffer:line_of(ctx.view:cursor())
 	local found = changes(buffer)
 	local target: number? = nil
 	if forward then
@@ -269,7 +264,7 @@ local function goto_change(ctx: greed.Context, forward: boolean)
 		return
 	end
 	local at = buffer:line_start(target)
-	ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	ctx.view:set_cursor(at)
 end
 
 greed.command({
@@ -303,7 +298,7 @@ for _, last in { false, true } do
 				return
 			end
 			local at = buffer:line_start((lines_of(buffer, change)))
-			ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+			ctx.view:set_cursor(at)
 		end,
 	})
 end
@@ -311,7 +306,7 @@ end
 -- The change since the last commit on the cursor's line, if there is one.
 local function change_here(ctx: greed.Context): Change?
 	local buffer = ctx.buffer
-	local line = buffer:line_of(head(ctx.view))
+	local line = buffer:line_of(ctx.view:cursor())
 	for _, change in changes(buffer) do
 		local first, last = lines_of(buffer, change)
 		if first <= line and line <= last then
@@ -458,13 +453,13 @@ greed.command({
 	run = function(ctx)
 		local buffer = ctx.buffer
 		if buffer:kind() == "multibuffer" then
-			local ok, why = multibuffer.revert(buffer, head(ctx.view))
+			local ok, why = multibuffer.revert(buffer, ctx.view:cursor())
 			if not ok then
 				greed.echo(why :: string)
 			end
 			return
 		end
-		local change = change_shown_at(buffer, buffer:line_of(head(ctx.view)))
+		local change = change_shown_at(buffer, buffer:line_of(ctx.view:cursor()))
 		if change == nil then
 			greed.echo("no change here")
 			return
@@ -480,7 +475,7 @@ greed.command({
 	doc = "Stage the change under the cursor for the next git commit, leaving the rest",
 	run = function(ctx)
 		local buffer = ctx.buffer
-		local pos = head(ctx.view)
+		local pos = ctx.view:cursor()
 		local path, text
 		if buffer:kind() == "multibuffer" then
 			path, text = multibuffer.change_at(buffer, pos)
@@ -561,7 +556,7 @@ greed.command({
 			greed.echo("this file isn't in a repository")
 			return
 		end
-		local line = ctx.buffer:line_of(head(ctx.view)) + 1
+		local line = ctx.buffer:line_of(ctx.view:cursor()) + 1
 		local out = if repo.kind == "jj"
 			then vcs(repo, { "file", "annotate", "-r", "@", "--", `root-file:"{relative}"` })
 			else vcs(repo, { "blame", "-L", `{line},{line}`, "--", relative })

@@ -598,7 +598,7 @@ end
 --- Puts the cursor in `view` at the end of what's in the box.
 function M.focus_prompt(view: greed.View)
 	local pos = view:buffer():len()
-	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	view:set_cursor(pos)
 end
 
 -- The box's sides follow what you write.

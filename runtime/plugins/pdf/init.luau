@@ -94,13 +94,13 @@ local function show(v: Viewer)
 		local start = v.starts[v.page]
 		local at = v.buffer:line_start(start)
 		for _, view in v.buffer:views() do
-			view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+			view:set_cursor(at)
 			view:set_scroll(start)
 		end
 	else
 		show_page(v, cols_of(v))
 		for _, view in v.buffer:views() do
-			view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+			view:set_cursor(0)
 			view:set_scroll(0)
 		end
 	end
@@ -149,7 +149,7 @@ local function page_at_cursor(v: Viewer, ctx: greed.Context)
 	if not v.text then
 		return
 	end
-	local line = v.buffer:line_of(ctx.view:selection().ranges[1].head)
+	local line = v.buffer:line_of(ctx.view:cursor())
 	for page, start in v.starts do
 		if start <= line then
 			v.page = page

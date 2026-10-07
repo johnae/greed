@@ -85,7 +85,7 @@ greed.command({
 		if staged == nil then
 			return
 		end
-		local line = ctx.buffer:line_of(ctx.view:selection().ranges[1].head)
+		local line = ctx.buffer:line_of(ctx.view:cursor())
 		local patch = diffs.hunk_patch(ctx.buffer:text(), line)
 		if patch == nil then
 			greed.echo("no hunk here")
@@ -97,7 +97,7 @@ greed.command({
 		end
 		fill(staged)
 		local pos = ctx.buffer:line_start(math.min(line, ctx.buffer:line_count() - 1))
-		ctx.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+		ctx.view:set_cursor(pos)
 	end,
 })
 

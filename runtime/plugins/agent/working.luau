@@ -110,9 +110,8 @@ local last_look = ""
 --- happens every LOOK_EVERY.
 function M.look()
 	local view = greed.view()
-	local selection = view:selection()
 	local buffer = view:buffer()
-	local at = `{buffer:id()}:{selection.ranges[selection.primary].head}`
+	local at = `{buffer:id()}:{view:cursor()}`
 	if at ~= last_look then
 		last_look = at
 		note(buffer, "look")

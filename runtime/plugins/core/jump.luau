@@ -76,8 +76,7 @@ function M.pick(view: greed.View): (number?, number?)
 		return nil, nil
 	end
 	local buffer = view:buffer()
-	local selection = view:selection()
-	local found = targets(view, selection.ranges[selection.primary].head)
+	local found = targets(view, view:cursor())
 	if #found == 0 then
 		greed.echo("no words to jump to")
 		return nil, nil

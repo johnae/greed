@@ -15,12 +15,8 @@ type Range = greed.Range
 
 local each_range, point = core.motions.each_range, core.motions.point
 
-local function line_text(buffer: Buffer, line: number): string
-	return buffer:slice(buffer:line_start(line), buffer:line_end(line))
-end
-
 local function blank(buffer: Buffer, line: number): boolean
-	return string.match(line_text(buffer, line), "^%s*$") ~= nil
+	return string.match(buffer:line_text(line), "^%s*$") ~= nil
 end
 
 -- Where `line` ends, including its line break.
@@ -80,7 +76,7 @@ local function headings(buffer: Buffer): { [number]: number }
 	local found = {}
 	local fence: string? = nil
 	for line = 0, buffer:line_count() - 1 do
-		local text = line_text(buffer, line)
+		local text = buffer:line_text(line)
 		local marker = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
 		if fence then
 			if

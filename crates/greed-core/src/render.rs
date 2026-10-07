@@ -61,6 +61,45 @@ impl Measure for CellWidth {
     }
 }
 
+/// How many columns apart tab stops are.
+pub const TAB_WIDTH: usize = 4;
+
+/// The width of `grapheme` at column `x`: a tab reaches the next tab stop.
+fn width_at(measure: &impl Measure, grapheme: &str, x: usize, tab_width: usize) -> usize {
+    if grapheme == "\t" {
+        tab_width - x % tab_width
+    } else {
+        measure.width(grapheme)
+    }
+}
+
+/// The screen column of byte `pos` in its line, counting wide characters
+/// and tabs as they're drawn (but not folds, concealed or scaled text).
+pub fn display_column(text: &Rope, pos: usize, tab_width: usize) -> usize {
+    let start = text.line_to_byte(text.byte_to_line(pos));
+    let before = text.byte_slice(start..pos).to_string();
+    before
+        .graphemes(true)
+        .fold(0, |x, g| x + width_at(&CellWidth, g, x, tab_width))
+}
+
+/// The position in `line` drawn at screen column `col`: the start of the
+/// character covering it, or the line's end if the line is shorter.
+pub fn at_display_column(text: &Rope, line: usize, col: usize, tab_width: usize) -> usize {
+    let start = text.line_to_byte(line);
+    let content = text.line(line).to_string();
+    let content = content.trim_end_matches(['\n', '\r']);
+    let mut x = 0;
+    for (offset, g) in content.grapheme_indices(true) {
+        let w = width_at(&CellWidth, g, x, tab_width);
+        if col < x + w {
+            return start + offset;
+        }
+        x += w;
+    }
+    start + content.len()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Size {
     pub width: u16,
@@ -402,7 +441,7 @@ impl<M: Measure> Renderer<M> {
     pub fn new(measure: M) -> Self {
         Self {
             measure,
-            tab_width: 4,
+            tab_width: TAB_WIDTH,
             images: RefCell::default(),
             actions: RefCell::default(),
             status_actions: RefCell::default(),
@@ -934,7 +973,7 @@ impl<M: Measure> Renderer<M> {
             }
             let scale = scale_at(byte);
             let (text, w) = if grapheme == "\t" {
-                let w = self.tab_width - x % self.tab_width;
+                let w = width_at(&self.measure, grapheme, x, self.tab_width);
                 (" ".repeat(w), w)
             } else {
                 let w = self.measure.width(grapheme) * usize::from(scale);

@@ -129,7 +129,7 @@ local function mark(buffer: greed.Buffer)
 	local marks: { greed.Mark } = {}
 	for line = 0, buffer:line_count() - 1 do
 		local start = buffer:line_start(line)
-		line_marks(buffer:slice(start, buffer:line_end(line)), start, marks)
+		line_marks(buffer:line_text(line), start, marks)
 	end
 	buffer:decorate("notes-look", marks)
 end

@@ -26,7 +26,7 @@ require("@self/actions")
 require("@self/signature")
 local status = require("@self/status")
 
-local head, move_to, ask, describe = common.head, common.move_to, common.ask, common.describe
+local ask, describe = common.ask, common.describe
 
 -- Hover contents come as a string, a { value } table, or a list of those.
 local function hover_text(contents: any): string
@@ -76,7 +76,7 @@ greed.command({
 	name = "hover",
 	doc = "Show what's under the cursor, and any problems there",
 	run = function(ctx)
-		local pos = head(ctx.view)
+		local pos = ctx.view:cursor()
 		local parts = {}
 		for _, d in greed.lsp.diagnostics(ctx.buffer) do
 			if d.from <= pos and pos <= d.to then
@@ -116,7 +116,7 @@ do
 		name = name,
 		doc = `Go to where the thing under the cursor is {what}`,
 		run = function(ctx)
-			local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, head(ctx.view))
+			local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, ctx.view:cursor())
 			if not ok then
 				return
 			elseif err then
@@ -150,7 +150,7 @@ local function sorted_diagnostics(buffer: greed.Buffer): { greed.Diagnostic }
 end
 
 local function jump(ctx: greed.Context, forward: boolean)
-	local pos = head(ctx.view)
+	local pos = ctx.view:cursor()
 	local list = sorted_diagnostics(ctx.buffer)
 	local target = nil
 	if forward then
@@ -169,7 +169,7 @@ local function jump(ctx: greed.Context, forward: boolean)
 		end
 	end
 	if target then
-		move_to(ctx.view, target.from)
+		ctx.view:set_cursor(target.from)
 		greed.echo(describe(target))
 	else
 		greed.echo("no more problems")
@@ -202,7 +202,7 @@ for _, last in { false, true } do
 			local list = sorted_diagnostics(ctx.buffer)
 			local target = list[if last then #list else 1]
 			if target then
-				move_to(ctx.view, target.from)
+				ctx.view:set_cursor(target.from)
 				greed.echo(describe(target))
 			else
 				greed.echo("no problems")
@@ -227,7 +227,7 @@ greed.command({
 		end
 		local text, language = buffer:text(), buffer:language()
 		picker.pick("Problems", items, function(item)
-			move_to(view, item.value)
+			view:set_cursor(item.value)
 		end, {
 			preview = function(item)
 				return { text = text, language = language, line = buffer:line_of(item.value) }
@@ -309,7 +309,7 @@ actions.finder({
 		end
 		local line = buffer:line_of(range.head)
 		local start = buffer:line_start(line)
-		local text = buffer:slice(start, buffer:line_end(line))
+		local text = buffer:line_text(line)
 		local at = range.head - start + 1
 		local init = 1
 		while true do

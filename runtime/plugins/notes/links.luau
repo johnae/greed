@@ -163,8 +163,7 @@ greed.command({
 	name = "notes-follow",
 	doc = "Open the note the [[link]] under the cursor points at, or go to the definition",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local head = selection.ranges[selection.primary].head
+		local head = ctx.view:cursor()
 		for _, link in M.links(ctx.buffer) do
 			if link.from <= head and head < link.to then
 				local path = ctx.buffer:path()

@@ -117,7 +117,7 @@ greed.command({
 		local change = last and last.changes[#last.changes]
 		if change then
 			local at = math.min(change.from + #change.text, ctx.buffer:len())
-			ctx.view:set_selection({ ranges = { motions.point(at) }, primary = 1 })
+			ctx.view:set_cursor(at)
 		end
 	end,
 })
@@ -141,14 +141,14 @@ local PATH_CHAR = "[%w%._%-/~+@]"
 --- character, otherwise the run of path characters around the cursor. Nil
 --- if there's none.
 function M.path_at(buffer: greed.Buffer, range: greed.Range): string?
-	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local from, to = text.span(range)
 	if to > buffer:next_char(from) then
 		return buffer:slice(from, to)
 	end
 	local cursor = motions.cursor(buffer, range)
 	local line = buffer:line_of(cursor)
 	local start = buffer:line_start(line)
-	local row = buffer:slice(start, buffer:line_end(line))
+	local row = buffer:line_text(line)
 	local at = cursor - start + 1
 	local first, last = at, at - 1
 	while first > 1 and string.match(string.sub(row, first - 1, first - 1), PATH_CHAR) do

@@ -7,6 +7,7 @@
 -- edits made since.
 
 local greed = require("@greed")
+local span = require("./text").span
 
 -- At most this many selections are kept for each view.
 local KEPT = 50
@@ -118,22 +119,20 @@ local function push(view: greed.View, history: History)
 	next_id += 1
 	local marks = buffer:decorations(namespace(view))
 	for i, range in selection.ranges do
+		local from, to = span(range)
 		table.insert(marks, {
-			from = math.min(range.anchor, range.head),
-			to = math.max(range.anchor, range.head),
+			from = from,
+			to = to,
 			style = `{next_id} {i} {if range.anchor > range.head then 1 else 0}`,
 		})
 	end
 	buffer:decorate(namespace(view), marks)
-	table.insert(
-		history.entries,
-		{
-			id = next_id,
-			buffer = buffer:id(),
-			primary = selection.primary,
-			count = #selection.ranges,
-		}
-	)
+	table.insert(history.entries, {
+		id = next_id,
+		buffer = buffer:id(),
+		primary = selection.primary,
+		count = #selection.ranges,
+	})
 	if #history.entries > KEPT then
 		table.remove(history.entries, 1)
 		keep_marks(view, history.entries)

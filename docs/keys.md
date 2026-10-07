@@ -180,8 +180,7 @@ greed.command({
 	doc = "Upper-case the line the cursor is on",
 	run = function(ctx)
 		local buffer = ctx.buffer
-		local selection = ctx.view:selection()
-		local line = buffer:line_of(selection.ranges[selection.primary].head)
+		local line = buffer:line_of(ctx.view:cursor())
 		local from, to = buffer:line_start(line), buffer:line_end(line)
 		buffer:edit(function(e)
 			e:replace(from, to, string.upper(buffer:slice(from, to)))

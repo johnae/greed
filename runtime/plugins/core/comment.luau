@@ -40,7 +40,7 @@ greed.command({
 		local commented = true
 		for _, line in motions.selected_lines(ctx) do
 			local start = buffer:line_start(line)
-			local text = buffer:slice(start, buffer:line_end(line))
+			local text = buffer:line_text(line)
 			local lead = #(string.match(text, "^[ \t]*") :: string)
 			if lead < #text then
 				table.insert(lines, { start = start, text = text, lead = lead })

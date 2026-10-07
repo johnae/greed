@@ -135,7 +135,7 @@ function M.open(options: Options)
 	greed.on("view.closed", closed)
 	open = o
 	greed.mode.set("insert")
-	view:set_selection({ ranges = { { anchor = #start, head = #start } }, primary = 1 })
+	view:set_cursor(#start)
 	mask(o)
 end
 

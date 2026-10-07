@@ -181,11 +181,7 @@ greed.command({
 			if buffer then
 				local row = buffer:line_of(math.min(place.pos, buffer:len()))
 				where = tostring(row + 1)
-				line = string.gsub(
-					buffer:slice(buffer:line_start(row), buffer:line_end(row)),
-					"^%s+",
-					""
-				)
+				line = string.gsub(buffer:line_text(row), "^%s+", "")
 			end
 			table.insert(items, { label = `{name}:{where}  {line}`, value = place })
 		end

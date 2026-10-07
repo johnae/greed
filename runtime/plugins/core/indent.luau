@@ -47,8 +47,7 @@ end
 
 --- The indent `line` starts with.
 function M.of(buffer: Buffer, line: number): string
-	local start = buffer:line_start(line)
-	return string.match(buffer:slice(start, buffer:line_end(line)), "^[ \t]*") :: string
+	return string.match(buffer:line_text(line), "^[ \t]*") :: string
 end
 
 -- Whether `node` is open at `pos`: it holds it, or ends there missing its
@@ -159,7 +158,7 @@ local function from_line(
 	-- On a line with nothing before `pos`, the lines above say.
 	while not string.match(before, "%S") and line > 0 do
 		line -= 1
-		before = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+		before = buffer:line_text(line)
 	end
 	before = string.match(before, "^(.-)%s*$") :: string
 	local base = if string.match(before, "%S") then M.of(buffer, line) else ""

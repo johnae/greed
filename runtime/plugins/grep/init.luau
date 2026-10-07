@@ -39,7 +39,7 @@ local function go_to(root: string, path: string, line: number, column: number)
 	local buffer = view:buffer()
 	local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
 	local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
-	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	view:set_cursor(at)
 end
 
 -- Shows `found` in the results panel, each line under its file.

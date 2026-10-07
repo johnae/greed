@@ -130,7 +130,7 @@ greed.command({
 		end
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		local first = ctx.buffer:line_of(from) + 1
 		local last = ctx.buffer:line_of(math.max(from, to - 1)) + 1
 		local text, err = M.history(path, first, last)

@@ -163,8 +163,7 @@ actions.finder({
 	name = "ticket",
 	find = function(view, range)
 		local buffer = view:buffer()
-		local line = buffer:line_of(range.head)
-		local text = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+		local text = buffer:line_text(buffer:line_of(range.head))
 		local id = string.match(text, "%u+%-%d+")
 		return if id then { { kind = "ticket", label = id, value = id } } else nil
 	end,
@@ -234,7 +233,7 @@ list of ranges with an `anchor` and a `head`.
 
 ```luau
 local buffer, view = ctx.buffer, ctx.view
-local line = buffer:line_of(view:selection().ranges[1].head)
+local line = buffer:line_of(view:cursor())
 buffer:edit(function(e)
 	e:insert(buffer:line_start(line), "-- ")
 end)
@@ -243,6 +242,23 @@ end)
 Edits made in one `edit` call are one undo step and are applied together,
 so their positions all refer to the text before the edit. Selections move
 with the text.
+
+`view:cursor()` is the head of the primary selection and
+`view:set_cursor(pos)` makes the selection one cursor there.
+`require("@core").text.span(range)` gives a range's start and end,
+whichever way it points. `buffer:line_text(line)` is a line without its
+line break. `buffer:display_column(pos)` is the screen column `pos` is
+drawn at, counting wide characters as two columns and tabs up to the next
+tab stop, and `buffer:at_display_column(line, col)` goes back from a
+column to a position, which is how up and down keep their column.
+
+Copying and pasting goes through `require("@core").registers`, so text
+keeps whether it was whole lines in every editing style. A register holds
+`{ pieces, linewise }`, one piece per selection: `registers.copy(pieces,
+linewise)` puts them in the register picked with `"` or on the clipboard,
+`registers.paste(ctx)` gives back what to paste, and `registers.join(r)`
+makes one text of it. Text on the clipboard that Greed didn't put there
+comes back with `linewise` false.
 
 `greed.open(path)` shows a file, `greed.load(path)` opens one without showing
 it, `greed.create_buffer(kind, text)` makes a scratch buffer, and

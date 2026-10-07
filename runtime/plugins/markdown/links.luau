@@ -65,10 +65,7 @@ end
 function M.heading(buffer: greed.Buffer, anchor: string): number?
 	local want = string.lower(decode(anchor))
 	for n = 0, buffer:line_count() - 1 do
-		local title = string.match(
-			buffer:slice(buffer:line_start(n), buffer:line_end(n)),
-			"^#+%s+(.-)%s*#*%s*$"
-		)
+		local title = string.match(buffer:line_text(n), "^#+%s+(.-)%s*#*%s*$")
 		if title and M.slug(title) == want then
 			return n
 		end
@@ -85,7 +82,7 @@ function M.jump(view: greed.View, anchor: string): boolean
 		return false
 	end
 	local at = buffer:line_start(line)
-	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	view:set_cursor(at)
 	view:set_scroll(line)
 	return true
 end
@@ -105,7 +102,7 @@ function M.follow(view: greed.View, target: string, at: number): greed.Buffer?
 	if path == nil then
 		-- A web page: open-link opens the address under the cursor.
 		local selection = view:selection()
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		view:set_cursor(at)
 		local ok, err = pcall(function()
 			greed.run("open-link")
 		end)

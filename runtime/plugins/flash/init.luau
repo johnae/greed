@@ -10,6 +10,7 @@
 --     require("@greed").option.set("flash-duration", 150)
 
 local greed = require("@greed")
+local core = require("@core")
 
 greed.option.define({
 	name = "flash-duration",
@@ -45,7 +46,7 @@ greed.on("command.run", function(event: greed.CommandRun)
 	local view = greed.view()
 	local marks: { greed.Mark } = {}
 	for _, range in view:selection().ranges do
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		if from < to then
 			table.insert(marks, { from = from, to = to, style = "ui.flash.now", above = true })
 		end
@@ -66,7 +67,9 @@ greed.on("command.run", function(event: greed.CommandRun)
 	if from_bg and to_bg then
 		greed.animate(duration, function(t)
 			if latest == mine then
-				greed.theme.set({ ["ui.flash.now"] = { bg = mix(from_bg, to_bg, t), fg = flash.fg } })
+				greed.theme.set({
+					["ui.flash.now"] = { bg = mix(from_bg, to_bg, t), fg = flash.fg },
+				})
 			end
 		end)
 	else

@@ -37,8 +37,7 @@ function M.scroll(view: greed.View, lines: number)
 	local top = math.clamp(view:scroll() + lines, 0, last)
 	view:set_scroll(top)
 	local rows = view:size() or 1
-	local selection = view:selection()
-	local line = buffer:line_of(selection.ranges[selection.primary].head)
+	local line = buffer:line_of(view:cursor())
 	local bottom = math.min(top + rows - 1, last)
 	if line < top then
 		point(view, buffer:line_start(top))

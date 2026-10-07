@@ -695,8 +695,7 @@ greed.command({
 	name = "multibuffer-open",
 	doc = "Go to the line under the cursor in its file",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local path, line, column = M.location(ctx.buffer, selection.ranges[selection.primary].head)
+		local path, line, column = M.location(ctx.buffer, ctx.view:cursor())
 		if path == nil then
 			return
 		end
@@ -705,7 +704,7 @@ greed.command({
 		local buffer = view:buffer()
 		local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
 		local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		view:set_cursor(at)
 	end,
 })
 
@@ -721,8 +720,7 @@ greed.command({
 	name = "multibuffer-revert",
 	doc = "Put the change under the cursor back the way it was, in a view of changes",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local ok, why = M.revert(ctx.buffer, selection.ranges[selection.primary].head)
+		local ok, why = M.revert(ctx.buffer, ctx.view:cursor())
 		if not ok then
 			greed.echo(why :: string)
 		end

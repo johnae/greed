@@ -12,6 +12,7 @@
 local greed = require("@greed")
 local registry = require("./registry")
 local syntax = require("./syntax")
+local span = require("./text").span
 
 type Buffer = greed.Buffer
 
@@ -52,7 +53,7 @@ end
 
 -- How far `line` is indented, or nil for a blank line.
 local function indent(buffer: Buffer, line: number): number?
-	local text = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+	local text = buffer:line_text(line)
 	local spaces, rest = string.match(text, "^(%s*)()")
 	return if (rest :: number) > #text then nil else #(spaces :: string)
 end
@@ -145,8 +146,7 @@ local function unfold(buffer: Buffer, starts: { number })
 end
 
 local function cursor_line(view: greed.View): number
-	local selection = view:selection()
-	return view:buffer():line_of(selection.ranges[selection.primary].head)
+	return view:buffer():line_of(view:cursor())
 end
 
 --- Folds lines `first` to `last` (0-based) under the first.
@@ -166,7 +166,7 @@ end
 
 local function go_to_line(view: greed.View, line: number)
 	local start = view:buffer():line_start(line)
-	view:set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+	view:set_cursor(start)
 end
 
 -- Folds the block around the cursor's line, saying so when there's none.
@@ -263,7 +263,7 @@ greed.command({
 	run = function(ctx)
 		local buffer, selection = ctx.buffer, ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = span(range)
 		local first, last = buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
 		if last > first then
 			M.fold(buffer, first, last)

@@ -111,7 +111,7 @@ fn cmdline_plugin_tests_pass() {
 #[test]
 fn vim_plugin_tests_pass() {
     // Vim uses the completion menu for ctrl-n in insert mode and the
-    // command line for :.
+    // command line for :. Its tests paste in edit mode too.
     let plugins = [
         core(),
         plugin("picker"),
@@ -119,6 +119,7 @@ fn vim_plugin_tests_pass() {
         plugin("statusline"),
         plugin("lsp"),
         plugin("cmdline"),
+        plugin("edit-mode"),
         plugin("vim"),
     ];
     assert_all_pass(&plugins, &plugin("vim"));

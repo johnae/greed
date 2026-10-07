@@ -489,16 +489,11 @@ local function allow(buffer: greed.Buffer): boolean
 	return true
 end
 
-local function cursor(ctx: greed.Context): number
-	local selection = ctx.view:selection()
-	return selection.ranges[selection.primary].head
-end
-
 greed.command({
 	name = "block-run",
 	doc = "Run the code block under the cursor and save its output in a result block under it",
 	run = function(ctx)
-		local block = block_at(ctx.buffer, cursor(ctx))
+		local block = block_at(ctx.buffer, ctx.view:cursor())
 		if block == nil then
 			greed.echo("there's no code block here")
 		elseif allow(ctx.buffer) then
@@ -538,7 +533,7 @@ greed.command({
 	name = "block-result-clear",
 	doc = "Remove the result under the code block at the cursor",
 	run = function(ctx)
-		local block = block_at(ctx.buffer, cursor(ctx))
+		local block = block_at(ctx.buffer, ctx.view:cursor())
 		local result = block and block.result
 		if result then
 			ctx.buffer:edit(function(e)
@@ -568,7 +563,7 @@ greed.command({
 	name = "block-stop",
 	doc = "Stop the code block running under the cursor",
 	run = function(ctx)
-		local block = block_at(ctx.buffer, cursor(ctx))
+		local block = block_at(ctx.buffer, ctx.view:cursor())
 		for _, run in running do
 			local at = where(run)
 			if run.buffer == ctx.buffer and block and at == block.from then

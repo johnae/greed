@@ -115,7 +115,7 @@ local function update_preview(o: Open)
 		local buffer = view:buffer()
 		local line = math.clamp(shown.line, 0, buffer:line_count() - 1)
 		local at = buffer:line_start(line)
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		view:set_cursor(at)
 	end
 end
 

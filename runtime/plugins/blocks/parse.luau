@@ -34,10 +34,6 @@ local function fence(text: string): (string?, string)
 	return ticks, rest or ""
 end
 
-local function line_text(buffer: greed.Buffer, n: number): string
-	return buffer:slice(buffer:line_start(n), buffer:line_end(n))
-end
-
 --- An info string's language and options: `sh id=files dir="a b"` is "sh"
 --- and `{ id = "files", dir = "a b" }`.
 function M.info(info: string): (string, { [string]: string })
@@ -62,7 +58,7 @@ function M.blocks(buffer: greed.Buffer): { Block }
 	local blocks: { Block } = {}
 	local lines = buffer:line_count()
 	local function line(n: number): string
-		return line_text(buffer, n)
+		return buffer:line_text(n)
 	end
 	-- The closing fence for one opened by `ticks` on line `open`.
 	local function closing(open: number, ticks: string): number?
@@ -131,11 +127,11 @@ function M.front_matter(buffer: greed.Buffer): string?
 	if buffer:line_count() < 2 then
 		return nil
 	end
-	if not string.match(line_text(buffer, 0), "^%-%-%-%s*$") then
+	if not string.match(buffer:line_text(0), "^%-%-%-%s*$") then
 		return nil
 	end
 	for n = 1, math.min(buffer:line_count() - 1, 50) do
-		local text = line_text(buffer, n)
+		local text = buffer:line_text(n)
 		if string.match(text, "^%-%-%-%s*$") then
 			return nil
 		end

@@ -53,11 +53,10 @@ local function here(): Place?
 	if buffer:kind() ~= "file" then
 		return nil
 	end
-	local selection = view:selection()
 	return {
 		buffer = buffer:id(),
 		path = buffer:path(),
-		pos = selection.ranges[selection.primary].head,
+		pos = view:cursor(),
 	}
 end
 
@@ -94,7 +93,7 @@ local function go(place: Place): boolean
 		greed.open(place.path)
 	end
 	local pos = math.min(place.pos, greed.view():buffer():len())
-	greed.view():set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	greed.view():set_cursor(pos)
 	return true
 end
 

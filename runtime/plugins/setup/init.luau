@@ -93,14 +93,10 @@ local function style_of(text: string?): string?
 	return nil
 end
 
-local function line_text(buffer: greed.Buffer, line: number): string
-	return buffer:slice(buffer:line_start(line), buffer:line_end(line))
-end
-
 -- The line saying the theme, after a pick.
 local function show_theme(buffer: greed.Buffer, name: string)
 	for line = 0, buffer:line_count() - 1 do
-		if string.match(line_text(buffer, line), "^Theme: ") then
+		if string.match(buffer:line_text(line), "^Theme: ") then
 			local start, finish = buffer:line_start(line), buffer:line_end(line)
 			buffer:edit(function(e)
 				e:replace(start, finish, `Theme: {name}`)
@@ -121,7 +117,7 @@ local function buttons(buffer: greed.Buffer)
 		)
 	end
 	for line = 0, buffer:line_count() - 1 do
-		local words = line_text(buffer, line)
+		local words = buffer:line_text(line)
 		if string.match(words, "^Theme: ") then
 			button(line, "Pick…", "setup-pick-theme")
 		elseif words == "When you're done:" then

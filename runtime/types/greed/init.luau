@@ -47,6 +47,12 @@ export type Buffer = {
 	line_start: (self: Buffer, line: number) -> number,
 	--- The end of `line`, before its line break.
 	line_end: (self: Buffer, line: number) -> number,
+	--- The text of `line`, without its line break.
+	line_text: (self: Buffer, line: number) -> string,
+	--- The screen column `pos` is drawn at in its line: wide characters take two columns and tabs reach the next tab stop, every `tab_width` columns (4 if not given).
+	display_column: (self: Buffer, pos: number, tab_width: number?) -> number,
+	--- The position in `line` drawn at screen column `col`: the start of the character covering it, or the line's end if the line is shorter.
+	at_display_column: (self: Buffer, line: number, col: number, tab_width: number?) -> number,
 	--- The character at `pos`, or nil at the end of the buffer.
 	char_at: (self: Buffer, pos: number) -> string?,
 	next_char: (self: Buffer, pos: number) -> number,
@@ -249,6 +255,10 @@ export type View = {
 	valid: (self: View) -> boolean,
 	selection: (self: View) -> Selection,
 	set_selection: (self: View, selection: Selection) -> (),
+	--- The head of the primary selection.
+	cursor: (self: View) -> number,
+	--- Makes the selection a single cursor at `pos`.
+	set_cursor: (self: View, pos: number) -> (),
 	--- The start and end of the text on screen when the view was last
 	--- drawn, or of the whole buffer before that.
 	visible: (self: View) -> (number, number),

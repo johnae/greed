@@ -1,13 +1,24 @@
 -- Registers and macros. `"` and a letter picks a register for the next copy,
 -- paste, delete or macro; without one, copies go to the clipboard and macros
 -- to `@`. `Q` starts and stops recording keys, `q` plays them back.
+--
+-- A register knows whether it holds whole lines, so lines copied in one
+-- editing style paste as lines in every other.
 
 local greed = require("@greed")
+local text = require("./text")
 
 local M = {}
 
+--- What a register holds: one piece per selection it came from, and
+--- whether the pieces are whole lines, each ending in a line break.
+export type Register = { pieces: { string }, linewise: boolean }
+
 -- What's been copied into each register.
-local texts: { [string]: { string } } = {}
+local kept: { [string]: Register } = {}
+-- What Greed last put on the clipboard. Clipboard text that isn't this was
+-- copied in another program, and pastes as plain text.
+local copied: Register? = nil
 -- The keys of each recorded macro, as a key sequence.
 local macros: { [string]: string } = {}
 -- The register the next copy, paste or macro uses, if one was picked.
@@ -30,52 +41,83 @@ function M.pick(name: string)
 end
 
 --- What register `name` holds, if anything.
-function M.get(name: string): { string }?
-	return texts[name]
+function M.get(name: string): Register?
+	return kept[name]
 end
 
-function M.set(name: string, pieces: { string })
-	texts[name] = pieces
+--- Puts `pieces` in register `name`, as whole lines with `linewise`.
+function M.set(name: string, pieces: { string }, linewise: boolean?)
+	kept[name] = { pieces = pieces, linewise = linewise == true }
+end
+
+--- The register's pieces as one text: whole lines one after another, other
+--- pieces a line apart.
+function M.join(register: Register): string
+	return table.concat(register.pieces, if register.linewise then "" else "\n")
+end
+
+--- Puts `pieces` on the clipboard, remembering whether they are whole lines
+--- for when they're pasted back.
+function M.to_clipboard(pieces: { string }, linewise: boolean?)
+	greed.clipboard.set(pieces)
+	copied = { pieces = pieces, linewise = linewise == true }
+end
+
+--- What's on the clipboard: what Greed copied there, with whether it was
+--- whole lines, or plain text another program copied.
+function M.clipboard(): Register?
+	local pieces = greed.clipboard.get()
+	if pieces == nil then
+		return nil
+	elseif copied and table.concat(copied.pieces, "\n") == table.concat(pieces, "\n") then
+		return copied
+	end
+	return { pieces = pieces, linewise = false }
 end
 
 -- The clipboard's registers; copies go there when no register is picked.
 local CLIPBOARD = { ["+"] = true, ["*"] = true }
 
---- Copies `pieces` to the register picked for this, or the clipboard. `_`
---- throws them away.
-function M.copy(pieces: { string })
+--- Whether `name` is the clipboard: no register, `"+` or `"*`.
+function M.is_clipboard(name: string?): boolean
+	return name == nil or CLIPBOARD[name] == true
+end
+
+--- Copies `pieces` (whole lines with `linewise`) to the register picked
+--- for this, or the clipboard. `_` throws them away.
+function M.copy(pieces: { string }, linewise: boolean?)
 	local name = M.take()
-	if name == nil or CLIPBOARD[name] then
-		greed.clipboard.set(pieces)
+	if M.is_clipboard(name) then
+		M.to_clipboard(pieces, linewise)
 	elseif name ~= "_" then
-		texts[name] = pieces
+		M.set(name :: string, pieces, linewise)
 	end
 end
 
---- What to paste into `ctx`'s view: the picked register's text, or the
---- clipboard's. Some registers are worked out rather than kept: `%` is the
+--- What to paste into `ctx`'s view: the picked register, or the
+--- clipboard. Some registers are worked out rather than kept: `%` is the
 --- file's name, `.` what each selection holds, `#` each selection's number,
 --- and `_` is always empty.
-function M.paste(ctx: greed.Context): { string }?
+function M.paste(ctx: greed.Context): Register?
 	local name = M.take()
-	if name == nil or CLIPBOARD[name] then
-		return greed.clipboard.get()
+	if M.is_clipboard(name) then
+		return M.clipboard()
 	elseif name == "_" then
 		return nil
 	elseif name == "%" then
 		local path = ctx.buffer:path()
-		return if path then { path } else nil
-	end
-	local ranges = ctx.view:selection().ranges
-	if name == "." or name == "#" then
+		return if path then { pieces = { path }, linewise = false } else nil
+	elseif name == "." or name == "#" then
 		local pieces = {}
-		for i, range in ranges do
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-			table.insert(pieces, if name == "#" then tostring(i) else ctx.buffer:slice(from, to))
+		for i, range in ctx.view:selection().ranges do
+			table.insert(
+				pieces,
+				if name == "#" then tostring(i) else ctx.buffer:slice(text.span(range))
+			)
 		end
-		return pieces
+		return { pieces = pieces, linewise = false }
 	end
-	return texts[name]
+	return kept[name :: string]
 end
 
 --- The register a macro is being recorded into, while one is.

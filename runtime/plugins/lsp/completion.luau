@@ -48,11 +48,6 @@ local open: Open? = nil
 -- Goes up with each keystroke, so a slow answer for older text is dropped.
 local generation = 0
 
-local function head(view: greed.View): number
-	local selection = view:selection()
-	return selection.ranges[selection.primary].head
-end
-
 -- Letters, digits, "_" and anything outside ASCII.
 local function is_word(ch: string): boolean
 	return #ch > 1 or string.match(ch, "[%w_]") ~= nil
@@ -115,7 +110,7 @@ end
 
 -- Draws the matching items and marks the current one.
 local function render(o: Open)
-	local typed = o.buffer:slice(o.start, head(o.view))
+	local typed = o.buffer:slice(o.start, o.view:cursor())
 	local labels = {}
 	local width = 0
 	for i, index in o.matches do
@@ -152,7 +147,7 @@ end
 
 -- Narrows the items to what's typed now, closing the menu when nothing's left.
 local function refresh(o: Open)
-	local typed = o.buffer:slice(o.start, head(o.view))
+	local typed = o.buffer:slice(o.start, o.view:cursor())
 	local labels = {}
 	for i, item in o.items do
 		labels[i] = item.label
@@ -175,7 +170,7 @@ local function show(view: greed.View, items: { Item }): boolean
 		return false
 	end
 	close()
-	local start = word_start(buffer, head(view))
+	local start = word_start(buffer, view:cursor())
 	for _, item in items do
 		if item.from then
 			start = math.min(start, item.from)
@@ -209,7 +204,7 @@ local function ask(view: greed.View, wanted: number)
 	end
 	local ok, result = pcall(greed.lsp.request, buffer, "textDocument/completion", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = greed.lsp.position(buffer, head(view)),
+		position = greed.lsp.position(buffer, view:cursor()),
 	})
 	if not ok or result == nil or wanted ~= generation or greed.mode.get() ~= mode then
 		return
@@ -232,7 +227,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	generation += 1
 	local wanted = generation
 	local buffer = view:buffer()
-	local pos = head(view)
+	local pos = view:cursor()
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
 	local in_word = is_word(ch)
 	if open then
@@ -282,7 +277,7 @@ local WORDS = 200
 -- the other buffers'.
 local function words(view: greed.View): { Item }
 	local buffer = view:buffer()
-	local pos = head(view)
+	local pos = view:cursor()
 	local typed = buffer:slice(word_start(buffer, pos), pos)
 	local texts = { buffer:slice(pos, buffer:len()), buffer:slice(0, pos) }
 	for _, other in greed.buffers() do
@@ -348,7 +343,7 @@ greed.command({
 			return
 		end
 		local item = o.items[o.matches[o.current]]
-		local to = head(o.view)
+		local to = o.view:cursor()
 		close()
 		o.buffer:edit(function(e)
 			e:replace(o.start, to, item.text)

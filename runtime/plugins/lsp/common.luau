@@ -4,15 +4,6 @@ local greed = require("@greed")
 
 local M = {}
 
-function M.head(view: greed.View): number
-	local selection = view:selection()
-	return selection.ranges[selection.primary].head
-end
-
-function M.move_to(view: greed.View, pos: number)
-	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
-end
-
 --- Parameters for requests about the position at `pos`.
 function M.at(buffer: greed.Buffer, pos: number): any
 	return {
@@ -62,7 +53,7 @@ end
 function M.open_at(path: string, position: greed.LspPosition)
 	greed.open(path)
 	local view = greed.view()
-	M.move_to(view, greed.lsp.offset(view:buffer(), position))
+	view:set_cursor(greed.lsp.offset(view:buffer(), position))
 end
 
 return M

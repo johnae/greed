@@ -110,11 +110,10 @@ local function scroll_to(view: greed.View, line: number)
 	local buffer = view:buffer()
 	line = math.clamp(line, 0, buffer:line_count() - 1)
 	local rows = view:size() or 1
-	local selection = view:selection()
-	local cursor = buffer:line_of(selection.ranges[selection.primary].head)
+	local cursor = buffer:line_of(view:cursor())
 	if cursor < line or cursor >= line + rows then
 		local at = buffer:line_start(line)
-		view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		view:set_cursor(at)
 	end
 	view:set_scroll(line)
 end

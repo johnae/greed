@@ -135,7 +135,7 @@ end
 
 local function go_to(picker: Picker, line: number)
 	local pos = picker.buffer:line_start(line)
-	picker.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	picker.view:set_cursor(pos)
 end
 
 --- Shows the hunks between each file's two versions in `view` to pick from.
@@ -205,7 +205,7 @@ local function here(ctx: greed.Context): (Picker?, number?)
 		return nil, nil
 	end
 	picker.view = ctx.view
-	return picker, picker.rows[ctx.buffer:line_of(ctx.view:selection().ranges[1].head)]
+	return picker, picker.rows[ctx.buffer:line_of(ctx.view:cursor())]
 end
 
 greed.command({
@@ -237,7 +237,7 @@ greed.command({
 		for _, item in picker.items do
 			item.picked = not all
 		end
-		local line = ctx.buffer:line_of(ctx.view:selection().ranges[1].head)
+		local line = ctx.buffer:line_of(ctx.view:cursor())
 		render(picker)
 		go_to(picker, line)
 	end,

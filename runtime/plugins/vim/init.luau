@@ -28,11 +28,6 @@ type Kind = "exclusive" | "inclusive" | "line"
 -- Where a motion goes from `pos`, done `count` times.
 type Motion = (buffer: Buffer, pos: number, count: number) -> (number?, Kind)
 
--- What `y` and `d` last took, and whether it was whole lines.
-local register = { text = "", linewise = false }
--- What "a y and the like put in named registers.
-local named: { [string]: { text: string, linewise: boolean } } = {}
-
 -- Text helpers -----------------------------------------------------------
 
 -- core's character classes, with the end of the buffer as a line end.
@@ -689,7 +684,7 @@ end
 local insert_repeat = { count = 1, start = 0, open = false }
 
 local function enter_insert(ctx: greed.Context, pos: number)
-	ctx.view:set_selection(point(pos))
+	ctx.view:set_cursor(pos)
 	greed.mode.set("vim-insert")
 	insert_repeat = { count = 1, start = pos, open = false }
 end
@@ -754,49 +749,61 @@ local function on_lines(ctx: greed.Context, command: string, from: number, to: n
 		local top = buffer:line_start(math.min(first, buffer:line_count() - 1))
 		at = core.text.first_non_blank(buffer, top)
 	end
-	ctx.view:set_selection(point(on_char(buffer, at)))
+	ctx.view:set_cursor(on_char(buffer, at))
 end
 
--- Keeps `value` in register `into`, for p and for ctrl-r while typing.
-local function keep(into: string, value: { text: string, linewise: boolean })
-	named[into] = value
-	core.registers.set(into, { value.text })
+-- Whole lines as registers keep them, ending in a line break: lines taken
+-- at the end of the buffer start with the break before them instead.
+local function as_lines(text: string): string
+	if string.sub(text, -1) == "\n" then
+		return text
+	end
+	local br = string.match(text, "^\r?\n")
+	if br then
+		return string.sub(text, #br + 1) .. br
+	end
+	return text .. "\n"
 end
 
--- Keeps what operator `op` took in the register picked with ", or the
--- unnamed one and the clipboard. "_ keeps nothing, and an uppercase letter
--- adds to its lowercase one.
-local function store(op: string, taken: { text: string, linewise: boolean })
-	local name = core.registers.take()
+-- Keeps what operator `op` took (whole lines with `linewise`) in the
+-- register picked with ", or the clipboard. "_ keeps nothing, and an
+-- uppercase letter adds to its lowercase one.
+local function store(op: string, text: string, linewise: boolean)
+	local registers = core.registers
+	local name = registers.take()
 	if name and string.match(name, "^%u$") then
 		name = string.lower(name)
-		local before = named[name]
+		local before = registers.get(name)
 		if before then
-			taken =
-				{ text = before.text .. taken.text, linewise = before.linewise or taken.linewise }
+			local joined = registers.join(before)
+			-- Lines added to a register of text start on a line of their own.
+			text = joined .. (if linewise and not before.linewise then "\n" else "") .. text
+			linewise = linewise or before.linewise
 		end
 	end
-	if name == nil or name == "+" or name == "*" then
-		register = taken
-		greed.clipboard.set(taken.text)
+	if linewise then
+		text = as_lines(text)
+	end
+	if registers.is_clipboard(name) then
+		registers.to_clipboard({ text }, linewise)
 		-- The numbered registers, as Vim keeps them: "0 the last yank, "1 to
 		-- "9 the last deletes of lines (older ones moving down), "- the last
 		-- smaller delete.
 		if op == "y" then
-			keep("0", taken)
-		elseif taken.linewise or string.find(taken.text, "\n", 1, true) then
+			registers.set("0", { text }, linewise)
+		elseif linewise or string.find(text, "\n", 1, true) then
 			for n = 9, 2, -1 do
-				local older = named[tostring(n - 1)]
+				local older = registers.get(tostring(n - 1))
 				if older then
-					keep(tostring(n), older)
+					registers.set(tostring(n), older.pieces, older.linewise)
 				end
 			end
-			keep("1", taken)
+			registers.set("1", { text }, linewise)
 		else
-			keep("-", taken)
+			registers.set("-", { text }, linewise)
 		end
 	elseif name ~= "_" then
-		keep(name, taken)
+		registers.set(name :: string, { text }, linewise)
 	end
 end
 
@@ -845,7 +852,7 @@ local function surround(ctx: greed.Context, from: number, to: number, linewise: 
 		e:insert(start, pair[1])
 		e:insert(finish, pair[2])
 	end)
-	ctx.view:set_selection(point(from))
+	ctx.view:set_cursor(from)
 end
 
 -- Applies operator `op` (one of "d", "c", "y", "ys" or LINE_OPERATORS) to `from`..`to`.
@@ -867,10 +874,10 @@ local function apply(ctx: greed.Context, op: string, from: number, to: number, l
 		buffer:edit(function(e)
 			e:replace(start, finish, new)
 		end)
-		ctx.view:set_selection(point(on_char(buffer, from)))
+		ctx.view:set_cursor(on_char(buffer, from))
 		return
 	end
-	store(op, { text = buffer:slice(from, to), linewise = linewise })
+	store(op, buffer:slice(from, to), linewise)
 	if op == "y" then
 		-- Whole lines at the end start with the line break before them.
 		local at = if linewise
@@ -878,7 +885,7 @@ local function apply(ctx: greed.Context, op: string, from: number, to: number, l
 				and buffer:char_at(from) == "\n"
 			then from + 1
 			else from
-		ctx.view:set_selection(point(on_char(buffer, at)))
+		ctx.view:set_cursor(on_char(buffer, at))
 		return
 	end
 	if op == "c" then
@@ -900,11 +907,9 @@ local function apply(ctx: greed.Context, op: string, from: number, to: number, l
 	if op == "c" then
 		enter_insert(ctx, from)
 	elseif linewise then
-		ctx.view:set_selection(
-			point(core.text.first_non_blank(buffer, math.min(from, buffer:len())))
-		)
+		ctx.view:set_cursor(core.text.first_non_blank(buffer, math.min(from, buffer:len())))
 	else
-		ctx.view:set_selection(point(on_char(buffer, from)))
+		ctx.view:set_cursor(on_char(buffer, from))
 	end
 end
 
@@ -965,7 +970,7 @@ local function operate(ctx: greed.Context, op: string)
 			e:replace(start, buffer:next_char(start), pair[1])
 			e:replace(finish, buffer:next_char(finish), pair[2])
 		end)
-		ctx.view:set_selection(point(on_char(buffer, start)))
+		ctx.view:set_cursor(on_char(buffer, start))
 		return
 	elseif op == "y" and key == "s" then
 		operate(ctx, "ys")
@@ -1068,9 +1073,14 @@ local function block_selection(buffer: Buffer): greed.Selection
 	local ranges: { greed.Range } = {}
 	local primary = 1
 	for row = top, bottom do
-		local head = if block.to_end
-			then buffer:line_end(row)
-			else core.text.at_column(buffer, row, right + 1)
+		local finish = buffer:line_end(row)
+		-- Up to the end of the character on the right column, however wide.
+		local head = core.text.at_column(buffer, row, right)
+		if block.to_end or head >= finish then
+			head = finish
+		else
+			head = buffer:next_char(head)
+		end
 		table.insert(ranges, { anchor = core.text.at_column(buffer, row, left), head = head })
 		if row == line then
 			primary = #ranges
@@ -1105,7 +1115,7 @@ for key, motion in motions do
 		elseif mode == "vim-visual" then
 			ctx.view:set_selection(visual(ctx.buffer, visual_start(ctx.buffer, range), target))
 		else
-			ctx.view:set_selection(point(on_char(ctx.buffer, target)))
+			ctx.view:set_cursor(on_char(ctx.buffer, target))
 		end
 		if HINTED[key] and (mode == "vim" or mode == "vim-visual") then
 			core.hints.after(ctx, "vim-" .. name, function(buffer, at)
@@ -1141,9 +1151,9 @@ local function block_operate(ctx: greed.Context, op: string)
 		for _, range in ranges do
 			table.insert(pieces, buffer:slice(range.anchor, range.head))
 		end
-		store(op, { text = table.concat(pieces, "\n"), linewise = false })
+		store(op, table.concat(pieces, "\n"), false)
 		if op == "y" then
-			ctx.view:set_selection(point(on_char(buffer, top)))
+			ctx.view:set_cursor(on_char(buffer, top))
 			return
 		end
 	end
@@ -1160,7 +1170,7 @@ local function block_operate(ctx: greed.Context, op: string)
 		end
 	end)
 	if op ~= "c" then
-		ctx.view:set_selection(point(on_char(buffer, top)))
+		ctx.view:set_cursor(on_char(buffer, top))
 		return
 	end
 	local points, removed = {}, 0
@@ -1181,7 +1191,7 @@ for _, op in { "d", "c", "y", ">", "<", "gc", "g~", "gu", "gU", "g?", "gq", "gw"
 			return
 		elseif mode == "vim-visual" or mode == "vim-visual-line" then
 			local range = ctx.view:selection().ranges[1]
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local from, to = core.text.span(range)
 			greed.mode.set("vim")
 			if mode == "vim-visual-line" then
 				apply(ctx, op, motion_range(ctx.buffer, from, to, "line"))
@@ -1230,35 +1240,23 @@ command("change-line", "Change the whole line", function(ctx)
 	enter_insert(ctx, from)
 end)
 
--- What the unnamed register holds: the last yank or delete, unless
--- something newer was copied since, in another program or another style.
-local function unnamed(): { text: string, linewise: boolean }
-	local pieces = greed.clipboard.get()
-	local text = if pieces then table.concat(pieces, "\n") else nil
-	if text and text ~= register.text then
-		return { text = text, linewise = string.sub(text, -1) == "\n" }
+-- What p pastes: the register picked with " (an uppercase letter is its
+-- lowercase one), or the clipboard, as one text. Nil for "_ or an empty
+-- register.
+local function to_paste(ctx: greed.Context): { text: string, linewise: boolean }?
+	local registers = core.registers
+	local name = registers.take()
+	if name then
+		registers.pick(if string.match(name, "^%u$") then string.lower(name) else name)
 	end
-	return register
-end
-
--- What p pastes: the register picked with ", or the unnamed one. Nil for "_.
-local function to_paste(): { text: string, linewise: boolean }?
-	local name = core.registers.take()
-	if name == "_" then
-		return nil
-	elseif name and name ~= "+" and name ~= "*" then
-		name = string.lower(name)
-		-- Text another style copied into it has no line information.
-		local pieces = core.registers.get(name)
-		return named[name]
-			or (pieces and { text = table.concat(pieces, "\n"), linewise = false })
-			or { text = "", linewise = false }
-	end
-	return unnamed()
+	local register = registers.paste(ctx)
+	return if register
+		then { text = registers.join(register), linewise = register.linewise }
+		else nil
 end
 
 local function paste(ctx: greed.Context, after: boolean)
-	local from = to_paste()
+	local from = to_paste(ctx)
 	if from == nil then
 		return
 	end
@@ -1271,12 +1269,9 @@ local function paste(ctx: greed.Context, after: boolean)
 			at = if line + 1 < buffer:line_count()
 				then buffer:line_start(line + 1)
 				else buffer:len()
-			if
-				at == buffer:len()
-				and string.sub(text, -1) == "\n"
-				and buffer:char_at(at - 1) ~= "\n"
-			then
-				text = "\n" .. string.sub(text, 1, -2)
+			local br = string.match(text, "\r?\n$")
+			if br and at == buffer:len() and buffer:char_at(at - 1) ~= "\n" then
+				text = br .. string.sub(text, 1, -#br - 1)
 			end
 		else
 			at = buffer:line_start(line)
@@ -1290,16 +1285,10 @@ local function paste(ctx: greed.Context, after: boolean)
 		e:insert(at, text)
 	end)
 	if from.linewise then
-		ctx.view:set_selection(
-			point(
-				core.text.first_non_blank(
-					buffer,
-					if string.sub(text, 1, 1) == "\n" then at + 1 else at
-				)
-			)
-		)
+		local br = string.match(text, "^\r?\n") or ""
+		ctx.view:set_cursor(core.text.first_non_blank(buffer, at + #br))
 	else
-		ctx.view:set_selection(point(buffer:prev_char(at + #text)))
+		ctx.view:set_cursor(buffer:prev_char(at + #text))
 	end
 end
 
@@ -1384,7 +1373,7 @@ local replaced: { { pos: number, text: string } } = {}
 command("replace-mode", "Type over the text", function(ctx)
 	greed.history.start_group()
 	replaced = {}
-	ctx.view:set_selection(point(cursor(ctx)))
+	ctx.view:set_cursor(cursor(ctx))
 	greed.mode.set("vim-replace")
 end)
 
@@ -1409,7 +1398,7 @@ command("replace-back", "Put back the character typed over last, or move left", 
 	if last == nil then
 		local _, start = line_bounds(buffer, pos)
 		if pos > start then
-			ctx.view:set_selection(point(buffer:prev_char(pos)))
+			ctx.view:set_cursor(buffer:prev_char(pos))
 		end
 		return
 	end
@@ -1430,12 +1419,11 @@ local undoing_line = false
 
 local function cursor_line_note(view: greed.View): LineNote
 	local buffer = view:buffer()
-	local selection = view:selection()
-	local line = buffer:line_of(math.min(selection.ranges[selection.primary].head, buffer:len()))
+	local line = buffer:line_of(math.min(view:cursor(), buffer:len()))
 	return {
 		buffer = buffer:id(),
 		line = line,
-		text = buffer:slice(buffer:line_start(line), buffer:line_end(line)),
+		text = buffer:line_text(line),
 		lines = buffer:line_count(),
 	}
 end
@@ -1471,7 +1459,7 @@ command("undo-line", "Put back the line last changed as it was before (U)", func
 		e:replace(from, to, u.text)
 	end)
 	undoing_line = false
-	ctx.view:set_selection(point(from))
+	ctx.view:set_cursor(from)
 end)
 
 -- The change list for g; and g,: where the last changes in each buffer
@@ -1493,8 +1481,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if view:buffer() ~= buffer then
 		return
 	end
-	local selection = view:selection()
-	local pos = math.min(selection.ranges[selection.primary].head, buffer:len())
+	local pos = math.min(view:cursor(), buffer:len())
 	local list = changes(buffer)
 	-- Another change on the same line takes the place of the last one.
 	local newest = list[#list]
@@ -1533,7 +1520,7 @@ for _, newer in { false, true } do
 				return
 			end
 			changes_back[buffer:id()] = back
-			ctx.view:set_selection(point(on_char(buffer, pos)))
+			ctx.view:set_cursor(on_char(buffer, pos))
 		end
 	)
 end
@@ -1573,7 +1560,7 @@ command("normal", "Back to normal mode", function(ctx)
 	end
 	greed.history.end_group()
 	greed.mode.set("vim")
-	ctx.view:set_selection(point(on_char(buffer, pos)))
+	ctx.view:set_cursor(on_char(buffer, pos))
 end)
 
 -- The last visual selection and its mode, for gv.
@@ -1615,7 +1602,7 @@ command(
 command("visual-surround", "Wrap the selection in the pair typed next", function(ctx)
 	local mode = greed.mode.get()
 	local range = ctx.view:selection().ranges[1]
-	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local from, to = core.text.span(range)
 	greed.mode.set("vim")
 	surround(ctx, from, to, mode == "vim-visual-line")
 end)
@@ -1640,7 +1627,7 @@ end
 command("jump-to-word", "Label every word on screen and jump to the one typed", function(ctx)
 	local from = core.jump.pick(ctx.view)
 	if from then
-		ctx.view:set_selection(point(from))
+		ctx.view:set_cursor(from)
 	end
 end)
 
@@ -1691,7 +1678,7 @@ local function leave_multi(ctx: greed.Context)
 	local selection = ctx.view:selection()
 	local range = selection.ranges[selection.primary]
 	greed.mode.set("vim")
-	ctx.view:set_selection(point(on_char(ctx.buffer, math.min(range.anchor, range.head))))
+	ctx.view:set_cursor(on_char(ctx.buffer, (core.text.span(range))))
 end
 
 command("multi-change", "Delete every selection and type in each place", function()
@@ -1715,9 +1702,8 @@ for _, at_end in { false, true } do
 		function(ctx)
 			local selection = ctx.view:selection()
 			for i, range in selection.ranges do
-				local pos = if at_end
-					then math.max(range.anchor, range.head)
-					else math.min(range.anchor, range.head)
+				local from, to = core.text.span(range)
+				local pos = if at_end then to else from
 				selection.ranges[i] = { anchor = pos, head = pos }
 			end
 			greed.history.start_group()
@@ -1766,10 +1752,9 @@ for _, down in { false, true } do
 		else "Add the count (or 1) to the number at or after the cursor"
 	command(name, doc, function(ctx)
 		greed.run(name, { count = ctx.count })
-		local range = ctx.view:selection().ranges[1]
-		local to = math.max(range.anchor, range.head)
-		if to > math.min(range.anchor, range.head) then
-			ctx.view:set_selection(point(ctx.buffer:prev_char(to)))
+		local from, to = core.text.span(ctx.view:selection().ranges[1])
+		if to > from then
+			ctx.view:set_cursor(ctx.buffer:prev_char(to))
 		end
 	end)
 end
@@ -1914,7 +1899,7 @@ command(
 		buffer:edit(function(e)
 			e:replace(pos, to, string.rep(char, count))
 		end)
-		ctx.view:set_selection(point(pos + (count - 1) * #char))
+		ctx.view:set_cursor(pos + (count - 1) * #char)
 	end
 )
 
@@ -1938,7 +1923,7 @@ command(
 			e:replace(pos, stop, swapped)
 		end)
 		pos = stop
-		ctx.view:set_selection(point(on_char(buffer, pos)))
+		ctx.view:set_cursor(on_char(buffer, pos))
 	end
 )
 
@@ -1963,7 +1948,7 @@ local function join(ctx: greed.Context, line: number, times: number, raw: boolea
 		at = stop
 	end
 	greed.history.end_group()
-	ctx.view:set_selection(point(at))
+	ctx.view:set_cursor(at)
 end
 
 for _, raw in { false, true } do
@@ -1981,8 +1966,8 @@ end
 -- The first and last line the selection touches.
 local function selected_lines(ctx: greed.Context): (number, number)
 	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
-	local first, last = ranges[1], ranges[#ranges]
-	local from, to = math.min(first.anchor, first.head), math.max(last.anchor, last.head)
+	local from = core.text.span(ranges[1])
+	local _, to = core.text.span(ranges[#ranges])
 	return buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
 end
 
@@ -1998,22 +1983,22 @@ command("visual-replace", "Replace every selected character with the next one ty
 		return
 	end
 	local buffer, ranges = ctx.buffer, ctx.view:selection().ranges
-	local top = math.min(ranges[1].anchor, ranges[1].head)
+	local top = core.text.span(ranges[1])
 	greed.mode.set("vim")
 	buffer:edit(function(e)
 		for _, range in ranges do
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local from, to = core.text.span(range)
 			local text = string.gsub(buffer:slice(from, to), utf8.charpattern, function(c)
 				return if c == "\n" then c else char
 			end)
 			e:replace(from, to, text)
 		end
 	end)
-	ctx.view:set_selection(point(on_char(buffer, top)))
+	ctx.view:set_cursor(on_char(buffer, top))
 end)
 
 command("visual-paste", "Replace the selection with what's in the register", function(ctx)
-	local from = to_paste()
+	local from = to_paste(ctx)
 	if from == nil then
 		return
 	end
@@ -2024,7 +2009,7 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 		block_operate(ctx, "d")
 	end
 	local range = ctx.view:selection().ranges[1]
-	local start, stop = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local start, stop = core.text.span(range)
 	greed.mode.set("vim")
 	local lines = mode == "vim-visual-line"
 	local text = from.text
@@ -2036,7 +2021,7 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 				text ..= "\n"
 			end
 		elseif from.linewise then
-			text = string.gsub(text, "\n$", "")
+			text = string.gsub(text, "\r?\n$", "")
 		end
 	elseif from.linewise then
 		text = "\n" .. text
@@ -2044,16 +2029,16 @@ command("visual-paste", "Replace the selection with what's in the register", fun
 	-- What it replaces goes in the unnamed register, as a delete would (the
 	-- block's delete already did).
 	if stop > start then
-		store("d", { text = buffer:slice(start, stop), linewise = lines })
+		store("d", buffer:slice(start, stop), lines)
 	end
 	buffer:edit(function(e)
 		e:replace(start, stop, text)
 	end)
 	if lines or from.linewise then
 		local first = if lines then start else start + 1
-		ctx.view:set_selection(point(core.text.first_non_blank(buffer, first)))
+		ctx.view:set_cursor(core.text.first_non_blank(buffer, first))
 	else
-		ctx.view:set_selection(point(on_char(buffer, buffer:prev_char(start + #text))))
+		ctx.view:set_cursor(on_char(buffer, buffer:prev_char(start + #text)))
 	end
 end)
 
@@ -2068,7 +2053,7 @@ for _, back in { false, true } do
 			greed.run("search-selection")
 			greed.run(if back then "search-prev" else "search-next")
 			local range = ctx.view:selection().ranges[1]
-			ctx.view:set_selection(point(math.min(range.anchor, range.head)))
+			ctx.view:set_cursor((core.text.span(range)))
 		end
 	)
 end
@@ -2077,7 +2062,7 @@ command("undo", "Undo", function(ctx)
 	for _ = 1, ctx.count or 1 do
 		ctx.view:undo()
 	end
-	ctx.view:set_selection(point(on_char(ctx.buffer, cursor(ctx))))
+	ctx.view:set_cursor(on_char(ctx.buffer, cursor(ctx)))
 end)
 command("redo", "Redo", function(ctx)
 	for _ = 1, ctx.count or 1 do

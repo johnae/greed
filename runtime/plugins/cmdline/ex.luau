@@ -10,8 +10,7 @@ local M = {}
 -- The first and last line the primary selection touches.
 function M.selected_lines(view: greed.View): (number, number)
 	local buffer, selection = view:buffer(), view:selection()
-	local range = selection.ranges[selection.primary]
-	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local from, to = core.text.span(selection.ranges[selection.primary])
 	return buffer:line_of(from), buffer:line_of(math.max(from, to - 1))
 end
 
@@ -27,18 +26,10 @@ local function whole_lines(buffer: greed.Buffer, first: number, last: number): (
 	return from, to
 end
 
--- The text of lines `first` to `last`, without the last line break.
-local function lines_text(buffer: greed.Buffer, first: number, last: number): string
-	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
-end
-
 -- Puts the cursor on the first non-blank of `line`.
 local function go_to_line(view: greed.View, line: number)
 	local buffer = view:buffer()
-	local start = buffer:line_start(line)
-	local text = buffer:slice(start, buffer:line_end(line))
-	local pos = start + #(string.match(text, "^%s*") :: string)
-	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	view:set_cursor(core.text.first_non_blank(buffer, buffer:line_start(line)))
 end
 M.go_to_line = go_to_line
 
@@ -154,7 +145,7 @@ greed.command({
 		local buffer = ctx.buffer
 		local first, last = M.selected_lines(ctx.view)
 		local from, to = whole_lines(buffer, first, last)
-		greed.clipboard.set(lines_text(buffer, first, last) .. "\n")
+		core.registers.to_clipboard({ core.text.lines(buffer, first, last) .. "\n" }, true)
 		buffer:edit(function(e)
 			e:delete(from, to)
 		end)
@@ -167,7 +158,7 @@ greed.command({
 	doc = "Copy the selected lines (:y)",
 	run = function(ctx)
 		local first, last = M.selected_lines(ctx.view)
-		greed.clipboard.set(lines_text(ctx.buffer, first, last) .. "\n")
+		core.registers.to_clipboard({ core.text.lines(ctx.buffer, first, last) .. "\n" }, true)
 	end,
 })
 
@@ -179,7 +170,7 @@ local function lines_below(
 	last: number,
 	after: number
 ): (number, string)
-	local text = lines_text(buffer, first, last)
+	local text = core.text.lines(buffer, first, last)
 	if after < 0 then
 		return 0, text .. "\n"
 	end
@@ -275,10 +266,7 @@ greed.command({
 		for _, anchor in starts do
 			local start = buffer:line_start(buffer:line_of(anchor:pos() or 0))
 			anchor:forget()
-			view:set_selection({
-				ranges = { { anchor = start, head = start } },
-				primary = 1,
-			})
+			view:set_cursor(start)
 			greed.keys.feed(typed)
 			-- A command left unfinished, like insert mode, ends with the line.
 			if greed.mode.get() ~= mode then

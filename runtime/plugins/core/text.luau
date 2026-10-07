@@ -188,29 +188,26 @@ function M.matching_bracket(buffer: Buffer, pos: number): number?
 	return nil
 end
 
--- How many characters `pos` is from the start of its line.
+--- The screen column `pos` is drawn at in its line, so wide characters
+--- count two and tabs reach the next tab stop.
 function M.column(buffer: Buffer, pos: number): number
-	local p = buffer:line_start(buffer:line_of(pos))
-	local column = 0
-	while p < pos do
-		p = buffer:next_char(p)
-		column += 1
-	end
-	return column
+	return buffer:display_column(pos)
 end
 
--- The position `column` characters into `line`, or the line's end if it is
--- shorter.
+--- The position drawn at screen column `column` of `line`, or the line's
+--- end if it is shorter.
 function M.at_column(buffer: Buffer, line: number, column: number): number
-	local p = buffer:line_start(line)
-	local stop = buffer:line_end(line)
-	for _ = 1, column do
-		if p >= stop then
-			break
-		end
-		p = buffer:next_char(p)
-	end
-	return p
+	return buffer:at_display_column(line, column)
+end
+
+--- The text of lines `first` to `last`, without the last one's line break.
+function M.lines(buffer: Buffer, first: number, last: number): string
+	return buffer:slice(buffer:line_start(first), buffer:line_end(last))
+end
+
+--- The start and end of `range`, whichever way it points.
+function M.span(range: greed.Range): (number, number)
+	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
 -- The line break the buffer uses: "\r\n" if its first line ends in one.

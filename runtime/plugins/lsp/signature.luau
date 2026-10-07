@@ -27,11 +27,6 @@ local function close()
 	end
 end
 
-local function head(view: greed.View): number
-	local selection = view:selection()
-	return selection.ranges[selection.primary].head
-end
-
 -- The characters that ask for signature help in `buffer`, and the ones
 -- that ask again while it's showing.
 local function triggers(buffer: greed.Buffer): ({ string }, { string })
@@ -117,7 +112,7 @@ local function ask(view: greed.View, context: any)
 	local wanted = generation
 	local ok, help = pcall(greed.lsp.request, buffer, "textDocument/signatureHelp", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = greed.lsp.position(buffer, head(view)),
+		position = greed.lsp.position(buffer, view:cursor()),
 		context = context,
 	})
 	if wanted ~= generation or not typing(greed.mode.get()) then
@@ -136,7 +131,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if event.buffer ~= buffer or not typing(greed.mode.get()) then
 		return
 	end
-	local pos = head(view)
+	local pos = view:cursor()
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
 	local trigger, retrigger = triggers(buffer)
 	if table.find(trigger, ch) then

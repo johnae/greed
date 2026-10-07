@@ -468,8 +468,7 @@ greed.command({
 		ctx.buffer:edit(function(e)
 			local shift = 0
 			for i, range in selection.ranges do
-				local from, to =
-					math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+				local from, to = text.span(range)
 				e:insert(from, open)
 				e:insert(to, close)
 				selection.ranges[i] = { anchor = from + shift, head = to + shift + #open + #close }

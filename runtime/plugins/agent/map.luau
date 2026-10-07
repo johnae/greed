@@ -313,7 +313,7 @@ function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, strin
 				local line = buffer:line_of(m.from)
 				if not seen[line] then
 					seen[line] = true
-					local text = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+					local text = buffer:line_text(line)
 					table.insert(hits, { path = path, line = line + 1, text = text })
 				end
 			end

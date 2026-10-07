@@ -3,6 +3,7 @@
 -- and shows what it returned at the end of its last line, or the error.
 -- The result goes when the buffer changes.
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
@@ -35,13 +36,13 @@ greed.command({
 		local buffer, view = ctx.buffer, ctx.view
 		local selection = view:selection()
 		local range = selection.ranges[selection.primary]
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		local code: string
 		local line: number
 		-- A cursor alone is one character: then the whole line runs.
 		if to - from <= 1 then
 			line = buffer:line_of(range.head)
-			code = buffer:slice(buffer:line_start(line), buffer:line_end(line))
+			code = buffer:line_text(line)
 		else
 			code = buffer:slice(from, to)
 			line = buffer:line_of(to - 1)

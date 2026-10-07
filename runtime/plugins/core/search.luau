@@ -6,6 +6,7 @@ local greed = require("@greed")
 local prompt = require("./prompt")
 local registers = require("./registers")
 local registry = require("./registry")
+local span = require("./text").span
 
 -- The last pattern searched for, and which way.
 local last: string? = nil
@@ -14,10 +15,6 @@ local backward = false
 local function primary(view: greed.View): greed.Range
 	local selection = view:selection()
 	return selection.ranges[selection.primary]
-end
-
-local function span(range: greed.Range): (number, number)
-	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
 -- Lowercase patterns ignore case, like Helix's smart case.

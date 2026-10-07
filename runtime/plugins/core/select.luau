@@ -19,12 +19,11 @@
 local greed = require("@greed")
 local prompt = require("./prompt")
 local search = require("./search")
+local texts = require("./text")
 
 type Ranges = { greed.Range }
 
-local function span(range: greed.Range): (number, number)
-	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
-end
+local span, column, at_column = texts.span, texts.column, texts.at_column
 
 local function set(view: greed.View, ranges: Ranges, primary: number?)
 	if #ranges > 0 then
@@ -102,28 +101,6 @@ local function keep(ctx: greed.Context, keep_matching: boolean)
 		end
 		return out
 	end)
-end
-
--- The column of `pos` on its line, in characters.
-local function column(buffer: greed.Buffer, pos: number): number
-	local at, n = buffer:line_start(buffer:line_of(pos)), 0
-	while at < pos do
-		at = buffer:next_char(at)
-		n += 1
-	end
-	return n
-end
-
--- The position `n` characters into `line`, or its end if it's shorter.
-local function at_column(buffer: greed.Buffer, line: number, n: number): number
-	local pos, finish = buffer:line_start(line), buffer:line_end(line)
-	for _ = 1, n do
-		if pos >= finish then
-			break
-		end
-		pos = buffer:next_char(pos)
-	end
-	return pos
 end
 
 -- Adds a copy of each selection on the next lines `delta` away (1 is down,
@@ -406,7 +383,7 @@ end
 local function number_at(buffer: greed.Buffer, pos: number): (number?, number?, number?, boolean?)
 	local line = buffer:line_of(pos)
 	local start = buffer:line_start(line)
-	local text = buffer:slice(start, buffer:line_end(line))
+	local text = buffer:line_text(line)
 	local at = pos - start + 1
 	local init = 1
 	while true do

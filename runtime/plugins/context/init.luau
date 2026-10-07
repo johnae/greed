@@ -261,7 +261,7 @@ greed.command({
 		end
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
-		local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+		local from, to = core.text.span(range)
 		if to - from > 1 then
 			M.add({ kind = "selection", path = path, from = from, to = to })
 			greed.echo(`pinned {to - from} characters of {core.project.relative(path)}`)

@@ -341,7 +341,7 @@ move(
 local function goto_line(ctx: greed.Context, line: number)
 	local buffer = ctx.buffer
 	local at = buffer:line_start(math.clamp(line - 1, 0, buffer:line_count() - 1))
-	ctx.view:set_selection({ ranges = { point(at) }, primary = 1 })
+	ctx.view:set_cursor(at)
 end
 
 greed.command({
@@ -599,7 +599,7 @@ greed.command({
 			return if line < buffer:line_count() then buffer:line_start(line) else buffer:len()
 		end
 		each_range(ctx, function(buffer, range)
-			local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+			local from, to = text.span(range)
 			local first = buffer:line_of(from)
 			-- A selection's last character, not the line it ends at the start of.
 			local last = buffer:line_of(if to > from then buffer:prev_char(to) else to)
@@ -648,8 +648,8 @@ function M.selected_lines(ctx: greed.Context): { number }
 	local buffer = ctx.buffer
 	local seen, lines = {}, {}
 	for _, range in ctx.view:selection().ranges do
-		local to = math.max(range.anchor, range.head)
-		local first, last = buffer:line_of(math.min(range.anchor, range.head)), buffer:line_of(to)
+		local from, to = text.span(range)
+		local first, last = buffer:line_of(from), buffer:line_of(to)
 		-- A selection ending at a line's start, like `x` makes, stops before it.
 		if last > first and to == buffer:line_start(last) then
 			last -= 1

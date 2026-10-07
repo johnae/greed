@@ -415,7 +415,7 @@ greed.command({
 		greed.open(o.path)
 		local view = greed.view()
 		local pos = view:buffer():line_start((o.line or 1) - 1)
-		view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+		view:set_cursor(pos)
 	end,
 })
 

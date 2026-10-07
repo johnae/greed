@@ -54,7 +54,7 @@ function M.save()
 	local view = greed.view()
 	local main = view:buffer():path()
 	if main then
-		shown[current.root] = { path = main, cursor = view:selection().ranges[1].head }
+		shown[current.root] = { path = main, cursor = view:cursor() }
 	end
 	local projects: { Project } = {}
 	local by_id: { [number]: Project } = {}
@@ -119,7 +119,7 @@ local function reopen(project: Project)
 		local view = greed.view()
 		greed.open(project.shown)
 		local pos = math.min(project.cursor or 0, view:buffer():len())
-		view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+		view:set_cursor(pos)
 		shown[project.root] = { path = project.shown, cursor = pos }
 	end
 end

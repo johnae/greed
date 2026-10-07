@@ -123,7 +123,8 @@ its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`,
 
 The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
-Panels like the file tree and help keep their own keys.
+Text from another program pastes as it is, even when it ends in a line
+break. Panels like the file tree and help keep their own keys.
 
 Line commands with ranges (`:%s/a/b/g`, `:g/regex/d`, `:'<,'>norm A;`)
 are on the command line; [Using Greed](using.md#the-command-line) lists

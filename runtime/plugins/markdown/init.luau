@@ -235,7 +235,7 @@ local function table_at(
 	read: boolean
 ): number?
 	local function text_of(line: number): string
-		return buffer:slice(buffer:line_start(line), buffer:line_end(line))
+		return buffer:line_text(line)
 	end
 	if n + 1 >= buffer:line_count() then
 		return nil
@@ -368,7 +368,7 @@ local function marks(buffer: greed.Buffer, read: Reading?): { greed.Mark }
 			continue
 		end
 		local at = buffer:line_start(n)
-		local text = buffer:slice(at, buffer:line_end(n))
+		local text = buffer:line_text(n)
 		local line: Line =
 			{ text = text, at = at, out = out, shows = shows, taken = {}, reading = read ~= nil }
 		local ticks = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
@@ -615,8 +615,7 @@ greed.command({
 	name = "markdown-follow",
 	doc = "Follow the Markdown link under the cursor: to a heading, another file or a web page",
 	run = function(ctx)
-		local selection = ctx.view:selection()
-		local target, at = links.at(ctx.buffer, selection.ranges[selection.primary].head)
+		local target, at = links.at(ctx.buffer, ctx.view:cursor())
 		if target == nil or at == nil then
 			greed.echo("no link here")
 			return

@@ -95,7 +95,7 @@ end
 -- stays where it was in the prompt, or goes to its end with `to_end`.
 local function render(o: Open, to_end: boolean?)
 	local start = prompt_start(o)
-	local column = o.view:selection().ranges[1].head - start
+	local column = o.view:cursor() - start
 	local lines = {}
 	local marks: { greed.Mark } = {}
 	local from = 0
@@ -357,7 +357,7 @@ greed.command({
 		close()
 		local buffer = greed.create_buffer("cmdline", ":")
 		local view = greed.float(buffer, { width = "100%", height = 3, anchor = "bottom" })
-		view:set_selection({ ranges = { { anchor = 1, head = 1 } }, primary = 1 })
+		view:set_cursor(1)
 		local o: Open = {
 			buffer = buffer,
 			view = view,
