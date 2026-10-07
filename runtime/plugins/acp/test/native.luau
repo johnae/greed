@@ -981,3 +981,36 @@ test("an edit's change unfolds on its row as a diff, gone lines and new", functi
 	assert(styles["    + TWO"] == "diff.plus", tostring(styles["    + TWO"]))
 	waiting(s).answer:send("no")
 end)
+
+test("old tool results are cut down to their start, the recent ones left whole", function(t)
+	local dir = t:tempdir({ ["big.txt"] = string.rep("a line of text\n", 400) })
+	local turns = {}
+	for i = 1, 16 do
+		table.insert(turns, {
+			text = "",
+			-- Different lines each time, so none is a repeat.
+			calls = {
+				{ id = `c{i}`, name = "read", input = { path = `{dir}/big.txt`, from_line = i } },
+			},
+			stop = "tools",
+		})
+	end
+	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
+	local asked = script(turns)
+	local s = ask(t, "read it again and again")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local said = asked[#asked].said
+	local results = {}
+	for _, message in said do
+		if message.role == "tool" then
+			table.insert(results, message.text)
+		end
+	end
+	assert(#results == 16, tostring(#results))
+	assert(string.find(results[1], "left out to save room", 1, true), "the first is cut down")
+	assert(#results[1] < 1000, tostring(#results[1]))
+	assert(not string.find(results[16], "left out", 1, true), "the last is whole")
+	assert(#results[16] > 2000, tostring(#results[16]))
+end)

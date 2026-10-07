@@ -41,6 +41,54 @@ local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, 
 local REPEATED = "\n\n(You made this same call already and got the same result. "
 	.. "Asking again won't change it: try something else.)"
 
+-- Old tool results are cut down to their start: those from before the
+-- last `KEEP_TURNS` of the model's turns, longer than `TRIM_ABOVE`
+-- characters. It's done every `KEEP_TURNS` turns rather than each one, so
+-- the start of the conversation stays the same between, as providers
+-- that cache it need.
+local KEEP_TURNS = 8
+local TRIM_ABOVE = 2000
+local TRIM_TO = 600
+local TRIMMED = "\n… (the rest of this result was left out to save room: "
+
+--- Cuts down the tool results in `said` that have served their turn, when
+--- it's time to (see `KEEP_TURNS`). Each request sends the whole
+--- conversation, so an old file read or listing costs again every turn.
+function M.trim_results(said: { models.Said })
+	local turns = 0
+	for _, message in said do
+		if message.role == "assistant" then
+			turns += 1
+		end
+	end
+	if turns == 0 or turns % KEEP_TURNS ~= 0 then
+		return
+	end
+	-- Where the last KEEP_TURNS turns start.
+	local seen, keep_from = 0, #said + 1
+	for i = #said, 1, -1 do
+		if said[i].role == "assistant" then
+			seen += 1
+			if seen == KEEP_TURNS then
+				keep_from = i
+				break
+			end
+		end
+	end
+	for i = 1, keep_from - 1 do
+		local message = said[i]
+		local text = message.text or ""
+		if
+			message.role == "tool"
+			and #text > TRIM_ABOVE
+			and not string.find(text, TRIMMED, 1, true)
+		then
+			message.text = string.sub(text, 1, TRIM_TO)
+				.. `{TRIMMED}{#text - TRIM_TO} more characters; call the tool again if you need it.)`
+		end
+	end
+end
+
 -- The most of a tool's result the model gets back, in characters.
 local MAX_RESULT = 30000
 
@@ -591,6 +639,7 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 		if os.date("%Y-%m-%d %H") ~= said_hour then
 			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
 		end
+		M.trim_results(state.said)
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
 		local room = models.window(state.role) * compact.THRESHOLD

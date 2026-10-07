@@ -368,6 +368,14 @@ older ones deleted (`:set agent-sessions-kept 100` keeps more); closing
 one with `x` in the session list deletes it. Agents don't read other
 sessions' conversations; only you see them in the list.
 
+Every request sends the whole conversation, so a long file read early on
+costs again on every turn after. Greed's agent cuts tool results that have
+served their turn down to their start: every eight turns, those from
+before the last eight that are longer than 2,000 characters keep their
+first 600, with a note telling the model it can call the tool again.
+Doing it in batches keeps the start of the conversation unchanged between,
+which providers that cache it need.
+
 When a conversation nears the model's limit (80% of its context window),
 it's compacted before the next request: the model summarises everything
 but the last four turns, and the summary takes their place. The
