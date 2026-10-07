@@ -4,6 +4,7 @@ description = "Greed's GUI client: draws a session's frames in a window, on the 
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }

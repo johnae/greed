@@ -110,3 +110,7 @@ checking plugins.
   Luau, and why.
 
 Greed is early and changes often.
+
+Greed is licensed under the [Mozilla Public License 2.0](LICENSE); parts
+from other projects keep their own licenses, listed in
+[THIRD-PARTY.md](THIRD-PARTY.md).
