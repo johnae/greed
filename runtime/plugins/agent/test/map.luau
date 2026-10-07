@@ -96,3 +96,18 @@ test("grep searches Greed's plugins and types, and says when a path is out of re
 	local one = assert(agent.map.grep("lonely", "src/unused.rs"))
 	assert(one[1] and one[1].path == "src/unused.rs", one[1] and one[1].path)
 end)
+
+test("grep finding nothing in the project looks in Greed's own code, and says so", function(t)
+	project(t)
+	local tool: any
+	for _, each in agent.tools() do
+		if each.name == "grep" then
+			tool = each
+		end
+	end
+	local said = tool.run({ pattern = "^export type ThemeEntry" }, agent.caller())
+	assert(string.find(said, "nothing in the project; these are from Greed's own", 1, true), said)
+	assert(string.find(said, "types/greed/init.luau", 1, true), said)
+	local none = tool.run({ pattern = "qzx" .. "jwv" .. "kq" }, agent.caller())
+	assert(none == "no lines match in the project", none)
+end)

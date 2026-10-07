@@ -28,7 +28,7 @@ models.fallback(M.ROLE, "reasoning", "Greed's own agent")
 models.fallback(compact.ROLE, M.ROLE, "compacting long conversations with Greed's agent")
 
 -- Turns one prompt may take, so a model that keeps calling tools stops.
-local MAX_TURNS = 50
+local MAX_TURNS = 100
 
 -- Answers in a row that may be cut off at their length before it stops,
 -- and what the model hears after one.
@@ -36,6 +36,10 @@ local MAX_CUTS = 2
 local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, so any tool "
 	.. "call in it was lost and nothing ran. Go on in smaller pieces: write a long file with "
 	.. "write_file holding its first part, then add the rest with edit_file, a part at a time."
+
+-- What the model hears after a call it made already, which came back the same.
+local REPEATED = "\n\n(You made this same call already and got the same result. "
+	.. "Asking again won't change it: try something else.)"
 
 -- The most of a tool's result the model gets back, in characters.
 local MAX_RESULT = 30000
@@ -514,6 +518,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local may_compact = true
 	-- Answers cut off at their length in a row.
 	local cuts = 0
+	-- What each call (tool and arguments) gave back this prompt.
+	local seen: { [string]: string } = {}
 	for _ = 1, MAX_TURNS do
 		if os.date("%Y-%m-%d %H") ~= said_hour then
 			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
@@ -573,6 +579,14 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 		end
 		for _, c in turn.calls do
 			local result, failed = call(s, state, by_name, c)
+			-- A call it made already this prompt, coming back the same, says
+			-- so: a model can go round asking the same thing.
+			local key = c.name .. " " .. greed.json.encode(c.input)
+			local before = seen[key]
+			seen[key] = result
+			if before == result then
+				result ..= REPEATED
+			end
 			table.insert(
 				state.said,
 				{ role = "tool", call = c.id, text = result, error = failed } :: models.Said
@@ -584,6 +598,15 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })
 			break
 		end
+	end
+	-- Still waiting for the model's answer to its tools' results: it ran
+	-- out of turns.
+	local last = state.said[#state.said]
+	if last and last.role == "tool" and not state.cancelled and not s.failed then
+		table.insert(s.entries, {
+			kind = "note",
+			text = `stopped: it took {MAX_TURNS} turns without finishing; say go on to let it carry on`,
+		})
 	end
 	s.status = "idle"
 	keep(s, state)

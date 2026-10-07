@@ -420,6 +420,21 @@ registry.tool({
 		if hits == nil then
 			error(err, 0)
 		end
+		if #hits == 0 then
+			-- An agent looking for Greed's API in the project gets it from
+			-- Greed's own plugins and types instead, and hears so.
+			local runtime = runtime_dir()
+			if args.path == nil and runtime then
+				local there = M.grep(args.pattern, runtime, args.limit)
+				if there and #there > 0 then
+					return `nothing in the project; these are from Greed's own plugins and types `
+						.. `(path "{runtime}" searches only there):\n{greed.json.encode(
+							greed.json.array(there)
+						)}`
+				end
+			end
+			return `no lines match in {args.path or "the project"}`
+		end
 		return greed.json.array(hits)
 	end,
 })

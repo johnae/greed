@@ -898,3 +898,25 @@ test("answers cut off again and again stop it", function(t)
 	assert(#asked == 3, `it stops after the third: {#asked}`)
 	assert(string.find(said(s), "stopped: the answer ran out of room", 1, true), said(s))
 end)
+
+test("a call made again with the same result says so, and running out of turns too", function(t)
+	local again = {
+		text = "",
+		calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+		stop = "tools",
+	}
+	local turns = {}
+	for _ = 1, 110 do
+		table.insert(turns, again)
+	end
+	local asked = script(turns)
+	local s = ask(t, "look")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local first = asked[2].said[3].text
+	local second = asked[3].said[5].text
+	assert(not string.find(first, "same call", 1, true), first)
+	assert(string.find(second, "You made this same call already", 1, true), second)
+	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
+end)
