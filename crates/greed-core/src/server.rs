@@ -5,7 +5,7 @@
 //! process or as JSON lines over a session socket.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::{BufRead, Write};
+use std::io::Write;
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender, select};
 use serde::{Deserialize, Serialize};
 
-use crate::control::{Attachment, Session};
+use crate::control::{Attachment, Session, read_line_within};
 use crate::delta::FrameDelta;
 use crate::image::{Image, ImageId};
 use crate::keymap::{Key, KeyCode, Mods};
@@ -616,17 +616,22 @@ impl Server<'_> {
     fn attach(&mut self, attachment: Attachment) {
         self.detach();
         let Attachment {
-            reader,
+            mut reader,
             mut writer,
             open,
             terminal,
             remote,
         } = attachment;
         let inputs = self.inputs.clone();
-        // A line that isn't input, even one that isn't UTF-8, is skipped.
+        // A line that isn't input, even one that isn't UTF-8, is skipped; one
+        // too long to read lets the client go.
         let reading = thread::Builder::new().spawn(move || {
-            for line in reader.split(b'\n') {
-                let Ok(line) = line else { return };
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                if !matches!(read_line_within(&mut reader, &mut line), Ok(n) if n > 0) {
+                    return;
+                }
                 let Ok(input) = serde_json::from_slice::<Input>(&line) else {
                     continue;
                 };

@@ -26,6 +26,24 @@ use serde_json::{Value, json};
 /// when they attach, and a session refuses one that doesn't match.
 pub const PROTOCOL: u32 = 8;
 
+/// The longest line a session reads from a connection, in bytes: room for a
+/// big paste, short of letting anything that can reach the socket fill the
+/// memory with one endless line. A longer one ends the connection.
+pub const LINE_LIMIT: u64 = 64 << 20;
+
+/// Reads a line of at most [`LINE_LIMIT`] bytes, with its line break, onto
+/// the end of `line`; the bytes read, 0 at the end.
+pub(crate) fn read_line_within(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<usize> {
+    let read = reader.take(LINE_LIMIT + 1).read_until(b'\n', line)?;
+    if read as u64 > LINE_LIMIT {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a line longer than a session reads",
+        ));
+    }
+    Ok(read)
+}
+
 /// Set in the environment of a session `greed ssh` started, through
 /// `greed bridge`.
 pub const REMOTE_ENV: &str = "GREED_SSH_SESSION";
@@ -482,16 +500,16 @@ fn serve_connection(
     let mut authed = false;
     // Whether the connection said at its first auth that it's a shell's.
     let mut shell = false;
-    let mut line = String::new();
+    let mut line = Vec::new();
     loop {
         line.clear();
-        if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+        if !matches!(read_line_within(&mut reader, &mut line), Ok(n) if n > 0) {
             return;
         }
-        if line.trim().is_empty() {
+        if line.trim_ascii().is_empty() {
             continue;
         }
-        let response = match serde_json::from_str::<Value>(&line) {
+        let response = match serde_json::from_slice::<Value>(&line) {
             Ok(message) if authed && message["method"] == "attach" => {
                 let theirs = message["params"]["protocol"].as_u64();
                 if theirs != Some(u64::from(PROTOCOL)) {

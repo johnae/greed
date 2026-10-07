@@ -308,3 +308,30 @@ fn plugins_hear_when_a_connection_closes_even_with_a_request_waiting() {
     conn.input.send(Input::Quit).unwrap();
     conn.server.join().unwrap().unwrap();
 }
+
+#[test]
+fn a_line_too_long_ends_its_connection_and_the_session_goes_on() {
+    use std::io::{Read, Write};
+    let (conn, socket, token) = start(&name("long"), ECHO);
+    let mut stream = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+    // Before it says the token, with no line break: more than a session reads.
+    let chunk = vec![b'x'; 1 << 20];
+    let limit = usize::try_from(control::LINE_LIMIT).unwrap();
+    let mut sent = 0;
+    while sent <= limit {
+        if stream.write_all(&chunk).is_err() {
+            break;
+        }
+        sent += chunk.len();
+    }
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    // Closed (or reset) without an answer.
+    let mut rest = Vec::new();
+    let _ = stream.read_to_end(&mut rest);
+    assert!(rest.is_empty(), "{}", String::from_utf8_lossy(&rest));
+    let mut client = Client::connect(&socket, &token).unwrap();
+    assert!(client.call("echo", &json!(1)).unwrap().is_ok());
+    conn.input.send(Input::Quit).unwrap();
+}
