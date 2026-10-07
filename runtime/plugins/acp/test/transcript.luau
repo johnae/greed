@@ -428,3 +428,16 @@ test("a tool's output shows exactly as it is, its stars and backticks too", func
 	assert(string.find(drawn, "- not a list", 1, true), drawn)
 	acp.stop(s)
 end)
+
+test("what you write in the box keeps its colour, the grey stays on the sides", function(t)
+	start(t)
+	type_in(t, "h i")
+	local buffer = greed.view():buffer()
+	local typed = buffer:len() - 2
+	for _, mark in buffer:decorations("acp-live") do
+		assert(
+			not (mark.style == "agent.box" and mark.from <= typed and mark.to > typed),
+			`the box's style covers what you wrote: {mark.from}-{mark.to}`
+		)
+	end
+end)
