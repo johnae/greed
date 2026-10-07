@@ -1404,7 +1404,7 @@ impl<M: Measure> Renderer<M> {
         // Files in the project show from its root.
         let root = editor.current_project().root();
         let middle = match message {
-            Some(message) => span(message, Tag::MESSAGE),
+            Some(message) => span(&status_message(message), Tag::MESSAGE),
             None => span(
                 &buffer.path().map_or_else(
                     || buffer.title(),
@@ -1736,6 +1736,16 @@ fn visible_bytes(
         .sum();
     let end_line = (scroll.line + rows + folded + 1).min(text.len_lines());
     text.line_to_byte(scroll.line)..text.line_to_byte(end_line)
+}
+
+/// A message as the status line shows it: its first line, with "…" when
+/// there's more, like an error's stack trace. Its lines would otherwise
+/// all be drawn on the one row.
+pub(crate) fn status_message(message: &str) -> Cow<'_, str> {
+    match message.split_once('\n') {
+        Some((first, _)) => Cow::Owned(format!("{} …", first.trim_end())),
+        None => Cow::Borrowed(message),
+    }
 }
 
 /// The capture that applies to each byte of `range`. Inner captures win over

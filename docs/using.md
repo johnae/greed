@@ -289,6 +289,10 @@ typing slowly would. They wait half a second at most; `esc` and `ctrl-c`
 reach a working command at once, unless keys typed before them are
 still waiting.
 
+Messages show on the status line, one line each; a longer one, like an
+error with its stack trace, ends in `…`. `:messages` shows the last ones
+in full.
+
 This page shows the Helix style, Greed's default. In the Helix style you
 select text, then say what to do with it. There is always a selection; a
 cursor is a selection one character wide.

@@ -540,4 +540,18 @@ greed.on("mode.changed", function()
 	M.glow("mode", 450, effects.burst)
 end)
 
+-- A message shows one line here; :messages shows the last ones whole, like
+-- an error's stack trace.
+greed.command({
+	name = "messages",
+	doc = "Show the last messages in full, newest last",
+	run = function(ctx)
+		local list = greed.messages()
+		local text = if #list == 0 then "no messages yet" else table.concat(list, "\n\n")
+		local buffer = greed.create_buffer("messages", text, { readonly = true })
+		ctx.view:show(buffer)
+		ctx.view:set_cursor(buffer:len())
+	end,
+})
+
 return M

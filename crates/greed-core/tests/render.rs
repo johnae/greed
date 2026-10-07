@@ -1729,3 +1729,25 @@ fn a_plain_mark_draws_its_text_without_syntax_highlighting() {
         .collect();
     assert_eq!(struck, ["~a~"], "only the text outside the plain mark");
 }
+
+#[test]
+fn a_message_of_several_lines_shows_its_first_on_the_status_line() {
+    let mut ed = editor("|x");
+    let f = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 40,
+            height: 3,
+        },
+        &Status::Default {
+            message: Some("it failed\nstack traceback:\n\tsomewhere"),
+        },
+        &Plain,
+    );
+    let text = status(&f).text();
+    assert!(text.contains("it failed …"), "{text}");
+    assert!(
+        !text.contains("traceback") && !text.contains('\n'),
+        "{text}"
+    );
+}

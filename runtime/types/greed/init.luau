@@ -1670,6 +1670,8 @@ export type Greed = {
 	off: (event: EventName, handler: (event: any) -> ()) -> (),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
+	--- The last messages shown, oldest first and whole (the status line shows a message's first line).
+	messages: () -> { string },
 	--- The focused view.
 	view: () -> View,
 	--- Asks the editor to exit.

@@ -441,6 +441,15 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
+    greed.set(
+        "messages",
+        lua.create_function(|lua, ()| {
+            let state = state(lua);
+            let list: Vec<String> = state.editor.recent_messages().map(str::to_owned).collect();
+            Ok(list)
+        })?,
+    )?;
+
     let o = owner.clone();
     greed.set(
         "view",
@@ -1788,7 +1797,10 @@ pub(super) fn status_line(
         },
     )?;
     ctx.set("mode", mode)?;
-    ctx.set("message", message)?;
+    ctx.set(
+        "message",
+        message.map(|m| crate::render::status_message(m).into_owned()),
+    )?;
     ctx.set("width", width)?;
     let line: Table =
         super::capabilities::running_as(lua, Some(&owner), "the status line", || build.call(ctx))?;

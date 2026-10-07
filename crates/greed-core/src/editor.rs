@@ -1,7 +1,7 @@
 //! The editor's authoritative state: buffers, views, the current mode and
 //! the keymap. Everything here is plain Rust; the Luau host drives it.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,6 +22,9 @@ pub use clients::{ClientInfo, ClientLayout, ClientState, FIRST_CLIENT, PEER_COLO
 pub use layouts::LayoutChange;
 use layouts::{Arrangement, LayoutId};
 pub use panes::{Tab, TabId, TabView};
+
+/// How many messages are kept to read again.
+const RECENT_MESSAGES: usize = 200;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
@@ -404,6 +407,8 @@ pub struct Editor {
     next_id: u32,
     keymap: Keymap,
     messages: Vec<String>,
+    /// The last messages shown, oldest first, to read again in full.
+    recent: VecDeque<String>,
     next_group: u64,
     /// Why edits are being made, e.g. the command running, when the edit
     /// itself doesn't say.
@@ -444,6 +449,7 @@ impl Editor {
             next_id: 1,
             keymap: Keymap::default(),
             messages: Vec::new(),
+            recent: VecDeque::new(),
             next_group: 0,
             cause: None,
             quit_requested: false,
@@ -1931,7 +1937,18 @@ impl Editor {
 
     /// Queues a message for the user.
     pub fn echo(&mut self, message: impl Into<String>) {
-        self.messages.push(message.into());
+        let message = message.into();
+        if self.recent.len() == RECENT_MESSAGES {
+            self.recent.pop_front();
+        }
+        self.recent.push_back(message.clone());
+        self.messages.push(message);
+    }
+
+    /// The last messages shown, oldest first, whole: the status line shows
+    /// only a message's first line.
+    pub fn recent_messages(&self) -> impl Iterator<Item = &str> {
+        self.recent.iter().map(String::as_str)
     }
 
     pub fn take_messages(&mut self) -> Vec<String> {
