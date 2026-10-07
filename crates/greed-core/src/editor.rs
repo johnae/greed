@@ -6,13 +6,13 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use greed_text::{
-    Author, ChangeSet, ClientId, Range, Replica, Selection, Transaction, TxId, TxMeta,
+    Assoc, Author, ChangeSet, ClientId, Range, Replica, Selection, Transaction, TxId, TxMeta,
 };
 
 use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error, GroupState, Mark};
+use crate::{Buffer, BufferId, Error, GroupState, Mark, TrackId};
 
 mod panes;
 pub use panes::{Tab, TabId};
@@ -534,6 +534,22 @@ impl Editor {
             mark.range = mark.range.start.min(end)..end;
         }
         b.set_marks(ns, marks);
+    }
+
+    /// Starts following `range` of `buffer` through edits; see [`crate::Tracked`].
+    pub fn track(
+        &mut self,
+        buffer: BufferId,
+        range: std::ops::Range<usize>,
+        gravity: (Assoc, Assoc),
+    ) -> Option<TrackId> {
+        Some(self.buffers.get_mut(&buffer)?.track(range, gravity))
+    }
+
+    pub fn forget_tracked(&mut self, buffer: BufferId, id: TrackId) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.forget(id);
+        }
     }
 
     /// The buffer for the file at `path`: the open one, or a new buffer

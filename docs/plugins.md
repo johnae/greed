@@ -244,6 +244,35 @@ it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 
+### Places that move with edits
+
+To find a place again after the text around it changed, say where a
+command should put its result once a slow program finishes, track it:
+
+```luau
+local here = buffer:track(pos)                  -- a position
+local line = buffer:track_range(from, to)       -- a range
+-- ... edits happen, here or elsewhere ...
+here:pos()                                      -- where it is now
+local from, to = line:range()                   -- nil, nil once its text was deleted
+line:deleted()
+here:forget()
+```
+
+Gravity says what happens to text inserted exactly at a tracked place.
+A position with `{ gravity = "right" }` (the default) ends up after the
+new text, and with `"left"` it stays before it. A range takes `from` and
+`to` gravities, one per end. By default text typed at either end stays
+outside, and `{ from = "left", to = "right" }` takes it in. Deleting text
+around a position moves it to where the deletion was. A range is deleted
+once all of its text is, and stays deleted even if undo brings the text
+back; one that started empty never is.
+
+Nothing draws tracked places, and each has its own handle, so two
+commands tracking the same buffer never get in each other's way. They go
+when you call `forget`, when the buffer closes, or when your plugin is
+unloaded. After that `pos` and `range` give nil.
+
 ### Paths and the files behind them
 
 Buffers know their files by full path, with `.` and `..` worked out, so

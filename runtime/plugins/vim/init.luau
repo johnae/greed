@@ -437,8 +437,9 @@ local motions: { [string]: Motion } = {
 	T = find_char(false, true),
 }
 
--- Marks: a to z in the buffer, kept as decorations so they move with edits;
+-- Marks: a to z in each buffer, by its id, tracked so they move with edits;
 -- A to Z across files, by path and place.
+local buffer_marks: { [number]: { [string]: greed.Anchor } } = {}
 local file_marks: { [string]: { path: string, pos: number } } = {}
 
 local function set_mark(buffer: Buffer, name: string, pos: number)
@@ -449,15 +450,13 @@ local function set_mark(buffer: Buffer, name: string, pos: number)
 		end
 		return
 	end
-	local marks = {}
-	for _, mark in buffer:decorations("vim-marks") do
-		if mark.style ~= name then
-			table.insert(marks, mark)
-		end
+	local marks = buffer_marks[buffer:id()] or {}
+	buffer_marks[buffer:id()] = marks
+	local old = marks[name]
+	if old then
+		old:forget()
 	end
-	-- The style names the mark; nothing in the theme draws it.
-	table.insert(marks, { from = pos, to = pos, style = name })
-	buffer:decorate("vim-marks", marks)
+	marks[name] = buffer:track(pos)
 end
 
 -- Where mark `name` is in `buffer`, or nil. An uppercase mark in another
@@ -474,12 +473,9 @@ local function mark_place(buffer: Buffer, name: string): number?
 		end
 		return math.min(mark.pos, buffer:len())
 	end
-	for _, mark in buffer:decorations("vim-marks") do
-		if mark.style == name then
-			return mark.from
-		end
-	end
-	return nil
+	local marks = buffer_marks[buffer:id()]
+	local mark = marks and marks[name]
+	return if mark then mark:pos() else nil
 end
 
 -- ' and `: to a mark's line, or to the mark itself.
@@ -1478,18 +1474,16 @@ command("undo-line", "Put back the line last changed as it was before (U)", func
 end)
 
 -- The change list for g; and g,: where the last changes in each buffer
--- were, kept as marks so they move with edits, numbered oldest first.
+-- were, by buffer id, tracked so they move with edits, oldest first.
 local CHANGES = 100
-local changes_made = 0
+local change_lists: { [number]: { greed.Anchor } } = {}
 -- How far back g; has gone in each buffer, by its id; 0 is past the newest.
 local changes_back: { [number]: number } = {}
 
-local function changes(buffer: Buffer): { greed.Mark }
-	local marks = buffer:decorations("vim-changes")
-	table.sort(marks, function(a: greed.Mark, b: greed.Mark)
-		return (tonumber(a.style) :: number) < (tonumber(b.style) :: number)
-	end)
-	return marks
+local function changes(buffer: Buffer): { greed.Anchor }
+	local list = change_lists[buffer:id()] or {}
+	change_lists[buffer:id()] = list
+	return list
 end
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
@@ -1500,18 +1494,23 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	end
 	local selection = view:selection()
 	local pos = math.min(selection.ranges[selection.primary].head, buffer:len())
-	local marks = changes(buffer)
+	local list = changes(buffer)
 	-- Another change on the same line takes the place of the last one.
-	local newest = marks[#marks]
-	if newest and buffer:line_of(newest.from) == buffer:line_of(pos) then
-		table.remove(marks)
-	elseif #marks >= CHANGES then
-		table.remove(marks, 1)
+	local newest = list[#list]
+	local newest_pos = newest and newest:pos()
+	local dropped = if newest_pos and buffer:line_of(newest_pos) == buffer:line_of(pos)
+		then table.remove(list)
+		elseif #list >= CHANGES then table.remove(list, 1)
+		else nil
+	if dropped then
+		dropped:forget()
 	end
-	changes_made += 1
-	table.insert(marks, { from = pos, to = pos, style = tostring(changes_made) })
-	buffer:decorate("vim-changes", marks)
+	table.insert(list, buffer:track(pos))
 	changes_back[buffer:id()] = 0
+end)
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	buffer_marks[event.id], change_lists[event.id], changes_back[event.id] = nil, nil, nil
 end)
 
 -- g; and g,: to an older change, or back to a newer one.
@@ -1523,16 +1522,17 @@ for _, newer in { false, true } do
 			else "Go to an older place in the change list",
 		function(ctx)
 			local buffer = ctx.buffer
-			local marks = changes(buffer)
+			local list = changes(buffer)
 			local back = (changes_back[buffer:id()] or 0)
 				+ (ctx.count or 1) * (if newer then -1 else 1)
-			local mark = marks[#marks - back + 1]
-			if back < 1 or mark == nil then
+			local change = list[#list - back + 1]
+			local pos = change and change:pos()
+			if back < 1 or pos == nil then
 				greed.echo(if newer then "at the newest change" else "at the oldest change")
 				return
 			end
 			changes_back[buffer:id()] = back
-			ctx.view:set_selection(point(on_char(buffer, mark.from)))
+			ctx.view:set_selection(point(on_char(buffer, pos)))
 		end
 	)
 end

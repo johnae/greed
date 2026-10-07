@@ -144,3 +144,13 @@ test("a diff's changes show as excerpts, and space g r puts one back", function(
 	local messages = t:messages()
 	assert(messages[#messages] == "no change here", messages[#messages])
 end)
+
+test("text typed at the start of a file's first line goes into its excerpt", function(t)
+	local dir, buffer = setup(t, 3)
+	t:keys("i x esc u")
+	local b = greed.load(dir .. "/b.txt")
+	b:edit(function(e)
+		e:insert(0, "> ")
+	end)
+	assert(buffer:text() == "two files\none\ntwo\n> only\n", buffer:text())
+end)

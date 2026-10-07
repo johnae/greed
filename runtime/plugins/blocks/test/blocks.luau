@@ -271,3 +271,27 @@ test("a block changed while it waits for its input doesn't run for an agent", fu
 	assert(string.find(buffer:text(), "error: the block on line 9 changed", 1, true), buffer:text())
 	assert(not string.find(buffer:text(), "result\npwned", 1, true), "it didn't run")
 end)
+
+test("a running block shows so on its fence, and its result follows it as text moves", function(t)
+	t:buffer("```sh\nsleep 0.3; echo done\n```|")
+	local buffer = greed.view():buffer()
+	local function status(): (string?, number?)
+		for _, mark in buffer:decorations("blocks") do
+			if mark.style == "blocks.running" then
+				return mark.text, mark.from
+			end
+		end
+		return nil, nil
+	end
+	t:run("block-run")
+	local shown, from = status()
+	assert(shown == "■ running" and from == 0, `{shown} at {from}`)
+	buffer:edit(function(e)
+		e:insert(0, "intro\n\n")
+	end)
+	shown, from = status()
+	assert(shown == "■ running" and from == 7, `{shown} at {from}`)
+	t:wait_for(has("```result"))
+	assert(text() == "intro\n\n```sh\nsleep 0.3; echo done\n```\n\n```result\ndone\n```", text())
+	assert(status() == nil, "nothing shows as running once it's done")
+end)

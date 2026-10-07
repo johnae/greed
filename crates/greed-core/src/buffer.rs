@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,6 +40,26 @@ pub struct Buffer {
     detected: Option<Arc<str>>,
     /// Decorations by namespace. They move with edits.
     marks: BTreeMap<Arc<str>, Vec<Mark>>,
+    /// Places plugins follow through edits, by id.
+    tracked: HashMap<TrackId, Tracked>,
+    next_track: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TrackId(pub u64);
+
+/// A range of the text that moves with edits without being drawn, so a
+/// plugin can find a place again after the text around it changed. A
+/// position is an empty range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tracked {
+    pub range: Range<usize>,
+    /// The side of text inserted exactly at the start, and at the end, that
+    /// each stays on.
+    pub gravity: (Assoc, Assoc),
+    /// Whether all of the range's text was deleted. It stays deleted, even
+    /// if undo brings the text back. A range that started empty never is.
+    pub deleted: bool,
 }
 
 /// Text drawn with a style, e.g. a search match. It moves with edits; text
@@ -153,6 +173,8 @@ impl Buffer {
             language: None,
             detected: None,
             marks: BTreeMap::new(),
+            tracked: HashMap::new(),
+            next_track: 0,
         }
     }
 
@@ -188,8 +210,39 @@ impl Buffer {
         }
     }
 
-    /// Moves every mark through `changes`, dropping marks whose text went.
+    /// Starts following `range` (clamped to the text) through edits.
+    pub(crate) fn track(&mut self, range: Range<usize>, gravity: (Assoc, Assoc)) -> TrackId {
+        let end = range.end.min(self.text.len_bytes());
+        let id = TrackId(self.next_track);
+        self.next_track += 1;
+        let tracked = Tracked {
+            range: range.start.min(end)..end,
+            gravity,
+            deleted: false,
+        };
+        self.tracked.insert(id, tracked);
+        id
+    }
+
+    /// Where the range tracked as `id` is now, unless it was forgotten.
+    pub fn tracked(&self, id: TrackId) -> Option<&Tracked> {
+        self.tracked.get(&id)
+    }
+
+    pub(crate) fn forget(&mut self, id: TrackId) {
+        self.tracked.remove(&id);
+    }
+
+    /// Moves every mark and tracked range through `changes`, dropping marks
+    /// whose text went.
     fn map_marks(&mut self, changes: &ChangeSet) {
+        for t in self.tracked.values_mut() {
+            let was_empty = t.range.is_empty();
+            let start = changes.map_pos(t.range.start, t.gravity.0);
+            let end = changes.map_pos(t.range.end, t.gravity.1).max(start);
+            t.range = start..end;
+            t.deleted |= !was_empty && start == end;
+        }
         for marks in self.marks.values_mut() {
             marks.retain_mut(|mark| {
                 let was_empty = mark.range.is_empty();

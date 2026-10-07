@@ -111,6 +111,10 @@ export type Buffer = {
 	--- The marks over `pos` in every namespace, each with its `ns`: those
 	--- whose range holds it, and empty ones that start there.
 	marks_at: (self: Buffer, pos: number) -> { Mark & { ns: string } },
+	--- Follows `pos` through edits. Text inserted exactly there goes before it with `gravity = "right"` (the default) and after it with "left". Deleting text around it moves it to where the deletion was.
+	track: (self: Buffer, pos: number, opts: { gravity: ("left" | "right")? }?) -> Anchor,
+	--- Follows `from`..`to` through edits. `from` and `to` in `opts` are each end's gravity, as for `track`; by default text inserted at either end stays outside. It's deleted once all of its text is.
+	track_range: (self: Buffer, from: number, to: number, opts: { from: ("left" | "right")?, to: ("left" | "right")? }?) -> Tracked,
 	--- The first match of the regex `pattern` starting at or after `from`
 	--- (default 0), or with `backward` the last one starting before it; `wrap`
 	--- goes round the other end. Returns its start and end, nil when nothing
@@ -159,6 +163,24 @@ export type Node = {
 	prev: (self: Node) -> Node?,
 	--- Its text. Errors if the buffer changed since the node was found.
 	text: (self: Node) -> string,
+}
+
+--- A position that moves with edits, from `buffer:track`. It goes when forgotten, when its buffer closes, or when the plugin that made it is unloaded.
+export type Anchor = {
+	--- Where it is now, or nil once it's gone.
+	pos: (self: Anchor) -> number?,
+	--- Stops following it.
+	forget: (self: Anchor) -> (),
+}
+
+--- A range that moves with edits, from `buffer:track_range`. It goes as an `Anchor` does.
+export type Tracked = {
+	--- Where it is now, or nil once its text was deleted or it's gone.
+	range: (self: Tracked) -> (number?, number?),
+	--- Whether all of its text was deleted, or it's gone. Undo bringing the text back doesn't change that.
+	deleted: (self: Tracked) -> boolean,
+	--- Stops following it.
+	forget: (self: Tracked) -> (),
 }
 
 --- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.

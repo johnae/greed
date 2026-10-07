@@ -266,24 +266,19 @@ greed.command({
 		local mode = greed.mode.get()
 		local view, buffer = ctx.view, ctx.buffer
 		local first, last = M.selected_lines(view)
-		-- Marks keep each line's place as earlier lines change.
-		local marks: { greed.Mark } = {}
+		-- Tracking each line's start keeps its place as earlier lines change.
+		local starts: { greed.Anchor } = {}
 		for line = first, last do
-			local start = buffer:line_start(line)
-			table.insert(marks, { from = start, to = start, style = tostring(line) })
+			table.insert(starts, buffer:track(buffer:line_start(line)))
 		end
-		buffer:decorate("cmdline-normal", marks)
 		greed.history.start_group()
-		for line = first, last do
-			for _, mark in buffer:decorations("cmdline-normal") do
-				if mark.style == tostring(line) then
-					local start = buffer:line_start(buffer:line_of(mark.from))
-					view:set_selection({
-						ranges = { { anchor = start, head = start } },
-						primary = 1,
-					})
-				end
-			end
+		for _, anchor in starts do
+			local start = buffer:line_start(buffer:line_of(anchor:pos() or 0))
+			anchor:forget()
+			view:set_selection({
+				ranges = { { anchor = start, head = start } },
+				primary = 1,
+			})
 			greed.keys.feed(typed)
 			-- A command left unfinished, like insert mode, ends with the line.
 			if greed.mode.get() ~= mode then
@@ -291,7 +286,6 @@ greed.command({
 			end
 		end
 		greed.history.end_group()
-		buffer:decorate("cmdline-normal", {})
 	end,
 })
 

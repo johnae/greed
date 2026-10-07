@@ -63,17 +63,15 @@ type Part = {
 	label: string,
 	-- Shown after the label and line number; the notes of joined excerpts.
 	note: string?,
-	-- The namespace of its mark in the multibuffer, and in its file's buffer
-	-- once that's open.
-	ns: string,
+	-- Where its text is in the multibuffer.
+	shown: greed.Tracked,
 	-- Its first line in the file, while the file isn't open.
 	start: number,
 	-- Its text when it was last the same as the file's.
 	text: string,
-	-- The file's buffer, once open, and whether the mark there starts with
-	-- the line break before the excerpt.
+	-- The file's buffer once open, and where the excerpt is in it.
 	source: greed.Buffer?,
-	lead: boolean,
+	place: greed.Tracked?,
 }
 
 type State = { buffer: greed.Buffer, parts: { Part }, options: Options }
@@ -86,8 +84,6 @@ local states: { [number]: State } = {}
 -- echo back.
 local syncing = false
 
-local next_id = 0
-
 -- `text` split into lines that keep their line breaks.
 local function lines_of(text: string): { string }
 	local lines = {}
@@ -99,26 +95,30 @@ local function lines_of(text: string): { string }
 	return lines
 end
 
--- Byte offsets of lines `from`..`to` of `buffer`, as a mark that also takes
--- the line break before them when there is one, so text typed at the
--- excerpt's start falls inside it.
-local function line_mark(buffer: greed.Buffer, from: number, to: number): (greed.Mark, boolean)
-	local start = buffer:line_start(from)
+-- Byte offsets of lines `from`..`to` of `buffer`.
+local function line_span(buffer: greed.Buffer, from: number, to: number): (number, number)
 	local stop = if to + 1 < buffer:line_count() then buffer:line_start(to + 1) else buffer:len()
-	local lead = from > 0
-	return { from = if lead then start - 1 else start, to = stop, style = "multibuffer.excerpt" },
-		lead
+	return buffer:line_start(from), stop
 end
 
--- The text the mark `ns` covers in `buffer`, without the line break before
--- it, and where that text starts; nil if the mark went with its text.
-local function marked(buffer: greed.Buffer, ns: string, lead: boolean): (string?, number)
-	local mark = buffer:decorations(ns)[1]
-	if mark == nil then
+-- Tracks `from`..`to` of `buffer`, whole lines, so that text typed at its
+-- start goes in and text typed at its end, the start of the next line,
+-- stays out.
+local function track(buffer: greed.Buffer, from: number, to: number): greed.Tracked
+	return buffer:track_range(from, to, { from = "left", to = "left" })
+end
+
+-- The text `tracked` covers in `buffer` and where it starts; nil once the
+-- text went.
+local function marked(buffer: greed.Buffer, tracked: greed.Tracked?): (string?, number)
+	if tracked == nil then
 		return nil, 0
 	end
-	local start = mark.from + (if lead then 1 else 0)
-	return buffer:slice(start, mark.to), start
+	local from, to = tracked:range()
+	if from == nil or to == nil then
+		return nil, 0
+	end
+	return buffer:slice(from, to), from
 end
 
 -- Whether byte `i` of `text` continues a character rather than starting one.
@@ -128,8 +128,8 @@ local function continues(text: string, i: number): boolean
 end
 
 -- Makes `old`, the text at `start` in `buffer`, read `new`, replacing only
--- what lies between the start and end they share. Replacing all of a
--- mark's text would take the mark away with it.
+-- what lies between the start and end they share, so cursors elsewhere in
+-- it stay put.
 local function rewrite(buffer: greed.Buffer, start: number, old: string, new: string)
 	if old == new then
 		return
@@ -157,12 +157,6 @@ local function rewrite(buffer: greed.Buffer, start: number, old: string, new: st
 	end
 	local from, to = same_start, #old - same_end
 	local text = string.sub(new, same_start + 1, #new - same_end)
-	-- Text added at the very end would land on the mark's edge and fall
-	-- outside it; replacing the last character keeps it in.
-	if from == #old and from > 0 then
-		from -= 1
-		text = string.sub(old, -1) .. text
-	end
 	syncing = true
 	local ok: boolean, err: unknown = pcall(buffer.edit, buffer, function(e: greed.Edits)
 		e:replace(start + from, start + to, text)
@@ -173,14 +167,19 @@ local function rewrite(buffer: greed.Buffer, start: number, old: string, new: st
 	end
 end
 
--- Puts the mark `ns` back over `text` at `start` after the plugin rewrote
--- it, rather than trusting edits at its edges to land inside it. Marks only
--- need to follow edits made by others.
-local function place(buffer: greed.Buffer, ns: string, start: number, text: string, lead: boolean)
-	if text ~= "" then
-		local from = if lead then start - 1 else start
-		buffer:decorate(ns, { { from = from, to = start + #text, style = "multibuffer.excerpt" } })
+-- Tracks `text` at `start` in `buffer` afresh after the plugin rewrote it,
+-- rather than trusting edits at its edges to land inside. Tracking only
+-- needs to follow edits made by others. Nil when there's no text.
+local function retrack(
+	buffer: greed.Buffer,
+	old: greed.Tracked?,
+	start: number,
+	text: string
+): greed.Tracked?
+	if old then
+		old:forget()
 	end
+	return if text ~= "" then track(buffer, start, start + #text) else nil
 end
 
 -- The text of the multibuffer's excerpt as the file should have it: the
@@ -199,9 +198,8 @@ end
 
 -- Starts keeping `part` in step with `buffer`, its file's.
 local function attach(part: Part, buffer: greed.Buffer, from: number, to: number)
-	local mark, lead = line_mark(buffer, from, to)
-	buffer:decorate(part.ns, { mark })
-	part.source, part.lead = buffer, lead
+	local start, stop = line_span(buffer, from, to)
+	part.source, part.place = buffer, track(buffer, start, stop)
 end
 
 -- Opens `part`'s file the first time its excerpt changes, if the file
@@ -215,9 +213,7 @@ local function ensure_source(part: Part): boolean
 	if to >= buffer:line_count() then
 		return false
 	end
-	local mark, lead = line_mark(buffer, part.start, to)
-	local start = mark.from + (if lead then 1 else 0)
-	if buffer:slice(start, mark.to) ~= part.text then
+	if buffer:slice(line_span(buffer, part.start, to)) ~= part.text then
 		return false
 	end
 	attach(part, buffer, part.start, to)
@@ -226,9 +222,9 @@ end
 
 -- The line of `part` in its file where the excerpt starts now.
 local function first_line(part: Part): number
-	local source = part.source
-	if source then
-		local _, start = marked(source, part.ns, part.lead)
+	local source, place = part.source, part.place
+	local start = place and place:range()
+	if source and start then
 		return source:line_of(start)
 	end
 	return part.start
@@ -254,7 +250,7 @@ local function redraw(state: State)
 		width = math.max(width, #tostring(first_line(part) + #lines_of(part.text)))
 	end
 	for _, part in state.parts do
-		local text, start = marked(buffer, part.ns, true)
+		local text, start = marked(buffer, part.shown)
 		if text then
 			local above = buffer:line_of(start - 1)
 			local line = first_line(part)
@@ -322,30 +318,22 @@ end
 --- A multibuffer of `excerpts`, not shown yet: show it with `greed.panel`,
 --- `greed.float` or a view's `show`.
 function M.open(excerpts: { Excerpt }, options: Options): greed.Buffer
-	next_id += 1
-	local id = next_id
 	local cache = {}
 	local pieces = { options.summary, "\n" }
 	local length = #options.summary + 1
-	local parts: { Part } = {}
-	local ranges: { { ns: string, from: number, to: number } } = {}
+	-- Each excerpt shown, its text and where that is in the multibuffer.
+	local shown_at: { { excerpt: Excerpt, text: string, from: number, to: number } } = {}
 	local found: { greed.Mark } = {}
-	for i, excerpt in joined(excerpts, options.context or 0) do
+	for _, excerpt in joined(excerpts, options.context or 0) do
 		local lines = file_lines(excerpt.path, cache)
 		local to = math.min(excerpt.to :: number, #lines - 1)
 		if excerpt.from <= to then
 			local text = table.concat(lines, "", excerpt.from + 1, to + 1)
-			local part: Part = {
-				path = excerpt.path,
-				label = excerpt.label or core.project.relative(excerpt.path),
-				note = excerpt.note,
-				ns = `multibuffer.{id}.{i}`,
-				start = excerpt.from,
-				text = text,
-				lead = false,
-			}
 			local shown = as_shown(text)
-			table.insert(ranges, { ns = part.ns, from = length - 1, to = length + #shown })
+			table.insert(
+				shown_at,
+				{ excerpt = excerpt, text = text, from = length, to = length + #shown }
+			)
 			-- Where each of the excerpt's lines starts in the multibuffer.
 			local starts, at = {}, length
 			for line = excerpt.from, to do
@@ -366,16 +354,21 @@ function M.open(excerpts: { Excerpt }, options: Options): greed.Buffer
 			end
 			table.insert(pieces, shown)
 			length += #shown
-			table.insert(parts, part)
 		end
 	end
 	local buffer = greed.create_buffer("multibuffer", table.concat(pieces))
 	buffer:set_line_numbers(false)
-	for _, range in ranges do
-		buffer:decorate(
-			range.ns,
-			{ { from = range.from, to = range.to, style = "multibuffer.excerpt" } }
-		)
+	local parts: { Part } = {}
+	for _, at in shown_at do
+		local excerpt = at.excerpt
+		table.insert(parts, {
+			path = excerpt.path,
+			label = excerpt.label or core.project.relative(excerpt.path),
+			note = excerpt.note,
+			shown = track(buffer, at.from, at.to),
+			start = excerpt.from,
+			text = at.text,
+		})
 	end
 	buffer:decorate("multibuffer.found", found)
 	local state = { buffer = buffer, parts = parts, options = options }
@@ -396,7 +389,7 @@ local function to_files(state: State)
 	local problems = {}
 	local kept = {}
 	for _, part in state.parts do
-		local shown = marked(state.buffer, part.ns, true)
+		local shown = marked(state.buffer, part.shown)
 		local new = as_file(part, shown or "")
 		if new == part.text then
 			table.insert(kept, part)
@@ -405,16 +398,19 @@ local function to_files(state: State)
 			table.insert(kept, part)
 		else
 			local source = part.source :: greed.Buffer
-			local old, start = marked(source, part.ns, part.lead)
+			local old, start = marked(source, part.place)
 			if old then
 				rewrite(source, start, old, new)
-				place(source, part.ns, start, new, part.lead)
+				part.place = retrack(source, part.place, start, new)
 			end
 			part.text = new
 			if shown then
 				table.insert(kept, part)
 			else
-				source:decorate(part.ns, {})
+				part.shown:forget()
+				if part.place then
+					part.place:forget()
+				end
 			end
 		end
 	end
@@ -432,12 +428,13 @@ local function from_file(buffer: greed.Buffer)
 		for _, part in state.parts do
 			local source = part.source
 			if source and source:id() == buffer:id() then
-				local now = marked(source, part.ns, part.lead)
+				local now = marked(source, part.place)
 				if now and now ~= part.text then
-					local shown, start = marked(state.buffer, part.ns, true)
+					local shown, start = marked(state.buffer, part.shown)
 					if shown then
 						rewrite(state.buffer, start, shown, as_shown(now))
-						place(state.buffer, part.ns, start, as_shown(now), true)
+						part.shown =
+							retrack(state.buffer, part.shown, start, as_shown(now)) :: greed.Tracked
 					end
 					part.text = now
 					changed = true
@@ -467,9 +464,8 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	if state then
 		states[event.id] = nil
 		for _, part in state.parts do
-			local source = part.source
-			if source then
-				pcall(source.decorate, source, part.ns, {})
+			if part.place then
+				part.place:forget()
 			end
 		end
 	end
@@ -501,7 +497,7 @@ function M.location(buffer: greed.Buffer, pos: number): (string?, number, number
 		return nil, 0, 0
 	end
 	for _, part in state.parts do
-		local text, start = marked(buffer, part.ns, true)
+		local text, start = marked(buffer, part.shown)
 		if text and pos >= start and pos <= start + #text then
 			local line = buffer:line_of(pos)
 			local offset = line - buffer:line_of(start)

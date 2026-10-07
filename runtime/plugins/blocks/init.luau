@@ -218,38 +218,36 @@ end
 
 core.features.add("blocks", M.on)
 
--- Runs in progress, each with a decoration namespace of its own holding a
--- mark on its block's fence: the mark moves with edits, so the result goes
--- under the block wherever it is by the time it's done.
-type Running = { buffer: greed.Buffer, ns: string, child: greed.Child?, stopped: boolean }
+-- Runs in progress, each tracking its block's fence as it moves with edits,
+-- so the result goes under the block wherever it is by the time it's done.
+-- `status` shows after the fence.
+type Running = {
+	buffer: greed.Buffer,
+	fence: greed.Tracked,
+	status: string,
+	child: greed.Child?,
+	stopped: boolean,
+}
 local running: { Running } = {}
-local runs = 0
 
--- Where a run's block starts now, if its mark is still there.
+-- Where a run's block starts now, unless its fence went.
 local function where(run: Running): number?
-	local ok, marks = pcall(run.buffer.decorations, run.buffer, run.ns)
-	return if ok and marks[1] then marks[1].from else nil
+	return (run.fence:range())
 end
 
 local draw: (buffer: greed.Buffer) -> ()
 
 -- Shows `text` after the fence of the block `run` is running.
-local function show(run: Running, from: number, text: string)
-	local mark: greed.Mark = {
-		from = from,
-		to = run.buffer:line_end(run.buffer:line_of(from)),
-		style = "blocks.running",
-		text = text,
-		eol = true,
-		action = "block-stop",
-	}
-	pcall(run.buffer.decorate, run.buffer, run.ns, { mark })
+local function show(run: Running, text: string)
+	run.status = text
+	draw(run.buffer)
 end
 
--- Takes `run` off the running list, along with its mark.
+-- Takes `run` off the running list, along with what it shows.
 local function finish(run: Running)
-	pcall(run.buffer.decorate, run.buffer, run.ns, {})
+	run.fence:forget()
 	table.remove(running, table.find(running, run) :: number)
+	draw(run.buffer)
 end
 
 -- The block at `pos` in `buffer`: the one whose fences or code it's in, or
@@ -374,13 +372,16 @@ function run_block(
 	if block.opts.id then
 		chain[block.opts.id] = true
 	end
-	runs += 1
-	local run: Running = { buffer = buffer, ns = `blocks-run-{runs}`, stopped = false }
+	local run: Running = {
+		buffer = buffer,
+		fence = buffer:track_range(block.from, buffer:line_end(block.open)),
+		status = "■ running",
+		stopped = false,
+	}
 	table.insert(running, run)
-	show(run, block.from, "■ running")
 	draw(buffer)
 	-- Running the block its input comes from moves this one, which the
-	-- run's mark follows.
+	-- run's tracked fence follows.
 	local input, failed = input_for(buffer, block, chain, check)
 	local now = block_at(buffer, where(run) or block.from) or block
 	-- Checked on the block as it is now, after any wait for its input.
@@ -411,15 +412,10 @@ function run_block(
 			opts = now.opts,
 			dir = dir_for(buffer, now),
 			progress = function(output: string)
-				local at = where(run)
-				if at and greed.now() - last > 150 then
+				if where(run) and greed.now() - last > 150 then
 					last = greed.now()
 					local _, lines = string.gsub(output, "\n", "")
-					show(
-						run,
-						at,
-						`■ running, {lines} line{if lines == 1 then "" else "s"} so far`
-					)
+					show(run, `■ running, {lines} line{if lines == 1 then "" else "s"} so far`)
 				end
 			end,
 			started = function(child: greed.Child)
@@ -619,20 +615,29 @@ greed.command({
 })
 
 -- A run button after each runnable block's fence, which enter on the fence
--- presses too, in files where blocks show as runnable.
+-- presses too, in files where blocks show as runnable, and how each running
+-- block is doing, which a click stops.
 function draw(buffer: greed.Buffer)
 	local ok = pcall(buffer.line_count, buffer)
 	if not ok then
 		return
 	end
 	local busy: { [number]: boolean } = {}
+	local marks: { greed.Mark } = {}
 	for _, run in running do
 		local at = where(run)
 		if at and run.buffer:id() == buffer:id() then
 			busy[at] = true
+			table.insert(marks, {
+				from = at,
+				to = buffer:line_end(buffer:line_of(at)),
+				style = "blocks.running",
+				text = run.status,
+				eol = true,
+				action = "block-stop",
+			})
 		end
 	end
-	local marks: { greed.Mark } = {}
 	if M.on(buffer) then
 		for _, block in M.runnable(buffer) do
 			if not busy[block.from] then

@@ -221,10 +221,7 @@ local function global(pattern: string, command: string, inverted: boolean, first
 	local view = greed.view()
 	local buffer = view:buffer()
 	local regex = core.search.smart_case(if pattern == "" then core.search.last() or "" else pattern)
-	-- Marks over each line keep its place as commands change the lines
-	-- around it; one that ends up empty was deleted, unless it was empty.
-	local marks: { greed.Mark } = {}
-	local lengths: { [string]: number } = {}
+	local starts: { number } = {}
 	for line = first, last do
 		local from, to = buffer:line_start(line), buffer:line_end(line)
 		-- The match's start and end, or nil and the error for a bad pattern.
@@ -234,34 +231,36 @@ local function global(pattern: string, command: string, inverted: boolean, first
 		end
 		local matches = found ~= nil and found <= to and buffer:line_of(found) == line
 		if matches ~= inverted then
-			local name = tostring(#marks + 1)
-			local stop = math.min(to + 1, buffer:len())
-			table.insert(marks, { from = from, to = stop, style = name })
-			lengths[name] = stop - from
+			table.insert(starts, from)
 		end
 	end
 	if command == "" then
 		local ranges = {}
-		for _, mark in marks do
-			table.insert(ranges, { anchor = mark.from, head = buffer:line_end(buffer:line_of(mark.from)) })
+		for _, from in starts do
+			table.insert(ranges, { anchor = from, head = buffer:line_end(buffer:line_of(from)) })
 		end
 		if #ranges > 0 then
 			view:set_selection({ ranges = ranges, primary = 1 })
 		end
 		return
 	end
-	buffer:decorate("cmdline-global", marks)
+	-- Tracking each line keeps its place as commands change the lines around
+	-- it, and tells when one deleted it.
+	local lines: { greed.Tracked } = {}
+	for _, from in starts do
+		local stop = math.min(buffer:line_end(buffer:line_of(from)) + 1, buffer:len())
+		table.insert(lines, buffer:track_range(from, stop))
+	end
 	greed.history.start_group()
-	for i = 1, #marks do
-		for _, mark in buffer:decorations("cmdline-global") do
-			if mark.style == tostring(i) and (mark.to > mark.from or lengths[mark.style] == 0) then
-				local line = buffer:line_of(mark.from)
-				execute(command, { first = line, last = line })
-			end
+	for _, tracked in lines do
+		local from = tracked:range()
+		if from then
+			local line = buffer:line_of(from)
+			execute(command, { first = line, last = line })
 		end
+		tracked:forget()
 	end
 	greed.history.end_group()
-	buffer:decorate("cmdline-global", {})
 end
 
 -- Runs a command line: Luau for "=" and "lua", otherwise a command, with

@@ -35,6 +35,7 @@ mod tasks;
 mod terminal;
 mod testing;
 mod theme;
+mod track;
 mod watch;
 
 use std::cell::Cell;

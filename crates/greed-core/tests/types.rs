@@ -80,6 +80,14 @@ fn declared_api_exists() {
             format!("{greed} greed.view():buffer():edit(check)"),
         ),
         (
+            "Anchor",
+            format!("{greed} check(greed.view():buffer():track(0))"),
+        ),
+        (
+            "Tracked",
+            format!("{greed} check(greed.view():buffer():track_range(0, 0))"),
+        ),
+        (
             "Node",
             format!(
                 "{greed} local b = greed.view():buffer() \

@@ -1,7 +1,8 @@
 //! What plugins make that outlives the call making it, beyond what the
-//! registry and the keymap keep: marks, images, floating views and panels,
-//! file types and language servers. Each is noted with the plugin that made
-//! it, so it goes when that plugin is unloaded or reloaded.
+//! registry and the keymap keep: marks, tracked places, images, floating
+//! views and panels, file types and language servers. Each is noted with
+//! the plugin that made it, so it goes when that plugin is unloaded or
+//! reloaded.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use crate::image::ImageId;
 use crate::lsp::{Lsp, ServerConfig};
 use crate::registry::PluginId;
-use crate::{BufferId, Editor, ViewId};
+use crate::{BufferId, Editor, TrackId, ViewId};
 
 /// A file type a plugin set: the language, its extensions and file names.
 type FileType = (String, Vec<String>, Vec<String>);
@@ -18,6 +19,7 @@ type FileType = (String, Vec<String>, Vec<String>);
 pub(crate) struct Owned {
     /// The plugin that last set each buffer's marks in each namespace.
     marks: HashMap<(BufferId, Arc<str>), PluginId>,
+    tracked: HashMap<(BufferId, TrackId), PluginId>,
     images: HashMap<ImageId, PluginId>,
     /// Floating views and panels.
     views: HashMap<ViewId, PluginId>,
@@ -40,6 +42,14 @@ impl Owned {
                 self.marks.remove(&key);
             }
         }
+    }
+
+    pub fn tracked(&mut self, buffer: BufferId, id: TrackId, by: PluginId) {
+        self.tracked.insert((buffer, id), by);
+    }
+
+    pub fn forget_tracked(&mut self, buffer: BufferId, id: TrackId) {
+        self.tracked.remove(&(buffer, id));
     }
 
     pub fn image(&mut self, id: ImageId, by: PluginId) {
@@ -80,9 +90,9 @@ impl Owned {
         self.servers.retain(|(_, c)| c.language != language);
     }
 
-    /// Takes away what `owner` made: clears its marks, forgets its images,
-    /// closes its views, and puts back the file types and servers it
-    /// replaced. Returns the views it closed.
+    /// Takes away what `owner` made: clears its marks, forgets its tracked
+    /// places and images, closes its views, and puts back the file types and
+    /// servers it replaced. Returns the views it closed.
     pub fn remove_owned_by(
         &mut self,
         owner: &str,
@@ -94,6 +104,12 @@ impl Owned {
         self.marks.retain(|(buffer, ns), by| {
             if mine(by) {
                 editor.decorate(*buffer, ns, Vec::new());
+            }
+            !mine(by) && editor.find_buffer(*buffer).is_some()
+        });
+        self.tracked.retain(|(buffer, id), by| {
+            if mine(by) {
+                editor.forget_tracked(*buffer, *id);
             }
             !mine(by) && editor.find_buffer(*buffer).is_some()
         });

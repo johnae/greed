@@ -71,3 +71,23 @@ test("$ keeps the selections a command succeeds on; alt-| leaves the text alone"
 	t:run("pipe-to", { "cat", ">/dev/null" })
 	t:expect("^ok| no ^ok|")
 end)
+
+test("two pipes at once on one buffer each put their results in place", function(t)
+	t:buffer("^one| two ^three|")
+	local view = greed.view()
+	local done: { [string]: string | boolean } = {}
+	greed.spawn(function()
+		local ok, err = pipe.pipe(view, "sleep 0.2; tr a-z A-Z")
+		done.first = err or ok
+	end)
+	view:set_selection({ ranges = { { anchor = 4, head = 7 } }, primary = 1 })
+	greed.spawn(function()
+		local ok, err = pipe.pipe(view, "rev")
+		done.second = err or ok
+	end)
+	t:wait_for(function()
+		return done.first ~= nil and done.second ~= nil
+	end, 5000)
+	assert(done.first == true and done.second == true, `{done.first} {done.second}`)
+	assert(view:buffer():text() == "ONE owt THREE", view:buffer():text())
+end)

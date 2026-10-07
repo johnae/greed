@@ -11,7 +11,7 @@
 --
 -- Every selection gets its own result, and they all go in as one change, so
 -- one undo takes them back. A model's changes are an operation too, to
--- review with space u o; marks keep each result in its place if you edit
+-- review with space u o; each result lands in its place even if you edit
 -- while the model works.
 
 local greed = require("@greed")
@@ -189,37 +189,45 @@ function M.parse(target: string): (Filter?, boolean, string?)
 	return shell(target), false, nil
 end
 
--- Pipes each selection in `view` through `filter`, keeping marks over them so
--- the results land in place even if the text moves while it works. Returns
--- what puts every result in with one edit, or why it can't.
+-- Pipes each selection in `view` through `filter`, tracking them so the
+-- results land in place even if the text moves while it works. Returns what
+-- puts every result in with one edit, or why it can't.
 local function gather(view: greed.View, filter: Filter): ((() -> ())?, string?)
 	local buffer = view:buffer()
-	local ns = "pipe"
-	local marks: { greed.Mark } = {}
+	local selected: { greed.Tracked } = {}
 	for _, range in view:selection().ranges do
 		local from, to = span(range)
-		table.insert(marks, { from = from, to = to, style = "pipe" })
+		table.insert(selected, buffer:track_range(from, to))
 	end
-	buffer:decorate(ns, marks)
+	local changed = "the text changed too much while it worked"
 	local results: { string } = {}
-	for i, mark in marks do
-		local ok, out = pcall(filter, buffer:slice(mark.from, mark.to))
-		if not ok then
-			buffer:decorate(ns, {})
-			return nil, tostring(out)
+	local ok, err = pcall(function()
+		for i, tracked in selected do
+			local from, to = tracked:range()
+			if from == nil or to == nil then
+				error(changed, 0)
+			end
+			results[i] = filter(buffer:slice(from, to))
 		end
-		results[i] = out
-	end
+	end)
 	-- Where the selections are now, in the order given.
-	local now = buffer:decorations(ns)
-	buffer:decorate(ns, {})
-	if #now ~= #results then
-		return nil, "the text changed too much while it worked"
+	local now: { { number } } = {}
+	for _, tracked in selected do
+		local from, to = tracked:range()
+		if from and to then
+			table.insert(now, { from, to })
+		end
+		tracked:forget()
+	end
+	if not ok then
+		return nil, tostring(err)
+	elseif #now ~= #selected then
+		return nil, changed
 	end
 	return function()
 		buffer:edit(function(e)
-			for i, mark in now do
-				e:replace(mark.from, mark.to, results[i])
+			for i, place in now do
+				e:replace(place[1], place[2], results[i])
 			end
 		end)
 	end,
