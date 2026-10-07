@@ -1,12 +1,15 @@
 //! `greed bridge`, the end of `greed ssh` that runs next to the session,
 //! driven over pipes the way ssh drives it.
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+mod common;
 
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
+
+use common::{GREED, kill_sessions, wait_until};
 use serde_json::{Value, json};
-
-const GREED: &str = env!("CARGO_BIN_EXE_greed");
 
 /// `greed` with folders of its own for sessions, config and cache, so these
 /// tests never see your editors or write to your folders.
@@ -39,12 +42,42 @@ fn greed_in(name: &str) -> Command {
     command
 }
 
+/// The sessions folder of `world`.
+fn sessions(world_name: &str) -> std::path::PathBuf {
+    world(world_name).join("run/greed")
+}
+
+/// A session called `name` in `world` that a test starts through a bridge.
+/// The bridge starts it in the background, where stopping the bridge can't
+/// reach it, so dropping this kills it, even when the test fails.
+struct Session {
+    world: &'static str,
+    name: String,
+}
+
+impl Session {
+    fn named(world: &'static str, name: &str) -> Session {
+        Session {
+            world,
+            name: name.to_owned(),
+        }
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        kill_sessions(&sessions(self.world), |name| name == self.name);
+    }
+}
+
 /// A `greed bridge` driven over pipes. Dropping it stops the bridge, so a
 /// failing test can't leave one behind holding the test run open.
 struct Bridge {
     child: Child,
     input: Option<ChildStdin>,
-    output: BufReader<ChildStdout>,
+    /// Its output, line by line, read as it comes so the bridge never waits
+    /// on a full pipe.
+    output: mpsc::Receiver<String>,
 }
 
 impl Bridge {
@@ -58,11 +91,19 @@ impl Bridge {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
         let input = child.stdin.take();
-        let output = BufReader::new(child.stdout.take().unwrap());
+        let stdout = BufReader::new(child.stdout.take().unwrap());
+        let (lines, output) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in stdout.lines().map_while(Result::ok) {
+                if lines.send(line).is_err() {
+                    return;
+                }
+            }
+        });
         Bridge {
             child,
             input,
@@ -77,9 +118,28 @@ impl Bridge {
     }
 
     fn next(&mut self) -> Value {
-        let mut line = String::new();
-        self.output.read_line(&mut line).unwrap();
+        let line = match self.output.recv_timeout(Duration::from_secs(60)) {
+            Ok(line) => line,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                panic!("the bridge said nothing for a minute")
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let status = self.child.wait();
+                let mut said = String::new();
+                if let Some(mut stderr) = self.child.stderr.take() {
+                    let _ = stderr.read_to_string(&mut said);
+                }
+                panic!("the bridge ended ({status:?}): {said}")
+            }
+        };
         serde_json::from_str(&line).unwrap()
+    }
+
+    /// Waits for the bridge to end, as it does once its session is gone.
+    fn wait_for_exit(&mut self) {
+        wait_until("the bridge to end", || {
+            self.child.try_wait().unwrap().is_some()
+        });
     }
 
     /// Attaches, says how big the screen is, and returns the first frame's
@@ -119,7 +179,7 @@ impl Bridge {
         // The bridge ends once its input does, the way it does when ssh
         // disconnects.
         self.input = None;
-        let _ = self.child.wait();
+        self.wait_for_exit();
     }
 }
 
@@ -141,6 +201,7 @@ fn temp_file(label: &str, text: &str) -> std::path::PathBuf {
 fn the_bridge_starts_a_session_when_none_is_running_and_attaches() {
     let file = temp_file("start", "hello from the other machine");
     let name = format!("bridge-start-{}", std::process::id());
+    let _session = Session::named("shared", &name);
     let mut bridge = Bridge::start(&["--session", &name, file.to_str().unwrap()]);
     let rows = bridge.attach();
     assert!(rows[0].contains("hello from the other machine"), "{rows:?}");
@@ -152,9 +213,8 @@ fn the_bridge_starts_a_session_when_none_is_running_and_attaches() {
 fn the_bridge_attaches_to_a_running_session() {
     let file = temp_file("running", "already open");
     let name = format!("bridge-running-{}", std::process::id());
-    let _server = Server::start(&["--session", &name, file.to_str().unwrap()]);
+    let _server = Server::start(&name, &["--session", &name, file.to_str().unwrap()]);
     let mut bridge = Bridge::start(&["--session", &name]);
-    // The session may still be starting; the bridge waits for it.
     let rows = bridge.attach();
     assert!(rows[0].contains("already open"), "{rows:?}");
     bridge.quit();
@@ -169,22 +229,16 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
     std::fs::write(project.join("README.md"), "top").unwrap();
     std::fs::write(project.join("src/lib.rs"), "deep inside").unwrap();
     let root = project.to_str().unwrap();
-    let _server = Server::start(&[root]);
     let name = format!("greed-proj-{}", std::process::id());
-    // The session takes a moment to start listening.
-    let mut listed = String::new();
-    for _ in 0..500 {
-        let out = greed().arg("ls").output().unwrap();
-        listed = String::from_utf8(out.stdout).unwrap();
-        if listed
+    let _server = Server::start(&name, &[root]);
+    let out = greed().arg("ls").output().unwrap();
+    let listed = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        listed
             .lines()
-            .any(|line| line.starts_with(&name) && line.contains(root))
-        {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    assert!(listed.contains(root), "{listed}");
+            .any(|line| line.starts_with(&name) && line.contains(root)),
+        "{listed}"
+    );
 
     // A path deep inside the project finds the same session and opens there.
     let mut bridge = Bridge::start(&[project.join("src/lib.rs").to_str().unwrap()]);
@@ -199,8 +253,10 @@ fn sessions_are_named_after_their_project_and_found_by_it() {
 struct Server(Child);
 
 impl Server {
-    fn start(args: &[&str]) -> Server {
-        Server(
+    /// Starts the session called `name` and waits until it listens: a
+    /// bridge started before that would start a session of its own.
+    fn start(name: &str, args: &[&str]) -> Server {
+        let mut server = Server(
             greed()
                 .arg("serve")
                 .args(args)
@@ -209,7 +265,15 @@ impl Server {
                 .stderr(Stdio::null())
                 .spawn()
                 .unwrap(),
-        )
+        );
+        let socket = sessions("shared").join(format!("{name}.sock"));
+        wait_until(&format!("session {name} to listen"), || {
+            if let Some(status) = server.0.try_wait().unwrap() {
+                panic!("session {name} ended before it listened: {status}");
+            }
+            std::os::unix::net::UnixStream::connect(&socket).is_ok()
+        });
+        server
     }
 }
 
@@ -242,6 +306,7 @@ fn a_session_loads_the_config_greed_config_dir_points_at() {
     .unwrap();
     let file = temp_file("config", "text");
     let name = format!("bridge-config-{}", std::process::id());
+    let _session = Session::named("shared", &name);
     let mut command = greed();
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
@@ -303,6 +368,7 @@ fn the_config_greed_ssh_brings_comes_first_and_the_machines_own_wins() {
 
     let file = temp_file("layers", "text");
     let name = format!("bridge-layers-{}", std::process::id());
+    let _session = Session::named("layers", &name);
     let mut command = greed_in("layers");
     command
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
@@ -368,6 +434,7 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     )
     .unwrap();
     let name = format!("bridge-trusted-{}", std::process::id());
+    let _session = Session::named("trusted", &name);
     let mut command = greed_in("trusted");
     command.args([
         "bridge",
@@ -398,18 +465,11 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
 fn the_bridge_ends_when_its_session_does_even_with_its_input_open() {
     let file = temp_file("dies", "short-lived");
     let name = format!("bridge-dies-{}", std::process::id());
-    let server = Server::start(&["--session", &name, file.to_str().unwrap()]);
+    let server = Server::start(&name, &["--session", &name, file.to_str().unwrap()]);
     let mut bridge = Bridge::start(&["--session", &name]);
     bridge.attach();
     drop(server);
     // Its input stays open, as when ssh is still connected.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while bridge.child.try_wait().unwrap().is_none() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the bridge still runs after its session ended"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
+    bridge.wait_for_exit();
     std::fs::remove_file(file).unwrap();
 }

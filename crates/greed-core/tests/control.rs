@@ -108,11 +108,19 @@ fn a_second_session_with_a_running_ones_name_is_refused() {
     sessions::private();
     let name = name("twice");
     let first = control::listen(&name, None).unwrap();
+    let (_, token_file) = control::session_files(&name);
+    let token = std::fs::read_to_string(&token_file).unwrap();
+    assert_eq!(token.len(), 32, "the token is there once it listens");
     let err = control::listen(&name, None).err().expect("refused");
     assert!(err.to_string().contains("already running"), "{err}");
     assert!(
         std::os::unix::net::UnixStream::connect(&first.socket).is_ok(),
         "the first one still answers"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&token_file).unwrap(),
+        token,
+        "and its token is untouched"
     );
 }
 

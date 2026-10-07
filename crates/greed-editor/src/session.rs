@@ -18,8 +18,9 @@ use crate::{ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
 
-/// How long `greed` waits for the server it started to listen.
-const STARTUP: Duration = Duration::from_secs(5);
+/// How long `greed` waits for the server it started to listen. It listens
+/// before it loads anything, so this is only long for a loaded machine.
+const STARTUP: Duration = Duration::from_secs(30);
 
 /// `greed serve`: runs the editor with no terminal until something quits it.
 pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
@@ -245,6 +246,10 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     let deadline = Instant::now() + STARTUP;
     while std::os::unix::net::UnixStream::connect(&socket).is_err() {
         if child.try_wait()?.is_some() || Instant::now() > deadline {
+            // One that is only slow would otherwise start later with no
+            // one attached, and run until someone finds it.
+            let _ = child.kill();
+            let _ = child.wait();
             let log = std::fs::read_to_string(&log_path).unwrap_or_default();
             return Err(format!("the editor didn't start: {}", log.trim()).into());
         }

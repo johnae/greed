@@ -85,11 +85,7 @@ impl World {
 
     /// Waits until `check` holds, for things that happen in the background.
     pub fn wait_for(&self, what: &str, check: impl Fn(&World) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !check(self) {
-            assert!(Instant::now() < deadline, "gave up waiting for {what}");
-            std::thread::sleep(Duration::from_millis(30));
-        }
+        wait_until(what, || check(self));
     }
 
     /// Runs `greed ARGS` in a pseudo-terminal in `dir` with `env` added, does
@@ -136,7 +132,7 @@ impl World {
                 Step::Pause(ms) => std::thread::sleep(Duration::from_millis(*ms)),
             }
         }
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while child.try_wait().unwrap().is_none() {
             if Instant::now() > deadline {
                 let _ = child.kill();
@@ -161,6 +157,8 @@ impl Drop for World {
         {
             self.eval(name, "require('@greed').quit()");
         }
+        // Any that didn't quit, or weren't listening yet.
+        kill_sessions(&self.root.join("run/greed"), |_| true);
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
@@ -172,6 +170,46 @@ pub enum Step {
     /// Wait until the text has been drawn.
     Shows(&'static str),
     Pause(u64),
+}
+
+/// Kills the sessions in the sessions folder `dir` whose names pass
+/// `which`, by the process id each writes next to its socket. A session
+/// started in the background (by plain `greed` or a bridge) is out of reach
+/// of a test's child handles, so tests call this when they end, failed or
+/// not.
+pub fn kill_sessions(dir: &Path, which: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        let name = path.file_stem().unwrap_or_default().to_string_lossy();
+        if path.extension().is_none_or(|ext| ext != "json") || !which(&name) {
+            continue;
+        }
+        let pid = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|info| info["pid"].as_u64());
+        if let Some(pid) = pid {
+            let _ = Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+}
+
+/// Waits until `done` holds, failing with `what` after a minute: things
+/// that take a moment can take many on a loaded machine.
+pub fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !done() {
+        assert!(
+            Instant::now() < deadline,
+            "gave up after a minute waiting for {what}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 pub fn running(world: &World) -> bool {

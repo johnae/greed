@@ -2,6 +2,9 @@
 //! socket. Every tool a plugin offers agents is a subcommand here too.
 
 use std::io;
+use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use greed_core::control::{self, Client};
 use serde_json::{Map, Value, json};
@@ -134,9 +137,28 @@ fn session_client(name: Option<&str>, shell: bool) -> Result<Client, Box<dyn std
         },
     };
     let (socket, token_file) = control::session_files(&name);
-    let token = std::fs::read_to_string(&token_file)
+    let token = read_token(&socket, &token_file)
         .map_err(|err| format!("can't read the token for session {name}: {err}"))?;
     Ok(Client::connect_as(&socket, token.trim(), shell)?)
+}
+
+/// The token in `token_file`. A session that has just started listens on
+/// `socket` a moment before its token is there, so while the socket
+/// answers, a missing token is waited for.
+fn read_token(socket: &Path, token_file: &Path) -> io::Result<String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match std::fs::read_to_string(token_file) {
+            Err(err)
+                if err.kind() == io::ErrorKind::NotFound
+                    && Instant::now() < deadline
+                    && UnixStream::connect(socket).is_ok() =>
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            read => return read,
+        }
+    }
 }
 
 /// `greed mcp`: an MCP server on stdin and stdout for the running editor, for
@@ -145,4 +167,46 @@ pub fn mcp() -> Result<(), Box<dyn std::error::Error>> {
     // Not a shell's: what comes through is an agent's.
     connect_to(None)?.pipe(io::BufReader::new(io::stdin()), io::stdout())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("greed-token-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_token_not_there_yet_is_waited_for_while_the_socket_answers() {
+        let dir = dir("late");
+        let (socket, token) = (dir.join("s.sock"), dir.join("s.token"));
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let writer = {
+            let token = token.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                // Renamed into place, as a session does.
+                let new = token.with_extension("new");
+                std::fs::write(&new, "abc").unwrap();
+                std::fs::rename(new, token).unwrap();
+            })
+        };
+        assert_eq!(read_token(&socket, &token).unwrap(), "abc");
+        writer.join().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn without_a_session_a_missing_token_fails_at_once() {
+        let dir = dir("none");
+        let started = Instant::now();
+        let err = read_token(&dir.join("s.sock"), &dir.join("s.token")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

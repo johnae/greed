@@ -313,25 +313,33 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_file(&bound);
-    let listener = UnixListener::bind(&bound)?;
-    let linked = std::fs::set_permissions(&bound, std::fs::Permissions::from_mode(0o600))
-        .and_then(|()| std::fs::hard_link(&bound, &socket));
-    let _ = std::fs::remove_file(&bound);
-    linked.map_err(|err| match err.kind() {
-        io::ErrorKind::AlreadyExists => io::Error::new(
-            io::ErrorKind::AddrInUse,
-            format!("a session called {name} is already running"),
-        ),
-        _ => err,
-    })?;
+    // The token is written beside it and renamed into place once the socket
+    // is ours, so a client never reads it half-written and a live session's
+    // is never overwritten. It appears just after the socket does.
     let token = new_token()?;
+    let new_token_file = bound.with_extension("token");
     std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .mode(0o600)
-        .open(&token_file)?
+        .open(&new_token_file)?
         .write_all(token.as_bytes())?;
+    let listener = UnixListener::bind(&bound)?;
+    let linked = std::fs::set_permissions(&bound, std::fs::Permissions::from_mode(0o600))
+        .and_then(|()| std::fs::hard_link(&bound, &socket));
+    let _ = std::fs::remove_file(&bound);
+    if let Err(err) = linked {
+        let _ = std::fs::remove_file(&new_token_file);
+        return Err(match err.kind() {
+            io::ErrorKind::AlreadyExists => io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!("a session called {name} is already running"),
+            ),
+            _ => err,
+        });
+    }
+    std::fs::rename(&new_token_file, &token_file)?;
 
     let (sender, requests) = crossbeam_channel::unbounded();
     let incoming = sender.clone();
