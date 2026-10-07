@@ -795,6 +795,11 @@ can set the variable `:models` names, like `ANTHROPIC_API_KEY`, or run
 `:secret-set anthropic`. Anything that needs a model and has no key says
 the same: which variable sets it, and that `:models` adds one.
 
+`:usage` shows how many tokens the models were sent and wrote: today, by
+model, and each day of the last week, as the providers reported them for
+Greed's agent and the features with tools. It's kept a file a day in
+Greed's data folder (`usage/2026-10-09.json`), by hour and model.
+
 Ollama needs no key, but it has to run: `ollama serve` starts it, and
 `ollama pull llama3.2` fetches a model. Greed says so when it can't reach
 it or the model isn't there.

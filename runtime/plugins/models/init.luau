@@ -623,6 +623,110 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	return stream, nil
 end
 
+-- Tokens used, kept in the data folder as a file a day: requests and the
+-- tokens read and written, by hour and model, as providers report them.
+local function usage_path(day: string): string?
+	local data = greed.fs.dirs().data
+	return data and `{data}/usage/{day}.json`
+end
+
+--- What was used on `day` ("2026-10-09"): `{ [hour .. " " .. model] = { requests,
+--- input, output } }`, models as "provider/model".
+export type Used = { requests: number, input: number, output: number }
+function M.usage(day: string): { [string]: Used }
+	local path = usage_path(day)
+	local text = if path then greed.fs.read(path) else nil
+	local ok, kept = pcall(greed.json.decode, text or "{}")
+	return if ok and type(kept) == "table" then kept else {}
+end
+
+--- Counts a request to `model` at `provider` that read `input` tokens and
+--- wrote `output`, as each turn does.
+function M.count(provider: string, model: string, input: number?, output: number?)
+	local day, hour = os.date("%Y-%m-%d"), os.date("%H")
+	local path = usage_path(day)
+	if path == nil then
+		return
+	end
+	local kept = M.usage(day)
+	local key = `{hour} {provider}/{model}`
+	local used = kept[key] or { requests = 0, input = 0, output = 0 }
+	used.requests += 1
+	used.input += input or 0
+	used.output += output or 0
+	kept[key] = used
+	greed.fs.write(path, greed.json.encode(kept))
+end
+
+-- `n` tokens, short: 950, 12.3k, 4.56M.
+local function short(n: number): string
+	if n >= 1e6 then
+		return string.format("%.2fM", n / 1e6)
+	elseif n >= 1e4 then
+		return string.format("%.1fk", n / 1e3)
+	end
+	return tostring(n)
+end
+
+--- What models were used for over the last `days` days (7 by default),
+--- as lines to read: today by model, then each day's totals.
+function M.usage_report(days: number?): { string }
+	local lines = {}
+	local today = M.usage(os.date("%Y-%m-%d"))
+	local by_model: { [string]: Used } = {}
+	for key, used in today do
+		local model = string.match(key, "^%d+ (.+)$") or key
+		local sum = by_model[model] or { requests = 0, input = 0, output = 0 }
+		sum.requests += used.requests
+		sum.input += used.input
+		sum.output += used.output
+		by_model[model] = sum
+	end
+	table.insert(lines, "Today")
+	local models = {}
+	for model in by_model do
+		table.insert(models, model)
+	end
+	table.sort(models)
+	if #models == 0 then
+		table.insert(lines, "  nothing yet")
+	end
+	for _, model in models do
+		local used = by_model[model]
+		table.insert(
+			lines,
+			`  {model}: {used.requests} requests, {short(used.input)} in, {short(used.output)} out`
+		)
+	end
+	table.insert(lines, "")
+	table.insert(lines, "Each day")
+	local now = os.time()
+	for back = 0, (days or 7) - 1 do
+		local day = os.date("%Y-%m-%d", now - back * 86400)
+		local requests, input, output = 0, 0, 0
+		for _, used in M.usage(day) do
+			requests += used.requests
+			input += used.input
+			output += used.output
+		end
+		if requests > 0 then
+			table.insert(
+				lines,
+				`  {day}: {requests} requests, {short(input)} in, {short(output)} out`
+			)
+		end
+	end
+	return lines
+end
+
+greed.command({
+	name = "usage",
+	doc = "How many tokens the models were sent and wrote today and over the last week",
+	run = function()
+		core.floats.show_text("Usage", table.concat(M.usage_report(), "\n"), { kind = "usage" })
+	end,
+})
+
 --- One turn of a conversation with tools, by the model playing `role`:
 --- `on_text` gets its text as it arrives, and the turn says what it said,
 --- the tool calls it asked for and why it stopped. Waits like greed.sleep.
@@ -643,13 +747,19 @@ function M.turn(
 	end
 	local reader = turn.reader(provider.kind)
 	local buffered = ""
+	-- The turn as it ended, its tokens counted.
+	local function ended(): turn.Turn
+		local done = reader.turn()
+		greed.vouch(M.count, chosen.provider, chosen.model, done.input, done.output)
+		return done
+	end
 	while true do
 		local piece, failed = response:read()
 		if piece == nil then
 			if failed then
 				return nil, failed
 			end
-			return reader.turn(), nil
+			return ended(), nil
 		end
 		local events
 		events, buffered = sse.parse(buffered .. piece)
@@ -664,7 +774,7 @@ function M.turn(
 			end
 			if finished then
 				response:close()
-				return reader.turn(), nil
+				return ended(), nil
 			end
 		end
 	end

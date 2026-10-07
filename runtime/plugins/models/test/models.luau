@@ -283,3 +283,22 @@ test("how long an answer may be: the role's, its provider's, or sized from the w
 	models.roles.poetry = nil
 	models.providers.small = nil
 end)
+
+test("tokens used are counted a day at a time, and :usage says how many", function(t)
+	models.count("berget", "moonshotai/Kimi-K3", 1000, 50)
+	models.count("berget", "moonshotai/Kimi-K3", 3000, 20)
+	models.count("anthropic", "claude-haiku-4-5-20251001", 200, 10)
+	local today = models.usage(os.date("%Y-%m-%d"))
+	local key = `{os.date("%H")} berget/moonshotai/Kimi-K3`
+	local kimi = today[key]
+	assert(kimi and kimi.requests == 2 and kimi.input == 4000 and kimi.output == 70, key)
+	local report = table.concat(models.usage_report(), "\n")
+	assert(
+		string.find(report, "berget/moonshotai/Kimi-K3: 2 requests, 4000 in, 70 out", 1, true),
+		report
+	)
+	assert(string.find(report, "3 requests, 4200 in, 80 out", 1, true), report)
+	t:buffer("|")
+	t:run("usage")
+	assert(string.find(greed.view():buffer():text(), "Today", 1, true), "shown in a float")
+end)

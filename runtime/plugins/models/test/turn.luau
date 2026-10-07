@@ -185,12 +185,14 @@ test("the tokens the conversation takes come from what the provider reports", fu
 		{ type = "message_stop" },
 	})
 	assert(anthropic.tokens == 1015, tostring(anthropic.tokens))
+	assert(anthropic.input == 1010 and anthropic.output == 5, "read and written apart")
 	local openai = events("openai", {
 		{ choices = { { delta = { content = "hi" }, finish_reason = "stop" } } },
 		{ choices = {}, usage = { prompt_tokens = 200, completion_tokens = 7 } },
 		"[DONE]",
 	})
 	assert(openai.tokens == 207, tostring(openai.tokens))
+	assert(openai.input == 200 and openai.output == 7, "read and written apart")
 	local quiet = events("openai", { { choices = { { delta = { content = "hi" } } } } })
 	assert(quiet.tokens == nil, "nothing reported")
 end)

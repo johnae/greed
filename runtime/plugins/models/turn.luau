@@ -29,8 +29,16 @@ export type Said = {
 --- How a turn ended: "done" (the model has finished), "tools" (it wants
 --- its calls run first), "length" (it ran out of room), or what the
 --- provider said. `tokens` is how much of the model's context the
---- conversation takes after the turn, when the provider says.
-export type Turn = { text: string, calls: { Call }, stop: string, tokens: number? }
+--- conversation takes after the turn, when the provider says; `input`
+--- and `output` are the tokens this request read and wrote.
+export type Turn = {
+	text: string,
+	calls: { Call },
+	stop: string,
+	tokens: number?,
+	input: number?,
+	output: number?,
+}
 
 -- A tool's schema, with an empty object for one that takes nothing.
 local function schema(tool: ToolSpec): { [string]: any }
@@ -294,7 +302,14 @@ function M.reader(kind: string): Reader
 			-- Some servers say "stop" though they asked for tools.
 			local ended = if #calls > 0 and stop == "done" then "tools" else stop
 			local tokens = if read then read + (written or 0) else nil
-			return { text = table.concat(text), calls = calls, stop = ended, tokens = tokens }
+			return {
+				text = table.concat(text),
+				calls = calls,
+				stop = ended,
+				tokens = tokens,
+				input = read,
+				output = written,
+			}
 		end,
 	}
 	return reader
