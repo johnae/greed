@@ -55,12 +55,73 @@ pub fn chosen(options: &BTreeMap<String, String>) -> Choice {
 
 /// How a run of text is drawn: its weight and slant, how many times bigger,
 /// and whether in the prose font.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct TextStyle {
     pub bold: bool,
     pub italic: bool,
     pub scale: u8,
     pub prose: bool,
+}
+
+/// Monospaced families to draw in when none is chosen, or the one chosen
+/// isn't installed, best first: ones most systems have.
+const MONOSPACED: [&str; 11] = [
+    "DejaVu Sans Mono",
+    "Noto Sans Mono",
+    "Liberation Mono",
+    "Menlo",
+    "SF Mono",
+    "Monaco",
+    "Consolas",
+    "Cascadia Mono",
+    "Ubuntu Mono",
+    "Source Code Pro",
+    "Fira Mono",
+];
+
+/// The same for prose.
+const PROSE: [&str; 9] = [
+    "Noto Sans",
+    "DejaVu Sans",
+    "Liberation Sans",
+    "Helvetica Neue",
+    "Helvetica",
+    "Arial",
+    "Segoe UI",
+    "Ubuntu",
+    "Cantarell",
+];
+
+/// The installed families named in `wanted`, the first found, or else with
+/// `monospaced` any installed family with monospaced faces.
+fn pick(installed: &Installed, wanted: &[&str], monospaced: bool) -> Option<String> {
+    wanted
+        .iter()
+        .find(|name| installed.names.contains(**name))
+        .map(|name| (*name).to_owned())
+        .or_else(|| monospaced.then(|| installed.monospaced.clone()).flatten())
+}
+
+/// What the system has: every family's name, and one with monospaced faces.
+struct Installed {
+    names: std::collections::HashSet<String>,
+    monospaced: Option<String>,
+}
+
+impl Installed {
+    fn of(system: &FontSystem) -> Self {
+        let mut names = std::collections::HashSet::new();
+        let mut monospaced = None;
+        for face in system.db().faces() {
+            for (name, _) in &face.families {
+                if face.monospaced && monospaced.is_none() {
+                    monospaced = Some(name.clone());
+                }
+                names.insert(name.clone());
+            }
+        }
+        Self { names, monospaced }
+    }
 }
 
 /// The monospaced font text is drawn in, and the cell it sets.
@@ -71,6 +132,18 @@ pub struct Fonts {
     family: Option<String>,
     /// Prose's family, or the system's sans-serif.
     prose: Option<String>,
+    /// The families drawn in when none is chosen or the chosen one isn't
+    /// installed. Asking for "the system's monospaced font" by kind makes
+    /// cosmic-text look through every font for each glyph when its idea of
+    /// that font isn't installed, as on most Linux systems: about 30 times
+    /// slower per line, on every frame.
+    installed: Installed,
+    default_family: Option<String>,
+    default_prose: Option<String>,
+    /// Lines shaped before, by their text and style: a frame draws mostly
+    /// what the one before did, and shaping a line with glyphs from
+    /// fallback fonts takes milliseconds. Emptied when the fonts change.
+    shaped: HashMap<(String, TextStyle), (Vec<LayoutGlyph>, f32)>,
     /// The size and line height at scale 1.
     metrics: Metrics,
     /// A cell's width and height in pixels.
@@ -87,12 +160,19 @@ impl Fonts {
         let metrics = Metrics::new(size, size);
         let mut buffer = Buffer::new(&mut system, metrics);
         buffer.set_wrap(Wrap::None);
+        let installed = Installed::of(&system);
+        let default_family = pick(&installed, &MONOSPACED, true);
+        let default_prose = pick(&installed, &PROSE, false);
         let mut fonts = Self {
             system,
             cache: SwashCache::new(),
             buffer,
             family: None,
             prose: None,
+            installed,
+            default_family,
+            default_prose,
+            shaped: HashMap::new(),
             metrics,
             cell_w: 0.0,
             cell_h: 0.0,
@@ -108,6 +188,7 @@ impl Fonts {
         let line = (size * 1.3).round();
         self.metrics = Metrics::new(size, line);
         self.family = family;
+        self.shaped.clear();
         self.cell_w = size * 0.6;
         self.cell_h = line;
         self.baseline = size;
@@ -121,19 +202,49 @@ impl Fonts {
 
     /// Switches prose to `family`, or the system's sans-serif.
     pub fn set_prose(&mut self, family: Option<String>) {
+        if self.prose != family {
+            self.shaped.clear();
+        }
         self.prose = family;
+    }
+
+    /// The family text is drawn in: `chosen` when it's installed, else
+    /// `default`; nil when neither is, for the font system's own choice.
+    fn in_use<'a>(&self, chosen: Option<&'a str>, default: Option<&'a str>) -> Option<&'a str> {
+        chosen
+            .filter(|name| self.installed.names.contains(*name))
+            .or(default)
+    }
+
+    /// The monospaced family the grid is drawn in, if one is installed.
+    pub fn grid_family(&self) -> Option<&str> {
+        self.in_use(self.family.as_deref(), self.default_family.as_deref())
     }
 
     /// Shapes one line as `style` says: its glyphs, each knowing the byte
     /// range of the text it draws, and the baseline from the line's top.
     pub fn shape(&mut self, text: &str, style: TextStyle) -> (Vec<LayoutGlyph>, f32) {
+        /// How many lines are kept: a few screens' worth, then they start over.
+        const KEPT: usize = 4096;
+        let key = (text.to_owned(), style);
+        if let Some(shaped) = self.shaped.get(&key) {
+            return shaped.clone();
+        }
+        let shaped = self.shape_now(text, style);
+        if self.shaped.len() >= KEPT {
+            self.shaped.clear();
+        }
+        self.shaped.insert(key, shaped.clone());
+        shaped
+    }
+
+    /// [`Fonts::shape`], without the lines kept from before.
+    fn shape_now(&mut self, text: &str, style: TextStyle) -> (Vec<LayoutGlyph>, f32) {
         let family = if style.prose {
-            self.prose
-                .as_deref()
+            self.in_use(self.prose.as_deref(), self.default_prose.as_deref())
                 .map_or(Family::SansSerif, Family::Name)
         } else {
-            self.family
-                .as_deref()
+            self.in_use(self.family.as_deref(), self.default_family.as_deref())
                 .map_or(Family::Monospace, Family::Name)
         };
         let attrs = Attrs::new()
@@ -308,6 +419,75 @@ pub struct Full;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn installed(names: &[&str], monospaced: Option<&str>) -> Installed {
+        Installed {
+            names: names.iter().map(|name| (*name).to_owned()).collect(),
+            monospaced: monospaced.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn the_default_font_is_one_that_is_installed() {
+        let some = installed(
+            &["Liberation Mono", "Noto Sans Mono", "Inter"],
+            Some("Odd Mono"),
+        );
+        assert_eq!(
+            pick(&some, &MONOSPACED, true).as_deref(),
+            Some("Noto Sans Mono")
+        );
+        let none_known = installed(&["Odd Mono", "Inter"], Some("Odd Mono"));
+        assert_eq!(
+            pick(&none_known, &MONOSPACED, true).as_deref(),
+            Some("Odd Mono")
+        );
+        assert_eq!(
+            pick(&none_known, &PROSE, false),
+            None,
+            "prose takes no stranger"
+        );
+        assert_eq!(pick(&installed(&[], None), &MONOSPACED, true), None);
+    }
+
+    #[test]
+    fn a_line_is_shaped_once_until_the_fonts_change() {
+        let mut fonts = Fonts::new(None, 15.0);
+        let style = TextStyle::default();
+        let first = fonts.shape("let x = 1;", style);
+        assert_eq!(fonts.shaped.len(), 2, "with the 0 measuring the cell");
+        let again = fonts.shape("let x = 1;", style);
+        assert_eq!(first.0.len(), again.0.len());
+        assert_eq!(fonts.shaped.len(), 2, "kept, not shaped again");
+        fonts.shape(
+            "let x = 1;",
+            TextStyle {
+                bold: true,
+                ..style
+            },
+        );
+        assert_eq!(fonts.shaped.len(), 3, "another style is another line");
+        fonts.set(None, 20.0);
+        assert_eq!(fonts.shaped.len(), 1, "a new size starts over, with its 0");
+    }
+
+    #[test]
+    fn a_chosen_font_that_is_not_installed_gives_way_to_the_default() {
+        let mut fonts = Fonts::new(None, 15.0);
+        let default = fonts.grid_family().map(str::to_owned);
+        if let Some(default) = &default {
+            assert!(
+                fonts.installed.names.contains(default),
+                "{default} is installed"
+            );
+        }
+        fonts.set(Some("No Such Font Anywhere".to_owned()), 15.0);
+        assert_eq!(fonts.grid_family().map(str::to_owned), default);
+        if let Some(installed) = default {
+            fonts.set(Some(installed.clone()), 15.0);
+            assert_eq!(fonts.grid_family(), Some(installed.as_str()));
+        }
+    }
 
     fn options(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs
