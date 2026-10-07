@@ -1574,8 +1574,11 @@ sessions' sockets). Each folder can also be set on its own with
 that move only one. Each flag has a variable too (`GREED_PROFILE`,
 `GREED_CONFIG_DIR`, `GREED_DATA_DIR`, `GREED_CACHE_DIR`, `GREED_STATE_DIR`):
 a folder's own setting wins over the profile, which wins over the XDG
-variables. Sessions, terminals, shells and agents Greed starts get the same
-folders, so `greed ctl` inside one of its terminals finds its session.
+variables. Sessions' sockets go in `GREED_RUN_DIR` when it's set, which
+helps when a profile's path is too long for a socket (they're limited to
+about a hundred characters). Sessions, terminals, shells and agents Greed
+starts get the same folders, so `greed ctl` inside one of its terminals
+finds its session.
 `HOME` stays yours, so git, kubectl and your keys work as usual.
 
 Saving your config, in Greed or anywhere else, runs it again within a

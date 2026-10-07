@@ -198,8 +198,8 @@ pub fn sessions_dir() -> PathBuf {
     if let Some(dir) = &*SESSIONS_DIR.lock().unwrap_or_else(PoisonError::into_inner) {
         return dir.clone();
     }
-    // A profile's sessions are its own.
-    if let Some(dir) = crate::dirs::profile_sessions() {
+    // GREED_RUN_DIR, or a profile's own.
+    if let Some(dir) = crate::dirs::sessions() {
         return dir;
     }
     runtime_dir().map_or_else(
@@ -350,7 +350,7 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
     if socket.as_os_str().len() > MAX_SOCKET_PATH {
         return Err(io::Error::other(format!(
             "the session's socket path is too long: {}; use a shorter name or set \
-             XDG_RUNTIME_DIR to a shorter folder",
+             GREED_RUN_DIR to a shorter folder",
             socket.display()
         )));
     }

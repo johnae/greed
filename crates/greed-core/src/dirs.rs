@@ -4,7 +4,8 @@
 //! `GREED_CACHE_DIR`, `GREED_STATE_DIR`), then a folder in the profile
 //! (`GREED_PROFILE`, which `greed --profile DIR` sets), then `greed` in the
 //! XDG folder (`XDG_CONFIG_HOME` and the rest), then the usual folder in
-//! your home.
+//! your home. Sessions' sockets go in `GREED_RUN_DIR`, else the profile's `run`
+//! folder, else the user's runtime folder.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -62,9 +63,15 @@ pub fn profile() -> Option<PathBuf> {
     set(|name| std::env::var_os(name), PROFILE)
 }
 
-/// Where a profile's sessions keep their sockets.
-pub fn profile_sessions() -> Option<PathBuf> {
-    profile().map(|profile| profile.join("run"))
+/// Where sessions keep their sockets when it isn't the user's runtime
+/// folder: `GREED_RUN_DIR`, or the profile's `run` folder.
+pub fn sessions() -> Option<PathBuf> {
+    sessions_in(|name| std::env::var_os(name))
+}
+
+/// [`sessions`], with `env` for the environment.
+pub fn sessions_in(env: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    set(&env, "GREED_RUN_DIR").or_else(|| set(&env, PROFILE).map(|profile| profile.join("run")))
 }
 
 /// [`dir`], with `env` for the environment.
@@ -143,5 +150,13 @@ mod tests {
         assert_eq!(dir_in(Kind::Config, env(&profile)), Some("/c".into()));
         assert_eq!(dir_in(Kind::Data, env(&profile)), Some("/p/data".into()));
         assert_eq!(dir_in(Kind::State, env(&profile)), Some("/p/state".into()));
+    }
+
+    #[test]
+    fn sessions_go_in_greed_run_dir_then_the_profile() {
+        let both = [("GREED_RUN_DIR", "/r"), ("GREED_PROFILE", "/p")];
+        assert_eq!(sessions_in(env(&both)), Some("/r".into()));
+        assert_eq!(sessions_in(env(&both[1..])), Some("/p/run".into()));
+        assert_eq!(sessions_in(env(&[("GREED_RUN_DIR", "")])), None);
     }
 }
