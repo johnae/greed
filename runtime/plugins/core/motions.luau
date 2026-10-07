@@ -690,6 +690,61 @@ function M.insert_at(ctx: greed.Context, points: { number }, text: string, push:
 	end)
 end
 
+--- Where `replace_each` leaves a selection in its new text: around it;
+--- around it pointing the way the selection did, a cursor staying a cursor
+--- at its start ("keep"); a cursor at its start or end; or a cursor this
+--- many bytes into it.
+export type Place = "around" | "keep" | "start" | "end" | number
+
+--- What `replace_each` puts in for one selection: `text` in place of
+--- `from`..`to` (in the text as it was; the selection by default), with
+--- the selection going where `place` says (default "around").
+export type Replacement = { text: string, place: Place?, from: number?, to: number? }
+
+--- Replaces the text of each of `view`'s selections in one edit, with
+--- what `change(i, range)` returns: the new text, a `Replacement`, or nil
+--- to leave that selection's text alone. Text replaced earlier in the
+--- buffer moves the later selections along.
+function M.replace_each(
+	view: greed.View,
+	change: (i: number, range: Range) -> (string | Replacement)?
+)
+	local selection = view:selection()
+	view:buffer():edit(function(e)
+		local shift = 0
+		for i, range in selection.ranges do
+			local got = change(i, range)
+			if got == nil then
+				selection.ranges[i] = { anchor = range.anchor + shift, head = range.head + shift }
+				continue
+			end
+			local r: Replacement = if type(got) == "string" then { text = got } else got
+			local new = r.text
+			local lo, hi = text.span(range)
+			local a, b = r.from or lo, r.to or hi
+			e:replace(a, b, new)
+			local start, stop = a + shift, a + shift + #new
+			local where = r.place or "around"
+			if where == "keep" and range.anchor == range.head then
+				where = "start"
+			end
+			if where == "keep" and range.anchor > range.head then
+				selection.ranges[i] = { anchor = stop, head = start }
+			elseif where == "around" or where == "keep" then
+				selection.ranges[i] = { anchor = start, head = stop }
+			elseif where == "start" then
+				selection.ranges[i] = point(start)
+			elseif where == "end" then
+				selection.ranges[i] = point(stop)
+			else
+				selection.ranges[i] = point(start + (where :: number))
+			end
+			shift += #new - (b - a)
+		end
+		e:select(selection)
+	end)
+end
+
 M.each_range = each_range
 M.point = point
 return M

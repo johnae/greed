@@ -4,6 +4,7 @@
 -- one after a lone `|`, and on a selection's last character going forward.
 
 local test = require("@greed/test")
+local greed = require("@greed")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -151,4 +152,48 @@ test("j and k step over folded lines", function(t)
 	buffer:decorate("fold", {})
 	t:keys("j")
 	t:expect("# A\n|one\ntwo\n# B")
+end)
+
+test("replace_each edits every selection and puts each where it says", function(t)
+	local motions = require("@core").motions
+	local function run(before: string, place: any, after: string)
+		t:buffer(before)
+		motions.replace_each(greed.view(), function(i)
+			return { text = string.rep("x", i + 1), place = place }
+		end)
+		t:expect(after)
+	end
+	-- Later selections move by what the earlier ones grew or shrank.
+	run("^abc| ^d| ^e|", nil, "^xx| ^xxx| ^xxxx|")
+	run("^abc| ^d|", "start", "|xx |xxx")
+	run("^abc| ^d|", "end", "xx| xxx|")
+	run("^abc| ^d|", 1, "x|x x|xx")
+	-- "keep" points the way the selection did, and a cursor stays one.
+	run("ab|c", "keep", "ab|xxc")
+	t:buffer("|abc d")
+	greed.view():set_selection({
+		ranges = { { anchor = 3, head = 0 }, { anchor = 4, head = 5 } },
+		primary = 1,
+	})
+	motions.replace_each(greed.view(), function(i)
+		return { text = string.rep("x", i + 1), place = "keep" }
+	end)
+	t:expect("|xx^ ^xxx|")
+end)
+
+test("replace_each takes text alone, another place to replace, or nil to leave one", function(t)
+	local motions = require("@core").motions
+	t:buffer("^ab| ^cd|")
+	motions.replace_each(greed.view(), function(i)
+		return string.rep("y", i)
+	end)
+	t:expect("^y| ^yy|")
+	t:buffer("^ab| ^cd| ^ef|")
+	motions.replace_each(greed.view(), function(i, range)
+		if i == 2 then
+			return nil
+		end
+		return { text = "123", from = range.anchor, to = range.anchor }
+	end)
+	t:expect("^123|ab ^cd| ^123|ef")
 end)

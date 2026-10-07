@@ -295,17 +295,10 @@ local function insert_output(ctx: greed.Context, after: boolean)
 		return
 	end
 	local output = done.stdout
-	local selection = ctx.view:selection()
-	ctx.buffer:edit(function(e)
-		local shift = 0
-		for i, range in selection.ranges do
-			local from, to = span(range)
-			local at = if after then to else from
-			e:insert(at, output)
-			selection.ranges[i] = { anchor = at + shift, head = at + shift + #output }
-			shift += #output
-		end
-		e:select(selection)
+	core.motions.replace_each(ctx.view, function(_, range)
+		local from, to = span(range)
+		local at = if after then to else from
+		return { text = output, from = at, to = at }
 	end)
 end
 

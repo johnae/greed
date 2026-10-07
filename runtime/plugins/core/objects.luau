@@ -607,17 +607,8 @@ greed.command({
 			return
 		end
 		local open, close = pair(char)
-		local selection = ctx.view:selection()
-		ctx.buffer:edit(function(e)
-			local shift = 0
-			for i, range in selection.ranges do
-				local from, to = text.span(range)
-				e:insert(from, open)
-				e:insert(to, close)
-				selection.ranges[i] = { anchor = from + shift, head = to + shift + #open + #close }
-				shift += #open + #close
-			end
-			e:select(selection)
+		motions.replace_each(ctx.view, function(_, range)
+			return open .. ctx.buffer:slice(text.span(range)) .. close
 		end)
 	end,
 })

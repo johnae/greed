@@ -19,6 +19,7 @@
 local greed = require("@greed")
 local prompt = require("./prompt")
 local search = require("./search")
+local motions = require("./motions")
 local texts = require("./text")
 
 type Ranges = { greed.Range }
@@ -294,23 +295,6 @@ command("merge-consecutive-selections", "Merge selections that touch or overlap"
 	set(ctx.view, merged)
 end)
 
--- Replaces the text of each selection with `change(i, text)` in one edit,
--- keeping each selection around its new text.
-local function replace_each(ctx: greed.Context, change: (number, string) -> string)
-	local buffer, selection = ctx.buffer, ctx.view:selection()
-	buffer:edit(function(e)
-		local shift = 0
-		for i, range in selection.ranges do
-			local from, to = span(range)
-			local new = change(i, buffer:slice(from, to))
-			e:replace(from, to, new)
-			selection.ranges[i] = { anchor = from + shift, head = from + shift + #new }
-			shift += #new - (to - from)
-		end
-		e:select(selection)
-	end)
-end
-
 command(
 	"trim-selections",
 	"Trim the spaces and line breaks off both ends of each selection",
@@ -371,7 +355,7 @@ for _, back in { false, true } do
 				texts[i] = buffer:slice(span(range))
 			end
 			local n = #texts
-			replace_each(ctx, function(i)
+			motions.replace_each(ctx.view, function(i)
 				return texts[if back then i % n + 1 else (i - 2) % n + 1]
 			end)
 		end
@@ -423,20 +407,13 @@ for _, down in { false, true } do
 			then "Subtract the count (or 1) from the number at each cursor"
 			else "Add the count (or 1) to the number at each cursor",
 		function(ctx)
-			local buffer, selection = ctx.buffer, ctx.view:selection()
 			local step = (ctx.count or 1) * (if down then -1 else 1)
-			buffer:edit(function(e)
-				local shift = 0
-				for i, range in selection.ranges do
-					local from, to, value, hex = number_at(buffer, (span(range)))
-					if from and to and value then
-						local text = format_number(value + step, hex)
-						e:replace(from, to, text)
-						selection.ranges[i] = { anchor = from + shift, head = from + shift + #text }
-						shift += #text - (to - from)
-					end
+			motions.replace_each(ctx.view, function(_, range)
+				local from, to, value, hex = number_at(ctx.buffer, (span(range)))
+				if from and to and value then
+					return { text = format_number(value + step, hex), from = from, to = to }
 				end
-				e:select(selection)
+				return nil
 			end)
 		end
 	)

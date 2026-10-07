@@ -28,19 +28,8 @@ end)
 -- Replaces each selection with a piece of text (`text(i)` for the i-th
 -- selection) and leaves a cursor after each.
 local function replace_selections(ctx: greed.Context, text: (i: number) -> string)
-	local selection = ctx.view:selection()
-	ctx.buffer:edit(function(e)
-		-- Earlier edits move the later selections by this much.
-		local shift = 0
-		for i, range in selection.ranges do
-			local start, finish = span(range)
-			local piece = text(i)
-			e:replace(start, finish, piece)
-			local cursor = start + shift + #piece
-			selection.ranges[i] = { anchor = cursor, head = cursor }
-			shift += #piece - (finish - start)
-		end
-		e:select(selection)
+	core.motions.replace_each(ctx.view, function(i)
+		return { text = text(i), place = "end" }
 	end)
 end
 

@@ -13,6 +13,7 @@
 -- language its own way with `provider`.
 
 local greed = require("@greed")
+local motions = require("./motions")
 local registry = require("./registry")
 local syntax = require("./syntax")
 local text = require("./text")
@@ -238,37 +239,28 @@ end
 local function break_lines(view: greed.View, above: { [number]: boolean })
 	local buffer = view:buffer()
 	local br = text.line_break(buffer)
-	local selection = view:selection()
-	buffer:edit(function(e)
-		-- Earlier edits move the later cursors by this much.
-		local shift = 0
-		for i, range in selection.ranges do
-			local pos = range.head
-			local from, to, inserted, cursor = pos, pos, br, 0
-			if not above[i] then
-				local line = buffer:line_of(pos)
-				local start = buffer:line_start(line)
-				local before = buffer:slice(start, pos)
-				local after = buffer:slice(pos, buffer:line_end(line))
-				local indent, closes = M.at(buffer, pos)
-				if string.match(before, "^[ \t]+$") then
-					from = start
-				end
-				to = pos + #(string.match(after, "^[ \t]*") :: string)
-				inserted = br .. indent
-				cursor = #inserted
-				if closes and string.match(before, "[%(%[{][ \t]*$") then
-					local unit = M.unit(buffer)
-					inserted = br .. indent .. unit .. br .. indent
-					cursor = #br + #indent + #unit
-				end
-			end
-			e:replace(from, to, inserted)
-			local at = from + shift + cursor
-			selection.ranges[i] = { anchor = at, head = at }
-			shift += #inserted - (to - from)
+	motions.replace_each(view, function(i, range)
+		local pos = range.head
+		if above[i] then
+			return { text = br, place = "start", from = pos, to = pos }
 		end
-		e:select(selection)
+		local line = buffer:line_of(pos)
+		local start = buffer:line_start(line)
+		local before = buffer:slice(start, pos)
+		local after = buffer:slice(pos, buffer:line_end(line))
+		local indent, closes = M.at(buffer, pos)
+		local from = if string.match(before, "^[ \t]+$") then start else pos
+		local to = pos + #(string.match(after, "^[ \t]*") :: string)
+		if closes and string.match(before, "[%(%[{][ \t]*$") then
+			local unit = M.unit(buffer)
+			return {
+				text = br .. indent .. unit .. br .. indent,
+				place = #br + #indent + #unit,
+				from = from,
+				to = to,
+			}
+		end
+		return { text = br .. indent, place = "end", from = from, to = to }
 	end)
 end
 

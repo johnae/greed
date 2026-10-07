@@ -5,6 +5,7 @@
 -- pastes themselves.
 
 local greed = require("@greed")
+local motions = require("./motions")
 local span = require("./text").span
 
 local M = {}
@@ -20,25 +21,10 @@ function M.paste(view: greed.View, text: string)
 	end
 	text = string.gsub(text, "\r\n?", "\n")
 	local replace = M.replacing[greed.mode.get()]
-	local selection = view:selection()
-	buffer:edit(function(e)
-		-- Each cursor ends up after its text; `shift` is how far the text
-		-- pasted at the cursors before it moved it.
-		local cursors = {}
-		local shift = 0
-		for _, range in selection.ranges do
-			local from, to = span(range)
-			if replace then
-				e:replace(from, to, text)
-			else
-				e:insert(from, text)
-				to = from
-			end
-			local at = from + shift + #text
-			table.insert(cursors, { anchor = at, head = at })
-			shift += #text - (to - from)
-		end
-		e:select({ ranges = cursors, primary = selection.primary })
+	-- Each cursor ends up after its text.
+	motions.replace_each(view, function(_, range)
+		local from, to = span(range)
+		return { text = text, place = "end", from = from, to = if replace then to else from }
 	end)
 end
 

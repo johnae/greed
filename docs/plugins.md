@@ -254,6 +254,33 @@ Edits made in one `edit` call are one undo step and are applied together,
 so their positions all refer to the text before the edit. Selections move
 with the text.
 
+To change the text of every selection and say where each selection goes
+afterwards, `core.motions.replace_each` does the bookkeeping. Return the
+new text, which the selection then goes around, or nil to leave that
+selection alone. A table says more: `place` is where the selection goes
+("around", "keep" for around it the way it pointed, "start", "end", or a
+number of bytes in), and `from` and `to` replace other text than the
+selection.
+
+```luau
+local core = require("@core")
+-- Wrap each selection in stars.
+core.motions.replace_each(ctx.view, function(i, range)
+	return "*" .. ctx.buffer:slice(core.text.span(range)) .. "*"
+end)
+-- Put "TODO " before each selection, leaving a cursor after it.
+core.motions.replace_each(ctx.view, function(i, range)
+	local at = core.text.span(range)
+	return { text = "TODO ", place = "end", from = at, to = at }
+end)
+```
+
+`core.objects.find(buffer, pos, key, around)` finds the text objects every
+editing style uses, by Helix's keys: `"w"` a word, `"p"` a paragraph, `"("`
+the parentheses around `pos`, `"f"` a function from the syntax tree, and so
+on. It gives `from, to, linewise`, or nil. `core.objects.pair(char)` is
+what surround wraps text in for a key.
+
 `view:cursor()` is the head of the primary selection and
 `view:set_cursor(pos)` makes the selection one cursor there.
 `require("@core").text.span(range)` gives a range's start and end,

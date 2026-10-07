@@ -312,26 +312,13 @@ local function paste(ctx: greed.Context, after: boolean)
 		return
 	end
 	local pieces = register.pieces
-	local selection = ctx.view:selection()
-	local one_each = #pieces == #selection.ranges
+	local one_each = #pieces == #ctx.view:selection().ranges
 	local joined = registers.join(register)
-	ctx.buffer:edit(function(e)
-		-- Text inserted earlier in the buffer shifts the later selections.
-		local shift = 0
-		for i, range in selection.ranges do
-			local piece = string.rep(if one_each then pieces[i] else joined, ctx.count or 1)
-			local at, inserted = paste_place(
-				ctx.buffer,
-				on_cursor(ctx.buffer, range),
-				after,
-				piece,
-				register.linewise
-			)
-			e:insert(at, inserted)
-			selection.ranges[i] = { anchor = at + shift, head = at + shift + #inserted }
-			shift += #inserted
-		end
-		e:select(selection)
+	motions.replace_each(ctx.view, function(i, range)
+		local piece = string.rep(if one_each then pieces[i] else joined, ctx.count or 1)
+		local at, inserted =
+			paste_place(ctx.buffer, on_cursor(ctx.buffer, range), after, piece, register.linewise)
+		return { text = inserted, from = at, to = at }
 	end)
 end
 
@@ -459,29 +446,12 @@ greed.option.define({
 -- with `change(text)`, keeping the selections around the new text.
 local function transform(ctx: greed.Context, change: (string) -> string)
 	local buffer = ctx.buffer
-	local selection = ctx.view:selection()
-	buffer:edit(function(e)
-		local shift = 0
-		for i, range in selection.ranges do
-			local a, b = span(range)
-			if a == b then
-				b = text.after(buffer, a)
-			end
-			local new = change(buffer:slice(a, b))
-			e:replace(a, b, new)
-			local grow = #new - (b - a)
-			local anchor, head = range.anchor + shift, range.head + shift
-			if range.anchor ~= range.head then
-				if range.anchor > range.head then
-					anchor += grow
-				else
-					head += grow
-				end
-			end
-			selection.ranges[i] = { anchor = anchor, head = head }
-			shift += grow
+	motions.replace_each(ctx.view, function(_, range)
+		local a, b = span(range)
+		if a == b then
+			b = text.after(buffer, a)
 		end
-		e:select(selection)
+		return { text = change(buffer:slice(a, b)), place = "keep", from = a, to = b }
 	end)
 end
 
