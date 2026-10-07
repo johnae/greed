@@ -772,11 +772,7 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
         )
         .unwrap();
         h.run("grep-test").unwrap();
-        let done = h
-            .finished_jobs()
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap();
-        h.finish_job(done).unwrap();
+        h.settle().unwrap();
         h.with_editor_mut(Editor::take_messages).join("")
     };
     assert_eq!(

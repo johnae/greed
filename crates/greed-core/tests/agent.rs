@@ -7,6 +7,8 @@ use greed_core::server::{self, Connection, Input};
 use greed_text::{ClientId, Selection};
 use serde_json::{Value, json};
 
+mod sessions;
+
 fn plugin(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../runtime/plugins")
@@ -16,6 +18,7 @@ fn plugin(name: &str) -> PathBuf {
 /// An editor with the agent plugin, showing `text` with "two" selected, and a
 /// client connected to its session.
 fn start(label: &str, text: &'static str) -> (Connection, Client) {
+    sessions::private();
     let name = format!("agent-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
     let conn = server::spawn_with_session(

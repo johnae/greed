@@ -388,6 +388,12 @@ impl Host {
         deadline(&self.lua).budget.set(budget);
     }
 
+    /// Keeps code that held the editor up in `:stalls` without saying so,
+    /// for tests that check what was said on a busy machine.
+    pub fn quiet_stalls(&self) {
+        state_mut(&self.lua).stalls.quiet = true;
+    }
+
     pub fn with_editor<R>(&self, f: impl FnOnce(&Editor) -> R) -> R {
         f(&state(&self.lua).editor)
     }
@@ -584,6 +590,17 @@ impl Host {
     pub fn finish_job(&self, done: FinishedJob) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             jobs::finish(&self.lua, done).map_err(HostError::from)
+        })
+    }
+
+    /// Waits for every running job and finishes it, and carries on commands
+    /// whose time slice ran out, until nothing is left to do. For code with
+    /// no event loop around the host, like tests: a command whose slice ran
+    /// out between starting a job and waiting on it is woken by a timer,
+    /// so finishing the job alone doesn't wake it.
+    pub fn settle(&self) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            jobs::settle(&self.lua).map_err(HostError::from)
         })
     }
 

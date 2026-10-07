@@ -152,11 +152,7 @@ fn check(host: &Host, dir: &Path) -> Vec<String> {
     .unwrap();
     host.with_editor_mut(|editor| editor.open("file", "", None));
     host.run("check-it").unwrap();
-    let job = host
-        .finished_jobs()
-        .recv_timeout(std::time::Duration::from_secs(60))
-        .unwrap();
-    host.finish_job(job).unwrap();
+    host.settle().unwrap();
     host.with_editor_mut(Editor::take_messages)
 }
 

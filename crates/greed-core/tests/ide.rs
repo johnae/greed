@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 use tungstenite::client::IntoClientRequest;
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
+mod sessions;
+
 /// Starts the IDE connection with the lock file in `dir`, echoes requests
 /// back with the client they came from, and sends a notification on
 /// "poke".
@@ -26,6 +28,7 @@ end)
 "#;
 
 fn start(label: &str) -> (Connection, PathBuf) {
+    sessions::private();
     let name = format!("ide-{label}-{}", std::process::id());
     let dir = std::env::temp_dir().join(format!("greed-{name}"));
     let session = control::listen(&name, None).unwrap();
@@ -46,10 +49,17 @@ fn start(label: &str) -> (Connection, PathBuf) {
 }
 
 /// The lock file Claude Code would find, once the editor has written it.
+/// Only `.lock` files count, as for Claude Code: the editor writes one
+/// through a temporary file beside it.
 fn lock(dir: &PathBuf) -> (u16, Value) {
     for _ in 0..100 {
-        if let Some(entry) = std::fs::read_dir(dir).ok().and_then(|mut d| d.next()) {
-            let path = entry.unwrap().path();
+        let found = std::fs::read_dir(dir).ok().and_then(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .find(|path| path.extension().is_some_and(|ext| ext == "lock"))
+        });
+        if let Some(path) = found {
             let port = path.file_stem().unwrap().to_str().unwrap().parse().unwrap();
             let lock = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             return (port, lock);
@@ -128,6 +138,7 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
 /// The default plugins with the agent's IDE tools, the lock file in a
 /// temporary directory, and `file` open.
 fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
+    sessions::private();
     let name = format!("ide-{label}-{}", std::process::id());
     let dir = std::env::temp_dir().join(format!("greed-{name}"));
     let session = control::listen(&name, None).unwrap();

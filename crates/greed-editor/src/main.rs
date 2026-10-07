@@ -355,6 +355,10 @@ fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if !plugins.contains(&dir) {
         plugins.push(dir.clone());
     }
+    // Tests see no sessions but their own, whatever the user is running.
+    greed_core::control::use_sessions_dir(
+        std::env::temp_dir().join(format!("greed-test-sessions-{}", std::process::id())),
+    );
     let results = run_tests(&plugins, &dir)?;
     let mut file = None;
     for result in &results {

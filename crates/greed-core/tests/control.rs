@@ -5,8 +5,11 @@ use greed_core::server::{self, Connection, Input};
 use greed_text::ClientId;
 use serde_json::json;
 
+mod sessions;
+
 /// A server answering requests on a session socket with `plugin`.
 fn start(name: &str, plugin: &'static str) -> (Connection, std::path::PathBuf, String) {
+    sessions::private();
     let session = control::listen(name, None).unwrap();
     let socket = session.socket.clone();
     let (_, token_file) = control::session_files(name);
@@ -86,19 +89,36 @@ fn requests_fail_clearly_when_no_plugin_answers() {
 
 #[test]
 fn starting_a_session_clears_what_crashed_ones_left() {
+    sessions::private();
     let stale = name("stale");
     let (socket, token) = control::session_files(&stale);
     std::fs::create_dir_all(control::sessions_dir()).unwrap();
-    // A socket nothing listens on any more, as a crash leaves it.
-    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+    // A socket nothing listens on any more, as a crash leaves it. The token
+    // goes first: another test's session starting may clear the socket as
+    // soon as it's there.
     std::fs::write(&token, "x").unwrap();
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
     let session = control::listen(&name("fresh"), None).unwrap();
     assert!(!socket.exists() && !token.exists());
     drop(session);
 }
 
 #[test]
+fn a_second_session_with_a_running_ones_name_is_refused() {
+    sessions::private();
+    let name = name("twice");
+    let first = control::listen(&name, None).unwrap();
+    let err = control::listen(&name, None).err().expect("refused");
+    assert!(err.to_string().contains("already running"), "{err}");
+    assert!(
+        std::os::unix::net::UnixStream::connect(&first.socket).is_ok(),
+        "the first one still answers"
+    );
+}
+
+#[test]
 fn a_session_name_too_long_for_a_socket_is_refused_clearly() {
+    sessions::private();
     let name = "x".repeat(200);
     let err = control::listen(&name, None).err().expect("refused");
     assert!(err.to_string().contains("too long"), "{err}");
@@ -106,9 +126,15 @@ fn a_session_name_too_long_for_a_socket_is_refused_clearly() {
 
 #[test]
 fn a_session_says_which_project_it_is_for_as_soon_as_it_listens() {
+    sessions::private();
     let name = format!("described-{}", std::process::id());
     let root = std::path::Path::new("/some/project");
     let session = control::listen(&name, Some(root)).unwrap();
+    assert!(
+        session.socket.starts_with(std::env::temp_dir()),
+        "a test's sessions stay out of the user's folder: {}",
+        session.socket.display()
+    );
     let found = control::sessions().unwrap();
     let info = found.iter().find(|s| s.name == name).expect("listed");
     assert_eq!(info.root.as_deref(), Some(root));

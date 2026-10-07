@@ -6,7 +6,7 @@ mod support;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use greed_core::Editor;
 use greed_core::lsp::DIAGNOSTICS;
@@ -92,24 +92,19 @@ fn answer(stream: TcpStream) {
 
 /// Finishes jobs until `count` messages were echoed, and returns them.
 fn messages(host: &Host, count: usize) -> Vec<String> {
-    let jobs = host.finished_jobs();
     let mut got = Vec::new();
-    loop {
+    until(host, |host| {
         got.extend(host.with_editor_mut(Editor::take_messages));
-        if got.len() >= count {
-            return got;
-        }
-        let done = jobs
-            .recv_timeout(Duration::from_secs(5))
-            .expect("a job finished");
-        host.finish_job(done).unwrap();
-    }
+        got.len() >= count
+    });
+    got
 }
 
 fn host(address: &str) -> Host {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", None);
     let host = Host::new(editor).unwrap();
+    host.quiet_stalls();
     host.load_dirs(&[plugin("core"), plugin("models")]).unwrap();
     host.load_str(
         "config",
@@ -176,6 +171,7 @@ fn a_model_pipe_rewrites_the_selection_as_one_operation() {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "hi there", None);
     let host = Host::new(editor).unwrap();
+    host.quiet_stalls();
     host.load_dirs(&[
         plugin("core"),
         plugin("picker"),
@@ -216,6 +212,7 @@ fn assist_host(address: &str, text: &str, path: Option<PathBuf>) -> Host {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, path);
     let host = Host::new(editor).unwrap();
+    host.quiet_stalls();
     load_assist(&host, address);
     host
 }
@@ -256,7 +253,12 @@ fn load_assist(host: &Host, address: &str) {
 /// Finishes jobs until `done` says so.
 fn until(host: &Host, mut done: impl FnMut(&Host) -> bool) {
     let jobs = host.finished_jobs();
-    while !done(host) {
+    loop {
+        // Commands whose time slice ran out carry on from a timer.
+        host.fire_timers(Instant::now()).unwrap();
+        if done(host) {
+            return;
+        }
         let job = jobs
             .recv_timeout(Duration::from_secs(5))
             .expect("a job finished");
@@ -342,6 +344,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
         Some(std::env::temp_dir().join("greed-assist-fix/main.rs")),
     );
     let host = Host::new(editor).unwrap();
+    host.quiet_stalls();
     let (input, output, _log) = support::start();
     host.connect_lsp("rust", Box::new(input), output).unwrap();
     load_assist(&host, &address);
@@ -349,11 +352,14 @@ fn a_fix_comes_as_a_proposal_to_review() {
     // Drive both servers: the language server's events and the model's job.
     let lsp = host.lsp_events();
     let jobs = host.finished_jobs();
+    let deadline = Instant::now() + Duration::from_secs(30);
     let step = |host: &Host| {
+        // Commands whose time slice ran out carry on from a timer.
+        host.fire_timers(Instant::now()).unwrap();
         crossbeam_channel::select! {
             recv(lsp) -> event => host.handle_lsp(event.unwrap()).unwrap(),
             recv(jobs) -> job => host.finish_job(job.unwrap()).unwrap(),
-            default(Duration::from_secs(5)) => panic!("nothing happened"),
+            default(Duration::from_millis(20)) => assert!(Instant::now() < deadline, "nothing happened"),
         }
     };
     let diagnosed =

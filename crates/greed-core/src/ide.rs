@@ -4,9 +4,8 @@
 //! the session socket's, marked as coming from "ide", and plugins can send
 //! it notifications such as `selection_changed`.
 
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, ErrorKind};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -71,10 +70,6 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     let token = new_token()?;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
     let lock_file = dir.join(format!("{port}.lock"));
     let lock = json!({
         "pid": std::process::id(),
@@ -83,13 +78,8 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
         "transport": "ws",
         "authToken": token,
     });
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&lock_file)?
-        .write_all(lock.to_string().as_bytes())?;
+    // Written whole and moved into place, so Claude Code never reads half.
+    crate::files::write_private(&lock_file, |out| out.write_all(lock.to_string().as_bytes()))?;
 
     let clients: Arc<Mutex<Vec<Sender<String>>>> = Arc::default();
     let registry = clients.clone();

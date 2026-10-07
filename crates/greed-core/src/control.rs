@@ -105,6 +105,9 @@ impl Notifier {
 
 static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
+/// Numbers the temporary names sockets are bound under in [`listen`].
+static NEXT_SOCKET: AtomicU64 = AtomicU64::new(0);
+
 /// How long a write to a connection may wait for it to read.
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -124,9 +127,24 @@ impl Request {
 /// The longest socket path that fits in a Unix socket address.
 const MAX_SOCKET_PATH: usize = 100;
 
+/// The folder [`use_sessions_dir`] set, if any.
+static SESSIONS_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Keeps this process's sessions in `dir` from now on, instead of the
+/// user's sessions folder. Tests use it so they never touch the sessions
+/// the user is running, or another checkout's tests. Programs this process
+/// starts don't inherit it; give those `XDG_RUNTIME_DIR` instead.
+pub fn use_sessions_dir(dir: PathBuf) {
+    *SESSIONS_DIR.lock().unwrap_or_else(PoisonError::into_inner) = Some(dir);
+}
+
 /// Where sessions keep their sockets: `greed` in the runtime directory, or a
-/// folder for the user in the temporary directory.
+/// folder for the user in the temporary directory, unless
+/// [`use_sessions_dir`] said otherwise.
 pub fn sessions_dir() -> PathBuf {
+    if let Some(dir) = &*SESSIONS_DIR.lock().unwrap_or_else(PoisonError::into_inner) {
+        return dir.clone();
+    }
     runtime_dir().map_or_else(
         || {
             let user = std::env::var("USER").unwrap_or_else(|_| "user".to_owned());
@@ -270,7 +288,7 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
         .mode(0o700)
         .create(&dir)?;
     // Editors that crashed leave sockets behind, which would also stop a
-    // new one with the same name from binding.
+    // new one with the same name from taking their place.
     prune(&dir);
     let (socket, token_file) = session_files(name);
     // Unix socket paths have to fit in about a hundred bytes.
@@ -281,14 +299,32 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
             socket.display()
         )));
     }
-    // A live session already there keeps its description; binding fails below.
+    // A live session already there keeps its description; linking fails below.
     if let Some(root) = root
         && !socket.exists()
     {
         describe(&socket, root)?;
     }
-    let listener = UnixListener::bind(&socket)?;
-    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
+    // Bound under a temporary name and linked into place once it listens:
+    // between binding and listening a socket refuses connections, and
+    // another session starting would prune it as one a crash left.
+    let bound = dir.join(format!(
+        ".new-{}-{}",
+        std::process::id(),
+        NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_file(&bound);
+    let listener = UnixListener::bind(&bound)?;
+    let linked = std::fs::set_permissions(&bound, std::fs::Permissions::from_mode(0o600))
+        .and_then(|()| std::fs::hard_link(&bound, &socket));
+    let _ = std::fs::remove_file(&bound);
+    linked.map_err(|err| match err.kind() {
+        io::ErrorKind::AlreadyExists => io::Error::new(
+            io::ErrorKind::AddrInUse,
+            format!("a session called {name} is already running"),
+        ),
+        _ => err,
+    })?;
     let token = new_token()?;
     std::fs::OpenOptions::new()
         .write(true)

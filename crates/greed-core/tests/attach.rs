@@ -9,6 +9,8 @@ use greed_core::render::{Frame, Size};
 use greed_core::server::{self, Connection, Input, Output};
 use greed_text::ClientId;
 
+mod sessions;
+
 const SIZE: Size = Size {
     width: 20,
     height: 4,
@@ -17,6 +19,7 @@ const SIZE: Size = Size {
 /// A headless editor with the core plugin and a session socket, and a way
 /// to attach to it.
 fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
+    sessions::private();
     let name = format!("attach-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
@@ -204,6 +207,7 @@ fn after_the_first_frame_clients_get_what_changed() {
 
 #[test]
 fn clients_speaking_another_protocol_are_refused_clearly() {
+    sessions::private();
     let name = format!("attach-protocol-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
     let socket = session.socket.clone();
