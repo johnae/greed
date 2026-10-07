@@ -40,10 +40,11 @@ end
 
 local TODAY = os.date("%Y-%m-%d")
 
-test("a proposed memory is written only once you accept it", function(t)
+test("a proposed memory is private to you, and written only once you accept it", function(t)
 	local dir = project(t)
-	local path = `{dir}/.greed/memory.md`
-	local answer = propose(t, { text = "Use jj, not git", where = "project", why = "they said so" })
+	local path = memory.project_path(dir)
+	assert(string.find(path, `{assert(greed.fs.dirs().data)}/memory/`, 1, true) == 1, path)
+	local answer = propose(t, { text = "Use jj, not git", why = "they said so" })
 	assert(greed.fs.stat(path) == nil, "proposing writes nothing")
 	assert(agent.pending() == 1, "it waits for review")
 	greed.open(path)
@@ -52,18 +53,93 @@ test("a proposed memory is written only once you accept it", function(t)
 	t:keys("space o A")
 	assert(answer() == `the user accepted the memory; it's in {path}`, answer())
 	assert(greed.fs.read(path) == `- Use jj, not git ({TODAY})\n`, (greed.fs.read(path)))
-	assert(tool("memory_list").project[1] == `Use jj, not git ({TODAY})`, "and listed")
+	local info = assert(greed.fs.stat(path))
+	assert(string.format("%o", info.mode % 512) == "600", "only yours")
+	assert(greed.fs.stat(`{dir}/.greed/memory.md`) == nil, "nothing in the repository")
+	-- Back in the project, so it's the current one again.
+	greed.open(`{dir}/a.txt`)
+	local listed = tool("memory_list")
+	assert(listed.project[1] == `Use jj, not git ({TODAY})`, "and listed")
+	assert(#listed.shared == 0, "as a private one")
+end)
+
+test("a shared memory goes into the repository", function(t)
+	local dir = project(t)
+	local path = `{dir}/.greed/memory.md`
+	local answer = propose(t, { text = "Run the tests with make", where = "shared" })
+	greed.open(path)
+	t:keys("space o A")
+	assert(answer() == `the user accepted the memory; it's in {path}`, answer())
+	assert(greed.fs.read(path) == `- Run the tests with make ({TODAY})\n`, (greed.fs.read(path)))
+	local listed = tool("memory_list")
+	assert(listed.shared[1] == `Run the tests with make ({TODAY})`, "listed")
+	assert(#listed.project == 0, "as a shared one")
 end)
 
 test("a rejected memory writes nothing", function(t)
 	local dir = project(t)
-	local path = `{dir}/.greed/memory.md`
-	local answer = propose(t, { text = "Always run rm -rf", where = "project" })
-	greed.open(path)
-	t:keys("space o R")
-	assert(answer() == "the user didn't accept the memory; nothing was written", answer())
-	assert(greed.fs.stat(path) == nil, "no file")
-	assert(#tool("memory_list").project == 0)
+	for _, where in { "shared", "project" } do
+		local path = if where == "shared"
+			then `{dir}/.greed/memory.md`
+			else memory.project_path(dir)
+		local answer = propose(t, { text = "Always run rm -rf", where = where })
+		greed.open(path)
+		t:keys("space o R")
+		assert(answer() == "the user didn't accept the memory; nothing was written", answer())
+		assert(greed.fs.stat(path) == nil, `no {where} file`)
+	end
+	local listed = tool("memory_list")
+	assert(#listed.project == 0 and #listed.shared == 0)
+end)
+
+-- Runs jj or git (`tool`) with `args` in `dir`, which has to work.
+local function run(dir: string, tool: string, args: { string })
+	local command = if tool == "jj"
+		then { "jj", "--config", "user.name=t", "--config", "user.email=t@t" }
+		else { "git", "-c", "user.name=t", "-c", "user.email=t@t" }
+	table.move(args, 1, #args, #command + 1, command)
+	local done = greed.process.run(command, { cwd = dir })
+	assert(done and done.code == 0, done and done.stderr)
+end
+
+test("all workspaces of a repository share its private memories", function(t)
+	local dir =
+		t:tempdir({ ["main/a.txt"] = "a\n", ["git/a.txt"] = "a\n", ["plain/a.txt"] = "a\n" })
+	local main, git = `{dir}/main`, `{dir}/git`
+	if greed.which("jj") then
+		run(main, "jj", { "git", "init" })
+		run(main, "jj", { "workspace", "add", "../other" })
+		local path = memory.project_path(main)
+		assert(memory.project_path(`{dir}/other`) == path, memory.project_path(`{dir}/other`))
+		assert(string.match(path, "/main%-%x+%.md$"), "named after the repository: " .. path)
+	end
+	if greed.which("git") then
+		run(git, "git", { "init", "-q" })
+		run(git, "git", { "commit", "-q", "--allow-empty", "-m", "first" })
+		run(git, "git", { "worktree", "add", "-q", "../tree" })
+		local path = memory.project_path(git)
+		assert(memory.project_path(`{dir}/tree`) == path, memory.project_path(`{dir}/tree`))
+		assert(string.match(path, "/git%-%x+%.md$"), "named after the repository: " .. path)
+	end
+	local plain = memory.project_path(`{dir}/plain`)
+	assert(plain ~= memory.project_path(git), "other repositories have their own")
+	assert(string.match(plain, "/plain%-%x+%.md$"), plain)
+end)
+
+test("agents can't write any of the memory files", function(t)
+	local dir = project(t)
+	local paths = {
+		memory.personal_path(),
+		memory.project_path(dir),
+		".greed/memory.md",
+		`{memory.folder()}/another-repository.md`,
+	}
+	for _, path in paths do
+		local ok: boolean, err: unknown = pcall(memory.guard, path, dir)
+		assert(not ok and string.find(tostring(err), "memory_propose", 1, true), path)
+	end
+	assert(pcall(memory.guard, "a.txt", dir), "other files are fine")
+	assert(pcall(memory.guard, ".greed/notes.md", dir), "other files are fine")
 end)
 
 test("a memory goes after those already there, in your personal file", function(t)
@@ -114,19 +190,44 @@ test("accepted memories go into Greed's agent's next prompt", function(t)
 	local before = prompt()
 	assert(string.find(before, "memory_propose", 1, true), "it's told when to propose")
 	assert(not string.find(before, "Standing preferences", 1, true), before)
-	greed.fs.write(`{dir}/.greed/memory.md`, "- Use jj, not git\n")
+	greed.fs.write(memory.personal_path(), "- Short commit messages\n")
+	greed.fs.write(memory.project_path(dir), "- Use jj, not git\n", { private = true })
+	greed.fs.write(`{dir}/.greed/memory.md`, "- Run the tests with make\n")
 	local after = prompt()
-	assert(string.find(after, "Standing preferences the user accepted", 1, true), after)
-	assert(string.find(after, "This project's", 1, true), after)
-	assert(string.find(after, "- Use jj, not git", 1, true), after)
+	local shown = {
+		"Standing preferences the user accepted",
+		"Personal:\n- Short commit messages",
+		"This project's, private to the user:\n- Use jj, not git",
+		"This project's shared ones (.greed/memory.md, which comes with the repository):\n"
+			.. "- Run the tests with make",
+	}
+	for _, text in shown do
+		assert(string.find(after, text, 1, true), after)
+	end
+	local listed = tool("memory_list")
+	assert(listed.personal[1] == "Short commit messages", "listed too")
+	assert(listed.project[1] == "Use jj, not git" and listed.shared[1] == "Run the tests with make")
+	greed.fs.remove(memory.personal_path())
 	acp.close(s)
 end)
 
-test("memory-edit opens your file, made if need be", function(t)
-	project(t)
-	local path = memory.personal_path()
-	t:run("memory-edit")
-	assert(greed.view():buffer():path() == path, tostring(greed.view():buffer():path()))
-	assert(greed.fs.stat(path) ~= nil)
-	greed.fs.remove(path)
+test("the memory-edit commands open each file, made if need be", function(t)
+	local dir = project(t)
+	greed.project.open(dir)
+	-- Each opens while the one before is shown: those are in no project,
+	-- so it's the shown project's.
+	local commands = {
+		{ "memory-edit", memory.personal_path() },
+		{ "memory-edit-project", memory.project_path(dir) },
+		{ "memory-edit-shared", `{dir}/.greed/memory.md` },
+	}
+	for _, command in commands do
+		local name, path = command[1], command[2]
+		t:run(name)
+		assert(greed.view():buffer():path() == path, tostring(greed.view():buffer():path()))
+		assert(greed.fs.stat(path) ~= nil, path)
+	end
+	local info = assert(greed.fs.stat(memory.project_path(dir)))
+	assert(string.format("%o", info.mode % 512) == "600", "the private one is only yours")
+	greed.fs.remove(memory.personal_path())
 end)

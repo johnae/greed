@@ -80,6 +80,47 @@ function M.root(path: string?): string
 	return folder or greed.project.current().root
 end
 
+-- The first line of the file at `path`, trimmed, if there's one.
+local function first_line(path: string): string?
+	local text = greed.fs.read(path)
+	local line = text and string.match(text, "^%s*([^\n]*)")
+	local trimmed = line and string.match(line, "^(.-)%s*$")
+	return if trimmed and trimmed ~= "" then trimmed else nil
+end
+
+--- What tells the repository the folder `root` is in apart from others,
+--- the same in all its jj workspaces and git worktrees: the folder its
+--- store is in (jj's `.jj/repo`, git's common `.git`). Outside a
+--- repository, `root` itself.
+function M.identity(root: string): string
+	local dir: string? = M.clean(root)
+	while dir do
+		if greed.fs.stat(`{dir}/.jj`) then
+			local store = `{dir}/.jj/repo`
+			local info = greed.fs.stat(store)
+			-- A workspace's store is a file saying where the repository's is.
+			local points = if info and info.kind == "file" then first_line(store) else nil
+			return if points then M.resolve(points, `{dir}/.jj`) else store
+		end
+		local dot = `{dir}/.git`
+		local info = greed.fs.stat(dot)
+		if info then
+			-- A worktree's .git is a file naming its folder in the
+			-- repository's, and that folder says where the repository's is.
+			local gitdir = if info.kind == "file" then first_line(dot) else nil
+			local linked = gitdir and string.match(gitdir, "^gitdir:%s*(.+)$")
+			if linked == nil then
+				return dot
+			end
+			local folder = M.resolve(linked, dir)
+			local common = first_line(`{folder}/commondir`)
+			return if common then M.resolve(common, folder) else folder
+		end
+		dir = parent(dir)
+	end
+	return root
+end
+
 -- How many recent projects are remembered.
 local RECENT = 30
 

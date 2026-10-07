@@ -374,6 +374,7 @@ core.project.relative(path)            -- "src/main.rs", or the full path outsid
 core.project.short(path)               -- like relative, but "~/..." under your home folder
 core.project.tilde(path)               -- "~/src/greed" for a path in your home folder
 core.project.basename(path)            -- "main.rs" for "src/main.rs"; nil for "/"
+core.project.identity(root)            -- the repository's store, the same in all its workspaces
 ```
 
 `core.file` reads and writes files the way you'd want an agent to:

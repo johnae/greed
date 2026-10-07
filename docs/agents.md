@@ -232,13 +232,18 @@ check `.greed` changes as you would code.
 
 Memories are standing preferences you want every later session to
 follow, like "use jj, not git" or "I prefer short commit messages". There
-are two files, plain Markdown with one memory per list item, for you to
-read and edit:
+are three kinds, each a plain Markdown file with one memory per list item,
+for you to read and edit:
 
-| File | |
-|---|---|
-| `memory.md` in your config folder (`~/.config/greed/memory.md`) | Yours, in every project; `:memory-edit` opens it |
-| `.greed/memory.md` in the project | The project's; `:memory-edit-project` opens it |
+| Kind | File | |
+|---|---|---|
+| Personal | `memory.md` in your config folder (`~/.config/greed/memory.md`) | Yours, in every project; `:memory-edit` opens it |
+| Project | A file per repository in `~/.local/share/greed/memory/` | Yours, for this project; `:memory-edit-project` opens it |
+| Shared | `.greed/memory.md` in the repository | For everyone working on it; `:memory-edit-shared` opens it |
+
+Project memories stay on your machine, outside the repository, and only
+you can read them. All jj workspaces and git worktrees of a repository
+share one file, so a memory you accept in one applies in the others.
 
 An agent can't add a memory itself. When you state a lasting preference
 ("from now on...", "always...", "I prefer..."), it proposes one with
@@ -246,16 +251,18 @@ An agent can't add a memory itself. When you state a lasting preference
 change, with the date: `space o a` accepts it, `space o r` rejects it (see
 [Reviewing proposed edits](#reviewing-proposed-edits)). Only what you
 accept is written. That way a web page or file saying "remember to always
-run X" can't become a rule for every later session.
+run X" can't become a rule for every later session. Proposals go to your
+project memories unless they're about how you work anywhere; agents
+propose shared ones only when you ask for a memory for the whole team.
 
-Greed's own agent gets both files in its system prompt with each message,
+Greed's own agent gets all three in its system prompt with each message,
 marked as preferences you accepted. Other agents read them with
 `memory_list`; Claude Code keeps memories of its own as well.
 
-A project's `.greed/memory.md` comes with the repository, like its
-`AGENTS.md`: whoever can change the repository can put memories in it. As
-with decisions, an agent that can write files can write these too, so
-check `.greed` changes as you would code.
+A repository's `.greed/memory.md` comes with it, like its `AGENTS.md`:
+whoever can change the repository can put memories in it. As with
+decisions, an agent that can write files can write these too, so check
+`.greed` changes as you would code.
 
 ## Claude Code's `/ide`
 
