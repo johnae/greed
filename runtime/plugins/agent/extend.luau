@@ -75,6 +75,10 @@ Tests:
 
 `t:keys("i")` presses keys by name ("g g", "esc", "ctrl-s"); `t:type("some text")` types
 text. `buffer:decorations("my-plugin")` gives back the marks a plugin drew, to check them.
+`t:buffer` makes an untitled buffer, which fires no "buffer.opened" (only files do, as in the
+editor); to test a plugin reacting to opened files, write one with `t:tempdir({ ["a.txt"] =
+"..." })` and `greed.open` it. A plugin decorating every buffer goes through
+`greed.buffers()` as it loads, then follows "buffer.opened" and "buffer.changed".
 
 Keep it small and say what each command does in its doc. The API's types
 follow; they're exactly what luau-analyze checks against.
