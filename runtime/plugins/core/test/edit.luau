@@ -2,6 +2,7 @@
 -- anchor (left out for cursors). "^hello |world" selects "hello ".
 
 local test = require("@greed/test")
+local greed = require("@greed")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -103,7 +104,6 @@ test("copying nothing says so", function(t)
 end)
 
 test("commands that wait finish when time passes", function(t)
-	local greed = require("@greed")
 	greed.command({
 		name = "slow-insert",
 		run = function(ctx)
@@ -249,4 +249,17 @@ test("t:type types text a character at a time, a newline as enter", function(t)
 	t:type("hello world\nnext")
 	t:keys("esc")
 	t:expect("hello world\nnext|")
+end)
+
+test("an edit elsewhere while you type leaves your typing one undo step", function(t)
+	t:buffer("|")
+	local other = greed.create_buffer("notes", "x")
+	t:keys("i")
+	t:type("ab")
+	other:edit(function(e)
+		e:insert(0, "y")
+	end)
+	t:type("cd")
+	t:keys("esc u")
+	t:expect("|")
 end)
