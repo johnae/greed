@@ -485,6 +485,13 @@ test("space k on a due date or a reminder says when it is in words", function(t)
 	assert(string.match(remind, "^remind tomorrow, 18:00, in %d+ hours$"), remind)
 	local elsewhere = words_at("end")
 	assert(not string.find(elsewhere, "due", 1, true), "elsewhere it's the usual hover")
+	-- Every style's hover key asks the same way.
+	t:run("style", { "vim" })
+	local from = string.find(buffer:text(), "remind:", 1, true) :: number
+	greed.view():set_selection({ ranges = { { anchor = from, head = from } }, primary = 1 })
+	t:keys("K")
+	local messages = t:messages()
+	assert(string.match(messages[#messages], "^remind tomorrow"), messages[#messages])
 end)
 
 test("due dates are colored by how close they are, and reminders show their time", function(t)

@@ -50,6 +50,7 @@ local words = require("@self/words")
 local paste = require("@self/paste")
 local floats = require("@self/floats")
 local modeless = require("@self/modeless")
+local lookup = require("@self/lookup")
 
 -- An empty layer applies in every mode.
 greed.keymap.bind({}, {
@@ -128,6 +129,8 @@ return {
 	paste = paste,
 	floats = floats,
 	registers = registers,
+	--- Where the thing under the cursor is defined, and what it is (lookup.luau).
+	lookup = lookup,
 	--- Helpers for registries other plugins add to (registry.luau).
 	registry = require("@self/registry"),
 }

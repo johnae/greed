@@ -340,22 +340,17 @@ function M.words_at(text: string, pos: number): string?
 	return nil
 end
 
-greed.command({
-	name = "notes-hover",
-	doc = "Say when the due date or reminder under the cursor is, in words, or show what's under it",
-	run = function(ctx)
-		local head = ctx.view:cursor()
-		local line = ctx.buffer:line_of(head)
-		local start = ctx.buffer:line_start(line)
-		local words =
-			M.words_at(ctx.buffer:slice(start, ctx.buffer:line_end(line)), head - start + 1)
-		if words then
-			greed.echo(words)
-		else
-			greed.run("hover")
-		end
-	end,
-})
+-- space k on a due date or reminder says when it is, in words.
+core.lookup.add("hover", function(ctx)
+	local head = ctx.view:cursor()
+	local line = ctx.buffer:line_of(head)
+	local start = ctx.buffer:line_start(line)
+	local words = M.words_at(ctx.buffer:slice(start, ctx.buffer:line_end(line)), head - start + 1)
+	if words then
+		greed.echo(words)
+	end
+	return words ~= nil
+end)
 
 greed.command({
 	name = "notes-reminders-dismiss",

@@ -154,21 +154,18 @@ greed.on("option.changed", function(event)
 	end
 end)
 
-greed.command({
-	name = "notes-follow",
-	doc = "Open the note the [[link]] under the cursor points at, or go to the definition",
-	run = function(ctx)
-		local head = ctx.view:cursor()
-		for _, link in M.links(ctx.buffer) do
-			if link.from <= head and head < link.to then
-				local path = ctx.buffer:path()
-				local from = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
-				core.file.open(notes.path(notes.resolve(link.target, from)))
-				return
-			end
+-- g d on a [[link]] opens the note it points at, making it if it's new.
+core.lookup.add("definition", function(ctx)
+	local head = ctx.view:cursor()
+	for _, link in M.links(ctx.buffer) do
+		if link.from <= head and head < link.to then
+			local path = ctx.buffer:path()
+			local from = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
+			core.file.open(notes.path(notes.resolve(link.target, from)))
+			return true
 		end
-		greed.run("goto-definition")
-	end,
-})
+	end
+	return false
+end)
 
 return M

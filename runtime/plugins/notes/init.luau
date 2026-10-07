@@ -32,14 +32,9 @@ require("@self/look")
 require("@self/reminders")
 require("@self/connect")
 
-greed.keymap.bind({ role = "command" }, {
-	["g d"] = "notes-follow",
-})
-
 greed.keymap.bind({ layer = "leader" }, {
 	["n r"] = "notes-reminders-dismiss",
 	["n l"] = "notes-connect",
-	k = "notes-hover",
 	["n d"] = "notes-daily",
 	["n c"] = "notes-capture",
 	["n t"] = "notes-thought",

@@ -217,6 +217,29 @@ The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
+### Going to definitions and hover
+
+`g d` (going to where something is defined) and `space k` (what it is) ask
+each plugin that answers for them in turn, so one key works for a note's
+`[[link]]` and a language server's symbol alike, in every style. An answer
+returns whether it handled what's under the cursor; a `fallback`, like the
+language server's, is asked only when nothing else answered.
+
+```luau
+local core = require("@core")
+
+core.lookup.add("definition", function(ctx)
+	local line = ctx.buffer:line_text(ctx.buffer:line_of(ctx.view:cursor()))
+	local id = string.match(line, "%u+%-%d+")
+	if id then
+		core.file.open_link(`https://example.atlassian.net/browse/{id}`)
+	end
+	return id ~= nil
+end)
+```
+
+Use `"hover"` for `space k`. What a plugin adds goes when it's unloaded.
+
 ### Menus of keys
 
 `core.transient.show` puts a menu at the bottom of the screen listing what

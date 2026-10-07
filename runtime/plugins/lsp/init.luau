@@ -66,40 +66,71 @@ local function show_info(title: string, text: string)
 	)
 end
 
-greed.command({
-	name = "hover",
-	doc = "Show what's under the cursor, and any problems there",
-	run = function(ctx)
-		local pos = ctx.view:cursor()
-		local parts = {}
-		for _, d in greed.lsp.diagnostics(ctx.buffer) do
-			if d.from <= pos and pos <= d.to then
-				table.insert(parts, describe(d))
-			end
+local function hover(ctx: greed.Context)
+	local pos = ctx.view:cursor()
+	local parts = {}
+	for _, d in greed.lsp.diagnostics(ctx.buffer) do
+		if d.from <= pos and pos <= d.to then
+			table.insert(parts, describe(d))
 		end
-		local ok, result = ask(ctx.buffer, "textDocument/hover", pos)
-		if not ok and #parts == 0 then
-			return
-		end
-		local text = if result and result.contents
-			then without_fences(hover_text(result.contents))
-			else ""
-		if string.match(text, "%S") then
-			table.insert(parts, text)
-		end
-		if #parts == 0 then
-			greed.echo("nothing to show here")
-			return
-		end
-		show_info("Hover", table.concat(parts, "\n\n"))
-	end,
-})
+	end
+	local ok, result = ask(ctx.buffer, "textDocument/hover", pos)
+	if not ok and #parts == 0 then
+		return
+	end
+	local text = if result and result.contents
+		then without_fences(hover_text(result.contents))
+		else ""
+	if string.match(text, "%S") then
+		table.insert(parts, text)
+	end
+	if #parts == 0 then
+		greed.echo("nothing to show here")
+		return
+	end
+	show_info("Hover", table.concat(parts, "\n\n"))
+end
 
--- Commands that go to where the language server says something under the
--- cursor is: its definition, declaration, type or implementation.
+-- Goes to where the language server says the thing under the cursor is,
+-- by `method`: its definition, declaration, type or implementation.
+local function go_to(ctx: greed.Context, method: string)
+	local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, ctx.view:cursor())
+	if not ok then
+		return
+	elseif err then
+		greed.echo(`{method}: {err.message}`)
+		return
+	end
+	-- A location, a list of locations or links (maybe empty), or nothing.
+	local target = if result and result[1] then result[1] else result
+	if target == nil or (target.uri == nil and target.targetUri == nil) then
+		greed.echo(`no {method} found`)
+		return
+	end
+	local uri = target.uri or target.targetUri
+	local range = target.range or target.targetSelectionRange
+	local path = greed.lsp.path(uri)
+	if path == nil then
+		greed.echo(`can't open {uri}`)
+		return
+	end
+	common.open_at(path, range.start)
+end
+
+-- What `hover` (space k) and `goto-definition` (g d) fall back on when no
+-- plugin knows better. They say what they found or why they couldn't, so
+-- they always answer.
+core.lookup.add("hover", function(ctx)
+	hover(ctx)
+	return true
+end, { fallback = true })
+core.lookup.add("definition", function(ctx)
+	go_to(ctx, "definition")
+	return true
+end, { fallback = true })
+
 for _, place in
 	{
-		{ "goto-definition", "definition", "defined" },
 		{ "goto-declaration", "declaration", "declared" },
 		{ "goto-type-definition", "typeDefinition", "its type is defined" },
 		{ "goto-implementation", "implementation", "implemented" },
@@ -110,27 +141,7 @@ do
 		name = name,
 		doc = `Go to where the thing under the cursor is {what}`,
 		run = function(ctx)
-			local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, ctx.view:cursor())
-			if not ok then
-				return
-			elseif err then
-				greed.echo(`{method}: {err.message}`)
-				return
-			end
-			-- A location, a list of locations or links (maybe empty), or nothing.
-			local target = if result and result[1] then result[1] else result
-			if target == nil or (target.uri == nil and target.targetUri == nil) then
-				greed.echo(`no {method} found`)
-				return
-			end
-			local uri = target.uri or target.targetUri
-			local range = target.range or target.targetSelectionRange
-			local path = greed.lsp.path(uri)
-			if path == nil then
-				greed.echo(`can't open {uri}`)
-				return
-			end
-			common.open_at(path, range.start)
+			go_to(ctx, method)
 		end,
 	})
 end
@@ -248,7 +259,6 @@ greed.lsp.on_request("window/showMessageRequest", function(params)
 end)
 
 greed.keymap.bind({ role = "command" }, {
-	["g d"] = "goto-definition",
 	["g D"] = "goto-declaration",
 	["g y"] = "goto-type-definition",
 	["g i"] = "goto-implementation",
@@ -259,7 +269,6 @@ greed.keymap.bind({ role = "command" }, {
 })
 
 greed.keymap.bind({ layer = "leader" }, {
-	k = "hover",
 	d = "pick-diagnostic",
 })
 
