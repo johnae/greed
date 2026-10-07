@@ -415,9 +415,15 @@ pub(super) fn view_closed(lua: &Lua, view: ViewId) -> LuaResult<()> {
     emit(lua, "view.closed", &payload)
 }
 
-/// Emits "buffer.changed" for `buffer`.
+/// Emits "buffer.changed" for `buffer`, with the lines that changed since
+/// plugins were last told. An edit that changed nothing isn't told.
 pub(super) fn buffer_changed(lua: &Lua, buffer: BufferId, author: &Author) -> LuaResult<()> {
+    let Some((from, to)) = state_mut(lua).editor.take_changed_lines(buffer) else {
+        return Ok(());
+    };
     let payload = lua.create_table()?;
+    payload.set("from_line", from)?;
+    payload.set("to_line", to)?;
     payload.set(
         "buffer",
         BufferRef {
@@ -526,57 +532,67 @@ fn span_table(lua: &Lua, span: &std::ops::Range<usize>) -> LuaResult<Table> {
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
 /// `{ from, to, style, line, text, eol, sign, gutter, above, overlay, ... }`.
 fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
-    methods.add_method("decorate", |lua, this, (ns, list): (String, Vec<Table>)| {
-        this.with_buffer(lua, |_| Ok(()))?;
-        let marks = list
-            .iter()
-            .map(|t| {
-                let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
-                    mlua::Error::runtime(
-                        "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
-                    )
-                })?;
-                let flag = |key: &str| -> LuaResult<bool> {
-                    Ok(t.get::<Option<bool>>(key)?.unwrap_or(false))
-                };
-                Ok(Mark {
-                    range: t.get("from")?..t.get("to")?,
-                    style: style.into(),
-                    line: flag("line")?,
-                    text: t.get::<Option<String>>("text")?.map(Into::into),
-                    eol: flag("eol")?,
-                    sign: t.get::<Option<String>>("sign")?.map(Into::into),
-                    gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
-                    above: flag("above")?,
-                    overlay: flag("overlay")?,
-                    conceal: flag("conceal")?,
-                    reveal: reveal_from_lua(t.get("reveal"))?,
-                    fold: flag("fold")?,
-                    lines: t
-                        .get::<Option<Vec<Value>>>("lines")?
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(virtual_line_from_lua)
-                        .collect::<LuaResult<_>>()?,
-                    image: t
-                        .get::<Option<Table>>("image")?
-                        .map(|i| mark_image_from_lua(&i))
-                        .transpose()?,
-                    action: t.get::<Option<String>>("action")?.map(Into::into),
-                    scale: scale_from_lua(t.get("scale"))?,
-                    data: match t.get::<Value>("data")? {
-                        Value::Nil => None,
-                        data => Some(lua.from_value(data)?),
-                    },
+    methods.add_method(
+        "decorate",
+        |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
+            this.with_buffer(lua, |_| Ok(()))?;
+            let marks = list
+                .iter()
+                .map(|t| {
+                    let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
+                        mlua::Error::runtime(
+                            "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
+                        )
+                    })?;
+                    let flag = |key: &str| -> LuaResult<bool> {
+                        Ok(t.get::<Option<bool>>(key)?.unwrap_or(false))
+                    };
+                    Ok(Mark {
+                        range: t.get("from")?..t.get("to")?,
+                        style: style.into(),
+                        line: flag("line")?,
+                        text: t.get::<Option<String>>("text")?.map(Into::into),
+                        eol: flag("eol")?,
+                        sign: t.get::<Option<String>>("sign")?.map(Into::into),
+                        gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
+                        above: flag("above")?,
+                        overlay: flag("overlay")?,
+                        conceal: flag("conceal")?,
+                        reveal: reveal_from_lua(t.get("reveal"))?,
+                        fold: flag("fold")?,
+                        lines: t
+                            .get::<Option<Vec<Value>>>("lines")?
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(virtual_line_from_lua)
+                            .collect::<LuaResult<_>>()?,
+                        image: t
+                            .get::<Option<Table>>("image")?
+                            .map(|i| mark_image_from_lua(&i))
+                            .transpose()?,
+                        action: t.get::<Option<String>>("action")?.map(Into::into),
+                        scale: scale_from_lua(t.get("scale"))?,
+                        data: match t.get::<Value>("data")? {
+                            Value::Nil => None,
+                            data => Some(lua.from_value(data)?),
+                        },
+                    })
                 })
-            })
-            .collect::<LuaResult<Vec<_>>>()?;
-        let by = super::capabilities::caller(lua, None);
-        let state = &mut *state_mut(lua);
-        state.owned.marked(this.buffer, &ns, by, marks.is_empty());
-        state.editor.decorate(this.buffer, &ns, marks);
-        Ok(())
-    });
+                .collect::<LuaResult<Vec<_>>>()?;
+            let within = within
+                .map(|t| -> LuaResult<_> {
+                    let to: Option<usize> = t.get("to")?;
+                    Ok(t.get::<usize>("from")?..to.unwrap_or(usize::MAX))
+                })
+                .transpose()?;
+            let by = super::capabilities::caller(lua, None);
+            let state = &mut *state_mut(lua);
+            state.editor.decorate_in(this.buffer, &ns, within, marks);
+            let cleared = state.editor.buffer(this.buffer).marks(&ns).is_empty();
+            state.owned.marked(this.buffer, &ns, by, cleared);
+            Ok(())
+        },
+    );
     methods.add_method("decorations", |lua, this, ns: String| {
         let marks = this.with_buffer(lua, |b| Ok(b.marks(&ns).to_vec()))?;
         let list = lua.create_table()?;
@@ -601,14 +617,15 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     });
 }
 
-/// A mark's `reveal`: "line" when not given, "cursor" or "never".
+/// A mark's `reveal`: "line" when not given, "cursor", "never" or "auto".
 fn reveal_from_lua(value: LuaResult<Option<String>>) -> LuaResult<Reveal> {
     match value?.as_deref() {
         None | Some("line") => Ok(Reveal::Line),
         Some("cursor") => Ok(Reveal::Cursor),
         Some("never") => Ok(Reveal::Never),
+        Some("auto") => Ok(Reveal::Auto),
         Some(_) => Err(mlua::Error::runtime(
-            "a mark's reveal is \"line\", \"cursor\" or \"never\"",
+            "a mark's reveal is \"line\", \"cursor\", \"never\" or \"auto\"",
         )),
     }
 }
@@ -644,6 +661,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
             Reveal::Line => "line",
             Reveal::Cursor => "cursor",
             Reveal::Never => "never",
+            Reveal::Auto => "auto",
         },
     )?;
     t.set("fold", mark.fold)?;
@@ -877,6 +895,9 @@ impl UserData for BufferRef {
         });
         methods.add_method("modified", |lua, this, ()| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))
+        });
+        methods.add_method("version", |lua, this, ()| {
+            this.with_buffer(lua, |b| Ok(b.history().applied()))
         });
         methods.add_method("close", |lua, this, ()| {
             this.with_buffer(lua, |_| Ok(()))?;

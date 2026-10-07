@@ -3,6 +3,7 @@
 -- to a web page, opened with the terminal plugin's `open-link`.
 
 local greed = require("@greed")
+local structure = require("./structure")
 
 local M = {}
 
@@ -40,15 +41,9 @@ end
 --- The target of the link `[text](target)` over `pos`, and where in the
 --- buffer the target starts.
 function M.at(buffer: greed.Buffer, pos: number): (string?, number?)
-	local start = buffer:line_start(buffer:line_of(pos))
-	local text = buffer:slice(start, buffer:line_end(buffer:line_of(pos)))
-	for from, inside, target, to in string.gmatch(text, "()%[[^%]]*%]%(()([^%)]*)%)()") do
-		if pos >= start + (from :: number) - 1 and pos < start + (to :: number) - 1 then
-			local lead = string.match(target :: string, "^%s*<?") or ""
-			local url = string.match(target :: string, "^%s*<?([^%s>]+)")
-			if url then
-				return url, start + (inside :: number) - 1 + #lead
-			end
+	for _, link in structure.of(buffer).links do
+		if pos >= link.from and pos < link.to then
+			return link.target, link.target_from
 		end
 	end
 	return nil, nil
@@ -64,10 +59,9 @@ end
 --- The line of the heading in `buffer` whose anchor is `anchor`.
 function M.heading(buffer: greed.Buffer, anchor: string): number?
 	local want = string.lower(decode(anchor))
-	for n = 0, buffer:line_count() - 1 do
-		local title = string.match(buffer:line_text(n), "^#+%s+(.-)%s*#*%s*$")
-		if title and M.slug(title) == want then
-			return n
+	for _, heading in structure.of(buffer).headings do
+		if M.slug(heading.text) == want then
+			return heading.line
 		end
 	end
 	return nil

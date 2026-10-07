@@ -21,11 +21,33 @@ require("@self/folds")
 local choices = require("@self/choices")
 local tables = require("@self/tables")
 local links = require("@self/links")
+local structure = require("@self/structure")
+local conceal = require("@self/conceal")
 
 local M = {}
 
 --- Choices, `- ( )` and `- (x)`: reading them and hearing picks.
 M.choices = choices
+
+export type Structure = structure.Structure
+export type Heading = structure.Heading
+export type Code = structure.Code
+export type Item = structure.Item
+export type Table = structure.Table
+export type Link = structure.Link
+export type Concealer = conceal.Concealer
+
+--- The structure of a buffer (kept until it changes) or of a file's
+--- text: its headings, code blocks, list items, tables and links.
+M.structure = structure.of
+
+--- Draws over the Markdown buffers a concealer wants, as they change, a
+--- few lines at a time; see conceal.luau.
+M.conceal = conceal.add
+
+-- When hidden markup shows: as the mode says (see `core.reveal`), or never
+-- in the reading view.
+type Reveal = "auto" | "never"
 
 greed.option.define({
 	name = "markdown-look",
@@ -74,7 +96,7 @@ type Line = {
 	text: string,
 	at: number,
 	out: { greed.Mark },
-	shows: "line" | "cursor" | "never",
+	shows: Reveal,
 	taken: { { number } },
 	reading: boolean,
 }
@@ -225,42 +247,43 @@ local function columns(text: string): number
 	return utf8.len(text) or #text
 end
 
--- The table whose header is line `n` of `buffer`, if one is: its marks go
--- in `out`. Returns its last line.
-local function table_at(
-	buffer: greed.Buffer,
-	n: number,
+-- The marks for table `found` of `s` go in `out`. False if its rows don't
+-- line up with its delimiter row after all.
+local function draw_table(
+	s: Structure,
+	found: structure.Table,
 	out: { greed.Mark },
-	shows: "line" | "cursor" | "never",
+	shows: Reveal,
 	read: boolean
-): number?
+): boolean
 	local function text_of(line: number): string
-		return buffer:line_text(line)
+		return s.lines[line + 1]
 	end
-	if n + 1 >= buffer:line_count() then
-		return nil
+	local n, last = found.first, found.last
+	if last == n then
+		return false
 	end
 	local header = tables.cells(text_of(n))
 	local aligns = tables.aligns(text_of(n + 1))
 	if header == nil or aligns == nil or #header ~= #aligns then
-		return nil
+		return false
 	end
 	local lines, texts = { n }, { text_of(n) }
-	local last = n + 1
-	while last + 1 < buffer:line_count() do
-		local text = text_of(last + 1)
-		if string.match(text, "^%s*$") or tables.cells(text) == nil then
-			break
-		end
-		last += 1
-		table.insert(lines, last)
-		table.insert(texts, text)
+	for row = n + 2, last do
+		table.insert(lines, row)
+		table.insert(texts, text_of(row))
 	end
 	local widths, rows = tables.layout(texts, aligns, function(text)
 		return columns(visible(text, read))
 	end)
+	local function line_start(line: number): number
+		return s.starts[line + 1]
+	end
+	local function line_end(line: number): number
+		return s.starts[line + 1] + #s.lines[line + 1]
+	end
 	local function line_of(number: number, text: string): Line
-		local at = buffer:line_start(number)
+		local at = line_start(number)
 		return { text = text, at = at, out = out, shows = shows, taken = {}, reading = read }
 	end
 	for r, row in rows do
@@ -299,19 +322,19 @@ local function table_at(
 	)
 	if n > 0 then
 		table.insert(out, {
-			from = buffer:line_start(n - 1),
-			to = buffer:line_end(n - 1),
+			from = line_start(n - 1),
+			to = line_end(n - 1),
 			style = "markdown.table",
 			lines = { tables.border(widths, "┌", "┬", "┐") },
 		})
 	end
 	table.insert(out, {
-		from = buffer:line_start(last),
-		to = buffer:line_end(last),
+		from = line_start(last),
+		to = line_end(last),
 		style = "markdown.table",
 		lines = { tables.border(widths, "└", "┴", "┘") },
 	})
-	return last
+	return true
 end
 
 -- The image `src` names, loaded for `read`, at its own size or as wide as
@@ -352,53 +375,46 @@ local function picture(
 	}
 end
 
--- The marks for `buffer`, in the reading view if `read` is given.
-local function marks(buffer: greed.Buffer, read: Reading?): { greed.Mark }
+-- The marks starting on lines `first` to `last` of `buffer`, whose
+-- structure is `s`, in the reading view if `read` is given.
+local function marks(
+	buffer: greed.Buffer,
+	s: Structure,
+	first: number,
+	last: number,
+	read: Reading?
+): { greed.Mark }
 	local out: { greed.Mark } = {}
 	local parts = claimed(buffer)
-	local shows: "line" | "cursor" | "never" = if read then "never" else core.reveal()
-	local fence: string? = nil
-	-- Lines already drawn as part of a table.
-	local done = -1
-	-- What code blocks look like: a block's output (```` ```result ````) a
-	-- little apart from code.
-	local block_style = "markdown.code.block"
-	for n = 0, buffer:line_count() - 1 do
-		if n <= done then
-			continue
-		end
-		local at = buffer:line_start(n)
-		local text = buffer:line_text(n)
+	local shows: Reveal = if read then "never" else "auto"
+	local n = first
+	while n <= last do
+		local at = s.starts[n + 1]
+		local text = s.lines[n + 1]
 		local line: Line =
 			{ text = text, at = at, out = out, shows = shows, taken = {}, reading = read ~= nil }
-		local ticks = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
-		if fence == nil and ticks then
-			block_style = if string.match(text, "^%s*[`~]+%s*result")
+		n += 1
+		local block = s.code_at[n - 1]
+		if block then
+			-- A block's output (```` ```result ````) looks a little apart
+			-- from code.
+			local style = if string.find(block.info, "^result")
 				then "markdown.code.block.result"
 				else "markdown.code.block"
-		end
-		if fence or ticks then
-			table.insert(out, { from = at, to = at + #text, style = block_style, line = true })
-			local closes = fence
-				and ticks
-				and string.sub(ticks, 1, 1) == string.sub(fence, 1, 1)
-				and #ticks >= #fence
-			if fence == nil or closes then
+			table.insert(out, { from = at, to = at + #text, style = style, line = true })
+			if n - 1 == block.open or (n - 1 == block.close and block.closed) then
 				if read then
 					hide(line, 1, #text)
 				else
 					paint(line, 1, #text, "markdown.fence")
 				end
-				fence = if fence == nil then ticks else nil
 			end
 			continue
 		end
-		if string.find(text, "|", 1, true) then
-			local last = table_at(buffer, n, out, shows, read ~= nil)
-			if last then
-				done = last
-				continue
-			end
+		local found = s.table_at[n - 1]
+		if found and draw_table(s, found, out, shows, read ~= nil) then
+			n = found.last + 1
+			continue
 		end
 		-- An image on a line of its own shows in place, reading.
 		local alt, src = string.match(text, "^%s*!%[([^%]]*)%]%(%s*<?([^%s>%)]+)[^%)]*%)%s*$")
@@ -420,11 +436,11 @@ local function marks(buffer: greed.Buffer, read: Reading?): { greed.Mark }
 		end
 		-- Outside code, text is prose: in the window, in the prose font.
 		paint(line, 1, #text, "markdown.text")
-		local hashes, space = string.match(text, "^(#+)()%s")
+		local heading = s.heading_at[n - 1]
+		local item = s.item_at[n - 1]
 		local quote = string.match(text, "^%s*>%s?()")
-		local bullet = string.match(text, "^%s*()[-*+]%s")
 		local choice, picked = string.match(text, "^%s*()[-*+] %(([ xX])%) ")
-		if choice then
+		if choice and item then
 			-- A choice, `- ( )` or `- (x)`: a button that picks it.
 			local chosen = picked ~= " "
 			table.insert(out, {
@@ -439,26 +455,39 @@ local function marks(buffer: greed.Buffer, read: Reading?): { greed.Mark }
 			inline(line)
 			continue
 		end
-		if
-			string.match(text, "^%s*([-*_])%s*%1%s*%1[%s%-*_]*$") and not string.match(text, "%w")
-		then
-			hide(line, 1, #text, string.rep("─", 40), "markdown.rule")
-			continue
-		elseif hashes and #hashes <= 6 and not parts.headings then
-			local level = #hashes
-			hide(line, 1, space :: number)
+		if heading and heading.underlined and not parts.headings then
+			if n - 1 == heading.last then
+				hide(line, 1, #text, string.rep("─", 40), "markdown.rule")
+				continue
+			end
 			paint(
 				line,
-				(space :: number) + 1,
+				1,
 				#text,
-				`markdown.heading.{level}`,
-				if level == 1 then 2 else nil
+				`markdown.heading.{heading.level}`,
+				if heading.level == 1 then 2 else nil
 			)
+		elseif heading and not heading.underlined and not parts.headings then
+			-- The #s and the space after them go.
+			local start = heading.from - at + 1
+			local words = string.find(text, "[^#%s]", start) or #text + 1
+			hide(line, start, words - 1)
+			paint(
+				line,
+				words,
+				#text,
+				`markdown.heading.{heading.level}`,
+				if heading.level == 1 then 2 else nil
+			)
+		elseif structure.rule(text) and not heading then
+			hide(line, 1, #text, string.rep("─", 40), "markdown.rule")
+			continue
 		elseif quote then
 			hide(line, 1, (quote :: number) - 1, "▎ ", "markdown.quote.bar")
 			paint(line, quote :: number, #text, "markdown.quote")
-		elseif bullet and not parts.bullets then
-			hide(line, bullet :: number, (bullet :: number) + 1, "• ", "markdown.bullet")
+		elseif item and not parts.bullets and string.find(item.bullet, "^[-*+]$") then
+			local bullet = item.from - at + 1
+			hide(line, bullet, bullet + 1, "• ", "markdown.bullet")
 		end
 		inline(line)
 	end
@@ -478,22 +507,24 @@ local function look(buffer: greed.Buffer): boolean
 	return greed.option.get("markdown-look") == true
 end
 
-local function draw(buffer: greed.Buffer)
-	local read = reading[buffer:id()]
-	if not is_markdown(buffer) or not (read or look(buffer)) then
-		if buffer:valid() then
-			buffer:decorate("markdown", {})
-		end
-		return
-	end
-	buffer:decorate("markdown", marks(buffer, read))
-end
+local redraw = conceal.add({
+	ns = "markdown",
+	wants = function(buffer: greed.Buffer): boolean
+		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
+	end,
+	draw = function(
+		buffer: greed.Buffer,
+		s: Structure,
+		first: number,
+		last: number
+	): { greed.Mark }
+		return marks(buffer, s, first, last, reading[buffer:id()])
+	end,
+})
 
 --- Draws every Markdown buffer again.
 function M.refresh()
-	for _, buffer in greed.buffers() do
-		draw(buffer)
-	end
+	redraw()
 end
 
 --- Lets `claim` say, for each buffer, which parts it draws its own way;
@@ -536,7 +567,7 @@ greed.command({
 		else
 			looks[buffer:id()] = on
 		end
-		draw(buffer)
+		redraw(buffer)
 		greed.echo(
 			if on then "Markdown look on for this file" else "Markdown look off for this file"
 		)
@@ -560,7 +591,7 @@ local function start_reading(buffer: greed.Buffer)
 	}
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
-	draw(buffer)
+	redraw(buffer)
 end
 
 -- Stops reading buffer `id`, letting its images go.
@@ -587,7 +618,7 @@ local function stop_reading()
 		local read = forget(id) :: Reading
 		read.buffer:set_readonly(read.readonly)
 		read.buffer:set_line_numbers(read.numbers)
-		draw(read.buffer)
+		redraw(read.buffer)
 	end
 end
 
@@ -667,24 +698,16 @@ greed.keymap.bind(
 )
 greed.keymap.bind("edit", { ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" })
 
-local function on_buffer(event: greed.BufferChanged)
-	draw(event.buffer)
-end
-
-greed.on("buffer.opened", on_buffer)
-greed.on("buffer.changed", on_buffer)
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	looks[event.id] = nil
 	forget(event.id)
 end)
--- Typing shows markup as written, so it's drawn again as modes change.
 greed.on("mode.changed", function(event: greed.ModeChanged)
 	-- Back in a style's own mode some other way (another style, say), the
 	-- reading is over.
 	if event.to ~= "read" and core.style.is_home(event.to) then
 		stop_reading()
 	end
-	M.refresh()
 end)
 greed.on("option.changed", function(event)
 	if event.name == "markdown-look" then
@@ -694,7 +717,7 @@ end)
 -- Images fit the view again when it's resized.
 greed.on("view.resized", function(event: greed.ViewResized)
 	if reading[event.view:buffer():id()] then
-		draw(event.view:buffer())
+		redraw(event.view:buffer())
 	end
 end)
 

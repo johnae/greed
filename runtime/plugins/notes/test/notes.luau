@@ -184,6 +184,39 @@ test("markup in notes shows as symbols, as written only while typing on its line
 	assert(styles["notes.overdue"] and styles["notes.done"], "overdue and done have their styles")
 end)
 
+test("+ items are bullets too, and code blocks keep their markup", function(t)
+	local rows = shown(t, "+ milk\n```sh\n# comment\n- [ ] not a todo\n```\n- eggs")
+	assert(rows[1] == "• milk", rows[1])
+	assert(rows[3] == "# comment", `no heading in code: {rows[3]}`)
+	assert(rows[4] == "- [ ] not a todo", `no box in code: {rows[4]}`)
+	assert(rows[6] == "• eggs", rows[6])
+end)
+
+test("a fence typed above makes the lines after it code, and taking it out undoes that", function(t)
+	shown(t, "intro\n\n# Plans\n- [ ] call\n\n- milk")
+	local buffer = greed.view():buffer()
+	buffer:edit(function(e)
+		e:insert(6, "```\n")
+	end)
+	local rows = t:draw(50, 8)
+	assert(rows[4] == "# Plans" and rows[5] == "- [ ] call" and rows[7] == "- milk", rows[4])
+	buffer:edit(function(e)
+		e:delete(6, 10)
+	end)
+	rows = t:draw(50, 8)
+	assert(rows[3] == "◉ Plans" and rows[4] == "☐ call" and rows[6] == "• milk", rows[3])
+end)
+
+test("todos in code blocks aren't todos", function(t)
+	folder(t, { ["a.md"] = "- [ ] real\n```\n- [ ] example\n```\n+ [ ] plus\n" })
+	local texts: { string } = {}
+	for _, todo in run_tool("notes_todos") do
+		table.insert(texts, todo.text)
+	end
+	table.sort(texts)
+	assert(#texts == 2 and texts[1] == "plus" and texts[2] == "real", table.concat(texts, ", "))
+end)
+
 test("clicking a todo's box ticks it, and it stays a box", function(t)
 	shown(t, "- [ ] call the bank\n\n")
 	t:mouse("press", 0, 0)

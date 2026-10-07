@@ -1,5 +1,6 @@
 local test = require("@greed/test")
 local greed = require("@greed")
+local markdown = require("@markdown")
 
 -- `text` open as a Markdown file with the cursor at its end (on a line of
 -- its own), drawn without line numbers. Returns the rows.
@@ -404,4 +405,169 @@ test("reading, an image on its own line shows in place", function(t)
 	for _, mark in buffer:decorations("markdown") do
 		assert(mark.image == nil, "gone when editing")
 	end
+end)
+
+test("a # line in a code block is code, not a heading, and doesn't end a section", function(t)
+	local rows = shown(t, "# Setup\n\n```sh\n# install it\nmake\n```\n\nmore\n\n# Use")
+	assert(table.find(rows, "# install it"), table.concat(rows, "|"))
+	assert(#styled("markdown.heading.1") == 2, "two headings")
+	local start = greed.view():buffer():line_start(7)
+	greed.view():set_selection({ ranges = { { anchor = start, head = start } }, primary = 1 })
+	t:keys("tab")
+	assert(hidden() == "1-7", "the whole section: " .. hidden())
+end)
+
+local SAMPLE = table.concat({
+	"# Title",
+	"",
+	"Underlined",
+	"==========",
+	"",
+	"```lua",
+	"# not a heading",
+	"- not an item",
+	"```",
+	"",
+	"- [ ] todo with [a link](other.md#part)",
+	"  + [x] done",
+	"* star",
+	"1. numbered",
+	"",
+	"| a | b |",
+	"|---|---|",
+	"| 1 | 2 |",
+	"",
+	"> # quoted heading",
+	"",
+	"Some `[code](x)` and ![an image](pic.png).",
+	"",
+	"~~~",
+	"open to the end",
+}, "\n")
+
+-- What a structure says, as text to compare.
+local function summary(s: markdown.Structure): string
+	local parts: { string } = {}
+	for _, h in s.headings do
+		table.insert(parts, `h{h.level} {h.line}-{h.last} {h.text} @{h.from}`)
+	end
+	for _, c in s.code do
+		table.insert(
+			parts,
+			`code {c.open}-{c.close} {c.closed} [{c.info}] {c.lang} {c.from}-{c.to} {c.code_from}-{c.code_to}`
+		)
+	end
+	for _, i in s.items do
+		table.insert(parts, `item {i.line}-{i.last} {i.bullet} [{i.check or ""}] @{i.from}`)
+	end
+	for _, tbl in s.tables do
+		table.insert(parts, `table {tbl.first}-{tbl.last}`)
+	end
+	for _, l in s.links do
+		table.insert(
+			parts,
+			`link {l.line} {l.from}-{l.to} {l.text} {l.target} {l.target_from} {l.image}`
+		)
+	end
+	return table.concat(parts, "\n")
+end
+
+test("the structure has headings, code, items, tables and links, tree or no tree", function(t)
+	shown(t, SAMPLE)
+	local buffer = greed.view():buffer()
+	assert(buffer:tree(), "a syntax tree")
+	local s = markdown.structure(buffer)
+	local want = table.concat({
+		"h1 0-0 Title @0",
+		"h1 2-3 Underlined @9",
+		"h1 19-19 quoted heading @180",
+		"code 5-8 true [lua] lua 32-72 39-68",
+		"code 23-25 false []  242-262 246-262",
+		"item 10-11 - [ ] @74",
+		"item 11-11 + [x] @116",
+		"item 12-12 * [] @127",
+		"item 13-13 1. [] @134",
+		"table 15-17",
+		"link 10 90-113 a link other.md#part 99 false",
+		"link 21 219-239 an image pic.png 231 true",
+	}, "\n")
+	assert(summary(s) == want, summary(s))
+	assert(markdown.structure(buffer) == s, "kept while the buffer doesn't change")
+	-- Read from the text alone, line by line, it's the same.
+	local scanned = markdown.structure(buffer:text())
+	assert(summary(scanned) == want, summary(scanned))
+	buffer:edit(function(e)
+		e:insert(0, "x")
+	end)
+	assert(markdown.structure(buffer) ~= s, "worked out again after an edit")
+end)
+
+-- The marks in namespace `ns`, sorted, as text to compare.
+local function marks_of(ns: string): string
+	local out: { string } = {}
+	for _, mark in greed.view():buffer():decorations(ns) do
+		table.insert(
+			out,
+			`{mark.from}-{mark.to} {mark.style} {mark.text or ""} {mark.conceal} {#(mark.lines or {})}`
+		)
+	end
+	table.sort(out)
+	return table.concat(out, "\n")
+end
+
+test("after an edit only what changed is read and drawn again, as if all of it was", function(t)
+	shown(t, SAMPLE)
+	local buffer = greed.view():buffer()
+	-- Each edit: the line it's on, where in the line, how much it replaces
+	-- and with what.
+	local edits: { { line: number, at: number, len: number, text: string } } = {
+		-- A fence opening makes the rest of the file code, and taking it
+		-- out again doesn't.
+		{ line = 0, at = 0, len = 0, text = "```\n" },
+		{ line = 0, at = 0, len = 4, text = "" },
+		{ line = 9, at = 0, len = 0, text = "```\n" },
+		{ line = 9, at = 0, len = 4, text = "" },
+		-- A wider cell widens the whole table.
+		{ line = 17, at = 2, len = 0, text = "wide" },
+		-- Text under a line makes it a heading.
+		{ line = 1, at = 0, len = 0, text = "Now a heading\n---" },
+		-- An indented line goes on with the list item above it.
+		{ line = 15, at = 0, len = 0, text = "  more of it\n" },
+		-- A closing fence ends the code block that went to the end.
+		{ line = 27, at = 0, len = 0, text = "~~~\n# after\n" },
+		-- Lines go.
+		{ line = 9, at = 0, len = 40, text = "" },
+	}
+	for i, edit in edits do
+		local from = buffer:line_start(math.min(edit.line, buffer:line_count() - 1)) + edit.at
+		buffer:edit(function(e)
+			e:replace(from, math.min(from + edit.len, buffer:len()), edit.text)
+		end)
+		local read = summary(markdown.structure(buffer))
+		local whole = summary(markdown.structure(buffer:text()))
+		assert(read == whole, `edit {i}:\n{read}\n---\n{whole}`)
+		local partly = marks_of("markdown")
+		markdown.refresh()
+		local all = marks_of("markdown")
+		assert(partly == all, `edit {i}:\n{partly}\n---\n{all}`)
+	end
+end)
+
+test("buffer.changed says which lines changed", function(t)
+	t:buffer("a\nb\nc\nd|")
+	local seen: { { number? } } = {}
+	local function hear(event: greed.BufferChanged)
+		table.insert(seen, { event.from_line, event.to_line })
+	end
+	greed.on("buffer.changed", hear)
+	local buffer = greed.view():buffer()
+	buffer:edit(function(e)
+		e:insert(buffer:line_start(2), "new\n")
+	end)
+	buffer:edit(function(e)
+		e:delete(buffer:line_start(1), buffer:line_start(2))
+	end)
+	greed.off("buffer.changed", hear)
+	assert(seen[1][1] == 2 and seen[1][2] == 3, `{seen[1][1]}-{seen[1][2]}`)
+	assert(seen[2][1] == 1 and seen[2][2] == 1, `{seen[2][1]}-{seen[2][2]}`)
 end)

@@ -442,6 +442,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("quit", quit_function(lua)?)?;
 
     greed.set("line_numbers", line_numbers_function(lua)?)?;
+    greed.set("reveal", reveal_function(lua)?)?;
 
     greed.set(
         "eval",
@@ -1613,6 +1614,25 @@ fn line_numbers_function(lua: &Lua) -> LuaResult<Function> {
             }
         };
         state_mut(lua).editor.set_line_numbers_style(style);
+        Ok(())
+    })
+}
+
+/// `greed.reveal(how)`: when marks with `reveal = "auto"` show what they
+/// hide.
+fn reveal_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, how: String| {
+        let reveal = match how.as_str() {
+            "line" => crate::Reveal::Line,
+            "cursor" => crate::Reveal::Cursor,
+            "never" => crate::Reveal::Never,
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "reveal is \"line\", \"cursor\" or \"never\", not {other:?}"
+                )));
+            }
+        };
+        state_mut(lua).editor.set_reveal(reveal);
         Ok(())
     })
 }

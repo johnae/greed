@@ -96,6 +96,32 @@ impl ChangeSet {
         self.ops.iter().all(|op| matches!(op, Operation::Retain(_)))
     }
 
+    /// The bytes of the document after applying this change set that it
+    /// inserted, from the first change to the end of the last one: empty
+    /// where it only deleted, `None` when it changes nothing.
+    pub fn changed_range(&self) -> Option<std::ops::Range<usize>> {
+        let mut new = 0;
+        let mut first = None;
+        for op in &self.ops {
+            let start = new;
+            match op {
+                Operation::Retain(n) => {
+                    new += n;
+                    continue;
+                }
+                Operation::Delete(_) => {}
+                Operation::Insert(text) => new += text.len(),
+            }
+            first.get_or_insert(start);
+        }
+        // Trailing retains don't count: the range ends after the last change.
+        let mut end = new;
+        if let Some(Operation::Retain(n)) = self.ops.last() {
+            end -= n;
+        }
+        first.map(|start| start..end)
+    }
+
     pub fn retain(&mut self, n: usize) {
         if n == 0 {
             return;

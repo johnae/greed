@@ -48,7 +48,7 @@ export type Reminder = {
 
 --- Every reminder in the notes, on lines that aren't ticked todos.
 function M.scan(): { Reminder }
-	local found: { notes.Found } = notes.grep("remind:\\d{4}-\\d{2}-\\d{2}") or {}
+	local found: { notes.Found } = notes.grep_text("remind:\\d{4}-\\d{2}-\\d{2}") or {}
 	local out: { Reminder } = {}
 	local default = greed.option.get("notes-remind-time") :: string
 	for _, line in found do
@@ -57,7 +57,7 @@ function M.scan(): { Reminder }
 		local time: string = said or default
 		local at = if date then dates.moment(date, time) else nil
 		if not done and date and at then
-			local text = todos.plain(rest or (string.gsub(line.text, "^%s*[-*] ", "")))
+			local text = todos.plain(rest or (string.gsub(line.text, "^%s*[-*+] ", "")))
 			table.insert(out, {
 				note = line.note,
 				line = line.line,

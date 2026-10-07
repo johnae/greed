@@ -43,6 +43,8 @@ pub struct Buffer {
     /// Places plugins follow through edits, by id.
     tracked: HashMap<TrackId, Tracked>,
     next_track: u64,
+    /// The text edits changed since plugins were last told, as it is now.
+    changed: Option<Range<usize>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -122,6 +124,9 @@ pub enum Reveal {
     Cursor,
     /// Never.
     Never,
+    /// As the editor says for all such marks at once, e.g. on its line
+    /// only while typing (see [`crate::Editor::set_reveal`]).
+    Auto,
 }
 
 /// A line a mark shows under the text: drawn in the mark's style, with
@@ -175,6 +180,7 @@ impl Buffer {
             marks: BTreeMap::new(),
             tracked: HashMap::new(),
             next_track: 0,
+            changed: None,
         }
     }
 
@@ -199,6 +205,15 @@ impl Buffer {
                 })
                 .map(move |m| (&**ns, m))
         })
+    }
+
+    /// Replaces the marks in namespace `ns` that start within `range` with
+    /// `marks`, keeping the rest.
+    pub(crate) fn set_marks_in(&mut self, ns: &str, range: &Range<usize>, marks: Vec<Mark>) {
+        let mut kept = self.marks.remove(ns).unwrap_or_default();
+        kept.retain(|m| !range.contains(&m.range.start));
+        kept.extend(marks);
+        self.set_marks(ns, kept);
     }
 
     /// Replaces the marks in namespace `ns`.
@@ -253,6 +268,28 @@ impl Buffer {
             });
         }
         self.marks.retain(|_, marks| !marks.is_empty());
+    }
+
+    /// Adds what `changes` changed to the text plugins haven't been told
+    /// about, moving what was there through them.
+    fn note_changed(&mut self, changes: &ChangeSet) {
+        let Some(new) = changes.changed_range() else {
+            return;
+        };
+        self.changed = Some(match self.changed.take() {
+            Some(old) => {
+                let start = changes.map_pos(old.start, Assoc::Before);
+                let end = changes.map_pos(old.end, Assoc::After);
+                start.min(new.start)..end.max(new.end)
+            }
+            None => new,
+        });
+    }
+
+    /// The text edits changed since this was last called, as it is now, or
+    /// `None` if they changed nothing.
+    pub fn take_changed(&mut self) -> Option<Range<usize>> {
+        self.changed.take()
     }
 
     #[must_use]
@@ -407,6 +444,7 @@ impl Buffer {
         let after = (current.is_some() || tx.selection.is_some()).then_some(mapped);
         let inverse = tx.changes.invert(&before)?;
         self.map_marks(&tx.changes);
+        self.note_changed(&tx.changes);
         self.version = SmallVec::from_buf([tx.meta.id]);
         self.history
             .commit(tx, inverse, current.cloned(), after.clone());
@@ -463,6 +501,7 @@ impl Buffer {
         let inverse = tx.changes.invert(&self.text)?;
         let selection = tx.apply(&mut self.text, current)?;
         self.map_marks(&tx.changes);
+        self.note_changed(&tx.changes);
         self.version = SmallVec::from_buf([id]);
         self.history.record(tx, inverse);
         Ok(selection)

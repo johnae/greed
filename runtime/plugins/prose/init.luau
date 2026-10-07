@@ -9,6 +9,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local markdown = require("@markdown")
 
 type Buffer = greed.Buffer
 type Range = greed.Range
@@ -71,29 +72,11 @@ local function select_sentence(buffer: Buffer, range: Range, around: boolean): R
 	return { anchor = from, head = if around then skip_spaces(buffer, to) else to }
 end
 
--- Heading levels (the number of #s) by line, leaving out lines in fenced code.
+-- Heading levels by line, leaving out lines in code blocks.
 local function headings(buffer: Buffer): { [number]: number }
 	local found = {}
-	local fence: string? = nil
-	for line = 0, buffer:line_count() - 1 do
-		local text = buffer:line_text(line)
-		local marker = string.match(text, "^%s*(```+)") or string.match(text, "^%s*(~~~+)")
-		if fence then
-			if
-				marker
-				and string.sub(marker, 1, 1) == string.sub(fence, 1, 1)
-				and #marker >= #fence
-			then
-				fence = nil
-			end
-		elseif marker then
-			fence = marker
-		else
-			local hashes = string.match(text, "^(#+)%s")
-			if hashes then
-				found[line] = #hashes
-			end
-		end
+	for _, heading in markdown.structure(buffer).headings do
+		found[heading.line] = heading.level
 	end
 	return found
 end

@@ -16,7 +16,6 @@
 --     require("@greed").theme.set({ ["notes.tag"] = { fg = "magenta" } })
 
 local greed = require("@greed")
-local core = require("@core")
 local markdown = require("@markdown")
 local notes = require("./notes")
 local todos = require("./todos")
@@ -38,9 +37,12 @@ local function due_style(date: string): string
 	return "notes.due"
 end
 
--- The marks for one line of text starting at `at`.
-local function line_marks(text: string, at: number, out: { greed.Mark })
-	local shows: "line" | "cursor" | "never" = core.reveal()
+-- The marks for line `n` of a note whose structure is `s`.
+local function line_marks(s: markdown.Structure, n: number, out: { greed.Mark })
+	if s.code_at[n] then
+		return
+	end
+	local text, at = s.lines[n + 1], s.starts[n + 1]
 	local function show(
 		from: number,
 		to: number,
@@ -54,38 +56,49 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 			style = style,
 			text = replacement,
 			conceal = true,
-			reveal = shows,
+			reveal = "auto" :: "auto",
 			action = action,
 		})
 	end
 	local symbols = notes.look.symbols
-	local indent, box, rest = string.match(text, "^(%s*)[-*] %[([ xX])%] ()")
-	local hashes = string.match(text, "^(#+) ")
-	if box then
-		local done = box ~= " "
-		local box_end = (rest :: number) - 1
+	local item, heading = s.item_at[n], s.heading_at[n]
+	local col = if item then item.from - at else 0
+	if item and item.check then
+		local done = item.check ~= " "
+		-- The bullet, the box and a space after it.
+		local _, box_end = string.find(text, "^[-*+]%s+%[[ xX]%]%s?", col + 1)
 		local symbol = if done then symbols.done else symbols.todo
 		show(
-			#(indent :: string),
-			box_end,
+			col,
+			box_end :: number,
 			symbol .. " ",
 			if done then "notes.done.box" else "notes.todo",
 			"todo-toggle"
 		)
 		if done then
-			table.insert(out, { from = at + box_end, to = at + #text, style = "notes.done" })
+			table.insert(
+				out,
+				{ from = at + (box_end :: number), to = at + #text, style = "notes.done" }
+			)
 		end
-	elseif hashes then
-		local level = math.min(#hashes, #symbols.headings)
-		show(0, #hashes + 1, symbols.headings[level] .. " ", "notes.heading", "fold-toggle")
-	else
+	elseif heading and not heading.underlined then
+		local level = math.min(heading.level, #symbols.headings)
+		local from = heading.from - at
+		local _, marker_end = string.find(text, "^#+%s?", from + 1)
+		show(
+			from,
+			marker_end :: number,
+			symbols.headings[level] .. " ",
+			"notes.heading",
+			"fold-toggle"
+		)
+	elseif
+		item
+		and string.find(item.bullet, "^[-*+]$")
 		-- Choices, `- ( )`, are Markdown's to draw.
-		local spaces = if string.match(text, "^%s*[-*] %([ xX]%) ")
-			then nil
-			else string.match(text, "^(%s*)[-*] ")
-		if spaces then
-			show(#spaces, #spaces + 2, symbols.bullet .. " ", "notes.bullet")
-		end
+		and not string.find(text, "^[-*+] %([ xX]%) ", col + 1)
+	then
+		show(col, col + 2, symbols.bullet .. " ", "notes.bullet")
 	end
 	for from, date, to in string.gmatch(text, "()due:(%d%d%d%d%-%d%d%-%d%d)()") do
 		local day = date :: string
@@ -121,39 +134,31 @@ local function line_marks(text: string, at: number, out: { greed.Mark })
 	end
 end
 
-local function mark(buffer: greed.Buffer)
-	if not notes.is_note(buffer) or greed.option.get("notes-conceal") ~= true then
-		buffer:decorate("notes-look", {})
-		return
-	end
-	local marks: { greed.Mark } = {}
-	for line = 0, buffer:line_count() - 1 do
-		local start = buffer:line_start(line)
-		line_marks(buffer:line_text(line), start, marks)
-	end
-	buffer:decorate("notes-look", marks)
-end
+local redraw = markdown.conceal({
+	ns = "notes-look",
+	wants = function(buffer: greed.Buffer): boolean
+		return notes.is_note(buffer) and greed.option.get("notes-conceal") == true
+	end,
+	draw = function(
+		_buffer: greed.Buffer,
+		s: markdown.Structure,
+		first: number,
+		last: number
+	): { greed.Mark }
+		local marks: { greed.Mark } = {}
+		for n = first, last do
+			line_marks(s, n, marks)
+		end
+		return marks
+	end,
+})
 
 --- Draws every open note again, as after changing symbols or rules.
 function M.refresh()
-	for _, buffer in greed.buffers() do
-		mark(buffer)
-	end
+	redraw()
 end
 
 notes.look.changed = M.refresh
-
-local function on_buffer(event: greed.BufferChanged)
-	pcall(mark, event.buffer)
-end
-
-greed.on("buffer.opened", on_buffer)
-greed.on("buffer.changed", on_buffer)
-
--- Typing shows markup as written, so it's drawn again as modes change.
-greed.on("mode.changed", function()
-	M.refresh()
-end)
 
 -- Notes draw headings and bullets as symbols; the Markdown plugin draws
 -- the rest of their markup.

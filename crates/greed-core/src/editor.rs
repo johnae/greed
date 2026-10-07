@@ -12,7 +12,7 @@ use greed_text::{
 use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error, GroupState, Mark, TrackId};
+use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId};
 
 mod panes;
 pub use panes::{Tab, TabId};
@@ -309,6 +309,8 @@ pub struct Editor {
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     /// How line numbers count, where buffers show them.
     line_numbers: LineNumbers,
+    /// When marks whose `reveal` is `Auto` show the text they hide.
+    reveal: Reveal,
     file_types: FileTypes,
     theme: Arc<Theme>,
     /// The menus for a window's menu bar, as plugins set them.
@@ -350,6 +352,7 @@ impl Editor {
             notices: Vec::new(),
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
+            reveal: Reveal::Line,
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
             menus: Vec::new(),
@@ -524,7 +527,19 @@ impl Editor {
     }
 
     /// Replaces `buffer`'s marks in namespace `ns`, clamping them to its text.
-    pub fn decorate(&mut self, buffer: BufferId, ns: &str, mut marks: Vec<Mark>) {
+    pub fn decorate(&mut self, buffer: BufferId, ns: &str, marks: Vec<Mark>) {
+        self.decorate_in(buffer, ns, None, marks);
+    }
+
+    /// Like [`Editor::decorate`], but with `within` replaces only the marks
+    /// in `ns` that start there.
+    pub fn decorate_in(
+        &mut self,
+        buffer: BufferId,
+        ns: &str,
+        within: Option<std::ops::Range<usize>>,
+        mut marks: Vec<Mark>,
+    ) {
         let Some(b) = self.buffers.get_mut(&buffer) else {
             return;
         };
@@ -533,7 +548,10 @@ impl Editor {
             let end = mark.range.end.min(len);
             mark.range = mark.range.start.min(end)..end;
         }
-        b.set_marks(ns, marks);
+        match within {
+            Some(range) => b.set_marks_in(ns, &range, marks),
+            None => b.set_marks(ns, marks),
+        }
     }
 
     /// Starts following `range` of `buffer` through edits; see [`crate::Tracked`].
@@ -824,6 +842,20 @@ impl Editor {
         self.buffers.get(&id)
     }
 
+    /// The first and last line (0-based, as the text is now) of what edits
+    /// changed in buffer `id` since this was last called for it; `None` when
+    /// they changed nothing, or without the buffer.
+    pub fn take_changed_lines(&mut self, id: BufferId) -> Option<(usize, usize)> {
+        let buffer = self.buffers.get_mut(&id)?;
+        let range = buffer.take_changed()?;
+        let text = buffer.text();
+        let len = text.len_bytes();
+        Some((
+            text.byte_to_line(range.start.min(len)),
+            text.byte_to_line(range.end.min(len)),
+        ))
+    }
+
     /// The view with `id`, if it's still open.
     pub fn find_view(&self, id: ViewId) -> Option<&View> {
         self.views.get(&id)
@@ -1108,6 +1140,23 @@ impl Editor {
 
     pub fn set_line_numbers_style(&mut self, style: LineNumbers) {
         self.line_numbers = style;
+    }
+
+    /// When concealing marks whose `reveal` is [`Reveal::Auto`] show their
+    /// text; never `Auto` itself.
+    pub fn reveal(&self) -> Reveal {
+        self.reveal
+    }
+
+    /// Sets when concealing marks whose `reveal` is [`Reveal::Auto`] show
+    /// their text, e.g. on their line while typing and never otherwise.
+    /// `Auto` is taken as `Line`.
+    pub fn set_reveal(&mut self, reveal: Reveal) {
+        self.reveal = if reveal == Reveal::Auto {
+            Reveal::Line
+        } else {
+            reveal
+        };
     }
 
     /// The cursor shape for the current mode.

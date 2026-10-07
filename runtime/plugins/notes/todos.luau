@@ -24,7 +24,7 @@ local M = {}
 
 --- The todo on `line` (a line of text), if it is one.
 function M.parse(line: string): (boolean?, string?)
-	local box, text = string.match(line, "^%s*[-*] %[([ xX])%] (.*)$")
+	local box, text = string.match(line, "^%s*[-*+] %[([ xX])%] (.*)$")
 	if box == nil then
 		return nil, nil
 	end
@@ -89,7 +89,7 @@ end
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
-	local found: { Found } = notes.grep("^\\s*[-*] \\[[ xX]\\] ") or {}
+	local found: { Found } = notes.grep_text("^\\s*[-*+] \\[[ xX]\\] ") or {}
 	local out: { Todo } = {}
 	for _, line in found do
 		local done, text = M.parse(line.text)
@@ -170,7 +170,7 @@ greed.command({
 				else
 					local indent = string.match(text, "^%s*") :: string
 					local rest = string.sub(text, #indent + 1)
-					local item = string.match(rest, "^[-*] ") and "" or "- "
+					local item = string.match(rest, "^[-*+] ") and "" or "- "
 					local bullet = if item == "" then 2 else 0
 					e:insert(start + #indent + bullet, item .. "[ ] ")
 				end

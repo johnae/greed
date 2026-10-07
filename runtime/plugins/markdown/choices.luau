@@ -13,6 +13,7 @@
 
 local greed = require("@greed")
 local registry = require("@core").registry
+local structure = require("./structure")
 
 local M = {}
 
@@ -35,13 +36,18 @@ function M.list(buffer: greed.Buffer): { Group }
 	local groups: { Group } = {}
 	local current: Group? = nil
 	local indent: string? = nil
-	for n = 0, buffer:line_count() - 1 do
-		local spaces, mark, rest = choice_of(buffer:line_text(n))
+	local s = structure.of(buffer)
+	for i, text in s.lines do
+		local n = i - 1
+		local spaces, mark, rest = nil :: string?, nil :: string?, nil :: string?
+		if s.item_at[n] then
+			spaces, mark, rest = choice_of(text)
+		end
 		if spaces and mark and rest then
 			if current == nil or spaces ~= indent then
 				local question: string? = nil
 				for above = n - 1, 0, -1 do
-					local line = buffer:line_text(above)
+					local line = s.lines[above + 1]
 					if not string.match(line, "^%s*$") then
 						local words = string.match(line, "^#*%s*(.-)%s*$")
 						question = if words ~= "" then words else nil

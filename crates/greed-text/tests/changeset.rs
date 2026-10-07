@@ -25,6 +25,17 @@ fn from_changes_builds_canonical_ops() {
 }
 
 #[test]
+fn changed_range_spans_the_changes_in_the_new_text() {
+    let cs = ChangeSet::from_changes(11, [(0, 5, Some("goodbye")), (6, 6, Some("big "))]).unwrap();
+    assert_eq!(cs.changed_range(), Some(0..12));
+    let deleted = ChangeSet::from_changes(11, [(2, 4, None::<&str>)]).unwrap();
+    assert_eq!(deleted.changed_range(), Some(2..2));
+    let appended = ChangeSet::from_changes(3, [(3, 3, Some("!"))]).unwrap();
+    assert_eq!(appended.changed_range(), Some(3..4));
+    assert_eq!(ChangeSet::identity(5).changed_range(), None);
+}
+
+#[test]
 fn from_changes_rejects_overlapping_and_out_of_bounds() {
     assert_eq!(
         ChangeSet::from_changes(10, [(2, 5, None::<&str>), (4, 6, None)]),

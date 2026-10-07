@@ -1,2 +1,2 @@
 name = "prose"
-requires = ["core"]
+requires = ["core", "markdown"]

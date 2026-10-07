@@ -3,6 +3,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local markdown = require("@markdown")
 
 greed.option.define({
 	name = "notes-folder",
@@ -232,6 +233,35 @@ end
 --- Note `name`'s text, as the editor has it if it's open.
 function M.read(name: string): string?
 	return (core.file.text(M.path(name)))
+end
+
+--- Like `grep`, leaving out lines in code blocks.
+function M.grep_text(pattern: string): ({ Found }?, string?)
+	local found, err = M.grep(pattern)
+	if found == nil then
+		return nil, err
+	end
+	-- Each note's structure, as on disk like what grep read, or false
+	-- when it can't be read.
+	local structures: { [string]: markdown.Structure | false } = {}
+	local out: { Found } = {}
+	for _, line in found do
+		local s: markdown.Structure | false | nil = structures[line.note]
+		if s == nil then
+			local text = greed.fs.read(M.path(line.note))
+			local read: markdown.Structure | false = false
+			if text then
+				read = markdown.structure(text)
+			end
+			structures[line.note] = read
+			s = read
+		end
+		local code = if s then s.code_at[line.line] else nil
+		if code == nil then
+			table.insert(out, line)
+		end
+	end
+	return out, nil
 end
 
 -- Checks on what agents may write, each saying why not for a note's path.

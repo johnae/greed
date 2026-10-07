@@ -495,8 +495,13 @@ greed.tab.set_layout({
   put a sign in the gutter, or draw text over the buffer's (like jump
   labels). It can also hide text (`conceal`, like a link's brackets), shown
   again as `reveal` says: `"line"` (the default) when a cursor is on its
-  line, `"cursor"` when one is inside it, or `"never"`, which notes uses
-  outside insert mode. A mark can fold lines away under the first one (`fold`),
+  line, `"cursor"` when one is inside it, `"never"`, or `"auto"`, which
+  follows the mode: on the cursor's line while typing, inside it in edit
+  mode, never otherwise. Markdown and notes use `"auto"`, so their marks
+  stay as they are when the mode changes (`greed.reveal(how)` is what core
+  calls as it does). `buffer:decorate(ns, marks, { from = a, to = b })`
+  replaces only the marks starting from `a` up to `b`, for plugins that
+  draw again just the lines an edit changed. A mark can fold lines away under the first one (`fold`),
   or show lines that aren't in the buffer under its own (`lines`), whole
   or in pieces with styles of their own. A mark's text with an `action`
   (a command name) is a button: clicking it, or `enter` on it in normal
@@ -566,6 +571,18 @@ greed.tab.set_layout({
   (the line above it) and its options, `picked` or not.
   `choices.on_pick(fn)` hears each pick, after the text has changed. A pick
   only edits text; what it does is up to the plugin listening.
+- `require("@markdown").structure(buffer)` reads a Markdown buffer once
+  per edit and gives its `headings` (level, text, lines), `code` blocks
+  (info string, fences' lines, the code's bytes), list `items` (bullet,
+  todo box, lines), `tables` and `links`, with `heading_at`, `code_at`,
+  `item_at` and `table_at` by line, and the lines' text. It uses the
+  syntax tree, so a `# comment` in a code block isn't a heading. Give it a
+  file's text instead of a buffer to read that.
+  `markdown.conceal({ ns, wants, draw })` draws marks over the Markdown
+  buffers `wants` says, calling `draw(buffer, structure, first, last)` for
+  the lines an edit changed (and any code block or table they touch)
+  rather than the whole file. It returns a function that draws a buffer,
+  or all of them, again in full.
 
 ## Waiting
 
@@ -663,7 +680,7 @@ end)
 
 | Event | When | What the handler gets |
 |---|---|---|
-| `buffer.changed` | After every edit to a buffer: yours, a plugin's, an agent's, or the file changing on disk | `buffer` |
+| `buffer.changed` | After every edit to a buffer: yours, a plugin's, an agent's, or the file changing on disk | `buffer`, and `from_line` and `to_line`: the lines that changed since the last one, as they are now. `buffer:version()` grows with each edit, for caches |
 | `buffer.opened` | A buffer was opened | `buffer` |
 | `buffer.saved` | A buffer was written to its file | `buffer` |
 | `buffer.closed` | A buffer was closed | `id`, the closed buffer's |

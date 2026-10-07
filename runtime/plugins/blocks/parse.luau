@@ -3,6 +3,7 @@
 -- the `---` lines at the top of a file.
 
 local greed = require("@greed")
+local markdown = require("@markdown")
 
 local M = {}
 
@@ -25,15 +26,6 @@ export type Block = {
 	result: { from: number, to: number, text: string, info: string }?,
 }
 
--- A fence line's ticks (or tildes) and what follows them.
-local function fence(text: string): (string?, string)
-	local ticks, rest = string.match(text, "^%s*(```+)(.*)$")
-	if ticks == nil then
-		ticks, rest = string.match(text, "^%s*(~~~+)(.*)$")
-	end
-	return ticks, rest or ""
-end
-
 --- An info string's language and options: `sh id=files dir="a b"` is "sh"
 --- and `{ id = "files", dir = "a b" }`.
 function M.info(info: string): (string, { [string]: string })
@@ -55,66 +47,43 @@ end
 --- another whose language is `result` is that block's result, and isn't
 --- listed on its own.
 function M.blocks(buffer: greed.Buffer): { Block }
+	local s = markdown.structure(buffer)
 	local blocks: { Block } = {}
-	local lines = buffer:line_count()
-	local function line(n: number): string
-		return buffer:line_text(n)
-	end
-	-- The closing fence for one opened by `ticks` on line `open`.
-	local function closing(open: number, ticks: string): number?
-		for n = open + 1, lines - 1 do
-			local found, rest = fence(line(n))
-			if
-				found
-				and string.sub(found, 1, 1) == string.sub(ticks, 1, 1)
-				and #found >= #ticks
-				and string.match(rest, "^%s*$")
-			then
-				return n
-			end
-		end
-		return nil
-	end
-	local n = 0
-	while n < lines do
-		local ticks, info = fence(line(n))
-		local close = ticks and closing(n, ticks :: string)
-		if ticks == nil or close == nil then
-			n += 1
+	local i = 1
+	while i <= #s.code do
+		local code = s.code[i]
+		i += 1
+		if not code.closed then
 			continue
 		end
-		local lang, opts = M.info(info)
+		local lang, opts = M.info(code.info)
 		local block: Block = {
 			lang = lang,
-			info = info,
+			info = code.info,
 			opts = opts,
-			open = n,
-			close = close,
-			from = buffer:line_start(n),
-			to = buffer:line_end(close),
-			code_from = buffer:line_start(n + 1),
-			code_to = if close > n + 1
-				then buffer:line_end(close - 1)
-				else buffer:line_start(close),
+			open = code.open,
+			close = code.close,
+			from = s.starts[code.open + 1],
+			to = code.to,
+			code_from = code.code_from,
+			code_to = code.code_to,
 		}
-		n = close + 1
 		-- Its result: a `result` block on the next line, or after one blank line.
-		local at = if n < lines and string.match(line(n), "^%s*$") then n + 1 else n
-		local result_ticks, result_info = nil, ""
-		if at < lines then
-			result_ticks, result_info = fence(line(at))
-		end
-		local result_close = result_ticks and closing(at, result_ticks :: string)
-		if result_close and string.match(result_info, "^%s*result") then
+		local after = s.code[i]
+		local gap = if after then after.open - code.close else 0
+		if
+			after
+			and after.closed
+			and string.find(after.info, "^result")
+			and (gap == 1 or (gap == 2 and string.find(s.lines[code.close + 2], "^%s*$")))
+		then
 			block.result = {
 				from = block.to,
-				to = buffer:line_end(result_close),
-				text = if result_close > at + 1
-					then buffer:slice(buffer:line_start(at + 1), buffer:line_end(result_close - 1))
-					else "",
-				info = result_info,
+				to = after.to,
+				text = buffer:slice(after.code_from, after.code_to),
+				info = after.info,
 			}
-			n = result_close + 1
+			i += 1
 		end
 		table.insert(blocks, block)
 	end

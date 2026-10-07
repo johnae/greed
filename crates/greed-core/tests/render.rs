@@ -1179,6 +1179,50 @@ fn concealed_text_shows_as_its_mark_says_on_the_cursors_line() {
 }
 
 #[test]
+fn concealed_text_marked_auto_shows_as_the_editor_says() {
+    use greed_core::{Mark, Reveal};
+    let mut ed = editor("|- [ ] task");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "md",
+        vec![Mark {
+            range: 2..5,
+            style: "notes.todo".into(),
+            conceal: true,
+            text: Some("☐".into()),
+            reveal: Reveal::Auto,
+            ..Mark::default()
+        }],
+    );
+    let shown = |ed: &mut Editor, reveal: Reveal, at: usize| {
+        ed.set_reveal(reveal);
+        let main = ed.main();
+        ed.view_mut(main).selection = greed_text::Selection::point(at);
+        body(&frame(ed, 20, 2))[0].clone()
+    };
+    assert_eq!(shown(&mut ed, Reveal::Line, 0), "- [ ] task", "line");
+    assert_eq!(shown(&mut ed, Reveal::Never, 0), "- ☐ task", "never");
+    assert_eq!(
+        shown(&mut ed, Reveal::Cursor, 3),
+        "- [ ] task",
+        "cursor, inside"
+    );
+    assert_eq!(
+        shown(&mut ed, Reveal::Cursor, 0),
+        "- ☐ task",
+        "cursor, before"
+    );
+    assert_eq!(ed.reveal(), Reveal::Cursor);
+    ed.set_reveal(Reveal::Auto);
+    assert_eq!(
+        ed.reveal(),
+        Reveal::Line,
+        "auto isn't a way to reveal of its own"
+    );
+}
+
+#[test]
 fn a_cursor_on_hidden_text_shows_on_the_first_character_after_it() {
     use greed_core::{Mark, Reveal};
     // "# Plan" with its "# " hidden, as Markdown shows a heading.

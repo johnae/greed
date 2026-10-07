@@ -1,44 +1,52 @@
 -- Links between notes: [[note]] and [[note|what to show]]. In notes the
 -- brackets are hidden (except while typing on their line), `g d` follows a
--- link, and the notes linking to a note are listed at its end.
+-- link, and the notes linking to a note are listed at its end. Links in
+-- code blocks are code.
 
 local greed = require("@greed")
-local core = require("@core")
+local markdown = require("@markdown")
 local notes = require("./notes")
 
 type Link = { from: number, to: number, target: string, text_from: number, text_to: number }
 
 local M = {}
 
+-- The links on lines `first` to `last` of a note whose structure is `s`.
+local function links_in(s: markdown.Structure, first: number, last: number): { Link }
+	local out: { Link } = {}
+	for n = first, last do
+		local text = s.lines[n + 1]
+		if s.code_at[n] or not string.find(text, "[[", 1, true) then
+			continue
+		end
+		local base = s.starts[n + 1]
+		for from, inside, to in string.gmatch(text, "()%[%[([^%]]+)%]%]()") do
+			local link_from = base + (from :: number) - 1
+			local link_to = base + (to :: number) - 1
+			local target, shown = string.match(inside :: string, "^([^|]+)|(.+)$")
+			local text_from = link_from + 2
+			if target and shown then
+				text_from += #target + 1
+			else
+				target = inside
+			end
+			table.insert(out, {
+				from = link_from,
+				to = link_to,
+				target = string.match(target :: string, "^%s*(.-)%s*$") :: string,
+				text_from = text_from,
+				text_to = link_to - 2,
+			})
+		end
+	end
+	return out
+end
+
 --- The links in `buffer`: where each is, where the part to show is, and
 --- the note it points at.
 function M.links(buffer: greed.Buffer): { Link }
-	local text = buffer:text()
-	local out: { Link } = {}
-	local at = 1
-	while true do
-		local found_from, found_to, found = string.find(text, "%[%[([^%]\n]+)%]%]", at)
-		if found_from == nil or found_to == nil or found == nil then
-			break
-		end
-		local from: number, to: number, inside: string = found_from, found_to, found
-		local target, shown = string.match(inside, "^([^|]+)|(.+)$")
-		local text_from = from + 1
-		if target and shown then
-			text_from += #target + 1
-		else
-			target = inside
-		end
-		table.insert(out, {
-			from = from - 1,
-			to = to,
-			target = string.match(target :: string, "^%s*(.-)%s*$") :: string,
-			text_from = text_from,
-			text_to = to - 2,
-		})
-		at = to + 1
-	end
-	return out
+	local s = markdown.structure(buffer)
+	return links_in(s, 0, #s.lines - 1)
 end
 
 local function escape(text: string): string
@@ -49,7 +57,7 @@ end
 --- anywhere, or by its name in its place from a note there.
 function M.backlinks(name: string): { string }
 	local function linking(target: string): { notes.Found }
-		return notes.grep(`\\[\\[\\s*{escape(target)}\\s*(\\|[^\\]]*)?\\]\\]`) or {}
+		return notes.grep_text(`\\[\\[\\s*{escape(target)}\\s*(\\|[^\\]]*)?\\]\\]`) or {}
 	end
 	local place, rest = notes.split(name)
 	local found = linking(name)
@@ -75,63 +83,61 @@ end
 -- opened or saved.
 local shown_backlinks: { [number]: { string } } = {}
 
-local function mark(buffer: greed.Buffer)
-	local marks: { greed.Mark } = {}
-	local conceal = greed.option.get("notes-conceal") == true
-	local shows: "line" | "cursor" | "never" = core.reveal()
-	for _, link in M.links(buffer) do
-		table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
-		if conceal then
+local redraw = markdown.conceal({
+	ns = "notes",
+	wants = notes.is_note,
+	draw = function(
+		buffer: greed.Buffer,
+		s: markdown.Structure,
+		first: number,
+		last: number
+	): { greed.Mark }
+		local marks: { greed.Mark } = {}
+		local conceal = greed.option.get("notes-conceal") == true
+		for _, link in links_in(s, first, last) do
+			table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
+			if conceal then
+				table.insert(marks, {
+					from = link.from,
+					to = link.text_from,
+					style = "markup.link",
+					conceal = true,
+					reveal = "auto" :: "auto",
+				})
+				table.insert(marks, {
+					from = link.text_to,
+					to = link.to,
+					style = "markup.link",
+					conceal = true,
+					reveal = "auto" :: "auto",
+				})
+			end
+		end
+		local backlinks = shown_backlinks[buffer:id()]
+		local count = #s.lines
+		if last == count - 1 and backlinks and #backlinks > 0 then
+			local lines: { greed.MarkLine } = { "", "Linked from:" }
+			for _, name in backlinks do
+				table.insert(lines, `  [[{name}]]`)
+			end
 			table.insert(marks, {
-				from = link.from,
-				to = link.text_from,
-				style = "markup.link",
-				conceal = true,
-				reveal = shows,
-			})
-			table.insert(marks, {
-				from = link.text_to,
-				to = link.to,
-				style = "markup.link",
-				conceal = true,
-				reveal = shows,
+				from = s.starts[count],
+				to = buffer:len(),
+				style = "comment",
+				lines = lines,
 			})
 		end
-	end
-	local backlinks = shown_backlinks[buffer:id()]
-	if backlinks and #backlinks > 0 then
-		local lines: { greed.MarkLine } = { "", "Linked from:" }
-		for _, name in backlinks do
-			table.insert(lines, `  [[{name}]]`)
-		end
-		local last = buffer:line_count() - 1
-		table.insert(marks, {
-			from = buffer:line_start(last),
-			to = buffer:len(),
-			style = "comment",
-			lines = lines,
-		})
-	end
-	buffer:decorate("notes", marks)
-end
+		return marks
+	end,
+})
 
 local function refresh(buffer: greed.Buffer)
 	if not notes.is_note(buffer) then
 		return
 	end
 	shown_backlinks[buffer:id()] = M.backlinks(notes.name(buffer:path() :: string))
-	mark(buffer)
+	redraw(buffer)
 end
-
--- Typing shows link brackets as written, so notes are drawn again as modes
--- change.
-greed.on("mode.changed", function()
-	for _, buffer in greed.buffers() do
-		if notes.is_note(buffer) then
-			mark(buffer)
-		end
-	end
-end)
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	refresh(event.buffer)
@@ -141,21 +147,9 @@ greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	if notes.is_note(event.buffer) then
-		pcall(mark, event.buffer)
-	end
-end)
-
 greed.on("option.changed", function(event)
 	if event.name == "notes-conceal" or event.name == "notes-everywhere" then
-		for _, buffer in greed.buffers() do
-			if notes.is_note(buffer) then
-				mark(buffer)
-			else
-				buffer:decorate("notes", {})
-			end
-		end
+		redraw()
 	end
 end)
 

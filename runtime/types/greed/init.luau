@@ -108,6 +108,8 @@ export type Buffer = {
 	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.
 	modified: (self: Buffer) -> boolean,
+	--- A number that grows with every edit, for caches that follow the text.
+	version: (self: Buffer) -> number,
 	--- Reads its file again, as an edit by "external" that undo can take back, and counts
 	--- it as saved. Returns whether the text changed.
 	reload: (self: Buffer) -> boolean,
@@ -115,8 +117,10 @@ export type Buffer = {
 	--- show something else there first. Plugins hear "buffer.closed".
 	close: (self: Buffer) -> (),
 	--- Replaces the marks in namespace `ns` (pick one per plugin feature,
-	--- e.g. "search"). Marks move with edits; `{}` clears them.
-	decorate: (self: Buffer, ns: string, marks: { Mark }) -> (),
+	--- e.g. "search"). Marks move with edits; `{}` clears them. With
+	--- `within`, only those starting from `from` up to (not at) `to` (default:
+	--- the end) are replaced, e.g. on the lines an edit changed.
+	decorate: (self: Buffer, ns: string, marks: { Mark }, within: { from: number, to: number? }?) -> (),
 	--- The marks in namespace `ns`, where they are now.
 	decorations: (self: Buffer, ns: string) -> { Mark },
 	--- The marks over `pos` in every namespace, each with its `ns`: those
@@ -222,8 +226,8 @@ export type Mark = {
 	--- Hide the text, showing `text` (if any) in its place, e.g. the
 	--- brackets of a `[[link]]`, except where `reveal` says.
 	conceal: boolean?,
-	--- When concealed text shows: "line" (the default) when a cursor is on its line, "cursor" when a cursor is inside it past its start (a click leaves it hidden), "never".
-	reveal: ("line" | "cursor" | "never")?,
+	--- When concealed text shows: "line" (the default) when a cursor is on its line, "cursor" when a cursor is inside it past its start (a click leaves it hidden), "never", or "auto" as `greed.reveal` last said, so the marks needn't be drawn again when that changes.
+	reveal: ("line" | "cursor" | "never" | "auto")?,
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
@@ -760,6 +764,10 @@ export type BufferClosed = {
 
 export type BufferChanged = {
 	buffer: Buffer,
+	--- On "buffer.changed": the first and last line (0-based, as the text is
+	--- now) of what changed since the last "buffer.changed" for the buffer.
+	from_line: number?,
+	to_line: number?,
 }
 
 --- A request from the session socket, e.g. from `greed ctl` or an agent.
@@ -1498,6 +1506,8 @@ export type Greed = {
 	--- number, "relative" to the cursor's line (0 on it), or "hybrid", relative
 	--- with the cursor's line showing its own.
 	line_numbers: (style: "absolute" | "relative" | "hybrid") -> (),
+	--- When text hidden by marks whose `reveal` is "auto" shows: "line" (on a cursor's line, the default), "cursor" or "never", as for a mark's own `reveal`. Core sets it as the mode changes (see `core.reveal`).
+	reveal: (how: "line" | "cursor" | "never") -> (),
 	--- Lets the attached terminal go and keeps the editor running in the
 	--- background, for `greed attach` to come back to.
 	detach: () -> (),

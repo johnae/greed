@@ -1,5 +1,5 @@
 name = "blocks"
-requires = ["core", "agent"]
+requires = ["core", "agent", "markdown"]
 # Blocks run programs (proc), Luau (eval) and HTTP requests (net); the list
 # of files you trust to run them is kept in the data folder.
 capabilities = ["proc", "eval", "net", "fs.read", "fs.write"]

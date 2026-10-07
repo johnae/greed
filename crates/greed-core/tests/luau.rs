@@ -2082,6 +2082,73 @@ fn marks_say_when_concealed_text_shows() {
 }
 
 #[test]
+fn reveal_sets_when_auto_marks_show_and_rejects_anything_else() {
+    let h = host("- [ ] task");
+    h.eval(
+        "require('@greed').view():buffer():decorate('md', { { from = 2, to = 5, style = 'x', conceal = true, reveal = 'auto' } })",
+    )
+    .unwrap();
+    assert_eq!(
+        h.eval("return require('@greed').view():buffer():decorations('md')[1].reveal")
+            .unwrap(),
+        "auto"
+    );
+    h.eval("require('@greed').reveal('never')").unwrap();
+    h.with_editor(|ed| assert_eq!(ed.reveal(), greed_core::Reveal::Never));
+    let err = h
+        .eval("require('@greed').reveal('auto')")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("reveal is"), "{err}");
+}
+
+#[test]
+fn decorate_within_replaces_only_the_marks_starting_there() {
+    let h = host("one two three");
+    h.eval(
+        "local b = require('@greed').view():buffer()
+         b:decorate('w', { { from = 0, to = 3, style = 'a' }, { from = 4, to = 7, style = 'a' }, { from = 8, to = 13, style = 'a' } })
+         b:decorate('w', { { from = 4, to = 6, style = 'b' } }, { from = 4, to = 8 })",
+    )
+    .unwrap();
+    let styles = h
+        .eval(
+            "local out = {}
+             for _, m in require('@greed').view():buffer():decorations('w') do
+                 table.insert(out, `{m.from}-{m.to} {m.style}`)
+             end
+             table.sort(out)
+             return table.concat(out, ', ')",
+        )
+        .unwrap();
+    assert_eq!(styles, "0-3 a, 4-6 b, 8-13 a");
+    let to_the_end = h
+        .eval(
+            "local b = require('@greed').view():buffer()
+             b:decorate('w', {}, { from = 4 })
+             return #b:decorations('w')",
+        )
+        .unwrap();
+    assert_eq!(to_the_end, "1");
+}
+
+#[test]
+fn buffer_version_grows_with_every_edit() {
+    let h = host("text");
+    let grew = h
+        .eval(
+            "local b = require('@greed').view():buffer()
+             local before = b:version()
+             b:edit(function(e) e:insert(0, 'x') end)
+             local after = b:version()
+             require('@greed').view():undo()
+             return after > before and b:version() > after",
+        )
+        .unwrap();
+    assert_eq!(grew, "true");
+}
+
+#[test]
 fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
     let h = host("hello");
     // What a sandbox may do: read the editor, edit the buffer.

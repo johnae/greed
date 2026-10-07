@@ -918,12 +918,13 @@ impl<M: Measure> Renderer<M> {
         let content = content.trim_end_matches(['\n', '\r']);
         let end = start + content.len();
 
-        let concealed = concealed(buffer, view, line, start..end);
+        let auto = editor.reveal();
+        let concealed = concealed(buffer, view, line, start..end, auto);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
             .all_marks()
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
-            .filter(|m| !m.conceal || !reveals(text, view, m, line))
+            .filter(|m| !m.conceal || !reveals(text, view, m, line, auto))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
@@ -1700,16 +1701,21 @@ fn virtual_lines<'a>(
 }
 
 /// Whether concealing mark `mark` on `line` shows its text now, as its
-/// `reveal` says.
-fn reveals(text: &Rope, view: &View, mark: &Mark, line: usize) -> bool {
-    match mark.reveal {
+/// `reveal` says, with `auto` (the editor's) for `Reveal::Auto`.
+fn reveals(text: &Rope, view: &View, mark: &Mark, line: usize, auto: Reveal) -> bool {
+    let reveal = if mark.reveal == Reveal::Auto {
+        auto
+    } else {
+        mark.reveal
+    };
+    match reveal {
         Reveal::Line => cursor_lines(text, view).any(|l| l == line),
         Reveal::Cursor => view
             .selection
             .ranges()
             .iter()
             .any(|r| mark.range.start < r.head && r.head < mark.range.end),
-        Reveal::Never => false,
+        Reveal::Never | Reveal::Auto => false,
     }
 }
 
@@ -1719,11 +1725,12 @@ fn concealed<'a>(
     view: &View,
     line: usize,
     bytes: Range<usize>,
+    auto: Reveal,
 ) -> Vec<&'a Mark> {
     buffer
         .all_marks()
         .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
-        .filter(|m| !reveals(buffer.text(), view, m, line))
+        .filter(|m| !reveals(buffer.text(), view, m, line, auto))
         .collect()
 }
 

@@ -280,7 +280,7 @@ agent.tool({
 			text = todos.with_marker(text, "remind", remind)
 		end
 		local ticked = if args.done == nil then done else args.done
-		local before = string.match(current, "^%s*[-*] ") :: string
+		local before = string.match(current, "^%s*[-*+] ") :: string
 		local changed = `{before}[{if ticked then "x" else " "}] {text}`
 		notes.set_line(args.note, args.line - 1, changed)
 		return changed

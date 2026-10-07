@@ -96,7 +96,10 @@ fn edit_mode_plugin_tests_pass() {
 
 #[test]
 fn prose_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("prose")], &plugin("prose"));
+    assert_all_pass(
+        &[core(), plugin("markdown"), plugin("prose")],
+        &plugin("prose"),
+    );
 }
 
 #[test]

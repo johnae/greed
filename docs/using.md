@@ -749,12 +749,13 @@ its command stands for the file's path.
 
 ## Markdown
 
-Markdown files show as documents: headings without their hashes (a `#`
-heading twice the size), `**bold**`, `*italic*`, `~~struck~~` and
-`` `code` `` without their markers, links as their underlined text, fenced
-code on a background of its own, quotes with a bar, `---` as a line, list
-dashes as bullets and tables in aligned columns with borders. The file
-stays plain Markdown: while you type on a line (insert mode) it shows as
+Markdown files show as documents: headings without their hashes (a
+top-level heading twice the size), `**bold**`, `*italic*`, `~~struck~~`
+and `` `code` `` without their markers, links as their underlined text,
+fenced code on a background of its own, quotes with a bar, `---` as a
+line, list bullets (`-`, `*` or `+`) as dots and tables in aligned columns
+with borders. Code blocks keep their markup: a `# comment` there is code,
+not a heading. The file stays plain Markdown: while you type on a line (insert mode) it shows as
 written, and in edit mode markup shows once the cursor is inside it. The
 window draws big headings big and sets the text in a proportional font
 (code and tables stay monospaced); terminals other than kitty show
@@ -980,9 +981,10 @@ require("@notes").add_place("work", "~/work/notes") -- notes named work:NAME
 
 A note's markup shows as symbols: todo boxes as ☐ and ☑ (real checkboxes in
 the window; done ones dimmed and struck through), headings as a symbol for
-their level, list dashes as bullets, `due:2026-10-03` as 📅 3 Oct (red
+their level, list bullets as dots, `due:2026-10-03` as 📅 3 Oct (red
 once it's past, yellow on the day and in the three days before), and
-`remind:2026-10-06 18:00` as ⏰ 6 Oct 18:00. The file
+`remind:2026-10-06 18:00` as ⏰ 6 Oct 18:00. Code blocks keep their
+markup, and the agenda leaves out todos in them. The file
 stays plain Markdown: while you type on a line (insert mode), it shows as
 written; in edit mode, markup shows once the cursor is inside it. Click a
 box to tick it, or press `enter` on it, and a heading's symbol folds its
