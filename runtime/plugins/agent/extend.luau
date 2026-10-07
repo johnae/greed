@@ -103,7 +103,14 @@ local function check_files(name: string, files: { [string]: string })
 	end
 end
 
-local function describe(report: greed.PluginCheck): (string, boolean)
+-- What a test failure says when it needed something not approved yet.
+local NEEDS_APPROVAL = "needs approval:"
+
+--- `report` in words for an agent, and whether the plugin may go to the
+--- user to install. Tests that fail only for want of approval don't stop
+--- it: before it's installed nothing is approved, and installing approves
+--- what it asks for (and checks it again).
+function M.describe(report: greed.PluginCheck): (string, boolean)
 	local lines, passed = {}, true
 	if report.types.skipped then
 		table.insert(lines, `types: not checked ({report.types.skipped})`)
@@ -119,7 +126,13 @@ local function describe(report: greed.PluginCheck): (string, boolean)
 	else
 		local failed: { { file: string, name: string, message: string } } = report.tests.failed
 			or {}
-		passed = passed and #failed == 0
+		local waiting = 0
+		for _, f in failed do
+			if string.sub(f.message, 1, #NEEDS_APPROVAL) == NEEDS_APPROVAL then
+				waiting += 1
+			end
+		end
+		passed = passed and #failed == waiting
 		local passed_count = report.tests.passed or 0
 		if passed_count == 0 and #failed == 0 then
 			table.insert(lines, "tests: none yet; add some in test/*.luau")
@@ -128,6 +141,13 @@ local function describe(report: greed.PluginCheck): (string, boolean)
 		end
 		for _, f in failed do
 			table.insert(lines, `  {f.file}: {f.name}: {f.message}`)
+		end
+		if waiting > 0 then
+			table.insert(
+				lines,
+				`  {waiting} of them only need what the plugin asks for, which installing it approves; `
+					.. "plugin_install may go ahead"
+			)
 		end
 	end
 	for _, warning in report.warnings do
@@ -156,7 +176,7 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 	tries += 1
 	local dir = `{M.dirs.staging}/{name}-{tries}`
 	write_files(dir, files)
-	local report, passed = describe(greed.plugin.check(dir))
+	local report, passed = M.describe(greed.plugin.check(dir))
 	staged[name] = { files = files, dir = dir, report = report, passed = passed }
 	return report, passed
 end
@@ -238,7 +258,13 @@ function M.install(name: string): string
 		where = `{target} on {machine}; on your own machine, greed bring HOST {name} copies it home`
 	end
 	greed.echo(`installed {name} in {where}`)
-	return `the user installed {name} in {target}; it's loaded and its commands are ready`
+	local said = `the user installed {name} in {target}; it's loaded and its commands are ready`
+	-- Tests that waited for approval run now, with what was approved.
+	if string.find(s.report, NEEDS_APPROVAL, 1, true) then
+		local report = M.describe(greed.plugin.check(target))
+		said ..= `\nchecked again with what it was approved for:\n{report}`
+	end
+	return said
 end
 
 greed.command({

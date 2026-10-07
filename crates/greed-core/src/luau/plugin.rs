@@ -246,7 +246,30 @@ fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), S
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    Ok((output.status.success(), said.trim().to_owned()))
+    Ok(own_reports(&said))
+}
+
+/// The reports in luau-analyze's output `said` about the checked plugin's
+/// own files (copied under `plugin/`), each with the lines that carry it
+/// on, and whether there are none. Errors in a plugin it requires are that
+/// plugin's to fix, so they don't fail this one's check.
+fn own_reports(said: &str) -> (bool, String) {
+    let mut kept = Vec::new();
+    let mut ours = false;
+    for line in said.lines() {
+        // A report starts with its file and place, `file(line,col): `.
+        let starts = !line.starts_with([' ', '\t'])
+            && line.split_once("): ").is_some_and(|(at, _)| {
+                at.contains('(') && at.ends_with(|c: char| c.is_ascii_digit())
+            });
+        if starts {
+            ours = line.starts_with("./plugin/") || line.starts_with("plugin/");
+        }
+        if ours {
+            kept.push(line);
+        }
+    }
+    (kept.is_empty(), kept.join("\n"))
 }
 
 fn collect_luau(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -326,4 +349,25 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
             Ok(Some(by.to_string()))
         })?,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::own_reports;
+
+    #[test]
+    fn only_the_checked_plugins_own_errors_count() {
+        let said = "./plugin/init.luau(3,5): TypeError: Expected this to be\n\t'number'\nbut got 'string'\n\
+            /src/runtime/plugins/core/mouse.luau(45,20): TypeError: Expected 'number'\n\
+            plugin/test/a.luau(1,1): LintWarning: unused";
+        let (ok, kept) = own_reports(said);
+        assert!(!ok);
+        assert_eq!(
+            kept,
+            "./plugin/init.luau(3,5): TypeError: Expected this to be\n\t'number'\nbut got 'string'\n\
+             plugin/test/a.luau(1,1): LintWarning: unused"
+        );
+        let (ok, kept) = own_reports("/src/core/mouse.luau(45,20): TypeError: Expected 'number'");
+        assert!(ok && kept.is_empty(), "{kept}");
+    }
 }

@@ -638,7 +638,10 @@ An agent can extend Greed while you work:
    (`~/.cache/greed/staging`) and checks it: strict
    types against the API, then the plugin's own tests in a headless editor,
    with none of its capabilities until you approve it. The agent gets back
-   what failed and tries again.
+   what failed and tries again. Type errors count only in the plugin's own
+   files, and tests that fail only because a capability isn't approved yet
+   don't stop it going to you: once you install it, they run again with
+   what you approved, and the agent hears how they did.
 3. `plugin_install` asks you. A panel shows what the plugin may do beyond
    the editor (its [capabilities](plugins.md#capabilities), like running
    programs or reading files), the code and the check results; `a` installs

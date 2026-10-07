@@ -145,3 +145,28 @@ test("when the config can't be written, a plugin is installed in the data folder
 	assert(string.find(answer() or "", dir .. "/data/plugins/shout", 1, true), answer())
 	assert(greed.fs.read(dir .. "/data/plugins/shout/init.luau") == PLUGIN["init.luau"])
 end)
+
+test("tests failing only for want of approval don't keep a plugin from install", function()
+	local function report(failed: { any }): any
+		return {
+			types = { ok = true, output = "" },
+			tests = { passed = 1, failed = failed },
+			warnings = {},
+		}
+	end
+	local waiting = {
+		file = "a.luau",
+		name = "runs gh",
+		message = 'needs approval: it would run programs, and you haven\'t approved "proc" for gh',
+	}
+	local said, may = agent.describe_check(report({ waiting }))
+	assert(may, said)
+	assert(string.find(said, "plugin_install may go ahead", 1, true), said)
+	local broken = { file = "a.luau", name = "adds", message = "expected 2, got 3" }
+	local _, may_not = agent.describe_check(report({ waiting, broken }))
+	assert(not may_not, "a real failure still stops it")
+	local typed: any = report({})
+	typed.types = { ok = false, output = "./plugin/init.luau(1,1): TypeError" }
+	local _, typed_may = agent.describe_check(typed)
+	assert(not typed_may, "so do type errors")
+end)
