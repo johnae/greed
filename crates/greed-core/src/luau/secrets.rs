@@ -229,16 +229,20 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let o = owner.clone();
     let start_get = lua.create_function(move |lua, name: String| {
         let places = places_for(lua, &o, &name)?;
-        Ok(jobs::start(lua, move || {
-            Output::Secret(Ok(find(&places, &name)))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.secrets.get {name:?}"),
+            move || Output::Secret(Ok(find(&places, &name))),
+        ))
     })?;
     let o = owner.clone();
     let start_set = lua.create_function(move |lua, (name, value): (String, String)| {
         let places = places_for(lua, &o, &name)?;
-        Ok(jobs::start(lua, move || {
-            Output::Secret(keep(&places, &name, &value).map(Some))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.secrets.set {name:?}"),
+            move || Output::Secret(keep(&places, &name, &value).map(Some)),
+        ))
     })?;
     secrets.set("get", jobs::waiting(lua, "greed.secrets.get", start_get)?)?;
     secrets.set("set", jobs::waiting(lua, "greed.secrets.set", start_set)?)?;

@@ -2,7 +2,10 @@
 //! project-wide grep. The command that starts a job waits for it the way it
 //! waits for `greed.sleep`, and is woken with the result when it's done.
 
-use crossbeam_channel::{Receiver, Sender};
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use mlua::{Function, Lua, Value};
 
 use super::{fs, state, state_mut, tasks};
@@ -51,8 +54,8 @@ pub(super) fn sender(lua: &Lua) -> Sender<Done> {
 pub(crate) struct Jobs {
     done: Sender<Done>,
     finished: Receiver<Done>,
-    /// Jobs started and not yet finished.
-    running: usize,
+    /// Jobs started and not yet finished: what each does, by its token.
+    running: BTreeMap<u64, String>,
 }
 
 impl Default for Jobs {
@@ -61,7 +64,7 @@ impl Default for Jobs {
         Self {
             done,
             finished,
-            running: 0,
+            running: BTreeMap::new(),
         }
     }
 }
@@ -73,15 +76,20 @@ impl Jobs {
 
     /// How many jobs are running.
     pub(super) fn running(&self) -> usize {
-        self.running
+        self.running.len()
     }
 }
 
-/// Runs `work` on a new thread and returns the token its result wakes.
-pub(super) fn start(lua: &Lua, work: impl FnOnce() -> Output + Send + 'static) -> u64 {
+/// Runs `work`, which does `what`, like "greed.fs.grep", on a new thread and
+/// returns the token its result wakes.
+pub(super) fn start(
+    lua: &Lua,
+    what: impl Into<String>,
+    work: impl FnOnce() -> Output + Send + 'static,
+) -> u64 {
     let mut state = state_mut(lua);
     let token = state.tasks.token();
-    state.jobs.running += 1;
+    state.jobs.running.insert(token, what.into());
     let done = state.jobs.done.clone();
     std::thread::spawn(move || {
         let output = work();
@@ -96,11 +104,12 @@ pub(super) fn start(lua: &Lua, work: impl FnOnce() -> Output + Send + 'static) -
 /// job counts as running until it sends its last.
 pub(super) fn start_streaming(
     lua: &Lua,
+    what: impl Into<String>,
     work: impl FnOnce(u64, &dyn Fn(Output)) + Send + 'static,
 ) -> u64 {
     let mut state = state_mut(lua);
     let token = state.tasks.token();
-    state.jobs.running += 1;
+    state.jobs.running.insert(token, what.into());
     let done = state.jobs.done.clone();
     std::thread::spawn(move || {
         work(token, &|output| {
@@ -150,7 +159,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
             | Output::Child(..)
     );
     if last {
-        state_mut(lua).jobs.running -= 1;
+        state_mut(lua).jobs.running.remove(&done.token);
     }
     match done.output {
         Output::Http(result) => {
@@ -178,7 +187,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
 /// Waits for what a program prints next when code waits on one, for tests,
 /// up to a while. Returns whether there was something to wait for.
 pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
-    const LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    const LIMIT: Duration = Duration::from_secs(10);
     if !super::process::awaited(lua) {
         return Ok(false);
     }
@@ -192,13 +201,28 @@ pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
 
 /// Waits for every running job and finishes it, and lets work cut into time
 /// slices finish, for tests, which have no event loop to do it. Time spent
-/// waiting for a job doesn't count against the test's budget.
+/// waiting for a job doesn't count against the test's budget. Gives up,
+/// naming the jobs still running, when none has finished for a minute.
 pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
+    settle_within(lua, Duration::from_secs(60))
+}
+
+fn settle_within(lua: &Lua, limit: Duration) -> LuaResult<()> {
     let finished = state(lua).jobs.finished.clone();
     loop {
-        while state(lua).jobs.running > 0 {
-            let waited = std::time::Instant::now();
-            let done = finished.recv().map_err(mlua::Error::external)?;
+        while state(lua).jobs.running() > 0 {
+            let waited = Instant::now();
+            let done = match finished.recv_timeout(limit) {
+                Ok(done) => done,
+                Err(RecvTimeoutError::Timeout) => {
+                    let running: Vec<String> = state(lua).jobs.running.values().cloned().collect();
+                    return Err(mlua::Error::runtime(format!(
+                        "gave up after {limit:?} waiting for {}",
+                        running.join(", ")
+                    )));
+                }
+                Err(err) => return Err(mlua::Error::external(err)),
+            };
             super::extend_deadline(lua, waited.elapsed());
             finish(lua, done)?;
         }
@@ -212,5 +236,42 @@ pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
         if !super::tasks::resume_sliced(lua)? && !more {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Editor;
+    use greed_text::ClientId;
+
+    #[test]
+    fn settling_gives_up_on_a_job_that_never_ends_naming_it() {
+        let host = super::super::Host::new(Editor::new(ClientId(1))).unwrap();
+        let lua = &host.lua;
+        start(lua, "a quick job", || Output::Tags(Vec::new()));
+        start(lua, "a job that never ends", || {
+            std::thread::sleep(Duration::from_secs(5));
+            Output::Tags(Vec::new())
+        });
+        let err = settle_within(lua, Duration::from_millis(200))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("waiting for a job that never ends"), "{err}");
+        assert!(!err.contains("quick"), "{err}");
+    }
+
+    #[test]
+    fn settling_finishes_every_job() {
+        let host = super::super::Host::new(Editor::new(ClientId(1))).unwrap();
+        let lua = &host.lua;
+        for _ in 0..3 {
+            start(lua, "a job", || {
+                std::thread::sleep(Duration::from_millis(20));
+                Output::Tags(Vec::new())
+            });
+        }
+        settle_within(lua, Duration::from_secs(60)).unwrap();
+        assert_eq!(state(lua).jobs.running(), 0);
     }
 }

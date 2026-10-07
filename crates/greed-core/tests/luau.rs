@@ -1076,11 +1076,35 @@ fn waiting_only_works_inside_commands() {
         err.contains("can only wait through greed functions"),
         "{err}"
     );
-    // A bare yield gives the editor a turn, then carries on.
+    // A bare yield gives the editor a turn, as a time slice running out
+    // does. With no event loop to take it, it carries on at once.
+    h.run("turn").unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["carried on"]);
+    assert!(h.next_timer().is_none());
+    // With one, it carries on once the loop fires its timer.
+    h.use_event_loop();
     h.run("turn").unwrap();
     assert!(h.with_editor_mut(Editor::take_messages).is_empty());
     h.fire_timers(std::time::Instant::now()).unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["carried on"]);
+}
+
+#[test]
+fn work_carried_on_after_a_turn_reports_its_errors() {
+    let h = host("");
+    h.load_str(
+        "turns",
+        "local greed = require('@greed')
+         greed.command { name = 'fails-later', run = function() coroutine.yield() error('after the turn') end }
+         greed.on('buffer.changed', function() coroutine.yield() greed.echo('handled') end)",
+    )
+    .unwrap();
+    let err = h.run("fails-later").unwrap_err().to_string();
+    assert!(err.contains("after the turn"), "{err}");
+    // What a call sets off, like an event's handlers, is done when it returns.
+    h.eval("require('@greed').view():buffer():edit(function(e) e:insert(0, 'x') end)")
+        .unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["handled"]);
 }
 
 #[test]

@@ -193,9 +193,11 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(
         |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
             let (dir, options) = grep_args(dir, opts.as_ref())?;
-            Ok(jobs::start(lua, move || {
-                Output::Grep(search::grep(Path::new(&dir), &pattern, options))
-            }))
+            Ok(jobs::start(
+                lua,
+                format!("greed.fs.grep {pattern:?} in {dir}"),
+                move || Output::Grep(search::grep(Path::new(&dir), &pattern, options)),
+            ))
         },
     )?;
     jobs::waiting(lua, "greed.fs.grep", start)

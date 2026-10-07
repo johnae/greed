@@ -124,6 +124,7 @@ where
                 return Err(err);
             }
         };
+        host.use_event_loop();
         let mut server = Server {
             host: &host,
             renderer: Renderer::new(CellWidth),

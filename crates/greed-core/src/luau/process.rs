@@ -105,7 +105,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let process = lua.create_table()?;
     let start = lua.create_function(|lua, (command, opts): (Vec<String>, Option<Table>)| {
         let how = run_from_lua(command, opts.as_ref())?;
-        Ok(jobs::start(lua, move || Output::Process(run(how))))
+        Ok(jobs::start(
+            lua,
+            format!("greed.process.run {}", how.command.join(" ")),
+            move || Output::Process(run(how)),
+        ))
     })?;
     process.set("run", jobs::waiting(lua, "greed.process.run", start)?)?;
     let owner = owner.clone();
@@ -229,7 +233,10 @@ fn start_child(
     });
     let kept = Arc::new(Mutex::new(Vec::new()));
     let errors = kept.clone();
+    // Dropped when all the error output is read.
+    let (reading, read) = crossbeam_channel::bounded::<()>(0);
     std::thread::spawn(move || {
+        let _reading = reading;
         let mut buffer = [0; 4096];
         while let Ok(n @ 1..) = stderr.read(&mut buffer) {
             if let Ok(mut kept) = errors.lock() {
@@ -252,6 +259,9 @@ fn start_child(
                 _ => break None,
             }
         };
+        // What it said last is there when its exit is, unless something it
+        // started keeps its error output open.
+        let _ = read.recv_timeout(std::time::Duration::from_secs(1));
         send(Piece::Exited(code));
     });
     Ok(Started {

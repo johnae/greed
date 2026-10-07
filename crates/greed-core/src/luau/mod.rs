@@ -51,7 +51,7 @@ use serde::Deserialize;
 
 pub use api::EVENTS;
 pub use jobs::Done as FinishedJob;
-pub use testing::{TestResult, run_tests};
+pub use testing::{TestResult, run_suites, run_tests};
 
 use crate::Editor;
 use crate::keymap::{Key, ParseError};
@@ -60,7 +60,7 @@ use crate::registry::{PluginId, Registry};
 use crate::render::{Hit, StatusLine};
 use modules::Modules;
 
-/// How long one call into Luau may run before it is stopped.
+/// How long one call into Luau may work before it is stopped.
 const BUDGET: Duration = Duration::from_secs(2);
 
 /// How long a command or handler runs before it yields to the editor, to
@@ -216,9 +216,101 @@ fn default_entry() -> String {
 struct Deadline {
     at: Cell<Option<Instant>>,
     budget: Cell<Duration>,
-    /// The task coroutine running now, by its pointer, and when it started
-    /// this run: past `SLICE` it yields, so the editor gets a turn.
-    slice: Cell<Option<(usize, Instant)>>,
+    /// How long the thread had run on a CPU when the call started, where
+    /// the system says.
+    worked: Cell<Option<Duration>>,
+    /// The task coroutine running now: past `SLICE` it yields, so the editor
+    /// gets a turn.
+    slice: Cell<Option<Slice>>,
+    /// Whether an event loop fires the timers, and so carries on what a
+    /// slice cut short. Without one, it carries on before the call returns.
+    looped: Cell<bool>,
+}
+
+impl Deadline {
+    fn new(budget: Duration) -> Self {
+        Self {
+            at: Cell::new(None),
+            budget: Cell::new(budget),
+            worked: Cell::new(None),
+            slice: Cell::new(None),
+            looped: Cell::new(false),
+        }
+    }
+
+    /// Gives the call a whole budget from now.
+    fn start(&self) {
+        self.at.set(Some(Instant::now() + self.budget.get()));
+        self.worked.set(cpu_time());
+    }
+
+    /// Whether the call, past its deadline at `now`, has worked its whole
+    /// budget. As with slices, time the thread waited for a CPU doesn't
+    /// count; until it has, the deadline moves later by that time.
+    fn spent(&self, now: Instant) -> bool {
+        let (Some(start), Some(worked)) = (self.worked.get(), cpu_time()) else {
+            return true;
+        };
+        let left = self
+            .budget
+            .get()
+            .checked_sub(worked.saturating_sub(start))
+            .filter(|left| !left.is_zero());
+        if let Some(left) = left {
+            self.at.set(Some(now + left));
+        }
+        left.is_none()
+    }
+}
+
+/// A run of a task coroutine, which the interrupt may cut short.
+#[derive(Clone, Copy)]
+struct Slice {
+    /// The coroutine, by its pointer.
+    thread: usize,
+    /// When it started, moved later by time the thread spent waiting for a
+    /// CPU rather than working.
+    from: Instant,
+    /// How long the thread had run on a CPU when it started, where the
+    /// system says.
+    worked: Option<Duration>,
+}
+
+impl Slice {
+    fn new(thread: usize) -> Self {
+        Self {
+            thread,
+            from: Instant::now(),
+            worked: cpu_time(),
+        }
+    }
+
+    /// Whether it has worked for `SLICE` by `now`. Time the thread waited
+    /// for a CPU on a busy machine doesn't count, since the editor, which
+    /// runs on the same thread, would have waited too; otherwise how busy
+    /// the machine is would decide where work is cut. Until it has, `from`
+    /// moves later by the time it waited.
+    fn ran_out(&mut self, now: Instant) -> bool {
+        if now.duration_since(self.from) <= SLICE {
+            return false;
+        }
+        let (Some(start), Some(worked)) = (self.worked, cpu_time()) else {
+            return true;
+        };
+        let worked = worked.saturating_sub(start);
+        if worked > SLICE {
+            return true;
+        }
+        self.from = now.checked_sub(worked).unwrap_or(now);
+        false
+    }
+}
+
+/// How long this thread has run on a CPU, on systems that say.
+fn cpu_time() -> Option<Duration> {
+    let stat = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    let nanos = stat.split_whitespace().next()?.parse().ok()?;
+    Some(Duration::from_nanos(nanos))
 }
 
 #[derive(Debug)]
@@ -353,16 +445,13 @@ impl Host {
             cli: cli::Commands::default(),
             stalls: stalls::Stalls::default(),
         });
-        lua.set_app_data(Deadline {
-            at: Cell::new(None),
-            budget: Cell::new(BUDGET),
-            slice: Cell::new(None),
-        });
+        lua.set_app_data(Deadline::new(BUDGET));
         lua.set_interrupt(|lua| {
             let deadline = deadline(lua);
             let now = Instant::now();
             if let Some(at) = deadline.at.get()
                 && now > at
+                && deadline.spent(now)
             {
                 return Err(mlua::Error::runtime(format!(
                     "stopped after running for more than {:?}",
@@ -372,20 +461,41 @@ impl Host {
             // A command or handler that has run its slice yields to the
             // editor, but only its own coroutine: one a plugin made, like a
             // generator, must never see a yield it didn't ask for.
-            if let Some((thread, from)) = deadline.slice.get()
-                && now.duration_since(from) > SLICE
-                && lua.current_thread().to_pointer() as usize == thread
+            if let Some(mut slice) = deadline.slice.get()
+                && now.duration_since(slice.from) > SLICE
             {
-                return Ok(VmState::Yield);
+                let ran_out = slice.ran_out(now);
+                if ran_out {
+                    // Asked again only a slice later, if it carries on: in
+                    // a coroutine a plugin made, or where it can't yield,
+                    // like a status line it draws. Asking which coroutine
+                    // runs takes a slot of its stack, which a function
+                    // working in a loop never gives back.
+                    slice.from = now;
+                }
+                deadline.slice.set(Some(slice));
+                if ran_out && lua.current_thread().to_pointer() as usize == slice.thread {
+                    return Ok(VmState::Yield);
+                }
             }
             Ok(VmState::Continue)
         });
         Ok(Self { lua })
     }
 
-    /// Sets how long one call into Luau may run before it is stopped.
+    /// Sets how long one call into Luau may work before it is stopped.
     pub fn set_budget(&self, budget: Duration) {
         deadline(&self.lua).budget.set(budget);
+    }
+
+    /// Says an event loop fires this host's timers, as the server's does. A
+    /// command or handler whose time slice runs out then carries on from a
+    /// timer, after the loop has handled keys and drawn. Without a loop, it
+    /// carries on before the call that ran it returns, so code driving the
+    /// host directly, like a test, sees its work done however busy the
+    /// machine is.
+    pub fn use_event_loop(&self) {
+        deadline(&self.lua).looped.set(true);
     }
 
     /// Keeps code that held the editor up in `:stalls` without saying so,
@@ -595,9 +705,8 @@ impl Host {
 
     /// Waits for every running job and finishes it, and carries on commands
     /// whose time slice ran out, until nothing is left to do. For code with
-    /// no event loop around the host, like tests: a command whose slice ran
-    /// out between starting a job and waiting on it is woken by a timer,
-    /// so finishing the job alone doesn't wake it.
+    /// no event loop around the host, like tests. Fails, naming the jobs
+    /// still running, when none has finished for a minute.
     pub fn settle(&self) -> Result<(), HostError> {
         budgeted(&self.lua, || {
             jobs::settle(&self.lua).map_err(HostError::from)
@@ -1372,21 +1481,37 @@ pub(crate) fn state_mut(lua: &Lua) -> mlua::AppDataRefMut<'_, State> {
 }
 
 /// Runs `f` under the time budget, unless an outer call already set one.
-fn budgeted<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
-    let outer = {
-        let deadline = deadline(lua);
-        let outer = deadline.at.get().is_some();
-        if !outer {
-            deadline
-                .at
-                .set(Some(Instant::now() + deadline.budget.get()));
-        }
-        outer
-    };
-    let result = f();
-    if !outer {
-        deadline(lua).at.set(None);
+/// With no event loop around the host, what `f` started that its time slice
+/// cut short then carries on, each turn of it with a budget of its own.
+fn budgeted<T, E: From<mlua::Error>>(lua: &Lua, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    if deadline(lua).at.get().is_some() {
+        return f();
     }
+    let result = within_budget(lua, f);
+    if deadline(lua).looped.get() {
+        return result;
+    }
+    let mut first_error = None;
+    loop {
+        match within_budget(lua, || tasks::resume_sliced(lua)) {
+            Ok(true) => {}
+            Ok(false) => break,
+            Err(err) => {
+                first_error.get_or_insert(err);
+            }
+        }
+    }
+    let value = result?;
+    match first_error {
+        Some(err) => Err(err.into()),
+        None => Ok(value),
+    }
+}
+
+fn within_budget<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
+    deadline(lua).start();
+    let result = f();
+    deadline(lua).at.set(None);
     result
 }
 
@@ -1396,6 +1521,15 @@ fn extend_deadline(lua: &Lua, by: Duration) {
     let deadline = deadline(lua);
     if let Some(at) = deadline.at.get() {
         deadline.at.set(Some(at + by));
+    }
+}
+
+/// Gives the current call its whole budget again, from now: for a test,
+/// whose every key and command is a call of its own, as in the editor.
+fn restart_deadline(lua: &Lua) {
+    let deadline = deadline(lua);
+    if deadline.at.get().is_some() {
+        deadline.start();
     }
 }
 
@@ -1423,8 +1557,65 @@ pub(crate) fn plugin_name(dir: &Path) -> Result<String, HostError> {
 /// Runs `f`, a run of the task coroutine `thread`, as a slice the
 /// interrupt may cut short.
 fn sliced<R>(lua: &Lua, thread: usize, f: impl FnOnce() -> R) -> R {
-    let outer = deadline(lua).slice.replace(Some((thread, Instant::now())));
+    let outer = deadline(lua).slice.replace(Some(Slice::new(thread)));
     let result = f();
     deadline(lua).slice.set(outer);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Works on a CPU for `time`, however busy the machine is.
+    fn busy(time: Duration) {
+        let (start, from) = (cpu_time(), Instant::now());
+        loop {
+            let worked = match (start, cpu_time()) {
+                (Some(start), Some(now)) => now.saturating_sub(start),
+                _ => from.elapsed(),
+            };
+            if worked > time {
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn a_slice_runs_out_after_working_its_time() {
+        let mut slice = Slice::new(1);
+        assert!(!slice.ran_out(Instant::now()), "just started");
+        busy(SLICE * 2);
+        assert!(slice.ran_out(Instant::now()));
+    }
+
+    #[test]
+    fn time_a_slice_spends_off_the_cpu_doesnt_count() {
+        let mut slice = Slice::new(1);
+        if slice.worked.is_none() {
+            // This system doesn't say how long a thread has worked.
+            return;
+        }
+        let started = slice.from;
+        std::thread::sleep(SLICE * 2);
+        assert!(!slice.ran_out(Instant::now()));
+        assert!(slice.from > started, "it starts again from the wait");
+        busy(SLICE * 2);
+        assert!(slice.ran_out(Instant::now()));
+    }
+
+    #[test]
+    fn a_call_is_stopped_once_it_has_worked_its_budget() {
+        let deadline = Deadline::new(Duration::from_millis(30));
+        deadline.start();
+        let at = deadline.at.get().unwrap();
+        if deadline.worked.get().is_some() {
+            // Waiting isn't working.
+            std::thread::sleep(Duration::from_millis(60));
+            assert!(!deadline.spent(Instant::now()));
+            assert!(deadline.at.get().unwrap() > at, "the deadline moved");
+        }
+        busy(Duration::from_millis(40));
+        assert!(deadline.spent(Instant::now()));
+    }
 }

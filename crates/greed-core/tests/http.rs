@@ -1,8 +1,12 @@
 //! `greed.http` against a tiny server on localhost.
 
+mod jobs;
+
+use jobs::messages;
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use greed_core::Editor;
 use greed_core::luau::Host;
@@ -69,25 +73,6 @@ fn answer(stream: TcpStream) {
         _ => write!(out, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").unwrap(),
     }
     out.flush().unwrap();
-}
-
-/// Finishes jobs until `count` messages were echoed, and returns them.
-fn messages(host: &Host, count: usize) -> Vec<String> {
-    let jobs = host.finished_jobs();
-    let mut got = Vec::new();
-    while got.len() < count {
-        // Commands whose time slice ran out carry on from a timer.
-        host.fire_timers(Instant::now()).unwrap();
-        got.extend(host.with_editor_mut(Editor::take_messages));
-        if got.len() >= count {
-            break;
-        }
-        let done = jobs
-            .recv_timeout(Duration::from_secs(5))
-            .expect("a job finished");
-        host.finish_job(done).unwrap();
-    }
-    got
 }
 
 #[test]

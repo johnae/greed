@@ -368,8 +368,10 @@ pub(super) fn deliver(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaRes
 }
 
 /// Carries on every coroutine whose time slice ran out, without waiting for
-/// its timer. Returns whether there were any. For tests, which look at the
-/// editor once a key's work is done.
+/// its timer. Returns whether there were any. For code with no event loop
+/// around it, like tests, which look at the editor once a key's work is
+/// done. Every one carries on even if one before it fails; the first error
+/// is returned.
 pub(super) fn resume_sliced(lua: &Lua) -> LuaResult<bool> {
     let tokens: Vec<u64> = {
         let tasks = &mut state_mut(lua).tasks;
@@ -379,10 +381,13 @@ pub(super) fn resume_sliced(lua: &Lua) -> LuaResult<bool> {
         tasks.timers.retain(|(_, token)| !tokens.contains(token));
         tokens
     };
+    let mut first_error = None;
     for &token in &tokens {
-        wake(lua, token, ())?;
+        if let Err(err) = wake(lua, token, ()) {
+            first_error.get_or_insert(err);
+        }
     }
-    Ok(!tokens.is_empty())
+    first_error.map_or(Ok(!tokens.is_empty()), Err)
 }
 
 /// Starts a timer and returns the token it resolves.

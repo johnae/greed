@@ -326,9 +326,11 @@ fn tags_function(lua: &Lua) -> LuaResult<Function> {
         };
         let dir = dir.unwrap_or_else(|| ".".to_owned());
         let tagger = state(lua).syntax.tagger();
-        Ok(jobs::start(lua, move || {
-            Output::Tags(tagger.tags(Path::new(&dir), limit.unwrap_or(10_000)))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.syntax.tags in {dir}"),
+            move || Output::Tags(tagger.tags(Path::new(&dir), limit.unwrap_or(10_000))),
+        ))
     })?;
     jobs::waiting(lua, "greed.syntax.tags", start)
 }

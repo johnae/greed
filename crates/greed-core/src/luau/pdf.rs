@@ -23,13 +23,17 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let pdf = lua.create_table()?;
     let open = lua.create_function(|lua, path: String| {
         super::secrets::guard(lua, std::path::Path::new(&path))?;
-        Ok(jobs::start(lua, move || {
-            Output::Pdf(Done::Opened(
-                std::fs::read(&path)
-                    .map_err(|err| format!("can't read {path}: {err}"))
-                    .and_then(Document::new),
-            ))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.pdf.open {path}"),
+            move || {
+                Output::Pdf(Done::Opened(
+                    std::fs::read(&path)
+                        .map_err(|err| format!("can't read {path}: {err}"))
+                        .and_then(Document::new),
+                ))
+            },
+        ))
     })?;
     pdf.set("open", jobs::waiting(lua, "greed.pdf.open", open)?)?;
     Ok(pdf)
@@ -61,17 +65,21 @@ fn document(lua: &Lua, doc: Document) -> LuaResult<Table> {
         move |lua, (page, scale): (usize, Option<f32>)| {
             let (doc, page) = (doc.clone(), page_index(&doc, page)?);
             let scale = scale.unwrap_or(1.0);
-            Ok(jobs::start(lua, move || {
-                Output::Pdf(Done::Rendered(doc.render(page, scale)))
-            }))
+            Ok(jobs::start(
+                lua,
+                format!("rendering page {} of a pdf", page + 1),
+                move || Output::Pdf(Done::Rendered(doc.render(page, scale))),
+            ))
         }
     })?;
     t.set("render", jobs::waiting_method(lua, "render", render)?)?;
     let text = lua.create_function(move |lua, page: usize| {
         let (doc, page) = (doc.clone(), page_index(&doc, page)?);
-        Ok(jobs::start(lua, move || {
-            Output::Pdf(Done::Text(doc.text(page)))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("the text of page {} of a pdf", page + 1),
+            move || Output::Pdf(Done::Text(doc.text(page))),
+        ))
     })?;
     t.set("text", jobs::waiting_method(lua, "text", text)?)?;
     super::handles::methods(lua, t)

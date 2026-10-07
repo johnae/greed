@@ -44,6 +44,58 @@ fn failing_tests_fail_the_command() {
 }
 
 #[test]
+fn several_plugins_are_tested_at_once_and_reported_one_by_one() {
+    let root = std::env::temp_dir().join(format!("greed-test-several-{}", std::process::id()));
+    let plugin = |name: &str, tests: &str| {
+        let dir = root.join(name);
+        std::fs::create_dir_all(dir.join("test")).unwrap();
+        std::fs::write(dir.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
+        std::fs::write(dir.join("init.luau"), "").unwrap();
+        std::fs::write(
+            dir.join("test/sample.luau"),
+            format!("local test = require('@greed/test')\n{tests}"),
+        )
+        .unwrap();
+        dir
+    };
+    let passing = plugin(
+        "passing",
+        "test('one', function(t) t:buffer('|a') t:expect('|a') end)\n\
+         test('two', function(t) t:buffer('|b') t:expect('|b') end)\n",
+    );
+    let failing = plugin(
+        "failing",
+        "test('ok', function(t) t:buffer('|a') t:expect('|a') end)\n\
+         test('wrong', function(t) t:buffer('|a') t:expect('a|') end)\n",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_greed"))
+        .args(["test", passing.to_str().unwrap(), failing.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let (passing, failing) = (
+        passing.canonicalize().unwrap(),
+        failing.canonicalize().unwrap(),
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!output.status.success(), "{stdout}");
+    // Each plugin's results together, in the order given, then the total.
+    let summary = |dir: &std::path::Path, counts: &str| {
+        let line = format!("{}: {counts}\n", dir.display());
+        stdout
+            .find(&line)
+            .unwrap_or_else(|| panic!("{line:?} in {stdout}"))
+    };
+    let passed = summary(&passing, "2 passed, 0 failed");
+    let failed = summary(&failing, "1 passed, 1 failed");
+    let wrong = stdout.find("  FAIL  wrong\n").expect(&stdout);
+    assert!(passed < wrong && wrong < failed, "{stdout}");
+    assert!(stdout.ends_with("\n3 passed, 1 failed\n"), "{stdout}");
+}
+
+#[test]
 fn new_plugins_pass_their_own_tests_and_load_from_the_config_directory() {
     let config = std::env::temp_dir().join(format!("greed-new-plugin-{}", std::process::id()));
     let plugins = config.join("greed/plugins");

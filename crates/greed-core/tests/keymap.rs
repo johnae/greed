@@ -326,6 +326,44 @@ fn unbinding_hides_a_key_until_its_owner_goes() {
 }
 
 #[test]
+fn bindings_made_one_by_one_match_their_log_replayed() {
+    let mut km = Keymap::default();
+    let normal = Layer::mode("normal");
+    km.bind(normal.clone(), &keys("w"), "next-word", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("g g"), "goto-start", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("g e"), "goto-end", "core")
+        .unwrap();
+    km.unbind(normal.clone(), &keys("g e"), "user/me");
+    km.bind(normal.clone(), &keys("g"), "go", "user/other")
+        .unwrap();
+    km.clear(Layer::global(), "user/me");
+    km.bind(Layer::global(), &keys("q"), "quit", "core")
+        .unwrap();
+    km.bind(normal.clone(), &keys("x"), "delete", "user/me")
+        .unwrap();
+    let sorted = |km: &Keymap| {
+        let mut all: Vec<String> = km
+            .bindings()
+            .into_iter()
+            .map(|binding| format!("{binding:?}"))
+            .collect();
+        all.sort();
+        all
+    };
+    let one_by_one = sorted(&km);
+    assert_eq!(one_by_one.len(), 4, "{one_by_one:?}");
+    // Removing a plugin rebuilds the layers it touched from their logs.
+    km.bind(normal.clone(), &keys("z"), "later", "user/later")
+        .unwrap();
+    km.bind(Layer::global(), &keys("z"), "later", "user/later")
+        .unwrap();
+    km.remove_owned_by("user/later");
+    assert_eq!(sorted(&km), one_by_one);
+}
+
+#[test]
 fn clearing_a_layer_hides_what_was_bound_before() {
     let mut km = Keymap::default();
     let normal = Layer::mode("normal");

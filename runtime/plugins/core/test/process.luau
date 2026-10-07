@@ -63,6 +63,20 @@ test("a spawned program is talked to over its input and output until it exits", 
 	assert(child:stderr() == "oops\n", child:stderr())
 end)
 
+test("a spawned program's last error output is there once it has exited", function(t)
+	local child, err = greed.process.spawn({
+		"sh",
+		"-c",
+		"i=0; while [ $i -lt 2000 ]; do echo line $i >&2; i=$((i+1)); done; echo last words >&2",
+	})
+	assert(child, err)
+	while child:read() ~= nil do
+	end
+	assert(child:wait() == 0, "the exit code")
+	local said = child:stderr()
+	assert(string.sub(said, -#"last words\n") == "last words\n", string.sub(said, -100))
+end)
+
 test("a spawned program can be killed, and one that can't start says why", function(t)
 	local child = greed.process.spawn({ "sleep", "30" })
 	assert(child)

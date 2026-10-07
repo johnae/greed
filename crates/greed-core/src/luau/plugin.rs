@@ -122,9 +122,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             .filter(|(other, _)| **other != *name)
             .map(|(other, dir)| (other.to_string(), dir))
             .collect();
-        Ok(jobs::start(lua, move || {
-            Output::Check(check(&dir, &others, approved.as_ref()))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.plugin.check {}", dir.display()),
+            move || Output::Check(check(&dir, &others, approved.as_ref())),
+        ))
     })?;
     plugin.set(
         "check",

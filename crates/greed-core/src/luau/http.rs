@@ -335,9 +335,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let start_request = lua.create_function(move |lua, opts: Table| {
         let request = request_from_lua(lua, &o, &opts)?;
         let save = save_path(lua, &o, &opts)?;
-        Ok(jobs::start(lua, move || {
-            Output::Http(fetch(request, save.as_deref()))
-        }))
+        Ok(jobs::start(
+            lua,
+            format!("greed.http.request {}", request.url),
+            move || Output::Http(fetch(request, save.as_deref())),
+        ))
     })?;
     let o = owner.clone();
     let start_stream = lua.create_function(move |lua, opts: Table| {
@@ -357,15 +359,17 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             );
             id
         };
-        Ok(jobs::start_streaming(lua, move |token, emit| {
-            match send(request) {
+        Ok(jobs::start_streaming(
+            lua,
+            format!("greed.http.stream {}", request.url),
+            move |token, emit| match send(request) {
                 Ok((head, body)) => {
                     emit(Output::StreamHead(token, id, Ok(head)));
                     pump(id, body, &cancel, emit);
                 }
                 Err(err) => emit(Output::StreamHead(token, id, Err(err))),
-            }
-        }))
+            },
+        ))
     })?;
     http.set(
         "request",

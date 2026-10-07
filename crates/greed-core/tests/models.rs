@@ -1,7 +1,10 @@
 //! The models plugin against a fake server that streams the way the
 //! Anthropic and `OpenAI` APIs do.
 
+mod jobs;
 mod support;
+
+use jobs::{messages, until};
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -87,16 +90,6 @@ fn answer(stream: TcpStream) {
     }
     write!(out, "0\r\n\r\n").unwrap();
     out.flush().unwrap();
-}
-
-/// Finishes jobs until `count` messages were echoed, and returns them.
-fn messages(host: &Host, count: usize) -> Vec<String> {
-    let mut got = Vec::new();
-    until(host, |host| {
-        got.extend(host.with_editor_mut(Editor::take_messages));
-        got.len() >= count
-    });
-    got
 }
 
 fn host(address: &str) -> Host {
@@ -249,22 +242,6 @@ fn load_assist(host: &Host, address: &str) {
     .unwrap();
 }
 
-/// Finishes jobs until `done` says so.
-fn until(host: &Host, mut done: impl FnMut(&Host) -> bool) {
-    let jobs = host.finished_jobs();
-    loop {
-        // Commands whose time slice ran out carry on from a timer.
-        host.fire_timers(Instant::now()).unwrap();
-        if done(host) {
-            return;
-        }
-        let job = jobs
-            .recv_timeout(Duration::from_secs(5))
-            .expect("a job finished");
-        host.finish_job(job).unwrap();
-    }
-}
-
 fn buffer_of_kind(host: &Host, kind: &str) -> Option<String> {
     host.with_editor(|ed| {
         ed.buffers()
@@ -353,7 +330,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
     let jobs = host.finished_jobs();
     let deadline = Instant::now() + Duration::from_secs(30);
     let step = |host: &Host| {
-        // Commands whose time slice ran out carry on from a timer.
+        // Timers due by now fire, as the server fires them.
         host.fire_timers(Instant::now()).unwrap();
         crossbeam_channel::select! {
             recv(lsp) -> event => host.handle_lsp(event.unwrap()).unwrap(),

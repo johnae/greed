@@ -4,7 +4,8 @@
 //! A test file gets `test` from `require("@greed/test")` and calls
 //! `test(name, function(t) ... end)` for each test. Every
 //! test runs in a fresh host with the plugins loaded, so tests can't affect
-//! each other. `t` sets up a buffer, presses keys and checks the result:
+//! each other, and they run side by side. `t` sets up a buffer, presses keys
+//! and checks the result:
 //!
 //! ```luau
 //! local test = require("@greed/test")
@@ -24,6 +25,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use greed_text::ClientId;
@@ -32,7 +34,8 @@ use mlua::{Function, Lua, Table, UserData, UserDataMethods};
 use super::capabilities::Grant;
 use super::modules::Modules;
 use super::{
-    Host, HostError, api, budgeted, extend_deadline, jobs, state, state_mut, tasks, terminal, watch,
+    Host, HostError, api, budgeted, extend_deadline, jobs, restart_deadline, state, state_mut,
+    tasks, terminal, watch,
 };
 use crate::keymap::Key;
 use crate::{Editor, parse_marked};
@@ -47,18 +50,30 @@ pub struct TestResult {
 }
 
 /// Runs every test in `dir/test/*.luau`. Each test gets a fresh host with
-/// `plugins` loaded, in order.
+/// `plugins` loaded, in order. They run side by side, on as many threads as
+/// the machine has cores.
 pub fn run_tests(plugins: &[PathBuf], dir: &Path) -> Result<Vec<TestResult>, HostError> {
-    run_checked(plugins, dir, None)
+    run_on(plugins, dir, None, cores())
 }
 
 /// `run_tests`, for checking the plugin in `dir`, the last of `plugins`,
 /// before it's approved: with `approved`, it and what its tests do get no
 /// capabilities but those, and what needs others fails as needing approval.
+/// The tests run one at a time, since the editor, or the test checking a
+/// plugin, carries on meanwhile.
 pub(super) fn run_checked(
     plugins: &[PathBuf],
     dir: &Path,
     approved: Option<&BTreeSet<String>>,
+) -> Result<Vec<TestResult>, HostError> {
+    run_on(plugins, dir, approved, 1)
+}
+
+fn run_on(
+    plugins: &[PathBuf],
+    dir: &Path,
+    approved: Option<&BTreeSet<String>>,
+    threads: usize,
 ) -> Result<Vec<TestResult>, HostError> {
     let dir = &dir.canonicalize().map_err(|err| HostError::Manifest {
         path: dir.to_owned(),
@@ -79,18 +94,116 @@ pub(super) fn run_checked(
     };
     files.sort();
 
-    let mut results = Vec::new();
-    for file in files {
-        for name in fresh_host(plugins, approved)?.test_names(dir, &file)? {
-            let failure = fresh_host(plugins, approved)?.run_test(dir, &file, &name)?;
-            results.push(TestResult {
+    let names = side_by_side(&files, threads, |file| {
+        fresh_host(plugins, approved)?.test_names(dir, file)
+    });
+    let mut tests = Vec::new();
+    for (file, names) in files.iter().zip(names) {
+        tests.extend(names?.into_iter().map(|name| (file, name)));
+    }
+    let failures = side_by_side(&tests, threads, |(file, name)| {
+        fresh_host(plugins, approved)?.run_test(dir, file, name)
+    });
+    tests
+        .into_iter()
+        .zip(failures)
+        .map(|((file, name), failure)| {
+            Ok(TestResult {
                 file: file.clone(),
                 name,
-                failure,
-            });
-        }
+                failure: failure?,
+            })
+        })
+        .collect()
+}
+
+/// `run_tests` for several plugins at once: each of `suites` is the plugins
+/// to load and the plugin whose tests to run. They run side by side, and
+/// their results come back in the same order.
+pub fn run_suites(suites: &[(Vec<PathBuf>, PathBuf)]) -> Vec<Result<Vec<TestResult>, HostError>> {
+    // A thread for each; their tests share the cores.
+    std::thread::scope(|scope| {
+        let running: Vec<_> = suites
+            .iter()
+            .map(|(plugins, dir)| scope.spawn(move || run_tests(plugins, dir)))
+            .collect();
+        running.into_iter().map(joined).collect()
+    })
+}
+
+/// `f` of each of `items`, in order, worked out on up to `threads` threads.
+/// However many calls run at once, the process works on no more items at a
+/// time than the machine has cores.
+fn side_by_side<T: Sync, R: Send>(
+    items: &[T],
+    threads: usize,
+    f: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    if threads <= 1 {
+        return items.iter().map(f).collect();
     }
-    Ok(results)
+    let workers = threads.min(items.len());
+    let next = AtomicUsize::new(0);
+    let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(i) else {
+                            return done;
+                        };
+                        let _core = Core::take();
+                        done.push((i, f(item)));
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(joined).collect()
+    });
+    done.sort_by_key(|(i, _)| *i);
+    done.into_iter().map(|(_, result)| result).collect()
+}
+
+/// What a thread returned, or its panic, passed on.
+fn joined<R>(thread: std::thread::ScopedJoinHandle<'_, R>) -> R {
+    thread
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+fn cores() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// One of the machine's cores, taken by a test while it runs, so that tests
+/// started from many threads at once, as `cargo test` starts them, don't
+/// crowd the machine until real-time waits in them give up.
+struct Core;
+
+static CORES_TAKEN: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+impl Core {
+    fn take() -> Self {
+        let (taken, freed) = &CORES_TAKEN;
+        let mut taken = freed
+            .wait_while(
+                taken.lock().unwrap_or_else(PoisonError::into_inner),
+                |taken| *taken >= cores(),
+            )
+            .unwrap_or_else(PoisonError::into_inner);
+        *taken += 1;
+        Self
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        let (taken, freed) = &CORES_TAKEN;
+        *taken.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+        freed.notify_one();
+    }
 }
 
 /// What looks wrong in what `plugins` register once they're all loaded, as
@@ -250,6 +363,7 @@ fn mouse(
     mods: Option<&Table>,
 ) -> mlua::Result<()> {
     use crate::mouse::{Mouse, MouseKind};
+    restart_deadline(lua);
     let kind = MouseKind::parse(kind, which)
         .ok_or_else(|| mlua::Error::runtime(format!("{kind:?} {which:?} isn't a mouse event")))?;
     let held = |name: &str| -> mlua::Result<bool> {
@@ -366,6 +480,7 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame
             &Plain,
         ))
     };
+    restart_deadline(lua);
     end_frame(lua)?;
     let mut drawn = frame()?;
     // As the server does: what plugins do about views changing shows at once.
@@ -395,6 +510,7 @@ impl UserData for TestContext {
         });
         methods.add_method("keys", |lua, _, keys: String| {
             for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
+                restart_deadline(lua);
                 api::press(lua, key).map_err(api::into_lua)?;
                 jobs::settle(lua)?;
             }
@@ -403,6 +519,7 @@ impl UserData for TestContext {
         methods.add_method(
             "run",
             |lua, _, (command, args): (String, Option<Vec<String>>)| {
+                restart_deadline(lua);
                 api::run_command_with(lua, &command, args.unwrap_or_default())
                     .map_err(api::into_lua)?;
                 jobs::settle(lua)?;
@@ -418,6 +535,7 @@ impl UserData for TestContext {
             },
         );
         methods.add_method("wait", |lua, _, ms: f64| {
+            restart_deadline(lua);
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
             jobs::settle(lua)?;
             end_frame(lua)?;

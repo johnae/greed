@@ -71,6 +71,9 @@ type Term = {
 	failures: { { mark: greed.TerminalMark, code: number } },
 	-- Whether it stays open when its program ends well, to read the output.
 	keep: boolean,
+	-- Whether an update is under way, and whether more came in meanwhile.
+	updating: boolean,
+	stale: boolean,
 }
 
 local M = {}
@@ -323,8 +326,7 @@ local function mark_failures(term: Term)
 	term.buffer:decorate("terminal.exits", marks)
 end
 
---- Shows the terminal's latest output in its buffer.
-function M.update(term: Term)
+local function show(term: Term)
 	local buffer = term.buffer
 	local scrolled = term.terminal:scrollback(term.next)
 	local screen = term.terminal:screen()
@@ -366,6 +368,27 @@ function M.update(term: Term)
 	term.alternate = screen.alternate
 	mark_failures(term)
 	follow(term, screen, before)
+end
+
+--- Shows the terminal's latest output in its buffer.
+function M.update(term: Term)
+	-- An update's time slice can run out partway, and another start on the
+	-- half-updated buffer meanwhile; that one leaves it to the first.
+	if term.updating then
+		term.stale = true
+		return
+	end
+	term.updating = true
+	local ok, err = pcall(function()
+		repeat
+			term.stale = false
+			show(term)
+		until not term.stale
+	end)
+	term.updating = false
+	if not ok then
+		error(err, 0)
+	end
 end
 
 --- Types into the terminal `view` shows, if it shows one that's running.
@@ -540,6 +563,8 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		marks_made = 0,
 		failures = {},
 		keep = opts.keep == true,
+		updating = false,
+		stale = false,
 	}
 	terms[buffer:id()] = term
 	M.enter(view)

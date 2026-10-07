@@ -16,11 +16,11 @@ mod tui;
 use crossbeam_channel::Sender;
 use greed_core::Editor;
 use greed_core::control::Request;
-use greed_core::luau::{Host, HostError, run_tests};
+use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal";
+const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -68,10 +68,12 @@ fn main() -> ExitCode {
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => runtime::dir()
             .map_err(Into::into)
-            .and_then(|dir| test(&dir.join("plugins/core"))),
+            .and_then(|dir| test(&[dir.join("plugins/core")])),
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
-        [cmd, dir] if cmd == "test" => test(Path::new(dir)),
+        [cmd, dirs @ ..] if cmd == "test" => {
+            test(&dirs.iter().map(PathBuf::from).collect::<Vec<_>>())
+        }
         [cmd] if cmd == "commands" => commands(),
         [cmd] if cmd == "bench" => bench::run(None, false),
         [cmd, flag] if cmd == "bench" && flag == "--draw" => bench::run(None, true),
@@ -344,39 +346,64 @@ fn write(host: &Host) -> Result<String, Box<dyn std::error::Error>> {
     })
 }
 
-/// Runs a plugin's tests, with the default plugins loaded so keymaps work.
-/// Fails if any test fails.
-fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = dir.canonicalize()?;
-    let mut plugins = plugins()?
+/// Runs plugins' tests, each with the default plugins loaded so keymaps
+/// work. The plugins' tests run side by side, and their results are printed
+/// plugin by plugin. Fails if any test fails.
+fn test(dirs: &[PathBuf]) -> Result<(), Box<dyn std::error::Error>> {
+    let plugins = plugins()?
         .iter()
         .map(|p| p.canonicalize())
         .collect::<io::Result<Vec<_>>>()?;
-    if !plugins.contains(&dir) {
-        plugins.push(dir.clone());
+    let mut suites = Vec::new();
+    for dir in dirs {
+        let dir = dir.canonicalize()?;
+        let mut plugins = plugins.clone();
+        if !plugins.contains(&dir) {
+            plugins.push(dir.clone());
+        }
+        suites.push((plugins, dir));
     }
     // Tests see no sessions but their own, whatever the user is running.
     greed_core::control::use_sessions_dir(
         std::env::temp_dir().join(format!("greed-test-sessions-{}", std::process::id())),
     );
-    let results = run_tests(&plugins, &dir)?;
-    let mut file = None;
-    for result in &results {
-        if file != Some(&result.file) {
-            println!("{}", result.file.display());
-            file = Some(&result.file);
+    let (mut passed, mut failed, mut broken) = (0, 0, 0);
+    for ((_, dir), results) in suites.iter().zip(run_suites(&suites)) {
+        let results = match results {
+            Ok(results) => results,
+            Err(err) => {
+                println!("{}\n  FAIL  {err}", dir.display());
+                broken += 1;
+                continue;
+            }
+        };
+        let mut file = None;
+        for result in &results {
+            if file != Some(&result.file) {
+                println!("{}", result.file.display());
+                file = Some(&result.file);
+            }
+            match &result.failure {
+                None => println!("  ok    {}", result.name),
+                Some(why) => println!(
+                    "  FAIL  {}\n        {}",
+                    result.name,
+                    why.replace('\n', "\n        ")
+                ),
+            }
         }
-        match &result.failure {
-            None => println!("  ok    {}", result.name),
-            Some(why) => println!(
-                "  FAIL  {}\n        {}",
-                result.name,
-                why.replace('\n', "\n        ")
-            ),
+        let failures = results.iter().filter(|r| r.failure.is_some()).count();
+        let ok = results.len() - failures;
+        if suites.len() > 1 {
+            println!("{}: {ok} passed, {failures} failed\n", dir.display());
         }
+        passed += ok;
+        failed += failures;
     }
-    let failed = results.iter().filter(|r| r.failure.is_some()).count();
-    println!("{} passed, {failed} failed", results.len() - failed);
+    println!("{passed} passed, {failed} failed");
+    if broken > 0 {
+        return Err(format!("{broken} plugin(s) couldn't run their tests").into());
+    }
     if failed > 0 {
         return Err(format!("{failed} test(s) failed").into());
     }

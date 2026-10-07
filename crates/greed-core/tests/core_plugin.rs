@@ -4,7 +4,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use greed_core::luau::run_tests;
+use greed_core::luau::{TestResult, run_suites, run_tests};
+
+mod sessions;
 
 fn core() -> PathBuf {
     plugin("core")
@@ -18,18 +20,24 @@ fn plugin(name: &str) -> PathBuf {
 
 /// Runs the tests in `dir`, failing on any failure, and returns how many ran.
 fn assert_all_pass(plugins: &[PathBuf], dir: &Path) -> usize {
+    sessions::private();
     let results = run_tests(plugins, dir).unwrap();
     assert!(!results.is_empty(), "no tests found in {}", dir.display());
-    let failures: Vec<String> = results
+    let failures = failures(&results);
+    assert!(failures.is_empty(), "\n{}", failures.join("\n\n"));
+    results.len()
+}
+
+/// Each failed test's file, name and why it failed.
+fn failures(results: &[TestResult]) -> Vec<String> {
+    results
         .iter()
         .filter_map(|r| {
             r.failure
                 .as_ref()
                 .map(|f| format!("{} \"{}\":\n{f}", r.file.display(), r.name))
         })
-        .collect();
-    assert!(failures.is_empty(), "\n{}", failures.join("\n\n"));
-    results.len()
+        .collect()
 }
 
 #[test]
@@ -179,13 +187,21 @@ fn every_default_plugin_passes_its_tests_with_the_others_loaded() {
         .filter(|dir| dir.join("plugin.toml").is_file())
         .collect();
     all.sort();
+    sessions::private();
+    let suites: Vec<(Vec<PathBuf>, PathBuf)> = all
+        .iter()
+        .filter(|dir| dir.join("test").is_dir())
+        .map(|dir| (all.clone(), dir.clone()))
+        .collect();
     let mut ran = Vec::new();
-    for dir in &all {
-        if dir.join("test").is_dir() {
-            assert_all_pass(&all, dir);
-            ran.push(dir.file_name().unwrap().to_string_lossy().into_owned());
-        }
+    let mut failed = Vec::new();
+    for ((_, dir), results) in suites.iter().zip(run_suites(&suites)) {
+        let results = results.unwrap();
+        assert!(!results.is_empty(), "no tests found in {}", dir.display());
+        failed.extend(failures(&results));
+        ran.push(dir.file_name().unwrap().to_string_lossy().into_owned());
     }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n\n"));
     for expected in ["agent", "core", "grep", "picker"] {
         assert!(
             ran.iter().any(|name| name == expected),

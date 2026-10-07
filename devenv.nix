@@ -12,6 +12,10 @@
     pkgs.cargo-insta
     pkgs.cargo-deny
     pkgs.cargo-llvm-cov
+    # Optional compile cache: `export RUSTC_WRAPPER=sccache`. It shares the
+    # C and C++ parts (Luau, tree-sitter grammars, wasmtime) between
+    # checkouts; Rust crates hit only when built at the same target path.
+    pkgs.sccache
     # `script`, which the terminal tests run greed under
     pkgs.util-linux
     pkgs.bacon

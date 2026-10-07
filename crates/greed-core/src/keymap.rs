@@ -401,31 +401,26 @@ impl Keymap {
         self.record(layer, owner.into(), Op::Clear);
     }
 
+    /// Adds a change to `layer`'s log, and makes it to the trie, which is
+    /// what replaying the log would build.
     fn record(&mut self, layer: Layer, owner: PluginId, op: Op) {
-        self.log
-            .entry(layer.clone())
-            .or_default()
-            .push(Entry { owner, op });
-        self.replay(layer);
+        let entry = Entry { owner, op };
+        let mut children = self.layers.remove(&layer).unwrap_or_default();
+        apply(&mut children, &entry);
+        self.log.entry(layer.clone()).or_default().push(entry);
+        self.keep(layer, children);
     }
 
     /// Rebuilds `layer`'s trie from its log.
     fn replay(&mut self, layer: Layer) {
         let mut children = HashMap::new();
         for entry in self.log.get(&layer).into_iter().flatten() {
-            match &entry.op {
-                Op::Bind(keys, command) => insert(
-                    &mut children,
-                    keys,
-                    Binding {
-                        command: command.clone(),
-                        owner: entry.owner.clone(),
-                    },
-                ),
-                Op::Unbind(keys) => remove(&mut children, keys),
-                Op::Clear => children.clear(),
-            }
+            apply(&mut children, entry);
         }
+        self.keep(layer, children);
+    }
+
+    fn keep(&mut self, layer: Layer, children: HashMap<Key, Node>) {
         if children.is_empty() {
             self.layers.remove(&layer);
         } else {
@@ -718,6 +713,22 @@ fn owns_any(children: &HashMap<Key, Node>, owner: &str) -> bool {
         Node::Command(b) => &*b.owner == owner,
         Node::Prefix(next) => owns_any(next, owner),
     })
+}
+
+/// Makes the change `entry` logs to a layer's trie.
+fn apply(children: &mut HashMap<Key, Node>, entry: &Entry) {
+    match &entry.op {
+        Op::Bind(keys, command) => insert(
+            children,
+            keys,
+            Binding {
+                command: command.clone(),
+                owner: entry.owner.clone(),
+            },
+        ),
+        Op::Unbind(keys) => remove(children, keys),
+        Op::Clear => children.clear(),
+    }
 }
 
 /// Binds `keys`, replacing whatever it conflicts with.

@@ -9,8 +9,11 @@
 //! A plugin's files share its globals, and can't require anything outside
 //! the plugin's directory.
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
+use mlua::chunk::Compiler;
 use mlua::{Function, Lua, Table, Value};
 
 use super::capabilities::{self, Grant};
@@ -107,9 +110,15 @@ impl Modules {
             .unwrap_or(file);
         let name = format!("{}/{}", self.owner, relative.display());
         state_mut(lua).sources.insert(name.clone(), file.to_owned());
-        lua.load(source)
+        let env = self.file_env(lua, Some(file))?;
+        let compiled = compiled(file, source);
+        let chunk = match &compiled {
+            Ok(code) => lua.load(&code[..]),
+            Err(source) => lua.load(source.as_str()),
+        };
+        chunk
             .set_name(format!("@{name}"))
-            .set_environment(self.file_env(lua, Some(file))?)
+            .set_environment(env)
             .eval()
     }
 
@@ -227,6 +236,33 @@ impl Modules {
             .find(|p| p.is_file())
             .ok_or_else(|| fail("no such file"))
     }
+}
+
+/// The bytecode for `file`'s `source`, compiled once per process: tests load
+/// the same plugins into a fresh editor for every test. Like evaluating
+/// source, it's the file as an expression if it is one, else as a block.
+/// Source that doesn't compile comes back, to load as it is and report
+/// what's wrong.
+fn compiled(file: &Path, source: String) -> Result<Arc<[u8]>, String> {
+    /// Each file's source as last compiled, and its bytecode.
+    type Compiled = BTreeMap<PathBuf, (String, Arc<[u8]>)>;
+    static COMPILED: Mutex<Compiled> = Mutex::new(BTreeMap::new());
+    let cache = || COMPILED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((cached, code)) = cache().get(file)
+        && *cached == source
+    {
+        return Ok(code.clone());
+    }
+    let compiler = Compiler::new();
+    let Ok(code) = compiler
+        .compile(format!("return {source}"))
+        .or_else(|_| compiler.compile(&source))
+    else {
+        return Err(source);
+    };
+    let code: Arc<[u8]> = code.into();
+    cache().insert(file.to_owned(), (source, code.clone()));
+    Ok(code)
 }
 
 /// Takes away `getfenv`/`setfenv`, which reach into another plugin's

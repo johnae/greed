@@ -701,10 +701,11 @@ piece or a plugin's top level, the calls that wait raise an error instead of
 running on the editor's thread, so no plugin can freeze the editor on a
 slow program or server.
 
-Heavy work doesn't freeze it either. A command or handler that runs for
+Heavy work doesn't freeze it either. A command or handler that works for
 more than 15 ms without waiting is paused, the editor handles keys and
 draws, and it carries on where it was, so a slow plugin is only slow
-itself. (`coroutine.yield()` with nothing does the same on purpose.) Your
+itself. On Linux only time spent working counts toward the 15 ms, so a
+busy machine doesn't change where code is paused. (`coroutine.yield()` with nothing does the same on purpose.) Your
 own coroutines, like a generator made with `coroutine.wrap`, are never
 paused this way. One that works for a whole minute without finishing is
 stopped and Greed says so. Code that can't be paused, like a status line
@@ -1210,13 +1211,17 @@ end)
 ```
 
 `greed test DIR` runs a plugin's tests, each in a fresh editor with the
-default plugins loaded. `t:wait(ms)` moves the clock forward for code that
-sleeps, `t:wait_for(check)` waits for real until `check()` is true (for a
-program's output), and `t:tempdir(files)` makes a folder of files to work
-on. Tests don't show the message about code that held the editor up, so
-a busy machine doesn't change what `t:messages()` returns, and time a
-test spends waiting for programs and background work doesn't count
-toward its time limit.
+default plugins loaded. Give it several folders (`greed test
+runtime/plugins/*/`) to test several plugins at once. Tests run side by
+side, as many at a time as the machine has cores, and the results are
+printed plugin by plugin. `t:wait(ms)` moves the clock forward for code
+that sleeps, `t:wait_for(check)` waits for real until `check()` is true
+(for a program's output), and `t:tempdir(files)` makes a folder of files
+to work on. Tests don't show the message about code that held the editor
+up, so a busy machine doesn't change what `t:messages()` returns. Each key
+a test presses and each command it runs gets the time limit a key press
+gets in the editor, and time spent waiting for programs and background
+work doesn't count toward it.
 
 ## Types
 

@@ -1,10 +1,16 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 
--- Keeps the editor's thread busy for `ms`, as heavy plugin code would.
+-- Keeps the editor's thread busy for `ms`, as heavy plugin code would. On
+-- a busy machine the thread gets less of that time to work in, and only
+-- work counts toward a slice, so it does a set amount of work too.
 local function busy(ms: number)
 	local until_ = os.clock() + ms / 1000
-	while os.clock() < until_ do
+	local spins = 0
+	while os.clock() < until_ or spins < ms * 2000 do
+		for _ = 1, 100 do
+			spins += 1
+		end
 	end
 end
 
@@ -44,6 +50,46 @@ test("a plugin's own coroutines never see a yield they didn't ask for", function
 	t:run("test-generator")
 	t:wait(10)
 	assert(got and got[1] == 1 and got[2] == 2, "the generator gave 1 and 2")
+end)
+
+-- Long enough, at a check for every call, to have run the coroutine out of
+-- stack when each check took a slot of it.
+test("a plugin's own coroutine can work long past a slice", function(t)
+	local calls = 0
+	greed.command({
+		name = "test-long-coroutine",
+		run = function()
+			local work = coroutine.wrap(function()
+				local until_ = os.clock() + 1.2
+				while os.clock() < until_ do
+					calls += 1
+				end
+				return "done"
+			end)
+			greed.echo(work())
+		end,
+	})
+	t:buffer("|x")
+	t:run("test-long-coroutine")
+	t:wait(10)
+	local said = t:messages()
+	assert(said[#said] == "done", table.concat(said, ", "))
+	assert(calls > 10000, `it called os.clock {calls} times`)
+end)
+
+test("code that can't yield, like a status line, can work long past a slice", function(t)
+	local calls = 0
+	greed.statusline(function()
+		local until_ = os.clock() + 1.2
+		while os.clock() < until_ do
+			calls += 1
+		end
+		return { left = {}, right = {} }
+	end)
+	t:buffer("|x")
+	-- The test runs as a command does, so its slice runs out meanwhile.
+	t:status()
+	assert(calls > 10000, `it called os.clock {calls} times`)
 end)
 
 test("code that holds the editor up is noted with its plugin and what it ran", function(t)
