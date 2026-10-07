@@ -602,7 +602,7 @@ greed.command({
 			table.insert(items, { label = core.project.relative(path, root), value = path })
 		end
 		picker.pick("Changed files", items, function(item)
-			greed.open(item.value)
+			core.file.open(item.value)
 		end)
 	end,
 })

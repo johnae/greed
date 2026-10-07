@@ -699,12 +699,7 @@ greed.command({
 		if path == nil then
 			return
 		end
-		greed.open(path)
-		local view = greed.view()
-		local buffer = view:buffer()
-		local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
-		local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
-		view:set_cursor(at)
+		core.file.open_at(path, line, column)
 	end,
 })
 

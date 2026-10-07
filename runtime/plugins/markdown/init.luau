@@ -651,7 +651,7 @@ greed.command({
 			greed.echo("no link here")
 			return
 		end
-		local opened = links.follow(ctx.view, target, at)
+		local opened = links.follow(ctx.view, target)
 		-- A Markdown file opened from the reading view is read too.
 		if opened and greed.mode.get() == "read" then
 			if is_markdown(opened) then

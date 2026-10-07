@@ -51,7 +51,7 @@ end
 
 --- Opens `path` in the main view at an LSP `position`.
 function M.open_at(path: string, position: greed.LspPosition)
-	greed.open(path)
+	require("@core").file.open(path)
 	local view = greed.view()
 	view:set_cursor(greed.lsp.offset(view:buffer(), position))
 end

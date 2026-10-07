@@ -4,6 +4,7 @@
 -- own jumping commands with `require("@core").jumps.add(name)`.
 
 local greed = require("@greed")
+local file = require("./file")
 local registry = require("./registry")
 
 type Place = { buffer: number, path: string?, pos: number }
@@ -90,7 +91,7 @@ local function go(place: Place): boolean
 		if place.path == nil then
 			return false
 		end
-		greed.open(place.path)
+		file.open(place.path)
 	end
 	local pos = math.min(place.pos, greed.view():buffer():len())
 	greed.view():set_cursor(pos)

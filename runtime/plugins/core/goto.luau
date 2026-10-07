@@ -7,6 +7,7 @@ local greed = require("@greed")
 local motions = require("./motions")
 local text = require("./text")
 local project = require("./project")
+local file = require("./file")
 
 local M = {}
 
@@ -177,7 +178,7 @@ greed.command({
 			greed.echo(`no file {path}`)
 			return
 		end
-		greed.open(path)
+		file.open(path)
 	end,
 })
 

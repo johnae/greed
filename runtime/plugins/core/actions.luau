@@ -174,7 +174,7 @@ M.action({
 	name = "open",
 	doc = "Open it here",
 	run = function(target)
-		greed.open(target.value)
+		require("./file").open(target.value)
 	end,
 })
 

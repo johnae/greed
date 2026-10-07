@@ -228,13 +228,8 @@ agent.tool({
 	description = "Open a file in the editor for the user, optionally at a 1-based line",
 	input = object({ path = { type = "string" }, line = { type = "integer" } }, { "path" }),
 	run = function(args)
-		greed.open(core.project.resolve(args.path))
-		if args.line then
-			local view = greed.view()
-			local buffer = view:buffer()
-			local at = buffer:line_start(math.clamp(args.line - 1, 0, buffer:line_count() - 1))
-			view:set_cursor(at)
-		end
+		local line: number? = args.line
+		core.file.open_at(core.project.resolve(args.path), if line then line - 1 else nil)
 		return `opened {args.path}`
 	end,
 })

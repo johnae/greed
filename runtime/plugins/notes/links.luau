@@ -162,7 +162,7 @@ greed.command({
 			if link.from <= head and head < link.to then
 				local path = ctx.buffer:path()
 				local from = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
-				greed.open(notes.path(notes.resolve(link.target, from)))
+				core.file.open(notes.path(notes.resolve(link.target, from)))
 				return
 			end
 		end

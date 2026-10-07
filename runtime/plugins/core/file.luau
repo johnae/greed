@@ -235,6 +235,115 @@ greed.command({
 	end,
 })
 
+-- Files that open as something other than text, like images: the last
+-- opener added that matches a path opens it.
+type Opener = {
+	match: (path: string) -> boolean,
+	open: (path: string, views: { greed.View }) -> string?,
+}
+local openers: { Opener } = {}
+
+--- Makes the files `match(path)` says yes to open with `open` rather than
+--- as text, like images as the picture. `open(path, views)` shows the file
+--- in each of `views` and returns nil, or says why it can't, and then the
+--- file opens as text. It goes when the plugin that added it does.
+function M.opener(
+	match: (path: string) -> boolean,
+	open: (path: string, views: { greed.View }) -> string?
+)
+	greed.plugin.tie(registry.put(openers, { match = match, open = open }))
+end
+
+local function opener_for(path: string): Opener?
+	for i = #openers, 1, -1 do
+		if openers[i].match(path) then
+			return openers[i]
+		end
+	end
+	return nil
+end
+
+-- Set while a file whose opener failed opens as text.
+local as_text = false
+
+--- Shows the file at `path` in the main view and focuses it: as its
+--- opener shows it (an image, a PDF), otherwise as text.
+function M.open(path: string)
+	local opener = opener_for(path)
+	if opener then
+		local main = greed.tab.current().active
+		local err = opener.open(path, { main })
+		if err == nil then
+			main:focus()
+			return
+		end
+		greed.echo(err)
+	end
+	as_text = opener ~= nil
+	local ok, err = pcall(function()
+		greed.open(path)
+	end)
+	as_text = false
+	if not ok then
+		error(err, 0)
+	end
+end
+
+--- Opens `path` like `M.open`, with the cursor on 0-based `line` at byte
+--- `col` of it (both kept inside the file), when `line` is given.
+function M.open_at(path: string, line: number?, col: number?)
+	M.open(path)
+	if line == nil then
+		return
+	end
+	local view = greed.view()
+	local buffer = view:buffer()
+	local row = math.clamp(line, 0, buffer:line_count() - 1)
+	view:set_cursor(math.min(buffer:line_start(row) + math.max(col or 0, 0), buffer:line_end(row)))
+end
+
+-- Files opened some other way than `M.open`, like `greed FILE` from a
+-- shell, open as text first; their opener takes over the views.
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	local path = event.buffer:path()
+	local opener = if path and not as_text then opener_for(path) else nil
+	if path and opener then
+		local err = opener.open(path, event.buffer:views())
+		if err then
+			greed.echo(err)
+		end
+	end
+end)
+
+greed.option.define({
+	name = "link-opener",
+	doc = 'What opens a link, e.g. "firefox"; empty for xdg-open, or open on macOS',
+	default = "",
+})
+
+--- Opens `uri` (a web address, or any link the system knows how to open)
+--- with the link-opener option, or the system's opener. Says why when it
+--- can't.
+function M.open_link(uri: string)
+	local given = greed.option.get("link-opener") :: string
+	local done, err
+	if given ~= "" then
+		local command = string.split(given, " ")
+		table.insert(command, uri)
+		done, err = greed.process.run(command)
+	else
+		done, err = greed.process.run({ "xdg-open", uri })
+		if done == nil then
+			done, err = greed.process.run({ "open", uri })
+		end
+	end
+	if done == nil then
+		greed.echo(`can't open {uri}: {err}`)
+	elseif done.code ~= 0 then
+		greed.echo(`can't open {uri}: {done.stderr}`)
+	end
+end
+
 greed.command({
 	name = "open",
 	doc = "Open a file in the main view",
@@ -250,7 +359,7 @@ greed.command({
 		if path == nil then
 			error("open needs a path, e.g. :open src/main.rs", 0)
 		end
-		greed.open(path)
+		M.open(path)
 	end,
 })
 

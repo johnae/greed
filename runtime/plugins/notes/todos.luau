@@ -5,7 +5,8 @@
 
 local greed = require("@greed")
 local picker = require("@picker")
-local prompt = require("@core").prompt
+local core = require("@core")
+local prompt = core.prompt
 local notes = require("./notes")
 
 type Found = notes.Found
@@ -147,10 +148,7 @@ end
 
 --- Opens note `name` with the cursor at the start of `line` (0-based).
 function M.open_at(name: string, line: number)
-	greed.open(notes.path(name))
-	local view = greed.view()
-	local at = view:buffer():line_start(math.min(line, view:buffer():line_count() - 1))
-	view:set_cursor(at)
+	core.file.open_at(notes.path(name), line)
 end
 
 greed.command({
@@ -158,7 +156,7 @@ greed.command({
 	doc = "Tick the todo on each selected line, or untick it; a plain line becomes a todo",
 	run = function(ctx)
 		local buffer = ctx.buffer
-		local lines = require("@core").motions.selected_lines(ctx)
+		local lines = core.motions.selected_lines(ctx)
 		buffer:edit(function(e)
 			for _, line in lines do
 				local start = buffer:line_start(line)
@@ -251,7 +249,7 @@ greed.command({
 		if greed.fs.stat(path) == nil then
 			greed.fs.write(path, `# {today}\n\n`)
 		end
-		greed.open(path)
+		core.file.open(path)
 	end,
 })
 
@@ -264,14 +262,14 @@ greed.command({
 			table.insert(items, { label = name, value = name })
 		end
 		picker.pick("Notes", items, function(item)
-			greed.open(notes.path(item.value))
+			core.file.open(notes.path(item.value))
 		end, {
 			preview = function(item)
 				return { text = notes.read(item.value) or "", language = "markdown" }
 			end,
 			-- A name that isn't a note yet makes one.
 			fallback = function(query)
-				greed.open(notes.path(query))
+				core.file.open(notes.path(query))
 			end,
 		})
 	end,

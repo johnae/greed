@@ -201,7 +201,7 @@ greed.command({
 				t.expanded[node.path] = true
 			end
 		else
-			greed.open(node.path)
+			core.file.open(node.path)
 		end
 		render(t, node.path)
 	end,

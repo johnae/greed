@@ -22,12 +22,6 @@ greed.option.define({
 	default = "",
 })
 
-greed.option.define({
-	name = "link-opener",
-	doc = 'What opens a link, e.g. "firefox"; empty for xdg-open, or open on macOS',
-	default = "",
-})
-
 -- The terminal-shell option as a command line, or nil for $SHELL.
 local function shell(): { string }?
 	local words = {}
@@ -853,17 +847,9 @@ local function to_reference(ctx: greed.Context, back: boolean)
 	})
 end
 
---- Opens `path` in the main view, at 1-based `line` and `col` if given.
-function M.open_file(path: string, line: number?, col: number?)
-	greed.open(path)
-	if line then
-		local view = greed.view()
-		local buffer = view:buffer()
-		local row = math.clamp(line - 1, 0, buffer:line_count() - 1)
-		local at =
-			math.min(buffer:line_start(row) + math.max((col or 1) - 1, 0), buffer:line_end(row))
-		view:set_cursor(at)
-	end
+-- Opens `path` in the main view, at 1-based `line` and `col` if given.
+local function open_file(path: string, line: number?, col: number?)
+	core.file.open_at(path, if line then line - 1 else nil, if col then col - 1 else nil)
 end
 
 greed.command({
@@ -898,7 +884,7 @@ greed.command({
 		end
 		picker.pick("In the output", items, function(item)
 			local ref = item.value :: Reference
-			M.open_file(ref.path, ref.line, ref.col)
+			open_file(ref.path, ref.line, ref.col)
 		end)
 	end,
 })
@@ -929,38 +915,17 @@ function M.link_at(buffer: greed.Buffer, pos: number): string?
 	return nil
 end
 
---- Opens `uri` with the link-opener option, or the system's opener.
-function M.open_link(uri: string)
-	local given = greed.option.get("link-opener") :: string
-	local done, err
-	if given ~= "" then
-		local command = string.split(given, " ")
-		table.insert(command, uri)
-		done, err = greed.process.run(command)
-	else
-		done, err = greed.process.run({ "xdg-open", uri })
-		if done == nil then
-			done, err = greed.process.run({ "open", uri })
-		end
-	end
-	if done == nil then
-		greed.echo(`can't open {uri}: {err}`)
-	elseif done.code ~= 0 then
-		greed.echo(`can't open {uri}: {done.stderr}`)
-	end
-end
-
 -- Opens the link at `pos` in `buffer`, or else the file named there; false
 -- when there's neither.
 local function open_at(buffer: greed.Buffer, pos: number): boolean
 	local uri = M.link_at(buffer, pos)
 	if uri then
-		M.open_link(uri)
+		core.file.open_link(uri)
 		return true
 	end
 	local path, line, col = M.file_at(buffer, pos)
 	if path then
-		M.open_file(path, line, col)
+		open_file(path, line, col)
 		return true
 	end
 	return false
@@ -989,7 +954,7 @@ core.actions.action({
 	name = "open",
 	doc = "Open it with the link-opener",
 	run = function(target)
-		M.open_link(target.value)
+		core.file.open_link(target.value)
 	end,
 })
 core.actions.action({

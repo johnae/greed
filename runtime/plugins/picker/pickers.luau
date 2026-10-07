@@ -3,7 +3,8 @@
 
 local greed = require("@greed")
 local picker = require("./picker")
-local project = require("@core").project
+local core = require("@core")
+local project = core.project
 
 -- At most this much of a file is read for its preview.
 local PREVIEW_BYTES = 64 * 1024
@@ -33,7 +34,7 @@ local function pick_file(title: string, root: string)
 		table.insert(items, { label = path, value = project.resolve(path, root), kind = "file" })
 	end
 	picker.pick(title, items, function(item)
-		greed.open(item.value)
+		core.file.open(item.value)
 	end, { preview = file_preview })
 end
 
@@ -75,7 +76,7 @@ greed.command({
 			end
 		end
 		picker.pick("Buffers", items, function(item)
-			greed.open(item.value)
+			core.file.open(item.value)
 		end, { preview = buffer_preview })
 	end,
 })

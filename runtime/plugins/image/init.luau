@@ -7,6 +7,7 @@
 --   0     its own size
 
 local greed = require("@greed")
+local core = require("@core")
 
 type Viewer = {
 	buffer: greed.Buffer,
@@ -66,9 +67,9 @@ end
 
 local M = {}
 
---- Shows the image at `path` in place of `file`, a buffer of its bytes,
---- in every view showing it. Returns the viewer's buffer, or nil and why.
-function M.open(path: string, file: greed.Buffer?): (greed.Buffer?, string?)
+--- Shows the image at `path` in each of `views` (the focused view by
+--- default). Returns the viewer's buffer, or nil and why.
+function M.open(path: string, views: { greed.View }?): (greed.Buffer?, string?)
 	local image, err = greed.image.load(path)
 	if image == nil then
 		return nil, err
@@ -78,8 +79,8 @@ function M.open(path: string, file: greed.Buffer?): (greed.Buffer?, string?)
 	buffer:forget_history()
 	local v: Viewer = { buffer = buffer, path = path, image = image }
 	viewers[buffer:id()] = v
-	local views: { greed.View } = if file then file:views() else { greed.view() }
-	for _, view in views do
+	local shown_in: { greed.View } = views or { greed.view() }
+	for _, view in shown_in do
 		view:show(buffer)
 	end
 	show(v, cols_of(v))
@@ -151,15 +152,11 @@ greed.keymap.bind({ mode = "normal", kind = "image" }, {
 	["0"] = "image-zoom-actual",
 })
 
-greed.on("buffer.opened", function(event: greed.BufferChanged)
-	local path = event.buffer:path()
-	local extension = path and string.lower(string.match(path, "%.(%w+)$") or "")
-	if path and extension and EXTENSIONS[extension] then
-		local _, err = M.open(path, event.buffer)
-		if err then
-			greed.echo(err)
-		end
-	end
+core.file.opener(function(path)
+	return EXTENSIONS[string.lower(string.match(path, "%.(%w+)$") or "")] ~= nil
+end, function(path, views)
+	local _, err = M.open(path, views)
+	return err
 end)
 
 greed.on("view.resized", function(event: greed.ViewResized)

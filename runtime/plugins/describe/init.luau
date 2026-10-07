@@ -412,10 +412,7 @@ greed.command({
 			return
 		end
 		close()
-		greed.open(o.path)
-		local view = greed.view()
-		local pos = view:buffer():line_start((o.line or 1) - 1)
-		view:set_cursor(pos)
+		require("@core").file.open_at(o.path, (o.line or 1) - 1)
 	end,
 })
 

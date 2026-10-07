@@ -31,17 +31,6 @@ local function grep(pattern: string, root: string): Found
 	return found
 end
 
--- Opens `path` (relative to `root`) in the main view with the cursor at
--- `column` on 0-based `line`.
-local function go_to(root: string, path: string, line: number, column: number)
-	greed.open(core.project.resolve(path, root))
-	local view = greed.view()
-	local buffer = view:buffer()
-	local start = buffer:line_start(math.clamp(line, 0, buffer:line_count() - 1))
-	local at = math.min(start + column, buffer:line_end(buffer:line_of(start)))
-	view:set_cursor(at)
-end
-
 -- Shows `found` in the results panel, each line under its file.
 local function show(pattern: string, root: string, found: Found)
 	if #found == 0 then
@@ -98,7 +87,7 @@ greed.command({
 		end
 		picker.pick("Search", {}, function(item)
 			local f = item.value :: greed.GrepLine
-			go_to(root, f.path, f.line, f.matches[1].from)
+			core.file.open_at(core.project.resolve(f.path, root), f.line, f.matches[1].from)
 		end, {
 			source = lines,
 			preview = function(item)

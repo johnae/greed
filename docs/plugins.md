@@ -185,7 +185,7 @@ actions.action({
 	name = "open",
 	doc = "Open it in the browser",
 	run = function(target)
-		require("@terminal").open_link(`https://example.atlassian.net/browse/{target.value}`)
+		require("@core").file.open_link(`https://example.atlassian.net/browse/{target.value}`)
 	end,
 })
 ```
@@ -298,7 +298,8 @@ linewise)` puts them in the register picked with `"` or on the clipboard,
 makes one text of it. Text on the clipboard that Greed didn't put there
 comes back with `linewise` false.
 
-`greed.open(path)` shows a file, `greed.load(path)` opens one without showing
+`greed.open(path)` shows a file as text (`core.file.open`, below, also
+knows images and PDFs), `greed.load(path)` opens one without showing
 it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
 `buffer:find`, `buffer:find_all` and `greed.fs.grep` search with regexes.
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
@@ -375,6 +376,28 @@ it back and the language server sees it, then saves; a closed file is
 written to disk. `{ from, to }` replaces just that part, and `{ load = true }`
 opens the file first. Both take paths as `core.project.resolve` does, and
 `core.file.buffer(path)` is the open buffer for one.
+
+To show a file to the user, `core.file.open(path)` opens it in the main
+view, as the picture for an image and the pages for a PDF, and
+`core.file.open_at(path, line, col)` puts the cursor there too (0-based
+line, byte column). `core.file.open_link(uri)` opens a web address with the
+`link-opener` option or the system's opener. A plugin that shows some kind
+of file its own way registers an opener; it goes when the plugin does:
+
+```luau
+core.file.opener(function(path)
+	return string.match(path, "%.csv$") ~= nil
+end, function(path, views)
+	local table_buffer = greed.create_buffer("csv", render(path), { readonly = true })
+	for _, view in views do
+		view:show(table_buffer)
+	end
+	return nil -- or why it can't, and the file opens as text
+end)
+```
+
+Files opened another way, like `greed FILE` from a shell or `greed.open`,
+open as text first and the opener then takes over the views showing them.
 
 For files on disk with no buffer, `greed.fs` has the usual operations, so
 a plugin needs no `rm` or `mv`. Each returns `true`, or nil and why:

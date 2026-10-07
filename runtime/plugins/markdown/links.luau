@@ -1,9 +1,10 @@
 -- Following Markdown links: `[text](#heading)` to a heading in the file,
 -- `[text](other.md#heading)` to another file, and `[text](https://...)`
--- to a web page, opened with the terminal plugin's `open-link`.
+-- to a web page, opened with the link-opener option.
 
 local greed = require("@greed")
 local structure = require("./structure")
+local core = require("@core")
 
 local M = {}
 
@@ -22,10 +23,15 @@ function M.dir(buffer: greed.Buffer): string?
 	return if path then string.match(path, "^(.*)/[^/]*$") else nil
 end
 
+-- Whether `target` starts with a scheme, like https:.
+local function has_scheme(target: string): boolean
+	return string.match(target, "^%a[%w+.-]*:") ~= nil
+end
+
 --- The path a link's `target` names, from `buffer`'s folder, without any
 --- `#heading`; nil for web addresses and for targets with no path.
 function M.path(buffer: greed.Buffer, target: string): string?
-	if string.match(target, "^%a[%w+.-]*:") then
+	if has_scheme(target) then
 		return nil
 	end
 	local path = decode(string.match(target, "^[^#?]*") or "")
@@ -81,9 +87,9 @@ function M.jump(view: greed.View, anchor: string): boolean
 	return true
 end
 
---- Follows `target`, the link's target starting at `at` in the view's
---- buffer. Returns the buffer it opened, if it opened one.
-function M.follow(view: greed.View, target: string, at: number): greed.Buffer?
+--- Follows `target`, a link's target in the view's buffer. Returns the
+--- buffer it opened, if it opened one.
+function M.follow(view: greed.View, target: string): greed.Buffer?
 	local buffer = view:buffer()
 	local anchor = string.match(target, "#(.*)$")
 	if string.sub(target, 1, 1) == "#" then
@@ -92,25 +98,21 @@ function M.follow(view: greed.View, target: string, at: number): greed.Buffer?
 		end
 		return nil
 	end
+	-- A web page, or anything else with a scheme.
+	if has_scheme(target) then
+		core.file.open_link(target)
+		return nil
+	end
 	local path = M.path(buffer, target)
 	if path == nil then
-		-- A web page: open-link opens the address under the cursor.
-		local selection = view:selection()
-		view:set_cursor(at)
-		local ok, err = pcall(function()
-			greed.run("open-link")
-		end)
-		view:set_selection(selection)
-		if not ok then
-			greed.echo(`can't open {target}: {err}`)
-		end
+		greed.echo(`can't open {target}`)
 		return nil
 	end
 	if greed.fs.stat(path) == nil then
 		greed.echo(`no file {path}`)
 		return nil
 	end
-	greed.open(path)
+	core.file.open(path)
 	if anchor and anchor ~= "" then
 		M.jump(greed.view(), anchor)
 	end

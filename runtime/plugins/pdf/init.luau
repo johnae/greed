@@ -7,6 +7,7 @@
 --   t        pages or text
 
 local greed = require("@greed")
+local core = require("@core")
 
 type Viewer = {
 	doc: greed.PdfDocument,
@@ -108,9 +109,9 @@ end
 
 local M = {}
 
---- Shows the PDF at `path` in place of `file`, a buffer of its bytes, in
---- every view showing it. Returns the viewer's buffer, or nil and why not.
-function M.open(path: string, file: greed.Buffer?): (greed.Buffer?, string?)
+--- Shows the PDF at `path` in each of `views` (the focused view by
+--- default). Returns the viewer's buffer, or nil and why not.
+function M.open(path: string, views: { greed.View }?): (greed.Buffer?, string?)
 	local doc, err = greed.pdf.open(path)
 	if doc == nil then
 		return nil, err
@@ -119,8 +120,8 @@ function M.open(path: string, file: greed.Buffer?): (greed.Buffer?, string?)
 	buffer:set_line_numbers(false)
 	local v: Viewer = { doc = doc, buffer = buffer, page = 1, zoom = 1, text = false, starts = {} }
 	viewers[buffer:id()] = v
-	local views: { greed.View } = if file then file:views() else { greed.view() }
-	for _, view in views do
+	local shown_in: { greed.View } = views or { greed.view() }
+	for _, view in shown_in do
 		view:show(buffer)
 	end
 	show(v)
@@ -209,14 +210,11 @@ greed.keymap.bind({ mode = "normal", kind = "pdf" }, {
 	t = "pdf-text",
 })
 
-greed.on("buffer.opened", function(event: greed.BufferChanged)
-	local path = event.buffer:path()
-	if path and string.lower(path):match("%.pdf$") then
-		local _, err = M.open(path, event.buffer)
-		if err then
-			greed.echo(err)
-		end
-	end
+core.file.opener(function(path)
+	return string.match(string.lower(path), "%.pdf$") ~= nil
+end, function(path, views)
+	local _, err = M.open(path, views)
+	return err
 end)
 
 greed.on("view.resized", function(event: greed.ViewResized)

@@ -286,3 +286,70 @@ test("writing a file goes through its buffer when it's open, and to disk when no
 	assert(greed.fs.read(dir .. "/new/c.txt") == "c\n")
 	assert(not pcall(core.file.write, "/nonexistent-dir/x/y.txt", "x", nil), "fails with why")
 end)
+
+-- Registers an opener for .view files that shows a buffer saying what it
+-- opened, or fails for files holding "bad".
+local function view_opener()
+	local file = require("@core").file
+	file.opener(function(path)
+		return string.match(path, "%.view$") ~= nil
+	end, function(path, views)
+		if greed.fs.read(path) == "bad" then
+			return "can't show " .. path
+		end
+		local shown = greed.create_buffer("viewer", "viewing " .. path)
+		for _, view in views do
+			view:show(shown)
+		end
+		return nil
+	end)
+end
+
+test("an opener shows its files directly, and takes over ones opened as text", function(t)
+	view_opener()
+	local dir = t:tempdir({ ["a.view"] = "bytes", ["b.view"] = "bytes" })
+	t:buffer("|")
+	require("@core").file.open(dir .. "/a.view")
+	assert(greed.view():buffer():kind() == "viewer", greed.view():buffer():kind())
+	assert(greed.buffer_for(dir .. "/a.view") == nil, "no text buffer for it")
+	greed.open(dir .. "/b.view")
+	assert(greed.view():buffer():text() == "viewing " .. dir .. "/b.view")
+end)
+
+test("a file its opener can't show opens as text, saying why once", function(t)
+	view_opener()
+	local dir = t:tempdir({ ["c.view"] = "bad" })
+	t:buffer("|")
+	require("@core").file.open(dir .. "/c.view")
+	assert(greed.view():buffer():text() == "bad")
+	local said = 0
+	for _, message in t:messages() do
+		if string.find(message, "can't show", 1, true) then
+			said += 1
+		end
+	end
+	assert(said == 1, `said it {said} times`)
+end)
+
+test("open_at puts the cursor on a line and column, kept inside the file", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree" })
+	local file = require("@core").file
+	file.open_at(dir .. "/a.txt", 1, 2)
+	t:expect("one\ntw|o\nthree")
+	file.open_at(dir .. "/a.txt", 9, 9)
+	t:expect("one\ntwo\nthree|")
+	file.open_at(dir .. "/a.txt", 0)
+	t:expect("|one\ntwo\nthree")
+end)
+
+test("open_link runs the link-opener, and says when it fails", function(t)
+	local dir = t:tempdir()
+	greed.fs.write(dir .. "/open.sh", `echo "$1" > {dir}/opened`)
+	greed.option.set("link-opener", `sh {dir}/open.sh`)
+	require("@core").file.open_link("https://example.com")
+	local opened = greed.fs.read(dir .. "/opened")
+	assert(opened == "https://example.com\n", opened)
+	greed.option.set("link-opener", "false")
+	require("@core").file.open_link("https://example.com")
+	assert(string.find(table.concat(t:messages(), "\n"), "can't open", 1, true) ~= nil)
+end)
