@@ -34,6 +34,15 @@ function M.project_path(root: string?): string
 	return `{root or core.project.root()}/.greed/memory.md`
 end
 
+--- Fails if `path` (relative to `root`) is one of the memory files: agents
+--- add memories only by proposing them, never by writing the files.
+function M.guard(path: string, root: string?)
+	local resolved = core.project.resolve(path, root)
+	if resolved == M.personal_path() or resolved == M.project_path(root) then
+		error(`{path} holds your memories: propose one with memory_propose instead`, 0)
+	end
+end
+
 local function path_of(where: Where, root: string?): string
 	return if where == "personal" then M.personal_path() else M.project_path(root)
 end

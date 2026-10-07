@@ -4,6 +4,7 @@
 -- programs and asking you for permission.
 local greed = require("@greed")
 local core = require("@core")
+local agent = require("@agent")
 local rpc = require("./rpc")
 
 local M = {}
@@ -457,6 +458,10 @@ local function handlers(session: Session): rpc.Handlers
 			if chosen ~= "once" then
 				return nil, "the user didn't allow writing outside the project"
 			end
+		end
+		local guarded: boolean, why: unknown = pcall(agent.memory.guard, params.path, session.root)
+		if not guarded then
+			return nil, tostring(why)
 		end
 		session.where = { path = params.path }
 		-- An open file is edited as you would, so undo takes it back.

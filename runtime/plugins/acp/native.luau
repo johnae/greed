@@ -106,6 +106,7 @@ local OWN: { Own } = {
 			if string.find(text, args.old_text, to + 1, true) then
 				error(`old_text is in {args.path} more than once; give more of it`, 0)
 			end
+			agent.memory.guard(args.path, s.cwd)
 			-- Through its buffer, opened if need be, so undo takes it back and
 			-- its language server sees it.
 			local buffer = core.file.write(
@@ -130,6 +131,7 @@ local OWN: { Own } = {
 			return `Write {args.path}`
 		end,
 		run = function(s, args)
+			agent.memory.guard(args.path, s.cwd)
 			return changed(
 				`wrote {args.path}`,
 				core.file.write(args.path, args.text, { root = s.cwd, load = true })
