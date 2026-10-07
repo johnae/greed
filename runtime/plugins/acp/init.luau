@@ -1118,7 +1118,7 @@ statusline.add("right", "agents", function()
 	return if text then { text = text, style = "ui.statusline.message" } else nil
 end, "position")
 
-greed.keymap.bind({ mode = "helix", kind = "agent-transcript" }, {
+greed.keymap.bind({ role = "command", kind = "agent-transcript" }, {
 	enter = "agent-answer",
 	["ctrl-c"] = "agent-stop",
 	tab = "agent-fold",
@@ -1142,17 +1142,13 @@ greed.keymap.bind({ kind = "agents" }, {
 	q = "agent-list",
 	esc = "agent-list",
 })
--- These work while typing too, in every style.
-local function transcript_keys(mode: string)
-	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
-		["alt-enter"] = "agent-send",
-		["alt-p"] = "agent-answer",
-		["alt-m"] = "agent-mode",
-		["alt-M"] = "agent-model",
-	})
-end
-transcript_keys("helix")
-core.style.each_typing(transcript_keys)
+-- These work in every mode, while typing too.
+greed.keymap.bind({ kind = "agent-transcript" }, {
+	["alt-enter"] = "agent-send",
+	["alt-p"] = "agent-answer",
+	["alt-m"] = "agent-mode",
+	["alt-M"] = "agent-model",
+})
 greed.keymap.bind({ layer = "leader" }, {
 	["i n"] = "agent-new",
 	["i l"] = "agent-list",

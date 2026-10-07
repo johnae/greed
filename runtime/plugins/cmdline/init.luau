@@ -592,12 +592,12 @@ greed.keymap.bind({ kind = "cmdline" }, {
 	["ctrl-n"] = "command-line-newer",
 })
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ role = "command" }, {
 	[":"] = "command-line",
 })
 
 -- In edit mode ":" types, so the command line is on alt-x there.
-greed.keymap.bind("edit", {
+greed.keymap.bind({ style = "edit", role = "typing" }, {
 	["alt-x"] = "command-line",
 })
 

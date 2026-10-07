@@ -384,9 +384,10 @@ core.style.each_typing(function(mode)
 	greed.keymap.bind(completing, KEYS)
 	greed.mode.set_cursor(completing, greed.mode.cursor_of(mode))
 	core.style.show_as(completing, mode)
-	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
 end)
--- Helix's own key for it; edit mode keeps ctrl-x for cut.
-greed.keymap.bind("helix-insert", { ["ctrl-x"] = "completion-ask" })
+-- ctrl-space asks in every style (in edit mode it opens the leader), and
+-- Helix has ctrl-x too; edit mode keeps ctrl-x for cut.
+greed.keymap.bind({ role = "typing" }, { ["ctrl-space"] = "completion-ask" })
+greed.keymap.bind({ style = "helix", role = "typing" }, { ["ctrl-x"] = "completion-ask" })
 
 return {}

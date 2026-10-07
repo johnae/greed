@@ -170,6 +170,6 @@ core.file.before_save("format", function(buffer)
 end)
 
 -- Helix formats on =; this formats the whole buffer.
-greed.keymap.bind("helix", { ["="] = "format" })
+greed.keymap.bind({ style = "helix", role = "command" }, { ["="] = "format" })
 
 return M

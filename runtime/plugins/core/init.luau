@@ -56,6 +56,30 @@ greed.keymap.bind({}, {
 	["ctrl-q"] = "quit",
 })
 
+-- Typing, the same in every style's typing mode; a style binds its own
+-- keys over these. esc goes back to the style's own mode.
+greed.keymap.bind({ role = "typing" }, {
+	esc = "normal-mode",
+	pagedown = "page-down",
+	pageup = "page-up",
+	enter = "insert-newline",
+	backspace = "delete-back",
+	delete = "delete-forward",
+	tab = "insert-tab",
+	home = "line-start",
+	["end"] = "line-end",
+	["ctrl-w"] = "delete-word-back",
+	["alt-backspace"] = "delete-word-back",
+	["alt-d"] = "delete-word-forward",
+	["ctrl-u"] = "delete-to-line-start",
+	["ctrl-k"] = "delete-to-line-end",
+	["ctrl-r"] = "insert-register",
+	left = "move-left",
+	right = "move-right",
+	up = "move-up",
+	down = "move-down",
+})
+
 --- A thing to act on, from a finder or a picker item (see actions.luau).
 export type Target = actions.Target
 export type TransientItem = transient.Item

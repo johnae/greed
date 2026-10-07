@@ -553,22 +553,49 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("theme", super::theme::module(lua, owner)?)
 }
 
-/// A mode name, or `{ mode = ..., kind = ... }`, where a named layer like
-/// the leader can stand in for the mode: `{ layer = "leader" }`.
+/// A mode name, or `{ mode = ..., kind = ... }`, where a named layer can
+/// stand in for the mode: the leader (`{ layer = "leader" }`), an editing
+/// role in every style (`{ role = "typing" }`) or in one
+/// (`{ style = "vim", role = "command" }`).
 fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     match layer {
         Value::String(mode) => Ok(Layer::mode(&mode.to_str()?)),
-        Value::Table(t) => Ok(Layer {
-            mode: t
-                .get::<Option<String>>("mode")?
-                .or(t.get::<Option<String>>("layer")?)
-                .map(Into::into),
-            kind: t.get::<Option<String>>("kind")?.map(Into::into),
-        }),
+        Value::Table(t) => {
+            let role = t.get::<Option<String>>("role")?;
+            let style = t.get::<Option<String>>("style")?;
+            let mode = match (role, style) {
+                (Some(role), Some(style)) => Some(Layer::style_role_name(&style, &role)),
+                (Some(role), None) => Some(Layer::role_name(&role)),
+                (None, Some(_)) => {
+                    return Err(mlua::Error::runtime(
+                        "a style's keymap layer needs a role, e.g. { style = \"vim\", role = \"command\" }",
+                    ));
+                }
+                (None, None) => t
+                    .get::<Option<String>>("mode")?
+                    .or(t.get::<Option<String>>("layer")?),
+            };
+            Ok(Layer {
+                mode: mode.map(Into::into),
+                kind: t.get::<Option<String>>("kind")?.map(Into::into),
+            })
+        }
         other => Err(mlua::Error::runtime(format!(
             "keymap layer must be a mode name or {{ mode = ..., kind = ... }}, not {}",
             other.type_name()
         ))),
+    }
+}
+
+/// The mode or named layer `parent` (a name, or a layer without a kind)
+/// stands for, for `greed.keymap.inherit`.
+fn parent_from_lua(parent: Value) -> LuaResult<String> {
+    let layer = layer_from_lua(parent)?;
+    match (layer.mode, layer.kind) {
+        (Some(mode), None) => Ok(mode.to_string()),
+        _ => Err(mlua::Error::runtime(
+            "a mode can inherit a mode or a named layer, not a buffer kind's keys",
+        )),
     }
 }
 
@@ -629,12 +656,13 @@ fn layer_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()>
 
     let o = owner.clone();
     keymap.set(
-        "inherit_kinds",
-        lua.create_function(move |lua, (mode, parent): (String, String)| {
+        "inherit_first",
+        lua.create_function(move |lua, (mode, parent): (String, Value)| {
+            let parent = parent_from_lua(parent)?;
             state_mut(lua)
                 .editor
                 .keymap_mut()
-                .inherit_kinds(&mode, &parent, o.clone());
+                .inherit_first(&mode, &parent, o.clone());
             Ok(())
         })?,
     )?;
@@ -665,7 +693,8 @@ fn layer_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()>
     keymap.set(
         "inherit",
         lua.create_function(
-            move |lua, (mode, parent, prefixes): (String, String, Option<Vec<String>>)| {
+            move |lua, (mode, parent, prefixes): (String, Value, Option<Vec<String>>)| {
+                let parent = parent_from_lua(parent)?;
                 let prefixes = prefixes
                     .unwrap_or_default()
                     .iter()

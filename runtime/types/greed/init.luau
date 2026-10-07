@@ -360,12 +360,16 @@ export type CliSpec = {
 	run: (args: { string }) -> string?,
 }
 
---- A keymap layer. Leave `mode` or `kind` out to match any. `layer` names
---- a layer that isn't a mode, like the "leader", which every editing style
---- enters its own way (`space`, or `ctrl-space` without modes).
+--- A keymap layer. Leave `mode` or `kind` out to match any. In place of a
+--- mode: `layer` names a layer that isn't a mode, like the "leader", which
+--- every editing style enters its own way (`space`, or `ctrl-space`
+--- without modes); `role` is an editing role ("command", "typing",
+--- "selecting") in every style, and with `style` in that style only.
 export type Layer = {
 	mode: string?,
 	layer: string?,
+	role: string?,
+	style: string?,
 	kind: string?,
 }
 
@@ -389,12 +393,12 @@ export type Keymap = {
 	--- Makes `mode` fall back to `parent`'s keys for sequences starting with
 	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
 	--- them. Keys bound in `mode` itself come first; what `parent` inherits
-	--- applies in turn.
-	inherit:(mode: string, parent: string, prefixes: { string }?) -> (),
+	--- applies in turn. `parent` can be a layer like `{ role = "typing" }`.
+	inherit: (mode: string, parent: string | Layer, prefixes: { string }?) -> (),
+	--- Makes `mode` use `parent`'s keys ahead of its own, e.g. `{ style = "vim", role = "command" }` for the Vim style's command mode. `core.style.define` does this for each style's roles.
+	inherit_first: (mode: string, parent: string | Layer) -> (),
 	--- Makes `keys` typed in `mode` lead into `layer`, so what's bound there works after them, e.g. `enter("helix", "space", "leader")`. It comes ahead of the mode's own keys. `core.style.define` does this for each style's leader.
 	enter: (mode: string, keys: string, layer: string) -> (),
-	--- Makes `mode` use `parent`'s keys for each buffer kind (the file tree, a help page) ahead of its own, so panels keep their keys in another style. `core.style.define` does this for each style's mode.
-	inherit_kinds: (mode: string, parent: string) -> (),
 	--- The command that handles a single unbound key in `mode`. A mode without one uses that of a mode it inherits every key from.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and

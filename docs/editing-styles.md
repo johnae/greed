@@ -37,6 +37,25 @@ do the same; after the leader a hint lists what can follow. Helix and Vim
 also share `:` for commands, `g d` to go to a definition and `] d` to the
 next problem. Prompts and pickers work the same in all three.
 
+## Keys in every style
+
+Bind keys for the leader or for a role, and they work in whichever style
+you use, styles added later included:
+
+```luau
+local greed = require("@greed")
+
+greed.keymap.bind({ layer = "leader" }, { w = "save" })          -- space w, or ctrl-space w
+greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })   -- insert mode, or edit mode
+greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" })
+```
+
+The roles are `command` (Helix's and Vim's normal mode), `typing`
+(insert mode, edit mode) and `selecting` (Helix's select mode, Vim's
+visual mode). A binding for one style's role wins over the style's own
+keys, and those win over a binding for every style's role. [Keys](keys.md#binding-keys)
+has the whole order.
+
 ## Helix
 
 Normal mode is for moving and selecting, and every movement selects: `w`
@@ -181,24 +200,23 @@ Completion comes up as you type; `ctrl-space` is the leader here.
 
 ## Making your own
 
-A style is a mode with keys bound in it, registered with the `core`
-plugin. It says which keys open the leader, and its keys can borrow from
-Helix's mode, so `:` and the rest keep working:
+A style is a few modes with keys bound in them, registered with the
+`core` plugin. It says which of its modes plays each role and which keys
+open the leader, and everything bound for those comes with it, with no
+plugin having to know the style exists:
 
 ```luau
 local greed = require("@greed")
 
 greed.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
-greed.keymap.inherit("mine", "helix", { ":" })
-greed.keymap.inherit("mine-insert", "helix-insert")
 greed.keymap.fallback("mine-insert", "insert-char")
 
 require("@core").style.define({
 	name = "mine",
 	doc = "My own keys",
 	mode = "mine",
-	-- The modes that type; insert-mode goes to the first.
-	typing = { "mine-insert" },
+	-- Which mode plays each role; insert-mode goes to the typing one.
+	roles = { command = "mine", typing = "mine-insert" },
 	-- What the status line shows for each mode.
 	labels = { mine = "normal", ["mine-insert"] = "insert" },
 	-- The keys that open the leader, where `space f` and the rest live.
@@ -206,11 +224,21 @@ require("@core").style.define({
 })
 ```
 
-`esc` in insert mode comes back to the style's mode, and `:style mine`
-switches to it. The file tree, help and other panels keep their keys in
-it. Completion, signature help and Markdown shown as written while typing
-follow the modes in `typing`; a style without modes lists its own mode
-there. `.` works in any style: it types the keys of the last change
-again; `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves
-out commands that shouldn't count as one. The Vim plugin in
+That's enough for `:style mine` to switch to it and for it to show in the
+`:style` list and the setup page. The leader opens with `space`, with the
+same hint after it; keys plugins bind for the command role (`:`, `g d`,
+`] d`) work in `mine`, and the typing keys every style shares (`enter`,
+`backspace`, the arrows, `esc` back to `mine`) in `mine-insert`. The file
+tree, pickers, help and other panels keep their keys in it. Completion,
+signature help and Markdown shown as written while typing follow the
+typing mode; a style without modes makes its own mode the typing one
+(`roles = { typing = "mine" }`). `.` works in any style: it types the keys
+of the last change again;
+`require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
+commands that shouldn't count as one. The Vim plugin in
 `runtime/plugins/vim` is a full example.
+
+Roles decide where keys live, not what commands mean, so two styles still
+differ in what `d` does. And Vim's operators read the motion after them
+straight from the keyboard, so leader and role keys don't apply between
+`d` and its motion.

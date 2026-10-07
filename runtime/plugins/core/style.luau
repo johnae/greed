@@ -3,10 +3,12 @@
 -- edit-mode) with its own modes, so switching between them leaves the
 -- others' keys alone.
 --
--- Plugins ask the styles rather than naming their modes: `is_typing` for
--- whether a mode types, `each_typing` to bind keys in every typing mode,
--- and a panel binds its keys for its kind of buffer alone
--- (`{ kind = "tree" }`), so they work in every style and mode.
+-- Plugins bind keys by role rather than naming a style's modes: each style
+-- says which of its modes plays which role, and `{ role = "typing" }`
+-- binds in every style's typing mode, styles added later too. The leader
+-- (`{ layer = "leader" }`) is open in every style, and a panel binds its
+-- keys for its kind of buffer alone (`{ kind = "tree" }`), so they work in
+-- every style and mode. `is_typing` says whether a mode types.
 --
 --     :style vim
 --     require("@greed").option.set("editing-style", "edit")
@@ -14,14 +16,32 @@
 local greed = require("@greed")
 local registry = require("./registry")
 
+--- Which of a style's modes plays each role. Keys bound with
+--- `{ role = "typing" }` work in every style's typing mode, and with
+--- `{ style = "vim", role = "typing" }` in one style's.
+export type Roles = {
+	--- The mode for moving around and running commands, like Helix's or
+	--- Vim's normal mode. A style without modes has none.
+	command: string?,
+	--- The mode that types what's typed, like insert.
+	typing: string?,
+	--- The mode where moving selects, like Helix's select or Vim's visual
+	--- mode.
+	selecting: string?,
+}
+
 export type Style = {
 	name: string,
 	doc: string,
 	--- The mode the style starts in and comes back to.
 	mode: string,
-	--- The modes that type what's typed, like insert. A style without
-	--- modes lists its own mode. Completion, signature help and markup
-	--- shown as written (see `reveal`) follow these.
+	--- Which mode plays each role. Left out, the typing mode is the first
+	--- of `typing`, and the command mode is `mode` unless it types.
+	roles: Roles?,
+	--- The modes that type what's typed, like insert; the typing role's by
+	--- default. A style without modes lists its own mode. Completion,
+	--- signature help and markup shown as written (see `reveal`) follow
+	--- these.
 	typing: { string }?,
 	--- What the status line calls the style's modes, e.g. { vim = "normal" }; a mode without one shows as its name.
 	labels: { [string]: string }?,
@@ -72,15 +92,51 @@ end
 
 local M = {}
 
---- Adds a style. If the user already chose it, it starts now. Its mode
---- gets the keys bound for each buffer kind in Helix's mode, so panels like
---- the file tree keep theirs, and its `leader` keys open the leader. It
---- goes when the plugin that added it does, and Helix's takes over if it
---- was in use.
+local ROLES = { "command", "typing", "selecting" }
+
+-- The mode that plays `role` in `roles`, if any.
+local function role_mode(roles: Roles, role: string): string?
+	return if role == "command"
+		then roles.command
+		elseif role == "typing" then roles.typing
+		elseif role == "selecting" then roles.selecting
+		else nil
+end
+
+-- The roles each mode of `style` plays, with what's left out filled in.
+local function roles_of(style: Style): Roles
+	local roles: Roles = if style.roles then table.clone(style.roles) else {}
+	local typing: { string } = style.typing or {}
+	roles.typing = roles.typing or typing[1]
+	if
+		roles.command == nil
+		and roles.typing ~= style.mode
+		and not table.find(typing, style.mode)
+	then
+		roles.command = style.mode
+	end
+	return roles
+end
+
+--- Adds a style. If the user already chose it, it starts now. Each of its
+--- role modes gets the keys bound for that role, every style's and its
+--- own (`{ role = "typing" }`, `{ style = name, role = "typing" }`), and
+--- its `leader` keys open the leader. It goes when the plugin that added
+--- it does, and Helix's takes over if it was in use.
 function M.define(style: Style)
+	style = table.clone(style)
+	local roles = roles_of(style)
+	style.roles = roles
+	if style.typing == nil then
+		style.typing = if roles.typing then { roles.typing } else {}
+	end
 	styles[style.name] = style
-	if style.mode ~= "helix" then
-		greed.keymap.inherit_kinds(style.mode, "helix")
+	for _, role in ROLES do
+		local mode = role_mode(roles, role)
+		if mode then
+			greed.keymap.inherit_first(mode, { style = style.name, role = role })
+			greed.keymap.inherit(mode, { role = role })
+		end
 	end
 	if style.leader then
 		greed.keymap.enter(style.mode, style.leader, "leader")
@@ -123,11 +179,16 @@ function M.home(): string
 	return current().mode
 end
 
---- The mode the style in use types in, e.g. after `insert-mode`: its first
+--- The mode that plays `role` in the style in use, if one does, e.g.
+--- `core.style.mode_for("selecting")`.
+function M.mode_for(role: string): string?
+	return role_mode(current().roles or {}, role)
+end
+
+--- The mode the style in use types in, e.g. after `insert-mode`: its
 --- typing mode, or its own for a style without modes.
 function M.typing_mode(): string
-	local style = current()
-	return style.typing and style.typing[1] or style.mode
+	return M.mode_for("typing") or current().mode
 end
 
 --- Whether `mode` is some style's own mode, like helix or vim.
@@ -205,12 +266,27 @@ function M.is_typing(mode: string?): boolean
 	return typing_style(mode or greed.mode.get()) ~= nil
 end
 
+--- The role `mode` (the current one if nil, or the mode it's shown as)
+--- plays in its style, e.g. "selecting" in Helix's select mode.
+function M.role(mode: string?): string?
+	local name = shown(mode or greed.mode.get())
+	for _, style in styles do
+		for _, role in ROLES do
+			if role_mode(style.roles or {}, role) == name then
+				return role
+			end
+		end
+	end
+	return nil
+end
+
 --- Calls `call` with each typing mode of every style, now and as styles
---- are added, each mode once, until the plugin that asked goes. For keys
---- that should work wherever you type:
+--- are added, each mode once, until the plugin that asked goes. Keys bind
+--- with `{ role = "typing" }`; this is for modes of your own made from
+--- each typing mode, like the completion menu's:
 ---
 ---     core.style.each_typing(function(mode)
----         greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
+---         greed.keymap.inherit(`completion-{mode}`, mode)
 ---     end)
 function M.each_typing(call: (mode: string) -> ())
 	local watcher: Watcher = { call = call, heard = {} }

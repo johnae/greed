@@ -125,3 +125,33 @@ test("the leader opens with each style's own keys, and lists the same keys", fun
 	greed.plugin.unload("mine")
 	t:wait(0)
 end)
+
+test("keys bound for a role work in each style's mode for it, by style in one", function(t)
+	t:buffer("a\nb\n|c")
+	greed.keymap.bind({ role = "command" }, { ["g z"] = "goto-start" })
+	greed.keymap.bind({ role = "typing" }, { ["ctrl-z"] = "goto-start" })
+	greed.keymap.bind({ style = "mine", role = "command" }, { i = "goto-end" })
+	load_mine(t)
+	for _, mode in { "helix", "helix-select", "mine" } do
+		greed.mode.set(mode)
+		assert(greed.keymap.resolve("g z") == "goto-start", mode)
+	end
+	for _, mode in { "helix-insert", "mine-insert" } do
+		greed.mode.set(mode)
+		assert(greed.keymap.resolve("ctrl-z") == "goto-start", mode)
+		assert(greed.keymap.resolve("g z") == nil, `not the command role's in {mode}`)
+	end
+	greed.mode.set("mine")
+	assert(
+		greed.keymap.resolve("i") == "goto-end",
+		"a style's own role keys come ahead of its mode's"
+	)
+	greed.mode.set("helix")
+	assert(greed.keymap.resolve("i") == "insert-mode", "and only in that style")
+	assert(
+		core.style.role("mine-insert") == "typing"
+			and core.style.role("helix-select") == "selecting"
+	)
+	greed.plugin.unload("mine")
+	t:wait(0)
+end)

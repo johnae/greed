@@ -42,32 +42,56 @@ greed.keymap.bind({ layer = "leader" }, {
 After the leader's keys, a hint lists what can follow, the same in every
 style.
 
-Other keys belong to a mode:
+Other keys belong to a role. Each style says which of its modes plays
+each one: `command` is where you move around and run commands (Helix's
+and Vim's normal mode; edit mode has none), `typing` is where what you
+type goes in (insert mode, or edit mode itself), and `selecting` is where
+moving selects (Helix's select mode, Vim's visual mode). Bind for a role
+and the key works in every style's mode for it, including styles a
+plugin adds later; add `style` for one style only:
+
+```luau
+-- In every style's typing mode: insert mode in Helix and Vim, edit mode
+greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })
+
+-- In normal mode in every style that has one
+greed.keymap.bind({ role = "command" }, { ["g p"] = "pick-changed-file" })
+
+-- Only in Vim's normal mode
+greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" })
+```
+
+For exact control, bind in a mode by its name:
 
 ```luau
 greed.keymap.bind("helix", { Q = "quit-all" })
-
--- In insert mode too
-greed.keymap.bind("helix-insert", { ["ctrl-s"] = "save" })
 ```
 
 The mode names depend on your editing style: `helix`, `helix-insert` and
 `helix-select` are the Helix style's, the Vim style's are `vim`,
 `vim-insert` and `vim-visual`, and edit mode has one, `edit`. The status
-line shows them as you'd expect (NORMAL, INSERT, VISUAL). Bind for the
-style you use, or for each of them (all the modes are listed under
-[Modes and layers](#modes-and-layers)):
-
-```luau
--- ctrl-s saves in every style
-for _, mode in { "helix", "helix-insert", "vim", "vim-insert", "edit" } do
-	greed.keymap.bind(mode, { ["ctrl-s"] = "save" })
-end
-```
+line shows them as you'd expect (NORMAL, INSERT, VISUAL); all of them are
+listed under [Modes and layers](#modes-and-layers).
 
 A binding maps a key, or a sequence of keys separated by spaces, to a
-command name. A newer binding replaces an older one for the same keys, so
-your config wins over the default plugins.
+command name. When the same keys are bound in several places, the more
+specific wins:
+
+1. keys for the kind of buffer you're in, like the file tree's
+2. keys for one style's role (`{ style = "vim", role = "command" }`)
+3. the leader, for the keys that open it
+4. the mode's own keys, like those its style binds
+5. keys for a role in every style (`{ role = "command" }`)
+6. keys for every mode (`{}`)
+
+Within one place, a newer binding replaces an older one for the same
+keys, so your config, loaded last, wins over the default plugins. To
+change a key a style binds itself, bind it for that style's role or its
+mode; a binding for every style's role stays behind it.
+
+Roles decide where keys live, not what commands mean: Helix still
+selects and then acts, and Vim's `d w` reads its motion straight from the
+keyboard, so role and leader keys don't apply after an operator.
 
 Key names:
 
@@ -171,7 +195,9 @@ Bindings live in layers. Most belong to a mode:
 The `leader` layer isn't a mode: each style's mode opens it with its own
 keys (`space`, or `ctrl-space` in edit mode), and what's bound in it works
 after them. A style can open any layer this way with
-`greed.keymap.enter(mode, keys, layer)`.
+`greed.keymap.enter(mode, keys, layer)`. Role layers aren't modes either:
+each style's mode for a role uses `{ role = ... }` after its own keys and
+`{ style = ..., role = ... }` ahead of them.
 
 A layer can also be limited to one kind of buffer, so a key does
 something different in the file tree or a picker than in a file. Bound
@@ -190,15 +216,16 @@ greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
 ```
 
 When a key is pressed, Greed looks first in the layers for the buffer's
-kind: the mode's, the leader's, those of the modes it inherits, then the
-kind's for every mode. Then come the leader if the keys open it, the
-mode's own layer, the layers of the modes it inherits, and the layer for
-every mode. The first layer where the keys run a command, or start a
-longer sequence, decides.
+kind: the style's role's, the mode's, the leader's, those of the layers
+and modes it inherits, then the kind's for every mode. Then come the
+style's role layer, the leader if the keys open it, the mode's own layer,
+the layers and modes it inherits (the role's for every style), and the
+layer for every mode. The first layer where the keys run a command, or
+start a longer sequence, decides.
 
 `greed.keymap.inherit` lets a mode use another mode's keys, all of them or
-only those starting with some prefixes. The Vim style uses it to share
-`:` and search with Helix's mode; see
+only those starting with some prefixes, and what that mode inherits in
+turn. Helix's select mode uses it to keep normal mode's keys; see
 [Editing styles](editing-styles.md#making-your-own).
 
 ## Binding your own commands
@@ -221,7 +248,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["g u"] = "upcase-line" })
+greed.keymap.bind({ role = "command" }, { ["g u"] = "upcase-line" })
 ```
 
 [Writing plugins](plugins.md) covers commands, and the rest of the API,

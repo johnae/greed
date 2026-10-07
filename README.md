@@ -52,7 +52,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["g u"] = "upper" })
+greed.keymap.bind({ role = "command" }, { ["g u"] = "upper" })
 ```
 
 Put it in `~/.config/greed/plugins/upper/` with a `plugin.toml` saying

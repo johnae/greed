@@ -6,9 +6,10 @@
 //! Layers are checked from most to least specific. Keys for the buffer's
 //! kind come first, so a panel's keys work in every mode: the mode's, the
 //! leader's and those of the modes it inherits for that kind, then those
-//! for the kind in any mode. Then the layers the mode enters with keys
-//! (like the leader), the mode's own, the modes it inherits from, and
-//! global. The first layer a
+//! for the kind in any mode. Then the layers the mode inherits ahead of
+//! its own (an editing style's role layer), those it enters with keys
+//! (the leader), the mode's own, the layers it inherits after (the role's
+//! for every style, other modes), and global. The first layer a
 //! key sequence leads anywhere in decides what it does.
 
 use std::collections::HashMap;
@@ -241,6 +242,18 @@ impl Layer {
             kind: Some(kind.into()),
         }
     }
+
+    /// The name of the layer for an editing role, like "typing", in every
+    /// style; each style's mode for the role inherits it.
+    pub fn role_name(role: &str) -> String {
+        format!("role:{role}")
+    }
+
+    /// The name of the layer for an editing role in one style, which the
+    /// style's mode for the role uses ahead of its own keys.
+    pub fn style_role_name(style: &str, role: &str) -> String {
+        format!("{style}:{role}")
+    }
 }
 
 impl fmt::Display for Layer {
@@ -331,6 +344,9 @@ struct Inherit {
     /// For a layer entered with keys ([`Keymap::enter`]): those keys, after
     /// which the parent's bindings follow.
     entry: Option<Vec<Key>>,
+    /// Whether the parent's bindings come ahead of the mode's own
+    /// ([`Keymap::inherit_first`]).
+    first: bool,
     owner: PluginId,
 }
 
@@ -424,11 +440,9 @@ pub struct Keymap {
     counts: HashMap<Arc<str>, Vec<PluginId>>,
     /// Modes that use only their own keys, and which plugins made them so.
     isolated: HashMap<Arc<str>, Vec<PluginId>>,
-    /// Per mode, the modes it falls back to, in the order they were added.
+    /// Per mode, the modes and layers it falls back to, in the order they
+    /// were added.
     inherits: HashMap<Arc<str>, Vec<Inherit>>,
-    /// Per mode, the modes whose buffer-kind layers it uses ahead of its
-    /// own mode layer, and the plugins that asked.
-    kind_parents: HashMap<Arc<str>, Vec<(Arc<str>, PluginId)>>,
 }
 
 impl Keymap {
@@ -498,7 +512,8 @@ impl Keymap {
     /// Makes `mode` fall back to `parent`'s bindings for key sequences
     /// starting with one of `prefixes` (any sequence if there are none),
     /// until `owner` is removed. Bindings of `mode` itself come first, and
-    /// `parent`'s own inheritances apply in turn.
+    /// `parent`'s own inheritances apply in turn. Asking again for the same
+    /// owner changes nothing.
     pub fn inherit(
         &mut self,
         mode: &str,
@@ -506,12 +521,33 @@ impl Keymap {
         prefixes: Vec<Vec<Key>>,
         owner: impl Into<PluginId>,
     ) {
-        self.inherits.entry(mode.into()).or_default().push(Inherit {
-            parent: parent.into(),
-            prefixes,
-            entry: None,
-            owner: owner.into(),
-        });
+        self.add_inherit(
+            mode,
+            Inherit {
+                parent: parent.into(),
+                prefixes,
+                entry: None,
+                first: false,
+                owner: owner.into(),
+            },
+        );
+    }
+
+    /// Makes `mode` use `parent`'s bindings ahead of its own, until `owner`
+    /// is removed, e.g. for keys bound for one editing style's role over
+    /// those the style binds itself. Asking again for the same owner
+    /// changes nothing.
+    pub fn inherit_first(&mut self, mode: &str, parent: &str, owner: impl Into<PluginId>) {
+        self.add_inherit(
+            mode,
+            Inherit {
+                parent: parent.into(),
+                prefixes: Vec::new(),
+                entry: None,
+                first: true,
+                owner: owner.into(),
+            },
+        );
     }
 
     /// Makes `keys` typed in `mode` lead into `layer`: what's bound there
@@ -521,27 +557,22 @@ impl Keymap {
     /// keys, so the keys that enter it start nothing else. Asking again for
     /// the same owner changes nothing.
     pub fn enter(&mut self, mode: &str, keys: Vec<Key>, layer: &str, owner: impl Into<PluginId>) {
-        let entry = Inherit {
-            parent: layer.into(),
-            prefixes: Vec::new(),
-            entry: Some(keys),
-            owner: owner.into(),
-        };
-        let inherits = self.inherits.entry(mode.into()).or_default();
-        if !inherits.contains(&entry) {
-            inherits.push(entry);
-        }
+        self.add_inherit(
+            mode,
+            Inherit {
+                parent: layer.into(),
+                prefixes: Vec::new(),
+                entry: Some(keys),
+                first: false,
+                owner: owner.into(),
+            },
+        );
     }
 
-    /// Makes `mode` use `parent`'s bindings for each buffer kind ahead of its
-    /// own for every buffer, so keys a plugin binds for a panel in one mode
-    /// work in another style's mode too, until `owner` is removed. Asking
-    /// again for the same owner changes nothing.
-    pub fn inherit_kinds(&mut self, mode: &str, parent: &str, owner: impl Into<PluginId>) {
-        let entry = (parent.into(), owner.into());
-        let parents = self.kind_parents.entry(mode.into()).or_default();
-        if !parents.contains(&entry) {
-            parents.push(entry);
+    fn add_inherit(&mut self, mode: &str, inherit: Inherit) {
+        let inherits = self.inherits.entry(mode.into()).or_default();
+        if !inherits.contains(&inherit) {
+            inherits.push(inherit);
         }
     }
 
@@ -563,10 +594,10 @@ impl Keymap {
     }
 
     /// Adds the layers of `mode`, reached through `via`, to `kinds` (those
-    /// for the buffer kind) and `modes` (the others), each in the same
-    /// order: the mode's own and the layers it enters with keys (the
-    /// latter ahead of its own in `modes`), then those of each mode it
-    /// inherits, and theirs in turn.
+    /// for the buffer kind) and `modes` (the others): first those of the
+    /// modes it inherits ahead of its own, then its own and the layers it
+    /// enters with keys (the latter ahead of its own in `modes`), then
+    /// those of the modes it inherits after, each with theirs in turn.
     fn expand<'a>(
         &'a self,
         mode: &str,
@@ -576,12 +607,10 @@ impl Keymap {
         modes: &mut Vec<Step<'a>>,
     ) {
         let inherits = self.inherits.get(mode).map_or(&[][..], Vec::as_slice);
-        kinds.push(Step::through(Layer::mode_kind(mode, kind), via));
-        if via.is_empty() {
-            for (parent, _) in self.kind_parents.get(mode).into_iter().flatten() {
-                kinds.push(Step::direct(Layer::mode_kind(parent, kind)));
-            }
+        for inherit in inherits.iter().filter(|i| i.first) {
+            self.expand_parent(inherit, kind, via, kinds, modes);
         }
+        kinds.push(Step::through(Layer::mode_kind(mode, kind), via));
         for inherit in inherits.iter().filter(|i| i.entry.is_some()) {
             via.push(inherit);
             kinds.push(Step::through(Layer::mode_kind(&inherit.parent, kind), via));
@@ -589,15 +618,26 @@ impl Keymap {
             via.pop();
         }
         modes.push(Step::through(Layer::mode(mode), via));
-        for inherit in inherits.iter().filter(|i| i.entry.is_none()) {
-            // Modes can inherit from each other in a loop.
-            if via.len() > 8 || via.iter().any(|i| i.parent == inherit.parent) {
-                continue;
-            }
-            via.push(inherit);
-            self.expand(&inherit.parent, kind, via, kinds, modes);
-            via.pop();
+        for inherit in inherits.iter().filter(|i| !i.first && i.entry.is_none()) {
+            self.expand_parent(inherit, kind, via, kinds, modes);
         }
+    }
+
+    fn expand_parent<'a>(
+        &'a self,
+        inherit: &'a Inherit,
+        kind: &str,
+        via: &mut Vec<&'a Inherit>,
+        kinds: &mut Vec<Step<'a>>,
+        modes: &mut Vec<Step<'a>>,
+    ) {
+        // Modes can inherit from each other in a loop.
+        if via.len() > 8 || via.iter().any(|i| i.parent == inherit.parent) {
+            return;
+        }
+        via.push(inherit);
+        self.expand(&inherit.parent, kind, via, kinds, modes);
+        via.pop();
     }
 
     /// Where `keys`, typed in a mode, lead in the layer `step` looks in.
@@ -832,10 +872,6 @@ impl Keymap {
             inherits.retain(|i| &*i.owner != owner);
         }
         self.inherits.retain(|_, inherits| !inherits.is_empty());
-        for parents in self.kind_parents.values_mut() {
-            parents.retain(|(_, o)| &**o != owner);
-        }
-        self.kind_parents.retain(|_, parents| !parents.is_empty());
     }
 
     fn lookup(&self, layer: &Layer, keys: &[Key]) -> Option<&Node> {

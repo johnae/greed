@@ -280,7 +280,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["g r"] = "goto-references" })
+greed.keymap.bind({ role = "command" }, { ["g r"] = "goto-references" })
 
 greed.keymap.bind({ layer = "leader" }, {
 	D = "pick-problem",

@@ -691,7 +691,10 @@ greed.keymap.bind(
 	{ layer = "leader" },
 	{ ["m l"] = "markdown-look-toggle", ["m v"] = "markdown-read" }
 )
-greed.keymap.bind("edit", { ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" })
+greed.keymap.bind(
+	{ style = "edit", role = "typing" },
+	{ ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" }
+)
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	looks[event.id] = nil

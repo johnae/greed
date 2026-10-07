@@ -455,27 +455,66 @@ fn a_mode_can_fall_back_to_another_under_some_prefixes() {
 }
 
 #[test]
-fn a_mode_can_use_another_modes_keys_for_buffer_kinds_first() {
+fn a_mode_can_use_a_layer_ahead_of_its_own_keys_and_another_after() {
     let mut km = Keymap::default();
+    let role = Layer::mode(&Layer::role_name("command"));
+    let vim_role = Layer::mode(&Layer::style_role_name("vim", "command"));
+    km.bind(Layer::mode("vim"), &keys("g d"), "vim-own", "vim")
+        .unwrap();
+    km.bind(Layer::mode("vim"), &keys("x"), "vim-x", "vim")
+        .unwrap();
+    km.bind(role.clone(), &keys("g d"), "definition", "lsp")
+        .unwrap();
+    km.bind(role.clone(), &keys("] d"), "next-problem", "lsp")
+        .unwrap();
+    km.bind(vim_role.clone(), &keys("x"), "user-x", "user")
+        .unwrap();
     km.bind(
-        Layer::mode_kind("normal", "tree"),
-        &keys("q"),
-        "tree-close",
-        "tree",
+        Layer {
+            kind: Some("multibuffer".into()),
+            ..role
+        },
+        &keys("enter"),
+        "open",
+        "multibuffer",
     )
     .unwrap();
-    km.bind(Layer::mode("vim"), &keys("q"), "vim-macro", "vim")
-        .unwrap();
-    km.inherit_kinds("vim", "normal", "vim");
+    km.inherit_first("vim", &Layer::style_role_name("vim", "command"), "core");
+    km.inherit("vim", &Layer::role_name("command"), vec![], "core");
+    km.inherit("vim", &Layer::role_name("command"), vec![], "core");
 
-    let resolve = |km: &Keymap, kind: &str| match km.resolve("vim", kind, &keys("q")) {
-        Resolution::Command(command) => Some(command.to_string()),
-        _ => None,
-    };
-    assert_eq!(resolve(&km, "tree").as_deref(), Some("tree-close"));
-    assert_eq!(resolve(&km, "file").as_deref(), Some("vim-macro"));
-    km.remove_owned_by("vim");
-    assert_eq!(resolve(&km, "tree"), None, "gone with its owner");
+    assert_eq!(
+        command(&km, "vim", "file", "x").as_deref(),
+        Some("user-x"),
+        "one style's role first"
+    );
+    assert_eq!(
+        command(&km, "vim", "file", "g d").as_deref(),
+        Some("vim-own"),
+        "then the mode's own"
+    );
+    assert_eq!(
+        command(&km, "vim", "file", "] d").as_deref(),
+        Some("next-problem"),
+        "then every style's"
+    );
+    assert_eq!(
+        command(&km, "vim", "multibuffer", "enter").as_deref(),
+        Some("open")
+    );
+    assert_eq!(
+        command(&km, "helix", "file", "] d"),
+        None,
+        "only where inherited"
+    );
+
+    km.remove_owned_by("core");
+    assert_eq!(
+        command(&km, "vim", "file", "] d"),
+        None,
+        "asked twice, gone at once"
+    );
+    assert_eq!(command(&km, "vim", "file", "x").as_deref(), Some("vim-x"));
 }
 
 #[test]
@@ -494,31 +533,6 @@ fn a_mode_without_a_fallback_uses_the_one_of_a_mode_it_inherits_in_full() {
     km.inherit("a", "b", vec![], "x");
     km.inherit("b", "a", vec![], "x");
     assert_eq!(km.fallback("a"), None, "a loop ends");
-}
-
-#[test]
-fn inheriting_kinds_twice_for_one_owner_adds_it_once() {
-    let mut km = Keymap::default();
-    km.bind(
-        Layer::mode_kind("normal", "tree"),
-        &keys("q"),
-        "tree-close",
-        "tree",
-    )
-    .unwrap();
-    km.inherit_kinds("mine", "normal", "core");
-    km.inherit_kinds("mine", "normal", "core");
-    km.inherit_kinds("mine", "normal", "mine");
-    km.remove_owned_by("mine");
-    assert!(matches!(
-        km.resolve("mine", "tree", &keys("q")),
-        Resolution::Command(_)
-    ));
-    km.remove_owned_by("core");
-    assert!(matches!(
-        km.resolve("mine", "tree", &keys("q")),
-        Resolution::Unbound
-    ));
 }
 
 fn command(km: &Keymap, mode: &str, kind: &str, k: &str) -> Option<String> {

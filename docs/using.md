@@ -569,7 +569,7 @@ Typing `(` or `,` in a call shows what the function takes, above the
 cursor, with the parameter you're on picked out. It follows along as you
 type and closes when the call does or you leave insert mode. To ask for it
 with a key, bind `signature-help` in insert mode, e.g.
-`greed.keymap.bind("helix-insert", { ["ctrl-k"] = "signature-help" })`.
+`greed.keymap.bind({ role = "typing" }, { ["ctrl-k"] = "signature-help" })`.
 
 ## Version control
 

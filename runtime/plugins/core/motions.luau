@@ -11,6 +11,7 @@ local greed = require("@greed")
 local text = require("./text")
 local words = require("./words")
 local hints = require("./hints")
+local style = require("./style")
 
 type Buffer = greed.Buffer
 type Range = greed.Range
@@ -498,7 +499,7 @@ greed.command({
 	run = function(ctx)
 		local again = last_find
 		if again then
-			find(ctx, again.char, again.forward, again.till, greed.mode.get() == "helix-select")
+			find(ctx, again.char, again.forward, again.till, style.role() == "selecting")
 		end
 	end,
 })

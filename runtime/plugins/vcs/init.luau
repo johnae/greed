@@ -704,11 +704,14 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ role = "command" }, {
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
 	["] G"] = "last-change",
 	["[ G"] = "first-change",
+})
+-- Helix's text object keys for them.
+greed.keymap.bind({ style = "helix", role = "command" }, {
 	["m i g"] = "select-inside-change",
 	["m a g"] = "select-around-change",
 })

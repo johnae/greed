@@ -165,15 +165,18 @@ motion("prev-paragraph", "Move to the start of the paragraph, or the one before"
 motion("next-sentence", "Move to the start of the next sentence", next_sentence)
 motion("prev-sentence", "Move to the start of the sentence, or the one before", prev_sentence)
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ role = "command" }, {
+	["] p"] = "next-paragraph",
+	["[ p"] = "prev-paragraph",
+	["] s"] = "next-sentence",
+	["[ s"] = "prev-sentence",
+})
+-- Helix's text object keys for them.
+greed.keymap.bind({ style = "helix", role = "command" }, {
 	["m i p"] = "select-paragraph",
 	["m a p"] = "select-paragraph-around",
 	["m i s"] = "select-sentence",
 	["m a s"] = "select-sentence-around",
 	["m i h"] = "select-section",
 	["m a h"] = "select-section-around",
-	["] p"] = "next-paragraph",
-	["[ p"] = "prev-paragraph",
-	["] s"] = "next-sentence",
-	["[ s"] = "prev-sentence",
 })

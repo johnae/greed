@@ -42,7 +42,8 @@ else c` expressions, string interpolation with backticks, `+=`, and
 
 - Commands: `greed.command({ name = "words-like-this", doc = "...", run = function(ctx) ... end })`.
   `ctx.buffer` and `ctx.view` are where the command runs.
-- Keys: `greed.keymap.bind("helix", { ["g x"] = "command-name" })`.
+- Keys: `greed.keymap.bind({ layer = "leader" }, { x = "command-name" })` (`space x` in Helix and Vim,
+  `ctrl-space x` in edit mode), or `{ role = "command" }` for normal mode in every style.
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
 - Events: `greed.on("buffer.saved", function(event) ... end)`; also "buffer.changed" (every
   edit, so keep it cheap and wait for a quiet moment before heavy work), "buffer.opened",

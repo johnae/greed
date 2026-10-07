@@ -1015,10 +1015,12 @@ local function bind()
 		window[`ctrl-w {key}`] = name
 		leader[`w {key}`] = name
 	end
-	greed.keymap.bind("helix", window)
-	greed.keymap.bind("vim", window)
+	greed.keymap.bind({ role = "command" }, window)
 	greed.keymap.bind({ layer = "leader" }, leader)
-	greed.keymap.bind("vim", { ["g t"] = "tab-next", ["g T"] = "tab-previous" })
+	greed.keymap.bind(
+		{ style = "vim", role = "command" },
+		{ ["g t"] = "tab-next", ["g T"] = "tab-previous" }
+	)
 end
 
 bind()

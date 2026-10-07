@@ -136,13 +136,17 @@ Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 was typed, and `ctx.char` for keys that type a character. Keys for
 commands people reach for by name go in the leader, `{ layer = "leader" }`,
 which every editing style opens its own way (`space g` in Helix and Vim,
-`ctrl-space g` in edit mode). Other keymaps are bound per mode, or per kind
-of buffer with `{ kind = "tree" }`.
+`ctrl-space g` in edit mode). Keys for normal mode or for typing go to a
+role, `{ role = "command" }` or `{ role = "typing" }`, so they work in
+every style's mode for it, styles added later included; `{ style =
+"helix", role = "command" }` is for one style's. Other keymaps are bound
+per mode, or per kind of buffer with `{ kind = "tree" }`.
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
-"helix", { ":" })` lets a new mode use some of Helix's mode's
-keys, which is how a whole editing style is built; see [Editing
+parent, prefixes)` lets a mode use another's keys (some of them, with
+prefixes), and `greed.keymap.enter(mode, keys, layer)` opens a layer with
+keys, the way each style opens the leader; see [Editing
 styles](editing-styles.md#making-your-own).
 `greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for
 macros and the like; several recordings can run at once. `greed.keymap.fallback(mode,
@@ -158,9 +162,11 @@ with `core.style.typing_kind("my-prompt")`: focusing one goes to the
 style's typing mode, and `core.floats.typing` opens a float in it.
 Rather than naming other styles' modes, ask `core.style`:
 `is_typing()` says whether the current mode types (insert, Vim's insert,
-edit mode), and `each_typing(function(mode) ... end)` calls back with
-every style's typing modes, including styles added later, for keys that
-should work wherever you type. Commands can carry tags others check:
+edit mode), `role()` which role the current mode plays, `mode_for(role)`
+the style in use's mode for a role, and `each_typing(function(mode) ...
+end)` calls back with every style's typing modes, including styles added
+later, for modes of your own made from them, like the completion menu's.
+Commands can carry tags others check:
 `core.commands.tag("typing", { "my-type-char" })` keeps them out of the
 selection history and in one undo step in edit mode, and `"no-repeat"`
 leaves them out of what `.` repeats.

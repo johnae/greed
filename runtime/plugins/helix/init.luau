@@ -121,28 +121,7 @@ greed.keymap.bind("helix", {
 	["[ space"] = "add-newline-above",
 })
 
-greed.keymap.bind("helix-insert", {
-	esc = "normal-mode",
-	pagedown = "page-down",
-	pageup = "page-up",
-	enter = "insert-newline",
-	backspace = "delete-back",
-	delete = "delete-forward",
-	tab = "insert-tab",
-	home = "line-start",
-	["end"] = "line-end",
-	["ctrl-w"] = "delete-word-back",
-	["alt-backspace"] = "delete-word-back",
-	["alt-d"] = "delete-word-forward",
-	["ctrl-u"] = "delete-to-line-start",
-	["ctrl-k"] = "delete-to-line-end",
-	["ctrl-r"] = "insert-register",
-	left = "move-left",
-	right = "move-right",
-	up = "move-up",
-	down = "move-down",
-})
-
+-- Insert mode has the typing keys every style's typing mode has (core's).
 greed.keymap.bind("helix", core.objects.keys)
 greed.keymap.bind("helix", core.syntax.keys)
 greed.keymap.bind("helix", core.folds.keys)
@@ -156,7 +135,7 @@ core.style.define({
 	name = "helix",
 	doc = "Select text, then say what to do with it (Helix, Kakoune)",
 	mode = "helix",
-	typing = { "helix-insert" },
+	roles = { command = "helix", typing = "helix-insert", selecting = "helix-select" },
 	labels = { helix = "normal", ["helix-insert"] = "insert", ["helix-select"] = "select" },
 	leader = "space",
 })

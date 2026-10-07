@@ -143,9 +143,16 @@ fn prose_plugin_tests_pass() {
 
 #[test]
 fn cmdline_plugin_tests_pass() {
-    // :norm is tried in the Vim style.
+    // :norm is tried in the Vim style, alt-x in edit mode.
     assert_all_pass(
-        &[core(), plugin("helix"), plugin("cmdline"), plugin("vim")],
+        &[
+            core(),
+            plugin("helix"),
+            plugin("picker"),
+            plugin("edit-mode"),
+            plugin("cmdline"),
+            plugin("vim"),
+        ],
         &plugin("cmdline"),
     );
 }

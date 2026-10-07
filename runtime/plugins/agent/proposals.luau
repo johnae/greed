@@ -472,7 +472,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ role = "command" }, {
 	["] o"] = "proposal-next",
 	["[ o"] = "proposal-prev",
 })

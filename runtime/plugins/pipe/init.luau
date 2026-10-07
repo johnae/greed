@@ -362,7 +362,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ style = "helix", role = "command" }, {
 	["|"] = "pipe",
 	["!"] = "insert-output",
 	["alt-!"] = "append-output",

@@ -4,37 +4,42 @@ local greed = require("@greed")
 local core = require("@core")
 local motions = require("./motions").motions
 
--- Keys other plugins put in normal mode that work the same here: the
--- search, and going to definitions and problems.
--- Plugins loaded later get them too.
-greed.keymap.inherit("vim", "helix", {
-	"/",
-	"?",
-	"n",
-	"N",
-	"g d",
-	"]",
-	"[",
-	"ctrl-f",
-	"ctrl-b",
-	"ctrl-d",
-	"ctrl-u",
-	"pagedown",
-	"pageup",
-	"z z",
-	"z a",
-	"z t",
-	"z b",
-	"z o",
-	"z R",
-	"ctrl-o",
-	"ctrl-i",
-	"tab",
-})
--- Insert mode as everyone has it, except that esc comes back here.
-greed.keymap.inherit("vim-insert", "helix-insert")
+-- Insert mode has the typing keys every style's typing mode has, and keys
+-- other plugins bind for the command role (going to definitions and
+-- problems, the next change) work in normal mode here too.
 greed.keymap.fallback("vim-insert", "insert-char")
 greed.mode.set_cursor("vim-insert", "bar")
+
+-- Core's keys that Vim has too: search, paging, jumps, the view and folds,
+-- and the next and previous syntax objects after ] and [.
+local shared: { [string]: string } = {
+	["/"] = "search",
+	["?"] = "search-back",
+	n = "search-next",
+	N = "search-prev",
+	["ctrl-f"] = "page-down",
+	["ctrl-b"] = "page-up",
+	["ctrl-d"] = "half-page-down",
+	["ctrl-u"] = "half-page-up",
+	pagedown = "page-down",
+	pageup = "page-up",
+	["ctrl-o"] = "jump-back",
+	["ctrl-i"] = "jump-forward",
+	tab = "fold-toggle",
+	["z z"] = "center-view",
+	["z t"] = "align-view-top",
+	["z b"] = "align-view-bottom",
+	["z a"] = "fold-toggle",
+	["z o"] = "fold-open",
+	["z R"] = "fold-open-all",
+	["] space"] = "add-newline-below",
+	["[ space"] = "add-newline-above",
+}
+for key, command in core.syntax.keys do
+	if string.match(key, "^[%[%]] ") then
+		shared[key] = command
+	end
+end
 
 local keys: { [string]: string } = {
 	d = "vim-operator-d",
@@ -119,6 +124,9 @@ local keys: { [string]: string } = {
 	["z d"] = "fold-open",
 	["z E"] = "fold-open-all",
 }
+for key, command in shared do
+	keys[key] = command
+end
 local visual_keys: { [string]: string } = {
 	d = "vim-operator-d",
 	x = "vim-operator-d",
@@ -203,7 +211,7 @@ core.style.define({
 	name = "vim",
 	doc = "Say what to do, then where: `d w`, `c i w` (Vim)",
 	mode = "vim",
-	typing = { "vim-insert" },
+	roles = { command = "vim", typing = "vim-insert", selecting = "vim-visual" },
 	leader = "space",
 	labels = {
 		vim = "normal",

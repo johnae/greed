@@ -32,7 +32,7 @@ require("@self/look")
 require("@self/reminders")
 require("@self/connect")
 
-greed.keymap.bind("helix", {
+greed.keymap.bind({ role = "command" }, {
 	["g d"] = "notes-follow",
 })
 
