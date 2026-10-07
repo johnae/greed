@@ -1008,6 +1008,8 @@ export type Sessions = {
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an
 --- empty table is an object unless it came from `array`.
 export type Json = {
+	--- `value` as JSON. Text that isn't UTF-8, like a program's binary
+	--- output, has its broken bytes written as U+FFFD.
 	encode: (value: any) -> string,
 	--- The value, or nil and why the text isn't JSON. `null` becomes nil.
 	decode: (text: string) -> (any, string?),

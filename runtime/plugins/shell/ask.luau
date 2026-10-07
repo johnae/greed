@@ -58,7 +58,12 @@ local function tail(text: string): string
 	local kept = table.move(lines, math.max(#lines - OUTPUT_LINES + 1, 1), #lines, 1, {})
 	local out = table.concat(kept, "\n")
 	if #out > OUTPUT_BYTES then
-		out = "…" .. string.sub(out, -OUTPUT_BYTES)
+		-- From the start of a character, not in the middle of one.
+		local from = #out - OUTPUT_BYTES + 1
+		while from <= #out and bit32.band(string.byte(out, from), 0xC0) == 0x80 do
+			from += 1
+		end
+		out = "…" .. string.sub(out, from)
 	end
 	return out
 end

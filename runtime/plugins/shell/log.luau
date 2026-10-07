@@ -38,6 +38,12 @@ greed.option.define({
 	default = 5000,
 })
 
+greed.option.define({
+	name = "shell-confirm-lines",
+	doc = "Running a prompt of more lines than this asks first, as after pasting a transcript",
+	default = 5,
+})
+
 --- A line of output, with styles from its start, e.g. errors or colors.
 export type Line = {
 	text: string,

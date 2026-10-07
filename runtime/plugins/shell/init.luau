@@ -731,9 +731,21 @@ greed.command({
 	end,
 })
 
--- Runs what's at the prompt.
+-- Runs what's at the prompt. Many lines, as a paste of a transcript or a
+-- file can leave there, run only once you say so.
 local function run_prompt(shell: Shell, ctx: greed.Context)
-	M.run(shell, log.prompt_text(shell), { view = ctx.view })
+	local line = log.prompt_text(shell)
+	local _, breaks = string.gsub(line, "\n", "")
+	local most = greed.option.get("shell-confirm-lines") :: number
+	if breaks + 1 > most then
+		greed.echo(`run these {breaks + 1} lines as one command? y/n`)
+		local yes = greed.next_key() == "y"
+		greed.echo("")
+		if not yes then
+			return
+		end
+	end
+	M.run(shell, line, { view = ctx.view })
 end
 
 -- Puts `block`'s command at the prompt to change and run again.

@@ -1693,6 +1693,19 @@ fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
         eval("local v, err = greed.json.decode('{') return v, err ~= nil"),
         "nil\ttrue"
     );
+    // JSON can't hold bytes that aren't UTF-8, like half a character cut
+    // off or a program's binary output: they become U+FFFD, in values and
+    // keys, however deep.
+    assert_eq!(
+        eval(
+            "return greed.json.encode({ text = 'ok \\xE2\\x9C', list = { { ['k\\xFF'] = '\\x80' } } })"
+        ),
+        "{\"list\":[{\"k\u{fffd}\":\"\u{fffd}\"}],\"text\":\"ok \u{fffd}\"}"
+    );
+    assert_eq!(
+        eval("return greed.json.encode(greed.json.array({ '\\xFF' }))"),
+        "[\"\u{fffd}\"]"
+    );
 }
 
 #[test]

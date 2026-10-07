@@ -81,6 +81,22 @@ test(":shell opens a buffer of blocks with the prompt at the bottom", function(t
 	assert(string.find(drawn, `{short} ❯ \n`, 1, true), drawn)
 end)
 
+test("a prompt of many lines, like a pasted transcript, runs only once you say so", function(t)
+	local sh = open(t, t:tempdir())
+	local pasted = "kubectl get pods\nNAME   READY\napi    1/1\ndb     1/1\ncache  1/1\nweb    1/1"
+	shell.log.set_prompt(sh, pasted, { greed.view() })
+	t:keys("enter")
+	local messages = t:messages()
+	assert(messages[#messages] == "run these 6 lines as one command? y/n", messages[#messages])
+	t:keys("n")
+	assert(#sh.blocks == 0, "nothing ran")
+	assert(shell.log.prompt_text(sh) == pasted, "and the prompt is as it was")
+	t:keys("enter y")
+	assert(#sh.blocks == 1, "y runs it")
+	-- A few lines run as they are.
+	type_line(t, sh, "echo a\necho b")
+end)
+
 test("the prompt's folder is short, and a new shell says where help is", function(t)
 	local home = assert(greed.fs.dirs().home)
 	assert(shell.log.short_folder(home .. "/Development/greed") == "~/D/greed")

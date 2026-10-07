@@ -81,3 +81,21 @@ test("without a model to ask, a block says so", function(t)
 	assert(string.find(block.output, "no model plays", 1, true), block.output)
 	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
 end)
+
+test("output cut down for the model is cut between characters", function(t)
+	local asked = stub("ls")
+	local sh = open(t)
+	-- More than the model is shown, all of it three-byte characters.
+	local block = assert(shell.run(sh, "printf '✔%.0s' $(seq 1 700)", { runner = "pipe" }))
+	t:wait_for(function()
+		return block.status ~= "running"
+	end)
+	enter(t, sh, "? what next")
+	t:wait_for(function()
+		return #asked == 1
+	end)
+	models.ask = ask
+	local said = asked[1].request.messages[1].content :: string
+	assert(utf8.len(said) ~= nil, "the message is whole characters")
+	assert(string.find(said, "…✔", 1, true), "cut at a character")
+end)

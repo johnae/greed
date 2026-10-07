@@ -69,6 +69,10 @@ first half and the latest half, saying how many it leaves out between them;
 (8 MB) the whole output goes to a file in the cache folder, which `space v`
 opens.
 
+A prompt of more than `shell-confirm-lines` (5) lines, as pasting a
+transcript or a file can leave there, asks `y/n` before it runs as one
+command.
+
 Undo at the prompt takes back what you typed, while output keeps
 streaming in above it.
 
