@@ -658,7 +658,8 @@ impl<M: Measure> Renderer<M> {
         };
         let (area, placed) = layout_panels(editor.panels(), screen);
         let mut surfaces = Vec::new();
-        let (lines, main_cursor) = self.panes(editor, area, decorations, &mut surfaces);
+        // Each view's cursor on screen, as views are laid out.
+        let (lines, mut cursors) = self.panes(editor, area, decorations, &mut surfaces);
         let status = match status {
             Status::Default { message } => {
                 Self::default_status(editor, editor.view(editor.status_view()), *message)
@@ -679,24 +680,30 @@ impl<M: Measure> Renderer<M> {
             vec![status],
         ));
 
-        let mut cursor = main_cursor;
         for (view, rect, role) in placed {
             let laid = self.view_rows(editor, view, rect, false, decorations);
-            if editor.focus() == view {
-                cursor = laid.cursor;
+            if let Some(cursor) = laid.cursor {
+                cursors.push((view, cursor));
             }
             surfaces.push(laid.surface(view, role, rect));
         }
+        let cursor_of = |cursors: &[(ViewId, Position)], view: ViewId| {
+            cursors.iter().find(|(v, _)| *v == view).map(|(_, c)| *c)
+        };
         // Images under a floating view are left out rather than drawn over
         // it.
         let mut images = self.images.take();
         let mut covered = Vec::new();
         let shown: Vec<Float> = editor.floats().into_iter().cloned().collect();
         for float in shown {
-            let rect = place(&float.options, screen, cursor);
+            // A float by the cursor goes by the view it opened from: one that
+            // takes focus has none of its own to go by yet.
+            let anchor = cursor_of(&cursors, float.return_to)
+                .or_else(|| cursor_of(&cursors, editor.focus()));
+            let rect = place(&float.options, screen, anchor);
             let laid = self.view_rows(editor, float.view, rect, false, decorations);
-            if editor.focus() == float.view {
-                cursor = laid.cursor;
+            if let Some(cursor) = laid.cursor {
+                cursors.push((float.view, cursor));
             }
             let options = &float.options;
             covered.push(if options.border { bordered(rect) } else { rect });
@@ -726,7 +733,7 @@ impl<M: Measure> Renderer<M> {
             surfaces,
             lines,
             images,
-            cursor,
+            cursor: cursor_of(&cursors, editor.focus()),
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
             gui: BTreeMap::new(),
@@ -813,7 +820,7 @@ impl<M: Measure> Renderer<M> {
         area: Rect,
         decorations: &dyn Decorations,
         surfaces: &mut Vec<Surface>,
-    ) -> (Vec<Separator>, Option<Position>) {
+    ) -> (Vec<Separator>, Vec<(ViewId, Position)>) {
         let tabline = editor.tabs().len() > 1;
         let panes_area = if tabline {
             Rect {
@@ -827,12 +834,12 @@ impl<M: Measure> Renderer<M> {
         editor.set_tab_area(panes_area);
         let (panes, lines) = editor.current_tab().place(panes_area);
         let active = editor.current_tab().active();
-        let mut cursor = None;
+        let mut cursors = Vec::new();
         for (view, rect) in panes {
             let numbers = editor.buffer(editor.view(view).buffer).line_numbers();
             let laid = self.view_rows(editor, view, rect, numbers, decorations);
-            if editor.focus() == view {
-                cursor = laid.cursor;
+            if let Some(cursor) = laid.cursor {
+                cursors.push((view, cursor));
             }
             let role = Role::Pane {
                 active: view == active,
@@ -847,7 +854,7 @@ impl<M: Measure> Renderer<M> {
             let rows = vec![Self::tabline(editor)];
             surfaces.push(Surface::new(SurfaceId::Tabline, Role::Tabline, rect, rows));
         }
-        (lines.into_iter().map(Separator::from).collect(), cursor)
+        (lines.into_iter().map(Separator::from).collect(), cursors)
     }
 
     /// The row of tabs above the panes: each tab's number and name, the

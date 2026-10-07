@@ -669,7 +669,8 @@ greed.tab.set_layout({
   `greed.panel(buffer, { side = "right", width = 40 })`. For text to read,
   `core.floats.show_text(title, text, { kind = "my-info" })` opens a
   read-only float that `esc` or `q` closes, replacing the one before of
-  that kind. For a float to type in, like your own prompt,
+  that kind; `anchor = "cursor"` with a `width` and `height` opens it
+  small by the cursor, like a hover. For a float to type in, like your own prompt,
   `core.floats.typing(buffer, spec, { on_change = ..., on_close = ... })`
   switches to the editing style's typing mode (insert, in Helix's and
   Vim's) and puts the mode and focus back however the

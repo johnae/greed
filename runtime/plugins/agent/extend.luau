@@ -45,6 +45,9 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Keys: `greed.keymap.bind({ layer = "leader" }, { x = "command-name" })` (`space x` in Helix and Vim,
   `ctrl-space x` in edit mode), or `{ role = "command" }` for normal mode in every style.
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
+- Showing text to read: `require("@core").floats.show_text("Title", text, { anchor = "cursor",
+  width = 60, height = 8 })` opens a float that esc or q closes (`requires = ["core"]`);
+  `greed.echo(text)` says one line on the status line.
 - Events: `greed.on("buffer.saved", function(event) ... end)`; also "buffer.changed" (every
   edit, so keep it cheap and wait for a quiet moment before heavy work), "buffer.opened",
   "mode.changed", "lsp.diagnostics", "option.changed", "editor.started" and more.

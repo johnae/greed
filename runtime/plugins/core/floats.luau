@@ -288,6 +288,21 @@ export type TextOptions = {
 	--- "80%" and "60%" of the screen by default.
 	width: (number | string)?,
 	height: (number | string)?,
+	--- Where it opens, as for greed.float: in the middle by default, or
+	--- "cursor" for a small float by the cursor, like a hover.
+	anchor: (
+		"center"
+		| "top"
+		| "bottom"
+		| "left"
+		| "right"
+		| "top-left"
+		| "top-right"
+		| "bottom-left"
+		| "bottom-right"
+		| "cursor"
+		| "above-cursor"
+	)?,
 }
 
 -- The float last showing text of each kind to each client, by client id,
@@ -328,10 +343,12 @@ function M.show_text(title: string, text: string, options: TextOptions?): greed.
 	if opts.marks then
 		buffer:decorate("text-float", opts.marks)
 	end
-	local view = greed.float(
-		buffer,
-		{ title = title, width = opts.width or "80%", height = opts.height or "60%" }
-	)
+	local view = greed.float(buffer, {
+		title = title,
+		width = opts.width or "80%",
+		height = opts.height or "60%",
+		anchor = opts.anchor,
+	})
 	mine[kind] = view
 	return view
 end

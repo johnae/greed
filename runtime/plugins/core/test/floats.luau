@@ -196,3 +196,16 @@ test("a float moved with one client's mouse lands in proportion on another's scr
 	)
 	assert(theirs.width + 2 == 2 * (mine.width + 2), `{theirs.width} wide`)
 end)
+
+test("text to read can open small by the cursor, like a hover", function(t)
+	t:buffer("one\ntwo\nthr|ee")
+	t:draw(80, 24)
+	local view =
+		floats.show_text("Blame", "who\nwhen", { anchor = "cursor", width = 30, height = 4 })
+	t:draw(80, 24)
+	local area = assert(view:area())
+	assert(area.width <= 32 and area.height <= 6, `{area.width}x{area.height}`)
+	assert(area.y <= 6, `by the cursor near the top, not the middle: {area.y}`)
+	t:keys("esc")
+	assert(not view:valid(), "esc closes it")
+end)
