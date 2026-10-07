@@ -376,11 +376,17 @@ greed.command({
 			greed.create_buffer("cmdline", ":"),
 			{ width = "100%", height = 3, anchor = "bottom" },
 			{
+				-- Both can come before `o` is set, while the line is opening.
 				on_change = function()
-					changed(o)
+					if o :: Open? then
+						changed(o)
+					end
 				end,
 				-- However it closed, if it's not to run what's typed.
 				on_close = function()
+					if not (o :: Open?) then
+						return
+					end
 					if opened[client] == o then
 						opened[client] = nil
 					end
