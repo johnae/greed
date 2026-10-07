@@ -52,6 +52,11 @@ local PROVIDERS = {
 	{ value = "none", text = "None for now" },
 }
 
+-- Whether the page shows in a window, which draws icons whatever its font.
+local function in_window(): boolean
+	return greed.client.current().kind == "gui"
+end
+
 -- What the page says about the model picked, and the button that helps,
 -- if one does.
 local function model_status(answers: Answers): (string, { text: string, action: string }?)
@@ -156,12 +161,21 @@ local function render(p: Page)
 	add("")
 	buttons(`Theme: {theme.current()}`, { { text = "Pick…", action = "setup-pick-theme" } })
 	add("")
-	add("Do you see an icon here: 󰉋", "markup.heading")
-	add("")
-	choices("icons", {
-		{ value = "yes", text = "Yes, it shows" },
-		{ value = "no", text = "No, or it's a box" },
-	}, if a.icons then "yes" else "no")
+	if in_window() then
+		-- The window draws Nerd Font icons whatever its font.
+		add("Icons: the window has them built in.", "markup.heading")
+	else
+		add("Do you see icons here:  󰉋        ", "markup.heading")
+		add("")
+		choices("icons", {
+			{ value = "yes", text = "Yes, they show" },
+			{ value = "no", text = "No, or they're boxes" },
+		}, if a.icons then "yes" else "no")
+		add(
+			"Boxes? Your terminal's font needs Nerd Font icons; plain ones work anywhere.",
+			"comment"
+		)
+	end
 	add("")
 	add("Do you use Claude Code?", "markup.heading")
 	add("")
@@ -333,7 +347,7 @@ function M.open()
 		view = view,
 		controls = {},
 		answers = {
-			icons = greed.option.get("tree-icons") == "nerd",
+			icons = in_window() or greed.option.get("tree-icons") == "nerd",
 			claude = false,
 			provider = provider,
 		},

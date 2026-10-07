@@ -86,11 +86,17 @@ test("the page is read-only and takes its own keys in every style", function(t)
 		assert(page:text() == before, `{style} changed the page`)
 		assert(greed.view():buffer() == page, `{style} left the page`)
 		-- tab goes from control to control; space and enter press.
-		on("No, or it's a box")
+		on("No, or they're boxes")
 		t:keys("shift-tab space")
-		assert(string.find(line_with("Yes, it shows"), "◉", 1, true), `{style}: shift-tab, space`)
+		assert(
+			string.find(line_with("Yes, they show"), "◉", 1, true),
+			`{style}: shift-tab, space`
+		)
 		t:keys("tab enter")
-		assert(string.find(line_with("No, or it's a box"), "◉", 1, true), `{style}: tab, enter`)
+		assert(
+			string.find(line_with("No, or they're boxes"), "◉", 1, true),
+			`{style}: tab, enter`
+		)
 		t:keys("esc")
 		assert(not page_open(), `esc closed it in {style}`)
 	end
@@ -101,7 +107,7 @@ test("Save writes a config from the answers and opens it", function(t)
 	t:buffer("|")
 	t:run("setup")
 	press(t, "No modes")
-	press(t, "No, or it's a box")
+	press(t, "No, or they're boxes")
 	press(t, "[ Save ]")
 	local written = greed.fs.read(config_file()) or ""
 	assert(string.find(written, 'option.set("editing-style", "vscode")', 1, true), written)
@@ -139,7 +145,7 @@ test("closing the page any way counts as Not now, and its picks don't hold up :q
 		t:buffer("|")
 		t:run("setup")
 		local page = greed.view():buffer()
-		press(t, "Yes, it shows")
+		press(t, "Yes, they show")
 		assert(not core.file.unsaved(page), "nothing to save on the page")
 		if close == ":q" then
 			t:run("quit")
@@ -175,7 +181,7 @@ test("choices follow the options as they change", function(t)
 	assert(string.find(line_with("Say what"), "◉", 1, true), "the style set elsewhere")
 	greed.option.set("tree-icons", "nerd")
 	t:wait(10)
-	assert(string.find(line_with("Yes, it shows"), "◉", 1, true), "icons set elsewhere")
+	assert(string.find(line_with("Yes, they show"), "◉", 1, true), "icons set elsewhere")
 	greed.option.set("editing-style", "helix")
 end)
 
@@ -194,8 +200,8 @@ test("clicks press the button drawn where they land", function(t)
 		end
 		error(`{text} isn't on the screen`)
 	end
-	click("Yes, it shows")
-	assert(string.find(line_with("Yes, it shows"), "◉", 1, true), "a click picks a choice")
+	click("Yes, they show")
+	assert(string.find(line_with("Yes, they show"), "◉", 1, true), "a click picks a choice")
 	click("Not now")
 	assert(not page_open(), "Not now closed it")
 	assert(seen() and greed.fs.stat(config_file()) == nil, "as Not now, without saving")
@@ -225,4 +231,26 @@ test("the model step says what's missing and helps set it up", function(t)
 	press(t, "[ Save ]")
 	local fast = models.roles.fast :: models.Role
 	assert(fast.provider == "openai" and fast.model == "gpt-5-mini", fast.provider)
+end)
+
+test("a terminal is asked whether icons show, with samples and what boxes mean", function(t)
+	t:buffer("|")
+	t:run("setup")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "Do you see icons here", 1, true), text)
+	assert(string.find(text, "No, or they're boxes", 1, true), text)
+	assert(string.find(text, "needs Nerd Font icons", 1, true), text)
+end)
+
+test("a window isn't asked about icons: it has them, and they're on", function(t)
+	t:buffer("|")
+	local window = t:client("window", "gui")
+	window:run("setup")
+	-- The page is the window's own.
+	local text = table.concat(window:screen(120, 50), "\n")
+	assert(string.find(text, "the window has them built in", 1, true), text)
+	assert(not string.find(text, "Do you see icons", 1, true), text)
+	window:run("setup-save")
+	local written = greed.fs.read(assert(greed.fs.dirs().config) .. "/init.luau") or ""
+	assert(string.find(written, 'option.set("tree-icons", "nerd")', 1, true), written)
 end)

@@ -92,6 +92,11 @@ const PROSE: [&str; 9] = [
     "Cantarell",
 ];
 
+/// Nerd Font icons, behind whatever font text is drawn in, so the icons the
+/// file tree, status line and the rest can use show in the window on any
+/// system (fonts/OFL.txt has its license).
+const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
+
 /// The installed families named in `wanted`, the first found, or else with
 /// `monospaced` any installed family with monospaced faces.
 fn pick(installed: &Installed, wanted: &[&str], monospaced: bool) -> Option<String> {
@@ -114,7 +119,9 @@ impl Installed {
         let mut monospaced = None;
         for face in system.db().faces() {
             for (name, _) in &face.families {
-                if face.monospaced && monospaced.is_none() {
+                // The icons are behind the text, never the text itself.
+                let icons = name.starts_with("Symbols Nerd Font");
+                if face.monospaced && monospaced.is_none() && !icons {
                     monospaced = Some(name.clone());
                 }
                 names.insert(name.clone());
@@ -157,6 +164,7 @@ impl Fonts {
     /// `family` at `size` pixels, or the system's monospaced font.
     pub fn new(family: Option<String>, size: f32) -> Self {
         let mut system = FontSystem::new();
+        system.db_mut().load_font_data(SYMBOLS.to_vec());
         let metrics = Metrics::new(size, size);
         let mut buffer = Buffer::new(&mut system, metrics);
         buffer.set_wrap(Wrap::None);
@@ -448,6 +456,21 @@ mod tests {
             "prose takes no stranger"
         );
         assert_eq!(pick(&installed(&[], None), &MONOSPACED, true), None);
+    }
+
+    #[test]
+    fn nerd_font_icons_show_in_any_font() {
+        let mut fonts = Fonts::new(None, 15.0);
+        // A folder, a git branch and a round cap, as the tree and the status
+        // line draw them.
+        for icon in ["\u{f07b}", "\u{e725}", "\u{e0b6}"] {
+            let (glyphs, _) = fonts.shape(icon, TextStyle::default());
+            assert!(
+                glyphs.first().is_some_and(|g| g.glyph_id != 0),
+                "{icon:?} has a glyph, not a box"
+            );
+        }
+        assert_ne!(fonts.grid_family(), Some("Symbols Nerd Font Mono"));
     }
 
     #[test]

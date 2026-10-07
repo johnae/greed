@@ -23,8 +23,8 @@ export type TestClient = {
 export type TestContext = {
 	--- Shows a fresh buffer in the main view, in the helix style's normal mode.
 	buffer: (self: TestContext, marked: string) -> (),
-	--- Another client, as if one attached, seeing what the first one does: the same views, selections and mode. `t`'s own methods act as the first client. `name` defaults to "test N".
-	client: (self: TestContext, name: string?) -> TestClient,
+	--- Another client, as if one attached, seeing what the first one does: the same views, selections and mode. `t`'s own methods act as the first client. `name` defaults to "test N", and `kind`, what `greed.client.current().kind` says, to "test" ("gui" for a window).
+	client: (self: TestContext, name: string?, kind: string?) -> TestClient,
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),
 	--- Runs a command, with arguments as from the command line, and waits

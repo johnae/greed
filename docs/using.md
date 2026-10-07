@@ -105,7 +105,8 @@ can say what of theirs is running with `require("@core").file.running`.
 
 Started without a config (`~/.config/greed/init.luau`), Greed shows a page
 with a few questions: how you like to edit, which theme, whether your font
-has icons, whether to add Greed's tools to Claude Code, and which language
+has icons (in a terminal, which needs a Nerd Font for them; the window has
+them built in and doesn't ask), whether to add Greed's tools to Claude Code, and which language
 model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
 for now). A style or theme you pick switches at once, so you can try it on
 the page.
@@ -559,9 +560,8 @@ how many bytes went out, and how long your terminal took to take them in.
 
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
 the folder you're in, `r` reads the disk again and `q` closes it. A click
-does what `enter` does, and the row under the mouse lights up. With a
-[Nerd Font](https://www.nerdfonts.com), `:set tree-icons nerd` shows an icon
-by each name.
+does what `enter` does, and the row under the mouse lights up.
+`:set tree-icons nerd` shows an icon by each name (see [Icons](#icons)).
 
 When a file changes on disk, from another program or an agent, its buffer
 loads the change as an edit you can undo with `u`. A buffer with unsaved
@@ -572,6 +572,28 @@ anyway. `:set auto-reload false` stops loading changes by itself.
 editing them, so a burst of typing is one save; `:set auto-save-delay 3000`
 waits three seconds instead. Put it in your `init.luau` to keep it:
 `require("@greed").option.set("auto-save", true)`.
+
+### Icons
+
+The file tree's icons and the status line's rounded ends come from
+[Nerd Fonts](https://www.nerdfonts.com). The window (`greed --gui`) has
+them built in, so they show whatever font you draw in. A terminal shows
+them only if its own font has them: install a Nerd Font, or one of its
+icon-only "Symbols" fonts, and set your terminal to use it. Without one
+you see boxes where icons should be.
+
+Two options use them, and both default to plain text that works anywhere:
+
+```luau
+local option = require("@greed").option
+option.set("tree-icons", "nerd") -- "none" for no icons
+option.set("statusline-caps", "round") -- "none" for square ends
+```
+
+Setup turns icons on when you run it in the window, or when you say a
+terminal shows them. The same config works for the window and terminals,
+so if you set Greed up in the window and later use a terminal without a
+Nerd Font, set both options back to `"none"` in your `init.luau`.
 
 ## Language servers
 

@@ -545,7 +545,7 @@ impl UserData for AddedClient {
 
 /// `t:client(name)`: a client seeing what the first one does, as one
 /// attaching would.
-fn add_client(lua: &Lua, name: Option<String>) -> mlua::Result<AddedClient> {
+fn add_client(lua: &Lua, name: Option<String>, kind: Option<String>) -> mlua::Result<AddedClient> {
     let id = {
         let editor = &mut state_mut(lua).editor;
         let id = editor.next_client_id();
@@ -556,7 +556,7 @@ fn add_client(lua: &Lua, name: Option<String>) -> mlua::Result<AddedClient> {
             id,
             crate::ClientInfo {
                 name: name.unwrap_or_else(|| format!("test {}", id.0)),
-                kind: "test".to_owned(),
+                kind: kind.unwrap_or_else(|| "test".to_owned()),
                 remote: false,
             },
         );
@@ -657,9 +657,10 @@ impl UserData for TestContext {
             state.editor.end_group();
             Ok(())
         });
-        methods.add_method("client", |lua, _, name: Option<String>| {
-            add_client(lua, name)
-        });
+        methods.add_method(
+            "client",
+            |lua, _, (name, kind): (Option<String>, Option<String>)| add_client(lua, name, kind),
+        );
         add_client_view_methods(methods);
         methods.add_method(
             "tempdir",
