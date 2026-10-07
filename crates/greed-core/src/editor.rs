@@ -518,6 +518,15 @@ impl Editor {
         }
     }
 
+    /// Binds single keys for `buffer` alone, in every mode and ahead of
+    /// every keymap layer, while a view of it has focus. Replaces what was
+    /// bound for it before; an empty map drops them.
+    pub fn set_buffer_keys(&mut self, buffer: BufferId, keys: HashMap<Key, Arc<str>>) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_keys(keys);
+        }
+    }
+
     /// Sets the language `buffer` is in, or with `None` goes back to the one
     /// its file name says.
     pub fn set_language(&mut self, buffer: BufferId, language: Option<Arc<str>>) {
@@ -1195,6 +1204,16 @@ impl Editor {
             && self.count.is_none()
             && let Some(overlay) = self.overlay.take()
             && let Some(name) = overlay.get(&key)
+        {
+            return KeyOutcome::Command {
+                name: name.clone(),
+                keys: vec![key],
+                count: None,
+            };
+        }
+        if self.pending.is_empty()
+            && self.count.is_none()
+            && let Some(name) = self.buffer(self.view(self.focus).buffer).key(key)
         {
             return KeyOutcome::Command {
                 name: name.clone(),

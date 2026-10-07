@@ -1775,20 +1775,21 @@ fn run_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
 /// `greed.keymap.overlay(bindings)`: binds single keys for the next key
 /// press only, or drops such bindings with nil.
 fn set_overlay(lua: &Lua, bindings: Option<HashMap<String, String>>) -> LuaResult<()> {
-    let overlay = bindings
-        .map(|bindings| {
-            bindings
-                .into_iter()
-                .map(|(key, command)| {
-                    Key::parse(&key)
-                        .map(|key| (key, Arc::<str>::from(command)))
-                        .map_err(mlua::Error::external)
-                })
-                .collect::<LuaResult<HashMap<_, _>>>()
-        })
-        .transpose()?;
+    let overlay = bindings.map(single_keys).transpose()?;
     state_mut(lua).editor.set_overlay(overlay);
     Ok(())
+}
+
+/// Bindings of single keys, like `{ y = "yes" }`, parsed.
+pub(super) fn single_keys(bindings: HashMap<String, String>) -> LuaResult<HashMap<Key, Arc<str>>> {
+    bindings
+        .into_iter()
+        .map(|(key, command)| {
+            Key::parse(&key)
+                .map(|key| (key, Arc::<str>::from(command)))
+                .map_err(mlua::Error::external)
+        })
+        .collect()
 }
 
 /// Sets `source` (`"file:line"`), and `path` and `line` when the file is on

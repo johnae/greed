@@ -135,6 +135,33 @@ fn unbound_single_keys_go_to_the_mode_fallback() {
 }
 
 #[test]
+fn keys_bound_for_a_buffer_come_first_while_it_has_focus() {
+    let mut ed = editor("");
+    let first = ed.view(ed.focus()).buffer;
+    ed.keymap_mut().set_fallback("insert", "insert-key", "core");
+    ed.keymap_mut()
+        .bind(Layer::mode("insert"), &keys("ctrl-x y"), "save", "core")
+        .unwrap();
+    ed.set_mode("insert");
+    ed.set_buffer_keys(first, [(Key::char('y'), "answer".into())].into());
+    let command = |name: &str, keys_: &str| KeyOutcome::Command {
+        name: name.into(),
+        keys: keys(keys_),
+        count: None,
+    };
+    assert_eq!(ed.press(Key::char('y')), command("answer", "y"));
+    assert_eq!(ed.press(Key::char('a')), command("insert-key", "a"));
+    // Inside a sequence the key is the sequence's.
+    ed.press(Key::parse("ctrl-x").unwrap());
+    assert_eq!(ed.press(Key::char('y')), command("save", "ctrl-x y"));
+    // Only in that buffer.
+    ed.open("file", "", None);
+    assert_eq!(ed.press(Key::char('y')), command("insert-key", "y"));
+    ed.set_buffer_keys(first, std::collections::HashMap::new());
+    assert!(ed.buffer(first).key(Key::char('y')).is_none());
+}
+
+#[test]
 fn messages_are_collected_and_taken() {
     let mut ed = editor("");
     ed.echo("hello");

@@ -12,14 +12,16 @@
 --   ▍ Found it in pager.rs.
 --   ▍ ✓ Edit pager.rs · +1 -1
 --   ▍ ✗ Run cargo test · 12 lines ▸
---   ▍ ? Allow Run cargo test?   enter to answer
+--   ▍ ? Allow Run cargo test?
 --
 --   ╭─ Claude · Plan · Sonnet ────── alt-enter sends · ctrl-c stops ─╮
+--   │ Allow Run cargo test?  [y] Allow once  [n] Reject              │
 --   │ now add a test                                                 │
---   ╰─  waiting for you  enter answers · 12s ── 14.2k / 200k tokens ─╯
+--   ╰─  waiting for you  enter answers · tab moves · esc hides · 12s ─╯
 --
--- The box's top line is in the buffer and marks where the history ends;
--- its sides and bottom, the bars beside messages and the status in the
+-- The box's top line is in the buffer and marks where the history ends,
+-- with the row of choices for a question under it (question.luau); its
+-- sides and bottom, the bars beside messages and the status in the
 -- bottom line are decorations, so copying text leaves them out. The status
 -- and running tools animate (with the effects option on) only while the
 -- agent works or waits for you.
@@ -27,6 +29,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local session = require("./session")
+local question = require("./question")
 
 type Session = session.Session
 
@@ -199,7 +202,7 @@ function M.history(s: Session): History
 				if e.chosen then
 					add(`  ? {e.permission.title}: {e.chosen}`, "comment")
 				else
-					add(`  ? Allow {e.permission.title}?   enter to answer`, "agent.working")
+					add(`  ? Allow {e.permission.title}?`, "agent.working")
 				end
 			end
 		end
@@ -333,7 +336,8 @@ end
 --- The box's bottom line for `s`, `cells` wide, as pieces with styles: what
 --- the agent is doing and for how long on the left, the tokens it has used
 --- on the right. `now` is the clock, for animations; nil draws them still.
-function M.bottom(s: Session, cells: number, now: number?): { any }
+--- `hint` says how to answer while the agent waits for you.
+function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any }
 	local left: { any } = {}
 	local function piece(text: string, style: string)
 		table.insert(left, { text = text, style = style })
@@ -351,7 +355,9 @@ function M.bottom(s: Session, cells: number, now: number?): { any }
 	elseif s.status == "waiting" then
 		local level = if now then (math.sin(now / 250) + 1) / 2 * 0.6 else 0
 		table.insert(left, chip(" waiting for you ", level))
-		piece(" enter answers", "agent.hint")
+		if hint and hint ~= "" then
+			piece(` {hint}`, "agent.hint")
+		end
 	elseif s.status == "starting" then
 		piece("starting…", "agent.hint")
 	elseif s.status == "exited" then
@@ -392,10 +398,32 @@ function M.bottom(s: Session, cells: number, now: number?): { any }
 	return out
 end
 
--- Where the box's top line ends in `buffer`, if it's still there.
-local function prompt_end(buffer: greed.Buffer): number?
+-- Where the box's top line starts, and where it (with the row of choices
+-- under it, if one shows) ends in `buffer`, if it's still there.
+local function prompt_head(buffer: greed.Buffer): (number?, number?)
 	local mark = buffer:decorations("acp-prompt")[1]
-	return if mark then mark.to else nil
+	if mark then
+		return mark.from, mark.to
+	end
+	return nil, nil
+end
+
+local function prompt_end(buffer: greed.Buffer): number?
+	local _, stop = prompt_head(buffer)
+	return stop
+end
+
+--- What's written in the box.
+function M.prompt(buffer: greed.Buffer): string
+	local stop = prompt_end(buffer)
+	if stop == nil then
+		return ""
+	end
+	local start = buffer:line_start(buffer:line_of(stop) + 1)
+	if start <= stop then
+		return ""
+	end
+	return buffer:slice(start, buffer:len())
 end
 
 -- Per transcript buffer: its session, the tool call on each line and the
@@ -438,15 +466,18 @@ end
 -- what you write, its bottom line with the status, and the running tools'
 -- marks. With `now`, animations are drawn at that time.
 local function live(buffer: greed.Buffer, s: Session, now: number?)
-	local stop = prompt_end(buffer)
-	if stop == nil then
+	local start = prompt_head(buffer)
+	if start == nil then
 		buffer:decorate("acp-live", {})
+		buffer:set_keys(nil)
 		return
 	end
+	local draft = M.prompt(buffer)
+	question.bind(buffer, draft)
 	local cells = box_width(buffer)
 	local marks: { greed.Mark } = {}
 	local count = buffer:line_count()
-	for line = buffer:line_of(stop) + 1, count - 1 do
+	for line = buffer:line_of(start) + 1, count - 1 do
 		local from = buffer:line_start(line)
 		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
 		table.insert(marks, { from = from, to = from, style = "agent.box", text = "│ " })
@@ -468,7 +499,7 @@ local function live(buffer: greed.Buffer, s: Session, now: number?)
 		from = last,
 		to = buffer:len(),
 		style = "agent.box",
-		lines = { M.bottom(s, cells, now) },
+		lines = { M.bottom(s, cells, now, question.hint(s, draft)) },
 	})
 	if now then
 		local frame = spinner_frame(now)
@@ -515,8 +546,11 @@ function M.render(buffer: greed.Buffer, s: Session)
 	local history = M.history(s)
 	rows[id] = history.tools
 	spinning[id] = history.running
-	local top, top_styles = M.top(s, box_width(buffer))
-	local wanted = history.text .. top
+	local cells = box_width(buffer)
+	local top, top_styles = M.top(s, cells)
+	local row, row_marks = question.row(buffer, s, cells)
+	local head = if row then `{top}\n{row}` else top
+	local wanted = history.text .. head
 	local stop = prompt_end(buffer)
 	if stop == nil then
 		-- The box's top went; everything there was is history now.
@@ -545,7 +579,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 		end
 	end
 	local at = #history.text
-	buffer:decorate("acp-prompt", { { from = at, to = at + #top, style = "agent.box" } })
+	buffer:decorate("acp-prompt", { { from = at, to = at + #head, style = "agent.box" } })
 	local styles = history.styles
 	for _, style in top_styles do
 		local moved = table.clone(style)
@@ -554,6 +588,12 @@ function M.render(buffer: greed.Buffer, s: Session)
 		table.insert(styles, moved)
 	end
 	buffer:decorate("acp", styles :: any)
+	local row_at = at + #top + 1
+	for _, mark in row_marks do
+		mark.from += row_at
+		mark.to += row_at
+	end
+	buffer:decorate("acp-choices", row_marks)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
 	tick(buffer, s)
 end
@@ -565,19 +605,6 @@ function M.create(s: Session): greed.Buffer
 	buffer:set_kept(true)
 	M.render(buffer, s)
 	return buffer
-end
-
---- What's written in the box.
-function M.prompt(buffer: greed.Buffer): string
-	local stop = prompt_end(buffer)
-	if stop == nil then
-		return ""
-	end
-	local start = buffer:line_start(buffer:line_of(stop) + 1)
-	if start <= stop then
-		return ""
-	end
-	return buffer:slice(start, buffer:len())
 end
 
 --- Empties the box.
@@ -615,6 +642,18 @@ greed.on("view.resized", function(event: greed.ViewResized)
 	local s = shown[buffer:id()]
 	if s then
 		M.render(buffer, s)
+	end
+end)
+
+question.on_redraw(M.render)
+
+-- What answers a question, and the hint saying so, depend on the mode.
+greed.on("mode.changed", function()
+	for _, buffer in greed.buffers() do
+		local s = shown[buffer:id()]
+		if s then
+			live(buffer, s, nil)
+		end
 	end
 end)
 

@@ -64,17 +64,14 @@ test("the agent asks before an edit; enter answers, and an open file is edited",
 	-- Through a local, so the check doesn't pin `s.status` for the code after it.
 	local status = s.status
 	assert(status == "waiting", status)
-	assert(string.find(shown(), "? Allow Edit a.txt?   enter to answer", 1, true), shown())
+	assert(string.find(shown(), "  ? Allow Edit a.txt?\n", 1, true), shown())
+	assert(
+		string.find(shown(), "─╮\nAllow Edit a.txt?  [y] Allow once  [n] Reject\n", 1, true),
+		shown()
+	)
 	local view = greed.view()
 	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
 	t:keys("enter")
-	local menu = t:floats()[1]
-	assert(
-		string.find(menu, "y     Allow once", 1, true)
-			and string.find(menu, "n     Reject", 1, true),
-		menu
-	)
-	t:keys("y")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)

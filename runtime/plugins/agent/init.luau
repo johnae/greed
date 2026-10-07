@@ -23,6 +23,7 @@ local eval = require("@self/eval")
 local extend = require("@self/extend")
 local context = require("@self/context")
 local untrusted = require("@self/untrusted")
+local memory = require("@self/memory")
 
 registry.group(
 	"refactor",
@@ -97,4 +98,6 @@ return table.freeze({
 	web = web,
 	--- What the user has on screen, to send with prompts (context.luau).
 	context = context,
+	--- Standing preferences you accepted, and agents proposing them (memory.luau).
+	memory = memory,
 })

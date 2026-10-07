@@ -54,6 +54,27 @@ local function screen(t: test.TestContext, width: number?): string
 	return table.concat(rows, "\n")
 end
 
+-- What the box's bottom line says.
+local function bottom(): string
+	local text = ""
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		for _, piece in (mark.lines or {})[1] or {} do
+			text ..= piece.text
+		end
+	end
+	return text
+end
+
+-- The choice highlighted in the box.
+local function highlighted(): string?
+	for _, mark in greed.view():buffer():decorations("acp-choices") do
+		if mark.style == "ui.menu.selected" then
+			return mark.text
+		end
+	end
+	return nil
+end
+
 -- `drawn` with runs of rule and of spaces as one, to compare the shape.
 local function squeeze(drawn: string): string
 	local out = string.gsub(drawn, " +", " ")
@@ -136,7 +157,15 @@ test("waiting on you shows as a chip, and how much context is used on the right"
 	assert(string.find(squeeze(screen(t)), strip, 1, true), screen(t))
 	send(t, s, "edit a.txt")
 	local drawn = screen(t)
-	assert(string.find(drawn, "╰─  waiting for you  enter answers · 0s ─", 1, true), drawn)
+	assert(
+		string.find(
+			drawn,
+			"╰─  waiting for you  y/n or enter answers · esc hides · 0s ─",
+			1,
+			true
+		),
+		drawn
+	)
 	assert(string.find(drawn, "▍ ○ Edit a.txt\n", 1, true), "it waits to start: " .. drawn)
 	acp.stop(s)
 end)
@@ -216,11 +245,137 @@ test("tool rows say what came back in a few words, never as JSON", function(t)
 	assert(rows[2] == "read a.txt · 2 lines", rows[2])
 	assert(rows[3] == "buffers · 1 item", rows[3])
 	acp.show(s)
-	local bottom = ""
-	for _, mark in greed.view():buffer():decorations("acp-live") do
-		for _, piece in (mark.lines or {})[1] or {} do
-			bottom ..= piece.text
+	assert(string.find(bottom(), " 1.5k / 200k tokens ─╯", 1, true), bottom())
+end)
+
+-- What's typed in the box once no question shows in it.
+local function draft(): string
+	return string.match(greed.view():buffer():text(), "ctrl%-c stops ─╮\n(.*)$") or "?"
+end
+
+-- Asks to edit a.txt and waits for the question.
+local function ask(t: test.TestContext, s: any)
+	send(t, s, "edit a.txt")
+	local status = s.status
+	assert(status == "waiting", status)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "[y] Allow once  [n] Reject", 1, true) ~= nil, text)
+end
+
+-- Waits for the agent to hear the answer, and returns what was chosen last.
+local function answered(t: test.TestContext, s: any): string
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(30)
+	local last = "?"
+	for chosen in string.gmatch(greed.view():buffer():text(), "%? Edit a%.txt: ([^\n]*)") do
+		last = chosen
+	end
+	return last
+end
+
+test("a question shows as choices in the box; letters answer outside typing", function(t)
+	local s = start(t)
+	ask(t, s)
+	assert(string.find(bottom(), "y/n or enter answers · esc hides", 1, true), bottom())
+	t:keys("n")
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+	assert(not string.find(greed.view():buffer():text(), "[y]", 1, true), "the row is gone")
+end)
+
+test("while you type, enter answers and what you typed stays in the box", function(t)
+	local s = start(t)
+	ask(t, s)
+	-- An empty box takes letters as answers, but h and i aren't any.
+	t:keys("i h")
+	t:keys("i")
+	assert(string.find(bottom(), "enter answers · tab moves · esc hides", 1, true), bottom())
+	-- With something typed, letters type.
+	t:keys("y")
+	local status = s.status
+	assert(status == "waiting", "y typed rather than answered")
+	assert(highlighted() == "[y] Allow once", tostring(highlighted()))
+	t:keys("tab")
+	assert(highlighted() == "[n] Reject", tostring(highlighted()))
+	t:keys("enter")
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+	assert(draft() == "hiy", draft())
+	assert(greed.mode.get() == "insert", greed.mode.get())
+end)
+
+test("esc hides the choices, leaving the question; alt-p brings them back", function(t)
+	local s = start(t)
+	ask(t, s)
+	t:keys("esc")
+	local text = greed.view():buffer():text()
+	assert(not string.find(text, "[y]", 1, true), text)
+	assert(string.find(text, "? Allow Edit a.txt?", 1, true), "still asked")
+	assert(string.find(bottom(), "enter shows the question", 1, true), bottom())
+	-- Keys do what they always do again: i starts typing.
+	t:keys("i")
+	assert(string.find(bottom(), "alt-p shows the question", 1, true), bottom())
+	t:keys("alt-p")
+	t:keys("right")
+	t:keys("left")
+	t:keys("enter")
+	assert(answered(t, s) == "Allow once", greed.view():buffer():text())
+end)
+
+test("clicking a choice answers with it", function(t)
+	local s = start(t)
+	ask(t, s)
+	local rows = t:draw(70, 16)
+	for row, text in rows do
+		local at = string.find(text, "[n] Reject", 1, true)
+		if at then
+			local col = utf8.len(string.sub(text, 1, at - 1)) :: number
+			t:mouse("press", col + 1, row - 1)
+			t:mouse("release", col + 1, row - 1)
+			break
 		end
 	end
-	assert(string.find(bottom, " 1.5k / 200k tokens ─╯", 1, true), bottom)
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+end)
+
+test("in Vim's style letters answer in normal mode, enter while typing", function(t)
+	greed.option.set("editing-style", "vim")
+	local s = start(t)
+	ask(t, s)
+	t:keys("y")
+	assert(answered(t, s) == "Allow once", greed.view():buffer():text())
+	-- Again, now typing with something in the box.
+	ask(t, s)
+	t:keys("i")
+	t:keys("o")
+	t:keys("k")
+	t:keys("enter")
+	assert(answered(t, s) == "Allow once", greed.view():buffer():text())
+	assert(draft() == "ok", draft())
+	greed.option.set("editing-style", "helix")
+end)
+
+test("in edit mode letters answer only while the box is empty", function(t)
+	local s = start(t)
+	-- Asked from Helix's style, which `send` types in.
+	ask(t, s)
+	greed.option.set("editing-style", "edit")
+	local view = greed.view()
+	view:set_cursor(view:buffer():len())
+	t:keys("o")
+	t:keys("n")
+	local status = s.status
+	assert(status == "waiting", "n typed rather than answered")
+	t:keys("enter")
+	assert(answered(t, s) == "Allow once", greed.view():buffer():text())
+	assert(draft() == "on", draft())
+	-- With the box empty again, a letter answers.
+	t:keys("backspace")
+	t:keys("backspace")
+	greed.option.set("editing-style", "helix")
+	ask(t, s)
+	greed.option.set("editing-style", "edit")
+	t:keys("n")
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+	greed.option.set("editing-style", "helix")
 end)

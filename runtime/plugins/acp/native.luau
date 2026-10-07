@@ -239,6 +239,7 @@ local function system(s: Session, env: string?): string
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
 		"Be brief: say what you did and what's left, not every step.",
+		agent.memory.prompt(s.root),
 	}
 	local found = instructions(s.root)
 	if found then

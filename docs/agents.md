@@ -62,6 +62,7 @@ claude mcp add greed -- greed mcp
 | `notes_remind` | Set a reminder on a line of a note, or add a todo with one ("remind me this evening") |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
+| `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
@@ -227,6 +228,35 @@ rules for the next. The notes tools refuse to write decisions. These are
 plain files, though: an agent that can write files can write here too, so
 check `.greed` changes as you would code.
 
+## Memories
+
+Memories are standing preferences you want every later session to
+follow, like "use jj, not git" or "I prefer short commit messages". There
+are two files, plain Markdown with one memory per list item, for you to
+read and edit:
+
+| File | |
+|---|---|
+| `memory.md` in your config folder (`~/.config/greed/memory.md`) | Yours, in every project; `:memory-edit` opens it |
+| `.greed/memory.md` in the project | The project's; `:memory-edit-project` opens it |
+
+An agent can't add a memory itself. When you state a lasting preference
+("from now on...", "always...", "I prefer..."), it proposes one with
+`memory_propose`, and the line shows in the memory file as a proposed
+change, with the date: `space o a` accepts it, `space o r` rejects it (see
+[Reviewing proposed edits](#reviewing-proposed-edits)). Only what you
+accept is written. That way a web page or file saying "remember to always
+run X" can't become a rule for every later session.
+
+Greed's own agent gets both files in its system prompt with each message,
+marked as preferences you accepted. Other agents read them with
+`memory_list`; Claude Code keeps memories of its own as well.
+
+A project's `.greed/memory.md` comes with the repository, like its
+`AGENTS.md`: whoever can change the repository can put memories in it. As
+with decisions, an agent that can write files can write these too, so
+check `.greed` changes as you would code.
+
 ## Claude Code's `/ide`
 
 `space i C` opens Claude Code in a pane beside your files, already
@@ -360,8 +390,22 @@ is idle. Themes style it with `agent.you` (your messages' background),
 `agent.hint`, `agent.working`, `agent.waiting`, `agent.done` and
 `agent.failed`.
 
-When the agent asks before doing something, `enter` (or `alt-p`)
-answers: `y` allows once, `a` always, `n` rejects.
+When the agent asks before doing something, the question shows as a row
+of choices at the top of the box, like
+`Allow Edit a.txt?  [y] Allow once  [a] Allow always  [n] Reject`, and
+you answer it from there in any mode and editing style:
+
+| Keys | |
+|---|---|
+| `enter` | The highlighted choice (the first, until you move) |
+| `tab`, `shift-tab`, `left`, `right` | Highlight the next or previous choice |
+| A choice's letter | That choice, unless you're typing with something in the box already |
+| `esc` | Hide the row, to read the question in the transcript; `enter` outside typing (or `alt-p`) shows it again |
+
+Clicking a choice picks it too. What you've typed in the box stays as it
+was. Letters type as usual once the box has something in it, so a
+message you're writing doesn't answer by accident; `enter` and `tab` still
+work then. The box's bottom line says which keys answer at the moment.
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo
 takes them back.

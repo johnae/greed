@@ -7,6 +7,7 @@
 //! A range is `{ anchor = n, head = n }`; a selection is
 //! `{ ranges = { range, ... }, primary = i }` with a 1-based `primary`.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use greed_text::{Author, ChangeSet, Range, Rope, Selection};
@@ -16,7 +17,7 @@ use mlua::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::api::{emit, float_options};
+use super::api::{emit, float_options, single_keys};
 use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::layout::Direction;
@@ -799,6 +800,15 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_kept(this.buffer, kept);
         Ok(())
     });
+    methods.add_method(
+        "set_keys",
+        |lua, this, bindings: Option<HashMap<String, String>>| {
+            this.with_buffer(lua, |_| Ok(()))?;
+            let keys = single_keys(bindings.unwrap_or_default())?;
+            state_mut(lua).editor.set_buffer_keys(this.buffer, keys);
+            Ok(())
+        },
+    );
     methods.add_method("language", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.language().map(str::to_owned)))
     });

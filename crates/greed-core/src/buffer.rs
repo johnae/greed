@@ -8,6 +8,7 @@ use smallvec::SmallVec;
 
 use crate::Error;
 use crate::history::{History, Step};
+use crate::keymap::Key;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferId(pub u32);
@@ -34,6 +35,8 @@ pub struct Buffer {
     line_numbers: bool,
     /// Kept open while nothing shows it, though it has no file.
     kept: bool,
+    /// Single keys bound for this buffer alone, ahead of every keymap layer.
+    keys: HashMap<Key, Arc<str>>,
     /// The language set for the buffer, overriding the detected one.
     language: Option<Arc<str>>,
     /// The language its file name says, from the editor's file types.
@@ -175,6 +178,7 @@ impl Buffer {
             lossy: false,
             line_numbers: true,
             kept: false,
+            keys: HashMap::new(),
             language: None,
             detected: None,
             marks: BTreeMap::new(),
@@ -353,6 +357,16 @@ impl Buffer {
 
     pub(crate) fn set_kept(&mut self, kept: bool) {
         self.kept = kept;
+    }
+
+    /// The command `key` runs in this buffer whatever the mode, if it's
+    /// bound for the buffer.
+    pub fn key(&self, key: Key) -> Option<&Arc<str>> {
+        self.keys.get(&key)
+    }
+
+    pub(crate) fn set_keys(&mut self, keys: HashMap<Key, Arc<str>>) {
+        self.keys = keys;
     }
 
     /// The language the text is in: the one set for the buffer, or the one

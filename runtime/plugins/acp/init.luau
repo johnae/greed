@@ -5,8 +5,10 @@
 --   space i n   start an agent: pick which, and where it works
 --   space i o   the agents: what each is doing, its changes, review or bring them in
 --
--- In a transcript, alt-enter sends what's in the box at the bottom, ctrl-c
--- stops the agent's turn and enter on a question answers it.
+-- In a transcript, alt-enter sends what's in the box at the bottom and
+-- ctrl-c stops the agent's turn. A question the agent asks shows as a row
+-- of choices in the box, answered with enter or a choice's letter in any
+-- mode (question.luau).
 --
 -- Agents are registered by name with the commands that run them; the first
 -- one installed is used. Add your own in init.luau:
@@ -21,6 +23,7 @@ local agents = require("@self/agents")
 local session = require("@self/session")
 local native = require("@self/native")
 local transcript = require("@self/transcript")
+local question = require("@self/question")
 local participants = require("@self/participants")
 local review = require("@self/review")
 local workspaces = require("@self/workspaces")
@@ -618,39 +621,17 @@ greed.command({
 	end,
 })
 
--- The keys for each kind of answer, in the order they're offered.
-local ANSWER_KEYS = { allow_once = "y", allow_always = "a", reject_once = "n", reject_always = "N" }
-
 greed.command({
 	name = "agent-answer",
-	doc = "Answer the question the agent waits on",
+	doc = "Show the question the agent waits on in the box, to answer it there",
 	run = function(ctx)
 		local s = current(ctx)
-		local permission = s and session.pending(s)[1]
-		if permission == nil then
+		local buffer = s and buffers[s.id]
+		if s == nil or buffer == nil or not question.show(s) then
 			greed.echo("no question waiting")
 			return
 		end
-		local items: { core.TransientItem } = {}
-		local used: { [string]: boolean } = {}
-		for i, option in permission.options do
-			local key = ANSWER_KEYS[option.kind] or tostring(i)
-			if used[key] then
-				key = tostring(i)
-			end
-			used[key] = true
-			table.insert(items, {
-				key = key,
-				doc = option.name,
-				run = function()
-					permission.answer:send(option.id)
-				end,
-			})
-		end
-		core.transient.show({
-			title = `Allow {permission.title}?`,
-			groups = { { title = "Answer", items = items } },
-		})
+		transcript.render(buffer, s)
 	end,
 })
 

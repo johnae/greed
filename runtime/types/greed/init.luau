@@ -80,6 +80,8 @@ export type Buffer = {
 	--- to; with false it goes once nothing shows it (right away if nothing
 	--- does now).
 	set_kept: (self: Buffer, kept: boolean) -> (),
+	--- Binds single keys for this buffer alone, e.g. `{ y = "answer-yes" }`, in every mode and ahead of every other binding, while it has focus. Replaces what was bound for it before; nil drops them.
+	set_keys: (self: Buffer, keys: { [string]: string }?) -> (),
 	--- Stops keeping undo history, for buffers whose edits nobody undoes,
 	--- like a terminal's: what's kept goes, and later edits aren't kept.
 	forget_history: (self: Buffer) -> (),

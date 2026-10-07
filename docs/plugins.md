@@ -159,6 +159,12 @@ should work wherever you type. Commands can carry tags others check:
 selection history and in one undo step in edit mode, and `"no-repeat"`
 leaves them out of what `.` repeats.
 
+For keys that should mean something in one buffer only for a while,
+`buffer:set_keys({ y = "my-answer-yes", esc = "my-hide" })` binds single
+keys for that buffer, in every mode and ahead of every other binding,
+while it has focus; `buffer:set_keys(nil)` drops them. The agent pane uses
+it to answer a question with `enter` or a letter whatever mode you're in.
+
 ### Actions on things
 
 `space .` lists what you can do with what's under the cursor, and `alt-.`
