@@ -12,6 +12,8 @@
 //! which the emulator doesn't know.
 
 use std::collections::HashMap;
+use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 
 use alacritty_terminal::event::EventListener;
@@ -247,6 +249,8 @@ impl Graphics {
         let keys = Keys::parse(control);
         // Later chunks carry only m=; the first one's keys hold for all.
         let (keys, data) = match self.pending.take() {
+            // An image sent in more pieces than any image takes is dropped.
+            Some((_, so_far)) if so_far.len().saturating_add(data.len()) > LIMIT => return None,
             Some((first, mut so_far)) => {
                 so_far.extend_from_slice(data);
                 (Keys(first.0.into_iter().chain(keys.0).collect()), so_far)
@@ -433,6 +437,37 @@ impl Graphics {
     }
 }
 
+/// The file at `path` a program names for an image: only a plain file (a
+/// pipe or a device could block or never end), and at most [`LIMIT`].
+fn read_file(path: &Path) -> Result<Vec<u8>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("EBADF:{e}"))?;
+    if !meta.is_file() {
+        return Err("EBADF:not a file".to_owned());
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| file.take(LIMIT as u64 + 1).read_to_end(&mut bytes))
+        .map_err(|e| format!("EBADF:{e}"))?;
+    if bytes.len() > LIMIT {
+        return Err("EFBIG:the file is too big".to_owned());
+    }
+    Ok(bytes)
+}
+
+/// Whether `path` is a temporary file the program wants removed once read:
+/// one in a temporary folder with "tty-graphics-protocol" in its name, as
+/// the kitty protocol says, so no other file can be removed this way.
+fn is_temporary(path: &Path) -> bool {
+    let named = path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().contains("tty-graphics-protocol"));
+    let temp = std::env::temp_dir();
+    let in_temp = [temp.as_path(), Path::new("/tmp"), Path::new("/dev/shm")]
+        .iter()
+        .any(|dir| path.parent() == Some(dir));
+    named && in_temp
+}
+
 /// The image a kitty command transmits: PNG, or raw RGB or RGBA pixels
 /// (`f=24`, `f=32` with `s` and `v`), sent in the command (`t=d`) or in a
 /// file (`t=f`, or `t=t` for a temporary file, removed after).
@@ -445,9 +480,10 @@ fn image(keys: &Keys, data: &[u8]) -> Result<Image, String> {
         b'd' => decoded,
         medium @ (b'f' | b't') => {
             let path = String::from_utf8(decoded).map_err(|_| "EINVAL:bad path".to_owned())?;
-            let bytes = std::fs::read(&path).map_err(|e| format!("EBADF:{e}"))?;
-            if medium == b't' && path.contains("tty-graphics-protocol") {
-                let _ = std::fs::remove_file(&path);
+            let path = Path::new(&path);
+            let bytes = read_file(path)?;
+            if medium == b't' && is_temporary(path) {
+                let _ = std::fs::remove_file(path);
             }
             bytes
         }
@@ -499,7 +535,7 @@ fn iterm_size(
         let cells = if let Some(px) = value.strip_suffix("px") {
             n(px)?.div_ceil(u32::from(pixel.max(1)))
         } else if let Some(percent) = value.strip_suffix('%') {
-            n(percent)? * u32::try_from(whole).ok()? / 100
+            n(percent)?.checked_mul(u32::try_from(whole).ok()?)? / 100
         } else {
             n(value)?
         };
@@ -595,6 +631,30 @@ mod tests {
         got.extend(pieces(&mut s, b"CD\x1b"));
         got.extend(pieces(&mut s, b"\\b"));
         assert_eq!(got, ["text a", "kitty m=1;ABCD", "text b"]);
+    }
+
+    #[test]
+    fn files_a_program_names_are_read_only_when_plain_and_removed_only_from_temp() {
+        let path = base64::engine::general_purpose::STANDARD.encode("/dev/zero");
+        let keys = Keys::parse(b"a=T,t=f");
+        let err = image(&keys, path.as_bytes()).map(|_| ()).unwrap_err();
+        assert!(err.starts_with("EBADF"), "{err}");
+        assert!(!is_temporary(Path::new(
+            "/home/me/tty-graphics-protocol.png"
+        )));
+        assert!(!is_temporary(&std::env::temp_dir().join("notes.png")));
+        assert!(is_temporary(
+            &std::env::temp_dir().join("tty-graphics-protocol-1.png")
+        ));
+    }
+
+    #[test]
+    fn iterm_sizes_past_any_screen_dont_overflow() {
+        let image = Image::from_pixels(2, 1, 3, &[0; 6]).unwrap();
+        for width in ["4294967295%", "4294967295px", "4294967295", "-1", "0%"] {
+            let args = HashMap::from([(&b"width"[..], width.as_bytes())]);
+            iterm_size(&image, &args, (8, 16), 80, 24);
+        }
     }
 
     #[test]

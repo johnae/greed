@@ -212,8 +212,9 @@ impl Terminal {
     /// Starts `options.command` in a new pseudo terminal. Output and the
     /// program's end arrive on `events`.
     pub fn spawn(id: TerminalId, options: &Options, events: Sender<Event>) -> io::Result<Self> {
+        let (rows, cols) = fit(options.rows, options.cols);
         let pair = portable_pty::native_pty_system()
-            .openpty(pty_size(options.rows, options.cols, options.cell))
+            .openpty(pty_size(rows, cols, options.cell))
             .map_err(io::Error::other)?;
         let mut child = pair
             .slave
@@ -252,7 +253,7 @@ impl Terminal {
             kitty_keyboard: true,
             ..Config::default()
         };
-        let size = Size::new(options.rows, options.cols);
+        let size = Size::new(rows, cols);
         let shared = Arc::new(Shared {
             term: Mutex::new(Term::new(config, &size, listener)),
             scrollback: Mutex::new(Lines {
@@ -402,7 +403,7 @@ impl Terminal {
 
     /// Changes the size in cells, and the size of a cell in pixels.
     pub fn resize(&self, rows: u16, cols: u16, cell: (u16, u16)) -> io::Result<()> {
-        let (rows, cols) = (rows.max(1), cols.max(1));
+        let (rows, cols) = fit(rows, cols);
         *lock(&self.shared.cell) = cell;
         self.master
             .resize(pty_size(rows, cols, cell))
@@ -683,7 +684,9 @@ fn add_image(row: &mut Row, piece: ImagePiece, graphics: &Graphics) {
     };
     let width = |image: &RowImage| u16::try_from(row.text.len() - image.from).unwrap_or(u16::MAX);
     let carries_on = row.images.last().is_some_and(|last| {
-        last.id.0 == piece.id && last.row == piece.row && last.col + width(last) == piece.col
+        last.id.0 == piece.id
+            && last.row == piece.row
+            && u32::from(last.col) + u32::from(width(last)) == u32::from(piece.col)
     });
     if !carries_on {
         row.images.push(RowImage {
@@ -976,6 +979,13 @@ impl EventListener for Listener {
             _ => {}
         }
     }
+}
+
+/// `rows` and `cols` kept to at least one each and to no more than the
+/// biggest screen drawn, so the grid fits in memory.
+fn fit(rows: u16, cols: u16) -> (u16, u16) {
+    let most = crate::render::Size::MAX;
+    (rows.clamp(1, most.height), cols.clamp(1, most.width))
 }
 
 struct Size {

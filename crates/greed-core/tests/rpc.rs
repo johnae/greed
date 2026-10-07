@@ -57,6 +57,36 @@ fn messages_are_framed_with_their_length() {
     assert_eq!(read_message(&mut reader).unwrap(), None);
 }
 
+#[test]
+fn a_length_too_big_to_take_ends_the_stream_and_odd_headers_are_skipped() {
+    let mut good = Vec::new();
+    write_message(&mut good, &json!(1)).unwrap();
+
+    // Bytes that aren't UTF-8 and a header line longer than any real one.
+    let mut stream = b"\xff\xfe: 2\r\n\r\n".to_vec();
+    stream.extend_from_slice(format!("x-junk: {}\r\n", "y".repeat(10_000)).as_bytes());
+    stream.extend_from_slice(&good);
+    let mut reader = BufReader::new(Cursor::new(stream));
+    let mut read = None;
+    for _ in 0..10 {
+        match read_message(&mut reader) {
+            Ok(message) => {
+                read = message;
+                break;
+            }
+            Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{err}"),
+        }
+    }
+    assert_eq!(read, Some(json!(1)));
+
+    for length in [u64::MAX.to_string(), (1u64 << 40).to_string()] {
+        let stream = format!("Content-Length: {length}\r\n\r\n{{}}");
+        let mut reader = BufReader::new(Cursor::new(stream.into_bytes()));
+        let err = read_message(&mut reader).unwrap_err();
+        assert_ne!(err.kind(), std::io::ErrorKind::InvalidData, "{err}");
+    }
+}
+
 /// A connection to a peer on a thread: what it's sent comes out of the
 /// returned reader, and what's written to the returned writer is what it
 /// says.

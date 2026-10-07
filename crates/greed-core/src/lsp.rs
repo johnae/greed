@@ -1176,9 +1176,10 @@ fn has_odd_break(text: &str) -> bool {
     text.contains(['\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'])
 }
 
-/// An LSP position (`{ line, character }`) for byte `pos`.
+/// An LSP position (`{ line, character }`) for byte `pos`, or for the start
+/// of the character it is inside.
 pub fn position(text: &Rope, pos: usize, encoding: Encoding) -> Value {
-    let pos = pos.min(text.len_bytes());
+    let pos = text.char_to_byte(text.byte_to_char(pos.min(text.len_bytes())));
     let line = text.byte_to_line(pos);
     let start = text.line_to_byte(line);
     let character = match encoding {

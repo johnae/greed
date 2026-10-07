@@ -29,6 +29,9 @@ const PROTOCOL_HEADER: &str = "sec-websocket-protocol";
 /// for messages.
 const POLL: Duration = Duration::from_millis(20);
 
+/// How long a client may take to finish the WebSocket handshake.
+const HANDSHAKE: Duration = Duration::from_secs(10);
+
 /// Where Claude Code looks for editors: `$CLAUDE_CONFIG_DIR/ide`, or
 /// `~/.claude/ide`.
 pub fn lock_dir() -> Option<PathBuf> {
@@ -92,7 +95,8 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
                 .push(outgoing.clone());
             let token = token.clone();
             let requests = requests.clone();
-            std::thread::spawn(move || {
+            // With no thread to spare, the connection is dropped.
+            let _ = std::thread::Builder::new().spawn(move || {
                 let _ = serve(stream, &token, &requests, &outgoing, &queued);
             });
         }
@@ -144,6 +148,8 @@ fn serve(
             Err(refused)
         }
     };
+    // A client that stalls in the handshake doesn't keep its thread.
+    stream.set_read_timeout(Some(HANDSHAKE))?;
     let mut socket = tungstenite::accept_hdr(stream, check).map_err(|err| match err {
         tungstenite::HandshakeError::Failure(err) => err,
         tungstenite::HandshakeError::Interrupted(_) => {
@@ -201,7 +207,8 @@ fn forward(text: &str, requests: &Sender<Request>, outgoing: &Sender<String>) {
         return;
     }
     let outgoing = outgoing.clone();
-    std::thread::spawn(move || {
+    // With no thread to spare, the request goes unanswered.
+    let _ = std::thread::Builder::new().spawn(move || {
         let Ok(answer) = answered.recv() else { return };
         let Some(id) = id else { return };
         let response = match answer {

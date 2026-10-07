@@ -286,10 +286,15 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
     let mut first = String::new();
     stdin.read_line(&mut first)?;
     let mut attach: Value = serde_json::from_str(&first)?;
-    attach["params"]["remote"] = Value::Bool(true);
+    let params = attach
+        .as_object_mut()
+        .map(|a| a.entry("params").or_insert_with(|| json!({})))
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| std::io::Error::other("the first message isn't an attach request"))?;
+    params.insert("remote".into(), Value::Bool(true));
     if running {
         if path.is_some() {
-            attach["params"]["open"] = Value::from(target.to_string_lossy());
+            params.insert("open".into(), Value::from(target.to_string_lossy()));
         }
     } else {
         spawn_server(&name, Some(&target), true)?;

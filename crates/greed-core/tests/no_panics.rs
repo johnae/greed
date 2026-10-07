@@ -424,6 +424,16 @@ fn resizing_panes_with_no_room_to_give() {
 }
 
 #[test]
+fn terminals_sized_past_any_screen_are_kept_to_one() {
+    let (h, _) = prepared();
+    run(
+        &h,
+        "local t = greed.terminal.spawn({ command = { 'true' }, rows = 65535, cols = 65535 }) \
+         t:resize(0, 0) t:resize(65535, 65535) t:screen() t:close()",
+    );
+}
+
+#[test]
 fn waits_too_long_to_count_or_less_than_none() {
     let (h, _) = prepared();
     run(

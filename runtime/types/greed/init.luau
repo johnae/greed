@@ -634,6 +634,7 @@ export type Terminal = {
 	key: (self: Terminal, name: string) -> (),
 	--- Sends pasted text, marked as a paste if the program asked for that.
 	paste: (self: Terminal, text: string) -> (),
+	--- Changes its size, kept to between 1 by 1 and 1024 rows by 2048 columns.
 	resize: (self: Terminal, rows: number, cols: number) -> (),
 	--- Whether the program asked for mouse events, as editors and htop do.
 	wants_mouse: (self: Terminal) -> boolean,
@@ -658,7 +659,8 @@ export type Terminals = {
 	--- Starts `command` (the program, then its arguments; the user's shell
 	--- without) in a terminal of `rows` by `cols`. Its output arrives as
 	--- "terminal.output" events and its end as "terminal.exited".
-	--- `scrollback` lines are kept above the screen (default 10000).
+	--- `scrollback` lines are kept above the screen (default 10000). The
+	--- size is kept to between 1 by 1 and 1024 rows by 2048 columns.
 	spawn: (spec: { command: { string }?, cwd: string?, env: { [string]: string }?, rows: number, cols: number, scrollback: number? }) -> Terminal,
 }
 

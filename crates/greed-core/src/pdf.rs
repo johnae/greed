@@ -69,8 +69,12 @@ impl Document {
     pub fn render(&self, page: usize, scale: f32) -> Result<Image, String> {
         let png = self.with_page(page, |page| {
             let (w, h) = page.render_dimensions();
-            // A page too big at this scale is drawn as big as allowed.
-            let scale = scale.min(MAX_SIDE / w.max(h).max(1.0)).max(0.01);
+            // A page too big at this scale is drawn as big as allowed, even
+            // one so big that means drawing it smaller than asked.
+            let scale = scale.max(0.01).min(MAX_SIDE / w.max(h).max(1.0));
+            if !(w * scale >= 1.0 && h * scale >= 1.0) {
+                return Err("the page is too small to draw".to_owned());
+            }
             let pixmap = render(
                 page,
                 &RenderCache::new(),
@@ -82,9 +86,8 @@ impl Document {
                     bg_color: WHITE,
                 },
             );
-            pixmap.into_png()
-        })?;
-        let png = png.map_err(|err| err.to_string())?;
+            pixmap.into_png().map_err(|err| err.to_string())
+        })??;
         Image::from_file_bytes(&png).map_err(|err| err.to_string())
     }
 
@@ -205,6 +208,11 @@ mod tests {
     /// A small PDF with a page of text on each of `pages`, made the way a
     /// writer would: objects, then a cross-reference table of their offsets.
     fn sample(pages: &[&str]) -> Vec<u8> {
+        sample_sized(pages, "0 0 612 792")
+    }
+
+    /// Like [`sample`], with pages the size `media` says, "x0 y0 x1 y1".
+    fn sample_sized(pages: &[&str], media: &str) -> Vec<u8> {
         let mut objects: Vec<String> = Vec::new();
         let n = pages.len();
         let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 4 + i * 2)).collect();
@@ -217,7 +225,7 @@ mod tests {
         for (i, text) in pages.iter().enumerate() {
             let content = format!("BT /F1 24 Tf 72 720 Td ({text}) Tj ET");
             objects.push(format!(
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [{media}] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
                 5 + i * 2
             ));
             objects.push(format!(
@@ -254,6 +262,18 @@ mod tests {
         let image = doc.render(0, 0.5).unwrap();
         assert_eq!((image.width, image.height), (306, 396));
         assert!(doc.render(2, 1.0).is_err(), "no third page");
+    }
+
+    #[test]
+    fn huge_tiny_and_odd_pages_and_scales_are_drawn_within_bounds_or_refused() {
+        let huge = Document::new(sample_sized(&["x"], "0 0 10000000 10000000")).unwrap();
+        for scale in [1.0, 0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let image = huge.render(0, scale).unwrap();
+            assert!(image.width <= 8_000 && image.height <= 8_000, "{scale}");
+        }
+        let tiny = Document::new(sample_sized(&["x"], "0 0 1 1")).unwrap();
+        assert!(tiny.render(0, 0.01).is_err());
+        assert!(tiny.render(0, 2.0).is_ok());
     }
 
     #[test]

@@ -248,6 +248,9 @@ impl Drop for Connection {
     }
 }
 
+/// The largest message read: a server saying more is broken.
+pub const MAX_MESSAGE: usize = 256 << 20;
+
 /// Writes `message` with its `Content-Length` header.
 pub fn write_message(writer: &mut impl Write, message: &Value) -> io::Result<()> {
     let body = message.to_string();
@@ -263,7 +266,9 @@ pub fn read_message(reader: &mut impl BufRead) -> io::Result<Option<Value>> {
     let mut headers = 0;
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
+        // A header line is short; a longer one is read in pieces, which
+        // are no header the reader knows.
+        if reader.by_ref().take(4096).read_line(&mut line)? == 0 {
             return Ok(None);
         }
         let line = line.trim_end();
@@ -283,6 +288,12 @@ pub fn read_message(reader: &mut impl BufRead) -> io::Result<Option<Value>> {
     }
     let length = length
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "a message without a length"))?;
+    if length > MAX_MESSAGE {
+        // Its body can't be skipped reliably, so the stream is given up.
+        return Err(io::Error::other(format!(
+            "a message of {length} bytes, more than the {MAX_MESSAGE} taken"
+        )));
+    }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
     serde_json::from_slice(&body)

@@ -1024,3 +1024,59 @@ fn line_breaks_lsp_doesnt_count_or_a_forgotten_history_send_the_whole_text() {
     let probe = s.compare();
     assert_eq!(probe["whole"], 4, "{probe}");
 }
+
+#[test]
+fn diagnostics_past_the_end_or_inside_characters_are_kept_in_the_text() {
+    use greed_core::render::{CellWidth, Plain, Renderer, Size, Status};
+    let options = support::Options {
+        incremental: false,
+        utf8: false,
+    };
+    let mut s = setup_with("a😀é\nbad\n", options);
+    s.lsp.sync(&s.editor);
+    s.next();
+    let at = |line: Value, character: Value| json!({ "line": line, "character": character });
+    let range = |start: Value, end: Value| json!({ "range": { "start": start, "end": end }, "message": "odd" });
+    s.publish(
+        None,
+        json!([
+            // Past the last line, past a line's end, and huge.
+            range(at(json!(9), json!(0)), at(json!(99), json!(5))),
+            range(at(json!(0), json!(500)), at(json!(1), json!(u64::MAX))),
+            // Inside the surrogate pair of the emoji, and ending before it starts.
+            range(at(json!(0), json!(2)), at(json!(0), json!(1))),
+            // Not numbers at all, and no range.
+            range(at(json!(-1), json!(0.5)), at(json!("x"), json!(null))),
+            json!({ "message": "no range" }),
+            json!("not even an object"),
+        ]),
+    );
+    let buffer = s.editor.buffers().next().unwrap();
+    let len = buffer.text().len_bytes();
+    for d in diagnostics(buffer) {
+        assert!(d.from <= d.to && d.to <= len, "{d:?}");
+        assert!(buffer.text().to_string().is_char_boundary(d.from), "{d:?}");
+    }
+    // Every byte, even those inside a character, has a position.
+    let text = buffer.text().clone();
+    for pos in 0..len + 3 {
+        for encoding in [Encoding::Utf8, Encoding::Utf16] {
+            let p = position(&text, pos, encoding);
+            assert!(offset(&text, &p, encoding).is_some(), "{pos}: {p}");
+        }
+    }
+    assert_eq!(
+        position(&text, 2, Encoding::Utf16),
+        json!({ "line": 0, "character": 1 })
+    );
+    s.lsp.problems(&s.editor);
+    Renderer::new(CellWidth).frame(
+        &mut s.editor,
+        Size {
+            width: 6,
+            height: 3,
+        },
+        &Status::Default { message: None },
+        &Plain,
+    );
+}

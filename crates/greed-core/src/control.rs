@@ -351,7 +351,9 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
             let attach = attach.clone();
             let gone = gone.clone();
             let token = token.clone();
-            std::thread::spawn(move || serve_connection(stream, &token, &sender, &attach, &gone));
+            // With no thread to spare, the connection is dropped.
+            let _ = std::thread::Builder::new()
+                .spawn(move || serve_connection(stream, &token, &sender, &attach, &gone));
         }
     });
     Ok(Session {
