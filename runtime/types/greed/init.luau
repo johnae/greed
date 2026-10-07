@@ -250,6 +250,9 @@ export type Mark = {
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
+	--- Draw the text without syntax highlighting, like a tool's output in a
+	--- Markdown buffer.
+	plain: boolean?,
 	--- Lines shown under the last line that aren't in the buffer, like
 	--- backlinks. The cursor never goes on them. Each is a string, or pieces
 	--- with styles of their own on top of the mark's, e.g.

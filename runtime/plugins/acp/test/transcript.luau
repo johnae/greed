@@ -541,3 +541,24 @@ test("a selection in the history isn't taken away by what the agent adds", funct
 	local range = greed.view():selection().ranges[1]
 	assert(range.anchor == 0 and range.head == 4, `{range.anchor}-{range.head}`)
 end)
+
+test("tool lines are drawn without Markdown's colours, what was said with them", function(t)
+	local s = start(t)
+	send(t, s, "stars")
+	send(t, s, "markdown")
+	t:wait(60)
+	local buffer = greed.view():buffer()
+	local text = buffer:text()
+	local function plain_at(needle: string): boolean
+		local at = (string.find(text, needle, 1, true) :: number) - 1
+		for _, mark in buffer:marks_at(at) do
+			if mark.plain then
+				return true
+			end
+		end
+		return false
+	end
+	assert(plain_at("Run python"), "a tool's row")
+	assert(not plain_at("Some **bold**"), "the agent's words")
+	acp.stop(s)
+end)

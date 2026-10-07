@@ -1683,3 +1683,49 @@ fn a_named_buffer_is_called_by_its_name_in_the_tab_line_a_float_and_the_status_l
     ed.set_buffer_name(term, None);
     assert_eq!(ed.buffer(term).title(), "terminal", "its kind, unnamed");
 }
+
+#[test]
+fn a_plain_mark_draws_its_text_without_syntax_highlighting() {
+    use greed_core::Mark;
+    use greed_core::syntax::Highlight;
+    use std::sync::Arc;
+
+    let mut ed = editor("|~a~ ~b~");
+    let buffer = ed.view(ed.focus()).buffer;
+    let highlights = vec![
+        Highlight {
+            range: 0..3,
+            capture: Arc::from("markup.strikethrough"),
+        },
+        Highlight {
+            range: 4..7,
+            capture: Arc::from("markup.strikethrough"),
+        },
+    ];
+    ed.decorate(
+        buffer,
+        "transcript",
+        vec![Mark {
+            range: 4..7,
+            style: "x".into(),
+            plain: true,
+            ..Mark::default()
+        }],
+    );
+    let f = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 20,
+            height: 2,
+        },
+        &Status::Default { message: None },
+        &Fixed { highlights },
+    );
+    let struck: Vec<String> = screen_rows(&f)[0]
+        .spans
+        .iter()
+        .filter(|s| s.tags.iter().any(|t| t.name() == "markup.strikethrough"))
+        .map(|s| s.text.clone())
+        .collect();
+    assert_eq!(struck, ["~a~"], "only the text outside the plain mark");
+}

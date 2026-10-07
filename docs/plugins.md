@@ -625,7 +625,9 @@ greed.tab.set_layout({
   stay as they are when the mode changes (`greed.reveal(how)` is what core
   calls as it does). `buffer:decorate(ns, marks, { from = a, to = b })`
   replaces only the marks starting from `a` up to `b`, for plugins that
-  draw again just the lines an edit changed. A mark can fold lines away under the first one (`fold`),
+  draw again just the lines an edit changed. `plain = true` draws a mark's
+  text without syntax highlighting, as for a tool's output in a Markdown
+  buffer. A mark can fold lines away under the first one (`fold`),
   or show lines that aren't in the buffer under its own (`lines`), whole
   or in pieces with styles of their own. A mark's text with an `action`
   (a command name) is a button: clicking it, or `enter` on it in normal

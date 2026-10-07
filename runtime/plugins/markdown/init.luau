@@ -395,6 +395,8 @@ local function marks(
 			{ text = text, at = at, out = out, shows = shows, taken = {}, reading = read ~= nil }
 		n += 1
 		if left_plain and left_plain[n - 1] then
+			-- Nor Markdown's colours: `~` around a path isn't strikethrough.
+			table.insert(out, { from = at, to = at + #text, style = "text", plain = true })
 			continue
 		end
 		local block = s.code_at[n - 1]

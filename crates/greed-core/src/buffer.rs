@@ -121,6 +121,9 @@ pub struct Mark {
     /// Hide the lines after the range's first line, up to its last, unless a
     /// cursor is in them, e.g. a section folded under its heading.
     pub fold: bool,
+    /// Draw the range's text without syntax highlighting, e.g. a tool's
+    /// output in an agent's Markdown transcript.
+    pub plain: bool,
     /// Lines shown under the range's last line that aren't in the buffer,
     /// like a list of backlinks. The cursor never goes on them.
     pub lines: Vec<VirtualLine>,

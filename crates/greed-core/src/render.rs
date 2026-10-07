@@ -1648,7 +1648,14 @@ fn cell_tags(
             })
             .map(|m| Tag::from(m.style.clone()))
     };
-    let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
+    let plain = marks
+        .iter()
+        .any(|m| m.plain && m.range.contains(&cell.byte));
+    let mut tags: SmallVec<[Tag; 2]> = capture
+        .filter(|_| !plain)
+        .map(Tag::from)
+        .into_iter()
+        .collect();
     tags.extend(on_cell(false));
     for peer in peers {
         tags.extend(selection_tags(
