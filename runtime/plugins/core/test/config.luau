@@ -54,3 +54,26 @@ test("the config runs again when it changes, taking away what it registered befo
 	assert(string.find(messages[#messages], "oops", 1, true), messages[#messages])
 	greed.plugin.unload("user/config")
 end)
+
+test("a config made after the editor started runs once it's written", function(t)
+	-- As on a first run: no config when the editor starts, then setup writes one.
+	local dir = assert(greed.fs.dirs().config)
+	assert(greed.plugin.dirs()["user/config"] == nil, "no config loaded")
+	core.config.watch()
+	greed.fs.write(
+		dir .. "/init.luau",
+		"require('@greed').command({ name = 'from-new-config', run = function() end })\n"
+	)
+	t:wait(10)
+	assert(commands()["from-new-config"], "it ran")
+	local messages = t:messages()
+	assert(messages[#messages] == "config reloaded", messages[#messages])
+	-- And it's watched from then on like any other.
+	greed.fs.write(
+		dir .. "/init.luau",
+		"require('@greed').command({ name = 'from-its-change', run = function() end })\n"
+	)
+	t:wait(10)
+	assert(commands()["from-its-change"] and not commands()["from-new-config"])
+	greed.plugin.unload("user/config")
+end)

@@ -12,25 +12,38 @@ local M = {}
 --- brought first, so this machine's own has the last word.
 M.names = { "user/brought-config", "user/config" }
 
--- Each loaded config's file, by name.
-local function files(): { [string]: string }
-	local out = {}
+-- Where each config is, by name: the loaded ones, and this machine's own
+-- config folder even before it has an init.luau, as on a first run, where
+-- setup writes it after the editor started.
+local function folders(): { [string]: string }
+	local out: { [string]: string } = {}
 	local dirs = greed.plugin.dirs()
 	for _, name in M.names do
-		local dir = dirs[name]
-		if dir then
-			out[name] = `{dir}/init.luau`
-		end
+		out[name] = dirs[name]
+	end
+	local own = greed.fs.dirs().config
+	if out["user/config"] == nil and own then
+		out["user/config"] = own
 	end
 	return out
 end
 
---- Runs the loaded configs again, in order, and says how it went.
+-- Each config's file, by name.
+local function files(): { [string]: string }
+	local out = {}
+	for name, dir in folders() do
+		out[name] = `{dir}/init.luau`
+	end
+	return out
+end
+
+--- Runs the configs again, in order, and says how it went: the loaded
+--- ones, and this machine's own once it has one.
 function M.reload()
-	local dirs = greed.plugin.dirs()
+	local dirs = folders()
 	for _, name in M.names do
 		local dir = dirs[name]
-		if dir then
+		if dir and greed.fs.stat(`{dir}/init.luau`) then
 			local ok, err = pcall(greed.plugin.load, dir, name)
 			if not ok then
 				greed.echo(`config: {err}`)
