@@ -178,6 +178,9 @@ thread_local! {
 fn watch_panics() {
     static HOOK: std::sync::Once = std::sync::Once::new();
     HOOK.call_once(|| {
+        // The editor's hook goes first, so this one sees each panic before
+        // the editor keeps it as an error.
+        let _ = greed_core::panics::catching(|| ());
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             PANICKED.with(|p| *p.borrow_mut() = Some(info.to_string()));

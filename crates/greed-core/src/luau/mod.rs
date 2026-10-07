@@ -1526,9 +1526,15 @@ fn budgeted<T, E: From<mlua::Error>>(lua: &Lua, f: impl FnOnce() -> Result<T, E>
     }
 }
 
-fn within_budget<R>(lua: &Lua, f: impl FnOnce() -> R) -> R {
+/// Runs `f` with the whole budget. A bug it runs into is an error, after
+/// which the editor carries on.
+fn within_budget<T, E: From<mlua::Error>>(
+    lua: &Lua,
+    f: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
     deadline(lua).start();
-    let result = f();
+    let result =
+        crate::panics::catching(f).unwrap_or_else(|panic| Err(mlua::Error::runtime(panic).into()));
     deadline(lua).at.set(None);
     result
 }
@@ -1615,6 +1621,41 @@ mod tests {
         assert!(!slice.ran_out(Instant::now()), "just started");
         busy(SLICE * 2);
         assert!(slice.ran_out(Instant::now()));
+    }
+
+    #[test]
+    fn a_bug_the_editor_runs_into_is_an_error_kept_with_its_plugin() {
+        let mut editor = Editor::new(greed_text::ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor).unwrap();
+        let lua = &host.lua;
+        let broken = lua
+            .create_function(|_, ()| -> mlua::Result<()> { panic!("broken on purpose") })
+            .unwrap();
+
+        // Called from the editor.
+        let called: Result<(), HostError> = budgeted(lua, || Ok(broken.call::<()>(())?));
+        let err = called.unwrap_err().to_string();
+        assert!(err.contains("broken on purpose"), "{err}");
+        assert!(err.contains("a bug in Greed"), "{err}");
+
+        // Called from a plugin's handler, which fails as with any error.
+        let handler: Function = lua
+            .load("local broken = ... return function() broken() end")
+            .call(broken)
+            .unwrap();
+        let ran = budgeted(lua, || {
+            tasks::spawn(lua, handler, (), "careless".into(), None)
+        });
+        assert!(ran.is_err());
+        let kept = errors::list(lua).unwrap();
+        let first: mlua::Table = kept.get(1).unwrap();
+        assert_eq!(first.get::<String>("plugin").unwrap(), "careless");
+        let message: String = first.get("message").unwrap();
+        assert!(message.contains("broken on purpose"), "{message}");
+
+        // And it carries on.
+        assert_eq!(host.eval("1 + 1").unwrap(), "2");
     }
 
     #[test]

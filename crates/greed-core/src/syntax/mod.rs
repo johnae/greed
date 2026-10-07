@@ -136,6 +136,10 @@ impl Language {
     }
 
     /// The grammar's own highlights query, compiled.
+    #[allow(
+        clippy::panic,
+        reason = "only bundled queries are here, and tests compile each one"
+    )]
     fn default_highlights(&self) -> &Highlights {
         self.highlights.get_or_init(|| {
             Query::new(&self.grammar, self.default_highlights).map_or_else(

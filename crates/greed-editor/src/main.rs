@@ -1,6 +1,19 @@
 //! The `greed` command line: the editor itself, a headless REPL for driving
 //! the editor core from a script or an agent, and a test runner for plugins.
 
+// Nothing a plugin, client, agent, language server or file does may panic
+// the editor: real invariants say why they hold with `expect`, the rest
+// return errors. Tests may unwrap.
+#![cfg_attr(
+    not(test),
+    warn(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

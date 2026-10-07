@@ -313,7 +313,7 @@ impl Server<'_> {
         for input in inputs {
             if self.must_wait(&input) {
                 self.held.push_back(input);
-            } else if !self.input(&input) {
+            } else if !self.guarded(|s| s.input(&input)) {
                 return false;
             }
         }
@@ -351,7 +351,7 @@ impl Server<'_> {
             }
             let input = self.held.pop_front().expect("not empty");
             *typed = true;
-            if !self.input(&input) {
+            if !self.guarded(|s| s.input(&input)) {
                 return false;
             }
             // A command this one starts holds up the rest from now.
@@ -483,7 +483,7 @@ impl Server<'_> {
             if self.frame_due(typed) {
                 let reported = self.host.report_selections();
                 self.report(reported);
-                if !self.draw() {
+                if !self.guarded(Self::draw) {
                     return;
                 }
             }
@@ -564,6 +564,18 @@ impl Server<'_> {
             Input::Quit => return false,
         }
         true
+    }
+
+    /// Runs `f`, which says whether to go on. A bug it runs into shows on
+    /// the status line, and the editor goes on.
+    fn guarded(&mut self, f: impl FnOnce(&mut Self) -> bool) -> bool {
+        match crate::panics::catching(|| f(self)) {
+            Ok(go_on) => go_on,
+            Err(panic) => {
+                self.message = Some(first_line(&panic.to_string()));
+                true
+            }
+        }
     }
 
     /// Shows what went wrong, if anything did, on the status line.

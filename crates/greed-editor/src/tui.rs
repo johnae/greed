@@ -335,7 +335,10 @@ impl Terminal {
     pub(crate) fn enter() -> io::Result<Self> {
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            restore();
+            // A panic the editor catches leaves the screen as it is.
+            if !greed_core::panics::caught_here() {
+                restore();
+            }
             hook(info);
         }));
         terminal::enable_raw_mode()?;

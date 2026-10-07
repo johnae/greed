@@ -771,6 +771,13 @@ buffer.opened): ..."). The last 100 are kept with where in your code they
 happened: `:errors` lists them, `greed.errors()` returns them, and a
 session also writes them to its log.
 
+Whatever you pass the API, it answers with a value or an error: a position
+past the end, a closed buffer or a size no screen has is an error you can
+`pcall`, or is kept in range where the function says so. Should your code
+run into a bug in Greed itself, that becomes an error too, starting
+"internal error, a bug in Greed", kept like the others while the editor
+carries on. Please report those.
+
 Language servers ask things too: `greed.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it

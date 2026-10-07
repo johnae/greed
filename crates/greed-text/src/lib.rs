@@ -2,6 +2,19 @@
 //!
 //! Positions throughout are byte offsets into UTF-8 text.
 
+// Nothing a plugin, client, agent, language server or file does may panic
+// the editor: real invariants say why they hold with `expect`, the rest
+// return errors. Tests may unwrap.
+#![cfg_attr(
+    not(test),
+    warn(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 mod changeset;
 mod selection;
 mod transaction;

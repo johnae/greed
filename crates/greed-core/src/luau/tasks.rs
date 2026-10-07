@@ -331,7 +331,11 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     };
     let what = label.as_deref().or(cause.as_deref()).unwrap_or("a handler");
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
-        super::sliced(lua, id, || thread.resume::<Value>(args))
+        super::sliced(lua, id, || {
+            // A bug the plugin's call ran into is its error, kept like one.
+            crate::panics::catching(|| thread.resume::<Value>(args))
+                .unwrap_or_else(|panic| Err(mlua::Error::runtime(panic)))
+        })
     });
     // An error nothing caught is kept with who and what ran, and where.
     let yielded =
