@@ -322,8 +322,11 @@ end
 --- there's nothing by that name.
 function M.text(name: string, kind: string?): string?
 	local found = {}
+	-- A type is found by its name alone too, and as the list of names
+	-- containing one writes it ("api type ThemeEntry").
+	local wanted = string.gsub(name, "^api ", "")
 	for _, entry in M.entries(kind) do
-		if entry.name == name then
+		if entry.name == wanted or entry.name == "type " .. wanted then
 			local lines = { `{entry.kind} {entry.name}`, "" }
 			for _, line in entry.lines() do
 				table.insert(lines, line)

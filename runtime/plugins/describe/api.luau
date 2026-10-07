@@ -69,22 +69,36 @@ function M.read(): Api?
 	end
 	local doc: { string } = {}
 	inside = nil
+	-- The lines of the table type being read, to show it whole.
+	local body: { string }? = nil
+	local typed: Entry? = nil
 	for number, line in lines do
 		local comment = string.match(line, "^\t?%-%-%- ?(.*)$")
 		local name = string.match(line, "^export type (%w+) = ")
+		if body then
+			table.insert(body, line)
+		end
 		if comment then
 			table.insert(doc, comment)
 		elseif name then
 			inside = if string.find(line, "{$") then name else nil
-			table.insert(api.entries, {
+			local entry: Entry = {
 				name = "type " .. name,
 				signature = line,
 				doc = table.concat(doc, " "),
 				line = number,
-			})
+			}
+			table.insert(api.entries, entry)
+			if inside then
+				body, typed = { line }, entry
+			end
 			api.fields[name] = {}
 			doc = {}
 		elseif line == "}" then
+			if body and typed then
+				typed.signature = table.concat(body, "\n")
+			end
+			body, typed = nil, nil
 			inside = nil
 			doc = {}
 		elseif inside then

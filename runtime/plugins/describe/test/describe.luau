@@ -179,3 +179,14 @@ test("an option with choices lists them", function()
 	local text = describe.text("line-numbers", "option") :: string
 	assert(string.find(text, 'Choices: "absolute", "relative", "hybrid"', 1, true), text)
 end)
+
+test("a type is found by its name alone, and as the list of names writes it", function(t)
+	t:buffer("|")
+	local text = describe.text("ThemeEntry") :: string
+	assert(text and string.find(text, "type ThemeEntry", 1, true), tostring(text))
+	assert(string.find(text, "tui: Style?", 1, true), text)
+	local style = describe.text("Style") :: string
+	assert(style and string.find(style, "fg: string?", 1, true), tostring(style))
+	assert(describe.text("api type ThemeEntry") == text, "as listed")
+	assert(describe.text("ThemeEntry", "api") == text, "as an api name")
+end)
