@@ -1,6 +1,7 @@
 -- The language server in the status line: its name while it runs, what
 -- it's working on as it reports progress (`rust-analyzer: indexing 40%`),
--- and whether it's starting, stopped or not installed.
+-- and whether it's starting, stopped or not installed. Each project has its
+-- own server, so each buffer shows its own.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -8,14 +9,14 @@ local statusline = require("@statusline")
 
 local M = {}
 
--- Work each language's server reports, by progress token, in the order it
--- began.
+-- Work each server reports, by progress token, in the order it began; by
+-- server, as `M.key` names them.
 type Work = { token: string, title: string, message: string?, percentage: number? }
 local working: { [string]: { Work } } = {}
 -- The program each language's server runs, false when none is installed;
 -- looked up once per language, as finding programs reads folders.
 local programs: { [string]: string | false } = {}
--- Languages whose server has answered, so it not answering now means it stopped.
+-- Servers that have answered, so one not answering now means it stopped.
 local seen: { [string]: boolean } = {}
 
 local function program(language: string): string | false
@@ -35,11 +36,16 @@ local function program(language: string): string | false
 	return found
 end
 
---- Takes in a `$/progress` notification from `language`'s server.
-function M.progress(language: string, params: any)
+--- What names `language`'s server in `root`, for `progress` and `work`.
+function M.key(language: string, root: string?): string
+	return if root then `{language} {root}` else language
+end
+
+--- Takes in a `$/progress` notification from the server `key` names.
+function M.progress(key: string, params: any)
 	local token, value = tostring(params.token), params.value or {}
-	local list: { Work } = working[language] or {}
-	working[language] = list
+	local list: { Work } = working[key] or {}
+	working[key] = list
 	local at
 	for i, work in list do
 		if work.token == token then
@@ -76,20 +82,21 @@ function M.text(buffer: greed.Buffer): string?
 		local wanted = commands[1]
 		return `{wanted and wanted[1] or "server"} not installed`
 	end
+	local key = M.key(language, greed.lsp.root(buffer))
 	if greed.lsp.capabilities(buffer) == nil then
 		-- A server that stopped took its work with it.
-		working[language] = nil
-		return if seen[language] then `{name} stopped` else `{name} starting`
+		working[key] = nil
+		return if seen[key] then `{name} stopped` else `{name} starting`
 	end
-	seen[language] = true
-	local work = M.work(language)
+	seen[key] = true
+	local work = M.work(key)
 	return if work then `{name}: {work}` else name
 end
 
---- What `language`'s server is working on, e.g. "indexing 3/10 40%", or
---- nil when it's idle. The oldest work shows.
-function M.work(language: string): string?
-	local work = (working[language] or {})[1]
+--- What the server `key` names is working on, e.g. "indexing 3/10 40%",
+--- or nil when it's idle. The oldest work shows.
+function M.work(key: string): string?
+	local work = (working[key] or {})[1]
 	if work == nil then
 		return nil
 	end
@@ -103,7 +110,9 @@ function M.work(language: string): string?
 	return what
 end
 
-greed.lsp.on_notification("$/progress", M.progress)
+greed.lsp.on_notification("$/progress", function(params, language, root)
+	M.progress(M.key(language, root), params)
+end)
 
 -- A server installed since gets found the next time a file opens.
 greed.on("buffer.opened", function()

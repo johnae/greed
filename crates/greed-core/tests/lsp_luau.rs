@@ -16,8 +16,7 @@ fn host() -> Host {
         Some(std::env::temp_dir().join("greed-lsp-luau/main.rs")),
     );
     let host = Host::new(editor).unwrap();
-    let (input, output, _log) = support::start();
-    host.connect_lsp("rust", Box::new(input), output).unwrap();
+    support::serve_rust(&host);
     host
 }
 
@@ -619,11 +618,11 @@ fn a_server_asking_to_pick_waits_for_the_picker_and_hears_the_answer() {
 }
 
 #[test]
-fn notifications_reach_the_plugins_listening_with_the_servers_language() {
+fn notifications_reach_the_plugins_listening_with_the_servers_language_and_root() {
     let h = host();
     h.load_str(
         "listen",
-        "local greed = require('@greed')\ngreed.lsp.on_notification('$/progress', function(params, language)\n  greed.echo(language .. ' ' .. params.token .. ' ' .. params.value.kind)\nend)",
+        "local greed = require('@greed')\ngreed.lsp.on_notification('$/progress', function(params, language, root)\n  greed.echo(`{language} {params.token} {params.value.kind} {root == greed.lsp.root(greed.view():buffer())}`)\nend)",
     )
     .unwrap();
     h.sync_lsp();
@@ -632,7 +631,89 @@ fn notifications_reach_the_plugins_listening_with_the_servers_language() {
         messages.extend(h.with_editor_mut(Editor::take_messages));
         messages.len() == 2
     });
-    assert_eq!(messages, ["rust index begin", "rust index end"]);
+    assert_eq!(messages, ["rust index begin true", "rust index end true"]);
+}
+
+/// A folder with two Rust projects, `a` and `b`, each with a Cargo.toml.
+fn two_projects(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("greed-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for project in ["a", "b"] {
+        std::fs::create_dir_all(dir.join(project)).unwrap();
+        std::fs::write(dir.join(project).join("Cargo.toml"), "").unwrap();
+    }
+    dir
+}
+
+#[test]
+fn each_projects_buffers_show_their_own_servers_root_and_work() {
+    let dir = two_projects("lsp-status");
+    let mut editor = Editor::new(ClientId(1));
+    for project in ["a", "b"] {
+        editor.open(
+            "file",
+            "let x = bad;",
+            Some(dir.join(project).join("main.rs")),
+        );
+    }
+    let h = Host::new(editor).unwrap();
+    support::serve_rust(&h);
+    h.load_dirs(&[
+        plugin("core"),
+        plugin("helix"),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("statusline"),
+        plugin("lsp"),
+    ])
+    .unwrap();
+    // Before any server runs, where they would.
+    let roots = r#"
+        local greed = require("@greed")
+        local status = require("@lsp").status
+        local out = {}
+        for _, b in greed.buffers() do
+            local project = b:path() and string.match(b:path(), "/(%w)/main.rs$")
+            if project then
+                table.insert(out, `{project} {greed.lsp.root(b)} {status.text(b)}`)
+            end
+        end
+        table.sort(out)
+        return table.concat(out, ", ")
+    "#;
+    let (a, b) = (
+        dir.join("a").display().to_string(),
+        dir.join("b").display().to_string(),
+    );
+    assert_eq!(
+        h.eval(roots).unwrap(),
+        format!("a {a} sh starting, b {b} sh starting")
+    );
+    h.sync_lsp();
+    pump(&h, |h| {
+        h.with_editor(|ed| {
+            ed.buffers()
+                .filter(|b| !b.marks(greed_core::lsp::DIAGNOSTICS).is_empty())
+                .count()
+                == 2
+        })
+    });
+    assert_eq!(h.eval(roots).unwrap(), format!("a {a} sh, b {b} sh"));
+    let running = h
+        .eval("local out = {}\nfor _, s in require('@greed').lsp.running() do table.insert(out, `{s.language} {s.root} {s.command[1]} {s.ready}`) end\nreturn table.concat(out, ', ')")
+        .unwrap();
+    assert_eq!(running, format!("rust {a} sh true, rust {b} sh true"));
+
+    // Work a's server reports shows on a's buffers only.
+    h.eval(&format!(
+        "local status = require('@lsp').status\nstatus.progress(status.key('rust', '{a}'), {{ token = 1, value = {{ kind = 'begin', title = 'Indexing' }} }})"
+    ))
+    .unwrap();
+    assert_eq!(
+        h.eval(roots).unwrap(),
+        format!("a {a} sh: indexing, b {b} sh")
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// A host with the lsp and agent plugins, and a "probe" plugin whose

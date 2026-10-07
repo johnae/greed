@@ -11,28 +11,60 @@ use serde_json::{Value, json};
 struct Setup {
     lsp: Lsp,
     editor: Editor,
-    log: crossbeam_channel::Receiver<String>,
+    started: support::Started,
     path: PathBuf,
 }
 
+/// An editor with `text` in a Rust file, and fake servers started for it.
 fn setup(text: &str) -> Setup {
-    let (client_out, client_in, log) = support::start();
-
     let path = std::env::temp_dir().join("greed-lsp-test/main.rs");
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, Some(path.clone()));
     let mut lsp = Lsp::default();
-    lsp.connect("rust", Box::new(client_out), client_in, Path::new("/tmp"))
-        .unwrap();
+    lsp.configure(support::rust_server());
+    let (launcher, started) = support::launcher();
+    lsp.set_launcher(launcher);
     Setup {
         lsp,
         editor,
-        log,
+        started,
         path,
     }
 }
 
 impl Setup {
+    /// How many servers were started.
+    fn starts(&self) -> usize {
+        self.started.lock().unwrap().len()
+    }
+
+    /// The methods server `n` (counting from 0, in the order they started)
+    /// got since the last look.
+    fn methods_of(&self, n: usize) -> Vec<String> {
+        std::thread::sleep(Duration::from_millis(50));
+        self.started.lock().unwrap()[n].1.try_iter().collect()
+    }
+
+    /// Asks `buffer`'s server what it was started with and knows, and waits
+    /// for the answer.
+    fn probe(&mut self, buffer: greed_core::BufferId) -> Value {
+        let (_, id) = self
+            .lsp
+            .request(self.editor.buffer(buffer), "probe", &Value::Null)
+            .unwrap();
+        loop {
+            match self.next() {
+                Handled::Response {
+                    id: got,
+                    result: Ok(result),
+                    ..
+                } if got == id => return result,
+                Handled::Response { .. } | Handled::Diagnostics(_) => {}
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
     /// Handles events until one is handled as something other than nothing
     /// or a notification for plugins.
     fn next(&mut self) -> Handled {
@@ -49,9 +81,16 @@ impl Setup {
         }
     }
 
+    /// What server `n` heard about documents since the last look.
+    fn documents_of(&self, n: usize) -> Vec<String> {
+        let mut methods = self.methods_of(n);
+        methods.retain(|m| m.starts_with("textDocument/did"));
+        methods
+    }
+
+    /// The methods the first server got since the last look.
     fn methods(&self) -> Vec<String> {
-        std::thread::sleep(Duration::from_millis(50));
-        self.log.try_iter().collect()
+        self.methods_of(0)
     }
 }
 
@@ -183,6 +222,263 @@ fn a_server_that_stops_says_so_and_its_late_answers_are_dropped() {
     assert!(err.to_string().contains("no language server"), "{err}");
     // Answering a request from it is quietly nothing.
     s.lsp.respond(server, &json!(1), &Value::Null);
+}
+
+#[test]
+fn a_server_that_stops_starts_again_with_its_documents_until_it_keeps_stopping() {
+    let mut s = setup("ok");
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    s.next();
+    let buffer = s.editor.buffers().next().unwrap().id();
+    let mut servers = Vec::new();
+    for start in 1..=4 {
+        assert_eq!(s.starts(), start);
+        let (server, _) = s
+            .lsp
+            .request(s.editor.buffer(buffer), "die", &Value::Null)
+            .unwrap();
+        servers.push(server);
+        assert_eq!(s.next(), Handled::Exited { server });
+        let errors = s.lsp.sync(&s.editor);
+        if start < 4 {
+            assert!(errors.is_empty(), "{errors:?}");
+            // The new one has the file open, and answers.
+            assert_eq!(s.probe(buffer)["text"], "ok");
+            let methods = s.methods_of(start);
+            assert_eq!(
+                methods[..3],
+                ["initialize", "initialized", "textDocument/didOpen"]
+            );
+        } else {
+            // The fourth stop in a row soon after starting is the last.
+            let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            assert!(errors[0].starts_with("sh keeps stopping in"), "{errors:?}");
+        }
+    }
+    // Each was a server of its own.
+    servers.dedup();
+    assert_eq!(servers.len(), 4);
+    assert!(s.lsp.sync(&s.editor).is_empty(), "said once");
+    assert_eq!(s.starts(), 4);
+    assert!(
+        s.lsp
+            .request(s.editor.buffer(buffer), "x", &Value::Null)
+            .is_err()
+    );
+
+    // Setting the language up again tries again.
+    s.lsp.configure(support::rust_server());
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    assert_eq!(s.starts(), 5);
+}
+
+#[test]
+fn a_server_that_cant_start_says_so_once_and_one_not_installed_says_nothing() {
+    for installed in [false, true] {
+        let mut s = setup("ok");
+        let tries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = tries.clone();
+        s.lsp.set_launcher(Box::new(move |_, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if installed {
+                Err(std::io::Error::other("can't run sh: broken"))
+            } else {
+                Ok(None)
+            }
+        }));
+        let errors: Vec<String> = s
+            .lsp
+            .sync(&s.editor)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        if installed {
+            assert_eq!(
+                errors,
+                ["no language server for rust: can't run sh: broken"]
+            );
+        } else {
+            assert!(errors.is_empty(), "{errors:?}");
+        }
+        assert!(s.lsp.sync(&s.editor).is_empty());
+        assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
+/// A folder with two Rust projects, `a` and `b`, each with a file.
+fn two_projects(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("greed-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for project in ["a", "b"] {
+        std::fs::create_dir_all(dir.join(project).join("src")).unwrap();
+        std::fs::write(dir.join(project).join("Cargo.toml"), "").unwrap();
+        std::fs::write(dir.join(project).join("src/main.rs"), "let x = bad;").unwrap();
+    }
+    dir
+}
+
+#[test]
+fn each_project_gets_a_server_of_its_own_in_its_root() {
+    let dir = two_projects("roots");
+    let mut editor = Editor::new(ClientId(1));
+    let a = editor
+        .open("file", "let x = bad;", Some(dir.join("a/src/main.rs")))
+        .0;
+    let (b, b_view) = editor.open("file", "let y = bad;", Some(dir.join("b/src/main.rs")));
+    // A second file in a goes to a's server.
+    let a2 = editor.open("file", "ok", Some(dir.join("a/src/lib.rs"))).0;
+    let mut s = Setup {
+        lsp: Lsp::default(),
+        editor,
+        started: support::Started::default(),
+        path: dir.join("a/src/main.rs"),
+    };
+    s.lsp.configure(support::rust_server());
+    let (launcher, started) = support::launcher();
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    let roots: Vec<PathBuf> = s
+        .started
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(r, _)| r.clone())
+        .collect();
+    assert_eq!(roots, [dir.join("a"), dir.join("b")]);
+
+    // Each was started in its root, with it as its one workspace folder,
+    // and has its own files.
+    for (buffer, project) in [(a, "a"), (b, "b"), (a2, "a")] {
+        let probe = s.probe(buffer);
+        let root = dir.join(project);
+        let folders = json!([{ "uri": file_uri(&root), "name": project }]);
+        assert_eq!(probe["initialize"]["rootUri"], file_uri(&root));
+        assert_eq!(probe["initialize"]["rootPath"], root.display().to_string());
+        assert_eq!(probe["initialize"]["workspaceFolders"], folders);
+        // Asked after starting, by the time a second probe is answered.
+        assert_eq!(s.probe(buffer)["folders"], folders);
+    }
+    assert_eq!(
+        s.documents_of(0),
+        ["textDocument/didOpen", "textDocument/didOpen"]
+    );
+    assert_eq!(s.documents_of(1), ["textDocument/didOpen"]);
+    // Problems arrived for each, where they are.
+    let found = |s: &Setup, buffer| diagnostics(s.editor.buffer(buffer)).len();
+    assert_eq!((found(&s, a), found(&s, b)), (1, 1));
+    for (buffer, root) in [(a, "a"), (b, "b")] {
+        let found = s.lsp.root(s.editor.buffer(buffer), &s.editor);
+        assert_eq!(found, Some(dir.join(root)));
+    }
+
+    // Closing b's file closes it in b's server only.
+    s.editor.show(b_view, a);
+    s.editor.close_buffer(b).unwrap();
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.documents_of(1), ["textDocument/didClose"]);
+    assert_eq!(s.documents_of(0), [""; 0]);
+    let running: Vec<(String, PathBuf)> = s
+        .lsp
+        .running()
+        .into_iter()
+        .map(|r| (r.language, r.root))
+        .collect();
+    assert_eq!(
+        running,
+        [
+            ("rust".to_owned(), dir.join("a")),
+            ("rust".to_owned(), dir.join("b"))
+        ],
+        "a server stays while it runs"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_file_saved_into_another_project_moves_to_its_server() {
+    let dir = two_projects("moves");
+    let mut s = setup("let x = bad;");
+    let buffer = s.editor.buffers().next().unwrap().id();
+    s.editor
+        .save_as(buffer, &dir.join("a/src/main.rs"))
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    s.probe(buffer);
+    s.editor
+        .save_as(buffer, &dir.join("a/src/other.rs"))
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    s.probe(buffer);
+    // A new name is a new document for the same server.
+    assert_eq!(
+        s.documents_of(0),
+        [
+            "textDocument/didOpen",
+            "textDocument/didClose",
+            "textDocument/didOpen"
+        ]
+    );
+    s.editor
+        .save_as(buffer, &dir.join("b/src/main.rs"))
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    assert_eq!(
+        s.probe(buffer)["initialize"]["rootUri"],
+        file_uri(&dir.join("b"))
+    );
+    assert_eq!(s.documents_of(0), ["textDocument/didClose"]);
+    assert_eq!(s.documents_of(1), ["textDocument/didOpen"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn servers_run_in_the_topmost_root_inside_a_project_or_the_project_itself() {
+    use greed_core::lsp::server_root;
+    let dir = std::env::temp_dir().join(format!("greed-server-root-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let repo = dir.join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(repo.join("crates/a/src")).unwrap();
+    std::fs::create_dir_all(dir.join("loose/src")).unwrap();
+    for marker in [
+        "repo/Cargo.toml",
+        "repo/crates/a/Cargo.toml",
+        "Cargo.toml",
+        "loose/Cargo.toml",
+    ] {
+        std::fs::write(dir.join(marker), "").unwrap();
+    }
+    let cargo = vec!["Cargo.toml".to_owned()];
+    let file = repo.join("crates/a/src/lib.rs");
+    // In a repository: the workspace at its top, not the member crate, and
+    // nothing above the repository.
+    assert_eq!(server_root(&file, &cargo, &[]), repo);
+    // Without markers, the repository's root.
+    assert_eq!(server_root(&file, &[], &[]), repo);
+    let none = vec!["none.toml".to_owned()];
+    assert_eq!(server_root(&file, &none, &[]), repo);
+    // An open project inside it bounds it too: the deepest one counts.
+    let crates = repo.join("crates");
+    assert_eq!(
+        server_root(&file, &cargo, &[dir.clone(), crates.clone()]),
+        repo.join("crates/a")
+    );
+    assert_eq!(
+        server_root(&file, &[], std::slice::from_ref(&crates)),
+        crates
+    );
+    // An open project around a folder with no repository.
+    let loose = dir.join("loose/src/main.rs");
+    assert_eq!(
+        server_root(&loose, &cargo, &[dir.join("loose")]),
+        dir.join("loose")
+    );
+    // Outside any project: the nearest marker, or the file's folder.
+    assert_eq!(server_root(&loose, &cargo, &[]), dir.join("loose"));
+    assert_eq!(server_root(&loose, &[], &[]), dir.join("loose/src"));
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]

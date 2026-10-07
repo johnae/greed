@@ -521,8 +521,15 @@ waits three seconds instead. Put it in your `init.luau` to keep it:
 ## Language servers
 
 Greed knows the usual languages and their servers and starts a server when a
-file needs one and it's installed. `:health` shows each language's server
-and whether it was found.
+file needs one and it's installed. `:health` shows each language's server,
+whether it was found, and the servers running.
+
+Each project gets a server of its own, so files from two projects (or two
+jj workspaces of one) are checked separately. A server runs in the topmost
+folder of the file's project that has one of the language's root files
+(`Cargo.toml` for Rust, `package.json` for TypeScript), so one server covers
+a whole Cargo or npm workspace; without one, it runs in the project's root.
+A server that crashes starts again, up to three times in a row.
 
 | Keys | |
 |---|---|

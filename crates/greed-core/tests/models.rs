@@ -323,8 +323,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
     );
     let host = Host::new(editor).unwrap();
     host.quiet_stalls();
-    let (input, output, _log) = support::start();
-    host.connect_lsp("rust", Box::new(input), output).unwrap();
+    support::serve_rust(&host);
     load_assist(&host, &address);
     host.sync_lsp();
     // Drive both servers: the language server's events and the model's job.

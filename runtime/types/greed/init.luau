@@ -1176,18 +1176,25 @@ export type LspPosition = {
 	character: number,
 }
 
---- Language servers. Servers start the first time a file of their language
---- is open.
+--- Language servers. A server runs per language and project root, started
+--- the first time a file that needs it is open, and started again if it
+--- stops.
 export type Lsp = {
 	--- Sets the server for a language, e.g.
 	--- `{ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } }`.
 	--- With `commands`, the first one whose program is installed runs, when
 	--- a file of the language first opens; with none installed, nothing does.
+	--- A server runs in the topmost folder with one of `root_markers` inside
+	--- the file's project, or the project's root without one.
 	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }? }) -> (),
 	--- Stops starting a server for a language; one running keeps running.
 	remove: (language: string) -> (),
 	--- The commands set for each language's server, by language.
 	servers: () -> { [string]: { { string } } },
+	--- The servers running now, by language and then root.
+	running: () -> { LspServer },
+	--- The folder the buffer's server runs in, or would: nil without a file or a server set for its language.
+	root: (buffer: Buffer) -> string?,
 	--- Sends a request to the buffer's server and waits for the answer.
 	--- Returns the result, or nil and the error; a server that stops before
 	--- answering gives the error "the language server stopped". Works in
@@ -1216,8 +1223,20 @@ export type Lsp = {
 	--- Answers requests of `method` from servers, e.g. "workspace/applyEdit",
 	--- with what `handler` returns. It can wait, e.g. to ask you; the server gets the answer when it returns.
 	on_request: (method: string, handler: (params: any) -> any) -> (),
-	--- Hears notifications of `method` from servers that the editor doesn't deal with itself, e.g. "$/progress", with the language of the server that sent it.
-	on_notification: (method: string, handler: (params: any, language: string) -> ()) -> (),
+	--- Hears notifications of `method` from servers that the editor doesn't deal with itself, e.g. "$/progress", with the language and root of the server that sent it.
+	on_notification: (method: string, handler: (params: any, language: string, root: string) -> ()) -> (),
+}
+
+--- A language server that's running.
+export type LspServer = {
+	language: string,
+	--- The folder it runs in.
+	root: string,
+	command: { string },
+	--- Whether it has answered `initialize`.
+	ready: boolean,
+	--- The last lines it wrote to stderr.
+	stderr: { string },
 }
 
 export type LspProblem = {

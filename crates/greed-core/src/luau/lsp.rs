@@ -55,9 +55,10 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
         } => answer(lua, server, &id, &method, &params),
         Handled::Notification {
             language,
+            root,
             method,
             params,
-        } => tell(lua, &language, &method, &params),
+        } => tell(lua, &language, &root.to_string_lossy(), &method, &params),
         Handled::Exited { server } => stopped(lua, server),
         Handled::Nothing => Ok(()),
     }
@@ -127,9 +128,15 @@ fn answer(
     tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)
 }
 
-/// Passes a notification from `language`'s server to the handlers plugins
-/// set for its method, each run the way a command is.
-fn tell(lua: &Lua, language: &str, method: &str, params: &serde_json::Value) -> LuaResult<()> {
+/// Passes a notification from `language`'s server in `root` to the
+/// handlers plugins set for its method, each run the way a command is.
+fn tell(
+    lua: &Lua,
+    language: &str,
+    root: &str,
+    method: &str,
+    params: &serde_json::Value,
+) -> LuaResult<()> {
     let listeners: Vec<(PluginId, Function)> = state(lua)
         .lsp_listeners
         .iter()
@@ -138,9 +145,9 @@ fn tell(lua: &Lua, language: &str, method: &str, params: &serde_json::Value) -> 
         .collect();
     for (owner, handler) in listeners {
         let run: Function = lua
-            .load("local handler, language = ...\nreturn function(params) handler(params, language) end")
+            .load("local handler, language, root = ...\nreturn function(params) handler(params, language, root) end")
             .set_name("=lsp.on_notification")
-            .call((handler, language))?;
+            .call((handler, language, root))?;
         tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)?;
     }
     Ok(())
@@ -274,6 +281,35 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 servers.set(config.language.as_str(), config.commands.clone())?;
             }
             Ok(servers)
+        })?,
+    )?;
+
+    lsp.set(
+        "running",
+        lua.create_function(|lua, ()| {
+            let list = lua.create_table()?;
+            for server in state(lua).lsp.running() {
+                let entry = lua.create_table()?;
+                entry.set("language", server.language)?;
+                entry.set("root", server.root.to_string_lossy())?;
+                entry.set("command", server.command)?;
+                entry.set("ready", server.ready)?;
+                entry.set("stderr", server.stderr)?;
+                list.push(entry)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+
+    lsp.set(
+        "root",
+        lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
+            let state = state(lua);
+            let b = buffer_ref(&state.editor, &buffer)?;
+            Ok(state
+                .lsp
+                .root(b, &state.editor)
+                .map(|root| root.to_string_lossy().into_owned()))
         })?,
     )?;
 

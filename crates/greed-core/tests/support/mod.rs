@@ -88,6 +88,8 @@ fn word_range() -> Value {
 fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel::Sender<String>) {
     let mut input = BufReader::new(input);
     let mut opened = Opened::default();
+    // How it was started, and the workspace folders the client said it has.
+    let (mut started, mut folders) = (Value::Null, Value::Null);
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -96,17 +98,22 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
         let _ = log.send(method.clone());
         let id = message.get("id").cloned();
         match method.as_str() {
-            "initialize" => write(
-                &mut output,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {
-                    "positionEncoding": "utf-8",
-                    "renameProvider": { "prepareProvider": true },
-                    "codeActionProvider": { "resolveProvider": true },
-                    "referencesProvider": true,
-                    "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
-                } } }),
-            ),
+            "initialize" => {
+                started = message["params"].clone();
+                write(
+                    &mut output,
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": capabilities() } }),
+                );
+            }
             "initialized" => initialized(&mut output),
+            "(response)" if id == Some(json!("folders")) => folders = message["result"].clone(),
+            // What the client started it with and told it since.
+            "probe" => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": {
+                    "initialize": started, "folders": folders, "text": opened.text,
+                } }),
+            ),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 opened = Opened::from(&message["params"]);
                 publish_diagnostics(&mut output, &opened);
@@ -188,12 +195,26 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
     }
 }
 
+fn capabilities() -> Value {
+    json!({
+        "positionEncoding": "utf-8",
+        "renameProvider": { "prepareProvider": true },
+        "codeActionProvider": { "resolveProvider": true },
+        "referencesProvider": true,
+        "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
+    })
+}
+
 /// What the server does once started: asks for its settings, and reports
 /// some work, begun and done, as servers report indexing.
 fn initialized(output: &mut impl Write) {
     write(
         output,
         &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [{}, {}] } }),
+    );
+    write(
+        output,
+        &json!({ "jsonrpc": "2.0", "id": "folders", "method": "workspace/workspaceFolders" }),
     );
     for value in [
         json!({ "kind": "begin", "title": "Indexing", "percentage": 0 }),
@@ -300,6 +321,47 @@ pub fn start() -> (
     let (log_tx, log) = crossbeam_channel::unbounded();
     std::thread::spawn(move || fake_server(server_in, server_out, &log_tx));
     (client_out, client_in, log)
+}
+
+/// The fake servers a [`launcher`] started, in order: the root each runs
+/// in and the log of the methods it got.
+pub type Started = std::sync::Arc<
+    std::sync::Mutex<Vec<(std::path::PathBuf, crossbeam_channel::Receiver<String>)>>,
+>;
+
+/// Starts a fake server whenever the editor starts a language server.
+pub fn launcher() -> (greed_core::lsp::Launcher, Started) {
+    let started = Started::default();
+    let list = started.clone();
+    let launcher: greed_core::lsp::Launcher = Box::new(move |_, root| {
+        let (input, output, log) = start();
+        list.lock().unwrap().push((root.to_owned(), log));
+        Ok(Some(greed_core::rpc::Transport::pipes(input, output)))
+    });
+    (launcher, started)
+}
+
+/// Has `host` start fake servers for Rust files.
+#[allow(dead_code)]
+pub fn serve_rust(host: &greed_core::luau::Host) -> Started {
+    let (launcher, started) = launcher();
+    host.set_lsp_launcher(launcher);
+    host.eval(
+        "require('@greed').lsp.server({ language = 'rust', command = { 'sh' }, root_markers = { 'Cargo.toml' } })",
+    )
+    .unwrap();
+    started
+}
+
+/// A Rust server, started by a [`launcher`], in the folder with
+/// `Cargo.toml`. Its command is `sh`, so it counts as installed.
+#[allow(dead_code)]
+pub fn rust_server() -> greed_core::lsp::ServerConfig {
+    greed_core::lsp::ServerConfig {
+        language: "rust".into(),
+        commands: vec![vec!["sh".into()]],
+        root_markers: vec!["Cargo.toml".into()],
+    }
 }
 
 /// Whether any buffer has diagnostic marks yet.

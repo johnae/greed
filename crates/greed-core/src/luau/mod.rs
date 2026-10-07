@@ -917,19 +917,10 @@ impl Host {
             .collect()
     }
 
-    /// Talks to a language server over `input` and `output` instead of
-    /// starting one; for tests.
-    pub fn connect_lsp(
-        &self,
-        language: &str,
-        input: Box<dyn std::io::Write + Send>,
-        output: impl std::io::Read + Send + 'static,
-    ) -> Result<(), HostError> {
-        state_mut(&self.lua)
-            .lsp
-            .connect(language, input, output, Path::new("."))
-            .map(drop)
-            .map_err(|err| HostError::Lua(mlua::Error::external(err)))
+    /// Starts language servers with `launcher` instead of running their
+    /// commands; for tests.
+    pub fn set_lsp_launcher(&self, launcher: crate::lsp::Launcher) {
+        state_mut(&self.lua).lsp.set_launcher(launcher);
     }
 
     /// Runs a command as the user.

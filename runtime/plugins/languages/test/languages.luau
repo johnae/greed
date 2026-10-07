@@ -32,6 +32,42 @@ test(":health lists each language with its highlighting and servers", function(t
 	assert(#t:floats() == 0, "q closes it")
 end)
 
+test(":health ends with the servers running, one per project", function(t)
+	assert(
+		table.concat(languages.running_report({}), "\n") == "\nNo language servers running",
+		"none"
+	)
+	local lines = languages.running_report({
+		{
+			language = "rust",
+			root = "/a",
+			command = { "rust-analyzer" },
+			ready = true,
+			stderr = {},
+		},
+		{
+			language = "rust",
+			root = "/b",
+			command = { "rust-analyzer" },
+			ready = false,
+			stderr = {},
+		},
+	})
+	local expected = {
+		"",
+		"Running language servers:",
+		"rust        rust-analyzer in /a",
+		"rust        rust-analyzer in /b (starting)",
+	}
+	assert(table.concat(lines, "\n") == table.concat(expected, "\n"), table.concat(lines, "\n"))
+	t:buffer("|x")
+	t:run("health")
+	-- Whether any run depends on the machine; the report ends with them.
+	local report = t:floats()[1]
+	local last = string.match(report, "\n\n([^\n]*language servers[^\n]*)")
+	assert(last == "No language servers running" or last == "Running language servers:", report)
+end)
+
 test("set with no servers stops starting one", function()
 	local before = (languages.get("python") :: languages.Language).servers
 	languages.set("python", { servers = { { "pylsp" } } })

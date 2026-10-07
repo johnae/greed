@@ -129,7 +129,26 @@ greed.command({
 
 -- `:health` --------------------------------------------------------------
 
--- One line per language: its grammar, then each server, found or missing.
+--- The lines `:health` ends with: each running server, its program and the
+--- folder it runs in, one per project.
+function M.running_report(servers: { greed.LspServer }): { string }
+	if #servers == 0 then
+		return { "", "No language servers running" }
+	end
+	local lines = { "", "Running language servers:" }
+	for _, server in servers do
+		local program = server.command[1] or "?"
+		local state = if server.ready then "" else " (starting)"
+		table.insert(
+			lines,
+			string.format("%-12s%s in %s%s", server.language, program, server.root, state)
+		)
+	end
+	return lines
+end
+
+-- One line per language: its grammar, then each server, found or missing;
+-- then the servers running.
 local function health_report(): (string, { greed.Mark })
 	local have = {}
 	for _, name in greed.grammars() do
@@ -166,6 +185,10 @@ local function health_report(): (string, { greed.Mark })
 			line ..= add(command[1], if found then "ui.health.found" else "ui.health.missing")
 		end
 		table.insert(lines, line)
+		pos += 1
+	end
+	for _, line in M.running_report(greed.lsp.running()) do
+		table.insert(lines, add(line))
 		pos += 1
 	end
 	return table.concat(lines, "\n"), marks

@@ -2,14 +2,16 @@
 //! protocol to them over [`rpc`](crate::rpc), and keeps their view of open
 //! documents in sync.
 //!
-//! One server runs per language, started the first time a buffer of that
-//! language shows up. What servers send arrives as [`Event`]s, which the
-//! editor handles on its own thread.
+//! One server runs per language and root (see [`server_root`]), started the
+//! first time a buffer that needs it shows up, and started again if it
+//! stops. What servers send arrives as [`Event`]s, which the editor handles
+//! on its own thread.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, Read, Write};
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use greed_text::Rope;
@@ -25,8 +27,8 @@ pub struct ServerConfig {
     pub language: String,
     /// Commands to try, in order: the first whose program is installed runs.
     pub commands: Vec<Vec<String>>,
-    /// Files that mark a project's root, e.g. `Cargo.toml`. The server starts
-    /// in the nearest directory above the first file that has one.
+    /// Files that mark a project's root, e.g. `Cargo.toml`, for where the
+    /// server runs (see [`server_root`]).
     pub root_markers: Vec<String>,
 }
 
@@ -79,6 +81,8 @@ pub enum Handled {
     /// like `$/progress`, for plugins to hear.
     Notification {
         language: String,
+        /// The folder the server runs in.
+        root: PathBuf,
         method: String,
         params: Value,
     },
@@ -124,6 +128,8 @@ pub struct Diagnostic {
 #[derive(Debug)]
 pub enum LspError {
     NoServer(String),
+    /// A server kept stopping soon after starting, so it isn't started again.
+    Stopped(String),
     Io(io::Error),
 }
 
@@ -131,6 +137,7 @@ impl std::fmt::Display for LspError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LspError::NoServer(what) => write!(f, "no language server for {what}"),
+            LspError::Stopped(what) => write!(f, "{what}"),
             LspError::Io(err) => write!(f, "language server: {err}"),
         }
     }
@@ -146,7 +153,11 @@ impl From<io::Error> for LspError {
 
 struct Server {
     language: String,
+    /// The folder it runs in, its workspace.
+    root: PathBuf,
+    command: Vec<String>,
     connection: Connection,
+    started: Instant,
     initialize_id: i64,
     ready: bool,
     encoding: Encoding,
@@ -182,6 +193,15 @@ impl Server {
     fn alive(&self) -> bool {
         self.connection.is_alive()
     }
+
+    /// Its root as the one workspace folder it has.
+    fn workspace_folders(&self) -> Value {
+        let name = self.root.file_name().map_or_else(
+            || self.root.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        json!([{ "uri": file_uri(&self.root), "name": name }])
+    }
 }
 
 impl Drop for Server {
@@ -197,12 +217,73 @@ impl Drop for Server {
     }
 }
 
+/// Starts the server for a language in a root: the transport to talk to it
+/// over, or `None` when it isn't installed. Tests start fake servers.
+pub type Launcher = Box<dyn FnMut(&ServerConfig, &Path) -> io::Result<Option<Transport>> + Send>;
+
+/// Runs the first of the config's commands that's installed.
+fn launch(config: &ServerConfig, root: &Path) -> io::Result<Option<Transport>> {
+    let Some(command) = config.installed_command() else {
+        return Ok(None);
+    };
+    Transport::spawn(command, root)
+        .map(Some)
+        .map_err(|err| io::Error::other(format!("can't run {}: {err}", command[0])))
+}
+
+/// A server that stops sooner than this after starting counts towards
+/// [`RESTARTS`]; one that ran longer starts the count again.
+const STEADY: Duration = Duration::from_secs(60);
+
+/// How many times in a row a server that stops soon after starting is
+/// started again.
+const RESTARTS: usize = 3;
+
+/// A language and the root its server runs in.
+type Key = (String, PathBuf);
+
+/// Where a buffer's server is: its language, file and root, so roots aren't
+/// looked for on every sync, and the server it was last sent to.
+struct Placed {
+    language: String,
+    path: PathBuf,
+    root: PathBuf,
+    server: Option<ServerId>,
+}
+
+impl Placed {
+    fn is_for(&self, path: &Path, language: &str) -> bool {
+        self.path == path && self.language == language
+    }
+}
+
+/// A server that's running, as [`Lsp::running`] lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Running {
+    pub language: String,
+    pub root: PathBuf,
+    pub command: Vec<String>,
+    /// Whether it answered `initialize`.
+    pub ready: bool,
+    /// The last lines it wrote to stderr.
+    pub stderr: Vec<String>,
+}
+
 pub struct Lsp {
     configs: Vec<ServerConfig>,
-    servers: Vec<Server>,
-    by_language: HashMap<String, ServerId>,
-    /// Languages whose server couldn't be started; not tried again.
-    failed: HashSet<String>,
+    launcher: Launcher,
+    servers: HashMap<ServerId, Server>,
+    next_server: ServerId,
+    /// The running server for each language and root.
+    running: HashMap<Key, ServerId>,
+    placed: HashMap<BufferId, Placed>,
+    /// Servers that couldn't be started or kept stopping; not tried again
+    /// until their language is set up again.
+    failed: HashSet<Key>,
+    /// How many times in a row each server stopped soon after starting.
+    stops: HashMap<Key, usize>,
+    /// Servers given up on since the last sync, to say so.
+    given_up: Vec<LspError>,
     /// Every file's latest problems, by URI, including files not open, with
     /// how their server counts positions.
     problems: HashMap<String, (Encoding, Vec<Problem>)>,
@@ -215,9 +296,14 @@ impl Default for Lsp {
         let (sender, events) = crossbeam_channel::unbounded();
         Self {
             configs: Vec::new(),
-            servers: Vec::new(),
-            by_language: HashMap::new(),
+            launcher: Box::new(launch),
+            servers: HashMap::new(),
+            next_server: 0,
+            running: HashMap::new(),
+            placed: HashMap::new(),
             failed: HashSet::new(),
+            stops: HashMap::new(),
+            given_up: Vec::new(),
             problems: HashMap::new(),
             events,
             sender,
@@ -227,10 +313,19 @@ impl Default for Lsp {
 
 impl Lsp {
     /// Sets how to start the server for a language, replacing any earlier
-    /// setting.
+    /// setting. Servers that couldn't start or kept stopping are tried
+    /// again.
     pub fn configure(&mut self, config: ServerConfig) {
-        self.configs.retain(|c| c.language != config.language);
+        let language = config.language.clone();
+        let markers = config.root_markers.clone();
+        let old = self.configs.iter().position(|c| c.language == language);
+        if old.is_none_or(|i| self.configs.remove(i).root_markers != markers) {
+            // Its buffers' roots are looked for again.
+            self.placed.retain(|_, p| p.language != language);
+        }
         self.configs.push(config);
+        self.failed.retain(|(l, _)| *l != language);
+        self.stops.retain(|(l, _), _| *l != language);
     }
 
     /// Stops starting a server for `language`. One already running keeps
@@ -244,26 +339,39 @@ impl Lsp {
         &self.configs
     }
 
+    /// Starts servers with `launcher` instead of running their commands.
+    pub fn set_launcher(&mut self, launcher: Launcher) {
+        self.launcher = launcher;
+    }
+
     /// Messages from servers, to pass to [`Lsp::handle`].
     pub fn events(&self) -> &Receiver<Event> {
         &self.events
     }
 
     /// Opens new documents, sends changed ones and closes those whose buffer
-    /// was closed, starting servers on first use. Returns an error for each
-    /// server that couldn't be reached.
+    /// was closed or now belongs to another server, starting servers on
+    /// first use. Returns an error for each server that couldn't be reached
+    /// or was given up on.
     pub fn sync(&mut self, editor: &Editor) -> Vec<LspError> {
-        let mut errors = Vec::new();
+        let projects = project_roots(editor);
+        let mut errors = std::mem::take(&mut self.given_up);
+        let mut sent: HashMap<BufferId, ServerId> = HashMap::new();
         for buffer in editor.buffers() {
-            if let Err(err) = self.sync_buffer(buffer) {
-                errors.push(err);
+            match self.sync_buffer(buffer, &projects) {
+                Ok(Some(server)) => {
+                    sent.insert(buffer.id(), server);
+                }
+                Ok(None) => {}
+                Err(err) => errors.push(err),
             }
         }
-        let open: HashSet<BufferId> = editor.buffers().map(Buffer::id).collect();
-        for server in &mut self.servers {
+        self.placed
+            .retain(|id, _| editor.find_buffer(*id).is_some());
+        for (&id, server) in &mut self.servers {
             let gone: Vec<(usize, String)> = server
                 .documents
-                .extract_if(|id, _| !open.contains(id))
+                .extract_if(|buffer, _| sent.get(buffer) != Some(&id))
                 .map(|(_, document)| document)
                 .collect();
             for (_, uri) in gone {
@@ -276,22 +384,84 @@ impl Lsp {
         errors
     }
 
-    fn sync_buffer(&mut self, buffer: &Buffer) -> Result<(), LspError> {
-        let Some(path) = buffer.path() else {
+    /// Sends `buffer` to its server, starting the server if it isn't
+    /// running. Returns the server, or `None` without one.
+    fn sync_buffer(
+        &mut self,
+        buffer: &Buffer,
+        projects: &[PathBuf],
+    ) -> Result<Option<ServerId>, LspError> {
+        let (Some(path), Some(language)) = (buffer.path(), buffer.language()) else {
+            return Ok(None);
+        };
+        let Some(root) = self.place(buffer.id(), path, language, projects) else {
+            return Ok(None);
+        };
+        let server = self.server_for(language, &root)?;
+        if let Some(placed) = self.placed.get_mut(&buffer.id()) {
+            placed.server = server;
+        }
+        let Some(server) = server else {
+            return Ok(None);
+        };
+        self.send_document(server, buffer)?;
+        Ok(Some(server))
+    }
+
+    /// The root `buffer`'s server runs in, worked out once per file and
+    /// language. `None` when no server is set up for its language.
+    fn place(
+        &mut self,
+        buffer: BufferId,
+        path: &Path,
+        language: &str,
+        projects: &[PathBuf],
+    ) -> Option<PathBuf> {
+        if let Some(root) = self.placed_root(buffer, path, language) {
+            return Some(root);
+        }
+        let config = self.configs.iter().find(|c| c.language == language)?;
+        let root = server_root(path, &config.root_markers, projects);
+        self.placed.insert(
+            buffer,
+            Placed {
+                language: language.to_owned(),
+                path: path.to_owned(),
+                root: root.clone(),
+                server: None,
+            },
+        );
+        Some(root)
+    }
+
+    /// The root found for `buffer` last time, if its file and language are
+    /// still the same.
+    fn placed_root(&self, buffer: BufferId, path: &Path, language: &str) -> Option<PathBuf> {
+        self.placed
+            .get(&buffer)
+            .filter(|p| p.is_for(path, language))
+            .map(|p| p.root.clone())
+    }
+
+    /// Opens `buffer` in `server`, or sends what changed since it last was.
+    fn send_document(&mut self, server: ServerId, buffer: &Buffer) -> Result<(), LspError> {
+        let (Some(path), Some(language)) = (buffer.path(), buffer.language()) else {
             return Ok(());
         };
-        let Some(language) = buffer.language() else {
-            return Ok(());
-        };
-        let Some(server) = self.server_for(language, path)? else {
-            return Ok(());
-        };
-        let version = buffer.history().applied();
-        let server = &mut self.servers[server];
+        let server = self.servers.get_mut(&server).expect("a running server");
         if !server.alive() {
             return Ok(());
         }
+        let version = buffer.history().applied();
         let uri = file_uri(path);
+        // A file saved under another name is another document.
+        if let Some((_, old)) = server.documents.get(&buffer.id())
+            && *old != uri
+        {
+            let closed = json!({ "textDocument": { "uri": old } });
+            server.documents.remove(&buffer.id());
+            server.notify("textDocument/didClose", &closed)?;
+        }
         match server.documents.insert(buffer.id(), (version, uri.clone())) {
             None => server.notify(
                 "textDocument/didOpen",
@@ -312,13 +482,14 @@ impl Lsp {
         Ok(())
     }
 
-    /// The server for `language`, started if it isn't running yet. `None` if
-    /// no server is configured for it.
-    fn server_for(&mut self, language: &str, path: &Path) -> Result<Option<ServerId>, LspError> {
-        if let Some(&id) = self.by_language.get(language) {
+    /// The server for `language` in `root`, started if it isn't running yet.
+    /// `None` if no server is set up for the language or it isn't installed.
+    fn server_for(&mut self, language: &str, root: &Path) -> Result<Option<ServerId>, LspError> {
+        let key = (language.to_owned(), root.to_owned());
+        if let Some(&id) = self.running.get(&key) {
             return Ok(Some(id));
         }
-        if self.failed.contains(language) {
+        if self.failed.contains(&key) {
             return Ok(None);
         }
         let Some(config) = self
@@ -329,65 +500,68 @@ impl Lsp {
         else {
             return Ok(None);
         };
-        let root = project_root(path, &config.root_markers);
-        // Not having a server installed is normal, so it's not an error.
-        let Some(command) = config.installed_command() else {
-            self.failed.insert(language.to_owned());
-            return Ok(None);
+        let transport = match (self.launcher)(&config, root) {
+            Ok(Some(transport)) => transport,
+            // Not having a server installed is normal, so it's not an error.
+            Ok(None) => {
+                self.failed.insert(key);
+                return Ok(None);
+            }
+            Err(err) => {
+                self.failed.insert(key);
+                return Err(LspError::NoServer(format!("{language}: {err}")));
+            }
         };
-        let transport = Transport::spawn(command, &root).map_err(|err| {
-            self.failed.insert(language.to_owned());
-            LspError::NoServer(format!("{language}: can't run {}: {err}", command[0]))
-        })?;
-        self.start(language, transport, &root).map(Some)
+        let command = config
+            .installed_command()
+            .or(config.commands.first())
+            .cloned()
+            .unwrap_or_default();
+        self.start(key, command, transport).map(Some)
     }
 
-    /// Talks to a server over `input` and `output`, and sends `initialize`.
-    /// Servers normally start from their config; tests connect directly.
-    pub fn connect(
-        &mut self,
-        language: &str,
-        input: Box<dyn Write + Send>,
-        output: impl Read + Send + 'static,
-        root: &Path,
-    ) -> Result<ServerId, LspError> {
-        self.start(language, Transport::pipes(input, output), root)
-    }
-
+    /// Talks to a new server over `transport`, and sends `initialize`.
     fn start(
         &mut self,
-        language: &str,
+        key: Key,
+        command: Vec<String>,
         transport: Transport,
-        root: &Path,
     ) -> Result<ServerId, LspError> {
-        let id = self.servers.len();
-        let mut connection = Connection::open(id, transport, &self.sender);
-        let initialize_id = connection.request(
-            "initialize",
-            &json!({
-                "processId": std::process::id(),
-                "rootUri": file_uri(root),
-                "clientInfo": { "name": "greed" },
-                "capabilities": client_capabilities(),
-            }),
-        )?;
-        self.servers.push(Server {
-            language: language.to_owned(),
-            connection,
-            initialize_id,
+        let id = self.next_server;
+        self.next_server += 1;
+        let (language, root) = key.clone();
+        let mut server = Server {
+            language,
+            root,
+            command,
+            connection: Connection::open(id, transport, &self.sender),
+            started: Instant::now(),
+            initialize_id: 0,
             ready: false,
             encoding: Encoding::Utf16,
             capabilities: Value::Null,
             queued: Vec::new(),
             documents: HashMap::new(),
-        });
-        self.by_language.insert(language.to_owned(), id);
+        };
+        server.initialize_id = server.connection.request(
+            "initialize",
+            &json!({
+                "processId": std::process::id(),
+                "rootUri": file_uri(&server.root),
+                "rootPath": server.root,
+                "workspaceFolders": server.workspace_folders(),
+                "clientInfo": { "name": "greed" },
+                "capabilities": client_capabilities(),
+            }),
+        )?;
+        self.servers.insert(id, server);
+        self.running.insert(key, id);
         Ok(id)
     }
 
-    /// Sends a request about `buffer` to its language's server, after the
-    /// buffer's latest text, so an edit made just before is seen. Returns
-    /// the server and the request's id, which the response will carry.
+    /// Sends a request about `buffer` to its server, after the buffer's
+    /// latest text, so an edit made just before is seen. Returns the server
+    /// and the request's id, which the response will carry.
     pub fn request(
         &mut self,
         buffer: &Buffer,
@@ -395,24 +569,65 @@ impl Lsp {
         params: &Value,
     ) -> Result<(ServerId, i64), LspError> {
         let server = self.server_of(buffer)?;
-        self.sync_buffer(buffer)?;
-        let id = self.servers[server].request(method, params)?;
+        self.send_document(server, buffer)?;
+        let id = self
+            .servers
+            .get_mut(&server)
+            .expect("a running server")
+            .request(method, params)?;
         Ok((server, id))
     }
 
+    /// The running server `buffer` was last sent to.
     fn server_of(&self, buffer: &Buffer) -> Result<ServerId, LspError> {
-        buffer
-            .path()
-            .and(buffer.language())
-            .and_then(|l| self.by_language.get(l).copied())
-            .filter(|&id| self.servers[id].alive())
+        self.placed
+            .get(&buffer.id())
+            .filter(|p| {
+                Some(p.path.as_path()) == buffer.path()
+                    && Some(p.language.as_str()) == buffer.language()
+            })
+            .and_then(|p| p.server)
+            .filter(|id| self.servers.get(id).is_some_and(Server::alive))
             .ok_or_else(|| LspError::NoServer(format!("buffer {}", buffer.id().0)))
+    }
+
+    /// The folder `buffer`'s server runs in, or would: `None` without a file
+    /// or a server set up for its language.
+    pub fn root(&self, buffer: &Buffer, editor: &Editor) -> Option<PathBuf> {
+        let (path, language) = (buffer.path()?, buffer.language()?);
+        if let Some(root) = self.placed_root(buffer.id(), path, language) {
+            return Some(root);
+        }
+        let config = self.configs.iter().find(|c| c.language == language)?;
+        Some(server_root(
+            path,
+            &config.root_markers,
+            &project_roots(editor),
+        ))
+    }
+
+    /// The servers running now, by language and then root.
+    pub fn running(&self) -> Vec<Running> {
+        let mut list: Vec<Running> = self
+            .servers
+            .values()
+            .filter(|s| s.alive())
+            .map(|s| Running {
+                language: s.language.clone(),
+                root: s.root.clone(),
+                command: s.command.clone(),
+                ready: s.ready,
+                stderr: s.connection.stderr(),
+            })
+            .collect();
+        list.sort_by(|a, b| (&a.language, &a.root).cmp(&(&b.language, &b.root)));
+        list
     }
 
     /// Deals with one event from a server: finishes starting it, answers its
     /// requests, marks diagnostics, and passes responses back.
     pub fn handle(&mut self, event: Event, editor: &mut Editor) -> Handled {
-        let Some(server) = self.servers.get_mut(event.server()) else {
+        let Some(server) = self.servers.get_mut(&event.server()) else {
             return Handled::Nothing;
         };
         // An answer nothing waits for any more is dropped here.
@@ -420,7 +635,7 @@ impl Lsp {
             return Handled::Nothing;
         };
         match event {
-            Event::Response { server, id, result } if id == self.servers[server].initialize_id => {
+            Event::Response { server, id, result } if id == self.servers[&server].initialize_id => {
                 self.finish_initialize(server, result.as_ref().ok());
                 Handled::Nothing
             }
@@ -437,7 +652,8 @@ impl Lsp {
                 method,
                 params,
             } => Handled::Notification {
-                language: self.servers[server].language.clone(),
+                language: self.servers[&server].language.clone(),
+                root: self.servers[&server].root.clone(),
                 method,
                 params,
             },
@@ -452,6 +668,13 @@ impl Lsp {
                 Handled::Nothing
             }
             Event::Request {
+                server, id, method, ..
+            } if method == "workspace/workspaceFolders" => {
+                let folders = self.servers[&server].workspace_folders();
+                self.respond(server, &id, &folders);
+                Handled::Nothing
+            }
+            Event::Request {
                 server,
                 id,
                 method,
@@ -463,30 +686,64 @@ impl Lsp {
                 params,
             },
             Event::Exited { server } => {
-                let language = &self.servers[server].language;
-                if self.by_language.get(language) == Some(&server) {
-                    self.by_language.remove(language);
-                }
+                self.stopped(server);
                 Handled::Exited { server }
             }
+        }
+    }
+
+    /// Forgets `server`, which stopped, so the next sync starts it again,
+    /// unless it keeps stopping soon after starting.
+    fn stopped(&mut self, id: ServerId) {
+        let Some(server) = self.servers.remove(&id) else {
+            return;
+        };
+        let key = (server.language.clone(), server.root.clone());
+        if self.running.get(&key) == Some(&id) {
+            self.running.remove(&key);
+        }
+        let stops = self.stops.entry(key.clone()).or_default();
+        *stops = if server.started.elapsed() < STEADY {
+            *stops + 1
+        } else {
+            1
+        };
+        if *stops > RESTARTS {
+            let program = server
+                .command
+                .first()
+                .map_or("the language server", String::as_str);
+            let why = server
+                .connection
+                .stderr()
+                .last()
+                .map(|line| format!(": {line}"))
+                .unwrap_or_default();
+            self.given_up.push(LspError::Stopped(format!(
+                "{program} keeps stopping in {}, not starting it again{why}",
+                server.root.display()
+            )));
+            self.failed.insert(key);
         }
     }
 
     /// Answers request `id` from `server`. A server that stopped hears
     /// nothing.
     pub fn respond(&mut self, server: ServerId, id: &Value, result: &Value) {
-        if let Some(server) = self.servers.get_mut(server) {
+        if let Some(server) = self.servers.get_mut(&server) {
             let _ = server.connection.respond(id, Ok(result));
         }
     }
 
     /// What `buffer`'s server said it can do, e.g. `renameProvider`.
     pub fn capabilities(&self, buffer: &Buffer) -> Result<&Value, LspError> {
-        Ok(&self.servers[self.server_of(buffer)?].capabilities)
+        Ok(&self.servers[&self.server_of(buffer)?].capabilities)
     }
 
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {
-        let server = &mut self.servers[server];
+        let Some(server) = self.servers.get_mut(&server) else {
+            return;
+        };
         if let Some(capabilities) = result.map(|r| &r["capabilities"]) {
             if capabilities["positionEncoding"].as_str() == Some("utf-8") {
                 server.encoding = Encoding::Utf8;
@@ -506,7 +763,7 @@ impl Lsp {
         params: &Value,
         editor: &mut Editor,
     ) -> Handled {
-        let encoding = self.servers[server].encoding;
+        let encoding = self.servers[&server].encoding;
         let Some(uri) = params["uri"].as_str() else {
             return Handled::Nothing;
         };
@@ -577,7 +834,7 @@ impl Lsp {
 
     /// How `buffer`'s server counts positions within a line.
     pub fn encoding(&self, buffer: &Buffer) -> Result<Encoding, LspError> {
-        Ok(self.servers[self.server_of(buffer)?].encoding)
+        Ok(self.servers[&self.server_of(buffer)?].encoding)
     }
 }
 
@@ -714,9 +971,61 @@ pub fn uri_path(uri: &str) -> Option<PathBuf> {
     url::Url::parse(uri).ok()?.to_file_path().ok()
 }
 
-/// Where a server for the file at `path` runs: the nearest directory with one
-/// of `markers`, or the file's own directory.
+/// Where a server for the file at `path` runs, as editors decide it.
+///
+/// Inside a project, the deepest of `projects` or of the version control
+/// roots that holds the file, it's the topmost folder from the file up to
+/// the project's root that has one of `markers`, so a Cargo or npm
+/// workspace gets one server for all its members; without one, the
+/// project's root. Outside any project it's [`project_root`].
+pub fn server_root(path: &Path, markers: &[String], projects: &[PathBuf]) -> PathBuf {
+    let dir = existing_folder(path);
+    let repository = dir
+        .ancestors()
+        .find(|d| has_marker(d, &crate::project::MARKERS));
+    let project = projects
+        .iter()
+        .map(PathBuf::as_path)
+        .chain(repository)
+        .filter(|p| dir.starts_with(p))
+        .max_by_key(|p| p.components().count());
+    let Some(project) = project else {
+        return project_root(path, markers);
+    };
+    dir.ancestors()
+        .take_while(|d| d.starts_with(project))
+        .filter(|d| has_marker(d, markers))
+        .last()
+        .unwrap_or(project)
+        .to_owned()
+}
+
+fn project_roots(editor: &Editor) -> Vec<PathBuf> {
+    editor
+        .projects()
+        .iter()
+        .map(|p| p.root().to_owned())
+        .collect()
+}
+
+/// Where a server for the file at `path` runs outside a project: the
+/// nearest directory with one of `markers`, or the file's own directory.
 pub fn project_root(path: &Path, markers: &[String]) -> PathBuf {
+    let existing = existing_folder(path);
+    existing
+        .ancestors()
+        .find(|d| has_marker(d, markers))
+        .unwrap_or(&existing)
+        .to_owned()
+}
+
+fn has_marker(dir: &Path, markers: &[impl AsRef<Path>]) -> bool {
+    markers.iter().any(|m| dir.join(m).exists())
+}
+
+/// The folder of the file at `path`, as a full path, or the nearest one up
+/// that exists: a new file can be in folders not made yet.
+fn existing_folder(path: &Path) -> PathBuf {
     // A bare file name like "notes.md" has an empty parent: the current
     // directory.
     let dir = match path.parent() {
@@ -724,17 +1033,9 @@ pub fn project_root(path: &Path, markers: &[String]) -> PathBuf {
         _ => PathBuf::from("."),
     };
     let dir = std::path::absolute(&dir).unwrap_or(dir);
-    // A new file can be in folders that don't exist yet; the server runs
-    // in the nearest one that does.
-    let existing = dir
-        .ancestors()
+    dir.ancestors()
         .find(|d| d.is_dir())
         .unwrap_or(&dir)
-        .to_owned();
-    existing
-        .ancestors()
-        .find(|d| markers.iter().any(|m| d.join(m).exists()))
-        .unwrap_or(&existing)
         .to_owned()
 }
 

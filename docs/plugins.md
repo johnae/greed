@@ -763,8 +763,14 @@ answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it
 answers. `greed.lsp.on_notification(method, handler)` hears what servers
 tell the editor without asking, like `$/progress`; the handler gets the
-parameters and the server's language. The status line's language server
-piece is built on it.
+parameters, the server's language and its root. The status line's language
+server piece is built on it.
+
+A server runs per language and project root. `greed.lsp.root(buffer)` is the
+folder the buffer's server runs in, and `greed.lsp.running()` lists the
+servers running, each with its language, root, command, whether it's ready,
+and the last lines it wrote to stderr. A request whose server stops before
+answering returns nil and an error saying so.
 
 ## Events
 
