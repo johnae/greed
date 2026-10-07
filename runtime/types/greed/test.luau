@@ -20,6 +20,13 @@ export type TestContext = {
 	--- A new, empty directory holding `files` (paths in it, to their text).
 	--- Folders in the paths are created.
 	tempdir: (self: TestContext, files: { [string]: string }?) -> string,
+	--- A new jj or git repository in a tempdir, with `files` committed as
+	--- "first" if given, and a way to run jj or git there as a made-up user:
+	--- it returns what the command printed and fails the test if it fails.
+	repo: (self: TestContext, kind: "jj" | "git", files: { [string]: string }?) -> (string, (...string) -> string),
+	--- Runs jj or git in `dir` as `repo`'s function does, for repositories
+	--- laid out some other way.
+	vcs: (self: TestContext, kind: "jj" | "git", dir: string) -> (...string) -> string,
 	--- The buffer with markers.
 	marked: (self: TestContext) -> string,
 	--- The text of each floating view, bottom first.

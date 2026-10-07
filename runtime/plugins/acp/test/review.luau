@@ -46,14 +46,7 @@ test("a new file is all one change, and so is a file you don't have", function()
 end)
 
 test("an agent's workspace changes come to your files as proposals", function(t)
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	for _, args in { { "init", "-q" }, { "add", "." }, { "commit", "-q", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local dir = t:repo("git", { ["a.txt"] = "a\n" })
 	local s = assert(acp.start(FAKE, dir, true))
 	t:wait_for(function()
 		return s.status == "idle"
@@ -82,14 +75,7 @@ test("an agent's workspace changes come to your files as proposals", function(t)
 end)
 
 test("with nothing left to take, review says so", function(t)
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	for _, args in { { "init", "-q" }, { "add", "." }, { "commit", "-q", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local dir = t:repo("git", { ["a.txt"] = "a\n" })
 	local s = assert(acp.start(FAKE, dir, true))
 	t:wait_for(function()
 		return s.status == "idle"

@@ -3,22 +3,6 @@ local greed = require("@greed")
 local operations = require("@operations")
 local vcs = require("@vcs")
 
--- A git repository holding `files`, committed. Returns its folder.
-local function repo(t: test.TestContext, files: { [string]: string }): string
-	local dir = t:tempdir(files)
-	local function git(...: string)
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	git("init", "-q")
-	git("add", ".")
-	git("commit", "-q", "-m", "first")
-	return dir
-end
-
 -- Each line's sign, by 0-based line number.
 local function signs(): { [number]: string }
 	local buffer = greed.view():buffer()
@@ -32,7 +16,7 @@ local function signs(): { [number]: string }
 end
 
 test("lines added, changed and removed since the last commit get signs", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
+	local dir = t:repo("git", { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
 	greed.open(dir .. "/a.txt")
 	assert(next(signs()) == nil, "nothing changed yet")
 	-- "one" becomes "ONE", "three" goes, and a line is added at the end.
@@ -46,7 +30,7 @@ test("lines added, changed and removed since the last commit get signs", functio
 end)
 
 test("] g and [ g go between changes, space g r puts one back", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\nb\nc\nd\ne\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\nb\nc\nd\ne\n" })
 	greed.open(dir .. "/a.txt")
 	t:keys("j c B esc g g 4 j c E esc")
 	t:wait(500)
@@ -59,7 +43,7 @@ test("] g and [ g go between changes, space g r puts one back", function(t)
 end)
 
 test("a new file in a repository counts as added", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\n" })
 	greed.fs.write(dir .. "/new.txt", "x\ny\n")
 	greed.open(dir .. "/new.txt")
 	t:wait(10)
@@ -72,7 +56,7 @@ test("a new file in a repository counts as added", function(t)
 end)
 
 test("a file whose last commit isn't text, like an image, gets no signs", function(t)
-	local dir = repo(t, { ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
+	local dir = t:repo("git", { ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
 	greed.fs.write(dir .. "/icon.bin", "now text\n")
 	greed.open(dir .. "/icon.bin")
 	t:wait(10)
@@ -92,16 +76,7 @@ test("with jj, changes are against the working copy's parent", function(t)
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
-	local function jj(...: string)
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	jj("git", "init")
-	jj("commit", "-m", "first")
+	local dir = t:repo("jj", { ["a.txt"] = "one\ntwo\n" })
 	greed.open(dir .. "/a.txt")
 	t:keys("j e c T W O esc")
 	t:wait(500)
@@ -110,7 +85,7 @@ test("with jj, changes are against the working copy's parent", function(t)
 end)
 
 test("space g b says who last changed the line", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\ntwo\n" })
+	local dir = t:repo("git", { ["a.txt"] = "one\ntwo\n" })
 	greed.open(dir .. "/a.txt")
 	t:keys("j space g b")
 	local messages = t:messages()
@@ -128,7 +103,7 @@ local function changes_view(): greed.Buffer?
 end
 
 test("space g s shows every change not staged, removed lines where they were", function(t)
-	local dir = repo(t, {
+	local dir = t:repo("git", {
 		["a.txt"] = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
 		["b.txt"] = "keep\n",
 	})
@@ -167,7 +142,7 @@ test("space g s shows every change not staged, removed lines where they were", f
 end)
 
 test("space g s leaves out files that aren't text", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\n", ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
+	local dir = t:repo("git", { ["a.txt"] = "one\n", ["icon.bin"] = "\x89PNG\r\n\x1a\n\0\0" })
 	greed.project.open(dir)
 	greed.fs.write(dir .. "/a.txt", "ONE\n")
 	greed.fs.write(dir .. "/icon.bin", "\x89PNG\r\n\x1a\n\1\1")
@@ -180,7 +155,7 @@ test("space g s leaves out files that aren't text", function(t)
 end)
 
 test("with nothing changed, it says so", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\n" })
+	local dir = t:repo("git", { ["a.txt"] = "one\n" })
 	greed.project.open(dir)
 	t:buffer("|x")
 	t:run("changes")
@@ -192,16 +167,7 @@ test("with jj, the changes view shows the working copy's changes against its par
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n", ["old.txt"] = "going\n" })
-	local function jj(...: string)
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	jj("git", "init")
-	jj("commit", "-m", "first")
+	local dir = t:repo("jj", { ["a.txt"] = "one\ntwo\n", ["old.txt"] = "going\n" })
 	greed.fs.write(dir .. "/a.txt", "one\ntwo\nthree\n")
 	greed.fs.remove(dir .. "/old.txt")
 	greed.project.open(dir)
@@ -214,7 +180,7 @@ test("with jj, the changes view shows the working copy's changes against its par
 end)
 
 test("space u c commits just the latest operation's files, named after it", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	local dir, git = t:repo("git", { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
 	greed.fs.write(dir .. "/b.txt", "mine\n")
 	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
@@ -226,33 +192,17 @@ test("space u c commits just the latest operation's files, named after it", func
 	t:keys("space u c")
 	local messages = t:messages()
 	assert(messages[#messages] == 'committed "change a"', messages[#messages])
-	local log = greed.process.run(
-		{ "git", "log", "-1", "--format=%s", "--name-only" },
-		{ cwd = dir }
-	)
-	assert(log and string.find(log.stdout, "^change a\n\na.txt\n$"), log and log.stdout)
-	local status = greed.process.run({ "git", "status", "--porcelain" }, { cwd = dir })
-	assert(
-		status and status.stdout == " M b.txt\n",
-		"b's change stays: " .. (status and status.stdout or "")
-	)
+	local log = git("log", "-1", "--format=%s", "--name-only")
+	assert(log == "change a\n\na.txt\n", log)
+	local status = git("status", "--porcelain")
+	assert(status == " M b.txt\n", "b's change stays: " .. status)
 end)
 
 test("with jj, an operation commits as its own change", function(t)
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
-	local function jj(...: string): string
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-		return done.stdout
-	end
-	jj("git", "init")
-	jj("commit", "-m", "first")
+	local dir, jj = t:repo("jj", { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
 	greed.fs.write(dir .. "/b.txt", "mine\n")
 	local a = greed.load(dir .. "/a.txt")
 	t:buffer("|x")
@@ -269,7 +219,7 @@ test("with jj, an operation commits as its own change", function(t)
 end)
 
 test("m i g selects the change under the cursor, m a g its lines", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\nb\nc\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\nb\nc\n" })
 	greed.open(dir .. "/a.txt")
 	t:keys("j c B esc")
 	t:wait(500)
@@ -278,7 +228,7 @@ test("m i g selects the change under the cursor, m a g its lines", function(t)
 end)
 
 test("changed_files lists the files changed since the last commit", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\n", ["b.txt"] = "b\n" })
 	greed.fs.write(dir .. "/b.txt", "B\n")
 	local files = require("@vcs").changed_files(dir) :: { string }
 	assert(#files == 1 and string.match(files[1], "/b%.txt$"), table.concat(files, ", "))
@@ -291,7 +241,7 @@ local function staged_diff(dir: string): string
 end
 
 test("space g a stages just the change under the cursor, and its sign goes", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\nb\nc\nd\ne\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\nb\nc\nd\ne\n" })
 	greed.open(dir .. "/a.txt")
 	t:keys("c A esc g g 4 j c E esc")
 	t:wait(500)
@@ -306,7 +256,7 @@ test("space g a stages just the change under the cursor, and its sign goes", fun
 end)
 
 test("space g a in the changes view stages a change and the view follows", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\nb\nc\nd\ne\nf\ng\nh\n", ["b.txt"] = "x\n" })
+	local dir = t:repo("git", { ["a.txt"] = "a\nb\nc\nd\ne\nf\ng\nh\n", ["b.txt"] = "x\n" })
 	greed.project.open(dir)
 	greed.fs.write(dir .. "/a.txt", "A\nb\nc\nd\ne\nf\ng\nH\n")
 	greed.fs.write(dir .. "/b.txt", "X\n")
@@ -324,11 +274,10 @@ test("space g a in the changes view stages a change and the view follows", funct
 end)
 
 test("space g S shows what's staged; u unstages a hunk and c commits", function(t)
-	local dir = repo(t, { ["a.txt"] = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n" })
+	local dir, git = t:repo("git", { ["a.txt"] = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n" })
 	greed.project.open(dir)
 	greed.fs.write(dir .. "/a.txt", "A\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nL\n")
-	local done = greed.process.run({ "git", "add", "a.txt" }, { cwd = dir })
-	assert(done and done.code == 0)
+	git("add", "a.txt")
 	t:buffer("|x")
 	t:keys("space g S")
 	local view = greed.view()
@@ -342,8 +291,8 @@ test("space g S shows what's staged; u unstages a hunk and c commits", function(
 	assert(not string.find(staged, "+A", 1, true) and string.find(staged, "+L", 1, true), staged)
 	assert(not string.find(view:buffer():text(), "+A", 1, true), "the view follows")
 	t:keys("c o n l y space l enter")
-	local log = greed.process.run({ "git", "log", "-1", "--format=%s" }, { cwd = dir })
-	assert(log and log.stdout == "only l\n", log and log.stdout)
+	local log = git("log", "-1", "--format=%s")
+	assert(log == "only l\n", log)
 	local after = view:buffer():text()
 	assert(string.find(after, "nothing staged", 1, true), after)
 end)
@@ -352,9 +301,8 @@ test("with jj, space g a says to split instead", function(t)
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "one\n" })
-	local done = greed.process.run({ "jj", "git", "init" }, { cwd = dir })
-	assert(done and done.code == 0)
+	local dir = t:repo("jj")
+	greed.fs.write(dir .. "/a.txt", "one\n")
 	greed.open(dir .. "/a.txt")
 	t:keys("c O N E esc")
 	t:wait(500)
@@ -364,13 +312,9 @@ test("with jj, space g a says to split instead", function(t)
 end)
 
 test("space g w shows the commits that made the selected lines", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
+	local dir, git = t:repo("git", { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
 	greed.fs.write(dir .. "/a.txt", "one\nTWO\nthree\n")
-	local done = greed.process.run(
-		{ "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "shout two" },
-		{ cwd = dir }
-	)
-	assert(done and done.code == 0, done and done.stderr)
+	git("commit", "-q", "-am", "shout two")
 	greed.open(dir .. "/a.txt")
 	t:keys("j space g w")
 	local text = greed.view():buffer():text()
@@ -387,16 +331,7 @@ test("with jj, the changes that last touched the lines, newest first", function(
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
-	local function jj(...: string)
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	jj("git", "init")
-	jj("commit", "-m", "first")
+	local dir, jj = t:repo("jj", { ["a.txt"] = "one\ntwo\n" })
 	greed.fs.write(dir .. "/a.txt", "one\nTWO\n")
 	jj("commit", "-m", "shout two")
 	greed.open(dir .. "/a.txt")
@@ -409,9 +344,8 @@ test("with jj, the changes that last touched the lines, newest first", function(
 end)
 
 test("the status line shows the branch and the lines changed in the file", function(t)
-	local dir = repo(t, { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
-	local done = greed.process.run({ "git", "checkout", "-q", "-b", "topic" }, { cwd = dir })
-	assert(done and done.code == 0, done and done.stderr)
+	local dir, git = t:repo("git", { ["a.txt"] = "one\ntwo\nthree\nfour\n" })
+	git("checkout", "-q", "-b", "topic")
 	greed.open(dir .. "/a.txt")
 	t:wait(300)
 	local _, right = t:status()
@@ -427,16 +361,7 @@ test("with jj, the status line shows the nearest bookmark and the change", funct
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "one\n" })
-	local function jj(...: string)
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	jj("git", "init")
-	jj("commit", "-m", "first")
+	local dir, jj = t:repo("jj", { ["a.txt"] = "one\n" })
 	jj("bookmark", "create", "-r", "@-", "trunk")
 	greed.open(dir .. "/a.txt")
 	t:wait(300)

@@ -92,31 +92,23 @@ test("a rejected memory writes nothing", function(t)
 	assert(#listed.project == 0 and #listed.shared == 0)
 end)
 
--- Runs jj or git (`tool`) with `args` in `dir`, which has to work.
-local function run(dir: string, tool: string, args: { string })
-	local command = if tool == "jj"
-		then { "jj", "--config", "user.name=t", "--config", "user.email=t@t" }
-		else { "git", "-c", "user.name=t", "-c", "user.email=t@t" }
-	table.move(args, 1, #args, #command + 1, command)
-	local done = greed.process.run(command, { cwd = dir })
-	assert(done and done.code == 0, done and done.stderr)
-end
-
 test("all workspaces of a repository share its private memories", function(t)
 	local dir =
 		t:tempdir({ ["main/a.txt"] = "a\n", ["git/a.txt"] = "a\n", ["plain/a.txt"] = "a\n" })
 	local main, git = `{dir}/main`, `{dir}/git`
 	if greed.which("jj") then
-		run(main, "jj", { "git", "init" })
-		run(main, "jj", { "workspace", "add", "../other" })
+		local jj = t:vcs("jj", main)
+		jj("git", "init")
+		jj("workspace", "add", "../other")
 		local path = memory.project_path(main)
 		assert(memory.project_path(`{dir}/other`) == path, memory.project_path(`{dir}/other`))
 		assert(string.match(path, "/main%-%x+%.md$"), "named after the repository: " .. path)
 	end
 	if greed.which("git") then
-		run(git, "git", { "init", "-q" })
-		run(git, "git", { "commit", "-q", "--allow-empty", "-m", "first" })
-		run(git, "git", { "worktree", "add", "-q", "../tree" })
+		local run = t:vcs("git", git)
+		run("init", "-q")
+		run("commit", "-q", "--allow-empty", "-m", "first")
+		run("worktree", "add", "-q", "../tree")
 		local path = memory.project_path(git)
 		assert(memory.project_path(`{dir}/tree`) == path, memory.project_path(`{dir}/tree`))
 		assert(string.match(path, "/git%-%x+%.md$"), "named after the repository: " .. path)

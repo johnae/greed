@@ -348,14 +348,7 @@ test("a fork of an agent in a jj workspace gets a workspace with its edits", fun
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	for _, args in { { "git", "init" }, { "commit", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local dir = t:repo("jj", { ["a.txt"] = "a\n" })
 	local s = start(t, dir, true)
 	send(t, s, "edit a.txt")
 	local fork, err = acp.fork(s)
@@ -375,24 +368,11 @@ test("an agent that isn't installed says how it would run", function(t)
 	assert(s == nil and err == "nope isn't installed: no-such-agent-here --acp", err)
 end)
 
--- A jj repository with a.txt committed, as a project.
-local function jj_repo(t: test.TestContext): string
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	for _, args in { { "git", "init" }, { "commit", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "jj", "--config", "user.name=t", "--config", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	return dir
-end
-
 test("in a jj workspace of its own, the agent's change is brought in with b", function(t)
 	if greed.which("jj") == nil then
 		return
 	end
-	local dir = jj_repo(t)
+	local dir = t:repo("jj", { ["a.txt"] = "a\n" })
 	local s = start(t, dir, true)
 	local ws = s.workspace
 	assert(ws and ws.kind == "jj" and greed.fs.stat(ws.path), "it has a workspace")
@@ -425,14 +405,7 @@ test("in a jj workspace of its own, the agent's change is brought in with b", fu
 end)
 
 test("in a git worktree of its own, b applies what the agent changed", function(t)
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	for _, args in { { "init", "-q" }, { "add", "." }, { "commit", "-q", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local dir = t:repo("git", { ["a.txt"] = "a\n" })
 	local s = start(t, dir, true)
 	local ws = s.workspace
 	assert(ws and ws.kind == "git", "a worktree")
@@ -525,13 +498,10 @@ end
 test("an agent in a worktree of its own is let edit only there", function(t)
 	local root = t:tempdir({ ["repo/a.txt"] = "a\n" })
 	local dir = root .. "/repo"
-	for _, args in { { "init", "-q" }, { "add", "." }, { "commit", "-q", "-m", "first" } } do
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local git = t:vcs("git", dir)
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "first")
 	local s = start(t, dir, true)
 	local ws = assert(s.workspace)
 	local outside = `../{string.match(ws.path, "[^/]+$")}-escape.txt`

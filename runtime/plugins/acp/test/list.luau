@@ -71,14 +71,6 @@ local function close_all()
 	end
 end
 
--- Runs `args` with jj in `dir`, failing the test if it fails.
-local function jj(dir: string, args: { string })
-	local command = { "jj", "--config", "user.name=t", "--config", "user.email=t@t" }
-	table.move(args, 1, #args, #command + 1, command)
-	local done = greed.process.run(command, { cwd = dir })
-	assert(done and done.code == 0, done and done.stderr)
-end
-
 test(
 	"the list shows each session: the agent, what it was asked, status, time and tokens",
 	function(t)
@@ -324,27 +316,19 @@ test("jj workspaces and git worktrees of one repository are one repository", fun
 	end
 	local dir = t:tempdir({ ["main/a.txt"] = "a\n", ["plain/a.txt"] = "a\n" })
 	local main = `{dir}/main`
-	jj(main, { "git", "init" })
-	jj(main, { "workspace", "add", "../other" })
+	local jj = t:vcs("jj", main)
+	jj("git", "init")
+	jj("workspace", "add", "../other")
 	local identity = vcs.repo.identity
 	assert(identity(main) == `{main}/.jj/repo`, identity(main))
 	assert(identity(`{dir}/other`) == identity(main), identity(`{dir}/other`))
 	assert(identity(`{dir}/plain`) == `{dir}/plain`, "outside a repository, the folder")
 	local repo = `{dir}/git`
 	greed.fs.mkdir(repo)
-	for _, args in
-		{
-			{ "init", "-q" },
-			{ "commit", "-q", "--allow-empty", "-m", "first" },
-			{ "worktree", "add", "-q", "../tree" },
-		}
-	do
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", table.unpack(args) },
-			{ cwd = repo }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
+	local git = t:vcs("git", repo)
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "first")
+	git("worktree", "add", "-q", "../tree")
 	assert(identity(repo) == `{repo}/.git`, identity(repo))
 	assert(identity(`{dir}/tree`) == identity(repo), identity(`{dir}/tree`))
 end)
@@ -355,8 +339,9 @@ test("two workspaces of a repository share their sessions, the one you're in fir
 	end
 	local dir = t:tempdir({ ["main/a.txt"] = "a\n" })
 	local main, other = `{dir}/main`, `{dir}/other`
-	jj(main, { "git", "init" })
-	jj(main, { "workspace", "add", "../other" })
+	local jj = t:vcs("jj", main)
+	jj("git", "init")
+	jj("workspace", "add", "../other")
 	local here = start(t, main)
 	send(t, here, "hello")
 	acp.stop(here)
@@ -390,8 +375,9 @@ test("Greed's own sessions kept per project folder move to their repository's", 
 	end
 	local dir = t:tempdir({ ["main/a.txt"] = "a\n" })
 	local main, other = `{dir}/main`, `{dir}/other`
-	jj(main, { "git", "init" })
-	jj(main, { "workspace", "add", "../other" })
+	local jj = t:vcs("jj", main)
+	jj("git", "init")
+	jj("workspace", "add", "../other")
 	local base = `{assert(greed.fs.dirs().data)}/agent-sessions`
 	local function write_old(root: string, id: string)
 		local name = string.match(root, "[^/]+$")

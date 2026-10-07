@@ -1259,8 +1259,11 @@ side, as many at a time as the machine has cores, and the results are
 printed plugin by plugin. `t:wait(ms)` moves the clock forward for code
 that sleeps, `t:wait_for(check)` waits for real until `check()` is true
 (for a program's output), and `t:tempdir(files)` makes a folder of files
-to work on. Tests don't show the message about code that held the editor
-up, so a busy machine doesn't change what `t:messages()` returns. Each key
+to work on. `local dir, git = t:repo("git", files)` makes a repository
+(jj or git) with the files committed and returns a function that runs git
+there and fails the test if it fails; `t:vcs("jj", dir)` gives that
+function for a folder you set up yourself. Tests don't show the message
+about code that held the editor up, so a busy machine doesn't change what `t:messages()` returns. Each key
 a test presses and each command it runs gets the time limit a key press
 gets in the editor, and time spent waiting for programs and background
 work doesn't count toward it.

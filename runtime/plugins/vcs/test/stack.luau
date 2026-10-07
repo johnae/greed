@@ -7,22 +7,7 @@ type Jj = (...string) -> string
 -- adding a file, and an empty working copy on top. Returns a way to run jj
 -- in it.
 local function repo(t: test.TestContext): Jj
-	local dir = t:tempdir({})
-	local function jj(...: string): string
-		local done = greed.process.run({
-			"jj",
-			"--config",
-			"user.name=t",
-			"--config",
-			"user.email=t@t",
-			"--color",
-			"never",
-			...,
-		}, { cwd = dir })
-		assert(done and done.code == 0, done and done.stderr)
-		return done.stdout
-	end
-	jj("git", "init")
+	local dir, jj = t:repo("jj")
 	for _, name in { "first", "second", "third" } do
 		greed.fs.write(`{dir}/{name}.txt`, name .. "\n")
 		jj("commit", "-m", name)
@@ -178,17 +163,7 @@ test("? lists the keys and runs the one picked", function(t)
 end)
 
 test("in a git repository it lists commits and shows them", function(t)
-	local dir = t:tempdir({ ["a.txt"] = "a\n" })
-	local function git(...: string)
-		local done = greed.process.run(
-			{ "git", "-c", "user.name=t", "-c", "user.email=t@t", ... },
-			{ cwd = dir }
-		)
-		assert(done and done.code == 0, done and done.stderr)
-	end
-	git("init", "-q")
-	git("add", ".")
-	git("commit", "-q", "-m", "first")
+	local dir = t:repo("git", { ["a.txt"] = "a\n" })
 	greed.project.open(dir)
 	t:keys("space g l")
 	assert(string.match(rows()[1], "^@ %x+ .*first$"), rows()[1])

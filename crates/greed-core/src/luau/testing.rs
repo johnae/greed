@@ -534,6 +534,7 @@ impl UserData for TestContext {
                 tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)
             },
         );
+        add_repo_methods(methods);
         methods.add_method("wait", |lua, _, ms: f64| {
             restart_deadline(lua);
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
@@ -618,6 +619,104 @@ fn test_body_line(lua: &Lua) -> Option<usize> {
         .checked_sub(2)
         .map_or(lines.first(), |i| lines.get(i));
     body.copied().flatten()
+}
+
+/// `t:repo` and `t:vcs`: jj and git repositories to test against.
+fn add_repo_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
+    methods.add_method(
+        "repo",
+        |lua, _, (kind, files): (String, Option<HashMap<String, mlua::LuaString>>)| {
+            let root = state(lua).dirs.clone().unwrap_or_else(std::env::temp_dir);
+            let commit = files.is_some();
+            let dir = tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)?;
+            let vcs = Vcs::new(&kind, &dir)?;
+            let steps: &[&[&str]] = match (kind.as_str(), commit) {
+                ("jj", false) => &[&["git", "init"]],
+                ("jj", true) => &[&["git", "init"], &["commit", "-m", "first"]],
+                (_, false) => &[&["init", "-q"]],
+                (_, true) => &[
+                    &["init", "-q"],
+                    &["add", "."],
+                    &["commit", "-q", "-m", "first"],
+                ],
+            };
+            for step in steps {
+                vcs.run(lua, step)?;
+            }
+            Ok((dir, vcs.runner(lua)?))
+        },
+    );
+    methods.add_method("vcs", |lua, _, (kind, dir): (String, String)| {
+        Vcs::new(&kind, &dir)?.runner(lua)
+    });
+}
+
+/// jj or git, run in a test's repository as a made-up user.
+struct Vcs {
+    program: &'static str,
+    /// The made-up user, and plain output.
+    options: &'static [&'static str],
+    dir: String,
+}
+
+impl Vcs {
+    fn new(kind: &str, dir: &str) -> mlua::Result<Self> {
+        let (program, options): (_, &[_]) = match kind {
+            "jj" => (
+                "jj",
+                &[
+                    "--config",
+                    "user.name=t",
+                    "--config",
+                    "user.email=t@t",
+                    "--color",
+                    "never",
+                ],
+            ),
+            "git" => ("git", &["-c", "user.name=t", "-c", "user.email=t@t"]),
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "a repository is \"jj\" or \"git\", not {other:?}"
+                )));
+            }
+        };
+        Ok(Self {
+            program,
+            options,
+            dir: dir.to_owned(),
+        })
+    }
+
+    /// `run` as a Luau function taking the arguments.
+    fn runner(self, lua: &Lua) -> mlua::Result<Function> {
+        lua.create_function(move |lua, args: mlua::Variadic<String>| {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            lua.create_string(self.run(lua, &args)?)
+        })
+    }
+
+    /// What `args` printed, or an error with what it said if it failed. The
+    /// time spent waiting for it doesn't count against the test's budget.
+    fn run(&self, lua: &Lua, args: &[&str]) -> mlua::Result<Vec<u8>> {
+        let started = Instant::now();
+        let out = std::process::Command::new(self.program)
+            .args(self.options)
+            .args(args)
+            .current_dir(&self.dir)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|err| mlua::Error::runtime(format!("can't run {}: {err}", self.program)))?;
+        extend_deadline(lua, started.elapsed());
+        if !out.status.success() {
+            return Err(mlua::Error::runtime(format!(
+                "{} {}: {}",
+                self.program,
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(out.stdout)
+    }
 }
 
 /// A new directory under `root`, holding `files`.
