@@ -217,6 +217,10 @@ fn float_options() -> greed_core::FloatOptions {
         x: None,
         y: None,
         tab: false,
+        label: None,
+        footer: None,
+        border: true,
+        hidden: false,
     }
 }
 
@@ -1243,4 +1247,50 @@ fn a_buffer_that_forgets_its_history_counts_edits_and_still_maps_other_views() {
     );
     assert_eq!(ed.view(v2).selection.primary(), Range::new(11, 16));
     assert!(!ed.undo(v1).unwrap(), "there's nothing to undo");
+}
+
+#[test]
+fn hidden_floats_give_up_focus_and_take_it_back_when_focused() {
+    let mut ed = editor("main text");
+    let main = ed.main();
+    let a = ed.create_buffer("terminal", "a");
+    let b = ed.create_buffer("terminal", "b");
+    let va = ed.float(a, float_options());
+    let vb = ed.float(b, float_options());
+    let hide = |ed: &mut greed_core::Editor, view, hidden| {
+        let options = ed.float_options(view).unwrap().clone();
+        ed.configure_float(view, greed_core::FloatOptions { hidden, ..options })
+    };
+
+    // Hiding the focused one gives focus to where it came from.
+    assert!(hide(&mut ed, vb, true));
+    assert_eq!(ed.focus(), va);
+    assert_eq!(ed.floats().iter().map(|f| f.view).collect::<Vec<_>>(), [va]);
+    assert_eq!(ed.floats_hidden_too().len(), 2);
+
+    // With what it came from hidden too, the main view gets it.
+    assert!(hide(&mut ed, va, true));
+    assert_eq!(ed.focus(), main);
+    assert!(ed.floats().is_empty());
+
+    // Focusing a hidden one shows it.
+    ed.set_focus(vb);
+    assert!(!ed.float_options(vb).unwrap().hidden);
+    assert_eq!(ed.floats().iter().map(|f| f.view).collect::<Vec<_>>(), [vb]);
+
+    // Closing it skips the hidden one it came from.
+    ed.close(vb);
+    assert_eq!(ed.focus(), main);
+
+    // One opened hidden doesn't take focus.
+    let c = ed.create_buffer("terminal", "c");
+    let vc = ed.float(
+        c,
+        greed_core::FloatOptions {
+            hidden: true,
+            ..float_options()
+        },
+    );
+    assert_eq!(ed.focus(), main);
+    assert!(ed.float_options(vc).unwrap().hidden);
 }

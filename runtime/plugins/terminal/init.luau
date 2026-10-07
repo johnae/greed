@@ -89,6 +89,18 @@ local function shown(term: Term): boolean
 	return greed.view():buffer() == term.buffer
 end
 
+-- Whether the terminal shows only in hidden floats, out of sight.
+local function out_of_sight(term: Term): boolean
+	local views = term.buffer:views()
+	for _, view in views do
+		local spec = view:float_spec()
+		if not (spec and spec.hidden) then
+			return false
+		end
+	end
+	return #views > 0
+end
+
 --- The terminal shown in `buffer`, if it's one.
 function M.terminal(buffer: greed.Buffer): greed.Terminal?
 	local term = term_of(buffer)
@@ -275,17 +287,25 @@ end
 local function mark_failures(term: Term)
 	local made = term.terminal:marks_made()
 	if made ~= term.marks_made then
+		local fresh = made - term.marks_made
 		term.marks_made = made
 		local failures = {}
 		local start: greed.TerminalMark? = nil
-		for _, mark in term.terminal:marks(term.next - term.history) do
+		local finished = false
+		local marks = term.terminal:marks(term.next - term.history)
+		for i, mark in marks do
 			if mark.kind == "prompt" or mark.kind == "command" then
 				start = mark
 			elseif mark.kind == "done" and start and mark.code and mark.code ~= 0 then
 				table.insert(failures, { mark = start, code = mark.code })
 			end
+			finished = finished or (mark.kind == "done" and i > #marks - fresh)
 		end
 		term.failures = failures
+		-- A command that finished in a hidden float wants a look.
+		if finished and out_of_sight(term) then
+			core.floats.attention(term.buffer, true)
+		end
 	end
 	local marks: { greed.Mark } = {}
 	for _, failure in term.failures do
@@ -595,6 +615,16 @@ greed.on("terminal.exited", function(event)
 	})
 	if greed.mode.get() == MODE and shown(term) then
 		greed.mode.set(core.style.home())
+	end
+	if out_of_sight(term) then
+		core.floats.attention(term.buffer, true)
+	end
+end)
+
+-- A terminal you look at again no longer needs you.
+greed.on("view.focused", function(event: greed.ViewFocused)
+	if event.view:valid() and term_of(event.view:buffer()) then
+		core.floats.attention(event.view:buffer(), false)
 	end
 end)
 

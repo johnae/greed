@@ -165,6 +165,8 @@ local function changed(s: Session)
 		local buffer = buffers[s.id]
 		if buffer then
 			pcall(transcript.render, buffer, s)
+			-- Its float, if it has one, says it's waiting for you.
+			core.floats.attention(buffer, s.status == "waiting")
 		end
 		overview.render(sessions)
 		participants.draw(sessions)

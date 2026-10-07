@@ -694,7 +694,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
 
 /// A mark's virtual line: a string, or pieces `{ text, style? }` to style
 /// parts of it on top of the mark's style.
-fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
+pub(super) fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
     let pieces = match value {
         Value::Table(pieces) => pieces,
         Value::String(text) => return Ok(VirtualLine::from(&*text.to_str()?)),
@@ -723,7 +723,7 @@ fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
 
 /// A virtual line as Luau gets it back: a string, or pieces if parts of it
 /// have styles.
-fn virtual_line_to_lua(lua: &Lua, line: &VirtualLine) -> LuaResult<Value> {
+pub(super) fn virtual_line_to_lua(lua: &Lua, line: &VirtualLine) -> LuaResult<Value> {
     if line.styles.is_empty() {
         return Ok(Value::String(lua.create_string(&*line.text)?));
     }

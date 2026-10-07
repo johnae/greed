@@ -123,10 +123,10 @@ impl<M: Measure> Renderer<M> {
             .floats()
             .into_iter()
             .rev()
-            .map(|f| (f.view, true))
+            .map(|f| (f.view, f.options.border))
             .chain(editor.panels().iter().map(|p| (p.view, false)))
             .chain(panes.into_iter().map(|v| (v, false)));
-        for (view_id, floating) in candidates {
+        for (view_id, bordered) in candidates {
             let Some(view) = editor.find_view(view_id) else {
                 continue;
             };
@@ -135,7 +135,7 @@ impl<M: Measure> Renderer<M> {
             };
             if !inside(area, col, row) {
                 // A float's border is part of it, for moving and resizing it.
-                if floating && let Some(border) = border_at(area, col, row) {
+                if bordered && let Some(border) = border_at(area, col, row) {
                     return Hit {
                         view: Some(view_id),
                         border: Some(border),

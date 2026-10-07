@@ -2263,3 +2263,29 @@ fn a_paste_reaches_plugins_and_the_system_clipboard_becomes_the_editors() {
         "taken once, and not sent back to the client"
     );
 }
+
+#[test]
+fn floats_hide_and_carry_border_text_through_their_spec() {
+    let h = host("main");
+    h.eval(
+        "g = require('@greed'); v = g.float(g.create_buffer('x', 'x'), { \
+         label = { { text = '‹ 1/2 ›', style = 'ui.float.title' } }, footer = '●○' })",
+    )
+    .unwrap();
+    assert_eq!(
+        h.eval("v:float_spec().label[1].text .. v:float_spec().footer")
+            .unwrap(),
+        "‹ 1/2 ›●○"
+    );
+    h.eval("v:configure({ hidden = true, footer = '' })")
+        .unwrap();
+    assert_eq!(h.eval("#g.floats()").unwrap(), "0");
+    assert_eq!(h.eval("#g.floats({ hidden = true })").unwrap(), "1");
+    assert_eq!(
+        h.eval("tostring(v:float_spec().hidden) .. tostring(v:float_spec().footer)")
+            .unwrap(),
+        "truenil"
+    );
+    h.eval("v:focus()").unwrap();
+    assert_eq!(h.eval("#g.floats()").unwrap(), "1");
+}

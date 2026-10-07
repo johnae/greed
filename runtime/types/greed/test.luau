@@ -30,6 +30,9 @@ export type TestContext = {
 	--- draw it, and returns the rows as text, the status line last. Views
 	--- drawn at a new size send "view.resized".
 	draw: (self: TestContext, width: number, height: number) -> { string },
+	--- As `draw`, but the whole screen as a terminal shows it: floats over
+	--- the panes, with their borders.
+	screen: (self: TestContext, width: number, height: number) -> { string },
 	--- Does what a client sends for the mouse at screen cell (`col`, `row`),
 	--- against the last `draw`: `kind` is "press", "release", "drag",
 	--- "move" or "scroll", `which` a button (default "left") or a scroll

@@ -19,6 +19,7 @@ use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as Option
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{
     Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, Notice, PanelOptions, Side,
+    VirtualLine,
 };
 
 type LuaResult<T> = mlua::Result<T>;
@@ -1150,7 +1151,7 @@ fn buffer_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()>
 fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("create_buffer", create_buffer_function(lua, owner)?)?;
     greed.set("panel", panel_function(lua, owner)?)?;
-    greed.set("floats", lua.create_function(|lua, ()| Ok(floats(lua)))?)?;
+    greed.set("floats", lua.create_function(floats)?)?;
 
     let o = owner.clone();
     greed.set(
@@ -1368,11 +1369,25 @@ pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
     x: None,
     y: None,
     tab: false,
+    label: None,
+    footer: None,
+    border: true,
+    hidden: false,
 };
 
-/// Reads `{ title, width, height, anchor, focus, x, y }` onto `base`;
-/// fields left out keep their value in `base`. Sizes are cells, or a string
-/// like "60%".
+/// A border label from a spec: text or styled pieces, or nil to keep
+/// `base`. Empty text takes it off.
+fn border_text(value: Value, base: Option<VirtualLine>) -> LuaResult<Option<VirtualLine>> {
+    if value.is_nil() {
+        return Ok(base);
+    }
+    let line = super::handles::virtual_line_from_lua(value)?;
+    Ok((!line.text.is_empty()).then_some(line))
+}
+
+/// Reads `{ title, width, height, anchor, focus, x, y, tab, label, footer,
+/// border, hidden }` onto `base`; fields left out keep their value in
+/// `base`. Sizes are cells, or a string like "60%".
 pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResult<FloatOptions> {
     let Some(spec) = spec else {
         return Ok(base);
@@ -1402,22 +1417,34 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         x: extent(spec.get("x")?)?.or(base.x),
         y: extent(spec.get("y")?)?.or(base.y),
         tab: spec.get::<Option<bool>>("tab")?.unwrap_or(base.tab),
+        label: border_text(spec.get("label")?, base.label)?,
+        footer: border_text(spec.get("footer")?, base.footer)?,
+        border: spec.get::<Option<bool>>("border")?.unwrap_or(base.border),
+        hidden: spec.get::<Option<bool>>("hidden")?.unwrap_or(base.hidden),
     })
 }
 
-/// `greed.floats()`: the floating views, the one in front last.
-fn floats(lua: &Lua) -> Vec<ViewRef> {
+/// `greed.floats(opts)`: the floating views, the one in front last; the
+/// hidden ones too with `hidden = true`.
+fn floats(lua: &Lua, opts: Option<Table>) -> LuaResult<Vec<ViewRef>> {
+    let hidden = match opts {
+        Some(opts) => opts.get::<Option<bool>>("hidden")?.unwrap_or(false),
+        None => false,
+    };
     let state = state(lua);
     let author = Author::User(state.editor.client());
-    state
-        .editor
-        .floats()
+    let floats = if hidden {
+        state.editor.floats_hidden_too()
+    } else {
+        state.editor.floats()
+    };
+    Ok(floats
         .iter()
         .map(|f| ViewRef {
             id: f.view,
             author: author.clone(),
         })
-        .collect()
+        .collect())
 }
 
 /// `options` as a spec `greed.float` and `view:configure` take.
@@ -1444,6 +1471,13 @@ pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> 
     )?;
     spec.set("focus", options.focus)?;
     spec.set("tab", options.tab)?;
+    spec.set("border", options.border)?;
+    spec.set("hidden", options.hidden)?;
+    for (key, text) in [("label", &options.label), ("footer", &options.footer)] {
+        if let Some(text) = text {
+            spec.set(key, super::handles::virtual_line_to_lua(lua, text)?)?;
+        }
+    }
     if let Some(x) = options.x {
         spec.set("x", to_lua(x)?)?;
     }

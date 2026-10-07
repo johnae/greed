@@ -114,7 +114,13 @@ impl<'a> Chrome<'a> {
         let float = frame.theme.style("ui.float", Surface::Gui);
         Chrome {
             images: &frame.images,
-            floats: frame.floats.iter().map(|f| f.rect).collect(),
+            // A float without a border is plain cells, with no box drawn around it.
+            floats: frame
+                .floats
+                .iter()
+                .filter(|f| f.border)
+                .map(|f| f.rect)
+                .collect(),
             rounded: float.rounded == Some(true),
             shadows: float.shadow == Some(true),
             text: frame.theme.style("ui.text", Surface::Gui),

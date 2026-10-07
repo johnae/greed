@@ -1156,6 +1156,9 @@ panes, tabs and terminals are where you left them.
 | `alt-n` | A terminal in a new pane, or a floating one while floating views are shown |
 | `alt-f` | Hide the tab's floating views or show them again; with none, open a floating terminal |
 | `alt-F` | This file in a new floating view |
+| `alt-w` | Lay the tab's floats out with the next [float layout](#float-layouts) |
+| `alt-{` `alt-}` | Bring the floating view before or after to the front |
+| `alt-W` | Pick a floating view from the dock |
 | `alt-=` `alt--` | More room for the pane (or floating view), or less |
 | `alt-[` `alt-]`, `alt-1`... | Tabs |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
@@ -1179,10 +1182,10 @@ running), and opens a floating terminal when there are none. While floats
 are shown, `alt-n` opens another floating terminal rather than a pane.
 `alt-F` opens the file you're in as a floating view (`:float-file PATH`
 for another), and `alt-p e` takes the pane you're in out to float over the
-tab, or puts a floating view back in as a pane. `alt-p T` lays the floats
-out side by side and `alt-p C` stacks them in a cascade. Otherwise they
-stay where you put them; drag one by its top border to move it or by an
-edge to resize it, or use the resize mode (`alt-r`).
+tab, or puts a floating view back in as a pane. Drag a float by its top
+border to move it or by an edge to resize it, or use the resize mode
+(`alt-r`). How the floats are laid out is up to the tab's
+[float layout](#float-layouts).
 
 To put a new pane somewhere particular, `alt-p p` shows a frame where it
 would go, on the right of the pane you're in. `h j k l` move the frame to
@@ -1227,6 +1230,63 @@ require("@panes").layouts.define("rows", function(panes)
 	return if #panes == 1 then panes[1] else { split = "column", children = panes }
 end)
 ```
+
+### Float layouts
+
+With several floats open (agent sessions, terminals), the tab's float
+layout says where they go and which of them show. `alt-w` goes to the next
+one:
+
+- `free`: they stay where you put them. The default.
+- `one`: only the float in front shows. `alt-}` and `alt-{` bring the next
+  one or the one before to the front, round the ends; the others keep
+  running out of sight.
+- `deck`: every float in the same place at the same size, the one in front
+  showing. Cycling swaps them in place, and moving or resizing the one in
+  front moves the deck.
+- `tiled`: side by side in a grid over the panes, laid out again as floats
+  open and close and as the window changes size.
+- `cascade`: overlapping, each a step down and right of the one before, so
+  every title shows.
+
+In `one` and `deck` the float in front says where it is on its border:
+`‹ 2/5 ›` at the right of the top, with the names of the floats either
+side when it's wide (`‹ terminal · 2/5 · claude ›`), and a dot for each
+float along the bottom, the one in front filled. A dock along the bottom
+of the tab lists them all by number and name; click a name to bring that
+float to the front, or press `alt-W` and then its number (or move with the
+arrows and press `enter`). `:float-dock` shows or hides the dock in any
+layout.
+
+A float that needs you gets a colored dot, in its place along the border
+and in the dock: an agent session waiting for your answer, or a terminal
+whose command finished while it was hidden (until you look at it).
+
+`alt-p O`, `D`, `T` and `C` pick `one`, `deck`, `tiled` and `cascade`
+directly, `alt-p Y` picks from a list (`:float-layout-pick`), and
+`:set float-layout one` sets the layout new tabs start with.
+
+A layout of your own is a function from the tab's floats to where each one
+goes, its border included, and whether it shows:
+
+```luau
+require("@panes").floats.define("left-half", function(a)
+	local places = {}
+	for i in a.floats do
+		local box = { x = a.room.x, y = a.room.y, width = a.room.width // 2, height = a.room.height }
+		places[i] = { box = box, hidden = i ~= a.current }
+	end
+	return places
+end)
+```
+
+`a.floats` are the tab's floats in the order they opened, `a.current` the
+one in front, `a.room` the room the panes take and `a.boxes` where each
+float is now. Plugins that show things in floats use
+`require("@panes").floats.show(buffer)`, which opens the buffer in a float
+of the tab (or finds the one it has) and brings it to the front,
+`floats.focus(view)` for a float they have, and
+`core.floats.attention(buffer, true)` to give it the dot.
 
 ## Clipboard
 

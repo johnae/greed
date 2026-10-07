@@ -81,6 +81,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.float"] = { bg = p.bg_alt, fg = p.fg, gui = { rounded = true, shadow = true } },
 		["ui.float.border"] = { bg = p.bg_alt, fg = p.gutter },
 		["ui.float.title"] = { bg = p.bg_alt, fg = p.fg, bold = true },
+		["ui.float.hint"] = { bg = p.bg_alt, fg = p.comment },
+		["ui.float.attention"] = { bg = p.bg_alt, fg = p.yellow, bold = true },
 		["ui.panel"] = { bg = p.bg_alt, fg = p.fg },
 		["ui.panel.border"] = { fg = p.gutter },
 		["ui.panel.title"] = { fg = p.fg, bold = true },

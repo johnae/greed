@@ -8,7 +8,9 @@
 --   alt-n opens a terminal pane (a floating one while floats are shown),
 --   alt-f shows or hides the tab's floating views (opening a floating
 --   terminal when there are none), alt-F floats this file, alt-= and
---   alt-- resize, alt-[ and alt-] or alt-1..9 change tabs.
+--   alt-- resize, alt-[ and alt-] or alt-1..9 change tabs. alt-w changes
+--   how the tab lays out its floats (see floats.luau), alt-{ and alt-}
+--   cycle through them and alt-W picks one from the dock.
 -- - alt-p and alt-t open the pane and tab modes, where single keys act until
 --   esc.
 -- - In normal mode, ctrl-w (and space w) is the window prefix Vim and Helix
@@ -509,17 +511,65 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	},
 	{
 		name = "floats-tile",
-		doc = "Lay this tab's floating views out side by side",
+		doc = "Lay this tab's floating views out side by side, from now on",
 		run = function()
-			M.floats.tile()
+			M.floats.use("tiled")
 		end,
 	},
 	{
 		name = "floats-cascade",
-		doc = "Stack this tab's floating views in a cascade",
+		doc = "Stack this tab's floating views in a cascade, from now on",
 		run = function()
-			M.floats.cascade()
+			M.floats.use("cascade")
 		end,
+	},
+	{
+		name = "floats-one",
+		doc = "Show one of this tab's floating views at a time, from now on",
+		run = function()
+			M.floats.use("one")
+		end,
+	},
+	{
+		name = "floats-deck",
+		doc = "Stack this tab's floating views in one place, showing the one in front, from now on",
+		run = function()
+			M.floats.use("deck")
+		end,
+	},
+	{
+		name = "float-layout-next",
+		doc = "Lay this tab's floating views out with the next float layout",
+		run = M.floats.next,
+	},
+	{
+		name = "float-layout-pick",
+		doc = "Pick how this tab lays out its floating views",
+		run = M.floats.pick,
+	},
+	{
+		name = "float-next",
+		doc = "Bring the next floating view in this tab to the front",
+		run = function()
+			M.floats.cycle(1)
+		end,
+	},
+	{
+		name = "float-previous",
+		doc = "Bring the floating view before in this tab to the front",
+		run = function()
+			M.floats.cycle(-1)
+		end,
+	},
+	{
+		name = "float-dock",
+		doc = "Show the dock of this tab's floating views, or hide it",
+		run = M.floats.toggle_dock,
+	},
+	{
+		name = "float-dock-pick",
+		doc = "Pick a floating view from the dock: 1 to 9, or the arrows and enter",
+		run = M.floats.pick_from_dock,
 	},
 	{
 		name = "resize-mode",
@@ -758,6 +808,10 @@ M.keys = {
 		["alt-m"] = "layout-swap-main",
 		["alt-t"] = "tab-mode",
 		["alt-r"] = "resize-mode",
+		["alt-w"] = "float-layout-next",
+		["alt-W"] = "float-dock-pick",
+		["alt-{"] = "float-previous",
+		["alt-}"] = "float-next",
 	} :: { [string]: string },
 	-- Resizing the pane or floating view: grow toward a side, shrink from
 	-- it with shift, and move a float with the arrows.
@@ -822,6 +876,11 @@ M.keys = {
 		z = "floats-toggle",
 		T = "floats-tile",
 		C = "floats-cascade",
+		O = "floats-one",
+		D = "floats-deck",
+		Y = "float-layout-pick",
+		["{"] = "float-previous",
+		["}"] = "float-next",
 		esc = "pane-mode-leave",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
@@ -926,6 +985,11 @@ modes.pane = {
 		"z",
 		"T",
 		"C",
+		"O",
+		"D",
+		"Y",
+		"{",
+		"}",
 		"=",
 		"-",
 		"esc",
@@ -960,6 +1024,18 @@ local function bind()
 end
 
 bind()
+
+-- The keys that cycle floats, for the hint on the float in front.
+local cycling = {}
+for _, name in { "float-previous", "float-next" } do
+	for key, bound in M.keys.everywhere do
+		if bound == name then
+			table.insert(cycling, key)
+			break
+		end
+	end
+end
+M.floats.cycle_hint = table.concat(cycling, " ")
 
 -- The line between panes, or by a panel, being dragged: the view whose
 -- edge it is, which edge, and where the mouse was last.

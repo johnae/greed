@@ -8,6 +8,7 @@
 
 local greed = require("@greed")
 local style = require("./style")
+local registry = require("./registry")
 
 local M = {}
 
@@ -259,5 +260,43 @@ function M.show_text(title: string, text: string, options: TextOptions?): greed.
 	showing[kind] = view
 	return view
 end
+
+-- The buffers that need you, by buffer id, and who to tell when that
+-- changes.
+local attention: { [number]: boolean } = {}
+local watchers: { () -> () } = {}
+
+--- Says whether `buffer` needs you: an agent waiting for an answer, a
+--- command that finished out of sight. Float layouts give its float a
+--- colored dot. Its owner sets it and takes it off again.
+function M.attention(buffer: greed.Buffer, needed: boolean)
+	local id = buffer:id()
+	if (attention[id] ~= nil) == needed then
+		return
+	end
+	if needed then
+		attention[id] = true
+	else
+		attention[id] = nil
+	end
+	for _, watch in watchers do
+		watch()
+	end
+end
+
+--- Whether `buffer` needs you, as `attention` last said.
+function M.needs_attention(buffer: greed.Buffer): boolean
+	return attention[buffer:id()] ~= nil
+end
+
+--- Calls `watch` whenever a buffer starts or stops needing you, until the
+--- plugin that asked goes.
+function M.on_attention(watch: () -> ())
+	greed.plugin.tie(registry.put(watchers, watch))
+end
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	attention[event.id] = nil
+end)
 
 return M

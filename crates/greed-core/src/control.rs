@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
 
 /// Set in the environment of a session `greed ssh` started, through
 /// `greed bridge`.

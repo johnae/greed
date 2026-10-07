@@ -12,7 +12,7 @@ use greed_text::{
 use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId};
+use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualLine};
 
 mod panes;
 pub use panes::{Tab, TabId};
@@ -94,6 +94,10 @@ pub enum Anchor {
 }
 
 /// How a floating view is shown.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags set from Luau"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloatOptions {
     pub title: Option<Arc<str>>,
@@ -111,6 +115,15 @@ pub struct FloatOptions {
     /// and closed with it, like a floating terminal. Otherwise it floats
     /// over every tab, like a picker.
     pub tab: bool,
+    /// Text on the top border, at its right end.
+    pub label: Option<VirtualLine>,
+    /// Text in the middle of the bottom border.
+    pub footer: Option<VirtualLine>,
+    /// Whether it has a border. Without one, its text fills its whole box.
+    pub border: bool,
+    /// Whether it's hidden: its view and buffer stay, but it isn't drawn
+    /// and the mouse goes through it. Focusing it shows it again.
+    pub hidden: bool,
 }
 
 /// A view floating over the main one.
@@ -664,7 +677,7 @@ impl Editor {
     pub fn float(&mut self, buffer: BufferId, options: FloatOptions) -> ViewId {
         let previous = self.focus;
         let view = self.add_view(buffer, Selection::point(0));
-        if !options.focus {
+        if !options.focus || options.hidden {
             self.focus = previous;
         }
         let tab = options.tab.then(|| self.current_tab().id());
@@ -678,8 +691,17 @@ impl Editor {
     }
 
     /// The floating views shown: those over every tab and the shown tab's
-    /// own, bottom first.
+    /// own, bottom first, leaving out hidden ones.
     pub fn floats(&self) -> Vec<&Float> {
+        self.floats_hidden_too()
+            .into_iter()
+            .filter(|f| !f.options.hidden)
+            .collect()
+    }
+
+    /// The floating views over every tab and the shown tab's own, hidden
+    /// or not, bottom first.
+    pub fn floats_hidden_too(&self) -> Vec<&Float> {
         let tab = self.current_tab().id();
         self.floats
             .iter()
@@ -715,15 +737,33 @@ impl Editor {
     }
 
     /// Changes how a floating view is shown. Returns false if `view` isn't
-    /// floating.
+    /// floating. Hiding the focused one moves focus as closing it would.
     pub fn configure_float(&mut self, view: ViewId, options: FloatOptions) -> bool {
-        match self.floats.iter_mut().find(|f| f.view == view) {
-            Some(float) => {
-                float.options = options;
-                true
-            }
-            None => false,
+        let Some(float) = self.floats.iter_mut().find(|f| f.view == view) else {
+            return false;
+        };
+        let hidden = options.hidden;
+        float.options = options;
+        let return_to = float.return_to;
+        if hidden && self.focus == view {
+            self.focus = self.focus_after(view, Some(return_to));
         }
+        true
+    }
+
+    /// What gets focus when `view` closes or hides: `return_to` if it's
+    /// still there and shown, else the floating view in front, else the
+    /// main view.
+    fn focus_after(&self, view: ViewId, return_to: Option<ViewId>) -> ViewId {
+        let shown = |v: &ViewId| {
+            *v != view
+                && self.views.contains_key(v)
+                && self.float_options(*v).is_none_or(|o| !o.hidden)
+        };
+        return_to
+            .filter(shown)
+            .or_else(|| self.floats().iter().map(|f| f.view).rfind(shown))
+            .unwrap_or(self.current_project().main())
     }
 
     /// Brings a floating view in front of the others. Returns false if
@@ -756,16 +796,13 @@ impl Editor {
             .floats
             .iter()
             .find(|f| f.view == view)
-            .map(|f| f.return_to)
-            .filter(|v| self.views.contains_key(v));
+            .map(|f| f.return_to);
         self.floats.retain(|f| f.view != view);
         for project in &mut self.projects {
             project.panels.retain(|p| p.view != view);
         }
         if self.focus == view {
-            self.focus = return_to
-                .or_else(|| self.floats().last().map(|f| f.view))
-                .unwrap_or(self.current_project().main());
+            self.focus = self.focus_after(view, return_to);
         }
         self.drop_if_unused(closed.buffer);
         true
@@ -914,8 +951,12 @@ impl Editor {
         self.focus
     }
 
+    /// Focuses `view`, showing it if it's a hidden floating view.
     pub fn set_focus(&mut self, view: ViewId) {
         assert!(self.views.contains_key(&view), "no view {view:?}");
+        if let Some(float) = self.floats.iter_mut().find(|f| f.view == view) {
+            float.options.hidden = false;
+        }
         self.focus = view;
         self.activate(view);
     }

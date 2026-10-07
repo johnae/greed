@@ -8,7 +8,7 @@ use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::{Frame, Row, Tag};
+use super::{FloatFrame, Frame, Row, Span, Tag};
 use crate::theme::{Style, Surface, Theme};
 
 /// One cell: a grapheme and its style. A wide grapheme's later cells have
@@ -92,36 +92,118 @@ pub fn compose_with(frame: &Frame, surface: Surface, scaled: bool) -> Vec<Vec<Ce
             usize::from(r.width),
             usize::from(r.height),
         );
-        for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
-            let (left, fill, right) = match dy {
-                d if d == y - 1 => ('┌', '─', '┐'),
-                d if d == y + h => ('└', '─', '┘'),
-                _ => ('│', ' ', '│'),
-            };
-            let mut cells = std::iter::once(left)
-                .chain(std::iter::repeat_n(fill, w))
-                .chain(std::iter::once(right));
-            for cell in line.iter_mut().skip(x - 1).take(w + 2) {
-                let c = cells.next().unwrap_or(' ');
-                *cell = Cell {
-                    text: c.to_string(),
-                    style: if c == ' ' { body } else { border },
-                    scale: 1,
-                };
+        if float.border {
+            draw_border(
+                &mut grid,
+                float,
+                border,
+                body,
+                look(&Tag::FLOAT_TITLE),
+                paint,
+            );
+        } else {
+            for line in grid.iter_mut().skip(y).take(h) {
+                put(line, x, w, &" ".repeat(w), body, 1);
             }
-        }
-        if let (Some(title), Some(top)) = (&float.title, grid.get_mut(y - 1))
-            && !title.is_empty()
-        {
-            let style = border.patch(&look(&Tag::FLOAT_TITLE));
-            let title = format!(" {title} ");
-            put(top, x + 1, w.saturating_sub(2), &title, style, 1);
         }
         for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
             put_row(line, x, w, row, body, paint);
         }
     }
     grid
+}
+
+/// Draws `float`'s border around its rect, blanking what's inside, with
+/// its title at the left of the top border, its label at the right and its
+/// footer in the middle of the bottom border.
+fn draw_border(
+    grid: &mut [Vec<Cell>],
+    float: &FloatFrame,
+    border: Style,
+    body: Style,
+    title_look: Style,
+    paint: Paint,
+) {
+    let r = float.rect;
+    let (x, y, w, h) = (
+        usize::from(r.x),
+        usize::from(r.y),
+        usize::from(r.width),
+        usize::from(r.height),
+    );
+    for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
+        let (left, fill, right) = match dy {
+            d if d == y - 1 => ('┌', '─', '┐'),
+            d if d == y + h => ('└', '─', '┘'),
+            _ => ('│', ' ', '│'),
+        };
+        let mut cells = std::iter::once(left)
+            .chain(std::iter::repeat_n(fill, w))
+            .chain(std::iter::once(right));
+        for cell in line.iter_mut().skip(x - 1).take(w + 2) {
+            let c = cells.next().unwrap_or(' ');
+            *cell = Cell {
+                text: c.to_string(),
+                style: if c == ' ' { body } else { border },
+                scale: 1,
+            };
+        }
+    }
+    // A label or footer has a space either side, and the label keeps a
+    // line before the corner.
+    let padded = |spans: &[Span]| {
+        if spans.is_empty() {
+            0
+        } else {
+            spans.iter().map(|s| s.text.width()).sum::<usize>() + 2
+        }
+    };
+    let label = padded(&float.label);
+    let label = if label < w { label } else { 0 };
+    if let Some(top) = grid.get_mut(y - 1) {
+        let room = w - label - usize::from(label > 0);
+        if let Some(title) = float.title.as_deref().filter(|t| !t.is_empty()) {
+            let style = border.patch(&title_look);
+            put(
+                top,
+                x + 1,
+                room.saturating_sub(2),
+                &format!(" {title} "),
+                style,
+                1,
+            );
+        }
+        if label > 0 {
+            put_spans(top, x + w - 1 - label, label, &float.label, border, paint);
+        }
+    }
+    let footer = padded(&float.footer);
+    if footer > 0
+        && footer <= w
+        && let Some(bottom) = grid.get_mut(y + h)
+    {
+        put_spans(
+            bottom,
+            x + (w - footer) / 2,
+            footer,
+            &float.footer,
+            border,
+            paint,
+        );
+    }
+}
+
+/// Draws `spans` with a space either side from cell `x`, within `width`
+/// cells, each styled by its tags over `base`.
+fn put_spans(line: &mut [Cell], x: usize, width: usize, spans: &[Span], base: Style, paint: Paint) {
+    let mut used = put(line, x, width, " ", base, 1);
+    for span in spans {
+        let style = span.tags.iter().fold(base, |style, tag| {
+            style.patch(&paint.theme.style(tag.name(), paint.surface))
+        });
+        used += put(line, x + used, width - used, &span.text, style, 1);
+    }
+    put(line, x + used, width - used, " ", base, 1);
 }
 
 /// Draws `row` over `base`, each span styled by the row's tags and then its

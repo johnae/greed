@@ -290,7 +290,7 @@ fn renderer(lua: &Lua) -> mlua::AppDataRef<'_, crate::render::Renderer<crate::re
     lua.app_data_ref().expect("it was just set")
 }
 
-/// `t:draw` and `t:mouse`: what a client would see and send.
+/// `t:draw`, `t:screen` and `t:mouse`: what a client would see and send.
 fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     methods.add_method(
         "mouse",
@@ -301,7 +301,20 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
         },
     );
     methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
-        draw(lua, width, height)
+        let frame = draw(lua, width, height)?;
+        Ok(frame
+            .rows
+            .iter()
+            .map(crate::render::Row::text)
+            .collect::<Vec<_>>())
+    });
+    methods.add_method("screen", |lua, _, (width, height): (u16, u16)| {
+        use crate::render::grid::compose;
+        let frame = draw(lua, width, height)?;
+        Ok(compose(&frame, crate::theme::Surface::Tui)
+            .iter()
+            .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
+            .collect::<Vec<_>>())
     });
 }
 
@@ -338,8 +351,8 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     });
 }
 
-/// The rows of a frame drawn at this size, as text.
-fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
+/// A frame drawn at this size.
+fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame> {
     use crate::render::{Plain, Size, Status};
     let frame = || -> mlua::Result<_> {
         let status = match api::status_line(lua, None, width)? {
@@ -360,7 +373,7 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
         drawn = frame()?;
         super::report_views(lua)?;
     }
-    Ok(drawn.rows.iter().map(crate::render::Row::text).collect())
+    Ok(drawn)
 }
 
 /// The `t` passed to each test.

@@ -746,6 +746,18 @@ export type FloatSpec = {
 	--- and closed with it, like a floating terminal. Otherwise it floats over
 	--- every tab, like a picker. Defaults to false.
 	tab: boolean?,
+	--- Text at the right end of the top border, e.g. "‹ 2/5 ›", or pieces
+	--- with styles of their own. "" takes it off.
+	label: MarkLine?,
+	--- Text in the middle of the bottom border, as `label` takes it.
+	footer: MarkLine?,
+	--- Whether it has a border; defaults to true. Without one its text
+	--- fills its whole box, like a one-line strip.
+	border: boolean?,
+	--- Hides it: its view and buffer stay (a terminal keeps running), but
+	--- it isn't drawn, `greed.floats()` leaves it out and focus moves on.
+	--- Focusing it shows it again.
+	hidden: boolean?,
 }
 
 export type CommandInfo = {
@@ -1570,8 +1582,8 @@ export type Greed = {
 	which: (program: string) -> string?,
 	--- Shows `buffer` in a view floating over the main one, and focuses it.
 	float: (buffer: Buffer, spec: FloatSpec?) -> View,
-	--- The floating views, the one in front last.
-	floats: () -> { View },
+	--- The floating views shown, the one in front last; with `hidden = true`, the hidden ones too.
+	floats: (opts: { hidden: boolean? }?) -> { View },
 	--- Shows `buffer` in a panel beside the main view, which gives up the
 	--- room. Defaults: the left side, 30 cells wide, focused. Close it with
 	--- `view:close()`.

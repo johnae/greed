@@ -224,6 +224,18 @@ fn is_one(n: &u8) -> bool {
     *n == 1
 }
 
+const fn yes() -> bool {
+    true
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
 /// One screen row.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Row {
@@ -331,12 +343,43 @@ pub struct ImagePlacement {
 }
 
 /// A floating view: its rows fill `rect`, and the client draws a border
-/// around it, one cell wide.
+/// around it, one cell wide, unless `border` is false.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FloatFrame {
     pub rect: Rect,
     pub title: Option<String>,
     pub rows: Vec<Row>,
+    /// Drawn at the right end of the top border.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub label: Vec<Span>,
+    /// Drawn in the middle of the bottom border.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub footer: Vec<Span>,
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub border: bool,
+}
+
+/// `line` as spans: its styled parts tagged with their style.
+fn border_spans(line: Option<&VirtualLine>) -> Vec<Span> {
+    let Some(line) = line else {
+        return Vec::new();
+    };
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for (range, style) in &line.styles {
+        if at < range.start {
+            spans.push(Span::new(&line.text[at..range.start], SmallVec::new()));
+        }
+        spans.push(Span::new(
+            &line.text[range.clone()],
+            smallvec![Tag::from(style.clone())],
+        ));
+        at = range.end;
+    }
+    if at < line.text.len() {
+        spans.push(Span::new(&line.text[at..], SmallVec::new()));
+    }
+    spans
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -501,12 +544,15 @@ impl<M: Measure> Renderer<M> {
                 rect,
                 title: float.options.title.as_deref().map(str::to_owned),
                 rows,
+                label: border_spans(float.options.label.as_ref()),
+                footer: border_spans(float.options.footer.as_ref()),
+                border: float.options.border,
             });
         }
         images.retain(|image| {
             !floats
                 .iter()
-                .any(|f| overlaps(image.rect, bordered(f.rect)))
+                .any(|f| overlaps(image.rect, if f.border { bordered(f.rect) } else { f.rect }))
         });
         images.extend(self.images.take());
 
@@ -1588,11 +1634,18 @@ fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFra
 }
 
 /// Where a floating view's rows go within `area`, leaving a cell around them
-/// for the border. `cursor` is where the focused view's cursor is, for
-/// floats anchored to it.
+/// for the border if it has one. `cursor` is where the focused view's
+/// cursor is, for floats anchored to it.
 fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
-    let outer_width = options.width.resolve(area.width).max(3);
-    let outer_height = options.height.resolve(area.height).max(3);
+    let inset = u16::from(options.border);
+    let outer_width = options.width.resolve(area.width).max(2 * inset + 1);
+    let outer_height = options.height.resolve(area.height).max(2 * inset + 1);
+    let inside = |x: u16, y: u16| Rect {
+        x: x + inset,
+        y: y + inset,
+        width: outer_width - 2 * inset,
+        height: outer_height - 2 * inset,
+    };
     if matches!(options.anchor, Anchor::Cursor | Anchor::AboveCursor)
         && let Some(cursor) = cursor
     {
@@ -1611,14 +1664,9 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
         };
         let x = cursor
             .col
-            .saturating_sub(1)
+            .saturating_sub(inset)
             .min((area.x + area.width).saturating_sub(outer_width));
-        return Rect {
-            x: x + 1,
-            y: y + 1,
-            width: outer_width - 2,
-            height: outer_height - 2,
-        };
+        return inside(x, y);
     }
     // Whatever the position, the box stays on screen.
     let x = match options.x {
@@ -1636,12 +1684,7 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
         (None, Anchor::Bottom) => area.height.saturating_sub(outer_height),
     }
     .min(area.height.saturating_sub(outer_height));
-    Rect {
-        x: area.x + x + 1,
-        y: area.y + y + 1,
-        width: outer_width - 2,
-        height: outer_height - 2,
-    }
+    inside(area.x + x, area.y + y)
 }
 
 /// The marks of `buffer` that touch `visible`.

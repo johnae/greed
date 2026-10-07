@@ -275,6 +275,10 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
             x: None,
             y: None,
             tab: false,
+            label: None,
+            footer: None,
+            border: true,
+            hidden: false,
         },
     );
     let f = frame(&mut ed, 20, 9);
@@ -522,6 +526,10 @@ fn floats_can_be_placed_side_by_side() {
         x,
         y,
         tab: false,
+        label: None,
+        footer: None,
+        border: true,
+        hidden: false,
     };
     let left = ed.create_buffer("picker", "a");
     let right = ed.create_buffer("preview", "b");
@@ -643,6 +651,10 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
         x: None,
         y: None,
         tab: false,
+        label: None,
+        footer: None,
+        border: true,
+        hidden: false,
     };
     let mut ed = editor("ab|c\nd");
     let cursor = frame(&mut ed, 30, 10)
@@ -680,6 +692,10 @@ fn a_float_anchored_above_the_cursor_opens_above_it_or_below_near_the_top() {
         x: None,
         y: None,
         tab: false,
+        label: None,
+        footer: None,
+        border: true,
+        hidden: false,
     };
     let mut ed = editor("a\nb\nc\nd\ne|");
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
@@ -1244,4 +1260,64 @@ fn a_cursor_on_hidden_text_shows_on_the_first_character_after_it() {
     // Line numbers take two cells; "P" is the first shown.
     let cursor = f.cursor.expect("the cursor shows");
     assert_eq!((cursor.col, cursor.row), (2, 0));
+}
+
+#[test]
+fn floats_can_hide_go_without_a_border_and_label_their_border() {
+    use greed_core::render::grid::compose;
+    use greed_core::theme::Surface;
+    use greed_core::{Anchor, Extent, FloatOptions, VirtualLine};
+    let mut ed = editor("|main");
+    let options = FloatOptions {
+        title: Some("term".into()),
+        width: Extent::Cells(20),
+        height: Extent::Cells(4),
+        anchor: Anchor::Top,
+        focus: false,
+        x: Some(Extent::Cells(0)),
+        y: Some(Extent::Cells(0)),
+        tab: false,
+        label: Some(VirtualLine {
+            text: "‹ 2/3 ›".into(),
+            styles: vec![(0..3, "ui.float.title".into())],
+        }),
+        footer: Some(VirtualLine::from("○●○")),
+        border: true,
+        hidden: false,
+    };
+    let boxed = ed.create_buffer("x", "boxed");
+    let hidden = ed.create_buffer("x", "hidden");
+    let bare = ed.create_buffer("x", "bare");
+    ed.float(boxed, options.clone());
+    ed.float(
+        hidden,
+        FloatOptions {
+            hidden: true,
+            ..options.clone()
+        },
+    );
+    ed.float(
+        bare,
+        FloatOptions {
+            border: false,
+            title: None,
+            width: Extent::Cells(10),
+            height: Extent::Cells(1),
+            y: Some(Extent::Cells(6)),
+            ..options
+        },
+    );
+    let f = frame(&mut ed, 20, 9);
+    assert_eq!(f.floats.len(), 2, "the hidden one isn't drawn");
+    let bare_rect = f.floats[1].rect;
+    assert_eq!(
+        (bare_rect.x, bare_rect.y, bare_rect.width, bare_rect.height),
+        (0, 6, 10, 1),
+        "without a border the text takes the whole box"
+    );
+    let grid = compose(&f, Surface::Tui);
+    let line = |y: usize| grid[y].iter().map(|c| c.text.as_str()).collect::<String>();
+    assert_eq!(line(0), "┌─ term ─ ‹ 2/3 › ─┐");
+    assert_eq!(line(3), "└────── ○●○ ───────┘");
+    assert_eq!(line(6), "bare                ");
 }

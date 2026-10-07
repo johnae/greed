@@ -22,6 +22,8 @@ return {
 	["ui.panel"] = {},
 	["ui.float.border"] = { fg = "bright-black" },
 	["ui.float.title"] = { fg = "white", bold = true },
+	["ui.float.hint"] = { fg = "bright-black" },
+	["ui.float.attention"] = { fg = "yellow", bold = true },
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },

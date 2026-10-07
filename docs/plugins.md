@@ -599,6 +599,15 @@ greed.tab.set_layout({
   switches to insert mode and puts the mode and focus back however the
   float closes, whether by its `close()` or by closing its view; it's what
   the prompt, pickers, the command line and the completion menu use.
+  A float's spec can also put text on its border (`label` at the right of
+  the top, `footer` in the middle of the bottom, plain or in styled
+  pieces), leave the border off (`border = false`, for a one-line strip),
+  or hide it (`hidden = true`: its view and buffer stay, and focusing it
+  shows it again; `greed.floats({ hidden = true })` lists hidden ones too).
+  To show something in a float of the tab, laid out by its
+  [float layout](using.md#float-layouts), use
+  `require("@panes").floats.show(buffer)`, and say a buffer needs the
+  user with `core.floats.attention(buffer, true)`.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes
