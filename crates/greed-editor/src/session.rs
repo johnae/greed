@@ -512,9 +512,7 @@ fn send_config(host: &str) -> Result<Option<String>, Error> {
 
 /// This machine's name, in characters that are safe in a folder name.
 fn this_machine() -> String {
-    let name = std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .or_else(|_| std::fs::read_to_string("/etc/hostname"))
-        .unwrap_or_default();
+    let name = gethostname::gethostname().to_string_lossy().into_owned();
     let name: String = name
         .trim()
         .chars()

@@ -212,11 +212,9 @@ pub fn sessions_dir() -> PathBuf {
 /// over ssh on some systems. Sessions started then get it too, so their
 /// sockets and their terminals' programs find the same one a login would.
 pub fn runtime_dir() -> Option<PathBuf> {
-    // Without /proc (macOS) there's no uid to look for, only the variable.
-    let uid = std::fs::metadata("/proc/self").ok().map(|meta| meta.uid());
     pick_runtime_dir(
         std::env::var_os("XDG_RUNTIME_DIR"),
-        uid,
+        Some(nix::unistd::getuid().as_raw()),
         Path::new("/run/user"),
     )
 }
@@ -826,7 +824,7 @@ mod tests {
     #[test]
     fn the_runtime_dir_is_the_variable_or_the_users_own_folder_in_run_user() {
         let run_user = std::env::temp_dir().join(format!("greed-run-user-{}", std::process::id()));
-        let uid = std::fs::metadata("/proc/self").unwrap().uid();
+        let uid = nix::unistd::getuid().as_raw();
         std::fs::create_dir_all(run_user.join(uid.to_string())).unwrap();
         let set = Some(OsString::from("/somewhere"));
         assert_eq!(

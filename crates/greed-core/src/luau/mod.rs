@@ -316,9 +316,8 @@ impl Slice {
 
 /// How long this thread has run on a CPU, on systems that say.
 fn cpu_time() -> Option<Duration> {
-    let stat = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
-    let nanos = stat.split_whitespace().next()?.parse().ok()?;
-    Some(Duration::from_nanos(nanos))
+    let time = nix::time::clock_gettime(nix::time::ClockId::CLOCK_THREAD_CPUTIME_ID).ok()?;
+    Some(Duration::from(time))
 }
 
 #[derive(Debug)]

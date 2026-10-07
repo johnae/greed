@@ -1453,6 +1453,7 @@ dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
  "crossterm",
+ "gethostname",
  "greed-core",
  "greed-gui",
  "greed-text",
