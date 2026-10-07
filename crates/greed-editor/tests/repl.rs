@@ -1,9 +1,23 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// `greed repl` with a profile of its own, so your config, plugins and
+/// approvals stay out of it.
+fn greed_repl() -> Command {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let profile = std::env::temp_dir().join(format!(
+        "greed-repl-test-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_greed"));
+    command.arg("repl").env("GREED_PROFILE", profile);
+    command
+}
 
 fn repl(args: &[&str], script: &str) -> String {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_greed"))
-        .arg("repl")
+    let mut child = greed_repl()
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -64,8 +78,7 @@ fn the_user_config_loads_last_and_errors_are_shown() {
     let config = dir.join("init.luau");
     std::fs::write(&config, "require('@greed').mode.set('insert')\n").unwrap();
     let run = |script: &str| {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_greed"))
-            .arg("repl")
+        let mut child = greed_repl()
             .env("GREED_CONFIG", &config)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
