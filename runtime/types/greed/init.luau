@@ -1189,9 +1189,10 @@ export type Lsp = {
 	--- The commands set for each language's server, by language.
 	servers: () -> { [string]: { { string } } },
 	--- Sends a request to the buffer's server and waits for the answer.
-	--- Returns the result, or nil and the error. Works in commands and event
-	--- handlers. "workspace/executeCommand" needs "proc", since a server's
-	--- commands can do anything.
+	--- Returns the result, or nil and the error; a server that stops before
+	--- answering gives the error "the language server stopped". Works in
+	--- commands and event handlers. "workspace/executeCommand" needs "proc",
+	--- since a server's commands can do anything.
 	request: (buffer: Buffer, method: string, params: any) -> (any, LspError?),
 	--- The buffer's file as a URI, for request parameters.
 	uri: (buffer: Buffer) -> string,

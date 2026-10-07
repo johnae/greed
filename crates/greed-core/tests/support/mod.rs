@@ -174,7 +174,8 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
             ),
-            "exit" => return,
+            // "die" stops without answering, as a server that crashes.
+            "exit" | "die" => return,
             other => {
                 if let Some(result) = answer(other, &message["params"], &opened) {
                     write(

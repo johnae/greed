@@ -58,9 +58,32 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
             method,
             params,
         } => tell(lua, &language, &method, &params),
+        Handled::Exited { server } => stopped(lua, server),
         Handled::Nothing => Ok(()),
     }
 }
+
+/// Wakes what waited on answers from `server`, which stopped, with an
+/// error, since none will come. A server started after it has its own id,
+/// so its answers can't wake these.
+fn stopped(lua: &Lua, server: lsp::ServerId) -> LuaResult<()> {
+    let tokens: Vec<u64> = state_mut(lua)
+        .lsp_waiting
+        .extract_if(|(s, _), _| *s == server)
+        .map(|(_, token)| token)
+        .collect();
+    for token in tokens {
+        let error = lua.create_table()?;
+        error.set("code", STOPPED)?;
+        error.set("message", "the language server stopped")?;
+        tasks::wake(lua, token, (Value::Nil, error))?;
+    }
+    Ok(())
+}
+
+/// The error code a request gets when its server stops before answering:
+/// JSON-RPC's internal error.
+const STOPPED: i64 = -32603;
 
 /// Answers a request from a server with the handler a plugin set for it,
 /// or with null when there's none. The handler runs as a coroutine, so it

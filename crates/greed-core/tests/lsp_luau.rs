@@ -80,6 +80,30 @@ fn commands_wait_for_answers() {
 }
 
 #[test]
+fn a_command_waiting_on_a_server_that_stops_gets_an_error() {
+    let h = host();
+    h.load_str(
+        "ask",
+        r#"
+        local greed = require("@greed")
+        greed.command { name = "ask", run = function(ctx)
+            local result, err = greed.lsp.request(ctx.buffer, "die", {})
+            greed.echo(`{result} {err.code} {err.message}`)
+        end }
+        "#,
+    )
+    .unwrap();
+    h.sync_lsp();
+    h.run("ask").unwrap();
+    let mut messages = Vec::new();
+    pump(&h, |h| {
+        messages.extend(h.with_editor_mut(Editor::take_messages));
+        !messages.is_empty()
+    });
+    assert_eq!(messages, ["nil -32603 the language server stopped"]);
+}
+
+#[test]
 fn requests_need_a_server_and_a_command() {
     let h = host();
     let err = h

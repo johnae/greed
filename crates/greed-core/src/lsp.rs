@@ -1,24 +1,23 @@
-//! A language server client: starts servers, speaks JSON-RPC to them over
-//! stdio, and keeps their view of open documents in sync.
+//! A language server client: starts servers, speaks the language server
+//! protocol to them over [`rpc`](crate::rpc), and keeps their view of open
+//! documents in sync.
 //!
 //! One server runs per language, started the first time a buffer of that
-//! language shows up. Each server has a reader thread that turns its output
-//! into [`Event`]s; the editor handles them on its own thread.
+//! language shows up. What servers send arrives as [`Event`]s, which the
+//! editor handles on its own thread.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{self, Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::thread;
 
 use crossbeam_channel::{Receiver, Sender};
 use greed_text::Rope;
 use serde_json::{Value, json};
 
+use crate::rpc::{Connection, Transport};
+pub use crate::rpc::{Event, ServerId};
 use crate::{Buffer, BufferId, Editor, Mark};
-
-pub type ServerId = usize;
 
 /// How to start the server for one language.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,32 +56,6 @@ fn is_executable(path: &Path) -> bool {
         .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
-/// Something a server sent.
-#[derive(Debug, Clone)]
-pub enum Event {
-    /// The answer to a request. `result` is `Err` with the error object if
-    /// the server reported one.
-    Response {
-        server: ServerId,
-        id: i64,
-        result: Result<Value, Value>,
-    },
-    Notification {
-        server: ServerId,
-        method: String,
-        params: Value,
-    },
-    /// The server asked the editor something.
-    Request {
-        server: ServerId,
-        id: Value,
-        method: String,
-        params: Value,
-    },
-    /// The server's output ended.
-    Exited { server: ServerId },
-}
-
 /// What [`Lsp::handle`] did with an event.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Handled {
@@ -108,6 +81,10 @@ pub enum Handled {
         language: String,
         method: String,
         params: Value,
+    },
+    /// The server stopped. Requests to it that weren't answered won't be.
+    Exited {
+        server: ServerId,
     },
     Nothing,
 }
@@ -169,12 +146,9 @@ impl From<io::Error> for LspError {
 
 struct Server {
     language: String,
-    child: Option<Child>,
-    stdin: BufWriter<Box<dyn Write + Send>>,
-    next_id: i64,
+    connection: Connection,
     initialize_id: i64,
     ready: bool,
-    alive: bool,
     encoding: Encoding,
     /// What the server said it can do, in its answer to `initialize`.
     capabilities: Value,
@@ -185,37 +159,40 @@ struct Server {
 }
 
 impl Server {
-    fn send(&mut self, message: &Value) -> io::Result<()> {
-        if !self.ready && message.get("method").and_then(Value::as_str) != Some("initialize") {
-            self.queued.push(message.clone());
+    /// Sends `message`, or keeps it until the server has answered
+    /// `initialize`.
+    fn send(&mut self, message: Value) -> io::Result<()> {
+        if !self.ready {
+            self.queued.push(message);
             return Ok(());
         }
-        let body = message.to_string();
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{body}", body.len())?;
-        self.stdin.flush()
+        self.connection.send(&message)
     }
 
     fn request(&mut self, method: &str, params: &Value) -> io::Result<i64> {
-        self.next_id += 1;
-        let id = self.next_id;
-        self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))?;
+        let (id, message) = self.connection.request_message(method, params);
+        self.send(message)?;
         Ok(id)
     }
 
     fn notify(&mut self, method: &str, params: &Value) -> io::Result<()> {
-        self.send(&json!({ "jsonrpc": "2.0", "method": method, "params": params }))
+        self.send(Connection::notification(method, params))
+    }
+
+    fn alive(&self) -> bool {
+        self.connection.is_alive()
     }
 }
 
 impl Drop for Server {
+    /// Asks the server to shut down and exit; the connection then closes
+    /// its input and kills it if it doesn't exit soon after.
     fn drop(&mut self) {
-        if self.alive {
-            let _ = self.request("shutdown", &Value::Null);
-            let _ = self.notify("exit", &Value::Null);
-        }
-        if let Some(child) = &mut self.child {
-            let _ = child.kill();
-            let _ = child.wait();
+        if self.alive() {
+            if self.ready {
+                let _ = self.connection.request("shutdown", &Value::Null);
+            }
+            let _ = self.connection.notify("exit", &Value::Null);
         }
     }
 }
@@ -290,7 +267,7 @@ impl Lsp {
                 .map(|(_, document)| document)
                 .collect();
             for (_, uri) in gone {
-                if server.alive {
+                if server.alive() {
                     let closed = json!({ "textDocument": { "uri": uri } });
                     let _ = server.notify("textDocument/didClose", &closed);
                 }
@@ -311,7 +288,7 @@ impl Lsp {
         };
         let version = buffer.history().applied();
         let server = &mut self.servers[server];
-        if !server.alive {
+        if !server.alive() {
             return Ok(());
         }
         let uri = file_uri(path);
@@ -354,29 +331,15 @@ impl Lsp {
         };
         let root = project_root(path, &config.root_markers);
         // Not having a server installed is normal, so it's not an error.
-        let Some((program, args)) = config
-            .installed_command()
-            .and_then(|command| command.split_first())
-        else {
+        let Some(command) = config.installed_command() else {
             self.failed.insert(language.to_owned());
             return Ok(None);
         };
-        let mut child = Command::new(program)
-            .args(args)
-            .current_dir(&root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| {
-                self.failed.insert(language.to_owned());
-                LspError::NoServer(format!("{language}: can't run {program}: {err}"))
-            })?;
-        let stdin = child.stdin.take().expect("stdin is piped");
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let id = self.connect(language, Box::new(stdin), stdout, &root)?;
-        self.servers[id].child = Some(child);
-        Ok(Some(id))
+        let transport = Transport::spawn(command, &root).map_err(|err| {
+            self.failed.insert(language.to_owned());
+            LspError::NoServer(format!("{language}: can't run {}: {err}", command[0]))
+        })?;
+        self.start(language, transport, &root).map(Some)
     }
 
     /// Talks to a server over `input` and `output`, and sends `initialize`.
@@ -388,23 +351,18 @@ impl Lsp {
         output: impl Read + Send + 'static,
         root: &Path,
     ) -> Result<ServerId, LspError> {
+        self.start(language, Transport::pipes(input, output), root)
+    }
+
+    fn start(
+        &mut self,
+        language: &str,
+        transport: Transport,
+        root: &Path,
+    ) -> Result<ServerId, LspError> {
         let id = self.servers.len();
-        let sender = self.sender.clone();
-        thread::spawn(move || read_messages(id, output, &sender));
-        let mut server = Server {
-            language: language.to_owned(),
-            child: None,
-            stdin: BufWriter::new(input),
-            next_id: 0,
-            initialize_id: 0,
-            ready: false,
-            alive: true,
-            encoding: Encoding::Utf16,
-            capabilities: Value::Null,
-            queued: Vec::new(),
-            documents: HashMap::new(),
-        };
-        server.initialize_id = server.request(
+        let mut connection = Connection::open(id, transport, &self.sender);
+        let initialize_id = connection.request(
             "initialize",
             &json!({
                 "processId": std::process::id(),
@@ -413,7 +371,16 @@ impl Lsp {
                 "capabilities": client_capabilities(),
             }),
         )?;
-        self.servers.push(server);
+        self.servers.push(Server {
+            language: language.to_owned(),
+            connection,
+            initialize_id,
+            ready: false,
+            encoding: Encoding::Utf16,
+            capabilities: Value::Null,
+            queued: Vec::new(),
+            documents: HashMap::new(),
+        });
         self.by_language.insert(language.to_owned(), id);
         Ok(id)
     }
@@ -438,13 +405,20 @@ impl Lsp {
             .path()
             .and(buffer.language())
             .and_then(|l| self.by_language.get(l).copied())
-            .filter(|&id| self.servers[id].alive)
+            .filter(|&id| self.servers[id].alive())
             .ok_or_else(|| LspError::NoServer(format!("buffer {}", buffer.id().0)))
     }
 
     /// Deals with one event from a server: finishes starting it, answers its
     /// requests, marks diagnostics, and passes responses back.
     pub fn handle(&mut self, event: Event, editor: &mut Editor) -> Handled {
+        let Some(server) = self.servers.get_mut(event.server()) else {
+            return Handled::Nothing;
+        };
+        // An answer nothing waits for any more is dropped here.
+        let Some(event) = server.connection.receive(event) else {
+            return Handled::Nothing;
+        };
         match event {
             Event::Response { server, id, result } if id == self.servers[server].initialize_id => {
                 self.finish_initialize(server, result.as_ref().ok());
@@ -489,17 +463,21 @@ impl Lsp {
                 params,
             },
             Event::Exited { server } => {
-                let server = &mut self.servers[server];
-                server.alive = false;
-                self.by_language.remove(&server.language);
-                Handled::Nothing
+                let language = &self.servers[server].language;
+                if self.by_language.get(language) == Some(&server) {
+                    self.by_language.remove(language);
+                }
+                Handled::Exited { server }
             }
         }
     }
 
-    /// Answers request `id` from `server`.
+    /// Answers request `id` from `server`. A server that stopped hears
+    /// nothing.
     pub fn respond(&mut self, server: ServerId, id: &Value, result: &Value) {
-        let _ = self.servers[server].send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }));
+        if let Some(server) = self.servers.get_mut(server) {
+            let _ = server.connection.respond(id, Ok(result));
+        }
     }
 
     /// What `buffer`'s server said it can do, e.g. `renameProvider`.
@@ -518,7 +496,7 @@ impl Lsp {
         server.ready = true;
         let _ = server.notify("initialized", &json!({}));
         for message in std::mem::take(&mut server.queued) {
-            let _ = server.send(&message);
+            let _ = server.send(message);
         }
     }
 
@@ -796,59 +774,4 @@ pub fn offset(text: &Rope, position: &Value, encoding: Encoding) -> Option<usize
         byte += c.len_utf8();
     }
     Some(byte)
-}
-
-/// Reads framed JSON-RPC messages until the stream ends.
-fn read_messages(server: ServerId, output: impl Read, events: &Sender<Event>) {
-    let mut reader = BufReader::new(output);
-    while let Some(message) = read_message(&mut reader) {
-        let event = if let Some(method) = message["method"].as_str() {
-            let params = message.get("params").cloned().unwrap_or(Value::Null);
-            match message.get("id") {
-                Some(id) => Event::Request {
-                    server,
-                    id: id.clone(),
-                    method: method.to_owned(),
-                    params,
-                },
-                None => Event::Notification {
-                    server,
-                    method: method.to_owned(),
-                    params,
-                },
-            }
-        } else if let Some(id) = message["id"].as_i64() {
-            let result = match message.get("error") {
-                Some(error) => Err(error.clone()),
-                None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
-            };
-            Event::Response { server, id, result }
-        } else {
-            continue;
-        };
-        if events.send(event).is_err() {
-            return;
-        }
-    }
-    let _ = events.send(Event::Exited { server });
-}
-
-fn read_message(reader: &mut impl BufRead) -> Option<Value> {
-    let mut length = None;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).ok()? == 0 {
-            return None;
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some(value) = line.strip_prefix("Content-Length:") {
-            length = value.trim().parse::<usize>().ok();
-        }
-    }
-    let mut body = vec![0; length?];
-    reader.read_exact(&mut body).ok()?;
-    serde_json::from_slice(&body).ok()
 }

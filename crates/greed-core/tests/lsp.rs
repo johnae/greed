@@ -146,6 +146,46 @@ fn requests_get_their_responses() {
 }
 
 #[test]
+fn answers_nobody_asked_for_are_dropped() {
+    let mut s = setup("ok");
+    s.lsp.sync(&s.editor);
+    s.next();
+    let stray = Event::Response {
+        server: 0,
+        id: 999,
+        result: Ok(Value::Null),
+    };
+    assert_eq!(s.lsp.handle(stray, &mut s.editor), Handled::Nothing);
+    let unknown = Event::Response {
+        server: 42,
+        id: 1,
+        result: Ok(Value::Null),
+    };
+    assert_eq!(s.lsp.handle(unknown, &mut s.editor), Handled::Nothing);
+}
+
+#[test]
+fn a_server_that_stops_says_so_and_its_late_answers_are_dropped() {
+    let mut s = setup("ok");
+    s.lsp.sync(&s.editor);
+    s.next();
+    let buffer = s.editor.buffers().next().unwrap();
+    let (server, id) = s.lsp.request(buffer, "die", &Value::Null).unwrap();
+    assert_eq!(s.next(), Handled::Exited { server });
+    let late = Event::Response {
+        server,
+        id,
+        result: Ok(Value::Null),
+    };
+    assert_eq!(s.lsp.handle(late, &mut s.editor), Handled::Nothing);
+    let buffer = s.editor.buffers().next().unwrap();
+    let err = s.lsp.request(buffer, "x", &Value::Null).unwrap_err();
+    assert!(err.to_string().contains("no language server"), "{err}");
+    // Answering a request from it is quietly nothing.
+    s.lsp.respond(server, &json!(1), &Value::Null);
+}
+
+#[test]
 fn buffers_without_a_server_say_so() {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", Some("notes.txt".into()));

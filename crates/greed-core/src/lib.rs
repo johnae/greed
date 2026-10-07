@@ -19,6 +19,7 @@ pub mod pdf;
 pub mod project;
 pub mod registry;
 pub mod render;
+pub mod rpc;
 pub mod search;
 pub mod server;
 pub mod syntax;
