@@ -285,7 +285,10 @@ registry.tool({
 	kind = "execute",
 	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
-		.. "then its tests. Returns what failed; fix and try again until it passes",
+		.. "then its tests. Returns what failed; fix and try again until it passes. This is how "
+		.. "to add anything new to Greed for the user: the plugin is kept apart from the project "
+		.. "and installed in their config with plugin_install, so don't write plugins into the "
+		.. "project's files unless they ask you to change the project",
 	input = object({
 		name = { type = "string", description = "Lowercase words with dashes" },
 		files = {

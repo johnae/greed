@@ -237,7 +237,12 @@ local function system(s: Session, env: string?): string
 			.. "Edit with edit_file, giving enough of the old text to match once.",
 		"More tools come in groups you switch on with the tools tool when you need them: the "
 			.. "repo map and the user's working set, renaming and the language server's fixes, "
-			.. "history, notes and more.",
+			.. "history, notes, plugins and more.",
+		"When the user asks for something new in Greed itself (a command, keys, a panel, an "
+			.. "integration like a GitHub client), build it as a plugin with the plugins group: "
+			.. "plugin_guide, then plugin_try until it passes, then plugin_install, which installs "
+			.. "it in their own config after they review it. Don't write it into the project, even "
+			.. "when the project is Greed's own code, unless they ask you to change the project.",
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
 		"Be brief: say what you did and what's left, not every step.",

@@ -577,19 +577,24 @@ offers the ones its own config sets up.
 An agent can extend Greed while you work:
 
 1. `plugin_guide` gives it the plugin conventions and the full typed API.
-2. `plugin_try` writes a plugin to a staging folder and checks it: strict
+2. `plugin_try` writes a plugin to a staging folder
+   (`~/.cache/greed/staging`) and checks it: strict
    types against the API, then the plugin's own tests in a headless editor,
    with none of its capabilities until you approve it. The agent gets back
    what failed and tries again.
 3. `plugin_install` asks you. A panel shows what the plugin may do beyond
    the editor (its [capabilities](plugins.md#capabilities), like running
    programs or reading files), the code and the check results; `a` installs
-   it into `~/.config/greed/plugins`, approves what it asks for and loads it
-   right away, `r` rejects it.
+   it into `~/.config/greed/plugins` (or `~/.local/share/greed/plugins` when
+   your config can't be written, as when Nix manages it), approves what it
+   asks for and loads it right away, `r` rejects it.
 
 Ask for something like "a command that jumps from a `use` line to the
 crate's entry in Cargo.toml" and the agent goes through these steps. You
-only see it once its checks pass.
+only see it once its checks pass. Greed's own agent is told to build new
+things for Greed this way rather than in the project you're in, and the
+tools say so to other agents; it changes the project only when you ask it
+to change the project.
 
 ## Writing your own tools
 

@@ -220,6 +220,12 @@ test("a group switched on in one turn is offered in the next", function(t)
 	assert(not has(asked[1], "rename") and has(asked[1], "tools"), "not at first")
 	assert(has(asked[2], "rename"), "then it is")
 	assert(string.find(asked[1].system, "tools tool", 1, true), "and it's told about groups")
+	-- Asked for something new in Greed, it builds a plugin apart from the project.
+	assert(
+		string.find(asked[1].system, "plugin_try until it passes", 1, true)
+			and string.find(asked[1].system, "Don't write it into the project", 1, true),
+		"and how new things for Greed are made"
+	)
 end)
 
 test("the agent knows the date and time, and where it runs", function(t)
