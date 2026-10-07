@@ -347,34 +347,6 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		end,
 	},
 	{
-		name = "pane-place-left",
-		doc = "Move the new pane's frame left",
-		run = function()
-			place.move("left")
-		end,
-	},
-	{
-		name = "pane-place-right",
-		doc = "Move the new pane's frame right",
-		run = function()
-			place.move("right")
-		end,
-	},
-	{
-		name = "pane-place-up",
-		doc = "Move the new pane's frame up",
-		run = function()
-			place.move("up")
-		end,
-	},
-	{
-		name = "pane-place-down",
-		doc = "Move the new pane's frame down",
-		run = function()
-			place.move("down")
-		end,
-	},
-	{
 		name = "pane-place-here",
 		doc = "Open a pane with this file where the frame is",
 		run = function()
@@ -426,49 +398,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 			layouts.grow_main(-0.05)
 		end,
 	},
-	{
-		name = "pane-left",
-		doc = "Move to the pane on the left, or the tab before",
-		run = function()
-			M.move("left")
-		end,
-	},
-	{
-		name = "pane-right",
-		doc = "Move to the pane on the right, or the tab after",
-		run = function()
-			M.move("right")
-		end,
-	},
-	{
-		name = "pane-up",
-		doc = "Move to the pane above",
-		run = function()
-			M.move("up")
-		end,
-	},
-	{
-		name = "pane-down",
-		doc = "Move to the pane below",
-		run = function()
-			M.move("down")
-		end,
-	},
 	{ name = "pane-next", doc = "Move to the next pane", run = M.next_pane },
-	{
-		name = "pane-split-right",
-		doc = "Show this pane's file in a new pane on the right",
-		run = function()
-			M.split("right")
-		end,
-	},
-	{
-		name = "pane-split-down",
-		doc = "Show this pane's file in a new pane below",
-		run = function()
-			M.split("down")
-		end,
-	},
 	{
 		name = "pane-terminal",
 		doc = "Open a terminal in a new pane, or a floating one while floating views are shown",
@@ -481,20 +411,6 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 			end
 		end,
 	},
-	{
-		name = "pane-terminal-right",
-		doc = "Open a terminal in a new pane on the right",
-		run = function()
-			M.terminal_pane("right")
-		end,
-	},
-	{
-		name = "pane-terminal-down",
-		doc = "Open a terminal in a new pane below",
-		run = function()
-			M.terminal_pane("down")
-		end,
-	},
 	{ name = "pane-close", doc = "Close this pane", run = M.close_pane },
 	{ name = "pane-only", doc = "Close every other pane in the tab", run = M.only },
 	{ name = "pane-zoom", doc = "Show only this pane, or all of them again", run = M.toggle_zoom },
@@ -503,64 +419,6 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Label the panes and go to the one whose label you type next",
 		run = function()
 			M.pick()
-		end,
-	},
-	{
-		name = "pane-swap-left",
-		doc = "Swap this pane with the one on its left",
-		run = function()
-			M.swap("left")
-		end,
-	},
-	{
-		name = "pane-swap-right",
-		doc = "Swap this pane with the one on its right",
-		run = function()
-			M.swap("right")
-		end,
-	},
-	{
-		name = "pane-swap-up",
-		doc = "Swap this pane with the one above",
-		run = function()
-			M.swap("up")
-		end,
-	},
-	{
-		name = "pane-swap-down",
-		doc = "Swap this pane with the one below",
-		run = function()
-			M.swap("down")
-		end,
-	},
-	{
-		name = "pane-new-down",
-		doc = "Open a pane below with a new, empty buffer",
-		run = function()
-			M.focus(M.pane():split("down", greed.create_buffer("file", "")))
-		end,
-	},
-	{
-		name = "pane-new-right",
-		doc = "Open a pane on the right with a new, empty buffer",
-		run = function()
-			M.focus(M.pane():split("right", greed.create_buffer("file", "")))
-		end,
-	},
-	{
-		name = "pane-file-down",
-		doc = "Open the file named under the cursor in a pane below",
-		run = function()
-			M.split("down")
-			greed.run("goto-file")
-		end,
-	},
-	{
-		name = "pane-file-right",
-		doc = "Open the file named under the cursor in a pane on the right",
-		run = function()
-			M.split("right")
-			greed.run("goto-file")
 		end,
 	},
 	{
@@ -575,90 +433,6 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		doc = "Give this pane less room",
 		run = function()
 			M.grow(-1)
-		end,
-	},
-	{
-		name = "pane-resize-left",
-		doc = "Move this pane's left edge out",
-		run = function()
-			M.resize("left")
-		end,
-	},
-	{
-		name = "pane-resize-right",
-		doc = "Move this pane's right edge out",
-		run = function()
-			M.resize("right")
-		end,
-	},
-	{
-		name = "pane-resize-up",
-		doc = "Move this pane's top edge up",
-		run = function()
-			M.resize("up")
-		end,
-	},
-	{
-		name = "pane-resize-down",
-		doc = "Move this pane's bottom edge down",
-		run = function()
-			M.resize("down")
-		end,
-	},
-	{
-		name = "pane-shrink-left",
-		doc = "Move this pane's left edge in",
-		run = function()
-			M.resize("left", -1)
-		end,
-	},
-	{
-		name = "pane-shrink-right",
-		doc = "Move this pane's right edge in",
-		run = function()
-			M.resize("right", -1)
-		end,
-	},
-	{
-		name = "pane-shrink-up",
-		doc = "Move this pane's top edge down",
-		run = function()
-			M.resize("up", -1)
-		end,
-	},
-	{
-		name = "pane-shrink-down",
-		doc = "Move this pane's bottom edge up",
-		run = function()
-			M.resize("down", -1)
-		end,
-	},
-	{
-		name = "float-move-left",
-		doc = "Move the floating view left",
-		run = function()
-			M.move_float("left")
-		end,
-	},
-	{
-		name = "float-move-right",
-		doc = "Move the floating view right",
-		run = function()
-			M.move_float("right")
-		end,
-	},
-	{
-		name = "float-move-up",
-		doc = "Move the floating view up",
-		run = function()
-			M.move_float("up")
-		end,
-	},
-	{
-		name = "float-move-down",
-		doc = "Move the floating view down",
-		run = function()
-			M.move_float("down")
 		end,
 	},
 	{
@@ -756,6 +530,85 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	},
 	{ name = "pane-mode-leave", doc = "Back from the pane or tab mode", run = leave },
 }
+
+-- How each side reads in the docs of its commands.
+type Words = { where: string, its: string, edge: string, out: string, back: string, tab: string }
+local WORDS: { [Direction]: Words } = {
+	left = {
+		where = "on the left",
+		its = "on its left",
+		edge = "left edge",
+		out = "out",
+		back = "in",
+		tab = ", or the tab before",
+	},
+	right = {
+		where = "on the right",
+		its = "on its right",
+		edge = "right edge",
+		out = "out",
+		back = "in",
+		tab = ", or the tab after",
+	},
+	up = { where = "above", its = "above", edge = "top edge", out = "up", back = "down", tab = "" },
+	down = {
+		where = "below",
+		its = "below",
+		edge = "bottom edge",
+		out = "down",
+		back = "up",
+		tab = "",
+	},
+}
+local function add(name: string, doc: string, run: () -> ())
+	table.insert(commands, { name = name, doc = doc, run = run })
+end
+
+-- Adds the commands for `side`.
+local function add_side(side: Direction)
+	local w = WORDS[side]
+	add(`pane-place-{side}`, `Move the new pane's frame {side}`, function()
+		place.move(side)
+	end)
+	add(`pane-{side}`, `Move to the pane {w.where}{w.tab}`, function()
+		M.move(side)
+	end)
+	add(`pane-swap-{side}`, `Swap this pane with the one {w.its}`, function()
+		M.swap(side)
+	end)
+	add(`pane-resize-{side}`, `Move this pane's {w.edge} {w.out}`, function()
+		M.resize(side)
+	end)
+	add(`pane-shrink-{side}`, `Move this pane's {w.edge} {w.back}`, function()
+		M.resize(side, -1)
+	end)
+	add(`float-move-{side}`, `Move the floating view {side}`, function()
+		M.move_float(side)
+	end)
+	if side == "right" or side == "down" then
+		add(`pane-split-{side}`, `Show this pane's file in a new pane {w.where}`, function()
+			M.split(side)
+		end)
+		add(`pane-terminal-{side}`, `Open a terminal in a new pane {w.where}`, function()
+			M.terminal_pane(side)
+		end)
+		add(`pane-new-{side}`, `Open a pane {w.where} with a new, empty buffer`, function()
+			M.focus(M.pane():split(side, greed.create_buffer("file", "")))
+		end)
+		add(
+			`pane-file-{side}`,
+			`Open the file named under the cursor in a pane {w.where}`,
+			function()
+				M.split(side)
+				greed.run("goto-file")
+			end
+		)
+	end
+end
+add_side("left")
+add_side("right")
+add_side("up")
+add_side("down")
 
 local by_name: { [string]: () -> () } = {}
 for _, c in commands do
