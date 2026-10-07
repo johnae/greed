@@ -1175,3 +1175,15 @@ test("the end kept is whole turns that fit the budget, the last one at least", f
 	assert(compact.cut(big, 100) == 4, tostring(compact.cut(big, 100)))
 	assert(big[4].role == "assistant", "never a result alone")
 end)
+
+test("a summary is asked for under fixed headings, folding in the one before", function(t)
+	local _, _, summarised = near_limit(t, 850)
+	local system = summarised[1].system :: string
+	for _, heading in
+		{ "## Objective", "## Decisions", "## Work state", "## Next step", "## Files" }
+	do
+		assert(string.find(system, heading, 1, true), heading)
+	end
+	assert(string.find(system, "earlier summary", 1, true), "and how to fold one in")
+	assert(string.find(compact.NOTE, "plan_read", 1, true), "the agent is pointed at the plan")
+end)

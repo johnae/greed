@@ -385,7 +385,11 @@ when the conversation is compacted.
 
 When a conversation nears the model's limit, it's compacted before the
 next request: the model summarises everything but its end, and the
-summary takes its place. The end kept as it was is as many whole turns as
+summary takes its place. The summary has fixed headings (objective, open
+requests, decisions, work state, next step, the files that matter and
+exact details still needed), folds in the summary before it when there
+is one, and is followed by a pointer to the plan, which is kept apart
+from the conversation. The end kept as it was is as many whole turns as
 fit in about 15k tokens (a fifth of the window, for a small one), the
 last turn at least, so a tool call and its result always stay together. Near the limit means the
 conversation, as the provider last counted it plus what came since,
