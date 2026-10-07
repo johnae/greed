@@ -106,3 +106,23 @@ test("double and triple clicks select the word and the line; shift extends, alt 
 	t:mouse("press", 0, 0, "left", { alt = true })
 	assert(#greed.view():selection().ranges == 2, "a second cursor")
 end)
+
+test("the wheel scrolls up through lines that wrap, all the way to the top", function(t)
+	-- Lines three or four rows long in a view 40 cells wide.
+	local long: { string } = {}
+	for i = 1, 30 do
+		table.insert(long, `{i} ` .. string.rep("word ", 25))
+	end
+	t:buffer(table.concat(long, "\n") .. "|")
+	greed.view():buffer():set_line_numbers(false)
+	t:draw(40, 10)
+	local start = greed.view():scroll()
+	assert(start > 20, `at the end: {start}`)
+	for _ = 1, 20 do
+		t:mouse("scroll", 5, 5, "up")
+		t:draw(40, 10)
+	end
+	assert(greed.view():scroll() == 0, `at the top: {greed.view():scroll()}`)
+	local rows = t:draw(40, 10)
+	assert(string.find(rows[1], "^1 word"), rows[1])
+end)

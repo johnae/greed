@@ -29,6 +29,29 @@ local function point(view: greed.View, pos: number, anchor: number?)
 	view:set_selection({ ranges = { { anchor = anchor or pos, head = pos } }, primary = 1 })
 end
 
+-- The last line surely on screen in `view` with `top` the first. Long lines
+-- wrap onto several rows; counting each as a row more than its width needs
+-- leaves room for where words break, so the line found is in sight and
+-- drawing doesn't scroll back down to a cursor put on it.
+local function bottom_line(view: greed.View, top: number): number
+	local buffer = view:buffer()
+	local last = math.max(buffer:line_count() - 1, 0)
+	local size_rows, size_cols = view:size()
+	local rows, cols = size_rows or 1, math.max(size_cols or 80, 1)
+	local used = 0
+	local line = top
+	while line <= last do
+		local width = text.width(buffer:slice(buffer:line_start(line), buffer:line_end(line)))
+		local takes = if width <= cols then 1 else width // cols + 2
+		if used + takes > rows then
+			break
+		end
+		used += takes
+		line += 1
+	end
+	return math.max(line - 1, top)
+end
+
 --- Scrolls `view` by `lines` (up when negative), bringing the cursor onto
 --- the screen with it, since drawing would scroll back to the cursor.
 function M.scroll(view: greed.View, lines: number)
@@ -36,9 +59,8 @@ function M.scroll(view: greed.View, lines: number)
 	local last = math.max(buffer:line_count() - 1, 0)
 	local top = math.clamp(view:scroll() + lines, 0, last)
 	view:set_scroll(top)
-	local rows = view:size() or 1
 	local line = buffer:line_of(view:cursor())
-	local bottom = math.min(top + rows - 1, last)
+	local bottom = bottom_line(view, top)
 	if line < top then
 		point(view, buffer:line_start(top))
 	elseif line > bottom then
