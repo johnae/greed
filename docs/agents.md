@@ -384,14 +384,16 @@ message for caching. Old messages are never changed afterwards, except
 when the conversation is compacted.
 
 When a conversation nears the model's limit, it's compacted before the
-next request: the model summarises everything but the last four turns,
-and the summary takes their place. Near the limit means the
+next request: the model summarises everything but its end, and the
+summary takes its place. The end kept as it was is as many whole turns as
+fit in about 15k tokens (a fifth of the window, for a small one), the
+last turn at least, so a tool call and its result always stay together. Near the limit means the
 conversation, as the provider last counted it plus what came since,
 leaves less than room for the longest answer and a reserve (10% of the
 context window or 16k tokens, whichever is more, but at most a quarter of
 it). A request the provider still turns down as too long is compacted and
-tried again, up to three times. The
-transcript shows a folded `conversation compacted (N messages → summary)`
+tried again, keeping half as much of the end each time, up to three
+times. The transcript shows a folded `conversation compacted (N messages → summary)`
 row; `tab` on it shows the summary. `:agent-compact` does it by hand. The
 summary goes to the model as its own earlier words rather than as
 instructions, and the system prompt (your project's instructions, where

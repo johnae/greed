@@ -591,11 +591,11 @@ local function estimate(state: State, extra: number): number
 	return compact.tokens(state.said, 1, extra)
 end
 
--- Replaces all but the last few turns of what `s` said with the model's
--- summary of them, shown in the transcript as a folded row with the
--- summary in it. False and why when it can't.
-local function compact_now(s: Session, state: State): (boolean, string?)
-	local upto = compact.cut(state.said)
+-- Replaces all but the end of what `s` said (as much as `tail` tokens hold)
+-- with the model's summary of it, shown in the transcript as a folded row
+-- with the summary in it. False and why when it can't.
+local function compact_now(s: Session, state: State, tail: number?): (boolean, string?)
+	local upto = compact.cut(state.said, tail or compact.keep((models.window(state.role))))
 	if upto == nil then
 		return false, "there's too little to compact yet"
 	end
@@ -664,10 +664,12 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	for _ = 1, MAX_TURNS do
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
-		local room = compact.room(models.window(state.role), models.output(state.role))
+		local window = models.window(state.role)
+		local room = compact.room(window, models.output(state.role))
 		local extra = #said_system + #greed.json.encode(specs)
-		if may_compact and estimate(state, extra) > room and compact.cut(state.said) then
-			may_compact = compact_now(s, state)
+		local tail = compact.keep(window)
+		if may_compact and estimate(state, extra) > room and compact.cut(state.said, tail) then
+			may_compact = compact_now(s, state, tail)
 		end
 		local turn, err = models.turn(state.role, {
 			system = said_system,
@@ -678,10 +680,16 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 		end)
 		if turn == nil then
 			-- Too long for the model after all, as the estimate can be off:
-			-- compacted, it's tried again, a few times at most.
-			if compact.too_long(err) and overflows < MAX_OVERFLOWS and compact.cut(state.said) then
+			-- compacted, keeping half as much of the end each time, it's
+			-- tried again, a few times at most.
+			local smaller = tail * 0.5 ^ (overflows + 1)
+			if
+				compact.too_long(err)
+				and overflows < MAX_OVERFLOWS
+				and compact.cut(state.said, smaller)
+			then
 				overflows += 1
-				if compact_now(s, state) then
+				if compact_now(s, state, smaller) then
 					continue
 				end
 			end

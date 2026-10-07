@@ -43,9 +43,16 @@ function M.too_long(err: string?): boolean
 	return false
 end
 
---- How many of the last turns (your messages and the model's answers,
---- with the tool results that follow them) are kept as they were.
-M.KEEP = 4
+--- About how many tokens of the conversation's end are kept as they were:
+--- whole turns (your messages and the model's answers, with the tool
+--- results after them), however many fit.
+M.KEEP_TOKENS = 15000
+
+--- How many tokens of the end to keep in a window of `window` tokens: no
+--- more than a fifth of it, so a small window has room for the summary.
+function M.keep(window: number): number
+	return math.min(M.KEEP_TOKENS, window * 0.2)
+end
 
 --- The role that summarises, when a model plays it; otherwise the
 --- session's own model does.
@@ -90,20 +97,23 @@ function M.tokens(said: { models.Said }, from: number?, extra: number?): number
 	return math.ceil((size(said, from or 1) + (extra or 0)) / 4)
 end
 
---- Where `said` is cut to keep its last `KEEP` turns as they were: the
+--- Where `said` is cut to keep as many whole turns of its end as fit in
+--- `budget` tokens (`KEEP_TOKENS` by default), the last one at least: the
 --- index of the first message kept, never a tool's result, so calls and
 --- their results stay together. Nil when there's too little before it.
-function M.cut(said: { models.Said }): number?
-	local turns = 0
+function M.cut(said: { models.Said }, budget: number?): number?
+	local limit = budget or M.KEEP_TOKENS
+	local kept: number? = nil
 	for i = #said, 1, -1 do
 		if said[i].role ~= "tool" then
-			turns += 1
-			if turns == M.KEEP then
-				return if i > 2 then i else nil
+			-- A turn starts here: keep it if it fits, or if nothing is kept yet.
+			if kept and M.tokens(said, i) > limit then
+				break
 			end
+			kept = i
 		end
 	end
-	return nil
+	return if kept and kept > 2 then kept else nil
 end
 
 local function quoted(text: string): string

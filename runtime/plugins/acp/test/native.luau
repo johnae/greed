@@ -428,6 +428,27 @@ local function looks(id: string, tokens: number?): any
 	}
 end
 
+-- A tool for the compaction tests whose result is always 400 characters,
+-- about 100 tokens, so how much of the end is kept is known.
+agent.tool({
+	name = "test_sized",
+	description = "Gives back 400 characters",
+	input = agent.schema.object({}),
+	run = function()
+		return string.rep("x", 400)
+	end,
+})
+
+-- A turn calling `test_sized`, the provider reporting `tokens` after it.
+local function sized(id: string, tokens: number?): any
+	return {
+		text = "",
+		calls = { { id = id, name = "test_sized", input = {} } },
+		stop = "tools",
+		tokens = tokens,
+	}
+end
+
 -- The file the session `s` is kept in, if it is.
 local function kept_file(s: any): string?
 	local base = `{greed.fs.dirs().data}/agent-sessions`
@@ -590,9 +611,9 @@ end)
 local function near_limit(t: test.TestContext, tokens: number): (any, { any }, { any })
 	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
 	local asked, summarised = script({
-		looks("c1", 100),
-		looks("c2", 200),
-		looks("c3", 300),
+		sized("c1", 100),
+		sized("c2", 200),
+		sized("c3", 300),
 		{ text = "first done", calls = {}, stop = "done", tokens = tokens },
 		{ text = "second", calls = {}, stop = "done" },
 	}, "they looked at the project three times")
@@ -606,12 +627,12 @@ end
 test("a summary that fails says so, and isn't asked for again that prompt", function(t)
 	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
 	local asked, summarised = script({
-		looks("c1", 100),
-		looks("c2", 200),
-		looks("c3", 900),
-		looks("c4", 910),
-		looks("c5", 920),
-		looks("c6", 930),
+		sized("c1", 100),
+		sized("c2", 200),
+		sized("c3", 900),
+		sized("c4", 910),
+		sized("c5", 920),
+		sized("c6", 930),
 		{ text = "done anyway", calls = {}, stop = "done" },
 	}, false)
 	local s = assert(acp.start(GREED, t:tempdir({})))
@@ -637,38 +658,40 @@ test("below the limit, nothing is compacted", function(t)
 	acp.close(s)
 end)
 
-test("near the model's limit, all but the last turns become the model's summary", function(t)
+test("near the model's limit, all but the end becomes the model's summary", function(t)
 	local s, asked, summarised = near_limit(t, 850)
 	assert(#summarised == 1, `{#summarised} summaries`)
 	local quoted = summarised[1].said[1].text :: string
 	assert(string.find(quoted, "User:\n<time>[^\n]*</time>\nhi"), quoted)
-	assert(string.find(quoted, "Assistant called project", 1, true), quoted)
-	assert(string.find(quoted, "Result of project", 1, true), quoted)
+	assert(string.find(quoted, "Assistant called test_sized", 1, true), quoted)
+	assert(string.find(quoted, "Result of test_sized", 1, true), quoted)
 	local history = asked[5].said
-	assert(#history == 8, `{#history} messages`)
+	assert(#history == 6, `{#history} messages`)
 	assert(history[1].role == "user" and history[1].text == compact.NOTE, "it says so")
 	assert(history[2].role == "assistant", "the summary is the assistant's words")
 	assert(history[2].text == "they looked at the project three times", history[2].text)
 	assert(
-		history[3].calls[1].id == "c2" and history[4].call == "c2",
+		history[3].calls[1].id == "c3" and history[4].call == "c3",
 		"the last turns as they were"
 	)
-	assert(untimed(history[8].text) == "next", "and the new message")
+	assert(untimed(history[6].text) == "next", "and the new message")
 	local system = asked[5].system :: string
 	assert(string.find(system, "Greed's coding agent", 1, true), "its instructions are fresh")
 	assert(not string.find(system, "three times", 1, true), "and the summary isn't in them")
 	local row = s.entries[#s.entries - 1].tool
-	assert(row and row.title == "conversation compacted (3 messages → summary)", said(s))
+	assert(row and row.title == "conversation compacted (5 messages → summary)", said(s))
 	assert(row.output[1] == "they looked at the project three times" and not row.open, "folded")
 	acp.close(s)
 end)
 
 test("agent-compact compacts by hand, once there's something to compact", function(t)
+	-- Room for 1000 tokens keeps 200 of the end: the last turn, about 100.
+	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
 	local asked = script({
-		looks("c1"),
-		looks("c2"),
-		looks("c3"),
-		looks("c4"),
+		sized("c1", 100),
+		sized("c2", 150),
+		sized("c3", 200),
+		sized("c4", 250),
 		{ text = "done", calls = {}, stop = "done" },
 	})
 	local s = assert(acp.start(GREED, t:tempdir({})))
@@ -679,12 +702,13 @@ test("agent-compact compacts by hand, once there's something to compact", functi
 	t:run("agent-compact")
 	assert(s.status == "idle", s.status)
 	local row = s.entries[#s.entries].tool
-	assert(row and row.title == "conversation compacted (3 messages → summary)", said(s))
+	assert(row and row.title == "conversation compacted (7 messages → summary)", said(s))
 	acp.prompt(s, "next")
 	local history = asked[6].said
 	assert(history[1].text == compact.NOTE and history[2].text == "the summary", "compacted")
-	assert(history[3].calls[1].id == "c2", "from the last turns on")
+	assert(history[3].calls[1].id == "c4", "from the end on")
 	acp.close(s)
+	models.roles.agent = nil
 end)
 
 test("the memory files can't be written with the file tools, only proposed to", function(t)
@@ -1075,13 +1099,15 @@ test("old tool results stay as they were, so the cached start of the conversatio
 end)
 
 test("a request turned down as too long is compacted and tried again", function(t)
+	-- Room for 1000 tokens keeps 200 of the end: the last turn, about 100.
+	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
 	local asked, summarised = script({
-		looks("c1", 100),
-		looks("c2", 200),
-		looks("c3", 300),
-		looks("c4", 400),
-		looks("c5", 500),
-		looks("c6", 600),
+		sized("c1", 100),
+		sized("c2", 150),
+		sized("c3", 200),
+		sized("c4", 250),
+		sized("c5", 300),
+		sized("c6", 350),
 		{
 			fail = "the model's server said 400: prompt is too long: 210000 tokens > 200000 maximum",
 		},
@@ -1094,14 +1120,17 @@ test("a request turned down as too long is compacted and tried again", function(
 	assert(s.failed == nil, tostring(s.failed))
 	assert(asked[#asked].said[1].text == compact.NOTE, "it went on from the summary")
 	acp.close(s)
+	models.roles.agent = nil
 end)
 
 test("a request turned down for something else isn't retried", function(t)
+	-- Room for 1000 tokens keeps 200 of the end: the last turn, about 100.
+	models.roles.agent = { provider = "anthropic", model = "test-model", context = 1000 }
 	local _, summarised = script({
-		looks("c1", 100),
-		looks("c2", 200),
-		looks("c3", 300),
-		looks("c4", 400),
+		sized("c1", 100),
+		sized("c2", 150),
+		sized("c3", 200),
+		sized("c4", 250),
 		{ fail = "the model's server said 401: invalid key" },
 	}, "never asked")
 	local s = assert(acp.start(GREED, t:tempdir({})))
@@ -1109,6 +1138,7 @@ test("a request turned down for something else isn't retried", function(t)
 	assert(#summarised == 0, "not compacted")
 	assert(string.find(s.failed or "", "invalid key", 1, true), tostring(s.failed))
 	acp.close(s)
+	models.roles.agent = nil
 end)
 
 test("the room before compacting leaves the longest answer and a reserve", function()
@@ -1119,4 +1149,29 @@ test("the room before compacting leaves the longest answer and a reserve", funct
 	assert(compact.too_long("prompt is too long: 210000 tokens > 200000 maximum"))
 	assert(compact.too_long("This model's maximum context length is 131072 tokens"))
 	assert(not compact.too_long("invalid key"))
+end)
+
+test("the end kept is whole turns that fit the budget, the last one at least", function()
+	-- "hi", then a turn per result: a call and what it gave back.
+	local function conversation(results: { string }): { any }
+		local said: { any } = { { role = "user", text = "hi" } }
+		for i, result in results do
+			table.insert(said, {
+				role = "assistant",
+				text = "",
+				calls = { { id = `c{i}`, name = "t", input = {} } },
+			})
+			table.insert(said, { role = "tool", call = `c{i}`, text = result })
+		end
+		return said
+	end
+	local said = conversation({ string.rep("x", 4000), "small", "small" })
+	-- 4000 characters are about 1000 tokens: the first turn doesn't fit in 100.
+	assert(compact.cut(said, 100) == 4, tostring(compact.cut(said, 100)))
+	-- With room for everything there's nothing to summarise.
+	assert(compact.cut(said, 100000) == nil, "nothing before it")
+	-- One turn bigger than the budget is still kept, as the last.
+	local big = conversation({ "small", string.rep("x", 4000) })
+	assert(compact.cut(big, 100) == 4, tostring(compact.cut(big, 100)))
+	assert(big[4].role == "assistant", "never a result alone")
 end)
