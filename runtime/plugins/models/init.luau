@@ -13,6 +13,7 @@
 -- Keys come from greed.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
 
 local greed = require("@greed")
+local registry = require("@core").registry
 local sse = require("@self/sse")
 local turn = require("@self/turn")
 local login = require("@self/login")
@@ -72,6 +73,18 @@ M.roles = {
 	reasoning = { provider = "anthropic", model = "claude-opus-5-5" },
 	["local"] = { provider = "ollama", model = "llama3.2" },
 } :: { [string]: Role? }
+
+--- Adds or replaces the provider `name`, as your config can by setting
+--- `providers[name]`. It goes when the plugin that added it does.
+function M.provider(name: string, provider: Provider)
+	greed.plugin.tie(registry.set(M.providers, name, provider))
+end
+
+--- Makes `role` played by `spec`, as your config can by setting
+--- `roles[role]`. It goes when the plugin that set it does.
+function M.role(role: string, spec: Role)
+	greed.plugin.tie(registry.set(M.roles, role, spec))
+end
 
 -- How long an answer may be when the request doesn't say.
 local MAX_TOKENS = 4096

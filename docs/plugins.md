@@ -805,6 +805,11 @@ models.providers.acme = {
 models.roles.agent = { provider = "acme", model = "acme-large" }
 ```
 
+That is how your config does it. A plugin gets other plugins' modules
+read-only, so it adds the provider and the role with
+`models.provider("acme", { ... })` and `models.role("agent", { ... })`;
+both go when the plugin does. Adding a login works the same from both.
+
 Then `:login acme`, and `:models` says "signed in". `:logout acme` forgets
 the tokens, and the provider goes back to its key. The name is used for the
 secret the tokens are kept in, so it takes lowercase letters, digits and
@@ -1013,6 +1018,18 @@ function M.greeter(name: string, greet: () -> string)
 	greed.plugin.tie(core.registry.set(greeters, name, greet))
 end
 ```
+
+### Other plugins' modules are read-only
+
+`require("@name")` gives a plugin a read-only view of another plugin's
+module: reading works as usual, nested tables too, and setting anything
+raises an error, so no plugin can replace another's functions or settings.
+Offer functions for what others may change, as `core.style.kind_mode` or
+`models.role` do. Your config, a trusted project's `.greed` folder, the
+REPL and tests get the modules themselves, so the settings the docs show
+you assigning, like `models.roles.fast = ...`, work there. Go through a
+view with `for k, v in t do` and `#t`; `pairs`, `ipairs` and the `table`
+functions don't see through it.
 
 ## Trying code
 

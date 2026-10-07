@@ -432,3 +432,130 @@ fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
     pass(&h, start, 1000);
     assert!(messages(&h).is_empty());
 }
+
+/// A plugin folder with `files`, in a fresh temporary folder.
+fn plugin_folder(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("greed-lifecycle-{name}-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (file, text) in files {
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    dir
+}
+
+const LIB: &str = r#"
+local M = { roles = { fast = "small" }, list = { 1, 2, 3 } }
+function M.ask() return "asked" end
+function M.role(name, model) M.roles[name] = model end
+return M
+"#;
+
+fn lib(h: &Host) {
+    let dir = plugin_folder(
+        "lib",
+        &[("plugin.toml", "name = \"lib\"\n"), ("init.luau", LIB)],
+    );
+    h.load_dir(&dir).unwrap();
+}
+
+#[test]
+fn other_plugins_read_a_module_but_cant_change_it() {
+    let h = host();
+    lib(&h);
+    let user = plugin_folder(
+        "user",
+        &[
+            ("plugin.toml", "name = \"user\"\nrequires = [\"lib\"]\n"),
+            (
+                "init.luau",
+                r#"
+local greed = require("@greed")
+local lib = require("@lib")
+local ok, err = pcall(function() lib.ask = function() return "accepted" end end)
+greed.echo(`{ok} {err}`)
+ok, err = pcall(function() lib.roles.fast = "huge" end)
+greed.echo(`{ok} {err}`)
+greed.echo(`{lib.ask()} {lib.roles.fast} {#lib.list}`)
+local sum = 0
+for _, n in lib.list do sum += n end
+greed.echo(`{sum} {lib.roles == lib.roles}`)
+lib.role("fast", "medium")
+greed.echo(lib.roles.fast)
+"#,
+            ),
+        ],
+    );
+    h.load_dir(&user).unwrap();
+    let said = messages(&h);
+    assert!(
+        said[0].starts_with("false") && said[0].contains("lib's module is read-only"),
+        "{}",
+        said[0]
+    );
+    assert!(
+        said[1].starts_with("false") && said[1].contains("can't set fast"),
+        "{}",
+        said[1]
+    );
+    assert_eq!(said[2..], ["asked small 3", "6 true", "medium"]);
+}
+
+#[test]
+fn config_can_change_other_plugins_modules() {
+    let h = host();
+    lib(&h);
+    h.load_str(
+        "config",
+        r#"require("@lib").roles.fast = "huge" require("@greed").echo(require("@lib").roles.fast)"#,
+    )
+    .unwrap();
+    assert_eq!(messages(&h), ["huge"]);
+}
+
+#[test]
+fn reading_through_a_view_is_quick() {
+    let h = host();
+    lib(&h);
+    let reader = |name: &str, lib: &str| {
+        plugin_folder(
+            name,
+            &[
+                (
+                    "plugin.toml",
+                    &format!("name = \"{name}\"\nrequires = [\"lib\"]\n"),
+                ),
+                (
+                    "init.luau",
+                    &format!(
+                        r#"
+local lib = {lib}
+local greed = require("@greed")
+local start = os.clock()
+for _ = 1, 200000 do
+  local _ = lib.ask
+end
+greed.echo(tostring(os.clock() - start))
+"#
+                    ),
+                ),
+            ],
+        )
+    };
+    h.load_dir(&reader("viewer", r#"require("@lib")"#)).unwrap();
+    let viewed: f64 = messages(&h)[0].parse().unwrap();
+    // The same loop over a plain table, for comparison.
+    h.load_dir(&reader("plain", r#"{ ask = require("@lib").ask }"#))
+        .unwrap();
+    let plain: f64 = messages(&h)[0].parse().unwrap();
+    // Each read through a view is a metamethod call, a few times what a
+    // plain read costs; generous, so a busy machine doesn't fail it.
+    eprintln!("200000 reads: through a view {viewed}s, plain {plain}s");
+    assert!(
+        viewed < plain * 20.0 + 0.1,
+        "through a view {viewed}s, plain {plain}s"
+    );
+}

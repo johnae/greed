@@ -945,6 +945,42 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
     }
 }
 
+/// `greed.buffers` and `greed.buffer_for`: open buffers, all or by path.
+fn buffer_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    greed.set(
+        "buffers",
+        lua.create_function(move |lua, ()| {
+            let ids: Vec<_> = state(lua).editor.buffers().map(crate::Buffer::id).collect();
+            let list = lua.create_table()?;
+            for buffer in ids {
+                list.push(BufferRef {
+                    buffer,
+                    view: None,
+                    author: Author::Plugin(o.clone()),
+                })?;
+            }
+            Ok(list)
+        })?,
+    )?;
+    let o = owner.clone();
+    greed.set(
+        "buffer_for",
+        lua.create_function(move |lua, path: String| {
+            let path = super::fs::expand_home(lua, path);
+            Ok(state(lua)
+                .editor
+                .buffer_for(Path::new(&path))
+                .map(|buffer| BufferRef {
+                    buffer,
+                    view: None,
+                    author: Author::Plugin(o.clone()),
+                }))
+        })?,
+    )?;
+    Ok(())
+}
+
 /// Buffers, floating views, files and commands: what pickers and other UI
 /// plugins are built from.
 fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
@@ -970,38 +1006,8 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
         )?,
     )?;
 
-    let o = owner.clone();
-    greed.set(
-        "buffers",
-        lua.create_function(move |lua, ()| {
-            let ids: Vec<_> = state(lua).editor.buffers().map(crate::Buffer::id).collect();
-            let list = lua.create_table()?;
-            for buffer in ids {
-                list.push(BufferRef {
-                    buffer,
-                    view: None,
-                    author: Author::Plugin(o.clone()),
-                })?;
-            }
-            Ok(list)
-        })?,
-    )?;
+    buffer_functions(lua, greed, owner)?;
     greed.set("load", load_function(lua, owner)?)?;
-    let o = owner.clone();
-    greed.set(
-        "buffer_for",
-        lua.create_function(move |lua, path: String| {
-            let path = super::fs::expand_home(lua, path);
-            Ok(state(lua)
-                .editor
-                .buffer_for(Path::new(&path))
-                .map(|buffer| BufferRef {
-                    buffer,
-                    view: None,
-                    author: Author::Plugin(o.clone()),
-                }))
-        })?,
-    )?;
 
     greed.set(
         "open",

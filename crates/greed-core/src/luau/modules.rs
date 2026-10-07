@@ -34,6 +34,9 @@ pub(super) struct Modules {
     loaded: Table,
     /// Sandboxed code, which can require nothing but `@greed`.
     sandboxed: bool,
+    /// Config, tests and the REPL, which may change other plugins' modules;
+    /// plugins get them read-only.
+    trusted: bool,
 }
 
 impl Modules {
@@ -61,6 +64,7 @@ impl Modules {
             root,
             loaded: lua.create_table()?,
             sandboxed: false,
+            trusted: *grant == Grant::All,
         })
     }
 
@@ -165,11 +169,15 @@ impl Modules {
             _ => {}
         }
         if let Some(plugin) = name.strip_prefix('@').filter(|n| !n.starts_with("self/")) {
-            return state(lua).exports.get(plugin).cloned().ok_or_else(|| {
+            let module = state(lua).exports.get(plugin).cloned().ok_or_else(|| {
                 mlua::Error::runtime(format!(
                     "can't require {name:?}: add {plugin:?} to `requires` in plugin.toml"
                 ))
-            });
+            })?;
+            if self.trusted || *self.owner == *plugin {
+                return Ok(module);
+            }
+            return read_only(lua, module, plugin);
         }
         let path = self.resolve(from, name)?;
         let key = path.to_string_lossy();
@@ -252,4 +260,80 @@ fn normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Luau returning `view(t, name)`, which makes the read-only view of `t`
+/// for `read_only`.
+const READ_ONLY_VIEW: &str = r#"
+local views = setmetatable({}, { __mode = "kv" })
+local function view(t, name)
+    local seen = views[t]
+    if seen then
+        return seen
+    end
+    local function wrap(value)
+        return if type(value) == "table" then view(value, name) else value
+    end
+    local made = setmetatable({}, {
+        __index = function(_, key)
+            return wrap(t[key])
+        end,
+        __newindex = function(_, key, value)
+            -- A frozen table takes no writes but through its own
+            -- __newindex, like a list only added to.
+            if table.isfrozen(t) then
+                t[key] = value
+                return
+            end
+            error(`{name}'s module is read-only for other plugins: can't set {tostring(key)}; use the functions it offers`, 2)
+        end,
+        __iter = function()
+            local pairs = {}
+            for key, value in t do
+                table.insert(pairs, { key, value })
+            end
+            local i = 0
+            return function()
+                i += 1
+                local pair = pairs[i]
+                if pair then
+                    return pair[1], wrap(pair[2])
+                end
+                return nil
+            end
+        end,
+        __len = function()
+            return #t
+        end,
+        __tostring = function()
+            return `{name}'s module`
+        end,
+        __metatable = false,
+    })
+    views[t] = made
+    return made
+end
+return view
+"#;
+
+/// What `require("@name")` gives other plugins: a read-only view of the
+/// module. Reads pass through, nested tables as views too, and writes
+/// fail. Each table has one view.
+fn read_only(lua: &Lua, module: Value, name: &str) -> LuaResult<Value> {
+    const KEY: &str = "greed.read_only";
+    if !module.is_table() {
+        return Ok(module);
+    }
+    let cached = lua.named_registry_value::<Option<Function>>(KEY)?;
+    let view = if let Some(view) = cached {
+        view
+    } else {
+        let view: Function = lua
+            .load(READ_ONLY_VIEW)
+            .set_name("=greed.read_only")
+            .eval()?;
+        lua.set_named_registry_value(KEY, &view)?;
+        view
+    };
+    view.call((module, name))
 }
