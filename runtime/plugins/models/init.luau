@@ -131,6 +131,7 @@ local WINDOWS: { { pattern: string, tokens: number } } = {
 	{ pattern = "deepseek", tokens = 131072 },
 	{ pattern = "gemma%-?3", tokens = 131072 },
 	{ pattern = "kimi%-k2", tokens = 131072 },
+	{ pattern = "kimi%-k3", tokens = 1048576 },
 }
 
 --- What a model of unknown size is taken to have room for, in tokens.

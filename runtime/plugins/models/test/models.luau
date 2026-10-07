@@ -30,6 +30,8 @@ test("a model's context window: the role's, its provider's, known by name, or as
 	assert(size == models.WINDOW and not known, "an unknown model is assumed small")
 	models.roles.poetry = { provider = "berget", model = "meta-llama/Llama-3.3-70B-Instruct" }
 	assert(models.window("poetry") == 131072, "known by name, whoever serves it")
+	models.roles.poetry = { provider = "berget", model = "moonshotai/Kimi-K3" }
+	assert(models.window("poetry") == 1048576, "Kimi K3 has room for a million")
 	models.providers.small = { kind = "openai", url = "http://localhost:1", context = 8000 }
 	models.roles.poetry = { provider = "small", model = "gpt-5" }
 	assert(models.window("poetry") == 8000, "the provider says")
