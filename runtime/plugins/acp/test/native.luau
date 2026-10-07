@@ -210,22 +210,6 @@ test("a group switched on in one turn is offered in the next", function(t)
 	assert(string.find(asked[1].system, "tools tool", 1, true), "and it's told about groups")
 end)
 
-test("notes-connect starts Greed's agent on the inbox with the notes tools on", function(t)
-	local asked = script({ { text = "Connected.", calls = {}, stop = "done" } })
-	t:buffer("|x")
-	t:run("notes-connect")
-	t:wait(10)
-	local request = asked[1]
-	assert(request, "the model was asked")
-	assert(string.find(request.said[1].text, "my inbox note", 1, true), request.said[1].text)
-	assert(string.find(request.said[1].text, "only with the propose tool", 1, true) ~= nil)
-	local names: { [string]: boolean } = {}
-	for _, tool in request.tools do
-		names[tool.name] = true
-	end
-	assert(names["notes_search"] and names["notes_add_thought"], "the notes tools are on")
-end)
-
 test("the agent knows the date and time, and where it runs", function(t)
 	local asked = script({ { text = "ok", calls = {}, stop = "done" } })
 	ask(t, "hi")

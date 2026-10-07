@@ -200,6 +200,77 @@ fn a_proposal_waits_for_the_user_and_tells_the_agent_what_happened() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn a_proposal_from_a_connection_that_closes_is_withdrawn() {
+    use std::io::{BufRead, Write};
+    let dir = std::env::temp_dir().join(format!("greed-dropped-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "let x = 1;\n").unwrap();
+    let (conn, mut client) = start("dropped", "");
+    let path = file.to_str().unwrap().to_owned();
+    call(&mut client, "open", &json!({ "path": path }));
+
+    // An agent proposes a change, then goes away without waiting for it.
+    let name = format!("agent-dropped-{}", std::process::id());
+    let (socket, token_file) = control::session_files(&name);
+    let token = std::fs::read_to_string(token_file).unwrap();
+    let mut agent = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    let mut answers = std::io::BufReader::new(agent.try_clone().unwrap());
+    writeln!(
+        agent,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "auth", "params": { "token": token } })
+    )
+    .unwrap();
+    answers.read_line(&mut String::new()).unwrap();
+    let edits = json!([{ "old_text": "1", "new_text": "2" }]);
+    let propose = json!({ "name": "propose", "arguments": { "path": path, "edits": edits } });
+    writeln!(
+        agent,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": propose })
+    )
+    .unwrap();
+    // Wait for the proposal, go, and wait for the editor to withdraw it.
+    // Accepting everything in the file then finds nothing to accept.
+    wait_for_proposal(&mut client, 8, true);
+    drop(answers);
+    drop(agent);
+    wait_for_proposal(&mut client, 8, false);
+    for key in greed_core::keymap::Key::parse_sequence("space o A").unwrap() {
+        conn.input.send(Input::Key(key)).unwrap();
+    }
+    assert_eq!(
+        call(&mut client, "read", &json!({ "path": path })).0,
+        "let x = 1;\n"
+    );
+    conn.input.send(Input::Quit).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Waits until the focused buffer does or doesn't show a proposed change at
+/// `pos`.
+fn wait_for_proposal(client: &mut Client, pos: usize, shown: bool) {
+    let code = format!(
+        "for _, mark in require(\"@greed\").view():buffer():marks_at({pos}) do \
+         if string.find(mark.ns, \"^proposal%-\") then return true end end \
+         return false"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let answer = call(client, "eval", &json!({ "code": code })).0;
+        if answer == shown.to_string() {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "proposal shown: {answer}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 fn tool_names(client: &mut Client) -> Vec<String> {
     let tools = client.call("tools/list", &Value::Null).unwrap().unwrap();
     tools["tools"]

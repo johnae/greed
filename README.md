@@ -71,7 +71,7 @@ and propose edits that show up in the buffer for you to accept or reject.
 claude mcp add greed -- greed mcp     # Greed's tools in Claude Code
 ```
 
-`space o c` opens Claude Code in a pane, connected to Greed like it is to VS
+`space i C` opens Claude Code in a pane, connected to Greed like it is to VS
 Code (outside Greed, `/ide` finds it), and its edits arrive as proposals. Agents can write new plugins too: Greed type checks and
 tests them, and you review the code before it loads.
 

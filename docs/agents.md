@@ -175,7 +175,9 @@ after each change:
 Changes follow the edits you make while they wait. The agent waits too, and
 then hears which changes went in, with the errors and warnings the language
 server reports in those files once it has seen them, so it can fix what it
-broke without running the compiler. What you accept from one proposal is an
+broke without running the compiler. An agent that goes away while its
+proposal waits, like a Claude Code session you quit, takes the proposal
+with it: what's left of it is rejected. What you accept from one proposal is an
 operation (see [Using Greed](using.md#operations)): `space u u` undoes it in
 every file at once, and `space u o` reviews it.
 
@@ -227,7 +229,7 @@ check `.greed` changes as you would code.
 
 ## Claude Code's `/ide`
 
-`space o c` opens Claude Code in a pane beside your files, already
+`space i C` opens Claude Code in a pane beside your files, already
 connected to Greed; pressed again it goes back to that pane, or brings it
 back if you closed it. `claude` started in any Greed terminal connects by
 itself too. `:set claude-command "claude --continue"` changes what the pane

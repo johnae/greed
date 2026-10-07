@@ -11,7 +11,7 @@ local function ask(args: { [string]: any }): () -> any
 	greed.spawn(function()
 		for _, tool in agent.tools() do
 			if tool.name == "ask" then
-				result = tool.run(args)
+				result = tool.run(args, agent.caller())
 			end
 		end
 	end)

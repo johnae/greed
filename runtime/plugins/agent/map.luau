@@ -328,9 +328,7 @@ function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, strin
 	return hits, nil
 end
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = registry.schema.object
 
 registry.tool({
 	name = "repo_map",

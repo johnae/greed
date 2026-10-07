@@ -26,7 +26,7 @@ end
 local function run(name: string, args: { [string]: any }): any
 	for _, tool in agent.tools() do
 		if tool.name == name then
-			return tool.run(args, nil, nil)
+			return tool.run(args, agent.caller())
 		end
 	end
 	error(`no tool {name}`)
@@ -78,7 +78,7 @@ end)
 
 test("the web tools are a group of their own, off until switched on", function()
 	local offered: { [string]: boolean } = {}
-	for _, tool in agent.offered(nil, agent.caller()) do
+	for _, tool in agent.offered(agent.caller()) do
 		offered[tool.name] = true
 	end
 	assert(offered["web_search"] == nil and offered["web_fetch"] == nil)

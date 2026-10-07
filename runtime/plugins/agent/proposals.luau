@@ -20,6 +20,7 @@ local core = require("@core")
 local picker = require("@picker")
 local operations = require("@operations")
 local problems = require("./problems")
+local registry = require("./registry")
 
 type Span = { from: number, to: number }
 
@@ -45,6 +46,8 @@ type Proposal = {
 	tab: string?,
 	-- The operation its accepted changes join, so they undo as one.
 	op: operations.Operation,
+	-- The MCP connection whose tool call proposed it, if one did.
+	connection: number?,
 }
 
 local proposals: { Proposal } = {}
@@ -499,6 +502,7 @@ local function start(
 		done = greed.signal(),
 		tab = tab,
 		op = op,
+		connection = registry.connection(),
 	}
 	table.insert(proposals, p)
 	for i, hunk in hunks do
@@ -714,6 +718,16 @@ function M.withdraw_all(): number
 	end
 	return n
 end
+
+-- An agent whose connection closed waits for no answer, so what's left of
+-- its proposals is rejected.
+greed.on("control.closed", function(event: greed.ControlClosed)
+	for _, p in table.clone(proposals) do
+		if p.connection == event.connection then
+			decide(p, everything, false)
+		end
+	end
+end)
 
 --- The changes waiting in `buffer`, where their old text is now, in the
 --- order they appear.

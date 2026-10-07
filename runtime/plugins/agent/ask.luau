@@ -173,25 +173,17 @@ registry.tool({
 		.. "(the key of its answer), the question, and either choices to pick one of or none, "
 		.. "for a typed answer. Greed shows them as a page; the user answers and sends it, or "
 		.. "cancels. Returns the answers by id and whether they cancelled.",
-	input = {
-		type = "object",
-		properties = {
-			title = { type = "string" },
-			questions = {
-				type = "array",
-				items = {
-					type = "object",
-					properties = {
-						id = { type = "string" },
-						question = { type = "string" },
-						choices = { type = "array", items = { type = "string" } },
-					},
-					required = { "id", "question" },
-				},
-			},
+	input = registry.schema.object({
+		title = { type = "string" },
+		questions = {
+			type = "array",
+			items = registry.schema.object({
+				id = { type = "string" },
+				question = { type = "string" },
+				choices = { type = "array", items = { type = "string" } },
+			}, { "id", "question" }),
 		},
-		required = { "questions" },
-	},
+	}, { "questions" }),
 	run = function(args)
 		local questions: { Question } = {}
 		for _, q in args.questions or {} do

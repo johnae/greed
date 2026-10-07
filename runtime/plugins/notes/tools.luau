@@ -13,9 +13,7 @@ local links = require("./links")
 local todos = require("./todos")
 local dates = require("./dates")
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 -- `name`, once it's a note agents may write; an error saying why if not.
 local function writable(name: string): string

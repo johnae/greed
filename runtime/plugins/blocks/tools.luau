@@ -14,9 +14,7 @@ export type Blocks = {
 	refused: (buffer: greed.Buffer, block: any) -> string?,
 }
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 return function(blocks: Blocks)
 	-- A block as an agent sees it: where it is, what it runs as, its code and

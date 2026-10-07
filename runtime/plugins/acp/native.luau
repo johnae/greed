@@ -10,6 +10,7 @@ local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
 local models = require("@models")
+local vcs = require("@vcs")
 local session = require("./session")
 
 type Session = session.Session
@@ -66,9 +67,7 @@ type Own = {
 	run: (s: Session, args: any) -> string,
 }
 
-local function object(properties: { [string]: any }, required: { string }): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 local OWN: { Own } = {
 	{
@@ -174,6 +173,12 @@ local function output(command: string, cwd: string): string?
 	return if text and text ~= "" then text else nil
 end
 
+-- How many lines `args` print in `repo`, or "?" when they fail.
+local function count(repo: vcs.Repo, args: { string }): string
+	local text = vcs.repo.run(repo, args)
+	return if text then tostring(select(2, string.gsub(text, "\n", ""))) else "?"
+end
+
 -- Where the agent works, as lines for its prompt: the system and shell,
 -- and the project's version control. Worked out once a session.
 local function environment(root: string): string
@@ -183,24 +188,24 @@ local function environment(root: string): string
 	if system_name then
 		table.insert(lines, `The system is {system_name}; the shell is {shell_name or "sh"}.`)
 	end
-	if greed.fs.stat(root .. "/.jj") then
-		local change = output(
-			"jj log -r @ --no-graph --ignore-working-copy -T 'description.first_line()'",
-			root
+	local repo = vcs.repo.repo_of(root .. "/.")
+	if repo and repo.kind == "jj" then
+		local described = vcs.repo.trimmed(
+			repo,
+			{ "log", "-r", "@", "--no-graph", "-T", "description.first_line()" }
 		)
-		local changed = output("jj diff --name-only --ignore-working-copy | wc -l", root)
 		table.insert(
 			lines,
 			`The project is a jj repository (use jj, not git). The working copy's change `
-				.. (if change then `is "{change}"` else "has no description yet")
-				.. `, with {changed or "?"} files changed when the session started.`
+				.. (if described then `is "{described}"` else "has no description yet")
+				.. `, with {count(repo, { "diff", "--name-only" })} files changed when the session started.`
 		)
-	elseif greed.fs.stat(root .. "/.git") then
-		local branch = output("git rev-parse --abbrev-ref HEAD", root)
-		local changed = output("git status --porcelain | wc -l", root)
+	elseif repo then
+		local branch = vcs.repo.trimmed(repo, { "rev-parse", "--abbrev-ref", "HEAD" })
+		local changed = count(repo, { "status", "--porcelain" })
 		table.insert(
 			lines,
-			`The project is a git repository on branch {branch or "?"}, with {changed or "?"} `
+			`The project is a git repository on branch {branch or "?"}, with {changed} `
 				.. "files changed when the session started."
 		)
 	end
@@ -234,29 +239,13 @@ local function system(s: Session, env: string?): string
 	return table.concat(lines, "\n\n")
 end
 
--- A registered tool's result as text for the model.
-local function as_text(result: any): string
-	if type(result) == "string" then
-		return result
-	elseif type(result) == "table" and type(result.content) == "table" then
-		local parts = {}
-		for _, item in result.content do
-			if type(item) == "table" and type(item.text) == "string" then
-				table.insert(parts, item.text)
-			end
-		end
-		return table.concat(parts, "\n")
-	end
-	return greed.json.encode(result)
-end
-
 -- The tools the model is told about now (Greed's tools for agents in the
 -- groups it has, and its own), and every tool it may call, by name, with
 -- what to do for each.
 local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agent.Tool })
 	local specs: { models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
-	for _, tool in agent.offered(nil, state.caller) do
+	for _, tool in agent.offered(state.caller) do
 		table.insert(
 			specs,
 			{ name = tool.name, description = tool.description, input = tool.input }
@@ -353,7 +342,7 @@ local function call(
 		if own then
 			return own.run(s, c.input)
 		end
-		return as_text((registered :: agent.Tool).run(c.input, "agent", state.caller))
+		return agent.as_text((registered :: agent.Tool).run(c.input, state.caller))
 	end)
 	local text = if ok then result else tostring(result)
 	tool.status = if ok then "completed" else "failed"

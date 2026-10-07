@@ -84,7 +84,7 @@ test("the working_set tool lists the files with their lines, 1-based", function(
 	local result
 	for _, tool in agent.tools() do
 		if tool.name == "working_set" then
-			result = tool.run({}, nil)
+			result = tool.run({}, agent.caller())
 		end
 	end
 	assert(result[1].path == "a.txt", result[1].path)

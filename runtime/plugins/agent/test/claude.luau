@@ -11,12 +11,12 @@ local function terminals(): { greed.Buffer }
 	return found
 end
 
-test("space o c opens Claude Code in a pane, then goes back to it", function(t)
+test("space i C opens Claude Code in a pane, then goes back to it", function(t)
 	greed.option.set("claude-command", "cat")
 	local dir = t:tempdir({ ["a.txt"] = "text" })
 	greed.open(dir .. "/a.txt")
 	local files = greed.view()
-	t:keys("space o c")
+	t:keys("space i C")
 	local claude = greed.view()
 	assert(claude:id() ~= files:id(), "a pane of its own")
 	assert(claude:buffer():kind() == "terminal")
@@ -25,7 +25,7 @@ test("space o c opens Claude Code in a pane, then goes back to it", function(t)
 
 	t:keys("ctrl-\\")
 	files:focus()
-	t:keys("space o c")
+	t:keys("space i C")
 	assert(greed.view():id() == claude:id(), "it goes to the pane that's there")
 	assert(#terminals() == 1)
 
@@ -33,7 +33,7 @@ test("space o c opens Claude Code in a pane, then goes back to it", function(t)
 	t:keys("ctrl-\\")
 	files:focus()
 	claude:close()
-	t:keys("space o c")
+	t:keys("space i C")
 	assert(greed.view():buffer():kind() == "terminal")
 	assert(#terminals() == 1, "the same Claude Code")
 	t:keys("ctrl-d")
@@ -43,7 +43,7 @@ test("without Claude Code installed, it says so and leaves the panes alone", fun
 	greed.option.set("claude-command", "greed-test-no-such-program")
 	local dir = t:tempdir({ ["a.txt"] = "text" })
 	greed.open(dir .. "/a.txt")
-	t:keys("space o c")
+	t:keys("space i C")
 	local messages = t:messages()
 	assert(
 		string.find(messages[#messages] or "", "can't start Claude Code", 1, true),

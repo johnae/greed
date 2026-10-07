@@ -12,11 +12,11 @@ local registry = require("./registry")
 local proposals = require("./proposals")
 
 local function text(...: string)
-	local content = {}
+	local content: { registry.Content } = {}
 	for _, part in { ... } do
-		table.insert(content, { type = "text", text = part })
+		table.insert(content, { type = "text", text = part } :: registry.Content)
 	end
-	return { content = content }
+	return registry.result(content)
 end
 
 local function json(value: any)
@@ -61,10 +61,7 @@ local function current_selection(): { [string]: any }?
 	}
 end
 
-local function tool(
-	name: string,
-	run: (args: { [string]: any }, client: string?, caller: registry.Caller?) -> any
-)
+local function tool(name: string, run: (args: { [string]: any }, caller: registry.Caller) -> any)
 	registry.tool({ name = name, description = name, client = "ide", run = run })
 end
 

@@ -50,7 +50,9 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Options: `greed.option.define({ name = "my-option", default = true, doc = "..." })`, read with
   `greed.option.get`.
 - Agents: `require("@agent").tool({ name, description, input, group, run })` offers a tool over
-  MCP; a plugin with several puts them in a group (`require("@agent").group(name, line)`).
+  MCP; `input = agent.schema.object({ path = { type = "string" } }, { "path" })` describes its
+  arguments, and `run(args, caller)` returns text or data. A plugin with several puts them in
+  a group (`require("@agent").group(name, line)`).
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
 - Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (greed.process.run,
   greed.terminal.spawn, greed.lsp.server), "fs.read" (greed.fs reads, greed.load, greed.open,
@@ -261,9 +263,7 @@ greed.keymap.bind({ mode = "normal", kind = "plugin-review" }, {
 	esc = "plugin-review-reject",
 })
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = registry.schema.object
 
 registry.tool({
 	name = "plugin_guide",

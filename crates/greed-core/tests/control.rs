@@ -188,3 +188,89 @@ fn plugins_send_notifications_to_the_connection_a_request_came_on() {
     conn.input.send(Input::Quit).unwrap();
     conn.server.join().unwrap().unwrap();
 }
+
+const CLOSED: &str = r#"
+local greed = require("@greed")
+local waiting, closed = {}, {}
+greed.on("control.request", function(req)
+  if req.method == "me" then
+    greed.control.reply(req.id, req.connection)
+  elseif req.method == "waiting" then
+    greed.control.reply(req.id, waiting)
+  elseif req.method == "closed" then
+    greed.control.reply(req.id, closed)
+  elseif req.method == "wait" then
+    -- No answer, like a proposal nobody has decided on.
+    table.insert(waiting, req.connection)
+  end
+end)
+greed.on("control.closed", function(event)
+  table.insert(closed, event.connection)
+end)
+"#;
+
+/// The connections the plugin lists for `method`, asked through `client`
+/// until `id` is among them.
+fn listed(client: &mut Client, method: &str, id: &serde_json::Value) -> Vec<serde_json::Value> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let ids = client
+            .call(method, &json!(null))
+            .unwrap()
+            .unwrap()
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if ids.contains(id) {
+            return ids;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{id} not {method}: {ids:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn plugins_hear_when_a_connection_closes_even_with_a_request_waiting() {
+    use std::io::{BufRead, BufReader, Write};
+    let (conn, socket, token) = start(&name("closed"), CLOSED);
+    let mut watcher = Client::connect(&socket, &token).unwrap();
+
+    let mut idle = Client::connect(&socket, &token).unwrap();
+    let idle_id = idle.call("me", &json!(null)).unwrap().unwrap();
+    drop(idle);
+    listed(&mut watcher, "closed", &idle_id);
+
+    // One that goes while the editor still owes it an answer.
+    let mut waiting = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+    let mut answers = BufReader::new(waiting.try_clone().unwrap());
+    let mut line = String::new();
+    for (id, method, params) in [
+        (1, "auth", json!({ "token": token })),
+        (2, "me", json!(null)),
+    ] {
+        let request = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        writeln!(waiting, "{request}").unwrap();
+        line.clear();
+        answers.read_line(&mut line).unwrap();
+    }
+    let waiting_id = serde_json::from_str::<serde_json::Value>(&line).unwrap()["result"].clone();
+    writeln!(
+        waiting,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 3, "method": "wait", "params": null })
+    )
+    .unwrap();
+    listed(&mut watcher, "waiting", &waiting_id);
+    drop(answers);
+    drop(waiting);
+    let closed = listed(&mut watcher, "closed", &waiting_id);
+    assert!(
+        !closed.contains(&watcher.call("me", &json!(null)).unwrap().unwrap()),
+        "one still open isn't closed"
+    );
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+}

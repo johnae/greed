@@ -166,10 +166,7 @@ registry.tool({
 	description = "The files the user has been working in lately, most active first: how "
 		.. "much they edited each (and how much agents did), when, and the 1-based lines they "
 		.. "worked on last. Start here to see what the user is doing",
-	input = {
-		type = "object",
-		properties = { limit = { type = "number", description = "20 by default" } },
-	},
+	input = registry.schema.object({ limit = { type = "number", description = "20 by default" } }),
 	run = function(args)
 		local limit = args.limit or 20
 		local list = {}

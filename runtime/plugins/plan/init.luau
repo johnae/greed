@@ -136,9 +136,7 @@ function M.decide(title: string, text: string, proposed: boolean): string
 	return name
 end
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 agent.tool({
 	name = "plan_read",

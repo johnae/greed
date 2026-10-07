@@ -649,7 +649,7 @@ fn with_agent() -> Host {
             for _, tool in agent.tools() do
                 if tool.name == name then
                     greed.spawn(function()
-                        local ok, out = pcall(tool.run, args, "socket")
+                        local ok, out = pcall(tool.run, args, agent.caller())
                         probe.out = if ok then out else "error: " .. tostring(out)
                     end)
                 end

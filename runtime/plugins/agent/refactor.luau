@@ -8,9 +8,7 @@ local core = require("@core")
 local agent = require("./registry")
 local proposals = require("./proposals")
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 -- The file at `path` (relative to the project, or absolute), opened
 -- without showing it if it isn't open.

@@ -612,6 +612,33 @@ end
 
 local next_id = 0
 
+-- Who waits for each session that's starting, by session id, until it's
+-- ready or can't start.
+local starting: { [number]: { greed.Signal } } = {}
+
+-- Wakes whoever waits for `session` to start.
+local function settle(session: Session)
+	local waiters = starting[session.id]
+	starting[session.id] = nil
+	if waiters then
+		for _, waiter in waiters do
+			waiter:send(nil)
+		end
+	end
+end
+
+--- Waits until `session` is ready for prompts or can't start, and returns
+--- whether it's running.
+function M.ready(session: Session): boolean
+	local waiters = starting[session.id]
+	if waiters then
+		local signal = greed.signal()
+		table.insert(waiters, signal)
+		signal:wait()
+	end
+	return session.status ~= "starting" and session.status ~= "exited"
+end
+
 --- A session of the agent `command` (registered as `agent`) working in
 --- `cwd` for the project at `root`, starting now. `changed` is called
 --- whenever there's something new to show.
@@ -651,6 +678,7 @@ function M.start(
 		decide = opts.decide,
 		changed = opts.changed,
 	}
+	starting[session.id] = {}
 	for _, entry in session.entries do
 		if entry.tool then
 			session.tools[entry.tool.id] = entry.tool
@@ -660,15 +688,20 @@ function M.start(
 		table.insert(session.entries, { kind = "note", text = text })
 		session.changed()
 	end
+	-- Says why it can't start, to the transcript and whoever waits for it.
+	local function failed(text: string)
+		note(text)
+		settle(session)
+	end
 	local conn, err = rpc.start(opts.command, opts.cwd, handlers(session), function(stderr)
 		session.status = "exited"
 		session.tool = nil
 		local said = string.match(stderr, "([^\n]+)\n?$")
-		note(if said then `the agent exited: {said}` else "the agent exited")
+		failed(if said then `the agent exited: {said}` else "the agent exited")
 	end)
 	if conn == nil then
 		session.status = "exited"
-		note(`couldn't start {table.concat(opts.command, " ")}: {err}`)
+		failed(`couldn't start {table.concat(opts.command, " ")}: {err}`)
 		return session
 	end
 	session.conn = conn
@@ -682,7 +715,7 @@ function M.start(
 			clientInfo = { name = "greed", title = "Greed", version = "0" },
 		})
 		if init == nil then
-			note(`the agent didn't start: {problem}`)
+			failed(`the agent didn't start: {problem}`)
 			return
 		end
 		local can = init.agentCapabilities or {}
@@ -690,21 +723,21 @@ function M.start(
 		local method = "session/new"
 		if opts.load then
 			if not can.loadSession then
-				note("the agent can't take up an earlier session")
+				failed("the agent can't take up an earlier session")
 				return
 			end
 			-- The agent tells the conversation so far again, as updates.
 			method, params.sessionId = "session/load", opts.load
 		elseif opts.fork then
 			if not (can.sessionCapabilities and can.sessionCapabilities.fork) then
-				note("the agent can't fork a session")
+				failed("the agent can't fork a session")
 				return
 			end
 			method, params.sessionId = "session/fork", opts.fork
 		end
-		local new, failed = conn.request(method, params)
+		local new, refused = conn.request(method, params)
 		if new == nil then
-			note(`the agent couldn't start a session: {failed}`)
+			failed(`the agent couldn't start a session: {refused}`)
 			return
 		end
 		session.session_id = new.sessionId or opts.load
@@ -735,6 +768,7 @@ function M.start(
 			session.status = "idle"
 		end
 		session.changed()
+		settle(session)
 	end)
 	return session
 end
@@ -900,6 +934,7 @@ function M.stop(session: Session)
 		session.conn.close()
 	end
 	session.status = "exited"
+	settle(session)
 end
 
 return M

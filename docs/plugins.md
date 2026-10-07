@@ -668,6 +668,7 @@ end)
 | `client.detached` | The attached terminal or window went; the session goes on without it | nothing |
 | `client.paste` | Text was pasted from the system clipboard | `text` |
 | `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
+| `control.closed` | A session socket connection closed, after its last request came; requests from it still waiting have nobody to answer | `connection` |
 | `plugin.loaded` | A plugin was loaded or reloaded | `name`, `dir` |
 | `plugin.unloaded` | A plugin was unloaded | `name` |
 | `editor.started` | Once, when the editor is up with every plugin and your config loaded | nothing |
@@ -1015,25 +1016,30 @@ A plugin offering tools lists `agent` in `requires`. The tool's parts:
 |---|---|
 | `name` | Letters, digits, `_` and `-` |
 | `description` | What it does, for the agent deciding whether to use it. Say when to use it and what comes back |
-| `input` | A JSON Schema for the arguments, like `{ type = "object", properties = { path = { type = "string" } }, required = { "path" } }`; left out, it takes none |
+| `input` | A JSON Schema for the arguments; `agent.schema.object({ path = { type = "string" } }, { "path" })` makes an object's, the second list naming the required ones. Left out, it takes none |
 | `group` | The group it's offered with; left out, it's always offered (below) |
 | `kind` | What it does beyond reading: `"edit"` (changes files or notes), `"execute"` (runs code or programs) or `"fetch"` (reaches the network); left out, `"read"` |
 | `reviews` | `true` when the tool puts what it does in front of the user itself, as a proposal or a question does |
-| `run` | `run(args, client, caller)` does the work |
+| `run` | `run(args, caller)` does the work |
 
 Greed's own agent asks the user before a tool whose `kind` isn't `"read"`
 runs, the way it asks before its own edits, unless the tool `reviews`;
 MCP clients see the others marked read-only. Set `kind` on every tool
 that changes, runs or fetches something, so it isn't run unasked.
 
-`run` gets the arguments as a table. `client` is who called: `"shell"` for
-`greed ctl`, `"agent"` for Greed's own agent, otherwise `"socket"`. Any
-plugin can call a tool with any `client`, so don't decide trust on it:
-`agent.from_shell(caller)` says whether the call came from `greed ctl`,
-whose user can run anything already. A string it returns goes to the
-agent as it is, any other value as JSON, and an error goes back as an
-error, so `error("there's no file " .. path, 0)` tells the agent what went
-wrong.
+`run` gets the arguments as a table, and who called as `caller`, whose
+`kind` is `"shell"` for `greed ctl`, `"socket"` for MCP clients like
+Claude Code, `"ide"` for Claude Code's IDE connection and `"agent"` for
+Greed's own agent. Any plugin can call a tool with any `caller`, so don't
+decide trust on `kind`: `agent.from_shell(caller)` says whether the call
+came from `greed ctl`, whose user can run anything already.
+
+A string `run` returns goes to the agent as it is, and any other value as
+JSON, even a table with a `content` field. To answer with MCP's result
+form itself, return `agent.result(content, is_error)`, where `content` is
+text or a list of pieces like `{ type = "text", text = "..." }`. An error
+goes back as an error, so `error("there's no file " .. path, 0)` tells the
+agent what went wrong.
 
 Hand text someone else wrote, like a web page or another agent's report,
 back through `agent.untrusted(source, text)`: it's wrapped in markers the
@@ -1050,7 +1056,7 @@ local agent = require("@agent")
 agent.tool({
 	name = "add_license",
 	description = "Propose adding the license header to a file",
-	input = { type = "object", properties = { path = { type = "string" } }, required = { "path" } },
+	input = agent.schema.object({ path = { type = "string" } }, { "path" }),
 	run = function(args)
 		local text = require("@greed").load(args.path):text()
 		local first = string.match(text, "^[^\n]*\n") or text
@@ -1065,7 +1071,9 @@ agent.tool({
 `agent.propose_files` proposes changes to several files as one operation,
 `agent.propose_ranges` does it by byte ranges (for edits from a language
 server or a diff), and `agent.ask(title, questions)` asks the user and
-waits for their answers.
+waits for their answers. When an MCP client's connection closes while its
+proposal waits, what's left of the proposal is rejected and the tool call
+returns.
 
 Each tool costs the agent tokens on every request, so a plugin with
 several should put them in a group, which agents switch on with the

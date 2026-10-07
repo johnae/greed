@@ -11,6 +11,7 @@ local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
 local session = require("./session")
+local workspaces = require("./workspaces")
 
 type Session = session.Session
 type Change = { from: number, to: number, text: string }
@@ -55,15 +56,6 @@ function M.merge(base: string, theirs: string, mine: string): ({ Change }, numbe
 	return out, clashes
 end
 
--- Runs `args` in `cwd`; its output, or nil.
-local function output(args: { string }, cwd: string): string?
-	local done = greed.process.run(args, { cwd = cwd })
-	if done == nil or done.code ~= 0 then
-		return nil
-	end
-	return done.stdout
-end
-
 -- The files `s` changed in its workspace, relative to it, and how to get
 -- one's text as the agent started from it ("" for a file it added).
 local function changed(s: Session): ({ string }?, ((string) -> string)?, string?)
@@ -71,16 +63,16 @@ local function changed(s: Session): ({ string }?, ((string) -> string)?, string?
 	local names: string?
 	local base: (string) -> string
 	if ws.kind == "jj" then
-		names = output({ "jj", "diff", "--name-only" }, ws.path)
+		names = workspaces.run(ws, { "diff", "--name-only" })
 		base = function(path)
-			return output({ "jj", "file", "show", "-r", "@-", "--", path }, ws.path) or ""
+			return workspaces.run(ws, { "file", "show", "-r", "@-", "--", path }) or ""
 		end
 	else
-		output({ "git", "add", "-A", "-N" }, ws.path)
+		workspaces.run(ws, { "add", "-A", "-N" })
 		local from = ws.base or "HEAD"
-		names = output({ "git", "diff", "--name-only", from }, ws.path)
+		names = workspaces.run(ws, { "diff", "--name-only", from })
 		base = function(path)
-			return output({ "git", "show", `{from}:{path}` }, ws.path) or ""
+			return workspaces.run(ws, { "show", `{from}:{path}` }) or ""
 		end
 	end
 	if names == nil then
@@ -109,7 +101,7 @@ export type Reviewed = {
 function M.review(s: Session): (Reviewed?, string?)
 	local ws = s.workspace
 	if ws == nil then
-		return nil, "it works in the project itself; its changes are already there"
+		return nil, workspaces.IN_PROJECT
 	end
 	local names, base, err = changed(s)
 	if names == nil or base == nil then

@@ -5,15 +5,26 @@
 -- them in. Its transcript is in `:agents` like any other, and it asks you
 -- before doing things, as agents you start do.
 
-local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
+local agents = require("./agents")
+local session = require("./session")
+
+type Session = session.Session
+
 agent.group(
 	"subagents",
 	"Handing a task to a helper agent with an empty context, and getting its report"
 )
 
 local M = {}
+
+--- How subagents start sessions and prompt them: the acp plugin's own
+--- `start` and `prompt`.
+export type Sessions = {
+	start: (chosen: agents.Agent, root: string, own: boolean?) -> (Session?, string?),
+	prompt: (s: Session, text: string) -> (boolean, string?),
+}
 
 -- At most this many subagents work at once, so a subagent that starts
 -- subagents can't start an endless chain of them.
@@ -27,7 +38,7 @@ local BRIEF = "\n\n(You're a helper another agent started through the Greed edit
 	.. "other agent sees.)"
 
 -- What `s` said in its last turn, after the task was sent.
-local function report(s: any): string
+local function report(s: Session): string
 	local said = {}
 	for i = #s.entries, 1, -1 do
 		local entry = s.entries[i]
@@ -42,34 +53,37 @@ end
 
 export type Done = { report: string, session: string, workspace: string? }
 
---- Hands `task` to a new session of `chosen` (an `acp.Agent`), in a
---- workspace of its own unless `here`, waits for it to finish and returns
---- what it reported, with the session.
-function M.run(acp: any, chosen: any, task: string, here: boolean?): (Done?, string?)
+--- Hands `task` to a new session of `chosen` started through `sessions`,
+--- in a workspace of its own unless `here`, waits for it to finish and
+--- returns what it reported, with the session.
+function M.run(
+	sessions: Sessions,
+	chosen: agents.Agent,
+	task: string,
+	here: boolean?
+): (Done?, string?)
 	if running >= M.LIMIT then
 		return nil, `{M.LIMIT} subagents are working already; wait for one to finish`
 	end
 	running += 1
 	local ok, result, err = pcall(function(): (Done?, string?)
-		local s, start_err = acp.start(chosen, core.project.root(), not here)
+		local s, start_err = sessions.start(chosen, core.project.root(), not here)
 		if s == nil then
 			return nil, start_err
 		end
-		while s.status == "starting" do
-			greed.sleep(50)
+		if not session.ready(s) then
+			return nil, "the agent didn't start"
 		end
-		if s.status == "exited" then
-			return nil, "the agent exited as it started"
-		end
-		local sent, prompt_err = acp.prompt(s, task .. BRIEF)
+		local sent, prompt_err = sessions.prompt(s, task .. BRIEF)
 		if not sent then
 			return nil, prompt_err
 		end
-		return {
+		local done: Done = {
 			report = report(s),
 			session = s.name,
 			workspace = if s.workspace then s.workspace.path else nil,
 		}
+		return done, nil
 	end)
 	running -= 1
 	if not ok then
@@ -78,8 +92,8 @@ function M.run(acp: any, chosen: any, task: string, here: boolean?): (Done?, str
 	return result, err
 end
 
---- Adds the `subagent` tool, starting agents through `acp`.
-function M.offer(acp: any, installed: (name: string?) -> any)
+--- Adds the `subagent` tool, starting agents through `sessions`.
+function M.offer(sessions: Sessions)
 	agent.tool({
 		name = "subagent",
 		kind = "execute",
@@ -89,30 +103,26 @@ function M.offer(acp: any, installed: (name: string?) -> any)
 			.. "a side task, or a second opinion, without filling your own context. By default it "
 			.. "works in a workspace of its own, so its edits reach the user's files only when they "
 			.. "bring them in. Returns its report",
-		input = {
-			type = "object",
-			properties = {
-				task = {
-					type = "string",
-					description = "What to do, with everything it needs to know",
-				},
-				agent = {
-					type = "string",
-					description = 'Which agent, e.g. "claude"; the first installed by default',
-				},
-				here = { type = "boolean", description = "Work in the project itself instead" },
+		input = agent.schema.object({
+			task = {
+				type = "string",
+				description = "What to do, with everything it needs to know",
 			},
-			required = { "task" },
-		},
+			agent = {
+				type = "string",
+				description = 'Which agent, e.g. "claude"; the first installed by default',
+			},
+			here = { type = "boolean", description = "Work in the project itself instead" },
+		}, { "task" }),
 		run = function(args)
-			local chosen = installed(args.agent)
+			local chosen = agents.installed(args.agent)
 			if chosen == nil then
 				error(
 					if args.agent then `{args.agent} isn't installed` else "no agent is installed",
 					0
 				)
 			end
-			local done, err = M.run(acp, chosen, args.task, args.here)
+			local done, err = M.run(sessions, chosen, args.task, args.here)
 			if done == nil then
 				error(err, 0)
 			end

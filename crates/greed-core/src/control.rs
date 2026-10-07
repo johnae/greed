@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use serde_json::{Value, json};
 
 /// The version of what attached clients and sessions send each other:
@@ -178,6 +178,7 @@ pub struct Session {
     requests: Receiver<Request>,
     sender: Sender<Request>,
     attachments: Receiver<Attachment>,
+    closed: Receiver<u64>,
 }
 
 impl Session {
@@ -195,6 +196,12 @@ impl Session {
     /// Connections that asked to attach, newest last.
     pub fn attachments(&self) -> &Receiver<Attachment> {
         &self.attachments
+    }
+
+    /// The ids of connections that closed, each sent after every request
+    /// that came on it. A connection handed over to attach doesn't close.
+    pub fn closed(&self) -> &Receiver<u64> {
+        &self.closed
     }
 }
 
@@ -294,12 +301,14 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
     let (sender, requests) = crossbeam_channel::unbounded();
     let incoming = sender.clone();
     let (attach, attachments) = crossbeam_channel::unbounded();
+    let (gone, closed) = crossbeam_channel::unbounded();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let sender = incoming.clone();
             let attach = attach.clone();
+            let gone = gone.clone();
             let token = token.clone();
-            std::thread::spawn(move || serve_connection(stream, &token, &sender, &attach));
+            std::thread::spawn(move || serve_connection(stream, &token, &sender, &attach, &gone));
         }
     });
     Ok(Session {
@@ -309,6 +318,7 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
         requests,
         sender,
         attachments,
+        closed,
     })
 }
 
@@ -352,13 +362,31 @@ pub struct Attachment {
     pub remote: bool,
 }
 
-/// Answers one connection's requests until it closes, or hands it to the
-/// server as an [`Attachment`] once it asks to attach.
+/// Sends a connection's id to `closed` when dropped, unless it was handed
+/// over to attach.
+struct Closing<'a> {
+    id: u64,
+    closed: &'a Sender<u64>,
+    attached: bool,
+}
+
+impl Drop for Closing<'_> {
+    fn drop(&mut self) {
+        if !self.attached {
+            let _ = self.closed.send(self.id);
+        }
+    }
+}
+
+/// Answers one connection's requests until it closes, then says so on
+/// `closed`, or hands it to the server as an [`Attachment`] once it asks to
+/// attach.
 fn serve_connection(
     stream: UnixStream,
     token: &str,
     requests: &Sender<Request>,
     attachments: &Sender<Attachment>,
+    closed: &Sender<u64>,
 ) {
     let Ok(writer) = stream.try_clone() else {
         return;
@@ -372,6 +400,11 @@ fn serve_connection(
     let notifier = Notifier {
         id: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
         writer: Arc::downgrade(&shared),
+    };
+    let mut closing = Closing {
+        id: notifier.id,
+        closed,
+        attached: false,
     };
     let mut reader = BufReader::new(stream);
     let mut authed = false;
@@ -399,6 +432,7 @@ fn serve_connection(
                     let open = message["params"]["open"].as_str().map(str::to_owned);
                     let terminal = message["params"]["terminal"].as_bool() == Some(true);
                     let remote = message["params"]["remote"].as_bool() == Some(true);
+                    closing.attached = true;
                     let _ = attachments.send(Attachment {
                         reader,
                         writer,
@@ -416,6 +450,7 @@ fn serve_connection(
                 &mut shell,
                 requests,
                 &notifier,
+                &mut reader,
             ),
             Err(err) => Some(error_response(&Value::Null, -32700, &err.to_string())),
         };
@@ -438,6 +473,7 @@ fn answer(
     shell: &mut bool,
     requests: &Sender<Request>,
     notifier: &Notifier,
+    reader: &mut BufReader<UnixStream>,
 ) -> Option<Value> {
     let id = message.get("id").cloned();
     let method = message.get("method").and_then(Value::as_str).unwrap_or("");
@@ -474,10 +510,45 @@ fn answer(
     if requests.send(request).is_err() {
         return respond(Err("the editor has stopped".to_owned()));
     }
-    let result = answered
-        .recv()
-        .unwrap_or_else(|_| Err("the editor dropped the request".to_owned()));
+    // A request can wait long, e.g. for the user to review an edit; a
+    // client that gives up meanwhile closes the connection.
+    let result = loop {
+        match answered.recv_timeout(HANG_UP_CHECK) {
+            Ok(result) => break result,
+            Err(RecvTimeoutError::Disconnected) => {
+                break Err("the editor dropped the request".to_owned());
+            }
+            Err(RecvTimeoutError::Timeout) if hung_up(reader) => return None,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    };
     respond(result)
+}
+
+/// How often a connection waiting for an answer looks whether the client
+/// hung up.
+const HANG_UP_CHECK: Duration = Duration::from_millis(200);
+
+/// Whether the client on the other end of `reader` hung up. Anything it
+/// sent meanwhile stays in `reader` to be read.
+fn hung_up(reader: &mut BufReader<UnixStream>) -> bool {
+    if !reader.buffer().is_empty()
+        || reader
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_millis(1)))
+            .is_err()
+    {
+        return false;
+    }
+    let gone = match reader.fill_buf() {
+        Ok(sent) => sent.is_empty(),
+        Err(err) => !matches!(
+            err.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+        ),
+    };
+    let _ = reader.get_ref().set_read_timeout(None);
+    gone
 }
 
 fn error_response(id: &Value, code: i64, message: &str) -> Value {

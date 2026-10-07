@@ -280,10 +280,10 @@ registry.tool({
 		.. "what it returns. It runs sandboxed first, reading the editor and editing buffers; code "
 		.. "that needs more (programs, commands, files, keys, options) is reviewed or shown to the "
 		.. "user before it runs. Edits it makes are one operation the user can undo in one step",
-	input = { type = "object", properties = { code = { type = "string" } }, required = { "code" } },
+	input = registry.schema.object({ code = { type = "string" } }, { "code" }),
 	kind = "execute",
 	reviews = true,
-	run = function(args, _, caller)
+	run = function(args, caller)
 		return eval(args.code, registry.from_shell(caller))
 	end,
 })

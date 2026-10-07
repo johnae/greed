@@ -470,7 +470,7 @@ end)
 local function subagent(args: { [string]: any }): (boolean, any)
 	for _, tool in require("@agent").tools() do
 		if tool.name == "subagent" then
-			return pcall(tool.run, args, nil, nil)
+			return pcall(tool.run, args, require("@agent").caller())
 		end
 	end
 	error("no subagent tool")
@@ -510,6 +510,17 @@ end)
 test("asking for an agent that isn't installed says so", function(t)
 	local ok, err = subagent({ task = "hello", agent = "nobody" })
 	assert(not ok and string.find(tostring(err), "nobody isn't installed", 1, true), tostring(err))
+end)
+
+test("a subagent that exits as it starts says so, without waiting on", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	acp.register({ name = "quitter", commands = { { "sh", "-c", "exit 1" } } })
+	local ok, err = subagent({ task = "hello", agent = "quitter", here = true })
+	assert(not ok and string.find(tostring(err), "didn't start", 1, true), tostring(err))
+	for _, s in acp.sessions() do
+		acp.close(s)
+	end
 end)
 
 -- The question `s` waits on, if any.

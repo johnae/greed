@@ -146,15 +146,11 @@ agent.tool({
 	name = "why",
 	group = "history",
 	description = "How some lines of a file came to be: each change that made them as they are, newest first, with who, when, its description and diff",
-	input = {
-		type = "object",
-		properties = {
-			path = { type = "string" },
-			from_line = { type = "integer", description = "First line, from 1" },
-			to_line = { type = "integer", description = "Last line; the first if left out" },
-		},
-		required = { "path", "from_line" },
-	},
+	input = agent.schema.object({
+		path = { type = "string" },
+		from_line = { type = "integer", description = "First line, from 1" },
+		to_line = { type = "integer", description = "Last line; the first if left out" },
+	}, { "path", "from_line" }),
 	run = function(args)
 		local text, err = M.history(args.path, args.from_line, args.to_line or args.from_line)
 		if text == nil then

@@ -6,7 +6,7 @@ local agent = require("@agent")
 local function run(name: string, args: { [string]: any }?, caller: agent.Caller?): any
 	for _, tool in agent.tools() do
 		if tool.name == name then
-			return tool.run(args or {}, nil, caller)
+			return tool.run(args or {}, caller or agent.caller())
 		end
 	end
 	error(`no tool {name}`)
@@ -231,23 +231,23 @@ end
 
 test("grouped tools are offered once a group is switched on, to that caller only", function()
 	local mine, theirs = agent.caller(), agent.caller()
-	local offered = names(agent.offered(nil, mine))
+	local offered = names(agent.offered(mine))
 	assert(offered.read and offered.tools and not offered.rename, "the core set")
 	assert(offered.plan_read, "the plan group is on from the start")
 	local said = run("tools", { group = "refactor" }, mine)
 	assert(string.find(said, "rename", 1, true), said)
-	assert(names(agent.offered(nil, mine)).rename, "switched on")
-	assert(not names(agent.offered(nil, theirs)).rename, "not for another caller")
-	assert(names(agent.offered("shell", nil)).rename, "a shell gets every tool")
+	assert(names(agent.offered(mine)).rename, "switched on")
+	assert(not names(agent.offered(theirs)).rename, "not for another caller")
+	assert(names(agent.offered({ kind = "shell", groups = {} })).rename, "a shell gets every tool")
 	assert(not pcall(run, "tools", { group = "nope" }, mine), "an unknown group fails")
 end)
 
 test("agent-tool-groups gives groups from the start, or all of them", function(t)
 	t:run("set", { "agent-tool-groups", "notes" })
-	local offered = names(agent.offered(nil, agent.caller()))
+	local offered = names(agent.offered(agent.caller()))
 	assert(offered.notes_read and not offered.plan_read and not offered.rename)
 	t:run("set", { "agent-tool-groups", "all" })
-	offered = names(agent.offered(nil, agent.caller()))
+	offered = names(agent.offered(agent.caller()))
 	assert(offered.rename and offered.notes_read and offered.plan_read)
 end)
 
@@ -276,4 +276,21 @@ test("the tools tool names its groups, so an agent needn't guess them", function
 	)
 	local ok, err = pcall(run, "tools", { group = "repo" }, agent.caller())
 	assert(not ok and string.find(tostring(err), "the groups are", 1, true), tostring(err))
+end)
+
+test("a tool's result reads as text: MCP results marked as such, other tables as data", function()
+	assert(agent.as_text("plain") == "plain")
+	assert(agent.as_text(agent.result("done")) == "done", "a result's text")
+	local pieces =
+		agent.result({ { type = "text", text = "a" }, { type = "text", text = "b" } }, true)
+	assert(pieces.isError and agent.as_text(pieces) == "a\nb", agent.as_text(pieces))
+	local data = { content = { { type = "text", text = "not a result" } } }
+	assert(agent.as_text(data) == greed.json.encode(data), "data with content stays data")
+end)
+
+test("schema.object makes an object's schema, the second list naming the required", function()
+	local schema = agent.schema.object({ path = { type = "string" } }, { "path" })
+	assert(schema.type == "object" and schema.properties.path.type == "string")
+	assert(schema.required[1] == "path")
+	assert(agent.schema.object({}).required == nil, "nothing required by default")
 end)

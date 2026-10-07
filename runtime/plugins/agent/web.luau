@@ -237,11 +237,7 @@ registry.tool({
 	kind = "fetch",
 	description = "Search the web: the results' titles, addresses and a line from each. "
 		.. "Read a promising one with web_fetch",
-	input = {
-		type = "object",
-		properties = { query = { type = "string" } },
-		required = { "query" },
-	},
+	input = registry.schema.object({ query = { type = "string" } }, { "query" }),
 	run = function(args)
 		local lines = {}
 		for i, found in M.search(args.query) do
@@ -259,11 +255,7 @@ registry.tool({
 	group = "web",
 	kind = "fetch",
 	description = "Read a web page (http or https) as text, without its markup",
-	input = {
-		type = "object",
-		properties = { url = { type = "string" } },
-		required = { "url" },
-	},
+	input = registry.schema.object({ url = { type = "string" } }, { "url" }),
 	run = function(args)
 		return untrusted(args.url, M.fetch(args.url))
 	end,

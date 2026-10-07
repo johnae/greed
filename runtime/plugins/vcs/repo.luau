@@ -35,9 +35,9 @@ function M.locate(buffer: greed.Buffer): (Repo?, string?)
 end
 
 --- Runs a jj or git command in `repo`'s root and returns what it printed, or
---- nil if it failed. jj doesn't look at the files on disk unless `snapshot`
---- says to, for commands that only read what's committed.
-function M.run(repo: Repo, args: { string }, snapshot: boolean?): string?
+--- nil and why if it failed. jj doesn't look at the files on disk unless
+--- `snapshot` says to, for commands that only read what's committed.
+function M.run(repo: Repo, args: { string }, snapshot: boolean?): (string?, string?)
 	local command: { string } = { repo.kind }
 	if repo.kind == "jj" and not snapshot then
 		-- Reading only: don't snapshot the working copy as a side effect.
@@ -46,8 +46,20 @@ function M.run(repo: Repo, args: { string }, snapshot: boolean?): string?
 	for _, arg in args do
 		table.insert(command, arg)
 	end
-	local done = greed.process.run(command, { cwd = repo.root })
-	return if done and done.code == 0 then done.stdout else nil
+	local done, err = greed.process.run(command, { cwd = repo.root })
+	if done == nil or done.code ~= 0 then
+		local why = if done then done.stderr else err or ""
+		return nil, string.match(why, "^%s*(.-)%s*$")
+	end
+	return done.stdout, nil
+end
+
+--- What `run` printed, without the whitespace around it, or nil if it
+--- failed or printed nothing.
+function M.trimmed(repo: Repo, args: { string }, snapshot: boolean?): string?
+	local text = M.run(repo, args, snapshot)
+	local inner = text and string.match(text, "^%s*(.-)%s*$")
+	return if inner and inner ~= "" then inner else nil
 end
 
 return M

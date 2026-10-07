@@ -24,11 +24,13 @@ local statusline = require("@statusline")
 local staging = require("@self/staging")
 require("@self/stack")
 
-type Repo = repos.Repo
+export type Repo = repos.Repo
 local repo_of, locate, vcs = repos.repo_of, repos.locate, repos.run
 
 local M = {}
 
+--- Finding the repository a path is in, and running jj or git there.
+M.repo = repos
 --- Diffs as text: buffers showing them, and patches for single hunks.
 M.diffs = require("@self/diffs")
 --- The history of some lines: why they're as they are.
@@ -68,30 +70,25 @@ local counts: { [number]: { [string]: number } } = {}
 -- working copy's change, e.g. "main · nwpr".
 local branches: { [string]: string? } = {}
 
--- `text` without the whitespace around it, or nil if nothing's left.
-local function trimmed(text: string?): string?
-	local inner = text and string.match(text, "^%s*(.-)%s*$")
-	return if inner and inner ~= "" then inner else nil
-end
-
 local function read_branch(repo: Repo)
+	local trimmed = repos.trimmed
 	local name
 	if repo.kind == "jj" then
 		local change =
-			trimmed(vcs(repo, { "log", "-r", "@", "--no-graph", "-T", "change_id.shortest(4)" }))
-		local bookmark = trimmed(vcs(repo, {
+			trimmed(repo, { "log", "-r", "@", "--no-graph", "-T", "change_id.shortest(4)" })
+		local bookmark = trimmed(repo, {
 			"log",
 			"-r",
 			"latest(heads(::@ & bookmarks()))",
 			"--no-graph",
 			"-T",
 			'local_bookmarks.map(|b| b.name()).join(" ")',
-		}))
+		})
 		name = if bookmark and change then `{bookmark} · {change}` else change
 	else
 		-- Detached: the commit instead.
-		name = trimmed(vcs(repo, { "branch", "--show-current" }))
-			or trimmed(vcs(repo, { "rev-parse", "--short", "HEAD" }))
+		name = trimmed(repo, { "branch", "--show-current" })
+			or trimmed(repo, { "rev-parse", "--short", "HEAD" })
 	end
 	branches[repo.root] = name
 end

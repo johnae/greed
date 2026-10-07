@@ -22,7 +22,7 @@ end
 local function run_tool(name: string, args: { [string]: any }?): any
 	for _, tool in agent.tools() do
 		if tool.name == name then
-			return tool.run(args or {})
+			return tool.run(args or {}, agent.caller())
 		end
 	end
 	error(`no tool {name}`)

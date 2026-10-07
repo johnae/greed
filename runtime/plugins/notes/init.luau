@@ -8,6 +8,7 @@
 --   space n x   tick a todo, or untick it
 --   space n t   jot a thought down in the inbox
 --   space n r   dismiss the reminders notice
+--   space n l   have Greed's agent link the inbox to your other notes
 --   space k     on a due date or a reminder, say when it is in words
 --   g d         follow the [[link]] under the cursor (making the note)
 --   tab, z a    fold the section, list item or code block under the cursor,
@@ -29,9 +30,11 @@ require("@self/todos")
 require("@self/tools")
 require("@self/look")
 require("@self/reminders")
+require("@self/connect")
 
 greed.keymap.bind("normal", {
 	["space n r"] = "notes-reminders-dismiss",
+	["space n l"] = "notes-connect",
 	["space k"] = "notes-hover",
 	["space n d"] = "notes-daily",
 	["space n c"] = "notes-capture",

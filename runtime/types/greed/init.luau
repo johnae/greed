@@ -776,6 +776,12 @@ export type ControlRequest = {
 	params: any,
 }
 
+--- A session socket connection closed, after its last request came.
+export type ControlClosed = {
+	--- The connection, as `ControlRequest.connection` gave it.
+	connection: number,
+}
+
 export type Signal = {
 	--- Waits until a value is sent, and returns it.
 	wait: (self: Signal) -> any,
@@ -1409,6 +1415,7 @@ export type EventName =
 	| "command.run"
 	| "lsp.diagnostics"
 	| "control.request"
+	| "control.closed"
 	| "client.attached"
 	| "client.detached"
 	| "client.paste"
@@ -1456,6 +1463,7 @@ export type Greed = {
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
+		& ((event: "control.closed", handler: (event: ControlClosed) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
 		& ((event: "client.detached", handler: (event: {}) -> ()) -> ())
 		& ((event: "client.paste", handler: (event: ClientPaste) -> ()) -> ())

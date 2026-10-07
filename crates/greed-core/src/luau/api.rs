@@ -226,6 +226,7 @@ pub const EVENTS: &[&str] = &[
     "client.detached",
     "client.paste",
     "command.run",
+    "control.closed",
     "control.request",
     "editor.quitting",
     "editor.started",

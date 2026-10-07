@@ -1,5 +1,5 @@
 -- Claude Code in Greed: `claude` run in any Greed terminal connects to Greed
--- by itself, as it does in VS Code's terminal, and `space o c` opens it in
+-- by itself, as it does in VS Code's terminal, and `space i C` opens it in
 -- a pane beside your files (or goes to it, or brings it back).
 
 local greed = require("@greed")
@@ -63,6 +63,6 @@ greed.command({
 	run = M.toggle,
 })
 
-greed.keymap.bind("normal", { ["space o c"] = "claude" })
+greed.keymap.bind("normal", { ["space i C"] = "claude" })
 
 return M

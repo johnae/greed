@@ -7,9 +7,7 @@ local proposals = require("./proposals")
 local describe = require("@describe")
 local context = require("./context")
 
-local function object(properties: { [string]: any }, required: { string }?): { [string]: any }
-	return { type = "object", properties = properties, required = required }
-end
+local object = agent.schema.object
 
 -- 1-based line and column, as people and agents count them.
 local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }

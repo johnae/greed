@@ -177,9 +177,10 @@ end)
 
 -- Calls the agent tool `name` with `args`.
 local function tool(name: string, args: { [string]: any }): any
-	for _, spec in require("@agent").tools() do
+	local agent = require("@agent")
+	for _, spec in agent.tools() do
 		if spec.name == name then
-			return spec.run(args)
+			return spec.run(args, agent.caller())
 		end
 	end
 	error(`no tool {name}`)

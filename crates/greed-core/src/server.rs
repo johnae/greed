@@ -286,6 +286,7 @@ impl Server<'_> {
         let requests = session.map_or_else(crossbeam_channel::never, |s| s.requests().clone());
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
+        let closed = session.map_or_else(crossbeam_channel::never, |s| s.closed().clone());
         // Where selections and focus start, for the first frame to compare.
         let started = self.host.report_selections();
         self.report(started);
@@ -342,6 +343,18 @@ impl Server<'_> {
                     if let Ok(request) = request {
                         let handled = self.host.handle_request(request);
                         self.report(handled);
+                    }
+                }
+                recv(closed) -> id => {
+                    if let Ok(id) = id {
+                        // The connection's last requests come first, so
+                        // plugins hear it closed after them.
+                        for request in requests.try_iter() {
+                            let handled = self.host.handle_request(request);
+                            self.report(handled);
+                        }
+                        let told = self.host.connection_closed(id);
+                        self.report(told);
                     }
                 }
                 recv(attachments) -> attachment => {

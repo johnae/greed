@@ -61,7 +61,7 @@ test("agents read the context with context_get", function(t)
 	local agent = require("@agent")
 	for _, tool in agent.tools() do
 		if tool.name == "context_get" then
-			local answer = tool.run({})
+			local answer = tool.run({}, agent.caller())
 			assert(string.find(answer, "pinned text", 1, true), answer)
 			return
 		end

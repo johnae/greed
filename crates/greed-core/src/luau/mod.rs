@@ -691,6 +691,17 @@ impl Host {
         state_mut(&self.lua).session_name = Some(name.to_owned());
     }
 
+    /// Tells plugins the session socket connection `id` closed, with
+    /// "control.closed", e.g. so what its requests wait on can stop.
+    pub fn connection_closed(&self, id: u64) -> Result<(), HostError> {
+        state_mut(&self.lua).connections.remove(&id);
+        budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            payload.set("connection", id)?;
+            api::emit(&self.lua, "control.closed", &payload).map_err(HostError::from)
+        })
+    }
+
     /// Passes a request from the session socket to the plugins that answer
     /// them.
     pub fn handle_request(&self, request: crate::control::Request) -> Result<(), HostError> {

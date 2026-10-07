@@ -45,6 +45,7 @@ registry.group(
 export type Tool = registry.Tool
 export type Kind = registry.Kind
 export type Caller = registry.Caller
+export type Content = registry.Content
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
 export type FileChanges = proposals.FileChanges
@@ -60,6 +61,12 @@ return table.freeze({
 	group = registry.group,
 	offered = registry.offered,
 	caller = registry.caller,
+	--- Helpers for tools' argument schemas, like `schema.object` (registry.luau).
+	schema = table.freeze(registry.schema),
+	--- An MCP result for a tool to return as it is, and any tool result as
+	--- text (registry.luau).
+	result = registry.result,
+	as_text = registry.as_text,
 	--- Whether an agent asks you before a tool runs, by its kind (registry.luau).
 	asks = registry.asks,
 	--- Whether a tool's caller is a shell, `greed ctl` (registry.luau).

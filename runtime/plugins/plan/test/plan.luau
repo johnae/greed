@@ -14,7 +14,7 @@ end
 local function tool(name: string, args: { [string]: any }?): any
 	for _, found in agent.tools() do
 		if found.name == name then
-			return found.run(args or {}, nil)
+			return found.run(args or {}, agent.caller())
 		end
 	end
 	error(`no tool {name}`)

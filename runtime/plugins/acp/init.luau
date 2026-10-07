@@ -17,11 +17,15 @@ local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local vcs = require("@vcs")
+local agents = require("@self/agents")
 local session = require("@self/session")
 local native = require("@self/native")
 local transcript = require("@self/transcript")
 local participants = require("@self/participants")
 local review = require("@self/review")
+local workspaces = require("@self/workspaces")
+local saved = require("@self/saved")
+local overview = require("@self/overview")
 local statusline = require("@statusline")
 local agent_context = require("@agent").context
 
@@ -29,44 +33,15 @@ type Session = session.Session
 
 local M = {}
 
---- An agent to start: `commands` are tried in order, the first installed
---- runs, and `model` is the model to have it use, when it offers models.
---- A `native` agent is Greed's own, run in the editor; its `model` is the
---- role of the model it uses (see the models plugin).
-export type Agent = {
-	name: string,
-	title: string?,
-	commands: { { string } },
-	model: string?,
-	native: boolean?,
-}
-
-local agents: { Agent } = {}
+export type Agent = agents.Agent
+export type Saved = saved.Saved
 
 --- Adds an agent to pick from, or replaces the one of the same name. It
 --- goes when the plugin (or config) that added it does.
-function M.register(agent: Agent)
-	greed.plugin.tie(core.registry.put(agents, agent, function(known: Agent)
-		return known.name == agent.name
-	end))
-end
+M.register = agents.register
 
-M.register({
-	name = "claude",
-	title = "Claude Code",
-	commands = {
-		{ "claude-agent-acp" },
-		{ "claude-code-acp" },
-		{ "npx", "-y", "@agentclientprotocol/claude-agent-acp" },
-	},
-})
-M.register({
-	name = "gemini",
-	title = "Gemini CLI",
-	commands = { { "gemini", "--experimental-acp" } },
-})
-M.register({ name = "codex", title = "Codex", commands = { { "codex-acp" } } })
-M.register({ name = "greed", title = "Greed", commands = {}, native = true })
+--- The agent called `name`, or the first installed one, if it's installed.
+M.installed = agents.installed
 
 greed.option.define({
 	name = "agent-greed-tools",
@@ -160,32 +135,12 @@ local function decide(s: Session, permission: session.Permission): string?
 	return workspace_edits(s, permission)
 end
 
---- The command that runs `agent`: the first one installed. Greed's own
---- agent needs none.
-local function command_of(agent: Agent): { string }?
-	if agent.native then
-		return {}
-	end
-	for _, command in agent.commands do
-		if greed.which(command[1]) then
-			return command
-		end
-	end
-	return nil
-end
-
 -- Sessions, oldest first, and each transcript's session by buffer id.
 local sessions: { Session } = {}
 local by_buffer: { [number]: Session } = {}
 -- The agent each session runs, by session id, for forking it.
 local agent_of: { [number]: Agent } = {}
 local buffers: { [number]: greed.Buffer } = {}
-
--- The overview buffers open, to redraw when a session changes.
-local overviews: { [number]: { buffer: greed.Buffer, rows: { [number]: Session } } } = {}
-
-local render_overviews: () -> ()
-local keep: (s: Session) -> ()
 
 -- Redraws everything that shows `s`, soon: changes come in bursts while an
 -- agent streams.
@@ -202,170 +157,14 @@ local function changed(s: Session)
 		if buffer then
 			pcall(transcript.render, buffer, s)
 		end
-		render_overviews()
+		overview.render(sessions)
 		participants.draw(sessions)
-		keep(s)
+		saved.keep(s)
 	end)
 end
 
 local function trim(text: string): string
 	return string.match(text, "^%s*(.-)%s*$") or ""
-end
-
--- Runs `args` in `cwd`; its output, or nil and why.
-local function run(args: { string }, cwd: string): (string?, string?)
-	local done, err = greed.process.run(args, { cwd = cwd })
-	if done == nil or done.code ~= 0 then
-		return nil, trim(if done then done.stderr else err or "")
-	end
-	return done.stdout, nil
-end
-
--- The repository `root` is in: "jj", "git" or nil.
-local function repo_kind(root: string): ("jj" | "git")?
-	if greed.fs.stat(root .. "/.jj") then
-		return "jj"
-	elseif greed.fs.stat(root .. "/.git") then
-		return "git"
-	end
-	return nil
-end
-
--- A workspace of its own for an agent `agent` runs, outside the project:
--- from your working copy's parent, or from `from`'s working copy, edits
--- and all, for a fork.
-local function make_workspace(
-	root: string,
-	agent: string,
-	from: session.Workspace?
-): (session.Workspace?, string?)
-	local kind = repo_kind(root)
-	if kind == nil then
-		return nil, "the project isn't in a jj or git repository"
-	end
-	local base = greed.fs.dirs().cache or core.project.clean(root .. "/..")
-	local project = string.match(root, "([^/]+)/*$") or "project"
-	greed.fs.mkdir(`{base}/workspaces`)
-	-- Earlier sessions' workspaces may still be there to take up again.
-	local n, name, path = 0, "", ""
-	repeat
-		n += 1
-		name = `greed-{agent}-{n}`
-		path = `{base}/workspaces/{project}-{name}`
-	until not greed.fs.stat(path)
-	if kind == "jj" then
-		local args = { "jj", "workspace", "add", "--name", name, path }
-		if from then
-			-- Any jj command there takes in what the agent wrote since.
-			run({ "jj", "status" }, from.path)
-			table.insert(args, "-r")
-			table.insert(args, `{from.name}@`)
-		end
-		local _, err = run(args, root)
-		if err then
-			return nil, err
-		end
-		return { kind = "jj", name = name, path = path }, nil
-	end
-	local start = if from then `greed/{from.name}` else "HEAD"
-	local head = run({ "git", "rev-parse", "HEAD" }, root)
-	local _, err = run({ "git", "worktree", "add", "-q", "-b", `greed/{name}`, path, start }, root)
-	if err then
-		return nil, err
-	end
-	local based = if from then from.base else head and string.match(head, "%x+")
-	return { kind = "git", name = name, path = path, base = based }, nil
-end
-
--- Sessions you can take up again, kept in the cache folder: which agent,
--- where it worked, its ACP session and what you asked it first.
-export type Saved = {
-	agent: string,
-	root: string,
-	workspace: session.Workspace?,
-	session_id: string,
-	title: string,
-	time: number,
-}
-
-local function saved_file(): string?
-	local cache = greed.fs.dirs().cache
-	return if cache then `{cache}/agents.json` else nil
-end
-
-local function read_saved(file: string?): { any }
-	local text = if file then greed.fs.read(file) else nil
-	local all = if text then greed.json.decode(text) else nil
-	return if type(all) == "table" then all else {}
-end
-
---- The sessions you can take up again for the project at `root`, newest
---- first, leaving out the ones running now.
-function M.saved(root: string): { Saved }
-	local out: { Saved } = {}
-	for _, entry in read_saved(saved_file()) do
-		local running = false
-		for _, s in sessions do
-			running = running or (s.session_id == entry.session_id and s.status ~= "exited")
-		end
-		if entry.root == root and not running then
-			table.insert(out, entry)
-		end
-	end
-	table.sort(out, function(a: Saved, b: Saved)
-		return a.time > b.time
-	end)
-	return out
-end
-
--- Keeps `s` to take up again, or with `forget`, stops keeping it.
-local function remember(s: Session, forget: boolean?)
-	local file = saved_file()
-	if file == nil or s.session_id == nil then
-		return
-	end
-	local kept: { any } = {}
-	for _, entry in read_saved(file) do
-		if entry.session_id ~= s.session_id then
-			table.insert(kept, entry)
-		end
-	end
-	if not forget then
-		local title = "(nothing asked yet)"
-		for _, entry in s.entries do
-			if entry.kind == "user" and entry.text then
-				title = string.match(entry.text, "^%s*([^\n]*)") or title
-				break
-			end
-		end
-		table.insert(kept, {
-			agent = s.agent,
-			root = s.root,
-			workspace = s.workspace,
-			session_id = s.session_id,
-			title = title,
-			time = os.time(),
-		})
-	end
-	greed.fs.write(file, greed.json.encode(greed.json.array(kept)))
-end
-
--- What each session was last kept as, so it's written only when that changes.
-local kept_as: { [number]: string } = {}
-
-function keep(s: Session)
-	local first = ""
-	for _, entry in s.entries do
-		if entry.kind == "user" then
-			first = entry.text or ""
-			break
-		end
-	end
-	local key = `{s.session_id}\0{first}`
-	if s.session_id and kept_as[s.id] ~= key then
-		kept_as[s.id] = key
-		remember(s)
-	end
 end
 
 -- Starts a session of `agent` in `workspace` (or the project at `root`),
@@ -376,7 +175,7 @@ local function launch(
 	workspace: session.Workspace?,
 	extra: { load: string?, fork: string?, entries: { session.Entry }? }?
 ): (Session?, string?)
-	local command = command_of(agent)
+	local command = agents.command_of(agent)
 	if command == nil then
 		return nil,
 			`{agent.title or agent.name} isn't installed: {table.concat(agent.commands[1], " ")}`
@@ -429,15 +228,12 @@ local function launch(
 	local buffer = transcript.create(s)
 	buffers[s.id] = buffer
 	by_buffer[buffer:id()] = s
-	render_overviews()
+	overview.render(sessions)
 	local model = if agent.native then nil else agent.model
 	if model then
 		-- The model asked for, once the agent says which it has.
 		greed.spawn(function()
-			while s.status == "starting" do
-				greed.sleep(50)
-			end
-			if s.status ~= "exited" and s.model ~= model then
+			if session.ready(s) and s.model ~= model then
 				local ok, err = session.set_model(s, model)
 				if not ok then
 					greed.echo(`{s.name} can't use the model {model}: {err}`)
@@ -456,7 +252,7 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 		return nil,
 			`{agent.title or agent.name} works in the project itself; it can't have a workspace yet`
 	elseif own then
-		local made, err = make_workspace(root, agent.name)
+		local made, err = workspaces.make(root, agent.name)
 		if made == nil then
 			return nil, err
 		end
@@ -465,15 +261,16 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 	return launch(agent, root, workspace)
 end
 
+--- The sessions you can take up again for the project at `root`, newest
+--- first, leaving out the ones running now.
+function M.saved(root: string): { Saved }
+	return saved.list(root, sessions)
+end
+
 --- Takes up a session kept from before: the agent tells the conversation
 --- again, into a new transcript.
 function M.resume(entry: Saved): (Session?, string?)
-	local agent = nil
-	for _, known in agents do
-		if known.name == entry.agent then
-			agent = known
-		end
-	end
+	local agent = agents.named(entry.agent)
 	if agent == nil then
 		return nil, `no agent called {entry.agent} is registered`
 	end
@@ -493,7 +290,7 @@ function M.fork(s: Session): (Session?, string?)
 	end
 	local workspace = nil
 	if s.workspace then
-		local made, err = make_workspace(s.root, agent.name, s.workspace)
+		local made, err = workspaces.make(s.root, agent.name, s.workspace)
 		if made == nil then
 			return nil, err
 		end
@@ -539,54 +336,14 @@ function M.prompt(s: Session, text: string): (boolean, string?)
 	return session.prompt(s, text)
 end
 
-local IN_PROJECT = "it works in the project itself; its changes are already there"
-
--- What `s` changed in its workspace, as a diff.
-local function changes(s: Session): (string?, string?)
-	local ws = s.workspace
-	if ws == nil then
-		return nil, IN_PROJECT
-	elseif ws.kind == "jj" then
-		-- Run in the workspace, so jj sees what the agent wrote since.
-		return run({ "jj", "diff", "--git", "--color", "never" }, ws.path)
-	end
-	-- Untracked files count too.
-	run({ "git", "add", "-A", "-N" }, ws.path)
-	return run({ "git", "diff", ws.base or "HEAD" }, ws.path)
-end
+--- Switches tool group `group` on for `s`, a session of Greed's own agent,
+--- as the agent would with the tools tool, e.g. to start it with the tools
+--- a task needs.
+M.switch_on = native.switch_on
 
 --- Brings what `s` changed in its workspace into yours: with jj its change
 --- is squashed into your working copy, with git its diff is applied.
-function M.bring(s: Session): (boolean, string?)
-	local ws = s.workspace
-	if ws == nil then
-		return false, IN_PROJECT
-	elseif ws.kind == "jj" then
-		-- Any jj command in the workspace takes in what the agent wrote.
-		run({ "jj", "status" }, ws.path)
-		local _, err = run({ "jj", "squash", "--from", `{ws.name}@`, "--into", "@" }, s.root)
-		if err then
-			return false, err
-		end
-		-- Its change is empty now; its files follow.
-		run({ "jj", "workspace", "update-stale" }, ws.path)
-		return true, nil
-	end
-	local patch, err = changes(s)
-	if patch == nil then
-		return false, err
-	elseif patch == "" then
-		return false, "nothing changed"
-	end
-	local done = greed.process.run(
-		{ "git", "apply", "--3way", "-" },
-		{ cwd = s.root, stdin = patch }
-	)
-	if done == nil or done.code ~= 0 then
-		return false, done and trim(done.stderr)
-	end
-	return true, nil
-end
+M.bring = workspaces.bring
 
 --- Stops the agent of `s`, keeping its transcript, its workspace and the
 --- session to take up again.
@@ -597,18 +354,9 @@ end
 
 --- Stops `s` and, if it had a workspace, removes it.
 function M.close(s: Session)
-	remember(s, true)
+	saved.remember(s, true)
 	session.stop(s)
-	local ws = s.workspace
-	if ws then
-		if ws.kind == "jj" then
-			run({ "jj", "workspace", "forget", ws.name }, s.root)
-			greed.fs.remove(ws.path, { recursive = true })
-		else
-			run({ "git", "worktree", "remove", "--force", ws.path }, s.root)
-			run({ "git", "branch", "-D", `greed/{ws.name}` }, s.root)
-		end
-	end
+	workspaces.remove(s)
 	local index = table.find(sessions, s)
 	if index then
 		table.remove(sessions, index)
@@ -619,110 +367,18 @@ function M.close(s: Session)
 		by_buffer[buffer:id()] = nil
 		buffer:set_kept(false)
 	end
-	render_overviews()
+	overview.render(sessions)
 	participants.draw(sessions)
-end
-
--- The overview ---------------------------------------------------------------
-
-local STATUS: { [string]: string } = {
-	starting = "starting",
-	idle = "ready",
-	working = "working",
-	waiting = "waiting for you",
-	exited = "exited",
-}
-
-local function overview_lines(): ({ string }, { greed.Mark }, { [number]: Session })
-	local lines = {
-		"Agents    enter opens · n new · d diff · r review · b bring in · s stop · x close",
-		"",
-	}
-	local marks: { greed.Mark } = {
-		{ from = 0, to = 6, style = "markup.heading" },
-		{ from = 6, to = #lines[1], style = "comment" },
-	}
-	local rows: { [number]: Session } = {}
-	local at = #lines[1] + 2
-	if #sessions == 0 then
-		table.insert(lines, "No agents yet: n starts one.")
-	end
-	for _, s in sessions do
-		local status = STATUS[s.status]
-		local waiting = #session.pending(s)
-		local parts = { `{s.name}  {status}` }
-		if s.tool then
-			table.insert(parts, `▸ {s.tool}`)
-		end
-		if waiting > 0 then
-			table.insert(parts, `{waiting} question{if waiting == 1 then "" else "s"}`)
-		end
-		table.insert(
-			parts,
-			if s.workspace then `workspace {s.workspace.name}` else "in the project"
-		)
-		local line = table.concat(parts, "   ")
-		local style = if s.status == "waiting"
-			then "diagnostic.warning"
-			elseif s.status == "working" then "diff.plus"
-			elseif s.status == "exited" then "comment"
-			else nil
-		if style then
-			table.insert(
-				marks,
-				{ from = at + #s.name + 2, to = at + #s.name + 2 + #status, style = style }
-			)
-		end
-		table.insert(marks, { from = at, to = at + #s.name, style = "keyword" })
-		rows[#lines] = s
-		table.insert(lines, line)
-		at += #line + 1
-	end
-	return lines, marks, rows
-end
-
-function render_overviews()
-	for id, overview in overviews do
-		local ok = pcall(function()
-			local lines, marks, rows = overview_lines()
-			local buffer = overview.buffer
-			buffer:set_readonly(false)
-			buffer:edit(function(e)
-				e:replace(0, buffer:len(), table.concat(lines, "\n"))
-			end)
-			buffer:set_readonly(true)
-			buffer:decorate("agents", marks)
-			overview.rows = rows
-		end)
-		if not ok then
-			overviews[id] = nil
-		end
-	end
 end
 
 --- Shows the agents overview in `view`.
 function M.overview(view: greed.View)
-	local buffer = greed.create_buffer("agents", "", { readonly = true })
-	buffer:set_line_numbers(false)
-	overviews[buffer:id()] = { buffer = buffer, rows = {} }
-	render_overviews()
-	view:show(buffer)
-	local pos = buffer:line_start(math.min(2, buffer:line_count() - 1))
-	view:set_cursor(pos)
-end
-
--- The session on the overview line under the cursor.
-local function overview_session(ctx: greed.Context): Session?
-	local overview = overviews[ctx.buffer:id()]
-	if overview == nil then
-		return nil
-	end
-	return overview.rows[ctx.buffer:line_of(ctx.view:cursor())]
+	overview.open(view, sessions)
 end
 
 -- The session `ctx` is about: the transcript it's in, or the overview line.
 local function current(ctx: greed.Context): Session?
-	return by_buffer[ctx.buffer:id()] or overview_session(ctx)
+	return by_buffer[ctx.buffer:id()] or overview.at_cursor(ctx)
 end
 
 -- Commands -------------------------------------------------------------------
@@ -732,8 +388,8 @@ greed.command({
 	doc = "Start an agent over ACP: pick which, and whether it works in a workspace of its own",
 	run = function(ctx)
 		local items = {}
-		for _, agent in agents do
-			local command = command_of(agent)
+		for _, agent in agents.list do
+			local command = agents.command_of(agent)
 			local how = if agent.native
 				then "in the editor, with the model in :models"
 				elseif command then table.concat(command, " ")
@@ -973,7 +629,7 @@ greed.command({
 	name = "agents-open",
 	doc = "Open the transcript of the agent under the cursor",
 	run = function(ctx)
-		local s = overview_session(ctx)
+		local s = overview.at_cursor(ctx)
 		if s then
 			M.show(s)
 		end
@@ -988,7 +644,7 @@ greed.command({
 		if s == nil then
 			return
 		end
-		local text, err = changes(s)
+		local text, err = workspaces.changes(s)
 		if text == nil then
 			greed.echo(err :: string)
 			return
@@ -1039,7 +695,7 @@ greed.command({
 	name = "agents-close",
 	doc = "Stop the agent under the cursor and remove its workspace, after asking",
 	run = function(ctx)
-		local s = overview_session(ctx)
+		local s = overview.at_cursor(ctx)
 		if s == nil then
 			return
 		end
@@ -1067,10 +723,6 @@ statusline.add("right", "agents", function()
 	local text = M.status()
 	return if text then { text = text, style = "ui.statusline.message" } else nil
 end, "position")
-
-greed.on("buffer.closed", function(event: greed.BufferClosed)
-	overviews[event.id] = nil
-end)
 
 for _, mode in { "normal", "vim" } do
 	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
@@ -1104,60 +756,11 @@ greed.keymap.bind("normal", {
 	["space i r"] = "agent-resume",
 })
 
--- The agent called `name`, or the first installed one, if it's installed.
-local function installed(name: string?): Agent?
-	for _, known in agents do
-		if (name == nil or known.name == name) and command_of(known) then
-			return known
-		end
-	end
-	return nil
-end
-
--- What Greed's agent is asked to do with your notes. Changes to notes that
--- are there go through proposals (notes_write proposes them too), so each
--- one waits for you; adding a line or a todo asks, as edits do.
-local CONNECT = [=[
-Go through %s and connect it with the rest of my notes. For each thought, idea or todo:
-find related notes (notes_search, notes_list, notes_read), link them with [[name]], and add a
-line of context where it helps: what it relates to, why it matters, what could come next.
-Where several items belong together, say so, and suggest a note gathering them.
-
-Change notes that already exist only with the propose tool, using the path notes_read gives,
-so I can review each change; make new notes with notes_write. Don't delete anything. End with
-a short summary of what you connected and what you'd suggest next.]=]
-
-greed.command({
-	name = "notes-connect",
-	doc = "Have Greed's agent go through the inbox (or the note you're in), link it to your other notes and add context, as changes you review",
-	run = function(ctx)
-		local agent = installed("greed")
-		if agent == nil then
-			greed.echo("Greed's agent isn't registered")
-			return
-		end
-		local path = ctx.buffer:path()
-		local what = if path and string.match(path, "%.md$")
-			then `the note I have open, {path}`
-			else "my inbox note (the project's when it keeps notes)"
-		local s, err = M.start(agent, core.project.root())
-		if s == nil then
-			greed.echo(`can't start Greed's agent: {err}`)
-			return
-		end
-		native.switch_on(s, "notes")
-		M.show(s)
-		M.prompt(s, string.format(CONNECT, what))
-	end,
-})
-
-greed.keymap.bind("normal", { ["space n l"] = "notes-connect" })
-
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")
 --- An agent's workspace changes as proposals on your files (review.luau).
 M.review = review
-M.subagent.offer(M, installed)
+M.subagent.offer(M)
 
 -- An agent at work keeps the session on :q (core's on-quit).
 core.file.running("agents", function()

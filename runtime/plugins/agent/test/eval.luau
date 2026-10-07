@@ -10,12 +10,12 @@ end
 
 -- Calls the eval tool with `code` in the background, as an agent's call
 -- runs, and returns a function giving what it returned (or `error: ...`).
-local function call(code: string, client: string?, caller: agent.Caller?): () -> string?
+local function call(code: string, caller: agent.Caller?): () -> string?
 	local result: string? = nil
 	greed.spawn(function()
 		for _, tool in agent.tools() do
 			if tool.name == "eval" then
-				local ok, value = pcall(tool.run, { code = code }, client, caller)
+				local ok, value = pcall(tool.run, { code = code }, caller or agent.caller())
 				result = if ok then value else `error: {value}`
 			end
 		end
@@ -146,13 +146,16 @@ test(
 test("only a call from greed ctl runs as you; a plugin saying shell doesn't", function(t)
 	reset("ask")
 	t:buffer("|")
-	local result = call("1 + 1", "shell", { groups = {} })
+	local result = call("1 + 1", { kind = "shell", groups = {} })
 	t:wait(10)
 	assert(result() == nil, "it waits for you, though it said shell")
 	assert(string.find(greed.view():buffer():text(), "1 + 1", 1, true), "the code is shown")
 	t:run("eval-deny")
 	settle(t, result)
-	assert(not agent.from_shell({ groups = {} }), "a caller a plugin made isn't a shell")
+	assert(
+		not agent.from_shell({ kind = "shell", groups = {} }),
+		"a caller a plugin made isn't a shell"
+	)
 	assert((agent :: any).eval == nil, "the eval module isn't handed out")
 	assert(not pcall(function()
 		(agent :: any).propose = function() end
