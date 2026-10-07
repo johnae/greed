@@ -250,6 +250,20 @@ local function environment(root: string): string
 end
 
 -- What the model is told about where it is and how to work.
+-- Where the user's config is and how settings change there, for asks like
+-- "make tabs 2 spaces in Lua".
+local function config_note(): string
+	local config = greed.fs.dirs().config
+	if config == nil then
+		return "The user has no config folder, so settings can't be kept."
+	end
+	return `The user's Greed config is {config}/init.luau, Luau that runs as Greed starts and `
+		.. 'again when saved. Settings go there: options with require("@greed").option.set '
+		.. '(describe an option to see its name and values), a language\'s with require("@languages"), '
+		.. 'the theme with require("@theme").use(name). Edit it with edit_file or write_file, '
+		.. "keeping what's there; don't look for it anywhere else."
+end
+
 local function system(s: Session, env: string?): string
 	local lines = {
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
@@ -270,6 +284,7 @@ local function system(s: Session, env: string?): string
 			.. "plugin_guide, then plugin_try until it passes, then plugin_install, which installs "
 			.. "it in their own config after they review it. Don't write it into the project, even "
 			.. "when the project is Greed's own code, unless they ask you to change the project.",
+		config_note(),
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
 		"Be brief: say what you did and what's left, not every step.",
