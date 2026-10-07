@@ -330,6 +330,27 @@ function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 	return M.result(M.as_text(result))
 end
 
+--- What an MCP client is told about Greed as it connects: where the
+--- user's config is, and how to add to Greed, for agents that come with
+--- their own system prompt.
+function M.instructions(): string
+	local lines = {
+		"Greed is the editor the user is working in; these tools see what they see, unsaved changes included.",
+		"To add something to Greed itself (a command, keys, a panel), switch on the plugins tool group "
+			.. "and use plugin_guide, then plugin_try until it passes, then plugin_install, which the "
+			.. "user reviews. Don't write plugins into the project unless they ask.",
+	}
+	local config = greed.fs.dirs().config
+	if config then
+		table.insert(
+			lines,
+			`The user's Greed config is {config}/init.luau: settings like options, a language's indent `
+				.. "or the theme go there, and it runs again when saved. describe gives an option's name and values."
+		)
+	end
+	return table.concat(lines, "\n")
+end
+
 local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 	initialize = function(request)
 		local params = request.params
@@ -337,6 +358,7 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 			protocolVersion = params and params.protocolVersion or "2025-06-18",
 			capabilities = { tools = { listChanged = true } },
 			serverInfo = { name = "greed", version = "0.1" },
+			instructions = M.instructions(),
 		}
 	end,
 	ping = function()

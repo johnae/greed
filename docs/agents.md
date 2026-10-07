@@ -32,7 +32,10 @@ only by you and needs a token from a file only you can read.
 claude mcp add greed -- greed mcp
 ```
 
-`greed mcp` connects an MCP client to the running editor. The tools:
+`greed mcp` connects an MCP client to the running editor. As it connects,
+the client is told where your config is and how to add to Greed with a
+plugin, so an agent asked to change a setting or add a command knows where
+to go. The tools:
 
 | Tool | What it does |
 |---|---|
