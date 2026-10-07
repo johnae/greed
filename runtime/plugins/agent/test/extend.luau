@@ -159,14 +159,33 @@ test("tests failing only for want of approval don't keep a plugin from install",
 		name = "runs gh",
 		message = 'needs approval: it would run programs, and you haven\'t approved "proc" for gh',
 	}
-	local said, may = agent.describe_check(report({ waiting }))
+	local said, may = agent.describe_check(report({ waiting }), { "proc" })
 	assert(may, said)
 	assert(string.find(said, "plugin_install may go ahead", 1, true), said)
 	local broken = { file = "a.luau", name = "adds", message = "expected 2, got 3" }
-	local _, may_not = agent.describe_check(report({ waiting, broken }))
+	local _, may_not = agent.describe_check(report({ waiting, broken }), { "proc" })
 	assert(not may_not, "a real failure still stops it")
 	local typed: any = report({})
 	typed.types = { ok = false, output = "./plugin/init.luau(1,1): TypeError" }
 	local _, typed_may = agent.describe_check(typed)
 	assert(not typed_may, "so do type errors")
+	-- Needing what the plugin doesn't ask for is a failure: installing won't grant it.
+	local undeclared = {
+		file = "a.luau",
+		name = "writes",
+		message = 'needs approval: it would write any file, by path, and you haven\'t approved "fs.write" for gh',
+	}
+	local _, may_write = agent.describe_check(report({ undeclared }), { "proc" })
+	assert(not may_write, "fs.write isn't declared")
+end)
+
+test("a try never lands in a folder left from before", function(t)
+	local dir = sandbox(t)
+	-- As if an earlier session had tried "shout" and left a test behind.
+	greed.fs.write(`{dir}/staging/shout-1/test/old.luau`, 'error("an old try")\n')
+	greed.fs.write(`{dir}/staging/shout-2/plugin.toml`, 'name = "shout"\n')
+	local report = in_command(t, function()
+		return (agent.try("shout", PLUGIN))
+	end)()
+	assert(report and string.find(report, "tests: 1 passed, 0 failed", 1, true), report)
 end)

@@ -116,14 +116,25 @@ local function check_files(name: string, files: { [string]: string })
 	end
 end
 
+-- The capabilities the plugin in `dir` declares.
+local function declared(dir: string): { string }
+	local names = {}
+	for _, capability in greed.plugin.describe(dir).capabilities do
+		table.insert(names, capability.name)
+	end
+	return names
+end
+
 -- What a test failure says when it needed something not approved yet.
 local NEEDS_APPROVAL = "needs approval:"
 
 --- `report` in words for an agent, and whether the plugin may go to the
---- user to install. Tests that fail only for want of approval don't stop
---- it: before it's installed nothing is approved, and installing approves
---- what it asks for (and checks it again).
-function M.describe(report: greed.PluginCheck): (string, boolean)
+--- user to install. Tests that fail only for want of approval of what the
+--- plugin `declares` don't stop it: before it's installed nothing is
+--- approved, and installing approves what it asks for (and checks it
+--- again). Needing something it doesn't declare is a failure like any.
+function M.describe(report: greed.PluginCheck, declares: { string }?): (string, boolean)
+	local declared: { string } = declares or {}
 	local lines, passed = {}, true
 	if report.types.skipped then
 		table.insert(lines, `types: not checked ({report.types.skipped})`)
@@ -141,7 +152,11 @@ function M.describe(report: greed.PluginCheck): (string, boolean)
 			or {}
 		local waiting = 0
 		for _, f in failed do
+			local needs: string? = nil
 			if string.sub(f.message, 1, #NEEDS_APPROVAL) == NEEDS_APPROVAL then
+				needs = string.match(f.message, 'you haven\'t approved "([^"]+)"')
+			end
+			if needs and table.find(declared, needs) then
 				waiting += 1
 			end
 		end
@@ -186,10 +201,15 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 	if files["plugin.toml"] == nil then
 		files["plugin.toml"] = `name = "{name}"\nrequires = ["core"]\n`
 	end
-	tries += 1
-	local dir = `{M.dirs.staging}/{name}-{tries}`
+	-- A folder of its own: one left from an earlier session would mix its
+	-- files in with these.
+	local dir
+	repeat
+		tries += 1
+		dir = `{M.dirs.staging}/{name}-{tries}`
+	until greed.fs.stat(dir) == nil
 	write_files(dir, files)
-	local report, passed = M.describe(greed.plugin.check(dir))
+	local report, passed = M.describe(greed.plugin.check(dir), declared(dir))
 	staged[name] = { files = files, dir = dir, report = report, passed = passed }
 	return report, passed
 end
@@ -274,7 +294,7 @@ function M.install(name: string): string
 	local said = `the user installed {name} in {target}; it's loaded and its commands are ready`
 	-- Tests that waited for approval run now, with what was approved.
 	if string.find(s.report, NEEDS_APPROVAL, 1, true) then
-		local report = M.describe(greed.plugin.check(target))
+		local report = M.describe(greed.plugin.check(target), declared(target))
 		said ..= `\nchecked again with what it was approved for:\n{report}`
 	end
 	return said
