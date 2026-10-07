@@ -664,6 +664,42 @@ function M.clear_prompt(buffer: greed.Buffer)
 	end
 end
 
+--- The views of `buffer` showing the box's top line, the end of the
+--- history, to keep following it as the agent adds more (`follow`).
+function M.following(buffer: greed.Buffer): { greed.View }
+	local start = prompt_head(buffer)
+	local out: { greed.View } = {}
+	if start == nil then
+		return out
+	end
+	for _, view in buffer:views() do
+		local _, last = view:visible()
+		if last >= start then
+			table.insert(out, view)
+		end
+	end
+	return out
+end
+
+--- Puts the cursor of each of `views` that's up in the history, and not
+--- selecting anything, at the end of the box, so drawing scrolls down to
+--- what the agent added.
+function M.follow(buffer: greed.Buffer, views: { greed.View })
+	local start = prompt_head(buffer)
+	if start == nil then
+		return
+	end
+	for _, view in views do
+		if view:valid() then
+			local ranges = view:selection().ranges
+			local only = ranges[1]
+			if #ranges == 1 and only.anchor == only.head and only.head < start then
+				view:set_cursor(buffer:len())
+			end
+		end
+	end
+end
+
 --- Puts the cursor in `view` at the end of what's in the box.
 function M.focus_prompt(view: greed.View)
 	local pos = view:buffer():len()

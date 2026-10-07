@@ -169,7 +169,9 @@ local function changed(s: Session)
 		queued[s.id] = nil
 		local buffer = buffers[s.id]
 		if buffer and buffer:valid() then
+			local following = transcript.following(buffer)
 			pcall(transcript.render, buffer, s)
+			transcript.follow(buffer, following)
 			-- Its float, if it has one, says it's waiting for you.
 			core.floats.attention(buffer, s.status == "waiting")
 		end

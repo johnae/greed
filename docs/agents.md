@@ -423,6 +423,10 @@ it was about and what came back in a few words, like `read src/main.rs ·
 120 lines`. A `▸` means there's more: `tab` on the row shows all of its
 output, and `tab` again folds it.
 
+While the box is on screen, the transcript scrolls down as the agent
+adds to it, taking your cursor back to the box (unless you're selecting
+text). Scroll up away from the box and it stays where you are.
+
 Write in the box at the bottom; it grows as you write, and its top shows
 the agent, its mode and model. `alt-enter` sends and `ctrl-c` stops the
 agent's turn. The box's bottom line says what the agent is doing (the

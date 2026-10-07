@@ -496,3 +496,48 @@ test("a tool's title of several lines shows them all, the question its first", f
 	assert(string.find(drawn, "│ Allow Run echo one …?", 1, true), drawn)
 	acp.stop(s)
 end)
+
+-- Sends `text` the way the transcript does, leaving the cursor where it is,
+-- and waits until the agent is done.
+local function prompt(t: test.TestContext, s: any, text: string)
+	greed.spawn(function()
+		acp.prompt(s, text)
+	end)
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(60)
+end
+
+test("with the box on screen, what the agent adds scrolls into view", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	greed.view():set_cursor(0)
+	screen(t)
+	prompt(t, s, "markdown")
+	local view = greed.view()
+	assert(view:cursor() == view:buffer():len(), "the cursor went to the box")
+	assert(string.find(screen(t), "ready", 1, true), "the box shows: " .. screen(t))
+end)
+
+test("scrolled up away from the box, the view stays where you are", function(t)
+	local s = start(t)
+	for _ = 1, 3 do
+		send(t, s, "markdown")
+	end
+	greed.view():set_cursor(0)
+	assert(not string.find(screen(t), "ready", 1, true), "the box is off screen")
+	prompt(t, s, "hello")
+	assert(greed.view():cursor() == 0, "the cursor stayed")
+	assert(string.find(screen(t), "Fake in", 1, true), "still at the top: " .. screen(t))
+end)
+
+test("a selection in the history isn't taken away by what the agent adds", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	greed.view():set_selection({ ranges = { { anchor = 0, head = 4 } }, primary = 1 })
+	screen(t)
+	prompt(t, s, "hello")
+	local range = greed.view():selection().ranges[1]
+	assert(range.anchor == 0 and range.head == 4, `{range.anchor}-{range.head}`)
+end)
