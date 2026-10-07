@@ -37,7 +37,7 @@ M.saved = require("@self/saved")
 --- The floating views a tab has (see floats.luau).
 M.floats = require("@self/floats")
 
-type Direction = "left" | "right" | "up" | "down"
+export type Direction = "left" | "right" | "up" | "down"
 
 local OPPOSITE: { [Direction]: Direction } =
 	{ left = "right", right = "left", up = "down", down = "up" }
@@ -167,11 +167,15 @@ function M.grow(steps: number)
 	end
 end
 
--- The side to split the pane along: its longer one, counting a cell as
--- about twice as tall as it's wide.
+--- The side to split a pane of `rows` by `cols` cells along: its longer
+--- one, counting a cell as about twice as tall as it's wide.
+function M.split_side(rows: number, cols: number): Direction
+	return if cols > rows * 2 then "right" else "down"
+end
+
 local function longer_side(pane: greed.View): Direction
 	local rows, cols = pane:size()
-	return if (cols or 80) > (rows or 24) * 2 then "right" else "down"
+	return M.split_side(rows or 24, cols or 80)
 end
 
 --- Opens a terminal in a new pane on the `dir` side (the longer side

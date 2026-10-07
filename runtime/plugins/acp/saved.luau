@@ -2,10 +2,12 @@
 -- where it worked, its ACP session and what you asked it first, kept in
 -- the cache folder; the agent tells the rest itself. Greed's own agent has
 -- no one else to remember its conversations, so each is kept whole in the
--- data folder, per project, readable only by you.
+-- data folder, per repository, readable only by you. A repository's jj
+-- workspaces and git worktrees share the sessions kept.
 
 local greed = require("@greed")
 local models = require("@models")
+local repo = require("@vcs").repo
 local session = require("./session")
 
 type Session = session.Session
@@ -19,6 +21,8 @@ export type Saved = {
 	session_id: string,
 	title: string,
 	time: number,
+	--- How many tokens of the model's context it took, when the agent said.
+	tokens: number?,
 }
 
 --- What Greed's own agent keeps of a session to take it up again: what
@@ -36,7 +40,7 @@ export type Conversation = {
 	entries: { session.Entry },
 }
 
--- How many of Greed's own sessions are kept per project; older ones go.
+-- How many of Greed's own sessions are kept per repository; older ones go.
 local function most_kept(): number
 	local count = greed.option.get("agent-sessions-kept")
 	return if type(count) == "number" then count else 50
@@ -63,19 +67,28 @@ local function read_saved(file: string?): { any }
 	return if type(all) == "table" then all else {}
 end
 
--- The folder Greed's own sessions for the project at `root` are kept in.
-local function conversations(root: string): string?
+--- The repository the folder `root` is in, the same for all of its jj
+--- workspaces and git worktrees, or `root` outside one. Sessions are kept
+--- and listed by it.
+M.repository = repo.identity
+
+-- The folder Greed's own sessions are kept in, one folder per repository.
+local function kept_folder(): string?
 	local dirs = greed.fs.dirs()
 	local base = dirs.data or dirs.cache
-	if base == nil then
-		return nil
-	end
-	local name = string.gsub(string.match(root, "([^/]+)/*$") or "root", "[^%w._-]", "_")
-	return `{base}/agent-sessions/{name}-{string.sub(greed.hash.sha256(root), 1, 12)}`
+	return if base then `{base}/agent-sessions` else nil
 end
 
--- The kept sessions of a project as its index lists them: the one written
--- last first.
+-- A folder's name in the kept folder for `key`: the last part of its
+-- path (the repository's, not its store's) and a bit of its hash.
+local function folder_for(base: string, key: string): string
+	local path = string.gsub(string.gsub(key, "/%.jj/repo$", ""), "/%.git$", "")
+	local name = string.gsub(string.match(path, "([^/]+)/*$") or "root", "[^%w._-]", "_")
+	return `{base}/{name}-{string.sub(greed.hash.sha256(key), 1, 12)}`
+end
+
+-- The kept sessions of a repository as its index lists them: the one
+-- written last first.
 local function index_of(dir: string): { Saved }
 	local all = read_json(`{dir}/index.json`)
 	return if type(all) == "table" then all else {}
@@ -89,20 +102,73 @@ local function write_index(dir: string, index: { Saved })
 	)
 end
 
---- The sessions you can take up again for the project at `root`, newest
---- first, leaving out those of `running` that still run.
+-- Sessions used to be kept per project folder. Moves those of folders in
+-- repository `key` to its folder `dir`, once per run.
+local moved: { [string]: boolean } = {}
+local function move_old(base: string, dir: string, key: string)
+	if moved[key] then
+		return
+	end
+	moved[key] = true
+	local entries: { greed.DirEntry } = greed.fs.list(base) or {}
+	for _, entry in entries do
+		local old = `{base}/{entry.name}`
+		local first = if entry.dir and old ~= dir then index_of(old)[1] else nil
+		local root = first and first.root
+		if root and folder_for(base, root) == old and repo.identity(root) == key then
+			local index = index_of(dir)
+			local olds = index_of(old)
+			table.move(olds, 1, #olds, #index + 1, index)
+			table.sort(index, function(a: Saved, b: Saved)
+				return a.time > b.time
+			end)
+			write_index(dir, index)
+			for _, kept in olds do
+				greed.fs.rename(`{old}/{kept.session_id}.json`, `{dir}/{kept.session_id}.json`)
+			end
+			greed.fs.remove(old, { recursive = true })
+		end
+	end
+end
+
+-- The folder Greed's own sessions for the repository of `root` are kept in.
+local function conversations(root: string): string?
+	local base = kept_folder()
+	if base == nil then
+		return nil
+	end
+	local key = repo.identity(root)
+	local dir = folder_for(base, key)
+	move_old(base, dir, key)
+	return dir
+end
+
+--- The sessions you can take up again for the repository of `root` (in
+--- any of its workspaces), newest first, leaving out those of `running`
+--- that still run.
 function M.list(root: string, running: { Session }): { Saved }
 	local out: { Saved } = {}
 	local dir = conversations(root)
 	local all = read_saved(saved_file())
 	local own: { Saved } = if dir then index_of(dir) else {}
+	local key = repo.identity(root)
+	-- ACP agents' sessions of every project are kept together.
+	local of_repo: { [string]: boolean } = {}
+	for _, entry in all do
+		if of_repo[entry.root] == nil then
+			of_repo[entry.root] = repo.identity(entry.root) == key
+		end
+	end
+	for _, entry in own do
+		of_repo[entry.root] = true
+	end
 	table.move(own, 1, #own, #all + 1, all)
 	for _, entry in all do
 		local live = false
 		for _, s in running do
 			live = live or (s.session_id == entry.session_id and s.status ~= "exited")
 		end
-		if entry.root == root and not live then
+		if of_repo[entry.root] and not live then
 			table.insert(out, entry)
 		end
 	end
@@ -122,26 +188,48 @@ function M.first_asked(s: Session): string?
 	return nil
 end
 
--- The first line of what `s` was asked first, to tell it by.
-local function title_of(s: Session): string
+--- The first line of what `s` was asked first, to tell it by.
+function M.title(s: Session): string
 	local first = M.first_asked(s)
 	return first and string.match(first, "^%s*([^\n]*)") or "(nothing asked yet)"
 end
 
---- Stops keeping Greed's own session `id` for the project at `root`.
+--- Stops keeping Greed's own session `id`, of the project at `root`.
 function M.discard(root: string, id: string)
 	local dir = conversations(root)
 	if dir == nil then
 		return
 	end
+	local index = index_of(dir)
 	local kept: { Saved } = {}
-	for _, entry in index_of(dir) do
+	for _, entry in index do
 		if entry.session_id ~= id then
 			table.insert(kept, entry)
 		end
 	end
-	write_index(dir, kept)
-	greed.fs.remove(`{dir}/{id}.json`)
+	if #kept < #index then
+		write_index(dir, kept)
+		greed.fs.remove(`{dir}/{id}.json`)
+	end
+end
+
+-- Puts `entry` in the place of ACP session `id` among those kept, or with
+-- nil, takes it out.
+local function write_saved(id: string, entry: Saved?)
+	local file = saved_file()
+	if file == nil then
+		return
+	end
+	local kept: { any } = {}
+	for _, old in read_saved(file) do
+		if old.session_id ~= id then
+			table.insert(kept, old)
+		end
+	end
+	if entry then
+		table.insert(kept, entry)
+	end
+	greed.fs.write(file, greed.json.encode(greed.json.array(kept)))
 end
 
 --- Keeps `s` to take up again, or with `forget`, stops keeping it.
@@ -153,27 +241,30 @@ function M.remember(s: Session, forget: boolean?)
 		end
 		return
 	end
-	local file = saved_file()
-	if file == nil or s.session_id == nil then
+	local id = s.session_id
+	if id == nil then
 		return
 	end
-	local kept: { any } = {}
-	for _, entry in read_saved(file) do
-		if entry.session_id ~= s.session_id then
-			table.insert(kept, entry)
-		end
-	end
-	if not forget then
-		table.insert(kept, {
-			agent = s.agent,
-			root = s.root,
-			workspace = s.workspace,
-			session_id = s.session_id,
-			title = title_of(s),
-			time = os.time(),
-		})
-	end
-	greed.fs.write(file, greed.json.encode(greed.json.array(kept)))
+	write_saved(
+		id,
+		if forget
+			then nil
+			else {
+				agent = s.agent,
+				root = s.root,
+				workspace = s.workspace,
+				session_id = id,
+				title = M.title(s),
+				time = os.time(),
+				tokens = s.tokens,
+			}
+	)
+end
+
+--- Stops keeping `entry`, a session kept from before, whichever agent's.
+function M.forget(entry: Saved)
+	M.discard(entry.root, entry.session_id)
+	write_saved(entry.session_id, nil)
 end
 
 -- What each session was last kept as, so it's written only when that changes.
@@ -252,7 +343,7 @@ function M.store(
 		id = id,
 		agent = s.agent,
 		root = s.root,
-		title = title_of(s),
+		title = M.title(s),
 		time = os.time(),
 		role = state.role,
 		groups = greed.json.array(state.groups),
@@ -276,6 +367,7 @@ function M.store(
 			session_id = id,
 			title = conversation.title,
 			time = conversation.time,
+			tokens = s.tokens,
 		},
 	}
 	local most = most_kept()

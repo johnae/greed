@@ -3,7 +3,8 @@
 -- to and read from, working in the project or in a workspace of its own.
 --
 --   space i n   start an agent: pick which, and where it works
---   space i o   the agents: what each is doing, its changes, review or bring them in
+--   space i l   the sessions, running and kept: show, take up, review or bring them in
+--   space i m   move this session's transcript to a pane, tab, float or panel
 --
 -- In a transcript, alt-enter sends what's in the box at the bottom and
 -- ctrl-c stops the agent's turn. A question the agent asks shows as a row
@@ -28,7 +29,8 @@ local participants = require("@self/participants")
 local review = require("@self/review")
 local workspaces = require("@self/workspaces")
 local saved = require("@self/saved")
-local overview = require("@self/overview")
+local list = require("@self/list")
+local panes = require("@panes")
 local statusline = require("@statusline")
 local agent_context = require("@agent").context
 
@@ -76,7 +78,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "agent-sessions-kept",
-	doc = "How many sessions with Greed's own agent are kept per project to take up again; older ones are deleted",
+	doc = "How many sessions with Greed's own agent are kept per repository to take up again; older ones are deleted",
 	default = 50,
 })
 
@@ -150,11 +152,14 @@ local by_buffer: { [number]: Session } = {}
 -- The agent each session runs, by session id, for forking it.
 local agent_of: { [number]: Agent } = {}
 local buffers: { [number]: greed.Buffer } = {}
+-- When each session last did something, in seconds since 1970.
+local active: { [number]: number } = {}
 
 -- Redraws everything that shows `s`, soon: changes come in bursts while an
 -- agent streams.
 local queued: { [number]: boolean } = {}
 local function changed(s: Session)
+	active[s.id] = os.time()
 	if queued[s.id] then
 		return
 	end
@@ -163,12 +168,12 @@ local function changed(s: Session)
 		greed.sleep(20)
 		queued[s.id] = nil
 		local buffer = buffers[s.id]
-		if buffer then
+		if buffer and buffer:valid() then
 			pcall(transcript.render, buffer, s)
 			-- Its float, if it has one, says it's waiting for you.
 			core.floats.attention(buffer, s.status == "waiting")
 		end
-		overview.render(sessions)
+		list.render()
 		participants.draw(sessions)
 		saved.keep(s)
 	end)
@@ -191,13 +196,21 @@ local function launch(
 		return nil,
 			`{agent.title or agent.name} isn't installed: {table.concat(agent.commands[1], " ")}`
 	end
-	local count = 1
-	for _, s in sessions do
-		if s.agent == agent.name then
-			count += 1
+	-- The agent's name, numbered from 2 while sessions have it.
+	local named = agent.title or agent.name
+	local name, count = named, 1
+	local function taken(): boolean
+		for _, other in sessions do
+			if other.name == name then
+				return true
+			end
 		end
+		return false
 	end
-	local name = (agent.title or agent.name) .. (if count > 1 then ` {count}` else "")
+	while taken() do
+		count += 1
+		name = `{named} {count}`
+	end
 	local s: Session
 	local function decides(permission: session.Permission): string?
 		return decide(s, permission)
@@ -241,10 +254,11 @@ local function launch(
 	end
 	table.insert(sessions, s)
 	agent_of[s.id] = agent
+	active[s.id] = os.time()
 	local buffer = transcript.create(s)
 	buffers[s.id] = buffer
 	by_buffer[buffer:id()] = s
-	overview.render(sessions)
+	list.render()
 	local model = if agent.native then nil else agent.model
 	if model then
 		-- The model asked for, once the agent says which it has.
@@ -277,8 +291,8 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 	return launch(agent, root, workspace)
 end
 
---- The sessions you can take up again for the project at `root`, newest
---- first, leaving out the ones running now.
+--- The sessions you can take up again for the repository of `root`, in any
+--- of its workspaces, newest first, leaving out the ones running now.
 function M.saved(root: string): { Saved }
 	return saved.list(root, sessions)
 end
@@ -325,16 +339,121 @@ function M.fork(s: Session): (Session?, string?)
 	return launch(agent, s.root, workspace, { fork = s.session_id, entries = entries })
 end
 
---- Shows the transcript of `s` in a panel on the right, with the cursor in
---- its prompt.
-function M.show(s: Session)
+--- Where a transcript shows: a panel on the right, a pane of the tab, a
+--- tab of its own or a floating view.
+export type Placement = "panel" | "pane" | "tab" | "float"
+
+-- The transcript of `s`, made again if it was closed (with :bc, say).
+local function buffer_of(s: Session): greed.Buffer
 	local buffer = buffers[s.id]
-	if buffer == nil then
-		return
+	if buffer and buffer:valid() then
+		return buffer
+	elseif buffer then
+		by_buffer[buffer:id()] = nil
 	end
-	local view = greed.panel(buffer, { side = "right", width = "45%", title = s.name })
+	local made = transcript.create(s)
+	buffers[s.id] = made
+	by_buffer[made:id()] = s
+	return made
+end
+
+-- Whether `view` is shown the way `where` says.
+local function shown_as(view: greed.View, where: Placement): boolean
+	local floating = view:float_spec() ~= nil
+	if where == "float" or where == "panel" then
+		return floating == (where == "float") and not view:is_pane()
+	elseif not view:is_pane() then
+		return false
+	elseif where == "pane" then
+		return true
+	end
+	for _, tab in greed.tab.list() do
+		if #tab.panes == 1 and tab.panes[1] == view then
+			return true
+		end
+	end
+	return false
+end
+
+-- The panes' sizes as they're split, by view id, for those split since
+-- they were last drawn.
+type Sizes = { [number]: { rows: number, cols: number } }
+
+-- A new pane showing `buffer`, split from the tab's biggest along its
+-- longer side.
+local function split(buffer: greed.Buffer, sizes: Sizes): greed.View
+	local tab = greed.tab.current()
+	local best, most = tab.active, { rows = 0, cols = 0 }
+	for _, pane in tab.panes do
+		local rows, cols = pane:size()
+		local size = sizes[pane:id()] or { rows = rows or 24, cols = cols or 80 }
+		if size.rows * size.cols > most.rows * most.cols then
+			best, most = pane, size
+		end
+	end
+	local side: panes.Direction = panes.split_side(most.rows, most.cols)
+	local view = best:split(side, buffer)
+	local half = if side == "right"
+		then { rows = most.rows, cols = most.cols // 2 }
+		else { rows = most.rows // 2, cols = most.cols }
+	sizes[best:id()] = half
+	sizes[view:id()] = half
+	return view
+end
+
+local function open_in(buffer: greed.Buffer, s: Session, where: Placement, sizes: Sizes): greed.View
+	if where == "panel" then
+		return greed.panel(buffer, { side = "right", width = "45%", title = s.name })
+	elseif where == "float" then
+		return panes.floats.show(buffer, { title = s.name })
+	elseif where == "tab" then
+		greed.tab.rename(greed.tab.new(buffer), s.name)
+		return greed.tab.current().active
+	end
+	return split(buffer, sizes)
+end
+
+-- Shows the transcript of `s` as `where` says, moving it there from
+-- wherever else it shows, or where it shows already (a panel if nowhere).
+local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
+	local buffer = buffer_of(s)
+	local before = buffer:views()
+	local found: greed.View? = nil
+	for _, old in before do
+		if where == nil or shown_as(old, where) then
+			found = old
+			break
+		end
+	end
+	local view = found or open_in(buffer, s, where or "panel", sizes or {})
+	if found == nil then
+		-- Closing a view leaves the session running; the project's last
+		-- pane can't close, and goes on showing it.
+		for _, old in before do
+			old:close()
+		end
+	end
 	view:focus()
 	transcript.focus_prompt(view)
+	return view
+end
+
+--- Shows the transcript of `s` with the cursor in its prompt: as `where`
+--- says, moving it there from where it showed, or without `where`, where
+--- it shows already, or else in a panel on the right. Closing its view
+--- leaves the session running.
+function M.show(s: Session, where: Placement?)
+	place(s, where)
+end
+
+--- Shows the transcripts of `several` as `where` says, each moved there:
+--- several panes split the biggest pane each time, and several tabs are
+--- one tab with a pane each.
+function M.show_all(several: { Session }, where: Placement)
+	local sizes: Sizes = {}
+	for i, s in several do
+		place(s, if where == "tab" and i > 1 then "pane" else where, sizes)
+	end
 end
 
 --- Every session, oldest first.
@@ -373,11 +492,8 @@ function M.stop(s: Session)
 	changed(s)
 end
 
---- Stops `s` and, if it had a workspace, removes it.
-function M.close(s: Session)
-	saved.remember(s, true)
-	session.stop(s)
-	workspaces.remove(s)
+-- Takes `s` out of the sessions, its transcript going once nothing shows it.
+local function drop(s: Session)
 	local index = table.find(sessions, s)
 	if index then
 		table.remove(sessions, index)
@@ -388,18 +504,183 @@ function M.close(s: Session)
 		by_buffer[buffer:id()] = nil
 		buffer:set_kept(false)
 	end
-	overview.render(sessions)
+end
+
+-- The sessions kept for the project shown, as the list last read them.
+local kept: { root: string, entries: { Saved } }? = nil
+
+--- Stops `s` and, if it had a workspace, removes it.
+function M.close(s: Session)
+	saved.remember(s, true)
+	session.stop(s)
+	workspaces.remove(s)
+	drop(s)
+	kept = nil
+	list.render()
 	participants.draw(sessions)
 end
 
---- Shows the agents overview in `view`.
-function M.overview(view: greed.View)
-	overview.open(view, sessions)
+-- The repository of each folder, as sessions are listed by it.
+local repositories: { [string]: string } = {}
+local function repository(root: string): string
+	local key = repositories[root]
+	if key == nil then
+		key = saved.repository(root)
+		repositories[root] = key
+	end
+	return key
 end
 
--- The session `ctx` is about: the transcript it's in, or the overview line.
+-- The list's rows: the sessions of the repository of the project at
+-- `root`, running and kept, that project's first, then the newest.
+local function rows(root: string): { list.Row }
+	local entries: { Saved }
+	if kept and kept.root == root then
+		entries = kept.entries
+	else
+		entries = saved.list(root, {})
+		kept = { root = root, entries = entries }
+	end
+	local key = repository(root)
+	local out: { list.Row } = {}
+	local running: { [string]: boolean } = {}
+	for _, s in sessions do
+		if repository(s.root) == key then
+			if s.session_id then
+				running[s.session_id] = true
+			end
+			table.insert(out, {
+				key = string.format("s%08d", s.id),
+				session = s,
+				agent = s.name,
+				title = saved.title(s),
+				status = s.status :: string,
+				time = active[s.id] or os.time(),
+				tokens = s.tokens,
+				root = s.root,
+				workspace = s.workspace and s.workspace.name,
+			})
+		end
+	end
+	for _, entry in entries do
+		if not running[entry.session_id] then
+			local agent = agents.named(entry.agent)
+			table.insert(out, {
+				key = `k{entry.session_id}`,
+				saved = entry,
+				agent = if agent then agent.title or agent.name else entry.agent,
+				title = entry.title,
+				status = "saved",
+				time = entry.time,
+				tokens = entry.tokens,
+				root = entry.root,
+				workspace = entry.workspace and entry.workspace.name,
+			})
+		end
+	end
+	table.sort(out, function(a: list.Row, b: list.Row)
+		local here_a, here_b = a.root == root, b.root == root
+		if here_a ~= here_b then
+			return here_a
+		elseif a.time ~= b.time then
+			return a.time > b.time
+		end
+		return a.key > b.key
+	end)
+	return out
+end
+list.source(rows)
+
+--- Opens the list of the sessions of the repository of the project at
+--- `root`, running and kept to take up again, in any of its workspaces.
+--- Without `root`, it's the project of the transcript or file you're in.
+function M.list(root: string?)
+	local s = by_buffer[greed.view():buffer():id()]
+	kept = nil
+	list.open(root or (s and s.root) or core.project.root())
+end
+
+-- The session of a row, taken up first when it's kept or it exited, in
+-- place of the one that exited (in the views that show it).
+local function take_up(row: list.Row): (Session?, string?)
+	local s = row.session
+	if s and s.status ~= "exited" then
+		return s, nil
+	end
+	local entry: Saved? = row.saved
+	if entry == nil and s and s.session_id then
+		local exited: Saved = {
+			agent = s.agent,
+			root = s.root,
+			workspace = s.workspace,
+			session_id = s.session_id,
+			title = row.title,
+			time = row.time,
+		}
+		entry = exited
+	end
+	if entry == nil then
+		-- It exited before it started: there's only its transcript to show.
+		return s, nil
+	end
+	-- Out of the sessions first, so the one taken up has its name.
+	local index = if s then table.find(sessions, s) else nil
+	if s and index then
+		table.remove(sessions, index)
+	end
+	local again, err = M.resume(entry)
+	if again == nil then
+		if s and index then
+			table.insert(sessions, index, s)
+		end
+		return nil, err
+	end
+	local old = s and buffers[s.id]
+	if s and old and old:valid() then
+		local new = buffer_of(again)
+		for _, view in old:views() do
+			view:show(new)
+		end
+	end
+	if s then
+		drop(s)
+	end
+	kept = nil
+	return again, nil
+end
+
+-- The session `ctx` is about: the transcript it's in, or the list's line.
 local function current(ctx: greed.Context): Session?
-	return by_buffer[ctx.buffer:id()] or overview.at_cursor(ctx)
+	local row = list.at_cursor(ctx)
+	return by_buffer[ctx.buffer:id()] or (row and row.session)
+end
+
+-- The sessions of the rows chosen in the list (marked, or under the
+-- cursor), taken up first where they need to be, or the transcript's
+-- session; each failure said.
+local function chosen(ctx: greed.Context): { Session }
+	local out: { Session } = {}
+	local s = by_buffer[ctx.buffer:id()]
+	if s then
+		return { s }
+	end
+	for _, row in list.chosen(ctx) do
+		local taken, err = take_up(row)
+		if taken then
+			table.insert(out, taken)
+		else
+			greed.echo(`can't take up {row.agent}: {err}`)
+		end
+	end
+	return out
+end
+
+-- Closes the list when `ctx` is in it, for a command that shows something
+-- else.
+local function leave_list(ctx: greed.Context)
+	if list.is(ctx.buffer) then
+		list.close()
+	end
 end
 
 -- Commands -------------------------------------------------------------------
@@ -408,6 +689,7 @@ greed.command({
 	name = "agent-new",
 	doc = "Start an agent over ACP: pick which, and whether it works in a workspace of its own",
 	run = function(ctx)
+		leave_list(ctx)
 		local items = {}
 		for _, agent in agents.list do
 			local command = agents.command_of(agent)
@@ -440,12 +722,128 @@ greed.command({
 	end,
 })
 
+-- Opens the list, or closes it from inside.
+local function toggle_list(ctx: greed.Context)
+	if list.is(ctx.buffer) then
+		list.close()
+	else
+		M.list()
+	end
+end
+
 greed.command({
-	name = "agents",
-	doc = "Show the agents: what each is doing, its changes, and bring them in",
+	name = "agent-list",
+	doc = "List the agent sessions, running and kept, to show, take up, move, review or close them",
+	run = toggle_list,
+})
+-- The names the list had when it was two.
+greed.command({ name = "agents", doc = "The same as agent-list", run = toggle_list })
+greed.command({ name = "agent-resume", doc = "The same as agent-list", run = toggle_list })
+
+-- Shows the sessions chosen in the list, or the transcript's, as `where`
+-- says.
+local function show_in(where: Placement?): (ctx: greed.Context) -> ()
+	return function(ctx)
+		local in_list = list.is(ctx.buffer)
+		local several = chosen(ctx)
+		if #several == 0 then
+			if not in_list then
+				greed.echo("no session here; space i l lists them")
+			end
+			return
+		end
+		leave_list(ctx)
+		if where == nil and #several == 1 then
+			M.show(several[1])
+		else
+			M.show_all(several, where or "pane")
+		end
+	end
+end
+
+greed.command({
+	name = "agents-show",
+	doc = "Show the sessions marked in the list, or the one under the cursor, taking them up if they're kept",
+	run = show_in(nil),
+})
+greed.command({
+	name = "agent-show-panel",
+	doc = "Show the session (the transcript's, or those chosen in the list) in a panel on the right",
+	run = show_in("panel"),
+})
+greed.command({
+	name = "agent-show-pane",
+	doc = "Show the session (the transcript's, or those chosen in the list) in a pane of the tab",
+	run = show_in("pane"),
+})
+greed.command({
+	name = "agent-show-tab",
+	doc = "Show the session (the transcript's, or those chosen in the list) in a tab of its own",
+	run = show_in("tab"),
+})
+greed.command({
+	name = "agent-show-float",
+	doc = "Show the session (the transcript's, or those chosen in the list) in a floating view",
+	run = show_in("float"),
+})
+
+local MOVES: { [string]: string } = {
+	p = "agent-show-pane",
+	t = "agent-show-tab",
+	w = "agent-show-float",
+	s = "agent-show-panel",
+}
+
+greed.command({
+	name = "agent-move",
+	doc = "Move the session's transcript to a pane, a tab, a float or a panel: the next key says which",
 	run = function(ctx)
-		M.overview(ctx.view)
+		if current(ctx) == nil and not list.is(ctx.buffer) then
+			greed.echo("no session here; space i l lists them")
+			return
+		end
+		greed.echo("move to: p pane · t tab · w float · s side panel")
+		local command = MOVES[greed.next_key()]
+		greed.echo("")
+		if command then
+			greed.run(command)
+		end
 	end,
+})
+
+greed.command({
+	name = "agents-resume",
+	doc = "Take up the sessions marked in the list, or the one under the cursor, without showing them",
+	run = function(ctx)
+		local taken = 0
+		for _, row in list.chosen(ctx) do
+			if row.session and row.session.status ~= "exited" then
+				continue
+			end
+			local s, err = take_up(row)
+			if s then
+				taken += 1
+			else
+				greed.echo(`can't take up {row.agent}: {err}`)
+			end
+		end
+		if taken > 0 then
+			greed.echo(`took up {taken} session{if taken == 1 then "" else "s"}`)
+		end
+		list.render()
+	end,
+})
+
+greed.command({
+	name = "agents-mark",
+	doc = "Mark the session under the cursor in the list, or unmark it, to act on several",
+	run = list.mark,
+})
+
+greed.command({
+	name = "agents-filter",
+	doc = "Narrow the list to the sessions with the text typed",
+	run = list.filter,
 })
 
 greed.command({
@@ -556,33 +954,6 @@ greed.command({
 })
 
 greed.command({
-	name = "agent-resume",
-	doc = "Take up an earlier session with an agent in this project, where it left off",
-	run = function()
-		local root = core.project.root()
-		local items = {}
-		for _, entry in M.saved(root) do
-			local where = if entry.workspace then `  (workspace {entry.workspace.name})` else ""
-			table.insert(items, { label = `{entry.agent}: {entry.title}{where}`, value = entry })
-		end
-		if #items == 0 then
-			greed.echo("no earlier sessions in this project")
-			return
-		end
-		local chosen = picker.choose("Take up", items)
-		if chosen == nil then
-			return
-		end
-		local s, err = M.resume(chosen.value)
-		if s == nil then
-			greed.echo(err :: string)
-			return
-		end
-		M.show(s)
-	end,
-})
-
-greed.command({
 	name = "agent-fork",
 	doc = "Fork the agent: a new session that starts with everything said so far",
 	run = function(ctx)
@@ -590,6 +961,7 @@ greed.command({
 		if s == nil then
 			return
 		end
+		leave_list(ctx)
 		local fork, err = M.fork(s)
 		if fork == nil then
 			greed.echo(`can't fork: {err}`)
@@ -638,17 +1010,6 @@ greed.command({
 })
 
 greed.command({
-	name = "agents-open",
-	doc = "Open the transcript of the agent under the cursor",
-	run = function(ctx)
-		local s = overview.at_cursor(ctx)
-		if s then
-			M.show(s)
-		end
-	end,
-})
-
-greed.command({
 	name = "agents-diff",
 	doc = "Show what the agent under the cursor changed in its workspace",
 	run = function(ctx)
@@ -663,7 +1024,8 @@ greed.command({
 		end
 		local buffer =
 			vcs.diffs.buffer("agent-diff", if text == "" then "nothing changed yet\n" else text)
-		ctx.view:show(buffer)
+		leave_list(ctx)
+		greed.view():show(buffer)
 	end,
 })
 
@@ -705,18 +1067,38 @@ greed.command({
 
 greed.command({
 	name = "agents-close",
-	doc = "Stop the agent under the cursor and remove its workspace, after asking",
+	doc = "Close the sessions marked in the list, or the one under the cursor: stop and forget them and remove their workspaces, asking first for those running or with a workspace",
 	run = function(ctx)
-		local s = overview.at_cursor(ctx)
-		if s == nil then
+		local picked = list.chosen(ctx)
+		local names: { string } = {}
+		local running, workspace = false, false
+		for _, row in picked do
+			table.insert(names, row.agent)
+			running = running or (row.session ~= nil and row.status ~= "exited")
+			workspace = workspace or row.workspace ~= nil
+		end
+		if #picked == 0 then
 			return
+		elseif running or workspace then
+			local also = if workspace then " and remove their workspaces" else ""
+			greed.echo(`close {table.concat(names, ", ")}{also}? y/n`)
+			local yes = greed.next_key() == "y"
+			greed.echo("")
+			if not yes then
+				return
+			end
 		end
-		greed.echo(`stop {s.name}{if s.workspace then " and remove its workspace" else ""}? y/n`)
-		local yes = greed.next_key() == "y"
-		greed.echo("")
-		if yes then
-			M.close(s)
+		for _, row in picked do
+			local s, entry = row.session, row.saved
+			if s then
+				M.close(s)
+			elseif entry then
+				saved.forget(entry)
+				workspaces.remove(entry)
+			end
 		end
+		kept = nil
+		list.render()
 	end,
 })
 
@@ -742,15 +1124,23 @@ greed.keymap.bind({ mode = "normal", kind = "agent-transcript" }, {
 	tab = "agent-fold",
 })
 greed.keymap.bind({ mode = "normal", kind = "agents" }, {
-	enter = "agents-open",
+	enter = "agents-show",
+	r = "agents-resume",
+	m = "agents-mark",
+	["/"] = "agents-filter",
+	p = "agent-show-pane",
+	t = "agent-show-tab",
+	w = "agent-show-float",
+	s = "agent-show-panel",
 	n = "agent-new",
+	f = "agent-fork",
+	x = "agents-close",
 	d = "agents-diff",
 	b = "agents-bring",
-	r = "agents-review",
-	s = "agent-stop",
-	x = "agents-close",
-	f = "agent-fork",
-	q = "buffer-close",
+	R = "agents-review",
+	["ctrl-c"] = "agent-stop",
+	q = "agent-list",
+	esc = "agent-list",
 })
 -- These work while typing too, in every style.
 local function transcript_keys(mode: string)
@@ -765,8 +1155,8 @@ transcript_keys("normal")
 core.style.each_typing(transcript_keys)
 greed.keymap.bind("normal", {
 	["space i n"] = "agent-new",
-	["space i o"] = "agents",
-	["space i r"] = "agent-resume",
+	["space i l"] = "agent-list",
+	["space i m"] = "agent-move",
 })
 
 --- Agents handing tasks to other agents (subagent.luau).

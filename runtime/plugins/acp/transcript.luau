@@ -48,9 +48,13 @@ local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 local FRAME_MS = 80
 local SECOND_MS = 1000
 
-local function spinner_frame(now: number): string
+--- The spinner's frame at `now`, on greed.now()'s clock; a frame shows
+--- for `FRAME_MS`.
+function M.spinner_frame(now: number): string
 	return SPINNER[(now // FRAME_MS) % #SPINNER + 1]
 end
+M.FRAME_MS = FRAME_MS
+local spinner_frame = M.spinner_frame
 
 type Style = {
 	from: number,
@@ -268,8 +272,8 @@ function M.top(s: Session, cells: number): (string, { Style })
 	return line, styles
 end
 
--- A count of tokens in a few characters: 950, 14.2k, 200k, 1.1M.
-local function tokens(count: number): string
+--- A count of tokens in a few characters: 950, 14.2k, 200k, 1.1M.
+function M.tokens(count: number): string
 	if count < 1000 then
 		return tostring(math.floor(count))
 	elseif count < 1e6 then
@@ -371,8 +375,8 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	local right = ""
 	if s.tokens then
 		right = if s.window
-			then `{tokens(s.tokens)} / {tokens(s.window)} tokens`
-			else `{tokens(s.tokens)} tokens`
+			then `{M.tokens(s.tokens)} / {M.tokens(s.window)} tokens`
+			else `{M.tokens(s.tokens)} tokens`
 	end
 	local used = 0
 	for _, p in left do

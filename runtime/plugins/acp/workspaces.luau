@@ -115,8 +115,9 @@ function M.bring(s: Session): (boolean, string?)
 	return true, nil
 end
 
---- Removes the workspace of `s`, if it has one.
-function M.remove(s: Session)
+--- Removes the workspace of `s` (a session, or one kept from before), if
+--- it has one.
+function M.remove(s: { root: string, workspace: Workspace? })
 	local ws = s.workspace
 	if ws == nil then
 		return

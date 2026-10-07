@@ -4,7 +4,7 @@
 -- berget or a local Ollama), uses the tools Greed offers every agent plus
 -- editing files and running commands, and asks before it edits or runs
 -- anything, the same way ACP agents ask. Its session is like theirs, so
--- the transcript, the agents overview and subagents work the same. Each
+-- the transcript, the session list and subagents work the same. Each
 -- session is written down as it goes, to take up again (saved.luau), and
 -- compacted as it nears the model's limit (compact.luau).
 
@@ -299,10 +299,7 @@ local function title_of(s: Session, c: models.Call): string
 				value = core.project.relative(value, s.root)
 			end
 			local line = string.match(value, "^[^\n]*") or value
-			if (utf8.len(line) or #line) > 50 then
-				line = string.sub(line, 1, (utf8.offset(line, 50) or 50) - 1) .. "…"
-			end
-			return `{c.name} {line}`
+			return `{c.name} {core.text.clip(line, 50)}`
 		end
 	end
 	return c.name

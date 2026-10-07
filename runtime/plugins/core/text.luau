@@ -277,4 +277,26 @@ function M.reflow(lines: string, width: number): string
 	return table.concat(out, "\n") .. (if ends then "\n" else "")
 end
 
+--- `text` cut to `width` characters, the last an ellipsis when it's longer.
+function M.clip(text: string, width: number): string
+	if (utf8.len(text) or #text) <= width then
+		return text
+	end
+	local at = utf8.offset(text, math.max(width, 1)) or width
+	return string.sub(text, 1, at - 1) .. "…"
+end
+
+--- How long ago something was, `seconds` back, roughly: "just now",
+--- "4 min ago", "3 h ago", "2 days ago".
+function M.ago(seconds: number): string
+	if seconds < 60 then
+		return "just now"
+	elseif seconds < 3600 then
+		return `{seconds // 60} min ago`
+	elseif seconds < 2 * 86400 then
+		return `{seconds // 3600} h ago`
+	end
+	return `{seconds // 86400} days ago`
+end
+
 return M

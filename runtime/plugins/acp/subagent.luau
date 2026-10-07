@@ -2,8 +2,8 @@
 -- a session of its own and reports back. The helper starts with an empty
 -- context, so a long search or a side task doesn't fill the caller's, and
 -- by default in a workspace of its own, so its edits wait for you to bring
--- them in. Its transcript is in `:agents` like any other, and it asks you
--- before doing things, as agents you start do.
+-- them in. Its transcript is in the session list like any other, and it
+-- asks you before doing things, as agents you start do.
 
 local core = require("@core")
 local agent = require("@agent")
@@ -127,7 +127,7 @@ function M.offer(sessions: Sessions)
 				error(err, 0)
 			end
 			local note = if done.workspace
-				then `Its changes are in its workspace ({done.workspace}); the user brings them in from :agents.`
+				then `Its changes are in its workspace ({done.workspace}); the user brings them in from the session list (space i l).`
 				else nil
 			return { report = done.report, session = done.session, note = note }
 		end,

@@ -168,14 +168,7 @@ end
 -- The most of a line a tool's summary shows, in characters.
 local SUMMARY_WIDTH = 60
 
--- `text` cut to `width` characters, with an ellipsis when it's longer.
-local function clip(text: string, width: number): string
-	if (utf8.len(text) or #text) <= width then
-		return text
-	end
-	local at = utf8.offset(text, width) or width
-	return string.sub(text, 1, at - 1) .. "…"
-end
+local clip = core.text.clip
 
 --- A tool's output (`lines`, without trailing empty ones) in a few words
 --- for its row in the transcript: a short line as it is, JSON as what it

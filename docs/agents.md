@@ -312,17 +312,19 @@ language server reports about the file right after. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
 in the project itself, without a workspace of its own.
 
-Each session is written down after every turn, so `space i r` lists them
-with the other agents' sessions and takes one up where it left off: the
-transcript comes back and the conversation goes on with everything said
-so far, the same model and the tool groups it had on. Your "allow always"
-answers aren't kept, so a session taken up asks again. The files are in
-Greed's data folder (`~/.local/share/greed/agent-sessions`), one folder
-per project, readable only by you, since they hold what you typed and
-what tools returned. Long tool output is cut there. The newest 50
-sessions of each project are kept and older ones deleted
-(`:set agent-sessions-kept 100` keeps more); closing one with `x` in the
-agents overview deletes it.
+Each session is written down after every turn, so the [session
+list](#the-session-list) (`space i l`) shows it with the other agents'
+sessions and takes it up where it left off: the transcript comes back and
+the conversation goes on with everything said so far, the same model and
+the tool groups it had on. Your "allow always" answers aren't kept, so a
+session taken up asks again. The files are in Greed's data folder
+(`~/.local/share/greed/agent-sessions`), one folder per repository, which
+all its jj workspaces and git worktrees share, readable only by you,
+since they hold what you typed and what tools returned. Long tool output
+is cut there. The newest 50 sessions of each repository are kept and
+older ones deleted (`:set agent-sessions-kept 100` keeps more); closing
+one with `x` in the session list deletes it. Agents don't read other
+sessions' conversations; only you see them in the list.
 
 When a conversation nears the model's limit (80% of its context window),
 it's compacted before the next request: the model summarises everything
@@ -350,8 +352,8 @@ models.roles.agent = { provider = "ollama", model = "qwen2.5-coder", context = 1
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent: pick which, and where it works |
-| `space i o` (`:agents`) | The agents: what each is doing, and their changes |
-| `space i r` (`:agent-resume`) | Take up an earlier session with an agent, where it left off |
+| `space i l` (`:agent-list`) | The [session list](#the-session-list): every session of the repository, running and kept |
+| `space i m` (`:agent-move`) | Move the transcript you're in to a pane, a tab, a float or a panel |
 | `:agent-fork` | Fork the agent of the transcript you're in |
 | `:agent-compact` | Compact the conversation with Greed's own agent now |
 
@@ -432,8 +434,52 @@ for you.
 has Manual, Accept edits and Plan), and `alt-M` the model, when it offers
 a choice; the top of the box you write in shows both. The transcript is a
 buffer in a panel: move and copy in it as in any other, and `:q` or
-`ctrl-w q` closes the panel while the agent goes on (`space i o` brings it
+`ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
+
+### The session list
+
+`space i l` lists the sessions of the repository you're in: those running
+and those kept to take up again, from every jj workspace or git worktree
+of it, with this one's first and then the newest. Each line says which
+agent, what you asked it first, what it's doing (`working`, spinning
+with effects on, `waiting for you`, `idle`, `exited` or `saved`), when it
+last did something, the tokens it takes when the agent says, and where it
+works: `in other-workspace` for one that ran in another workspace of the
+repository, `workspace NAME` for one in a workspace of its own.
+
+```text
+  Claude    Fix the off-by-one in the pager  ⠋ working  just now   14.2k tokens
+  Greed     Add a test for the pager         idle       4 min ago  3.1k tokens
+  Claude 2  Look at the parser               saved      2 h ago                 in greed-b
+```
+
+| Keys | |
+|---|---|
+| `enter` | Show the session, taking it up first if it's kept or exited; with several marked, show them all as panes |
+| `r` | Take up the session (or the marked ones) without showing it |
+| `m` | Mark the session, or unmark it, to act on several |
+| `p`, `t`, `w`, `s` | Show it in a pane, a tab of its own, a floating view or a panel on the right |
+| `/` | Narrow the list to sessions with what you type in them; `esc` puts back the filter there was |
+| `n` | Start another, asking which agent as `space i n` does |
+| `f` | Fork it: a new session that starts with everything said so far |
+| `x` | Close it: stop it, forget it and remove its workspace, asking first when it's running or has a workspace |
+| `d`, `b`, `R` | What it changed in its workspace, bring that in, or review it (below) |
+| `ctrl-c` | Stop its turn |
+| `q`, `esc` | Close the list |
+
+A session taken up from another workspace works in the folder it ran in,
+not the one you're in now.
+
+A transcript shows in one place at a time, and moving it doesn't restart
+the agent: `space i m` and then `p`, `t`, `w` or `s` moves the one you're
+in to a pane, a tab, a float or a side panel (`:agent-show-pane`,
+`:agent-show-tab`, `:agent-show-float`, `:agent-show-panel`). The box you
+write in, its keys and the status line under it work the same in each.
+Several marked sessions shown with `p` split the biggest pane each time,
+with `t` they share one new tab, and with `w` each gets a float of its
+own. Closing a transcript's view, its pane or its tab leaves the session
+running; only `x` in the list, or quitting Greed, ends it.
 
 Some questions can be answered for you. An agent in a workspace of its own
 edits, moves and deletes files there without asking, since nothing reaches
@@ -464,20 +510,15 @@ end)
 An agent works either in the project with you, or in a workspace of its
 own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
 cache folder. There it can change what it likes without touching your
-files. In the agents overview:
+files. In the session list:
 
 | Keys | |
 |---|---|
-| `enter` | Open its transcript |
 | `d` | What it changed in its workspace, as a diff |
-| `r` | Review that on your files, change by change, as proposed edits (see [Reviewing proposed edits](#reviewing-proposed-edits)) |
+| `R` | Review that on your files, change by change, as proposed edits (see [Reviewing proposed edits](#reviewing-proposed-edits)) |
 | `b` | Bring that into your working copy: with jj its change is squashed into yours, with git its diff is applied |
-| `s` | Stop its turn |
-| `x` | Stop it and remove its workspace, after asking |
-| `n` | Start another |
-| `f` | Fork it: a new session that starts with everything said so far |
 
-`r` takes the agent's edits and moves them past whatever you've changed
+`R` takes the agent's edits and moves them past whatever you've changed
 since it started, so you review only what it did. An edit to lines you
 changed too is left out, and the message says how many files had one;
 `d` shows them. What you accept lands in your buffers, unsaved, and undoes
@@ -490,7 +531,7 @@ workspace of its own with the edits made so far; in a git worktree, it
 starts from the branch's last commit.
 
 Sessions are kept in the cache folder until you close them with `x`, so
-after a restart `space i r` lists them, with what you asked first, and
+after a restart `space i l` lists them, with what you asked first, and
 takes one up: the agent tells the conversation again into a new
 transcript, and its workspace is still there. Agents that can't take up a
 session (or fork one) say so. Greed's own agent keeps its sessions itself,
@@ -500,7 +541,7 @@ An agent can start another with the `subagent` tool: for a search across
 the project, a side task or a second opinion, without filling its own
 context. The helper is an agent from the list here (the first installed,
 or the one asked for), in a workspace of its own unless the caller says
-otherwise. Its transcript shows in `:agents` and it asks you before doing
+otherwise. Its transcript shows in the session list and it asks you before doing
 things like any other; the caller gets its last answer as a report. At
 most three work at once, so helpers starting helpers can't run away.
 

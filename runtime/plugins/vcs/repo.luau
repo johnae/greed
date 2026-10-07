@@ -1,6 +1,7 @@
 -- Finding the repository a file is in, and running jj or git there.
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
@@ -22,6 +23,44 @@ function M.repo_of(path: string): Repo?
 		dir = parent(dir)
 	end
 	return nil
+end
+
+-- The first line of the file at `path`, trimmed, if there's one.
+local function first_line(path: string): string?
+	local text = greed.fs.read(path)
+	local line = text and string.match(text, "^%s*([^\n]*)")
+	local trimmed = line and string.match(line, "^(.-)%s*$")
+	return if trimmed and trimmed ~= "" then trimmed else nil
+end
+
+--- What tells the repository the folder `root` is in apart from others,
+--- the same in all its jj workspaces and git worktrees: the folder its
+--- store is in (jj's `.jj/repo`, git's common `.git`). Outside a
+--- repository, `root` itself.
+function M.identity(root: string): string
+	local repo = M.repo_of(`{root}/.`)
+	if repo == nil then
+		return root
+	end
+	if repo.kind == "jj" then
+		local store = `{repo.root}/.jj/repo`
+		local info = greed.fs.stat(store)
+		-- A workspace's store is a file saying where the repository's is.
+		local points = if info and info.kind == "file" then first_line(store) else nil
+		return if points then core.project.resolve(points, `{repo.root}/.jj`) else store
+	end
+	local dot = `{repo.root}/.git`
+	local info = greed.fs.stat(dot)
+	-- A worktree's .git is a file naming its folder in the repository's,
+	-- and that folder says where the repository's is.
+	local gitdir = if info and info.kind == "file" then first_line(dot) else nil
+	local linked = gitdir and string.match(gitdir, "^gitdir:%s*(.+)$")
+	if linked == nil then
+		return dot
+	end
+	local folder = core.project.resolve(linked, repo.root)
+	local common = first_line(`{folder}/commondir`)
+	return if common then core.project.resolve(common, folder) else folder
 end
 
 --- The repository `buffer`'s file is in, and the file's path from its root.

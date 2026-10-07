@@ -227,17 +227,6 @@ local function count(n: number, word: string): string
 	return `{n} {word}{if n == 1 then "" else "s"}`
 end
 
--- How long ago `time` was, roughly.
-local function ago(time: number): string
-	local seconds = os.time() - time
-	if seconds < 60 then
-		return "just now"
-	elseif seconds < 3600 then
-		return `{seconds // 60} min ago`
-	end
-	return `{seconds // 3600} h ago`
-end
-
 type Revert = { from: number, to: number, text: string }
 
 -- What puts `file`'s changes back in `now`, its text now, leaving those
@@ -360,8 +349,9 @@ greed.command({
 		local items = {}
 		for _, op in M.list() do
 			local status = if op.status == "done" then "" else ` ({op.status})`
+			local ago = core.text.ago(os.time() - op.time)
 			table.insert(items, {
-				label = `{op.name}{status}  {op.author}, {count(#op.files, "file")}, {ago(op.time)}`,
+				label = `{op.name}{status}  {op.author}, {count(#op.files, "file")}, {ago}`,
 				value = op,
 			})
 		end
