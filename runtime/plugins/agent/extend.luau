@@ -87,6 +87,9 @@ editor); to test a plugin reacting to opened files, write one with `t:tempdir({ 
 "..." })` and `greed.open` it. A plugin decorating every buffer goes through
 `greed.buffers()` as it loads, then follows "buffer.opened" and "buffer.changed".
 
+Before writing one, check whether Greed does it already (describe a likely command name, or
+grep Greed's plugins): then say so, and offer to change or extend what's there.
+
 Keep it small and say what each command does in its doc. The API's types
 follow; they're exactly what luau-analyze checks against.
 ]]
