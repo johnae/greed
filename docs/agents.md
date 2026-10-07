@@ -465,6 +465,7 @@ repository, `workspace NAME` for one in a workspace of its own.
 |---|---|
 | `enter` | Show the session, taking it up first if it's kept or exited; with several marked, show them all as panes |
 | `r` | Take up the session (or the marked ones) without showing it |
+| `h` | Take up Greed's own session here, in the workspace you're in |
 | `m` | Mark the session, or unmark it, to act on several |
 | `p`, `t`, `w`, `s` | Show it in a pane, a tab of its own, a floating view or a panel on the right |
 | `/` | Narrow the list to sessions with what you type in them; `esc` puts back the filter there was |
@@ -475,8 +476,11 @@ repository, `workspace NAME` for one in a workspace of its own.
 | `ctrl-c` | Stop its turn |
 | `q`, `esc` | Close the list |
 
-A session taken up from another workspace works in the folder it ran in,
-not the one you're in now.
+A session taken up from another workspace works in the folder it ran in.
+To carry on with one of Greed's own sessions where you are now, take it up
+with `h`; from then on it's kept as this workspace's. Other agents, like
+Claude Code, keep their sessions by folder, so theirs stay where they ran,
+as do sessions in a workspace of their own.
 
 A transcript shows in one place at a time, and moving it doesn't restart
 the agent: `space i m` and then `p`, `t`, `w` or `s` moves the one you're

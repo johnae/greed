@@ -262,6 +262,11 @@ function M.is(buffer: greed.Buffer): boolean
 	return open ~= nil and open.buffer == buffer
 end
 
+--- The folder the open list is for, if it's open.
+function M.root(): string?
+	return if open then open.root else nil
+end
+
 --- Closes the list.
 function M.close()
 	local o = open

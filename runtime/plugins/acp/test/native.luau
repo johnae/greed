@@ -449,6 +449,34 @@ test("a session is kept as it goes and taken up again where it left off", functi
 	acp.close(s)
 end)
 
+test("a session from another workspace can be taken up in this one", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	script({ { text = "Hello.", calls = {}, stop = "done" } })
+	local dir = t:tempdir({ ["main/a.txt"] = "a\n", ["plain/a.txt"] = "a\n" })
+	local main, other = `{dir}/main`, `{dir}/other`
+	local jj = t:vcs("jj", main)
+	jj("git", "init")
+	jj("workspace", "add", "../other")
+	local s = assert(acp.start(GREED, main))
+	acp.prompt(s, "hi")
+	acp.stop(s)
+	local entry = acp.saved(other)[1]
+	assert(entry and entry.root == main, "kept where it ran")
+	local _, outside = acp.resume(entry, `{dir}/plain`)
+	assert(outside == "that isn't a workspace of its repository", outside)
+	local again, err = acp.resume(entry, other)
+	assert(again, err)
+	assert(again.root == other and again.cwd == other, "it works here now")
+	assert(again.session_id == s.session_id, "the same session")
+	acp.prompt(again, "and here")
+	acp.stop(again)
+	assert(acp.saved(main)[1].root == other, "from then on it's kept as this workspace's")
+	acp.close(again)
+	acp.close(s)
+end)
+
 test("kept sessions are only yours to read, and long output isn't all kept", function(t)
 	local agent = require("@agent")
 	agent.tool({

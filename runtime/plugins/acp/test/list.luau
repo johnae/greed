@@ -362,6 +362,13 @@ test("two workspaces of a repository share their sessions, the one you're in fir
 	lines = rows()
 	assert(string.find(lines[1], "^  Fake 2  usage"), lines[1])
 	assert(string.find(lines[2], "in main$"), lines[2])
+	-- An agent that keeps its sessions by folder can't move with h.
+	t:keys("g g j j j j h")
+	local messages = t:messages()
+	assert(
+		messages[#messages] == "can't take up Fake here: Fake keeps its sessions by folder",
+		messages[#messages]
+	)
 	-- Taken up from the other workspace, it works in its own.
 	t:keys("g g j j j j enter")
 	local again = acp.of(greed.view():buffer())

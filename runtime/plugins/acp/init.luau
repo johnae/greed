@@ -298,17 +298,31 @@ function M.saved(root: string): { Saved }
 end
 
 --- Takes up a session kept from before, in a new transcript: an ACP agent
---- tells the conversation again, Greed's own reads back what it kept.
-function M.resume(entry: Saved): (Session?, string?)
+--- tells the conversation again, Greed's own reads back what it kept. It
+--- works where it did, or in `here`, another workspace of its repository:
+--- only Greed's own sessions can move, since other agents keep theirs by
+--- folder.
+function M.resume(entry: Saved, here: string?): (Session?, string?)
 	local agent = agents.named(entry.agent)
 	if agent == nil then
 		return nil, `no agent called {entry.agent} is registered`
 	end
 	local ws = entry.workspace
+	local root = entry.root
+	if here and here ~= root then
+		if not agent.native then
+			return nil, `{agent.title or agent.name} keeps its sessions by folder`
+		elseif ws then
+			return nil, "it works in a workspace of its own"
+		elseif vcs.repo.identity(here) ~= vcs.repo.identity(root) then
+			return nil, "that isn't a workspace of its repository"
+		end
+		root = here
+	end
 	if ws and not greed.fs.stat(ws.path) then
 		return nil, `its workspace is gone: {ws.path}`
 	end
-	return launch(agent, entry.root, ws, { load = entry.session_id })
+	return launch(agent, root, ws, { load = entry.session_id })
 end
 
 --- Forks `s`: a new session that starts with everything said so far, in a
@@ -601,8 +615,9 @@ function M.list(root: string?)
 end
 
 -- The session of a row, taken up first when it's kept or it exited, in
--- place of the one that exited (in the views that show it).
-local function take_up(row: list.Row): (Session?, string?)
+-- place of the one that exited (in the views that show it); in `here` if
+-- given, as `M.resume` does.
+local function take_up(row: list.Row, here: string?): (Session?, string?)
 	local s = row.session
 	if s and s.status ~= "exited" then
 		return s, nil
@@ -628,7 +643,7 @@ local function take_up(row: list.Row): (Session?, string?)
 	if s and index then
 		table.remove(sessions, index)
 	end
-	local again, err = M.resume(entry)
+	local again, err = M.resume(entry, here)
 	if again == nil then
 		if s and index then
 			table.insert(sessions, index, s)
@@ -811,26 +826,40 @@ greed.command({
 	end,
 })
 
+-- Takes up the sessions chosen in the list that aren't running, in `here`
+-- if given, saying what failed.
+local function resume_chosen(ctx: greed.Context, here: string?)
+	local taken = 0
+	for _, row in list.chosen(ctx) do
+		if row.session and row.session.status ~= "exited" then
+			continue
+		end
+		local s, err = take_up(row, here)
+		if s then
+			taken += 1
+		else
+			greed.echo(`can't take up {row.agent}{if here then " here" else ""}: {err}`)
+		end
+	end
+	if taken > 0 then
+		greed.echo(`took up {taken} session{if taken == 1 then "" else "s"}`)
+	end
+	list.render()
+end
+
 greed.command({
 	name = "agents-resume",
 	doc = "Take up the sessions marked in the list, or the one under the cursor, without showing them",
 	run = function(ctx)
-		local taken = 0
-		for _, row in list.chosen(ctx) do
-			if row.session and row.session.status ~= "exited" then
-				continue
-			end
-			local s, err = take_up(row)
-			if s then
-				taken += 1
-			else
-				greed.echo(`can't take up {row.agent}: {err}`)
-			end
-		end
-		if taken > 0 then
-			greed.echo(`took up {taken} session{if taken == 1 then "" else "s"}`)
-		end
-		list.render()
+		resume_chosen(ctx)
+	end,
+})
+
+greed.command({
+	name = "agents-resume-here",
+	doc = "Take up Greed's own sessions marked in the list, or the one under the cursor, in this workspace",
+	run = function(ctx)
+		resume_chosen(ctx, list.root())
 	end,
 })
 
@@ -1126,6 +1155,7 @@ greed.keymap.bind({ role = "command", kind = "agent-transcript" }, {
 greed.keymap.bind({ kind = "agents" }, {
 	enter = "agents-show",
 	r = "agents-resume",
+	h = "agents-resume-here",
 	m = "agents-mark",
 	["/"] = "agents-filter",
 	p = "agent-show-pane",
