@@ -121,13 +121,13 @@ greed.keymap.bind("helix", {
 	["[ space"] = "add-newline-above",
 })
 
--- Insert mode has the typing keys every style's typing mode has (core's).
 greed.keymap.bind("helix", core.objects.keys)
 greed.keymap.bind("helix", core.syntax.keys)
 greed.keymap.bind("helix", core.folds.keys)
 greed.keymap.bind("helix", core.scroll.keys)
 greed.keymap.bind("helix", core.goto_keys.keys)
 greed.keymap.counts("helix")
+-- Insert mode has the typing keys every style's typing mode has (core's).
 greed.keymap.fallback("helix-insert", "insert-char")
 greed.mode.set_cursor("helix-insert", "bar")
 

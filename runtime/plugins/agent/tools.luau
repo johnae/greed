@@ -336,7 +336,7 @@ agent.tool({
 		},
 		kind = {
 			type = "string",
-			enum = { "command", "option", "event", "api", "plugin", "mode" },
+			enum = { "command", "option", "event", "api", "plugin", "mode", "style" },
 			description = "To look in one kind only",
 		},
 	}, { "name" }),

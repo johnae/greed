@@ -405,7 +405,8 @@ export type Keymap = {
 	--- the command each runs. Keys without a command start longer sequences.
 	next: (keys: string?) -> { { key: string, command: string? } },
 	--- Every key sequence that runs `command` (every binding, without one),
-	--- the layer it's bound in (a mode name, or "global") and its command.
+	--- the layer it's bound in (a mode name, a named layer like "leader",
+	--- "role:typing" or "vim:command", or "global") and its command.
 	find: (command: string?) -> { { layer: string, keys: string, command: string } },
 	--- Every key sequence that runs a command in the current mode and buffer, through the layers it enters and inherits (the leader's as "space f"), less those a more specific layer hides.
 	active: () -> { { keys: string, command: string } },

@@ -675,12 +675,11 @@ impl Keymap {
     /// Every layer where `keys` is bound, most specific first, with the
     /// active binding in each.
     pub fn describe(&self, mode: &str, kind: &str, keys: &[Key]) -> Vec<Found> {
-        let order = self.lookup_order(mode, kind);
-        order
-            .iter()
-            .filter_map(|step| match self.locate(step, keys)? {
+        self.lookup_order(mode, kind)
+            .into_iter()
+            .filter_map(|step| match self.locate(&step, keys)? {
                 At::Command(active) => Some(Found {
-                    layer: step.layer.clone(),
+                    layer: step.layer,
                     command: active.command.clone(),
                     owner: active.owner.clone(),
                 }),

@@ -1,8 +1,8 @@
 -- Vim-style editing, written only against the plugin API. It has modes of
--- its own (vim, vim-insert, vim-replace and the three visual modes), so it
--- sits beside Helix's normal mode instead of replacing it, and borrows the
--- space-leader keys, search, paging, the jumplist and the language server
--- keys from normal mode.
+-- its own (vim, vim-insert, vim-replace and the three visual modes), beside
+-- Helix's, and says which plays each role: keys other plugins bind for the
+-- command role (the language server's, the next change) and the leader
+-- (`space`) work here as in every style.
 --
 -- Switch to it with `:style vim`, or put this in ~/.config/greed/init.luau:
 --

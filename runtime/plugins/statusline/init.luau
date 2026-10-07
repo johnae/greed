@@ -1,9 +1,8 @@
 -- The status line: on the left the mode, the tab, the file (or the latest
 -- message) and whether keys are being recorded; on the right the branch,
 -- problems, the language and its server, the editing style (dim), anything
--- unusual about the file,
--- how many selections there are, where the cursor is, the machine and the
--- session.
+-- unusual about the file, how many selections there are, where the cursor
+-- is, the machine and the session.
 -- With the statusline-pills option some are pills, with rounded ends drawn
 -- in the theme's colors, and with the effects option light goes through the
 -- tab or the file when you go to another, and the mode when it changes.

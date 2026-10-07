@@ -2,14 +2,22 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 
--- A fourth style, from a plugin no other plugin knows about.
+-- A fourth style, from a plugin no other plugin knows about: a command
+-- mode with one key of its own, a typing mode, and a leader of its own.
 local MINE = [[
 local greed = require("@greed")
 local core = require("@core")
 greed.command({ name = "mine-type", run = function() greed.mode.set("mine-insert") end })
 greed.keymap.bind("mine", { i = "mine-type" })
-greed.keymap.inherit("mine-insert", "helix-insert")
-core.style.define({ name = "mine", doc = "Mine", mode = "mine", typing = { "mine-insert" }, leader = "ctrl-l" })
+greed.keymap.fallback("mine-insert", "insert-char")
+core.style.define({
+	name = "mine",
+	doc = "Mine, a style no plugin knows",
+	mode = "mine",
+	roles = { command = "mine", typing = "mine-insert" },
+	labels = { mine = "normal", ["mine-insert"] = "insert" },
+	leader = "ctrl-l",
+})
 core.commands.tag("no-repeat", { "mine-type" })
 return {}
 ]]
@@ -152,6 +160,66 @@ test("keys bound for a role work in each style's mode for it, by style in one", 
 		core.style.role("mine-insert") == "typing"
 			and core.style.role("helix-select") == "selecting"
 	)
+	greed.plugin.unload("mine")
+	t:wait(0)
+end)
+
+test("a new style gets everything without plugins naming it", function(t)
+	t:buffer("apple\n|")
+	load_mine(t)
+	core.style.set("mine")
+	t:expect_mode("mine")
+
+	-- Typing: completion in its typing mode, and the keys every typing
+	-- mode has, esc back to its own.
+	t:keys("i a")
+	t:run("completion-words")
+	t:expect_mode("completion-mine-insert")
+	t:keys("p enter")
+	t:expect("apple\napple|")
+	t:expect_mode("mine-insert")
+	assert(greed.keymap.resolve("ctrl-space") == "completion-ask", "asking for completion")
+	local left, right = t:status()
+	assert(left and string.find(left, "INSERT", 1, true), left)
+	assert(right and string.find(right, "mine", 1, true), right)
+	t:keys("enter x backspace esc")
+	t:expect("apple\napple\n|")
+	t:expect_mode("mine")
+	left = t:status()
+	assert(left and string.find(left, "NORMAL", 1, true), left)
+
+	-- Keys plugins bind for the command role, and the leader with its own key.
+	assert(greed.keymap.resolve(":") == "command-line")
+	assert(greed.keymap.resolve("] d") == "next-diagnostic")
+	local leader_f = greed.keymap.resolve("ctrl-l f")
+	assert(leader_f == "pick-file", tostring(leader_f))
+	assert(greed.keymap.resolve("space f") == nil, "space is another style's way in")
+
+	-- A picker takes typing in its typing mode, and keeps its keys there.
+	local chosen = nil
+	require("@picker").pick("Test", { { label = "apple" }, { label = "pear" } }, function(item)
+		chosen = item.label
+	end)
+	t:expect_mode("mine-insert")
+	t:keys("p e enter")
+	assert(chosen == "pear", tostring(chosen))
+	t:expect_mode("mine")
+
+	-- It's in :style's list, on the setup page and in describe.
+	assert(table.find(core.style.names(), "mine"))
+	t:run("style")
+	local list = t:floats()[1]
+	assert(list and string.find(list, "Mine, a style no plugin knows", 1, true), tostring(list))
+	t:keys("esc")
+	require("@setup").open()
+	local page = greed.view():buffer():text()
+	assert(string.find(page, "Mine, a style no plugin knows", 1, true), page)
+	local described = require("@describe").text("mine", "style") :: string
+	assert(string.find(described, "command: mine (shown as NORMAL)", 1, true), described)
+	assert(string.find(described, "typing: mine-insert (shown as INSERT)", 1, true), described)
+	assert(string.find(described, "The leader: ctrl-l", 1, true), described)
+
+	greed.option.set("editing-style", "helix")
 	greed.plugin.unload("mine")
 	t:wait(0)
 end)

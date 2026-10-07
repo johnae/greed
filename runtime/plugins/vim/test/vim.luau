@@ -169,7 +169,7 @@ test("the leader, : and search work here too", function(t)
 	assert(greed.keymap.resolve("alt-s") == nil, "Helix's own keys stay in Helix")
 end)
 
-test(":style switches between Helix, edit mode and Vim", function(t)
+test(":style switches between Helix and Vim", function(t)
 	buffer(t, "|abc")
 	t:run("style", { "helix" })
 	t:expect_mode("helix")

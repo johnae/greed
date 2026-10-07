@@ -50,7 +50,22 @@ fn picker_plugin_tests_pass() {
 
 #[test]
 fn core_plugin_tests_pass() {
-    let count = assert_all_pass(&[core(), plugin("helix")], &core());
+    // A style from a test gets completion, pickers, the command line, the
+    // setup page and describe without them naming it.
+    let plugins = [
+        core(),
+        plugin("helix"),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("statusline"),
+        plugin("lsp"),
+        plugin("cmdline"),
+        plugin("theme"),
+        plugin("markdown"),
+        plugin("setup"),
+        plugin("describe"),
+    ];
+    let count = assert_all_pass(&plugins, &core());
     assert!(count >= 10, "found only {count} tests");
 }
 

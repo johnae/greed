@@ -1361,10 +1361,10 @@ read-only, so saving can't change them.
 `space ?` lists every command, `space h c` describes one and `space h k`
 tells you what a key does. `space h h` describes anything the editor is
 made of (commands, options with their values, events and who listens to
-them, the plugin API, plugins and modes), and `enter` in the help window
-goes to where it's defined. After a key like `space`, a hint shows what can
-follow, and `f1` shows the keys of the mode you're in, in every mode. A
-message on the status line goes away with the next key.
+them, the plugin API, plugins, modes and editing styles), and `enter` in
+the help window goes to where it's defined. After a key like `space`, a
+hint shows what can follow, and `f1` shows the keys of the mode you're in,
+in every mode. A message on the status line goes away with the next key.
 
 Vim's line commands work in every style. A range in front picks the lines
 a command works on; without one, it's the lines the selection touches.

@@ -28,7 +28,7 @@ export type Entry = {
 	line: number?,
 }
 
-local KINDS = { "command", "option", "event", "api", "plugin", "mode" }
+local KINDS: { string } = { "command", "option", "event", "api", "plugin", "mode", "style" }
 
 local function defined_at(source: string?, owner: string?): string
 	local where = source or "?"
@@ -258,6 +258,42 @@ local function modes(): { Entry }
 	return out
 end
 
+-- The editing styles: their modes, each with the role it plays and what the
+-- status line calls it, and the keys that open the leader.
+local function styles(): { Entry }
+	local core = require("@core")
+	local out: { Entry } = {}
+	for _, style in core.style.list() do
+		table.insert(out, {
+			kind = "style",
+			name = style.name,
+			doc = style.doc,
+			lines = function()
+				local lines = { style.doc, "" }
+				local function role(name: string, mode: string?)
+					if mode then
+						local label = string.upper(core.style.label(mode))
+						table.insert(lines, `{name}: {mode} (shown as {label})`)
+					end
+				end
+				local roles = style.roles
+				if roles then
+					role("command", roles.command)
+					role("typing", roles.typing)
+					role("selecting", roles.selecting)
+				end
+				if style.leader then
+					table.insert(lines, `The leader: {style.leader}`)
+				end
+				table.insert(lines, "")
+				table.insert(lines, `:style {style.name} switches to it.`)
+				return lines
+			end,
+		})
+	end
+	return out
+end
+
 local SOURCES: { [string]: () -> { Entry } } = {
 	command = commands,
 	option = options,
@@ -265,10 +301,11 @@ local SOURCES: { [string]: () -> { Entry } } = {
 	api = functions,
 	plugin = plugins,
 	mode = modes,
+	style = styles,
 }
 
---- Everything of `kind` ("command", "option", "event", "api", "plugin" or
---- "mode"), or of every kind.
+--- Everything of `kind` ("command", "option", "event", "api", "plugin",
+--- "mode" or "style"), or of every kind.
 function M.entries(kind: string?): { Entry }
 	local out: { Entry } = {}
 	for _, name in KINDS do
@@ -431,6 +468,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["h p"] = "describe-plugin",
 	["h m"] = "describe-mode",
 	["h k"] = "describe-key",
+	["h s"] = "describe-style",
 })
 
 -- Commands, wherever they show up as things to act on (the command
