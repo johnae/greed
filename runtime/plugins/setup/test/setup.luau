@@ -43,7 +43,7 @@ test("Save writes a config from the answers and opens it", function(t)
 	markdown.choices.pick(page, line_of(page, "No, or it's a box"))
 	t:run("setup-save")
 	local written = greed.fs.read(config_file()) or ""
-	assert(string.find(written, 'option.set("editing-style", "edit")', 1, true), written)
+	assert(string.find(written, 'option.set("editing-style", "vscode")', 1, true), written)
 	assert(string.find(written, 'option.set("tree-icons", "none")', 1, true), written)
 	assert(greed.view():buffer():path() == config_file(), "the config is open")
 	assert(greed.fs.stat(`{greed.fs.dirs().data}/setup-seen`), "marked as answered")

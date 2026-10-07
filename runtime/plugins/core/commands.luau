@@ -2,7 +2,8 @@
 -- own way without listing other plugins' names:
 --
 --   - "typing": types or erases a character, like insert-char. The selection
---     history skips these, and edit mode undoes a run of them in one step.
+--     history skips these, and a style without modes undoes a run of them
+--     in one step.
 --   - "no-repeat": never a change for `.` to repeat, like undo.
 --
 --     core.commands.tag("typing", { "my-type-char" })

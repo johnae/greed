@@ -67,11 +67,11 @@ end)
 test(
 	"a command bound in several layers lists each, and help opened twice replaces itself",
 	function(t)
-		greed.keymap.bind("edit", { ["alt-g"] = "goto-start" })
+		greed.keymap.bind("vscode", { ["alt-g"] = "goto-start" })
 		describe_command(t, "goto-start")
 		local help = t:floats()[1]
 		assert(string.find(help, "Keys: g g (helix)", 1, true), help)
-		assert(string.find(help, "Keys: alt-g (edit)", 1, true), help)
+		assert(string.find(help, "Keys: alt-g (vscode)", 1, true), help)
 		t:keys("esc")
 		describe_command(t, "goto-end")
 		describe_command(t, "goto-start")

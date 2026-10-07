@@ -123,13 +123,8 @@ fn describe_plugin_tests_pass() {
 #[test]
 fn edit_mode_plugin_tests_pass() {
     assert_all_pass(
-        &[
-            core(),
-            plugin("helix"),
-            plugin("picker"),
-            plugin("edit-mode"),
-        ],
-        &plugin("edit-mode"),
+        &[core(), plugin("helix"), plugin("picker"), plugin("vscode")],
+        &plugin("vscode"),
     );
 }
 
@@ -143,13 +138,13 @@ fn prose_plugin_tests_pass() {
 
 #[test]
 fn cmdline_plugin_tests_pass() {
-    // :norm is tried in the Vim style, alt-x in edit mode.
+    // :norm is tried in the Vim style, alt-x in the vscode style.
     assert_all_pass(
         &[
             core(),
             plugin("helix"),
             plugin("picker"),
-            plugin("edit-mode"),
+            plugin("vscode"),
             plugin("cmdline"),
             plugin("vim"),
         ],
@@ -160,7 +155,7 @@ fn cmdline_plugin_tests_pass() {
 #[test]
 fn vim_plugin_tests_pass() {
     // Vim uses the completion menu for ctrl-n in insert mode and the
-    // command line for :. Its tests paste in edit mode too.
+    // command line for :. Its tests paste in the vscode style too.
     let plugins = [
         core(),
         plugin("helix"),
@@ -169,7 +164,7 @@ fn vim_plugin_tests_pass() {
         plugin("statusline"),
         plugin("lsp"),
         plugin("cmdline"),
-        plugin("edit-mode"),
+        plugin("vscode"),
         plugin("vim"),
     ];
     assert_all_pass(&plugins, &plugin("vim"));

@@ -1,4 +1,4 @@
--- The command line: press ":" (alt-x in edit mode) and type a command, like
+-- The command line: press ":" (alt-x in the vscode style) and type a command, like
 -- in Vim or Helix.
 --
 -- Every command can be run by name (`:save`, `:pick-file`), and the short
@@ -596,8 +596,8 @@ greed.keymap.bind({ role = "command" }, {
 	[":"] = "command-line",
 })
 
--- In edit mode ":" types, so the command line is on alt-x there.
-greed.keymap.bind({ style = "edit", role = "typing" }, {
+-- Without modes ":" types, so in the vscode style the command line is on alt-x.
+greed.keymap.bind({ style = "vscode", role = "typing" }, {
 	["alt-x"] = "command-line",
 })
 

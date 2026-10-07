@@ -63,6 +63,6 @@ greed.keymap.bind({ layer = "leader" }, {
 	["."] = "act",
 })
 -- In edit mode space types, and ctrl-. is the language server's code actions.
-greed.keymap.bind({ style = "edit", role = "typing" }, { ["alt-."] = "act" })
+greed.keymap.bind({ style = "vscode", role = "typing" }, { ["alt-."] = "act" })
 
 return picker

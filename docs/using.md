@@ -100,19 +100,19 @@ Linux it needs Wayland or X11 and a Vulkan or GL driver.
 
 On macOS the menu bar holds Greed's menus (File, Edit, View, Pane, Help),
 each item a command. Elsewhere there's no menu bar, and the command
-palette (`space ?`, or `ctrl-P` in edit mode) lists every command. Plugins
+palette (`space ?`, or `ctrl-P` in the vscode style) lists every command. Plugins
 and your config add items:
 `require("@core").menus.add("Tools", "Run tests", "test-run")`.
 
 What you copy in Greed goes on the system clipboard, and what you copied in
 another program becomes Greed's clipboard when the window gets focus, so
-`p` (or `ctrl-v` in edit mode) pastes it. `ctrl-shift-v` and `shift-insert`
+`p` (or `ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and `shift-insert`
 (`cmd-v` on macOS) paste the system clipboard at the cursors in any mode,
 as a terminal's paste does.
 
 Whole lines stay whole lines from one editing style to another: lines
 copied with `y y` in the Vim style, `x y` in Helix's or `ctrl-c` with
-nothing selected in edit mode paste above or below the line in all three.
+nothing selected in the vscode style paste above or below the line in all three.
 Text copied in another program pastes where the cursor is.
 
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
@@ -161,7 +161,7 @@ picker, project search and tree work within the shown one.
 A recent project or a folder typed into `space P` opens in its own session,
 starting it if it isn't running, like `greed FOLDER` from a terminal.
 `:project PATH` opens a project in this session instead. Like every
-`space` key here, it's the leader's: in edit mode, where space types, it's
+`space` key here, it's the leader's: in the vscode style, where space types, it's
 `ctrl-space P`.
 
 To find projects you haven't opened yet, give `space P` sources in your
@@ -559,7 +559,7 @@ after a letter or a `.`. The menu narrows as you keep typing.
 | `shift-tab` `ctrl-p` `up` | Previous completion |
 | `enter` | Put the current one in |
 | `esc` | Close the menu (and leave insert mode) |
-| `ctrl-space` | Ask for completions now (in edit mode it opens the leader instead) |
+| `ctrl-space` | Ask for completions now (in the vscode style it opens the leader instead) |
 
 `:set completion-delay 300` waits longer before asking; `0` stops asking
 while you type, leaving `ctrl-space`. In Vim's style, `ctrl-n` and `ctrl-p`
@@ -762,20 +762,20 @@ fenced code on a background of its own, quotes with a bar, `---` as a
 line, list bullets (`-`, `*` or `+`) as dots and tables in aligned columns
 with borders. Code blocks keep their markup: a `# comment` there is code,
 not a heading. The file stays plain Markdown: while you type on a line (insert mode) it shows as
-written, and in edit mode markup shows once the cursor is inside it. The
+written, and in the vscode style markup shows once the cursor is inside it. The
 window draws big headings big and sets the text in a proportional font
 (code and tables stay monospaced); terminals other than kitty show
 headings at the normal size.
 
 `:set markdown-look false` turns the look off everywhere. To see one file
 as written, or one file as a document while the option is off, toggle it
-for that file with `space m l` (`alt-V` in edit mode, or
+for that file with `space m l` (`alt-V` in the vscode style, or
 `:markdown-look-toggle`). The status line shows `markdown · plain` while a
 file shows as written.
 
 ### Reading view
 
-`space m v` (`alt-v` in edit mode, or `:markdown-read`) shows the file for
+`space m v` (`alt-v` in the vscode style, or `:markdown-read`) shows the file for
 reading: read-only, without line numbers, and with no markup showing
 anywhere, even on the cursor's line. Images on a line of their own show in
 place (in the window, and in terminals that show images; elsewhere you see
@@ -992,7 +992,7 @@ once it's past, yellow on the day and in the three days before), and
 `remind:2026-10-06 18:00` as ⏰ 6 Oct 18:00. Code blocks keep their
 markup, and the agenda leaves out todos in them. The file
 stays plain Markdown: while you type on a line (insert mode), it shows as
-written; in edit mode, markup shows once the cursor is inside it. Click a
+written; in the vscode style, markup shows once the cursor is inside it. Click a
 box to tick it, or press `enter` on it, and a heading's symbol folds its
 section.
 
@@ -1357,7 +1357,7 @@ read-only, so saving can't change them.
 
 ## The command line
 
-`:` (or `alt-x` in edit mode) runs any command by name, with completion.
+`:` (or `alt-x` in the vscode style) runs any command by name, with completion.
 `space ?` lists every command, `space h c` describes one and `space h k`
 tells you what a key does. `space h h` describes anything the editor is
 made of (commands, options with their values, events and who listens to

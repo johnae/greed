@@ -1,3 +1,0 @@
-name = "edit-mode"
-requires = ["core", "picker"]
-capabilities = ["clipboard"]

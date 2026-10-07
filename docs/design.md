@@ -14,7 +14,7 @@ same way any plugin would build it.
 In Luau:
 
 - The editing model: modes, motions, selections, operators, the keymaps.
-  The `core` plugin holds the editing commands; Helix, Vim and edit mode
+  The `core` plugin holds the editing commands; Helix, Vim and vscode
   are plugins that give them keys, each with modes of its own, and
   `:style` switches between them.
 - Commands, the command line, pickers, the file tree, search and replace,

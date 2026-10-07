@@ -692,7 +692,7 @@ greed.keymap.bind(
 	{ ["m l"] = "markdown-look-toggle", ["m v"] = "markdown-read" }
 )
 greed.keymap.bind(
-	{ style = "edit", role = "typing" },
+	{ style = "vscode", role = "typing" },
 	{ ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" }
 )
 

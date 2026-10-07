@@ -1,6 +1,6 @@
 -- Editing styles: which mode you come back to when you're done typing or
 -- picking something. Each style is a plugin (helix, the default; vim;
--- edit-mode) with its own modes, so switching between them leaves the
+-- vscode) with its own modes, so switching between them leaves the
 -- others' keys alone.
 --
 -- Plugins bind keys by role rather than naming a style's modes: each style
@@ -11,7 +11,7 @@
 -- every style and mode. `is_typing` says whether a mode types.
 --
 --     :style vim
---     require("@greed").option.set("editing-style", "edit")
+--     require("@greed").option.set("editing-style", "vscode")
 
 local greed = require("@greed")
 local registry = require("./registry")
@@ -70,7 +70,7 @@ end
 
 greed.option.define({
 	name = "editing-style",
-	doc = "How editing works: helix, vim, edit or another style a plugin adds (see :style)",
+	doc = "How editing works: helix, vim, vscode or another style a plugin adds (see :style)",
 	default = "helix",
 })
 

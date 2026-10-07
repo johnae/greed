@@ -5,7 +5,7 @@
 -- cursor is a block (normal, select), it sits on a character, as in Helix:
 -- an empty range is a cursor on the character at its head, a selection's
 -- cursor is on its last character going forward, and motions start from
--- there. Where it's a bar (insert, edit mode), it sits between characters.
+-- there. Where it's a bar (insert, the vscode style), it sits between characters.
 
 local greed = require("@greed")
 local text = require("./text")

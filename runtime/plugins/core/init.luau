@@ -49,6 +49,7 @@ local commands = require("@self/commands")
 local words = require("@self/words")
 local paste = require("@self/paste")
 local floats = require("@self/floats")
+local modeless = require("@self/modeless")
 
 -- An empty layer applies in every mode.
 greed.keymap.bind({}, {
@@ -121,6 +122,8 @@ return {
 	objects = objects,
 	syntax = syntax,
 	words = words,
+	--- Editing without modes, for styles like vscode (modeless.luau).
+	modeless = modeless,
 	--- Pasted text going in at the cursors (paste.luau).
 	paste = paste,
 	floats = floats,

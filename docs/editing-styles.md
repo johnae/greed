@@ -11,7 +11,7 @@ below says so.
 |---|---|---|
 | `helix` (the default) | Select text, then say what to do with it | Helix, Kakoune |
 | `vim` | Say what to do, then where: `d w`, `c i w`, `y y` | Vim |
-| `edit` | No modes: typing inserts, shift and the arrows select | VS Code, most editors |
+| `vscode` | No modes, VS Code's keys: typing inserts, shift and the arrows select | VS Code, most editors |
 
 ```text
 :style vim        switch now
@@ -30,9 +30,9 @@ require("@greed").option.set("editing-style", "vim")
 ```
 
 The keys that aren't about editing live in the leader, which every style
-opens its own way: `space` in Helix and Vim, `ctrl-space` in edit mode,
+opens its own way: `space` in Helix and Vim, `ctrl-space` in the vscode style,
 where typing a letter inserts it. So `space f` finds files and `space /`
-searches the project, and in edit mode `ctrl-space f` and `ctrl-space /`
+searches the project, and in the vscode style `ctrl-space f` and `ctrl-space /`
 do the same; after the leader a hint lists what can follow. Helix and Vim
 also share `:` for commands, `g d` to go to a definition and `] d` to the
 next problem. Prompts and pickers work the same in all three.
@@ -46,12 +46,12 @@ you use, styles added later included:
 local greed = require("@greed")
 
 greed.keymap.bind({ layer = "leader" }, { w = "save" })          -- space w, or ctrl-space w
-greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })   -- insert mode, or edit mode
+greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })   -- insert mode, or vscode's mode
 greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" })
 ```
 
 The roles are `command` (Helix's and Vim's normal mode), `typing`
-(insert mode, edit mode) and `selecting` (Helix's select mode, Vim's
+(insert mode, vscode's mode) and `selecting` (Helix's select mode, Vim's
 visual mode). A binding for one style's role wins over the style's own
 keys, and those win over a binding for every style's role. [Keys](keys.md#binding-keys)
 has the whole order.
@@ -158,10 +158,10 @@ them. Some of Vim is still missing: a copied block pastes as plain
 text (one piece per line), and Vim's own regex syntax (`\(`, `\<`) since
 patterns are the same regexes search uses.
 
-## Edit
+## VS Code
 
-No modes. Typing inserts text, replacing a selection if there is one, and
-the keys are the ones most editors use.
+No modes, VS Code's keys. Typing inserts text, replacing a selection if
+there is one, and the keys are the ones VS Code and most editors use.
 
 | Keys | |
 |---|---|
@@ -196,7 +196,9 @@ the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).
 Why it's here: for people who don't want modes, or don't want them yet,
 and for the odd edit where modes get in the way. Everything else in Greed
 still works, through the leader, `ctrl-P` and the command line (`alt-x`).
-Completion comes up as you type; `ctrl-space` is the leader here.
+Completion comes up as you type; `ctrl-space` is the leader here. The
+style is the `vscode` plugin: VS Code's keys over core's editing without
+modes, which another modeless keymap can use the same way (see below).
 
 ## Making your own
 
@@ -237,6 +239,28 @@ of the last change again;
 `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
 commands that shouldn't count as one. The Vim plugin in
 `runtime/plugins/vim` is a full example.
+
+A style without modes, like a JetBrains keymap, is shorter still: bind
+its keys in its one mode, and core's editing without modes (the vscode
+style's) does the typing, replacing the selection, and the rest:
+
+```luau
+local greed = require("@greed")
+
+greed.keymap.bind("jetbrains", {
+	["ctrl-c"] = "copy-or-line",
+	["ctrl-v"] = "paste-over",
+	["ctrl-d"] = "copy-lines-down",
+	["ctrl-y"] = "delete-lines-at-cursor",
+	["ctrl-shift-up"] = "move-lines-up",
+})
+
+require("@core").modeless.define({
+	name = "jetbrains",
+	doc = "No modes, JetBrains' keys",
+	leader = "ctrl-space",
+})
+```
 
 Roles decide where keys live, not what commands mean, so two styles still
 differ in what `d` does. And Vim's operators read the motion after them

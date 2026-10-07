@@ -237,7 +237,7 @@ end)
 
 test("without modes, markup shows once the cursor is inside it", function(t)
 	shown(t, "- [ ] call the bank\n")
-	greed.mode.set("edit")
+	greed.mode.set("vscode")
 	local function at(pos: number): string
 		greed.view():set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
 		return t:draw(50, 8)[1]

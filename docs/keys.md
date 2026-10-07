@@ -13,11 +13,11 @@ how keymaps are organised.
 | `space h h` | Describe anything: commands, options, events, functions of the plugin API, plugins and modes, from one picker |
 | `space h o` `space h e` `space h a` `space h p` `space h m` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, or a mode and its keys |
 | `space ?` | Every command, with its keys; enter runs one |
-| `space .` (`alt-.` in edit mode) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |
+| `space .` (`alt-.` in the vscode style) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |
 | `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow |
 
 Commands have names like `goto-end` or `select-line`, and `:` runs any of
-them by name. Keys starting with `space` are the leader's: in edit mode
+them by name. Keys starting with `space` are the leader's: in the vscode style
 they start with `ctrl-space` instead.
 
 ## Binding keys
@@ -25,13 +25,13 @@ they start with `ctrl-space` instead.
 Bindings go in `~/.config/greed/init.luau`. Most commands you reach for
 by name, like finding a file or searching the project, live in the
 leader: a layer every editing style opens its own way, `space` in Helix
-and Vim, `ctrl-space` in edit mode. Bind there and the key works in
+and Vim, `ctrl-space` in the vscode style. Bind there and the key works in
 whichever style you use:
 
 ```luau
 local greed = require("@greed")
 
--- space w in Helix and Vim, ctrl-space w in edit mode
+-- space w in Helix and Vim, ctrl-space w in the vscode style
 greed.keymap.bind({ layer = "leader" }, {
 	w = "save",
 	q = "quit",
@@ -44,14 +44,14 @@ style.
 
 Other keys belong to a role. Each style says which of its modes plays
 each one: `command` is where you move around and run commands (Helix's
-and Vim's normal mode; edit mode has none), `typing` is where what you
-type goes in (insert mode, or edit mode itself), and `selecting` is where
+and Vim's normal mode; the vscode style has none), `typing` is where what you
+type goes in (insert mode, or the vscode style's one mode), and `selecting` is where
 moving selects (Helix's select mode, Vim's visual mode). Bind for a role
 and the key works in every style's mode for it, including styles a
 plugin adds later; add `style` for one style only:
 
 ```luau
--- In every style's typing mode: insert mode in Helix and Vim, edit mode
+-- In every style's typing mode: insert mode in Helix and Vim, vscode's mode
 greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })
 
 -- In normal mode in every style that has one
@@ -69,7 +69,7 @@ greed.keymap.bind("helix", { Q = "quit-all" })
 
 The mode names depend on your editing style: `helix`, `helix-insert` and
 `helix-select` are the Helix style's, the Vim style's are `vim`,
-`vim-insert` and `vim-visual`, and edit mode has one, `edit`. The status
+`vim-insert` and `vim-visual`, and the vscode style has one, `vscode`. The status
 line shows them as you'd expect (NORMAL, INSERT, VISUAL); all of them are
 listed under [Modes and layers](#modes-and-layers).
 
@@ -186,14 +186,14 @@ Bindings live in layers. Most belong to a mode:
 | Mode | Used by |
 |---|---|
 | `helix`, `helix-insert`, `helix-select` | The Helix style |
-| `edit` | Edit mode |
+| `vscode` | The vscode style |
 | `vim`, `vim-insert`, `vim-visual` | The Vim style |
 | `terminal` | Typing into a terminal (takes every key) |
 | `pane`, `tab`, `resize` | The pane, tab and resize modes |
 | `view` | The sticky view mode (`Z` in the Helix style) |
 
 The `leader` layer isn't a mode: each style's mode opens it with its own
-keys (`space`, or `ctrl-space` in edit mode), and what's bound in it works
+keys (`space`, or `ctrl-space` in the vscode style), and what's bound in it works
 after them. A style can open any layer this way with
 `greed.keymap.enter(mode, keys, layer)`. Role layers aren't modes either:
 each style's mode for a role uses `{ role = ... }` after its own keys and

@@ -1,17 +1,15 @@
 -- Text pasted into the client from the system clipboard (a terminal's paste,
 -- or ctrl-shift-v in the window) goes in at the cursors in one edit, in any
--- mode: in normal mode it would otherwise run as keys. In edit mode it
+-- mode: in normal mode it would otherwise run as keys. Without modes it
 -- replaces what's selected, as typing does there. Terminal panes take their
 -- pastes themselves.
 
 local greed = require("@greed")
+local modeless = require("./modeless")
 local motions = require("./motions")
 local span = require("./text").span
 
 local M = {}
-
--- The modes where typing replaces the selection, and so does a paste.
-M.replacing = { edit = true }
 
 --- Puts `text` at each cursor of `view`.
 function M.paste(view: greed.View, text: string)
@@ -20,7 +18,7 @@ function M.paste(view: greed.View, text: string)
 		return
 	end
 	text = string.gsub(text, "\r\n?", "\n")
-	local replace = M.replacing[greed.mode.get()]
+	local replace = modeless.is(greed.mode.get())
 	-- Each cursor ends up after its text.
 	motions.replace_each(view, function(_, range)
 		local from, to = span(range)

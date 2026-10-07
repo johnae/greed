@@ -1,26 +1,34 @@
--- Edit mode: editing without modes, the way most editors work. Typing
--- inserts text (replacing any selection), arrows move, shift+arrows select,
--- and the usual ctrl shortcuts do the usual things.
+-- Editing without modes, the way most editors work: typing inserts text
+-- (replacing any selection), shift and the arrows select, and the editing
+-- commands such editors have (copy and cut take the line with nothing
+-- selected, lines move up and down, ...). A style without modes, like the
+-- vscode plugin's, binds its keys to these commands in its one mode and
+-- adds itself with `define`:
 --
--- Switch to it with `:style edit`, or to use it all the time, put this in
--- ~/.config/greed/init.luau:
---
---     require("@greed").option.set("editing-style", "edit")
+--     greed.keymap.bind("mine", { ["ctrl-c"] = "copy-or-line", ... })
+--     require("@core").modeless.define({ name = "mine", doc = "My keys", leader = "ctrl-space" })
 
 local greed = require("@greed")
-local core = require("@core")
-local text, indent, registers = core.text, core.indent, core.registers
+local commands = require("./commands")
+local indent = require("./indent")
+local motions = require("./motions")
+local registers = require("./registers")
+local registry = require("./registry")
+local style = require("./style")
+local text = require("./text")
 local span = text.span
+
+local M = {}
+
+-- The modes of the styles without modes.
+local modes: { [string]: boolean } = {}
 
 -- Typing in a row is undone in one step; any command not tagged as typing
 -- ends the step.
-core.commands.tag(
-	"typing",
-	{ "type-char", "type-newline", "type-tab", "erase-back", "erase-forward" }
-)
+commands.tag("typing", { "type-char", "type-newline", "type-tab", "erase-back", "erase-forward" })
 
 greed.on("command.run", function(event: greed.CommandRun)
-	if greed.mode.get() == "edit" and not core.commands.has(event.name, "typing") then
+	if modes[greed.mode.get()] and not commands.has(event.name, "typing") then
 		greed.history.end_group()
 	end
 end)
@@ -28,7 +36,7 @@ end)
 -- Replaces each selection with a piece of text (`text(i)` for the i-th
 -- selection) and leaves a cursor after each.
 local function replace_selections(ctx: greed.Context, text: (i: number) -> string)
-	core.motions.replace_each(ctx.view, function(i)
+	motions.replace_each(ctx.view, function(i)
 		return { text = text(i), place = "end" }
 	end)
 end
@@ -450,98 +458,38 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("edit", {
-	left = "move-left",
-	right = "move-right",
-	up = "move-up",
-	down = "move-down",
-	home = "smart-home",
-	["end"] = "line-end",
-	["ctrl-left"] = "move-word-left",
-	["ctrl-right"] = "move-word-right",
-	["ctrl-home"] = "goto-start",
-	["ctrl-end"] = "goto-end",
-	pagedown = "page-down",
-	pageup = "page-up",
-	["shift-left"] = "extend-left",
-	["shift-right"] = "extend-right",
-	["shift-up"] = "extend-up",
-	["shift-down"] = "extend-down",
-	["shift-home"] = "extend-smart-home",
-	["shift-end"] = "extend-line-end",
-	["ctrl-shift-left"] = "extend-word-left",
-	["ctrl-shift-right"] = "extend-word-right",
-	["ctrl-shift-home"] = "extend-start",
-	["ctrl-shift-end"] = "extend-end",
-	enter = "type-newline",
-	tab = "type-tab",
-	["shift-tab"] = "dedent",
-	backspace = "erase-back",
-	delete = "erase-forward",
-	esc = "collapse",
-	["ctrl-a"] = "select-all",
-	["ctrl-c"] = "copy-or-line",
-	["ctrl-x"] = "cut-or-line",
-	["ctrl-v"] = "paste-over",
-	["ctrl-z"] = "undo",
-	["ctrl-y"] = "redo",
-	["ctrl-Z"] = "redo",
-	["ctrl-p"] = "pick-file",
-	["ctrl-b"] = "pick-buffer",
-	["ctrl-P"] = "command-palette",
-	["ctrl-f"] = "search",
-	f3 = "search-next",
-	["shift-f3"] = "search-prev",
-	["ctrl-h"] = "replace-in-file",
-	["ctrl-g"] = "command-line",
-	["ctrl-d"] = "select-next-match",
-	["ctrl-L"] = "select-all-matches",
-	["ctrl-l"] = "select-lines",
-	["ctrl-K"] = "delete-lines-at-cursor",
-	["alt-up"] = "move-lines-up",
-	["alt-down"] = "move-lines-down",
-	["alt-shift-up"] = "copy-lines-up",
-	["alt-shift-down"] = "copy-lines-down",
-	["ctrl-alt-up"] = "copy-selection-up",
-	["ctrl-alt-down"] = "copy-selection-down",
-	["ctrl-enter"] = "insert-line-below",
-	["ctrl-shift-enter"] = "insert-line-above",
-	["ctrl-/"] = "toggle-comment",
-	["ctrl-_"] = "toggle-comment",
-	["ctrl-]"] = "indent",
-	["ctrl-backspace"] = "delete-word-back",
-	["ctrl-delete"] = "delete-word-forward",
-	["ctrl-w"] = "buffer-close",
-	f12 = "goto-definition",
-	["shift-f12"] = "goto-references",
-	f2 = "rename",
-	f8 = "next-diagnostic",
-	["shift-f8"] = "prev-diagnostic",
-	["ctrl-."] = "code-action",
-	["ctrl-O"] = "pick-outline",
-	["ctrl-t"] = "pick-workspace-symbol",
-	["ctrl-M"] = "pick-problem",
-	["alt-left"] = "jump-back",
-	["alt-right"] = "jump-forward",
-	["ctrl-u"] = "selection-undo",
-	["ctrl-U"] = "selection-redo",
-})
+--- Whether `mode` is the one mode of a style without modes, where typing
+--- and pasting replace the selection.
+function M.is(mode: string): boolean
+	return modes[mode] == true
+end
 
--- Without modes there's no ":" to find, so switching here says where
--- commands are.
-greed.on("option.changed", function(event: greed.OptionChanged)
-	if event.name == "editing-style" and event.value == "edit" then
-		greed.echo("ctrl-P runs any command, alt-x opens the command line")
-	end
-end)
+export type Style = {
+	--- The style's name, which is its mode's too.
+	name: string,
+	doc: string,
+	--- The keys that open the leader, e.g. "ctrl-space".
+	leader: string?,
+	--- What the status line calls its mode; "edit" if left out.
+	label: string?,
+}
 
-greed.keymap.fallback("edit", "type-char")
-greed.mode.set_cursor("edit", "bar")
+--- Adds a style without modes. Its one mode, named like the style, types
+--- what's typed, replacing the selection; bind its keys in that mode.
+--- It goes when the plugin that added it does.
+function M.define(spec: Style)
+	local mode = spec.name
+	greed.keymap.fallback(mode, "type-char")
+	greed.mode.set_cursor(mode, "bar")
+	greed.plugin.tie(registry.set(modes, mode, true))
+	style.define({
+		name = spec.name,
+		doc = spec.doc,
+		mode = mode,
+		roles = { typing = mode },
+		labels = { [mode] = spec.label or "edit" },
+		leader = spec.leader,
+	})
+end
 
-core.style.define({
-	name = "edit",
-	doc = "No modes: typing inserts, shift and the arrows select (VS Code, most editors)",
-	mode = "edit",
-	typing = { "edit" },
-	leader = "ctrl-space",
-})
+return M

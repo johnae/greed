@@ -1,7 +1,7 @@
 -- Actions on things, like Emacs's Embark: finders say what's at the cursor
 -- (a file path, a link, a symbol, a problem, a change, the selected text)
 -- and every kind of thing has actions. The picker plugin's `act` (`space .`,
--- `alt-.` in edit mode) lists the actions for what's under the cursor, and
+-- `alt-.` in the vscode style) lists the actions for what's under the cursor, and
 -- `alt-.` in a picker for the current item, so the same verbs work wherever
 -- a thing shows up.
 --

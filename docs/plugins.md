@@ -136,7 +136,7 @@ Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 was typed, and `ctx.char` for keys that type a character. Keys for
 commands people reach for by name go in the leader, `{ layer = "leader" }`,
 which every editing style opens its own way (`space g` in Helix and Vim,
-`ctrl-space g` in edit mode). Keys for normal mode or for typing go to a
+`ctrl-space g` in the vscode style). Keys for normal mode or for typing go to a
 role, `{ role = "command" }` or `{ role = "typing" }`, so they work in
 every style's mode for it, styles added later included; `{ style =
 "helix", role = "command" }` is for one style's. Other keymaps are bound
@@ -162,13 +162,13 @@ with `core.style.typing_kind("my-prompt")`: focusing one goes to the
 style's typing mode, and `core.floats.typing` opens a float in it.
 Rather than naming other styles' modes, ask `core.style`:
 `is_typing()` says whether the current mode types (insert, Vim's insert,
-edit mode), `role()` which role the current mode plays, `mode_for(role)`
+the vscode style), `role()` which role the current mode plays, `mode_for(role)`
 the style in use's mode for a role, and `each_typing(function(mode) ...
 end)` calls back with every style's typing modes, including styles added
 later, for modes of your own made from them, like the completion menu's.
 Commands can carry tags others check:
 `core.commands.tag("typing", { "my-type-char" })` keeps them out of the
-selection history and in one undo step in edit mode, and `"no-repeat"`
+selection history and in one undo step in the vscode style, and `"no-repeat"`
 leaves them out of what `.` repeats.
 
 For keys that should mean something in one buffer only for a while,
