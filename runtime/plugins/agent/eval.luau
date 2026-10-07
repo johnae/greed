@@ -21,6 +21,7 @@ local models = require("@models")
 local operations = require("@operations")
 local registry = require("./registry")
 local untrusted = require("./untrusted")
+local pages = require("./pages")
 
 local M = {}
 
@@ -227,7 +228,10 @@ end
 
 -- Asks you about `code` and runs it if you let it.
 local function with_you(code: string, needs: string, why: string?): string
-	local choice = ask_you(code, needs, why)
+	-- After any other page asking you, so it shows, and waits, where you see it.
+	local choice = pages.one_at_a_time(function()
+		return ask_you(code, needs, why)
+	end)
 	if choice == "deny" then
 		error("the user didn't let this run", 0)
 	end

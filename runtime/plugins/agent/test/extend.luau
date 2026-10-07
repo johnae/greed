@@ -209,3 +209,43 @@ test("the plugin guide carries the API's signatures, not its doc comments", func
 	assert(not string.find(text, "\n%s*%-%-%- "), "without doc comments")
 	assert(#text < 50000, `small enough to carry: {#text}`)
 end)
+
+test("two pages asked for at once show one after the other", function(t)
+	local dir = sandbox(t)
+	in_command(t, function()
+		return (agent.try("shout", PLUGIN))
+	end)
+	local loud = table.clone(PLUGIN)
+	loud["init.luau"] = string.gsub(PLUGIN["init.luau"], '"shout"', '"loud"')
+	loud["test/shout.luau"] = string.gsub(PLUGIN["test/shout.luau"], '"shout"', '"loud"')
+	in_command(t, function()
+		return (agent.try("loud", loud))
+	end)
+	local first = in_command(t, function()
+		return agent.install("shout")
+	end)
+	greed.command({
+		name = "test-extend-second",
+		run = function()
+			agent.install("loud")
+		end,
+	})
+	t:run("test-extend-second")
+	local reviews = 0
+	for _, buffer in greed.buffers() do
+		if buffer:kind() == "plugin-review" then
+			reviews += 1
+		end
+	end
+	assert(reviews == 1, `one review up at a time: {reviews}`)
+	assert(
+		string.find(greed.view():buffer():text(), '"shout"', 1, true),
+		"the first asked shows first"
+	)
+	t:keys("a")
+	assert(first() and string.find(first() or "", "installed shout", 1, true), first())
+	t:wait(10)
+	assert(string.find(greed.view():buffer():text(), '"loud"', 1, true), "then the second")
+	t:keys("r")
+	assert(greed.fs.stat(dir .. "/plugins/loud") == nil, "rejected")
+end)

@@ -7,6 +7,7 @@
 local greed = require("@greed")
 local registry = require("./registry")
 local approvals = require("@approvals")
+local pages = require("./pages")
 
 local M = {}
 
@@ -270,19 +271,8 @@ greed.on("view.closed", function(event)
 	end
 end)
 
---- Shows the latest try of plugin `name` for review, and installs and
---- loads it if the user accepts. Returns what happened, in words.
-function M.install(name: string): string
-	local s = staged[name]
-	if s == nil then
-		error(`try {name} with plugin_try first`, 0)
-	end
-	if not s.passed then
-		error(`{name} doesn't pass its checks yet:\n{s.report}`, 0)
-	end
-	if review then
-		error("another plugin is waiting for review", 0)
-	end
+-- The review of `s`, the latest try of plugin `name`, and installing it.
+local function review_and_install(name: string, s: Staged): string
 	local target = `{M.dirs.plugins}/{name}`
 	local lines = {
 		`An agent wrote the plugin "{name}" and wants it installed in {target}.`,
@@ -336,6 +326,22 @@ function M.install(name: string): string
 		said ..= `\nchecked again with what it was approved for:\n{report}`
 	end
 	return said
+end
+
+--- Shows the latest try of plugin `name` for review, after any other page
+--- asking you, and installs and loads it if you accept. Returns what
+--- happened, in words.
+function M.install(name: string): string
+	local s = staged[name]
+	if s == nil then
+		error(`try {name} with plugin_try first`, 0)
+	end
+	if not s.passed then
+		error(`{name} doesn't pass its checks yet:\n{s.report}`, 0)
+	end
+	return pages.one_at_a_time(function()
+		return review_and_install(name, s)
+	end)
 end
 
 greed.command({

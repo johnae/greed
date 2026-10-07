@@ -664,6 +664,10 @@ An agent can extend Greed while you work:
    your config can't be written, as when Nix manages it), approves what it
    asks for and loads it right away, `r` rejects it.
 
+Pages like this one, and the one asking before an agent's code runs, show
+one at a time: when an agent asks for two at once, the second shows once
+you've answered the first, so neither waits hidden behind the other.
+
 Ask for something like "a command that jumps from a `use` line to the
 crate's entry in Cargo.toml" and the agent goes through these steps. You
 only see it once its checks pass. Greed's own agent is told to build new
