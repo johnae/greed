@@ -551,6 +551,15 @@ require("@acp").policy(function(session, question)
 end)
 ```
 
+One kind of question is always yours. A write to a `plugin.toml` that adds
+capabilities, letting a plugin do more than it could, asks every time and
+says what it adds, like `Write plugin.toml, which widens what acp may do:
++ plugins`. No policy answers it, "allow always" doesn't cover it, and it
+has no "allow always" of its own. This matters most for Greed's own
+plugins, which load without asking you to approve their capabilities.
+It covers writes that go through Greed. An agent with a shell of its own
+can still change files there.
+
 An agent works either in the project with you, or in a workspace of its
 own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
 cache folder. There it can change what it likes without touching your

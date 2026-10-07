@@ -826,3 +826,48 @@ test("tools needing more than files and programs work for Greed's agent too", fu
 	assert(not string.find(result.text, "can't", 1, true), result.text)
 	assert(not result.error, result.text)
 end)
+
+test("a write letting a plugin do more asks every time, and no policy answers it", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "b" } } },
+			stop = "tools",
+		},
+		{
+			text = "",
+			calls = {
+				{
+					id = "c2",
+					name = "write_file",
+					input = {
+						path = "plugin.toml",
+						text = 'name = "tiny"\ncapabilities = ["proc"]\n',
+					},
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "OK.", calls = {}, stop = "done" },
+	})
+	local remove = acp.policy(function(_s, permission)
+		return permission.options[1].id
+	end)
+	local s, dir = ask(t, "make things")
+	-- The policy allowed the first write; the second waits for you.
+	local status = s.status
+	assert(status == "waiting", `{status}: {said(s)}`)
+	local question = waiting(s)
+	assert(
+		question.title == "Write plugin.toml, which widens what tiny may do: + proc",
+		question.title
+	)
+	assert(#question.options == 2, "no allowing it for good")
+	question.answer:send("no")
+	t:wait(10)
+	remove()
+	assert(greed.fs.read(`{dir}/b.txt`) == "b", "the first was written")
+	assert(greed.fs.read(`{dir}/plugin.toml`) == nil, "not written")
+	local result = asked[3].said[#asked[3].said]
+	assert(result.error and string.find(result.text, "don't try another way", 1, true), result.text)
+end)

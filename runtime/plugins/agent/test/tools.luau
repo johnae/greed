@@ -314,3 +314,19 @@ test("a tool failing a capability check tells the agent not to change capabiliti
 	local plain = agent.error_text("no such file")
 	assert(plain == "no such file", plain)
 end)
+
+test("widens says what a plugin.toml change lets the plugin do that it couldn't", function()
+	local before = 'name = "acp"\ncapabilities = ["proc", "fs.read"]\n'
+	local after =
+		'name = "acp"\ncapabilities = [\n  "proc",\n  "fs.read",\n  "plugins",\n  "eval",\n]\n'
+	local said = agent.widens("/x/acp/plugin.toml", before, after)
+	assert(said == "widens what acp may do: + eval, + plugins", tostring(said))
+	-- A new plugin.toml adds all it lists.
+	local new = agent.widens("/x/tiny/plugin.toml", nil, "name = 'tiny'\ncapabilities = ['net']\n")
+	assert(new == "widens what tiny may do: + net", tostring(new))
+	-- Taking away, keeping, other files and plugins without capabilities: nothing.
+	assert(agent.widens("/x/acp/plugin.toml", after, before) == nil)
+	assert(agent.widens("/x/acp/plugin.toml", before, before .. "# note\n") == nil)
+	assert(agent.widens("/x/notes.toml", before, after) == nil)
+	assert(agent.widens("/x/tiny/plugin.toml", nil, 'name = "tiny"\n') == nil)
+end)

@@ -24,6 +24,7 @@ local extend = require("@self/extend")
 local context = require("@self/context")
 local untrusted = require("@self/untrusted")
 local memory = require("@self/memory")
+local manifest = require("@self/manifest")
 
 registry.group(
 	"refactor",
@@ -105,4 +106,7 @@ return table.freeze({
 	context = context,
 	--- Standing preferences you accepted, and agents proposing them (memory.luau).
 	memory = memory,
+	--- What a write to a plugin.toml lets the plugin do that it couldn't,
+	--- to say in the question before it (manifest.luau).
+	widens = manifest.widens,
 })

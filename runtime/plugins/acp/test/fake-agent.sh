@@ -14,6 +14,7 @@
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
 #   twice        asks two questions, one after the other
+#   widen        writes a plugin.toml asking for "proc", and says if it could
 #   script       asks to run a tool whose title has two lines
 #   stars        runs a tool whose output has Markdown-looking stars and backticks
 #   quit         exits
@@ -169,6 +170,15 @@ while IFS= read -r line; do
 			say "Both done."
 			turn_done "$id" end_turn
 			;;
+			widen*)
+				send "{\"jsonrpc\":\"2.0\",\"id\":907,\"method\":\"fs/write_text_file\",\"params\":{\"sessionId\":\"s1\",\"path\":\"$cwd/plugin.toml\",\"content\":\"name = \\\"tiny\\\"\\ncapabilities = [\\\"proc\\\"]\\n\"}}"
+				await 907
+				case "$reply" in
+				*'"error"'*) say "Not written." ;;
+				*) say "Written." ;;
+				esac
+				turn_done "$id" end_turn
+				;;
 			script*)
 				update '{"sessionUpdate":"tool_call","toolCallId":"t5","title":"Run echo one\necho **two**","kind":"execute","status":"pending"}'
 				send "{\"jsonrpc\":\"2.0\",\"id\":906,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"t5\"},\"options\":[{\"optionId\":\"yes\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"no\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"

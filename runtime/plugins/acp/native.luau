@@ -75,6 +75,8 @@ type Own = {
 	kind: string,
 	title: (args: any) -> string,
 	run: (s: Session, args: any) -> string,
+	--- What the call would let a plugin do that it couldn't (agent.widens).
+	widens: ((s: Session, args: any) -> string?)?,
 }
 
 local object = agent.schema.object
@@ -95,6 +97,15 @@ local OWN: { Own } = {
 		kind = "edit",
 		title = function(args)
 			return `Edit {args.path}`
+		end,
+		widens = function(s, args)
+			local text = core.file.text(args.path, s.cwd)
+			local from, to = string.find(text or "", args.old_text, 1, true)
+			if text == nil or from == nil or to == nil then
+				return nil
+			end
+			local new = string.sub(text, 1, from - 1) .. args.new_text .. string.sub(text, to + 1)
+			return agent.widens(args.path, text, new)
 		end,
 		run = function(s, args)
 			local text = core.file.text(args.path, s.cwd)
@@ -131,6 +142,9 @@ local OWN: { Own } = {
 		kind = "edit",
 		title = function(args)
 			return `Write {args.path}`
+		end,
+		widens = function(s, args)
+			return agent.widens(args.path, core.file.text(args.path, s.cwd), args.text)
 		end,
 		run = function(s, args)
 			agent.memory.guard(args.path, s.cwd)
@@ -346,10 +360,21 @@ local function call(
 	-- Its own tools all change something; Greed's ask unless they only
 	-- read or put what they do in front of you themselves.
 	local asks = own ~= nil or (registered ~= nil and agent.asks(registered))
-	if asks and not allowed(s, state, tool.title, kind) then
+	-- One letting a plugin do more asks you, and only you, every time.
+	local widens = if own and own.widens then own.widens(s, c.input) else nil
+	local refused = nil
+	if widens then
+		local title = `{tool.title}, which {widens}`
+		if session.ask(s, title, kind, session.ONCE, nil, true) ~= "once" then
+			refused = session.NOT_WIDENED
+		end
+	elseif asks and not allowed(s, state, tool.title, kind) then
+		refused = "the user didn't allow it"
+	end
+	if refused then
 		tool.status = "failed"
 		s.tool = nil
-		return "the user didn't allow it", true
+		return refused, true
 	end
 	tool.status = "in_progress"
 	s.changed()

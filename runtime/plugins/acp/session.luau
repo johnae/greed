@@ -35,6 +35,9 @@ export type Permission = {
 	locations: { string }?,
 	options: { { id: string, name: string, kind: string } },
 	answer: greed.Signal,
+	--- Only you answer it, never a policy: for writes that let a plugin do
+	--- more.
+	firm: boolean?,
 }
 
 --- A mode the agent works in, like "plan" or "accept edits".
@@ -459,12 +462,31 @@ local function handlers(session: Session): rpc.Handlers
 			if session.workspace then
 				return nil, `{params.path} is outside the workspace ({session.cwd})`
 			end
-			local chosen = M.ask(session, `Write {params.path}, outside the project`, "edit", {
-				{ id = "once", name = "Allow once", kind = "allow_once" },
-				{ id = "no", name = "Reject", kind = "reject_once" },
-			}, { params.path })
+			local chosen = M.ask(
+				session,
+				`Write {params.path}, outside the project`,
+				"edit",
+				M.ONCE,
+				{ params.path }
+			)
 			if chosen ~= "once" then
 				return nil, "the user didn't allow writing outside the project"
+			end
+		end
+		-- Whatever the agent was allowed before, a write letting a plugin do
+		-- more asks you, and only you.
+		local widens = agent.widens(params.path, core.file.text(params.path), params.content)
+		if widens then
+			local chosen = M.ask(
+				session,
+				`Write {params.path}, which {widens}`,
+				"edit",
+				M.ONCE,
+				{ params.path },
+				true
+			)
+			if chosen ~= "once" then
+				return nil, M.NOT_WIDENED
 			end
 		end
 		local guarded: boolean, why: unknown = pcall(agent.memory.guard, params.path, session.root)
@@ -574,16 +596,27 @@ local function handlers(session: Session): rpc.Handlers
 	return h
 end
 
+--- Answers for a question that can't be allowed for good.
+M.ONCE = {
+	{ id = "once", name = "Allow once", kind = "allow_once" },
+	{ id = "no", name = "Reject", kind = "reject_once" },
+}
+
+--- What an agent hears when you don't let it widen what a plugin may do.
+M.NOT_WIDENED = "the user didn't allow letting a plugin do more; don't try another way, "
+	.. "tell them what you needed it for"
+
 --- Asks you whether the agent may do `title` (a tool call of `kind`,
 --- touching the files at `locations` when it says), with `options` to
---- answer by, unless a policy answers first. Returns the option chosen, or
---- nil if the question was cancelled.
+--- answer by, unless a policy answers first; a `firm` question only you
+--- answer. Returns the option chosen, or nil if the question was cancelled.
 function M.ask(
 	session: Session,
 	title: string,
 	kind: string?,
 	options: { { id: string, name: string, kind: string } },
-	locations: { string }?
+	locations: { string }?,
+	firm: boolean?
 ): string?
 	local permission: Permission = {
 		title = title,
@@ -591,6 +624,7 @@ function M.ask(
 		locations = locations,
 		options = options,
 		answer = greed.signal(),
+		firm = firm,
 	}
 	local entry: Entry = { kind = "permission", permission = permission }
 	table.insert(session.entries, entry)
@@ -601,7 +635,7 @@ function M.ask(
 			end
 		end
 	end
-	local decided = session.decide and session.decide(permission)
+	local decided = if firm then nil else session.decide and session.decide(permission)
 	if decided then
 		chose(decided, " (by policy)")
 		session.changed()

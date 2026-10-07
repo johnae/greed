@@ -562,3 +562,18 @@ test(
 		assert(#t:floats() == 0, "nothing more is asked")
 	end
 )
+
+test("an agent's write letting a plugin do more asks you first", function(t)
+	local dir = t:tempdir({})
+	local s = start(t, dir)
+	send(t, s, "widen")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "which widens what tiny may do: + proc", 1, true), text)
+	t:keys("n")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(30)
+	assert(greed.fs.read(`{dir}/plugin.toml`) == nil, "not written")
+	assert(string.find(greed.view():buffer():text(), "Not written.", 1, true), "the agent heard")
+end)
