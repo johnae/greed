@@ -63,24 +63,24 @@ function M.program(command: { string }): Runner
 		table.insert(args, run.code)
 		local child, err = greed.process.spawn(args, { cwd = run.dir })
 		if child == nil then
-			return { output = "", error = `can't start {command[1]}: {err}` }
+			return { output = "", error = err or `can't start {command[1]}` }
 		end
 		run.started(child)
 		if run.input then
-			child.write(run.input)
+			child:write(run.input)
 		end
-		child.close()
+		child:close()
 		local parts: { string } = {}
 		while true do
-			local piece = child.read()
+			local piece = child:read()
 			if piece == nil then
 				break
 			end
 			table.insert(parts, piece)
 			run.progress(table.concat(parts))
 		end
-		local exit = child.wait()
-		local output, errors = table.concat(parts), child.stderr()
+		local exit = child:wait()
+		local output, errors = table.concat(parts), child:stderr()
 		if errors ~= "" then
 			output = if output == "" or string.sub(output, -1) == "\n"
 				then output .. errors

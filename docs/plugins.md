@@ -33,8 +33,8 @@ capabilities = ["proc", "fs.read"]
 
 | Capability | What it opens |
 |---|---|
-| `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`, typing into a terminal, and a language server's `workspace/executeCommand`. A program can do anything you can, so this is full access |
-| `fs.read` | Files by path: `greed.fs` reads, `greed.fs.copy`, `greed.hash.sha256_file`, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.load_grammar` |
+| `proc` | Running programs: `greed.process.run` and `spawn`, `greed.terminal.spawn`, `greed.lsp.server`, typing into a terminal, and a language server's `workspace/executeCommand`. A program can do anything you can, so this is full access |
+| `fs.read` | Files by path: `greed.fs` reads, `greed.fs.copy`, `greed.hash.sha256_file`, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.tags`, `greed.syntax.load_grammar` |
 | `fs.write` | `greed.fs.write`, `mkdir`, `remove`, `rename` and `copy`, `greed.http.request` with `save`, and `buffer:save(path)` to a path other than the buffer's own file |
 | `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
 | `net` | The network: `greed.http` to any host, and the Claude Code connection |
@@ -124,6 +124,12 @@ greed.command({
 
 greed.keymap.bind("normal", { ["space g"] = "greet" })
 ```
+
+A command name can't have spaces, so it can be typed after `:`. Defining
+a command that another plugin already has replaces it, and Greed says so
+in a message; your config can replace any command without one. When the
+editor starts, it names keys bound to commands that don't exist, which
+usually means a typo. `greed.plugin.check` reports both as warnings.
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
@@ -491,8 +497,8 @@ greed.tab.set_layout({
   cells it covers at its own size, and `greed.image.cell_size()` how many
   pixels a cell is.
 - PDFs: `local doc = greed.pdf.open(path)` reads one, `doc.pages` counts
-  its pages, `doc.render(page, scale)` draws one as an image id at `scale`
-  pixels per point, and `doc.text(page)` gives its text, line by line. All
+  its pages, `doc:render(page, scale)` draws one as an image id at `scale`
+  pixels per point, and `doc:text(page)` gives its text, line by line. All
   three wait, like `greed.sleep`.
 - Floats show a buffer over the main view, and panels beside it:
   `greed.float(buffer, { title = "Info", width = "60%" })`,
@@ -609,7 +615,7 @@ following an agent around are all built this way.
 local greed = require("@greed")
 
 -- Trim spaces at the ends of lines whenever a file is saved.
-greed.on("buffer.saved", function(event)
+greed.on("buffer.saved", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	local trimmed = string.gsub(buffer:text(), "[ \t]+\n", "\n")
 	if trimmed ~= buffer:text() then
@@ -651,8 +657,12 @@ end)
 | `editor.started` | Once, when the editor is up with every plugin and your config loaded | nothing |
 | `editor.quitting` | Just before the editor quits | nothing |
 
-`space h e` (`:describe-event`) shows any event's fields, and
-`runtime/types/greed` has them all typed.
+`space h e` (`:describe-event`) shows any event's fields, and the types
+that come with `require("@greed")` have them all. Give the handler's
+parameter its type, as above (`greed.BufferChanged`), so the type checker
+catches a misspelled field. A name that isn't on this list, like
+`"buffer.chnaged"`, is an error, from the type checker and when the code
+runs.
 
 A handler stays until its plugin unloads or `greed.off(event, handler)`
 removes it, given the same function. Removing one that's gone does nothing,
@@ -727,11 +737,24 @@ greed.option.define({
 	doc = "Trim spaces at the ends of lines when saving",
 })
 
-greed.on("buffer.saved", function(event)
+greed.on("buffer.saved", function(event: greed.BufferChanged)
 	if greed.option.get("trim-on-save") then
 		-- ...
 	end
 end)
+```
+
+An option that takes one of a few values lists them as `choices`. Setting
+it to anything else fails with an error naming them, `:set` offers them as
+you type, and `:describe-option` shows them:
+
+```luau
+greed.option.define({
+	name = "trim-style",
+	default = "trailing",
+	choices = { "trailing", "all", "off" },
+	doc = "What trim-on-save takes away",
+})
 ```
 
 ## Programs and terminals
@@ -747,16 +770,16 @@ that started it.
 
 `greed.process.spawn(command, { cwd, env })` starts a program to talk to
 over its input and output, like an agent or a server speaking JSON-RPC.
-`child.write(text)` sends it input, `child.read()` waits for the next
-piece it prints (nil once it exited), `child.close()` closes its input,
-and `child.wait()` waits for its exit code. It ends with the plugin that
+`child:write(text)` sends it input, `child:read()` waits for the next
+piece it prints (nil once it exited), `child:close()` closes its input,
+and `child:wait()` waits for its exit code. It ends with the plugin that
 started it, too.
 
 ```luau
 greed.spawn(function()
 	local child = assert(greed.process.spawn({ "sh", "-c", "read x; echo got $x" }))
-	child.write("hello\n")
-	greed.echo(child.read()) -- got hello
+	child:write("hello\n")
+	greed.echo(child:read()) -- got hello
 end)
 ```
 
@@ -789,7 +812,7 @@ folder wins, and `greed NAME` with no such command opens `NAME` as a file.
 `greed.http.request({ url, method, headers, body, timeout })` returns the
 whole response (`status`, `headers` with lowercase names, `body`), or nil
 and why. `greed.http.stream(...)` returns once the status and headers are
-in, and `read()` gives the body piece by piece as it arrives, which is how
+in, and `stream:read()` gives the body piece by piece as it arrives, which is how
 model APIs stream their answers:
 
 ```luau
@@ -802,7 +825,7 @@ if stream == nil then
 	error(err, 0)
 end
 while true do
-	local piece = stream.read()
+	local piece = stream:read()
 	if piece == nil then
 		break
 	end
@@ -848,7 +871,7 @@ if stream == nil then
 	error(err, 0)
 end
 while true do
-	local piece = stream.next()
+	local piece = stream:next()
 	if piece == nil then
 		break
 	end

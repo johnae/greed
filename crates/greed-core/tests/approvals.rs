@@ -142,6 +142,9 @@ fn check(host: &Host, dir: &Path) -> Vec<String> {
                 for _, failed in report.tests.failed or {{}} do
                     greed.echo(failed.message)
                 end
+                for _, warning in report.warnings do
+                    greed.echo('warning: ' .. warning)
+                end
             end }})",
             dir.to_str().unwrap()
         ),
@@ -364,4 +367,39 @@ fn plugins_cant_remove_move_or_replace_the_approvals_file() {
         assert!(err.contains(why), "{call}: {err}");
     }
     assert!(store.exists());
+}
+
+#[test]
+fn checking_a_plugin_warns_of_replaced_commands_and_keys_to_missing_ones() {
+    let temp = Temp::new("check-warnings");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let base = shipped.join("base");
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(base.join("plugin.toml"), "name = \"base\"\n").unwrap();
+    std::fs::write(
+        base.join("init.luau"),
+        "require('@greed').command({ name = 'save-it', run = function() end })\n",
+    )
+    .unwrap();
+    let dir = temp.plugin("mine", "", "\"base\"");
+    std::fs::write(
+        dir.join("init.luau"),
+        "local greed = require('@greed')
+        greed.command({ name = 'save-it', run = function() end })
+        greed.keymap.bind('normal', { ['g z'] = 'nowhere' })
+        return {}\n",
+    )
+    .unwrap();
+    let host = host(&temp.0.join("approved.json"), &shipped);
+    host.load_dirs(&[base]).unwrap();
+    let said = check(&host, &dir);
+    assert_eq!(
+        said,
+        [
+            "passed 0",
+            "warning: the mine plugin replaces the base plugin's command save-it",
+            "warning: g z in normal runs nowhere, which doesn't exist",
+        ]
+    );
 }

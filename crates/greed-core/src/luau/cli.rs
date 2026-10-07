@@ -32,6 +32,7 @@ pub(super) fn function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(move |lua, spec: Table| {
         let name: String = spec.get("name")?;
+        super::api::check_command_name(&name)?;
         let command = CliCommand {
             owner: owner.clone(),
             doc: spec.get::<Option<String>>("doc")?.unwrap_or_default(),

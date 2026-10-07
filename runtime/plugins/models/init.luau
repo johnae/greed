@@ -49,9 +49,9 @@ export type Request = {
 --- text and returns it, nil at the end, or nil and why it failed; `text` is
 --- everything so far.
 export type Stream = {
-	next: () -> (string?, string?),
+	next: (self: Stream) -> (string?, string?),
 	text: string,
-	close: () -> (),
+	close: (self: Stream) -> (),
 }
 
 local M = {}
@@ -286,7 +286,7 @@ local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream
 	if response.status >= 300 then
 		local body = {}
 		while true do
-			local piece = response.read()
+			local piece = response:read()
 			if piece == nil then
 				break
 			end
@@ -316,9 +316,9 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	local stream: Stream
 	stream = {
 		text = "",
-		next = function(): (string?, string?)
+		next = function(_: Stream): (string?, string?)
 			while #pending == 0 and not done do
-				local piece, failed = response.read()
+				local piece, failed = response:read()
 				if piece == nil then
 					done = true
 					if failed then
@@ -332,7 +332,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 					local text, finished, problem = read_event(provider.kind, event)
 					if problem then
 						done = true
-						response.close()
+						response:close()
 						return nil, problem
 					end
 					if text and text ~= "" then
@@ -340,7 +340,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 					end
 					if finished then
 						done = true
-						response.close()
+						response:close()
 					end
 				end
 			end
@@ -350,9 +350,9 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 			end
 			return text, nil
 		end,
-		close = function(): ()
+		close = function(_: Stream): ()
 			done = true
-			response.close()
+			response:close()
 		end,
 	}
 	return stream, nil
@@ -379,7 +379,7 @@ function M.turn(
 	local reader = turn.reader(provider.kind)
 	local buffered = ""
 	while true do
-		local piece, failed = response.read()
+		local piece, failed = response:read()
 		if piece == nil then
 			if failed then
 				return nil, failed
@@ -391,14 +391,14 @@ function M.turn(
 		for _, event in events do
 			local text, finished, problem = reader.feed(event)
 			if problem then
-				response.close()
+				response:close()
 				return nil, problem
 			end
 			if text and on_text then
 				on_text(text)
 			end
 			if finished then
-				response.close()
+				response:close()
 				return reader.turn(), nil
 			end
 		end
@@ -453,7 +453,7 @@ function M.ask(role: string, request: Request): (string?, string?)
 		return nil, err
 	end
 	while true do
-		local piece, failed = stream.next()
+		local piece, failed = stream:next()
 		if failed then
 			return nil, failed
 		end

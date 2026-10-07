@@ -397,7 +397,7 @@ function run_block(
 			local child = run.child
 			if child and table.find(running, run) then
 				run.stopped = true
-				child.kill()
+				child:kill()
 			end
 		end)
 	end
@@ -575,7 +575,7 @@ greed.command({
 				run.stopped = true
 				local child = run.child
 				if child then
-					child.kill()
+					child:kill()
 				end
 				return
 			end

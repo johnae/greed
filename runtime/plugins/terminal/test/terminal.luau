@@ -26,7 +26,10 @@ test(":terminal runs a program and shows what it prints", function(t)
 		return #buffer:decorations("terminal.exit") > 0
 	end)
 	local exit = buffer:decorations("terminal.exit")[1]
-	assert(exit.lines and exit.lines[1] == "[exited with 3]", exit.lines and exit.lines[1])
+	assert(
+		exit.lines and exit.lines[1] == "[exited with 3]",
+		tostring(exit.lines and exit.lines[1])
+	)
 	assert(greed.mode.get() == "normal", greed.mode.get())
 end)
 

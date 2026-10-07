@@ -25,6 +25,37 @@ use crate::{Buffer, BufferId, Mark, MarkImage, Reveal, Scroll, View, ViewId, Vir
 
 type LuaResult<T> = mlua::Result<T>;
 
+const METHODS: &str = r"
+local t = ...
+for name, f in t do
+    if type(f) == 'function' then
+        t[name] = function(first, ...)
+            if rawequal(first, t) then
+                return f(...)
+            end
+            return f(first, ...)
+        end
+    end
+end
+return t
+";
+
+/// Makes the functions in a table-shaped handle, like a child process or
+/// an HTTP stream, work as methods (`child:write(text)`) as well as plain
+/// fields (`child.write(text)`).
+pub(super) fn methods(lua: &Lua, handle: Table) -> LuaResult<Table> {
+    const KEY: &str = "greed.methods";
+    let cached = lua.named_registry_value::<Option<Function>>(KEY)?;
+    let wrap = if let Some(wrap) = cached {
+        wrap
+    } else {
+        let wrap: Function = lua.load(METHODS).set_name("=greed").into_function()?;
+        lua.set_named_registry_value(KEY, &wrap)?;
+        wrap
+    };
+    wrap.call(handle)
+}
+
 /// A view, as seen by a command or plugin. Edits made through it are
 /// attributed to `author`.
 pub(super) struct ViewRef {
@@ -285,14 +316,14 @@ impl BufferRef {
 /// to the front, and reading how it's shown.
 fn add_float_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
     methods.add_method("configure", |lua, this, spec: Table| {
-        let current = state(lua)
-            .editor
-            .float_options(this.id)
-            .cloned()
-            .ok_or_else(|| mlua::Error::runtime("only floating views can be configured"))?;
+        // A closed view fails, as with every other method.
+        this.with_view(lua, |_| Ok(()))?;
+        let Some(current) = state(lua).editor.float_options(this.id).cloned() else {
+            return Ok(false);
+        };
         let options = float_options(current, Some(spec))?;
         state_mut(lua).editor.configure_float(this.id, options);
-        Ok(())
+        Ok(true)
     });
     methods.add_method("raise", |lua, this, ()| {
         Ok(state_mut(lua).editor.raise_float(this.id))
@@ -413,7 +444,7 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             match found {
                 Ok(Some(m)) => (m.start, m.end).into_lua_multi(lua),
                 Ok(None) => Value::Nil.into_lua_multi(lua),
-                Err(err) => (Value::Nil, err.to_string()).into_lua_multi(lua),
+                Err(err) => (Value::Nil, Value::Nil, err.to_string()).into_lua_multi(lua),
             }
         },
     );

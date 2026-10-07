@@ -494,7 +494,7 @@ local function handlers(session: Session): rpc.Handlers
 		terms[id] = term
 		greed.spawn(function()
 			while true do
-				local piece = child.read()
+				local piece = child:read()
 				if piece == nil then
 					break
 				end
@@ -505,10 +505,10 @@ local function handlers(session: Session): rpc.Handlers
 					term.truncated = true
 				end
 			end
-			term.code = child.wait()
+			term.code = child:wait()
 			term.done = true
 			for _, waiter in term.waiters do
-				waiter.send(true)
+				waiter:send(true)
 			end
 		end)
 		return { terminalId = id }
@@ -541,19 +541,19 @@ local function handlers(session: Session): rpc.Handlers
 		if not term.done then
 			local finished = greed.signal()
 			table.insert(term.waiters, finished)
-			finished.wait()
+			finished:wait()
 		end
 		return exit_status(term)
 	end
 
 	h["terminal/kill"] = function(params: any): (any, string?)
-		term_of(params).child.kill()
+		term_of(params).child:kill()
 		return nil
 	end
 
 	h["terminal/release"] = function(params: any): (any, string?)
 		local term = term_of(params)
-		term.child.kill()
+		term.child:kill()
 		terms[params.terminalId] = nil
 		return nil
 	end
@@ -597,7 +597,7 @@ function M.ask(
 	local before: Status = session.status
 	session.status = "waiting"
 	session.changed()
-	local chosen = permission.answer.wait()
+	local chosen = permission.answer:wait()
 	if session.status == "waiting" then
 		session.status = before
 	end
@@ -871,7 +871,7 @@ end
 --- Asks the agent to stop its turn, answering any question it waits on.
 function M.cancel(session: Session)
 	for _, permission in M.pending(session) do
-		permission.answer.send(nil)
+		permission.answer:send(nil)
 	end
 	if session.driver then
 		session.driver.cancel(session)

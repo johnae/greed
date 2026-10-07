@@ -251,6 +251,7 @@ greed.option.define({
 	name = "tree-icons",
 	doc = 'Icons by the names in the file tree: "none", or "nerd" for a Nerd Font\'s',
 	default = "none",
+	choices = { "none", "nerd" },
 })
 
 greed.on("option.changed", function(event)

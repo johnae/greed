@@ -127,6 +127,9 @@ local function describe(report: greed.PluginCheck): (string, boolean)
 			table.insert(lines, `  {f.file}: {f.name}: {f.message}`)
 		end
 	end
+	for _, warning in report.warnings do
+		table.insert(lines, `warning: {warning}`)
+	end
 	return table.concat(lines, "\n"), passed
 end
 
@@ -165,7 +168,7 @@ local function finish(accepted: boolean)
 	end
 	review = nil
 	r.view:close()
-	r.done.send(accepted)
+	r.done:send(accepted)
 end
 
 greed.on("view.closed", function(event)
@@ -214,7 +217,7 @@ function M.install(name: string): string
 	local r = { done = greed.signal(), view = view }
 	review = r
 	greed.echo(`an agent wants to install the plugin {name} - a installs it, r rejects it`)
-	if not r.done.wait() then
+	if not r.done:wait() then
 		return `the user rejected {name}`
 	end
 	-- Your config first; when it can't be written, as when Nix manages it,

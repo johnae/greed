@@ -26,6 +26,9 @@ pub struct Check {
     pub types: Result<(bool, String), String>,
     /// Each test's file, name and failure, if it failed.
     pub tests: Result<Vec<(String, String, Option<String>)>, String>,
+    /// What looks wrong once it's loaded with the others, like keys bound
+    /// to commands that don't exist.
+    pub warnings: Vec<String>,
 }
 
 /// What a plugin's registry added for another plugin, to take away when
@@ -162,7 +165,13 @@ fn check(dir: &Path, others: &[(String, PathBuf)], approved: Option<&BTreeSet<St
                 .collect()
         })
         .map_err(|err| err.to_string());
-    Check { types, tests }
+    // A plugin that fails to load says so in its tests.
+    let warnings = super::testing::warnings(&plugins, approved).unwrap_or_default();
+    Check {
+        types,
+        tests,
+        warnings,
+    }
 }
 
 /// Runs `luau-analyze` in strict mode on the plugin's files, with
@@ -286,6 +295,7 @@ pub(super) fn to_lua(lua: &Lua, check: Check) -> LuaResult<Table> {
         Err(error) => tests.set("error", error)?,
     }
     report.set("tests", tests)?;
+    report.set("warnings", check.warnings)?;
     Ok(report)
 }
 

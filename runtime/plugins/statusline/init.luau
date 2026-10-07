@@ -31,6 +31,7 @@ greed.option.define({
 	name = "statusline-caps",
 	doc = 'The ends of status line pills: "round" (needs a Nerd Font) or "none"',
 	default = "round",
+	choices = { "round", "none" },
 })
 
 --- What a piece of the status line shows: text, or a pill in a style with

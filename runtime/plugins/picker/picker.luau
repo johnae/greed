@@ -533,12 +533,12 @@ function M.choose(title: string, items: { Item }, options: Options?): Item?
 		if cancel then
 			cancel()
 		end
-		done.send(false)
+		done:send(false)
 	end
 	M.pick(title, items, function(item)
-		done.send(item)
+		done:send(item)
 	end, given)
-	local item = done.wait()
+	local item = done:wait()
 	return if item then item else nil
 end
 

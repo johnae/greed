@@ -542,7 +542,9 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
         return function()
             local token = new()
             local sent = false
-            return {
+            local signal
+            -- Both signal:send(value) and signal.send(value) work.
+            signal = {
                 wait = function()
                     local ready, value = take(token)
                     if ready then
@@ -553,13 +555,15 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
                     end
                     return coroutine.yield(token)
                 end,
-                send = function(value)
+                send = function(first, ...)
+                    local value = if rawequal(first, signal) then ... else first
                     if not sent then
                         sent = true
                         send(token, value)
                     end
                 end,
             }
+            return signal
         end
         "#,
     )

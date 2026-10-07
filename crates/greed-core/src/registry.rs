@@ -84,6 +84,15 @@ pub struct OptionDef {
     pub owner: PluginId,
     pub source: Option<Source>,
     pub default: Value,
+    /// The values it can take; empty when any value of its type will do.
+    pub choices: Vec<Value>,
+}
+
+impl OptionDef {
+    /// Whether `value` is one of its choices, or any value when it has none.
+    fn allows(&self, value: &Value) -> bool {
+        self.choices.is_empty() || self.choices.contains(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +102,11 @@ pub enum OptionError {
         name: Arc<str>,
         expected: &'static str,
         actual: &'static str,
+    },
+    NotAChoice {
+        name: Arc<str>,
+        value: Value,
+        choices: Vec<Value>,
     },
 }
 
@@ -105,6 +119,18 @@ impl fmt::Display for OptionError {
                 expected,
                 actual,
             } => write!(f, "option {name:?} takes a {expected}, not a {actual}"),
+            OptionError::NotAChoice {
+                name,
+                value,
+                choices,
+            } => {
+                let choices: Vec<String> = choices.iter().map(ToString::to_string).collect();
+                write!(
+                    f,
+                    "option {name:?} can't be \"{value}\"; it takes one of: {}",
+                    choices.join(", ")
+                )
+            }
         }
     }
 }
@@ -228,7 +254,8 @@ impl<H> Registry<H> {
 
     /// Defines an option, set to its default. An option of the same name and
     /// type that was set, even one whose plugin was removed since, as when
-    /// it reloads, keeps its value and who set it.
+    /// it reloads, keeps its value and who set it, if that value is still
+    /// one of its choices.
     pub fn define_option(&mut self, def: OptionDef) {
         let earlier = self
             .options
@@ -238,6 +265,7 @@ impl<H> Registry<H> {
             .or_else(|| self.kept.remove(&def.name))
             .filter(|(value, _)| {
                 std::mem::discriminant(value) == std::mem::discriminant(&def.default)
+                    && def.allows(value)
             });
         let set = earlier.is_some();
         let (value, set_by) = earlier.unwrap_or_else(|| (def.default.clone(), None));
@@ -290,6 +318,13 @@ impl<H> Registry<H> {
                 name: name.into(),
                 expected: slot.value.type_name(),
                 actual: value.type_name(),
+            });
+        }
+        if !slot.def.allows(&value) {
+            return Err(OptionError::NotAChoice {
+                name: name.into(),
+                value,
+                choices: slot.def.choices.clone(),
             });
         }
         slot.value = value;

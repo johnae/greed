@@ -166,3 +166,8 @@ test("space h h describes anything from one picker", function(t)
 	local help = t:floats()[1]
 	assert(help and string.find(help, "text-width  (option)", 1, true), help)
 end)
+
+test("an option with choices lists them", function()
+	local text = describe.text("line-numbers", "option") :: string
+	assert(string.find(text, 'Choices: "absolute", "relative", "hybrid"', 1, true), text)
+end)

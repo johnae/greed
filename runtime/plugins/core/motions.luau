@@ -61,7 +61,7 @@ end
 --- Whether the current mode's cursor sits on characters (a block), as in
 --- Helix's and Vim's normal modes, rather than between them (a bar).
 function M.on_chars(): boolean
-	return greed.mode.shape() ~= "bar"
+	return greed.mode.cursor_of() ~= "bar"
 end
 
 -- Where a motion on `range` starts: its block cursor's character, or its

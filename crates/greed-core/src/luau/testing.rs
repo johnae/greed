@@ -93,6 +93,15 @@ pub(super) fn run_checked(
     Ok(results)
 }
 
+/// What looks wrong in what `plugins` register once they're all loaded, as
+/// `run_checked` loads them.
+pub(super) fn warnings(
+    plugins: &[PathBuf],
+    approved: Option<&BTreeSet<String>>,
+) -> Result<Vec<String>, HostError> {
+    Ok(api::registry_warnings(&fresh_host(plugins, approved)?.lua))
+}
+
 fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Result<Host, HostError> {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let mut editor = Editor::new(ClientId(1));

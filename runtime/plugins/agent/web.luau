@@ -14,6 +14,7 @@ local untrusted = require("./untrusted")
 greed.option.define({
 	name = "web-search",
 	default = "",
+	choices = { "", "brave", "exa", "tavily", "searxng" },
 	doc = 'The search service agents search the web with: "brave", "exa", "tavily" or "searxng"; empty for none',
 })
 
@@ -218,9 +219,7 @@ function M.search(query: string): { Found }
 	local search = SERVICES[service]
 	if search == nil then
 		error(
-			if service == ""
-				then "no search service: :set web-search brave (or exa, tavily, searxng) and :secret-set its key"
-				else `web-search is "{service}"; it can be brave, exa, tavily or searxng`,
+			"no search service: :set web-search brave (or exa, tavily, searxng) and :secret-set its key",
 			0
 		)
 	end

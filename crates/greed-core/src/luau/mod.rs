@@ -49,6 +49,7 @@ use std::time::{Duration, Instant};
 use mlua::{Function, Lua, Value, VmState};
 use serde::Deserialize;
 
+pub use api::EVENTS;
 pub use jobs::Done as FinishedJob;
 pub use testing::{TestResult, run_tests};
 
@@ -664,12 +665,18 @@ impl Host {
 
     /// Tells plugins the editor is up and about to show itself, with
     /// "editor.started": once per run, so reloading a plugin doesn't repeat
-    /// what it does then.
+    /// what it does then. Says which keys are bound to commands that don't
+    /// exist, if any are.
     pub fn started(&self) -> Result<(), HostError> {
-        budgeted(&self.lua, || {
+        let emitted = budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             api::emit(&self.lua, "editor.started", &payload).map_err(HostError::from)
-        })
+        });
+        let unknown = api::unknown_bindings(&self.lua);
+        if !unknown.is_empty() {
+            state_mut(&self.lua).editor.echo(unknown.join("; "));
+        }
+        emitted
     }
 
     /// Tells plugins what the mouse did, with "mouse", and what was under it.

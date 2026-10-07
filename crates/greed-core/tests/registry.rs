@@ -103,6 +103,7 @@ fn options_are_typed() {
         owner: "core".into(),
         source: None,
         default: Value::Int(4),
+        choices: Vec::new(),
     });
     assert_eq!(reg.option("tab-width"), Some(&Value::Int(4)));
     reg.set_option("tab-width", Value::Int(2)).unwrap();
@@ -120,6 +121,7 @@ fn removing_the_owner_removes_its_options() {
         owner: "user/me".into(),
         source: None,
         default: Value::Bool(false),
+        choices: Vec::new(),
     });
     reg.remove_owned_by("user/me");
     assert_eq!(reg.option("wrap"), None);
@@ -132,6 +134,7 @@ fn option(name: &str, owner: &str, default: Value) -> OptionDef {
         owner: owner.into(),
         source: None,
         default,
+        choices: Vec::new(),
     }
 }
 
@@ -173,4 +176,41 @@ fn an_option_defined_again_with_another_type_takes_its_default() {
     reg.set_option("wrap", Value::Bool(false)).unwrap();
     reg.define_option(option("wrap", "user/me", Value::String("on".into())));
     assert_eq!(reg.option("wrap"), Some(&Value::String("on".into())));
+}
+
+#[test]
+fn an_option_with_choices_takes_only_those() {
+    let mut reg = Reg::default();
+    let choices = ["absolute", "relative", "off"].map(|c| Value::String(c.into()));
+    reg.define_option(OptionDef {
+        choices: choices.to_vec(),
+        ..option("numbers", "core", Value::String("absolute".into()))
+    });
+    reg.set_option("numbers", Value::String("off".into()))
+        .unwrap();
+    let err = reg
+        .set_option("numbers", Value::String("of".into()))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "option \"numbers\" can't be \"of\"; it takes one of: absolute, relative, off"
+    );
+    assert_eq!(reg.option("numbers"), Some(&Value::String("off".into())));
+    assert!(reg.set_option("numbers", Value::Int(1)).is_err());
+}
+
+#[test]
+fn an_option_defined_again_without_the_choice_it_was_set_to_takes_its_default() {
+    let mut reg = Reg::default();
+    let strings = |cs: &[&str]| cs.iter().map(|c| Value::String((*c).into())).collect();
+    reg.define_option(OptionDef {
+        choices: strings(&["a", "b"]),
+        ..option("pick", "user/me", Value::String("a".into()))
+    });
+    reg.set_option("pick", Value::String("b".into())).unwrap();
+    reg.define_option(OptionDef {
+        choices: strings(&["a", "c"]),
+        ..option("pick", "user/me", Value::String("a".into()))
+    });
+    assert_eq!(reg.option("pick"), Some(&Value::String("a".into())));
 }

@@ -66,15 +66,15 @@ fn document(lua: &Lua, doc: Document) -> LuaResult<Table> {
             }))
         }
     })?;
-    t.set("render", jobs::waiting(lua, "render", render)?)?;
+    t.set("render", jobs::waiting_method(lua, "render", render)?)?;
     let text = lua.create_function(move |lua, page: usize| {
         let (doc, page) = (doc.clone(), page_index(&doc, page)?);
         Ok(jobs::start(lua, move || {
             Output::Pdf(Done::Text(doc.text(page)))
         }))
     })?;
-    t.set("text", jobs::waiting(lua, "text", text)?)?;
-    Ok(t)
+    t.set("text", jobs::waiting_method(lua, "text", text)?)?;
+    super::handles::methods(lua, t)
 }
 
 /// Wakes the command waiting on PDF job `token` with what it produced, or

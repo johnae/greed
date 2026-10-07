@@ -23,7 +23,7 @@ greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
 	local signals: { greed.Signal } = waiting[id] or {}
 	waiting[id] = nil
 	for _, signal in signals do
-		signal.send(true)
+		signal:send(true)
 	end
 end)
 
@@ -75,7 +75,7 @@ function M.after_edits(buffers: { greed.Buffer }, ms: number?): string?
 	greed.spawn(function()
 		greed.sleep(ms or WAIT)
 		for i, signal in signals do
-			signal.send(false)
+			signal:send(false)
 			-- A server that never reports mustn't collect waiters.
 			local id = checked[i]:id()
 			local list = waiting[id]
@@ -87,7 +87,7 @@ function M.after_edits(buffers: { greed.Buffer }, ms: number?): string?
 	end)
 	local reports = {}
 	for i, buffer in checked do
-		signals[i].wait()
+		signals[i]:wait()
 		table.insert(reports, report(buffer))
 	end
 	return table.concat(reports, "\n")

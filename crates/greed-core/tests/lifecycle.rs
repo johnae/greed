@@ -559,3 +559,59 @@ greed.echo(tostring(os.clock() - start))
         "through a view {viewed}s, plain {plain}s"
     );
 }
+
+#[test]
+fn command_names_must_be_typeable() {
+    let h = host();
+    for (call, name) in [
+        ("command", "Bad Name"),
+        ("command", ""),
+        ("cli", "two words"),
+    ] {
+        let err = h
+            .eval(&format!(
+                "require('@greed').{call}({{ name = {name:?}, run = function() end }})"
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("can't be a command name"),
+            "{call} {name:?}: {err}"
+        );
+    }
+    h.eval("require('@greed').command({ name = 'vim-motion-$', run = function() end })")
+        .unwrap();
+}
+
+#[test]
+fn replacing_another_plugins_command_says_so_unless_its_your_config() {
+    let h = host();
+    let define = "require('@greed').command({ name = 'shared', run = function() end })";
+    h.load_str("one", define).unwrap();
+    h.load_str("one", define).unwrap();
+    assert!(messages(&h).is_empty(), "reloading replaces its own");
+    h.load_str("two", define).unwrap();
+    assert_eq!(
+        messages(&h),
+        ["the two plugin replaces the one plugin's command shared"]
+    );
+    h.load_str("user/config", define).unwrap();
+    assert!(messages(&h).is_empty(), "your config may");
+}
+
+#[test]
+fn keys_bound_to_missing_commands_are_named_at_start() {
+    let h = host();
+    h.load_str(
+        "keys",
+        "local greed = require('@greed')
+        greed.command({ name = 'there', run = function() end })
+        greed.keymap.bind('normal', { ['g z'] = 'nowhere', ['g y'] = 'there' })",
+    )
+    .unwrap();
+    h.started().unwrap();
+    assert_eq!(
+        messages(&h),
+        ["g z in normal runs nowhere, which doesn't exist"]
+    );
+}

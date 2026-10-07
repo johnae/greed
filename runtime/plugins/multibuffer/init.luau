@@ -42,7 +42,7 @@ export type Mark = {
 	to: number,
 	style: string,
 	whole: boolean?,
-	lines: { string }?,
+	lines: { greed.MarkLine }?,
 }
 
 export type Options = {
@@ -573,7 +573,10 @@ end
 function M.diff(path: string, label: string?, base: string, text: string): { Excerpt }
 	local out: { Excerpt } = {}
 	for _, hunk in hunks(base, text) do
-		local removed = string.split(hunk.old, "\n")
+		local removed: { greed.MarkLine } = {}
+		for _, line in string.split(hunk.old, "\n") do
+			table.insert(removed, line)
+		end
 		if removed[#removed] == "" then
 			table.remove(removed)
 		end

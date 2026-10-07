@@ -103,8 +103,8 @@ local function search(ctx: greed.Context, back: boolean)
 			if pattern == "" then
 				return
 			end
-			-- Nil and the error for a bad pattern.
-			local found, err = buffer:find(smart_case(pattern))
+			-- Nil, nil and the error for a bad pattern.
+			local found, _, err = buffer:find(smart_case(pattern))
 			if found == nil and err then
 				greed.echo(`bad pattern {pattern}: {err}`)
 				return

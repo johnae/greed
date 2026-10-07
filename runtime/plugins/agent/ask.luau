@@ -104,7 +104,7 @@ local function finish(a: Asking, result: any)
 	if view then
 		pcall(view.close, view)
 	end
-	a.done.send(result)
+	a.done:send(result)
 end
 
 --- Shows `questions` as a page and waits until you send or cancel it.
@@ -127,7 +127,7 @@ function M.ask(title: string, questions: { Question }): ({ [string]: string }, b
 	end
 	buffer:decorate("ask", { button("Send", "ask-send"), button("Cancel", "ask-cancel") })
 	a.view = greed.float(buffer, { title = "Questions", width = "70%", height = "70%" })
-	local result = a.done.wait()
+	local result = a.done:wait()
 	return result.answers, result.cancelled
 end
 

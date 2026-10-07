@@ -92,7 +92,8 @@ export type Buffer = {
 	--- overlapping `from`..`to`, e.g.
 	--- `"(function_item name: (identifier) @name) @fn"`. One table per
 	--- match, from capture name to node. Errors on a query the language's
-	--- grammar can't compile.
+	--- grammar can't compile; a buffer without a grammar has no matches, so
+	--- any query gives an empty list there.
 	query: (self: Buffer, source: string, range: { from: number?, to: number? }?) -> { { [string]: Node } },
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
 	--- together, as one undoable change, when it returns.
@@ -122,8 +123,8 @@ export type Buffer = {
 	--- The first match of the regex `pattern` starting at or after `from`
 	--- (default 0), or with `backward` the last one starting before it; `wrap`
 	--- goes round the other end. Returns its start and end, nil when nothing
-	--- matches, or nil and the error for a bad pattern.
-	find: (self: Buffer, pattern: string, from: number?, opts: { backward: boolean?, wrap: boolean? }?) -> (number?, any),
+	--- matches, or nil, nil and the error for a bad pattern.
+	find: (self: Buffer, pattern: string, from: number?, opts: { backward: boolean?, wrap: boolean? }?) -> (number?, number?, string?),
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
@@ -187,6 +188,9 @@ export type Tracked = {
 	forget: (self: Tracked) -> (),
 }
 
+--- A line a mark shows under its range: text, or pieces with styles of their own.
+export type MarkLine = string | { { text: string, style: string? } }
+
 --- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.
 --- Text typed at either edge stays outside it.
 export type Mark = {
@@ -221,7 +225,7 @@ export type Mark = {
 	--- backlinks. The cursor never goes on them. Each is a string, or pieces
 	--- with styles of their own on top of the mark's, e.g.
 	--- `{ { text = "x = " }, { text = "2", style = "diff.plus.change" } }`.
-	lines: { any }?,
+	lines: { MarkLine }?,
 	--- An image (from `greed.image`) drawn over `cols` by `rows` cells right
 	--- of and below `from`, whatever text is there. `col` and `row` say
 	--- which of its cells is at `from`, for an image cut off at the top or
@@ -270,8 +274,8 @@ export type View = {
 	--- project's last pane can't be closed, and returns false.
 	close: (self: View) -> boolean,
 	--- Changes how a floating view is shown; fields left out stay as they
-	--- are. Fails for views that aren't floating.
-	configure: (self: View, spec: FloatSpec) -> (),
+	--- are. False, changing nothing, if it isn't floating; fails if it was closed.
+	configure: (self: View, spec: FloatSpec) -> boolean,
 	--- Brings a floating view in front of the other floats; false if it isn't floating.
 	raise: (self: View) -> boolean,
 	--- How a floating view is shown, as `greed.float` takes it; nil if it isn't floating.
@@ -388,17 +392,23 @@ export type Mode = {
 	get: () -> string,
 	--- Switches mode, emitting "mode.changed" if it changed.
 	set: (name: string) -> (),
-	--- How the cursor looks in `mode`; modes without a shape get a block.
-	cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
+	--- Sets how the cursor looks in `mode`; modes without a shape get a block.
+	set_cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
 	--- The cursor shape of `mode`, or of the current mode. A block or underline sits on a character, the last of a selection going forward; a bar sits between characters.
+	cursor_of: (mode: string?) -> "block" | "bar" | "underline",
+	--- The older name of `set_cursor`.
+	cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
+	--- The older name of `cursor_of`.
 	shape: (mode: string?) -> "block" | "bar" | "underline",
 }
 
 export type OptionValue = boolean | number | string
 
 export type Options = {
-	define: (spec: { name: string, doc: string?, default: OptionValue }) -> (),
+	--- Defines an option. With `choices`, it takes only those values (the default among them), and `:set` completes them.
+	define: (spec: { name: string, doc: string?, default: OptionValue, choices: { OptionValue }? }) -> (),
 	get: (name: string) -> OptionValue?,
+	--- Sets an option; fails on an unknown name, the wrong type or a value that isn't one of its choices.
 	set: (name: string, value: OptionValue) -> (),
 	--- Every option, sorted by name.
 	list: () -> { OptionInfo },
@@ -409,6 +419,8 @@ export type OptionInfo = {
 	doc: string,
 	value: OptionValue,
 	default: OptionValue,
+	--- The values it can take; empty when any value of its type will do.
+	choices: { OptionValue },
 	--- The plugin that defined it.
 	owner: string,
 	--- The plugin that last set it (your config is a plugin too), if anything has.
@@ -474,8 +486,8 @@ export type HttpResponse = {
 export type HttpStream = {
 	status: number,
 	headers: { [string]: string },
-	read: () -> (string?, string?),
-	close: () -> (),
+	read: (self: HttpStream) -> (string?, string?),
+	close: (self: HttpStream) -> (),
 }
 
 --- Requests over the network, each on a thread of its own so the editor
@@ -519,16 +531,16 @@ export type Process = {
 export type Child = {
 	pid: number,
 	--- Sends `text` to its input; false once that's closed.
-	write: (text: string) -> boolean,
+	write: (self: Child, text: string) -> boolean,
 	--- Waits for the next piece of what it prints, and returns it; nil once it exited and everything was read. Only in commands, event handlers and greed.spawn.
-	read: () -> string?,
+	read: (self: Child) -> string?,
 	--- Closes its input, which tells most programs to finish.
-	close: () -> (),
-	kill: () -> (),
+	close: (self: Child) -> (),
+	kill: (self: Child) -> (),
 	--- Waits for it to exit and returns its exit code, nil if a signal ended it.
-	wait: () -> number?,
+	wait: (self: Child) -> number?,
 	--- The end of what it printed as errors so far.
-	stderr: () -> string,
+	stderr: (self: Child) -> string,
 }
 
 --- A line of a terminal: its text, and the parts with a style of their own
@@ -756,9 +768,9 @@ export type ControlRequest = {
 
 export type Signal = {
 	--- Waits until a value is sent, and returns it.
-	wait: () -> any,
+	wait: (self: Signal) -> any,
 	--- Sends `value` to whoever waits. Only the first send counts.
-	send: (value: any) -> (),
+	send: (self: Signal, value: any) -> (),
 }
 
 --- A project: a folder with its own main view and panels.
@@ -809,11 +821,11 @@ export type Pdfs = {
 export type PdfDocument = {
 	pages: number,
 	--- A page's width and height in points (1/72 inch).
-	size: (page: number) -> (number?, number?),
+	size: (self: PdfDocument, page: number) -> (number?, number?),
 	--- Draws a page at `scale` pixels per point (1 if not given) and returns it as a `greed.image` id, or nil and why not. Forget the image when done with it. Waits like greed.sleep.
-	render: (page: number, scale: number?) -> (number?, string?),
+	render: (self: PdfDocument, page: number, scale: number?) -> (number?, string?),
 	--- The text on a page, line by line from the top, or nil and why not. Waits like greed.sleep.
-	text: (page: number) -> (string?, string?),
+	text: (self: PdfDocument, page: number) -> (string?, string?),
 }
 
 --- A tab of the shown project: panes laid out side by side and one above
@@ -1098,6 +1110,13 @@ export type Diagnostic = {
 	source: string?,
 }
 
+--- The error a language server answered a request with.
+export type LspError = {
+	code: number,
+	message: string,
+	data: any?,
+}
+
 --- A position as language servers count it.
 export type LspPosition = {
 	line: number,
@@ -1120,7 +1139,7 @@ export type Lsp = {
 	--- Returns the result, or nil and the error. Works in commands and event
 	--- handlers. "workspace/executeCommand" needs "proc", since a server's
 	--- commands can do anything.
-	request: (buffer: Buffer, method: string, params: any) -> (any, any),
+	request: (buffer: Buffer, method: string, params: any) -> (any, LspError?),
 	--- The buffer's file as a URI, for request parameters.
 	uri: (buffer: Buffer) -> string,
 	--- The file path in a `file://` URI.
@@ -1191,8 +1210,8 @@ export type Fs = {
 	list: (dir: string, opts: { hidden: boolean?, ignored: boolean? }?) -> ({ DirEntry }?, string?),
 	--- The file's text, or its first `limit` bytes.
 	read: (path: string, limit: number?) -> (string?, string?),
-	--- What's at `path`, or nil if nothing is.
-	stat: (path: string) -> FileInfo?,
+	--- What's at `path`; nil if nothing is, and nil and why when it can't tell, as when a folder above it can't be read.
+	stat: (path: string) -> (FileInfo?, string?),
 	--- Replaces the file's contents with `text`, creating it and its folders
 	--- if needed.
 	write: (path: string, text: string) -> (boolean?, string?),
@@ -1244,6 +1263,8 @@ export type GrepLine = {
 export type PluginCheck = {
 	types: { ok: boolean?, output: string?, skipped: string? },
 	tests: { passed: number?, failed: { { file: string, name: string, message: string } }?, error: string? },
+	--- What looks wrong once it's loaded with the others: a command it replaces from another plugin, keys bound to commands that don't exist.
+	warnings: { string },
 }
 
 export type Plugins = {
@@ -1370,6 +1391,36 @@ export type Theme = {
 	get: (name: string) -> ThemeEntry?,
 }
 
+--- The events `greed.on` and `greed.off` take; any other name is an error.
+export type EventName =
+	| "mode.changed"
+	| "buffer.changed"
+	| "keys.pending"
+	| "command.run"
+	| "lsp.diagnostics"
+	| "control.request"
+	| "client.attached"
+	| "client.detached"
+	| "client.paste"
+	| "buffer.opened"
+	| "buffer.saved"
+	| "buffer.closed"
+	| "view.closed"
+	| "view.resized"
+	| "pane.opened"
+	| "view.scrolled"
+	| "mouse"
+	| "option.changed"
+	| "plugin.loaded"
+	| "file.changed"
+	| "plugin.unloaded"
+	| "editor.started"
+	| "editor.quitting"
+	| "terminal.output"
+	| "terminal.exited"
+	| "selection.changed"
+	| "view.focused"
+
 export type Greed = {
 	command: (spec: CommandSpec) -> (),
 	--- Adds a command line command, `greed NAME ARGS`; see `CliSpec`.
@@ -1415,11 +1466,10 @@ export type Greed = {
 		& ((event: "editor.started", handler: (event: {}) -> ()) -> ())
 		& ((event: "editor.quitting", handler: (event: {}) -> ()) -> ())
 		& ((event: "terminal.output", handler: (event: TerminalOutput) -> ()) -> ())
-		& ((event: "terminal.exited", handler: (event: TerminalExited) -> ()) -> ())
-		& ((event: string, handler: (event: any) -> ()) -> ()),
+		& ((event: "terminal.exited", handler: (event: TerminalExited) -> ()) -> ()),
 	--- Removes `handler`, added by this plugin with `greed.on(event, handler)`.
 	--- Does nothing if it's not there.
-	off: (event: string, handler: (event: any) -> ()) -> (),
+	off: (event: EventName, handler: (event: any) -> ()) -> (),
 	--- Shows a message to the user.
 	echo: (...any) -> (),
 	--- The focused view.
@@ -1438,7 +1488,7 @@ export type Greed = {
 	sleep: (ms: number) -> (),
 	--- Runs `f` on its own, the way a command runs, and returns at once: it can wait (greed.sleep, greed.process.run, ...) while the editor and the code that started it go on. For work in the background, like a status line piece refreshing.
 	spawn: (f: (...any) -> ...any, ...any) -> (),
-	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading".
+	--- Runs of plugin code that held the editor up (50 ms or more), newest first, for tracing a freeze to its plugin and what it was doing: a command's name, "the status line", "loading". `ms` is how long it took; `time` is when, in seconds since 1970 (as `os.time()` counts, with a fraction).
 	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
 	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken.
 	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean },

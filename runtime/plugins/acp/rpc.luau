@@ -39,7 +39,7 @@ function M.start(
 
 	local function send(message: any)
 		message.jsonrpc = "2.0"
-		running.write(greed.json.encode(message) .. "\n")
+		running:write(greed.json.encode(message) .. "\n")
 	end
 
 	local function answer(id: any, method: string, params: any)
@@ -78,7 +78,7 @@ function M.start(
 			local signal = waiting[message.id]
 			waiting[message.id] = nil
 			if signal then
-				signal.send(message)
+				signal:send(message)
 			end
 		end
 	end
@@ -86,7 +86,7 @@ function M.start(
 	greed.spawn(function()
 		local pending = ""
 		while true do
-			local piece = running.read()
+			local piece = running:read()
 			if piece == nil then
 				break
 			end
@@ -106,10 +106,10 @@ function M.start(
 		alive = false
 		for id, signal in waiting do
 			waiting[id] = nil
-			signal.send({ error = { message = "the agent exited" } })
+			signal:send({ error = { message = "the agent exited" } })
 		end
 		if on_exit then
-			on_exit(running.stderr())
+			on_exit(running:stderr())
 		end
 	end)
 
@@ -124,7 +124,7 @@ function M.start(
 			local signal = greed.signal()
 			waiting[id] = signal
 			send({ id = id, method = method, params = params })
-			local reply = signal.wait()
+			local reply = signal:wait()
 			if reply.error then
 				return nil, tostring(reply.error.message or "error")
 			end
@@ -139,8 +139,8 @@ function M.start(
 			return alive
 		end,
 		close = function()
-			running.close()
-			running.kill()
+			running:close()
+			running:kill()
 		end,
 	}
 	return conn, nil

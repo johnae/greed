@@ -164,7 +164,7 @@ function M.token(name: string): (string?, string?)
 	end
 	local waiting = renewing[name]
 	if waiting then
-		local result = waiting.wait()
+		local result = waiting:wait()
 		return result.access, result.why
 	end
 	-- Reading the tokens waits too, so the guard starts before it.
@@ -198,7 +198,7 @@ function M.token(name: string): (string?, string?)
 		access, why = nil, tostring(access)
 	end
 	renewing[name] = nil
-	done.send({ access = access, why = why })
+	done:send({ access = access, why = why })
 	return access, why
 end
 

@@ -345,7 +345,9 @@ impl Buffer {
                 path.display()
             )));
         }
-        crate::files::write(path, |out| self.text.write_to(out))?;
+        crate::files::write(path, |out| self.text.write_to(out)).map_err(|err| {
+            std::io::Error::new(err.kind(), format!("can't save {}: {err}", path.display()))
+        })?;
         self.mark_saved();
         Ok(())
     }

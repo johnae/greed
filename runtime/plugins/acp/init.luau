@@ -958,7 +958,7 @@ greed.command({
 				key = key,
 				doc = option.name,
 				run = function()
-					permission.answer.send(option.id)
+					permission.answer:send(option.id)
 				end,
 			})
 		end

@@ -12,9 +12,10 @@ export type Candidate = {
 	doc: string?,
 }
 
---- Finds candidates for `word`, the argument typed so far. They're ranked
---- against `word` afterwards, so a completer can return everything.
-export type Completer = (word: string) -> { Candidate }
+--- Finds candidates for `word`, the argument typed so far; `args` are the
+--- arguments before it. They're ranked against `word` afterwards, so a
+--- completer can return everything.
+export type Completer = (word: string, args: { string }) -> { Candidate }
 
 local M = {}
 
@@ -79,6 +80,25 @@ M.register("option", function()
 	return items
 end)
 
+-- The choices of the option named by the argument before, or true and
+-- false for a yes-or-no one.
+M.register("option-value", function(_, args)
+	for _, option in greed.option.list() do
+		if option.name == args[#args] then
+			local items = {}
+			local choices: { greed.OptionValue } = if #option.choices > 0
+				then option.choices
+				elseif type(option.default) == "boolean" then { true, false }
+				else {}
+			for _, choice in choices do
+				table.insert(items, { text = tostring(choice) })
+			end
+			return items
+		end
+	end
+	return {}
+end)
+
 M.register("buffer", function()
 	local items = {}
 	for _, buffer in greed.buffers() do
@@ -135,7 +155,8 @@ function M.candidates(
 			local spec = command.args[index]
 			local key = spec and spec.complete
 			local completer = key and completers[key]
-			return (if completer then rank(word, completer(word)) else {}),
+			local before = table.move(parsed.args, 1, index - 1, 1, {})
+			return (if completer then rank(word, completer(word, before)) else {}),
 				word,
 				key and previews[key]
 		end

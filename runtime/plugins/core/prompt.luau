@@ -149,13 +149,13 @@ function M.ask(title: string, text: string?, options: { secret: boolean? }?): st
 		text = text,
 		secret = options and options.secret,
 		on_submit = function(typed)
-			done.send(typed)
+			done:send(typed)
 		end,
 		on_cancel = function()
-			done.send(false)
+			done:send(false)
 		end,
 	})
-	local typed = done.wait()
+	local typed = done:wait()
 	return if typed then typed else nil
 end
 

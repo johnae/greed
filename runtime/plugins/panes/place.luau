@@ -234,6 +234,6 @@ end
 M.cancel = finish
 
 greed.keymap.isolate(MODE)
-greed.mode.cursor(MODE, "block")
+greed.mode.set_cursor(MODE, "block")
 
 return M

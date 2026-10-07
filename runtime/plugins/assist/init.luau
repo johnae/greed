@@ -53,7 +53,7 @@ function M.answer_into(buffer: greed.Buffer, request: models.Request): (string?,
 		return nil, err
 	end
 	while true do
-		local piece, failed = stream.next()
+		local piece, failed = stream:next()
 		if failed then
 			return nil, failed
 		end

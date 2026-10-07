@@ -385,7 +385,7 @@ for mode, fallback in TYPING do
 	greed.keymap.inherit(completing, mode)
 	greed.keymap.bind(completing, KEYS)
 	greed.keymap.fallback(completing, fallback)
-	greed.mode.cursor(completing, "bar")
+	greed.mode.set_cursor(completing, "bar")
 	core.style.show_as(completing, mode)
 	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
 end

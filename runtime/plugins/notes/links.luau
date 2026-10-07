@@ -100,7 +100,7 @@ local function mark(buffer: greed.Buffer)
 	end
 	local backlinks = shown_backlinks[buffer:id()]
 	if backlinks and #backlinks > 0 then
-		local lines = { "", "Linked from:" }
+		local lines: { greed.MarkLine } = { "", "Linked from:" }
 		for _, name in backlinks do
 			table.insert(lines, `  [[{name}]]`)
 		end

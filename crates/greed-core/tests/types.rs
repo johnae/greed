@@ -146,6 +146,50 @@ fn api_tables_are_fully_declared() {
     }
 }
 
+/// Every event the editor emits has a typed `greed.on` overload and a place
+/// in `EventName`, and nothing else does.
+#[test]
+fn events_are_declared() {
+    let types = types();
+    let mut expected: Vec<&str> = greed_core::luau::EVENTS.to_vec();
+    expected.sort_unstable();
+    let mut overloads: Vec<&str> = types
+        .lines()
+        .filter_map(|line| line.split_once("(event: \"")?.1.split_once('"'))
+        .map(|(name, _)| name)
+        .collect();
+    overloads.sort_unstable();
+    assert_eq!(overloads, expected, "greed.on overloads");
+    let mut names: Vec<&str> = types
+        .lines()
+        .skip_while(|line| *line != "export type EventName =")
+        .skip(1)
+        .map_while(|line| line.trim().strip_prefix("| \""))
+        .filter_map(|line| line.strip_suffix('"'))
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, expected, "EventName");
+}
+
+#[test]
+fn unknown_events_are_errors() {
+    let h = host();
+    let err = h
+        .eval("require('@greed').on('buffer.chnaged', function() end)")
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("there is no event called \"buffer.chnaged\""),
+        "{err}"
+    );
+    assert!(
+        h.eval("require('@greed').off('nope', function() end)")
+            .is_err()
+    );
+    h.eval("require('@greed').on('buffer.changed', function() end)")
+        .unwrap();
+}
+
 #[test]
 fn runtime_passes_strict_type_checking() {
     if Command::new("luau-analyze").arg("--help").output().is_err() {

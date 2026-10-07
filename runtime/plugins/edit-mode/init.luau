@@ -563,7 +563,7 @@ greed.on("option.changed", function(event: greed.OptionChanged)
 end)
 
 greed.keymap.fallback("edit", "type-char")
-greed.mode.cursor("edit", "bar")
+greed.mode.set_cursor("edit", "bar")
 -- Panels like the file tree and help keep their keys.
 greed.keymap.inherit_kinds("edit", "normal")
 

@@ -62,8 +62,17 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     fs.set(
         "stat",
         lua.create_function(|lua, path: String| {
-            let Ok(meta) = std::fs::metadata(&path) else {
-                return Ok(None);
+            let meta = match std::fs::metadata(&path) {
+                Ok(meta) => meta,
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                    ) =>
+                {
+                    return mlua::Value::Nil.into_lua_multi(lua);
+                }
+                Err(err) => return failure(lua, format!("can't look at {path}: {err}")),
             };
             let kind = if meta.is_dir() {
                 "dir"
@@ -75,7 +84,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let stat = lua.create_table()?;
             stat.set("kind", kind)?;
             stat.set("size", if meta.is_dir() { 0 } else { meta.len() })?;
-            Ok(Some(stat))
+            stat.into_lua_multi(lua)
         })?,
     )?;
 

@@ -274,7 +274,7 @@ pub(super) fn stream_started(
             Ok(())
         })?,
     )?;
-    tasks::deliver(lua, token, stream)
+    tasks::deliver(lua, token, super::handles::methods(lua, stream)?)
 }
 
 /// The values a read of stream `id` gives for `chunk`: the text, nil at the

@@ -240,3 +240,25 @@ test("paths complete from the home folder, and hidden ones once a dot is typed",
 	assert(prompt(t) == ":e ~/.config/", prompt(t))
 	t:keys("esc")
 end)
+
+test("an option's value completes from its choices", function(t)
+	greed.option.define({
+		name = "test-look",
+		default = "plain",
+		choices = { "plain", "fancy" },
+	})
+	t:buffer("|abc")
+	t:keys(": s e t space t e s t - l o o k space f")
+	t:keys("tab")
+	assert(prompt(t) == ":set test-look fancy", prompt(t))
+	t:keys("enter")
+	assert(greed.option.get("test-look") == "fancy")
+end)
+
+test("a yes-or-no option's value completes to true or false", function(t)
+	greed.option.define({ name = "test-flag", default = false })
+	t:buffer("|abc")
+	t:keys(": s e t space t e s t - f l a g space t")
+	t:keys("tab")
+	assert(prompt(t) == ":set test-flag true", prompt(t))
+end)

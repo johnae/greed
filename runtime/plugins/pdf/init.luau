@@ -32,8 +32,8 @@ end
 -- which page it is.
 local function show_page(v: Viewer, cols: number)
 	local cell_w = greed.image.cell_size()
-	local width = v.doc.size(v.page)
-	local image, err = v.doc.render(v.page, cols * v.zoom * cell_w / (width :: number))
+	local width = v.doc:size(v.page)
+	local image, err = v.doc:render(v.page, cols * v.zoom * cell_w / (width :: number))
 	if image == nil then
 		set_text(v.buffer, `page {v.page} of {v.doc.pages}: {err}`)
 		v.buffer:decorate("pdf", {})
@@ -61,7 +61,7 @@ local function show_text(v: Viewer)
 	local parts = {}
 	local line = 0
 	for page = 1, v.doc.pages do
-		local text = v.doc.text(page) or ""
+		local text = v.doc:text(page) or ""
 		local part = `── page {page} ──\n{text}`
 		v.starts[page] = line
 		table.insert(parts, part)

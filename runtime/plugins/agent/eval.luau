@@ -28,6 +28,7 @@ greed.option.define({
 	name = "agent-eval",
 	doc = 'How Luau from agents runs: "auto" (sandboxed, a reviewer or you for more), "ask", "allow" or "off"',
 	default = "auto",
+	choices = { "auto", "ask", "allow", "off" },
 })
 
 -- Whether you allowed every run until the editor quits.
@@ -157,7 +158,7 @@ local function ask_you(code: string, needs: string, why: string?): string
 			answer(buffer, "deny")
 		end
 	end)
-	return a.done.wait()
+	return a.done:wait()
 end
 
 -- Closes the page in `buffer`, giving its agent `choice`.
@@ -170,7 +171,7 @@ function answer(buffer: greed.Buffer, choice: string)
 			if view then
 				pcall(view.close, view)
 			end
-			a.done.send(choice)
+			a.done:send(choice)
 			return
 		end
 	end

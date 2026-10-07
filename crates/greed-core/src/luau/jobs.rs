@@ -115,19 +115,29 @@ pub(super) fn start_streaming(
 /// handler or `greed.spawn`. It never does the work on the editor's thread,
 /// so nothing that calls it can hold the editor up.
 pub(super) fn waiting(lua: &Lua, name: &str, start: Function) -> LuaResult<Function> {
+    waiting_at(lua, name, start, 2)
+}
+
+/// `waiting`, for a function in a handle that `handles::methods` wraps, so
+/// its errors point at the code calling the method.
+pub(super) fn waiting_method(lua: &Lua, name: &str, start: Function) -> LuaResult<Function> {
+    waiting_at(lua, name, start, 3)
+}
+
+fn waiting_at(lua: &Lua, name: &str, start: Function, level: u8) -> LuaResult<Function> {
     lua.load(
         r"
-        local name, start = ...
+        local name, start, level = ...
         return function(...)
             if not coroutine.isyieldable() then
-                error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', 2)
+                error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', level)
             end
             return coroutine.yield(start(...))
         end
         ",
     )
     .set_name(format!("={name}"))
-    .call((name, start))
+    .call((name, start, level))
 }
 
 /// Wakes the command waiting on a finished job with its result.

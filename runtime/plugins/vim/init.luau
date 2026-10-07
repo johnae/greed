@@ -919,7 +919,7 @@ local function search_match(buffer: Buffer, pos: number): (number?, number?)
 	local start = buffer:line_start(buffer:line_of(pos))
 	while start <= pos do
 		local from, to = buffer:find(pattern, start)
-		if from == nil or from > pos then
+		if from == nil or to == nil or from > pos then
 			break
 		elseif to > pos then
 			return from, to
@@ -930,7 +930,8 @@ local function search_match(buffer: Buffer, pos: number): (number?, number?)
 		end
 		start = next
 	end
-	return buffer:find(pattern, pos, { wrap = true })
+	local from, to = buffer:find(pattern, pos, { wrap = true })
+	return from, to
 end
 
 -- Reads digits as a count, then returns the key after them and the count.
@@ -2136,7 +2137,7 @@ greed.keymap.inherit("vim", "normal", {
 -- Insert mode as everyone has it, except that esc comes back here.
 greed.keymap.inherit("vim-insert", "insert")
 greed.keymap.fallback("vim-insert", "insert-char")
-greed.mode.cursor("vim-insert", "bar")
+greed.mode.set_cursor("vim-insert", "bar")
 
 local keys: { [string]: string } = {
 	d = "vim-operator-d",
@@ -2288,7 +2289,7 @@ greed.keymap.bind("vim-multi", {
 greed.keymap.inherit("vim-replace", "vim-insert")
 greed.keymap.bind("vim-replace", { backspace = "vim-replace-back" })
 greed.keymap.fallback("vim-replace", "vim-replace-typed")
-greed.mode.cursor("vim-replace", "underline")
+greed.mode.set_cursor("vim-replace", "underline")
 greed.keymap.counts("vim")
 greed.keymap.counts("vim-visual")
 greed.keymap.inherit("vim-visual-line", "vim-visual")

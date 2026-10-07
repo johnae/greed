@@ -69,12 +69,14 @@ greed.option.define({
 		.. 'is running (a command in a terminal, an agent at work) and keeps it then, "end" always '
 		.. 'ends it, "keep" always leaves it running to attach to again',
 	default = "auto",
+	choices = { "auto", "end", "keep" },
 })
 
 greed.option.define({
 	name = "on-quit-remote",
 	doc = "Like on-quit, when you're attached over greed ssh",
 	default = "keep",
+	choices = { "auto", "end", "keep" },
 })
 
 greed.option.define({

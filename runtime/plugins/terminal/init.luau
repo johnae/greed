@@ -1263,7 +1263,7 @@ greed.keymap.bind(MODE, {
 	["ctrl-space"] = "terminal-leader",
 	esc = "terminal-esc",
 })
-greed.mode.cursor(MODE, "block")
+greed.mode.set_cursor(MODE, "block")
 for _, mode in { "normal", "vim" } do
 	greed.keymap.bind({ mode = mode, kind = "terminal" }, {
 		i = "terminal-input",

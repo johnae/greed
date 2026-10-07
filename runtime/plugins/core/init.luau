@@ -196,7 +196,7 @@ greed.keymap.bind("normal", scroll.keys)
 greed.keymap.bind("normal", goto_keys.keys)
 greed.keymap.counts("normal")
 greed.keymap.fallback("insert", "insert-char")
-greed.mode.cursor("insert", "bar")
+greed.mode.set_cursor("insert", "bar")
 
 --- A thing to act on, from a finder or a picker item (see actions.luau).
 export type Target = actions.Target

@@ -93,6 +93,13 @@ local function options(): { Entry }
 					`Value: {tostring(option.value)}`,
 					`Default: {tostring(option.default)}`,
 				}
+				if #option.choices > 0 then
+					local choices = {}
+					for _, choice in option.choices do
+						table.insert(choices, `"{tostring(choice)}"`)
+					end
+					table.insert(lines, `Choices: {table.concat(choices, ", ")}`)
+				end
 				if option.set_by then
 					table.insert(lines, `Set by the {option.set_by} plugin`)
 				end

@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use greed_core::luau::{Host, HostError};
@@ -657,10 +658,21 @@ fn files_read_whole_or_up_to_a_limit() {
         &h,
         &dir,
         "local f, d = greed.fs.stat(DIR .. '/a.txt'), greed.fs.stat(DIR)
-         return f.kind .. ' ' .. f.size .. ' ' .. d.kind .. ' ' .. tostring(greed.fs.stat(DIR .. '/nope'))",
+         return f.kind .. ' ' .. f.size .. ' ' .. d.kind .. ' ' .. tostring(greed.fs.stat(DIR .. '/nope')) \
+           .. ' ' .. select('#', greed.fs.stat(DIR .. '/a.txt/inside'))",
     );
+    assert_eq!(stat, "file 13 dir nil 1", "nothing there is nil alone");
+    // A folder that can't be read is another matter.
+    std::fs::create_dir(dir.join("locked")).unwrap();
+    std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+    let locked = eval_in(
+        &h,
+        &dir,
+        "local info, err = greed.fs.stat(DIR .. '/locked/x') return tostring(info) .. ' ' .. err",
+    );
+    std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
-    assert_eq!(stat, "file 13 dir nil");
+    assert!(locked.starts_with("nil can't look at "), "{locked}");
 }
 
 #[test]
@@ -1123,16 +1135,10 @@ fn floats_change_size_and_title_after_they_open() {
         assert_eq!(float.options.width, greed_core::Extent::Cells(30));
         assert_eq!(float.options.anchor, greed_core::Anchor::Bottom);
     });
-    let err = h
-        .eval("require('@greed').view():configure({ height = 2 })")
-        .err();
-    assert!(err.is_none(), "the float is focused");
+    let configure = "require('@greed').view():configure({ height = 2 })";
+    assert_eq!(h.eval(configure).unwrap(), "true", "the float is focused");
     h.eval("v:close()").unwrap();
-    let err = h
-        .eval("require('@greed').view():configure({ height = 2 })")
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("floating"), "{err}");
+    assert_eq!(h.eval(configure).unwrap(), "false", "a pane isn't floating");
 }
 
 #[test]
@@ -1164,8 +1170,9 @@ fn options_are_listed_with_their_docs_and_values() {
 #[test]
 fn plugins_set_the_cursor_shape_per_mode() {
     let h = host("");
-    h.eval("require('@greed').mode.cursor('edit', 'bar')")
+    h.eval("require('@greed').mode.set_cursor('edit', 'bar')")
         .unwrap();
+    // The older name still works.
     h.eval("require('@greed').mode.cursor('replace', 'underline')")
         .unwrap();
     h.with_editor_mut(|ed| {
@@ -1174,8 +1181,12 @@ fn plugins_set_the_cursor_shape_per_mode() {
         ed.set_mode("replace");
         assert_eq!(ed.cursor_shape(), greed_core::CursorShape::Underline);
     });
+    let shapes = h
+        .eval("local m = require('@greed').mode return m.cursor_of('edit') .. m.shape() .. m.cursor_of('other')")
+        .unwrap();
+    assert_eq!(shapes, "barunderlineblock");
     let err = h
-        .eval("require('@greed').mode.cursor('edit', 'blob')")
+        .eval("require('@greed').mode.set_cursor('edit', 'blob')")
         .unwrap_err()
         .to_string();
     assert!(err.contains("block"), "{err}");
@@ -1546,7 +1557,7 @@ fn plugins_search_buffers_with_regexes() {
         "0-2 0-1 false 3"
     );
     let bad = eval(
-        "local ok, err = b:find('('); local all, err2 = b:find_all('['); return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. tostring(all) .. ' ' .. tostring(err2 ~= nil)",
+        "local ok, _, err = b:find('('); local all, err2 = b:find_all('['); return tostring(ok) .. ' ' .. tostring(err ~= nil) .. ' ' .. tostring(all) .. ' ' .. tostring(err2 ~= nil)",
     );
     assert_eq!(bad, "nil true nil true");
 }
@@ -1928,6 +1939,32 @@ fn waiting_calls_refuse_to_run_where_they_would_hold_up_the_editor() {
             "{call} didn't block"
         );
     }
+}
+
+#[test]
+fn table_handles_take_method_calls_and_plain_calls() {
+    let host = host("");
+    let out = host
+        .eval(
+            "local greed = require('@greed') \
+             local c = assert(greed.process.spawn({ 'cat' })) \
+             local a, b = c:write('x'), c.write('y') \
+             c:kill() \
+             local s = greed.signal() s:send({ 1 }) local t = greed.signal() t.send(2) \
+             return tostring(a) .. tostring(b) .. type(c:stderr()) .. type(c.stderr()) \
+               .. s:wait()[1] .. t.wait()",
+        )
+        .unwrap();
+    assert_eq!(out, "truetruestringstring12");
+    let err = host
+        .eval("local c = require('@greed').process.spawn({ 'cat' }) c:kill() c:read()")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("child.read waits"), "{err}");
+    assert!(
+        err.starts_with("runtime error: repl:1:"),
+        "it points at the caller: {err}"
+    );
 }
 
 #[test]

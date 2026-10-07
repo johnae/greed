@@ -31,6 +31,11 @@ struct Run {
     cwd: Option<String>,
 }
 
+/// Why `program` didn't start, naming it.
+fn cant_run(program: &str, err: &std::io::Error) -> std::io::Error {
+    std::io::Error::new(err.kind(), format!("can't run {program}: {err}"))
+}
+
 fn run(how: Run) -> std::io::Result<Finished> {
     let (program, args) = how
         .command
@@ -49,7 +54,7 @@ fn run(how: Run) -> std::io::Result<Finished> {
     if let Some(cwd) = &how.cwd {
         command.current_dir(cwd);
     }
-    let mut child = command.spawn()?;
+    let mut child = command.spawn().map_err(|err| cant_run(program, &err))?;
     if let (Some(input), Some(mut stdin)) = (how.stdin, child.stdin.take()) {
         // Written on its own thread, so a program that prints while it reads
         // can't fill a pipe and stall both ends.
@@ -201,7 +206,7 @@ fn start_child(
     if let Some(cwd) = cwd {
         builder.current_dir(cwd);
     }
-    let mut child = builder.spawn()?;
+    let mut child = builder.spawn().map_err(|err| cant_run(program, &err))?;
     let pid = child.id();
     let (mut stdin, mut stdout, mut stderr) = (
         child.stdin.take().expect("piped"),
@@ -340,7 +345,8 @@ fn wait_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
 }
 
 /// A Luau function that calls `now`, and waits for the token it gives when
-/// it isn't ready.
+/// it isn't ready. It's a child's method, which `handles::methods` wraps,
+/// so its errors point two calls up.
 fn waiting_call(lua: &Lua, name: &str, now: Function) -> LuaResult<Function> {
     lua.load(
         r"
@@ -351,7 +357,7 @@ fn waiting_call(lua: &Lua, name: &str, now: Function) -> LuaResult<Function> {
                 return a
             end
             if not coroutine.isyieldable() then
-                error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', 2)
+                error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', 3)
             end
             return coroutine.yield(a)
         end
@@ -415,7 +421,7 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
     child.set("read", waiting_call(lua, "child.read", read)?)?;
     let wait = lua.create_function(move |lua, ()| wait_now(lua, id))?;
     child.set("wait", waiting_call(lua, "child.wait", wait)?)?;
-    Ok(child)
+    super::handles::methods(lua, child)
 }
 
 fn spawn(

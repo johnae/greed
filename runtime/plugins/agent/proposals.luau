@@ -288,7 +288,7 @@ local function decide(
 	end
 	changed(p.buffer)
 	if #pending == 0 then
-		p.done.send(p)
+		p.done:send(p)
 	end
 end
 
@@ -598,7 +598,7 @@ local function offer(prepared: { Prepared }, reason: string?, tab: string?): { P
 	announce(changes, paths, reason)
 	local decided: { Proposal } = {}
 	for _, p in started do
-		table.insert(decided, p.done.wait())
+		table.insert(decided, p.done:wait())
 	end
 	return decided
 end

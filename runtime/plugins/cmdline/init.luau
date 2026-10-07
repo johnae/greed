@@ -224,8 +224,8 @@ local function global(pattern: string, command: string, inverted: boolean, first
 	local starts: { number } = {}
 	for line = first, last do
 		local from, to = buffer:line_start(line), buffer:line_end(line)
-		-- The match's start and end, or nil and the error for a bad pattern.
-		local found, err = buffer:find(regex, from)
+		-- The match's start and end, or nil, nil and the error for a bad pattern.
+		local found, _, err = buffer:find(regex, from)
 		if found == nil and err then
 			error(err, 0)
 		end
@@ -484,7 +484,7 @@ end)
 
 local set_args: { greed.ArgSpec } = {
 	{ name = "option", doc = "The option to set", complete = "option" },
-	{ name = "value", doc = "true, false, a number or text" },
+	{ name = "value", doc = "true, false, a number or text", complete = "option-value" },
 }
 
 greed.command({

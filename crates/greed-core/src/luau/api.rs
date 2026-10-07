@@ -215,9 +215,52 @@ fn keys_text(keys: &[Key]) -> String {
         .join(" ")
 }
 
+/// Every event the editor emits, the names `greed.on` accepts. Each has an
+/// overload of `greed.on` in the type definitions.
+pub const EVENTS: &[&str] = &[
+    "buffer.changed",
+    "buffer.closed",
+    "buffer.opened",
+    "buffer.saved",
+    "client.attached",
+    "client.detached",
+    "client.paste",
+    "command.run",
+    "control.request",
+    "editor.quitting",
+    "editor.started",
+    "file.changed",
+    "keys.pending",
+    "lsp.diagnostics",
+    "mode.changed",
+    "mouse",
+    "option.changed",
+    "pane.opened",
+    "plugin.loaded",
+    "plugin.unloaded",
+    "selection.changed",
+    "terminal.exited",
+    "terminal.output",
+    "view.closed",
+    "view.focused",
+    "view.resized",
+    "view.scrolled",
+];
+
+fn known_event(event: &str) -> LuaResult<()> {
+    if EVENTS.contains(&event) {
+        Ok(())
+    } else {
+        Err(mlua::Error::runtime(format!(
+            "there is no event called {event:?}"
+        )))
+    }
+}
+
 /// Calls every handler for `event` with `payload`. All handlers run even if
 /// one fails; the first error is returned.
 pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
+    debug_assert!(EVENTS.contains(&event), "{event} is missing from EVENTS");
     let handlers: Vec<(Function, PluginId)> = state(lua)
         .registry
         .handlers(event)
@@ -242,6 +285,7 @@ fn add_event_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
     greed.set(
         "on",
         lua.create_function(move |lua, (event, handler): (String, Function)| {
+            known_event(&event)?;
             let source = caller(lua);
             state_mut(lua)
                 .registry
@@ -253,37 +297,107 @@ fn add_event_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
     greed.set(
         "off",
         lua.create_function(move |lua, (event, handler): (String, Function)| {
+            known_event(&event)?;
             state_mut(lua).registry.off(&event, &o, |h| *h == handler);
             Ok(())
         })?,
     )
 }
 
+/// Refuses command names that can't be typed on the command line: empty
+/// ones, and ones with spaces or control characters.
+pub(super) fn check_command_name(name: &str) -> LuaResult<()> {
+    if name.is_empty() || name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(mlua::Error::runtime(format!(
+            "{name:?} can't be a command name: use letters, digits and dashes, e.g. \"word-count\""
+        )));
+    }
+    Ok(())
+}
+
+/// What looks wrong in what plugins registered, as lines to show: commands
+/// a plugin replaced from another (your config may), and keys bound to
+/// commands that don't exist.
+pub(super) fn registry_warnings(lua: &Lua) -> Vec<String> {
+    let state = state(lua);
+    let mut warnings: Vec<String> = state
+        .registry
+        .commands()
+        .flat_map(|command| {
+            state
+                .registry
+                .definitions(&command.name)
+                .iter()
+                .filter_map(|earlier| replacing(&command.owner, &earlier.owner, &command.name))
+        })
+        .collect();
+    warnings.extend(unknown_bindings(lua));
+    warnings
+}
+
+/// What to say when plugin `owner` defines command `name` over `earlier`'s,
+/// if anything: not for its own, and not for your config.
+fn replacing(owner: &str, earlier: &str, name: &str) -> Option<String> {
+    (owner != earlier && !owner.starts_with("user/"))
+        .then(|| format!("the {owner} plugin replaces the {earlier} plugin's command {name}"))
+}
+
+/// Keys bound to commands that don't exist, as lines to show.
+pub(super) fn unknown_bindings(lua: &Lua) -> Vec<String> {
+    let state = state(lua);
+    let mut found: Vec<String> = state
+        .editor
+        .keymap()
+        .bindings()
+        .into_iter()
+        .filter(|(_, _, command)| state.registry.command(command).is_none())
+        .map(|(layer, keys, command)| {
+            format!(
+                "{} in {layer} runs {command}, which doesn't exist",
+                keys_text(&keys)
+            )
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// `greed.command(spec)` for `owner`, which says when it replaces another
+/// plugin's command.
+fn command_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let o = owner.clone();
+    lua.create_function(move |lua, spec: Table| {
+        let name: String = spec.get("name")?;
+        check_command_name(&name)?;
+        let command = Command {
+            name: name.into(),
+            doc: spec
+                .get::<Option<String>>("doc")?
+                .unwrap_or_default()
+                .into(),
+            args: command_args(spec.get("args")?)?,
+            owner: o.clone(),
+            source: caller(lua),
+            handler: spec.get::<Function>("run")?,
+        };
+        let state = &mut *state_mut(lua);
+        let said = state
+            .registry
+            .command(&command.name)
+            .and_then(|earlier| replacing(&o, &earlier.owner, &command.name));
+        if let Some(said) = said {
+            state.editor.echo(said);
+        }
+        state.registry.add_command(command);
+        Ok(())
+    })
+}
+
 pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let greed = lua.create_table()?;
 
     greed.set("cli", super::cli::function(lua, owner)?)?;
-
-    let o = owner.clone();
-    greed.set(
-        "command",
-        lua.create_function(move |lua, spec: Table| {
-            let command = Command {
-                name: spec.get::<String>("name")?.into(),
-                doc: spec
-                    .get::<Option<String>>("doc")?
-                    .unwrap_or_default()
-                    .into(),
-                args: command_args(spec.get("args")?)?,
-                owner: o.clone(),
-                source: caller(lua),
-                handler: spec.get::<Function>("run")?,
-            };
-            state_mut(lua).registry.add_command(command);
-            Ok(())
-        })?,
-    )?;
-
+    greed.set("command", command_function(lua, owner)?)?;
     greed.set("run", run_function(lua, owner)?)?;
 
     add_event_functions(lua, &greed, owner)?;
@@ -663,37 +777,36 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             emit(lua, "mode.changed", &payload)
         })?,
     )?;
-    mode.set(
-        "cursor",
-        lua.create_function(|lua, (name, shape): (String, String)| {
-            let shape = match shape.as_str() {
-                "block" => CursorShape::Block,
-                "bar" => CursorShape::Bar,
-                "underline" => CursorShape::Underline,
-                other => {
-                    return Err(mlua::Error::runtime(format!(
-                        "cursor shapes are \"block\", \"bar\" or \"underline\", not {other:?}"
-                    )));
-                }
-            };
-            state_mut(lua).editor.set_cursor_shape(&name, shape);
-            Ok(())
-        })?,
-    )?;
-    mode.set(
-        "shape",
-        lua.create_function(|lua, name: Option<String>| {
-            let state = state(lua);
-            let editor = &state.editor;
-            Ok(
-                match editor.cursor_shape_of(name.as_deref().unwrap_or(editor.mode())) {
-                    CursorShape::Block => "block",
-                    CursorShape::Bar => "bar",
-                    CursorShape::Underline => "underline",
-                },
-            )
-        })?,
-    )?;
+    let set_cursor = lua.create_function(|lua, (name, shape): (String, String)| {
+        let shape = match shape.as_str() {
+            "block" => CursorShape::Block,
+            "bar" => CursorShape::Bar,
+            "underline" => CursorShape::Underline,
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "cursor shapes are \"block\", \"bar\" or \"underline\", not {other:?}"
+                )));
+            }
+        };
+        state_mut(lua).editor.set_cursor_shape(&name, shape);
+        Ok(())
+    })?;
+    let cursor_of = lua.create_function(|lua, name: Option<String>| {
+        let state = state(lua);
+        let editor = &state.editor;
+        Ok(
+            match editor.cursor_shape_of(name.as_deref().unwrap_or(editor.mode())) {
+                CursorShape::Block => "block",
+                CursorShape::Bar => "bar",
+                CursorShape::Underline => "underline",
+            },
+        )
+    })?;
+    // `cursor` and `shape` are the older names.
+    mode.set("cursor", set_cursor.clone())?;
+    mode.set("set_cursor", set_cursor)?;
+    mode.set("shape", cursor_of.clone())?;
+    mode.set("cursor_of", cursor_of)?;
     Ok(mode)
 }
 
@@ -815,15 +928,38 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set(
         "define",
         lua.create_function(move |lua, spec: Table| {
+            let name: String = spec.get("name")?;
+            let default = option_value(spec.get("default")?)?;
+            let choices = spec
+                .get::<Option<Vec<Value>>>("choices")?
+                .unwrap_or_default()
+                .into_iter()
+                .map(option_value)
+                .collect::<LuaResult<Vec<_>>>()?;
+            if let Some(odd) = choices
+                .iter()
+                .find(|c| std::mem::discriminant(*c) != std::mem::discriminant(&default))
+            {
+                return Err(mlua::Error::runtime(format!(
+                    "option {name:?}: the choice \"{odd}\" isn't a {}",
+                    default.type_name()
+                )));
+            }
+            if !choices.is_empty() && !choices.contains(&default) {
+                return Err(mlua::Error::runtime(format!(
+                    "option {name:?}: the default \"{default}\" isn't one of its choices"
+                )));
+            }
             let def = OptionDef {
-                name: spec.get::<String>("name")?.into(),
+                name: name.into(),
                 doc: spec
                     .get::<Option<String>>("doc")?
                     .unwrap_or_default()
                     .into(),
                 owner: o.clone(),
                 source: caller(lua),
-                default: option_value(spec.get("default")?)?,
+                default,
+                choices,
             };
             state_mut(lua).registry.define_option(def);
             Ok(())
@@ -866,6 +1002,13 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 entry.set("doc", &*option.def.doc)?;
                 entry.set("value", option_to_lua(lua, option.value.clone())?)?;
                 entry.set("default", option_to_lua(lua, option.def.default.clone())?)?;
+                let choices: Vec<Value> = option
+                    .def
+                    .choices
+                    .iter()
+                    .map(|c| option_to_lua(lua, c.clone()))
+                    .collect::<LuaResult<_>>()?;
+                entry.set("choices", choices)?;
                 entry.set("owner", &*option.def.owner)?;
                 entry.set("set_by", option.set_by.map(|by| &**by))?;
                 set_source(&entry, &state.sources, option.def.source.as_ref())?;
