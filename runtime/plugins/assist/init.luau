@@ -274,11 +274,11 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	describing[event.id] = nil
 end)
 
-greed.keymap.bind("helix", {
-	["space i e"] = "explain",
-	["space i a"] = "ask-about",
-	["space i f"] = "fix",
-	["space i c"] = "commit-message",
+greed.keymap.bind({ layer = "leader" }, {
+	["i e"] = "explain",
+	["i a"] = "ask-about",
+	["i f"] = "fix",
+	["i c"] = "commit-message",
 })
 greed.keymap.bind({ mode = "helix", kind = "answer" }, { q = "assist-close" })
 greed.keymap.bind(

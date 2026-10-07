@@ -9,7 +9,7 @@ local core = require("@core")
 greed.command({ name = "mine-type", run = function() greed.mode.set("mine-insert") end })
 greed.keymap.bind("mine", { i = "mine-type" })
 greed.keymap.inherit("mine-insert", "helix-insert")
-core.style.define({ name = "mine", doc = "Mine", mode = "mine", typing = { "mine-insert" } })
+core.style.define({ name = "mine", doc = "Mine", mode = "mine", typing = { "mine-insert" }, leader = "ctrl-l" })
 core.commands.tag("no-repeat", { "mine-type" })
 return {}
 ]]
@@ -80,4 +80,29 @@ test("each_typing hears of every typing mode once, now and later", function(t)
 		typing = { "helix-insert", "again-insert" },
 	})
 	assert(#heard == before + 1 and heard[#heard] == "again-insert", table.concat(heard, " "))
+end)
+
+test("the leader opens with each style's own keys, and lists the same keys", function(t)
+	t:buffer("a\n|b")
+	greed.keymap.bind({ layer = "leader" }, { ["q q"] = "goto-start" })
+	t:keys("space q q")
+	t:expect("|a\nb")
+	load_mine(t)
+	core.style.set("mine")
+	t:keys("ctrl-l")
+	assert(greed.keymap.resolve("ctrl-l") == nil, "waiting for more")
+	local next = {}
+	for _, key in greed.keymap.next("ctrl-l") do
+		table.insert(next, key.key)
+	end
+	assert(table.find(next, "q"), table.concat(next, " "))
+	t:keys("esc")
+	local found = false
+	for _, binding in greed.keymap.active() do
+		found = found or (binding.keys == "ctrl-l q q" and binding.command == "goto-start")
+	end
+	assert(found, "the command palette lists it with the style's keys")
+	assert(greed.keymap.resolve("space q q") == nil, "space is Helix's way in")
+	greed.plugin.unload("mine")
+	t:wait(0)
 end)

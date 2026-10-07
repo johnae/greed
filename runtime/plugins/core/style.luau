@@ -24,6 +24,9 @@ export type Style = {
 	typing: { string }?,
 	--- What the status line calls the style's modes, e.g. { vim = "normal" }; a mode without one shows as its name.
 	labels: { [string]: string }?,
+	--- The keys that open the leader in the style's mode, e.g. "space" or
+	--- "ctrl-space": the keys every plugin binds with `{ layer = "leader" }`.
+	leader: string?,
 	--- Once the plugin it came from; ignored.
 	plugin: string?,
 }
@@ -70,12 +73,16 @@ local M = {}
 
 --- Adds a style. If the user already chose it, it starts now. Its mode
 --- gets the keys bound for each buffer kind in Helix's mode, so panels like
---- the file tree keep theirs. It goes when the plugin that added it does,
---- and Helix's takes over if it was in use.
+--- the file tree keep theirs, and its `leader` keys open the leader. It
+--- goes when the plugin that added it does, and Helix's takes over if it
+--- was in use.
 function M.define(style: Style)
 	styles[style.name] = style
 	if style.mode ~= "helix" then
 		greed.keymap.inherit_kinds(style.mode, "helix")
+	end
+	if style.leader then
+		greed.keymap.enter(style.mode, style.leader, "leader")
 	end
 	for _, watcher in table.clone(watchers) do
 		tell(watcher, style)

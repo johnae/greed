@@ -271,7 +271,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["space o m"] = "ide-mention" })
+greed.keymap.bind({ layer = "leader" }, { ["o m"] = "ide-mention" })
 
 -- Without a session (in tests, say) there is nothing for Claude Code to
 -- connect to.

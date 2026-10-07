@@ -33,17 +33,20 @@ require("@self/reminders")
 require("@self/connect")
 
 greed.keymap.bind("helix", {
-	["space n r"] = "notes-reminders-dismiss",
-	["space n l"] = "notes-connect",
-	["space k"] = "notes-hover",
-	["space n d"] = "notes-daily",
-	["space n c"] = "notes-capture",
-	["space n t"] = "notes-thought",
-	["space n a"] = "notes-agenda",
-	["space n f"] = "notes-find",
-	["space n /"] = "notes-search",
-	["space n x"] = "todo-toggle",
 	["g d"] = "notes-follow",
+})
+
+greed.keymap.bind({ layer = "leader" }, {
+	["n r"] = "notes-reminders-dismiss",
+	["n l"] = "notes-connect",
+	k = "notes-hover",
+	["n d"] = "notes-daily",
+	["n c"] = "notes-capture",
+	["n t"] = "notes-thought",
+	["n a"] = "notes-agenda",
+	["n f"] = "notes-find",
+	["n /"] = "notes-search",
+	["n x"] = "todo-toggle",
 })
 
 core.features.add("notes", notes.is_note)

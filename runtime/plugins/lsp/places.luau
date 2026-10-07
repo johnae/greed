@@ -280,12 +280,13 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", {
-	["g r"] = "goto-references",
-	["space D"] = "pick-problem",
+greed.keymap.bind("helix", { ["g r"] = "goto-references" })
+
+greed.keymap.bind({ layer = "leader" }, {
+	D = "pick-problem",
 	-- Helix has this on space h, which is help here.
-	["space H"] = "select-references",
-	["space S"] = "pick-workspace-symbol",
+	H = "select-references",
+	S = "pick-workspace-symbol",
 })
 
 return {}

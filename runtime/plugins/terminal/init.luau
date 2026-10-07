@@ -733,12 +733,13 @@ greed.command({
 
 greed.command({
 	name = "terminal-leader",
-	doc = "Stop typing into the terminal and press space, for the keys after it",
+	doc = "Stop typing into the terminal and open the leader, for the keys after it",
 	run = function()
 		greed.mode.set(core.style.home())
-		-- Styles without space keys (edit mode) just stop typing into it.
-		if #greed.keymap.next("space") > 0 then
-			greed.keys.feed("space")
+		-- A style without a leader just stops typing into it.
+		local leader = core.style.current().leader
+		if leader then
+			greed.keys.feed(leader)
 		end
 	end,
 })
@@ -1178,7 +1179,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["space t"] = "pick-terminal", ["space T"] = "terminal-send" })
+greed.keymap.bind({ layer = "leader" }, { t = "pick-terminal", T = "terminal-send" })
 
 -- The mouse in a terminal. A program that asked for it gets it. Otherwise
 -- the wheel scrolls back through the output, as tmux does: up stops typing
@@ -1287,7 +1288,10 @@ greed.keymap.bind({ mode = "helix", kind = "terminal" }, {
 	["g o"] = "terminal-select-output",
 	["] e"] = "terminal-next-reference",
 	["[ e"] = "terminal-prev-reference",
-	["space d"] = "terminal-references",
+})
+
+greed.keymap.bind({ layer = "leader", kind = "terminal" }, {
+	d = "terminal-references",
 })
 
 --- Whether `term` is still open.

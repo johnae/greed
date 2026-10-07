@@ -193,6 +193,6 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["space o d"] = "proposal-compare" })
+greed.keymap.bind({ layer = "leader" }, { ["o d"] = "proposal-compare" })
 
 return {}

@@ -189,9 +189,9 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", {
-	["space r"] = "rename",
-	["space a"] = "code-action",
+greed.keymap.bind({ layer = "leader" }, {
+	r = "rename",
+	a = "code-action",
 })
 
 return {}

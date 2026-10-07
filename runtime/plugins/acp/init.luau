@@ -1153,10 +1153,10 @@ local function transcript_keys(mode: string)
 end
 transcript_keys("helix")
 core.style.each_typing(transcript_keys)
-greed.keymap.bind("helix", {
-	["space i n"] = "agent-new",
-	["space i l"] = "agent-list",
-	["space i m"] = "agent-move",
+greed.keymap.bind({ layer = "leader" }, {
+	["i n"] = "agent-new",
+	["i l"] = "agent-list",
+	["i m"] = "agent-move",
 })
 
 --- Agents handing tasks to other agents (subagent.luau).

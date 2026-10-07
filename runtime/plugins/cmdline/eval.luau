@@ -59,6 +59,6 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	end
 end)
 
-greed.keymap.bind("helix", { ["space l e"] = "eval-selection" })
+greed.keymap.bind({ layer = "leader" }, { ["l e"] = "eval-selection" })
 
 return M

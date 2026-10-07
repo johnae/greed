@@ -160,9 +160,9 @@ picker, project search and tree work within the shown one.
 
 A recent project or a folder typed into `space P` opens in its own session,
 starting it if it isn't running, like `greed FOLDER` from a terminal.
-`:project PATH` opens a project in this session instead. `space P` works the
-same in the Helix and Vim styles; in edit mode, where space types, pick
-`pick-project` from the command palette (`ctrl-P`).
+`:project PATH` opens a project in this session instead. Like every
+`space` key here, it's the leader's: in edit mode, where space types, it's
+`ctrl-space P`.
 
 To find projects you haven't opened yet, give `space P` sources in your
 `init.luau`: folders to look in, and commands that print one path per line.
@@ -559,7 +559,7 @@ after a letter or a `.`. The menu narrows as you keep typing.
 | `shift-tab` `ctrl-p` `up` | Previous completion |
 | `enter` | Put the current one in |
 | `esc` | Close the menu (and leave insert mode) |
-| `ctrl-space` | Ask for completions now |
+| `ctrl-space` | Ask for completions now (in edit mode it opens the leader instead) |
 
 `:set completion-delay 300` waits longer before asking; `0` stops asking
 while you type, leaving `ctrl-space`. In Vim's style, `ctrl-n` and `ctrl-p`
@@ -1035,7 +1035,7 @@ goes to the program, including ones the editor would otherwise take, like
 | `space t` | Switch to a terminal, or open a new one |
 | `space T` (in a file) | Send the selection, or the cursor's line, to the terminal you used last and run it: for a REPL or a shell beside your code |
 | `ctrl-\`, `esc esc` | Stop typing into the program, to move around its output; one `esc` still goes to the program |
-| `ctrl-space` | The same, then `space`: `ctrl-space f` finds a file from inside a terminal |
+| `ctrl-space` | The same, then open the leader: `ctrl-space f` finds a file from inside a terminal |
 | `alt-p` and the other `alt` pane keys | Work as in any pane: `alt-p x` closes the terminal's pane |
 | `f1` | The keys that work while typing into it |
 | `i`, `a`, `enter` | Type into it again |
@@ -1424,7 +1424,7 @@ to stop trusting one.
 local greed = require("@greed")
 
 -- Keys
-greed.keymap.bind("helix", { ["space w"] = "save" })
+greed.keymap.bind({ layer = "leader" }, { w = "save" })
 
 -- Options (`:set` changes them while running)
 greed.option.set("flash-duration", 150)

@@ -158,6 +158,7 @@ core.style.define({
 	mode = "helix",
 	typing = { "helix-insert" },
 	labels = { helix = "normal", ["helix-insert"] = "insert", ["helix-select"] = "select" },
+	leader = "space",
 })
 
 return {}

@@ -248,16 +248,19 @@ greed.lsp.on_request("window/showMessageRequest", function(params)
 end)
 
 greed.keymap.bind("helix", {
-	["space k"] = "hover",
 	["g d"] = "goto-definition",
 	["g D"] = "goto-declaration",
 	["g y"] = "goto-type-definition",
 	["g i"] = "goto-implementation",
-	["space d"] = "pick-diagnostic",
 	["] d"] = "next-diagnostic",
 	["[ d"] = "prev-diagnostic",
 	["] D"] = "last-diagnostic",
 	["[ D"] = "first-diagnostic",
+})
+
+greed.keymap.bind({ layer = "leader" }, {
+	k = "hover",
+	d = "pick-diagnostic",
 })
 
 greed.option.define({

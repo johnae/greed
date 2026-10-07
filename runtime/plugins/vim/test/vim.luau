@@ -152,7 +152,7 @@ test("unloading it while in use goes back to Helix", function(t)
 	t:expect("^one |two")
 end)
 
-test("keys from normal mode work here too: space, :, search", function(t)
+test("the leader, : and search work here too", function(t)
 	buffer(t, "|one two one")
 	t:keys("/ o n e enter")
 	-- The cursor lands on the match, as in Vim.
@@ -163,7 +163,7 @@ test("keys from normal mode work here too: space, :, search", function(t)
 	t:keys("x")
 	t:expect("|ne two one")
 	-- Bound after Vim loaded, the way a later plugin would.
-	greed.keymap.bind("helix", { ["space z"] = "goto-start" })
+	greed.keymap.bind({ layer = "leader" }, { z = "goto-start" })
 	t:keys("$ space z")
 	t:expect("|ne two one")
 	assert(greed.keymap.resolve("alt-s") == nil, "Helix's own keys stay in Helix")

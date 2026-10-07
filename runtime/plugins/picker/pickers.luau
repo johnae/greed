@@ -85,17 +85,13 @@ greed.command({
 	name = "command-palette",
 	doc = "Run any command by name",
 	run = function()
-		-- Keys that run each command in the mode the palette opened from.
-		local mode = greed.mode.get()
-		-- Every binding at once: one lookup per command takes long enough with
-		-- hundreds of them that keys typed right away miss the picker.
+		-- Keys that run each command where the palette opened from, the
+		-- leader's too.
 		local keys_of: { [string]: { string } } = {}
-		for _, binding in greed.keymap.find() do
-			if binding.layer == mode or binding.layer == "global" then
-				local list = keys_of[binding.command] or {}
-				table.insert(list, binding.keys)
-				keys_of[binding.command] = list
-			end
+		for _, binding in greed.keymap.active() do
+			local list = keys_of[binding.command] or {}
+			table.insert(list, binding.keys)
+			keys_of[binding.command] = list
 		end
 		local items = {}
 		for _, command in greed.commands() do

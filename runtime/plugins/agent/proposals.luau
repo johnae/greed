@@ -475,12 +475,15 @@ greed.command({
 greed.keymap.bind("helix", {
 	["] o"] = "proposal-next",
 	["[ o"] = "proposal-prev",
-	["space o a"] = "proposal-accept",
-	["space o r"] = "proposal-reject",
-	["space o n"] = "proposal-note",
-	["space o A"] = "proposal-accept-all",
-	["space o R"] = "proposal-reject-all",
-	["space o o"] = "proposals",
+})
+
+greed.keymap.bind({ layer = "leader" }, {
+	["o a"] = "proposal-accept",
+	["o r"] = "proposal-reject",
+	["o n"] = "proposal-note",
+	["o A"] = "proposal-accept-all",
+	["o R"] = "proposal-reject-all",
+	["o o"] = "proposals",
 })
 
 -- Shows `hunks` (at `at`, and in file order as `pending`) for review as

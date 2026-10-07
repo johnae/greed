@@ -3,8 +3,10 @@
 //! Keymaps are defined from Luau but resolved here, in a trie per layer, so
 //! a keypress only runs Luau when the command it resolves to does.
 //!
-//! Layers are checked from most to least specific: mode and buffer kind,
-//! mode, buffer kind, then global.
+//! Layers are checked from most to least specific: the mode and buffer
+//! kind, the layers the mode enters with keys (like the leader), the mode,
+//! the modes it inherits from, the buffer kind, then global. The first layer a
+//! key sequence leads anywhere in decides what it does.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -317,12 +319,15 @@ struct Binding {
     owner: PluginId,
 }
 
-/// A mode falling back to another mode's bindings.
-#[derive(Debug)]
+/// A mode falling back to another mode's or layer's bindings.
+#[derive(Debug, PartialEq)]
 struct Inherit {
     parent: Arc<str>,
     /// Only sequences starting with one of these; all of them if empty.
     prefixes: Vec<Vec<Key>>,
+    /// For a layer entered with keys ([`Keymap::enter`]): those keys, after
+    /// which the parent's bindings follow.
+    entry: Option<Vec<Key>>,
     owner: PluginId,
 }
 
@@ -335,6 +340,65 @@ impl Inherit {
                 .iter()
                 .any(|p| keys.starts_with(p) || p.starts_with(keys))
     }
+}
+
+/// A layer to look in for a mode, and the inheritances that led there,
+/// from the mode outwards.
+struct Step<'a> {
+    layer: Layer,
+    via: Vec<&'a Inherit>,
+}
+
+impl<'a> Step<'a> {
+    fn direct(layer: Layer) -> Self {
+        Self {
+            layer,
+            via: Vec::new(),
+        }
+    }
+
+    fn through(layer: Layer, via: &[&'a Inherit]) -> Self {
+        Self {
+            layer,
+            via: via.to_vec(),
+        }
+    }
+}
+
+/// Keys typed in a mode, as a layer it inherits sees them.
+enum Through<'k> {
+    /// These keys, after the entry keys of the layers on the way.
+    Keys(&'k [Key]),
+    /// The keys typed so far are the start of an entry; this key comes next.
+    Entering(Key),
+}
+
+/// Where keys lead in one layer.
+enum At<'a> {
+    Command(&'a Binding),
+    /// The start of longer sequences, or the layer itself.
+    Prefix(&'a HashMap<Key, Node>),
+    /// Part of the keys that enter the layer, and the key that comes next.
+    Entering(Key),
+}
+
+/// How `keys` typed in a mode reach a layer through `via`, if they do.
+fn through<'k>(via: &[&Inherit], keys: &'k [Key]) -> Option<Through<'k>> {
+    let mut keys = keys;
+    for inherit in via {
+        match &inherit.entry {
+            Some(entry) => match keys.strip_prefix(entry.as_slice()) {
+                Some(rest) => keys = rest,
+                None if entry.starts_with(keys) => {
+                    return Some(Through::Entering(entry[keys.len()]));
+                }
+                None => return None,
+            },
+            None if inherit.covers(keys) => {}
+            None => return None,
+        }
+    }
+    Some(Through::Keys(keys))
 }
 
 #[derive(Debug)]
@@ -430,7 +494,8 @@ impl Keymap {
 
     /// Makes `mode` fall back to `parent`'s bindings for key sequences
     /// starting with one of `prefixes` (any sequence if there are none),
-    /// until `owner` is removed. Bindings of `mode` itself come first.
+    /// until `owner` is removed. Bindings of `mode` itself come first, and
+    /// `parent`'s own inheritances apply in turn.
     pub fn inherit(
         &mut self,
         mode: &str,
@@ -441,8 +506,28 @@ impl Keymap {
         self.inherits.entry(mode.into()).or_default().push(Inherit {
             parent: parent.into(),
             prefixes,
+            entry: None,
             owner: owner.into(),
         });
+    }
+
+    /// Makes `keys` typed in `mode` lead into `layer`: what's bound there
+    /// works after them, as if bound in `mode` behind `keys`, until `owner`
+    /// is removed. Each editing style enters the shared leader layer this
+    /// way, e.g. Helix's mode with `space`. It comes ahead of `mode`'s own
+    /// keys, so the keys that enter it start nothing else. Asking again for
+    /// the same owner changes nothing.
+    pub fn enter(&mut self, mode: &str, keys: Vec<Key>, layer: &str, owner: impl Into<PluginId>) {
+        let entry = Inherit {
+            parent: layer.into(),
+            prefixes: Vec::new(),
+            entry: Some(keys),
+            owner: owner.into(),
+        };
+        let inherits = self.inherits.entry(mode.into()).or_default();
+        if !inherits.contains(&entry) {
+            inherits.push(entry);
+        }
     }
 
     /// Makes `mode` use `parent`'s bindings for each buffer kind ahead of its
@@ -458,65 +543,100 @@ impl Keymap {
     }
 
     /// The layers that apply in `mode` for a buffer of `kind`, most specific
-    /// first, each with the inheritance that brought it in, if any.
-    fn lookup_order(&self, mode: &str, kind: &str) -> Vec<(Layer, Option<&Inherit>)> {
-        let mut order = vec![(Layer::mode_kind(mode, kind), None)];
-        for (parent, _) in self.kind_parents.get(mode).into_iter().flatten() {
-            order.push((Layer::mode_kind(parent, kind), None));
-        }
-        order.push((Layer::mode(mode), None));
+    /// first, each with the inheritances that brought it in.
+    fn lookup_order(&self, mode: &str, kind: &str) -> Vec<Step<'_>> {
+        let mut order = Vec::new();
         if self.isolated.contains_key(mode) {
+            order.push(Step::direct(Layer::mode_kind(mode, kind)));
+            order.push(Step::direct(Layer::mode(mode)));
             return order;
         }
-        for inherit in self.inherits.get(mode).into_iter().flatten() {
-            order.push((Layer::mode_kind(&inherit.parent, kind), Some(inherit)));
-            order.push((Layer::mode(&inherit.parent), Some(inherit)));
-        }
-        order.push((Layer::kind(kind), None));
-        order.push((Layer::global(), None));
+        self.expand(mode, kind, &mut Vec::new(), &mut order);
+        order.push(Step::direct(Layer::kind(kind)));
+        order.push(Step::direct(Layer::global()));
         order
     }
 
-    /// The layers that apply to `keys` in `mode` for a buffer of `kind`.
-    fn layers_for(&self, mode: &str, kind: &str, keys: &[Key]) -> Vec<Layer> {
-        self.lookup_order(mode, kind)
-            .into_iter()
-            .filter(|(_, inherit)| inherit.is_none_or(|i| i.covers(keys)))
-            .map(|(layer, _)| layer)
-            .collect()
+    /// Adds the layers of `mode`, reached through `via`, to `order`: its own
+    /// for the buffer kind, those it enters with keys, its own, then those
+    /// of each mode it inherits, and theirs in turn.
+    fn expand<'a>(
+        &'a self,
+        mode: &str,
+        kind: &str,
+        via: &mut Vec<&'a Inherit>,
+        order: &mut Vec<Step<'a>>,
+    ) {
+        let inherits = self.inherits.get(mode).map_or(&[][..], Vec::as_slice);
+        order.push(Step::through(Layer::mode_kind(mode, kind), via));
+        if via.is_empty() {
+            for (parent, _) in self.kind_parents.get(mode).into_iter().flatten() {
+                order.push(Step::direct(Layer::mode_kind(parent, kind)));
+            }
+        }
+        for inherit in inherits.iter().filter(|i| i.entry.is_some()) {
+            via.push(inherit);
+            order.push(Step::through(Layer::mode_kind(&inherit.parent, kind), via));
+            order.push(Step::through(Layer::mode(&inherit.parent), via));
+            via.pop();
+        }
+        order.push(Step::through(Layer::mode(mode), via));
+        for inherit in inherits.iter().filter(|i| i.entry.is_none()) {
+            // Modes can inherit from each other in a loop.
+            if via.len() > 8 || via.iter().any(|i| i.parent == inherit.parent) {
+                continue;
+            }
+            via.push(inherit);
+            self.expand(&inherit.parent, kind, via, order);
+            via.pop();
+        }
     }
 
-    /// Resolves a key sequence in `mode` for a buffer of `kind`.
+    /// Where `keys`, typed in a mode, lead in the layer `step` looks in.
+    fn locate<'a>(&'a self, step: &Step<'a>, keys: &[Key]) -> Option<At<'a>> {
+        match through(&step.via, keys)? {
+            Through::Keys([]) => self.layers.get(&step.layer).map(At::Prefix),
+            Through::Keys(keys) => Some(match self.lookup(&step.layer, keys)? {
+                Node::Command(binding) => At::Command(binding),
+                Node::Prefix(children) => At::Prefix(children),
+            }),
+            Through::Entering(next) => self
+                .layers
+                .contains_key(&step.layer)
+                .then_some(At::Entering(next)),
+        }
+    }
+
+    /// Resolves a key sequence in `mode` for a buffer of `kind`. The most
+    /// specific layer the keys lead anywhere in decides, whether to a
+    /// command or to the start of longer sequences.
     pub fn resolve(&self, mode: &str, kind: &str, keys: &[Key]) -> Resolution {
-        let mut pending = false;
-        for layer in self.layers_for(mode, kind, keys) {
-            match self.lookup(&layer, keys) {
-                Some(Node::Command(active)) => {
-                    return Resolution::Command(active.command.clone());
-                }
-                Some(Node::Prefix(_)) => pending = true,
+        if keys.is_empty() {
+            return Resolution::Unbound;
+        }
+        for step in self.lookup_order(mode, kind) {
+            match self.locate(&step, keys) {
+                Some(At::Command(active)) => return Resolution::Command(active.command.clone()),
+                Some(At::Prefix(_) | At::Entering(_)) => return Resolution::Pending,
                 None => {}
             }
         }
-        if pending {
-            Resolution::Pending
-        } else {
-            Resolution::Unbound
-        }
+        Resolution::Unbound
     }
 
     /// Every layer where `keys` is bound, most specific first, with the
     /// active binding in each.
     pub fn describe(&self, mode: &str, kind: &str, keys: &[Key]) -> Vec<Found> {
-        self.layers_for(mode, kind, keys)
-            .into_iter()
-            .filter_map(|layer| match self.lookup(&layer, keys) {
-                Some(Node::Command(active)) => Some(Found {
-                    layer,
+        let order = self.lookup_order(mode, kind);
+        order
+            .iter()
+            .filter_map(|step| match self.locate(step, keys)? {
+                At::Command(active) => Some(Found {
+                    layer: step.layer.clone(),
                     command: active.command.clone(),
                     owner: active.owner.clone(),
                 }),
-                Some(Node::Prefix(_)) | None => None,
+                At::Prefix(_) | At::Entering(_) => None,
             })
             .collect()
     }
@@ -554,7 +674,7 @@ impl Keymap {
         self.inherits
             .get(mode)?
             .iter()
-            .filter(|inherit| inherit.prefixes.is_empty())
+            .filter(|inherit| inherit.prefixes.is_empty() && inherit.entry.is_none())
             .find_map(|inherit| self.fallback_within(&inherit.parent, depth + 1))
     }
 
@@ -585,23 +705,25 @@ impl Keymap {
     /// what each does, sorted by key. A more specific layer hides the same
     /// key in a less specific one.
     pub fn continuations(&self, mode: &str, kind: &str, prefix: &[Key]) -> Vec<(Key, Next)> {
-        let mut found = Vec::new();
+        let mut found: Vec<(Key, Next)> = Vec::new();
         let mut keys = prefix.to_vec();
-        for (layer, inherit) in self.lookup_order(mode, kind) {
-            let children = if prefix.is_empty() {
-                self.layers.get(&layer)
-            } else {
-                match self.lookup(&layer, prefix) {
-                    Some(Node::Prefix(children)) => Some(children),
-                    Some(Node::Command(_)) | None => None,
+        for step in self.lookup_order(mode, kind) {
+            let children = match self.locate(&step, prefix) {
+                Some(At::Prefix(children)) => children,
+                Some(At::Entering(next)) => {
+                    if !found.iter().any(|(k, _)| *k == next) {
+                        found.push((next, Next::Prefix));
+                    }
+                    continue;
                 }
+                Some(At::Command(_)) | None => continue,
             };
-            for (key, node) in children.into_iter().flatten() {
+            for (key, node) in children {
                 if found.iter().any(|(k, _)| k == key) {
                     continue;
                 }
                 keys.push(*key);
-                let covered = inherit.is_none_or(|i| i.covers(&keys));
+                let covered = matches!(through(&step.via, &keys), Some(Through::Keys(_)));
                 keys.pop();
                 if !covered {
                     continue;
@@ -614,6 +736,37 @@ impl Keymap {
             }
         }
         found.sort_by_key(|(key, _)| key.to_string());
+        found
+    }
+
+    /// Every key sequence that runs a command in `mode` for a buffer of
+    /// `kind`, with the command, sorted by keys: what the layers that apply
+    /// bind, after the keys that enter them, less what a more specific
+    /// layer hides.
+    pub fn reachable(&self, mode: &str, kind: &str) -> Vec<(Vec<Key>, Arc<str>)> {
+        let mut found: Vec<(Vec<Key>, Arc<str>)> = Vec::new();
+        for step in self.lookup_order(mode, kind) {
+            let Some(children) = self.layers.get(&step.layer) else {
+                continue;
+            };
+            let entry: Vec<Key> = step
+                .via
+                .iter()
+                .filter_map(|i| i.entry.as_deref())
+                .flatten()
+                .copied()
+                .collect();
+            collect_bindings(children, None, &mut Vec::new(), &mut |keys, command| {
+                let mut typed = entry.clone();
+                typed.extend(keys);
+                if !found.iter().any(|(k, _)| *k == typed)
+                    && self.resolve(mode, kind, &typed) == Resolution::Command(command.clone())
+                {
+                    found.push((typed, command.clone()));
+                }
+            });
+        }
+        found.sort_by_cached_key(|(keys, _)| format_keys(keys));
         found
     }
 

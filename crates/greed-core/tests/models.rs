@@ -166,6 +166,7 @@ fn a_model_pipe_rewrites_the_selection_as_one_operation() {
     host.quiet_stalls();
     host.load_dirs(&[
         plugin("core"),
+        plugin("helix"),
         plugin("picker"),
         plugin("multibuffer"),
         plugin("operations"),
@@ -214,6 +215,7 @@ fn assist_host(address: &str, text: &str, path: Option<PathBuf>) -> Host {
 fn load_assist(host: &Host, address: &str) {
     host.load_dirs(&[
         plugin("core"),
+        plugin("helix"),
         plugin("picker"),
         plugin("terminal"),
         plugin("multibuffer"),

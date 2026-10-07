@@ -422,15 +422,15 @@ greed.keymap.bind({ mode = "helix", kind = "help" }, {
 	enter = "help-goto",
 })
 
-greed.keymap.bind("helix", {
-	["space h h"] = "describe",
-	["space h c"] = "describe-command",
-	["space h o"] = "describe-option",
-	["space h e"] = "describe-event",
-	["space h a"] = "describe-api",
-	["space h p"] = "describe-plugin",
-	["space h m"] = "describe-mode",
-	["space h k"] = "describe-key",
+greed.keymap.bind({ layer = "leader" }, {
+	["h h"] = "describe",
+	["h c"] = "describe-command",
+	["h o"] = "describe-option",
+	["h e"] = "describe-event",
+	["h a"] = "describe-api",
+	["h p"] = "describe-plugin",
+	["h m"] = "describe-mode",
+	["h k"] = "describe-key",
 })
 
 -- Commands, wherever they show up as things to act on (the command

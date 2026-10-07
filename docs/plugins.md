@@ -2,8 +2,8 @@
 
 Everything you use in Greed is a plugin written against the API described
 here, so the default plugins in `runtime/plugins` are the best examples:
-`core` is the whole editing model, `grep` the project search, `agent` the
-MCP tools.
+`core` holds the editing commands, `helix` gives them Helix's keys, `grep`
+is the project search, `agent` the MCP tools.
 
 ## A plugin
 
@@ -122,7 +122,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("helix", { ["space g"] = "greet" })
+greed.keymap.bind({ layer = "leader" }, { g = "greet" })
 ```
 
 A command name can't have spaces, so it can be typed after `:`. Defining
@@ -133,12 +133,15 @@ usually means a typo. `greed.plugin.check` reports both as warnings.
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
-was typed, and `ctx.char` for keys that type a character. Keymaps are bound
-per mode, or per kind of buffer with `{ mode = "helix", kind = "tree" }`.
+was typed, and `ctx.char` for keys that type a character. Keys for
+commands people reach for by name go in the leader, `{ layer = "leader" }`,
+which every editing style opens its own way (`space g` in Helix and Vim,
+`ctrl-space g` in edit mode). Other keymaps are bound per mode, or per kind
+of buffer with `{ mode = "helix", kind = "tree" }`.
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
-"helix", { "space", ":" })` lets a new mode use some of Helix's mode's
+"helix", { ":" })` lets a new mode use some of Helix's mode's
 keys, which is how a whole editing style is built; see [Editing
 styles](editing-styles.md#making-your-own).
 `greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for

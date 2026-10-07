@@ -174,6 +174,6 @@ greed.keymap.bind({ mode = "helix", kind = "undo-tree" }, {
 	esc = "undo-tree-cancel",
 })
 
-greed.keymap.bind("helix", { ["space u t"] = "undo-tree" })
+greed.keymap.bind({ layer = "leader" }, { ["u t"] = "undo-tree" })
 
 return {}

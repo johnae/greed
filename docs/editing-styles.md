@@ -29,11 +29,13 @@ again). To start in a style every time, set it in `~/.config/greed/init.luau`:
 require("@greed").option.set("editing-style", "vim")
 ```
 
-Helix and Vim share the keys that aren't about editing: `space f` finds
-files, `space /` searches the project, `:` runs commands, `g d` goes to a
-definition, `] d` to the next problem. Edit mode, where typing a letter
-inserts it, reaches the same commands through `ctrl-P` and `alt-x`.
-Prompts and pickers work the same in all three.
+The keys that aren't about editing live in the leader, which every style
+opens its own way: `space` in Helix and Vim, `ctrl-space` in edit mode,
+where typing a letter inserts it. So `space f` finds files and `space /`
+searches the project, and in edit mode `ctrl-space f` and `ctrl-space /`
+do the same; after the leader a hint lists what can follow. Helix and Vim
+also share `:` for commands, `g d` to go to a definition and `] d` to the
+next problem. Prompts and pickers work the same in all three.
 
 ## Helix
 
@@ -166,6 +168,7 @@ the keys are the ones most editors use.
 | `ctrl-u` `ctrl-shift-u` | Back to the cursors before the last command, and forward again |
 | `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file |
 | `ctrl-P` or `alt-x` | Run a command |
+| `ctrl-space` | The leader: `ctrl-space f` finds a file, `ctrl-space /` searches the project, the rest as `space` in Helix and Vim |
 | `ctrl-s` | Save |
 
 Keys with `ctrl-shift` need a terminal that reports them, such as one with
@@ -173,19 +176,20 @@ the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).
 
 Why it's here: for people who don't want modes, or don't want them yet,
 and for the odd edit where modes get in the way. Everything else in Greed
-still works, through `ctrl-P` and the command line (`alt-x`).
+still works, through the leader, `ctrl-P` and the command line (`alt-x`).
+Completion comes up as you type; `ctrl-space` is the leader here.
 
 ## Making your own
 
 A style is a mode with keys bound in it, registered with the `core`
-plugin. Its keys can borrow from Helix's mode, so `space`, `:` and the
-rest keep working:
+plugin. It says which keys open the leader, and its keys can borrow from
+Helix's mode, so `:` and the rest keep working:
 
 ```luau
 local greed = require("@greed")
 
 greed.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
-greed.keymap.inherit("mine", "helix", { "space", ":" })
+greed.keymap.inherit("mine", "helix", { ":" })
 greed.keymap.inherit("mine-insert", "helix-insert")
 greed.keymap.fallback("mine-insert", "insert-char")
 
@@ -197,6 +201,8 @@ require("@core").style.define({
 	typing = { "mine-insert" },
 	-- What the status line shows for each mode.
 	labels = { mine = "normal", ["mine-insert"] = "insert" },
+	-- The keys that open the leader, where `space f` and the rest live.
+	leader = "space",
 })
 ```
 

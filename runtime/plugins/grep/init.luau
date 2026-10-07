@@ -135,6 +135,6 @@ greed.command({
 	run = multibuffer.close,
 })
 
-greed.keymap.bind("helix", { ["space /"] = "search-project" })
+greed.keymap.bind({ layer = "leader" }, { ["/"] = "search-project" })
 
 return {}

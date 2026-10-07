@@ -53,15 +53,15 @@ greed.keymap.bind({ mode = "helix-insert", kind = "picker" }, picker.KEYS)
 core.style.kind_mode("picker", "helix-insert")
 greed.keymap.bind({ mode = "helix", kind = "picker" }, { esc = "picker-close" })
 
-greed.keymap.bind("helix", {
-	["space f"] = "pick-file",
-	["space b"] = "pick-buffer",
-	["space s"] = "pick-outline",
-	["space j"] = "pick-jump",
-	["space F"] = "pick-file-here",
-	["space '"] = "picker-resume",
-	["space ?"] = "command-palette",
-	["space ."] = "act",
+greed.keymap.bind({ layer = "leader" }, {
+	f = "pick-file",
+	b = "pick-buffer",
+	s = "pick-outline",
+	j = "pick-jump",
+	F = "pick-file-here",
+	["'"] = "picker-resume",
+	["?"] = "command-palette",
+	["."] = "act",
 })
 -- In edit mode space types, and ctrl-. is the language server's code actions.
 greed.keymap.bind("edit", { ["alt-."] = "act" })

@@ -553,12 +553,16 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("theme", super::theme::module(lua, owner)?)
 }
 
-/// A mode name, or `{ mode = ..., kind = ... }`.
+/// A mode name, or `{ mode = ..., kind = ... }`, where a named layer like
+/// the leader can stand in for the mode: `{ layer = "leader" }`.
 fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     match layer {
         Value::String(mode) => Ok(Layer::mode(&mode.to_str()?)),
         Value::Table(t) => Ok(Layer {
-            mode: t.get::<Option<String>>("mode")?.map(Into::into),
+            mode: t
+                .get::<Option<String>>("mode")?
+                .or(t.get::<Option<String>>("layer")?)
+                .map(Into::into),
             kind: t.get::<Option<String>>("kind")?.map(Into::into),
         }),
         other => Err(mlua::Error::runtime(format!(
@@ -568,9 +572,22 @@ fn layer_from_lua(layer: Value) -> LuaResult<Layer> {
     }
 }
 
-/// `greed.keymap.unbind`, `greed.keymap.clear`, `greed.keymap.counts` and
-/// `greed.keymap.inherit`.
-fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
+/// The `greed.keymap` functions that change a layer or how a mode uses
+/// layers: `unbind`, `clear`, `counts`, `inherit`, `enter`, `isolate` and
+/// `fallback`.
+fn layer_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()> {
+    let o = owner.clone();
+    keymap.set(
+        "fallback",
+        lua.create_function(move |lua, (mode, command): (String, String)| {
+            state_mut(lua)
+                .editor
+                .keymap_mut()
+                .set_fallback(&mode, command, o.clone());
+            Ok(())
+        })?,
+    )?;
+
     let o = owner.clone();
     keymap.set(
         "unbind",
@@ -618,6 +635,19 @@ fn unbinding_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult
                 .editor
                 .keymap_mut()
                 .inherit_kinds(&mode, &parent, o.clone());
+            Ok(())
+        })?,
+    )?;
+
+    let o = owner.clone();
+    keymap.set(
+        "enter",
+        lua.create_function(move |lua, (mode, keys, layer): (String, String, String)| {
+            let keys = Key::parse_sequence(&keys).map_err(mlua::Error::external)?;
+            state_mut(lua)
+                .editor
+                .keymap_mut()
+                .enter(&mode, keys, &layer, o.clone());
             Ok(())
         })?,
     )?;
@@ -676,7 +706,7 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    unbinding_functions(lua, &keymap, owner)?;
+    layer_functions(lua, &keymap, owner)?;
 
     keymap.set(
         "resolve",
@@ -749,18 +779,27 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    let o = owner.clone();
-    keymap.set(
-        "fallback",
-        lua.create_function(move |lua, (mode, command): (String, String)| {
-            state_mut(lua)
-                .editor
-                .keymap_mut()
-                .set_fallback(&mode, command, o.clone());
-            Ok(())
-        })?,
-    )?;
+    keymap.set("active", lua.create_function(active_keys)?)?;
     Ok(keymap)
+}
+
+/// `greed.keymap.active()`: what runs a command in the current mode and
+/// buffer, as `{ keys, command }`.
+fn active_keys(lua: &Lua, (): ()) -> LuaResult<Table> {
+    let found = {
+        let state = state(lua);
+        let editor = &state.editor;
+        let kind = editor.buffer(editor.view(editor.focus()).buffer).kind();
+        editor.keymap().reachable(editor.mode(), kind)
+    };
+    let list = lua.create_table()?;
+    for (keys, command) in found {
+        let entry = lua.create_table()?;
+        entry.set("keys", keys_text(&keys))?;
+        entry.set("command", &*command)?;
+        list.push(entry)?;
+    }
+    Ok(list)
 }
 
 fn mode_module(lua: &Lua) -> LuaResult<Table> {

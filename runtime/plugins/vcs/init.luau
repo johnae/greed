@@ -705,20 +705,23 @@ greed.command({
 })
 
 greed.keymap.bind("helix", {
-	["space g s"] = "changes",
-	["space g l"] = "change-stack",
 	["] g"] = "next-change",
 	["[ g"] = "prev-change",
 	["] G"] = "last-change",
 	["[ G"] = "first-change",
 	["m i g"] = "select-inside-change",
 	["m a g"] = "select-around-change",
-	["space g g"] = "pick-changed-file",
-	["space g r"] = "revert-change",
-	["space g a"] = "stage-change",
-	["space g S"] = "staged",
-	["space g b"] = "blame-line",
-	["space u c"] = "operation-commit",
+})
+
+greed.keymap.bind({ layer = "leader" }, {
+	["g s"] = "changes",
+	["g l"] = "change-stack",
+	["g g"] = "pick-changed-file",
+	["g r"] = "revert-change",
+	["g a"] = "stage-change",
+	["g S"] = "staged",
+	["g b"] = "blame-line",
+	["u c"] = "operation-commit",
 })
 
 return M

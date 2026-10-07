@@ -463,7 +463,11 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
     ("statusline", "replace the status line", &[]),
     ("set_menus", "replace the menus", &[]),
     ("keys", "type keys or record them", &[]),
-    ("keymap", "change the keys", &["next", "find", "resolve"]),
+    (
+        "keymap",
+        "change the keys",
+        &["next", "find", "resolve", "active"],
+    ),
     ("option", "change options", &["get", "list"]),
     ("theme", "change the theme", &["get"]),
     (

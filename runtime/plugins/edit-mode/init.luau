@@ -543,4 +543,5 @@ core.style.define({
 	doc = "No modes: typing inserts, shift and the arrows select (VS Code, most editors)",
 	mode = "edit",
 	typing = { "edit" },
+	leader = "ctrl-space",
 })

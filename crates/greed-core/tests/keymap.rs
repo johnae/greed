@@ -519,3 +519,165 @@ fn inheriting_kinds_twice_for_one_owner_adds_it_once() {
         Resolution::Unbound
     ));
 }
+
+fn command(km: &Keymap, mode: &str, kind: &str, k: &str) -> Option<String> {
+    match km.resolve(mode, kind, &keys(k)) {
+        Resolution::Command(c) => Some(c.to_string()),
+        Resolution::Pending | Resolution::Unbound => None,
+    }
+}
+
+#[test]
+fn keys_that_enter_a_layer_lead_to_its_bindings() {
+    use greed_core::keymap::Next;
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("leader"), &keys("f"), "files", "picker")
+        .unwrap();
+    km.bind(Layer::mode("leader"), &keys("g s"), "changes", "vcs")
+        .unwrap();
+    km.bind(
+        Layer::mode_kind("leader", "tree"),
+        &keys("f"),
+        "tree-files",
+        "tree",
+    )
+    .unwrap();
+    km.bind(Layer::mode("helix"), &keys("space y"), "copy", "helix")
+        .unwrap();
+    km.bind(Layer::mode("edit"), &keys("ctrl-space"), "complete", "lsp")
+        .unwrap();
+    km.enter("helix", keys("space"), "leader", "helix");
+    km.enter("edit", keys("ctrl-space"), "leader", "edit");
+
+    assert_eq!(
+        km.resolve("helix", "file", &keys("space")),
+        Resolution::Pending
+    );
+    assert_eq!(
+        command(&km, "helix", "file", "space f").as_deref(),
+        Some("files")
+    );
+    assert_eq!(
+        command(&km, "helix", "file", "space g s").as_deref(),
+        Some("changes")
+    );
+    assert_eq!(
+        command(&km, "helix", "file", "space y").as_deref(),
+        Some("copy"),
+        "the mode's own longer keys still work"
+    );
+    assert_eq!(
+        command(&km, "helix", "tree", "space f").as_deref(),
+        Some("tree-files"),
+        "the leader's keys for a buffer kind come first"
+    );
+    assert_eq!(
+        command(&km, "edit", "file", "ctrl-space f").as_deref(),
+        Some("files")
+    );
+    assert_eq!(
+        km.resolve("edit", "file", &keys("ctrl-space")),
+        Resolution::Pending,
+        "the keys that enter it start nothing else"
+    );
+    assert_eq!(
+        command(&km, "vim", "file", "space f"),
+        None,
+        "only where entered"
+    );
+
+    let next: Vec<(String, Next)> = km
+        .continuations("helix", "file", &keys("space"))
+        .into_iter()
+        .map(|(k, n)| (k.to_string(), n))
+        .collect();
+    assert_eq!(
+        next,
+        [
+            ("f".to_string(), Next::Command("files".into())),
+            ("g".to_string(), Next::Prefix),
+            ("y".to_string(), Next::Command("copy".into())),
+        ]
+    );
+    assert!(
+        km.continuations("helix", "file", &[])
+            .contains(&(Key::char(' '), Next::Prefix)),
+        "the key that enters it starts a sequence"
+    );
+
+    let active: Vec<(String, String)> = km
+        .reachable("helix", "file")
+        .into_iter()
+        .map(|(k, c)| (keys_text(&k), c.to_string()))
+        .collect();
+    assert_eq!(
+        active,
+        [
+            ("space f".to_string(), "files".to_string()),
+            ("space g s".to_string(), "changes".to_string()),
+            ("space y".to_string(), "copy".to_string()),
+        ]
+    );
+
+    km.enter("helix", keys("space"), "leader", "helix");
+    km.remove_owned_by("helix");
+    assert_eq!(
+        command(&km, "helix", "file", "space f"),
+        None,
+        "gone with its owner"
+    );
+    assert_eq!(
+        command(&km, "edit", "file", "ctrl-space f").as_deref(),
+        Some("files")
+    );
+}
+
+#[test]
+fn the_most_specific_layer_the_keys_lead_anywhere_in_decides() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("normal"), &keys("g g"), "start", "core")
+        .unwrap();
+    km.bind(Layer::global(), &keys("g"), "global-g", "other")
+        .unwrap();
+    assert_eq!(
+        km.resolve("normal", "file", &keys("g")),
+        Resolution::Pending,
+        "a prefix in the mode hides a command for every mode"
+    );
+    assert_eq!(
+        command(&km, "insert", "file", "g").as_deref(),
+        Some("global-g")
+    );
+}
+
+#[test]
+fn inheritance_goes_on_through_the_modes_inherited() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("insert"), &keys("enter"), "newline", "core")
+        .unwrap();
+    km.bind(Layer::mode("vim-insert"), &keys("esc"), "vim-normal", "vim")
+        .unwrap();
+    km.inherit("vim-insert", "insert", vec![], "vim");
+    km.inherit("vim-replace", "vim-insert", vec![], "vim");
+    km.inherit("insert", "vim-replace", vec![], "loop");
+    assert_eq!(
+        command(&km, "vim-replace", "file", "esc").as_deref(),
+        Some("vim-normal")
+    );
+    assert_eq!(
+        command(&km, "vim-replace", "file", "enter").as_deref(),
+        Some("newline")
+    );
+    assert_eq!(
+        command(&km, "insert", "file", "esc").as_deref(),
+        Some("vim-normal"),
+        "a loop ends"
+    );
+}
+
+fn keys_text(keys: &[Key]) -> String {
+    keys.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
+}

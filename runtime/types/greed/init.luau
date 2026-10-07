@@ -360,9 +360,12 @@ export type CliSpec = {
 	run: (args: { string }) -> string?,
 }
 
---- A keymap layer. Leave `mode` or `kind` out to match any.
+--- A keymap layer. Leave `mode` or `kind` out to match any. `layer` names
+--- a layer that isn't a mode, like the "leader", which every editing style
+--- enters its own way (`space`, or `ctrl-space` without modes).
 export type Layer = {
 	mode: string?,
+	layer: string?,
 	kind: string?,
 }
 
@@ -385,8 +388,11 @@ export type Keymap = {
 	isolate: (mode: string) -> (),
 	--- Makes `mode` fall back to `parent`'s keys for sequences starting with
 	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
-	--- them. Keys bound in `mode` itself come first.
-	inherit: (mode: string, parent: string, prefixes: { string }?) -> (),
+	--- them. Keys bound in `mode` itself come first; what `parent` inherits
+	--- applies in turn.
+	inherit:(mode: string, parent: string, prefixes: { string }?) -> (),
+	--- Makes `keys` typed in `mode` lead into `layer`, so what's bound there works after them, e.g. `enter("helix", "space", "leader")`. It comes ahead of the mode's own keys. `core.style.define` does this for each style's leader.
+	enter: (mode: string, keys: string, layer: string) -> (),
 	--- Makes `mode` use `parent`'s keys for each buffer kind (the file tree, a help page) ahead of its own, so panels keep their keys in another style. `core.style.define` does this for each style's mode.
 	inherit_kinds: (mode: string, parent: string) -> (),
 	--- The command that handles a single unbound key in `mode`. A mode without one uses that of a mode it inherits every key from.
@@ -397,6 +403,8 @@ export type Keymap = {
 	--- Every key sequence that runs `command` (every binding, without one),
 	--- the layer it's bound in (a mode name, or "global") and its command.
 	find: (command: string?) -> { { layer: string, keys: string, command: string } },
+	--- Every key sequence that runs a command in the current mode and buffer, through the layers it enters and inherits (the leader's as "space f"), less those a more specific layer hides.
+	active: () -> { { keys: string, command: string } },
 	--- Binds single keys for the next key press only, over every layer, e.g. `{ ["1"] = "hint-1" }`; any other key drops them and does what it always does. Nil drops them now.
 	overlay: (bindings: { [string]: string }?) -> (),
 	--- What `keys` runs in the current mode: the command, or nil and whether

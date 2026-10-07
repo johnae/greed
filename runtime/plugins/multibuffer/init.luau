@@ -725,7 +725,10 @@ greed.command({
 greed.keymap.bind({ mode = "helix", kind = "multibuffer" }, {
 	enter = "multibuffer-open",
 	q = "multibuffer-close",
-	["space g r"] = "multibuffer-revert",
+})
+
+greed.keymap.bind({ layer = "leader", kind = "multibuffer" }, {
+	["g r"] = "multibuffer-revert",
 })
 
 return M

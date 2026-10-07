@@ -5,10 +5,9 @@ local core = require("@core")
 local motions = require("./motions").motions
 
 -- Keys other plugins put in normal mode that work the same here: the
--- space-leader keys, search, and going to definitions and problems.
+-- search, and going to definitions and problems.
 -- Plugins loaded later get them too.
 greed.keymap.inherit("vim", "helix", {
-	"space",
 	"/",
 	"?",
 	"n",
@@ -205,6 +204,7 @@ core.style.define({
 	doc = "Say what to do, then where: `d w`, `c i w` (Vim)",
 	mode = "vim",
 	typing = { "vim-insert" },
+	leader = "space",
 	labels = {
 		vim = "normal",
 		["vim-insert"] = "insert",

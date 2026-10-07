@@ -13,7 +13,7 @@
 --   cycle through them and alt-W picks one from the dock.
 -- - alt-p and alt-t open the pane and tab modes, where single keys act until
 --   esc.
--- - In normal mode, ctrl-w (and space w) is the window prefix Vim and Helix
+-- - In normal mode, ctrl-w (and the leader's w) is the window prefix Vim and Helix
 --   users know, and in Vim, g t and g T change tabs.
 --
 -- Every key is in `M.keys`; rebind or unbind them from your config like any
@@ -910,7 +910,7 @@ M.keys = {
 		t = "pane-place-terminal",
 		esc = "pane-place-cancel",
 	} :: { [string]: string },
-	-- After ctrl-w (and space w) in normal mode, as in Vim and Helix.
+	-- After ctrl-w in normal mode, as in Vim and Helix, and w in the leader.
 	window = {
 		v = "pane-split-right",
 		s = "pane-split-down",
@@ -1010,12 +1010,14 @@ local function bind()
 	greed.keymap.bind("pane-place", M.keys.place)
 	greed.keymap.fallback("pane-place", "pane-place-cancel")
 	local window: { [string]: string } = {}
+	local leader: { [string]: string } = {}
 	for key, name in M.keys.window do
 		window[`ctrl-w {key}`] = name
-		window[`space w {key}`] = name
+		leader[`w {key}`] = name
 	end
 	greed.keymap.bind("helix", window)
 	greed.keymap.bind("vim", window)
+	greed.keymap.bind({ layer = "leader" }, leader)
 	greed.keymap.bind("vim", { ["g t"] = "tab-next", ["g T"] = "tab-previous" })
 end
 

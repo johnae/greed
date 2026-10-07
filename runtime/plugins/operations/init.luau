@@ -406,9 +406,9 @@ greed.on("buffer.closed", function(event)
 	reviews[event.id] = nil
 end)
 
-greed.keymap.bind("helix", {
-	["space u o"] = "operations",
-	["space u u"] = "operation-undo",
+greed.keymap.bind({ layer = "leader" }, {
+	["u o"] = "operations",
+	["u u"] = "operation-undo",
 })
 
 M.restore()

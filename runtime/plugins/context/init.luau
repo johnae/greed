@@ -348,9 +348,9 @@ end
 
 restore()
 
-greed.keymap.bind("helix", {
-	["space i p"] = "context-add",
-	["space i i"] = "context",
+greed.keymap.bind({ layer = "leader" }, {
+	["i p"] = "context-add",
+	["i i"] = "context",
 })
 greed.keymap.bind(
 	{ mode = "helix", kind = "context" },

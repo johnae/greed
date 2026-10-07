@@ -140,7 +140,7 @@ function M.setup(terminal: any)
 			end)
 		end,
 	})
-	greed.keymap.bind("helix", { ["space r"] = "task" })
+	greed.keymap.bind({ layer = "leader" }, { r = "task" })
 end
 
 return M

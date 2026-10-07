@@ -688,8 +688,8 @@ greed.keymap.bind("read", {
 })
 
 greed.keymap.bind(
-	"helix",
-	{ ["space m l"] = "markdown-look-toggle", ["space m v"] = "markdown-read" }
+	{ layer = "leader" },
+	{ ["m l"] = "markdown-look-toggle", ["m v"] = "markdown-read" }
 )
 greed.keymap.bind("edit", { ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" })
 

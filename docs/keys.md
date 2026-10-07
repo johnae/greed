@@ -17,20 +17,35 @@ how keymaps are organised.
 | `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow |
 
 Commands have names like `goto-end` or `select-line`, and `:` runs any of
-them by name.
+them by name. Keys starting with `space` are the leader's: in edit mode
+they start with `ctrl-space` instead.
 
 ## Binding keys
 
-Bindings go in `~/.config/greed/init.luau`:
+Bindings go in `~/.config/greed/init.luau`. Most commands you reach for
+by name, like finding a file or searching the project, live in the
+leader: a layer every editing style opens its own way, `space` in Helix
+and Vim, `ctrl-space` in edit mode. Bind there and the key works in
+whichever style you use:
 
 ```luau
 local greed = require("@greed")
 
-greed.keymap.bind("helix", {
-	["space w"] = "save",
-	["space q"] = "quit",
-	Q = "quit-all",
+-- space w in Helix and Vim, ctrl-space w in edit mode
+greed.keymap.bind({ layer = "leader" }, {
+	w = "save",
+	q = "quit",
+	["g p"] = "pick-changed-file",
 })
+```
+
+After the leader's keys, a hint lists what can follow, the same in every
+style.
+
+Other keys belong to a mode:
+
+```luau
+greed.keymap.bind("helix", { Q = "quit-all" })
 
 -- In insert mode too
 greed.keymap.bind("helix-insert", { ["ctrl-s"] = "save" })
@@ -99,10 +114,11 @@ two modes where single keys act until `esc`.
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
 | `alt-r` | Resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
 
-In normal mode (Helix and Vim), `ctrl-w` and `space w` start the window
-keys from Vim and Helix: `v` and `s` split, `h j k l` move, `w` the next
-pane, `q` close, `o` close the others, `t` a terminal, `z` zoom, `g` label
-the panes. In the Vim style, `g t` and `g T` change tabs.
+In normal mode (Helix and Vim), `ctrl-w` and the leader's `w` (`space w`)
+start the window keys from Vim and Helix: `v` and `s` split, `h j k l`
+move, `w` the next pane, `q` close, `o` close the others, `t` a terminal,
+`z` zoom, `g` label the panes. In the Vim style, `g t` and `g T` change
+tabs.
 
 All of these are ordinary bindings to commands (`pane-left`,
 `pane-terminal`, `tab-next`, ...), so they change like any other:
@@ -115,9 +131,9 @@ greed.keymap.unbind({}, { "alt-n" })
 greed.keymap.unbind("terminal", { "alt-n" })
 
 -- Split with space | and space -
-greed.keymap.bind("helix", {
-	["space |"] = "pane-split-right",
-	["space -"] = "pane-split-down",
+greed.keymap.bind({ layer = "leader" }, {
+	["|"] = "pane-split-right",
+	["-"] = "pane-split-down",
 })
 
 -- The pane mode on ctrl-p, in terminals too, as in zellij
@@ -131,7 +147,7 @@ program. `require("@panes").keys` holds the defaults, by layer.
 
 In a terminal, keys go to the program except those bound in the
 `terminal` layer: `ctrl-\` to stop typing into it, `ctrl-space` to stop
-and press `space` (so `ctrl-space f` finds a file), and the `alt` keys
+and open the leader (so `ctrl-space f` finds a file), and the `alt` keys
 above. Bind more there the same way:
 
 ```luau
@@ -152,6 +168,11 @@ Bindings live in layers. Most belong to a mode:
 | `pane`, `tab`, `resize` | The pane, tab and resize modes |
 | `view` | The sticky view mode (`Z` in the Helix style) |
 
+The `leader` layer isn't a mode: each style's mode opens it with its own
+keys (`space`, or `ctrl-space` in edit mode), and what's bound in it works
+after them. A style can open any layer this way with
+`greed.keymap.enter(mode, keys, layer)`.
+
 A layer can also be limited to one kind of buffer, so a key does
 something different in the file tree or a picker than in a file:
 
@@ -164,12 +185,14 @@ greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
 ```
 
 When a key is pressed, Greed looks in the mode and buffer kind's layer
-first, then the mode's, then the buffer kind's, then the layer for every
-mode.
+first, then the leader if the keys open it, then the mode's, then the
+layers of the modes it inherits, then the buffer kind's, then the layer
+for every mode. The first layer where the keys run a command, or start a
+longer sequence, decides.
 
 `greed.keymap.inherit` lets a mode use another mode's keys, all of them or
 only those starting with some prefixes. The Vim style uses it to share
-`space`, `:` and search with Helix's mode; see
+`:` and search with Helix's mode; see
 [Editing styles](editing-styles.md#making-your-own).
 
 ## Binding your own commands

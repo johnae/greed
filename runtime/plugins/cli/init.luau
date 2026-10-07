@@ -56,7 +56,7 @@ greed.command({
 })
 
 -- Bind it to keys like this:
--- greed.keymap.bind("helix", { ["space x"] = "NAME-greet" })
+-- greed.keymap.bind({ layer = "leader" }, { x = "NAME-greet" })
 
 return {}
 ]]
