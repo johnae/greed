@@ -29,11 +29,12 @@ mod tui;
 use crossbeam_channel::Sender;
 use greed_core::Editor;
 use greed_core::control::Request;
+use greed_core::dirs;
 use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal";
+const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -47,6 +48,25 @@ Type Luau to evaluate it, or one of:
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Anywhere on the line: which folders Greed keeps things in. Greed runs
+    // again with them in its environment, so the sessions, terminals and
+    // agents it starts find the same folders.
+    match folder_flags(&mut args) {
+        Ok(set) if set.is_empty() => {}
+        Ok(set) => {
+            use std::os::unix::process::CommandExt;
+            let err = match std::env::current_exe() {
+                Ok(me) => std::process::Command::new(me).args(&args).envs(set).exec(),
+                Err(err) => err,
+            };
+            eprintln!("greed: can't start again with those folders: {err}");
+            return ExitCode::FAILURE;
+        }
+        Err(err) => {
+            eprintln!("greed: {err}");
+            return ExitCode::FAILURE;
+        }
+    }
     // Anywhere on the line: attach with a terminal open in the session.
     let terminal = args.iter().any(|arg| arg == "--terminal");
     args.retain(|arg| arg != "--terminal");
@@ -130,19 +150,15 @@ fn print_environment() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Greed's config directory on this machine: `$GREED_CONFIG_DIR`, or `greed` in
-/// the user's config directory (`$XDG_CONFIG_HOME`, or `~/.config`).
+/// Greed's config directory on this machine (see [`greed_core::dirs`]).
 fn config_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("GREED_CONFIG_DIR") {
-        return Some(PathBuf::from(dir));
-    }
-    user_dir("XDG_CONFIG_HOME", ".config")
+    dirs::dir(dirs::Kind::Config)
 }
 
 /// Greed's state folder, for what it keeps that isn't config or cache, like
-/// which plugins you approved: `$XDG_STATE_HOME/greed` or `~/.local/state/greed`.
+/// which plugins you approved.
 fn state_dir() -> Option<PathBuf> {
-    user_dir("XDG_STATE_HOME", ".local/state")
+    dirs::dir(dirs::Kind::State)
 }
 
 /// The copy of your config `greed ssh` brought from another machine, when
@@ -160,18 +176,47 @@ fn config_file() -> Option<PathBuf> {
 }
 
 /// Greed's data folder, where plugins made in the editor go when the config
-/// can't be written: `$XDG_DATA_HOME/greed` or `~/.local/share/greed`.
+/// can't be written.
 fn data_dir() -> Option<PathBuf> {
-    user_dir("XDG_DATA_HOME", ".local/share")
+    dirs::dir(dirs::Kind::Data)
 }
 
-/// `greed` in the folder the environment variable `var` names, or in
-/// `fallback` under the home folder.
-fn user_dir(var: &str, fallback: &str) -> Option<PathBuf> {
-    let base = std::env::var_os(var)
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(fallback)))?;
-    Some(base.join("greed"))
+/// The flags that choose Greed's folders, with the variables they set.
+const DIR_FLAGS: [(&str, &str); 5] = [
+    ("--profile", dirs::PROFILE),
+    ("--config-dir", "GREED_CONFIG_DIR"),
+    ("--data-dir", "GREED_DATA_DIR"),
+    ("--cache-dir", "GREED_CACHE_DIR"),
+    ("--state-dir", "GREED_STATE_DIR"),
+];
+
+/// Takes the folder flags (`--profile DIR`, `--config-dir DIR`, ...) out of
+/// `args` and returns the variables they set, each folder made absolute, so
+/// the sessions and programs Greed starts find the same folders. An error
+/// for a flag with no folder after it.
+fn folder_flags(args: &mut Vec<String>) -> Result<Vec<(&'static str, PathBuf)>, String> {
+    let mut set = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let Some((flag, variable)) = DIR_FLAGS.iter().find(|(flag, _)| *flag == args[i]) else {
+            i += 1;
+            continue;
+        };
+        let Some(dir) = args.get(i + 1).filter(|dir| !dir.starts_with("--")) else {
+            return Err(format!("{flag} needs a folder after it"));
+        };
+        let dir = PathBuf::from(dir);
+        let dir = if dir.is_absolute() {
+            dir
+        } else {
+            std::env::current_dir()
+                .map_err(|err| format!("{flag}: {err}"))?
+                .join(dir)
+        };
+        set.push((*variable, dir));
+        args.drain(i..i + 2);
+    }
+    Ok(set)
 }
 
 /// The plugins to load: the default ones (core first, then by name), then

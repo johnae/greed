@@ -50,11 +50,9 @@ fn places(lua: &Lua) -> Option<Places> {
             keyring: false,
         });
     }
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".local/state")))?;
+    let state = crate::dirs::dir(crate::dirs::Kind::State)?;
     Some(Places {
-        file: base.join("greed/secrets.json"),
+        file: state.join("secrets.json"),
         keyring: true,
     })
 }

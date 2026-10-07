@@ -17,6 +17,7 @@ mod buffer;
 pub mod control;
 pub mod delta;
 pub mod diff;
+pub mod dirs;
 mod editor;
 pub mod files;
 mod filetypes;

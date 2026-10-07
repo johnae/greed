@@ -198,6 +198,10 @@ pub fn sessions_dir() -> PathBuf {
     if let Some(dir) = &*SESSIONS_DIR.lock().unwrap_or_else(PoisonError::into_inner) {
         return dir.clone();
     }
+    // A profile's sessions are its own.
+    if let Some(dir) = crate::dirs::profile_sessions() {
+        return dir;
+    }
     runtime_dir().map_or_else(
         || {
             let user = std::env::var("USER").unwrap_or_else(|_| "user".to_owned());

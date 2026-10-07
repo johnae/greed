@@ -364,14 +364,6 @@ fn read(path: &Path, limit: Option<usize>) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Greed's folder under `$var`, or under `fallback` in the home directory.
-fn user_dir(var: &str, fallback: &str) -> Option<String> {
-    let base = std::env::var_os(var)
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(fallback)))?;
-    Some(base.join("greed").to_string_lossy().into_owned())
-}
-
 /// `path` with a leading `~` as the home folder (a test's own, in tests), as
 /// a shell would have it, so `:open ~/notes.md` opens that file and not one
 /// in a folder called `~`.
@@ -406,15 +398,13 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
         return Ok(dirs);
     }
     dirs.set("home", std::env::var("HOME").ok())?;
+    let folder = |kind| crate::dirs::dir(kind).map(|dir| dir.to_string_lossy().into_owned());
     // This machine's own config, where plugins agents write go.
-    let config = std::env::var("GREED_CONFIG_DIR")
-        .ok()
-        .or_else(|| user_dir("XDG_CONFIG_HOME", ".config"));
-    dirs.set("config", config)?;
-    dirs.set("cache", user_dir("XDG_CACHE_HOME", ".cache"))?;
+    dirs.set("config", folder(crate::dirs::Kind::Config))?;
+    dirs.set("cache", folder(crate::dirs::Kind::Cache))?;
     // Where plugins made in the editor go when the config can't be written,
     // like one Nix manages.
-    dirs.set("data", user_dir("XDG_DATA_HOME", ".local/share"))?;
+    dirs.set("data", folder(crate::dirs::Kind::Data))?;
     // The copy of your config `greed ssh` brought, on its far end.
     dirs.set("brought", std::env::var("GREED_SSH_CONFIG_DIR").ok())?;
     Ok(dirs)

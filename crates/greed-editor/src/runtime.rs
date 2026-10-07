@@ -34,12 +34,9 @@ pub fn dir() -> io::Result<PathBuf> {
     unpack(&cache)
 }
 
-/// Greed's cache folder: `$XDG_CACHE_HOME/greed` or `~/.cache/greed`.
+/// Greed's cache folder (see [`greed_core::dirs`]).
 pub(crate) fn cache_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
-    Some(base.join("greed"))
+    greed_core::dirs::dir(greed_core::dirs::Kind::Cache)
 }
 
 /// Unpacks the built-in runtime into `cache` once per version of it, and

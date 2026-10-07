@@ -1449,6 +1449,32 @@ with `.,.+2`.
 Your config is `~/.config/greed/init.luau`, plain Luau with the full plugin
 API. Your own plugins go in `~/.config/greed/plugins/NAME/`.
 
+### Where Greed keeps things, and profiles
+
+Greed keeps four folders: your config (`~/.config/greed`), data like saved
+agent sessions (`~/.local/share/greed`), a cache (`~/.cache/greed`) and
+state like the plugins you approved and kept secrets
+(`~/.local/state/greed`). The `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_CACHE_HOME` and `XDG_STATE_HOME` variables move them as usual.
+
+A profile keeps everything in one folder of your choosing, with sessions
+of its own that never meet your usual ones:
+
+```bash
+greed --profile ~/greed-work            # a setup of its own
+greed --profile "$(mktemp -d)"           # Greed as on its first run
+```
+
+The profile holds `config`, `data`, `cache`, `state` and `run` (its
+sessions' sockets). Each folder can also be set on its own with
+`--config-dir`, `--data-dir`, `--cache-dir` and `--state-dir`, for scripts
+that move only one. Each flag has a variable too (`GREED_PROFILE`,
+`GREED_CONFIG_DIR`, `GREED_DATA_DIR`, `GREED_CACHE_DIR`, `GREED_STATE_DIR`):
+a folder's own setting wins over the profile, which wins over the XDG
+variables. Sessions, terminals, shells and agents Greed starts get the same
+folders, so `greed ctl` inside one of its terminals finds its session.
+`HOME` stays yours, so git, kubectl and your keys work as usual.
+
 Saving your config, in Greed or anywhere else, runs it again within a
 second: what it registered (commands, keys, theme entries, event handlers)
 is taken away and set up anew, and the status line says "config reloaded"
