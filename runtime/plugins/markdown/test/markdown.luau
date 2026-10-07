@@ -543,6 +543,9 @@ test("after an edit only what changed is read and drawn again, as if all of it w
 		buffer:edit(function(e)
 			e:replace(from, math.min(from + edit.len, buffer:len()), edit.text)
 		end)
+		-- What the edit set off finishes first, even cut into time slices
+		-- on a busy machine.
+		t:wait(0)
 		local read = summary(markdown.structure(buffer))
 		local whole = summary(markdown.structure(buffer:text()))
 		assert(read == whole, `edit {i}:\n{read}\n---\n{whole}`)
