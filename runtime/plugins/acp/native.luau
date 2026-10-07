@@ -364,7 +364,7 @@ local function call(
 		end
 		return agent.as_text(tool.run(c.input, state.caller))
 	end)
-	local text = if ok then result else tostring(result)
+	local text = if ok then result else agent.error_text(result)
 	tool.status = if ok then "completed" else "failed"
 	local lines = string.split(text, "\n")
 	while #lines > 0 and lines[#lines] == "" do

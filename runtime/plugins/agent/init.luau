@@ -68,6 +68,7 @@ return table.freeze({
 	--- text (registry.luau).
 	result = registry.result,
 	as_text = registry.as_text,
+	error_text = registry.error_text,
 	--- Whether an agent asks you before a tool runs, by its kind (registry.luau).
 	asks = registry.asks,
 	--- Why arguments don't fit a tool's schema, and running a tool by name

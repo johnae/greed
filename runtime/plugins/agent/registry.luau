@@ -124,6 +124,19 @@ function M.result(content: string | { Content }, is_error: boolean?): { [string]
 	return made
 end
 
+--- A tool's error as text for an agent to read. One from a capability
+--- check says how a plugin author would fix it; an agent reads that as an
+--- instruction to change Greed's plugins, so it's told to stop instead.
+function M.error_text(err: any): string
+	local text = tostring(err)
+	if string.find(text, "to capabilities in", 1, true) then
+		local note = "This is a limit on what Greed's plugins may do, not something to work "
+			.. "around: don't change any plugin.toml's capabilities. Tell the user what failed."
+		text ..= "\n\n" .. note
+	end
+	return text
+end
+
 --- What a tool returned, as text for an agent to read: a string as it is,
 --- a `result`'s text pieces, anything else as JSON.
 function M.as_text(value: any): string
@@ -307,7 +320,7 @@ function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 	local ok, result = pcall(tool.run, arguments, caller)
 	running[thread] = nil
 	if not ok then
-		return M.result(tostring(result), true)
+		return M.result(M.error_text(result), true)
 	elseif results[result] then
 		return result
 	end

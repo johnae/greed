@@ -299,3 +299,18 @@ test("schema.object makes an object's schema, the second list naming the require
 	assert(schema.required[1] == "path")
 	assert(agent.schema.object({}).required == nil, "nothing required by default")
 end)
+
+test("a tool failing a capability check tells the agent not to change capabilities", function()
+	agent.tool({
+		name = "needs_more",
+		description = "Fails as a plugin without a capability would",
+		input = agent.schema.object({}),
+		run = function()
+			error('tiny can\'t run programs: add "proc" to capabilities in its plugin.toml', 0)
+		end,
+	})
+	local text = agent.as_text(agent.call("needs_more", {}, agent.caller()))
+	assert(string.find(text, "don't change any plugin.toml's capabilities", 1, true), text)
+	local plain = agent.error_text("no such file")
+	assert(plain == "no such file", plain)
+end)
