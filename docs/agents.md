@@ -388,6 +388,12 @@ when it's wrong, as for an Ollama model whose context you've raised:
 models.roles.agent = { provider = "ollama", model = "qwen2.5-coder", context = 128000 }
 ```
 
+One answer from Greed's agent may be up to 32k tokens long, or a quarter
+of the context window when that's smaller; set `output` on the role or
+provider to change it. An answer that runs out of room anyway, such as one
+writing a long file, runs none of its tool calls. The agent is told and
+goes on in smaller pieces, and stops after three such answers in a row.
+
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |

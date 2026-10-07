@@ -268,3 +268,18 @@ test("an Ollama that isn't running says how to start it", function(t)
 	end)
 	assert(string.find(said or "", "`ollama serve` starts it", 1, true), tostring(said))
 end)
+
+test("how long an answer may be: the role's, its provider's, or sized from the window", function()
+	models.roles.poetry = { provider = "berget", model = "moonshotai/Kimi-K3" }
+	assert(models.output("poetry") == 32000, tostring(models.output("poetry")))
+	models.roles.poetry = { provider = "ollama", model = "some-model" }
+	-- An unknown model is assumed small, so its answers leave room for the rest.
+	assert(models.output("poetry") == models.WINDOW // 4, tostring(models.output("poetry")))
+	models.providers.small = { kind = "openai", url = "http://localhost:1", output = 2000 }
+	models.roles.poetry = { provider = "small", model = "gpt-5" }
+	assert(models.output("poetry") == 2000, "the provider says")
+	models.roles.poetry = { provider = "small", model = "gpt-5", output = 1000 }
+	assert(models.output("poetry") == 1000, "the role says first")
+	models.roles.poetry = nil
+	models.providers.small = nil
+end)

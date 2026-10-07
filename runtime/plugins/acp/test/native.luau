@@ -871,3 +871,30 @@ test("a write letting a plugin do more asks every time, and no policy answers it
 	local result = asked[3].said[#asked[3].said]
 	assert(result.error and string.find(result.text, "don't try another way", 1, true), result.text)
 end)
+
+test("an answer cut off at its length runs none of its calls, and goes on in parts", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "hal" } } },
+			stop = "length",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "write b")
+	assert(s.status == "idle", s.status)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "half a call doesn't run")
+	local heard = asked[2].said[#asked[2].said]
+	assert(heard.role == "user" and string.find(heard.text, "cut off", 1, true), heard.text)
+	assert(#asked[2].said[#asked[2].said - 1].calls == 0, "the lost call isn't answered for")
+	assert(string.find(said(s), "agent: Done.", 1, true), said(s))
+end)
+
+test("answers cut off again and again stop it", function(t)
+	local cut = { text = "and", calls = {}, stop = "length" }
+	local asked = script({ cut, cut, cut, cut })
+	local s = ask(t, "go")
+	assert(s.status == "idle", s.status)
+	assert(#asked == 3, `it stops after the third: {#asked}`)
+	assert(string.find(said(s), "stopped: the answer ran out of room", 1, true), said(s))
+end)

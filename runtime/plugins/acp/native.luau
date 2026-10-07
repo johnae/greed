@@ -30,6 +30,13 @@ models.fallback(compact.ROLE, M.ROLE, "compacting long conversations with Greed'
 -- Turns one prompt may take, so a model that keeps calling tools stops.
 local MAX_TURNS = 50
 
+-- Answers in a row that may be cut off at their length before it stops,
+-- and what the model hears after one.
+local MAX_CUTS = 2
+local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, so any tool "
+	.. "call in it was lost and nothing ran. Go on in smaller pieces: write a long file with "
+	.. "write_file holding its first part, then add the rest with edit_file, a part at a time."
+
 -- The most of a tool's result the model gets back, in characters.
 local MAX_RESULT = 30000
 
@@ -505,6 +512,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
 	-- Once a summary fails, it isn't asked for again until the next prompt.
 	local may_compact = true
+	-- Answers cut off at their length in a row.
+	local cuts = 0
 	for _ = 1, MAX_TURNS do
 		if os.date("%Y-%m-%d %H") ~= said_hour then
 			said_system, said_hour = system(s, state.env), os.date("%Y-%m-%d %H")
@@ -530,21 +539,36 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 		end
 		-- It answered, so nothing keeps it from working.
 		s.problem = nil
+		-- An answer cut off at its length may end in half a tool call, so
+		-- none of its calls run; the model hears why and goes on in parts.
+		local cut = turn.stop == "length"
 		table.insert(
 			state.said,
-			{ role = "assistant", text = turn.text, calls = turn.calls } :: models.Said
+			{ role = "assistant", text = turn.text, calls = if cut then {} else turn.calls } :: models.Said
 		)
 		if turn.tokens then
 			state.reported = { tokens = turn.tokens, at = #state.said }
 		end
 		s.tokens = turn.tokens or s.tokens
-		if turn.stop ~= "tools" or #turn.calls == 0 then
-			if turn.stop == "length" then
+		if cut then
+			cuts += 1
+			if cuts > MAX_CUTS then
 				table.insert(
 					s.entries,
 					{ kind = "note", text = "stopped: the answer ran out of room" }
 				)
+				break
 			end
+			table.insert(
+				s.entries,
+				{ kind = "note", text = "the answer ran out of room; going on" }
+			)
+			table.insert(state.said, { role = "user", text = CUT_OFF } :: models.Said)
+			s.changed()
+			continue
+		end
+		cuts = 0
+		if turn.stop ~= "tools" or #turn.calls == 0 then
 			break
 		end
 		for _, c in turn.calls do

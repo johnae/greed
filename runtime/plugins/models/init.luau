@@ -36,18 +36,20 @@ export type TurnRequest = turn.Request
 --- name of its key in greed.secrets, if it needs one. A provider you can
 --- sign in to names its `login` (login.luau); once signed in, that's used
 --- instead of the key. `context` is how many tokens its models have room
---- for, when you'd rather say than have it guessed from the model's name.
+--- for, when you'd rather say than have it guessed from the model's name,
+--- and `output` how long one of their answers may be.
 export type Provider = {
 	kind: string,
 	url: string,
 	secret: string?,
 	login: string?,
 	context: number?,
+	output: number?,
 }
 
 --- Which provider and model play a role, and optionally how many tokens
---- the model has room for (its context window).
-export type Role = { provider: string, model: string, context: number? }
+--- the model has room for (its context window) and may write in one answer.
+export type Role = { provider: string, model: string, context: number?, output: number? }
 
 export type Message = { role: "user" | "assistant", content: string }
 
@@ -261,6 +263,22 @@ function M.window(role: string): (number, boolean)
 		end
 	end
 	return M.WINDOW, false
+end
+
+-- The longest answer asked for when nothing says: enough to write a file
+-- of a few hundred lines in one tool call, and within what models allow.
+local OUTPUT = 32000
+
+--- How many tokens the model playing `role` may write in one turn: the
+--- role's `output`, its provider's, or else `OUTPUT`, never more than a
+--- quarter of its context window, leaving the rest for the conversation.
+function M.output(role: string): number
+	local chosen, provider = M.resolve(role)
+	local said = (chosen and chosen.output) or (provider and provider.output)
+	if said then
+		return said
+	end
+	return math.min(OUTPUT, M.window(role) // 4)
 end
 
 -- The request to send, as the provider's API wants it.
@@ -618,7 +636,7 @@ function M.turn(
 		return nil, why
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
-	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, MAX_TOKENS))
+	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, M.output(role)))
 	local response, err = greed.vouch(open, chosen, sent)
 	if response == nil then
 		return nil, err
