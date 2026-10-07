@@ -11,9 +11,13 @@
 --   m s X           wrap each selection in X and its pair
 --   m d X           take away the X pair around each selection
 --   m r X Y         swap the X pair around each selection for Y's
+--
+-- `find` has every object by its key, paragraphs and sentences too, so
+-- the other editing styles and plugins pick the same text.
 
 local greed = require("@greed")
 local motions = require("./motions")
+local syntax = require("./syntax")
 local text = require("./text")
 
 type Buffer = greed.Buffer
@@ -117,7 +121,12 @@ end
 
 -- The word (or WORD) under `pos`, and with `include_space`, the spaces after it
 -- (or before it, at the end of a line).
-local function word(buffer: Buffer, pos: number, big: boolean, include_space: boolean): Range
+local function word(
+	buffer: Buffer,
+	pos: number,
+	big: boolean,
+	include_space: boolean
+): (number, number)
 	local function kind(p: number): string?
 		local class = text.class(buffer:char_at(p))
 		return if big and class == "punct" then "word" else class
@@ -143,77 +152,65 @@ local function word(buffer: Buffer, pos: number, big: boolean, include_space: bo
 			end
 		end
 	end
-	return { anchor = from, head = to }
+	return from, to
 end
 
-local function object(name: string, doc: string, pick: (Buffer, Range, number?) -> Range?)
-	greed.command({
-		name = name,
-		doc = doc,
-		run = function(ctx)
-			motions.each_range(ctx, function(buffer, range)
-				return pick(buffer, range, ctx.count) or range
-			end)
-		end,
-	})
-end
-
--- The range inside the pair from `from` to `to`, or with `outer`, around it.
-local function pair_range(buffer: Buffer, from: number?, to: number?, outer: boolean): Range?
-	if from == nil or to == nil then
-		return nil
+-- Lines `first` to `last` whole, line break included, as `from, to`. With
+-- `vim`, lines at the end of the buffer take the line break before them
+-- instead, as Vim deletes them.
+local function whole_lines(
+	buffer: Buffer,
+	first: number,
+	last: number,
+	vim: boolean?
+): (number, number)
+	local from = buffer:line_start(first)
+	if last + 1 < buffer:line_count() then
+		return from, buffer:line_start(last + 1)
 	end
-	if outer then
-		return { anchor = from, head = buffer:next_char(to) }
+	if vim and from > 0 then
+		from = buffer:prev_char(from)
 	end
-	return { anchor = buffer:next_char(from), head = to }
+	return from, buffer:len()
 end
 
 local M = {}
 
--- Bindings for every object, filled in below.
-M.keys = {} :: { [string]: string }
-
-for _, big in { false, true } do
-	local w = if big then "W" else "w"
-	local what = if big then "WORD" else "word"
-	for _, outer in { false, true } do
-		local name =
-			`select-{if outer then "around" else "inside"}-{if big then "big-word" else "word"}`
-		object(
-			name,
-			`Select the {what}{if outer then " and the space after it" else ""}`,
-			function(buffer, range)
-				return word(buffer, motions.cursor(buffer, range), big, outer)
-			end
-		)
-		M.keys[`m {if outer then "a" else "i"} {w}`] = name
-	end
+--- Whether `line` is empty or only spaces.
+function M.blank(buffer: Buffer, line: number): boolean
+	return string.match(buffer:line_text(line), "^%s*$") ~= nil
 end
 
-local NAMES: { [string]: string } = {
-	["("] = "parens",
-	["["] = "brackets",
-	["{"] = "braces",
-	["<"] = "angles",
-	['"'] = "double-quotes",
-	["'"] = "quotes",
-	["`"] = "backticks",
-}
-for char, label in NAMES do
-	for _, outer in { false, true } do
-		local side = if outer then "around" else "inside"
-		local name = `select-{side}-{label}`
-		object(name, `Select {side} the {label}`, function(buffer, range, count)
-			local from, to = around(buffer, motions.cursor(buffer, range), char, count)
-			return pair_range(buffer, from, to, outer)
-		end)
-		local key = if outer then "a" else "i"
-		M.keys[`m {key} {char}`] = name
-		if CLOSE[char] then
-			M.keys[`m {key} {CLOSE[char]}`] = name
-		end
+local blank = M.blank
+
+--- The first and last line of the paragraph around `line`, or of the run
+--- of blank lines it's in. Lines of only spaces count as blank.
+function M.paragraph(buffer: Buffer, line: number): (number, number)
+	local is_blank = blank(buffer, line)
+	local first, last = line, line
+	while first > 0 and blank(buffer, first - 1) == is_blank do
+		first -= 1
 	end
+	while last + 1 < buffer:line_count() and blank(buffer, last + 1) == is_blank do
+		last += 1
+	end
+	return first, last
+end
+
+-- The range inside the pair from `from` to `to`, or with `outer`, around it.
+local function pair_range(
+	buffer: Buffer,
+	from: number?,
+	to: number?,
+	outer: boolean
+): (number?, number?)
+	if from == nil or to == nil then
+		return nil, nil
+	end
+	if outer then
+		return from, buffer:next_char(to)
+	end
+	return buffer:next_char(from), to
 end
 
 --- The innermost XML or HTML element around `pos`: inside it (between its
@@ -255,14 +252,15 @@ function M.tag(buffer: Buffer, pos: number, around: boolean): (number?, number?)
 	return best[2], best[3]
 end
 
-for _, outer in { false, true } do
-	local side = if outer then "around" else "inside"
-	object(`select-{side}-tag`, `Select {side} the XML or HTML element`, function(buffer, range)
-		local from, to = M.tag(buffer, motions.cursor(buffer, range), outer)
-		return if from and to then { anchor = from, head = to } else nil
-	end)
-	M.keys[`m {if outer then "a" else "i"} x`] = `select-{side}-tag`
-end
+local NAMES: { [string]: string } = {
+	["("] = "parens",
+	["["] = "brackets",
+	["{"] = "braces",
+	["<"] = "angles",
+	['"'] = "double-quotes",
+	["'"] = "quotes",
+	["`"] = "backticks",
+}
 
 -- The innermost pair of any kind around `pos`, as Helix's m i m finds it.
 local function nearest(buffer: Buffer, pos: number, count: number?): (number?, number?)
@@ -274,19 +272,6 @@ local function nearest(buffer: Buffer, pos: number, count: number?): (number?, n
 		end
 	end
 	return best_from, best_to
-end
-
-for _, outer in { false, true } do
-	local side = if outer then "around" else "inside"
-	object(
-		`select-{side}-pair`,
-		`Select {side} the nearest brackets or quotes`,
-		function(buffer, range, count)
-			local from, to = nearest(buffer, motions.cursor(buffer, range), count)
-			return pair_range(buffer, from, to, outer)
-		end
-	)
-	M.keys[`m {if outer then "a" else "i"} m`] = `select-{side}-pair`
 end
 
 -- Reads a character to stand for a pair; nil for keys like esc.
@@ -341,29 +326,6 @@ function M.next_pair(buffer: Buffer, pos: number, char: string, back: boolean): 
 	end
 end
 
-for _, outer in { false, true } do
-	local side = if outer then "around" else "inside"
-	for _, back in { false, true } do
-		local which = if back then "last" else "next"
-		local name = `select-{side}-{which}`
-		greed.command({
-			name = name,
-			doc = `Select {side} the {which} pair of the bracket or quote typed next`,
-			run = function(ctx)
-				local char = pair_key()
-				if char == nil then
-					return
-				end
-				motions.each_range(ctx, function(buffer, range)
-					local from, to = M.next_pair(buffer, motions.cursor(buffer, range), char, back)
-					return pair_range(buffer, from, to, outer) or range
-				end)
-			end,
-		})
-		M.keys[`m {if outer then "a" else "i"} {if back then "l" else "n"}`] = name
-	end
-end
-
 -- How far `line` is indented, or nil for a blank line.
 local function indent_of(buffer: Buffer, line: number): number?
 	local start, stop = buffer:line_start(line), buffer:line_end(line)
@@ -371,10 +333,8 @@ local function indent_of(buffer: Buffer, line: number): number?
 	return if first >= stop then nil else first - start
 end
 
---- The lines around `pos`'s line indented at least as far as it, blank
---- lines inside included, as a range of whole lines; `around` takes the
---- line above too, like a block's header.
-function M.indent(buffer: Buffer, pos: number, around: boolean): (number, number)
+-- The first and last of the lines `M.indent` takes.
+local function indented_lines(buffer: Buffer, pos: number, around: boolean): (number, number)
 	local line = buffer:line_of(pos)
 	local count = buffer:line_count()
 	-- A blank line belongs with the next line that isn't.
@@ -406,8 +366,15 @@ function M.indent(buffer: Buffer, pos: number, around: boolean): (number, number
 	if around and first > 0 then
 		first -= 1
 	end
-	local to = if last + 1 < count then buffer:line_start(last + 1) else buffer:line_end(last)
-	return buffer:line_start(first), to
+	return first, last
+end
+
+--- The lines around `pos`'s line indented at least as far as it, blank
+--- lines inside included, as a range of whole lines; `around` takes the
+--- line above too, like a block's header.
+function M.indent(buffer: Buffer, pos: number, around: boolean): (number, number)
+	local first, last = indented_lines(buffer, pos, around)
+	return whole_lines(buffer, first, last)
 end
 
 --- The number at or after `pos` on its line: decimal (with a fraction) or
@@ -432,27 +399,203 @@ function M.number(buffer: Buffer, pos: number, around: boolean): (number?, numbe
 	return nil, nil
 end
 
+-- The paragraph around `pos` (see `M.find`).
+local function paragraph_object(
+	buffer: Buffer,
+	pos: number,
+	around: boolean,
+	vim: boolean?
+): (number, number, boolean)
+	local first, last = M.paragraph(buffer, buffer:line_of(pos))
+	-- "a paragraph" takes the blank lines after it; Vim's, on blank lines,
+	-- the paragraph after them.
+	if around and last + 1 < buffer:line_count() and (vim or not blank(buffer, last)) then
+		local _, next_last = M.paragraph(buffer, last + 1)
+		last = next_last
+	end
+	if vim or around then
+		local from, to = whole_lines(buffer, first, last, vim)
+		return from, to, true
+	end
+	return buffer:line_start(first), buffer:line_end(last), false
+end
+
+-- The pair for the bracket or quote `char` around `pos` (see `M.find`).
+local function pair_object(
+	buffer: Buffer,
+	pos: number,
+	char: string,
+	opts: FindOptions
+): (number?, number?)
+	local open, close = around(buffer, pos, char, opts.count)
+	if open == nil and opts.vim and QUOTES[char] then
+		-- Before the quotes on a line, Vim takes the next pair on it.
+		local finish = buffer:line_end(buffer:line_of(pos))
+		local at = pos
+		while at < finish and buffer:char_at(at) ~= char do
+			at = buffer:next_char(at)
+		end
+		if at < finish then
+			open, close = quotes_around(buffer, at, char)
+		end
+	end
+	return open, close
+end
+
+export type FindOptions = {
+	--- Brackets further out: 2 is the pair around the nearest one.
+	count: number?,
+	--- For `n` and `l`, the bracket or quote; read from the keyboard when
+	--- not given.
+	char: string?,
+	--- Vim's way where it differs: quotes after the cursor on its line
+	--- count, a paragraph is whole lines (at the end of the buffer, with
+	--- the line break before them), and "a paragraph" on blank lines takes
+	--- the paragraph after them.
+	vim: boolean?,
+}
+
+--- The text object for `key` around `pos`, inside it or `around` it, as
+--- `from, to, linewise`, or nil when there's none. The keys: `w` and `W`
+--- words (around: with the spaces after, or before at a line's end), `p`
+--- a paragraph (around: with the blank lines after), `s` a sentence
+--- (around: with the blanks after), a bracket or quote for its pair, `m`
+--- the nearest pair, `n` and `l` the next and last pair of a bracket or
+--- quote, `x` an XML element, `i` an indented block, `d` a number, and the
+--- syntax tree's objects in `core.syntax.OBJECTS` (`f` a function, `a` an
+--- argument, `c` a comment...).
+function M.find(
+	buffer: Buffer,
+	pos: number,
+	key: string,
+	around: boolean,
+	opts: FindOptions?
+): (number?, number?, boolean)
+	local o: FindOptions = opts or {}
+	local from: number?, to: number? = nil, nil
+	if key == "w" or key == "W" then
+		from, to = word(buffer, pos, key == "W", around)
+	elseif key == "p" then
+		return paragraph_object(buffer, pos, around, o.vim)
+	elseif key == "i" then
+		local first, last = indented_lines(buffer, pos, around)
+		local start, stop = whole_lines(buffer, first, last, o.vim)
+		return start, stop, true
+	elseif key == "s" then
+		local start, stop = buffer:sentence(pos)
+		while around and stop < buffer:len() and text.class(buffer:char_at(stop)) == "space" do
+			stop = buffer:next_char(stop)
+		end
+		from, to = start, stop
+	elseif key == "x" then
+		from, to = M.tag(buffer, pos, around)
+	elseif key == "d" then
+		from, to = M.number(buffer, pos, around)
+	elseif key == "m" then
+		local open, close = nearest(buffer, pos, o.count)
+		from, to = pair_range(buffer, open, close, around)
+	elseif key == "n" or key == "l" then
+		local char = o.char or pair_key()
+		if char then
+			local open, close = M.next_pair(buffer, pos, char, key == "l")
+			from, to = pair_range(buffer, open, close, around)
+		end
+	elseif syntax.OBJECTS[key] then
+		local range =
+			syntax.select(buffer, { anchor = pos, head = pos }, syntax.OBJECTS[key], around)
+		if range then
+			from, to = range.anchor, range.head
+		end
+	elseif OPEN[key] or QUOTES[key] then
+		local open, close = pair_object(buffer, pos, key, o)
+		from, to = pair_range(buffer, open, close, around)
+	end
+	return from, to, false
+end
+
+--- What wraps text for the pair key `char`: a bracket and its partner, or
+--- the character twice. With `spaced`, an opening bracket ( [ { puts a
+--- space inside each side, as vim-surround does.
+function M.pair(char: string, spaced: boolean?): (string, string)
+	local open, close = pair(char)
+	if spaced and char == open and open ~= "<" and CLOSE[open] then
+		return open .. " ", " " .. close
+	end
+	return open, close
+end
+
+-- Bindings for every object, filled in below.
+M.keys = {} :: { [string]: string }
+
+-- Makes command `name` select object `key` (`outer`: around it) at each
+-- selection, bound to m i or m a and `key`. With `reads`, it
+-- reads the pair's character first.
+local function object(name: string, doc: string, key: string, outer: boolean, reads: boolean?)
+	greed.command({
+		name = name,
+		doc = doc,
+		run = function(ctx)
+			local char = if reads then pair_key() else nil
+			if reads and char == nil then
+				return
+			end
+			motions.each_range(ctx, function(buffer, range)
+				local from, to = M.find(
+					buffer,
+					motions.cursor(buffer, range),
+					key,
+					outer,
+					{ count = ctx.count, char = char }
+				)
+				return if from and to then { anchor = from, head = to } else range
+			end)
+		end,
+	})
+	M.keys[`m {if outer then "a" else "i"} {key}`] = name
+end
+
 for _, outer in { false, true } do
 	local side = if outer then "around" else "inside"
-	local key = if outer then "a" else "i"
+	for _, big in { false, true } do
+		local what = if big then "WORD" else "word"
+		object(
+			`select-{side}-{if big then "big-word" else "word"}`,
+			`Select the {what}{if outer then " and the space after it" else ""}`,
+			if big then "W" else "w",
+			outer
+		)
+	end
+	for char, label in NAMES do
+		local name = `select-{side}-{label}`
+		object(name, `Select {side} the {label}`, char, outer)
+		if CLOSE[char] then
+			M.keys[`m {if outer then "a" else "i"} {CLOSE[char]}`] = name
+		end
+	end
+	object(`select-{side}-tag`, `Select {side} the XML or HTML element`, "x", outer)
+	object(`select-{side}-pair`, `Select {side} the nearest brackets or quotes`, "m", outer)
+	for _, back in { false, true } do
+		local which = if back then "last" else "next"
+		object(
+			`select-{side}-{which}`,
+			`Select {side} the {which} pair of the bracket or quote typed next`,
+			if back then "l" else "n",
+			outer,
+			true
+		)
+	end
 	object(
 		`select-{side}-indent`,
 		`Select the lines indented as far as this one{if outer then ", and the one above" else ""}`,
-		function(buffer, range)
-			local from, to = M.indent(buffer, motions.cursor(buffer, range), outer)
-			return { anchor = from, head = to }
-		end
+		"i",
+		outer
 	)
-	M.keys[`m {key} i`] = `select-{side}-indent`
 	object(
 		`select-{side}-number`,
 		`Select the number at or after the cursor{if outer then ", with its sign" else ""}`,
-		function(buffer, range)
-			local from, to = M.number(buffer, motions.cursor(buffer, range), outer)
-			return if from and to then { anchor = from, head = to } else nil
-		end
+		"d",
+		outer
 	)
-	M.keys[`m {key} d`] = `select-{side}-number`
 end
 
 greed.command({

@@ -80,7 +80,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `{ }` `( )` `H M L` `- + _` `\|` | Paragraphs, sentences, the top, middle or bottom of the screen, lines, a column |
 | `f t F T` + a character, `; ,` | To the next or previous character on the line; again, or back |
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
-| `i w` `a w` `i W` `i (` `a "` `i s` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, sentences, paragraphs, tags |
+| `i w` `a w` `i W` `i (` `a "` `i s` `i p` `i t` ... | Text objects: words, brackets (`b` `B` too), quotes, sentences, paragraphs, tags, and the rest of the objects Helix's `m i` takes (`i f` a function, `i d` a number, `i n (` the next parens...) |
 | `>` `<` `g c` + a motion | Indent, dedent, comment; `> >` `< <` `g c c` for the line |
 | `g ~` `g u` `g U` `g ?` + a motion | Switch case, lowercase, uppercase, rot13 (`~` `u` `U` in visual mode) |
 | `g q` `g w` `=` `!` + a motion | Rewrap to the `text-width` option (`g w` keeps the cursor), reindent, pipe through a command |

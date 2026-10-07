@@ -1,4 +1,5 @@
 local test = require("@greed/test")
+local greed = require("@greed")
 
 local function check(t: test.TestContext, before: string, keys: string, after: string)
 	t:buffer(before)
@@ -76,4 +77,52 @@ test("m i d takes the number at or after the cursor, m a d with its sign", funct
 	t:buffer("|x = -0x1f")
 	t:keys("m a d")
 	t:expect("x = ^-0x1f|")
+end)
+
+-- `core.objects.find` on `before` (| is the cursor): the text it picks.
+local function found(
+	t: test.TestContext,
+	before: string,
+	key: string,
+	around: boolean,
+	vim: boolean?
+): string?
+	t:buffer(before)
+	local buffer = greed.view():buffer()
+	local from, to =
+		require("@core").objects.find(buffer, greed.view():cursor(), key, around, { vim = vim })
+	return if from and to then buffer:slice(from, to) else nil
+end
+
+test("find picks every style's objects, Vim's way where it differs", function(t)
+	assert(
+		found(t, "one tw|o", "w", true) == " two",
+		"a word at a line's end takes the space before"
+	)
+	assert(found(t, "one tw|o three", "w", true) == "two ")
+	-- Quotes after the cursor on its line count in Vim only.
+	assert(found(t, '|x = "a"', '"', false) == nil)
+	assert(found(t, '|x = "a"', '"', false, true) == "a")
+	-- A paragraph: its lines, or whole lines in Vim; at the end of the
+	-- buffer Vim takes the line break before them.
+	assert(found(t, "a\n\nb|\nc", "p", false) == "b\nc")
+	assert(found(t, "a\n\nb|\nc", "p", false, true) == "\nb\nc")
+	assert(found(t, "a|\nb\n\nc", "p", true) == "a\nb\n\n")
+	-- On blank lines, Vim's "a paragraph" takes the next one too.
+	assert(found(t, "a\n|\nb\n", "p", true) == "\n")
+	assert(found(t, "a\n|\nb\n", "p", true, true) == "\nb\n")
+	assert(found(t, "One. Tw|o. Three.", "s", true) == "Two. ")
+	assert(found(t, "f(a|)", "z", false) == nil, "an unknown key finds nothing")
+end)
+
+test("pair gives what surround wraps in, spaced inside for Vim's opening brackets", function()
+	local function wraps(char: string, spaced: boolean?): string
+		local open, close = require("@core").objects.pair(char, spaced)
+		return open .. "x" .. close
+	end
+	assert(wraps("(") == "(x)")
+	assert(wraps("(", true) == "( x )")
+	assert(wraps(")", true) == "(x)")
+	assert(wraps("<", true) == "<x>")
+	assert(wraps("*", true) == "*x*")
 end)

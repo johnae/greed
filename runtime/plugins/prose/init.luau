@@ -16,10 +16,6 @@ type Range = greed.Range
 
 local each_range, point = core.motions.each_range, core.motions.point
 
-local function blank(buffer: Buffer, line: number): boolean
-	return string.match(buffer:line_text(line), "^%s*$") ~= nil
-end
-
 -- Where `line` ends, including its line break.
 local function after_line(buffer: Buffer, line: number): number
 	if line + 1 < buffer:line_count() then
@@ -28,48 +24,14 @@ local function after_line(buffer: Buffer, line: number): number
 	return buffer:len()
 end
 
--- The first and last line of the paragraph around `line`, or of the run
--- of blank lines it's in.
-local function paragraph(buffer: Buffer, line: number): (number, number)
-	local is_blank = blank(buffer, line)
-	local first, last = line, line
-	while first > 0 and blank(buffer, first - 1) == is_blank do
-		first -= 1
-	end
-	while last + 1 < buffer:line_count() and blank(buffer, last + 1) == is_blank do
-		last += 1
-	end
-	return first, last
-end
+local blank, paragraph = core.objects.blank, core.objects.paragraph
 
-local function select_paragraph(buffer: Buffer, range: Range, around: boolean): Range
-	local first, last = paragraph(buffer, buffer:line_of(range.head))
-	if not around then
-		return { anchor = buffer:line_start(first), head = buffer:line_end(last) }
+-- Selects `core.objects.find`'s object for `key` at the selection's head.
+local function object(key: string): (Buffer, Range, boolean) -> Range
+	return function(buffer, range, around)
+		local from, to = core.objects.find(buffer, range.head, key, around)
+		return if from and to then { anchor = from, head = to } else range
 	end
-	local stop = after_line(buffer, last)
-	if last + 1 < buffer:line_count() and blank(buffer, last + 1) then
-		local _, blanks_end = paragraph(buffer, last + 1)
-		stop = after_line(buffer, blanks_end)
-	end
-	return { anchor = buffer:line_start(first), head = stop }
-end
-
--- Skips spaces and tabs from `pos`.
-local function skip_spaces(buffer: Buffer, pos: number): number
-	while pos < buffer:len() do
-		local ch = buffer:char_at(pos)
-		if ch ~= " " and ch ~= "\t" then
-			break
-		end
-		pos = buffer:next_char(pos)
-	end
-	return pos
-end
-
-local function select_sentence(buffer: Buffer, range: Range, around: boolean): Range
-	local from, to = buffer:sentence(range.head)
-	return { anchor = from, head = if around then skip_spaces(buffer, to) else to }
 end
 
 -- Heading levels by line, leaving out lines in code blocks.
@@ -184,13 +146,13 @@ text_object(
 	"paragraph",
 	"Select the paragraph",
 	"Select the paragraph and the blank lines after it",
-	select_paragraph
+	object("p")
 )
 text_object(
 	"sentence",
 	"Select the sentence",
 	"Select the sentence and the spaces after it",
-	select_sentence
+	object("s")
 )
 text_object(
 	"section",

@@ -547,64 +547,9 @@ local function motion_range(
 	return from, to, false
 end
 
--- The word around `pos`, with the spaces after it for "a word". A WORD
--- (`big`) takes punctuation in too.
-local function word_object(
-	buffer: Buffer,
-	pos: number,
-	around: boolean,
-	big: boolean?
-): (number, number)
-	local function kind(p: number): string
-		local of = class(buffer:char_at(p))
-		return if big and of == "punct" then "word" else of
-	end
-	local of = kind(pos)
-	local from, to = pos, pos
-	while from > 0 and kind(buffer:prev_char(from)) == of do
-		from = buffer:prev_char(from)
-	end
-	local len = buffer:len()
-	while to < len and kind(to) == of do
-		to = buffer:next_char(to)
-	end
-	if around then
-		while to < len and class(buffer:char_at(to)) == "space" do
-			to = buffer:next_char(to)
-		end
-	end
-	return from, to
-end
-
--- The lines of the paragraph around `pos`, and for "a paragraph" the blank
--- lines after it, as `from, to` for a linewise range.
-local function paragraph_object(buffer: Buffer, pos: number, around: boolean): (number, number)
-	local function blank(line: number): boolean
-		return buffer:line_end(line) == buffer:line_start(line)
-	end
-	local last_line = buffer:line_count() - 1
-	local line = buffer:line_of(pos)
-	local is_blank = blank(line)
-	local first, last = line, line
-	while first > 0 and blank(first - 1) == is_blank do
-		first -= 1
-	end
-	while last < last_line and blank(last + 1) == is_blank do
-		last += 1
-	end
-	if around then
-		while last < last_line and blank(last + 1) ~= is_blank do
-			last += 1
-		end
-	end
-	return buffer:line_start(first), buffer:line_start(last)
-end
-
-local BRACKETS = { b = "(", B = "{" }
-
--- Objects from the syntax tree: functions, arguments and comments (`t` is
--- left out, since Vim users expect a tag there).
-local SYNTAX_OBJECTS = { f = "function", a = "parameter", c = "comment" }
+-- Vim's keys for text objects core names differently: b and B for ( and
+-- {, t for a tag.
+local OBJECT_KEYS = { b = "(", B = "{", t = "x" }
 
 -- The text object for `key` around `pos` ("w", "(", '"', "p", ...), inside
 -- it or around it: `from, to, linewise`, or nil.
@@ -614,67 +559,14 @@ local function text_object(
 	key: string,
 	around: boolean
 ): (number?, number?, boolean)
-	if key == "w" or key == "W" then
-		local from, to = word_object(buffer, pos, around, key == "W")
-		return from, to, false
-	elseif key == "p" then
-		local first, last = paragraph_object(buffer, pos, around)
-		return motion_range(buffer, first, last, "line")
-	elseif key == "s" then
-		local from, to = buffer:sentence(pos)
-		-- a sentence takes the blanks after it too.
-		while around and to < buffer:len() and class(buffer:char_at(to)) == "space" do
-			to = buffer:next_char(to)
-		end
-		return from, to, false
-	elseif SYNTAX_OBJECTS[key] then
-		local range =
-			core.syntax.select(buffer, { anchor = pos, head = pos }, SYNTAX_OBJECTS[key], around)
-		if range == nil then
-			return nil, nil, false
-		end
-		return range.anchor, range.head, false
+	return core.objects.find(buffer, pos, OBJECT_KEYS[key] or key, around, { vim = true })
+end
+
+local function select_word(ctx: greed.Context)
+	local from, to = text_object(ctx.buffer, cursor(ctx), "w", false)
+	if from and to then
+		ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
 	end
-	if key == "t" then
-		local from, to = core.objects.tag(buffer, pos, around)
-		return from, to, false
-	elseif key == "i" then
-		local from, to = core.objects.indent(buffer, pos, around)
-		return motion_range(buffer, from, math.max(from, to - 1), "line")
-	elseif key == "d" then
-		local from, to = core.objects.number(buffer, pos, around)
-		return from, to, false
-	elseif key == "n" or key == "l" then
-		-- The next or last pair: c i n ( changes inside the next parens.
-		local open, close = core.objects.next_pair(buffer, pos, greed.next_key(), key == "l")
-		if open == nil or close == nil then
-			return nil, nil, false
-		end
-		if around then
-			return open, buffer:next_char(close), false
-		end
-		return buffer:next_char(open), close, false
-	end
-	local open, close = core.objects.around(buffer, pos, BRACKETS[key] or key)
-	if open == nil and (key == '"' or key == "'" or key == "`") then
-		-- Before the quotes on a line, Vim takes the next pair on it.
-		local _, _, finish = line_bounds(buffer, pos)
-		local at = pos
-		while at < finish and buffer:char_at(at) ~= key do
-			at = buffer:next_char(at)
-		end
-		if at < finish then
-			open, close = core.objects.around(buffer, at, key)
-		end
-	end
-	if open == nil or close == nil then
-		return nil, nil, false
-	end
-	local first, last = open :: number, close :: number
-	if around then
-		return first, buffer:next_char(last), false
-	end
-	return buffer:next_char(first), last, false
 end
 
 -- Operators ---------------------------------------------------------------
@@ -807,28 +699,14 @@ local function store(op: string, text: string, linewise: boolean)
 	end
 end
 
--- What ys and visual S wrap text in for each key, as vim-surround has it:
--- an opening bracket adds spaces inside, a closing one doesn't, and b B r a
--- stand for ( { [ <. Any other character goes on both sides.
-local SURROUND: { [string]: { string } } = {
-	["("] = { "( ", " )" },
-	[")"] = { "(", ")" },
-	b = { "(", ")" },
-	["["] = { "[ ", " ]" },
-	["]"] = { "[", "]" },
-	r = { "[", "]" },
-	["{"] = { "{ ", " }" },
-	["}"] = { "{", "}" },
-	B = { "{", "}" },
-	["<"] = { "<", ">" },
-	[">"] = { "<", ">" },
-	a = { "<", ">" },
-}
--- The brackets b B r a stand for in ds and cs.
-local PAIR_ALIASES: { [string]: string } = { b = "(", B = "{", r = "[", a = "<" }
+-- vim-surround's keys for brackets: b B r a stand for ( { [ <.
+local PAIR_KEYS: { [string]: string } = { b = "(", B = "{", r = "[", a = "<" }
 
-local function pair_for(char: string): { string }
-	return SURROUND[char] or { char, char }
+-- What ys, cs and visual S wrap text in for `char`: as vim-surround has
+-- it, an opening bracket adds spaces inside, and a closing one or a letter
+-- standing for one doesn't. Any other character goes on both sides.
+local function pair_for(char: string): (string, string)
+	return core.objects.pair(PAIR_KEYS[char] or char, PAIR_KEYS[char] == nil)
 end
 
 -- Wraps `from`..`to` in the pair for the key typed next; whole lines wrap
@@ -846,11 +724,11 @@ local function surround(ctx: greed.Context, from: number, to: number, linewise: 
 		from, to =
 			core.text.first_non_blank(buffer, buffer:line_start(first)), buffer:line_end(last)
 	end
-	local pair = pair_for(char)
+	local open, close = pair_for(char)
 	local start, finish = from, to :: number
 	buffer:edit(function(e)
-		e:insert(start, pair[1])
-		e:insert(finish, pair[2])
+		e:insert(start, open)
+		e:insert(finish, close)
 	end)
 	ctx.view:set_cursor(from)
 end
@@ -960,15 +838,18 @@ local function operate(ctx: greed.Context, op: string)
 	if (op == "d" or op == "c") and key == "s" then
 		local char = greed.next_key()
 		local with = if op == "c" then greed.next_key() else nil
-		local open, close = core.objects.around(buffer, pos, PAIR_ALIASES[char] or char)
+		local open, close = core.objects.around(buffer, pos, PAIR_KEYS[char] or char)
 		if open == nil or close == nil then
 			return
 		end
-		local pair = if with then pair_for(with) else { "", "" }
+		local new_open, new_close = "", ""
+		if with then
+			new_open, new_close = pair_for(with)
+		end
 		local start, finish = open :: number, close :: number
 		buffer:edit(function(e)
-			e:replace(start, buffer:next_char(start), pair[1])
-			e:replace(finish, buffer:next_char(finish), pair[2])
+			e:replace(start, buffer:next_char(start), new_open)
+			e:replace(finish, buffer:next_char(finish), new_close)
 		end)
 		ctx.view:set_cursor(on_char(buffer, start))
 		return
@@ -1636,8 +1517,7 @@ end)
 -- I A act on every selection, and esc goes back to one cursor.
 command("multi-next", "Select the word under the cursor, or add its next match", function(ctx)
 	if greed.mode.get() ~= "vim-multi" then
-		local from, to = word_object(ctx.buffer, cursor(ctx), false)
-		ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+		select_word(ctx)
 		greed.run("search-selection")
 		greed.mode.set("vim-multi")
 		return
@@ -2048,8 +1928,7 @@ for _, back in { false, true } do
 		if back then "search-word-back" else "search-word",
 		"Search for the word under the cursor",
 		function(ctx)
-			local from, to = word_object(ctx.buffer, cursor(ctx), false)
-			ctx.view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+			select_word(ctx)
 			greed.run("search-selection")
 			greed.run(if back then "search-prev" else "search-next")
 			local range = ctx.view:selection().ranges[1]
