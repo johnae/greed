@@ -7,6 +7,7 @@
 -- edits made since.
 
 local greed = require("@greed")
+local commands = require("./commands")
 local span = require("./text").span
 
 -- At most this many selections are kept for each view.
@@ -28,25 +29,8 @@ local next_id = 0
 
 -- Commands that don't add to the history: these two, and typing, whose
 -- cursors would fill it one character at a time.
-local IGNORED: { [string]: boolean } = {}
-for _, name in
-	{
-		"selection-undo",
-		"selection-redo",
-		"insert-char",
-		"insert-newline",
-		"insert-tab",
-		"delete-back",
-		"delete-forward",
-		"type-char",
-		"type-newline",
-		"type-tab",
-		"erase-back",
-		"erase-forward",
-		"vim-replace-typed",
-	}
-do
-	IGNORED[name] = true
+local function ignored(name: string): boolean
+	return name == "selection-undo" or name == "selection-redo" or commands.has(name, "typing")
 end
 
 local function namespace(view: greed.View): string
@@ -142,7 +126,7 @@ end
 -- Before each command, the selection it starts from is kept. A command
 -- after going back drops what was ahead.
 greed.on("command.run", function(event: greed.CommandRun)
-	if IGNORED[event.name] then
+	if ignored(event.name) then
 		return
 	end
 	local view = greed.view()

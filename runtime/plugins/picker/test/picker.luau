@@ -414,3 +414,51 @@ test("alt-. in a picker lists the actions for the current item", function(t)
 	t:keys("r u n enter")
 	t:expect("x|")
 end)
+
+test("a picker whose view closes some other way is cancelled, its preview too", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	greed.mode.set("select")
+	local cancelled, chosen = 0, 0
+	local items = { { label = "one", value = "first" } }
+	local function open()
+		picker.pick("Things", items, function()
+			chosen += 1
+		end, {
+			preview = function(item)
+				return { text = item.value }
+			end,
+			on_cancel = function()
+				cancelled += 1
+			end,
+		})
+	end
+	open()
+	t:expect_mode("insert")
+	greed.view():close()
+	t:wait(0)
+	t:expect_mode("select")
+	assert(cancelled == 1 and #t:floats() == 0, `cancelled {cancelled}, {#t:floats()} floats`)
+	t:run("picker-choose")
+	assert(chosen == 0 and cancelled == 1, "nothing left open")
+	-- Choosing isn't cancelling; another picker opening is.
+	open()
+	t:keys("enter")
+	assert(chosen == 1 and cancelled == 1)
+	open()
+	open()
+	assert(cancelled == 2)
+	t:keys("esc")
+	assert(cancelled == 3)
+	t:expect_mode("select")
+end)
+
+test("esc closes a picker in a style no plugin names", function(t)
+	local core = require("@core")
+	t:buffer("a|bc")
+	core.style.define({ name = "mine", doc = "Mine", mode = "mine" })
+	core.style.set("mine")
+	t:run("command-palette")
+	greed.mode.set("mine")
+	assert(greed.keymap.resolve("esc") == "picker-close")
+end)

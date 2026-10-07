@@ -281,14 +281,12 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	end
 end)
 
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "hunk-picker" }, {
-		space = "hunk-picker-toggle",
-		a = "hunk-picker-all",
-		enter = "hunk-picker-done",
-		q = "hunk-picker-cancel",
-		esc = "hunk-picker-cancel",
-	})
-end
+greed.keymap.bind({ mode = "normal", kind = "hunk-picker" }, {
+	space = "hunk-picker-toggle",
+	a = "hunk-picker-all",
+	enter = "hunk-picker-done",
+	q = "hunk-picker-cancel",
+	esc = "hunk-picker-cancel",
+})
 
 return M

@@ -16,6 +16,7 @@
 -- installed; the languages plugin says which (see `:health`).
 
 local greed = require("@greed")
+local core = require("@core")
 local picker = require("@picker")
 local common = require("@self/common")
 local marks = require("@self/marks")
@@ -56,20 +57,13 @@ local function without_fences(text: string): string
 	return table.concat(kept, "\n")
 end
 
-local shown: greed.View? = nil
-
-local function close_info()
-	if shown then
-		shown:close()
-		shown = nil
-	end
-end
-
 local function show_info(title: string, text: string)
-	close_info()
 	local lines = string.split(text, "\n")
-	local buffer = greed.create_buffer("info", text)
-	shown = greed.float(buffer, { title = title, width = "70%", height = math.min(#lines + 2, 20) })
+	core.floats.show_text(
+		title,
+		text,
+		{ kind = "info", width = "70%", height = math.min(#lines + 2, 20) }
+	)
 end
 
 greed.command({
@@ -236,12 +230,6 @@ greed.command({
 	end,
 })
 
-greed.command({
-	name = "info-close",
-	doc = "Close the hover window",
-	run = close_info,
-})
-
 -- A server asking you to pick, e.g. "Reload the project?" with buttons:
 -- the actions show in a picker titled with its message, and the server
 -- hears which one you chose, or nothing if you closed it.
@@ -259,7 +247,6 @@ greed.lsp.on_request("window/showMessageRequest", function(params)
 	return if item then item.value else nil
 end)
 
-greed.keymap.bind({ mode = "normal", kind = "info" }, { esc = "info-close", q = "info-close" })
 greed.keymap.bind("normal", {
 	["space k"] = "hover",
 	["g d"] = "goto-definition",
@@ -298,7 +285,7 @@ greed.on("option.changed", function(event)
 end)
 
 -- Symbols and problems, as things to act on.
-local actions = require("@core").actions
+local actions = core.actions
 
 actions.finder({
 	name = "symbol",

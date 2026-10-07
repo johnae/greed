@@ -13,7 +13,8 @@
 -- Keys come from greed.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
 
 local greed = require("@greed")
-local registry = require("@core").registry
+local core = require("@core")
+local registry = core.registry
 local sse = require("@self/sse")
 local turn = require("@self/turn")
 local login = require("@self/login")
@@ -463,16 +464,6 @@ function M.ask(role: string, request: Request): (string?, string?)
 	end
 end
 
--- The list of roles while it's shown.
-local shown: greed.View? = nil
-
-local function close()
-	if shown then
-		shown:close()
-		shown = nil
-	end
-end
-
 --- One line per role: its model and provider, and whether the key is found.
 function M.describe(): { string }
 	local names = {}
@@ -507,17 +498,12 @@ greed.command({
 	name = "models",
 	doc = "Show which provider and model plays each role, and whether its key is found",
 	run = function()
-		close()
-		local buffer =
-			greed.create_buffer("models", table.concat(M.describe(), "\n"), { readonly = true })
-		shown = greed.float(buffer, { title = "Models by role", width = "80%", height = "40%" })
+		core.floats.show_text(
+			"Models by role",
+			table.concat(M.describe(), "\n"),
+			{ kind = "models", height = "40%" }
+		)
 	end,
-})
-
-greed.command({
-	name = "models-close",
-	doc = "Close the list of models",
-	run = close,
 })
 
 -- The login named on the command line, or the only one there is.
@@ -585,10 +571,5 @@ greed.command({
 		end
 	end,
 })
-
-greed.keymap.bind(
-	{ mode = "normal", kind = "models" },
-	{ q = "models-close", esc = "models-close" }
-)
 
 return M

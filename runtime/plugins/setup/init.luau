@@ -9,18 +9,13 @@
 -- what's picked is the text itself.
 
 local greed = require("@greed")
+local core = require("@core")
 local markdown = require("@markdown")
 local picker = require("@picker")
 local theme = require("@theme")
 local types = require("@self/types")
 
 local M = {}
-
-local STYLES = {
-	{ "Helix: select first, then act (`w` then `d`)", "helix" },
-	{ "Vim: say what, then where (`d w`)", "vim" },
-	{ "No modes: typing types, like VS Code", "edit" },
-}
 
 local QUESTIONS = {
 	style = "How do you like to edit?",
@@ -39,8 +34,8 @@ end
 local function text(): string
 	local style = greed.option.get("editing-style")
 	local styles = {}
-	for _, s in STYLES do
-		table.insert(styles, choice(style == s[2], s[1]))
+	for _, s in core.style.list() do
+		table.insert(styles, choice(style == s.name, s.doc))
 	end
 	local icons = greed.option.get("tree-icons") == "nerd"
 	return table.concat({
@@ -83,11 +78,11 @@ local function picked(buffer: greed.Buffer, question: string): string?
 	return nil
 end
 
--- The editing style a choice's text names.
+-- The editing style a choice's text is the doc of.
 local function style_of(text: string?): string?
-	for _, s in STYLES do
-		if s[1] == text then
-			return s[2]
+	for _, s in core.style.list() do
+		if s.doc == text then
+			return s.name
 		end
 	end
 	return nil

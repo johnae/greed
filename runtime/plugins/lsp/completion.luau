@@ -18,12 +18,8 @@ greed.option.define({
 	default = 150,
 })
 
--- The modes completion works in, and what an unbound key does in each.
-local TYPING: { [string]: string } = {
-	insert = "insert-char",
-	["vim-insert"] = "insert-char",
-	edit = "type-char",
-}
+-- The modes completion works in: every style's typing modes.
+local TYPING: { [string]: boolean } = {}
 
 -- At most this many items are listed.
 local SHOWN = 10
@@ -33,7 +29,7 @@ type Item = { label: string, detail: string?, text: string, from: number? }
 type Open = {
 	view: greed.View,
 	buffer: greed.Buffer,
-	menu: greed.View,
+	float: core.TypingFloat,
 	-- Every item the server sent, and the ones matching what's typed.
 	items: { Item },
 	matches: { number },
@@ -97,14 +93,8 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 end
 
 local function close()
-	local o = open
-	if o == nil then
-		return
-	end
-	open = nil
-	o.menu:close()
-	if greed.mode.get() == `completion-{o.mode}` then
-		greed.mode.set(o.mode)
+	if open then
+		open.float.close()
 	end
 end
 
@@ -133,7 +123,7 @@ local function render(o: Open)
 		table.insert(lines, line)
 		from += #line + 1
 	end
-	local buffer = o.menu:buffer()
+	local buffer = o.float.buffer
 	buffer:edit(function(e)
 		e:replace(0, buffer:len(), table.concat(lines, "\n"))
 	end)
@@ -142,7 +132,7 @@ local function render(o: Open)
 	for _, line in lines do
 		longest = math.max(longest, utf8.len(line) or #line)
 	end
-	o.menu:configure({ width = longest + 3, height = #lines + 2 })
+	o.float.view:configure({ width = longest + 3, height = #lines + 2 })
 end
 
 -- Narrows the items to what's typed now, closing the menu when nothing's left.
@@ -164,24 +154,35 @@ end
 -- Opens the menu at the cursor in `view` with what of `items` matches the
 -- word being typed. Returns whether anything did.
 local function show(view: greed.View, items: { Item }): boolean
-	local mode = greed.mode.get()
 	local buffer = view:buffer()
 	if #items == 0 then
 		return false
 	end
 	close()
+	local mode = greed.mode.get()
 	local start = word_start(buffer, view:cursor())
 	for _, item in items do
 		if item.from then
 			start = math.min(start, item.from)
 		end
 	end
-	local list = greed.create_buffer("completion", "", { readonly = true })
-	local float = greed.float(list, { anchor = "cursor", width = 20, height = 3, focus = false })
-	local o: Open = {
+	local o: Open
+	local float = core.floats.typing(
+		greed.create_buffer("completion", "", { readonly = true }),
+		{ anchor = "cursor", width = 20, height = 3, focus = false },
+		{
+			mode = `completion-{mode}`,
+			on_close = function()
+				if open == o then
+					open = nil
+				end
+			end,
+		}
+	)
+	o = {
 		view = view,
 		buffer = buffer,
-		menu = float,
+		float = float,
 		items = items,
 		matches = {},
 		current = 1,
@@ -189,7 +190,6 @@ local function show(view: greed.View, items: { Item }): boolean
 		mode = mode,
 	}
 	open = o
-	greed.mode.set(`completion-{mode}`)
 	refresh(o)
 	return open ~= nil
 end
@@ -375,15 +375,17 @@ local KEYS = {
 	esc = "completion-close",
 }
 
-for mode, fallback in TYPING do
+-- The menu's mode keeps the typing mode's keys, and what it does with
+-- an unbound key.
+core.style.each_typing(function(mode)
+	TYPING[mode] = true
 	local completing = `completion-{mode}`
 	greed.keymap.inherit(completing, mode)
 	greed.keymap.bind(completing, KEYS)
-	greed.keymap.fallback(completing, fallback)
-	greed.mode.set_cursor(completing, "bar")
+	greed.mode.set_cursor(completing, greed.mode.cursor_of(mode))
 	core.style.show_as(completing, mode)
 	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
-end
+end)
 -- Helix's own key for it; edit mode keeps ctrl-x for cut.
 greed.keymap.bind("insert", { ["ctrl-x"] = "completion-ask" })
 

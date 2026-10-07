@@ -48,3 +48,96 @@ test("a float doesn't shrink below its smallest size", function()
 	local box = floats.dragged({ x = 5, y = 5, width = 20, height = 6 }, "left", 30, 0)
 	assert(box.width == floats.min_width and box.x == 15, `{box.x} {box.width}`)
 end)
+
+local floats = require("@core").floats
+
+-- A typing float over the buffer, and what it heard.
+local function typing(t: test.TestContext, spec: greed.FloatSpec?, mode: string?)
+	t:buffer("|x")
+	local heard = { changes = 0, closes = 0 }
+	local float =
+		floats.typing(greed.create_buffer("scratch", ""), spec or { width = 20, height = 3 }, {
+			mode = mode,
+			on_change = function()
+				heard.changes += 1
+			end,
+			on_close = function()
+				heard.closes += 1
+			end,
+		})
+	return float, heard
+end
+
+test("a typing float types in insert mode and comes back when closed", function(t)
+	local main = greed.view()
+	local float, heard = typing(t)
+	t:expect_mode("insert")
+	assert(greed.view() == float.view, "focused")
+	t:keys("a b")
+	assert(float.buffer:text() == "ab" and heard.changes == 2, `{heard.changes} changes`)
+	float.close()
+	float.close()
+	t:expect_mode("normal")
+	assert(greed.view() == main, "focus is back")
+	assert(heard.closes == 1 and not float.is_open(), "closed once")
+end)
+
+test("a typing float closed some other way still comes back and says so", function(t)
+	local float, heard = typing(t)
+	float.view:close()
+	t:wait(0)
+	t:expect_mode("normal")
+	assert(heard.closes == 1 and not float.is_open())
+	float.close()
+	assert(heard.closes == 1, "closing again does nothing")
+end)
+
+test("a typing float comes back to the mode for wherever focus ends up", function(t)
+	t:buffer("|x")
+	greed.mode.set("select")
+	local float = floats.typing(greed.create_buffer("scratch", ""), { width = 20, height = 3 })
+	local other = greed.float(greed.create_buffer("scratch", ""), { width = 20, height = 3 })
+	float.close()
+	assert(greed.view() == other)
+	t:expect_mode("normal")
+end)
+
+test("a typing float without focus comes back only from its own mode", function(t)
+	t:buffer("|x")
+	t:keys("i")
+	local float = floats.typing(
+		greed.create_buffer("scratch", ""),
+		{ width = 20, height = 3, focus = false },
+		{
+			mode = "test-menu",
+		}
+	)
+	t:expect_mode("test-menu")
+	float.close()
+	t:expect_mode("insert")
+	local again = floats.typing(
+		greed.create_buffer("scratch", ""),
+		{ width = 20, height = 3, focus = false },
+		{
+			mode = "test-menu",
+		}
+	)
+	greed.mode.set("normal")
+	again.close()
+	t:expect_mode("normal")
+end)
+
+test("text to read shows in a float that esc or q closes, one per kind", function(t)
+	t:buffer("|x")
+	local first = floats.show_text("One", "first", { kind = "test-info" })
+	assert(greed.view() == first and first:buffer():text() == "first")
+	local second = floats.show_text("Two", "second", { kind = "test-info" })
+	assert(not first:valid(), "the one before of its kind closed")
+	assert(second:buffer():readonly(), "it can't be changed")
+	t:keys("esc")
+	assert(not second:valid(), "esc closes it")
+	greed.option.set("editing-style", "vim")
+	local third = floats.show_text("Three", "third")
+	t:keys("q")
+	assert(not third:valid(), "q closes it in another style")
+end)

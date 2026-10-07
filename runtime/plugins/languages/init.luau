@@ -11,8 +11,8 @@
 
 local greed = require("@greed")
 local defaults = require("@self/languages")
-local comment = require("@core").comment
-local indent = require("@core").indent
+local core = require("@core")
+local comment, indent = core.comment, core.indent
 local query_files = require("@self/query_files")
 local grammars = require("@self/grammars")
 
@@ -129,15 +129,6 @@ greed.command({
 
 -- `:health` --------------------------------------------------------------
 
-local shown: greed.View? = nil
-
-local function close_health()
-	if shown then
-		shown:close()
-		shown = nil
-	end
-end
-
 -- One line per language: its grammar, then each server, found or missing.
 local function health_report(): (string, { greed.Mark })
 	local have = {}
@@ -184,26 +175,13 @@ greed.command({
 	name = "health",
 	doc = "Show each language's highlighting and servers, and which are installed",
 	run = function()
-		close_health()
 		local text, marks = health_report()
-		local buffer = greed.create_buffer("health", text, { readonly = true })
-		buffer:decorate("health", marks)
-		shown = greed.float(
-			buffer,
-			{ title = "Health: found servers in green", width = "80%", height = "80%" }
+		core.floats.show_text(
+			"Health: found servers in green",
+			text,
+			{ kind = "health", marks = marks, height = "80%" }
 		)
 	end,
 })
-
-greed.command({
-	name = "health-close",
-	doc = "Close the health report",
-	run = close_health,
-})
-
-greed.keymap.bind(
-	{ mode = "normal", kind = "health" },
-	{ esc = "health-close", q = "health-close" }
-)
 
 return M

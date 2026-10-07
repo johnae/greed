@@ -140,13 +140,24 @@ take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
 "normal", { "space", ":" })` lets a new mode use some of normal mode's
 keys, which is how a whole editing style is built; see [Editing
-styles](editing-styles.md#making-your-own); `greed.keymap.inherit_kinds(mode,
-"normal")` gives it the keys plugins bind for panels like the file tree.
+styles](editing-styles.md#making-your-own).
 `greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for
 macros and the like; several recordings can run at once. `greed.keymap.fallback(mode,
-command)` runs a command for any single key nothing else takes, and
+command)` runs a command for any single key nothing else takes (a mode
+inheriting all of another's keys uses that one's), and
 `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
 the way a terminal takes every key.
+
+Keys for a kind of buffer bound in normal mode work in every editing
+style, so a panel binds them once, with `{ mode = "normal", kind = "tree" }`.
+Rather than naming other styles' modes, ask `core.style`:
+`is_typing()` says whether the current mode types (insert, Vim's insert,
+edit mode), and `each_typing(function(mode) ... end)` calls back with
+every style's typing modes, including styles added later, for keys that
+should work wherever you type. Commands can carry tags others check:
+`core.commands.tag("typing", { "my-type-char" })` keeps them out of the
+selection history and in one undo step in edit mode, and `"no-repeat"`
+leaves them out of what `.` repeats.
 
 ### Actions on things
 
@@ -518,7 +529,14 @@ greed.tab.set_layout({
   three wait, like `greed.sleep`.
 - Floats show a buffer over the main view, and panels beside it:
   `greed.float(buffer, { title = "Info", width = "60%" })`,
-  `greed.panel(buffer, { side = "right", width = 40 })`.
+  `greed.panel(buffer, { side = "right", width = 40 })`. For text to read,
+  `core.floats.show_text(title, text, { kind = "my-info" })` opens a
+  read-only float that `esc` or `q` closes, replacing the one before of
+  that kind. For a float to type in, like your own prompt,
+  `core.floats.typing(buffer, spec, { on_change = ..., on_close = ... })`
+  switches to insert mode and puts the mode and focus back however the
+  float closes, whether by its `close()` or by closing its view; it's what
+  the prompt, pickers, the command line and the completion menu use.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes

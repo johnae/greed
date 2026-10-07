@@ -452,12 +452,14 @@ impl Keymap {
 
     /// Makes `mode` use `parent`'s bindings for each buffer kind ahead of its
     /// own for every buffer, so keys a plugin binds for a panel in one mode
-    /// work in another style's mode too, until `owner` is removed.
+    /// work in another style's mode too, until `owner` is removed. Asking
+    /// again for the same owner changes nothing.
     pub fn inherit_kinds(&mut self, mode: &str, parent: &str, owner: impl Into<PluginId>) {
-        self.kind_parents
-            .entry(mode.into())
-            .or_default()
-            .push((parent.into(), owner.into()));
+        let entry = (parent.into(), owner.into());
+        let parents = self.kind_parents.entry(mode.into()).or_default();
+        if !parents.contains(&entry) {
+            parents.push(entry);
+        }
     }
 
     /// The layers that apply in `mode` for a buffer of `kind`, most specific
@@ -540,8 +542,25 @@ impl Keymap {
             });
     }
 
+    /// The command that handles an unbound key in `mode`: its own, or else
+    /// that of a mode it inherits every key from.
     pub fn fallback(&self, mode: &str) -> Option<&Arc<str>> {
-        self.fallbacks.get(mode)?.last().map(|b| &b.command)
+        self.fallback_within(mode, 0)
+    }
+
+    fn fallback_within(&self, mode: &str, depth: usize) -> Option<&Arc<str>> {
+        if let Some(binding) = self.fallbacks.get(mode).and_then(|b| b.last()) {
+            return Some(&binding.command);
+        }
+        // Modes can inherit from each other in a loop.
+        if depth > 8 {
+            return None;
+        }
+        self.inherits
+            .get(mode)?
+            .iter()
+            .filter(|inherit| inherit.prefixes.is_empty())
+            .find_map(|inherit| self.fallback_within(&inherit.parent, depth + 1))
     }
 
     /// Makes digits typed before a key sequence in `mode` a count for the

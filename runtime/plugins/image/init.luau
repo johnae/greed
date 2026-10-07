@@ -142,15 +142,14 @@ greed.command({
 	end,
 })
 
--- The buffer is read-only, so even modeless editing can have these keys.
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "image" }, {
-		["+"] = "image-zoom-in",
-		["-"] = "image-zoom-out",
-		["="] = "image-zoom-fit",
-		["0"] = "image-zoom-actual",
-	})
-end
+-- Bound for normal mode, these work in every style; the buffer is read-only,
+-- so even modeless editing can have them.
+greed.keymap.bind({ mode = "normal", kind = "image" }, {
+	["+"] = "image-zoom-in",
+	["-"] = "image-zoom-out",
+	["="] = "image-zoom-fit",
+	["0"] = "image-zoom-actual",
+})
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local path = event.buffer:path()

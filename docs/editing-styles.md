@@ -181,17 +181,21 @@ local greed = require("@greed")
 
 greed.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
 greed.keymap.inherit("mine", "normal", { "space", ":" })
--- The file tree, help and other panels keep their keys.
-greed.keymap.inherit_kinds("mine", "normal")
 
 require("@core").style.define({
 	name = "mine",
 	doc = "My own keys",
 	mode = "mine",
+	-- The modes that type; insert-mode goes to Helix's insert mode.
+	typing = { "insert" },
 })
 ```
 
 `esc` in insert mode comes back to the style's mode, and `:style mine`
-switches to it. `.` works in any style: it types the keys of the last
-change again; `require("@core").again.ignore({ "my-undo" })` leaves out
-commands that shouldn't count as one. The Vim plugin in `runtime/plugins/vim` is a full example.
+switches to it. The file tree, help and other panels keep their keys in
+it. Completion, signature help and Markdown shown as written while typing
+follow the modes in `typing`; a style without modes lists its own mode
+there. `.` works in any style: it types the keys of the last change
+again; `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves
+out commands that shouldn't count as one. The Vim plugin in
+`runtime/plugins/vim` is a full example.

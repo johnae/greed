@@ -1,8 +1,13 @@
 -- Floating views move and resize with the mouse: drag the top border (where
 -- the title is) to move one, an edge or a corner to resize it. Pressing on
 -- a float's border brings it to the front.
+--
+-- Also here, the two kinds of float plugins open most: one you type in,
+-- like a prompt or a picker (`typing`), and one showing some text to read
+-- (`show_text`).
 
 local greed = require("@greed")
+local style = require("./style")
 
 local M = {}
 
@@ -108,5 +113,150 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		dragging = nil
 	end
 end)
+
+--- A float being typed in, from `typing`.
+export type Typing = {
+	view: greed.View,
+	buffer: greed.Buffer,
+	--- Closes it, if it's still open.
+	close: () -> (),
+	--- Whether it's still open.
+	is_open: () -> boolean,
+}
+
+export type TypingOptions = {
+	--- The mode to type in while it's open; "insert" by default.
+	mode: string?,
+	--- Called after each change to the buffer.
+	on_change: (() -> ())?,
+	--- Called once it's closed, however that happened: by `close`, or by
+	--- closing its view some other way. The mode is back by then.
+	on_close: (() -> ())?,
+}
+
+--- Opens `buffer` in a float (see `greed.float` for `spec`) to type in,
+--- like a prompt or a picker, and switches to `options.mode`. However it
+--- closes, the mode goes back: to the one it was opened from if focus goes
+--- back there, otherwise to the one for the view focused then. A float
+--- with `focus = false`, like a completion menu over the text being typed,
+--- goes back only if the mode is still its own.
+function M.typing(buffer: greed.Buffer, spec: greed.FloatSpec, options: TypingOptions?): Typing
+	local opts: TypingOptions = options or {}
+	local mode = opts.mode or "insert"
+	local came_from, was = greed.view(), greed.mode.get()
+	local view = greed.float(buffer, spec)
+	local id = view:id()
+	local open = true
+
+	local function restore()
+		if spec.focus == false then
+			if greed.mode.get() == mode then
+				greed.mode.set(was)
+			end
+		elseif greed.view() == came_from then
+			greed.mode.set(was)
+		else
+			greed.mode.set(style.home_for(greed.view()))
+		end
+	end
+
+	local function changed(event: greed.BufferChanged)
+		if open and event.buffer == buffer and opts.on_change then
+			opts.on_change()
+		end
+	end
+	local closed: (event: greed.ViewClosed) -> ()
+	local function finish()
+		if not open then
+			return
+		end
+		open = false
+		greed.off("buffer.changed", changed)
+		greed.off("view.closed", closed)
+		restore()
+		if opts.on_close then
+			opts.on_close()
+		end
+	end
+	function closed(event: greed.ViewClosed)
+		if event.view == id then
+			finish()
+		end
+	end
+	greed.on("buffer.changed", changed)
+	greed.on("view.closed", closed)
+	greed.mode.set(mode)
+
+	return {
+		view = view,
+		buffer = buffer,
+		close = function()
+			if open then
+				-- It may have closed with the news yet to come.
+				if view:valid() then
+					view:close()
+				end
+				finish()
+			end
+		end,
+		is_open = function()
+			return open
+		end,
+	}
+end
+
+export type TextOptions = {
+	--- The buffer's kind, for keys of its own; "text" by default. Showing
+	--- text with a kind closes the float showing text of that kind before.
+	kind: string?,
+	--- The language to highlight the text as.
+	language: string?,
+	--- Marks to put on the text, e.g. styles for parts of it.
+	marks: { greed.Mark }?,
+	--- "80%" and "60%" of the screen by default.
+	width: (number | string)?,
+	height: (number | string)?,
+}
+
+-- The float last showing text of each kind.
+local showing: { [string]: greed.View } = {}
+
+greed.command({
+	name = "text-float-close",
+	doc = "Close the float showing text",
+	run = function(ctx)
+		if showing[ctx.buffer:kind()] == ctx.view then
+			ctx.view:close()
+		end
+	end,
+})
+
+--- Shows `text` in a float titled `title`, to read: it can't be changed,
+--- and esc or q closes it.
+---
+---     core.floats.show_text("Stalls", table.concat(lines, "\n"), { kind = "stalls" })
+function M.show_text(title: string, text: string, options: TextOptions?): greed.View
+	local opts: TextOptions = options or {}
+	local kind = opts.kind or "text"
+	local before = showing[kind]
+	if before == nil then
+		greed.keymap.bind(
+			{ mode = "normal", kind = kind },
+			{ esc = "text-float-close", q = "text-float-close" }
+		)
+	elseif before:valid() then
+		before:close()
+	end
+	local buffer = greed.create_buffer(kind, text, { readonly = true, language = opts.language })
+	if opts.marks then
+		buffer:decorate("text-float", opts.marks)
+	end
+	local view = greed.float(
+		buffer,
+		{ title = title, width = opts.width or "80%", height = opts.height or "60%" }
+	)
+	showing[kind] = view
+	return view
+end
 
 return M

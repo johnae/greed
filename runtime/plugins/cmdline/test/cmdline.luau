@@ -262,3 +262,29 @@ test("a yes-or-no option's value completes to true or false", function(t)
 	t:keys("tab")
 	assert(prompt(t) == ":set test-flag true", prompt(t))
 end)
+
+test("a command line whose view closes some other way leaves nothing behind", function(t)
+	local cmdline = require("@cmdline")
+	t:buffer("|abc")
+	local shown: { string } = {}
+	cmdline.completer("test-color", function()
+		return { { text = "red" }, { text = "blue" } }
+	end, function(name: string?)
+		table.insert(shown, name or "undone")
+	end)
+	greed.command({
+		name = "test-paint",
+		args = { { name = "color", complete = "test-color" } },
+		run = function() end,
+	})
+	t:keys(": t e s t - p a i n t space tab")
+	assert(shown[1] == "red", shown[1])
+	greed.view():close()
+	t:wait(0)
+	t:expect_mode("normal")
+	assert(shown[2] == "undone", "the preview is undone")
+	t:run("command-line-run")
+	assert(#shown == 2, "nothing left to run")
+	t:keys(": g o t o - e n d enter")
+	t:expect("abc|")
+end)

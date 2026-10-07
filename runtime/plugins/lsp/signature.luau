@@ -4,15 +4,9 @@
 -- The signature-help command asks for it, for a key in insert mode.
 
 local greed = require("@greed")
-
--- The modes signature help works in: typing, and typing with the
--- completion menu open.
-local function typing(mode: string): boolean
-	return mode == "insert"
-		or mode == "vim-insert"
-		or mode == "edit"
-		or string.match(mode, "^completion%-") ~= nil
-end
+-- Signature help works in typing modes, and with the completion menu open,
+-- whose modes show as the ones they came from.
+local typing = require("@core").style.is_typing
 
 type Open = { view: greed.View, list: greed.Buffer }
 

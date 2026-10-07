@@ -2071,7 +2071,11 @@ command("redo", "Redo", function(ctx)
 end)
 
 -- `.` is core's, which types the last change's keys again.
-core.again.ignore({ "vim-undo", "vim-redo", "vim-undo-line", "vim-macro", "vim-play-macro" })
+core.commands.tag(
+	"no-repeat",
+	{ "vim-undo", "vim-redo", "vim-undo-line", "vim-macro", "vim-play-macro" }
+)
+core.commands.tag("typing", { "vim-replace-typed" })
 core.search.start_at_match("vim")
 for _, name in
 	{
@@ -2089,8 +2093,6 @@ end
 
 -- Keys --------------------------------------------------------------------
 
--- Panels like the file tree and help keep their keys.
-greed.keymap.inherit_kinds("vim", "normal")
 -- Keys other plugins put in normal mode that work the same here: the
 -- space-leader keys, search, and going to definitions and problems.
 -- Plugins loaded later get them too.
@@ -2289,8 +2291,9 @@ greed.keymap.counts("vim-visual-block")
 
 core.style.define({
 	name = "vim",
-	doc = "Vim's operators and motions, with a visual mode",
+	doc = "Say what to do, then where: `d w`, `c i w` (Vim)",
 	mode = "vim",
+	typing = { "vim-insert" },
 	labels = {
 		vim = "normal",
 		["vim-insert"] = "insert",

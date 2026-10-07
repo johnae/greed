@@ -724,25 +724,24 @@ statusline.add("right", "agents", function()
 	return if text then { text = text, style = "ui.statusline.message" } else nil
 end, "position")
 
-for _, mode in { "normal", "vim" } do
-	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
-		enter = "agent-answer",
-		["ctrl-c"] = "agent-stop",
-		tab = "agent-fold",
-	})
-	greed.keymap.bind({ mode = mode, kind = "agents" }, {
-		enter = "agents-open",
-		n = "agent-new",
-		d = "agents-diff",
-		b = "agents-bring",
-		r = "agents-review",
-		s = "agent-stop",
-		x = "agents-close",
-		f = "agent-fork",
-		q = "buffer-close",
-	})
-end
-for _, mode in { "normal", "vim", "insert", "vim-insert", "edit" } do
+greed.keymap.bind({ mode = "normal", kind = "agent-transcript" }, {
+	enter = "agent-answer",
+	["ctrl-c"] = "agent-stop",
+	tab = "agent-fold",
+})
+greed.keymap.bind({ mode = "normal", kind = "agents" }, {
+	enter = "agents-open",
+	n = "agent-new",
+	d = "agents-diff",
+	b = "agents-bring",
+	r = "agents-review",
+	s = "agent-stop",
+	x = "agents-close",
+	f = "agent-fork",
+	q = "buffer-close",
+})
+-- These work while typing too, in every style.
+local function transcript_keys(mode: string)
 	greed.keymap.bind({ mode = mode, kind = "agent-transcript" }, {
 		["alt-enter"] = "agent-send",
 		["alt-p"] = "agent-answer",
@@ -750,6 +749,8 @@ for _, mode in { "normal", "vim", "insert", "vim-insert", "edit" } do
 		["alt-M"] = "agent-model",
 	})
 end
+transcript_keys("normal")
+core.style.each_typing(transcript_keys)
 greed.keymap.bind("normal", {
 	["space i n"] = "agent-new",
 	["space i o"] = "agents",

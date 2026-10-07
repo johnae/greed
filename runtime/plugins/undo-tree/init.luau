@@ -164,17 +164,15 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 	end
 end)
 
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "undo-tree" }, {
-		j = "undo-tree-down",
-		k = "undo-tree-up",
-		down = "undo-tree-down",
-		up = "undo-tree-up",
-		enter = "undo-tree-keep",
-		q = "undo-tree-keep",
-		esc = "undo-tree-cancel",
-	})
-end
+greed.keymap.bind({ mode = "normal", kind = "undo-tree" }, {
+	j = "undo-tree-down",
+	k = "undo-tree-up",
+	down = "undo-tree-down",
+	up = "undo-tree-up",
+	enter = "undo-tree-keep",
+	q = "undo-tree-keep",
+	esc = "undo-tree-cancel",
+})
 
 greed.keymap.bind("normal", { ["space u t"] = "undo-tree" })
 

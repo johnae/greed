@@ -2,6 +2,7 @@
 -- commands that ask for a bit of text. Enter accepts, esc cancels.
 
 local greed = require("@greed")
+local floats = require("./floats")
 local style = require("./style")
 
 export type Options = {
@@ -17,19 +18,16 @@ export type Options = {
 }
 
 type Open = {
-	view: greed.View,
-	buffer: greed.Buffer,
+	float: floats.Typing,
 	options: Options,
-	-- The mode to go back to.
-	mode: string,
-	-- Removes the handlers it listens with while it's open.
-	stop: () -> (),
+	-- What to do once it's closed; cancelling if nothing else.
+	finish: (() -> ())?,
 }
 
 local open: Open? = nil
 
 local function text(o: Open): string
-	return (string.gsub(o.buffer:text(), "\n", ""))
+	return (string.gsub(o.float.buffer:text(), "\n", ""))
 end
 
 -- Closes the prompt, then calls `finish` with its options and what was
@@ -40,11 +38,10 @@ local function close(finish: (options: Options, typed: string) -> ())
 		return
 	end
 	local typed = text(o)
-	open = nil
-	o.stop()
-	o.view:close()
-	greed.mode.set(o.mode)
-	finish(o.options, typed)
+	function o.finish()
+		finish(o.options, typed)
+	end
+	o.float.close()
 end
 
 -- Dots over what's typed in a secret prompt, so it never shows.
@@ -52,7 +49,7 @@ local function mask(o: Open)
 	if o.options.secret then
 		local typed = text(o)
 		local dots = string.rep("•", utf8.len(typed) or #typed)
-		o.buffer:decorate(
+		o.float.buffer:decorate(
 			"prompt-secret",
 			{ { from = 0, to = #typed, text = dots, overlay = true, style = "ui.text" } }
 		)
@@ -98,44 +95,36 @@ function M.open(options: Options)
 		greed.run("prompt-cancel")
 	end
 	local start = options.text or ""
-	local buffer = greed.create_buffer("prompt", start)
-	local view = greed.float(
-		buffer,
-		{ title = options.title, width = "100%", height = 3, anchor = "bottom" }
-	)
-	local o: Open = {
-		view = view,
-		buffer = buffer,
+	local o: Open
+	o = {
+		float = floats.typing(
+			greed.create_buffer("prompt", start),
+			{ title = options.title, width = "100%", height = 3, anchor = "bottom" },
+			{
+				on_change = function()
+					mask(o)
+					if options.on_change then
+						options.on_change(text(o))
+					end
+				end,
+				-- Closed some other way, it counts as cancelled.
+				on_close = function()
+					if open == o then
+						open = nil
+					end
+					local finish = o.finish
+					if finish then
+						finish()
+					else
+						cancel(options)
+					end
+				end,
+			}
+		),
 		options = options,
-		mode = greed.mode.get(),
-		stop = function() end,
-	}
-	local function changed(event: greed.BufferChanged)
-		if event.buffer == buffer then
-			mask(o)
-			if options.on_change then
-				options.on_change(text(o))
-			end
-		end
-	end
-	-- Closed some other way, it counts as cancelled.
-	local function closed(event: greed.ViewClosed)
-		if event.view == view:id() then
-			open = nil
-			o.stop()
-			greed.mode.set(o.mode)
-			cancel(options)
-		end
-	end
-	function o.stop()
-		greed.off("buffer.changed", changed)
-		greed.off("view.closed", closed)
-	end
-	greed.on("buffer.changed", changed)
-	greed.on("view.closed", closed)
+	} :: Open
 	open = o
-	greed.mode.set("insert")
-	view:set_cursor(#start)
+	o.float.view:set_cursor(#start)
 	mask(o)
 end
 

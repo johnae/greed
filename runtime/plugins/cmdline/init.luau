@@ -64,8 +64,9 @@ end
 type Open = {
 	buffer: greed.Buffer,
 	view: greed.View,
-	-- The mode to go back to when the command line closes.
-	mode: string,
+	float: core.TypingFloat,
+	-- Closing to run what's typed.
+	running: boolean?,
 	-- The text after ":", as last seen.
 	text: string,
 	candidates: { complete.Candidate },
@@ -127,16 +128,12 @@ local function render(o: Open, to_end: boolean?)
 end
 
 -- Closes the command line; unless what's typed is about to run, a preview
--- shown while going through matches is undone.
+-- shown while going through matches is undone (see command-line).
 local function close(running: boolean?)
-	if open then
-		local view, mode, previewed = open.view, open.mode, open.previewed
-		open = nil
-		view:close()
-		greed.mode.set(mode)
-		if previewed and not running then
-			previewed(nil)
-		end
+	local o = open
+	if o then
+		o.running = running
+		o.float.close()
 	end
 end
 
@@ -153,9 +150,8 @@ local function set_text(o: Open, text: string)
 	render(o, true)
 end
 
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	local o = open
-	if o == nil or event.buffer ~= o.buffer then
+local function changed(o: Open)
+	if open ~= o then
 		return
 	end
 	local line = o.buffer:slice(prompt_start(o), o.buffer:len())
@@ -170,7 +166,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 		update(o, text)
 		render(o)
 	end
-end)
+end
 
 -- Splits `text` at each unescaped `delimiter`; `\` before the delimiter
 -- takes it as is, other backslashes stay for the regex.
@@ -355,21 +351,37 @@ greed.command({
 	args = { { name = "text" } },
 	run = function(ctx)
 		close()
-		local buffer = greed.create_buffer("cmdline", ":")
-		local view = greed.float(buffer, { width = "100%", height = 3, anchor = "bottom" })
-		view:set_cursor(1)
-		local o: Open = {
-			buffer = buffer,
-			view = view,
-			mode = greed.mode.get(),
+		local o: Open
+		local float = core.floats.typing(
+			greed.create_buffer("cmdline", ":"),
+			{ width = "100%", height = 3, anchor = "bottom" },
+			{
+				on_change = function()
+					changed(o)
+				end,
+				-- However it closed, if it's not to run what's typed.
+				on_close = function()
+					if open == o then
+						open = nil
+					end
+					if o.previewed and not o.running then
+						o.previewed(nil)
+					end
+				end,
+			}
+		)
+		float.view:set_cursor(1)
+		o = {
+			buffer = float.buffer,
+			view = float.view,
+			float = float,
 			text = "",
 			candidates = {},
 			word = "",
 			current = 0,
 			history_index = 0,
-		}
+		} :: Open
 		open = o
-		greed.mode.set("insert")
 		set_text(o, ctx.args[1] or "")
 	end,
 })

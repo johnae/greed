@@ -35,3 +35,22 @@ test("ask waits for the text, and gives nil when cancelled", function(t)
 	t:keys("esc")
 	assert(done and got == nil, tostring(got))
 end)
+
+test("a prompt whose view closes some other way is cancelled", function(t)
+	t:buffer("|x")
+	local cancelled = 0
+	core.prompt.open({
+		title = "Name",
+		on_submit = function() end,
+		on_cancel = function()
+			cancelled += 1
+		end,
+	})
+	t:expect_mode("insert")
+	greed.view():close()
+	t:wait(0)
+	t:expect_mode("normal")
+	assert(cancelled == 1, `cancelled {cancelled} times`)
+	t:run("prompt-cancel")
+	assert(cancelled == 1, "nothing left to cancel")
+end)

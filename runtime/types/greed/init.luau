@@ -381,9 +381,9 @@ export type Keymap = {
 	--- one of `prefixes` (e.g. `{ "space", ":" }`), or for every key without
 	--- them. Keys bound in `mode` itself come first.
 	inherit: (mode: string, parent: string, prefixes: { string }?) -> (),
-	--- Makes `mode` use `parent`'s keys for each buffer kind (the file tree, a help page) ahead of its own, so panels keep their keys in another style.
+	--- Makes `mode` use `parent`'s keys for each buffer kind (the file tree, a help page) ahead of its own, so panels keep their keys in another style. `core.style.define` does this for each style's mode.
 	inherit_kinds: (mode: string, parent: string) -> (),
-	--- The command that handles a single unbound key in `mode`.
+	--- The command that handles a single unbound key in `mode`. A mode without one uses that of a mode it inherits every key from.
 	fallback: (mode: string, command: string) -> (),
 	--- The keys that can follow `keys` (e.g. "space") in the current mode, and
 	--- the command each runs. Keys without a command start longer sequences.

@@ -66,8 +66,9 @@ type Open = {
 	matches: { number },
 	current: number,
 	choose: (item: Item) -> (),
-	-- The mode to go back to when the picker closes.
-	mode: string,
+	float: core.TypingFloat,
+	-- Closing because an item was chosen.
+	chosen: boolean?,
 	preview: ((item: Item) -> Preview?)?,
 	keys: { [string]: (items: { Item }, current: Item?) -> () },
 	source: ((query: string) -> { Item })?,
@@ -263,34 +264,16 @@ local function refresh(o: Open)
 	end
 end
 
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	if open and event.buffer == open.buffer then
-		refresh(open)
-	end
-end)
-
 -- Closes the picker. Unless an item was chosen, `on_cancel` hears that it
--- ended, however it did: esc, another picker, or its view closing.
+-- ended, however it did: esc, another picker, or its view closing (see
+-- `pick`).
 local function close(chosen: boolean?)
-	if open then
-		local view, mode, preview, cancel = open.view, open.mode, open.preview_view, open.on_cancel
-		open = nil
-		view:close()
-		if preview then
-			preview:close()
-		end
-		greed.mode.set(mode)
-		if cancel and not chosen then
-			cancel()
-		end
+	local o = open
+	if o then
+		o.chosen = chosen
+		o.float.close()
 	end
 end
-
-greed.on("view.closed", function(event: greed.ViewClosed)
-	if open and open.view:id() == event.view then
-		close()
-	end
-end)
 
 local function move(delta: number)
 	if open and #open.matches > 0 then
@@ -432,13 +415,35 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 			{ x = "50%", width = "46%", height = "70%", focus = false }
 		)
 		else nil
-	local buffer = greed.create_buffer("picker")
-	local view = if preview
-		then greed.float(buffer, { title = title, x = "4%", width = "46%", height = "70%" })
-		else greed.float(buffer, { title = title, width = "60%", height = "60%" })
-	local o: Open = {
-		buffer = buffer,
-		view = view,
+	local o: Open
+	local float = core.floats.typing(
+		greed.create_buffer("picker"),
+		if preview
+			then { title = title, x = "4%", width = "46%", height = "70%" }
+			else { title = title, width = "60%", height = "60%" },
+		{
+			on_change = function()
+				if open == o then
+					refresh(o)
+				end
+			end,
+			on_close = function()
+				if preview_view and preview_view:valid() then
+					preview_view:close()
+				end
+				if open == o then
+					open = nil
+				end
+				if o.on_cancel and not o.chosen then
+					o.on_cancel()
+				end
+			end,
+		}
+	)
+	o = {
+		buffer = float.buffer,
+		view = float.view,
+		float = float,
 		items = items,
 		labels = labels,
 		matches = {},
@@ -455,8 +460,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		paths = options and options.paths,
 		generation = 0,
 		searching = false,
-		mode = greed.mode.get(),
-	}
+	} :: Open
 	for key in o.keys do
 		if not bound[key] then
 			bound[key] = true
@@ -464,7 +468,6 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		end
 	end
 	open = o
-	greed.mode.set("insert")
 	refresh(o)
 end
 

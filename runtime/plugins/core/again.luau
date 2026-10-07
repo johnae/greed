@@ -6,26 +6,14 @@
 --
 -- Each command run from a style's own mode (normal, vim) starts a run of
 -- keys; the next one ends it. A run that changed the buffer it started in
--- becomes the last change. Undo, redo, macros and `.` itself don't start
--- runs.
+-- becomes the last change. Commands tagged "no-repeat" (see commands.luau),
+-- like undo, macros and `.` itself, don't start runs.
 
 local greed = require("@greed")
+local commands = require("./commands")
 local style = require("./style")
-local registry = require("./registry")
 
-local M = {}
-
--- Commands that never count as changes, by name.
-local ignored: { [string]: boolean } = {}
-
---- Leaves the commands `names` out of what `.` repeats, like undo.
-function M.ignore(names: { string })
-	for _, name in names do
-		greed.plugin.tie(registry.set(ignored, name, true))
-	end
-end
-
-M.ignore({ "undo", "redo", "repeat-change", "play-macro", "record-macro" })
+commands.tag("no-repeat", { "undo", "redo", "repeat-change", "play-macro", "record-macro" })
 
 -- The run being recorded: what started it and whether it changed its buffer.
 type Run = { keys: string, count: number?, buffer: number, changed: boolean }
@@ -65,7 +53,7 @@ greed.on("command.run", function(event: greed.CommandRun)
 		extra += #tostring(event.count)
 	end
 	finish(extra)
-	if ignored[event.name] or event.keys == nil then
+	if commands.has(event.name, "no-repeat") or event.keys == nil then
 		return
 	end
 	run = {
@@ -96,4 +84,4 @@ greed.command({
 	end,
 })
 
-return M
+return {}

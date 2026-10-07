@@ -600,9 +600,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	diffs[event.id] = nil
 end)
 
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "change-stack" }, keys)
-	greed.keymap.bind({ mode = mode, kind = "change-diff" }, { q = "change-diff-close" })
-end
+greed.keymap.bind({ mode = "normal", kind = "change-stack" }, keys)
+greed.keymap.bind({ mode = "normal", kind = "change-diff" }, { q = "change-diff-close" })
 
 return M

@@ -198,17 +198,16 @@ command("pdf-text", "Switch between the PDF's pages and the text on them", funct
 	show(v)
 end)
 
--- The buffer is read-only, so even modeless editing can have these keys.
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "pdf" }, {
-		["]"] = "pdf-next-page",
-		["["] = "pdf-previous-page",
-		["+"] = "pdf-zoom-in",
-		["-"] = "pdf-zoom-out",
-		["="] = "pdf-zoom-fit",
-		t = "pdf-text",
-	})
-end
+-- Bound for normal mode, these work in every style; the buffer is read-only,
+-- so even modeless editing can have them.
+greed.keymap.bind({ mode = "normal", kind = "pdf" }, {
+	["]"] = "pdf-next-page",
+	["["] = "pdf-previous-page",
+	["+"] = "pdf-zoom-in",
+	["-"] = "pdf-zoom-out",
+	["="] = "pdf-zoom-fit",
+	t = "pdf-text",
+})
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local path = event.buffer:path()

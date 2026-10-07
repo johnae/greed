@@ -44,7 +44,8 @@ local indent = require("@self/indent")
 local folds = require("@self/folds")
 local config = require("@self/config")
 local effects = require("@self/effects")
-local again = require("@self/again")
+require("@self/again")
+local commands = require("@self/commands")
 local words = require("@self/words")
 local paste = require("@self/paste")
 local floats = require("@self/floats")
@@ -202,6 +203,8 @@ greed.mode.set_cursor("insert", "bar")
 export type Target = actions.Target
 export type TransientItem = transient.Item
 export type TransientMenu = transient.Menu
+--- A float being typed in, from `floats.typing`.
+export type TypingFloat = floats.Typing
 
 -- Other plugins can use these with `require("@core")`.
 return {
@@ -222,7 +225,8 @@ return {
 	folds = folds,
 	config = config,
 	effects = effects,
-	again = again,
+	--- Tags on commands, like "typing" (commands.luau).
+	commands = commands,
 	comment = comment,
 	jumps = jumps,
 	jump = jump,

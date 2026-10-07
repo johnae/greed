@@ -2,16 +2,7 @@
 -- with the plugin and what it was running, to trace a freeze to its cause.
 
 local greed = require("@greed")
-
--- The list while it's shown.
-local shown: greed.View? = nil
-
-local function close()
-	if shown then
-		shown:close()
-		shown = nil
-	end
-end
+local floats = require("./floats")
 
 --- The lines of the list, newest first.
 local function lines(): { string }
@@ -34,11 +25,7 @@ greed.command({
 	name = "stalls",
 	doc = "List the times plugin code held the editor up, with the plugin and what it ran",
 	run = function()
-		close()
-		local buffer =
-			greed.create_buffer("stalls", table.concat(lines(), "\n"), { readonly = true })
-		shown =
-			greed.float(buffer, { title = "Stalls, newest first", width = "80%", height = "60%" })
+		floats.show_text("Stalls, newest first", table.concat(lines(), "\n"), { kind = "stalls" })
 	end,
 })
 
@@ -80,22 +67,9 @@ greed.command({
 		end
 		local seconds = (greed.now() - started) / 1000
 		started = nil
-		close()
 		local text = table.concat(profile_lines(greed.profile.stop(), seconds), "\n")
-		local buffer = greed.create_buffer("stalls", text, { readonly = true })
-		shown = greed.float(buffer, { title = "Profile", width = "90%", height = "70%" })
+		floats.show_text("Profile", text, { kind = "stalls", width = "90%", height = "70%" })
 	end,
 })
-
-greed.command({
-	name = "stalls-close",
-	doc = "Close the list of stalls",
-	run = close,
-})
-
-greed.keymap.bind(
-	{ mode = "normal", kind = "stalls" },
-	{ esc = "stalls-close", q = "stalls-close" }
-)
 
 return {}

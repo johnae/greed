@@ -438,3 +438,46 @@ fn a_mode_can_use_another_modes_keys_for_buffer_kinds_first() {
     km.remove_owned_by("vim");
     assert_eq!(resolve(&km, "tree"), None, "gone with its owner");
 }
+
+#[test]
+fn a_mode_without_a_fallback_uses_the_one_of_a_mode_it_inherits_in_full() {
+    let mut km = Keymap::default();
+    km.set_fallback("insert", "insert-char", "core");
+    km.inherit("completion-insert", "insert", vec![], "lsp");
+    km.inherit("vim", "insert", vec![keys("space")], "vim");
+    assert_eq!(
+        km.fallback("completion-insert").map(|c| &**c),
+        Some("insert-char")
+    );
+    assert_eq!(km.fallback("vim"), None, "only some keys are inherited");
+    km.set_fallback("completion-insert", "own", "lsp");
+    assert_eq!(km.fallback("completion-insert").map(|c| &**c), Some("own"));
+    km.inherit("a", "b", vec![], "x");
+    km.inherit("b", "a", vec![], "x");
+    assert_eq!(km.fallback("a"), None, "a loop ends");
+}
+
+#[test]
+fn inheriting_kinds_twice_for_one_owner_adds_it_once() {
+    let mut km = Keymap::default();
+    km.bind(
+        Layer::mode_kind("normal", "tree"),
+        &keys("q"),
+        "tree-close",
+        "tree",
+    )
+    .unwrap();
+    km.inherit_kinds("mine", "normal", "core");
+    km.inherit_kinds("mine", "normal", "core");
+    km.inherit_kinds("mine", "normal", "mine");
+    km.remove_owned_by("mine");
+    assert!(matches!(
+        km.resolve("mine", "tree", &keys("q")),
+        Resolution::Command(_)
+    ));
+    km.remove_owned_by("core");
+    assert!(matches!(
+        km.resolve("mine", "tree", &keys("q")),
+        Resolution::Unbound
+    ));
+}

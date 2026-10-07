@@ -2,6 +2,7 @@
 -- paste.
 
 local greed = require("@greed")
+local commands = require("./commands")
 local indent = require("./indent")
 local motions = require("./motions")
 local registers = require("./registers")
@@ -177,6 +178,11 @@ greed.command({
 		insert_at_heads(ctx, indent.unit(ctx.buffer))
 	end,
 })
+
+commands.tag(
+	"typing",
+	{ "insert-char", "insert-newline", "insert-tab", "delete-back", "delete-forward" }
+)
 
 greed.command({
 	name = "insert-register",

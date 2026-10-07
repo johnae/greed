@@ -12,18 +12,15 @@ local core = require("@core")
 local text, indent, registers = core.text, core.indent, core.registers
 local span = text.span
 
--- Commands that type. Typing in a row is undone in one step; any other
--- command ends the step.
-local typing = {
-	["type-char"] = true,
-	["type-newline"] = true,
-	["type-tab"] = true,
-	["erase-back"] = true,
-	["erase-forward"] = true,
-}
+-- Typing in a row is undone in one step; any command not tagged as typing
+-- ends the step.
+core.commands.tag(
+	"typing",
+	{ "type-char", "type-newline", "type-tab", "erase-back", "erase-forward" }
+)
 
 greed.on("command.run", function(event: greed.CommandRun)
-	if greed.mode.get() == "edit" and not typing[event.name] then
+	if greed.mode.get() == "edit" and not core.commands.has(event.name, "typing") then
 		greed.history.end_group()
 	end
 end)
@@ -551,11 +548,10 @@ end)
 
 greed.keymap.fallback("edit", "type-char")
 greed.mode.set_cursor("edit", "bar")
--- Panels like the file tree and help keep their keys.
-greed.keymap.inherit_kinds("edit", "normal")
 
-require("@core").style.define({
+core.style.define({
 	name = "edit",
-	doc = "No modes: typing inserts, shift and the arrows select (most editors)",
+	doc = "No modes: typing inserts, shift and the arrows select (VS Code, most editors)",
 	mode = "edit",
+	typing = { "edit" },
 })

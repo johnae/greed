@@ -134,13 +134,11 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	views[event.id] = nil
 end)
 
-for _, mode in { "normal", "vim", "edit" } do
-	greed.keymap.bind({ mode = mode, kind = "staged-diff" }, {
-		u = "staged-unstage",
-		c = "staged-commit",
-		r = "staged-refresh",
-		q = "multibuffer-close",
-	})
-end
+greed.keymap.bind({ mode = "normal", kind = "staged-diff" }, {
+	u = "staged-unstage",
+	c = "staged-commit",
+	r = "staged-refresh",
+	q = "multibuffer-close",
+})
 
 return M

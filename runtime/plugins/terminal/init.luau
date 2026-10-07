@@ -1256,22 +1256,19 @@ greed.keymap.bind(MODE, {
 	esc = "terminal-esc",
 })
 greed.mode.set_cursor(MODE, "block")
-for _, mode in { "normal", "vim" } do
-	greed.keymap.bind({ mode = mode, kind = "terminal" }, {
-		i = "terminal-input",
-		a = "terminal-input",
-		enter = "terminal-input",
-		p = "terminal-paste",
-		["g x"] = "open-link",
-		["[ p"] = "terminal-prev-command",
-		["] p"] = "terminal-next-command",
-		["g o"] = "terminal-select-output",
-		["] e"] = "terminal-next-reference",
-		["[ e"] = "terminal-prev-reference",
-		["space d"] = "terminal-references",
-	})
-end
-greed.keymap.bind({ mode = "edit", kind = "terminal" }, { enter = "terminal-input" })
+greed.keymap.bind({ mode = "normal", kind = "terminal" }, {
+	i = "terminal-input",
+	a = "terminal-input",
+	enter = "terminal-input",
+	p = "terminal-paste",
+	["g x"] = "open-link",
+	["[ p"] = "terminal-prev-command",
+	["] p"] = "terminal-next-command",
+	["g o"] = "terminal-select-output",
+	["] e"] = "terminal-next-reference",
+	["[ e"] = "terminal-prev-reference",
+	["space d"] = "terminal-references",
+})
 
 --- Whether `term` is still open.
 function M.is_open(term: Term): boolean
