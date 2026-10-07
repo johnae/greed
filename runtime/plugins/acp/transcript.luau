@@ -203,7 +203,13 @@ function M.history(s: Session): History
 				end
 				if tool.open then
 					for _, output in tool.output do
-						add(`    {output}`, "comment")
+						-- An edit's change shows as a diff: gone lines and new ones.
+						local mark = if tool.kind == "edit" then string.sub(output, 1, 2) else ""
+						local style = if mark == "- "
+							then "diff.minus"
+							elseif mark == "+ " then "diff.plus"
+							else "comment"
+						add(`    {output}`, style)
 					end
 				end
 				for i = first, #lines - 1 do

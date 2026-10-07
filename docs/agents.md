@@ -421,7 +421,10 @@ bar beside it (yours on a shaded background), and its plan. Each tool call
 is one row: `○` waiting, `◐` running, `✓` done or `✗` failed, with what
 it was about and what came back in a few words, like `read src/main.rs ·
 120 lines`. A `▸` means there's more: `tab` on the row shows all of its
-output, and `tab` again folds it.
+output, and `tab` again folds it. When Greed's own agent asks before
+editing a file, like your config, the edit's row already holds the change
+(`-1 +1 · tab shows the change`): `tab` shows the lines going and the ones
+coming, in the theme's diff colours, before you answer.
 
 While the box is on screen, the transcript scrolls down as the agent
 adds to it, taking your cursor back to the box (unless you're selecting

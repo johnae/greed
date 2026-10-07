@@ -104,6 +104,12 @@ test("an edit asks first, and once allowed it's made and the model hears so", fu
 	assert(status == "waiting", status)
 	local question = waiting(s)
 	assert(question.title == "Edit a.txt", question.title)
+	local tool = s.tools.c1
+	assert(
+		tool.output[1] == "- two" and tool.output[2] == "+ TWO",
+		table.concat(tool.output, " | ")
+	)
+	assert(tool.detail[1] == "-1 +1 · tab shows the change", tool.detail[1])
 	question.answer:send("once")
 	t:wait(10)
 	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\n", "edited")
@@ -924,4 +930,54 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(not string.find(first, "same call", 1, true), first)
 	assert(string.find(second, "You made this same call already", 1, true), second)
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
+end)
+
+test("writing over a file shows only what changes before you're asked", function(t)
+	script({
+		{
+			text = "",
+			calls = {
+				{ id = "c1", name = "write_file", input = { path = "a.txt", text = "one\nTWO\n" } },
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "shout two")
+	local tool = s.tools.c1
+	assert(#tool.output == 2, table.concat(tool.output, " | "))
+	assert(
+		tool.output[1] == "- two" and tool.output[2] == "+ TWO",
+		table.concat(tool.output, " | ")
+	)
+	waiting(s).answer:send("no")
+end)
+
+test("an edit's change unfolds on its row as a diff, gone lines and new", function(t)
+	script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "two", new_text = "TWO" },
+				},
+			},
+			stop = "tools",
+		},
+	})
+	local s = ask(t, "shout two")
+	s.tools.c1.open = true
+	acp.show(s)
+	s.changed()
+	t:wait(50)
+	local buffer = greed.view():buffer()
+	local styles: { [string]: string } = {}
+	for _, mark in buffer:decorations("acp") do
+		styles[buffer:slice(mark.from, mark.to)] = mark.style
+	end
+	assert(styles["    - two"] == "diff.minus", tostring(styles["    - two"]))
+	assert(styles["    + TWO"] == "diff.plus", tostring(styles["    + TWO"]))
+	waiting(s).answer:send("no")
 end)

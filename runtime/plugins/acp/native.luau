@@ -88,7 +88,23 @@ type Own = {
 	run: (s: Session, args: any) -> string,
 	--- What the call would let a plugin do that it couldn't (agent.widens).
 	widens: ((s: Session, args: any) -> string?)?,
+	--- The change it would make, as lines starting "- " (gone) and "+ "
+	--- (new), shown on its row before you're asked.
+	preview: ((s: Session, args: any) -> { string })?,
 }
+
+-- The most lines of a change shown before you're asked.
+local PREVIEW_LINES = 200
+
+-- `text`'s lines, each after `mark`, into `out`, up to PREVIEW_LINES in all.
+local function marked(out: { string }, mark: string, text: string)
+	for _, line in string.split(text, "\n") do
+		if #out >= PREVIEW_LINES then
+			return
+		end
+		table.insert(out, mark .. line)
+	end
+end
 
 local object = agent.schema.object
 
@@ -108,6 +124,12 @@ local OWN: { Own } = {
 		kind = "edit",
 		title = function(args)
 			return `Edit {args.path}`
+		end,
+		preview = function(_, args)
+			local out = {}
+			marked(out, "- ", args.old_text)
+			marked(out, "+ ", args.new_text)
+			return out
 		end,
 		widens = function(s, args)
 			local text = core.file.text(args.path, s.cwd)
@@ -153,6 +175,21 @@ local OWN: { Own } = {
 		kind = "edit",
 		title = function(args)
 			return `Write {args.path}`
+		end,
+		preview = function(s, args)
+			local out = {}
+			local old = core.file.text(args.path, s.cwd) or ""
+			-- Only what changes, for a file that's there already.
+			for _, hunk in greed.diff(old, args.text) do
+				local gone = string.sub(old, hunk.from + 1, hunk.to)
+				if gone ~= "" then
+					marked(out, "- ", (string.gsub(gone, "\n$", "")))
+				end
+				if hunk.text ~= "" then
+					marked(out, "+ ", (string.gsub(hunk.text, "\n$", "")))
+				end
+			end
+			return out
 		end,
 		widens = function(s, args)
 			return agent.widens(args.path, core.file.text(args.path, s.cwd), args.text)
@@ -386,6 +423,21 @@ local function call(
 	-- Its own tools all change something; Greed's ask unless they only
 	-- read or put what they do in front of you themselves.
 	local asks = own ~= nil or (registered ~= nil and agent.asks(registered))
+	-- What it would change, on its row before you're asked: tab shows it.
+	local before = if own and own.preview then own.preview(s, c.input) else nil
+	if before and #before > 0 then
+		local removed, added = 0, 0
+		for _, line in before do
+			if string.sub(line, 1, 1) == "-" then
+				removed += 1
+			else
+				added += 1
+			end
+		end
+		tool.output = before
+		tool.detail = { `-{removed} +{added} · tab shows the change` }
+		s.changed()
+	end
 	-- One letting a plugin do more asks you, and only you, every time.
 	local widens = if own and own.widens then own.widens(s, c.input) else nil
 	local refused = nil
