@@ -9,7 +9,7 @@ local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, nativ
 -- Stands in for the model: each turn returns the next of `turns`, and the
 -- requests it got are kept, as they were then. Requests to summarise the
 -- conversation are answered with `summary` (false fails them) and kept
--- apart.
+-- apart. A turn with `fail` fails with it.
 local function script(turns: { any }, summary: (string | false)?): ({ any }, { any })
 	local asked: { any } = {}
 	local summarised: { any } = {}
@@ -31,6 +31,9 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		table.insert(asked, copy)
 		at += 1
 		local turn = turns[at] or { text = "", calls = {}, stop = "done" }
+		if turn.fail then
+			return nil, turn.fail
+		end
 		if on_text and turn.text ~= "" then
 			on_text(turn.text)
 		end
@@ -627,7 +630,7 @@ test("a summary that fails says so, and isn't asked for again that prompt", func
 end)
 
 test("below the limit, nothing is compacted", function(t)
-	local s, asked, summarised = near_limit(t, 700)
+	local s, asked, summarised = near_limit(t, 400)
 	assert(s.window == 1000, tostring(s.window))
 	assert(#summarised == 0, "not summarised")
 	assert(#asked[5].said == 9 and untimed(asked[5].said[1].text) == "hi", "all of it goes")
@@ -1069,4 +1072,51 @@ test("old tool results stay as they were, so the cached start of the conversatio
 		#first > 20000 and not string.find(first, "left out", 1, true),
 		"the first result, whole"
 	)
+end)
+
+test("a request turned down as too long is compacted and tried again", function(t)
+	local asked, summarised = script({
+		looks("c1", 100),
+		looks("c2", 200),
+		looks("c3", 300),
+		looks("c4", 400),
+		looks("c5", 500),
+		looks("c6", 600),
+		{
+			fail = "the model's server said 400: prompt is too long: 210000 tokens > 200000 maximum",
+		},
+		{ text = "done after all", calls = {}, stop = "done" },
+	}, "they looked at the project six times")
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "hi")
+	assert(#summarised == 1, `compacted once: {#summarised}`)
+	assert(string.find(said(s), "agent: done after all", 1, true), said(s))
+	assert(s.failed == nil, tostring(s.failed))
+	assert(asked[#asked].said[1].text == compact.NOTE, "it went on from the summary")
+	acp.close(s)
+end)
+
+test("a request turned down for something else isn't retried", function(t)
+	local _, summarised = script({
+		looks("c1", 100),
+		looks("c2", 200),
+		looks("c3", 300),
+		looks("c4", 400),
+		{ fail = "the model's server said 401: invalid key" },
+	}, "never asked")
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "hi")
+	assert(#summarised == 0, "not compacted")
+	assert(string.find(s.failed or "", "invalid key", 1, true), tostring(s.failed))
+	acp.close(s)
+end)
+
+test("the room before compacting leaves the longest answer and a reserve", function()
+	assert(compact.room(1000000, 32000) == 1000000 - 32000 - 100000, "a big window: 10% kept back")
+	assert(compact.room(200000, 32000) == 200000 - 32000 - 20000, "Claude's: 10%, over 16k")
+	assert(compact.room(100000, 25000) == 100000 - 25000 - 16000, "16k when 10% is less")
+	assert(compact.room(32000, 8000) == 32000 - 8000 - 8000, "a small one: a quarter at most")
+	assert(compact.too_long("prompt is too long: 210000 tokens > 200000 maximum"))
+	assert(compact.too_long("This model's maximum context length is 131072 tokens"))
+	assert(not compact.too_long("invalid key"))
 end)

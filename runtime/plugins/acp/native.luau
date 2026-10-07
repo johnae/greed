@@ -37,6 +37,10 @@ local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, 
 	.. "call in it was lost and nothing ran. Go on in smaller pieces: write a long file with "
 	.. "write_file holding its first part, then add the rest with edit_file, a part at a time."
 
+-- How many times a request the provider turns down as too long is compacted
+-- and tried again.
+local MAX_OVERFLOWS = 3
+
 -- What the model hears after a call it made already, which came back the same.
 local REPEATED = "\n\n(You made this same call already and got the same result. "
 	.. "Asking again won't change it: try something else.)"
@@ -653,12 +657,14 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local may_compact = true
 	-- Answers cut off at their length in a row.
 	local cuts = 0
+	-- Requests the provider turned down as too long, compacted and tried again.
+	local overflows = 0
 	-- What each call (tool and arguments) gave back this prompt.
 	local seen: { [string]: string } = {}
 	for _ = 1, MAX_TURNS do
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
-		local room = models.window(state.role) * compact.THRESHOLD
+		local room = compact.room(models.window(state.role), models.output(state.role))
 		local extra = #said_system + #greed.json.encode(specs)
 		if may_compact and estimate(state, extra) > room and compact.cut(state.said) then
 			may_compact = compact_now(s, state)
@@ -671,6 +677,14 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			say(s, piece)
 		end)
 		if turn == nil then
+			-- Too long for the model after all, as the estimate can be off:
+			-- compacted, it's tried again, a few times at most.
+			if compact.too_long(err) and overflows < MAX_OVERFLOWS and compact.cut(state.said) then
+				overflows += 1
+				if compact_now(s, state) then
+					continue
+				end
+			end
 			s.failed = `the model failed: {err}`
 			table.insert(s.entries, { kind = "note", text = s.failed })
 			break

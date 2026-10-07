@@ -383,9 +383,14 @@ requests to Anthropic mark the tools, the system prompt and the newest
 message for caching. Old messages are never changed afterwards, except
 when the conversation is compacted.
 
-When a conversation nears the model's limit (80% of its context window),
-it's compacted before the next request: the model summarises everything
-but the last four turns, and the summary takes their place. The
+When a conversation nears the model's limit, it's compacted before the
+next request: the model summarises everything but the last four turns,
+and the summary takes their place. Near the limit means the
+conversation, as the provider last counted it plus what came since,
+leaves less than room for the longest answer and a reserve (10% of the
+context window or 16k tokens, whichever is more, but at most a quarter of
+it). A request the provider still turns down as too long is compacted and
+tried again, up to three times. The
 transcript shows a folded `conversation compacted (N messages → summary)`
 row; `tab` on it shows the summary. `:agent-compact` does it by hand. The
 summary goes to the model as its own earlier words rather than as

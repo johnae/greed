@@ -10,9 +10,38 @@ local models = require("@models")
 
 local M = {}
 
---- How full the model's context may get, as a share of it, before the
---- conversation is compacted.
-M.THRESHOLD = 0.8
+--- How many tokens the conversation may take, in a context window of
+--- `window` with answers up to `output` long, before it's compacted: room
+--- for the longest answer, and a reserve for what the next turn adds of
+--- 10% of the window or 16k tokens, whichever is more, but no more than a
+--- quarter of the window, so a small one still gets used.
+function M.room(window: number, output: number): number
+	local reserve = math.min(math.max(window * 0.1, 16000), window * 0.25)
+	return math.max(window - output - reserve, window * 0.25)
+end
+
+--- Whether `err`, from a failed request, says the request was too long for
+--- the model's context, as providers word it.
+function M.too_long(err: string?): boolean
+	local said = string.lower(err or "")
+	for _, phrase in
+		{
+			"context length",
+			"context_length",
+			"context window",
+			"maximum context",
+			"prompt is too long",
+			"too many tokens",
+			"input is too long",
+			"request too large",
+		}
+	do
+		if string.find(said, phrase, 1, true) then
+			return true
+		end
+	end
+	return false
+end
 
 --- How many of the last turns (your messages and the model's answers,
 --- with the tool results that follow them) are kept as they were.
