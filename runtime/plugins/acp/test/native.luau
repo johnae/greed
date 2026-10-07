@@ -935,7 +935,7 @@ test("a call made again with the same result says so, and running out of turns t
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
-	local first = asked[2].said[3].text
+	local first = asked[#asked].said[3].text :: string
 	local second = asked[3].said[5].text
 	assert(not string.find(first, "same call", 1, true), first)
 	assert(string.find(second, "You made this same call already", 1, true), second)
@@ -992,62 +992,6 @@ test("an edit's change unfolds on its row as a diff, gone lines and new", functi
 	waiting(s).answer:send("no")
 end)
 
-test("old tool results are cut down to their start, the recent ones left whole", function(t)
-	local dir = t:tempdir({ ["big.txt"] = string.rep("a line of text\n", 2000) })
-	local turns = {}
-	for i = 1, 16 do
-		table.insert(turns, {
-			text = "",
-			-- Different lines each time, so none is a repeat.
-			calls = {
-				{ id = `c{i}`, name = "read", input = { path = `{dir}/big.txt`, from_line = i } },
-			},
-			stop = "tools",
-		})
-	end
-	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
-	local asked = script(turns)
-	local s = ask(t, "read it again and again")
-	t:wait_for(function()
-		return s.status == "idle"
-	end)
-	local said = asked[#asked].said
-	local results = {}
-	for _, message in said do
-		if message.role == "tool" then
-			table.insert(results, message.text)
-		end
-	end
-	assert(#results == 16, tostring(#results))
-	assert(string.find(results[1], "left out to save room", 1, true), "the first is cut down")
-	assert(#results[1] < 1000, tostring(#results[1]))
-	assert(not string.find(results[16], "left out", 1, true), "the last is whole")
-	assert(#results[16] > 2000, tostring(#results[16]))
-end)
-
-test("old results are left alone while cutting them would save little", function(t)
-	local dir = t:tempdir({ ["small.txt"] = string.rep("a line of text\n", 300) })
-	local turns = {}
-	for i = 1, 16 do
-		table.insert(turns, {
-			text = "",
-			calls = {
-				{ id = `c{i}`, name = "read", input = { path = `{dir}/small.txt`, from_line = i } },
-			},
-			stop = "tools",
-		})
-	end
-	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
-	local asked = script(turns)
-	local s = ask(t, "read it")
-	t:wait_for(function()
-		return s.status == "idle"
-	end)
-	for _, message in asked[#asked].said do
-		assert(not string.find(message.text or "", "left out to save room", 1, true), "nothing cut")
-	end
-end)
-
 test("the system prompt stays the same; the time comes in your message, new tools last", function(t)
 	local asked = script({
 		{
@@ -1100,4 +1044,29 @@ test("a result too long to give whole goes to a file, its start to the model", f
 	assert(string.format("%o", assert(greed.fs.stat(path)).mode) == "600", "only yours to read")
 	local hits = assert(agent.map.grep("^line 2999$", string.match(path, "^(.*)/[^/]+$")))
 	assert(#hits == 1, "and grep finds what's in it")
+end)
+
+test("old tool results stay as they were, so the cached start of the conversation does", function(t)
+	local dir = t:tempdir({ ["big.txt"] = string.rep("a line of text\n", 1500) })
+	local turns = {}
+	for i = 1, 12 do
+		table.insert(turns, {
+			text = "",
+			calls = {
+				{ id = `c{i}`, name = "read", input = { path = `{dir}/big.txt`, from_line = i } },
+			},
+			stop = "tools",
+		})
+	end
+	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
+	local asked = script(turns)
+	local s = ask(t, "read it again and again")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local first = asked[#asked].said[3].text :: string
+	assert(
+		#first > 20000 and not string.find(first, "left out", 1, true),
+		"the first result, whole"
+	)
 end)

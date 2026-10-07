@@ -41,57 +41,6 @@ local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, 
 local REPEATED = "\n\n(You made this same call already and got the same result. "
 	.. "Asking again won't change it: try something else.)"
 
--- Old tool results are cut down to their start: those from before the
--- last `KEEP_TURNS` of the model's turns, longer than `TRIM_ABOVE`
--- characters. It's done only when that saves `TRIM_LEAST` characters at
--- once, so the start of the conversation, which providers cache, changes
--- seldom.
-local KEEP_TURNS = 8
-local TRIM_ABOVE = 2000
-local TRIM_TO = 600
-local TRIM_LEAST = 80000
-local TRIMMED = "\n… (the rest of this result was left out to save room: "
-
---- Cuts down the tool results in `said` that have served their turn, when
---- that saves a lot at once (see `TRIM_LEAST`). Each request sends the
---- whole conversation, so an old file read or listing costs again every
---- turn.
-function M.trim_results(said: { models.Said })
-	-- Where the last KEEP_TURNS turns start.
-	local seen, keep_from = 0, #said + 1
-	for i = #said, 1, -1 do
-		if said[i].role == "assistant" then
-			seen += 1
-			if seen == KEEP_TURNS then
-				keep_from = i
-				break
-			end
-		end
-	end
-	local cut: { models.Said } = {}
-	local saved = 0
-	for i = 1, keep_from - 1 do
-		local message = said[i]
-		local text = message.text or ""
-		if
-			message.role == "tool"
-			and #text > TRIM_ABOVE
-			and not string.find(text, TRIMMED, 1, true)
-		then
-			table.insert(cut, message)
-			saved += #text - TRIM_TO
-		end
-	end
-	if saved < TRIM_LEAST then
-		return
-	end
-	for _, message in cut do
-		local text = message.text or ""
-		message.text = string.sub(text, 1, TRIM_TO)
-			.. `{TRIMMED}{#text - TRIM_TO} more characters; call the tool again if you need it.)`
-	end
-end
-
 -- The most of a tool's result the model gets back, in characters and lines;
 -- the rest of a longer one is in a file it can read on in. Such files go
 -- after `OUTPUT_DAYS`.
@@ -707,7 +656,6 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	-- What each call (tool and arguments) gave back this prompt.
 	local seen: { [string]: string } = {}
 	for _ = 1, MAX_TURNS do
-		M.trim_results(state.said)
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
 		local room = models.window(state.role) * compact.THRESHOLD
