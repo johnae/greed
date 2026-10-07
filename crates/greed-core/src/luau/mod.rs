@@ -516,12 +516,15 @@ impl Host {
         f(&mut state_mut(&self.lua).editor)
     }
 
-    /// Calls `f` with the editor and the syntax trees, for drawing.
+    /// Calls `f` with the editor and the syntax trees, for drawing. The
+    /// trees are brought up to the text first, so highlights follow edits
+    /// made since.
     pub fn with_editor_and_syntax<R>(
         &self,
         f: impl FnOnce(&mut Editor, &crate::syntax::Syntax) -> R,
     ) -> R {
         let state = &mut *state_mut(&self.lua);
+        state.syntax.update(&state.editor);
         f(&mut state.editor, &state.syntax)
     }
 

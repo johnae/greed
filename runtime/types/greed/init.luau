@@ -90,9 +90,10 @@ export type Buffer = {
 	--- Sets the language, or with nil goes back to the one the file's
 	--- extension implies.
 	set_language: (self: Buffer, language: string?) -> (),
-	--- The root of the syntax tree, or nil if the language has no grammar,
-	--- the buffer is too big to parse, or just after an edit when parsing it
-	--- again would hold the editor up (a moment later there's one again).
+	--- The root of the syntax tree, or nil if the language has no grammar
+	--- or the buffer is too big to parse. Just after an edit, when parsing
+	--- again would hold the editor up, it's the tree before with the edit
+	--- applied (nodes moved with the text) until the new one is in.
 	tree: (self: Buffer) -> Node?,
 	--- The smallest named node covering `from`..`to` (default: just `from`).
 	node_at: (self: Buffer, from: number, to: number?) -> Node?,

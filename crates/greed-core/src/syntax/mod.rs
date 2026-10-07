@@ -3,7 +3,9 @@
 //! Buffers are parsed on a worker thread, which always works on the latest
 //! text it has been sent. The server keeps the newest tree for each buffer
 //! and queries it for just the visible range when rendering. While the
-//! worker catches up after an edit, the tree can be one version behind.
+//! worker catches up after an edit, the tree is the one before, told about
+//! the edits since, so highlights move with the text until the new one
+//! comes.
 
 use std::collections::HashMap;
 use std::ops::{ControlFlow, Range};
@@ -33,6 +35,50 @@ pub const MAX_BYTES: usize = 4 * 1024 * 1024;
 /// How long a parse on the editor's thread may take, when a plugin wants a
 /// tree before the worker has one.
 const IN_TIME: Duration = Duration::from_millis(3);
+
+/// A buffer's tree, for its text as of some version.
+struct Held {
+    /// The buffer version and text the tree fits.
+    version: usize,
+    text: Rope,
+    tree: Tree,
+    /// The languages inside it.
+    layers: Vec<Layer>,
+    /// The version it was parsed from: `version`, or an earlier one whose
+    /// tree was told about the edits since, while the worker parses again.
+    parsed: usize,
+}
+
+impl Held {
+    fn new(version: usize, text: Rope, tree: Tree, layers: Vec<Layer>) -> Self {
+        Self {
+            version,
+            text,
+            tree,
+            layers,
+            parsed: version,
+        }
+    }
+
+    /// Brings the tree and its layers up to `buffer`'s text by telling them
+    /// about each edit since, so their nodes move with the text.
+    fn follow(&mut self, buffer: &Buffer) {
+        let version = buffer.history().applied();
+        if self.version == version {
+            return;
+        }
+        let edits =
+            incremental::edits_since(buffer.history(), self.version, &self.text, buffer.text());
+        for edit in &edits {
+            self.tree.edit(edit);
+            for layer in &mut self.layers {
+                layer.tree.edit(edit);
+            }
+        }
+        self.version = version;
+        self.text = buffer.text().clone();
+    }
+}
 
 /// A query that picks out what to highlight, and its capture names, e.g.
 /// "keyword" or "function.macro".
@@ -277,11 +323,8 @@ struct BufferSyntax {
     language: Arc<Language>,
     /// The last version sent to the worker.
     sent: Option<usize>,
-    /// The newest tree, and the version and text it was parsed from, to
-    /// parse the next version from.
-    tree: Option<(usize, Tree, Rope)>,
-    /// The languages inside it, from the same parse.
-    layers: Vec<Layer>,
+    /// The newest tree, to draw with and to parse the next version from.
+    held: Option<Held>,
 }
 
 pub struct Syntax {
@@ -291,6 +334,9 @@ pub struct Syntax {
     buffers: HashMap<BufferId, BufferSyntax>,
     /// For trees wanted right away, when the worker's is behind.
     parser: Parser,
+    /// How long a parse on the editor's thread may take before it gives up
+    /// and the tree before, with the edits applied, stands in.
+    pub in_time: Duration,
     /// Queries plugins ran, by language and source, compiled once.
     queries: HashMap<(&'static str, String), Arc<Query>>,
     /// Queries plugins set, by language and kind ("highlights",
@@ -334,6 +380,7 @@ impl Syntax {
             results,
             buffers: HashMap::new(),
             parser: Parser::new(),
+            in_time: IN_TIME,
             queries: HashMap::new(),
             sources: HashMap::new(),
             highlights: HashMap::new(),
@@ -444,46 +491,56 @@ impl Syntax {
                 BufferSyntax {
                     language,
                     sent: None,
-                    tree: None,
-                    layers: Vec::new(),
+                    held: None,
                 },
             );
         }
         let too_big = buffer.text().len_bytes() > self.max_bytes;
         let state = self.buffers.get_mut(&id).expect("just inserted");
         if too_big {
-            state.tree = None;
-            state.layers.clear();
+            state.held = None;
             return None;
         }
         Some(state)
     }
 
-    /// Sends buffers that changed since their last parse to the worker, and
-    /// forgets closed ones.
+    /// Sends buffers that changed since their last parse to the worker,
+    /// brings their trees up to their text in the meantime, and forgets
+    /// closed ones.
     pub fn update(&mut self, editor: &Editor) {
         self.buffers
             .retain(|id, _| editor.find_buffer(*id).is_some());
         for buffer in editor.buffers() {
-            let version = buffer.history().applied();
             let Some(state) = self.state_for(buffer) else {
                 continue;
             };
-            let language = state.language.clone();
-            let needs_parse = state.sent != Some(version);
-            state.sent = Some(version);
-            self.prepare(&language);
-            if needs_parse {
-                let _ = self.requests.send(Request {
-                    buffer: buffer.id(),
-                    version,
-                    text: buffer.text().clone(),
-                    language,
-                    injections: self.injections.clone(),
-                    engine: self.wasm.as_ref().map(|(engine, _)| engine.clone()),
-                });
+            if let Some(held) = &mut state.held {
+                held.follow(buffer);
             }
+            let language = state.language.clone();
+            self.prepare(&language);
+            self.send(buffer);
         }
+    }
+
+    /// Sends `buffer` to the worker, unless its version was already.
+    fn send(&mut self, buffer: &Buffer) {
+        let version = buffer.history().applied();
+        let Some(state) = self.buffers.get_mut(&buffer.id()) else {
+            return;
+        };
+        if state.sent == Some(version) {
+            return;
+        }
+        state.sent = Some(version);
+        let _ = self.requests.send(Request {
+            buffer: buffer.id(),
+            version,
+            text: buffer.text().clone(),
+            language: state.language.clone(),
+            injections: self.injections.clone(),
+            engine: self.wasm.as_ref().map(|(engine, _)| engine.clone()),
+        });
     }
 
     /// Compiles the highlights query set for `language`, now that a buffer
@@ -510,54 +567,79 @@ impl Syntax {
         std::mem::take(&mut self.problems)
     }
 
-    /// Keeps a finished parse unless what we have is newer. One of the same
-    /// version is a parse again, after the injections changed.
+    /// Keeps a finished parse unless what we have was parsed from a newer
+    /// version. One of the same version is a parse again, after the
+    /// injections changed. One older than the text is brought up to it by
+    /// the next [`Syntax::update`].
     pub fn receive(&mut self, parsed: Parsed) {
         for layer in &parsed.layers {
             self.prepare(&layer.language);
         }
         if let Some(state) = self.buffers.get_mut(&parsed.buffer)
             && state
-                .tree
+                .held
                 .as_ref()
-                .is_none_or(|(v, _, _)| *v <= parsed.version)
+                .is_none_or(|held| held.parsed <= parsed.version)
         {
-            state.tree = Some((parsed.version, parsed.tree, parsed.text));
-            state.layers = parsed.layers;
+            state.held = Some(Held::new(
+                parsed.version,
+                parsed.text,
+                parsed.tree,
+                parsed.layers,
+            ));
         }
     }
 
     /// The syntax tree of `buffer` as its text is now, and its language.
     /// When the worker hasn't caught up with the latest edit, the buffer is
     /// parsed here and then, from the tree before the edit, so only what
-    /// changed is parsed again. `None` if it has no language Greed knows or
-    /// is too big to parse.
+    /// changed is parsed again. A parse that would hold up the key that
+    /// asked for it (in code tree-sitter has to recover from) gives up, and
+    /// the tree before, told about the edits, stands in until the worker
+    /// brings the new one. `None` if it has no language Greed knows or is
+    /// too big to parse.
     pub fn tree(&mut self, buffer: &Buffer) -> Option<(Arc<Language>, Tree)> {
         let version = buffer.history().applied();
         let state = self.state_for(buffer)?;
-        if let Some((v, tree, _)) = &state.tree
-            && *v == version
-        {
-            return Some((state.language.clone(), tree.clone()));
-        }
         let language = state.language.clone();
-        let before = state.tree.clone();
+        let before = state.held.as_mut().map(|held| {
+            held.follow(buffer);
+            (held.parsed == version, held.tree.clone())
+        });
+        let edited = match before {
+            Some((true, tree)) => return Some((language, tree)),
+            Some((false, edited)) => Some(edited),
+            None => None,
+        };
         self.parser.set_language(&language.grammar).ok()?;
-        let tree = match &before {
-            // A parse again after an edit that would hold up the key that
-            // asked for it (in code tree-sitter has to recover from) gives
-            // up, and there's no tree until the worker brings one.
-            Some((_, old, old_text)) => {
-                let deadline = Some(Instant::now() + IN_TIME);
-                incremental::reparse(&mut self.parser, old, old_text, buffer.text(), deadline)?
+        let parsed = match &edited {
+            Some(edited) => {
+                let deadline = Some(Instant::now() + self.in_time);
+                parse_from(&mut self.parser, buffer.text(), Some(edited), deadline)
             }
-            None => parse(&mut self.parser, buffer.text())?,
+            None => parse(&mut self.parser, buffer.text()),
         };
         let state = self.buffers.get_mut(&buffer.id())?;
-        state.tree = Some((version, tree.clone(), buffer.text().clone()));
-        // The layers were for the text before; the worker brings new ones.
-        state.layers.clear();
-        Some((language, tree))
+        match (parsed, &mut state.held) {
+            // The layers stay as they were edited; the worker brings new
+            // ones.
+            (Some(tree), Some(held)) => {
+                held.tree = tree.clone();
+                held.parsed = version;
+                Some((language, tree))
+            }
+            (Some(tree), None) => {
+                let held = Held::new(version, buffer.text().clone(), tree.clone(), Vec::new());
+                state.held = Some(held);
+                Some((language, tree))
+            }
+            (None, Some(held)) => {
+                let tree = held.tree.clone();
+                self.send(buffer);
+                Some((language, tree))
+            }
+            (None, None) => None,
+        }
     }
 
     /// `source` compiled as a query for `language`. Compiled queries are
@@ -663,16 +745,15 @@ impl Syntax {
     pub fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         let Some(BufferSyntax {
             language,
-            tree: Some((_, tree, _)),
-            layers,
+            held: Some(held),
             ..
         }) = self.buffers.get(&buffer)
         else {
             return Vec::new();
         };
         let mut found = Vec::new();
-        self.highlight(language, tree, text, &range, &mut found);
-        for layer in layers {
+        self.highlight(language, &held.tree, text, &range, &mut found);
+        for layer in &held.layers {
             self.highlight(&layer.language, &layer.tree, text, &range, &mut found);
         }
         found

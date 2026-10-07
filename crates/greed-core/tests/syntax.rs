@@ -400,3 +400,176 @@ fn grammars_load_from_webassembly_and_parse_like_built_in_ones() {
     let at = text.find("42").unwrap();
     assert_eq!(captured(&all, at..at + 2), ["constant.numeric"], "{all:?}");
 }
+
+/// A file big enough that parsing it again takes a while.
+const LINE: &str = "fn f() { let x = 1; }\n";
+const LINES: usize = 20_000;
+
+/// Checks that the `fn` on each of `lines` is highlighted as a keyword
+/// where it is in the buffer's text now.
+fn assert_fn_keywords(syntax: &Syntax, ed: &Editor, buffer: greed_core::BufferId, lines: &[usize]) {
+    let text = ed.buffer(buffer).text();
+    for &line in lines {
+        let start = text.line_to_byte(line);
+        let end = text.line_to_byte(line + 1);
+        let at = start + text.byte_slice(start..end).to_string().find("fn").unwrap();
+        let found = syntax.highlights(buffer, text, start..end);
+        assert!(
+            captured(&found, at..at + 2).contains(&"keyword"),
+            "line {line}, fn at {at}: {found:?}"
+        );
+    }
+}
+
+fn big_rust() -> (Editor, greed_core::BufferId, greed_core::ViewId, Syntax) {
+    let mut ed = Editor::new(ClientId(1));
+    let (buffer, view) = ed.open("file", &LINE.repeat(LINES), Some("big.rs".into()));
+    let mut syntax = Syntax::new();
+    // Every parse on the editor's thread is out of time at once.
+    syntax.in_time = Duration::ZERO;
+    syntax.update(&ed);
+    wait(&mut syntax);
+    (ed, buffer, view, syntax)
+}
+
+fn edit(ed: &mut Editor, view: greed_core::ViewId, changes: &[(usize, usize, &str)]) {
+    let len = ed.buffer(ed.view(view).buffer).text().len_bytes();
+    let changes = greed_text::ChangeSet::from_changes(
+        len,
+        changes
+            .iter()
+            .map(|&(from, to, text)| (from, to, Some(text))),
+    )
+    .unwrap();
+    ed.apply(
+        view,
+        changes,
+        greed_text::Author::User(ClientId(1)),
+        None,
+        None,
+    )
+    .unwrap();
+}
+
+/// After an edit, the highlights follow the text at once, from the tree
+/// before it with the edit applied; a plugin asking for the tree gets that
+/// tree too when parsing again runs out of time; and the worker's new parse
+/// replaces it after.
+fn check_edit(
+    ed: &mut Editor,
+    view: greed_core::ViewId,
+    syntax: &mut Syntax,
+    change: impl FnOnce(&mut Editor),
+    lines: &[usize],
+) {
+    let buffer = ed.view(view).buffer;
+    change(ed);
+    syntax.update(ed);
+    assert_fn_keywords(syntax, ed, buffer, lines);
+    let (_, tree) = syntax
+        .tree(ed.buffer(buffer))
+        .expect("a tree right after the edit");
+    assert_eq!(
+        tree.root_node().end_byte(),
+        ed.buffer(buffer).text().len_bytes()
+    );
+    assert_fn_keywords(syntax, ed, buffer, lines);
+    wait(syntax);
+    syntax.update(ed);
+    assert_fn_keywords(syntax, ed, buffer, lines);
+}
+
+#[test]
+fn highlights_follow_edits_while_the_buffer_is_parsed_again() {
+    let (mut ed, buffer, view, mut syntax) = big_rust();
+    let (mid, last) = (LINES / 2, LINES - 1);
+    assert_fn_keywords(&syntax, &ed, buffer, &[0, mid, last]);
+
+    // At the start, in the middle and at the end.
+    check_edit(
+        &mut ed,
+        view,
+        &mut syntax,
+        |ed| edit(ed, view, &[(0, 0, "  ")]),
+        &[0, 1, mid, last],
+    );
+    let middle = ed.buffer(buffer).text().line_to_byte(mid);
+    check_edit(
+        &mut ed,
+        view,
+        &mut syntax,
+        |ed| edit(ed, view, &[(middle, middle, "\n\n    ")]),
+        &[0, mid - 1, mid + 2, last + 2],
+    );
+    let end = ed.buffer(buffer).text().len_bytes();
+    check_edit(
+        &mut ed,
+        view,
+        &mut syntax,
+        |ed| edit(ed, view, &[(end, end, "fn g() {}\n")]),
+        &[0, mid + 2, last + 2],
+    );
+    // The new function has its highlights once the new tree is in.
+    assert_fn_keywords(&syntax, &ed, buffer, &[last + 3]);
+
+    // Several cursors: two spaces before every thousandth line.
+    let text = ed.buffer(buffer).text().clone();
+    let starts: Vec<usize> = (0..LINES)
+        .step_by(1000)
+        .map(|l| text.line_to_byte(l))
+        .collect();
+    let changes: Vec<(usize, usize, &str)> = starts.iter().map(|&at| (at, at, "  ")).collect();
+    check_edit(
+        &mut ed,
+        view,
+        &mut syntax,
+        |ed| edit(ed, view, &changes),
+        &[0, 999, 1000, 1001, mid + 2, last + 2],
+    );
+
+    // Undo takes each back, and the highlights go back with the text.
+    for lines in [
+        &[0, 1000, mid + 2, last + 3][..],
+        &[0, mid + 2, last + 2],
+        &[0, mid, last],
+    ] {
+        check_edit(
+            &mut ed,
+            view,
+            &mut syntax,
+            |ed| assert!(ed.undo(view).unwrap()),
+            lines,
+        );
+    }
+}
+
+#[test]
+fn a_parse_that_runs_out_of_time_keeps_the_tree_before_with_the_edit_applied() {
+    let (mut ed, buffer, view, mut syntax) = big_rust();
+    let mid = LINES / 2;
+    // Every function moves into another one, so none of the tree before
+    // can be reused: more than parsing again can do in no time at all.
+    let end = ed.buffer(buffer).text().len_bytes();
+    edit(
+        &mut ed,
+        view,
+        &[(0, 0, "fn outer() {\n"), (end, end, "}\n")],
+    );
+    syntax.update(&ed);
+    let (_, tree) = syntax
+        .tree(ed.buffer(buffer))
+        .expect("the tree before, edited");
+    assert_eq!(
+        tree.root_node().end_byte(),
+        ed.buffer(buffer).text().len_bytes()
+    );
+    assert_eq!(tree.root_node().named_child_count(), LINES);
+    assert_fn_keywords(&syntax, &ed, buffer, &[1, mid, LINES]);
+
+    // The new tree, parsed in the background, comes after.
+    wait(&mut syntax);
+    syntax.update(&ed);
+    let (_, tree) = syntax.tree(ed.buffer(buffer)).unwrap();
+    assert_eq!(tree.root_node().named_child_count(), 1);
+    assert_fn_keywords(&syntax, &ed, buffer, &[0, 1, mid, LINES]);
+}

@@ -536,7 +536,10 @@ view:set_selection({ ranges = ranges, primary = 1 })
 
 `tostring(node)` shows the node's subtree, which helps when writing a
 query. A node describes the text as it was when you got it; after an
-edit, find it again.
+edit, find it again. Right after an edit that would take a while to parse
+(a big file, or code tree-sitter has to recover from), the tree is the one
+before with the edit applied, its nodes moved along with the text, until
+the new one comes a moment later.
 
 Each language's queries are in `greed.syntax`: `greed.syntax.query("rust",
 "textobjects")` is the one in use, and `greed.syntax.set_query` sets one.

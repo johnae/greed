@@ -4,6 +4,8 @@ Greed highlights code with tree-sitter. A language's `highlights` query
 gives pieces of the text names like `keyword.control.return` or
 `markup.heading.1`, and the theme gives each name a look. The names are
 the same in every language, so one theme entry styles keywords everywhere.
+Files are parsed again in the background after each edit; until that's
+done, the highlights from before move along with the text you typed.
 
 A name falls back to its parent when the theme has no entry for it:
 `keyword.control.return` uses `keyword.control`, then `keyword`. A theme

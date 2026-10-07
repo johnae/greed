@@ -4,8 +4,10 @@
 
 use std::time::Instant;
 
-use greed_text::Rope;
+use greed_text::{ChangeSet, Operation, Rope};
 use tree_sitter::{InputEdit, Parser, Point, Tree};
+
+use crate::History;
 
 /// The one range that differs between `old` and `new`, as tree-sitter wants
 /// an edit: the bytes before it are the same in both, and so are the bytes
@@ -26,6 +28,72 @@ pub(super) fn edit_between(old: &Rope, new: &Rope) -> Option<InputEdit> {
         old_end_position: point(old, old_end),
         new_end_position: point(new, new_end),
     })
+}
+
+/// The edits that took the text from `old`, as it was at version `from` of
+/// `history`, to `new`, as it is now: one for each change of each
+/// transaction since, each in the text as the ones before it left it. When
+/// the history doesn't have them (it doesn't keep transactions, or `old`
+/// doesn't fit them), the one range that differs instead.
+pub(super) fn edits_since(
+    history: &History,
+    from: usize,
+    old: &Rope,
+    new: &Rope,
+) -> Vec<InputEdit> {
+    let log = history.log();
+    if history.applied() == log.len() && from <= log.len() {
+        let mut text = old.clone();
+        let mut edits = Vec::new();
+        let fits = log[from..].iter().all(|tx| {
+            let fits = tx.changes.len() == text.len_bytes();
+            if fits {
+                edits_of(&tx.changes, &mut text, &mut edits);
+            }
+            fits
+        });
+        if fits && text.len_bytes() == new.len_bytes() {
+            return edits;
+        }
+    }
+    edit_between(old, new).into_iter().collect()
+}
+
+/// Adds the edits `changes` makes to `text` to `edits`, and makes them.
+fn edits_of(changes: &ChangeSet, text: &mut Rope, edits: &mut Vec<InputEdit>) {
+    let mut pos = 0;
+    let mut ops = changes.ops().iter().peekable();
+    while let Some(op) = ops.next() {
+        let (inserted, deleted) = match op {
+            Operation::Retain(n) => {
+                pos += n;
+                continue;
+            }
+            // An insert comes before a delete at the same place.
+            Operation::Insert(inserted) => {
+                match ops.next_if(|op| matches!(op, Operation::Delete(_))) {
+                    Some(Operation::Delete(n)) => (inserted.as_str(), *n),
+                    _ => (inserted.as_str(), 0),
+                }
+            }
+            Operation::Delete(n) => ("", *n),
+        };
+        let start_position = point(text, pos);
+        let old_end_position = point(text, pos + deleted);
+        let from = text.byte_to_char(pos);
+        text.remove(from..text.byte_to_char(pos + deleted));
+        text.insert(from, inserted);
+        let new_end = pos + inserted.len();
+        edits.push(InputEdit {
+            start_byte: pos,
+            old_end_byte: pos + deleted,
+            new_end_byte: new_end,
+            start_position,
+            old_end_position,
+            new_end_position: point(text, new_end),
+        });
+        pos = new_end;
+    }
 }
 
 /// Parses `new`, reusing `old`, which was parsed from `old_text`; `None` if
@@ -141,6 +209,35 @@ mod tests {
         let e = edit_between(&Rope::from_str("ab\ncd\n"), &Rope::from_str("ab\ncXd\n")).unwrap();
         assert_eq!((e.start_position.row, e.start_position.column), (1, 1));
         assert_eq!((e.new_end_position.row, e.new_end_position.column), (1, 2));
+    }
+
+    #[test]
+    fn each_change_is_an_edit_in_the_text_the_ones_before_left() {
+        let mut text = Rope::from_str("ab\ncd\nef\n");
+        let changes =
+            ChangeSet::from_changes(9, [(1, 1, Some("X\n")), (3, 4, None), (6, 8, Some("g"))])
+                .unwrap();
+        let mut edits = Vec::new();
+        edits_of(&changes, &mut text, &mut edits);
+        assert_eq!(text.to_string(), "aX\nb\nd\ng\n");
+        let found: Vec<_> = edits
+            .iter()
+            .map(|e| {
+                (
+                    (e.start_byte, e.old_end_byte, e.new_end_byte),
+                    (e.start_position.row, e.start_position.column),
+                    (e.new_end_position.row, e.new_end_position.column),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ((1, 1, 3), (0, 1), (1, 0)),
+                ((5, 6, 5), (2, 0), (2, 0)),
+                ((7, 9, 8), (3, 0), (3, 1)),
+            ]
+        );
     }
 
     #[test]
