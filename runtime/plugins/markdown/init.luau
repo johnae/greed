@@ -136,6 +136,18 @@ local function free(line: Line, from: number, to: number): boolean
 	return true
 end
 
+-- Whether emphasis from `from` to `to`, its markers `size` long, can be:
+-- what's marked already, like `**`code`**`'s code, must be inside it whole.
+local function around(line: Line, from: number, to: number, size: number): boolean
+	for _, span in line.taken do
+		local overlaps = from <= span[2] and to >= span[1]
+		if overlaps and not (span[1] >= from + size and span[2] <= to - size) then
+			return false
+		end
+	end
+	return true
+end
+
 local visible: (text: string, reading: boolean) -> string
 
 -- Inline markup in `line`: code spans first, then images and links, then
@@ -205,7 +217,7 @@ local function inline(line: Line)
 			-- `_` inside words (snake_case) isn't emphasis.
 			local word = marker == "_"
 				and string.match(string.sub(text, first - 1, first - 1), "%w") ~= nil
-			if free(line, first, last) and not word and not string.match(body, "%s$") then
+			if around(line, first, last, size) and not word and not string.match(body, "%s$") then
 				hide(line, first, first + size - 1)
 				paint(line, first + size, last - size, style)
 				hide(line, last - size + 1, last)

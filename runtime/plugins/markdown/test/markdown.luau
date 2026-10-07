@@ -587,3 +587,27 @@ test("a Markdown buffer made with its text gets the look when it's first shown",
 	t:draw(60, 12)
 	assert(#buffer:decorations("markdown") > 0, "drawn once a view shows it")
 end)
+
+test("bold holding code, brackets or a comma after it shows without its stars", function(t)
+	local rows =
+		shown(t, "- **Highlights TODO (yellow), NOTE (blue)**, bold\n**`github-dashboard`** plugin")
+	assert(rows[1] == "• Highlights TODO (yellow), NOTE (blue), bold", rows[1])
+	assert(rows[2] == "github-dashboard plugin", rows[2])
+end)
+
+test("a long bold line that wraps, indented as a transcript has it", function(t)
+	local rows = shown(
+		t,
+		"  - **Highlights `TODO` (yellow), `FIXME` (red), `NOTE` (blue)**, bold, in every buffer — whole words only, so `todos` or `UNTODOED` don't light up."
+	)
+	assert(not string.find(rows[1], "**", 1, true), rows[1] .. "\n" .. rows[2])
+end)
+
+test("another plugin's marks inside bold leave its stars hidden", function(t)
+	shown(t, "a **b TODO c** d")
+	local buffer = greed.view():buffer()
+	local at = (string.find(buffer:text(), "TODO", 1, true) :: number) - 1
+	buffer:decorate("other", { { from = at, to = at + 4, style = "keyword" } })
+	local rows = t:draw(60, 12)
+	assert(rows[1] == "a b TODO c d", rows[1])
+end)
