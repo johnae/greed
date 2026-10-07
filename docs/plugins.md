@@ -1454,6 +1454,12 @@ Greed's own agent asks the user before a tool whose `kind` isn't `"read"`
 runs, the way it asks before its own edits, unless the tool `reviews`;
 MCP clients see the others marked read-only. Set `kind` on every tool
 that changes, runs or fetches something, so it isn't run unasked.
+`sandboxed = true` marks a tool that does more than read but needs no say
+from the user, like checking a plugin in an editor of its own.
+
+Agents connected when a plugin loads or unloads hear that their tools
+changed, so a tool from a plugin you've just approved can be used in the
+same conversation.
 
 `run` gets the arguments as a table, and who called as `caller`, whose
 `kind` is `"shell"` for `greed ctl`, `"socket"` for MCP clients like

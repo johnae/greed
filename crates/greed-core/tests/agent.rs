@@ -18,6 +18,11 @@ fn plugin(name: &str) -> PathBuf {
 /// An editor with the agent plugin, showing `text` with "two" selected, and a
 /// client connected to its session.
 fn start(label: &str, text: &'static str) -> (Connection, Client) {
+    start_with(label, text, Vec::new())
+}
+
+/// [`start`], loading the plugins in `extra` too, after the agent plugin.
+fn start_with(label: &str, text: &'static str, extra: Vec<PathBuf>) -> (Connection, Client) {
     sessions::private();
     let name = format!("agent-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
@@ -40,6 +45,7 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
                 plugin("models"),
                 plugin("agent"),
             ])?;
+            host.load_dirs(&extra)?;
             Ok(host)
         },
         Some(session),
@@ -313,4 +319,55 @@ fn an_agent_switches_on_a_group_of_tools_and_hears_its_list_changed() {
     );
     assert!(tool_names(&mut client).contains(&"history_recent".to_owned()));
     conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_plugin_loaded_while_an_agent_is_connected_tells_it_of_its_tools() {
+    let dir = std::env::temp_dir().join(format!("greed-agent-new-tool-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let loader = dir.join("loader");
+    let offers = dir.join("offers");
+    std::fs::create_dir_all(&loader).unwrap();
+    std::fs::create_dir_all(&offers).unwrap();
+    std::fs::write(
+        loader.join("plugin.toml"),
+        "name = \"loader\"\ncapabilities = [\"plugins\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        loader.join("init.luau"),
+        format!(
+            "local greed = require('@greed')
+            greed.command({{ name = 'load-offers', run = function() greed.plugin.load({:?}) end }})
+            return {{}}\n",
+            offers.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        offers.join("plugin.toml"),
+        "name = \"offers\"\nrequires = [\"agent\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        offers.join("init.luau"),
+        "require('@agent').tool({ name = 'echo_back', description = 'Says it back',
+            input = require('@agent').schema.object({}), run = function() return 'back' end })
+        return {}\n",
+    )
+    .unwrap();
+    let (conn, mut client) = start_with("new-tool", "one two three", vec![loader]);
+    assert!(!tool_names(&mut client).contains(&"echo_back".to_owned()));
+    conn.input.send(Input::Run("load-offers".into())).unwrap();
+    // A request after it, so the notice that came first is in.
+    let names = tool_names(&mut client);
+    assert!(names.contains(&"echo_back".to_owned()), "{names:?}");
+    assert!(
+        client
+            .take_notifications()
+            .contains(&json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" })),
+        "the agent heard its tools changed"
+    );
+    conn.input.send(Input::Quit).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

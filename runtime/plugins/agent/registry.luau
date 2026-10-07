@@ -69,6 +69,15 @@ local groups: { [string]: string } = {}
 -- The groups each MCP connection switched on, by connection.
 local switched: { [number]: Caller } = {}
 
+-- Tells every connected MCP client its tools changed, to ask for them
+-- again. Plugins offering tools set it off, so it's vouched for: it only
+-- ever sends that notice.
+local function announce()
+	for connection in switched do
+		pcall(greed.control.send, connection, "notifications/tools/list_changed", nil)
+	end
+end
+
 greed.option.define({
 	name = "agent-tool-groups",
 	doc = 'The tool groups agents get from the start, besides those they switch on: names with spaces between, or "all"',
@@ -93,7 +102,14 @@ function M.tool(spec: Tool)
 	local client = spec.client or "socket"
 	local named = tools[client] or {}
 	tools[client] = named
-	greed.plugin.tie(registry.set(named, spec.name, spec))
+	local remove = registry.set(named, spec.name, spec)
+	-- Agents connected now hear of it, and of it going, so a plugin you
+	-- just approved can be used at once.
+	greed.vouch(announce)
+	greed.plugin.tie(function()
+		remove()
+		greed.vouch(announce)
+	end)
 end
 
 --- Whether an agent should ask you before `tool` runs: it does more than
