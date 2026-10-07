@@ -1750,6 +1750,141 @@ fn plugins_hear_when_a_view_is_drawn_at_a_new_size() {
 }
 
 #[test]
+fn plugins_hear_once_a_frame_when_a_selection_changes() {
+    let h = host("hello world");
+    h.eval("greed = require('@greed')").unwrap();
+    h.load_str(
+        "selections",
+        r#"
+        local greed = require("@greed")
+        local seen = {}
+        greed.on("selection.changed", function(e)
+            local range = e.view:selection().ranges[1]
+            table.insert(seen, `{range.anchor}-{range.head}`)
+        end)
+        return seen
+        "#,
+    )
+    .unwrap();
+    let seen = || h.eval("table.concat(require('@selections'), ' ')").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "", "nothing to compare with yet");
+
+    // A plugin moving it twice, then a key, all before one frame.
+    h.eval("greed.view():set_selection({ ranges = { { anchor = 0, head = 2 } } })")
+        .unwrap();
+    h.eval("greed.view():set_selection({ ranges = { { anchor = 0, head = 3 } } })")
+        .unwrap();
+    h.with_editor_mut(|ed| {
+        let view = ed.focus();
+        ed.view_mut(view).selection = Selection::single(1, 4);
+    });
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "1-4");
+
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "1-4", "nothing changed");
+
+    // Moved and moved back is no change.
+    h.eval("greed.view():set_selection({ ranges = { { anchor = 0, head = 0 } } })")
+        .unwrap();
+    h.eval("greed.view():set_selection({ ranges = { { anchor = 1, head = 4 } } })")
+        .unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "1-4");
+
+    // An edit maps the selection along.
+    h.eval("greed.view():buffer():edit(function(e) e:insert(0, 'oh ') end)")
+        .unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "1-4 4-7");
+
+    // Another buffer at the same place is a change too.
+    h.eval("greed.view():show(greed.create_buffer('scratch', 'x'))")
+        .unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "1-4 4-7 0-0");
+}
+
+#[test]
+fn what_a_selection_handler_changes_is_told_in_the_same_frame() {
+    let h = host("hello world");
+    h.eval("greed = require('@greed')").unwrap();
+    h.load_str(
+        "snap",
+        r#"
+        local greed = require("@greed")
+        local heads = {}
+        greed.on("selection.changed", function(e)
+            local head = e.view:selection().ranges[1].head
+            table.insert(heads, head)
+            if head == 3 then
+                e.view:set_selection({ ranges = { { anchor = 5, head = 5 } } })
+            end
+        end)
+        return heads
+        "#,
+    )
+    .unwrap();
+    h.report_selections().unwrap();
+    h.eval("greed.view():set_selection({ ranges = { { anchor = 3, head = 3 } } })")
+        .unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(
+        h.eval("table.concat(require('@snap'), ' ')").unwrap(),
+        "3 5"
+    );
+}
+
+#[test]
+fn plugins_hear_when_another_view_has_focus() {
+    let h = host("text");
+    h.eval("greed = require('@greed')").unwrap();
+    h.load_str(
+        "focus",
+        r#"
+        local greed = require("@greed")
+        local seen = {}
+        greed.on("view.focused", function(e)
+            local from = if e.from then e.from:buffer():text() else "nil"
+            table.insert(seen, `{from}>{e.view:buffer():text()}`)
+        end)
+        return seen
+        "#,
+    )
+    .unwrap();
+    let seen = || h.eval("table.concat(require('@focus'), ' ')").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "");
+
+    h.eval(
+        "main = greed.view(); pane = main:split('right', greed.create_buffer('scratch', 'pane'))",
+    )
+    .unwrap();
+    h.eval("pane:focus()").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "text>pane");
+
+    h.eval("main:focus()").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "text>pane pane>text");
+
+    // There and back before a frame is no change.
+    h.eval("pane:focus(); main:focus()").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "text>pane pane>text");
+
+    h.eval("float = greed.float(greed.create_buffer('scratch', 'float'))")
+        .unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "text>pane pane>text text>float");
+
+    h.eval("float:close()").unwrap();
+    h.report_selections().unwrap();
+    assert_eq!(seen(), "text>pane pane>text text>float nil>text");
+}
+
+#[test]
 fn marks_lines_can_be_pieces_with_styles() {
     let h = host("a");
     h.eval(

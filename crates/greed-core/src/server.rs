@@ -286,6 +286,9 @@ impl Server<'_> {
         let requests = session.map_or_else(crossbeam_channel::never, |s| s.requests().clone());
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
+        // Where selections and focus start, for the first frame to compare.
+        let started = self.host.report_selections();
+        self.report(started);
         loop {
             let mut problems = self.host.update_syntax();
             problems.extend(self.host.sync_lsp());
@@ -358,8 +361,12 @@ impl Server<'_> {
             if !self.follow_requests() {
                 return;
             }
-            if self.frame_due(typed) && !self.draw() {
-                return;
+            if self.frame_due(typed) {
+                let reported = self.host.report_selections();
+                self.report(reported);
+                if !self.draw() {
+                    return;
+                }
             }
         }
     }

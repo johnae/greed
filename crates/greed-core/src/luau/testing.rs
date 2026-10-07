@@ -152,6 +152,8 @@ impl Host {
             .lua
             .create_function(move |lua, (name, body): (String, Function)| {
                 if name == target {
+                    // What loading did is the start, with nothing to tell.
+                    super::report_selections(lua)?;
                     // As a coroutine, so the test can wait like any command.
                     super::tasks::run_to_end(lua, body, TestContext)?;
                 }
@@ -189,6 +191,7 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
         }
         jobs::settle(lua)?;
         watch::check(lua)?;
+        end_frame(lua)?;
         if done.call::<bool>(())? {
             return Ok(());
         }
@@ -233,6 +236,15 @@ fn mouse(
     };
     let hit = renderer(lua).hit(&state(lua).editor, col, row);
     super::mouse_event(lua, event, &hit)?;
+    jobs::settle(lua)?;
+    end_frame(lua)
+}
+
+/// Tells plugins what the server tells them before drawing the next frame:
+/// selections and focus that changed. Each `t:keys`, `t:run`, `t:mouse`,
+/// `t:wait` and `t:draw` ends one.
+fn end_frame(lua: &Lua) -> mlua::Result<()> {
+    super::report_selections(lua)?;
     jobs::settle(lua)
 }
 
@@ -309,6 +321,7 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<Vec<String>> {
             &Plain,
         ))
     };
+    end_frame(lua)?;
     let mut drawn = frame()?;
     // As the server does: what plugins do about views changing shows at once.
     if super::report_views(lua)? {
@@ -340,14 +353,15 @@ impl UserData for TestContext {
                 api::press(lua, key).map_err(api::into_lua)?;
                 jobs::settle(lua)?;
             }
-            Ok(())
+            end_frame(lua)
         });
         methods.add_method(
             "run",
             |lua, _, (command, args): (String, Option<Vec<String>>)| {
                 api::run_command_with(lua, &command, args.unwrap_or_default())
                     .map_err(api::into_lua)?;
-                jobs::settle(lua)
+                jobs::settle(lua)?;
+                end_frame(lua)
             },
         );
         methods.add_method(
@@ -361,10 +375,12 @@ impl UserData for TestContext {
         methods.add_method("wait", |lua, _, ms: f64| {
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
             jobs::settle(lua)?;
+            end_frame(lua)?;
             tasks::advance(lua, later)?;
             jobs::settle(lua)?;
             // As much time as the session takes to look has gone by.
-            watch::check(lua)
+            watch::check(lua)?;
+            end_frame(lua)
         });
         methods.add_method("wait_for", |lua, _, (done, ms): (Function, Option<f64>)| {
             wait_until(

@@ -63,6 +63,17 @@ test("g n, g p and g a go between open files, g m to the last one changed", func
 	assert(greed.view():buffer():id() == before, "g p comes back")
 end)
 
+test("g a knows files a plugin showed, with no keys in between", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b", ["c.txt"] = "c" })
+	greed.open(dir .. "/a.txt")
+	t:wait(0)
+	greed.open(dir .. "/b.txt")
+	t:wait(0)
+	greed.open(dir .. "/c.txt")
+	t:keys("g a")
+	assert(greed.view():buffer():path() == dir .. "/b.txt", greed.view():buffer():path())
+end)
+
 test("g . goes to the last change, g | to a column", function(t)
 	t:buffer("|one\ntwo\nthree")
 	t:keys("j i X esc g g g .")

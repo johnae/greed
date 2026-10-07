@@ -995,6 +995,19 @@ export type ViewScrolled = {
 	line: number,
 }
 
+--- A view's selection changed, or it shows another buffer, since the last
+--- frame: told once a frame however many changes there were, whatever made
+--- them (keys, the mouse, undo, a plugin or an agent).
+export type SelectionChanged = {
+	view: View,
+}
+
+--- Another view has focus. `from` had it before; nil when it was closed.
+export type ViewFocused = {
+	view: View,
+	from: View?,
+}
+
 --- An option was set, with `greed.option.set` or `:set`.
 export type OptionChanged = {
 	name: string,
@@ -1392,6 +1405,8 @@ export type Greed = {
 		& ((event: "view.resized", handler: (event: ViewResized) -> ()) -> ())
 		& ((event: "pane.opened", handler: (event: PaneOpened) -> ()) -> ())
 		& ((event: "view.scrolled", handler: (event: ViewScrolled) -> ()) -> ())
+		& ((event: "selection.changed", handler: (event: SelectionChanged) -> ()) -> ())
+		& ((event: "view.focused", handler: (event: ViewFocused) -> ()) -> ())
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.loaded", handler: (event: PluginLoaded) -> ()) -> ())

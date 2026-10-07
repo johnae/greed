@@ -493,25 +493,24 @@ local function where(): (number, string?)
 	return tab.id, tab.active:buffer():path()
 end
 
--- After a command or a click, light goes through what changed: the tab
--- pill for another tab, the file for another file in the active pane.
+local shown_tab, shown_file = where()
+
+-- Light goes through what changed: the tab pill for another tab, the file
+-- for another file in the active pane.
 local function follow()
-	if not effects.enabled() then
-		return
-	end
 	local tab, file = where()
-	-- Waits for the command to finish.
-	greed.sleep(0)
-	local now_tab, now_file = where()
-	if now_tab ~= tab then
-		M.glow("tab")
-	elseif now_file ~= file and now_file then
-		M.glow("file")
+	if effects.enabled() then
+		if tab ~= shown_tab then
+			M.glow("tab")
+		elseif file ~= shown_file and file then
+			M.glow("file")
+		end
 	end
+	shown_tab, shown_file = tab, file
 end
 
-greed.on("command.run", follow)
-greed.on("mouse", follow)
+greed.on("view.focused", follow)
+greed.on("selection.changed", follow)
 -- A new mode glows from the middle of its name out.
 greed.on("mode.changed", function()
 	M.glow("mode", 450, effects.burst)

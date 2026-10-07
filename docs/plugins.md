@@ -630,6 +630,8 @@ end)
 | `file.changed` | A file watched with `greed.fs.watch(path)` was written, created or removed, by anything | `path` |
 | `mode.changed` | The mode changed | `from`, `to` |
 | `command.run` | A command is about to run | `name`, the `keys` that ran it, `count` |
+| `selection.changed` | A view's selection changed, or it shows another buffer, by anything: keys, the mouse, undo, a plugin or an agent. Once a frame per view, before it's drawn, however many changes there were | `view` |
+| `view.focused` | Another view has focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, and `from`, the view that had it (nil if it was closed) |
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
 | `option.changed` | An option was set | `name`, `value` |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |

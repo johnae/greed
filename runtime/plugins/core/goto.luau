@@ -40,8 +40,13 @@ local function seen(buffer: greed.Buffer)
 	end
 end
 
-greed.on("command.run", function()
-	seen(greed.view():buffer())
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	if event.view == greed.view() then
+		seen(event.view:buffer())
+	end
+end)
+greed.on("view.focused", function(event: greed.ViewFocused)
+	seen(event.view:buffer())
 end)
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)

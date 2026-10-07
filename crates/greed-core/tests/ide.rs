@@ -303,6 +303,56 @@ fn mentioning_whole_lines_names_just_those_lines() {
     std::fs::remove_dir_all(&work).unwrap();
 }
 
+#[test]
+fn claude_code_hears_the_selection_whatever_moved_it() {
+    let work = std::env::temp_dir().join(format!("greed-ide-select-work-{}", std::process::id()));
+    std::fs::create_dir_all(&work).unwrap();
+    let file = work.join("a.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
+    let (conn, dir) = start_agent("select", &file);
+    let (port, lock) = lock(&dir);
+    let mut socket = connect(port, lock["authToken"].as_str().unwrap()).unwrap();
+    if let MaybeTlsStream::Plain(stream) = socket.get_ref() {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+    }
+    let mut selected = |text: &str| loop {
+        let params = notification(&mut socket, "selection_changed");
+        if params["text"] == text {
+            return params;
+        }
+    };
+
+    for key in greed_core::keymap::Key::parse_sequence("j x").unwrap() {
+        conn.input.send(Input::Key(key)).unwrap();
+    }
+    let keys = selected("two\n");
+    assert_eq!(keys["selection"]["start"]["line"], 1, "{keys}");
+    assert_eq!(keys["filePath"], file.to_str().unwrap());
+
+    // An agent moving it, with no key pressed.
+    let name = format!("ide-select-{}", std::process::id());
+    let (session, token) = control::session_files(&name);
+    let token = std::fs::read_to_string(token).unwrap();
+    let mut client = control::Client::connect_as(&session, &token, true).unwrap();
+    let set = json!({
+        "name": "eval",
+        "arguments": {
+            "code": "require('@greed').view():set_selection({ ranges = { { anchor = 0, head = 3 } } })",
+        },
+    });
+    let answer = client.call("tools/call", &set).unwrap().unwrap();
+    assert_eq!(answer["isError"], false, "{answer}");
+    let agent = selected("one");
+    assert_eq!(agent["selection"]["start"]["line"], 0, "{agent}");
+
+    conn.input.send(Input::Quit).unwrap();
+    conn.server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&work).unwrap();
+}
+
 /// Waits until the editor started by `start_agent(label, ..)` has a proposal
 /// waiting for the user, asking over its session socket.
 fn wait_for_proposal(label: &str) {

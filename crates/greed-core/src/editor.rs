@@ -854,6 +854,13 @@ impl Editor {
         self.views.iter().map(|(id, view)| (*id, view.scroll.line))
     }
 
+    /// Each view's buffer and selection, floats' too.
+    pub fn view_selections(&self) -> impl Iterator<Item = (ViewId, BufferId, &Selection)> + '_ {
+        self.views
+            .iter()
+            .map(|(id, view)| (*id, view.buffer, &view.selection))
+    }
+
     pub fn view(&self, id: ViewId) -> &View {
         &self.views[&id]
     }

@@ -227,7 +227,7 @@ end)
 local last_sent = ""
 local generation = 0
 
-greed.on("command.run", function()
+local function selection_moved()
 	generation += 1
 	local mine = generation
 	greed.sleep(100)
@@ -243,7 +243,14 @@ greed.on("command.run", function()
 		last_sent = encoded
 		greed.control.notify("selection_changed", selection)
 	end
+end
+
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	if event.view == greed.view() then
+		selection_moved()
+	end
 end)
+greed.on("view.focused", selection_moved)
 
 greed.command({
 	name = "ide-mention",

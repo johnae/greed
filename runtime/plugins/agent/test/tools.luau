@@ -22,6 +22,16 @@ test("focus tells the file you were in while a pane without one has focus", func
 	assert(focus.selections[1].text == "two", focus.selections[1].text)
 end)
 
+test("focus tells the file you were in after moving to a pane without one", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+	greed.open(dir .. "/a.txt")
+	t:wait(0)
+	greed.view():split("right", greed.create_buffer("notes", "x")):focus()
+	t:wait(0)
+	local focus = run("focus")
+	assert(focus.path == dir .. "/a.txt", tostring(focus.path))
+end)
+
 test("read falls back to the disk for files that aren't open", function(t)
 	local dir = t:tempdir({ ["closed.txt"] = "a\nb\nc" })
 	t:buffer("|x")

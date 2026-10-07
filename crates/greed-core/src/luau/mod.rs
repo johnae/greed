@@ -133,6 +133,11 @@ pub(crate) struct State {
     pub view_sizes: HashMap<crate::ViewId, (u16, u16)>,
     /// Each view's top line as last told to plugins with "view.scrolled".
     pub view_scrolls: HashMap<crate::ViewId, usize>,
+    /// Each view's buffer and selection as last told to plugins with
+    /// "selection.changed".
+    pub view_selections: HashMap<crate::ViewId, (crate::BufferId, greed_text::Selection)>,
+    /// The focused view as last told to plugins with "view.focused".
+    pub focus_told: Option<crate::ViewId>,
     /// Syntax trees, for highlighting and for plugins.
     pub syntax: crate::syntax::Syntax,
     /// The queries each plugin set, by language and kind, oldest first; the
@@ -327,6 +332,8 @@ impl Host {
             terminals: terminal::Terminals::default(),
             view_sizes: HashMap::new(),
             view_scrolls: HashMap::new(),
+            view_selections: HashMap::new(),
+            focus_told: None,
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
@@ -698,6 +705,16 @@ impl Host {
     pub fn report_views(&self) -> Result<bool, HostError> {
         budgeted(&self.lua, || {
             report_views(&self.lua).map_err(HostError::from)
+        })
+    }
+
+    /// Tells plugins about another view taking focus, with "view.focused",
+    /// and views whose selection changed since the last call, with
+    /// "selection.changed": once each however many changes there were.
+    /// Call it before drawing a frame.
+    pub fn report_selections(&self) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            report_selections(&self.lua).map_err(HostError::from)
         })
     }
 
@@ -1074,6 +1091,66 @@ fn report_views(lua: &Lua) -> mlua::Result<bool> {
         let payload = payload(id)?;
         payload.set("line", line)?;
         api::emit(lua, "view.scrolled", &payload)?;
+    }
+    Ok(reported)
+}
+
+/// Emits "view.focused" when another view has focus and
+/// "selection.changed" for each view whose selection changed, or which shows
+/// another buffer. Views that are new have nothing to compare with. What
+/// handlers change in answer is told once more.
+fn report_selections(lua: &Lua) -> mlua::Result<()> {
+    if report_selections_once(lua)? {
+        report_selections_once(lua)?;
+    }
+    Ok(())
+}
+
+/// One round of [`report_selections`]; whether a handler heard it.
+fn report_selections_once(lua: &Lua) -> mlua::Result<bool> {
+    let (focused, changed) = {
+        let state = &mut *state_mut(lua);
+        let editor = &state.editor;
+        let focus = editor.focus();
+        let focused = match state.focus_told.replace(focus) {
+            Some(old) if old != focus => Some((focus, editor.find_view(old).map(|_| old))),
+            _ => None,
+        };
+        let now: HashMap<_, _> = editor
+            .view_selections()
+            .map(|(id, buffer, selection)| (id, (buffer, selection.clone())))
+            .collect();
+        let changed: Vec<_> = now
+            .iter()
+            .filter(|(id, seen)| {
+                state
+                    .view_selections
+                    .get(id)
+                    .is_some_and(|old| old != *seen)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        state.view_selections = now;
+        (focused, changed)
+    };
+    let author = greed_text::Author::User(state(lua).editor.client());
+    let view = |id| handles::ViewRef {
+        id,
+        author: author.clone(),
+    };
+    let heard = |event: &str| !state(lua).registry.handlers(event).is_empty();
+    let reported = (focused.is_some() && heard("view.focused"))
+        || (!changed.is_empty() && heard("selection.changed"));
+    if let Some((id, from)) = focused {
+        let payload = lua.create_table()?;
+        payload.set("view", view(id))?;
+        payload.set("from", from.map(&view))?;
+        api::emit(lua, "view.focused", &payload)?;
+    }
+    for id in changed {
+        let payload = lua.create_table()?;
+        payload.set("view", view(id))?;
+        api::emit(lua, "selection.changed", &payload)?;
     }
     Ok(reported)
 }

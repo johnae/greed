@@ -26,10 +26,11 @@ local function has_file(view: greed.View?): boolean
 	return ok and path ~= nil
 end
 
-greed.on("command.run", function()
-	local view = greed.view()
-	if has_file(view) then
-		last = view
+greed.on("view.focused", function(event: greed.ViewFocused)
+	if has_file(event.view) then
+		last = event.view
+	elseif has_file(event.from) then
+		last = event.from
 	end
 end)
 
