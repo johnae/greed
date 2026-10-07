@@ -410,3 +410,21 @@ test("the agent's Markdown shows as Markdown, its markup hidden", function(t)
 	t:keys("esc")
 	acp.stop(s)
 end)
+
+test("a tool's output shows exactly as it is, its stars and backticks too", function(t)
+	local s = start(t)
+	send(t, s, "stars")
+	local view = greed.view()
+	local text = view:buffer():text()
+	local at = (string.find(text, "Run python", 1, true) :: number) - 1
+	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	t:keys("tab")
+	-- The cursor away from it, so nothing is shown as written for being on
+	-- the cursor's line.
+	view:set_cursor(0)
+	local drawn = screen(t, 70)
+	assert(string.find(drawn, "def f(**kwargs):", 1, true), drawn)
+	assert(string.find(drawn, "return *ptr, `x`", 1, true), drawn)
+	assert(string.find(drawn, "- not a list", 1, true), drawn)
+	acp.stop(s)
+end)

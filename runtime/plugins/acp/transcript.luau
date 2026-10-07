@@ -28,6 +28,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local markdown = require("@markdown")
 local session = require("./session")
 local question = require("./question")
 
@@ -93,6 +94,10 @@ export type History = {
 	tools: { [number]: string },
 	--- Where each running tool's mark is, to animate it.
 	running: { { from: number, to: number } },
+	--- The lines that aren't what you or the agent said, by 0-based line
+	--- number: headings, tools and their output, plans, questions. They
+	--- show as they are; only what was said shows as Markdown.
+	plain: { [number]: boolean },
 }
 
 --- The history's text and decorations, for `s` as it is now.
@@ -131,8 +136,11 @@ function M.history(s: Session): History
 		speaker = nil
 		add("")
 	end
+	-- The lines of what was said, by 0-based line number.
+	local said: { [number]: boolean } = {}
 	local function body(text: string, style: string?)
 		for _, line in string.split(text, "\n") do
+			said[#lines] = true
 			add("  " .. line, style)
 		end
 	end
@@ -213,11 +221,18 @@ function M.history(s: Session): History
 		end
 	end
 	gap()
+	local plain: { [number]: boolean } = {}
+	for line = 0, #lines - 1 do
+		if not said[line] then
+			plain[line] = true
+		end
+	end
 	return {
 		text = table.concat(lines, "\n") .. "\n",
 		styles = styles,
 		tools = tools,
 		running = running,
+		plain = plain,
 	}
 end
 
@@ -558,6 +573,15 @@ function M.render(buffer: greed.Buffer, s: Session)
 	local row, row_marks = question.row(buffer, s, cells)
 	local head = if row then `{top}\n{row}` else top
 	local wanted = history.text .. head
+	-- The box's top line and its row of choices aren't Markdown either;
+	-- what you write under them is.
+	local plain = table.clone(history.plain)
+	local _, lines = string.gsub(history.text, "\n", "")
+	plain[lines] = true
+	if row then
+		plain[lines + 1] = true
+	end
+	markdown.plain(buffer, plain)
 	local stop = prompt_end(buffer)
 	if stop == nil then
 		-- The box's top went; everything there was is history now.

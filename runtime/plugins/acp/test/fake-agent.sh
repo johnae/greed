@@ -13,6 +13,7 @@
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
+#   stars        runs a tool whose output has Markdown-looking stars and backticks
 #   quit         exits
 
 cwd=""
@@ -154,6 +155,11 @@ while IFS= read -r line; do
 			;;
 		markdown*)
 			say 'Some **bold** and `code`, then:\n\n- one\n- two'
+			turn_done "$id" end_turn
+			;;
+		stars*)
+			update '{"sessionUpdate":"tool_call","toolCallId":"t4","title":"Run python","kind":"execute","status":"in_progress"}'
+			update '{"sessionUpdate":"tool_call_update","toolCallId":"t4","status":"completed","content":[{"type":"content","content":{"type":"text","text":"def f(**kwargs):\n    return *ptr, `x`\n- not a list"}}]}'
 			turn_done "$id" end_turn
 			;;
 		context*)

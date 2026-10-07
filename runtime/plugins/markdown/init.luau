@@ -61,6 +61,10 @@ export type Parts = { [string]: boolean }
 
 local claims: { (buffer: greed.Buffer) -> Parts? } = {}
 
+-- Lines of each buffer, by its id, that aren't Markdown and show as they
+-- are, from `M.plain`.
+local plain_lines: { [number]: { [number]: boolean } } = {}
+
 -- What others claimed in `buffer`.
 local function claimed(buffer: greed.Buffer): Parts
 	local parts: Parts = {}
@@ -382,6 +386,7 @@ local function marks(
 	local out: { greed.Mark } = {}
 	local parts = claimed(buffer)
 	local shows: Reveal = if read then "never" else "auto"
+	local left_plain = plain_lines[buffer:id()]
 	local n = first
 	while n <= last do
 		local at = s.starts[n + 1]
@@ -389,6 +394,9 @@ local function marks(
 		local line: Line =
 			{ text = text, at = at, out = out, shows = shows, taken = {}, reading = read ~= nil }
 		n += 1
+		if left_plain and left_plain[n - 1] then
+			continue
+		end
 		local block = s.code_at[n - 1]
 		if block then
 			-- A block's output (```` ```result ````) looks a little apart
@@ -534,6 +542,18 @@ function M.claim(claim: (buffer: greed.Buffer) -> Parts?): () -> ()
 	end
 	greed.plugin.tie(undo)
 	return undo
+end
+
+--- Says which lines of `buffer` (0-based) aren't Markdown, like a tool's
+--- output in an agent's transcript: they show exactly as they are, their
+--- stars and backticks untouched. Nil takes that back. Call it before
+--- changing the text, so the redraw the change brings knows.
+function M.plain(buffer: greed.Buffer, lines: { [number]: boolean }?)
+	if lines then
+		plain_lines[buffer:id()] = lines
+	else
+		plain_lines[buffer:id()] = nil
+	end
 end
 
 --- Whether `buffer` is in the reading view.
@@ -698,6 +718,7 @@ greed.keymap.bind(
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	looks[event.id] = nil
+	plain_lines[event.id] = nil
 	forget(event.id)
 end)
 greed.on("mode.changed", function(event: greed.ModeChanged)
