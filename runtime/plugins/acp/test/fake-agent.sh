@@ -13,6 +13,7 @@
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
+#   twice        asks two questions, one after the other
 #   stars        runs a tool whose output has Markdown-looking stars and backticks
 #   quit         exits
 
@@ -155,6 +156,16 @@ while IFS= read -r line; do
 			;;
 		markdown*)
 			say 'Some **bold** and `code`, then:\n\n- one\n- two'
+			turn_done "$id" end_turn
+			;;
+		twice*)
+			for n in 1 2; do
+				update "{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"q$n\",\"title\":\"Step $n\",\"kind\":\"execute\",\"status\":\"pending\"}"
+				send "{\"jsonrpc\":\"2.0\",\"id\":91$n,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"q$n\"},\"options\":[{\"optionId\":\"yes\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"no\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
+				await 91$n
+				update "{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"q$n\",\"status\":\"completed\"}"
+			done
+			say "Both done."
 			turn_done "$id" end_turn
 			;;
 		stars*)

@@ -441,3 +441,48 @@ test("what you write in the box keeps its colour, the grey stays on the sides", 
 		)
 	end
 end)
+
+-- Waits until `s` asks something again, or is done.
+local function settled(t: test.TestContext, s: any)
+	t:wait_for(function()
+		return s.status == "waiting" or s.status == "idle"
+	end)
+	t:wait(30)
+end
+
+test("questions one after another are each answered with y while typing", function(t)
+	local s = start(t)
+	type_in(t, "t w i c e")
+	t:keys("alt-enter")
+	settled(t, s)
+	t:keys("i")
+	for n = 1, 2 do
+		local text = greed.view():buffer():text()
+		assert(s.status == "waiting", `question {n}: {s.status}\n{text}`)
+		assert(string.find(text, "[y] Allow once", 1, true), `question {n} shows\n{text}`)
+		t:keys("y")
+		settled(t, s)
+	end
+	local text = greed.view():buffer():text()
+	assert(s.status == "idle", `{s.status}\n{text}`)
+	assert(string.find(text, "Both done.", 1, true), text)
+	assert(draft() == "", "nothing typed: " .. draft())
+end)
+
+test("after a click answers, typing goes in the box", function(t)
+	local s = start(t)
+	ask(t, s)
+	local rows = t:draw(70, 16)
+	for row, text in rows do
+		local at = string.find(text, "[n] Reject", 1, true)
+		if at then
+			local col = utf8.len(string.sub(text, 1, at - 1)) :: number
+			t:mouse("press", col + 1, row - 1)
+			t:mouse("release", col + 1, row - 1)
+			break
+		end
+	end
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+	t:keys("i o k esc")
+	assert(draft() == "ok", draft())
+end)

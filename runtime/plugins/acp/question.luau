@@ -186,6 +186,19 @@ local function answer(buffer: greed.Buffer, index: number)
 	if state == nil or option == nil then
 		return
 	end
+	-- A cursor on the row (a click puts it there) goes to the end of the
+	-- box, so typing after the row goes doesn't land in the transcript.
+	local first = buffer:decorations("acp-choices")[1]
+	if first then
+		local line = buffer:line_of(first.from)
+		local from, to = buffer:line_start(line), buffer:line_end(line)
+		for _, view in buffer:views() do
+			local cursor = view:cursor()
+			if cursor >= from and cursor <= to then
+				view:set_cursor(buffer:len())
+			end
+		end
+	end
 	-- At once, so a key pressed before the agent hears doesn't answer again.
 	state.hidden = true
 	buffer:set_keys(nil)
