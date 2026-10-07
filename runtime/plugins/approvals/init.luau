@@ -154,4 +154,171 @@ greed.command({
 	end,
 })
 
+-- Your plugins are watched: a plugin folder that appears loads, and one
+-- whose files change reloads, by itself. One asking for anything you
+-- haven't approved waits (the version running keeps going as it was) and
+-- the review opens, so nothing gets a capability before you say so.
+
+--- The folders whose plugins are watched: your config's and the data
+--- folder's plugins. Tests point it elsewhere and call `rescan`.
+function M.watched(): { string }
+	local dirs = greed.fs.dirs()
+	local out = {}
+	for _, base in { dirs.config, dirs.data } do
+		if base then
+			table.insert(out, `{base}/plugins`)
+		end
+	end
+	return out
+end
+
+-- How long a plugin's files must be still before it loads: an agent or a
+-- save writes several files in a row.
+local QUIET_MS = 300
+
+-- The plugin folders found, when each last changed (on greed.now()'s
+-- clock), and what each loaded plugin's files held when it loaded, by name.
+local found: { [string]: boolean } = {}
+local changed_at: { [string]: number } = {}
+local loaded_as: { [string]: string } = {}
+
+-- What's directly in `dir`; nothing when it can't be read.
+local function entries(dir: string): { greed.DirEntry }
+	local list = greed.fs.list(dir)
+	return list or {}
+end
+
+-- The plugin files under `dir`, sorted.
+local function files_of(dir: string, out: { string }?): { string }
+	local files = out or {}
+	for _, entry in entries(dir) do
+		local path = `{dir}/{entry.name}`
+		if entry.dir then
+			files_of(path, files)
+		elseif entry.name == "plugin.toml" or string.match(entry.name, "%.luau$") then
+			table.insert(files, path)
+		end
+	end
+	table.sort(files)
+	return files
+end
+
+-- What the plugin files under `dir` hold, as one digest.
+local function digest(dir: string): string
+	local parts = {}
+	for _, path in files_of(dir) do
+		table.insert(parts, `{string.sub(path, #dir + 1)}={greed.hash.sha256_file(path) or ""}`)
+	end
+	return table.concat(parts, "\n")
+end
+
+-- Watches `dir`, its folders and the plugin files under it.
+local function watch_tree(dir: string)
+	greed.fs.watch(dir)
+	for _, entry in entries(dir) do
+		if entry.dir then
+			watch_tree(`{dir}/{entry.name}`)
+		end
+	end
+	for _, path in files_of(dir) do
+		greed.fs.watch(path)
+	end
+end
+
+-- The plugin folder `path` is in, if it's under a watched folder.
+local function plugin_of(path: string): string?
+	for _, folder in M.watched() do
+		local name = string.match(path, "^" .. string.gsub(folder, "%p", "%%%0") .. "/([^/]+)")
+		if name then
+			return `{folder}/{name}`
+		end
+	end
+	return nil
+end
+
+-- Loads or reloads the plugin in `dir`, or has it wait for your approval.
+local function settle(dir: string)
+	local ok, about = pcall(greed.plugin.describe, dir)
+	if not ok then
+		greed.echo(`{dir}: {about}`)
+		return
+	end
+	local info = about :: greed.PluginInfo
+	if loaded_as[info.name] == digest(dir) then
+		-- Loaded as it is now, as installing a plugin an agent wrote does.
+		return
+	end
+	local was = greed.plugin.dirs()[info.name] ~= nil
+	if #info.missing > 0 then
+		-- It goes on the waiting list; what runs now keeps running.
+		pcall(greed.plugin.load, dir, nil)
+		local now = if was then " (it runs as it was until then)" else ""
+		greed.echo(
+			`{info.name} asks for {table.concat(info.missing, ", ")}: approve it to load it{now}`
+		)
+		greed.run("plugins-approve")
+		return
+	end
+	local loaded, err = pcall(greed.plugin.load, dir, nil)
+	if loaded then
+		greed.echo(if was then `reloaded {info.name}` else `loaded {info.name}`)
+	else
+		greed.echo(`{info.name} didn't load: {err}`)
+	end
+end
+
+-- Settles `dir` once its files have been still for a moment.
+local function soon(dir: string)
+	local at = greed.now()
+	changed_at[dir] = at
+	greed.spawn(function()
+		greed.sleep(QUIET_MS)
+		if changed_at[dir] == at then
+			settle(dir)
+		end
+	end)
+end
+
+--- Looks through the watched folders again, watching what's there; with
+--- `load`, plugin folders it hadn't seen load (or wait for approval).
+function M.rescan(load: boolean?)
+	for _, folder in M.watched() do
+		greed.fs.watch(folder)
+		for _, entry in entries(folder) do
+			local dir = `{folder}/{entry.name}`
+			if entry.dir and greed.fs.stat(`{dir}/plugin.toml`) then
+				watch_tree(dir)
+				if not found[dir] then
+					found[dir] = true
+					if load then
+						soon(dir)
+					end
+				end
+			end
+		end
+	end
+end
+
+greed.on("plugin.loaded", function(event: greed.PluginLoaded)
+	if event.dir then
+		loaded_as[event.name] = digest(event.dir)
+	end
+end)
+
+greed.on("file.changed", function(event: greed.FileChanged)
+	local dir = plugin_of(event.path)
+	if dir then
+		-- A new file in it is watched too.
+		watch_tree(dir)
+		if found[dir] then
+			soon(dir)
+			return
+		end
+	end
+	M.rescan(true)
+end)
+
+-- What's there as Greed starts has loaded, or waits, already.
+M.rescan(false)
+
 return M

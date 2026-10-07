@@ -449,3 +449,67 @@ fn choosing_a_waiting_plugin_in_plugins_approve_approves_and_loads_it() {
         "approved and loaded: {said:?}"
     );
 }
+
+/// Lets the plugin watcher see what changed in the plugins folder and
+/// settle it, as the session does while time goes by.
+fn watch_settle(host: &Host) {
+    host.check_watches().unwrap();
+    host.settle().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    host.fire_timers(std::time::Instant::now()).unwrap();
+    host.settle().unwrap();
+}
+
+#[test]
+fn a_plugin_appearing_or_asking_for_more_waits_for_you_and_the_review_opens() {
+    let temp = Temp::new("watch");
+    let store = temp.0.join("approved.json");
+    let shipped = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    let folder = temp.0.join("plugins");
+    std::fs::create_dir_all(&folder).unwrap();
+    let host = host(&store, &shipped);
+    host.load_dirs(&[
+        shipped.join("core"),
+        shipped.join("picker"),
+        shipped.join("approvals"),
+    ])
+    .unwrap();
+    host.with_editor_mut(|editor| editor.open("file", "", None));
+    host.eval(&format!(
+        "local approvals = require('@approvals')
+        approvals.watched = function() return {{ {:?} }} end
+        approvals.rescan(false)",
+        folder.to_str().unwrap()
+    ))
+    .unwrap();
+
+    // A new plugin that runs programs doesn't load; the review opens.
+    let dir = folder.join("runner");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.toml"),
+        "name = \"runner\"\ncapabilities = [\"proc\"]\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
+    watch_settle(&host);
+    assert!(!loaded(&host).contains("runner"), "it waits");
+    let kind = host
+        .eval("require('@greed').view():buffer():kind()")
+        .unwrap();
+    assert_eq!(kind, "picker", "the review opened");
+    host.press_keys("enter").unwrap();
+    host.settle().unwrap();
+    assert!(loaded(&host).contains("runner"), "approved, it loads");
+
+    // Asking for more later waits again, the approved version still running.
+    std::fs::write(
+        dir.join("plugin.toml"),
+        "name = \"runner\"\ncapabilities = [\"proc\", \"fs.read\"]\n",
+    )
+    .unwrap();
+    watch_settle(&host);
+    assert!(loaded(&host).contains("runner"), "it runs as it was");
+    let waiting = host.eval("#require('@greed').plugin.pending()").unwrap();
+    assert_eq!(waiting, "1", "and waits for fs.read");
+}
