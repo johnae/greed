@@ -181,6 +181,19 @@ local SUMMARY_WIDTH = 60
 
 local clip = core.text.clip
 
+--- A tool call's title as an agent sends it, readable: an MCP tool's
+--- `mcp__server__tool` is Greed's own `tool`, or `server: tool`.
+function M.tool_title(title: string?): string?
+	if title == nil then
+		return nil
+	end
+	local server, rest = string.match(title, "^mcp__([^_]+)__(.+)$")
+	if server == nil or rest == nil then
+		return title
+	end
+	return if server == "greed" then rest else `{server}: {rest}`
+end
+
 --- The first line of `text`, like a command a tool runs, with "…" when
 --- there's more, for places with room for one line.
 function M.first_line(text: string): string
@@ -347,7 +360,7 @@ local function update(session: Session, u: any)
 		local detail, output = detail_of(u.content, session.cwd)
 		local tool: Tool = {
 			id = u.toolCallId,
-			title = u.title or "a tool",
+			title = M.tool_title(u.title) or "a tool",
 			kind = u.kind,
 			status = u.status or "pending",
 			locations = paths_of(u, session.cwd),
@@ -363,7 +376,7 @@ local function update(session: Session, u: any)
 		if tool == nil then
 			return
 		end
-		tool.title = u.title or tool.title
+		tool.title = M.tool_title(u.title) or tool.title
 		tool.kind = u.kind or tool.kind
 		tool.status = u.status or tool.status
 		tool.locations = paths_of(u, session.cwd) or tool.locations
@@ -426,7 +439,7 @@ local function handlers(session: Session): rpc.Handlers
 		local tool = session.tools[call.toolCallId or ""]
 		local chosen = M.ask(
 			session,
-			call.title or (tool and tool.title) or "a tool call",
+			M.tool_title(call.title) or (tool and tool.title) or "a tool call",
 			call.kind or (tool and tool.kind),
 			options,
 			paths_of(call, session.cwd) or (tool and tool.locations)

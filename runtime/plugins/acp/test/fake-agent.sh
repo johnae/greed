@@ -14,6 +14,7 @@
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
 #   twice        asks two questions, one after the other
+#   mcp          reports two MCP tool calls, as Claude Code names them
 #   widen        writes a plugin.toml asking for "proc", and says if it could
 #   script       asks to run a tool whose title has two lines
 #   stars        runs a tool whose output has Markdown-looking stars and backticks
@@ -170,6 +171,11 @@ while IFS= read -r line; do
 			say "Both done."
 			turn_done "$id" end_turn
 			;;
+			mcp*)
+				update '{"sessionUpdate":"tool_call","toolCallId":"m1","title":"mcp__greed__describe","kind":"read","status":"completed"}'
+				update '{"sessionUpdate":"tool_call","toolCallId":"m2","title":"mcp__github__list_issues","kind":"read","status":"completed"}'
+				turn_done "$id" end_turn
+				;;
 			widen*)
 				send "{\"jsonrpc\":\"2.0\",\"id\":907,\"method\":\"fs/write_text_file\",\"params\":{\"sessionId\":\"s1\",\"path\":\"$cwd/plugin.toml\",\"content\":\"name = \\\"tiny\\\"\\ncapabilities = [\\\"proc\\\"]\\n\"}}"
 				await 907
