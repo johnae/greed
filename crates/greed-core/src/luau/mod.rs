@@ -1572,6 +1572,16 @@ pub(crate) fn plugin_name(dir: &Path) -> Result<String, HostError> {
     Ok(read_manifest(dir)?.1.name)
 }
 
+/// `ms` milliseconds from Luau as a duration: none for a negative number
+/// or NaN, and at most a year for a huge one or infinity.
+pub(crate) fn millis(ms: f64) -> Duration {
+    const YEAR: Duration = Duration::from_secs(365 * 24 * 3600);
+    if ms.is_nan() || ms <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::try_from_secs_f64(ms / 1000.0).map_or(YEAR, |d| d.min(YEAR))
+}
+
 /// Runs `f`, a run of the task coroutine `thread`, as a slice the
 /// interrupt may cut short.
 fn sliced<R>(lua: &Lua, thread: usize, f: impl FnOnce() -> R) -> R {
@@ -1620,6 +1630,18 @@ mod tests {
         assert!(slice.from > started, "it starts again from the wait");
         busy(SLICE * 2);
         assert!(slice.ran_out(Instant::now()));
+    }
+
+    #[test]
+    fn milliseconds_from_luau_are_none_to_a_year() {
+        let year = Duration::from_secs(365 * 24 * 3600);
+        assert_eq!(millis(1500.0), Duration::from_millis(1500));
+        for ms in [-1.0, 0.0, f64::NAN, f64::NEG_INFINITY] {
+            assert_eq!(millis(ms), Duration::ZERO, "{ms}");
+        }
+        for ms in [1e20, 1e300, f64::INFINITY, f64::MAX] {
+            assert_eq!(millis(ms), year, "{ms}");
+        }
     }
 
     #[test]

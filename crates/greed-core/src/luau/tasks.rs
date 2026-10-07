@@ -541,10 +541,7 @@ pub(super) fn animate_function(lua: &Lua, now: Function, sleep: Function) -> Lua
 
 /// `greed.sleep(ms)`: waits without blocking the editor.
 pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
-    let start = lua.create_function(|lua, ms: f64| {
-        let ms = if ms.is_finite() { ms.max(0.0) } else { 0.0 };
-        Ok(start_timer(lua, Duration::from_secs_f64(ms / 1000.0)))
-    })?;
+    let start = lua.create_function(|lua, ms: f64| Ok(start_timer(lua, super::millis(ms))))?;
     lua.load(
         r#"
         local start = ...

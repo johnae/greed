@@ -1324,7 +1324,6 @@ fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     lua.create_function(
         move |lua, (buffer, spec): (UserDataRef<BufferRef>, Option<Table>)| {
-            buffer.with_buffer(lua, |_| Ok(()))?;
             let mut options = PanelOptions {
                 side: Side::Left,
                 width: Extent::Cells(30),
@@ -1345,6 +1344,8 @@ fn panel_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
                 options.title = spec.get::<Option<String>>("title")?.map(Into::into);
                 options.focus = spec.get::<Option<bool>>("focus")?.unwrap_or(options.focus);
             }
+            // Checked last: reading the spec can run Luau that closes it.
+            buffer.with_buffer(lua, |_| Ok(()))?;
             let state = &mut *state_mut(lua);
             let id = state.editor.panel(buffer.buffer, options);
             state.owned.view(id, owner.clone());

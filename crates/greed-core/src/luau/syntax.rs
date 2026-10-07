@@ -216,6 +216,12 @@ fn tree_of(lua: &Lua, buffer: &BufferRef) -> LuaResult<Option<(Arc<Language>, Tr
 /// match, from capture name to node.
 fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> LuaResult<Table> {
     let matches = lua.create_table()?;
+    // Read before the editor is borrowed: reading a table can run Luau,
+    // its `__index`, which can call back in.
+    let (from, to): (Option<usize>, Option<usize>) = match range {
+        Some(range) => (range.get("from")?, range.get("to")?),
+        None => (None, None),
+    };
     let Some((language, tree, version)) = tree_of(lua, buffer)? else {
         return Ok(matches);
     };
@@ -230,9 +236,7 @@ fn query(lua: &Lua, buffer: &BufferRef, source: &str, range: Option<Table>) -> L
         .expect("checked above")
         .text();
     let mut cursor = QueryCursor::new();
-    if let Some(range) = range {
-        let from: Option<usize> = range.get("from")?;
-        let to: Option<usize> = range.get("to")?;
+    if from.is_some() || to.is_some() {
         cursor.set_byte_range(from.unwrap_or(0)..to.unwrap_or(usize::MAX));
     }
     let names = compiled.capture_names();

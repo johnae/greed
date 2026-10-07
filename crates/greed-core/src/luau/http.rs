@@ -106,7 +106,7 @@ fn request_from_lua(lua: &Lua, owner: &PluginId, opts: &Table) -> LuaResult<Requ
         url,
         headers,
         body: body.map(|b| b.as_bytes().to_vec()),
-        timeout: timeout.map(|ms| Duration::from_secs_f64(ms.max(0.0) / 1000.0)),
+        timeout: timeout.map(super::millis),
     })
 }
 

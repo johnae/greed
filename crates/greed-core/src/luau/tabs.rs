@@ -52,9 +52,11 @@ fn layout_to_lua(lua: &Lua, node: &Node, author: &Author) -> LuaResult<Value> {
 }
 
 /// A layout from Luau. Sizes are relative to each other, equal if left out.
-fn layout_from_lua(value: Value) -> LuaResult<Node> {
+/// Splits nest at most `depth` deep.
+fn layout_from_lua(value: Value, depth: usize) -> LuaResult<Node> {
     match value {
         Value::UserData(ud) => Ok(Node::Pane(ud.borrow::<ViewRef>()?.id)),
+        Value::Table(_) if depth == 0 => Err(mlua::Error::runtime("splits nest too deep")),
         Value::Table(t) => {
             let axis = match t.get::<String>("split")?.as_str() {
                 "row" => Axis::Across,
@@ -74,16 +76,22 @@ fn layout_from_lua(value: Value) -> LuaResult<Node> {
                 .map(|i| given.get(i).copied().unwrap_or(1.0).max(0.0))
                 .collect();
             let total = sizes.iter().sum::<f64>().max(f64::MIN_POSITIVE);
-            let children = nodes
+            let mut children = nodes
                 .into_iter()
                 .zip(sizes)
                 .map(|(child, size)| {
                     // Each child's share of a whole that halves many times.
                     let weight = (size / total * 1024.0 * 64.0).round().max(1.0);
                     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    Ok((layout_from_lua(child)?, weight as u32))
+                    Ok((layout_from_lua(child, depth - 1)?, weight as u32))
                 })
                 .collect::<LuaResult<Vec<_>>>()?;
+            // A split of one is that one, so closing it leaves no empty split.
+            if children.len() == 1
+                && let Some((only, _)) = children.pop()
+            {
+                return Ok(only);
+            }
             Ok(Node::Split { axis, children })
         }
         _ => Err(mlua::Error::runtime(
@@ -179,7 +187,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     tab.set(
         "set_layout",
         lua.create_function(|lua, (layout, id): (Value, Option<u32>)| {
-            let layout = layout_from_lua(layout)?;
+            let layout = layout_from_lua(layout, 64)?;
             let mut state = state_mut(lua);
             let id = id.map_or_else(|| state.editor.current_tab().id(), TabId);
             state

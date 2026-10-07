@@ -536,7 +536,6 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "decorate",
         |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
-            this.with_buffer(lua, |_| Ok(()))?;
             let marks = list
                 .iter()
                 .map(|t| {
@@ -586,6 +585,8 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     Ok(t.get::<usize>("from")?..to.unwrap_or(usize::MAX))
                 })
                 .transpose()?;
+            // Checked last: reading the marks can run Luau that closes it.
+            this.with_buffer(lua, |_| Ok(()))?;
             let by = super::capabilities::caller(lua, None);
             let state = &mut *state_mut(lua);
             state.editor.decorate_in(this.buffer, &ns, within, marks);

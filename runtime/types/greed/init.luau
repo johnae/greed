@@ -919,7 +919,8 @@ export type Tabs = {
 	layout: (id: number?) -> any,
 	--- Lays tab `id`'s panes out as `layout` (a `PaneLayout`) instead. It
 	--- arranges the panes the tab has, so it has to hold each of them once;
-	--- opening and closing panes is `view:split` and `view:close`.
+	--- opening and closing panes is `view:split` and `view:close`. A split
+	--- of one pane is that pane; splits nest at most 64 deep.
 	set_layout: (layout: any, id: number?) -> (),
 }
 
