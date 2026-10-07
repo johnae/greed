@@ -87,14 +87,14 @@ two modes where single keys act until `esc`.
 | `alt-n` | A terminal in a new pane, on the pane's longer side; while floating views are shown, a floating terminal |
 | `alt-f` | Hide the tab's floating views or show them again, where they were (terminals keep running); with none, open a floating terminal |
 | `alt-F` | This file in a new floating view (`:float-file PATH` for another) |
-| `alt-w` | Lay the tab's floating views out with the next float layout: `free`, `one`, `deck`, `tiled`, `cascade` |
-| `alt-{` `alt-}` | Bring the floating view before or after to the front (in `one` and `deck`, the one that shows) |
+| `alt-w` | Lay the tab's floating views out with the next float layout: `free`, `one`, `tiled`, `cascade` |
+| `alt-{` `alt-}` | Bring the floating view before or after to the front (in `one`, the one that shows) |
 | `alt-W` | Pick a floating view from the dock: its number, or the arrows and `enter` |
 | `alt-=` `alt--` | Give the pane more room, or less |
 | `alt-[` `alt-]`, `alt-1` to `alt-9` | The tab before or after, or tab N |
 | `alt-space` | Arrange the tab with the next layout |
 | `alt-m` | Swap the pane with the main one |
-| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or put a float back, `T` tile the floats, `C` cascade them, `O` one at a time, `D` a deck, `Y` pick a float layout, `{ }` the float before or after, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
+| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or put a float back, `T` tile the floats, `C` cascade them, `O` one at a time, `Y` pick a float layout, `{ }` the float before or after, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
 | `alt-r` | Resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
 

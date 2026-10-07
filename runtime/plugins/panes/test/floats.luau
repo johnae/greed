@@ -94,9 +94,10 @@ test("focusing a hidden float shows it in place of the one in front", function(t
 	assert(table.concat(shown()) == "b")
 end)
 
-test("a deck keeps every float in one place, where the one in front was moved", function(t)
+test("one at a time keeps every float in one place, so cycling never moves anything", function(t)
 	local views = three(t, { width = 30, height = 10 })
-	floats.use("deck")
+	views[1]:configure({ x = 1, y = 1, width = 20, height = 8 })
+	floats.use("one")
 	assert(table.concat(shown()) == "c")
 	views[3]:configure({ x = 5, y = 2, width = 40, height = 12 })
 	t:keys("alt-}")
@@ -106,6 +107,13 @@ test("a deck keeps every float in one place, where the one in front was moved", 
 	t:keys("alt-}")
 	spec = views[2]:float_spec() :: greed.FloatSpec
 	assert(spec.x == 5 and spec.width == 40, "the next one too")
+	-- Back in free, each float is where it was before.
+	floats.use("free")
+	spec = views[1]:float_spec() :: greed.FloatSpec
+	assert(spec.x == 1 and spec.y == 1 and spec.width == 20 and spec.height == 8, "its own place")
+	-- "deck" is the older name of one.
+	floats.use("deck")
+	assert(floats.current() == "one")
 end)
 
 test("tiled keeps the floats in a grid as they come and go", function(t)
@@ -132,19 +140,19 @@ test("cascade steps each float down and right, and alt-w goes through the layout
 	assert(b.x > a.x and b.y > a.y and a.width == b.width, "a step down and right")
 	floats.use("free")
 	local seen: { string } = {}
-	for _ = 1, 5 do
+	for _ = 1, 4 do
 		t:keys("alt-w")
 		table.insert(seen, floats.current())
 	end
-	assert(table.concat(seen, " ") == "one deck tiled cascade free", table.concat(seen, " "))
+	assert(table.concat(seen, " ") == "one tiled cascade free", table.concat(seen, " "))
 	assert(#shown() == 3, "free shows them all again")
 end)
 
 test("new tabs take the float-layout option, and layouts of your own join in", function(t)
 	t:buffer("|hello")
-	greed.option.set("float-layout", "deck")
+	greed.option.set("float-layout", "one")
 	greed.tab.new()
-	assert(floats.current() == "deck")
+	assert(floats.current() == "one")
 	floats.define("corner", function(a)
 		local places = {}
 		for i in a.floats do

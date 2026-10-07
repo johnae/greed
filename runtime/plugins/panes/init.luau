@@ -529,16 +529,9 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	},
 	{
 		name = "floats-one",
-		doc = "Show one of this tab's floating views at a time, from now on",
+		doc = "Show this tab's floating views one at a time, like tabs, all in the same place, from now on",
 		run = function()
 			M.floats.use("one")
-		end,
-	},
-	{
-		name = "floats-deck",
-		doc = "Stack this tab's floating views in one place, showing the one in front, from now on",
-		run = function()
-			M.floats.use("deck")
 		end,
 	},
 	{
@@ -881,7 +874,6 @@ M.keys = {
 		T = "floats-tile",
 		C = "floats-cascade",
 		O = "floats-one",
-		D = "floats-deck",
 		Y = "float-layout-pick",
 		["{"] = "float-previous",
 		["}"] = "float-next",

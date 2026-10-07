@@ -3,11 +3,11 @@
 -- them all, turning a pane into a float and back, and the tab's float
 -- layout, which says where they go and which of them show:
 --
--- - `free`: where you put them, the default;
--- - `one`: only the one in front shows, and the others keep running out
---   of sight until you cycle to them;
--- - `deck`: all in one place at one size, stacked, the one in front
---   showing; cycling swaps them in place;
+-- - `free`: where you put them, the default; each float goes back to its
+--   own place here after another layout moved it;
+-- - `one`: one at a time, like tabs: all in one place at one size, the one
+--   in front showing and the others running out of sight; cycling swaps
+--   them in place;
 -- - `tiled`: side by side in a grid over the panes, kept so as floats
 --   come and go;
 -- - `cascade`: overlapping, each a step down and right, titles showing.
@@ -66,7 +66,7 @@ local layouts: { Entry } = {}
 
 greed.option.define({
 	name = "float-layout",
-	doc = 'How new tabs lay out their floating views: "free", "one", "deck", "tiled", "cascade" or your own',
+	doc = 'How new tabs lay out their floating views: "free", "one", "tiled", "cascade" or your own',
 	default = "free",
 })
 
@@ -88,7 +88,11 @@ function M.names(): { string }
 	return names
 end
 
+-- Older names of layouts: `deck` became `one`.
+local ALIASES: { [string]: string } = { deck = "one" }
+
 local function layout_named(name: string): Entry?
+	name = ALIASES[name] or name
 	for _, entry in layouts do
 		if entry.name == name then
 			return entry
@@ -110,6 +114,8 @@ type TabState = {
 	dock_view: greed.View?,
 	dock_items: { { from: number, to: number } },
 	picking: number?,
+	-- Where each float was in `free`, by view id, to go back to there.
+	own: { [number]: Area? },
 }
 
 local states: { [number]: TabState } = {}
@@ -120,10 +126,11 @@ local function state(): TabState
 	if st == nil then
 		local default = greed.option.get("float-layout") :: string
 		local fresh: TabState = {
-			layout = if layout_named(default) then default else "free",
+			layout = if layout_named(default) then ALIASES[default] or default else "free",
 			order = {},
 			away = false,
 			dock_items = {},
+			own = {},
 		}
 		states[id] = fresh
 		return fresh
@@ -474,12 +481,20 @@ function M.use(name: string)
 		greed.echo(`there's no float layout called {name}`)
 		return
 	end
+	name = ALIASES[name] or name
 	local st = state()
+	-- Floats keep their own places from `free`, and get them back there.
+	if st.layout == "free" and name ~= "free" then
+		for _, view in M.all() do
+			st.own[view:id()] = box_of(view)
+		end
+	end
+	local back = name == "free" and st.layout ~= "free"
 	st.layout = name
 	-- What the layout before hid comes back, unless the new one hides it.
 	if not st.away then
 		for _, view in M.all() do
-			apply(view, { hidden = false }, {}, {})
+			apply(view, { hidden = false, box = if back then st.own[view:id()] else nil }, {}, {})
 		end
 	end
 	arrange()
@@ -686,16 +701,9 @@ M.define("free", function()
 	return {}
 end)
 
+-- One at a time, like tabs: every float in the one place, where the float
+-- in front was, moved or resized, so cycling never moves anything.
 M.define("one", function(a)
-	local places = {}
-	for i in a.floats do
-		places[i] = { hidden = i ~= a.current }
-	end
-	return places
-end)
-
--- The deck stays where the float in front was, moved or resized.
-M.define("deck", function(a)
 	local box = a.boxes[a.previous or a.current] or centered(a.room, 0.8)
 	local places = {}
 	for i in a.floats do

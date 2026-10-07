@@ -1237,19 +1237,19 @@ With several floats open (agent sessions, terminals), the tab's float
 layout says where they go and which of them show. `alt-w` goes to the next
 one:
 
-- `free`: they stay where you put them. The default.
-- `one`: only the float in front shows. `alt-}` and `alt-{` bring the next
-  one or the one before to the front, round the ends; the others keep
-  running out of sight.
-- `deck`: every float in the same place at the same size, the one in front
-  showing. Cycling swaps them in place, and moving or resizing the one in
-  front moves the deck.
+- `free`: they stay where you put them. The default. Coming back to `free`
+  from another layout puts each float back where it was.
+- `one`: one at a time, like tabs. Every float takes the same place at the
+  same size and only the one in front shows; `alt-}` and `alt-{` bring the
+  next one or the one before to the front, round the ends, without
+  anything moving. The others keep running out of sight. Moving or
+  resizing the one in front moves them all.
 - `tiled`: side by side in a grid over the panes, laid out again as floats
   open and close and as the window changes size.
 - `cascade`: overlapping, each a step down and right of the one before, so
   every title shows.
 
-In `one` and `deck` the float in front says where it is on its border:
+In `one` the float in front says where it is on its border:
 `‹ 2/5 ›` at the right of the top, with the names of the floats either
 side when it's wide (`‹ terminal · 2/5 · claude ›`), and a dot for each
 float along the bottom, the one in front filled. A dock along the bottom
@@ -1262,7 +1262,7 @@ A float that needs you gets a colored dot, in its place along the border
 and in the dock: an agent session waiting for your answer, or a terminal
 whose command finished while it was hidden (until you look at it).
 
-`alt-p O`, `D`, `T` and `C` pick `one`, `deck`, `tiled` and `cascade`
+`alt-p O`, `T` and `C` pick `one`, `tiled` and `cascade`
 directly, `alt-p Y` picks from a list (`:float-layout-pick`), and
 `:set float-layout one` sets the layout new tabs start with.
 
