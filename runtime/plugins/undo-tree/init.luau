@@ -164,7 +164,7 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 	end
 end)
 
-greed.keymap.bind({ mode = "normal", kind = "undo-tree" }, {
+greed.keymap.bind({ mode = "helix", kind = "undo-tree" }, {
 	j = "undo-tree-down",
 	k = "undo-tree-up",
 	down = "undo-tree-down",
@@ -174,6 +174,6 @@ greed.keymap.bind({ mode = "normal", kind = "undo-tree" }, {
 	esc = "undo-tree-cancel",
 })
 
-greed.keymap.bind("normal", { ["space u t"] = "undo-tree" })
+greed.keymap.bind("helix", { ["space u t"] = "undo-tree" })
 
 return {}

@@ -71,13 +71,13 @@ end
 test("a typing float types in insert mode and comes back when closed", function(t)
 	local main = greed.view()
 	local float, heard = typing(t)
-	t:expect_mode("insert")
+	t:expect_mode("helix-insert")
 	assert(greed.view() == float.view, "focused")
 	t:keys("a b")
 	assert(float.buffer:text() == "ab" and heard.changes == 2, `{heard.changes} changes`)
 	float.close()
 	float.close()
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 	assert(greed.view() == main, "focus is back")
 	assert(heard.closes == 1 and not float.is_open(), "closed once")
 end)
@@ -86,7 +86,7 @@ test("a typing float closed some other way still comes back and says so", functi
 	local float, heard = typing(t)
 	float.view:close()
 	t:wait(0)
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 	assert(heard.closes == 1 and not float.is_open())
 	float.close()
 	assert(heard.closes == 1, "closing again does nothing")
@@ -113,12 +113,12 @@ end)
 
 test("a typing float comes back to the mode for wherever focus ends up", function(t)
 	t:buffer("|x")
-	greed.mode.set("select")
+	greed.mode.set("helix-select")
 	local float = floats.typing(greed.create_buffer("scratch", ""), { width = 20, height = 3 })
 	local other = greed.float(greed.create_buffer("scratch", ""), { width = 20, height = 3 })
 	float.close()
 	assert(greed.view() == other)
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 end)
 
 test("a typing float without focus comes back only from its own mode", function(t)
@@ -133,7 +133,7 @@ test("a typing float without focus comes back only from its own mode", function(
 	)
 	t:expect_mode("test-menu")
 	float.close()
-	t:expect_mode("insert")
+	t:expect_mode("helix-insert")
 	local again = floats.typing(
 		greed.create_buffer("scratch", ""),
 		{ width = 20, height = 3, focus = false },
@@ -141,9 +141,9 @@ test("a typing float without focus comes back only from its own mode", function(
 			mode = "test-menu",
 		}
 	)
-	greed.mode.set("normal")
+	greed.mode.set("helix")
 	again.close()
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 end)
 
 test("text to read shows in a float that esc or q closes, one per kind", function(t)

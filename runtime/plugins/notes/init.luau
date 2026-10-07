@@ -32,7 +32,7 @@ require("@self/look")
 require("@self/reminders")
 require("@self/connect")
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space n r"] = "notes-reminders-dismiss",
 	["space n l"] = "notes-connect",
 	["space k"] = "notes-hover",

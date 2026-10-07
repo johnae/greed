@@ -13,7 +13,7 @@ test("describing a command shows its doc, keys and source", function(t)
 	local help = t:floats()[1]
 	assert(help, "a help window opens")
 	assert(string.find(help, "Select to the start of the next word", 1, true), help)
-	assert(string.find(help, "Keys: w (normal)", 1, true), help)
+	assert(string.find(help, "Keys: w (helix)", 1, true), help)
 	assert(string.find(help, "Defined in core/motions.luau:", 1, true), help)
 end)
 
@@ -70,7 +70,7 @@ test(
 		greed.keymap.bind("edit", { ["alt-g"] = "goto-start" })
 		describe_command(t, "goto-start")
 		local help = t:floats()[1]
-		assert(string.find(help, "Keys: g g (normal)", 1, true), help)
+		assert(string.find(help, "Keys: g g (helix)", 1, true), help)
 		assert(string.find(help, "Keys: alt-g (edit)", 1, true), help)
 		t:keys("esc")
 		describe_command(t, "goto-end")
@@ -92,7 +92,7 @@ test("enter does nothing for a command with no file to go to", function(t)
 end)
 
 test("a key bound to a missing command says so", function(t)
-	greed.keymap.bind("normal", { ["g z"] = "nothing-by-this-name" })
+	greed.keymap.bind("helix", { ["g z"] = "nothing-by-this-name" })
 	t:buffer("|abc")
 	t:keys("space h k g z")
 	local messages = t:messages()
@@ -104,7 +104,7 @@ end)
 
 test("describing a key works in the mode you're in", function(t)
 	t:buffer("|abc")
-	greed.mode.set("insert")
+	greed.mode.set("helix-insert")
 	greed.run("describe-key")
 	t:keys("esc")
 	assert(string.find(t:floats()[1] or "", "normal-mode", 1, true), tostring(t:floats()[1]))
@@ -151,7 +151,7 @@ test("a plugin says where it's from and what it defines; a mode lists its keys",
 	local plugin = describe.text("picker", "plugin") :: string
 	assert(string.find(plugin, "Loaded from ", 1, true), plugin)
 	assert(string.find(plugin, "May use fs.read", 1, true), plugin)
-	local mode = describe.text("normal", "mode") :: string
+	local mode = describe.text("helix", "mode") :: string
 	assert(string.find(mode, "w  next-word", 1, true), mode)
 	assert(describe.text("no-such-thing") == nil)
 end)

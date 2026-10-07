@@ -579,8 +579,8 @@ for name, command in defaults do
 	M.alias(name, command)
 end
 
-core.style.kind_mode("cmdline", "insert")
-greed.keymap.bind({ mode = "insert", kind = "cmdline" }, {
+core.style.kind_mode("cmdline", "helix-insert")
+greed.keymap.bind({ mode = "helix-insert", kind = "cmdline" }, {
 	enter = "command-line-run",
 	esc = "command-line-close",
 	["ctrl-c"] = "command-line-close",
@@ -592,7 +592,7 @@ greed.keymap.bind({ mode = "insert", kind = "cmdline" }, {
 	["ctrl-n"] = "command-line-newer",
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	[":"] = "command-line",
 })
 

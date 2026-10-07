@@ -140,7 +140,7 @@ function M.setup(terminal: any)
 			end)
 		end,
 	})
-	greed.keymap.bind("normal", { ["space r"] = "task" })
+	greed.keymap.bind("helix", { ["space r"] = "task" })
 end
 
 return M

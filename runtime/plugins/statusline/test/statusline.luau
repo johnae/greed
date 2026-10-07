@@ -73,7 +73,7 @@ test("with effects on, a wave of light goes through the file's letters when it c
 	t:buffer("|abc")
 	local function file_segments(): number
 		local ctx =
-			{ view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
+			{ view = greed.view(), buffer = greed.view():buffer(), mode = "helix", width = 80 }
 		local lit = 0
 		local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
 		for _, segment in left do
@@ -124,7 +124,7 @@ test("opening another file sends the wave by itself", function(t)
 	t:buffer("|abc")
 	t:run("open", { dir .. "/notes.txt" })
 	t:wait(300)
-	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "normal", width = 80 }
+	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "helix", width = 80 }
 	local lit = 0
 	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
 	for _, segment in left do
@@ -193,7 +193,8 @@ test("dark letters on a light pill light up too", function(t)
 	t:keys("i")
 	t:wait(60)
 	local statusline = require("@statusline")
-	local ctx = { view = greed.view(), buffer = greed.view():buffer(), mode = "insert", width = 80 }
+	local ctx =
+		{ view = greed.view(), buffer = greed.view():buffer(), mode = "helix-insert", width = 80 }
 	local brightest = 0
 	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
 	for _, segment in left do
@@ -330,4 +331,27 @@ test("clicking a piece with an action runs it, in either style", function(t)
 	assert(clicked == 2, `clicked {clicked} times`)
 	statusline.remove("clicky")
 	greed.option.set("statusline-pills", false)
+end)
+
+test("the mode shows as its style calls it, and the style's name picks another", function(t)
+	t:buffer("|abc")
+	local left, right = t:status()
+	assert(left and string.find(left, "NORMAL", 1, true), left)
+	assert(right and string.find(right, "helix", 1, true), right)
+	t:keys("i")
+	left = t:status()
+	assert(left and string.find(left, "INSERT", 1, true), left)
+	t:keys("esc v")
+	left = t:status()
+	assert(left and string.find(left, "SELECT", 1, true), left)
+	t:keys("esc")
+	local rows = t:draw(80, 4)
+	local at = string.find(rows[4], "helix", 1, true)
+	assert(at, rows[4])
+	local col = utf8.len(string.sub(rows[4], 1, at - 1)) or 0
+	t:mouse("press", col, 3)
+	t:mouse("release", col, 3)
+	local picker = t:floats()[1]
+	assert(picker and string.find(picker, "Select text, then say", 1, true), tostring(picker))
+	t:keys("esc")
 end)

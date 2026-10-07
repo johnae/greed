@@ -112,6 +112,6 @@ end)
 
 statusline.add("right", "server", function(ctx)
 	return M.text(ctx.buffer)
-end, "file-settings")
+end, "style")
 
 return M

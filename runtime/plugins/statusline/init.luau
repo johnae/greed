@@ -1,6 +1,7 @@
 -- The status line: on the left the mode, the tab, the file (or the latest
 -- message) and whether keys are being recorded; on the right the branch,
--- problems, the language and its server, anything unusual about the file,
+-- problems, the language and its server, the editing style (dim), anything
+-- unusual about the file,
 -- how many selections there are, where the cursor is, the machine and the
 -- session.
 -- With the statusline-pills option some are pills, with rounded ends drawn
@@ -244,6 +245,11 @@ M.add("right", "language", function(ctx)
 	return table.concat(parts, " · ")
 end)
 
+-- The editing style's name, dim; a click picks another.
+M.add("right", "style", function()
+	return { text = style.current().name, style = "ui.statusline.dim", action = "style" }
+end)
+
 -- What's unusual about the file, and only that: Windows line breaks,
 -- indented with tabs where its language indents with spaces (or the other
 -- way round), or read-only, e.g. "CRLF · read-only".
@@ -375,6 +381,7 @@ local KEPT = {
 	["ui.statusline.mode"] = true,
 	["ui.statusline.message"] = true,
 	["ui.statusline.warning"] = true,
+	["ui.statusline.dim"] = true,
 }
 
 -- `part` as segments, lit by `glow` if there is one. With the

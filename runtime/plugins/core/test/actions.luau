@@ -40,7 +40,7 @@ core.actions.finder({ name = "ticket", find = function(view, range)
 end })
 core.actions.action({ kind = "ticket", name = "open", run = function() end })
 core.features.add("tickets", function() return true end)
-core.style.kind_mode("tickets", "insert")
+core.style.kind_mode("tickets", "helix-insert")
 return {}
 ]],
 	})
@@ -53,7 +53,7 @@ return {}
 	local core = require("@core")
 	local features = table.concat(core.features.of(greed.view():buffer()), " ")
 	assert(features == "tickets", features)
-	assert(core.style.kind_modes.tickets == "insert")
+	assert(core.style.kind_modes.tickets == "helix-insert")
 	greed.plugin.unload("jira")
 	t:wait(0)
 	assert(not string.find(kinds(), "ticket", 1, true), kinds())

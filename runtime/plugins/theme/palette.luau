@@ -74,6 +74,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.statusline.mode"] = { bg = p.green, fg = p.bg, bold = true },
 		["ui.statusline.message"] = { fg = p.yellow },
 		["ui.statusline.warning"] = { fg = p.red, bold = true },
+		["ui.statusline.dim"] = { fg = p.comment },
 		["ui.statusline.tab"] = { bg = accent, fg = p.bg },
 		["ui.statusline.tab.number"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.statusline.host"] = { bg = p.cyan, fg = p.bg },

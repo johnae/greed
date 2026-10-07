@@ -722,7 +722,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ mode = "normal", kind = "multibuffer" }, {
+greed.keymap.bind({ mode = "helix", kind = "multibuffer" }, {
 	enter = "multibuffer-open",
 	q = "multibuffer-close",
 	["space g r"] = "multibuffer-revert",

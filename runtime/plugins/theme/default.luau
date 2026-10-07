@@ -13,6 +13,7 @@ return {
 	["ui.statusline.mode"] = { bg = "green", fg = "black", bold = true },
 	["ui.statusline.message"] = { fg = "bright-yellow" },
 	["ui.statusline.warning"] = { fg = "bright-red", bold = true },
+	["ui.statusline.dim"] = { dim = true },
 	["ui.statusline.tab"] = { bg = "blue", fg = "black" },
 	["ui.statusline.tab.number"] = { bg = "yellow", fg = "black", bold = true },
 	["ui.statusline.host"] = { bg = "cyan", fg = "black" },

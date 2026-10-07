@@ -10,7 +10,7 @@ $ greed ls
 48211
 $ greed attach               # come back to it
 $ greed ctl focus            # ask the running editor what you're looking at
-{ "path": "src/main.rs", "mode": "normal", "selections": [ ... ], ... }
+{ "path": "src/main.rs", "mode": "helix", "selections": [ ... ], ... }
 ```
 
 Edit the way you already like to. The first time Greed starts it asks which
@@ -52,7 +52,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["g u"] = "upper" })
+greed.keymap.bind("helix", { ["g u"] = "upper" })
 ```
 
 Put it in `~/.config/greed/plugins/upper/` with a `plugin.toml` saying

@@ -257,7 +257,7 @@ test("alt-W picks from the dock by number, or with the arrows and enter", functi
 	assert(string.find((dock() :: greed.View):buffer():text(), "2 b", 1, true) ~= nil)
 	t:keys("x")
 	assert(table.concat(shown()) == "c", "any other key leaves it")
-	assert(greed.mode.get() == "normal")
+	assert(greed.mode.get() == "helix")
 end)
 
 test("alt-f hides them all in one at a time and brings back the one in front", function(t)

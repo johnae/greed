@@ -193,6 +193,6 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space o d"] = "proposal-compare" })
+greed.keymap.bind("helix", { ["space o d"] = "proposal-compare" })
 
 return {}

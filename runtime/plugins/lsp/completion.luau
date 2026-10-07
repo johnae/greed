@@ -387,6 +387,6 @@ core.style.each_typing(function(mode)
 	greed.keymap.bind(mode, { ["ctrl-space"] = "completion-ask" })
 end)
 -- Helix's own key for it; edit mode keeps ctrl-x for cut.
-greed.keymap.bind("insert", { ["ctrl-x"] = "completion-ask" })
+greed.keymap.bind("helix-insert", { ["ctrl-x"] = "completion-ask" })
 
 return {}

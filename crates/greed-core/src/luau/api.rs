@@ -660,6 +660,8 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         "bind",
         lua.create_function(move |lua, (layer, map): (Value, Table)| {
             let layer = layer_from_lua(layer)?;
+            // Keys from another plugin's module, like core's text objects.
+            let map = super::modules::plain(lua, map)?;
             let mut state = state_mut(lua);
             for pair in map.pairs::<String, String>() {
                 let (keys, command) = pair?;

@@ -569,7 +569,7 @@ Typing `(` or `,` in a call shows what the function takes, above the
 cursor, with the parameter you're on picked out. It follows along as you
 type and closes when the call does or you leave insert mode. To ask for it
 with a key, bind `signature-help` in insert mode, e.g.
-`greed.keymap.bind("insert", { ["ctrl-k"] = "signature-help" })`.
+`greed.keymap.bind("helix-insert", { ["ctrl-k"] = "signature-help" })`.
 
 ## Version control
 
@@ -1424,7 +1424,7 @@ to stop trusting one.
 local greed = require("@greed")
 
 -- Keys
-greed.keymap.bind("normal", { ["space w"] = "save" })
+greed.keymap.bind("helix", { ["space w"] = "save" })
 
 -- Options (`:set` changes them while running)
 greed.option.set("flash-duration", 150)
@@ -1457,6 +1457,7 @@ recording on the left. On the right it shows:
 - the language server: its name, what it's working on
   (`rust-analyzer: indexing 40%`), or that it's starting, stopped or not
   installed
+- the editing style, dim, like `helix`; click it to pick another
 - anything unusual about the file, and only then: `CRLF` line breaks,
   `tabs` (or `spaces`) where its language indents the other way, or
   `read-only`
@@ -1498,7 +1499,8 @@ statusline.remove("host")
 A piece gets the main view, its buffer, the mode and the message, and
 returns text, a pill (`{ text, style }`), a list of pills shown joined, or
 nil to show nothing. The pills' colors are the theme's
-`ui.statusline.mode`, `.tab`, `.tab.number`, `.host` and `.session`.
+`ui.statusline.mode`, `.tab`, `.tab.number`, `.host` and `.session`;
+`.dim` is the editing style's.
 
 A piece is drawn with every frame, so it has to be quick and can't run
 programs. For anything that takes time, like a repository's state in a big

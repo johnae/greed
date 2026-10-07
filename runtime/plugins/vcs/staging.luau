@@ -134,7 +134,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	views[event.id] = nil
 end)
 
-greed.keymap.bind({ mode = "normal", kind = "staged-diff" }, {
+greed.keymap.bind({ mode = "helix", kind = "staged-diff" }, {
 	u = "staged-unstage",
 	c = "staged-commit",
 	r = "staged-refresh",

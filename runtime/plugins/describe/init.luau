@@ -416,13 +416,13 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ mode = "normal", kind = "help" }, {
+greed.keymap.bind({ mode = "helix", kind = "help" }, {
 	esc = "help-close",
 	q = "help-close",
 	enter = "help-goto",
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space h h"] = "describe",
 	["space h c"] = "describe-command",
 	["space h o"] = "describe-option",

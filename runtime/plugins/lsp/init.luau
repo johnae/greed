@@ -247,7 +247,7 @@ greed.lsp.on_request("window/showMessageRequest", function(params)
 	return if item then item.value else nil
 end)
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space k"] = "hover",
 	["g d"] = "goto-definition",
 	["g D"] = "goto-declaration",

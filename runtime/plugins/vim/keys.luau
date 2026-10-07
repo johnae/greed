@@ -7,7 +7,7 @@ local motions = require("./motions").motions
 -- Keys other plugins put in normal mode that work the same here: the
 -- space-leader keys, search, and going to definitions and problems.
 -- Plugins loaded later get them too.
-greed.keymap.inherit("vim", "normal", {
+greed.keymap.inherit("vim", "helix", {
 	"space",
 	"/",
 	"?",
@@ -33,7 +33,7 @@ greed.keymap.inherit("vim", "normal", {
 	"tab",
 })
 -- Insert mode as everyone has it, except that esc comes back here.
-greed.keymap.inherit("vim-insert", "insert")
+greed.keymap.inherit("vim-insert", "helix-insert")
 greed.keymap.fallback("vim-insert", "insert-char")
 greed.mode.set_cursor("vim-insert", "bar")
 

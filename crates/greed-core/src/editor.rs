@@ -348,7 +348,7 @@ impl Editor {
             floats: Vec::new(),
             focus: ViewId(0),
             next_id: 1,
-            mode: "normal".into(),
+            mode: "helix".into(),
             keymap: Keymap::default(),
             pending: Vec::new(),
             count: None,

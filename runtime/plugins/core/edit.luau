@@ -21,7 +21,7 @@ local appending = false
 local function enter_insert(append: boolean?)
 	appending = append == true
 	greed.history.start_group()
-	greed.mode.set("insert")
+	greed.mode.set(style.typing_mode())
 end
 
 -- `range`, or for a bare cursor sitting on a character (a block), that

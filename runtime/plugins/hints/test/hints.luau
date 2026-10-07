@@ -28,7 +28,7 @@ test(
 	"keys that start longer sequences say more, and commands without a doc show their name",
 	function(t)
 		greed.command({ name = "hint-test-nodoc", run = function() end })
-		greed.keymap.bind("normal", { ["g q"] = "hint-test-nodoc" })
+		greed.keymap.bind("helix", { ["g q"] = "hint-test-nodoc" })
 		t:buffer("|abc")
 		t:keys("m")
 		assert(string.find(t:floats()[1], "i        more...", 1, true), t:floats()[1])
@@ -38,7 +38,7 @@ test(
 )
 
 test("long key names keep the descriptions lined up", function(t)
-	greed.keymap.bind("normal", { ["g ctrl-shift-home"] = "goto-start" })
+	greed.keymap.bind("helix", { ["g ctrl-shift-home"] = "goto-start" })
 	t:buffer("|abc")
 	t:keys("g")
 	local columns = {}
@@ -72,8 +72,8 @@ test("the first time in a mode with an intro, the status line says how to get ou
 	greed.mode.set("hint-test")
 	local messages = t:messages()
 	assert(messages[#messages] == "you're in the test mode", messages[#messages])
-	greed.mode.set("normal")
+	greed.mode.set("helix")
 	greed.mode.set("hint-test")
 	assert(#t:messages() == 0, "only once")
-	greed.mode.set("normal")
+	greed.mode.set("helix")
 end)

@@ -26,25 +26,26 @@ Bindings go in `~/.config/greed/init.luau`:
 ```luau
 local greed = require("@greed")
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space w"] = "save",
 	["space q"] = "quit",
 	Q = "quit-all",
 })
 
 -- In insert mode too
-greed.keymap.bind("insert", { ["ctrl-s"] = "save" })
+greed.keymap.bind("helix-insert", { ["ctrl-s"] = "save" })
 ```
 
-The mode names depend on your editing style: `normal` and `insert` are
-the Helix style's, the Vim style's are `vim`, `vim-insert` and
-`vim-visual`, and edit mode has one, `edit`. Bind for the style you use,
-or for each of them (all the modes are listed under
+The mode names depend on your editing style: `helix`, `helix-insert` and
+`helix-select` are the Helix style's, the Vim style's are `vim`,
+`vim-insert` and `vim-visual`, and edit mode has one, `edit`. The status
+line shows them as you'd expect (NORMAL, INSERT, VISUAL). Bind for the
+style you use, or for each of them (all the modes are listed under
 [Modes and layers](#modes-and-layers)):
 
 ```luau
 -- ctrl-s saves in every style
-for _, mode in { "normal", "insert", "vim", "vim-insert", "edit" } do
+for _, mode in { "helix", "helix-insert", "vim", "vim-insert", "edit" } do
 	greed.keymap.bind(mode, { ["ctrl-s"] = "save" })
 end
 ```
@@ -68,11 +69,11 @@ Key names:
 ```luau
 -- Hide some keys; whatever they did before comes back if the plugin that
 -- unbound them is removed
-greed.keymap.unbind("normal", { "U", "g w" })
+greed.keymap.unbind("helix", { "U", "g w" })
 
 -- Start a mode over: everything bound in it so far is hidden, and bindings
 -- made afterwards apply as usual
-greed.keymap.clear("normal")
+greed.keymap.clear("helix")
 ```
 
 ## Panes, tabs and terminals
@@ -114,7 +115,7 @@ greed.keymap.unbind({}, { "alt-n" })
 greed.keymap.unbind("terminal", { "alt-n" })
 
 -- Split with space | and space -
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space |"] = "pane-split-right",
 	["space -"] = "pane-split-down",
 })
@@ -144,7 +145,7 @@ Bindings live in layers. Most belong to a mode:
 
 | Mode | Used by |
 |---|---|
-| `normal`, `insert` | The Helix style |
+| `helix`, `helix-insert`, `helix-select` | The Helix style |
 | `edit` | Edit mode |
 | `vim`, `vim-insert`, `vim-visual` | The Vim style |
 | `terminal` | Typing into a terminal (takes every key) |
@@ -156,7 +157,7 @@ something different in the file tree or a picker than in a file:
 
 ```luau
 -- o opens the file under the cursor, but only in the file tree
-greed.keymap.bind({ mode = "normal", kind = "tree" }, { o = "tree-open" })
+greed.keymap.bind({ mode = "helix", kind = "tree" }, { o = "tree-open" })
 
 -- An empty layer applies in every mode
 greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
@@ -168,7 +169,7 @@ mode.
 
 `greed.keymap.inherit` lets a mode use another mode's keys, all of them or
 only those starting with some prefixes. The Vim style uses it to share
-`space`, `:` and search with Helix's normal mode; see
+`space`, `:` and search with Helix's mode; see
 [Editing styles](editing-styles.md#making-your-own).
 
 ## Binding your own commands
@@ -191,7 +192,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["g u"] = "upcase-line" })
+greed.keymap.bind("helix", { ["g u"] = "upcase-line" })
 ```
 
 [Writing plugins](plugins.md) covers commands, and the rest of the API,

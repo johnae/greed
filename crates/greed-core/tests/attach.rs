@@ -30,15 +30,15 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
             let mut editor = Editor::new(ClientId(1));
             editor.open("file", "hello", None);
             let host = Host::new(editor)?;
-            host.load_dir(
-                &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core"),
-            )?;
+            let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+            host.load_dir(&runtime.join("core"))?;
+            host.load_dir(&runtime.join("helix"))?;
             host.load_str(
                 "keys",
                 "local greed = require('@greed')
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
-                 greed.keymap.bind('normal', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping' })",
+                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -50,7 +50,7 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
                          ctx.buffer:decorate('pic', {{ {{ from = 0, to = 1, style = 'x',
                              image = {{ id = id, cols = 2, rows = 1 }} }} }})
                      end }})
-                     greed.keymap.bind('normal', {{ ['ctrl-p'] = 'picture' }})",
+                     greed.keymap.bind('helix', {{ ['ctrl-p'] = 'picture' }})",
                     png = png.display()
                 ),
             )?;

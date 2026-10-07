@@ -498,7 +498,7 @@ greed.command({
 	run = function(ctx)
 		local again = last_find
 		if again then
-			find(ctx, again.char, again.forward, again.till, greed.mode.get() == "select")
+			find(ctx, again.char, again.forward, again.till, greed.mode.get() == "helix-select")
 		end
 	end,
 })

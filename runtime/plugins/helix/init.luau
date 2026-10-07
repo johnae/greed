@@ -1,0 +1,163 @@
+-- Helix's editing style, the default: select text, then say what to do with
+-- it. Its modes are `helix` (normal), `helix-insert` and `helix-select`;
+-- the status line shows them as NORMAL, INSERT and SELECT. The commands
+-- are core's; this plugin gives them Helix's keys. Copy any part of it
+-- into your own config to change it.
+
+local greed = require("@greed")
+local core = require("@core")
+
+require("@self/select")
+
+greed.keymap.bind("helix", {
+	enter = "press-button",
+	h = "move-left",
+	j = "move-down",
+	k = "move-up",
+	l = "move-right",
+	left = "move-left",
+	down = "move-down",
+	up = "move-up",
+	right = "move-right",
+	w = "next-word",
+	b = "prev-word",
+	e = "word-end",
+	home = "line-start",
+	["end"] = "line-end",
+	["g h"] = "line-start",
+	["g l"] = "line-end",
+	["g g"] = "goto-start",
+	["g e"] = "goto-last-line",
+	["g w"] = "jump-to-word",
+	G = "goto-line",
+	["g s"] = "first-non-blank",
+	W = "next-big-word",
+	B = "prev-big-word",
+	E = "big-word-end",
+	f = "find-next-char",
+	t = "till-next-char",
+	F = "find-prev-char",
+	T = "till-prev-char",
+	["m m"] = "match-bracket",
+	v = "select-mode",
+	["ctrl-c"] = "toggle-comment",
+	['"'] = "select-register",
+	Q = "record-macro",
+	q = "play-macro",
+	["ctrl-o"] = "jump-back",
+	["ctrl-i"] = "jump-forward",
+	["alt-d"] = "delete-without-copy",
+	["alt-c"] = "change-without-copy",
+	r = "replace-char",
+	R = "replace-with-copy",
+	["~"] = "switch-case",
+	["`"] = "lowercase",
+	["alt-`"] = "uppercase",
+	[">"] = "indent",
+	["<"] = "dedent",
+	J = "join-lines",
+	I = "insert-line-start",
+	A = "append-line-end",
+	["ctrl-f"] = "page-down",
+	["ctrl-b"] = "page-up",
+	["ctrl-d"] = "half-page-down",
+	["ctrl-u"] = "half-page-up",
+	pagedown = "page-down",
+	pageup = "page-up",
+	x = "select-line",
+	[";"] = "collapse",
+	["."] = "repeat-change",
+	["alt-;"] = "flip",
+	i = "insert-mode",
+	a = "append-mode",
+	o = "open-below",
+	O = "open-above",
+	d = "delete",
+	c = "change",
+	u = "undo",
+	U = "redo",
+	y = "copy",
+	p = "paste-after",
+	P = "paste-before",
+	["/"] = "search",
+	["?"] = "search-back",
+	n = "search-next",
+	N = "search-prev",
+	["*"] = "search-selection",
+	["alt-*"] = "search-selection-anywhere",
+	["%"] = "select-all",
+	s = "select-regex",
+	S = "split-regex",
+	["alt-s"] = "split-lines",
+	K = "keep-matching",
+	["alt-K"] = "remove-matching",
+	C = "copy-selection-down",
+	["alt-C"] = "copy-selection-up",
+	[","] = "keep-primary",
+	["alt-,"] = "remove-primary",
+	["("] = "rotate-primary-back",
+	[")"] = "rotate-primary",
+	X = "extend-to-line-bounds",
+	["alt-x"] = "shrink-to-line-bounds",
+	["alt-_"] = "merge-consecutive-selections",
+	["_"] = "trim-selections",
+	["&"] = "align-selections",
+	["alt-("] = "rotate-contents-back",
+	["alt-)"] = "rotate-contents",
+	["alt-."] = "repeat-find",
+	["ctrl-a"] = "increment",
+	["ctrl-x"] = "decrement",
+	["alt-u"] = "earlier",
+	["alt-U"] = "later",
+	["ctrl-h"] = "selection-undo",
+	["ctrl-k"] = "selection-redo",
+	["space c"] = "toggle-comment",
+	-- Copies already go to the clipboard; these are Helix's keys for it.
+	["space y"] = "copy",
+	["space Y"] = "copy",
+	["space p"] = "paste-after",
+	["space R"] = "replace-with-copy",
+	["] space"] = "add-newline-below",
+	["[ space"] = "add-newline-above",
+})
+
+greed.keymap.bind("helix-insert", {
+	esc = "normal-mode",
+	pagedown = "page-down",
+	pageup = "page-up",
+	enter = "insert-newline",
+	backspace = "delete-back",
+	delete = "delete-forward",
+	tab = "insert-tab",
+	home = "line-start",
+	["end"] = "line-end",
+	["ctrl-w"] = "delete-word-back",
+	["alt-backspace"] = "delete-word-back",
+	["alt-d"] = "delete-word-forward",
+	["ctrl-u"] = "delete-to-line-start",
+	["ctrl-k"] = "delete-to-line-end",
+	["ctrl-r"] = "insert-register",
+	left = "move-left",
+	right = "move-right",
+	up = "move-up",
+	down = "move-down",
+})
+
+greed.keymap.bind("helix", core.objects.keys)
+greed.keymap.bind("helix", core.syntax.keys)
+greed.keymap.bind("helix", core.folds.keys)
+greed.keymap.bind("helix", core.scroll.keys)
+greed.keymap.bind("helix", core.goto_keys.keys)
+greed.keymap.counts("helix")
+greed.keymap.fallback("helix-insert", "insert-char")
+greed.mode.set_cursor("helix-insert", "bar")
+
+core.style.define({
+	name = "helix",
+	doc = "Select text, then say what to do with it (Helix, Kakoune)",
+	mode = "helix",
+	typing = { "helix-insert" },
+	labels = { helix = "normal", ["helix-insert"] = "insert", ["helix-select"] = "select" },
+})
+
+return {}

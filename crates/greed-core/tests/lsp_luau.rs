@@ -121,6 +121,7 @@ fn with_plugin() -> Host {
     let h = host();
     h.load_dirs(&[
         plugin("core"),
+        plugin("helix"),
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
@@ -337,7 +338,7 @@ fn completions_show_as_you_type_and_narrow_as_you_go() {
     h.press_keys("enter").unwrap();
     assert_eq!(main_text(&h), "let x = bad; badge");
     assert!(completion_menu(&h).is_none(), "taking one closes the menu");
-    assert_eq!(h.with_editor(|ed| ed.mode().to_owned()), "insert");
+    assert_eq!(h.with_editor(|ed| ed.mode().to_owned()), "helix-insert");
 }
 
 #[test]
@@ -361,7 +362,7 @@ fn tab_moves_through_completions_and_esc_closes_them_and_insert_mode() {
     assert!(completion_menu(&h).is_none());
     assert_eq!(
         h.with_editor(|ed| ed.mode().to_owned()),
-        "normal",
+        "helix",
         "esc also leaves insert"
     );
     assert!(main_text(&h).ends_with(" b"), "nothing was put in: {first}");
@@ -617,6 +618,7 @@ fn with_agent() -> Host {
     let h = host();
     h.load_dirs(&[
         plugin("core"),
+        plugin("helix"),
         plugin("picker"),
         plugin("terminal"),
         plugin("multibuffer"),

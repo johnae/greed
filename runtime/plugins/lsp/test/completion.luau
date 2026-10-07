@@ -21,7 +21,7 @@ test("a completion menu whose view closes some other way goes back to typing", f
 	t:buffer("apple apricot\n|")
 	t:keys("i a")
 	t:run("completion-words")
-	t:expect_mode("completion-insert")
+	t:expect_mode("completion-helix-insert")
 	local menu = t:floats()
 	assert(#menu == 1, `{#menu} floats`)
 	for _, view in greed.floats() do
@@ -30,7 +30,7 @@ test("a completion menu whose view closes some other way goes back to typing", f
 		end
 	end
 	t:wait(0)
-	t:expect_mode("insert")
+	t:expect_mode("helix-insert")
 	t:keys("p")
 	t:expect("apple apricot\nap|")
 end)
@@ -38,7 +38,7 @@ end)
 test("a style no plugin names gets completion in its typing mode", function(t)
 	local core = require("@core")
 	t:buffer("apple\n|")
-	greed.keymap.inherit("mine-insert", "insert")
+	greed.keymap.inherit("mine-insert", "helix-insert")
 	core.style.define({ name = "mine", doc = "Mine", mode = "mine", typing = { "mine-insert" } })
 	greed.mode.set("mine-insert")
 	t:keys("a")

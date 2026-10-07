@@ -301,7 +301,7 @@ test("while you type, enter answers and what you typed stays in the box", functi
 	t:keys("enter")
 	assert(answered(t, s) == "Reject", greed.view():buffer():text())
 	assert(draft() == "hiy", draft())
-	assert(greed.mode.get() == "insert", greed.mode.get())
+	assert(greed.mode.get() == "helix-insert", greed.mode.get())
 end)
 
 test("esc hides the choices, leaving the question; alt-p brings them back", function(t)

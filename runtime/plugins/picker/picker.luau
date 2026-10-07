@@ -464,7 +464,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 	for key in o.keys do
 		if not bound[key] then
 			bound[key] = true
-			greed.keymap.bind({ mode = "insert", kind = "picker" }, { [key] = "picker-key" })
+			greed.keymap.bind({ mode = "helix-insert", kind = "picker" }, { [key] = "picker-key" })
 		end
 	end
 	open = o

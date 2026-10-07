@@ -46,10 +46,10 @@ test("a prompt whose view closes some other way is cancelled", function(t)
 			cancelled += 1
 		end,
 	})
-	t:expect_mode("insert")
+	t:expect_mode("helix-insert")
 	greed.view():close()
 	t:wait(0)
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 	assert(cancelled == 1, `cancelled {cancelled} times`)
 	t:run("prompt-cancel")
 	assert(cancelled == 1, "nothing left to cancel")

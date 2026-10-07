@@ -31,7 +31,7 @@ test("z j and z k scroll the view, Z keeps the view keys until esc", function(t)
 	t:expect_mode("view")
 	assert(greed.view():scroll() == 3, tostring(greed.view():scroll()))
 	t:keys("esc")
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 end)
 
 test("g t and g b go to the top and bottom line on the screen", function(t)

@@ -373,3 +373,22 @@ fn read_only(lua: &Lua, module: Value, name: &str) -> LuaResult<Value> {
     };
     view.call((module, name))
 }
+
+/// `t` as a plain table: itself, or for a table with a metatable, like
+/// another plugin's module seen through its read-only view, a copy of what
+/// iterating it gives.
+pub(super) fn plain(lua: &Lua, t: Table) -> LuaResult<Table> {
+    const KEY: &str = "greed.plain";
+    if t.metatable().is_none() {
+        return Ok(t);
+    }
+    if let Some(copy) = lua.named_registry_value::<Option<Function>>(KEY)? {
+        return copy.call(t);
+    }
+    let copy: Function = lua
+        .load("return function(t) local out = {} for k, v in t do out[k] = v end return out end")
+        .set_name("=greed.plain")
+        .eval()?;
+    lua.set_named_registry_value(KEY, &copy)?;
+    copy.call(t)
+}

@@ -201,7 +201,7 @@ end)
 
 -- Bound for normal mode, these work in every style; the buffer is read-only,
 -- so even modeless editing can have them.
-greed.keymap.bind({ mode = "normal", kind = "pdf" }, {
+greed.keymap.bind({ mode = "helix", kind = "pdf" }, {
 	["]"] = "pdf-next-page",
 	["["] = "pdf-previous-page",
 	["+"] = "pdf-zoom-in",

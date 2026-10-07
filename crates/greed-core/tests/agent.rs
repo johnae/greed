@@ -29,6 +29,7 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
             let host = Host::new(editor)?;
             host.load_dirs(&[
                 plugin("core"),
+                plugin("helix"),
                 plugin("picker"),
                 plugin("terminal"),
                 plugin("multibuffer"),

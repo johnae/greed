@@ -657,7 +657,7 @@ greed.on("buffer.changed", on_buffer)
 
 require("@self/tools")(M)
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space m r"] = "block-run",
 	["space m R"] = "blocks-run-all",
 	["space m c"] = "block-result-clear",

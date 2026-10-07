@@ -63,6 +63,6 @@ greed.command({
 	run = M.toggle,
 })
 
-greed.keymap.bind("normal", { ["space i C"] = "claude" })
+greed.keymap.bind("helix", { ["space i C"] = "claude" })
 
 return M

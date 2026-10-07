@@ -955,7 +955,7 @@ local function hint(keys: { [string]: string }, order: { string }): string
 end
 
 modes.pane = {
-	back = "normal",
+	back = "helix",
 	hint = hint(M.keys.pane, {
 		"h",
 		"j",
@@ -991,9 +991,9 @@ modes.pane = {
 		"esc",
 	}),
 }
-modes.tab = { back = "normal", hint = hint(M.keys.tab, { "h", "l", "n", "t", "x", "r", "esc" }) }
+modes.tab = { back = "helix", hint = hint(M.keys.tab, { "h", "l", "n", "t", "x", "r", "esc" }) }
 modes.resize = {
-	back = "normal",
+	back = "helix",
 	hint = "h j k l grow  H J K L shrink  arrows move a float  = - every way  esc",
 }
 
@@ -1014,7 +1014,7 @@ local function bind()
 		window[`ctrl-w {key}`] = name
 		window[`space w {key}`] = name
 	end
-	greed.keymap.bind("normal", window)
+	greed.keymap.bind("helix", window)
 	greed.keymap.bind("vim", window)
 	greed.keymap.bind("vim", { ["g t"] = "tab-next", ["g T"] = "tab-previous" })
 end

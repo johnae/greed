@@ -93,14 +93,14 @@ fn selections_and_cursors_are_tagged() {
 #[test]
 fn a_bar_cursor_sits_between_characters_and_shows_only_on_cursors() {
     let mut ed = editor("^hello| ^wo|rld");
-    ed.set_cursor_shape("normal", greed_core::CursorShape::Bar);
+    ed.set_cursor_shape("helix", greed_core::CursorShape::Bar);
     let f = frame(&mut ed, 20, 2);
     assert_eq!(f.cursor, Some(Position { col: 7, row: 0 }));
     assert!(
         tagged(&f, &Tag::CURSOR).is_empty(),
         "no cursors drawn on selections"
     );
-    ed.set_cursor_shape("normal", greed_core::CursorShape::Block);
+    ed.set_cursor_shape("helix", greed_core::CursorShape::Block);
     let f = frame(&mut ed, 20, 2);
     assert_eq!(
         tagged(&f, &Tag::CURSOR),
@@ -180,8 +180,8 @@ fn the_status_line_shows_mode_file_and_position() {
     let mut ed = editor("ab\nc|d");
     let f = frame(&mut ed, 24, 3);
     let status = f.rows.last().unwrap();
-    assert_eq!(status.text(), " NORMAL  notes.md   2:2 ");
-    assert_eq!(tagged(&f, &Tag::MODE), [" NORMAL "]);
+    assert_eq!(status.text(), " HELIX  notes.md    2:2 ");
+    assert_eq!(tagged(&f, &Tag::MODE), [" HELIX "]);
 
     let f = Renderer::new(CellWidth).frame(
         &mut ed,
@@ -194,7 +194,7 @@ fn the_status_line_shows_mode_file_and_position() {
         },
         &Plain,
     );
-    assert_eq!(f.rows.last().unwrap().text(), " NORMAL  saved      2:2 ");
+    assert_eq!(f.rows.last().unwrap().text(), " HELIX  saved       2:2 ");
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn long_paths_keep_their_end_on_the_status_line() {
     ed.view_mut(view).selection = selection;
     let f = frame(&mut ed, 30, 2);
     let status = f.rows.last().unwrap().text();
-    assert_eq!(status, " NORMAL  …o/some/notes.md 1:1 ");
+    assert_eq!(status, " HELIX  …to/some/notes.md 1:1 ");
     assert_eq!(status.chars().count(), 30);
 }
 

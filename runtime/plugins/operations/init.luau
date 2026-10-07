@@ -406,7 +406,7 @@ greed.on("buffer.closed", function(event)
 	reviews[event.id] = nil
 end)
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space u o"] = "operations",
 	["space u u"] = "operation-undo",
 })

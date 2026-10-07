@@ -280,7 +280,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["g r"] = "goto-references",
 	["space D"] = "pick-problem",
 	-- Helix has this on space h, which is help here.

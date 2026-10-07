@@ -15,8 +15,12 @@ below says so.
 
 ```text
 :style vim        switch now
-:style            show the style in use and the others
+:style            pick one from a list
 ```
+
+The status line shows the style's name, dim, on the right; clicking it
+opens the same list. The mode on the left reads the way the style's
+editor says it: NORMAL, INSERT, SELECT in Helix's, VISUAL in Vim's.
 
 The first time you start Greed it asks which you'd like (`:setup` asks
 again). To start in a style every time, set it in `~/.config/greed/init.luau`:
@@ -65,7 +69,8 @@ it, and many selections are part of the model rather than a separate
 feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then
 happens at each one, which covers most of what macros and
 search-and-replace are used for. [Using Greed](using.md#editing) lists
-the keys.
+the keys. The style is the `helix` plugin, and its modes are `helix`,
+`helix-insert` and `helix-select`.
 
 ## Vim
 
@@ -173,21 +178,25 @@ still works, through `ctrl-P` and the command line (`alt-x`).
 ## Making your own
 
 A style is a mode with keys bound in it, registered with the `core`
-plugin. Its keys can borrow from Helix's normal mode, so `space`, `:` and
-the rest keep working:
+plugin. Its keys can borrow from Helix's mode, so `space`, `:` and the
+rest keep working:
 
 ```luau
 local greed = require("@greed")
 
 greed.keymap.bind("mine", { j = "move-down", k = "move-up", i = "insert-mode" })
-greed.keymap.inherit("mine", "normal", { "space", ":" })
+greed.keymap.inherit("mine", "helix", { "space", ":" })
+greed.keymap.inherit("mine-insert", "helix-insert")
+greed.keymap.fallback("mine-insert", "insert-char")
 
 require("@core").style.define({
 	name = "mine",
 	doc = "My own keys",
 	mode = "mine",
-	-- The modes that type; insert-mode goes to Helix's insert mode.
-	typing = { "insert" },
+	-- The modes that type; insert-mode goes to the first.
+	typing = { "mine-insert" },
+	-- What the status line shows for each mode.
+	labels = { mine = "normal", ["mine-insert"] = "insert" },
 })
 ```
 

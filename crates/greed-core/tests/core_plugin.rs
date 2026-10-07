@@ -42,12 +42,15 @@ fn failures(results: &[TestResult]) -> Vec<String> {
 
 #[test]
 fn picker_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("picker")], &plugin("picker"));
+    assert_all_pass(
+        &[core(), plugin("helix"), plugin("picker")],
+        &plugin("picker"),
+    );
 }
 
 #[test]
 fn core_plugin_tests_pass() {
-    let count = assert_all_pass(&[core()], &core());
+    let count = assert_all_pass(&[core(), plugin("helix")], &core());
     assert!(count >= 10, "found only {count} tests");
 }
 
@@ -63,7 +66,7 @@ fn failures_name_the_line_and_what_differed() {
     )
     .unwrap();
 
-    let results = run_tests(&[core()], &dir).unwrap();
+    let results = run_tests(&[core(), plugin("helix")], &dir).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 
     let summary: Vec<(&str, Option<&str>)> = results
@@ -85,18 +88,34 @@ fn failures_name_the_line_and_what_differed() {
 
 #[test]
 fn statusline_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("statusline")], &plugin("statusline"));
+    assert_all_pass(
+        &[
+            core(),
+            plugin("helix"),
+            plugin("picker"),
+            plugin("statusline"),
+        ],
+        &plugin("statusline"),
+    );
 }
 
 #[test]
 fn hints_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("hints")], &plugin("hints"));
+    assert_all_pass(
+        &[core(), plugin("helix"), plugin("hints")],
+        &plugin("hints"),
+    );
 }
 
 #[test]
 fn describe_plugin_tests_pass() {
     assert_all_pass(
-        &[core(), plugin("picker"), plugin("describe")],
+        &[
+            core(),
+            plugin("helix"),
+            plugin("picker"),
+            plugin("describe"),
+        ],
         &plugin("describe"),
     );
 }
@@ -104,7 +123,12 @@ fn describe_plugin_tests_pass() {
 #[test]
 fn edit_mode_plugin_tests_pass() {
     assert_all_pass(
-        &[core(), plugin("picker"), plugin("edit-mode")],
+        &[
+            core(),
+            plugin("helix"),
+            plugin("picker"),
+            plugin("edit-mode"),
+        ],
         &plugin("edit-mode"),
     );
 }
@@ -112,7 +136,7 @@ fn edit_mode_plugin_tests_pass() {
 #[test]
 fn prose_plugin_tests_pass() {
     assert_all_pass(
-        &[core(), plugin("markdown"), plugin("prose")],
+        &[core(), plugin("helix"), plugin("markdown"), plugin("prose")],
         &plugin("prose"),
     );
 }
@@ -121,7 +145,7 @@ fn prose_plugin_tests_pass() {
 fn cmdline_plugin_tests_pass() {
     // :norm is tried in the Vim style.
     assert_all_pass(
-        &[core(), plugin("cmdline"), plugin("vim")],
+        &[core(), plugin("helix"), plugin("cmdline"), plugin("vim")],
         &plugin("cmdline"),
     );
 }
@@ -132,6 +156,7 @@ fn vim_plugin_tests_pass() {
     // command line for :. Its tests paste in edit mode too.
     let plugins = [
         core(),
+        plugin("helix"),
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
@@ -145,19 +170,29 @@ fn vim_plugin_tests_pass() {
 
 #[test]
 fn theme_plugin_tests_pass() {
-    let plugins = [core(), plugin("picker"), plugin("cmdline"), plugin("theme")];
+    let plugins = [
+        core(),
+        plugin("helix"),
+        plugin("picker"),
+        plugin("cmdline"),
+        plugin("theme"),
+    ];
     assert_all_pass(&plugins, &plugin("theme"));
 }
 
 #[test]
 fn flash_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("flash")], &plugin("flash"));
+    assert_all_pass(
+        &[core(), plugin("helix"), plugin("flash")],
+        &plugin("flash"),
+    );
 }
 
 #[test]
 fn lsp_plugin_tests_pass() {
     let plugins = [
         core(),
+        plugin("helix"),
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
@@ -168,12 +203,15 @@ fn lsp_plugin_tests_pass() {
 
 #[test]
 fn languages_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("languages")], &plugin("languages"));
+    assert_all_pass(
+        &[core(), plugin("helix"), plugin("languages")],
+        &plugin("languages"),
+    );
 }
 
 #[test]
 fn tree_plugin_tests_pass() {
-    assert_all_pass(&[core(), plugin("tree")], &plugin("tree"));
+    assert_all_pass(&[core(), plugin("helix"), plugin("tree")], &plugin("tree"));
 }
 
 /// Every default plugin's tests, with all the default plugins loaded the
@@ -249,8 +287,14 @@ fn every_style_name_the_plugins_use_is_in_the_theme() {
 
     let host =
         greed_core::luau::Host::new(greed_core::Editor::new(greed_text::ClientId(1))).unwrap();
-    host.load_dirs(&[core(), plugin("picker"), plugin("cmdline"), plugin("theme")])
-        .unwrap();
+    host.load_dirs(&[
+        core(),
+        plugin("helix"),
+        plugin("picker"),
+        plugin("cmdline"),
+        plugin("theme"),
+    ])
+    .unwrap();
     let missing: Vec<&String> = names
         .iter()
         .filter(|name| {

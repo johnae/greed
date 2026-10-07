@@ -1118,12 +1118,12 @@ statusline.add("right", "agents", function()
 	return if text then { text = text, style = "ui.statusline.message" } else nil
 end, "position")
 
-greed.keymap.bind({ mode = "normal", kind = "agent-transcript" }, {
+greed.keymap.bind({ mode = "helix", kind = "agent-transcript" }, {
 	enter = "agent-answer",
 	["ctrl-c"] = "agent-stop",
 	tab = "agent-fold",
 })
-greed.keymap.bind({ mode = "normal", kind = "agents" }, {
+greed.keymap.bind({ mode = "helix", kind = "agents" }, {
 	enter = "agents-show",
 	r = "agents-resume",
 	m = "agents-mark",
@@ -1151,9 +1151,9 @@ local function transcript_keys(mode: string)
 		["alt-M"] = "agent-model",
 	})
 end
-transcript_keys("normal")
+transcript_keys("helix")
 core.style.each_typing(transcript_keys)
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space i n"] = "agent-new",
 	["space i l"] = "agent-list",
 	["space i m"] = "agent-move",

@@ -48,7 +48,7 @@ test(":style edit makes edit mode the one to come back to", function(t)
 	t:keys("x")
 	t:expect("x|abc")
 	greed.option.set("editing-style", "helix")
-	t:expect_mode("normal")
+	t:expect_mode("helix")
 end)
 
 test("ctrl-p, ctrl-b and ctrl-P open the pickers", function(t)

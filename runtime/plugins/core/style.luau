@@ -1,11 +1,11 @@
 -- Editing styles: which mode you come back to when you're done typing or
--- picking something. Helix's style (this plugin) comes back to "normal";
--- edit mode and Vim are styles of their own, each with its own modes, so
--- switching between them leaves the others' keys alone.
+-- picking something. Each style is a plugin (helix, the default; vim;
+-- edit-mode) with its own modes, so switching between them leaves the
+-- others' keys alone.
 --
 -- Plugins ask the styles rather than naming their modes: `is_typing` for
 -- whether a mode types, `each_typing` to bind keys in every typing mode,
--- and keys bound for a buffer kind in normal mode work in every style.
+-- and keys bound for a buffer kind in Helix's mode work in every style.
 --
 --     :style vim
 --     require("@greed").option.set("editing-style", "edit")
@@ -22,7 +22,7 @@ export type Style = {
 	--- modes lists its own mode. Completion, signature help and markup
 	--- shown as written (see `reveal`) follow these.
 	typing: { string }?,
-	--- What the status line calls the style's modes, e.g. { vim = "normal" }.
+	--- What the status line calls the style's modes, e.g. { vim = "normal" }; a mode without one shows as its name.
 	labels: { [string]: string }?,
 	--- Once the plugin it came from; ignored.
 	plugin: string?,
@@ -46,25 +46,36 @@ end
 
 greed.option.define({
 	name = "editing-style",
-	doc = "How editing works: helix, edit or vim (see :style)",
+	doc = "How editing works: helix, vim, edit or another style a plugin adds (see :style)",
 	default = "helix",
 })
 
--- The style in use: the option's, or Helix's if that style isn't known.
+-- What's in use while no style is loaded at all.
+local NONE: Style = { name = "none", doc = "No editing style loaded", mode = "helix" }
+
+-- The style in use: the option's, or Helix's if that style isn't known, or
+-- any there is.
 local function current(): Style
-	return styles[greed.option.get("editing-style") :: string] or styles.helix
+	local found = styles[greed.option.get("editing-style") :: string] or styles.helix
+	if found then
+		return found
+	end
+	for _, style in styles do
+		return style
+	end
+	return NONE
 end
 
 local M = {}
 
 --- Adds a style. If the user already chose it, it starts now. Its mode
---- gets the keys bound for each buffer kind in normal mode, so panels like
+--- gets the keys bound for each buffer kind in Helix's mode, so panels like
 --- the file tree keep theirs. It goes when the plugin that added it does,
 --- and Helix's takes over if it was in use.
 function M.define(style: Style)
 	styles[style.name] = style
-	if style.mode ~= "normal" then
-		greed.keymap.inherit_kinds(style.mode, "normal")
+	if style.mode ~= "helix" then
+		greed.keymap.inherit_kinds(style.mode, "helix")
 	end
 	for _, watcher in table.clone(watchers) do
 		tell(watcher, style)
@@ -104,7 +115,14 @@ function M.home(): string
 	return current().mode
 end
 
---- Whether `mode` is some style's own mode, like normal or vim.
+--- The mode the style in use types in, e.g. after `insert-mode`: its first
+--- typing mode, or its own for a style without modes.
+function M.typing_mode(): string
+	local style = current()
+	return style.typing and style.typing[1] or style.mode
+end
+
+--- Whether `mode` is some style's own mode, like helix or vim.
 function M.is_home(mode: string): boolean
 	for _, style in styles do
 		if style.mode == mode then
@@ -119,7 +137,7 @@ end
 M.kind_modes = {} :: { [string]: string }
 
 --- Makes buffers of `kind` used in `mode`, e.g.
---- `core.style.kind_mode("picker", "insert")`: a picker you come back to
+--- `core.style.kind_mode("picker", "helix-insert")`: a picker you come back to
 --- after a float over it closes takes typing again.
 function M.kind_mode(kind: string, mode: string)
 	greed.plugin.tie(registry.set(M.kind_modes, kind, mode))
@@ -134,7 +152,7 @@ end
 M.shown_as = {} :: { [string]: string }
 
 --- Shows `mode` as `as`, e.g. a completion menu's mode as the typing mode
---- it came from: `core.style.show_as("completion-insert", "insert")`.
+--- it came from: `core.style.show_as("completion-vim-insert", "vim-insert")`.
 --- Being typing or not follows `as` too.
 function M.show_as(mode: string, as: string)
 	greed.plugin.tie(registry.set(M.shown_as, mode, as))
@@ -236,26 +254,31 @@ greed.on("option.changed", function(event)
 	greed.mode.set(M.home())
 end)
 
+-- Whether a command called `name` is there.
+local function has_command(name: string): boolean
+	for _, command in greed.commands() do
+		if command.name == name then
+			return true
+		end
+	end
+	return false
+end
+
 greed.command({
 	name = "style",
-	doc = "Switch editing style: helix, edit or vim",
+	doc = "Switch editing style, or pick one",
 	args = { { name = "style", doc = "The style", complete = "editing-style" } },
 	run = function(ctx)
 		local name = ctx.args[1]
-		if name == nil then
+		if name then
+			M.set(name)
+			greed.echo(`editing style: {name}`)
+		elseif has_command("pick-style") then
+			greed.run("pick-style")
+		else
 			greed.echo(`editing style: {current().name} (there's {table.concat(M.names(), ", ")})`)
-			return
 		end
-		M.set(name)
-		greed.echo(`editing style: {name}`)
 	end,
-})
-
-M.define({
-	name = "helix",
-	doc = "Select text, then say what to do with it (Helix, Kakoune)",
-	mode = "normal",
-	typing = { "insert" },
 })
 
 return M

@@ -572,7 +572,7 @@ greed.command({
 -- The reading view ----------------------------------------------------------
 
 -- The mode to go back to from reading.
-local back = "normal"
+local back = core.style.home()
 
 local function start_reading(buffer: greed.Buffer)
 	if reading[buffer:id()] then
@@ -688,7 +688,7 @@ greed.keymap.bind("read", {
 })
 
 greed.keymap.bind(
-	"normal",
+	"helix",
 	{ ["space m l"] = "markdown-look-toggle", ["space m v"] = "markdown-read" }
 )
 greed.keymap.bind("edit", { ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" })

@@ -47,13 +47,13 @@ core.actions.action({
 	end,
 })
 
-greed.keymap.bind({ mode = "insert", kind = "picker" }, picker.KEYS)
+greed.keymap.bind({ mode = "helix-insert", kind = "picker" }, picker.KEYS)
 -- A picker takes typing; if something leaves it in another mode, esc still
 -- closes it.
-core.style.kind_mode("picker", "insert")
-greed.keymap.bind({ mode = "normal", kind = "picker" }, { esc = "picker-close" })
+core.style.kind_mode("picker", "helix-insert")
+greed.keymap.bind({ mode = "helix", kind = "picker" }, { esc = "picker-close" })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space f"] = "pick-file",
 	["space b"] = "pick-buffer",
 	["space s"] = "pick-outline",

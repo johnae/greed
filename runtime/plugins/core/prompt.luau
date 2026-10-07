@@ -81,8 +81,8 @@ greed.command({
 	end,
 })
 
-style.kind_mode("prompt", "insert")
-greed.keymap.bind({ mode = "insert", kind = "prompt" }, {
+style.kind_mode("prompt", "helix-insert")
+greed.keymap.bind({ mode = "helix-insert", kind = "prompt" }, {
 	enter = "prompt-submit",
 	esc = "prompt-cancel",
 	["ctrl-c"] = "prompt-cancel",

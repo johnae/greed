@@ -10,7 +10,7 @@ test("docs writes the plugins, options and API pages from the running editor", f
 	-- Each plugin's top comment, and its commands with their keys.
 	assert(string.find(plugins, "\n## core\n", 1, true), "core has a section")
 	assert(
-		string.find(plugins, "`g g` (normal) | Move to the start of the buffer", 1, true),
+		string.find(plugins, "`g g` (helix) | Move to the start of the buffer", 1, true),
 		"commands come with their keys"
 	)
 	local options = greed.fs.read(dir .. "/options.md") :: string

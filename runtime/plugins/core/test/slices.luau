@@ -126,7 +126,7 @@ test("keys fed together wait for what the key before started to finish", functio
 			table.insert(order, "quick")
 		end,
 	})
-	greed.keymap.bind("normal", { ["f8"] = "test-slow-key", ["f9"] = "test-quick-key" })
+	greed.keymap.bind("helix", { ["f8"] = "test-slow-key", ["f9"] = "test-quick-key" })
 	t:buffer("|x")
 	greed.keys.feed("f8 f9")
 	t:wait(10)

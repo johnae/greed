@@ -122,7 +122,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space g"] = "greet" })
+greed.keymap.bind("helix", { ["space g"] = "greet" })
 ```
 
 A command name can't have spaces, so it can be typed after `:`. Defining
@@ -134,11 +134,11 @@ usually means a typo. `greed.plugin.check` reports both as warnings.
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
 was typed, and `ctx.char` for keys that type a character. Keymaps are bound
-per mode, or per kind of buffer with `{ mode = "normal", kind = "tree" }`.
+per mode, or per kind of buffer with `{ mode = "helix", kind = "tree" }`.
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
-"normal", { "space", ":" })` lets a new mode use some of normal mode's
+"helix", { "space", ":" })` lets a new mode use some of Helix's mode's
 keys, which is how a whole editing style is built; see [Editing
 styles](editing-styles.md#making-your-own).
 `greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for
@@ -148,8 +148,8 @@ inheriting all of another's keys uses that one's), and
 `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
 the way a terminal takes every key.
 
-Keys for a kind of buffer bound in normal mode work in every editing
-style, so a panel binds them once, with `{ mode = "normal", kind = "tree" }`.
+Keys for a kind of buffer bound in Helix's mode work in every editing
+style, so a panel binds them once, with `{ mode = "helix", kind = "tree" }`.
 Rather than naming other styles' modes, ask `core.style`:
 `is_typing()` says whether the current mode types (insert, Vim's insert,
 edit mode), and `each_typing(function(mode) ... end)` calls back with

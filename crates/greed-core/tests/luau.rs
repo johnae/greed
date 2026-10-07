@@ -38,7 +38,7 @@ greed.command {
     end)
   end,
 }
-greed.keymap.bind("normal", { ["m s"] = "wrap-in-some" })
+greed.keymap.bind("helix", { ["m s"] = "wrap-in-some" })
 "#;
 
 #[test]
@@ -90,7 +90,7 @@ fn insert_mode_fallback_gets_the_typed_char() {
           ctx.buffer:edit(function(e) e:insert(pos, ctx.char) end)
         end }
         greed.command { name = "insert-mode", run = function() greed.mode.set("insert") end }
-        greed.keymap.bind("normal", { i = "insert-mode" })
+        greed.keymap.bind("helix", { i = "insert-mode" })
         greed.keymap.fallback("insert", "insert-char")
         "#,
     )
@@ -138,7 +138,7 @@ fn unknown_commands_are_reported() {
     assert!(matches!(h.run("nope"), Err(HostError::UnknownCommand(_))));
     h.load_str(
         "k",
-        "require('@greed').keymap.bind('normal', { x = 'missing' })",
+        "require('@greed').keymap.bind('helix', { x = 'missing' })",
     )
     .unwrap();
     assert!(matches!(
@@ -161,7 +161,7 @@ fn reloading_replaces_registrations() {
         assert!(reg.command("other").is_some());
     });
     h.with_editor(|ed| {
-        assert!(ed.keymap().fallback("normal").is_none());
+        assert!(ed.keymap().fallback("helix").is_none());
     });
     h.reload("p").unwrap();
     assert_eq!(h.with_registry(|reg| reg.definitions("other").len()), 1);
@@ -212,7 +212,7 @@ fn mode_changes_emit_an_event() {
     .unwrap();
     h.eval("require('@greed').mode.set('insert')").unwrap();
     h.eval("require('@greed').mode.set('insert')").unwrap();
-    assert_eq!(h.with_editor_mut(Editor::take_messages), ["normal->insert"]);
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["helix->insert"]);
 }
 
 #[test]
@@ -931,7 +931,7 @@ fn status_lines_come_from_the_plugin_that_set_them() {
     let text = |spans: &[greed_core::render::Span]| {
         spans.iter().map(|s| s.text.clone()).collect::<String>()
     };
-    assert_eq!(text(&line.left), "normal");
+    assert_eq!(text(&line.left), "helix");
     assert_eq!(text(&line.right), "hi");
 
     h.load_str("bar", "").unwrap();
@@ -1169,7 +1169,7 @@ fn commands_get_arguments_and_force() {
             greed.echo(table.concat(ctx.args, "+") .. " " .. tostring(ctx.force))
           end,
         }
-        greed.keymap.bind("normal", { g = "greet" })
+        greed.keymap.bind("helix", { g = "greet" })
         "#,
     )
     .unwrap();
@@ -1298,13 +1298,13 @@ fn plugins_unbind_keys_and_clear_layers() {
     h.load_str(
         "base",
         "local greed = require('@greed')
-         greed.keymap.bind('normal', { w = 'next-word', x = 'select-line', ['g g'] = 'goto-start' })",
+         greed.keymap.bind('helix', { w = 'next-word', x = 'select-line', ['g g'] = 'goto-start' })",
     )
     .unwrap();
     h.load_str(
         "mine",
         "local greed = require('@greed')
-         greed.keymap.unbind('normal', { 'w' })
+         greed.keymap.unbind('helix', { 'w' })
          greed.keymap.clear({ mode = 'insert' })",
     )
     .unwrap();
@@ -1318,8 +1318,8 @@ fn plugins_unbind_keys_and_clear_layers() {
     h.load_str(
         "vim",
         "local greed = require('@greed')
-         greed.keymap.clear('normal')
-         greed.keymap.bind('normal', { ['d d'] = 'delete-line' })",
+         greed.keymap.clear('helix')
+         greed.keymap.bind('helix', { ['d d'] = 'delete-line' })",
     )
     .unwrap();
     assert_eq!(resolve("x"), "nil\tfalse");
@@ -1336,9 +1336,9 @@ fn commands_get_the_count_typed_before_them() {
     h.load_str(
         "counter",
         "local greed = require('@greed')
-         greed.keymap.counts('normal')
+         greed.keymap.counts('helix')
          greed.command { name = 'show', run = function(ctx) greed.echo(tostring(ctx.count)) end }
-         greed.keymap.bind('normal', { s = 'show' })",
+         greed.keymap.bind('helix', { s = 'show' })",
     )
     .unwrap();
     h.press_keys("2 5 s s").unwrap();
@@ -1353,7 +1353,7 @@ fn plugins_unload_unless_another_requires_them() {
             "init.luau",
             "local greed = require('@greed')
              greed.command { name = 'hello', run = function() greed.echo('hi') end }
-             greed.keymap.bind('normal', { h = 'hello' })
+             greed.keymap.bind('helix', { h = 'hello' })
              return {}",
         )],
     );

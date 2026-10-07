@@ -160,7 +160,7 @@ agent.tool({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space g w"] = "why-lines" })
-greed.keymap.bind({ mode = "normal", kind = "why" }, { q = "multibuffer-close" })
+greed.keymap.bind("helix", { ["space g w"] = "why-lines" })
+greed.keymap.bind({ mode = "helix", kind = "why" }, { q = "multibuffer-close" })
 
 return M

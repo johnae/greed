@@ -1178,7 +1178,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space t"] = "pick-terminal", ["space T"] = "terminal-send" })
+greed.keymap.bind("helix", { ["space t"] = "pick-terminal", ["space T"] = "terminal-send" })
 
 -- The mouse in a terminal. A program that asked for it gets it. Otherwise
 -- the wheel scrolls back through the output, as tmux does: up stops typing
@@ -1276,7 +1276,7 @@ greed.keymap.bind(MODE, {
 	esc = "terminal-esc",
 })
 greed.mode.set_cursor(MODE, "block")
-greed.keymap.bind({ mode = "normal", kind = "terminal" }, {
+greed.keymap.bind({ mode = "helix", kind = "terminal" }, {
 	i = "terminal-input",
 	a = "terminal-input",
 	enter = "terminal-input",

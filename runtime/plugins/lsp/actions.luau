@@ -189,7 +189,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space r"] = "rename",
 	["space a"] = "code-action",
 })

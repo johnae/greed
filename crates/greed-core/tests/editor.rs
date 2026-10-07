@@ -79,7 +79,7 @@ fn undo_and_redo_map_other_views() {
 #[test]
 fn mode_changes_report_whether_anything_changed() {
     let mut ed = editor("");
-    assert_eq!(ed.mode(), "normal");
+    assert_eq!(ed.mode(), "helix");
     assert!(ed.set_mode("insert"));
     assert!(!ed.set_mode("insert"));
     assert_eq!(ed.mode(), "insert");
@@ -89,7 +89,7 @@ fn mode_changes_report_whether_anything_changed() {
 fn keys_resolve_through_pending_sequences() {
     let mut ed = editor("");
     ed.keymap_mut()
-        .bind(Layer::mode("normal"), &keys("g g"), "goto-start", "core")
+        .bind(Layer::mode("helix"), &keys("g g"), "goto-start", "core")
         .unwrap();
     assert_eq!(ed.press(Key::char('g')), KeyOutcome::Pending);
     assert_eq!(
@@ -626,7 +626,7 @@ fn each_mode_has_a_cursor_shape() {
 #[test]
 fn counts_before_a_command_reach_it() {
     let mut ed = editor("");
-    let normal = Layer::mode("normal");
+    let normal = Layer::mode("helix");
     ed.keymap_mut()
         .bind(normal.clone(), &keys("j"), "down", "core")
         .unwrap();
@@ -652,7 +652,7 @@ fn counts_before_a_command_reach_it() {
     // Without counts turned on, digits are plain keys.
     assert_eq!(press(&mut ed, "3"), KeyOutcome::Unbound(keys("3")));
 
-    ed.keymap_mut().enable_counts("normal", "core");
+    ed.keymap_mut().enable_counts("helix", "core");
     assert_eq!(press(&mut ed, "1 2 j"), command("down", "j", Some(12)));
     assert_eq!(press(&mut ed, "j"), command("down", "j", None));
     // A leading 0 is a key; after a digit it's part of the count.
@@ -664,7 +664,7 @@ fn counts_before_a_command_reach_it() {
     assert_eq!(press(&mut ed, "j"), command("down", "j", None));
     press(&mut ed, "4");
     ed.set_mode("insert");
-    ed.set_mode("normal");
+    ed.set_mode("helix");
     assert_eq!(press(&mut ed, "j"), command("down", "j", None));
 
     ed.keymap_mut().remove_owned_by("core");

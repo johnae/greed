@@ -4,6 +4,7 @@
 
 local greed = require("@greed")
 local motions = require("./motions")
+local style = require("./style")
 local text = require("./text")
 
 -- How many lines the view showed when it was last drawn.
@@ -163,7 +164,7 @@ greed.command({
 	name = "view-mode-leave",
 	doc = "Back from the view mode",
 	run = function()
-		greed.mode.set("normal")
+		greed.mode.set(style.home())
 	end,
 })
 

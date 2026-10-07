@@ -13,7 +13,9 @@ fn start(text: &'static str, path: Option<&'static Path>) -> Connection {
         let mut editor = Editor::new(ClientId(1));
         editor.open("file", text, path.map(Path::to_owned));
         let host = Host::new(editor)?;
-        host.load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core"))?;
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+        host.load_dir(&runtime.join("core"))?;
+        host.load_dir(&runtime.join("helix"))?;
         Ok(host)
     })
 }
@@ -149,7 +151,7 @@ fn the_server_wakes_up_for_timers() {
         let host = Host::new(editor)?;
         host.load_str(
             "sleepy",
-            "local greed = require('@greed')\ngreed.command { name = 'later', run = function(ctx) greed.sleep(20) ctx.buffer:edit(function(e) e:insert(0, 'woke') end) end }\ngreed.keymap.bind('normal', { z = 'later' })",
+            "local greed = require('@greed')\ngreed.command { name = 'later', run = function(ctx) greed.sleep(20) ctx.buffer:edit(function(e) e:insert(0, 'woke') end) end }\ngreed.keymap.bind('helix', { z = 'later' })",
         )?;
         Ok(host)
     });
@@ -177,7 +179,7 @@ fn frames_come_at_most_once_a_redraw_while_work_keeps_waking_the_server() {
         let host = Host::new(editor)?;
         host.load_str(
             "busy",
-            "local greed = require('@greed')\ngreed.command { name = 'busy', run = function(ctx) for i = 1, 200 do greed.sleep(1) ctx.buffer:edit(function(e) e:replace(0, #ctx.buffer:text(), tostring(i)) end) end end }\ngreed.keymap.bind('normal', { z = 'busy' })",
+            "local greed = require('@greed')\ngreed.command { name = 'busy', run = function(ctx) for i = 1, 200 do greed.sleep(1) ctx.buffer:edit(function(e) e:replace(0, #ctx.buffer:text(), tostring(i)) end) end end }\ngreed.keymap.bind('helix', { z = 'busy' })",
         )?;
         Ok(host)
     });

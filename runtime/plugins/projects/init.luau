@@ -257,7 +257,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", { ["space P"] = "pick-project" })
+greed.keymap.bind("helix", { ["space P"] = "pick-project" })
 
 load_cache()
 

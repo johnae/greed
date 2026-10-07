@@ -416,7 +416,7 @@ fn runtime(name: &str) -> std::path::PathBuf {
 #[test]
 fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
     let h = host();
-    h.load_dirs(&[runtime("core"), runtime("statusline")])
+    h.load_dirs(&[runtime("core"), runtime("helix"), runtime("statusline")])
         .unwrap();
     h.load_str(
         "clock",
@@ -615,12 +615,12 @@ fn keys_bound_to_missing_commands_are_named_at_start() {
         "keys",
         "local greed = require('@greed')
         greed.command({ name = 'there', run = function() end })
-        greed.keymap.bind('normal', { ['g z'] = 'nowhere', ['g y'] = 'there' })",
+        greed.keymap.bind('helix', { ['g z'] = 'nowhere', ['g y'] = 'there' })",
     )
     .unwrap();
     h.started().unwrap();
     assert_eq!(
         messages(&h),
-        ["g z in normal runs nowhere, which doesn't exist"]
+        ["g z in helix runs nowhere, which doesn't exist"]
     );
 }

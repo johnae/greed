@@ -23,7 +23,7 @@ fn repl(args: &[&str], script: &str) -> String {
 #[test]
 fn keys_edit_and_show_the_buffer() {
     let out = repl(&[], ":keys i h i esc\n:keys g h w\n");
-    assert_eq!(out, "[normal]\nhi|\n[normal]\n^hi|\n");
+    assert_eq!(out, "[helix]\nhi|\n[helix]\n^hi|\n");
 }
 
 #[test]

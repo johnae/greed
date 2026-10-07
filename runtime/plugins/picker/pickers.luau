@@ -196,4 +196,22 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "pick-style",
+	doc = "Pick an editing style",
+	run = function()
+		local using = core.style.current().name
+		-- The style in use comes first, so enter right away changes nothing.
+		local items = {}
+		for _, style in core.style.list() do
+			local item = { label = `{style.name}  {style.doc}`, value = style.name }
+			table.insert(items, if style.name == using then 1 else #items + 1, item)
+		end
+		picker.pick("Editing style", items, function(item)
+			core.style.set(item.value)
+			greed.echo(`editing style: {item.value}`)
+		end)
+	end,
+})
+
 return {}

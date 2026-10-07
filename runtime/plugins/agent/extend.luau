@@ -42,7 +42,7 @@ else c` expressions, string interpolation with backticks, `+=`, and
 
 - Commands: `greed.command({ name = "words-like-this", doc = "...", run = function(ctx) ... end })`.
   `ctx.buffer` and `ctx.view` are where the command runs.
-- Keys: `greed.keymap.bind("normal", { ["g x"] = "command-name" })`.
+- Keys: `greed.keymap.bind("helix", { ["g x"] = "command-name" })`.
 - Edits: `ctx.buffer:edit(function(e) e:replace(from, to, "text") end)`; positions are 0-based bytes.
 - Events: `greed.on("buffer.saved", function(event) ... end)`; also "buffer.changed" (every
   edit, so keep it cheap and wait for a quiet moment before heavy work), "buffer.opened",
@@ -256,7 +256,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ mode = "normal", kind = "plugin-review" }, {
+greed.keymap.bind({ mode = "helix", kind = "plugin-review" }, {
 	a = "plugin-review-accept",
 	r = "plugin-review-reject",
 	q = "plugin-review-reject",

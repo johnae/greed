@@ -75,7 +75,7 @@ greed.command({ name = "run-true", run = function()
 	local ok, err = pcall(greed.process.run, { "true" })
 	greed.echo(if ok then "ran" else tostring(err))
 end })
-greed.keymap.bind("normal", { ["ctrl-alt-r"] = "run-true" })
+greed.keymap.bind("helix", { ["ctrl-alt-r"] = "run-true" })
 ]],
 	}))
 end

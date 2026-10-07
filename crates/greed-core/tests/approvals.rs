@@ -383,7 +383,7 @@ fn checking_a_plugin_warns_of_replaced_commands_and_keys_to_missing_ones() {
         dir.join("init.luau"),
         "local greed = require('@greed')
         greed.command({ name = 'save-it', run = function() end })
-        greed.keymap.bind('normal', { ['g z'] = 'nowhere' })
+        greed.keymap.bind('helix', { ['g z'] = 'nowhere' })
         return {}\n",
     )
     .unwrap();
@@ -395,7 +395,7 @@ fn checking_a_plugin_warns_of_replaced_commands_and_keys_to_missing_ones() {
         [
             "passed 0",
             "warning: the mine plugin replaces the base plugin's command save-it",
-            "warning: g z in normal runs nowhere, which doesn't exist",
+            "warning: g z in helix runs nowhere, which doesn't exist",
         ]
     );
 }

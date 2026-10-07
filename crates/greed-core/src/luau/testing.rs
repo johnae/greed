@@ -504,7 +504,7 @@ impl UserData for TestContext {
             state.editor.show(main, buffer);
             state.editor.view_mut(main).selection = selection;
             state.editor.set_focus(main);
-            state.editor.set_mode("normal");
+            state.editor.set_mode("helix");
             state.editor.end_group();
             Ok(())
         });

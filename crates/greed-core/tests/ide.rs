@@ -156,6 +156,7 @@ fn start_agent(label: &str, file: &std::path::Path) -> (Connection, PathBuf) {
             let host = Host::new(editor)?;
             host.load_dirs(&[
                 plugins.join("core"),
+                plugins.join("helix"),
                 plugins.join("picker"),
                 plugins.join("terminal"),
                 plugins.join("multibuffer"),

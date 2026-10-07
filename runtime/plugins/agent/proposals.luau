@@ -472,7 +472,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["] o"] = "proposal-next",
 	["[ o"] = "proposal-prev",
 	["space o a"] = "proposal-accept",

@@ -153,7 +153,7 @@ fn new_plugins_pass_their_own_tests_and_load_from_the_config_directory() {
         .write_all(b":run greeter-greet\n")
         .unwrap();
     let out = String::from_utf8(repl.wait_with_output().unwrap().stdout).unwrap();
-    assert_eq!(out, "[normal]\nhello|\n");
+    assert_eq!(out, "[helix]\nhello|\n");
 
     // The scaffold type-checks in strict mode, if luau-analyze is around.
     if let Ok(output) = Command::new("luau-analyze")

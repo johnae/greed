@@ -348,12 +348,12 @@ end
 
 restore()
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space i p"] = "context-add",
 	["space i i"] = "context",
 })
 greed.keymap.bind(
-	{ mode = "normal", kind = "context" },
+	{ mode = "helix", kind = "context" },
 	{ q = "context-close", esc = "context-close" }
 )
 

@@ -704,7 +704,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind("normal", {
+greed.keymap.bind("helix", {
 	["space g s"] = "changes",
 	["space g l"] = "change-stack",
 	["] g"] = "next-change",
