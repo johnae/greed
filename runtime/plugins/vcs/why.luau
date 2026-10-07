@@ -161,6 +161,6 @@ agent.tool({
 })
 
 greed.keymap.bind({ layer = "leader" }, { ["g w"] = "why-lines" })
-greed.keymap.bind({ mode = "helix", kind = "why" }, { q = "multibuffer-close" })
+greed.keymap.bind({ kind = "why" }, { q = "multibuffer-close" })
 
 return M

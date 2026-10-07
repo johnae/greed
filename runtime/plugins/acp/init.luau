@@ -1123,7 +1123,7 @@ greed.keymap.bind({ mode = "helix", kind = "agent-transcript" }, {
 	["ctrl-c"] = "agent-stop",
 	tab = "agent-fold",
 })
-greed.keymap.bind({ mode = "helix", kind = "agents" }, {
+greed.keymap.bind({ kind = "agents" }, {
 	enter = "agents-show",
 	r = "agents-resume",
 	m = "agents-mark",

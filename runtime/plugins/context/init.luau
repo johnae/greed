@@ -352,9 +352,6 @@ greed.keymap.bind({ layer = "leader" }, {
 	["i p"] = "context-add",
 	["i i"] = "context",
 })
-greed.keymap.bind(
-	{ mode = "helix", kind = "context" },
-	{ q = "context-close", esc = "context-close" }
-)
+greed.keymap.bind({ kind = "context" }, { q = "context-close", esc = "context-close" })
 
 return M

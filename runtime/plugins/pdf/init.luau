@@ -199,9 +199,9 @@ command("pdf-text", "Switch between the PDF's pages and the text on them", funct
 	show(v)
 end)
 
--- Bound for normal mode, these work in every style; the buffer is read-only,
--- so even modeless editing can have them.
-greed.keymap.bind({ mode = "helix", kind = "pdf" }, {
+-- Bound for the kind of buffer, these work in every style and mode; the
+-- buffer is read-only, so typing has nothing to lose to them.
+greed.keymap.bind({ kind = "pdf" }, {
 	["]"] = "pdf-next-page",
 	["["] = "pdf-previous-page",
 	["+"] = "pdf-zoom-in",

@@ -256,7 +256,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ mode = "helix", kind = "plugin-review" }, {
+greed.keymap.bind({ kind = "plugin-review" }, {
 	a = "plugin-review-accept",
 	r = "plugin-review-reject",
 	q = "plugin-review-reject",

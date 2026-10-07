@@ -100,7 +100,8 @@ fn more_specific_layers_win() {
     );
     assert_eq!(
         km.resolve("normal", "terminal", &keys("q")),
-        Resolution::Command("quit".into())
+        Resolution::Command("term-q".into()),
+        "a buffer kind's keys come ahead of the mode's"
     );
     assert_eq!(
         km.resolve("normal", "terminal", &keys("ctrl-s")),
@@ -680,4 +681,45 @@ fn keys_text(keys: &[Key]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[test]
+fn a_kinds_keys_come_first_in_the_mode_and_what_it_inherits() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("insert"), &keys("enter"), "newline", "core")
+        .unwrap();
+    km.bind(
+        Layer::mode_kind("typing", "picker"),
+        &keys("esc"),
+        "close",
+        "picker",
+    )
+    .unwrap();
+    km.bind(Layer::mode("vim-insert"), &keys("esc"), "vim-normal", "vim")
+        .unwrap();
+    km.bind(Layer::kind("picker"), &keys("enter"), "choose", "picker")
+        .unwrap();
+    km.inherit("vim-insert", "typing", vec![], "core");
+    assert_eq!(
+        command(&km, "vim-insert", "picker", "esc").as_deref(),
+        Some("close")
+    );
+    assert_eq!(
+        command(&km, "vim-insert", "file", "esc").as_deref(),
+        Some("vim-normal")
+    );
+    assert_eq!(
+        command(&km, "insert", "picker", "enter").as_deref(),
+        Some("choose")
+    );
+    assert_eq!(
+        command(&km, "insert", "file", "enter").as_deref(),
+        Some("newline")
+    );
+    km.isolate("terminal", "terminal");
+    assert_eq!(
+        command(&km, "terminal", "picker", "enter"),
+        None,
+        "but not in an isolated mode"
+    );
 }

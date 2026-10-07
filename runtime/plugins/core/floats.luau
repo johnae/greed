@@ -126,7 +126,7 @@ export type Typing = {
 }
 
 export type TypingOptions = {
-	--- The mode to type in while it's open; "helix-insert" by default.
+	--- The mode to type in while it's open; the style's typing mode by default.
 	mode: string?,
 	--- Called after each change to the buffer.
 	on_change: (() -> ())?,
@@ -143,7 +143,7 @@ export type TypingOptions = {
 --- goes back only if the mode is still its own.
 function M.typing(buffer: greed.Buffer, spec: greed.FloatSpec, options: TypingOptions?): Typing
 	local opts: TypingOptions = options or {}
-	local mode = opts.mode or "helix-insert"
+	local mode = opts.mode or style.typing_mode()
 	local came_from, was = greed.view(), greed.mode.get()
 	local view = greed.float(buffer, spec)
 	local id = view:id()
@@ -242,10 +242,7 @@ function M.show_text(title: string, text: string, options: TextOptions?): greed.
 	local kind = opts.kind or "text"
 	local before = showing[kind]
 	if before == nil then
-		greed.keymap.bind(
-			{ mode = "helix", kind = kind },
-			{ esc = "text-float-close", q = "text-float-close" }
-		)
+		greed.keymap.bind({ kind = kind }, { esc = "text-float-close", q = "text-float-close" })
 	elseif before:valid() then
 		before:close()
 	end

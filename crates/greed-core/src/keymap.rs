@@ -3,9 +3,12 @@
 //! Keymaps are defined from Luau but resolved here, in a trie per layer, so
 //! a keypress only runs Luau when the command it resolves to does.
 //!
-//! Layers are checked from most to least specific: the mode and buffer
-//! kind, the layers the mode enters with keys (like the leader), the mode,
-//! the modes it inherits from, the buffer kind, then global. The first layer a
+//! Layers are checked from most to least specific. Keys for the buffer's
+//! kind come first, so a panel's keys work in every mode: the mode's, the
+//! leader's and those of the modes it inherits for that kind, then those
+//! for the kind in any mode. Then the layers the mode enters with keys
+//! (like the leader), the mode's own, the modes it inherits from, and
+//! global. The first layer a
 //! key sequence leads anywhere in decides what it does.
 
 use std::collections::HashMap;
@@ -545,49 +548,54 @@ impl Keymap {
     /// The layers that apply in `mode` for a buffer of `kind`, most specific
     /// first, each with the inheritances that brought it in.
     fn lookup_order(&self, mode: &str, kind: &str) -> Vec<Step<'_>> {
-        let mut order = Vec::new();
         if self.isolated.contains_key(mode) {
-            order.push(Step::direct(Layer::mode_kind(mode, kind)));
-            order.push(Step::direct(Layer::mode(mode)));
-            return order;
+            return vec![
+                Step::direct(Layer::mode_kind(mode, kind)),
+                Step::direct(Layer::mode(mode)),
+            ];
         }
-        self.expand(mode, kind, &mut Vec::new(), &mut order);
-        order.push(Step::direct(Layer::kind(kind)));
-        order.push(Step::direct(Layer::global()));
-        order
+        let (mut kinds, mut modes) = (Vec::new(), Vec::new());
+        self.expand(mode, kind, &mut Vec::new(), &mut kinds, &mut modes);
+        kinds.push(Step::direct(Layer::kind(kind)));
+        kinds.append(&mut modes);
+        kinds.push(Step::direct(Layer::global()));
+        kinds
     }
 
-    /// Adds the layers of `mode`, reached through `via`, to `order`: its own
-    /// for the buffer kind, those it enters with keys, its own, then those
-    /// of each mode it inherits, and theirs in turn.
+    /// Adds the layers of `mode`, reached through `via`, to `kinds` (those
+    /// for the buffer kind) and `modes` (the others), each in the same
+    /// order: the mode's own and the layers it enters with keys (the
+    /// latter ahead of its own in `modes`), then those of each mode it
+    /// inherits, and theirs in turn.
     fn expand<'a>(
         &'a self,
         mode: &str,
         kind: &str,
         via: &mut Vec<&'a Inherit>,
-        order: &mut Vec<Step<'a>>,
+        kinds: &mut Vec<Step<'a>>,
+        modes: &mut Vec<Step<'a>>,
     ) {
         let inherits = self.inherits.get(mode).map_or(&[][..], Vec::as_slice);
-        order.push(Step::through(Layer::mode_kind(mode, kind), via));
+        kinds.push(Step::through(Layer::mode_kind(mode, kind), via));
         if via.is_empty() {
             for (parent, _) in self.kind_parents.get(mode).into_iter().flatten() {
-                order.push(Step::direct(Layer::mode_kind(parent, kind)));
+                kinds.push(Step::direct(Layer::mode_kind(parent, kind)));
             }
         }
         for inherit in inherits.iter().filter(|i| i.entry.is_some()) {
             via.push(inherit);
-            order.push(Step::through(Layer::mode_kind(&inherit.parent, kind), via));
-            order.push(Step::through(Layer::mode(&inherit.parent), via));
+            kinds.push(Step::through(Layer::mode_kind(&inherit.parent, kind), via));
+            modes.push(Step::through(Layer::mode(&inherit.parent), via));
             via.pop();
         }
-        order.push(Step::through(Layer::mode(mode), via));
+        modes.push(Step::through(Layer::mode(mode), via));
         for inherit in inherits.iter().filter(|i| i.entry.is_none()) {
             // Modes can inherit from each other in a loop.
             if via.len() > 8 || via.iter().any(|i| i.parent == inherit.parent) {
                 continue;
             }
             via.push(inherit);
-            self.expand(&inherit.parent, kind, via, order);
+            self.expand(&inherit.parent, kind, via, kinds, modes);
             via.pop();
         }
     }

@@ -5,7 +5,8 @@
 --
 -- Plugins ask the styles rather than naming their modes: `is_typing` for
 -- whether a mode types, `each_typing` to bind keys in every typing mode,
--- and keys bound for a buffer kind in Helix's mode work in every style.
+-- and a panel binds its keys for its kind of buffer alone
+-- (`{ kind = "tree" }`), so they work in every style and mode.
 --
 --     :style vim
 --     require("@greed").option.set("editing-style", "edit")
@@ -139,20 +140,20 @@ function M.is_home(mode: string): boolean
 	return false
 end
 
---- The mode buffers of each kind are used in, when it isn't the style's
---- own; set with `kind_mode`.
-M.kind_modes = {} :: { [string]: string }
+--- The kinds of buffer that take typing; set with `typing_kind`.
+M.typing_kinds = {} :: { [string]: boolean }
 
---- Makes buffers of `kind` used in `mode`, e.g.
---- `core.style.kind_mode("picker", "helix-insert")`: a picker you come back to
---- after a float over it closes takes typing again.
-function M.kind_mode(kind: string, mode: string)
-	greed.plugin.tie(registry.set(M.kind_modes, kind, mode))
+--- Makes buffers of `kind` take typing, in the style's typing mode, e.g.
+--- `core.style.typing_kind("picker")`: a picker you come back to after a
+--- float over it closes takes typing again, whatever the style.
+function M.typing_kind(kind: string)
+	greed.plugin.tie(registry.set(M.typing_kinds, kind, true))
 end
 
---- The mode to be in with `view` focused: its buffer kind's, or `home()`.
+--- The mode to be in with `view` focused: `typing_mode()` for a kind of
+--- buffer that takes typing, or `home()`.
 function M.home_for(view: greed.View): string
-	return M.kind_modes[view:buffer():kind()] or M.home()
+	return if M.typing_kinds[view:buffer():kind()] then M.typing_mode() else M.home()
 end
 
 --- Modes shown as another mode; set with `show_as`.

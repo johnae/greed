@@ -47,11 +47,10 @@ core.actions.action({
 	end,
 })
 
-greed.keymap.bind({ mode = "helix-insert", kind = "picker" }, picker.KEYS)
--- A picker takes typing; if something leaves it in another mode, esc still
--- closes it.
-core.style.kind_mode("picker", "helix-insert")
-greed.keymap.bind({ mode = "helix", kind = "picker" }, { esc = "picker-close" })
+-- A picker takes typing, in the style's typing mode, and its keys work in
+-- every mode, so esc closes it whatever left it in another.
+greed.keymap.bind({ kind = "picker" }, picker.KEYS)
+core.style.typing_kind("picker")
 
 greed.keymap.bind({ layer = "leader" }, {
 	f = "pick-file",

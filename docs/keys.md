@@ -174,20 +174,26 @@ after them. A style can open any layer this way with
 `greed.keymap.enter(mode, keys, layer)`.
 
 A layer can also be limited to one kind of buffer, so a key does
-something different in the file tree or a picker than in a file:
+something different in the file tree or a picker than in a file. Bound
+for the kind alone, a panel's keys work in every style and every mode,
+ahead of the mode's own:
 
 ```luau
 -- o opens the file under the cursor, but only in the file tree
-greed.keymap.bind({ mode = "helix", kind = "tree" }, { o = "tree-open" })
+greed.keymap.bind({ kind = "tree" }, { o = "tree-open" })
+
+-- Only in Helix's mode, in the file tree
+greed.keymap.bind({ mode = "helix", kind = "tree" }, { O = "tree-open" })
 
 -- An empty layer applies in every mode
 greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
 ```
 
-When a key is pressed, Greed looks in the mode and buffer kind's layer
-first, then the leader if the keys open it, then the mode's, then the
-layers of the modes it inherits, then the buffer kind's, then the layer
-for every mode. The first layer where the keys run a command, or start a
+When a key is pressed, Greed looks first in the layers for the buffer's
+kind: the mode's, the leader's, those of the modes it inherits, then the
+kind's for every mode. Then come the leader if the keys open it, the
+mode's own layer, the layers of the modes it inherits, and the layer for
+every mode. The first layer where the keys run a command, or start a
 longer sequence, decides.
 
 `greed.keymap.inherit` lets a mode use another mode's keys, all of them or

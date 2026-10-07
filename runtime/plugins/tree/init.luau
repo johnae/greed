@@ -302,7 +302,7 @@ greed.on("mouse", function(event: greed.MouseEvent)
 end)
 
 greed.keymap.bind({ layer = "leader" }, { e = "tree" })
-greed.keymap.bind({ mode = "helix", kind = "tree" }, {
+greed.keymap.bind({ kind = "tree" }, {
 	enter = "tree-open",
 	l = "tree-open",
 	h = "tree-fold",

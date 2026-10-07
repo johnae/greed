@@ -600,7 +600,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	diffs[event.id] = nil
 end)
 
-greed.keymap.bind({ mode = "helix", kind = "change-stack" }, keys)
-greed.keymap.bind({ mode = "helix", kind = "change-diff" }, { q = "change-diff-close" })
+greed.keymap.bind({ kind = "change-stack" }, keys)
+greed.keymap.bind({ kind = "change-diff" }, { q = "change-diff-close" })
 
 return M

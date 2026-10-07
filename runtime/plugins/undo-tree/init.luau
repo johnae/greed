@@ -164,7 +164,7 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 	end
 end)
 
-greed.keymap.bind({ mode = "helix", kind = "undo-tree" }, {
+greed.keymap.bind({ kind = "undo-tree" }, {
 	j = "undo-tree-down",
 	k = "undo-tree-up",
 	down = "undo-tree-down",

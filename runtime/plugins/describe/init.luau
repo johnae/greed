@@ -416,7 +416,7 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ mode = "helix", kind = "help" }, {
+greed.keymap.bind({ kind = "help" }, {
 	esc = "help-close",
 	q = "help-close",
 	enter = "help-goto",

@@ -294,7 +294,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	end
 end)
 
-greed.keymap.bind({ mode = "helix", kind = "hunk-picker" }, {
+greed.keymap.bind({ kind = "hunk-picker" }, {
 	space = "hunk-picker-toggle",
 	a = "hunk-picker-all",
 	enter = "hunk-picker-done",

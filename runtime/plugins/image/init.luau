@@ -143,9 +143,9 @@ greed.command({
 	end,
 })
 
--- Bound for normal mode, these work in every style; the buffer is read-only,
--- so even modeless editing can have them.
-greed.keymap.bind({ mode = "helix", kind = "image" }, {
+-- Bound for the kind of buffer, these work in every style and mode; the
+-- buffer is read-only, so typing has nothing to lose to them.
+greed.keymap.bind({ kind = "image" }, {
 	["+"] = "image-zoom-in",
 	["-"] = "image-zoom-out",
 	["="] = "image-zoom-fit",

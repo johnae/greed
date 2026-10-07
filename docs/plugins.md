@@ -137,7 +137,7 @@ was typed, and `ctx.char` for keys that type a character. Keys for
 commands people reach for by name go in the leader, `{ layer = "leader" }`,
 which every editing style opens its own way (`space g` in Helix and Vim,
 `ctrl-space g` in edit mode). Other keymaps are bound per mode, or per kind
-of buffer with `{ mode = "helix", kind = "tree" }`.
+of buffer with `{ kind = "tree" }`.
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
@@ -151,8 +151,11 @@ inheriting all of another's keys uses that one's), and
 `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
 the way a terminal takes every key.
 
-Keys for a kind of buffer bound in Helix's mode work in every editing
-style, so a panel binds them once, with `{ mode = "helix", kind = "tree" }`.
+Keys bound for a kind of buffer alone work in every editing style and
+every mode, ahead of the mode's own, so a panel binds them once, with
+`{ kind = "tree" }`. A buffer kind you type into, like a prompt, says so
+with `core.style.typing_kind("my-prompt")`: focusing one goes to the
+style's typing mode, and `core.floats.typing` opens a float in it.
 Rather than naming other styles' modes, ask `core.style`:
 `is_typing()` says whether the current mode types (insert, Vim's insert,
 edit mode), and `each_typing(function(mode) ... end)` calls back with
@@ -601,7 +604,8 @@ greed.tab.set_layout({
   read-only float that `esc` or `q` closes, replacing the one before of
   that kind. For a float to type in, like your own prompt,
   `core.floats.typing(buffer, spec, { on_change = ..., on_close = ... })`
-  switches to insert mode and puts the mode and focus back however the
+  switches to the editing style's typing mode (insert, in Helix's and
+  Vim's) and puts the mode and focus back however the
   float closes, whether by its `close()` or by closing its view; it's what
   the prompt, pickers, the command line and the completion menu use.
   A float's spec can also put text on its border (`label` at the right of
@@ -1291,7 +1295,7 @@ end
 `require("@name")` gives a plugin a read-only view of another plugin's
 module: reading works as usual, nested tables too, and setting anything
 raises an error, so no plugin can replace another's functions or settings.
-Offer functions for what others may change, as `core.style.kind_mode` or
+Offer functions for what others may change, as `core.style.typing_kind` or
 `models.role` do. Your config, a trusted project's `.greed` folder, the
 REPL and tests get the modules themselves, so the settings the docs show
 you assigning, like `models.roles.fast = ...`, work there. Go through a

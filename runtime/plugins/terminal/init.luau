@@ -1277,7 +1277,7 @@ greed.keymap.bind(MODE, {
 	esc = "terminal-esc",
 })
 greed.mode.set_cursor(MODE, "block")
-greed.keymap.bind({ mode = "helix", kind = "terminal" }, {
+greed.keymap.bind({ kind = "terminal" }, {
 	i = "terminal-input",
 	a = "terminal-input",
 	enter = "terminal-input",

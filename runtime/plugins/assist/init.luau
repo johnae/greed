@@ -280,10 +280,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["i f"] = "fix",
 	["i c"] = "commit-message",
 })
-greed.keymap.bind({ mode = "helix", kind = "answer" }, { q = "assist-close" })
-greed.keymap.bind(
-	{ mode = "helix", kind = "commit-message" },
-	{ a = "commit-message-apply", q = "assist-close" }
-)
+greed.keymap.bind({ kind = "answer" }, { q = "assist-close" })
+greed.keymap.bind({ kind = "commit-message" }, { a = "commit-message-apply", q = "assist-close" })
 
 return M
