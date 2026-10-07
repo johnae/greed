@@ -607,7 +607,9 @@ end
 
 --- A new transcript buffer for `s`, with an empty box to write in.
 function M.create(s: Session): greed.Buffer
-	local buffer = greed.create_buffer("agent-transcript", "")
+	-- Agents write Markdown, which shows as such, its markup hidden except
+	-- on the line you're on.
+	local buffer = greed.create_buffer("agent-transcript", "", { language = "markdown" })
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
 	M.render(buffer, s)

@@ -392,3 +392,21 @@ test("undo in the box takes back only typing, never what the transcript drew", f
 	t:run("undo")
 	assert(buffer:text() == sent, buffer:text())
 end)
+
+test("the agent's Markdown shows as Markdown, its markup hidden", function(t)
+	local s = start(t)
+	send(t, s, "markdown")
+	local drawn = screen(t, 70)
+	assert(string.find(drawn, "Some bold and code, then:", 1, true), drawn)
+	assert(not string.find(drawn, "**bold**", 1, true), "the stars are hidden: " .. drawn)
+	assert(not string.find(drawn, "`code`", 1, true), "the backticks too: " .. drawn)
+	-- While you type in the box, it shows as you typed it, as on the line you
+	-- type on in a Markdown file.
+	local view = greed.view()
+	local pos = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	t:keys("i * * x * *")
+	assert(string.find(screen(t, 70), "**x**", 1, true), screen(t, 70))
+	t:keys("esc")
+	acp.stop(s)
+end)
