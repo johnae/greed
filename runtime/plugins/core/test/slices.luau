@@ -64,3 +64,25 @@ test("code that holds the editor up is noted with its plugin and what it ran", f
 	assert(string.find(text, "the status line", 1, true), text)
 	t:keys("q")
 end)
+
+test("keys fed together wait for what the key before started to finish", function(t)
+	local order = {}
+	greed.command({
+		name = "test-slow-key",
+		run = function()
+			busy(40)
+			table.insert(order, "slow")
+		end,
+	})
+	greed.command({
+		name = "test-quick-key",
+		run = function()
+			table.insert(order, "quick")
+		end,
+	})
+	greed.keymap.bind("normal", { ["f8"] = "test-slow-key", ["f9"] = "test-quick-key" })
+	t:buffer("|x")
+	greed.keys.feed("f8 f9")
+	t:wait(10)
+	assert(table.concat(order, " ") == "slow quick", table.concat(order, " "))
+end)

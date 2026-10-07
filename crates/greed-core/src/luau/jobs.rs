@@ -191,12 +191,15 @@ pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
 }
 
 /// Waits for every running job and finishes it, and lets work cut into time
-/// slices finish, for tests, which have no event loop to do it.
+/// slices finish, for tests, which have no event loop to do it. Time spent
+/// waiting for a job doesn't count against the test's budget.
 pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
     let finished = state(lua).jobs.finished.clone();
     loop {
         while state(lua).jobs.running > 0 {
+            let waited = std::time::Instant::now();
             let done = finished.recv().map_err(mlua::Error::external)?;
+            super::extend_deadline(lua, waited.elapsed());
             finish(lua, done)?;
         }
         // What programs printed so far, without waiting for more.

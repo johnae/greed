@@ -21,7 +21,7 @@ fn greed_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal(
         &[],
         &[
             Step::Until("the session", running),
-            Step::Pause(300),
+            Step::Shows("buy milk"),
             Step::Keys("iyes \x1b"),
             Step::Pause(200),
             Step::Keys(":detach\r"),
@@ -45,7 +45,7 @@ fn greed_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal(
         &project,
         "attach",
         &[],
-        &[Step::Pause(500), Step::Keys(":q!\r")],
+        &[Step::Shows("yes buy milk"), Step::Keys(":q!\r")],
     );
     world.wait_for("the session to quit", none_running);
 }
@@ -62,7 +62,7 @@ fn greed_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
         &[],
         &[
             Step::Until("the session", running),
-            Step::Pause(300),
+            Step::Shows("first"),
             Step::Keys(":detach\r"),
         ],
     );
@@ -70,7 +70,7 @@ fn greed_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
         &project.join("src"),
         "b.txt",
         &[],
-        &[Step::Pause(500), Step::Keys(":detach\r")],
+        &[Step::Shows("second"), Step::Keys(":detach\r")],
     );
     let listed = world.sessions();
     assert_eq!(
@@ -172,7 +172,7 @@ fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
         ],
         &[
             Step::Until("the remote session", running),
-            Step::Pause(400),
+            Step::Shows("main"),
             // Typing goes to the terminal it opened; ctrl-\ leaves it.
             Step::Keys("\x1c:detach\r"),
         ],
@@ -210,7 +210,7 @@ fn without_sessions_the_editor_runs_in_the_terminal_and_quits_with_it() {
         &project,
         "a.txt",
         &[("GREED_NO_SESSION", "1")],
-        &[Step::Pause(800), Step::Keys(":q\r")],
+        &[Step::Shows("local text"), Step::Keys(":q\r")],
     );
     assert!(out.contains("local text"), "drawn in this terminal");
     assert!(none_running(&world), "no session was started");
@@ -228,7 +228,7 @@ fn greed_in_one_of_its_own_terminals_opens_the_file_there_instead_of_nesting() {
         &[],
         &[
             Step::Until("the session", running),
-            Step::Pause(300),
+            Step::Shows("first"),
             Step::Keys(":detach\r"),
         ],
     );
@@ -279,7 +279,7 @@ fn greed_with_terminal_opens_one_in_the_session_it_shows() {
         &[],
         &[
             Step::Until("the session", running),
-            Step::Pause(400),
+            Step::Shows("a.txt"),
             Step::Keys("\x1c:detach\r"),
         ],
     );

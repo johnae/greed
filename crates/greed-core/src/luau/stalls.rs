@@ -38,6 +38,10 @@ pub(crate) struct Stalls {
     kept: VecDeque<Stall>,
     inner: Duration,
     profile: Option<HashMap<(Option<String>, String), Spent>>,
+    /// Keeps long stalls without saying them, for tests: how long a run
+    /// takes depends on how busy the machine is, and a test checking what
+    /// was said shouldn't.
+    pub(crate) quiet: bool,
 }
 
 /// What one plugin doing one thing took while a profile was taken.
@@ -66,7 +70,7 @@ fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |d| d.as_secs_f64());
     let state = &mut *state_mut(lua);
-    if took >= SAY {
+    if took >= SAY && !state.stalls.quiet {
         state.editor.echo(format!(
             "{} held the editor up for {} ms ({what}) - :stalls lists these",
             plugin.unwrap_or("Greed"),

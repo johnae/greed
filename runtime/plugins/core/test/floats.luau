@@ -92,6 +92,25 @@ test("a typing float closed some other way still comes back and says so", functi
 	assert(heard.closes == 1, "closing again does nothing")
 end)
 
+test("a typing float whose view is gone hears no more changes, even before it's told", function(t)
+	-- A handler that runs before the float hears its view closed edits its
+	-- buffer, as code running in between can.
+	local edited: greed.Buffer? = nil
+	greed.on("view.closed", function()
+		if edited then
+			edited:edit(function(e)
+				e:insert(0, "a")
+			end)
+		end
+	end)
+	local float, heard = typing(t)
+	float.buffer:set_kept(true)
+	edited = float.buffer
+	float.view:close()
+	assert(heard.changes == 0, `{heard.changes} changes`)
+	assert(heard.closes == 1 and not float.is_open())
+end)
+
 test("a typing float comes back to the mode for wherever focus ends up", function(t)
 	t:buffer("|x")
 	greed.mode.set("select")

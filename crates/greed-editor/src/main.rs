@@ -364,7 +364,11 @@ fn test(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
         match &result.failure {
             None => println!("  ok    {}", result.name),
-            Some(why) => println!("  FAIL  {}\n        {why}", result.name),
+            Some(why) => println!(
+                "  FAIL  {}\n        {}",
+                result.name,
+                why.replace('\n', "\n        ")
+            ),
         }
     }
     let failed = results.iter().filter(|r| r.failure.is_some()).count();

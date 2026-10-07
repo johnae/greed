@@ -1695,6 +1695,10 @@ fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                     }
                 }
                 press_key(lua, key, Some(limit.clone())).map_err(into_lua)?;
+                // A command a key started that ran out of time and yielded
+                // finishes before the next key, which may count on it, as a
+                // macro's keys do.
+                while tasks::resume_sliced(lua)? {}
             }
             Ok(())
         })?,

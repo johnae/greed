@@ -3,6 +3,7 @@
 -- link, and the notes linking to a note are listed at its end. Links in
 -- code blocks are code.
 
+local core = require("@core")
 local greed = require("@greed")
 local markdown = require("@markdown")
 local notes = require("./notes")

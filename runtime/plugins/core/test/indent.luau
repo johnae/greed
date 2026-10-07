@@ -52,3 +52,11 @@ test("a closing bracket typed at a line's start lines up with its block", functi
 	greed.option.set("indent", "  ")
 	check(t, "x = [\n  a\n  |", "i ]", "x = [\n  a\n]|")
 end)
+
+test("enter makes one edit, with none for lining up a line that needs none", function(t)
+	t:buffer("a|b")
+	t:keys("i enter")
+	local history = greed.view():buffer():history()
+	assert(#history == 1, `{#history} edits`)
+	t:expect("a\n|b")
+end)

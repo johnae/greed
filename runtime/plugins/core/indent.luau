@@ -219,17 +219,25 @@ end
 --- the cursor closes one, like `end` or `}` typed at its start.
 function M.reindent(view: greed.View)
 	local buffer = view:buffer()
-	buffer:edit(function(e)
-		for _, range in view:selection().ranges do
-			local line = buffer:line_of(range.head)
-			local start = buffer:line_start(line)
-			local current = M.of(buffer, line)
-			if start + #current < range.head then
-				local wanted, closes = M.at(buffer, start + #current)
-				if closes and wanted ~= current then
-					e:replace(start, start + #current, wanted)
-				end
+	local changes = {}
+	for _, range in view:selection().ranges do
+		local line = buffer:line_of(range.head)
+		local start = buffer:line_start(line)
+		local current = M.of(buffer, line)
+		if start + #current < range.head then
+			local wanted, closes = M.at(buffer, start + #current)
+			if closes and wanted ~= current then
+				table.insert(changes, { from = start, to = start + #current, text = wanted })
 			end
+		end
+	end
+	-- An edit that changes nothing would still be an undo step.
+	if #changes == 0 then
+		return
+	end
+	buffer:edit(function(e)
+		for _, change in changes do
+			e:replace(change.from, change.to, change.text)
 		end
 	end)
 end

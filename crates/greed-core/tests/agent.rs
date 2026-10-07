@@ -18,8 +18,6 @@ fn plugin(name: &str) -> PathBuf {
 fn start(label: &str, text: &'static str) -> (Connection, Client) {
     let name = format!("agent-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
-    let socket = session.socket.clone();
-    let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
     let conn = server::spawn_with_session(
         move || {
             let mut editor = Editor::new(ClientId(1));
@@ -42,7 +40,15 @@ fn start(label: &str, text: &'static str) -> (Connection, Client) {
         },
         Some(session),
     );
-    (conn, Client::connect(&socket, &token).unwrap())
+    (conn, connect(label))
+}
+
+/// Another client connected to the session `start(label, ..)` made.
+fn connect(label: &str) -> Client {
+    let name = format!("agent-{label}-{}", std::process::id());
+    let (socket, token_file) = control::session_files(&name);
+    let token = std::fs::read_to_string(token_file).unwrap();
+    Client::connect(&socket, &token).unwrap()
 }
 
 /// The text a tools/call answered with, and whether it was an error.
@@ -188,8 +194,9 @@ fn a_proposal_waits_for_the_user_and_tells_the_agent_what_happened() {
             &json!({ "path": path, "edits": edits }),
         )
     });
-    // Give the request time to arrive, then accept everything in the file.
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    // Once the proposal shows, accept everything in the file. The agent's
+    // client is waiting for the answer, so another one looks.
+    wait_for_proposal(&mut connect("propose"), 8, true);
     for key in greed_core::keymap::Key::parse_sequence("space o A").unwrap() {
         conn.input.send(Input::Key(key)).unwrap();
     }

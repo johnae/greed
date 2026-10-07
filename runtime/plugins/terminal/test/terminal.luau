@@ -399,25 +399,24 @@ end)
 
 test("space T sends the line, or the selection, to the terminal used last and runs it", function(t)
 	local dir = t:tempdir({ ["a.sh"] = "echo first\necho second\n" })
-	t:run("terminal", { "cat" })
+	-- Without the terminal's echo, which can land in the middle of what cat
+	-- prints, the buffer holds only cat's output, in order.
+	t:run("terminal", { "sh", "-c", "stty -echo; echo ready; cat" })
+	shows(t, "ready")
 	local terminal = greed.view():buffer()
 	t:keys("ctrl-\\")
 	greed.open(dir .. "/a.sh")
 	t:keys("space T")
 	t:wait_for(function()
-		return string.find(terminal:text(), "echo first\necho first", 1, true) ~= nil
+		return string.find(terminal:text(), "ready\necho first\n", 1, true) ~= nil
 	end)
 	t:keys("x x space T")
 	t:wait_for(function()
-		return string.find(
-			terminal:text(),
-			"echo first\necho second\necho first\necho second",
-			1,
-			true
-		) ~= nil
+		return string.find(terminal:text(), "ready\necho first\necho first\necho second\n", 1, true)
+			~= nil
 	end)
 	local messages = t:messages()
-	assert(messages[#messages] == "sent to cat", messages[#messages])
+	assert(string.find(messages[#messages], "sent to sh", 1, true), messages[#messages])
 end)
 
 test("space T without a terminal says how to get one", function(t)

@@ -468,7 +468,9 @@ export type Keys = {
 	--- Presses the keys of a space-separated sequence as if they were
 	--- typed. Only recordings started with `fed` keep them. What they run
 	--- can do only what this plugin may (unless it has "commands"), and they
-	--- don't answer a command waiting for you to press a key.
+	--- don't answer a command waiting for you to press a key. A command
+	--- that works long enough to give the editor a turn finishes before
+	--- the next key; one waiting on a timer or a job doesn't hold them up.
 	feed: (keys: string) -> (),
 }
 

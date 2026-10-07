@@ -42,7 +42,7 @@ export type TestContext = {
 	--- Where something asked to send the client since the last call, if
 	--- anywhere.
 	switched: (self: TestContext) -> { session: string?, path: string? }?,
-	--- Messages shown since the last call, oldest first.
+	--- Messages shown since the last call, oldest first. Notices of code that held the editor up aren't among them, since they depend on how busy the machine is; `greed.stalls()` lists those.
 	messages: (self: TestContext) -> { string },
 	--- Desktop notifications sent with `greed.client.notify` since the last call, oldest first.
 	notices: (self: TestContext) -> { { title: string, body: string } },

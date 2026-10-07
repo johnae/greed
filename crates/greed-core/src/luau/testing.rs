@@ -111,7 +111,11 @@ fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Resul
     // never touch the user's. They only exist once something writes there.
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let dirs = std::env::temp_dir().join(format!("greed-home-{}-{n}", std::process::id()));
-    state_mut(&host.lua).dirs = Some(dirs);
+    {
+        let mut state = state_mut(&host.lua);
+        state.dirs = Some(dirs);
+        state.stalls.quiet = true;
+    }
     let (Some(approved), Some((checked, others))) = (approved, plugins.split_last()) else {
         host.load_dirs(plugins)?;
         return Ok(host);
@@ -171,7 +175,7 @@ impl Host {
         Ok(self
             .run_test_file(root, file, test)
             .err()
-            .map(|err| err.brief()))
+            .map(|err| failure(&err)))
     }
 
     fn run_test_file(&self, root: &Path, file: &Path, test: Function) -> Result<(), HostError> {
@@ -185,6 +189,25 @@ impl Host {
         budgeted(&self.lua, || modules.run_file(&self.lua, file))?;
         Ok(())
     }
+}
+
+/// Why a test failed: the error, then the Luau lines it was raised from that
+/// the message doesn't name already, so an error from the API, which names
+/// no line, still says where it came from.
+fn failure(err: &HostError) -> String {
+    let brief = err.brief();
+    let mut out = brief.clone();
+    let text = err.to_string();
+    if let Some(trace) = text.split("\nstack traceback:").nth(1) {
+        for frame in trace.lines().map(str::trim) {
+            let place = frame.split(": ").next().unwrap_or(frame);
+            if !frame.is_empty() && !frame.starts_with("[C]") && !brief.contains(place) {
+                out.push_str("\nat ");
+                out.push_str(frame);
+            }
+        }
+    }
+    out
 }
 
 /// Delivers terminal events and finishes jobs until `done` returns true, for

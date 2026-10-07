@@ -38,7 +38,8 @@ pub struct TerminalId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
-    /// There's new output. Sent once until the screen is next read.
+    /// There's new output. Sent once until the screen or the scrollback
+    /// is next read.
     Output(TerminalId),
     /// The program ended, with its exit code.
     Exited(TerminalId, u32),
@@ -183,6 +184,9 @@ struct Shared {
     made: AtomicU64,
     /// The folder the shell last said it's in, or the one it started in.
     cwd: Mutex<Option<PathBuf>>,
+    /// Whether an `Output` event was sent that no read has answered yet.
+    /// Each read clears it before reading, so output that lands during a
+    /// read sends another event.
     unread: AtomicBool,
     /// A cell's size in pixels on the client's screen.
     cell: Mutex<(u16, u16)>,
@@ -316,6 +320,7 @@ impl Terminal {
     /// The scrollback from line `from` on, or from the oldest line still
     /// kept if `from` is gone.
     pub fn scrollback(&self, from: u64) -> Scrollback {
+        self.shared.unread.store(false, Ordering::Release);
         let lines = lock(&self.shared.scrollback);
         let skip = usize::try_from(from.saturating_sub(lines.first)).unwrap_or(usize::MAX);
         Scrollback {

@@ -3,9 +3,10 @@
 
 #![allow(dead_code, reason = "each test file uses a different part")]
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub const GREED: &str = env!("CARGO_BIN_EXE_greed");
@@ -109,6 +110,19 @@ impl World {
         command.envs(env.iter().copied());
         let mut child = command.spawn().unwrap();
         let mut keys = child.stdin.take().unwrap();
+        // Read as it comes, so a step can wait for something to be drawn.
+        let printed = Arc::new(Mutex::new(Vec::new()));
+        let reader = {
+            let printed = printed.clone();
+            let mut stdout = child.stdout.take().unwrap();
+            std::thread::spawn(move || {
+                let mut buf = [0; 4096];
+                while let Ok(n @ 1..) = stdout.read(&mut buf) {
+                    printed.lock().unwrap().extend_from_slice(&buf[..n]);
+                }
+            })
+        };
+        let shown = || String::from_utf8_lossy(&printed.lock().unwrap()).into_owned();
         for step in steps {
             match step {
                 Step::Keys(text) => {
@@ -116,6 +130,9 @@ impl World {
                     keys.flush().unwrap();
                 }
                 Step::Until(what, check) => self.wait_for(what, check),
+                Step::Shows(text) => {
+                    self.wait_for(&format!("{text:?} to be drawn"), |_| shown().contains(text));
+                }
                 Step::Pause(ms) => std::thread::sleep(Duration::from_millis(*ms)),
             }
         }
@@ -128,8 +145,9 @@ impl World {
             std::thread::sleep(Duration::from_millis(30));
         }
         drop(keys);
-        let out = child.wait_with_output().unwrap();
-        String::from_utf8_lossy(&out.stdout).into_owned()
+        child.wait_with_output().unwrap();
+        reader.join().unwrap();
+        shown()
     }
 }
 
@@ -151,6 +169,8 @@ pub enum Step {
     Keys(&'static str),
     /// Wait until the check holds.
     Until(&'static str, fn(&World) -> bool),
+    /// Wait until the text has been drawn.
+    Shows(&'static str),
     Pause(u64),
 }
 

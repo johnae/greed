@@ -1195,7 +1195,10 @@ end)
 default plugins loaded. `t:wait(ms)` moves the clock forward for code that
 sleeps, `t:wait_for(check)` waits for real until `check()` is true (for a
 program's output), and `t:tempdir(files)` makes a folder of files to work
-on.
+on. Tests don't show the message about code that held the editor up, so
+a busy machine doesn't change what `t:messages()` returns, and time a
+test spends waiting for programs and background work doesn't count
+toward its time limit.
 
 ## Types
 

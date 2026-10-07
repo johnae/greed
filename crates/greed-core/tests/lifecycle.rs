@@ -27,6 +27,15 @@ fn pass(h: &Host, start: Instant, ms: u64) {
     }
 }
 
+/// When the first timer, due every `period` ms, started counting. Counting
+/// from it rather than from the time before loading keeps a busy machine,
+/// where loading takes a while, from moving timers in or out of a window.
+fn started(h: &Host, period: u64) -> Instant {
+    h.next_timer()
+        .and_then(|at| at.checked_sub(Duration::from_millis(period)))
+        .unwrap()
+}
+
 const TICKER: &str = r#"
 local greed = require("@greed")
 greed.spawn(function()
@@ -40,8 +49,8 @@ end)
 #[test]
 fn unloading_stops_a_plugins_tasks() {
     let h = host();
-    let start = Instant::now();
     h.load_str("ticker", TICKER).unwrap();
+    let start = started(&h, 100);
     pass(&h, start, 250);
     assert_eq!(messages(&h), ["tick", "tick"]);
     h.unload("ticker").unwrap();
@@ -53,10 +62,10 @@ fn unloading_stops_a_plugins_tasks() {
 #[test]
 fn reloading_doesnt_double_a_plugins_tasks() {
     let h = host();
-    let start = Instant::now();
     h.load_str("ticker", TICKER).unwrap();
     h.reload("ticker").unwrap();
     h.load_str("ticker", TICKER).unwrap();
+    let start = started(&h, 100);
     pass(&h, start, 150);
     assert_eq!(messages(&h), ["tick"]);
 }
@@ -409,7 +418,6 @@ fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
     let h = host();
     h.load_dirs(&[runtime("core"), runtime("statusline")])
         .unwrap();
-    let start = Instant::now();
     h.load_str(
         "clock",
         r#"
@@ -423,6 +431,7 @@ fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
         "#,
     )
     .unwrap();
+    let start = started(&h, 100);
     pass(&h, start, 250);
     assert_eq!(messages(&h), ["refreshed", "refreshed", "refreshed"]);
     let pieces = "local names = {} for _, e in require('@statusline').right do table.insert(names, e.name) end return table.concat(names, ' ')";

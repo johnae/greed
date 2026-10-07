@@ -22,9 +22,13 @@ fn assert_all_pass(plugins: &[PathBuf], dir: &Path) -> usize {
     assert!(!results.is_empty(), "no tests found in {}", dir.display());
     let failures: Vec<String> = results
         .iter()
-        .filter_map(|r| r.failure.as_ref().map(|f| format!("{}: {f}", r.name)))
+        .filter_map(|r| {
+            r.failure
+                .as_ref()
+                .map(|f| format!("{} \"{}\":\n{f}", r.file.display(), r.name))
+        })
         .collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(failures.is_empty(), "\n{}", failures.join("\n\n"));
     results.len()
 }
 
@@ -65,7 +69,10 @@ fn failures_name_the_line_and_what_differed() {
         failure.contains("line 10: expected buffer \"ab|\", got \"a|b\""),
         "{failure}"
     );
-    assert!(summary[2].1.unwrap().contains("no-such-command"));
+    let failure = summary[2].1.unwrap();
+    assert!(failure.contains("no-such-command"), "{failure}");
+    // The API's errors name no line, so the line it was called from follows.
+    assert!(failure.contains("sample.luau:13:"), "{failure}");
 }
 
 #[test]

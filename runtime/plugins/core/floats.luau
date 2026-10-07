@@ -160,8 +160,9 @@ function M.typing(buffer: greed.Buffer, spec: greed.FloatSpec, options: TypingOp
 		end
 	end
 
+	-- Its view may have closed with the news yet to come.
 	local function changed(event: greed.BufferChanged)
-		if open and event.buffer == buffer and opts.on_change then
+		if open and event.buffer == buffer and view:valid() and opts.on_change then
 			opts.on_change()
 		end
 	end

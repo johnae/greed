@@ -39,7 +39,12 @@ test("checking a plugin runs its tests and type checks it", function(t)
 	assert(report.types.ok or report.types.skipped, report.types.output)
 	assert(report.tests.passed == 1, tostring(report.tests.error))
 	local failed = (report.tests.failed :: any)[1]
-	assert(failed.name == "fails on purpose" and failed.message == "nope", failed.message)
+	-- The line the error came from follows it when the error doesn't say.
+	assert(failed.name == "fails on purpose", failed.name)
+	assert(
+		failed.message == "nope\nat test/test/hello.luau:7: in function <test/test/hello.luau:6>",
+		failed.message
+	)
 end)
 
 test("type errors are reported", function(t)

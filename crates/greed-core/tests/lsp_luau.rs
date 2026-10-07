@@ -135,6 +135,9 @@ fn with_plugin() -> Host {
     h.sync_lsp();
     // Wait for the first diagnostics.
     pump(&h, has_diagnostics);
+    // What loading said, like that it took a while on a busy machine, isn't
+    // what the tests look at.
+    h.with_editor_mut(Editor::take_messages);
     h
 }
 

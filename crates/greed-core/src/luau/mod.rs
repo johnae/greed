@@ -268,7 +268,7 @@ impl std::error::Error for HostError {}
 
 impl HostError {
     /// The error without mlua's "runtime error:" prefix and its stack
-    /// traceback, which only shows Rust frames.
+    /// traceback.
     pub fn brief(&self) -> String {
         let text = self.to_string();
         let text = text.split("\nstack traceback:").next().unwrap_or(&text);

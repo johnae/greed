@@ -10,7 +10,11 @@ local M = {}
 
 -- The marks for `diagnostics` in `buffer`; `messages` says whether to show
 -- their text after each line.
-function M.diagnostic_marks(buffer: greed.Buffer, diagnostics: { greed.Diagnostic }, messages: boolean): { greed.Mark }
+function M.diagnostic_marks(
+	buffer: greed.Buffer,
+	diagnostics: { greed.Diagnostic },
+	messages: boolean
+): { greed.Mark }
 	local worst: { [number]: greed.Diagnostic } = {}
 	for _, d in diagnostics do
 		local line = buffer:line_of(d.from)
@@ -29,10 +33,21 @@ function M.diagnostic_marks(buffer: greed.Buffer, diagnostics: { greed.Diagnosti
 		local d = worst[line]
 		local name = NAMES[d.severity] or "hint"
 		local at = buffer:line_start(line)
-		table.insert(marks, { from = at, to = at, style = "diagnostic.sign." .. name, sign = SIGNS[d.severity] or "H" })
+		table.insert(marks, {
+			from = at,
+			to = at,
+			style = "diagnostic.sign." .. name,
+			sign = SIGNS[d.severity] or "H",
+		})
 		if messages then
 			local message = string.split(d.message, "\n")[1]
-			table.insert(marks, { from = at, to = at, style = "diagnostic.message." .. name, text = message, eol = true })
+			table.insert(marks, {
+				from = at,
+				to = at,
+				style = "diagnostic.message." .. name,
+				text = message,
+				eol = true,
+			})
 		end
 	end
 	return marks
