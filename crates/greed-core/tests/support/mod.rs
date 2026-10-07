@@ -36,17 +36,127 @@ struct Opened {
     text: String,
 }
 
-impl From<&Value> for Opened {
-    /// From `didOpen` or `didChange` parameters, with the whole text.
-    fn from(params: &Value) -> Self {
-        let text = params["textDocument"]["text"]
-            .as_str()
-            .or_else(|| params["contentChanges"][0]["text"].as_str())
-            .unwrap_or_default();
-        Opened {
-            uri: params["textDocument"]["uri"].clone(),
-            text: text.to_owned(),
+/// How the fake server says it works.
+#[derive(Debug, Clone, Copy)]
+pub struct Options {
+    /// Whether it takes changes as ranges, or the whole text each time.
+    pub incremental: bool,
+    /// Whether it counts positions in UTF-8 bytes, or UTF-16 code units.
+    pub utf8: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            incremental: false,
+            utf8: true,
         }
+    }
+}
+
+/// The documents the client has open in the fake server, kept as LSP says
+/// to from what it's told, and how it was told.
+#[derive(Default)]
+struct Documents {
+    texts: std::collections::HashMap<String, String>,
+    /// How many changes came as ranges, and as the whole text.
+    ranged: usize,
+    whole: usize,
+    /// What the client got wrong, like a position that isn't one.
+    errors: Vec<String>,
+}
+
+impl Documents {
+    /// Takes in `didOpen`, `didChange` or `didClose` parameters, and returns
+    /// the document as it is now.
+    fn update(&mut self, method: &str, params: &Value, options: Options) -> Opened {
+        let uri = params["textDocument"]["uri"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        match method {
+            "textDocument/didOpen" => {
+                let text = params["textDocument"]["text"].as_str().unwrap_or_default();
+                self.texts.insert(uri.clone(), text.to_owned());
+            }
+            "textDocument/didClose" => {
+                self.texts.remove(&uri);
+            }
+            _ => {
+                let mut text = self.texts.remove(&uri).unwrap_or_default();
+                for change in params["contentChanges"].as_array().into_iter().flatten() {
+                    let new = change["text"].as_str().unwrap_or_default();
+                    if change.get("range").is_none() {
+                        self.whole += 1;
+                        new.clone_into(&mut text);
+                        continue;
+                    }
+                    self.ranged += 1;
+                    if !options.incremental {
+                        self.errors
+                            .push("a range to a server that wants it all".into());
+                    }
+                    let range = &change["range"];
+                    match (
+                        lsp_offset(&text, &range["start"], options.utf8),
+                        lsp_offset(&text, &range["end"], options.utf8),
+                    ) {
+                        (Ok(from), Ok(to)) if from <= to => text.replace_range(from..to, new),
+                        (from, to) => self.errors.push(format!("{range}: {from:?} {to:?}")),
+                    }
+                }
+                self.texts.insert(uri.clone(), text);
+            }
+        }
+        let text = self.texts.get(&uri).cloned().unwrap_or_default();
+        Opened {
+            uri: json!(uri),
+            text,
+        }
+    }
+}
+
+/// Where an LSP position is in `text`, strictly: lines end at `\n`, `\r\n`
+/// or `\r`, and a position past its line's end or inside a character is an
+/// error, since the client shouldn't send one.
+fn lsp_offset(text: &str, position: &Value, utf8: bool) -> Result<usize, String> {
+    let line = usize::try_from(position["line"].as_u64().ok_or("no line")?).unwrap();
+    let character = usize::try_from(position["character"].as_u64().ok_or("no character")?).unwrap();
+    let bytes = text.as_bytes();
+    let line_end = |from: usize| {
+        bytes[from..]
+            .iter()
+            .position(|b| matches!(b, b'\n' | b'\r'))
+            .map(|at| from + at)
+    };
+    let mut start = 0;
+    for _ in 0..line {
+        let Some(at) = line_end(start) else {
+            return Err(format!("no line {line}"));
+        };
+        start = if bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n') {
+            at + 2
+        } else {
+            at + 1
+        };
+    }
+    let end = line_end(start).unwrap_or(text.len());
+    let mut units = 0;
+    for (at, c) in text[start..end].char_indices() {
+        if units == character {
+            return Ok(start + at);
+        }
+        if units > character {
+            return Err(format!("character {character} is inside a character"));
+        }
+        units += if utf8 { c.len_utf8() } else { c.len_utf16() };
+    }
+    match units.cmp(&character) {
+        std::cmp::Ordering::Equal => Ok(end),
+        std::cmp::Ordering::Greater => Err(format!("character {character} is inside a character")),
+        std::cmp::Ordering::Less => Err(format!(
+            "character {character} is past the end of line {line}"
+        )),
     }
 }
 
@@ -85,9 +195,15 @@ fn word_range() -> Value {
 
 /// A tiny language server: reports every "bad" as an error, answers hover
 /// with the position it was asked about, and logs every method it gets.
-fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel::Sender<String>) {
+fn fake_server(
+    input: impl Read,
+    mut output: impl Write,
+    log: &crossbeam_channel::Sender<String>,
+    options: Options,
+) {
     let mut input = BufReader::new(input);
     let mut opened = Opened::default();
+    let mut documents = Documents::default();
     // How it was started, and the workspace folders the client said it has.
     let (mut started, mut folders) = (Value::Null, Value::Null);
     while let Some(message) = read(&mut input) {
@@ -102,7 +218,7 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 started = message["params"].clone();
                 write(
                     &mut output,
-                    &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": capabilities() } }),
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": capabilities(options) } }),
                 );
             }
             "initialized" => initialized(&mut output),
@@ -112,11 +228,16 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "result": {
                     "initialize": started, "folders": folders, "text": opened.text,
+                    "ranged": documents.ranged, "whole": documents.whole,
+                    "errors": documents.errors,
                 } }),
             ),
             "textDocument/didOpen" | "textDocument/didChange" => {
-                opened = Opened::from(&message["params"]);
+                opened = documents.update(&method, &message["params"], options);
                 publish_diagnostics(&mut output, &opened);
+            }
+            "textDocument/didClose" => {
+                documents.update(&method, &message["params"], options);
             }
             // "ask" asks the user to pick, then writes their answer over
             // the first word once it comes back.
@@ -144,35 +265,6 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
                     &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
                 );
             }
-            "textDocument/hover" => {
-                let p = &message["params"]["position"];
-                // Past column 10 there is nothing to say, as servers often answer.
-                let text = if p["character"].as_u64() > Some(10) {
-                    String::new()
-                } else {
-                    format!("hover at {}:{}", p["line"], p["character"])
-                };
-                write(
-                    &mut output,
-                    &json!({ "jsonrpc": "2.0", "id": id, "result": { "contents": text } }),
-                );
-            }
-            // Past column 10 there's no definition: an empty list, as servers answer.
-            "textDocument/definition"
-                if message["params"]["position"]["character"].as_u64() > Some(10) =>
-            {
-                write(
-                    &mut output,
-                    &json!({ "jsonrpc": "2.0", "id": id, "result": [] }),
-                );
-            }
-            "textDocument/definition" => write(
-                &mut output,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": {
-                    "uri": message["params"]["textDocument"]["uri"],
-                    "range": word_range(),
-                } }),
-            ),
             "fail" => write(
                 &mut output,
                 &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "nope" } }),
@@ -195,9 +287,10 @@ fn fake_server(input: impl Read, mut output: impl Write, log: &crossbeam_channel
     }
 }
 
-fn capabilities() -> Value {
+fn capabilities(options: Options) -> Value {
     json!({
-        "positionEncoding": "utf-8",
+        "positionEncoding": if options.utf8 { "utf-8" } else { "utf-16" },
+        "textDocumentSync": { "openClose": true, "change": if options.incremental { 2 } else { 1 } },
         "renameProvider": { "prepareProvider": true },
         "codeActionProvider": { "resolveProvider": true },
         "referencesProvider": true,
@@ -261,12 +354,22 @@ fn publish_diagnostics(output: &mut impl Write, doc: &Opened) {
     );
 }
 
-/// Answers that are only a result: completion, formatting, and changing
-/// "bad" with rename, references and code actions.
+/// Answers that are only a result: hover, definitions, completion,
+/// formatting, and changing "bad" with rename, references and code actions.
 /// `opened` is the document opened or changed last.
 fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
     let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+    let position = &params["position"];
+    // Past column 10 there's nothing to say, as servers often answer: no
+    // hover text, and an empty list of definitions.
+    let far = position["character"].as_u64() > Some(10);
     let answer = match method {
+        "textDocument/hover" if far => json!({ "contents": "" }),
+        "textDocument/hover" => json!({
+            "contents": format!("hover at {}:{}", position["line"], position["character"]),
+        }),
+        "textDocument/definition" if far => json!([]),
+        "textDocument/definition" => json!({ "uri": uri, "range": word_range() }),
         "textDocument/completion" => json!({ "isIncomplete": false, "items": [
             { "label": "bad_thing", "kind": 3, "detail": "fn()" },
             { "label": "badge", "kind": 6 },
@@ -311,7 +414,9 @@ fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
 
 /// Starts the fake server on a thread. Returns the pipe ends for the client
 /// (what to write to, what to read from) and a log of the methods it got.
-pub fn start() -> (
+fn start(
+    options: Options,
+) -> (
     std::io::PipeWriter,
     std::io::PipeReader,
     crossbeam_channel::Receiver<String>,
@@ -319,7 +424,7 @@ pub fn start() -> (
     let (server_in, client_out) = std::io::pipe().unwrap();
     let (client_in, server_out) = std::io::pipe().unwrap();
     let (log_tx, log) = crossbeam_channel::unbounded();
-    std::thread::spawn(move || fake_server(server_in, server_out, &log_tx));
+    std::thread::spawn(move || fake_server(server_in, server_out, &log_tx, options));
     (client_out, client_in, log)
 }
 
@@ -331,10 +436,16 @@ pub type Started = std::sync::Arc<
 
 /// Starts a fake server whenever the editor starts a language server.
 pub fn launcher() -> (greed_core::lsp::Launcher, Started) {
+    launcher_with(Options::default())
+}
+
+/// Starts a fake server that works as `options` say whenever the editor
+/// starts a language server.
+pub fn launcher_with(options: Options) -> (greed_core::lsp::Launcher, Started) {
     let started = Started::default();
     let list = started.clone();
     let launcher: greed_core::lsp::Launcher = Box::new(move |_, root| {
-        let (input, output, log) = start();
+        let (input, output, log) = start(options);
         list.lock().unwrap().push((root.to_owned(), log));
         Ok(Some(greed_core::rpc::Transport::pipes(input, output)))
     });

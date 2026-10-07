@@ -7,6 +7,7 @@
 //! stops. What servers send arrives as [`Event`]s, which the editor handles
 //! on its own thread.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::ops::Range;
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
-use greed_text::Rope;
+use greed_text::{Operation, Rope};
 use serde_json::{Value, json};
 
 use crate::rpc::{Connection, Transport};
@@ -161,12 +162,44 @@ struct Server {
     initialize_id: i64,
     ready: bool,
     encoding: Encoding,
+    sync: SyncKind,
     /// What the server said it can do, in its answer to `initialize`.
     capabilities: Value,
     /// Messages to send once the server has answered `initialize`.
     queued: Vec<Value>,
-    /// The version and URI of each open document the server has.
-    documents: HashMap<BufferId, (usize, String)>,
+    documents: HashMap<BufferId, Document>,
+}
+
+/// An open document as the server has it.
+struct Document {
+    version: usize,
+    uri: String,
+    text: Rope,
+    /// Whether the text has line breaks LSP doesn't count as such, so
+    /// changes can't be sent as ranges.
+    odd_breaks: bool,
+}
+
+/// How a server wants to hear about changes to a document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncKind {
+    /// The whole text each time.
+    Full,
+    /// What changed, as ranges.
+    Incremental,
+}
+
+impl SyncKind {
+    /// What `textDocumentSync` in a server's capabilities asks for: a kind,
+    /// or options with a `change` kind. The whole text unless it says
+    /// incremental.
+    fn of(capabilities: &Value) -> Self {
+        let sync = &capabilities["textDocumentSync"];
+        match sync.as_u64().or_else(|| sync["change"].as_u64()) {
+            Some(2) => SyncKind::Incremental,
+            _ => SyncKind::Full,
+        }
+    }
 }
 
 impl Server {
@@ -369,12 +402,12 @@ impl Lsp {
         self.placed
             .retain(|id, _| editor.find_buffer(*id).is_some());
         for (&id, server) in &mut self.servers {
-            let gone: Vec<(usize, String)> = server
+            let gone: Vec<String> = server
                 .documents
                 .extract_if(|buffer, _| sent.get(buffer) != Some(&id))
-                .map(|(_, document)| document)
+                .map(|(_, document)| document.uri)
                 .collect();
-            for (_, uri) in gone {
+            for uri in gone {
                 if server.alive() {
                     let closed = json!({ "textDocument": { "uri": uri } });
                     let _ = server.notify("textDocument/didClose", &closed);
@@ -455,31 +488,50 @@ impl Lsp {
         let version = buffer.history().applied();
         let uri = file_uri(path);
         // A file saved under another name is another document.
-        if let Some((_, old)) = server.documents.get(&buffer.id())
-            && *old != uri
+        if let Some(old) = server.documents.get(&buffer.id())
+            && old.uri != uri
         {
-            let closed = json!({ "textDocument": { "uri": old } });
+            let closed = json!({ "textDocument": { "uri": old.uri } });
             server.documents.remove(&buffer.id());
             server.notify("textDocument/didClose", &closed)?;
         }
-        match server.documents.insert(buffer.id(), (version, uri.clone())) {
-            None => server.notify(
-                "textDocument/didOpen",
-                &json!({ "textDocument": {
-                    "uri": uri, "languageId": language, "version": version,
-                    "text": buffer.text().to_string(),
-                }}),
-            )?,
-            Some((old, _)) if old != version => server.notify(
-                "textDocument/didChange",
-                &json!({
-                    "textDocument": { "uri": uri, "version": version },
-                    "contentChanges": [{ "text": buffer.text().to_string() }],
-                }),
-            )?,
-            Some(_) => {}
+        let (sync, encoding) = (server.sync, server.encoding);
+        let Some(document) = server.documents.get_mut(&buffer.id()) else {
+            let text = buffer.text().to_string();
+            server.documents.insert(
+                buffer.id(),
+                Document {
+                    version,
+                    uri: uri.clone(),
+                    text: buffer.text().clone(),
+                    odd_breaks: has_odd_break(&text),
+                },
+            );
+            let params = json!({ "textDocument": {
+                "uri": uri, "languageId": language, "version": version, "text": text,
+            }});
+            return Ok(server.notify("textDocument/didOpen", &params)?);
+        };
+        if document.version == version {
+            return Ok(());
         }
-        Ok(())
+        let ranged = if sync == SyncKind::Incremental && !document.odd_breaks {
+            ranged_changes(&document.text, document.version, buffer, encoding)
+        } else {
+            None
+        };
+        let changes = ranged.unwrap_or_else(|| {
+            let text = buffer.text().to_string();
+            document.odd_breaks = has_odd_break(&text);
+            vec![json!({ "text": text })]
+        });
+        document.version = version;
+        document.text = buffer.text().clone();
+        let params = json!({
+            "textDocument": { "uri": uri, "version": version },
+            "contentChanges": changes,
+        });
+        Ok(server.notify("textDocument/didChange", &params)?)
     }
 
     /// The server for `language` in `root`, started if it isn't running yet.
@@ -539,6 +591,7 @@ impl Lsp {
             initialize_id: 0,
             ready: false,
             encoding: Encoding::Utf16,
+            sync: SyncKind::Full,
             capabilities: Value::Null,
             queued: Vec::new(),
             documents: HashMap::new(),
@@ -748,6 +801,7 @@ impl Lsp {
             if capabilities["positionEncoding"].as_str() == Some("utf-8") {
                 server.encoding = Encoding::Utf8;
             }
+            server.sync = SyncKind::of(capabilities);
             server.capabilities = capabilities.clone();
         }
         server.ready = true;
@@ -1037,6 +1091,89 @@ fn existing_folder(path: &Path) -> PathBuf {
         .find(|d| d.is_dir())
         .unwrap_or(&dir)
         .to_owned()
+}
+
+/// The changes that took `text`, the document as the server last had it
+/// at version `since`, to `buffer`'s text now, as LSP content changes in
+/// the order they apply, each range against the text after the ones
+/// before. `None` when they can't be told apart that way: the buffer
+/// doesn't keep the transactions since, or the text has line breaks LSP
+/// doesn't count as such.
+fn ranged_changes(
+    text: &Rope,
+    since: usize,
+    buffer: &Buffer,
+    encoding: Encoding,
+) -> Option<Vec<Value>> {
+    let history = buffer.history();
+    let log = history.log();
+    let count = history.applied().checked_sub(since)?;
+    let first = log.len().checked_sub(count)?;
+    let mut text = text.clone();
+    let mut changes = Vec::new();
+    for tx in &log[first..] {
+        if tx.changes.len() != text.len_bytes() {
+            return None;
+        }
+        let mut pos = 0;
+        let mut ops = tx.changes.ops().iter().peekable();
+        while let Some(op) = ops.next() {
+            let (deleted, inserted) = match op {
+                Operation::Retain(n) => {
+                    pos += n;
+                    continue;
+                }
+                Operation::Delete(n) => (*n, ""),
+                // An insert before a delete at the same place replaces it.
+                Operation::Insert(new) => {
+                    match ops.next_if(|op| matches!(op, Operation::Delete(_))) {
+                        Some(Operation::Delete(n)) => (*n, new.as_str()),
+                        _ => (0, new.as_str()),
+                    }
+                }
+            };
+            changes.push(replace(&mut text, pos..pos + deleted, inserted, encoding)?);
+            pos += inserted.len();
+        }
+    }
+    (text == *buffer.text()).then_some(changes)
+}
+
+/// Replaces `range` of `text` with `new`, and returns that as an LSP content
+/// change against the text before. A range starting or ending between a
+/// `\r` and its `\n` takes in the whole line break, since servers can't
+/// place a position there.
+fn replace(text: &mut Rope, range: Range<usize>, new: &str, encoding: Encoding) -> Option<Value> {
+    if has_odd_break(new) {
+        return None;
+    }
+    let splits = |at: usize| {
+        at > 0 && at < text.len_bytes() && text.byte(at - 1) == b'\r' && text.byte(at) == b'\n'
+    };
+    let (mut from, mut to) = (range.start, range.end);
+    let mut new = Cow::Borrowed(new);
+    if splits(from) {
+        from -= 1;
+        new = format!("\r{new}").into();
+    }
+    if splits(to) {
+        to += 1;
+        new = format!("{new}\n").into();
+    }
+    let change = json!({
+        "range": { "start": position(text, from, encoding), "end": position(text, to, encoding) },
+        "text": new,
+    });
+    let (start, end) = (text.byte_to_char(from), text.byte_to_char(to));
+    text.remove(start..end);
+    text.insert(start, &new);
+    Some(change)
+}
+
+/// Whether `text` has a line break the editor counts but LSP doesn't: LSP
+/// breaks lines only at `\n`, `\r\n` and `\r`.
+fn has_odd_break(text: &str) -> bool {
+    text.contains(['\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'])
 }
 
 /// An LSP position (`{ line, character }`) for byte `pos`.

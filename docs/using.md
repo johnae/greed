@@ -529,7 +529,8 @@ jj workspaces of one) are checked separately. A server runs in the topmost
 folder of the file's project that has one of the language's root files
 (`Cargo.toml` for Rust, `package.json` for TypeScript), so one server covers
 a whole Cargo or npm workspace; without one, it runs in the project's root.
-A server that crashes starts again, up to three times in a row.
+A server that crashes starts again, up to three times in a row. Servers that
+support it hear only what changed with each edit, so big files stay quick.
 
 | Keys | |
 |---|---|

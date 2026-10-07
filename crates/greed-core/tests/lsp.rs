@@ -17,12 +17,18 @@ struct Setup {
 
 /// An editor with `text` in a Rust file, and fake servers started for it.
 fn setup(text: &str) -> Setup {
+    setup_with(text, support::Options::default())
+}
+
+/// An editor with `text` in a Rust file, and fake servers that work as
+/// `options` say started for it.
+fn setup_with(text: &str, options: support::Options) -> Setup {
     let path = std::env::temp_dir().join("greed-lsp-test/main.rs");
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, Some(path.clone()));
     let mut lsp = Lsp::default();
     lsp.configure(support::rust_server());
-    let (launcher, started) = support::launcher();
+    let (launcher, started) = support::launcher_with(options);
     lsp.set_launcher(launcher);
     Setup {
         lsp,
@@ -817,4 +823,204 @@ fn diagnostics_underline_their_text_and_color_the_line_number() {
         )
     });
     assert_eq!(tagged, expected);
+}
+
+/// Numbers that look random but are the same every run.
+struct Dice(u64);
+
+impl Dice {
+    fn roll(&mut self, below: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(self.0 >> 33).unwrap() % below
+    }
+}
+
+/// Text that makes positions hard: characters of every UTF-8 length, one
+/// that's two UTF-16 units, and every kind of line break.
+const PIECES: [&str; 10] = [
+    "a", "é", "😀", "\r\n", "\n", "\r", "x😀y", "", "\r\n\r\n", "€\r",
+];
+
+impl Setup {
+    /// Replaces up to `cuts` characters at each of up to three random places
+    /// at once, as several cursors typing do.
+    fn edit_randomly(&mut self, dice: &mut Dice) {
+        let view = self.editor.focus();
+        let text = self
+            .editor
+            .buffer(self.editor.view(view).buffer)
+            .text()
+            .clone();
+        let chars = text.len_chars();
+        let mut places: Vec<usize> = (0..=dice.roll(3)).map(|_| dice.roll(chars + 1)).collect();
+        places.sort_unstable();
+        places.dedup();
+        let mut edits = Vec::new();
+        for (i, &at) in places.iter().enumerate() {
+            let next = places.get(i + 1).copied().unwrap_or(chars);
+            let to = (at + dice.roll(3)).min(next);
+            let piece = PIECES[dice.roll(PIECES.len())];
+            edits.push((text.char_to_byte(at), text.char_to_byte(to), Some(piece)));
+        }
+        let changes = greed_text::ChangeSet::from_changes(text.len_bytes(), edits).unwrap();
+        self.editor
+            .apply(
+                view,
+                changes,
+                greed_text::Author::User(ClientId(1)),
+                None,
+                None,
+            )
+            .unwrap();
+    }
+
+    /// Checks that the server, building its text from what it was sent, has
+    /// the buffer's text, and returns what it says about it.
+    fn compare(&mut self) -> Value {
+        let buffer = self.editor.buffers().next().unwrap().id();
+        let probe = self.probe(buffer);
+        assert_eq!(probe["errors"], json!([]));
+        let text = self.editor.buffer(buffer).text().to_string();
+        assert_eq!(probe["text"].as_str(), Some(text.as_str()));
+        probe
+    }
+
+    /// Edits, undoes and redoes many times, syncing now and then, and
+    /// compares after each sync.
+    fn edit_and_compare(&mut self, seed: u64) -> Value {
+        let mut dice = Dice(seed);
+        assert!(self.lsp.sync(&self.editor).is_empty());
+        let mut probe = self.compare();
+        let view = self.editor.focus();
+        for step in 0..300 {
+            match dice.roll(8) {
+                0 => {
+                    self.editor.undo(view).unwrap();
+                }
+                1 => {
+                    self.editor.redo(view).unwrap();
+                }
+                _ => self.edit_randomly(&mut dice),
+            }
+            // Several edits between syncs too.
+            if step % 3 == 0 {
+                assert!(self.lsp.sync(&self.editor).is_empty());
+                probe = self.compare();
+            }
+        }
+        probe
+    }
+}
+
+#[test]
+fn incremental_changes_rebuild_the_text_in_utf16_positions() {
+    let options = support::Options {
+        incremental: true,
+        utf8: false,
+    };
+    let mut s = setup_with("a😀b\r\ncd\r\n\r\né\n", options);
+    let probe = s.edit_and_compare(1);
+    assert_eq!(probe["whole"], 0, "{probe}");
+    assert!(probe["ranged"].as_u64() > Some(100), "{probe}");
+    let buffer = s.editor.buffers().next().unwrap();
+    assert_eq!(s.lsp.encoding(buffer).unwrap(), Encoding::Utf16);
+}
+
+#[test]
+fn incremental_changes_rebuild_the_text_in_utf8_positions() {
+    let options = support::Options {
+        incremental: true,
+        utf8: true,
+    };
+    let mut s = setup_with("€x\r\n😀\r", options);
+    let probe = s.edit_and_compare(2);
+    assert_eq!(probe["whole"], 0, "{probe}");
+    assert!(probe["ranged"].as_u64() > Some(100), "{probe}");
+    let buffer = s.editor.buffers().next().unwrap();
+    assert_eq!(s.lsp.encoding(buffer).unwrap(), Encoding::Utf8);
+}
+
+#[test]
+fn a_server_that_wants_the_whole_text_gets_it() {
+    let options = support::Options {
+        incremental: false,
+        utf8: false,
+    };
+    let mut s = setup_with("a😀b\r\n", options);
+    let probe = s.edit_and_compare(3);
+    assert_eq!(probe["ranged"], 0, "{probe}");
+    assert!(probe["whole"].as_u64() > Some(50), "{probe}");
+}
+
+#[test]
+fn a_change_inside_a_line_break_takes_in_the_whole_break() {
+    let options = support::Options {
+        incremental: true,
+        utf8: false,
+    };
+    let mut s = setup_with("ab\r\ncd\r\nef", options);
+    s.lsp.sync(&s.editor);
+    s.compare();
+    // Typing between a \r and its \n, deleting just the \r of one and just
+    // the \n of another, all at once.
+    s.edit(3, 3, "😀");
+    s.compare();
+    let changes = greed_text::ChangeSet::from_changes(
+        s.editor.buffers().next().unwrap().text().len_bytes(),
+        [(2, 3, None::<&str>), (11, 12, None)],
+    )
+    .unwrap();
+    let view = s.editor.focus();
+    s.editor
+        .apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    let probe = s.compare();
+    assert_eq!(probe["text"], "ab😀\ncd\ref");
+    assert_eq!(probe["whole"], 0);
+}
+
+#[test]
+fn line_breaks_lsp_doesnt_count_or_a_forgotten_history_send_the_whole_text() {
+    let options = support::Options {
+        incremental: true,
+        utf8: false,
+    };
+    let mut s = setup_with("ab\ncd", options);
+    s.lsp.sync(&s.editor);
+    s.compare();
+    s.edit(1, 1, "x");
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.compare()["whole"], 0);
+    // The editor breaks lines at U+2028; a server doesn't.
+    s.edit(0, 0, "\u{2028}");
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.compare()["whole"], 1);
+    s.edit(0, 0, "y");
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.compare()["whole"], 2, "while the text has one");
+    s.edit(1, 4, "");
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.compare()["whole"], 3);
+    s.edit(0, 0, "z");
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.compare()["whole"], 3, "ranges again once it's gone");
+
+    // Without the transactions, there's nothing to make ranges from.
+    let buffer = s.editor.buffers().next().unwrap().id();
+    s.editor.forget_history(buffer);
+    s.edit(0, 0, "w");
+    s.edit(0, 0, "v");
+    s.lsp.sync(&s.editor);
+    let probe = s.compare();
+    assert_eq!(probe["whole"], 4, "{probe}");
 }
