@@ -184,14 +184,14 @@ fn check(dir: &Path, others: &[(String, PathBuf)], approved: Option<&BTreeSet<St
 fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), String> {
     let analyzer = crate::lsp::which("luau-analyze")
         .ok_or("luau-analyze isn't installed, so types weren't checked")?;
+    // Names like "user/config" can't be required, and aren't valid aliases.
+    let requirable = |name: &str| {
+        name.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
     let mut aliases = serde_json::Map::new();
     for (name, plugin) in others {
-        // Names like "user/config" can't be required, and aren't valid
-        // aliases.
-        if !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
+        if !requirable(name) {
             continue;
         }
         // luau-analyze runs in a temporary folder, so relative paths break.
@@ -207,15 +207,23 @@ fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), S
             );
         }
     }
-    let luaurc = serde_json::json!({ "languageMode": "strict", "aliases": aliases });
     // luau-analyze only applies a .luaurc above a file's own folder, and
     // follows links, so the plugin's code is checked from a copy inside a
     // folder holding one. That also leaves the plugin's folder as it was.
-    let wrapper = std::env::temp_dir().join(format!(
+    // Canonical, as luau-analyze resolves macOS's linked temporary folder.
+    let temp = std::env::temp_dir();
+    let wrapper = std::fs::canonicalize(&temp).unwrap_or(temp).join(format!(
         "greed-check-{}-{}",
         std::process::id(),
         NEXT_CHECK.fetch_add(1, Ordering::Relaxed)
     ));
+    // Its tests require the plugin by its name, as they do when they run.
+    if let Ok(name) = super::plugin_name(dir)
+        && requirable(&name)
+    {
+        aliases.insert(name, wrapper.join("plugin").to_string_lossy().into());
+    }
+    let luaurc = serde_json::json!({ "languageMode": "strict", "aliases": aliases });
     let result = (|| {
         std::fs::create_dir_all(&wrapper)?;
         std::fs::write(wrapper.join(".luaurc"), luaurc.to_string())?;

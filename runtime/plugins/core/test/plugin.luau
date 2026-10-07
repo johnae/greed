@@ -60,6 +60,24 @@ test("type errors are reported", function(t)
 	assert(string.find(report.types.output or "", "ech", 1, true) ~= nil, report.types.output)
 end)
 
+test("a plugin's tests can require it by its name", function(t)
+	-- The folder is named apart from the plugin, as a staged try is.
+	local dir = t:tempdir({
+		["plugin.toml"] = 'name = "counted"\n',
+		["init.luau"] = "local M = {}\nfunction M.twice(n: number): number\n\treturn n * 2\nend\nreturn M\n",
+		["test/counted.luau"] = [[
+local test = require("@greed/test")
+local counted = require("@counted")
+test("doubles", function()
+	assert(counted.twice(2) == 4)
+end)
+]],
+	})
+	local report = check(t, dir)
+	assert(report.types.ok or report.types.skipped, report.types.output)
+	assert(report.tests.passed == 1, tostring(report.tests.error))
+end)
+
 test("plugins load while the editor runs", function(t)
 	local dir = t:tempdir(GOOD)
 	assert(greed.plugin.load(dir) == "hello")
