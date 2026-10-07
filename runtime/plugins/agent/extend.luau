@@ -55,6 +55,8 @@ else c` expressions, string interpolation with backticks, `+=`, and
   arguments, and `run(args, caller)` returns text or data. A plugin with several puts them in
   a group (`require("@agent").group(name, line)`).
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
+- Searching: Greed's own functions (buffer:find, buffer:find_all, greed.fs.grep) take Rust
+  regexes (`\bTODO\b`, `a|b`); Luau's string.find and string.match take Lua patterns.
 - Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (greed.process.run,
   greed.terminal.spawn, greed.lsp.server), "fs.read" (greed.fs reads, greed.load, greed.open,
   greed.files), "fs.write" (greed.fs.write, mkdir, remove, rename, copy, buffer:save(path)),
@@ -70,6 +72,9 @@ Tests:
         t:run("command-name")
         t:expect("hello world|")
     end)
+
+`t:keys("i")` presses keys by name ("g g", "esc", "ctrl-s"); `t:type("some text")` types
+text. `buffer:decorations("my-plugin")` gives back the marks a plugin drew, to check them.
 
 Keep it small and say what each command does in its doc. The API's types
 follow; they're exactly what luau-analyze checks against.
@@ -315,6 +320,9 @@ registry.tool({
 registry.tool({
 	name = "plugin_try",
 	kind = "execute",
+	-- It writes only to the staging folder, and checks the plugin in an
+	-- editor of its own with nothing approved for it.
+	sandboxed = true,
 	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
 		.. "then its tests. Returns what failed; fix and try again until it passes. This is how "

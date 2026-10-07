@@ -818,7 +818,7 @@ test("tools needing more than files and programs work for Greed's agent too", fu
 		{ text = "Done.", calls = {}, stop = "done" },
 	})
 	local s = ask(t, "make a plugin")
-	waiting(s).answer:send("once")
+	-- Trying a plugin doesn't ask: it's checked in a sandbox.
 	t:wait_for(function()
 		return s.status == "idle"
 	end)

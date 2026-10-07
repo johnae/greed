@@ -37,7 +37,7 @@ use super::{
     Host, HostError, api, budgeted, extend_deadline, jobs, restart_deadline, state, state_mut,
     tasks, terminal, watch,
 };
-use crate::keymap::Key;
+use crate::keymap::{Key, KeyCode};
 use crate::{Editor, parse_marked};
 
 /// The outcome of one test.
@@ -464,6 +464,21 @@ fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(meth
     methods.add_method("keys", |lua, this, keys: String| {
         as_client(lua, this.id(), || {
             for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
+                restart_deadline(lua);
+                api::press(lua, key).map_err(api::into_lua)?;
+                jobs::settle(lua)?;
+            }
+            end_frame(lua)
+        })
+    });
+    methods.add_method("type", |lua, this, text: String| {
+        as_client(lua, this.id(), || {
+            for c in text.chars() {
+                let key = match c {
+                    '\n' => Key::named(KeyCode::Enter),
+                    '\t' => Key::named(KeyCode::Tab),
+                    c => Key::char(c),
+                };
                 restart_deadline(lua);
                 api::press(lua, key).map_err(api::into_lua)?;
                 jobs::settle(lua)?;

@@ -330,3 +330,12 @@ test("widens says what a plugin.toml change lets the plugin do that it couldn't"
 	assert(agent.widens("/x/notes.toml", before, after) == nil)
 	assert(agent.widens("/x/tiny/plugin.toml", nil, 'name = "tiny"\n') == nil)
 end)
+
+test("trying a plugin doesn't ask: it's checked in a sandbox", function()
+	local by_name: { [string]: any } = {}
+	for _, tool in agent.tools() do
+		by_name[tool.name] = tool
+	end
+	assert(by_name.plugin_try and not agent.asks(by_name.plugin_try), "plugin_try runs at once")
+	assert(by_name.eval and not agent.asks(by_name.eval), "eval puts its review in front of you")
+end)

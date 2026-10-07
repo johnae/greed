@@ -10,6 +10,8 @@ export type TestClient = {
 	--- Its id, as `greed.client.current().id` gives it to code running as it.
 	id: (self: TestClient) -> number,
 	keys: (self: TestClient, keys: string) -> (),
+	--- Types `text` as keys, a character at a time, newlines as enter.
+	type: (self: TestClient, text: string) -> (),
 	run: (self: TestClient, command: string, args: { string }?) -> (),
 	mouse: (self: TestClient, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> (),
 	draw: (self: TestClient, width: number, height: number) -> { string },
@@ -27,6 +29,8 @@ export type TestContext = {
 	client: (self: TestContext, name: string?, kind: string?) -> TestClient,
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),
+	--- Types `text` as keys, a character at a time, newlines as enter: `t:keys("i")` then `t:type("hello world")`.
+	type: (self: TestContext, text: string) -> (),
 	--- Runs a command, with arguments as from the command line, and waits
 	--- for any background work it starts.
 	run: (self: TestContext, command: string, args: { string }?) -> (),

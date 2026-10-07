@@ -48,6 +48,9 @@ export type Tool = {
 	--- It puts what it does in front of the user itself (a proposal, a
 	--- question, an approval page), so agents don't ask before it runs.
 	reviews: boolean?,
+	--- It does more than read but nothing that needs your say, like
+	--- checking a plugin in a sandbox, so agents don't ask before it runs.
+	sandboxed: boolean?,
 	--- Does the work for `caller`. It can wait, e.g. for the user. A string
 	--- result goes to the agent as is, one made with `result` as that MCP
 	--- result, anything else as JSON. Errors go back as errors.
@@ -96,7 +99,7 @@ end
 --- Whether an agent should ask you before `tool` runs: it does more than
 --- read, and puts nothing in front of you itself.
 function M.asks(tool: Tool): boolean
-	return (tool.kind or "read") ~= "read" and not tool.reviews
+	return (tool.kind or "read") ~= "read" and not tool.reviews and not tool.sandboxed
 end
 
 -- The callers made for calls from a shell (`greed ctl`). Only the registry
