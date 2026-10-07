@@ -795,3 +795,34 @@ test("a subagent whose model fails is an error, not an empty report", function(t
 		tostring(err)
 	)
 end)
+
+test("tools needing more than files and programs work for Greed's agent too", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "plugin_try",
+					input = {
+						name = "tiny",
+						files = {
+							["plugin.toml"] = 'name = "tiny"\n',
+							["init.luau"] = "return {}\n",
+						},
+					},
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "make a plugin")
+	waiting(s).answer:send("once")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local result = asked[2].said[3]
+	assert(not string.find(result.text, "can't", 1, true), result.text)
+	assert(not result.error, result.text)
+end)
