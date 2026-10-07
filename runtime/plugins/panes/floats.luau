@@ -242,7 +242,7 @@ end
 -- The name of `buffer`'s file, if it has one.
 local function file_name(buffer: greed.Buffer): string?
 	local path = buffer:path()
-	return if path then string.match(path, "[^/]+$") else nil
+	return if path then core.project.basename(path) else nil
 end
 
 -- A float's name: its title, else its file's name, else its kind.
@@ -252,19 +252,6 @@ local function title_of(view: greed.View): string
 		return spec.title
 	end
 	return file_name(view:buffer()) or view:buffer():kind()
-end
-
-local function cells_of(text: string): number
-	return utf8.len(text) or #text
-end
-
--- `text` cut to `cells`, with an ellipsis if it was longer.
-local function shorten(text: string, cells: number): string
-	if cells_of(text) <= cells then
-		return text
-	end
-	local cut = utf8.offset(text, math.max(cells, 1)) or #text + 1
-	return string.sub(text, 1, cut - 1) .. "…"
 end
 
 --- The keys that cycle the floats, shown faint on the float in front. The
@@ -278,22 +265,22 @@ type Piece = { text: string, style: string? }
 -- `cells` wide enough) and a dot for each float.
 local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { Piece })
 	local n = #st.order
-	local count = `{i}/{n}`
-	local label: { Piece } = { { text = "‹ ", style = "ui.float.title" } }
+	local label: { Piece } = {
+		{ text = "‹ ", style = "ui.float.title" },
+		{ text = `{i}/{n}`, style = "ui.float.title" },
+	}
 	if cells >= 60 then
 		local each = (cells - 30) // 4
 		local before, after = st.order[(i - 2) % n + 1], st.order[i % n + 1]
 		table.insert(
 			label,
-			{ text = shorten(title_of(before), each) .. " · ", style = "ui.float.hint" }
+			2,
+			{ text = core.text.clip(title_of(before), each) .. " · ", style = "ui.float.hint" }
 		)
-		table.insert(label, { text = count, style = "ui.float.title" })
 		table.insert(
 			label,
-			{ text = " · " .. shorten(title_of(after), each), style = "ui.float.hint" }
+			{ text = " · " .. core.text.clip(title_of(after), each), style = "ui.float.hint" }
 		)
-	else
-		table.insert(label, { text = count, style = "ui.float.title" })
 	end
 	table.insert(label, { text = " ›", style = "ui.float.title" })
 	local footer: { Piece } = {}
@@ -306,7 +293,7 @@ local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { 
 		end
 		table.insert(footer, { text = if j == 1 then dot else " " .. dot, style = style })
 	end
-	if M.cycle_hint ~= "" and 2 * n + cells_of(M.cycle_hint) + 6 <= cells then
+	if M.cycle_hint ~= "" and 2 * n + core.text.width(M.cycle_hint) + 6 <= cells then
 		table.insert(footer, { text = "  " .. M.cycle_hint, style = "ui.float.hint" })
 	end
 	return label, footer

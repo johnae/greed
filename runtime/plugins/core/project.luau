@@ -22,11 +22,22 @@ local function parent(dir: string): string?
 	return if up == nil or dir == "/" then nil elseif up == "" then "/" else up
 end
 
+-- `path` from the folder Greed started in when it's relative.
+local function absolute(path: string): string
+	return if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
+end
+
+--- The last part of `path`, its file or folder name ("main.rs" for
+--- "src/main.rs", "src" for "src/"); nil when it has none, as for "/".
+function M.basename(path: string): string?
+	return string.match(path, "([^/]+)/*$")
+end
+
 --- `path` as a full path with `.`, `..` and doubled slashes worked out,
 --- from the folder Greed started in when it's relative. Symbolic links
 --- aren't followed.
 function M.clean(path: string): string
-	local full = if string.sub(path, 1, 1) == "/" then path else `{greed.fs.cwd()}/{path}`
+	local full = absolute(path)
 	local parts: { string } = {}
 	for part in string.gmatch(full, "[^/]+") do
 		if part == ".." then
@@ -130,7 +141,7 @@ local function run_config(root: string)
 		greed.echo(`{root} has its own Greed config in .greed/ - :trust runs it`)
 		return
 	end
-	local name = string.match(root, "([^/]+)$") or root
+	local name = M.basename(root) or root
 	local ok, err = pcall(greed.plugin.load, dir, `project/{name}`)
 	if not ok then
 		greed.echo(`project config: {err}`)
@@ -177,13 +188,7 @@ end
 --- A typed path as a full one: "~/src" from the home folder, "src" from the
 --- folder Greed started in.
 function M.expand(path: string): string
-	local home = from_home(path)
-	if home then
-		return home
-	elseif string.sub(path, 1, 1) ~= "/" then
-		return `{greed.fs.cwd()}/{path}`
-	end
-	return path
+	return from_home(path) or absolute(path)
 end
 
 --- `path` as a full path: "~/x" from the home folder, a relative one from

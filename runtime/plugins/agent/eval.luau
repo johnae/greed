@@ -59,8 +59,9 @@ local REVIEWERS = { "review", "reasoning" }
 local function review(code: string, needs: string): (string?, string?)
 	local role: string? = nil
 	for _, name in REVIEWERS do
-		if role == nil and models.resolve(name) then
+		if models.resolve(name) then
 			role = name
+			break
 		end
 	end
 	if role == nil then

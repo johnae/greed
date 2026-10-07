@@ -33,7 +33,7 @@ function M.make(root: string, agent: string, from: Workspace?): (Workspace?, str
 		return nil, "the project isn't in a jj or git repository"
 	end
 	local base = greed.fs.dirs().cache or core.project.clean(root .. "/..")
-	local project = string.match(root, "([^/]+)/*$") or "project"
+	local project = core.project.basename(root) or "project"
 	greed.fs.mkdir(`{base}/workspaces`)
 	-- Earlier sessions' workspaces may still be there to take up again.
 	local n, name, path = 0, "", ""

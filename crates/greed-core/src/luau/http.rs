@@ -170,9 +170,7 @@ fn fetch(request: Request, save: Option<&Path>) -> Result<Fetched, String> {
 /// Writes `body` to `path` as it arrives, with no size limit. The file
 /// appears only once it's whole.
 fn save_body(body: ureq::Body, path: &Path) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    super::fs::create_parent(path)?;
     let mut reader = body.into_with_config().limit(u64::MAX).reader();
     crate::files::write(path, |out| std::io::copy(&mut reader, out).map(drop))
 }

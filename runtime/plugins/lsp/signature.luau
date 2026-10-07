@@ -4,9 +4,10 @@
 -- The signature-help command asks for it, for a key in insert mode.
 
 local greed = require("@greed")
+local core = require("@core")
 -- Signature help works in typing modes, and with the completion menu open,
 -- whose modes show as the ones they came from.
-local typing = require("@core").style.is_typing
+local typing = core.style.is_typing
 
 type Open = { view: greed.View, list: greed.Buffer }
 
@@ -71,7 +72,7 @@ local function show(help: any)
 		return
 	end
 	local label: string = signature.label
-	local width = math.min((utf8.len(label) or #label) + 2, 80)
+	local width = math.min(core.text.width(label) + 2, 80)
 	local o: Open
 	if open == nil then
 		local list = greed.create_buffer("signature", label, { readonly = true })

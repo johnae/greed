@@ -89,7 +89,7 @@ end
 
 -- `text` cut to `max` characters, and how many were cut.
 local function cut(text: string, max: number): (string, number)
-	local count = utf8.len(text) or #text
+	local count = core.text.width(text)
 	if count <= max then
 		return text, 0
 	end

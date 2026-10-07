@@ -169,3 +169,11 @@ test("a path is inside a folder only once its .. and . are worked out", function
 	assert(not project.inside("/p/notes-old/a.md", "/p/notes"), "a folder with a longer name")
 	assert(project.inside("/p/notes/x/../a.md", "/p/notes"), "climbs out and back in")
 end)
+
+test("a path's basename is its last part, trailing slashes or not", function()
+	assert(project.basename("src/main.rs") == "main.rs")
+	assert(project.basename("/home/me/src/") == "src")
+	assert(project.basename("main.rs") == "main.rs")
+	assert(project.basename("/") == nil)
+	assert(project.basename("") == nil)
+end)

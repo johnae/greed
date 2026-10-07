@@ -7,7 +7,7 @@ use mlua::{Lua, Table, UserData, UserDataMethods};
 
 use super::handles::BufferRef;
 use super::{state, state_mut};
-use crate::{BufferId, TrackId, Tracked};
+use crate::{BufferId, TrackId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -19,20 +19,11 @@ pub(super) struct TrackedRef {
 }
 
 impl TrackedRef {
-    fn get(&self, lua: &Lua) -> Option<Tracked> {
-        let state = state(lua);
-        state
-            .editor
-            .find_buffer(self.buffer)?
-            .tracked(self.id)
-            .cloned()
-    }
-
     /// Where it is now, unless its text was deleted or it's gone.
     fn range(&self, lua: &Lua) -> Option<(usize, usize)> {
-        self.get(lua)
-            .filter(|t| !t.deleted)
-            .map(|t| (t.range.start, t.range.end))
+        let state = state(lua);
+        let tracked = state.editor.find_buffer(self.buffer)?.tracked(self.id)?;
+        (!tracked.deleted).then_some((tracked.range.start, tracked.range.end))
     }
 }
 

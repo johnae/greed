@@ -143,12 +143,12 @@ local function with_inputs(buffer: greed.Buffer, block: Block): { Block }
 	local i = 1
 	while list[i] do
 		local id = list[i].opts.input
-		local source = if id and not seen[id] then named(buffer, id) else nil
-		if id then
+		if id and not seen[id] then
 			seen[id] = true
-		end
-		if source then
-			table.insert(list, source)
+			local source = named(buffer, id)
+			if source then
+				table.insert(list, source)
+			end
 		end
 		i += 1
 	end
@@ -471,7 +471,7 @@ local function allow(buffer: greed.Buffer): boolean
 		return true
 	end
 	local path = path_of(buffer) :: string
-	local name = string.match(path, "[^/]+$") or path
+	local name = core.project.basename(path) or path
 	greed.echo(`run code blocks from {name}? y yes, a always for this file, n no`)
 	local key = greed.next_key()
 	if key == "y" then

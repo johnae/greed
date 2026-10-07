@@ -8,7 +8,6 @@
 //! the editor thread as a [`Request`]; plugins decide what the methods mean.
 
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -378,10 +377,7 @@ fn prune(dir: &Path) {
 pub(crate) fn new_token() -> io::Result<String> {
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    Ok(bytes.iter().fold(String::new(), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    }))
+    Ok(crate::luau::hash::hex(&bytes))
 }
 
 /// A connection that asked to attach, for the server to send frames to and

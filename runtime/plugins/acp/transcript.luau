@@ -79,10 +79,7 @@ local GLYPH_STYLE: { [string]: string } = {
 	pending = "agent.hint",
 }
 
--- How many cells `text` takes.
-local function width(text: string): number
-	return utf8.len(text) or #text
-end
+local width = core.text.width
 
 --- What the transcript's history looks like and where things are in it.
 export type History = {

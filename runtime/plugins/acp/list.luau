@@ -92,18 +92,10 @@ function M.source(rows: (root: string) -> { Row })
 	source = rows
 end
 
-local function width(text: string): number
-	return utf8.len(text) or #text
-end
-
-local function pad(text: string, cells: number): string
-	return text .. string.rep(" ", cells - width(text))
-end
-
 local function where(row: Row, root: string): string
 	local parts = {}
 	if row.root ~= root then
-		table.insert(parts, `in {string.match(row.root, "([^/]+)/*$") or row.root}`)
+		table.insert(parts, `in {core.project.basename(row.root) or row.root}`)
 	end
 	if row.workspace then
 		table.insert(parts, `workspace {row.workspace}`)
@@ -150,7 +142,7 @@ local function draw(
 		if matches(cells, o.filter) then
 			table.insert(shown, { row = row, cells = cells })
 			for i = 1, #widths do
-				widths[i] = math.max(widths[i], width(cells[i]))
+				widths[i] = math.max(widths[i], core.text.width(cells[i]))
 			end
 		end
 	end
@@ -168,23 +160,24 @@ local function draw(
 	for _, item in shown do
 		local row, cells = item.row, item.cells
 		local line = if o.marked[row.key] then "* " else "  "
-		local function cell(i: number, style: string?)
+		-- Adds cell `i` to the line and returns where it starts.
+		local function cell(i: number, style: string?): number
 			local from = at + #line
 			line ..= cells[i]
 			if style and cells[i] ~= "" then
 				table.insert(marks, { from = from, to = from + #cells[i], style = style })
 			end
 			if i < #cells then
-				line ..= string.rep(" ", (widths[i] or 0) - width(cells[i]) + 2)
+				line ..= string.rep(" ", widths[i] - core.text.width(cells[i]) + 2)
 			end
-		end
-		if row.status == "working" then
-			local from = at + #line + #pad(cells[1], widths[1]) + 2 + #pad(cells[2], widths[2]) + 2
-			table.insert(spinning, { from = from, to = from + #"●" })
+			return from
 		end
 		cell(1, "keyword")
 		cell(2)
-		cell(3, STATUS_STYLE[row.status])
+		local status = cell(3, STATUS_STYLE[row.status])
+		if row.status == "working" then
+			table.insert(spinning, { from = status, to = status + #"●" })
+		end
 		cell(4, "comment")
 		cell(5, "comment")
 		cell(6, "comment")
@@ -278,6 +271,10 @@ function M.close()
 	end
 end
 
+local function to_first(o: Open)
+	o.view:set_cursor(o.buffer:line_start(math.min(3, o.buffer:line_count() - 1)))
+end
+
 --- Opens the list in a floating view, in place of one open already, and
 --- puts the cursor on its first session.
 function M.open(root: string)
@@ -297,7 +294,7 @@ function M.open(root: string)
 	}
 	open = o
 	M.render()
-	view:set_cursor(buffer:line_start(math.min(3, buffer:line_count() - 1)))
+	to_first(o)
 end
 
 --- The row under the cursor in the list.
@@ -355,8 +352,7 @@ function M.filter()
 	local function set(text: string)
 		o.filter = text
 		M.render()
-		local first = math.min(3, o.buffer:line_count() - 1)
-		o.view:set_cursor(o.buffer:line_start(first))
+		to_first(o)
 	end
 	core.prompt.open({
 		title = "Filter sessions",

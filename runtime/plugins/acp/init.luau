@@ -525,7 +525,7 @@ local repositories: { [string]: string } = {}
 local function repository(root: string): string
 	local key = repositories[root]
 	if key == nil then
-		key = saved.repository(root)
+		key = vcs.repo.identity(root)
 		repositories[root] = key
 	end
 	return key

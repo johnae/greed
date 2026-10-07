@@ -130,7 +130,7 @@ local function render(o: Open)
 	buffer:decorate("completion", marks)
 	local longest = 0
 	for _, line in lines do
-		longest = math.max(longest, utf8.len(line) or #line)
+		longest = math.max(longest, core.text.width(line))
 	end
 	o.float.view:configure({ width = longest + 3, height = #lines + 2 })
 end
@@ -199,7 +199,7 @@ end
 local function ask(view: greed.View, wanted: number)
 	local mode = greed.mode.get()
 	local buffer = view:buffer()
-	if TYPING[mode] == nil or buffer:path() == nil then
+	if not TYPING[mode] or buffer:path() == nil then
 		return
 	end
 	local ok, result = pcall(greed.lsp.request, buffer, "textDocument/completion", {
@@ -220,7 +220,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 		return
 	end
 	local mode = greed.mode.get()
-	local typing = TYPING[mode] ~= nil or (open ~= nil and mode == `completion-{open.mode}`)
+	local typing = TYPING[mode] == true or (open ~= nil and mode == `completion-{open.mode}`)
 	if not typing then
 		return
 	end

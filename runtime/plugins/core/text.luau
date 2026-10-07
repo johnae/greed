@@ -277,9 +277,15 @@ function M.reflow(lines: string, width: number): string
 	return table.concat(out, "\n") .. (if ends then "\n" else "")
 end
 
+--- How many characters `text` has, one cell each on screen; its bytes
+--- when it isn't valid UTF-8.
+function M.width(text: string): number
+	return utf8.len(text) or #text
+end
+
 --- `text` cut to `width` characters, the last an ellipsis when it's longer.
 function M.clip(text: string, width: number): string
-	if (utf8.len(text) or #text) <= width then
+	if M.width(text) <= width then
 		return text
 	end
 	local at = utf8.offset(text, math.max(width, 1)) or width

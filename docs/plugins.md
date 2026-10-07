@@ -373,6 +373,7 @@ core.project.resolve("a.rs", "/tmp/x") -- from another folder
 core.project.relative(path)            -- "src/main.rs", or the full path outside the project
 core.project.short(path)               -- like relative, but "~/..." under your home folder
 core.project.tilde(path)               -- "~/src/greed" for a path in your home folder
+core.project.basename(path)            -- "main.rs" for "src/main.rs"; nil for "/"
 ```
 
 `core.file` reads and writes files the way you'd want an agent to:

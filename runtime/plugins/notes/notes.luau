@@ -249,15 +249,13 @@ function M.grep_text(pattern: string): ({ Found }?, string?)
 		local s: markdown.Structure | false | nil = structures[line.note]
 		if s == nil then
 			local text = greed.fs.read(M.path(line.note))
-			local read: markdown.Structure | false = false
-			if text then
-				read = markdown.structure(text)
-			end
+			local read: markdown.Structure | false = if text
+				then markdown.structure(text)
+				else false
 			structures[line.note] = read
 			s = read
 		end
-		local code = if s then s.code_at[line.line] else nil
-		if code == nil then
+		if not (s and s.code_at[line.line]) then
 			table.insert(out, line)
 		end
 	end

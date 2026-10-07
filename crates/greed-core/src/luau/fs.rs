@@ -17,8 +17,13 @@ use crate::search::{self, GrepOptions, LineMatch};
 type LuaResult<T> = mlua::Result<T>;
 
 /// `nil, message`.
-fn failure(lua: &Lua, err: impl std::fmt::Display) -> LuaResult<MultiValue> {
+pub(super) fn failure(lua: &Lua, err: impl std::fmt::Display) -> LuaResult<MultiValue> {
     (mlua::Value::Nil, err.to_string()).into_lua_multi(lua)
+}
+
+/// Creates the folder `path` goes in.
+pub(super) fn create_parent(path: &Path) -> std::io::Result<()> {
+    path.parent().map_or(Ok(()), std::fs::create_dir_all)
 }
 
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
@@ -123,10 +128,7 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
                 let written = if private {
                     crate::files::write_private(target, contents)
                 } else {
-                    target
-                        .parent()
-                        .map_or(Ok(()), std::fs::create_dir_all)
-                        .and_then(|()| crate::files::write(target, contents))
+                    create_parent(target).and_then(|()| crate::files::write(target, contents))
                 };
                 match written {
                     Ok(()) => true.into_lua_multi(lua),
@@ -176,10 +178,7 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
         lua.create_function(|lua, (from, to): (String, String)| {
             super::secrets::guard(lua, Path::new(&from))?;
             guard_write(lua, Path::new(&to))?;
-            let copied = Path::new(&to)
-                .parent()
-                .map_or(Ok(()), std::fs::create_dir_all)
-                .and_then(|()| std::fs::copy(&from, &to));
+            let copied = create_parent(Path::new(&to)).and_then(|()| std::fs::copy(&from, &to));
             match copied {
                 Ok(_) => true.into_lua_multi(lua),
                 Err(err) => failure(lua, format!("can't copy {from} to {to}: {err}")),

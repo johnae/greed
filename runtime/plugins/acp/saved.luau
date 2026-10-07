@@ -6,6 +6,7 @@
 -- workspaces and git worktrees share the sessions kept.
 
 local greed = require("@greed")
+local core = require("@core")
 local models = require("@models")
 local repo = require("@vcs").repo
 local session = require("./session")
@@ -67,11 +68,6 @@ local function read_saved(file: string?): { any }
 	return if type(all) == "table" then all else {}
 end
 
---- The repository the folder `root` is in, the same for all of its jj
---- workspaces and git worktrees, or `root` outside one. Sessions are kept
---- and listed by it.
-M.repository = repo.identity
-
 -- The folder Greed's own sessions are kept in, one folder per repository.
 local function kept_folder(): string?
 	local dirs = greed.fs.dirs()
@@ -83,15 +79,14 @@ end
 -- path (the repository's, not its store's) and a bit of its hash.
 local function folder_for(base: string, key: string): string
 	local path = string.gsub(string.gsub(key, "/%.jj/repo$", ""), "/%.git$", "")
-	local name = string.gsub(string.match(path, "([^/]+)/*$") or "root", "[^%w._-]", "_")
+	local name = string.gsub(core.project.basename(path) or "root", "[^%w._-]", "_")
 	return `{base}/{name}-{string.sub(greed.hash.sha256(key), 1, 12)}`
 end
 
 -- The kept sessions of a repository as its index lists them: the one
 -- written last first.
 local function index_of(dir: string): { Saved }
-	local all = read_json(`{dir}/index.json`)
-	return if type(all) == "table" then all else {}
+	return read_saved(`{dir}/index.json`)
 end
 
 local function write_index(dir: string, index: { Saved })
@@ -113,11 +108,10 @@ local function move_old(base: string, dir: string, key: string)
 	local entries: { greed.DirEntry } = greed.fs.list(base) or {}
 	for _, entry in entries do
 		local old = `{base}/{entry.name}`
-		local first = if entry.dir and old ~= dir then index_of(old)[1] else nil
-		local root = first and first.root
+		local olds: { Saved } = if entry.dir and old ~= dir then index_of(old) else {}
+		local root = olds[1] and olds[1].root
 		if root and folder_for(base, root) == old and repo.identity(root) == key then
 			local index = index_of(dir)
-			local olds = index_of(old)
 			table.move(olds, 1, #olds, #index + 1, index)
 			table.sort(index, function(a: Saved, b: Saved)
 				return a.time > b.time
@@ -324,8 +318,8 @@ end
 
 --- Writes down Greed's own session `s`, with what was said and the role
 --- and groups it has, to take up again, keeping the project's newest
---- `agent-sessions-kept`. The file is replaced whole and only you can read it. Nil and
---- why when it can't.
+--- `agent-sessions-kept`. The file is replaced whole and only you can
+--- read it. Nil and why when it can't.
 function M.store(
 	s: Session,
 	state: { role: string, groups: { string }, said: { models.Said } }

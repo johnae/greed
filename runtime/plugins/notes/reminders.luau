@@ -160,7 +160,7 @@ local function draw()
 		table.insert(lines, line)
 		table.insert(marks, { from = at, to = at + #line, style = "notes.remind" })
 		at += #line + 1
-		width = math.max(width, (utf8.len(line) or #line) + 2)
+		width = math.max(width, core.text.width(line) + 2)
 	end
 	local hint = "space n r dismisses"
 	table.insert(lines, hint)

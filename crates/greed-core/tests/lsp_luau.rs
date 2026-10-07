@@ -5,7 +5,6 @@ mod support;
 use std::time::Duration;
 
 use greed_core::Editor;
-use greed_core::lsp::DIAGNOSTICS;
 use greed_core::luau::Host;
 use greed_text::ClientId;
 
@@ -20,10 +19,6 @@ fn host() -> Host {
     let (input, output, _log) = support::start();
     host.connect_lsp("rust", Box::new(input), output).unwrap();
     host
-}
-
-fn has_diagnostics(host: &Host) -> bool {
-    host.with_editor(|ed| ed.buffers().any(|b| !b.marks(DIAGNOSTICS).is_empty()))
 }
 
 /// Handles server events until `done` says to stop.
@@ -134,7 +129,7 @@ fn with_plugin() -> Host {
     .unwrap();
     h.sync_lsp();
     // Wait for the first diagnostics.
-    pump(&h, has_diagnostics);
+    pump(&h, support::has_diagnostics);
     // What loading said, like that it took a while on a busy machine, isn't
     // what the tests look at.
     h.with_editor_mut(Editor::take_messages);
@@ -664,7 +659,7 @@ fn with_agent() -> Host {
     )
     .unwrap();
     h.sync_lsp();
-    pump(&h, has_diagnostics);
+    pump(&h, support::has_diagnostics);
     h
 }
 

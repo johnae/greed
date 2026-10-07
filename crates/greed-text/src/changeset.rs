@@ -101,7 +101,7 @@ impl ChangeSet {
     /// where it only deleted, `None` when it changes nothing.
     pub fn changed_range(&self) -> Option<std::ops::Range<usize>> {
         let mut new = 0;
-        let mut first = None;
+        let mut range: Option<std::ops::Range<usize>> = None;
         for op in &self.ops {
             let start = new;
             match op {
@@ -112,14 +112,9 @@ impl ChangeSet {
                 Operation::Delete(_) => {}
                 Operation::Insert(text) => new += text.len(),
             }
-            first.get_or_insert(start);
+            range.get_or_insert(start..new).end = new;
         }
-        // Trailing retains don't count: the range ends after the last change.
-        let mut end = new;
-        if let Some(Operation::Retain(n)) = self.ops.last() {
-            end -= n;
-        }
-        first.map(|start| start..end)
+        range
     }
 
     pub fn retain(&mut self, n: usize) {

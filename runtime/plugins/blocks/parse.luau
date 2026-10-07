@@ -93,18 +93,14 @@ end
 --- What the front matter's `greed:` line says, e.g. "run" for
 --- `greed: run`, or nil without one.
 function M.front_matter(buffer: greed.Buffer): string?
-	if buffer:line_count() < 2 then
+	local s = markdown.structure(buffer)
+	local front = s.front
+	if front == nil then
 		return nil
 	end
-	if not string.match(buffer:line_text(0), "^%-%-%-%s*$") then
-		return nil
-	end
-	for n = 1, math.min(buffer:line_count() - 1, 50) do
-		local text = buffer:line_text(n)
-		if string.match(text, "^%-%-%-%s*$") then
-			return nil
-		end
-		local value = string.match(text, "^greed:%s*(.-)%s*$")
+	-- `s.lines` is 1-based, so the lines between the fences are 2 to `front`.
+	for n = 2, front do
+		local value = string.match(s.lines[n], "^greed:%s*(.-)%s*$")
 		if value then
 			return value
 		end

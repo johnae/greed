@@ -296,12 +296,10 @@ fn closed_buffers_are_closed_in_the_server_and_their_diagnostics_go() {
     s.lsp.sync(&s.editor);
     assert!(s.methods().contains(&"textDocument/didClose".to_string()));
     // The file's problems are as the server sent them again.
-    let problems = s.lsp.problems(&s.editor);
-    let main = problems
-        .iter()
-        .find(|p| p.uri == file_uri(&s.path))
-        .unwrap();
-    assert_eq!(main.range["end"], json!({ "line": 0, "character": 3 }));
+    assert_eq!(
+        s.problem_range()["end"],
+        json!({ "line": 0, "character": 3 })
+    );
 }
 
 impl Setup {
@@ -348,6 +346,16 @@ impl Setup {
             .map(|d| text[d.from..d.to].to_owned())
             .collect()
     }
+
+    /// The range of this file's problem in the project's problem list.
+    fn problem_range(&self) -> Value {
+        self.lsp
+            .problems(&self.editor)
+            .into_iter()
+            .find(|p| p.uri == file_uri(&self.path))
+            .unwrap()
+            .range
+    }
 }
 
 fn problem(line: u64, from: u64, to: u64, severity: u8) -> Value {
@@ -367,13 +375,8 @@ fn diagnostics_move_with_edits_before_them() {
     let buffer = s.editor.buffers().next().unwrap().id();
     assert_eq!(diagnostics(s.editor.buffer(buffer))[0].from, 16);
     // Problems in open files are where they are now, too.
-    let problems = s.lsp.problems(&s.editor);
-    let main = problems
-        .iter()
-        .find(|p| p.uri == file_uri(&s.path))
-        .unwrap();
     assert_eq!(
-        main.range,
+        s.problem_range(),
         json!({ "start": { "line": 1, "character": 8 }, "end": { "line": 1, "character": 11 } })
     );
 

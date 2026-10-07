@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use greed_core::Editor;
-use greed_core::lsp::DIAGNOSTICS;
 use greed_core::luau::Host;
 use greed_text::ClientId;
 
@@ -362,9 +361,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
             default(Duration::from_millis(20)) => assert!(Instant::now() < deadline, "nothing happened"),
         }
     };
-    let diagnosed =
-        |host: &Host| host.with_editor(|ed| ed.buffers().any(|b| !b.marks(DIAGNOSTICS).is_empty()));
-    while !diagnosed(&host) {
+    while !support::has_diagnostics(&host) {
         step(&host);
     }
     host.run("fix").unwrap();

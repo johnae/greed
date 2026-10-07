@@ -51,7 +51,7 @@ local function show(v: Viewer, cols: number)
 	local scale = v.zoom or fit(natural_cols, cols)
 	local image_cols = math.max(1, math.round(natural_cols * scale))
 	local rows = math.max(1, math.round(natural_rows * scale))
-	local name = string.match(v.path, "[^/]+$") or v.path
+	local name = core.project.basename(v.path) or v.path
 	local zoom = math.round(scale * 100)
 	set_text(v.buffer, `{name}  {width}×{height}  {zoom}%\n` .. string.rep("\n", rows - 1))
 	v.buffer:decorate("image", {

@@ -116,9 +116,9 @@ local function blank(text: string): boolean
 	return string.find(text, "^%s*$") ~= nil
 end
 
---- A fence line's ticks or tildes and what follows them, inside quotes
---- and list items too.
-function M.fence(text: string): (string?, string)
+-- A fence line's ticks or tildes and what follows them, inside quotes
+-- and list items too.
+local function fence_of(text: string): (string?, string)
 	local ticks, rest = string.match(text, "^[%s>]*(```+)(.*)$")
 	if ticks == nil then
 		ticks, rest = string.match(text, "^[%s>]*(~~~+)(.*)$")
@@ -128,7 +128,7 @@ end
 
 -- Whether `text` closes a fence opened by `ticks`.
 local function closes(text: string, ticks: string): boolean
-	local found, rest = M.fence(text)
+	local found, rest = fence_of(text)
 	return found ~= nil
 		and string.sub(found, 1, 1) == string.sub(ticks, 1, 1)
 		and #found >= #ticks
@@ -202,7 +202,7 @@ end
 
 -- The code block between fences on lines `open` and `close`.
 local function code(s: Structure, open: number, close: number): Code
-	local ticks, info = M.fence(s.lines[open + 1])
+	local ticks, info = fence_of(s.lines[open + 1])
 	local fence = ticks or "```"
 	local closed = close > open and closes(s.lines[close + 1], fence)
 	local function line_end(n: number): number
@@ -300,7 +300,7 @@ local function scan(
 			n += 1
 			continue
 		end
-		local ticks = M.fence(text)
+		local ticks = fence_of(text)
 		if ticks then
 			local close = n + 1
 			while close < count and not closes(lines[close + 1], ticks) do
@@ -629,14 +629,11 @@ local function splice(
 		start,
 		after,
 		function(h: Heading): Heading
-			return {
-				level = h.level,
-				text = h.text,
-				line = h.line + delta,
-				last = h.last + delta,
-				underlined = h.underlined,
-				from = h.from + bytes,
-			}
+			local moved = table.clone(h)
+			moved.line += delta
+			moved.last += delta
+			moved.from += bytes
+			return moved
 		end
 	)
 	s.code = join(
@@ -648,18 +645,14 @@ local function splice(
 		start,
 		after,
 		function(c: Code): Code
-			return {
-				info = c.info,
-				lang = c.lang,
-				fence = c.fence,
-				open = c.open + delta,
-				close = c.close + delta,
-				closed = c.closed,
-				from = c.from + bytes,
-				to = c.to + bytes,
-				code_from = c.code_from + bytes,
-				code_to = c.code_to + bytes,
-			}
+			local moved = table.clone(c)
+			moved.open += delta
+			moved.close += delta
+			moved.from += bytes
+			moved.to += bytes
+			moved.code_from += bytes
+			moved.code_to += bytes
+			return moved
 		end
 	)
 	s.items = join(
@@ -671,14 +664,11 @@ local function splice(
 		start,
 		after,
 		function(i: Item): Item
-			return {
-				bullet = i.bullet,
-				check = i.check,
-				line = i.line + delta,
-				last = i.last + delta,
-				indent = i.indent,
-				from = i.from + bytes,
-			}
+			local moved = table.clone(i)
+			moved.line += delta
+			moved.last += delta
+			moved.from += bytes
+			return moved
 		end
 	)
 	s.tables = join(
@@ -704,15 +694,12 @@ local function splice(
 		start,
 		after,
 		function(l: Link): Link
-			return {
-				line = l.line + delta,
-				from = l.from + bytes,
-				to = l.to + bytes,
-				text = l.text,
-				target = l.target,
-				target_from = l.target_from + bytes,
-				image = l.image,
-			}
+			local moved = table.clone(l)
+			moved.line += delta
+			moved.from += bytes
+			moved.to += bytes
+			moved.target_from += bytes
+			return moved
 		end
 	)
 	return s

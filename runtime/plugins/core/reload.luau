@@ -4,6 +4,7 @@
 -- `:reload` loads the file into it anyway.
 
 local greed = require("@greed")
+local project = require("./project")
 
 greed.option.define({
 	name = "auto-reload",
@@ -16,7 +17,7 @@ greed.option.define({
 local known: { [number]: string } = {}
 
 local function name(path: string): string
-	return string.match(path, "[^/]+$") or path
+	return project.basename(path) or path
 end
 
 -- Starts watching `buffer`'s file, once.

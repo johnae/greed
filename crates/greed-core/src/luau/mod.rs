@@ -12,7 +12,7 @@ mod cli;
 mod diff;
 mod fs;
 mod handles;
-mod hash;
+pub(crate) mod hash;
 mod history;
 mod http;
 mod images;

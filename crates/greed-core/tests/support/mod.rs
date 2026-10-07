@@ -301,6 +301,15 @@ pub fn start() -> (
     (client_out, client_in, log)
 }
 
+/// Whether any buffer has diagnostic marks yet.
+#[allow(dead_code)]
+pub fn has_diagnostics(host: &greed_core::luau::Host) -> bool {
+    host.with_editor(|ed| {
+        ed.buffers()
+            .any(|b| !b.marks(greed_core::lsp::DIAGNOSTICS).is_empty())
+    })
+}
+
 /// The "ask" command: sends the user a choice, and once the answer (the
 /// response with id "pick") comes back, writes its title over the first word.
 fn ask(output: &mut impl Write, id: Option<&Value>, message: &Value, opened: &Opened) {

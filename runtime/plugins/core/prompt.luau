@@ -4,6 +4,7 @@
 local greed = require("@greed")
 local floats = require("./floats")
 local style = require("./style")
+local width = require("./text").width
 
 export type Options = {
 	title: string,
@@ -48,7 +49,7 @@ end
 local function mask(o: Open)
 	if o.options.secret then
 		local typed = text(o)
-		local dots = string.rep("•", utf8.len(typed) or #typed)
+		local dots = string.rep("•", width(typed))
 		o.float.buffer:decorate(
 			"prompt-secret",
 			{ { from = 0, to = #typed, text = dots, overlay = true, style = "ui.text" } }

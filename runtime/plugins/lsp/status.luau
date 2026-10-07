@@ -3,6 +3,7 @@
 -- and whether it's starting, stopped or not installed.
 
 local greed = require("@greed")
+local core = require("@core")
 local statusline = require("@statusline")
 
 local M = {}
@@ -26,7 +27,7 @@ local function program(language: string): string | false
 	local commands: { { string } } = greed.lsp.servers()[language] or {}
 	for _, command in commands do
 		if greed.which(command[1]) then
-			found = string.match(command[1], "[^/]+$") or command[1]
+			found = core.project.basename(command[1]) or command[1]
 			break
 		end
 	end

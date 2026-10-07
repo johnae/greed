@@ -35,6 +35,10 @@ test("front matter says whether a file shows its blocks as runnable", function(t
 	assert(blocks.on(buffer), "on with greed: run")
 	t:buffer("# not front matter\ngreed: run\n|")
 	assert(blocks.parse.front_matter(greed.view():buffer()) == nil)
+	t:buffer("---\ntitle: x\n---\ngreed: run\n|")
+	assert(blocks.parse.front_matter(greed.view():buffer()) == nil, "after the front matter")
+	t:buffer("---\ntitle: x\ngreed: run\n|")
+	assert(blocks.parse.front_matter(greed.view():buffer()) == nil, "never closed")
 end)
 
 test("a shell block runs and its output goes in a result under it", function(t)

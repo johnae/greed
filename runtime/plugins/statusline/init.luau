@@ -187,7 +187,7 @@ M.add("left", "tab", function()
 	local tabs = greed.tab.list()
 	for i, tab in tabs do
 		if tab.current then
-			local name = tab.name or string.match(greed.project.current().root, "[^/]+$") or "tab"
+			local name = tab.name or core.project.basename(greed.project.current().root) or "tab"
 			local parts: { Pill } = {
 				{ text = tostring(i), style = "ui.statusline.tab.number" },
 				{ text = name, style = "ui.statusline.tab" },

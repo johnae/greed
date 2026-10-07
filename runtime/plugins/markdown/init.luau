@@ -242,11 +242,6 @@ visible = function(text: string, reading: boolean): string
 	return table.concat(parts)
 end
 
--- How many columns `text` takes: one per character.
-local function columns(text: string): number
-	return utf8.len(text) or #text
-end
-
 -- The marks for table `found` of `s` go in `out`. False if its rows don't
 -- line up with its delimiter row after all.
 local function draw_table(
@@ -274,7 +269,7 @@ local function draw_table(
 		table.insert(texts, text_of(row))
 	end
 	local widths, rows = tables.layout(texts, aligns, function(text)
-		return columns(visible(text, read))
+		return core.text.width(visible(text, read))
 	end)
 	local function line_start(line: number): number
 		return s.starts[line + 1]

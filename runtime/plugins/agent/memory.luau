@@ -99,7 +99,7 @@ local function checked(text: string): string
 	local line = string.match(string.gsub(text, "%s+", " "), "^%s*(.-)%s*$") or ""
 	if line == "" then
 		error("say what to remember", 0)
-	elseif (utf8.len(line) or #line) > MAX_LENGTH then
+	elseif core.text.width(line) > MAX_LENGTH then
 		error(`a memory is a line of at most {MAX_LENGTH} characters`, 0)
 	end
 	return line

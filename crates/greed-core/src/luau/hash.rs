@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 type LuaResult<T> = mlua::Result<T>;
 
-fn hex(digest: &[u8]) -> String {
+pub(crate) fn hex(digest: &[u8]) -> String {
     digest.iter().fold(String::new(), |mut out, byte| {
         let _ = write!(out, "{byte:02x}");
         out
@@ -35,9 +35,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             super::secrets::guard(lua, Path::new(&path))?;
             match file_digest(Path::new(&path)) {
                 Ok(digest) => digest.into_lua_multi(lua),
-                Err(err) => {
-                    (mlua::Value::Nil, format!("can't read {path}: {err}")).into_lua_multi(lua)
-                }
+                Err(err) => super::fs::failure(lua, format!("can't read {path}: {err}")),
             }
         })?,
     )?;
