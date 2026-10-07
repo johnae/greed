@@ -99,14 +99,17 @@ pub(super) fn guard(lua: &mlua::Lua, path: &Path) -> mlua::Result<()> {
 /// they exist, so another spelling of the same file counts, and as written
 /// where they don't yet.
 pub(super) fn same_file(a: &Path, b: &Path) -> bool {
-    let resolved = |p: &Path| {
-        let absolute = std::path::absolute(p).unwrap_or_else(|_| p.to_owned());
-        absolute
-            .parent()
-            .and_then(|dir| dir.canonicalize().ok())
-            .zip(absolute.file_name())
-            .map(|(dir, name)| dir.join(name))
-            .unwrap_or(absolute)
-    };
     resolved(a) == resolved(b)
+}
+
+/// `path` made absolute, with its folder resolved where it exists and its
+/// own name as written, so a link is the link itself.
+pub(super) fn resolved(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    absolute
+        .parent()
+        .and_then(|dir| dir.canonicalize().ok())
+        .zip(absolute.file_name())
+        .map(|(dir, name)| dir.join(name))
+        .unwrap_or(absolute)
 }

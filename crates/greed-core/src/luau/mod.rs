@@ -12,6 +12,7 @@ mod cli;
 mod diff;
 mod fs;
 mod handles;
+mod hash;
 mod history;
 mod http;
 mod images;

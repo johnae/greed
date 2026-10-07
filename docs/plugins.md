@@ -34,8 +34,8 @@ capabilities = ["proc", "fs.read"]
 | Capability | What it opens |
 |---|---|
 | `proc` | Running programs: `greed.process.run`, `greed.terminal.spawn`, `greed.lsp.server`, typing into a terminal, and a language server's `workspace/executeCommand`. A program can do anything you can, so this is full access |
-| `fs.read` | Files by path: `greed.fs` reads, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.load_grammar` |
-| `fs.write` | `greed.fs.write`, and `buffer:save(path)` to a path other than the buffer's own file |
+| `fs.read` | Files by path: `greed.fs` reads, `greed.fs.copy`, `greed.hash.sha256_file`, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.load_grammar` |
+| `fs.write` | `greed.fs.write`, `mkdir`, `remove`, `rename` and `copy`, `greed.http.request` with `save`, and `buffer:save(path)` to a path other than the buffer's own file |
 | `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
 | `net` | The network: `greed.http` to any host, and the Claude Code connection |
 | `net:HOST` | `greed.http` to one host, e.g. `net:api.anthropic.com` |
@@ -297,6 +297,26 @@ it back and the language server sees it, then saves; a closed file is
 written to disk. `{ from, to }` replaces just that part, and `{ load = true }`
 opens the file first. Both take paths as `core.project.resolve` does, and
 `core.file.buffer(path)` is the open buffer for one.
+
+For files on disk with no buffer, `greed.fs` has the usual operations, so
+a plugin needs no `rm` or `mv`. Each returns `true`, or nil and why:
+
+```luau
+greed.fs.write(path, text)                        -- creates its folders too
+greed.fs.mkdir(dir)                               -- and the folders above it
+greed.fs.copy(from, to)
+greed.fs.rename(from, to)
+greed.fs.remove(path)                             -- a file, link or empty folder
+greed.fs.remove(dir, { recursive = true })        -- a folder and all in it
+greed.hash.sha256(text)                           -- hex, to tell if text changed
+greed.hash.sha256_file(path)                      -- to check a download
+```
+
+Something already gone counts as removed. `remove` and `rename` raise an
+error rather than touch the root folder, your home folder, a path with `..`
+in it or a folder holding Greed's own approvals or secrets, so a path built
+wrong can't take more than it should. `greed.hostname()` is the machine's
+name.
 
 ### History
 
@@ -754,6 +774,18 @@ end
 Each request runs on a thread of its own and both wait like `greed.sleep`,
 so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.
+
+To download a file, give `request` a `save` path: a successful (2xx)
+response's body is written there as it arrives, with no size limit, and
+the file appears only once it's whole. Any other response comes back with
+its body as usual and nothing is written. Saving needs `fs.write` too.
+
+```luau
+local got, err = greed.http.request({ url = url, save = cache .. "/grammar.wasm" })
+if got == nil or got.status >= 300 then
+	error(err or `status {got.status}`, 0)
+end
+```
 
 Keys for those servers come from `greed.secrets.get("anthropic")`, never from
 config or plugin source. It looks in the environment (`GREED_SECRET_ANTHROPIC`,

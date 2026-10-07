@@ -325,3 +325,43 @@ fn plugins_cant_write_the_approvals_file() {
     );
     assert!(!store.exists());
 }
+
+#[test]
+fn plugins_cant_remove_move_or_replace_the_approvals_file() {
+    let temp = Temp::new("guard-tree");
+    let store = temp.0.join("state/approved.json");
+    std::fs::create_dir_all(store.parent().unwrap()).unwrap();
+    std::fs::write(&store, "{}").unwrap();
+    std::fs::write(temp.0.join("other.json"), "{}").unwrap();
+    let host = host(&store, &temp.0.join("shipped"));
+    let (state, other) = (temp.0.join("state"), temp.0.join("other.json"));
+    for (call, why) in [
+        (
+            format!("remove({store:?})"),
+            "can't write Greed's approvals",
+        ),
+        (
+            format!("remove({state:?}, {{ recursive = true }})"),
+            "holds Greed's own files",
+        ),
+        (
+            format!("rename({state:?}, {:?})", temp.0.join("moved")),
+            "holds Greed's own files",
+        ),
+        (
+            format!("rename({other:?}, {store:?})"),
+            "can't write Greed's approvals",
+        ),
+        (
+            format!("copy({other:?}, {store:?})"),
+            "can't write Greed's approvals",
+        ),
+    ] {
+        let err = host
+            .eval(&format!("require('@greed').fs.{call}"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(why), "{call}: {err}");
+    }
+    assert!(store.exists());
+}

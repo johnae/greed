@@ -1513,8 +1513,8 @@ or `GREED_COLORS=256` decides for a terminal that says the wrong thing.
 Greed has grammars built in for Rust, Nix, Bash, Python, Go, JavaScript,
 TypeScript, C, Luau, JSON, TOML, YAML and Markdown. For C++, C#, Java,
 Ruby, Scala, Haskell, OCaml, Julia, HTML and CSS it downloads the grammar
-the first time you open a file in that language (with `curl`), checks it
-against a checksum Greed knows, and keeps it in `~/.cache/greed/grammars`.
+the first time you open a file in that language, checks it against a
+checksum Greed knows, and keeps it in `~/.cache/greed/grammars`.
 `:health` shows which languages are built in, which download, and which
 have no grammar. `:grammar-fetch ruby` downloads one ahead of time, say
 before going offline, and `greed.option.set("grammar-download", false)`

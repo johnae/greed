@@ -684,6 +684,96 @@ fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
 }
 
 #[test]
+fn folders_are_made_and_files_copied_moved_and_removed() {
+    let dir = plugin_dir("fs-tree", &[("a.txt", "a\n"), ("full/b.txt", "b\n")]);
+    let h = host("");
+    let did = eval_in(
+        &h,
+        &dir,
+        "local out = {}
+         local function say(ok, err) table.insert(out, if ok then 'ok' else 'nil:' .. tostring(err ~= nil)) end
+         say(greed.fs.mkdir(DIR .. '/x/y/z'))
+         say(greed.fs.mkdir(DIR .. '/x/y/z'))
+         say(greed.fs.mkdir(DIR .. '/a.txt/inside'))
+         say(greed.fs.copy(DIR .. '/a.txt', DIR .. '/copies/a.txt'))
+         say(greed.fs.copy(DIR .. '/nope', DIR .. '/copies/nope'))
+         say(greed.fs.rename(DIR .. '/copies/a.txt', DIR .. '/moved.txt'))
+         say(greed.fs.rename(DIR .. '/nope', DIR .. '/other'))
+         table.insert(out, greed.fs.read(DIR .. '/moved.txt') or '-')
+         table.insert(out, tostring(greed.fs.stat(DIR .. '/copies/a.txt')))
+         say(greed.fs.remove(DIR .. '/moved.txt'))
+         say(greed.fs.remove(DIR .. '/moved.txt'))
+         say(greed.fs.remove(DIR .. '/full'))
+         table.insert(out, greed.fs.stat(DIR .. '/full/b.txt').kind)
+         say(greed.fs.remove(DIR .. '/full', { recursive = true }))
+         say(greed.fs.remove(DIR .. '/x/y/z'))
+         table.insert(out, tostring(greed.fs.stat(DIR .. '/full')) .. ' ' .. tostring(greed.fs.stat(DIR .. '/x/y/z')))
+         return table.concat(out, ' ')",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        did,
+        "ok ok nil:true ok nil:true ok nil:true a\n nil ok ok nil:true file ok ok nil nil"
+    );
+}
+
+#[test]
+fn removing_refuses_the_root_and_paths_that_climb() {
+    let dir = plugin_dir("fs-refuse", &[("keep/a.txt", "")]);
+    let h = host("");
+    for (call, why) in [
+        (
+            "greed.fs.remove('/', { recursive = true })",
+            "the root folder",
+        ),
+        (
+            "greed.fs.remove('/./', { recursive = true })",
+            "the root folder",
+        ),
+        ("greed.fs.remove('')", "an empty path"),
+        (
+            "greed.fs.remove(DIR .. '/keep/..', { recursive = true })",
+            "it has ..",
+        ),
+        ("greed.fs.rename(DIR .. '/../x', DIR .. '/y')", "it has .."),
+        ("greed.fs.rename('/', DIR .. '/y')", "won't move the root"),
+    ] {
+        let err = h
+            .eval(&format!(
+                "local greed = require('@greed')\nlocal DIR = {:?}\n{call}",
+                dir.to_str().unwrap()
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(why), "{call}: {err}");
+    }
+    assert!(dir.join("keep/a.txt").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn hashes_are_sha256_in_hex() {
+    let dir = plugin_dir("hash", &[("abc.txt", "abc")]);
+    let h = host("");
+    let digests = eval_in(
+        &h,
+        &dir,
+        "local _, err = greed.hash.sha256_file(DIR .. '/nope')
+         return greed.hash.sha256('abc') .. ' ' .. greed.hash.sha256_file(DIR .. '/abc.txt') .. ' ' .. tostring(err ~= nil)",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    assert_eq!(digests, format!("{abc} {abc} true"));
+}
+
+#[test]
+fn the_machine_has_a_name() {
+    let h = host("");
+    let name = h.eval("return require('@greed').hostname() or ''").unwrap();
+    assert!(!name.is_empty());
+}
+
+#[test]
 fn status_lines_come_from_the_plugin_that_set_them() {
     let h = host("abc");
     assert_eq!(h.status_line(None, 80).unwrap(), None);
@@ -1734,6 +1824,8 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
         ("greed.keys.feed('x')", "type keys"),
         ("greed.option.set('indent', '  ')", "change options"),
         ("greed.fs.read('/etc/hostname')", "read or write files"),
+        ("greed.fs.remove('/tmp/x')", "read or write files"),
+        ("greed.hash.sha256_file('/etc/hostname')", "read files"),
         ("greed.view():buffer():save()", "write a file"),
         ("require('@core')", "require @core"),
         (

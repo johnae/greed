@@ -355,7 +355,7 @@ local function split(stack: Stack, change: Change)
 				return
 			end
 			local prep = `{stack.repo.root}/.jj/greed-split`
-			greed.process.run({ "rm", "-rf", prep })
+			greed.fs.remove(prep, { recursive = true })
 			local deleted = {}
 			for path, text: string | false in picked do
 				if text then
@@ -382,7 +382,7 @@ local function split(stack: Stack, change: Change)
 				"--config",
 				`merge-tools.greed-split.edit-args={edit_args}`,
 			}, change.id)
-			greed.process.run({ "rm", "-rf", prep })
+			greed.fs.remove(prep, { recursive = true })
 		end,
 	})
 end

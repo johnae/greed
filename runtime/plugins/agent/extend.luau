@@ -54,9 +54,9 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
 - Capabilities, in plugin.toml as `capabilities = ["fs.read"]`: "proc" (greed.process.run,
   greed.terminal.spawn, greed.lsp.server), "fs.read" (greed.fs reads, greed.load, greed.open,
-  greed.files), "fs.write" (greed.fs.write, buffer:save(path)), "clipboard" (reading it),
-  "net" or "net:HOST" (greed.http), "secrets:NAME" (greed.secrets.get), "eval", "plugins". Ask
-  only for what the plugin needs; the user sees the list.
+  greed.files), "fs.write" (greed.fs.write, mkdir, remove, rename, copy, buffer:save(path)),
+  "clipboard" (reading it), "net" or "net:HOST" (greed.http), "secrets:NAME" (greed.secrets.get),
+  "eval", "plugins". Ask only for what the plugin needs; the user sees the list.
   Editing buffers, commands, keys and the rest of the editor need none.
 
 Tests:
@@ -228,8 +228,7 @@ function M.install(name: string): string
 	local where = target
 	-- On the far end of greed ssh, it's on this machine, not yours.
 	if greed.fs.dirs().brought then
-		local named = greed.fs.read("/etc/hostname")
-		local machine = named and string.match(named, "^%s*(%S+)") or "this machine"
+		local machine = greed.hostname() or "this machine"
 		where = `{target} on {machine}; on your own machine, greed bring HOST {name} copies it home`
 	end
 	greed.echo(`installed {name} in {where}`)

@@ -167,22 +167,7 @@ function M.remove(name: string)
 end
 
 -- The machine's name, read once.
-local host: string? = nil
-local function machine(): string?
-	if host == nil then
-		local named = greed.fs.read("/etc/hostname")
-		host = named and string.match(named, "^%s*(%S+)") or ""
-	end
-	return if host ~= "" then host else nil
-end
-
--- Without /etc/hostname (macOS), `hostname` says, once the editor runs.
-greed.on("editor.started", function()
-	if machine() == nil then
-		local done = greed.process.run({ "hostname" })
-		host = done and done.code == 0 and string.match(done.stdout, "^%s*(%S+)") or ""
-	end
-end)
+local host = greed.hostname()
 
 -- A pill showing `text` in the style `look`, or nothing without text.
 local function pill(text: string?, look: string): Part?
@@ -305,7 +290,7 @@ M.add("right", "position", function(ctx)
 end)
 
 M.add("right", "host", function()
-	return pill(machine(), "ui.statusline.host")
+	return pill(host, "ui.statusline.host")
 end)
 
 M.add("right", "session", function()

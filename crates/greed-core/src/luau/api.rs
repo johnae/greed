@@ -386,6 +386,11 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("client", client_module(lua)?)?;
     greed.set("lsp", super::lsp::module(lua, owner)?)?;
     greed.set("fs", super::fs::module(lua, owner)?)?;
+    greed.set("hash", super::hash::module(lua)?)?;
+    greed.set(
+        "hostname",
+        lua.create_function(|_, ()| Ok(gethostname::gethostname().into_string().ok()))?,
+    )?;
     greed.set("control", super::requests::module(lua)?)?;
     greed.set("json", super::json::module(lua)?)?;
     greed.set("project", super::projects::module(lua)?)?;

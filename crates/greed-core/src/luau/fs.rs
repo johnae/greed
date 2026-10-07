@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
 
@@ -80,12 +80,28 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     super::watch::add_to(lua, &fs, owner)?;
+    add_writes(lua, &fs)?;
 
+    fs.set(
+        "cwd",
+        lua.create_function(|_, ()| {
+            Ok(std::env::current_dir()
+                .map_or_else(|_| ".".to_owned(), |dir| dir.to_string_lossy().into_owned()))
+        })?,
+    )?;
+
+    fs.set("dirs", lua.create_function(|lua, ()| dirs(lua))?)?;
+
+    fs.set("grep", grep_function(lua)?)?;
+    Ok(fs)
+}
+
+/// The functions in `greed.fs` that change files.
+fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
     fs.set(
         "write",
         lua.create_function(|lua, (path, text): (String, mlua::LuaString)| {
-            super::approvals::guard(lua, Path::new(&path))?;
-            super::secrets::guard(lua, Path::new(&path))?;
+            guard_write(lua, Path::new(&path))?;
             let written = Path::new(&path)
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)
@@ -100,17 +116,55 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
 
     fs.set(
-        "cwd",
-        lua.create_function(|_, ()| {
-            Ok(std::env::current_dir()
-                .map_or_else(|_| ".".to_owned(), |dir| dir.to_string_lossy().into_owned()))
+        "mkdir",
+        lua.create_function(|lua, path: String| match std::fs::create_dir_all(&path) {
+            Ok(()) => true.into_lua_multi(lua),
+            Err(err) => failure(lua, format!("can't make {path}: {err}")),
         })?,
     )?;
 
-    fs.set("dirs", lua.create_function(|lua, ()| dirs(lua))?)?;
+    fs.set(
+        "remove",
+        lua.create_function(|lua, (path, opts): (String, Option<Table>)| {
+            let recursive = match opts {
+                Some(opts) => opts.get::<Option<bool>>("recursive")?.unwrap_or(false),
+                None => false,
+            };
+            guard_removal(lua, Path::new(&path), "remove")?;
+            match remove(Path::new(&path), recursive) {
+                Ok(()) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't remove {path}: {err}")),
+            }
+        })?,
+    )?;
 
-    fs.set("grep", grep_function(lua)?)?;
-    Ok(fs)
+    fs.set(
+        "rename",
+        lua.create_function(|lua, (from, to): (String, String)| {
+            guard_removal(lua, Path::new(&from), "move")?;
+            guard_write(lua, Path::new(&to))?;
+            match std::fs::rename(&from, &to) {
+                Ok(()) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't move {from} to {to}: {err}")),
+            }
+        })?,
+    )?;
+
+    fs.set(
+        "copy",
+        lua.create_function(|lua, (from, to): (String, String)| {
+            super::secrets::guard(lua, Path::new(&from))?;
+            guard_write(lua, Path::new(&to))?;
+            let copied = Path::new(&to)
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::copy(&from, &to));
+            match copied {
+                Ok(_) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't copy {from} to {to}: {err}")),
+            }
+        })?,
+    )
 }
 
 /// `greed.fs.grep`, which searches in the background and waits, so a command
@@ -165,6 +219,68 @@ pub(super) fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> 
         list.push(entry)?;
     }
     Ok(list)
+}
+
+/// Fails if `path` is Greed's approvals or secrets file, which plugins
+/// mustn't write.
+pub(super) fn guard_write(lua: &Lua, path: &Path) -> LuaResult<()> {
+    super::approvals::guard(lua, path)?;
+    super::secrets::guard(lua, path)
+}
+
+/// Fails if removing or moving `path` (`what`) could take far more than
+/// meant, as a computed path gone wrong would: the root, a home folder, a
+/// path that climbs with `..`, or one holding Greed's approvals or secrets.
+fn guard_removal(lua: &Lua, path: &Path, what: &str) -> LuaResult<()> {
+    let refuse = |why: String| Err(mlua::Error::runtime(format!("won't {what} {why}")));
+    if path.as_os_str().is_empty() {
+        return refuse("an empty path".to_owned());
+    }
+    if path.components().any(|c| c == Component::ParentDir) {
+        return refuse(format!("{}: it has ..", path.display()));
+    }
+    let resolved = super::approvals::resolved(path);
+    if resolved.parent().is_none() {
+        return refuse("the root folder".to_owned());
+    }
+    let test_home = state(lua).dirs.clone();
+    for home in test_home
+        .into_iter()
+        .chain(std::env::var_os("HOME").map(PathBuf::from))
+    {
+        if super::approvals::resolved(&home) == resolved
+            || home.canonicalize().is_ok_and(|h| h == resolved)
+        {
+            return refuse("the home folder".to_owned());
+        }
+    }
+    guard_write(lua, path)?;
+    if resolved.is_dir() {
+        let approvals = state(lua).approvals.as_ref().map(|a| a.path().to_owned());
+        for file in approvals.into_iter().chain(super::secrets::file(lua)) {
+            if file.canonicalize().is_ok_and(|f| f.starts_with(&resolved)) {
+                return refuse(format!("{}: it holds Greed's own files", path.display()));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Removes the file, link or empty folder at `path`, or with `recursive`
+/// the folder and all in it. Nothing being there is fine.
+fn remove(path: &Path, recursive: bool) -> std::io::Result<()> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    if !meta.is_dir() {
+        std::fs::remove_file(path)
+    } else if recursive {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_dir(path)
+    }
 }
 
 /// The entries directly in `dir` as `(name, is_dir)`: folders first, then

@@ -117,6 +117,39 @@ fn requests_wait_for_the_whole_response() {
 }
 
 #[test]
+fn a_successful_response_can_go_straight_to_a_file() {
+    let address = serve();
+    let dir = std::env::temp_dir().join(format!("greed-http-save-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let host = host();
+    host.load_str(
+        "save",
+        &format!(
+            r#"
+            local greed = require("@greed")
+            greed.command {{ name = "save", run = function()
+                local r = assert(greed.http.request({{ url = "{address}/hello", save = "{saved}" }}))
+                greed.echo(`{{r.status}} [{{r.body}}]`)
+                local missing = assert(greed.http.request({{ url = "{address}/nope", save = "{missing}" }}))
+                greed.echo(`{{missing.status}}`)
+            end }}
+            "#,
+            saved = dir.join("deep/hello.txt").display(),
+            missing = dir.join("nope.txt").display(),
+        ),
+    )
+    .unwrap();
+    host.run("save").unwrap();
+    assert_eq!(messages(&host, 2), ["200 []", "404"]);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("deep/hello.txt")).unwrap(),
+        "hello"
+    );
+    assert!(!dir.join("nope.txt").exists(), "a failure isn't saved");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn streams_give_each_piece_as_it_arrives() {
     let address = serve();
     let host = host();

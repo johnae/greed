@@ -1,3 +1,3 @@
 name = "languages"
 requires = ["core"]
-capabilities = ["proc", "fs.read"]
+capabilities = ["proc", "fs.read", "fs.write", "net"]

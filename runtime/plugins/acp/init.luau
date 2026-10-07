@@ -243,9 +243,9 @@ local function make_workspace(
 	if kind == nil then
 		return nil, "the project isn't in a jj or git repository"
 	end
-	local base = greed.fs.dirs().cache or (root .. "/..")
+	local base = greed.fs.dirs().cache or core.project.clean(root .. "/..")
 	local project = string.match(root, "([^/]+)/*$") or "project"
-	greed.process.run({ "mkdir", "-p", `{base}/workspaces` })
+	greed.fs.mkdir(`{base}/workspaces`)
 	-- Earlier sessions' workspaces may still be there to take up again.
 	local n, name, path = 0, "", ""
 	repeat
@@ -603,7 +603,7 @@ function M.close(s: Session)
 	if ws then
 		if ws.kind == "jj" then
 			run({ "jj", "workspace", "forget", ws.name }, s.root)
-			greed.process.run({ "rm", "-rf", ws.path })
+			greed.fs.remove(ws.path, { recursive = true })
 		else
 			run({ "git", "worktree", "remove", "--force", ws.path }, s.root)
 			run({ "git", "branch", "-D", `greed/{ws.name}` }, s.root)

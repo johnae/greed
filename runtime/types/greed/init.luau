@@ -439,13 +439,18 @@ export type Keys = {
 }
 
 --- A request for `greed.http`. `method` defaults to POST with a body and GET
---- without; `timeout` is in milliseconds, for the whole request.
+--- without; `timeout` is in milliseconds, for the whole request. With `save`,
+--- `request` writes a successful (2xx) response's body to that file as it
+--- arrives, creating its folders, and returns an empty body; the file appears
+--- only once it's whole. Other responses come back as usual and nothing is
+--- written. Saving needs "fs.write".
 export type HttpRequest = {
 	url: string,
 	method: string?,
 	headers: { [string]: string }?,
 	body: string?,
 	timeout: number?,
+	save: string?,
 }
 
 --- A whole response. Header names are lowercase.
@@ -1145,7 +1150,16 @@ export type FileInfo = {
 	size: number,
 }
 
---- Reading the file system. Failures return nil and a message.
+--- SHA-256 digests as lowercase hex, for checking a download or telling
+--- whether some text changed.
+export type Hash = {
+	--- The digest of `data`.
+	sha256: (data: string) -> string,
+	--- The digest of the file at `path`, read in pieces, or nil and why. Needs "fs.read".
+	sha256_file: (path: string) -> (string?, string?),
+}
+
+--- Reading and writing the file system. Failures return nil and a message.
 export type Fs = {
 	--- The entries directly in `dir`, folders first, then by name. Hidden
 	--- entries and ones `.gitignore` excludes are left out unless asked for.
@@ -1157,6 +1171,14 @@ export type Fs = {
 	--- Replaces the file's contents with `text`, creating it and its folders
 	--- if needed.
 	write: (path: string, text: string) -> (boolean?, string?),
+	--- Makes the folder at `path` and any missing folders above it. Needs "fs.write".
+	mkdir: (path: string) -> (boolean?, string?),
+	--- Removes the file, link or empty folder at `path`; with `recursive`, a folder and everything in it. Nothing being there counts as removed. It refuses (an error) the root, your home folder, a path with `..` and a folder holding Greed's approvals or secrets. Needs "fs.write".
+	remove: (path: string, opts: { recursive: boolean? }?) -> (boolean?, string?),
+	--- Moves or renames `from` to `to`, replacing a file there. It refuses what `remove` does. Needs "fs.write".
+	rename: (from: string, to: string) -> (boolean?, string?),
+	--- Copies the file `from` to `to`, creating its folders. Needs "fs.read" and "fs.write".
+	copy: (from: string, to: string) -> (boolean?, string?),
 	--- Watches the file at `path`: whenever it changes, from inside the
 	--- editor or out, plugins hear "file.changed". It needn't exist yet.
 	watch: (path: string) -> (),
@@ -1392,6 +1414,8 @@ export type Greed = {
 	--- Milliseconds on the editor's clock, for timing animations. While a
 	--- timer wakes code, it reads the time the timer was due.
 	now: () -> number,
+	--- This machine's name, or nil if the system doesn't say.
+	hostname: () -> string?,
 	--- Calls `step(t)` about once a frame for `ms` milliseconds, with `t`
 	--- going from 0 to 1, e.g. to fade a theme color or move a decoration.
 	--- Works in commands and event handlers.
@@ -1470,6 +1494,7 @@ export type Greed = {
 	client: Client,
 	lsp: Lsp,
 	fs: Fs,
+	hash: Hash,
 	control: Control,
 	json: Json,
 	project: Projects,

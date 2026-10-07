@@ -49,11 +49,7 @@ end)
 
 --- A short fingerprint of `text`, for telling whether it changed.
 function M.version(text: string): string
-	local hash = 5381
-	for i = 1, #text do
-		hash = (hash * 33 + string.byte(text, i)) % 4294967296
-	end
-	return string.format("%08x", hash)
+	return string.sub(greed.hash.sha256(text), 1, 16)
 end
 
 export type Task = { line: number, done: boolean, text: string, depth: number }

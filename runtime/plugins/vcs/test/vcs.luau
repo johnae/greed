@@ -181,7 +181,7 @@ test("with jj, the changes view shows the working copy's changes against its par
 	jj("git", "init")
 	jj("commit", "-m", "first")
 	greed.fs.write(dir .. "/a.txt", "one\ntwo\nthree\n")
-	greed.process.run({ "rm", dir .. "/old.txt" })
+	greed.fs.remove(dir .. "/old.txt")
 	greed.project.open(dir)
 	t:buffer("|x")
 	t:run("changes")

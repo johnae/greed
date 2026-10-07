@@ -1,0 +1,58 @@
+//! `greed.hash`: SHA-256 digests, for checking a download or telling
+//! whether some text changed.
+
+use std::fmt::Write;
+use std::path::Path;
+
+use mlua::{IntoLuaMulti, Lua, Table};
+use sha2::{Digest, Sha256};
+
+type LuaResult<T> = mlua::Result<T>;
+
+fn hex(digest: &[u8]) -> String {
+    digest.iter().fold(String::new(), |mut out, byte| {
+        let _ = write!(out, "{byte:02x}");
+        out
+    })
+}
+
+/// The file's digest, read in pieces so a big one isn't held whole.
+fn file_digest(path: &Path) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    Ok(hex(&hasher.finalize()))
+}
+
+pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
+    let hash = lua.create_table()?;
+    hash.set(
+        "sha256",
+        lua.create_function(|_, data: mlua::LuaString| Ok(hex(&Sha256::digest(data.as_bytes()))))?,
+    )?;
+    hash.set(
+        "sha256_file",
+        lua.create_function(|lua, path: String| {
+            super::secrets::guard(lua, Path::new(&path))?;
+            match file_digest(Path::new(&path)) {
+                Ok(digest) => digest.into_lua_multi(lua),
+                Err(err) => {
+                    (mlua::Value::Nil, format!("can't read {path}: {err}")).into_lua_multi(lua)
+                }
+            }
+        })?,
+    )?;
+    Ok(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Digest, Sha256, hex};
+
+    #[test]
+    fn digests_are_lowercase_hex() {
+        assert_eq!(
+            hex(&Sha256::digest(b"abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+}

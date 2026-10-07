@@ -175,34 +175,26 @@ function M.adapt(source: string): string
 	return table.concat(lines, "\n")
 end
 
---- How files are fetched: `url` saved at `path`. Tests swap it out.
+--- How files are fetched: `url` saved at `path`. A `file://` URL, as for a
+--- grammar built locally, is copied.
 function M.fetch(url: string, path: string)
-	local result, err = greed.process.run({
-		"curl",
-		"--fail",
-		"--silent",
-		"--show-error",
-		"--location",
-		"--max-time",
-		"120",
-		"--create-dirs",
-		"--output",
-		path,
-		url,
-	})
-	if result == nil then
-		error(`can't run curl to download grammars: {err}`, 0)
-	elseif result.code ~= 0 then
-		error(`downloading {url}: {result.stderr}`, 0)
+	local file = string.match(url, "^file://(.+)$")
+	if file then
+		local copied, err = greed.fs.copy(file, path)
+		if not copied then
+			error(err, 0)
+		end
+		return
+	end
+	local response, err = greed.http.request({ url = url, save = path, timeout = 120000 })
+	if response == nil then
+		error(`downloading {url}: {err}`, 0)
+	elseif response.status < 200 or response.status >= 300 then
+		error(`downloading {url}: status {response.status}`, 0)
 	end
 end
 
 local KINDS = { "highlights", "injections" }
-
-local function sha256(path: string): string?
-	local result = greed.process.run({ "sha256sum", path })
-	return result and string.match(result.stdout, "^(%x+)")
-end
 
 -- Where `name`'s files go.
 local function folder(name: string, source: Source): string
@@ -241,16 +233,19 @@ local function files(name: string, source: Source): string?
 	greed.echo(`downloading the {name} grammar`)
 	local part = wasm .. ".part"
 	M.fetch(wasm_url(source), part)
-	local got = sha256(part)
+	local got = greed.hash.sha256_file(part)
 	if got ~= source.sha256 then
-		greed.process.run({ "rm", "-f", part })
+		greed.fs.remove(part)
 		error(`the {name} grammar downloaded doesn't match its checksum ({got or "unknown"})`, 0)
 	end
 	for _, kind in KINDS do
 		-- Not every grammar has every kind; those that don't are left out.
 		pcall(M.fetch, queries_url(source, kind), `{dir}/{kind}.scm`)
 	end
-	greed.process.run({ "mv", part, wasm })
+	local moved, err = greed.fs.rename(part, wasm)
+	if not moved then
+		error(err, 0)
+	end
 	return wasm
 end
 

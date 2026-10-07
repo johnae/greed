@@ -5,10 +5,11 @@
 //!
 //! Both only work in a command or event handler, which wait for them the
 //! way they wait for `greed.sleep`. A plugin needs the `net` capability, or
-//! `net:HOST` for one host.
+//! `net:HOST` for one host, and `fs.write` to save a response to a file.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -42,7 +43,8 @@ pub(super) struct Head {
     headers: Vec<(String, String)>,
 }
 
-/// A whole response, for `request`.
+/// A whole response, for `request`; an empty body when it was saved to a
+/// file.
 pub(super) struct Fetched {
     head: Head,
     body: Vec<u8>,
@@ -144,8 +146,18 @@ fn send(request: Request) -> Result<(Head, ureq::Body), String> {
     Ok((head, response.into_body()))
 }
 
-fn fetch(request: Request) -> Result<Fetched, String> {
+/// Sends `request` and reads the response; a successful one's body goes
+/// to `save` instead, if given.
+fn fetch(request: Request, save: Option<&Path>) -> Result<Fetched, String> {
     let (head, body) = send(request)?;
+    if let Some(path) = save.filter(|_| (200..300).contains(&head.status)) {
+        save_body(body, path)
+            .map_err(|err| format!("can't save the response to {}: {err}", path.display()))?;
+        return Ok(Fetched {
+            head,
+            body: Vec::new(),
+        });
+    }
     let mut bytes = Vec::new();
     body.into_with_config()
         .limit(MAX_BODY)
@@ -153,6 +165,27 @@ fn fetch(request: Request) -> Result<Fetched, String> {
         .read_to_end(&mut bytes)
         .map_err(|err| err.to_string())?;
     Ok(Fetched { head, body: bytes })
+}
+
+/// Writes `body` to `path` as it arrives, with no size limit. The file
+/// appears only once it's whole.
+fn save_body(body: ureq::Body, path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut reader = body.into_with_config().limit(u64::MAX).reader();
+    crate::files::write(path, |out| std::io::copy(&mut reader, out).map(drop))
+}
+
+/// Where `request`'s `save` option says to put the body, checked: the
+/// plugin needs `fs.write`, and Greed's own files are off limits.
+fn save_path(lua: &Lua, owner: &PluginId, opts: &Table) -> LuaResult<Option<PathBuf>> {
+    let Some(path) = opts.get::<Option<String>>("save")? else {
+        return Ok(None);
+    };
+    capabilities::check_for(lua, owner, "fs.write")?;
+    super::fs::guard_write(lua, Path::new(&path))?;
+    Ok(Some(PathBuf::from(path)))
 }
 
 /// Reads the body of the stream `id` on this thread, sending each piece.
@@ -303,7 +336,10 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let o = owner.clone();
     let start_request = lua.create_function(move |lua, opts: Table| {
         let request = request_from_lua(lua, &o, &opts)?;
-        Ok(jobs::start(lua, move || Output::Http(fetch(request))))
+        let save = save_path(lua, &o, &opts)?;
+        Ok(jobs::start(lua, move || {
+            Output::Http(fetch(request, save.as_deref()))
+        }))
     })?;
     let o = owner.clone();
     let start_stream = lua.create_function(move |lua, opts: Table| {

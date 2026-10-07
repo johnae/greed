@@ -59,6 +59,11 @@ fn places(lua: &Lua) -> Option<Places> {
     })
 }
 
+/// Greed's secrets file, if it has a place.
+pub(super) fn file(lua: &Lua) -> Option<PathBuf> {
+    places(lua).map(|places| places.file)
+}
+
 /// A secret's name: lowercase letters, digits and dashes.
 fn check_name(name: &str) -> LuaResult<()> {
     let fine = !name.is_empty()
