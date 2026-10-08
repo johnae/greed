@@ -1253,6 +1253,12 @@ border to move it or by an edge to resize it, or use the resize mode
 (`alt-r`). How the floats are laid out is up to the tab's
 [float layout](#float-layouts).
 
+To move what a pane shows somewhere else, `alt-p b` takes it to a new tab,
+`alt-p t` to a tab you pick (or a new one), and `alt-p P` into a panel on
+the right; its cursor goes with it and a terminal keeps running. They work
+on a floating view too, and `t` and `b` on a panel. `:pane-to-new-tab`,
+`:pane-to-tab` and `:pane-to-panel` do the same.
+
 To put a new pane somewhere particular, `alt-p p` shows a frame where it
 would go, on the right of the pane you're in. `h j k l` move the frame to
 either side of any pane, or along a whole edge of the tab; `enter` opens a

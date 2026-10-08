@@ -237,6 +237,100 @@ function M.swap(dir: Direction)
 	M.focus(there)
 end
 
+-- Moves what `from` shows to `to`, made by `open` from its buffer, as
+-- `from` has it (selection and scroll), then closes `from`. A terminal
+-- keeps running.
+local function move_view(from: greed.View, open: (buffer: greed.Buffer) -> greed.View): greed.View
+	local buffer = from:buffer()
+	local selection, scroll = from:selection(), from:scroll()
+	local kept = buffer:kept()
+	buffer:set_kept(true)
+	local to = open(buffer)
+	to:set_selection(selection)
+	to:set_scroll(scroll)
+	from:close()
+	buffer:set_kept(kept)
+	M.focus(to)
+	return to
+end
+
+-- What can move: the focused pane, panel or floating view of the tab;
+-- nil, saying why, for a picker or prompt, or when it's the tab's only
+-- pane and `last` says that can't go.
+local function movable(last: string?): greed.View?
+	local view = greed.view()
+	local spec = view:float_spec()
+	if spec and not spec.tab then
+		greed.echo("a picker or prompt can't move")
+		return nil
+	end
+	if last and view:is_pane() and #greed.tab.current().panes == 1 then
+		greed.echo(last)
+		return nil
+	end
+	return view
+end
+
+--- Moves the focused pane (or panel, or floating view) to tab `id`, beside
+--- its active pane on its longer side, or to a new tab after this one
+--- without `id`, and goes there.
+function M.to_tab(id: number?)
+	local here = greed.tab.current()
+	if id == here.id then
+		greed.echo("it's in this tab already")
+		return
+	end
+	-- A tab's only pane can go to another tab, closing its own; alone in
+	-- a new one it would be where it was.
+	local view = movable(if id == nil then "it's the only pane in its tab already" else nil)
+	if view == nil then
+		return
+	end
+	move_view(view, function(buffer)
+		if id == nil then
+			greed.tab.new(buffer)
+			return greed.tab.current().active
+		end
+		greed.tab.switch(id)
+		local active = greed.tab.current().active
+		return active:split(longer_side(active), buffer)
+	end)
+	greed.echo(if id == nil then "moved to a new tab" else "moved to that tab")
+end
+
+--- Picks a tab to move the focused pane to, or a new one.
+function M.pick_tab()
+	local items = { { label = "a new tab", value = 0 } }
+	for i, tab in greed.tab.list() do
+		if not tab.current then
+			local name = tab.name or tab.active:buffer():title()
+			table.insert(items, { label = `{i} {name}`, value = tab.id })
+		end
+	end
+	picker.pick("Move to tab", items, function(item)
+		M.to_tab(if item.value == 0 then nil else item.value)
+	end)
+end
+
+--- Moves the focused pane (or floating view) into a panel on the `side`
+--- (right by default), a third of the screen wide, and focuses it.
+function M.to_panel(side: ("left" | "right")?)
+	local view = movable("the last pane stays in the tab")
+	if view == nil then
+		return
+	end
+	if not view:is_pane() and view:float_spec() == nil then
+		greed.echo("it's a panel already")
+		return
+	end
+	move_view(view, function(buffer)
+		return greed.panel(
+			buffer,
+			{ side = side or "right", width = "33%", title = buffer:title() }
+		)
+	end)
+end
+
 --- Closes the pane, unless it's the last one.
 function M.close_pane()
 	-- A panel or a float closes like a pane would.
@@ -510,6 +604,25 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		end,
 	},
 	{ name = "tab-close", doc = "Close this tab and its panes", run = M.close_tab },
+	{
+		name = "pane-to-new-tab",
+		doc = "Move this pane (or panel, or floating view) to a new tab",
+		run = function()
+			M.to_tab()
+		end,
+	},
+	{
+		name = "pane-to-tab",
+		doc = "Move this pane (or panel, or floating view) to a tab you pick, or a new one",
+		run = M.pick_tab,
+	},
+	{
+		name = "pane-to-panel",
+		doc = "Move this pane (or floating view) into a panel on the right",
+		run = function()
+			M.to_panel()
+		end,
+	},
 	{
 		name = "tab-next",
 		doc = "Show the next tab",
@@ -828,7 +941,17 @@ greed.command({
 -- Commands that leave the pane or tab mode after running, for keys in it
 -- that open something.
 for _, name in
-	{ "pane-terminal", "pane-close", "tab-new", "tab-terminal", "tab-close", "tab-rename" }
+	{
+		"pane-terminal",
+		"pane-close",
+		"pane-to-new-tab",
+		"pane-to-tab",
+		"pane-to-panel",
+		"tab-new",
+		"tab-terminal",
+		"tab-close",
+		"tab-rename",
+	}
 do
 	greed.command({
 		name = `{name}-done`,
@@ -935,6 +1058,9 @@ M.keys = {
 		F = "float-flip",
 		z = "floats-toggle",
 		T = "floats-tile",
+		b = "pane-to-new-tab-done",
+		t = "pane-to-tab-done",
+		P = "pane-to-panel-done",
 		C = "floats-cascade",
 		O = "floats-one",
 		Y = "float-layout-pick",
@@ -1016,6 +1142,9 @@ modes.pane = {
 		"f zoom",
 		"g pick",
 		"e float",
+		"b to new tab",
+		"t to tab",
+		"P to panel",
 		"space layout",
 		"y layouts",
 		"m main",
