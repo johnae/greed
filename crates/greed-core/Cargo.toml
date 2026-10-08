@@ -53,6 +53,10 @@ ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzi
 
 [dev-dependencies]
 proptest.workspace = true
+# The performance budgets read the process's CPU time and peak memory, and
+# count what's allocated.
+nix = { version = "0.28", default-features = false, features = ["resource"] }
+stats_alloc = "0.1"
 
 [lints]
 workspace = true

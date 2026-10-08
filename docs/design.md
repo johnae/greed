@@ -98,3 +98,36 @@ Agents see the same editor state you do, and their edits arrive as
 proposals in the buffer that you accept or reject. When they extend Greed,
 their plugins go through the same type checking and tests as any other, and
 you review them before they load.
+
+## Performance budgets
+
+How fast Greed is gets checked like everything else: `cargo test` runs a
+set of budgets, each a measurement with a limit it must stay under.
+
+- Starting with every default plugin, to the first frame, on an empty
+  file and on a 10,000 line Rust file.
+- Opening a file of a million lines, and one of 100 MB, then moving around
+  and typing in them: the time per key, and the memory the file adds.
+- 500 files open: opening them, moving, the buffer picker.
+- A long session of opening, editing, undoing, splitting and closing, for
+  the memory each round leaves behind, so a leak fails a test.
+- Three clients attached, one typing beside a split, a terminal and a
+  float: the time per key and the bytes each client gets for it, and what
+  the session uses while nothing happens.
+- Searching 2,000 files, and highlighting a 20,000 line file again after
+  an edit.
+
+Times are CPU time, which a busy machine changes far less than the clock,
+and each measurement runs in a process of its own. The limits are a few
+times what was measured, so a loaded machine or a debug build doesn't fail
+them while something becoming several times slower does.
+
+To see each measurement next to its limit:
+
+```sh
+GREED_BUDGETS=report cargo test --release -p greed-core --test budgets -- --nocapture
+```
+
+Adding `--include-ignored` also runs a session of several minutes. For how
+keys feel in your own setup, with your plugins and config, `greed bench`
+times each key from the terminal client's side.
