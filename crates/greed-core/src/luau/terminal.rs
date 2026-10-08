@@ -320,6 +320,9 @@ impl UserData for TerminalRef {
             },
         );
         methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));
+        methods.add_method("program", |lua, this, ()| {
+            this.with(lua, |t| t.program().to_owned())
+        });
         methods.add_method("exit_code", |lua, this, ()| {
             this.with(lua, |t| t.exit_code())
         });

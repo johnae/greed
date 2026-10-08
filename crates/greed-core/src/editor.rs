@@ -862,6 +862,13 @@ impl Editor {
         }
     }
 
+    /// Names `buffer` where it shows, or leaves it unnamed with `None`.
+    pub fn set_buffer_name(&mut self, buffer: BufferId, name: Option<&str>) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_name(name);
+        }
+    }
+
     /// Binds single keys for `buffer` alone, in every mode and ahead of
     /// every keymap layer, while a view of it has focus. Replaces what was
     /// bound for it before; an empty map drops them.
@@ -1160,6 +1167,19 @@ impl Editor {
 
     pub fn main(&self) -> ViewId {
         self.main_of(self.shown_index())
+    }
+
+    /// The view the status line is about: the focused one when it's a
+    /// pane, a panel or one of the tab's floats (a floating terminal), else
+    /// the main view, behind a picker or the command line.
+    pub fn status_view(&self) -> ViewId {
+        let focus = self.focus();
+        let of_tab = |v: ViewId| {
+            self.is_pane(v)
+                || self.panels().iter().any(|p| p.view == v)
+                || self.floats().iter().any(|f| f.view == v && f.tab.is_some())
+        };
+        if of_tab(focus) { focus } else { self.main() }
     }
 
     /// Moves the acting client's focus to its main view.

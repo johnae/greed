@@ -69,6 +69,12 @@ export type Buffer = {
 	--- are refused.
 	readonly: (self: Buffer) -> boolean,
 	set_readonly: (self: Buffer, readonly: boolean) -> (),
+	--- The name it was given, for a buffer without a file, like a terminal's "nu ~/src".
+	name: (self: Buffer) -> string?,
+	--- Names it where it shows (the tab line, float titles, the status line); nil or "" leaves it unnamed.
+	set_name: (self: Buffer, name: string?) -> (),
+	--- What it's called where it shows: its file's name, the name it was given, "untitled" for a file not saved yet, or its kind.
+	title: (self: Buffer) -> string,
 	--- Whether the main view shows line numbers beside it (the default).
 	line_numbers: (self: Buffer) -> boolean,
 	set_line_numbers: (self: Buffer, on: boolean) -> (),
@@ -682,6 +688,8 @@ export type Terminal = {
 	mouse: (self: Terminal, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> boolean,
 	--- What the program called its window, if it did.
 	title: (self: Terminal) -> string?,
+	--- The name of the program it started, like "nu" or "cargo": its file name, or the shell's for a terminal started without a command.
+	program: (self: Terminal) -> string,
 	--- The program's exit code, once it has ended.
 	exit_code: (self: Terminal) -> number?,
 	--- Whether a program other than the one it started is in the foreground, like a command its shell runs. False once it has ended.

@@ -141,6 +141,19 @@ end
 -- The terminal last typed into, where text sent from files goes.
 local last_used: Term? = nil
 
+-- Names `term`'s buffer after what it runs and the folder its shell is in,
+-- like "nu ~/src" or "cargo test ~/src", for its float's border, the tab
+-- line, the dock and the status line; an adopted one by the title it was
+-- given. Called as output comes, since the folder changes.
+local function name(term: Term)
+	local what = if term.adopted or term.asked then term.command else term.terminal:program()
+	local cwd = if not term.adopted and term.terminal:valid() then term.terminal:cwd() else nil
+	local wanted = if cwd then `{what} {core.project.tilde(cwd)}` else what
+	if term.buffer:valid() and term.buffer:name() ~= wanted then
+		term.buffer:set_name(wanted)
+	end
+end
+
 local function term_of(buffer: greed.Buffer): Term?
 	return terms[buffer:id()]
 end
@@ -477,6 +490,7 @@ function M.update(term: Term)
 		return
 	end
 	term.updating = true
+	name(term)
 	local ok, err = pcall(function()
 		repeat
 			term.stale = false
@@ -539,7 +553,8 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 end)
 
 -- Floating terminals belong to the tab they open in.
-local FLOAT: greed.FloatSpec = { title = "terminal", width = "80%", height = "80%", tab = true }
+-- Without a title of their own, their buffers' names show on the border.
+local FLOAT: greed.FloatSpec = { width = "80%", height = "80%", tab = true }
 
 export type OpenOptions = {
 	--- Open it in a new pane on this side of `from` (the focused view by
@@ -624,6 +639,7 @@ local function track(
 		giving_back = false,
 	}
 	terms[buffer:id()] = term
+	name(term)
 	return term
 end
 

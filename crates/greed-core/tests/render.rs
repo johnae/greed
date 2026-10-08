@@ -1646,3 +1646,40 @@ fn a_screen_smaller_than_the_view_leaves_room_with_its_note() {
         rows[5]
     );
 }
+
+#[test]
+fn a_named_buffer_is_called_by_its_name_in_the_tab_line_a_float_and_the_status_line() {
+    use greed_core::{Anchor, Extent};
+    let mut ed = editor("|main");
+    let term = ed.create_buffer("terminal", "$ ");
+    ed.set_buffer_name(term, Some("nu ~/src"));
+    assert_eq!(ed.buffer(term).title(), "nu ~/src");
+    let mut options = float_options(Extent::Cells(16), Extent::Cells(4), Anchor::Center);
+    options.tab = true;
+    let float = ed.float(term, options);
+    let f = frame(&mut ed, 30, 9);
+    let Role::Float { title, .. } = &floats(&f)[0].role else {
+        panic!("a float")
+    };
+    assert_eq!(title.as_deref(), Some("nu ~/src"), "named on its border");
+    // Focused, it's what the status line is about, as one of the tab's.
+    ed.set_focus(float);
+    let f = frame(&mut ed, 30, 9);
+    assert!(
+        status(&f).text().contains("nu ~/src"),
+        "{}",
+        status(&f).text()
+    );
+    // A tab showing it is called by it, and a new file without a path is
+    // "untitled".
+    ed.new_tab(Some(term));
+    ed.new_tab(None);
+    let f = frame(&mut ed, 60, 9);
+    let tabs = screen_rows(&f)[0].text();
+    assert!(
+        tabs.contains("2 nu ~/src") && tabs.contains("3 untitled"),
+        "{tabs}"
+    );
+    ed.set_buffer_name(term, None);
+    assert_eq!(ed.buffer(term).title(), "terminal", "its kind, unnamed");
+}

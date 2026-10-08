@@ -789,8 +789,21 @@ fn mark_image_from_lua(t: &Table) -> LuaResult<MarkImage> {
     })
 }
 
-/// Whether the buffer is read-only, and its language.
+/// Whether the buffer is read-only, its name, and its language.
 fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("name", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.name().map(str::to_owned)))
+    });
+    methods.add_method("set_name", |lua, this, name: Option<String>| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua)
+            .editor
+            .set_buffer_name(this.buffer, name.as_deref());
+        Ok(())
+    });
+    methods.add_method("title", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.title()))
+    });
     methods.add_method("readonly", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.is_readonly()))
     });

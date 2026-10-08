@@ -51,6 +51,9 @@ pub struct Buffer {
     /// The size its text is laid out at in every view, whatever room a view
     /// has, like a terminal's screen, which can be one size only.
     screen_size: Option<ScreenSize>,
+    /// What a buffer without a file is called where it shows, like a
+    /// terminal's "nu ~/src", set by the plugin that made it.
+    name: Option<Arc<str>>,
 }
 
 /// The size a buffer's text is laid out at, in rows and columns, and what a
@@ -202,6 +205,7 @@ impl Buffer {
             next_track: 0,
             changed: None,
             screen_size: None,
+            name: None,
         }
     }
 
@@ -385,6 +389,28 @@ impl Buffer {
     /// view's own size again.
     pub fn set_screen_size(&mut self, size: Option<ScreenSize>) {
         self.screen_size = size;
+    }
+
+    /// What it's called where it shows, if it was given a name.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Names it, or with `None` (or "") leaves it unnamed again.
+    pub fn set_name(&mut self, name: Option<&str>) {
+        self.name = name.filter(|n| !n.is_empty()).map(Arc::from);
+    }
+
+    /// What it's called where it shows: its file's name, the name it was
+    /// given, "untitled" for a file not saved yet, or its kind, like
+    /// "terminal".
+    pub fn title(&self) -> String {
+        match (self.path().and_then(|p| p.file_name()), self.name()) {
+            (Some(file), _) => file.to_string_lossy().into_owned(),
+            (None, Some(name)) => name.to_owned(),
+            (None, None) if self.kind() == "file" => "untitled".to_owned(),
+            (None, None) => self.kind().to_owned(),
+        }
     }
 
     /// The command `key` runs in this buffer whatever the mode, if it's

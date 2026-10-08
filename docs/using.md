@@ -1101,7 +1101,9 @@ it, copy it. Lines that scroll off the top stay above the screen, up to
 terminal closes; when it fails, the output stays with how it ended, so you
 can read what went wrong. A terminal keeps running while you look at other
 files, and while you're detached. `:set terminal-shell "fish -l"` changes
-what new terminals run.
+what new terminals run. A terminal is called by what it runs and the
+folder its shell is in, like `nu ~/src` or `cargo test ~/src`: on a
+floating terminal's border, in the dock, the tab line and the status line.
 
 Programs that ask for the kitty keyboard protocol (Helix, Neovim, fish,
 recent shells) get it, so they can tell `tab` from `ctrl-i` or `enter` from
@@ -1316,7 +1318,8 @@ one:
 
 In `one` the float in front says where it is on its border:
 `‹ 2/5 ›` at the right of the top, with the names of the floats either
-side when it's wide (`‹ terminal · 2/5 · claude ›`), and a dot for each
+side when it's wide (`‹ nu ~/src · 2/5 · claude ›`; of two, the other on
+its side: `‹ 1/2 · claude ›`), and a dot for each
 float along the bottom, the one in front filled. A dock along the bottom
 of the tab lists them all by number and name; click a name to bring that
 float to the front, or press `alt-W` and then its number (or move with the
@@ -1536,8 +1539,12 @@ greed.plugin.unload("hints")
 
 ### The status line
 
-The status line shows the mode, the tab, the file and whether a macro is
-recording on the left. On the right it shows:
+The status line shows the mode, the tab, the tab's layout when it isn't
+`manual` and `zoomed` while one pane fills it, the file and whether a
+macro is recording on the left. The file is the one you're in: a focused
+panel or floating view (a floating terminal) counts, a picker or the
+command line doesn't. Buffers without a file show by name, like
+`terminal: nu ~/src`, or `untitled` for a new file. On the right it shows:
 
 - the branch and the lines added, changed and removed in the file, like
   `main +3 ~1 -2` (with jj the nearest bookmark and the change you're on,

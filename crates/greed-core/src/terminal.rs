@@ -195,6 +195,8 @@ pub struct Terminal {
     title: Arc<Mutex<Option<String>>>,
     copied: Arc<Mutex<Option<String>>>,
     exit: Arc<Mutex<Option<u32>>>,
+    /// The name of the program it started, like "nu" or "cargo".
+    program: String,
 }
 
 struct Shared {
@@ -311,6 +313,7 @@ impl Terminal {
             title,
             copied,
             exit,
+            program: program_name(options),
         })
     }
 
@@ -477,6 +480,12 @@ impl Terminal {
         lock(&self.title).clone()
     }
 
+    /// The name of the program it started, like "nu" or "cargo": its file
+    /// name, or the shell's for a terminal started without a command.
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
     /// The program's exit code, once it has ended.
     pub fn exit_code(&self) -> Option<u32> {
         *lock(&self.exit)
@@ -503,6 +512,19 @@ impl Drop for Terminal {
     fn drop(&mut self) {
         self.kill();
     }
+}
+
+/// The file name of the program `options` starts: its command's, or the
+/// user's shell from `$SHELL` (`sh` without it).
+fn program_name(options: &Options) -> String {
+    let program = match options.command.as_deref() {
+        Some([program, ..]) => program.clone(),
+        _ => std::env::var("SHELL").unwrap_or_else(|_| "sh".to_owned()),
+    };
+    std::path::Path::new(&program).file_name().map_or_else(
+        || program.clone(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 fn command(options: &Options) -> CommandBuilder {

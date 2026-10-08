@@ -650,7 +650,6 @@ impl<M: Measure> Renderer<M> {
     ) -> Frame {
         self.images.borrow_mut().clear();
         self.actions.borrow_mut().clear();
-        let main = editor.main();
         let screen = Rect {
             x: 0,
             y: 0,
@@ -662,7 +661,7 @@ impl<M: Measure> Renderer<M> {
         let (lines, main_cursor) = self.panes(editor, area, decorations, &mut surfaces);
         let status = match status {
             Status::Default { message } => {
-                Self::default_status(editor, editor.view(main), *message)
+                Self::default_status(editor, editor.view(editor.status_view()), *message)
             }
             Status::Line(line) => line.clone(),
         };
@@ -703,7 +702,13 @@ impl<M: Measure> Renderer<M> {
             covered.push(if options.border { bordered(rect) } else { rect });
             let role = Role::Float {
                 border: options.border,
-                title: options.title.as_deref().map(str::to_owned),
+                // Without a title, a float of a named buffer, like a
+                // terminal's, is called by its name.
+                title: options
+                    .title
+                    .as_deref()
+                    .or_else(|| editor.buffer(editor.view(float.view).buffer).name())
+                    .map(str::to_owned),
                 label: border_spans(options.label.as_ref()),
                 footer: border_spans(options.footer.as_ref()),
             };
@@ -1395,7 +1400,7 @@ impl<M: Measure> Renderer<M> {
             Some(message) => span(message, Tag::MESSAGE),
             None => span(
                 &buffer.path().map_or_else(
-                    || "[scratch]".to_owned(),
+                    || buffer.title(),
                     |p| p.strip_prefix(root).unwrap_or(p).display().to_string(),
                 ),
                 Tag::STATUS,
@@ -1751,16 +1756,10 @@ fn tab_label(editor: &Editor, i: usize, tab: &crate::TabView) -> String {
     format!(" {} {name} ", i + 1)
 }
 
-/// What a tab is called when it has no name: the file name of what its
-/// active pane shows, "untitled" for a file not saved yet, or the kind of
-/// buffer, like "terminal".
+/// What a tab is called when it has no name: what its active pane shows
+/// (see [`crate::Buffer::title`]).
 fn tab_title(editor: &Editor, pane: ViewId) -> String {
-    let buffer = editor.buffer(editor.view(pane).buffer);
-    match buffer.path().and_then(|p| p.file_name()) {
-        Some(name) => name.to_string_lossy().into_owned(),
-        None if buffer.kind() == "file" => "untitled".to_owned(),
-        None => buffer.kind().to_owned(),
-    }
+    editor.buffer(editor.view(pane).buffer).title()
 }
 
 /// Where a view in `room` with a `gutter` that wide lays its text out: in

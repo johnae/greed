@@ -245,13 +245,14 @@ local function file_name(buffer: greed.Buffer): string?
 	return if path then core.project.basename(path) else nil
 end
 
--- A float's name: its title, else its file's name, else its kind.
+-- A float's name: its title, else what its buffer is called (its file's
+-- name, the name it was given, or its kind).
 local function title_of(view: greed.View): string
 	local spec = view:float_spec()
 	if spec and spec.title and spec.title ~= "" then
 		return spec.title
 	end
-	return file_name(view:buffer()) or view:buffer():kind()
+	return view:buffer():title()
 end
 
 --- The keys that cycle the floats, shown faint on the float in front. The
@@ -271,16 +272,23 @@ local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { 
 	}
 	if cells >= 60 then
 		local each = (cells - 30) // 4
-		local before, after = st.order[(i - 2) % n + 1], st.order[i % n + 1]
-		table.insert(
-			label,
-			2,
-			{ text = core.text.clip(title_of(before), each) .. " · ", style = "ui.float.hint" }
-		)
-		table.insert(
-			label,
-			{ text = " · " .. core.text.clip(title_of(after), each), style = "ui.float.hint" }
-		)
+		-- The ones either side, round the ends; of two, the other one once,
+		-- on the side it's on.
+		local before = if n > 2 or i > 1 then st.order[(i - 2) % n + 1] else nil
+		local after = if n > 2 or i < n then st.order[i % n + 1] else nil
+		if before then
+			table.insert(
+				label,
+				2,
+				{ text = core.text.clip(title_of(before), each) .. " · ", style = "ui.float.hint" }
+			)
+		end
+		if after then
+			table.insert(
+				label,
+				{ text = " · " .. core.text.clip(title_of(after), each), style = "ui.float.hint" }
+			)
+		end
 	end
 	table.insert(label, { text = " ›", style = "ui.float.title" })
 	local footer: { Piece } = {}
@@ -675,8 +683,11 @@ function M.flip(view: greed.View)
 		local rows, cols = active:size()
 		moved = active:split(if (cols or 80) > (rows or 24) * 2 then "right" else "down", buffer)
 	elseif #greed.tab.current().panes > 1 then
-		local title = file_name(buffer) or buffer:kind()
-		moved = greed.float(buffer, { title = title, width = "70%", height = "70%", tab = true })
+		-- A file by its name; a named buffer, like a terminal, shows its own.
+		moved = greed.float(
+			buffer,
+			{ title = file_name(buffer), width = "70%", height = "70%", tab = true }
+		)
 	else
 		greed.echo("the last pane stays in the tab")
 		return

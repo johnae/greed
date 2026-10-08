@@ -1747,9 +1747,10 @@ fn extent(value: Value) -> LuaResult<Option<Extent>> {
 }
 
 /// Calls the plugin's status line function, if one is set. It gets
-/// `{ view, buffer, mode, message, width }` for the main view and returns
-/// `{ left = segments, right = segments }`, where a segment is a string or
-/// `{ text = ..., style = "mode" | "message" | "status" }`.
+/// `{ view, buffer, mode, message, width }` for the view it's about (see
+/// [`crate::Editor::status_view`]) and returns `{ left = segments, right =
+/// segments }`, where a segment is a string or `{ text = ..., style =
+/// "mode" | "message" | "status" }`.
 pub(super) fn status_line(
     lua: &Lua,
     message: Option<&str>,
@@ -1760,7 +1761,7 @@ pub(super) fn status_line(
         let Some((owner, build)) = &state.statusline else {
             return Ok(None);
         };
-        let view = state.editor.main();
+        let view = state.editor.status_view();
         (
             build.clone(),
             owner.clone(),

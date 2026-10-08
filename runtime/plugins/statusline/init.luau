@@ -202,12 +202,18 @@ M.add("left", "file", function(ctx)
 	if ctx.message then
 		return pill(ctx.message, "ui.statusline.message")
 	end
-	local path = ctx.buffer:path()
-	-- Files in the project show from its root.
-	local name = if path then core.project.relative(path) else "[scratch]"
-	-- A scratch buffer's changes, like a shell's, are nothing to save.
-	local changed = ctx.buffer:modified() and not core.file.is_scratch(ctx.buffer)
-	return if changed then name .. " [+]" else name
+	local buffer = ctx.buffer
+	local path, given = buffer:path(), buffer:name()
+	-- Files in the project show from its root; other buffers by the name
+	-- they were given, with their kind ("terminal: nu ~/src"), or as the
+	-- tab line has them ("untitled").
+	local name = if path
+		then core.project.relative(path)
+		elseif given and buffer:kind() ~= "file" then `{buffer:kind()}: {given}`
+		else buffer:title()
+	-- Only a file's changes are something to save; a shell's or a
+	-- terminal's aren't.
+	return if core.file.unsaved(buffer) then name .. " [+]" else name
 end)
 
 M.add("left", "macro", function()

@@ -5,9 +5,7 @@ test("shows the mode, the tab, the file and the position", function(t)
 	t:buffer("ab\nçd|e")
 	local left, right = t:status()
 	assert(
-		left
-			and string.find(left, " NORMAL ", 1, true)
-			and string.find(left, " [scratch] ", 1, true),
+		left and string.find(left, " NORMAL ", 1, true) and string.find(left, " untitled ", 1, true),
 		left
 	)
 	assert(right and string.find(right, " 2:3 ", 1, true), right)
@@ -20,7 +18,7 @@ test("marks changed buffers and follows the mode", function(t)
 	assert(
 		left
 			and string.find(left, " INSERT ", 1, true)
-			and string.find(left, "[scratch] [+]", 1, true),
+			and string.find(left, "untitled [+]", 1, true),
 		left
 	)
 end)
@@ -94,7 +92,7 @@ test("with effects on, a wave of light goes through the file's letters when it c
 	greed.option.set("effects", true)
 	t:run("wave-test")
 	t:wait(300)
-	assert(file_segments() == #"[scratch]", "one segment per letter mid-wave: " .. file_segments())
+	assert(file_segments() == #"untitled", "one segment per letter mid-wave: " .. file_segments())
 	t:wait(400)
 	assert(file_segments() == 0, "gone once it's through")
 	greed.option.set("effects", false)
@@ -368,4 +366,18 @@ test("each client's status line shows its own mode", function(t)
 	assert(string.find(rows[#rows], " INSERT ", 1, true), rows[#rows])
 	rows = t:draw(40, 4)
 	assert(string.find(rows[#rows], " NORMAL ", 1, true), rows[#rows])
+end)
+
+test("names the focused panel rather than the pane beside it", function(t)
+	t:buffer("|hello")
+	local notes = greed.create_buffer("notes", "")
+	notes:set_name("my notes")
+	local panel = greed.panel(notes, { side = "right", width = 20 })
+	assert(greed.view() == panel)
+	local left = t:status()
+	assert(left and string.find(left, "notes: my notes", 1, true), left)
+	-- A picker over it doesn't count.
+	greed.float(greed.create_buffer("picker", ""), { focus = true })
+	left = t:status()
+	assert(left and string.find(left, " untitled ", 1, true), left)
 end)
