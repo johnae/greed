@@ -24,10 +24,10 @@ test("an agent writes the plan and reads back what you changed", function(t)
 	local dir = project(t)
 	local first = tool("plan_read")
 	assert(first.text == "", first.text)
-	assert(
+	local wrote =
 		tool("plan_write", { text = "- [ ] parse\n- [ ] print\n", version = first.version })
-			== "written"
-	)
+	assert(wrote.written == true, "written")
+	assert(wrote.version == tool("plan_read").version, "with the version to give next")
 	assert(
 		greed.fs.read(`{dir}/.greed/notes/plan.md`) == "# Plan\n\n- [ ] parse\n- [ ] print\n",
 		"with a heading"
@@ -55,8 +55,7 @@ test("a write over changes the agent hasn't read is refused", function(t)
 		tostring(refused.text)
 	)
 	assert(
-		tool("plan_write", { text = "# Plan\n\n- [ ] two\n", version = refused.version })
-			== "written"
+		tool("plan_write", { text = "# Plan\n\n- [ ] two\n", version = refused.version }).written
 	)
 end)
 
@@ -127,9 +126,7 @@ test("an agent's note tools can't write a decision, so none reads as accepted", 
 	assert(#listed == 1 and listed[1].status == "proposed", `{#listed} decisions`)
 	assert(greed.fs.stat(`{dir}/.greed/notes/decisions/0099-mine.md`) == nil, "not written")
 	-- The plan is still the agent's to write.
-	assert(
-		tool("plan_write", { text = "- [ ] x\n", version = tool("plan_read").version }) == "written"
-	)
+	assert(tool("plan_write", { text = "- [ ] x\n", version = tool("plan_read").version }).written)
 end)
 
 test("a proposed decision says how to accept it, and accepting says so, line for line", function(t)

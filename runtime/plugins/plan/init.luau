@@ -157,7 +157,8 @@ agent.tool({
 	description = "Replace the plan with new Markdown: a checklist ('- [ ] step', '- [x] done', "
 		.. "indented for sub-steps) and any notes. Give the version plan_read returned; if the "
 		.. "user changed the plan since, nothing is written and you get the plan as it is now, "
-		.. "to read and try again. Keep their changes",
+		.. "to read and try again. Keep their changes. Returns whether it was written and the "
+		.. "version to give next time",
 	input = object({
 		text = { type = "string" },
 		version = { type = "string" },
@@ -168,10 +169,10 @@ agent.tool({
 			text = PLAN_START .. text
 		end
 		local done, current = M.write_plan(text, args.version)
-		if done then
-			return "written"
-		end
 		local _, version = M.read_plan()
+		if done then
+			return { written = true, version = version }
+		end
 		return {
 			written = false,
 			reason = "the user changed the plan since you read it",

@@ -51,11 +51,13 @@ local function report(s: Session): string
 	return table.concat(said, "\n")
 end
 
-export type Done = { report: string, session: string, workspace: string? }
+export type Done = { report: string, session: string, workspace: string?, note: string? }
 
 --- Hands `task` to a new session of `chosen` started through `sessions`,
 --- in a workspace of its own unless `here`, waits for it to finish and
---- returns what it reported, with the session.
+--- returns what it reported, with the session. An agent that can't have
+--- a workspace, like Greed's own, works in the project, and `note` says
+--- so. A turn that fails is an error, not an empty report.
 function M.run(
 	sessions: Sessions,
 	chosen: agents.Agent,
@@ -65,6 +67,12 @@ function M.run(
 	if running >= M.LIMIT then
 		return nil, `{M.LIMIT} subagents are working already; wait for one to finish`
 	end
+	local note: string? = nil
+	if chosen.native and not here then
+		here = true
+		note = `{chosen.title or chosen.name} can't have a workspace of its own yet, so it `
+			.. "worked in the project itself: its edits are in the user's files, as they allowed them"
+	end
 	running += 1
 	local ok, result, err = pcall(function(): (Done?, string?)
 		local s, start_err = sessions.start(chosen, core.project.root(), not here)
@@ -72,16 +80,19 @@ function M.run(
 			return nil, start_err
 		end
 		if not session.ready(s) then
-			return nil, "the agent didn't start"
+			return nil, s.failed or "the agent didn't start"
 		end
 		local sent, prompt_err = sessions.prompt(s, task .. BRIEF)
 		if not sent then
 			return nil, prompt_err
+		elseif s.failed then
+			return nil, `{s.name} couldn't do it: {s.failed}`
 		end
 		local done: Done = {
 			report = report(s),
 			session = s.name,
 			workspace = if s.workspace then s.workspace.path else nil,
+			note = note,
 		}
 		return done, nil
 	end)
@@ -128,7 +139,7 @@ function M.offer(sessions: Sessions)
 			end
 			local note = if done.workspace
 				then `Its changes are in its workspace ({done.workspace}); the user brings them in from the session list (space i l).`
-				else nil
+				else done.note
 			return { report = done.report, session = done.session, note = note }
 		end,
 	})

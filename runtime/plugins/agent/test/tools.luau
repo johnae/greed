@@ -20,6 +20,11 @@ test("focus tells the file you were in while a pane without one has focus", func
 	local focus = run("focus")
 	assert(focus.path == dir .. "/a.txt", tostring(focus.path))
 	assert(focus.selections[1].text == "two", focus.selections[1].text)
+	assert(focus.mode == "normal" and focus.style == "helix", `{focus.mode} {focus.style}`)
+	t:keys("i")
+	local typing = run("focus")
+	assert(typing.mode == "insert", tostring(typing.mode))
+	t:keys("esc")
 end)
 
 test("focus tells the file you were in after moving to a pane without one", function(t)

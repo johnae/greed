@@ -36,7 +36,7 @@ claude mcp add greed -- greed mcp
 
 | Tool | What it does |
 |---|---|
-| `focus` | The file you are in (the last one, while an agent's pane has focus), your selections with their text, the lines on screen |
+| `focus` | The file you are in (the last one, while an agent's pane has focus), your selections with their text, the lines on screen, the mode (`normal`, `insert`, ...) and the editing style |
 | `buffers` | Open files and which have unsaved changes |
 | `read` | A file as the editor has it, unsaved changes included |
 | `diagnostics` | Errors and warnings from language servers |
@@ -63,7 +63,7 @@ claude mcp add greed -- greed mcp
 | `notes_todos`, `notes_add_todo`, `notes_add_thought` | The todos in your notes, soonest due first, and adding a todo or a thought |
 | `notes_update_todo` | Change one todo: its text, due date or reminder, or tick it |
 | `notes_remind` | Set a reminder on a line of a note, or add a todo with one ("remind me this evening") |
-| `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it |
+| `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it, which gives back the version to write with next |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
@@ -588,6 +588,9 @@ or the one asked for), in a workspace of its own unless the caller says
 otherwise. Its transcript shows in the session list and it asks you before doing
 things like any other; the caller gets its last answer as a report. At
 most three work at once, so helpers starting helpers can't run away.
+Greed's own agent can't have a workspace yet, so as a helper it works in
+the project, and the result says so. A helper whose turn fails, like one
+whose model has no key, comes back as an error saying why.
 
 Add an agent that isn't in the list in your
 `init.luau`; the first of its commands that's installed is used, and

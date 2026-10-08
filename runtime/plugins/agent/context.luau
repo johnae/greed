@@ -42,7 +42,10 @@ function M.focus(view: greed.View): { [string]: any }
 		kind = buffer:kind(),
 		language = buffer:language(),
 		modified = buffer:modified(),
-		mode = greed.mode.get(),
+		-- The mode as the status line names it, like "normal" or "insert",
+		-- and the editing style apart.
+		mode = core.style.label(greed.mode.get()),
+		style = core.style.current().name,
 		selections = selections,
 		visible = { from = position(buffer, first).line, to = position(buffer, final).line },
 	}

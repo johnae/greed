@@ -759,3 +759,39 @@ test("agent-model outside a transcript says there's no session there", function(
 		messages[#messages]
 	)
 end)
+
+-- Runs the subagent tool with `args`, as an agent's call would.
+local function subagent(args: { [string]: any }): (boolean, any)
+	local agent = require("@agent")
+	for _, tool in agent.tools() do
+		if tool.name == "subagent" then
+			return pcall(tool.run, args, agent.caller())
+		end
+	end
+	error("no subagent tool")
+end
+
+test("Greed's agent as a subagent works here, and the result says so", function(t)
+	script({ { text = "Found it.", calls = {}, stop = "done" } })
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	local ok, result = subagent({ task = "look", agent = "greed" })
+	assert(ok, tostring(result))
+	assert(result.report == "Found it.", result.report)
+	assert(string.find(result.note or "", "worked in the project itself", 1, true), result.note)
+end)
+
+test("a subagent whose model fails is an error, not an empty report", function(t)
+	script({})
+	models.turn = function(): (any, string?)
+		return nil, "the model is busy"
+	end
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	local ok, err = subagent({ task = "look", agent = "greed" })
+	assert(not ok, "it fails")
+	assert(
+		string.find(tostring(err), "the model failed: the model is busy", 1, true),
+		tostring(err)
+	)
+end)
