@@ -22,6 +22,7 @@ alone.
 | `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it |
+| `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
@@ -39,6 +40,11 @@ and returns, rather than starting an editor inside the editor, and
 Attaching from a second terminal takes the session over from the first. If
 a session can't start in the background, `GREED_NO_SESSION=1 greed FILE` runs
 the editor directly in the terminal.
+
+A session keeps running the greed it started with. After an upgrade, a
+session from before may not understand the new client, and `greed` says so
+with both versions. `greed ctl quit NAME` ends that session (it works
+across versions), and the next `greed` starts a new one.
 
 A session that quits remembers its projects, their open files and where the
 cursor was, and opens them again the next time it starts. It writes this

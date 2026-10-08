@@ -360,7 +360,7 @@ fn ssh_once(
     let line = bridge_command(&remote_greed, to, config);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
-    handshake(&mut reader, &mut writer, terminal).map_err(attach_failed)?;
+    handshake(&mut reader, &mut writer, to.session.as_deref(), terminal).map_err(attach_failed)?;
     let ended = show(reader, writer)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
@@ -369,12 +369,14 @@ fn ssh_once(
     Ok(ended)
 }
 
-/// Asks to attach over `reader` and `writer`, already connected to a
-/// session. Fails with the session's reason if it refuses, e.g. because the
-/// two ends run greed versions that don't speak the same protocol.
+/// Asks to attach over `reader` and `writer`, already connected to the
+/// session `session` (or whichever the other end picks). Fails with the
+/// session's reason if it refuses, e.g. because the two ends run greed
+/// versions that don't speak the same protocol.
 fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
+    session: Option<&str>,
     terminal: bool,
 ) -> Result<(), Error> {
     let mut params = control::handshake();
@@ -395,7 +397,8 @@ fn handshake(
     }
     let response: Value = serde_json::from_str(&line)?;
     if let Some(error) = response.get("error") {
-        return Err(error["message"].as_str().unwrap_or("refused").into());
+        let said = error["message"].as_str().unwrap_or("refused");
+        return Err(control::refused(session, said).into());
     }
     Ok(())
 }

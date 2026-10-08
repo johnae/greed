@@ -59,9 +59,13 @@ misreading them.
 Frames describe what to show by meaning, like "selection", "keyword" or
 "diagnostic.error", and carry the theme that maps those names to colors.
 A terminal and a GUI can draw the same frame, and theme entries can style
-each one differently. An attached client gets a whole frame once, and after
-that only what changed: typing a character sends a row or two, and the
-theme goes along only when it changes.
+each one differently. A frame is a stack of surfaces (panes, panels,
+floats, the tab and status lines), each with its own rows and a role that
+says how the client draws around it. An attached client gets a whole frame
+once, and after that only what changed, surface by surface: typing a
+character sends a row or two of one pane, focusing another pane sends two
+roles, moving a float sends its new place, and the theme goes along only
+when it changes.
 
 ## Plugins are contained
 

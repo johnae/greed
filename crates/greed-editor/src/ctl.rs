@@ -14,10 +14,26 @@ usage: greed ctl tools                 list the tools the editor offers
        greed ctl TOOL [JSON | KEY=VALUE...]
                                       run a tool, e.g. greed ctl read path=src/main.rs
        greed ctl sessions              list running editors
+       greed ctl quit [--force] [SESSION]
+                                      end a session, even one of another greed version,
+                                      unless files in it have unsaved changes (--force
+                                      ends it anyway)
 The session is $GREED_SESSION, or the only editor running.";
 
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
+        [cmd, rest @ ..] if cmd == "quit" => {
+            let force = rest.iter().any(|arg| arg == "--force");
+            match rest
+                .iter()
+                .filter(|arg| *arg != "--force")
+                .collect::<Vec<_>>()[..]
+            {
+                [] => quit(None, force),
+                [name] => quit(Some(name.as_str()), force),
+                _ => Err(USAGE.into()),
+            }
+        }
         [cmd] if cmd == "sessions" => {
             for session in control::sessions()? {
                 let root = session
@@ -77,6 +93,34 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [] => Err(USAGE.into()),
     }
+}
+
+/// Ends the session `name`, or `$GREED_SESSION` or the only one running,
+/// unless files in it have unsaved changes and not `force`. It asks through
+/// the `eval` tool, which a session of an older greed answers too, since a
+/// client of this one can't attach to that.
+fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = session_client(name, true)?;
+    let code = format!("require('@greed').run('quit-session', {{ force = {force}, wait = true }})");
+    let call = json!({ "name": "eval", "arguments": { "code": code } });
+    let result = match client.call("tools/call", &call) {
+        // It went before it answered.
+        Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
+        other => other?.map_err(io::Error::other)?,
+    };
+    if result["isError"].as_bool() == Some(true) {
+        let text: String = (result["content"].as_array().into_iter().flatten())
+            .filter_map(|part| part["text"].as_str())
+            .collect();
+        // The reason, without where in the plugins it came from.
+        let why = text.split("\nstack traceback:").next().unwrap_or_default();
+        let why = why.trim_start_matches("runtime error: ");
+        if force {
+            return Err(why.into());
+        }
+        return Err(format!("{why} (greed ctl quit --force ends it anyway)").into());
+    }
+    Ok(())
 }
 
 /// A tool's arguments: one JSON object, or `key=value` pairs where each

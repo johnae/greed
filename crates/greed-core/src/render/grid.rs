@@ -365,12 +365,12 @@ fn merged_rows(frame: &Frame, panes: &[&Surface], tabline: Option<&Surface>) -> 
     for surface in tabline.into_iter().chain(panes.iter().copied()) {
         let r = surface.rect;
         let inactive = matches!(surface.role, Role::Pane { active: false });
-        for (dy, row) in (0..r.height).zip(&surface.rows) {
+        for (y, row) in (r.y..r.y.saturating_add(r.height)).zip(&surface.rows) {
             let mut row = row.clone();
             if inactive {
                 row.tags.insert(0, Tag::PANE_INACTIVE);
             }
-            put(r.y + dy, (r.x, r.width, row));
+            put(y, (r.x, r.width, row));
         }
     }
     let border = |text: String| Row {

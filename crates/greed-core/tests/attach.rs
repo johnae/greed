@@ -197,8 +197,14 @@ fn after_the_first_frame_clients_get_what_changed() {
     client.keys("i");
     match client.next() {
         Output::Delta(delta) => {
-            let rows: Vec<u16> = delta.rows.iter().map(|(i, _)| *i).collect();
-            assert_eq!(rows, [3], "only the status line changed: {rows:?}");
+            let changed: Vec<_> = (delta.surfaces.iter())
+                .map(|s| (s.id, s.rows.iter().map(|(i, _)| *i).collect::<Vec<_>>()))
+                .collect();
+            assert_eq!(
+                changed,
+                [(greed_core::render::SurfaceId::Status, vec![0])],
+                "only the status line changed: {changed:?}"
+            );
         }
         other => panic!("expected a delta, got {other:?}"),
     }
@@ -215,10 +221,32 @@ fn clients_speaking_another_protocol_are_refused_clearly() {
     let conn = server::spawn_with_session(|| Host::new(Editor::new(ClientId(1))), Some(session));
     let mut old = Client::connect(&socket, &token).unwrap();
     let refused = old
-        .call("attach", &serde_json::json!({ "protocol": 999 }))
+        .call(
+            "attach",
+            &serde_json::json!({ "protocol": 7, "version": "0.1.0" }),
+        )
         .unwrap()
         .unwrap_err();
-    assert!(refused.contains("protocol 999"), "{refused}");
+    // Both sides' versions, and how to start over with this greed.
+    let ours = format!(
+        "greed {} (protocol {})",
+        env!("CARGO_PKG_VERSION"),
+        control::PROTOCOL
+    );
+    for said in [
+        &ours,
+        "greed 0.1.0 (protocol 7)",
+        &format!("the session {name}"),
+        &format!("`greed ctl quit {name}`"),
+    ] {
+        assert!(refused.contains(said), "{said:?} in {refused}");
+    }
+    let mut older = Client::connect(&socket, &token).unwrap();
+    let refused = older
+        .call("attach", &serde_json::json!({}))
+        .unwrap()
+        .unwrap_err();
+    assert!(refused.contains("an older greed"), "{refused}");
     let mut current = Client::connect(&socket, &token).unwrap();
     let hello = current
         .call("attach", &control::handshake())
@@ -226,6 +254,55 @@ fn clients_speaking_another_protocol_are_refused_clearly() {
         .unwrap();
     assert_eq!(hello["protocol"], control::PROTOCOL);
     conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_session_of_an_older_greed_says_how_to_start_over() {
+    use std::io::BufReader;
+    use std::os::unix::net::UnixListener;
+    sessions::private();
+    // A session started before an upgrade: it answers auth, then refuses
+    // to attach with the reason older sessions give.
+    let name = format!("attach-older-{}", std::process::id());
+    let socket = control::session_files(&name).0;
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&socket);
+    let listener = UnixListener::bind(&socket).unwrap();
+    let older = std::thread::spawn(move || {
+        let authed = r#"{"jsonrpc":"2.0","id":1,"result":{}}"#;
+        let refused = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32001,"message":"this session runs greed 0.1.0 and speaks protocol 7, the client speaks protocol 8; use the same greed version on both ends"}}"#;
+        // Other tests starting sessions connect to see what's still
+        // running, and say nothing.
+        for stream in listener.incoming() {
+            let stream = stream.unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                continue;
+            }
+            writeln!(writer, "{authed}").unwrap();
+            reader.read_line(&mut line).unwrap();
+            writeln!(writer, "{refused}").unwrap();
+            return;
+        }
+    });
+    let Err(refused) = Client::connect(&socket, "token").unwrap().attach() else {
+        panic!("an older session can't take this client")
+    };
+    older.join().unwrap();
+    let _ = std::fs::remove_file(&socket);
+    let refused = refused.to_string();
+    for said in [
+        "this session runs greed 0.1.0",
+        &format!("protocol {}", control::PROTOCOL),
+        &format!("`greed ctl quit {name}`"),
+    ] {
+        assert!(refused.contains(said), "{said:?} in {refused}");
+    }
+    // A newer session's reason already says it all.
+    let full = "the session x runs greed 9 (protocol 9) ... `greed ctl quit x` ...";
+    assert_eq!(control::refused(Some("x"), full), full);
 }
 
 #[test]

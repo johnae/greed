@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 /// Set in the environment of a session `greed ssh` started, through
 /// `greed bridge`.
@@ -36,16 +36,42 @@ pub fn handshake() -> Value {
     json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })
 }
 
-/// Why a client speaking protocol `theirs` can't attach.
-fn mismatch(theirs: Option<u64>) -> String {
-    let theirs = theirs.map_or_else(
-        || "an older protocol".to_owned(),
-        |p| format!("protocol {p}"),
-    );
+/// How to start over with the greed installed now when the session `name`
+/// runs another version, as happens after an upgrade while it ran.
+fn start_over(name: &str) -> String {
     format!(
-        "this session runs greed {} and speaks protocol {PROTOCOL}, the client speaks {theirs}; \
-         use the same greed version on both ends",
-        env!("CARGO_PKG_VERSION")
+        "if greed was upgraded while the session ran, quit it with `greed ctl quit {name}` \
+         and start greed again"
+    )
+}
+
+/// Why a client of greed `version` speaking protocol `theirs` can't attach
+/// to the session `name`.
+fn mismatch(name: &str, theirs: Option<u64>, version: Option<&str>) -> String {
+    let client = match (version, theirs) {
+        (Some(version), Some(protocol)) => format!("greed {version} (protocol {protocol})"),
+        (None, Some(protocol)) => format!("protocol {protocol}"),
+        _ => "an older greed".to_owned(),
+    };
+    format!(
+        "the session {name} runs greed {} (protocol {PROTOCOL}) and this client is {client}, \
+         and both need the same; {}",
+        env!("CARGO_PKG_VERSION"),
+        start_over(name)
+    )
+}
+
+/// What to show when the session `session` refused to attach because it
+/// speaks another protocol, saying `said`. An older session's reason
+/// doesn't say how to go on, so this adds it.
+pub fn refused(session: Option<&str>, said: &str) -> String {
+    if !said.contains("protocol") || said.contains("greed ctl quit") {
+        return said.to_owned();
+    }
+    format!(
+        "{said}\nthis is greed {} (protocol {PROTOCOL}); {}",
+        env!("CARGO_PKG_VERSION"),
+        start_over(session.unwrap_or("NAME"))
     )
 }
 
@@ -345,15 +371,18 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
     let incoming = sender.clone();
     let (attach, attachments) = crossbeam_channel::unbounded();
     let (gone, closed) = crossbeam_channel::unbounded();
+    let session: Arc<str> = name.into();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let sender = incoming.clone();
             let attach = attach.clone();
             let gone = gone.clone();
             let token = token.clone();
+            let session = session.clone();
             // With no thread to spare, the connection is dropped.
-            let _ = std::thread::Builder::new()
-                .spawn(move || serve_connection(stream, &token, &sender, &attach, &gone));
+            let _ = std::thread::Builder::new().spawn(move || {
+                serve_connection(stream, &session, &token, &sender, &attach, &gone);
+            });
         }
     });
     Ok(Session {
@@ -425,6 +454,7 @@ impl Drop for Closing<'_> {
 /// attach.
 fn serve_connection(
     stream: UnixStream,
+    session: &str,
     token: &str,
     requests: &Sender<Request>,
     attachments: &Sender<Attachment>,
@@ -465,7 +495,9 @@ fn serve_connection(
             Ok(message) if authed && message["method"] == "attach" => {
                 let theirs = message["params"]["protocol"].as_u64();
                 if theirs != Some(u64::from(PROTOCOL)) {
-                    let refused = error_response(&message["id"], -32001, &mismatch(theirs));
+                    let version = message["params"]["version"].as_str();
+                    let why = mismatch(session, theirs, version);
+                    let refused = error_response(&message["id"], -32001, &why);
                     let _ = writeln!(lock(&shared), "{refused}");
                     return;
                 }
@@ -604,6 +636,8 @@ pub struct Client {
     next_id: u64,
     /// Notifications that came while waiting for answers.
     notifications: Vec<Value>,
+    /// The session's name, from its socket's.
+    session: Option<String>,
 }
 
 impl Client {
@@ -623,6 +657,9 @@ impl Client {
             writer,
             next_id: 0,
             notifications: Vec::new(),
+            session: socket
+                .file_stem()
+                .map(|name| name.to_string_lossy().into_owned()),
         };
         client
             .call("auth", &json!({ "token": token, "shell": shell }))?
@@ -682,7 +719,8 @@ impl Client {
         if terminal {
             params["terminal"] = Value::Bool(true);
         }
-        self.call("attach", &params)?.map_err(io::Error::other)?;
+        self.call("attach", &params)?
+            .map_err(|said| io::Error::other(refused(self.session.as_deref(), &said)))?;
         Ok(Attachment {
             reader: self.reader,
             writer: self.writer,

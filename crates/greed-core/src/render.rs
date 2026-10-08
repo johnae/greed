@@ -301,7 +301,7 @@ impl Row {
 pub struct Frame {
     pub size: Size,
     /// What's on screen, bottom first: the shown tab's panes, the tab line,
-    /// the status line, panels, then floats.
+    /// the status line, panels, then floats. No two have the same id.
     pub surfaces: Vec<Surface>,
     /// The lines between panes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -484,7 +484,7 @@ fn border_spans(line: Option<&VirtualLine>) -> Vec<Span> {
     spans
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: u16,
     pub y: u16,
@@ -665,6 +665,10 @@ impl<M: Measure> Renderer<M> {
         }
         images.retain(|image| !covered.iter().any(|&c| overlaps(image.rect, c)));
         images.extend(self.images.take());
+        // Deltas tell surfaces apart by id. A view is on screen once, but
+        // should one show up twice, only the first is drawn.
+        let mut seen = std::collections::HashSet::new();
+        surfaces.retain(|s| seen.insert(s.id));
 
         Frame {
             size,
