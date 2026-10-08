@@ -117,3 +117,80 @@ test("each client records its own macro", function(t)
 	second:keys("w Q")
 	assert(core.registers.macro("@") == "w", `the second's: {core.registers.macro("@")}`)
 end)
+
+-- A hundred numbered lines, without line numbers, the cursor on the first,
+-- and a command that puts the acting client's cursor on line `n`.
+local function long(t: any)
+	local lines = {}
+	for i = 0, 99 do
+		table.insert(lines, (if i == 0 then "|" else "") .. `line {i}`)
+	end
+	t:buffer(table.concat(lines, "\n"))
+	greed.view():buffer():set_line_numbers(false)
+	greed.command({
+		name = "test-line",
+		args = { { name = "n" } },
+		run = function(ctx)
+			local at = ctx.buffer:line_start(tonumber(ctx.args[1]) :: number)
+			ctx.view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		end,
+	})
+end
+
+test("clients of different sizes each scroll to their own cursor", function(t)
+	long(t)
+	local second = t:client()
+	local scrolled: { { client: number, line: number } } = {}
+	greed.on("view.scrolled", function(event: greed.ViewScrolled)
+		table.insert(scrolled, { client = event.client, line = event.line })
+	end)
+	second:run("test-line", { "50" })
+	local mine = t:draw(30, 11)
+	local theirs = second:draw(20, 6)
+	assert(mine[1] == "line 0", mine[1])
+	assert(theirs[#theirs - 1] == "line 50", `the second's last line: {theirs[#theirs - 1]}`)
+	assert(#scrolled == 1 and scrolled[1].client == second:id(), `scrolled: {#scrolled}`)
+	assert(scrolled[1].line == 46, `to {scrolled[1].line}`)
+	-- Each keeps its place when the other draws.
+	assert(t:draw(30, 11)[1] == "line 0", "the first's stayed")
+	assert(second:draw(20, 6)[1] == "line 46", "the second's stayed")
+end)
+
+test("view:size and view.resized are the acting client's", function(t)
+	long(t)
+	local second = t:client()
+	local resized: { [number]: { number } } = {}
+	greed.on("view.resized", function(event: greed.ViewResized)
+		resized[event.client] = { event.rows, event.cols }
+	end)
+	local sizes: { [number]: { number? } } = {}
+	greed.command({
+		name = "test-size",
+		run = function(ctx)
+			local rows, cols = ctx.view:size()
+			sizes[ctx.client] = { rows, cols }
+		end,
+	})
+	t:draw(30, 11)
+	second:draw(20, 6)
+	t:run("test-size")
+	second:run("test-size")
+	assert(sizes[1][1] == 10 and sizes[1][2] == 30, `first: {sizes[1][1]} {sizes[1][2]}`)
+	local id = second:id()
+	assert(sizes[id][1] == 5 and sizes[id][2] == 20, `second: {sizes[id][1]} {sizes[id][2]}`)
+	assert(resized[1] and resized[1][1] == 10, "the first was told its size")
+	assert(resized[id] and resized[id][1] == 5 and resized[id][2] == 20, "the second its own")
+end)
+
+test("a click lands where the client that clicked shows things", function(t)
+	long(t)
+	local second = t:client()
+	second:run("test-line", { "50" })
+	t:draw(30, 11)
+	second:draw(20, 6)
+	-- The second shows lines 46 to 50; its top row is line 46.
+	second:mouse("press", 2, 0)
+	second:mouse("release", 2, 0)
+	assert(string.find(second:marked(), "\nli|ne 46\n", 1, true), "the second's cursor moved there")
+	assert(string.sub(t:marked(), 1, 1) == "|", "the first's stayed")
+end)

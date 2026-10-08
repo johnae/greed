@@ -127,15 +127,8 @@ where
         host.use_event_loop();
         let mut server = Server {
             host: &host,
-            renderer: Renderer::new(CellWidth),
-            size: None,
             message: None,
-            client: Some(Client {
-                output: outbox,
-                local: true,
-                last: None,
-                images: HashSet::new(),
-            }),
+            client: Some(Client::new(outbox, true)),
             inputs,
             watched_at: Instant::now(),
             drawn_at: Instant::now(),
@@ -173,9 +166,24 @@ struct Client {
     last: Option<Frame>,
     /// The images whose data it has.
     images: HashSet<ImageId>,
+    /// Lays out its frames, and knows where it put things for its clicks.
+    renderer: Renderer<CellWidth>,
+    /// Its screen's size, once it has said.
+    size: Option<Size>,
 }
 
 impl Client {
+    fn new(output: Sender<Output>, local: bool) -> Self {
+        Self {
+            output,
+            local,
+            last: None,
+            images: HashSet::new(),
+            renderer: Renderer::new(CellWidth),
+            size: None,
+        }
+    }
+
     /// What to send this client for `frame`, or `None` if nothing changed.
     fn output_for(&mut self, frame: Frame) -> Option<Output> {
         if self.local {
@@ -192,9 +200,6 @@ impl Client {
 
 struct Server<'a> {
     host: &'a Host,
-    renderer: Renderer<CellWidth>,
-    /// The attached client's screen size, once it has said.
-    size: Option<Size>,
     message: Option<String>,
     client: Option<Client>,
     /// For attached clients to send their input with the local client's.
@@ -539,16 +544,26 @@ impl Server<'_> {
                 self.report(pressed);
             }
             Input::Resize(new) => {
+                let Some(client) = &mut self.client else {
+                    return true;
+                };
                 let size = new.limited();
-                self.size = Some(size);
+                client.size = Some(size);
                 self.host.with_editor_mut(|ed| {
                     ed.set_client_size(FIRST_CLIENT, Some((size.width, size.height)));
                 });
             }
             Input::Mouse(mouse) => {
-                let hit = self
-                    .host
-                    .with_editor(|ed| self.renderer.hit(ed, mouse.col, mouse.row));
+                let Some(client) = &self.client else {
+                    return true;
+                };
+                // Where it clicked in what it was shown, as its own client.
+                let hit = self.host.with_editor_mut(|ed| {
+                    let outer = ed.act_as(FIRST_CLIENT);
+                    let hit = client.renderer.hit(ed, mouse.col, mouse.row);
+                    ed.act_as(outer);
+                    hit
+                });
                 let handled = self.host.mouse(FIRST_CLIENT, mouse, &hit);
                 self.report(handled);
             }
@@ -613,7 +628,6 @@ impl Server<'_> {
 
     /// Forgets the client, telling plugins if there was one.
     fn let_client_go(&mut self) {
-        self.size = None;
         if self.client.take().is_some() {
             let detached = self.host.client_detached(FIRST_CLIENT, false);
             self.report(detached);
@@ -668,12 +682,7 @@ impl Server<'_> {
         if writing.is_err() {
             return;
         }
-        self.client = Some(Client {
-            output,
-            local: false,
-            last: None,
-            images: HashSet::new(),
-        });
+        self.client = Some(Client::new(output, false));
         let attached = self
             .host
             .client_attached(FIRST_CLIENT, open.as_deref(), terminal, remote);
@@ -684,7 +693,7 @@ impl Server<'_> {
     /// its screen is. Returns false once the editor should stop, because
     /// the client in this process went away.
     fn draw(&mut self) -> bool {
-        let (Some(size), Some(_)) = (self.size, &self.client) else {
+        let Some(size) = self.client.as_ref().and_then(|c| c.size) else {
             return true;
         };
         let host = self.host;
@@ -710,9 +719,12 @@ impl Server<'_> {
                 }
             }
         };
+        let Some(client) = &self.client else {
+            return true;
+        };
         let render = || {
             host.with_editor_and_syntax(|ed, syntax| {
-                self.renderer.frame(ed, size, &status, &Shown { syntax })
+                client.renderer.frame(ed, size, &status, &Shown { syntax })
             })
         };
         let mut frame = host.timed("drawing", render);
