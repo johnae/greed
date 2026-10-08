@@ -1,3 +1,5 @@
 name = "lsp"
 requires = ["core", "picker", "multibuffer", "statusline"]
-capabilities = ["fs.read", "proc"]
+# The completion menu passes keys it doesn't take on to where you were
+# typing (commands), like enter running a shell's line.
+capabilities = ["fs.read", "proc", "commands"]

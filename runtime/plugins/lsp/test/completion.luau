@@ -71,3 +71,89 @@ test("a source offers completions in a buffer with no file, ahead of the server"
 	t:keys("enter")
 	t:expect("greeting|")
 end)
+
+-- A source offering `labels` in buffers with no file, with `options`.
+local function offer(labels: { string }, options: any?)
+	local lsp = require("@lsp")
+	lsp.completion.source(function(view)
+		if view:buffer():path() ~= nil then
+			return nil
+		end
+		local items = {}
+		for _, label in labels do
+			table.insert(items, { label = label, text = label })
+		end
+		return items
+	end, options)
+end
+
+test("a menu opens by itself only once typing pauses for completion-delay", function(t)
+	offer({ "greeting", "green" })
+	t:buffer("|")
+	t:keys("i g r")
+	assert(#t:floats() == 0, "not while typing")
+	t:wait(greed.option.get("completion-delay") :: number - 50)
+	assert(#t:floats() == 0, "not before the delay")
+	t:wait(100)
+	assert(#t:floats() == 1, "after it")
+	t:keys("esc")
+	-- Asking shows it at once.
+	t:keys("i")
+	t:run("completion-ask")
+	assert(#t:floats() == 1, "asked for")
+	t:keys("esc")
+	-- With a longer delay, it waits that long.
+	greed.option.set("completion-delay", 1000)
+	t:keys("A e")
+	t:wait(500)
+	assert(#t:floats() == 0, "not yet")
+	t:wait(600)
+	assert(#t:floats() == 1, "after the longer delay")
+	greed.option.set("completion-delay", 150)
+end)
+
+test("enter in a menu takes the first item, or with selected only one moved to", function(t)
+	offer({ "greeting", "green" }, { enter = "selected" })
+	t:buffer("|")
+	t:keys("i g r")
+	t:run("completion-ask")
+	t:keys("enter")
+	t:expect("gr\n|")
+	t:keys("g r")
+	t:run("completion-ask")
+	t:keys("tab enter")
+	t:expect("gr\ngreeting|")
+	-- completion-enter decides over what the source says.
+	greed.option.set("completion-enter", "first")
+	t:keys("enter g r")
+	t:run("completion-ask")
+	t:keys("enter")
+	t:expect("gr\ngreeting\ngreeting|")
+	greed.option.set("completion-enter", "auto")
+end)
+
+test("completion-enter selected applies to every menu", function(t)
+	offer({ "greeting", "green" })
+	greed.option.set("completion-enter", "selected")
+	t:buffer("|")
+	t:keys("i g r")
+	t:run("completion-ask")
+	t:keys("enter")
+	t:expect("gr\n|")
+	t:keys("g r")
+	t:run("completion-ask")
+	t:keys("down enter")
+	t:expect("gr\ngreeting|")
+	greed.option.set("completion-enter", "auto")
+end)
+
+test("matches starting with what's typed come first, then those holding it", function()
+	local lsp = require("@lsp")
+	local labels = { "hcisecfilter", "zhistory", "history" }
+	local order = lsp.completion.rank("hist", labels)
+	local ranked = {}
+	for _, index in order do
+		table.insert(ranked, labels[index])
+	end
+	assert(table.concat(ranked, " ") == "history zhistory hcisecfilter", table.concat(ranked, " "))
+end)

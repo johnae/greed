@@ -5,6 +5,11 @@
 -- it. ctrl-space asks right away. completion-words fills the same menu
 -- with words from open files instead, for Vim's ctrl-n and ctrl-p.
 --
+-- Sources ask before the server and say how their menu behaves: whether
+-- enter takes the first item or only one moved to (completion-enter),
+-- whether tab completes in place as a shell's does, and whether a menu
+-- that opened by itself leaves up and down to the buffer.
+--
 -- While the menu is open the editor is in a mode of its own that keeps
 -- every key of the mode you were typing in, so nothing else changes.
 
@@ -14,8 +19,18 @@ local menu = core.menu
 
 greed.option.define({
 	name = "completion-delay",
-	doc = "Milliseconds of no typing before completions are asked for; 0 turns asking off",
+	doc = "Milliseconds of no typing before a completion menu opens by itself; 0 opens it only when asked",
 	default = 150,
+})
+
+greed.option.define({
+	name = "completion-enter",
+	doc = 'What enter does in a completion menu: "first" puts in the first item, "selected" only '
+		.. "one moved to with tab or the arrows (otherwise enter does what it does without a menu, "
+		.. 'like running a shell\'s line), "auto" lets each source say: the shell "selected", '
+		.. 'language servers "first"',
+	default = "auto",
+	choices = { "auto", "first", "selected" },
 })
 
 -- The modes completion works in: every style's typing modes.
@@ -42,13 +57,32 @@ export type Ask = { explicit: boolean }
 --- program's answer; one that comes after more typing is dropped.
 export type Source = (view: greed.View, ask: Ask) -> { Item }?
 
-local sources: { Source } = {}
+--- How a source's menu behaves.
+export type SourceOptions = {
+	--- What enter does while completion-enter is "auto": "first" (the
+	--- default) puts in the first item, "selected" only one moved to.
+	enter: ("first" | "selected")?,
+	--- "insert" makes tab complete in place, as a shell does: the only
+	--- match or what all matches start with at once, else the menu, and
+	--- tab again puts each item in place in turn. "next" (the default)
+	--- moves through the menu.
+	tab: ("next" | "insert")?,
+	--- "after-tab" leaves up and down to the buffer (a shell's history)
+	--- while a menu that opened by itself hasn't been moved into with tab;
+	--- "menu" (the default) moves through it.
+	arrows: ("menu" | "after-tab")?,
+}
+
+type Registered = { source: Source, options: SourceOptions }
+
+local sources: { Registered } = {}
 
 --- Asks `source` what could go at the cursor before the language server is
 --- asked, in any buffer, a file or not: the first source to answer (even
---- with nothing) decides. It goes when the plugin that added it does.
-function M.source(source: Source)
-	greed.plugin.tie(core.registry.put(sources, source))
+--- with nothing) decides, and `options` say how its menu behaves. It goes
+--- when the plugin that added it does.
+function M.source(source: Source, options: SourceOptions?)
+	greed.plugin.tie(core.registry.put(sources, { source = source, options = options or {} }))
 end
 
 type Open = {
@@ -58,12 +92,24 @@ type Open = {
 	-- Every item the server sent, and the ones matching what's typed.
 	items: { Item },
 	matches: { number },
+	-- The highlighted match, 0 for none.
 	current: number,
 	-- Where the word being completed starts, following edits elsewhere,
 	-- like a shell's output above its prompt.
 	start: greed.Anchor,
 	-- The mode to go back to.
 	mode: string,
+	options: SourceOptions,
+	-- Whether it was asked for (tab, ctrl-space), and whether it was moved
+	-- through since.
+	explicit: boolean,
+	moved: boolean,
+	-- With tab "insert": whether the current item is in place, what was
+	-- typed from `start` before one was, and whether the menu is putting
+	-- one there now.
+	placed: boolean,
+	original: string?,
+	placing: boolean,
 }
 
 -- Where the word `o` completes starts now.
@@ -93,6 +139,15 @@ local function next_generation(): number
 	local count = (generations[client] or 0) + 1
 	generations[client] = count
 	return count
+end
+
+-- What enter does in `options`' menu: "first" or "selected".
+local function enter_mode(options: SourceOptions): string
+	local set = greed.option.get("completion-enter")
+	if set == "first" or set == "selected" then
+		return set
+	end
+	return options.enter or "first"
 end
 
 -- Letters, digits, "_" and anything outside ASCII.
@@ -143,6 +198,31 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 	return out
 end
 
+--- The indexes of `labels` matching `typed`, best first: those starting
+--- with it, then those holding it, then the other fuzzy matches, each in
+--- the fuzzy match's order.
+function M.rank(typed: string, labels: { string }): { number }
+	local order = greed.fuzzy(typed, labels)
+	if typed == "" then
+		return order
+	end
+	local lower = string.lower(typed)
+	local starting, holding, rest = {}, {}, {}
+	for _, index in order do
+		local label = string.lower(labels[index])
+		if string.sub(label, 1, #lower) == lower then
+			table.insert(starting, index)
+		elseif string.find(label, lower, 1, true) then
+			table.insert(holding, index)
+		else
+			table.insert(rest, index)
+		end
+	end
+	table.move(holding, 1, #holding, #starting + 1, starting)
+	table.move(rest, 1, #rest, #starting + 1, starting)
+	return starting
+end
+
 local function close()
 	local o = mine()
 	if o then
@@ -152,7 +232,7 @@ end
 
 -- Draws the matching items and marks the current one.
 local function render(o: Open)
-	local typed = o.buffer:slice(start_of(o), o.view:cursor())
+	local typed = o.original or o.buffer:slice(start_of(o), o.view:cursor())
 	local labels = {}
 	local width, badges = 0, 0
 	for i, index in o.matches do
@@ -202,15 +282,19 @@ local function render(o: Open)
 	o.float.view:configure({ width = longest + 3, height = #lines + 2 })
 end
 
--- Narrows the items to what's typed now, closing the menu when nothing's left.
-local function refresh(o: Open)
-	local typed = o.buffer:slice(start_of(o), o.view:cursor())
+-- The items of `items` matching `typed`, best first.
+local function matching(items: { Item }, typed: string): { number }
 	local labels = {}
-	for i, item in o.items do
+	for i, item in items do
 		labels[i] = item.label
 	end
-	o.matches = greed.fuzzy(typed, labels)
-	o.current = 1
+	return M.rank(typed, labels)
+end
+
+-- Narrows the items to what's typed now, closing the menu when nothing's left.
+local function refresh(o: Open)
+	o.matches = matching(o.items, o.buffer:slice(start_of(o), o.view:cursor()))
+	o.current = if enter_mode(o.options) == "first" then 1 else 0
 	if #o.matches == 0 then
 		close()
 		return
@@ -218,9 +302,81 @@ local function refresh(o: Open)
 	render(o)
 end
 
+-- Puts `text` from `start` to the cursor of `view` in `buffer`, with the
+-- cursor after it; what's put in isn't something to complete again.
+local function put(buffer: greed.Buffer, start: number, view: greed.View, text: string)
+	local to = view:cursor()
+	buffer:edit(function(e)
+		e:replace(start, to, text)
+		local at = start + #text
+		e:select({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	end)
+	next_generation()
+end
+
+-- What `typed` (from `start`) becomes with `item` in place: the item's
+-- text from where it starts.
+local function with_item(typed: string, start: number, item: Item): string
+	local offset = math.clamp((item.from or start) - start, 0, #typed)
+	return string.sub(typed, 1, offset) .. item.text
+end
+
+-- The longest start all of `texts` share.
+local function common_start(texts: { string }): string
+	local common = texts[1] or ""
+	for i = 2, #texts do
+		local text = texts[i]
+		local n = 0
+		while
+			n < #common
+			and n < #text
+			and string.byte(common, n + 1) == string.byte(text, n + 1)
+		do
+			n += 1
+		end
+		common = string.sub(common, 1, n)
+	end
+	-- Not in the middle of a character.
+	while #common > 0 and utf8.len(common) == nil do
+		common = string.sub(common, 1, -2)
+	end
+	return common
+end
+
+-- What tab puts in at once in place of `typed` (from `start`), as a shell
+-- completes: the only match, or what all those starting with what's typed
+-- share, when that's more than what's typed. Nil when it's the menu's to
+-- show.
+local function completed(
+	items: { Item },
+	matches: { number },
+	typed: string,
+	start: number
+): string?
+	local starting: { string } = {}
+	for _, index in matches do
+		local text = with_item(typed, start, items[index])
+		if string.sub(text, 1, #typed) == typed then
+			table.insert(starting, text)
+		end
+	end
+	if #starting == 1 or (#starting == 0 and #matches == 1) then
+		return starting[1] or with_item(typed, start, items[matches[1]])
+	end
+	local common = common_start(starting)
+	return if #common > #typed then common else nil
+end
+
 -- Opens the menu at the cursor in `view` with what of `items` matches the
--- word being typed. Returns whether anything did.
-local function show(view: greed.View, items: { Item }): boolean
+-- word being typed, asked for or not (`explicit`), as `options` say. With
+-- tab "insert", asking puts the only match in place at once, or what the
+-- matches share. Returns whether anything matched.
+local function show(
+	view: greed.View,
+	items: { Item },
+	options: SourceOptions,
+	explicit: boolean
+): boolean
 	local buffer = view:buffer()
 	if #items == 0 then
 		return false
@@ -231,6 +387,18 @@ local function show(view: greed.View, items: { Item }): boolean
 	for _, item in items do
 		if item.from then
 			start = math.min(start, item.from)
+		end
+	end
+	if explicit and options.tab == "insert" then
+		local typed = buffer:slice(start, view:cursor())
+		local matches = matching(items, typed)
+		if #matches == 0 then
+			return false
+		end
+		local text = completed(items, matches, typed, start)
+		if text then
+			put(buffer, start, view, text)
+			return true
 		end
 	end
 	local client = greed.client.id()
@@ -254,12 +422,23 @@ local function show(view: greed.View, items: { Item }): boolean
 		float = float,
 		items = items,
 		matches = {},
-		current = 1,
+		current = 0,
 		start = buffer:track(start, { gravity = "left" }),
 		mode = mode,
+		options = options,
+		explicit = explicit,
+		moved = false,
+		placed = false,
+		original = nil :: string?,
+		placing = false,
 	}
 	opened[client] = o
 	refresh(o)
+	if opened[client] == o and explicit and options.tab == "insert" then
+		-- Asked for with tab: nothing's chosen until tab moves.
+		o.current = 0
+		render(o)
+	end
 	return opened[client] ~= nil
 end
 
@@ -281,8 +460,8 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 		return buffer:slice(buffer:line_start(buffer:line_of(pos)), pos)
 	end
 	local typed, asked_at = before_cursor(), view:cursor()
-	for _, source in table.clone(sources) do
-		local answered, items = pcall(source, view, { explicit = explicit })
+	for _, registered in table.clone(sources) do
+		local answered, items = pcall(registered.source, view, { explicit = explicit })
 		if answered and items then
 			local current = wanted == generation() or (mine() == nil and before_cursor() == typed)
 			if current and greed.mode.get() == mode and view:valid() then
@@ -294,7 +473,7 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 						end
 					end
 				end
-				show(view, items)
+				show(view, items, registered.options, explicit)
 			end
 			return
 		end
@@ -309,11 +488,11 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 	if not ok or result == nil or wanted ~= generation() or greed.mode.get() ~= mode then
 		return
 	end
-	show(view, items_from(result, buffer))
+	show(view, items_from(result, buffer), { enter = "first" }, explicit)
 end
 
 -- Typing a word character or "." asks again once typing pauses; anything
--- else closes the menu.
+-- else closes the menu, and so does typing after an item tab put in place.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
 	if event.buffer ~= view:buffer() then
@@ -321,6 +500,9 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	end
 	local mode = greed.mode.get()
 	local open = mine()
+	if open and open.placing then
+		return
+	end
 	local typing = TYPING[mode] == true or (open ~= nil and mode == `completion-{open.mode}`)
 	if not typing then
 		return
@@ -337,7 +519,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
 	local in_word = is_word(ch)
 	if open then
-		if in_word and pos > start_of(open) then
+		if in_word and pos > start_of(open) and not open.placed then
 			refresh(open)
 		else
 			close()
@@ -358,19 +540,41 @@ end)
 
 greed.command({
 	name = "completion-ask",
-	doc = "Ask the language server what could go at the cursor",
+	doc = "Ask what could go at the cursor: a source like the shell's, or the language server",
 	run = function(ctx)
 		ask(ctx.view, next_generation(), true)
 	end,
 })
 
+-- Puts `o`'s current item in place of what was typed, keeping the menu.
+local function place(o: Open)
+	local start = start_of(o)
+	local original = o.original or o.buffer:slice(start, o.view:cursor())
+	o.original = original
+	o.placing = true
+	put(o.buffer, start, o.view, with_item(original, start, o.items[o.matches[o.current]]))
+	o.placing = false
+	o.placed = true
+end
+
+-- Moves `delta` items through the menu; with tab "insert", putting each in
+-- place, starting with the highlighted one when none is yet.
 local function move(delta: number)
 	local o = mine()
 	if o == nil then
 		return
 	end
 	local count = math.min(#o.matches, SHOWN)
-	o.current = (o.current - 1 + delta) % count + 1
+	local inserting = o.options.tab == "insert"
+	if o.current == 0 then
+		o.current = if delta > 0 then 1 else count
+	elseif not (inserting and not o.placed and delta > 0) then
+		o.current = (o.current - 1 + delta) % count + 1
+	end
+	o.moved = true
+	if inserting then
+		place(o)
+	end
 	render(o)
 end
 
@@ -414,10 +618,17 @@ for _, back in { false, true } do
 			then "Complete the word being typed from words in open files, starting with the last"
 			else "Complete the word being typed from words in open files",
 		run = function(ctx)
-			if not show(ctx.view, words(ctx.view)) then
+			if not show(ctx.view, words(ctx.view), { enter = "first" }, true) then
 				greed.echo("no words to complete")
-			elseif back then
-				move(-1)
+			else
+				local o = mine()
+				if o and o.current == 0 then
+					o.current = 1
+					render(o)
+				end
+				if back then
+					move(-1)
+				end
 			end
 		end,
 	})
@@ -440,23 +651,78 @@ greed.command({
 })
 
 greed.command({
-	name = "completion-accept",
-	doc = "Put the current completion in place of the word being typed",
+	name = "completion-tab",
+	doc = "Move to the next completion; where tab completes in place, as in a shell, first put in "
+		.. "what every match starts with",
 	run = function()
 		local o = mine()
 		if o == nil then
 			return
 		end
+		o.explicit = true
+		if o.options.tab == "insert" and not o.moved then
+			local start = start_of(o)
+			local typed = o.buffer:slice(start, o.view:cursor())
+			local text = completed(o.items, o.matches, typed, start)
+			if text then
+				put(o.buffer, start, o.view, text)
+				if #o.matches == 1 then
+					close()
+				end
+				return
+			end
+		end
+		move(1)
+	end,
+})
+
+-- up and down: through the menu, unless it leaves them to the buffer until
+-- it's been moved into.
+for _, key in { "up", "down" } do
+	greed.command({
+		name = `completion-{key}`,
+		doc = if key == "up"
+			then "Move to the previous completion, or in a shell's menu that opened by itself, the command before"
+			else "Move to the next completion, or in a shell's menu that opened by itself, the command after",
+		run = function()
+			local o = mine()
+			if o == nil then
+				return
+			end
+			if o.options.arrows == "after-tab" and not (o.explicit or o.moved) then
+				close()
+				greed.keys.feed(key)
+				return
+			end
+			move(if key == "up" then -1 else 1)
+		end,
+	})
+end
+
+greed.command({
+	name = "completion-accept",
+	doc = "Put the current completion in place of the word being typed; with none chosen, "
+		.. "close the menu and do what enter does",
+	run = function()
+		local o = mine()
+		if o == nil then
+			return
+		end
+		if o.placed then
+			close()
+			next_generation()
+			return
+		end
+		if o.current == 0 then
+			close()
+			greed.keys.feed("enter")
+			return
+		end
 		local item = o.items[o.matches[o.current]]
-		local from, to = start_of(o), o.view:cursor()
+		local start = start_of(o)
+		local typed = o.buffer:slice(start, o.view:cursor())
 		close()
-		o.buffer:edit(function(e)
-			e:replace(from, to, item.text)
-			local at = from + #item.text
-			e:select({ ranges = { { anchor = at, head = at } }, primary = 1 })
-		end)
-		-- What was just put in isn't something to complete again.
-		next_generation()
+		put(o.buffer, start, o.view, with_item(typed, start, item))
 	end,
 })
 
@@ -470,12 +736,12 @@ greed.command({
 })
 
 local KEYS = {
-	tab = "completion-next",
+	tab = "completion-tab",
 	["ctrl-n"] = "completion-next",
-	down = "completion-next",
+	down = "completion-down",
 	["shift-tab"] = "completion-prev",
 	["ctrl-p"] = "completion-prev",
-	up = "completion-prev",
+	up = "completion-up",
 	enter = "completion-accept",
 	esc = "completion-close",
 }

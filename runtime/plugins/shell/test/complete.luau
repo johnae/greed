@@ -20,96 +20,6 @@ local function at_prompt(sh: Shell): string
 	return shell.log.prompt_text(sh)
 end
 
--- Puts `text` at the prompt and asks what could complete it, with tab
--- while typing, waiting for the menu: what completes a program's
--- arguments may come from programs.
-local function complete(t: test.TestContext, sh: Shell, text: string): string
-	shell.log.set_prompt(sh, text, { greed.view() })
-	greed.mode.set(core.style.typing_mode())
-	t:keys("tab")
-	t:wait_for(function()
-		return #t:floats() > 0
-	end, ASK_MS)
-	return table.concat(t:floats(), "\n")
-end
-
-test("tab completes programs on PATH and builtins for a command's first word", function(t)
-	local dir = t:tempdir({ ["bin/greedtestprog"] = "", ["bin/other"] = "" })
-	local sh = open(t, dir)
-	shell.run(sh, `export PATH={dir}/bin`)
-	local menu = complete(t, sh, "greedtest")
-	assert(string.find(menu, "greedtestprog", 1, true), menu)
-	t:keys("enter")
-	assert(at_prompt(sh) == "greedtestprog", "enter takes it, without running: " .. at_prompt(sh))
-	assert(#sh.blocks == 1)
-	local builtins = complete(t, sh, "expo")
-	assert(string.find(builtins, "export", 1, true), builtins)
-end)
-
-test("tab completes files and folders from the shell's folder", function(t)
-	local dir = t:tempdir({ ["subdir/inner.txt"] = "", ["other.txt"] = "" })
-	local sh = open(t, dir)
-	local menu = complete(t, sh, "cat subd")
-	assert(string.find(menu, "subdir/", 1, true), menu)
-	t:keys("enter")
-	assert(at_prompt(sh) == "cat subdir/", at_prompt(sh))
-	local inner = complete(t, sh, "cat subdir/in")
-	assert(string.find(inner, "subdir/inner.txt", 1, true), inner)
-	t:keys("enter")
-	assert(at_prompt(sh) == "cat subdir/inner.txt", at_prompt(sh))
-end)
-
-test("tab completes variables, earlier blocks and open files", function(t)
-	local dir = t:tempdir({ ["notes.md"] = "hi" })
-	local sh = open(t, dir)
-	shell.run(sh, "export GREED_COMPLETE_ME=1")
-	local vars = complete(t, sh, "echo $GREED_COMPLETE")
-	assert(string.find(vars, "$GREED_COMPLETE_ME", 1, true), vars)
-	t:keys("enter")
-	assert(at_prompt(sh) == "echo $GREED_COMPLETE_ME", at_prompt(sh))
-	t:keys("esc")
-	local blocks = complete(t, sh, "echo $1")
-	assert(
-		string.find(blocks, "$1", 1, true) and string.find(blocks, "export GREED", 1, true),
-		blocks
-	)
-	t:keys("esc")
-	greed.load(dir .. "/notes.md")
-	local bufs = complete(t, sh, "cat buf:no")
-	assert(string.find(bufs, "buf:notes.md", 1, true), bufs)
-	t:keys("esc")
-	local done = assert(shell.run(sh, "echo x > buf:made-here"))
-	t:wait_for(function()
-		return done.status ~= "running"
-	end)
-	local made = complete(t, sh, "buf:ma")
-	assert(string.find(made, "buf:made-here", 1, true), made)
-	t:keys("esc")
-	local editor = complete(t, sh, "@s")
-	assert(string.find(editor, "@sel", 1, true), editor)
-end)
-
-test("output streaming above the prompt leaves the completion menu working", function(t)
-	local dir = t:tempdir({ ["subdir/inner.txt"] = "" })
-	local sh = open(t, dir)
-	local block = assert(shell.run(sh, "sh -c 'echo started; read x; echo more; echo lines'", {
-		view = greed.view(),
-	}))
-	t:wait_for(function()
-		return string.find(sh.buffer:text(), "started", 1, true) ~= nil
-	end)
-	local menu = complete(t, sh, "cat subd")
-	assert(string.find(menu, "subdir/", 1, true), menu)
-	local term = assert(assert(block.job).terminal)
-	term:key("enter")
-	t:wait_for(function()
-		return block.status ~= "running"
-	end)
-	assert(#t:floats() == 1, "the menu stays open")
-	t:keys("enter")
-	assert(at_prompt(sh) == "cat subdir/", at_prompt(sh))
-end)
-
 type Item = { label: string, text: string, detail: string?, badge: string?, from: number? }
 
 -- What completes `text` at `sh`'s prompt, by label.
@@ -128,6 +38,207 @@ local function items_for(t: test.TestContext, sh: Shell, text: string): { [strin
 	end
 	return by
 end
+
+-- Puts `text` at the prompt and presses tab, waiting for what it does:
+-- a menu, or the prompt completed in place. What completes a program's
+-- arguments may come from programs.
+local function tab(t: test.TestContext, sh: Shell, text: string): string
+	shell.log.set_prompt(sh, text, { greed.view() })
+	greed.mode.set(core.style.typing_mode())
+	t:keys("tab")
+	t:wait_for(function()
+		return #t:floats() > 0 or at_prompt(sh) ~= text
+	end, ASK_MS)
+	return table.concat(t:floats(), "\n")
+end
+
+-- Types `keys` at an empty prompt and waits for the menu that opens by
+-- itself once typing pauses.
+local function pause(t: test.TestContext, keys: string): string
+	greed.mode.set(core.style.typing_mode())
+	if keys ~= "" then
+		t:keys(keys)
+	end
+	t:wait(greed.option.get("completion-delay") :: number)
+	t:wait_for(function()
+		return #t:floats() > 0
+	end, ASK_MS)
+	return table.concat(t:floats(), "\n")
+end
+
+test(
+	"tab completes the only match at once, then what several start with, then the menu",
+	function(t)
+		local dir = t:tempdir({
+			["bin/greedtestprog"] = "",
+			["bin/greedtestother"] = "",
+			["bin/zzz"] = "",
+		})
+		local sh = open(t, dir)
+		shell.run(sh, `export PATH={dir}/bin`)
+		tab(t, sh, "greedtestp")
+		assert(at_prompt(sh) == "greedtestprog", at_prompt(sh))
+		assert(#t:floats() == 0, "no menu for the only match")
+		assert(#sh.blocks == 1, "nothing ran")
+		tab(t, sh, "greedt")
+		assert(at_prompt(sh) == "greedtest", "what both start with: " .. at_prompt(sh))
+		assert(#t:floats() == 0, "no menu yet")
+		-- Nothing more in common: the menu, with nothing chosen.
+		local menu = tab(t, sh, "greedtest")
+		assert(at_prompt(sh) == "greedtest", at_prompt(sh))
+		assert(
+			string.find(menu, "greedtestprog", 1, true)
+				and string.find(menu, "greedtestother", 1, true),
+			menu
+		)
+		-- tab again puts each in place, shift-tab goes back.
+		t:keys("tab")
+		local first = at_prompt(sh)
+		assert(first == "greedtestprog" or first == "greedtestother", first)
+		assert(#t:floats() == 1, "the menu stays")
+		t:keys("tab")
+		local second = at_prompt(sh)
+		assert(second ~= first and string.sub(second, 1, 9) == "greedtest", second)
+		t:keys("shift-tab")
+		assert(at_prompt(sh) == first, at_prompt(sh))
+		-- enter keeps it, without running.
+		t:keys("enter")
+		assert(at_prompt(sh) == first and #t:floats() == 0, at_prompt(sh))
+		assert(#sh.blocks == 1, "enter kept the item without running")
+		-- So does typing on.
+		tab(t, sh, "greedtest")
+		t:keys("tab space x")
+		assert(at_prompt(sh) == first .. " x", at_prompt(sh))
+		assert(#t:floats() == 0)
+		tab(t, sh, "expo")
+		assert(at_prompt(sh) == "export", at_prompt(sh))
+	end
+)
+
+test("tab completes files and folders from the shell's folder", function(t)
+	local dir = t:tempdir({ ["subdir/inner.txt"] = "", ["other.txt"] = "" })
+	local sh = open(t, dir)
+	tab(t, sh, "cat subd")
+	assert(at_prompt(sh) == "cat subdir/", at_prompt(sh))
+	tab(t, sh, "cat subdir/in")
+	assert(at_prompt(sh) == "cat subdir/inner.txt", at_prompt(sh))
+	local both = items_for(t, sh, "cat ")
+	assert(both["subdir/"] and both["other.txt"], "both")
+end)
+
+test("tab completes variables, earlier blocks and open files", function(t)
+	local dir = t:tempdir({ ["notes.md"] = "hi" })
+	local sh = open(t, dir)
+	shell.run(sh, "export GREED_COMPLETE_ME=1")
+	tab(t, sh, "echo $GREED_COMPLETE")
+	assert(at_prompt(sh) == "echo $GREED_COMPLETE_ME", at_prompt(sh))
+	local blocks = items_for(t, sh, "echo $1")
+	assert(
+		blocks["$1"] and string.find(blocks["$1"].detail or "", "export GREED", 1, true),
+		"block 1, with its command"
+	)
+	greed.load(dir .. "/notes.md")
+	assert(items_for(t, sh, "cat buf:no")["buf:notes.md"], "an open file")
+	local done = assert(shell.run(sh, "echo x > buf:made-here"))
+	t:wait_for(function()
+		return done.status ~= "running"
+	end)
+	assert(items_for(t, sh, "buf:ma")["buf:made-here"], "a buffer > buf: made")
+	assert(items_for(t, sh, "@s")["@sel"], "@sel")
+end)
+
+test("output streaming above the prompt leaves the completion menu working", function(t)
+	local dir = t:tempdir({ ["subdir/inner.txt"] = "", ["subway.txt"] = "" })
+	local sh = open(t, dir)
+	local block = assert(shell.run(sh, "sh -c 'echo started; read x; echo more; echo lines'", {
+		view = greed.view(),
+	}))
+	t:wait_for(function()
+		return string.find(sh.buffer:text(), "started", 1, true) ~= nil
+	end)
+	local menu = tab(t, sh, "cat sub")
+	assert(string.find(menu, "subdir/", 1, true), menu)
+	local term = assert(assert(block.job).terminal)
+	term:key("enter")
+	t:wait_for(function()
+		return block.status ~= "running"
+	end)
+	assert(#t:floats() == 1, "the menu stays open")
+	t:keys("tab enter")
+	local typed = at_prompt(sh)
+	assert(typed == "cat subdir/" or typed == "cat subway.txt", typed)
+end)
+
+test("a menu that opened by itself leaves enter and the arrows to the prompt", function(t)
+	local dir = t:tempdir({ ["subdir/inner.txt"] = "", ["subway.txt"] = "" })
+	local sh = open(t, dir)
+	shell.run(sh, "echo older")
+	-- Not before typing pauses.
+	greed.mode.set(core.style.typing_mode())
+	t:keys("c a t space s u")
+	assert(#t:floats() == 0, "no menu while typing")
+	local menu = pause(t, "")
+	assert(string.find(menu, "subdir/", 1, true), menu)
+	-- enter runs what's typed: nothing in the menu was chosen.
+	t:keys("enter")
+	assert(#sh.blocks == 2, "enter ran the line")
+	assert(sh.blocks[2].command == "cat su", sh.blocks[2].command)
+	-- Its output comes in first.
+	t:wait_for(function()
+		return sh.blocks[2].status ~= "running"
+	end)
+	t:wait(0)
+	-- up goes through the history, not the menu.
+	pause(t, "e c h")
+	t:keys("up")
+	assert(#t:floats() == 0, "the menu closed")
+	assert(at_prompt(sh) == "echo older", at_prompt(sh))
+	-- Once tab moved into the menu, enter takes the item and the arrows
+	-- move through it.
+	shell.log.set_prompt(sh, "", { greed.view() })
+	pause(t, "c a t space s u")
+	t:keys("tab")
+	local first = at_prompt(sh)
+	t:keys("down")
+	assert(at_prompt(sh) ~= first and #t:floats() == 1, at_prompt(sh))
+	t:keys("enter")
+	assert(#sh.blocks == 2, "enter kept the item")
+	assert(at_prompt(sh) == "cat subdir/" or at_prompt(sh) == "cat subway.txt", at_prompt(sh))
+end)
+
+test("completion-enter first makes enter take the first item of any menu", function(t)
+	local dir = t:tempdir({ ["subdir/inner.txt"] = "", ["subway.txt"] = "" })
+	local sh = open(t, dir)
+	greed.option.set("completion-enter", "first")
+	pause(t, "c a t space s u")
+	t:keys("enter")
+	assert(#sh.blocks == 0, "enter took the item")
+	assert(at_prompt(sh) == "cat subdir/" or at_prompt(sh) == "cat subway.txt", at_prompt(sh))
+	greed.option.set("completion-enter", "auto")
+end)
+
+test("command names starting with what's typed come before other matches", function(t)
+	local dir = t:tempdir({ ["bin/hcisecfilter"] = "", ["bin/zhistory"] = "" })
+	local sh = open(t, dir)
+	shell.run(sh, `export PATH={dir}/bin`)
+	local lsp = require("@lsp")
+	local found = items_for(t, sh, "hist")
+	local labels: { string } = {}
+	for _, one in found do
+		table.insert(labels, one.label)
+	end
+	local order = lsp.completion.rank("hist", labels)
+	local ranked: { string } = {}
+	for _, index in order do
+		table.insert(ranked, labels[index])
+	end
+	assert(ranked[1] == "history", table.concat(ranked, " "))
+	local holding = assert(table.find(ranked, "zhistory"), "zhistory")
+	local fuzzy = assert(table.find(ranked, "hcisecfilter"), "hcisecfilter")
+	assert(holding < fuzzy, table.concat(ranked, " "))
+	tab(t, sh, "hist")
+	assert(at_prompt(sh) == "history", at_prompt(sh))
+end)
 
 -- The item labelled `label`, which has to be there.
 local function item(items: { [string]: Item }, label: string): Item
@@ -168,7 +279,8 @@ test("the shell's own builtins are marked as Greed's, with what they do", functi
 	)
 	assert(first.sh and first.sh.badge == nil, "a program on PATH isn't Greed's")
 	-- The menu shows the badge and the doc.
-	local menu = complete(t, sh, "expo")
+	shell.log.set_prompt(sh, "", { greed.view() })
+	local menu = pause(t, "e x p o")
 	assert(
 		string.find(menu, "greed", 1, true) and string.find(menu, "Set variables", 1, true),
 		menu

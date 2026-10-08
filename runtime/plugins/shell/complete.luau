@@ -456,10 +456,12 @@ end
 
 -- The completion menu is the lsp plugin's, which can be unloaded: once
 -- it's loaded, it asks `items` first, and its keys win over the shell's
--- tab, enter and arrows while it's open.
+-- tab, enter and arrows while it's open. As in a shell, tab completes in
+-- place, enter runs the line unless an item was moved to, and up and down
+-- go through the history until tab moves into the menu.
 local function attach()
 	local lsp = require("@lsp")
-	lsp.completion.source(M.items)
+	lsp.completion.source(M.items, { enter = "selected", tab = "insert", arrows = "after-tab" })
 	lsp.completion.keys_over("shell")
 end
 

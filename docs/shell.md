@@ -88,7 +88,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `alt-enter` | Another line at the prompt |
 | `up` `down` | At the prompt: the commands typed before that start with what's typed |
 | `ctrl-r` | Pick a command typed before, in any shell |
-| `tab` | Complete a program, its arguments and flags, a file or folder, a variable, `$3`, `buf:` or `@sel` |
+| `tab` | Complete a program, its arguments and flags, a file or folder, a variable, `$3`, `buf:` or `@sel`: the only match or what they all start with at once, else a menu, which `tab` again goes through |
 | `ctrl-c` | Interrupt the running block |
 | `ctrl-t` | Type into the running block's program, in a terminal in the shell's place |
 | `[ p` `] p` | The block before or after the cursor |
@@ -296,8 +296,22 @@ The commands you type at every shell are kept in your data folder
 `shell-history-size` (5000) of them, so `up` and `ctrl-r` find them in
 every session. An agent's commands aren't kept.
 
-`tab` completes what fits where the cursor is. What the shell itself
-knows is marked `greed` in the menu, with what it does beside it:
+`tab` completes what fits where the cursor is, as a shell does: the only
+match goes in at once, and with several, what they all start with. When
+that's all there is, `tab` shows the menu, and `tab` again puts each item
+in place in turn (`shift-tab` goes back); `enter` or typing on keeps it.
+Command names that start with what you typed come first, then those
+holding it, then looser matches, so `hist` offers `history` first.
+
+A menu also opens by itself once typing pauses
+([`completion-delay`](using.md#language-servers), 150 ms). It's a hint
+until you move into it with `tab`: `enter` runs the line as typed, and
+`up` and `down` go through the history. So typing `ls -la`, pausing and
+pressing `enter` runs `ls -la`. `:set completion-enter first` makes `enter`
+take the menu's first item instead.
+
+What the shell itself knows is marked `greed` in the menu, with what it
+does beside it:
 
 - A command's first word: the builtins and the programs on your `PATH`;
   after `$3 |`, the stages too.

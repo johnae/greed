@@ -688,10 +688,17 @@ greed.tab.set_layout({
   it is (the shell's own things say `greed`). `ask.explicit` is true when
   you asked with `tab` or `ctrl-space` rather than by a pause in typing. A
   source can wait, for a program say; its answer is dropped if more was
-  typed meanwhile. The shell completes its prompt this way. A plugin that
-  binds `tab`, `enter` or the arrows for typing in its own kind of buffer
-  calls `completion.keys_over(kind)` so the menu keeps those keys while
-  it's open.
+  typed meanwhile. A second argument says how its menu behaves:
+  `{ enter = "selected" }` has `enter` take only an item moved to while
+  `completion-enter` is `auto` (`"first"`, the default, takes the first);
+  `tab = "insert"` makes `tab` complete in place as a shell does (the only
+  match or what all matches start with at once, then each item in turn);
+  and `arrows = "after-tab"` leaves `up` and `down` to the buffer while a
+  menu that opened by itself hasn't been moved into. The shell completes
+  its prompt this way, with all three. A plugin that binds `tab`, `enter`
+  or the arrows for typing in its own kind of buffer calls
+  `completion.keys_over(kind)` so the menu keeps those keys while it's
+  open.
 - The theme maps style names to looks, as in
   `greed.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those

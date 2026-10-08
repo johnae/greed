@@ -586,7 +586,8 @@ them and leaves them unsaved, so you can look the change over (`space b`)
 and undo it before saving.
 
 Completions show as you type, in a menu at the cursor, once typing pauses
-after a letter or a `.`. The menu narrows as you keep typing.
+after a letter or a `.`. The menu narrows as you keep typing, with what
+starts with what you typed first, then what holds it, then looser matches.
 
 | Keys | |
 |---|---|
@@ -596,9 +597,21 @@ after a letter or a `.`. The menu narrows as you keep typing.
 | `esc` | Close the menu (and leave insert mode) |
 | `ctrl-space` | Ask for completions now (in the vscode style it opens the leader instead) |
 
-`:set completion-delay 300` waits longer before asking; `0` stops asking
-while you type, leaving `ctrl-space`. In Vim's style, `ctrl-n` and `ctrl-p`
-in insert mode complete from the words in open files.
+These apply to every completion menu, the shell's included:
+
+- `completion-delay` (150) is how many milliseconds typing pauses before a
+  menu opens by itself; `:set completion-delay 300` waits longer, and `0`
+  opens it only when you ask, with `ctrl-space` (or `tab` in the shell).
+  Asking always shows it at once.
+- `completion-enter` says what `enter` does in a menu: `first` puts in the
+  first item, `selected` only an item you moved to with `tab` or the
+  arrows, and otherwise `enter` does its usual job, like starting a new
+  line or running a shell's line. `auto`, the default, lets each menu say:
+  a language server's takes the first, [the shell's](shell.md#history-and-completion)
+  only one you chose.
+
+In Vim's style, `ctrl-n` and `ctrl-p` in insert mode complete from the
+words in open files.
 
 Typing `(` or `,` in a call shows what the function takes, above the
 cursor, with the parameter you're on picked out. It follows along as you
