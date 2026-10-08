@@ -17,7 +17,7 @@ use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualL
 mod clients;
 mod panes;
 use clients::TabState;
-pub use clients::{ClientState, FIRST_CLIENT};
+pub use clients::{ClientInfo, ClientLayout, ClientState, FIRST_CLIENT, PEER_COLORS};
 pub use panes::{Tab, TabId, TabView};
 
 #[derive(
@@ -321,6 +321,8 @@ pub struct Editor {
     /// The client that last did something, for work nobody in particular
     /// asked for, like timers.
     last_active: ClientId,
+    /// Counts what clients do, for telling who did something last.
+    activity: u64,
     /// Open projects, each with its own main view and panels. Empty until the
     /// first view opens.
     projects: Vec<Project>,
@@ -362,6 +364,7 @@ impl Editor {
             clients: BTreeMap::from([(FIRST_CLIENT, ClientState::new(FIRST_CLIENT))]),
             acting: FIRST_CLIENT,
             last_active: FIRST_CLIENT,
+            activity: 0,
             projects: Vec::new(),
             buffer_projects: HashMap::new(),
             floats: Vec::new(),
@@ -403,9 +406,71 @@ impl Editor {
         if self.clients.contains_key(&id) {
             return false;
         }
-        let state = self.acting_client().seeing_as(id);
+        let mut state = self.acting_client().seeing_as(id);
+        state.color = self.free_color(id);
         self.clients.insert(id, state);
         true
+    }
+
+    /// The first peer color no other client has, or one by `id` when all
+    /// are taken.
+    fn free_color(&self, id: ClientId) -> u8 {
+        (1..=PEER_COLORS)
+            .find(|c| self.clients.values().all(|s| s.color != *c))
+            .unwrap_or_else(|| {
+                u8::try_from(id.0.saturating_sub(1) % u32::from(PEER_COLORS)).unwrap_or(0) + 1
+            })
+    }
+
+    /// An id no client has.
+    pub fn next_client_id(&self) -> ClientId {
+        let last = self.clients.keys().next_back().map_or(0, |id| id.0);
+        ClientId(last + 1)
+    }
+
+    /// Client `id`'s state, if there is such a client.
+    pub fn client_state(&self, id: ClientId) -> Option<&ClientState> {
+        self.clients.get(&id)
+    }
+
+    /// Sets what client `id` says about itself. False without such a client.
+    pub fn set_client_info(&mut self, id: ClientId, info: ClientInfo) -> bool {
+        let Some(client) = self.clients.get_mut(&id) else {
+            return false;
+        };
+        client.name = info.name.into();
+        client.kind = info.kind.into();
+        client.remote = info.remote;
+        client.layout = info.layout;
+        true
+    }
+
+    /// Sets how big client `id`'s screen is, in cells.
+    pub fn set_client_size(&mut self, id: ClientId, size: Option<(u16, u16)>) {
+        if let Some(client) = self.clients.get_mut(&id) {
+            client.size = size;
+        }
+    }
+
+    /// Takes client `id` away, returning its state. The first client stays:
+    /// removing it returns `None`. The editor acts for the last active
+    /// client left if it acted for this one.
+    pub fn remove_client(&mut self, id: ClientId) -> Option<ClientState> {
+        if id == FIRST_CLIENT {
+            return None;
+        }
+        let removed = self.clients.remove(&id)?;
+        if self.last_active == id {
+            self.last_active = self
+                .clients
+                .values()
+                .max_by_key(|c| c.active_at)
+                .map_or(FIRST_CLIENT, ClientState::id);
+        }
+        if self.acting == id {
+            self.acting = self.last_active;
+        }
+        Some(removed)
     }
 
     /// Acts for client `id` from now on, which counts as its doing
@@ -416,7 +481,22 @@ impl Editor {
         }
         self.acting = id;
         self.last_active = id;
+        self.activity += 1;
+        let activity = self.activity;
+        self.acting_client_mut().active_at = activity;
         true
+    }
+
+    /// Acts for client `id` without that counting as its doing anything, as
+    /// when carrying on what it started, or drawing its screen. For a client
+    /// that's gone, acts for the last active one. Returns who it acts for.
+    pub fn act_as(&mut self, id: ClientId) -> ClientId {
+        self.acting = if self.clients.contains_key(&id) {
+            id
+        } else {
+            self.last_active
+        };
+        self.acting
     }
 
     fn acting_client(&self) -> &ClientState {

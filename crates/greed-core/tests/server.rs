@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::time::Duration;
 
-use greed_core::Editor;
 use greed_core::keymap::Key;
 use greed_core::luau::Host;
 use greed_core::render::grid::screen_rows;
 use greed_core::render::{Frame, Size};
 use greed_core::server::{self, Connection, Input, Output};
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 fn start(text: &'static str, path: Option<&'static Path>) -> Connection {
@@ -390,28 +390,34 @@ fn a_keys_command_is_at_work_until_it_finishes_or_waits_for_the_user() {
     editor.open("file", "", None);
     let host = Host::new(editor).unwrap();
     host.load_str("keys", KEYS_PLUGIN).unwrap();
-    assert!(!host.key_command_at_work());
+    assert!(!host.key_command_at_work(FIRST_CLIENT));
 
     // Sleeping, and still the one keys wait for after a quick key.
     host.press_keys("z").unwrap();
-    assert!(host.key_command_at_work());
+    assert!(host.key_command_at_work(FIRST_CLIENT));
     host.press_keys("x").unwrap();
-    assert!(host.key_command_at_work());
-    host.let_keys_through();
-    assert!(!host.key_command_at_work());
+    assert!(host.key_command_at_work(FIRST_CLIENT));
+    host.let_keys_through(FIRST_CLIENT);
+    assert!(!host.key_command_at_work(FIRST_CLIENT));
 
     host.press_keys("x").unwrap();
-    assert!(!host.key_command_at_work(), "finished at once");
+    assert!(!host.key_command_at_work(FIRST_CLIENT), "finished at once");
     host.press_keys("q").unwrap();
-    assert!(!host.key_command_at_work(), "waits for a key");
+    assert!(!host.key_command_at_work(FIRST_CLIENT), "waits for a key");
     host.press_keys("k s").unwrap();
-    assert!(!host.key_command_at_work(), "waits for an answer");
+    assert!(
+        !host.key_command_at_work(FIRST_CLIENT),
+        "waits for an answer"
+    );
     host.press_keys("S").unwrap();
     host.press_keys("j").unwrap();
-    assert!(host.key_command_at_work(), "waits on a program");
-    host.let_keys_through();
+    assert!(host.key_command_at_work(FIRST_CLIENT), "waits on a program");
+    host.let_keys_through(FIRST_CLIENT);
     host.press_keys("w").unwrap();
-    assert!(host.key_command_at_work(), "waits for a command at work");
+    assert!(
+        host.key_command_at_work(FIRST_CLIENT),
+        "waits for a command at work"
+    );
 }
 
 #[test]

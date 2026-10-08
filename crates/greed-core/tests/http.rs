@@ -8,8 +8,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
-use greed_core::Editor;
 use greed_core::luau::Host;
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 /// Answers `/hello` with "hello", echoes the body sent to `/echo`, and
@@ -96,7 +96,7 @@ fn requests_wait_for_the_whole_response() {
         ),
     )
     .unwrap();
-    host.run("fetch").unwrap();
+    host.run(FIRST_CLIENT, "fetch").unwrap();
     assert_eq!(
         messages(&host, 3),
         ["200 greeting hello", "201 sent", "refused"]
@@ -126,7 +126,7 @@ fn a_successful_response_can_go_straight_to_a_file() {
         ),
     )
     .unwrap();
-    host.run("save").unwrap();
+    host.run(FIRST_CLIENT, "save").unwrap();
     assert_eq!(messages(&host, 2), ["200 []", "404"]);
     assert_eq!(
         std::fs::read_to_string(dir.join("deep/hello.txt")).unwrap(),
@@ -159,7 +159,7 @@ fn streams_give_each_piece_as_it_arrives() {
         ),
     )
     .unwrap();
-    host.run("stream").unwrap();
+    host.run(FIRST_CLIENT, "stream").unwrap();
     assert_eq!(
         messages(&host, 5),
         ["status 200", "one", "two", "three", "end"]
@@ -191,7 +191,7 @@ fn a_plugin_reaches_only_the_hosts_it_declares() {
     .unwrap();
     let host = host();
     host.load_dir(&dir).unwrap();
-    host.run("fetcher-go").unwrap();
+    host.run(FIRST_CLIENT, "fetcher-go").unwrap();
     let said = messages(&host, 1);
     assert!(said[0].contains("add \"net:127.0.0.1\""), "{said:?}");
     std::fs::remove_dir_all(&dir).unwrap();

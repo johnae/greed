@@ -133,7 +133,8 @@ usually means a typo. `greed.plugin.check` reports both as warnings.
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
-was typed, and `ctx.char` for keys that type a character. Keys for
+was typed, `ctx.char` for keys that type a character, and `ctx.client`, the
+id of the client that ran it (see [Clients](#clients)). Keys for
 commands people reach for by name go in the leader, `{ layer = "leader" }`,
 which every editing style opens its own way (`space g` in Helix and Vim,
 `ctrl-space g` in the vscode style). Keys for normal mode or for typing go to a
@@ -666,8 +667,8 @@ greed.tab.set_layout({
   command when clicked, and `style = "ui.statusline.warning"` draws it as a
   warning.
 - `greed.client.notify(title, body)` sends a notification to your desktop
-  through the attached client: the terminal shows it (OSC 9, or OSC 777 in
-  foot and urxvt) with a bell while it isn't focused.
+  through the client you used last: the terminal shows it (OSC 9, or OSC
+  777 in foot and urxvt) with a bell while it isn't focused.
 - Features are what a plugin turns on for some buffers beyond their
   language, like notes for Markdown in the notes folder. Name yours with
   `require("@core").features.add("todos", function(buffer) return ... end)`,
@@ -690,6 +691,33 @@ greed.tab.set_layout({
   the lines an edit changed (and any code block or table they touch)
   rather than the whole file. It returns a function that draws a buffer,
   or all of them, again in full.
+
+## Clients
+
+Several terminals or windows can show one session at once, like your
+desktop and a laptop over `greed ssh`. Each is a client, with its own
+cursors, focus, mode, half-typed keys and macro recording; buffers and
+their undo history are shared. Code always acts for one client: a command
+for the client whose key, click or menu ran it, an event handler for the
+client the event is about, and what either starts (`greed.spawn`, a timer)
+for the same client. `greed.view()`, `greed.mode.get()`, `greed.next_key()`
+and selections all belong to that client.
+
+```luau
+greed.command({
+	name = "who",
+	run = function(ctx)
+		local me = greed.client.current()
+		greed.echo(`{me.name} ({me.kind}), one of {#greed.client.list()}`)
+	end,
+})
+```
+
+`greed.client.current()` and `greed.client.list()` describe clients:
+`id`, `name` (like `tui@laptop`), `kind`, `remote`, `size`, `layout`,
+`color` (the color its cursors show in for the others) and `person`.
+`ctx.client` is the id of the client a command runs for, and events about
+a client carry it as `event.client`.
 
 ## Waiting
 
@@ -822,22 +850,22 @@ end)
 | `buffer.saved` | A buffer was written to its file | `buffer` |
 | `buffer.closed` | A buffer was closed | `id`, the closed buffer's |
 | `file.changed` | A file watched with `greed.fs.watch(path)` was written, created or removed, by anything | `path` |
-| `mode.changed` | The mode changed | `from`, `to` |
+| `mode.changed` | A client's mode changed | `from`, `to` |
 | `command.run` | A command is about to run | `name`, the `keys` that ran it, `count` |
-| `selection.changed` | A view's selection changed, or it shows another buffer, by anything: keys, the mouse, undo, a plugin or an agent. Once a frame per view, before it's drawn, however many changes there were | `view` |
-| `view.focused` | Another view has focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, and `from`, the view that had it (nil if it was closed) |
+| `selection.changed` | A view's selection changed for a client, or it shows another buffer, by anything: keys, the mouse, undo, a plugin or an agent. Once a frame per view, before it's drawn, however many changes there were | `view` |
+| `view.focused` | Another view has a client's focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, and `from`, the view that had it (nil if it was closed) |
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
 | `option.changed` | An option was set | `name`, `value` |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
-| `view.resized` | A view has room for a different number of rows or columns | `view`, `rows`, `cols` |
-| `view.scrolled` | A view starts at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |
+| `view.resized` | A view has room, for a client, for a different number of rows or columns | `view`, `rows`, `cols` |
+| `view.scrolled` | A view starts, for a client, at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |
 | `view.closed` | A view was closed, e.g. a plugin's panel | `view`, the closed view's id |
 | `pane.opened` | A split opened, from whichever plugin made it | `view`, and `from`, the pane beside it |
 | `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a floating view's `border`, or a `tab` |
 | `terminal.output` | A terminal's program printed something | `terminal`; read it with `terminal:screen()` |
 | `terminal.exited` | A terminal's program ended | `terminal`, `code` |
 | `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal`, whether it came over `greed ssh` (`remote`) |
-| `client.detached` | The attached terminal or window went; the session goes on without it | nothing |
+| `client.detached` | A terminal or window went; the session goes on without it | `client` |
 | `client.paste` | Text was pasted from the system clipboard | `text` |
 | `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
 | `control.closed` | A session socket connection closed, after its last request came; requests from it still waiting have nobody to answer | `connection` |
@@ -1293,6 +1321,21 @@ about code that held the editor up, so a busy machine doesn't change what `t:mes
 a test presses and each command it runs gets the time limit a key press
 gets in the editor, and time spent waiting for programs and background
 work doesn't count toward it.
+
+`t` acts as the session's first client. `t:client(name)` adds another, as
+if a second terminal attached, seeing what the first one does; it has
+`keys`, `run`, `mouse`, `draw`, `screen`, `status`, `marked`, `expect`,
+`expect_mode` and `id`, all as that client:
+
+```luau
+test("each client has its own mode", function(t)
+	t:buffer("|hello")
+	local laptop = t:client("laptop")
+	laptop:keys("i")
+	laptop:expect_mode("helix-insert")
+	t:expect_mode("helix")
+end)
+```
 
 ## Types
 

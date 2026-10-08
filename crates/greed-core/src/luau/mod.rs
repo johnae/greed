@@ -47,6 +47,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use greed_text::ClientId;
 use mlua::{Function, Lua, Value, VmState};
 use serde::Deserialize;
 
@@ -86,11 +87,11 @@ pub(crate) struct State {
     pub exports: HashMap<PluginId, Value>,
     /// Commands and handlers waiting on a timer or a reply.
     pub tasks: tasks::Tasks,
-    /// The command waiting for the next key press, if any, and the limit
+    /// The command waiting for each client's next key press, and the limit
     /// it runs within.
-    pub key_waiter: Option<(u64, capabilities::Limit)>,
-    /// What each `greed.keys.record` is keeping, by name.
-    pub recording: HashMap<String, api::Recording>,
+    pub key_waiter: HashMap<ClientId, (u64, capabilities::Limit)>,
+    /// What each `greed.keys.record` is keeping, by client and name.
+    pub recording: HashMap<ClientId, HashMap<String, api::Recording>>,
     /// Language servers.
     pub lsp: crate::lsp::Lsp,
     /// The waiting command each pending request wakes, by server and
@@ -131,15 +132,19 @@ pub(crate) struct State {
     pub dirs: Option<PathBuf>,
     /// Programs running in terminals.
     pub terminals: terminal::Terminals,
-    /// Each view's size as last told to plugins with "view.resized".
-    pub view_sizes: HashMap<crate::ViewId, (u16, u16)>,
-    /// Each view's top line as last told to plugins with "view.scrolled".
-    pub view_scrolls: HashMap<crate::ViewId, usize>,
-    /// Each view's buffer and selection as last told to plugins with
-    /// "selection.changed".
-    pub view_selections: HashMap<crate::ViewId, (crate::BufferId, greed_text::Selection)>,
-    /// The focused view as last told to plugins with "view.focused".
-    pub focus_told: Option<crate::ViewId>,
+    /// Each view's size for each client, as last told to plugins with
+    /// "view.resized".
+    pub view_sizes: HashMap<(ClientId, crate::ViewId), (u16, u16)>,
+    /// Each view's top line for each client, as last told to plugins with
+    /// "view.scrolled".
+    pub view_scrolls: HashMap<(ClientId, crate::ViewId), usize>,
+    /// Each view's buffer and selection for each client, as last told to
+    /// plugins with "selection.changed".
+    pub view_selections:
+        HashMap<(ClientId, crate::ViewId), (crate::BufferId, greed_text::Selection)>,
+    /// Each client's focused view as last told to plugins with
+    /// "view.focused".
+    pub focus_told: HashMap<ClientId, crate::ViewId>,
     /// Syntax trees, for highlighting and for plugins.
     pub syntax: crate::syntax::Syntax,
     /// The queries each plugin set, by language and kind, oldest first; the
@@ -325,6 +330,7 @@ pub enum HostError {
     },
     UnknownCommand(Arc<str>),
     UnknownPlugin(Arc<str>),
+    UnknownClient(ClientId),
     Required {
         plugin: Arc<str>,
         by: Arc<str>,
@@ -346,6 +352,7 @@ impl fmt::Display for HostError {
             }
             HostError::UnknownCommand(name) => write!(f, "there is no command called {name:?}"),
             HostError::UnknownPlugin(name) => write!(f, "there is no plugin called {name:?}"),
+            HostError::UnknownClient(id) => write!(f, "there is no client {}", id.0),
             HostError::Required { plugin, by } => {
                 write!(f, "can't unload {plugin:?}: {by:?} requires it")
             }
@@ -407,7 +414,7 @@ impl Host {
             sources: HashMap::new(),
             exports: HashMap::new(),
             tasks: tasks::Tasks::default(),
-            key_waiter: None,
+            key_waiter: HashMap::new(),
             recording: HashMap::new(),
             lsp: crate::lsp::Lsp::default(),
             lsp_waiting: HashMap::new(),
@@ -429,7 +436,7 @@ impl Host {
             view_sizes: HashMap::new(),
             view_scrolls: HashMap::new(),
             view_selections: HashMap::new(),
-            focus_told: None,
+            focus_told: HashMap::new(),
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
@@ -753,11 +760,12 @@ impl Host {
         })
     }
 
-    /// Tells plugins a client attached, with the file or folder it asked to
+    /// Tells plugins `client` attached, with the file or folder it asked to
     /// open, if any, whether it asked for a terminal and whether it came
-    /// over `greed ssh`.
+    /// over `greed ssh`. Its handlers run as that client.
     pub fn client_attached(
         &self,
+        client: ClientId,
         open: Option<&str>,
         terminal: bool,
         remote: bool,
@@ -767,33 +775,65 @@ impl Host {
             state.remote = Some(remote);
             state.attached = true;
         }
+        self.act_for(client)?;
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("path", open)?;
             payload.set("terminal", terminal)?;
             payload.set("remote", remote)?;
-            api::emit(&self.lua, "client.attached", &payload).map_err(HostError::from)
+            api::emit_for_client(&self.lua, "client.attached", &payload).map_err(HostError::from)
         })
     }
 
-    /// Tells plugins the attached client went, with "client.detached"; the
-    /// session goes on without one.
-    pub fn client_detached(&self) -> Result<(), HostError> {
-        state_mut(&self.lua).attached = false;
-        budgeted(&self.lua, || {
+    /// Tells plugins `client` went, with "client.detached", its handlers
+    /// running as that client; the session goes on without it. With
+    /// `others` false, no other client is attached.
+    pub fn client_detached(&self, client: ClientId, others: bool) -> Result<(), HostError> {
+        state_mut(&self.lua).attached = others;
+        let outer = self.with_editor_mut(|ed| {
+            let outer = ed.client();
+            ed.act_as(client);
+            outer
+        });
+        let told = budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
-            api::emit(&self.lua, "client.detached", &payload).map_err(HostError::from)
-        })
+            api::emit_for_client(&self.lua, "client.detached", &payload).map_err(HostError::from)
+        });
+        self.with_editor_mut(|ed| ed.act_as(outer));
+        told
     }
 
-    /// Tells plugins text was pasted into the client, with "client.paste";
+    /// Tells plugins text was pasted into `client`, with "client.paste";
     /// the core plugin puts it at the cursors.
-    pub fn paste(&self, text: &str) -> Result<(), HostError> {
+    pub fn paste(&self, client: ClientId, text: &str) -> Result<(), HostError> {
+        self.act_for(client)?;
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("text", text)?;
-            api::emit(&self.lua, "client.paste", &payload).map_err(HostError::from)
+            api::emit_for_client(&self.lua, "client.paste", &payload).map_err(HostError::from)
         })
+    }
+
+    /// Acts for `client` from now on, as it does something.
+    fn act_for(&self, client: ClientId) -> Result<(), HostError> {
+        if self.with_editor_mut(|ed| ed.set_acting(client)) {
+            Ok(())
+        } else {
+            Err(HostError::UnknownClient(client))
+        }
+    }
+
+    /// Forgets what plugins were told about client `id` and what waits for
+    /// its keys, once it's gone.
+    pub fn forget_client(&self, id: ClientId) {
+        let state = &mut *state_mut(&self.lua);
+        state.key_waiter.remove(&id);
+        state.recording.remove(&id);
+        state.focus_told.remove(&id);
+        state.view_sizes.retain(|(client, _), _| *client != id);
+        state.view_scrolls.retain(|(client, _), _| *client != id);
+        state.view_selections.retain(|(client, _), _| *client != id);
+        state.tasks.forget_client(id);
     }
 
     /// Tells plugins the editor is up and about to show itself, with
@@ -812,8 +852,10 @@ impl Host {
         emitted
     }
 
-    /// Tells plugins what the mouse did, with "mouse", and what was under it.
-    pub fn mouse(&self, mouse: Mouse, hit: &Hit) -> Result<(), HostError> {
+    /// Tells plugins what the mouse did in `client`, with "mouse", and what
+    /// was under it.
+    pub fn mouse(&self, client: ClientId, mouse: Mouse, hit: &Hit) -> Result<(), HostError> {
+        self.act_for(client)?;
         budgeted(&self.lua, || {
             mouse_event(&self.lua, mouse, hit).map_err(HostError::from)
         })
@@ -926,8 +968,9 @@ impl Host {
         state_mut(&self.lua).lsp.set_launcher(launcher);
     }
 
-    /// Runs a command as the user.
-    pub fn run(&self, name: &str) -> Result<(), HostError> {
+    /// Runs a command as the user, from `client`.
+    pub fn run(&self, client: ClientId, name: &str) -> Result<(), HostError> {
+        self.act_for(client)?;
         budgeted(&self.lua, || api::run_command(&self.lua, name))
     }
 
@@ -956,31 +999,33 @@ impl Host {
         stalls::timed(&self.lua, None, what, f).0
     }
 
-    /// Feeds one key press through the keymap, running whatever it resolves
-    /// to.
-    pub fn press(&self, key: Key) -> Result<(), HostError> {
+    /// Feeds one key press from `client` through its keymap, running
+    /// whatever it resolves to.
+    pub fn press(&self, client: ClientId, key: Key) -> Result<(), HostError> {
+        self.act_for(client)?;
         budgeted(&self.lua, || api::press(&self.lua, key))
     }
 
-    /// Whether the command the last key ran is still at work: cut into time
-    /// slices, or waiting on a timer, a job, or a command that is. Keys
-    /// typed meanwhile should wait their turn. One waiting for the user, for
-    /// a key or a prompt's answer, isn't at work.
-    pub fn key_command_at_work(&self) -> bool {
-        tasks::key_command_at_work(&self.lua)
+    /// Whether the command the last key `client` typed ran is still at work:
+    /// cut into time slices, or waiting on a timer, a job, or a command that
+    /// is. Keys it types meanwhile should wait their turn. One waiting for
+    /// the user, for a key or a prompt's answer, isn't at work.
+    pub fn key_command_at_work(&self, client: ClientId) -> bool {
+        tasks::key_command_at_work(&self.lua, client)
     }
 
-    /// Stops keys waiting for the command the last key ran, though it's
-    /// still at work, once they've waited long enough.
-    pub fn let_keys_through(&self) {
-        tasks::let_keys_through(&self.lua);
+    /// Stops `client`'s keys waiting for the command its last key ran,
+    /// though it's still at work, once they've waited long enough.
+    pub fn let_keys_through(&self, client: ClientId) {
+        tasks::let_keys_through(&self.lua, client);
     }
 
-    /// Presses each key of a space-separated sequence, e.g. `"g g"`.
+    /// Presses each key of a space-separated sequence, e.g. `"g g"`, as the
+    /// first client.
     pub fn press_keys(&self, keys: &str) -> Result<(), HostError> {
         Key::parse_sequence(keys)?
             .into_iter()
-            .try_for_each(|key| self.press(key))
+            .try_for_each(|key| self.press(crate::FIRST_CLIENT, key))
     }
 }
 
@@ -1202,33 +1247,86 @@ fn mouse_event(lua: &Lua, mouse: Mouse, hit: &Hit) -> mlua::Result<()> {
     }
     payload.set("action", hit.action.as_deref())?;
     payload.set("tab", hit.tab.map(|t| t.0))?;
-    api::emit(lua, "mouse", &payload)
+    api::emit_for_client(lua, "mouse", &payload)
+}
+
+/// Runs `report` acting for each client in turn, then for the one acting
+/// before, so what it tells plugins is each client's and their handlers run
+/// as it. Returns whether any call returned true; the first error stops it.
+fn as_each_client(
+    lua: &Lua,
+    mut report: impl FnMut(ClientId) -> mlua::Result<bool>,
+) -> mlua::Result<bool> {
+    let (outer, clients): (ClientId, Vec<ClientId>) = {
+        let editor = &state(lua).editor;
+        (
+            editor.client(),
+            editor.clients().map(crate::ClientState::id).collect(),
+        )
+    };
+    let mut heard = false;
+    let mut result = Ok(());
+    for client in clients {
+        state_mut(lua).editor.act_as(client);
+        match report(client) {
+            Ok(now) => heard |= now,
+            Err(err) => {
+                result = Err(err);
+                break;
+            }
+        }
+    }
+    state_mut(lua).editor.act_as(outer);
+    result.map(|()| heard)
+}
+
+/// Replaces what `told` holds for `client`'s views with `now`.
+fn replace_client_views<V>(
+    told: &mut HashMap<(ClientId, crate::ViewId), V>,
+    client: ClientId,
+    now: HashMap<(ClientId, crate::ViewId), V>,
+) {
+    told.retain(|(c, _), _| *c != client);
+    told.extend(now);
 }
 
 /// Emits "view.resized" for each view drawn at a new size and
-/// "view.scrolled" for each scrolled to a new line. Returns whether a
-/// handler heard either.
+/// "view.scrolled" for each scrolled to a new line, for each client. Returns
+/// whether a handler heard either.
 fn report_views(lua: &Lua) -> mlua::Result<bool> {
+    as_each_client(lua, |client| report_views_of(lua, client))
+}
+
+/// [`report_views`] for `client`, the acting one.
+fn report_views_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
     let (resized, scrolled): (Vec<_>, Vec<_>) = {
         let state = &mut *state_mut(lua);
-        let sizes: HashMap<_, _> = state.editor.view_sizes().collect();
+        let sizes: HashMap<_, _> = state
+            .editor
+            .view_sizes()
+            .map(|(id, size)| ((client, id), size))
+            .collect();
         let resized = sizes
             .iter()
             .filter(|(id, size)| state.view_sizes.get(id) != Some(size))
-            .map(|(id, size)| (*id, *size))
+            .map(|((_, id), size)| (*id, *size))
             .collect();
-        state.view_sizes = sizes;
-        let scrolls: HashMap<_, _> = state.editor.view_scrolls().collect();
+        replace_client_views(&mut state.view_sizes, client, sizes);
+        let scrolls: HashMap<_, _> = state
+            .editor
+            .view_scrolls()
+            .map(|(id, line)| ((client, id), line))
+            .collect();
         // A view that's new hasn't scrolled anywhere yet.
         let scrolled = scrolls
             .iter()
             .filter(|(id, line)| state.view_scrolls.get(id).is_some_and(|old| old != *line))
-            .map(|(id, line)| (*id, *line))
+            .map(|((_, id), line)| (*id, *line))
             .collect();
-        state.view_scrolls = scrolls;
+        replace_client_views(&mut state.view_scrolls, client, scrolls);
         (resized, scrolled)
     };
-    let author = greed_text::Author::User(state(lua).editor.client());
+    let author = greed_text::Author::User(client);
     let payload = |id| -> mlua::Result<mlua::Table> {
         let payload = lua.create_table()?;
         payload.set(
@@ -1247,40 +1345,41 @@ fn report_views(lua: &Lua) -> mlua::Result<bool> {
         let payload = payload(id)?;
         payload.set("rows", rows)?;
         payload.set("cols", cols)?;
-        api::emit(lua, "view.resized", &payload)?;
+        api::emit_for_client(lua, "view.resized", &payload)?;
     }
     for (id, line) in scrolled {
         let payload = payload(id)?;
         payload.set("line", line)?;
-        api::emit(lua, "view.scrolled", &payload)?;
+        api::emit_for_client(lua, "view.scrolled", &payload)?;
     }
     Ok(reported)
 }
 
 /// Emits "view.focused" when another view has focus and
 /// "selection.changed" for each view whose selection changed, or which shows
-/// another buffer. Views that are new have nothing to compare with. What
-/// handlers change in answer is told once more.
+/// another buffer, for each client. Views that are new have nothing to
+/// compare with. What handlers change in answer is told once more.
 fn report_selections(lua: &Lua) -> mlua::Result<()> {
-    if report_selections_once(lua)? {
-        report_selections_once(lua)?;
+    if as_each_client(lua, |client| report_selections_of(lua, client))? {
+        as_each_client(lua, |client| report_selections_of(lua, client))?;
     }
     Ok(())
 }
 
-/// One round of [`report_selections`]; whether a handler heard it.
-fn report_selections_once(lua: &Lua) -> mlua::Result<bool> {
+/// One round of [`report_selections`] for `client`, the acting one; whether
+/// a handler heard it.
+fn report_selections_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
     let (focused, changed) = {
         let state = &mut *state_mut(lua);
         let editor = &state.editor;
         let focus = editor.focus();
-        let focused = match state.focus_told.replace(focus) {
+        let focused = match state.focus_told.insert(client, focus) {
             Some(old) if old != focus => Some((focus, editor.find_view(old).map(|_| old))),
             _ => None,
         };
         let now: HashMap<_, _> = editor
             .view_selections()
-            .map(|(id, buffer, selection)| (id, (buffer, selection.clone())))
+            .map(|(id, buffer, selection)| ((client, id), (buffer, selection.clone())))
             .collect();
         let changed: Vec<_> = now
             .iter()
@@ -1290,12 +1389,12 @@ fn report_selections_once(lua: &Lua) -> mlua::Result<bool> {
                     .get(id)
                     .is_some_and(|old| old != *seen)
             })
-            .map(|(id, _)| *id)
+            .map(|((_, id), _)| *id)
             .collect();
-        state.view_selections = now;
+        replace_client_views(&mut state.view_selections, client, now);
         (focused, changed)
     };
-    let author = greed_text::Author::User(state(lua).editor.client());
+    let author = greed_text::Author::User(client);
     let view = |id| handles::ViewRef {
         id,
         author: author.clone(),
@@ -1307,12 +1406,12 @@ fn report_selections_once(lua: &Lua) -> mlua::Result<bool> {
         let payload = lua.create_table()?;
         payload.set("view", view(id))?;
         payload.set("from", from.map(&view))?;
-        api::emit(lua, "view.focused", &payload)?;
+        api::emit_for_client(lua, "view.focused", &payload)?;
     }
     for id in changed {
         let payload = lua.create_table()?;
         payload.set("view", view(id))?;
-        api::emit(lua, "selection.changed", &payload)?;
+        api::emit_for_client(lua, "selection.changed", &payload)?;
     }
     Ok(reported)
 }

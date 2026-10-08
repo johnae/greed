@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use greed_core::Editor;
 use greed_core::luau::{Host, HostError};
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 /// A temporary folder for one test, removed when dropped.
@@ -151,7 +151,7 @@ fn check(host: &Host, dir: &Path) -> Vec<String> {
     )
     .unwrap();
     host.with_editor_mut(|editor| editor.open("file", "", None));
-    host.run("check-it").unwrap();
+    host.run(FIRST_CLIENT, "check-it").unwrap();
     host.settle().unwrap();
     host.with_editor_mut(Editor::take_messages)
 }
@@ -295,7 +295,7 @@ fn code_a_plugin_loads_counts_as_its_own_whatever_its_named() {
     .unwrap();
     host.load_dir(&user).unwrap();
     for command in ["user-go", "user-spawn"] {
-        let err = host.run(command).unwrap_err().brief();
+        let err = host.run(FIRST_CLIENT, command).unwrap_err().brief();
         // Refused for user, through the stack or the limit it started.
         assert!(
             err.starts_with("tools can't run programs")
@@ -303,7 +303,7 @@ fn code_a_plugin_loads_counts_as_its_own_whatever_its_named() {
             "{command}: {err}"
         );
     }
-    let err = host.run("user-peek").unwrap_err().brief();
+    let err = host.run(FIRST_CLIENT, "user-peek").unwrap_err().brief();
     assert!(err.contains("getfenv isn't available to plugins"), "{err}");
 }
 

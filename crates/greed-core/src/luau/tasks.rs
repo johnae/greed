@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use greed_text::ClientId;
 use mlua::thread::ThreadStatus;
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Thread, Value};
 
@@ -56,9 +57,12 @@ pub(crate) struct Tasks {
     /// The timers of coroutines whose time slice ran out, which carry on as
     /// soon as the editor had a turn.
     sliced: HashSet<u64>,
-    /// The coroutine of the command the last key typed ran, while it runs,
-    /// so keys typed after it can wait their turn.
-    key_command: Option<usize>,
+    /// The client each running coroutine acts for: the one acting when it
+    /// started. The editor acts for it while it runs.
+    clients: HashMap<usize, ClientId>,
+    /// The coroutine of the command the last key each client typed ran,
+    /// while it runs, so keys that client types after it wait their turn.
+    key_command: HashMap<ClientId, usize>,
 }
 
 impl Default for Tasks {
@@ -80,7 +84,8 @@ impl Default for Tasks {
             worked: HashMap::new(),
             finished: HashMap::new(),
             sliced: HashSet::new(),
-            key_command: None,
+            clients: HashMap::new(),
+            key_command: HashMap::new(),
         }
     }
 }
@@ -105,9 +110,13 @@ impl Tasks {
         self.limits.remove(&id);
         self.labels.remove(&id);
         self.worked.remove(&id);
-        if self.key_command == Some(id) {
-            self.key_command = None;
-        }
+        self.clients.remove(&id);
+        self.key_command.retain(|_, running| *running != id);
+    }
+
+    /// Stops keys of client `id`, which went, waiting for anything.
+    pub(super) fn forget_client(&mut self, id: ClientId) {
+        self.key_command.remove(&id);
     }
 
     /// Whether coroutine `id` is at work: cut into time slices, or waiting
@@ -170,26 +179,32 @@ impl Tasks {
     }
 }
 
-/// Whether the command the last key typed ran is still at work (see
-/// `Tasks::at_work`), so the keys typed after it should wait.
-pub(super) fn key_command_at_work(lua: &Lua) -> bool {
+/// Whether the command the last key `client` typed ran is still at work
+/// (see `Tasks::at_work`), so the keys it types after it should wait.
+pub(super) fn key_command_at_work(lua: &Lua, client: ClientId) -> bool {
     let state = state(lua);
     state
         .tasks
         .key_command
-        .is_some_and(|id| state.tasks.at_work(id, &state.jobs))
+        .get(&client)
+        .is_some_and(|id| state.tasks.at_work(*id, &state.jobs))
 }
 
-/// Keeps `running`, the coroutine of the command a key typed just ran, as
-/// the one keys wait for.
+/// Keeps `running`, the coroutine of the command a key the acting client
+/// typed just ran, as the one its keys wait for.
 pub(super) fn ran_for_key(lua: &Lua, running: Option<usize>) {
-    state_mut(lua).tasks.key_command = running;
+    let state = &mut *state_mut(lua);
+    let client = state.editor.client();
+    match running {
+        Some(id) => state.tasks.key_command.insert(client, id),
+        None => state.tasks.key_command.remove(&client),
+    };
 }
 
-/// Stops keys waiting for the command the last key ran, though it's still
-/// at work.
-pub(super) fn let_keys_through(lua: &Lua) {
-    state_mut(lua).tasks.key_command = None;
+/// Stops `client`'s keys waiting for the command its last key ran, though
+/// it's still at work.
+pub(super) fn let_keys_through(lua: &Lua, client: ClientId) {
+    state_mut(lua).tasks.key_command.remove(&client);
 }
 
 /// Stops every command, handler and task of plugin `owner`'s, letting what
@@ -198,13 +213,9 @@ pub(super) fn stop_owned_by(lua: &Lua, owner: &str) -> LuaResult<()> {
     let waiters = {
         let state = &mut *state_mut(lua);
         let (dropped, waiters) = state.tasks.stop_owned_by(owner);
-        if state
+        state
             .key_waiter
-            .as_ref()
-            .is_some_and(|(token, _)| dropped.contains(token))
-        {
-            state.key_waiter = None;
-        }
+            .retain(|_, (token, _)| !dropped.contains(token));
         waiters
     };
     for token in waiters {
@@ -277,6 +288,7 @@ fn spawn_with(
         }
         state.tasks.owners.insert(id, owner);
         state.tasks.limits.insert(id, limit);
+        state.tasks.clients.insert(id, state.editor.client());
         if let Some(label) = label {
             state.tasks.labels.insert(id, label);
         }
@@ -311,8 +323,15 @@ fn key(thread: &Thread) -> usize {
 
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let id = key(&thread);
-    let (outer, outer_owner, outer_limit, owner, cause, label) = {
+    let (outer, outer_owner, outer_limit, outer_client, owner, cause, label) = {
         let state = &mut *state_mut(lua);
+        let outer_client = state.editor.client();
+        // A test's body, which nothing spawned, acts for whoever is acting.
+        if let Some(client) = state.tasks.clients.get(&id).copied() {
+            // One that's gone is replaced by the last active one, from now on.
+            let acting = state.editor.act_as(client);
+            state.tasks.clients.insert(id, acting);
+        }
         let cause = state.tasks.causes.get(&id).cloned();
         let owner = state.tasks.owners.get(&id).cloned();
         let label = state.tasks.labels.get(&id).cloned();
@@ -327,7 +346,15 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         state.editor.set_cause(cause.clone());
         let outer_owner = std::mem::replace(&mut state.running, owner.clone());
         let outer_limit = std::mem::replace(&mut state.limit, limit);
-        (outer, outer_owner, outer_limit, owner, cause, label)
+        (
+            outer,
+            outer_owner,
+            outer_limit,
+            outer_client,
+            owner,
+            cause,
+            label,
+        )
     };
     let what = label.as_deref().or(cause.as_deref()).unwrap_or("a handler");
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
@@ -343,6 +370,7 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let stopped = {
         let state = &mut *state_mut(lua);
         state.editor.set_cause(outer);
+        state.editor.act_as(outer_client);
         state.running = outer_owner;
         state.limit = outer_limit;
         // Its plugin was unloaded while it ran.
@@ -561,13 +589,17 @@ pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
     .call(start)
 }
 
-/// `greed.next_key()`: waits for the next key press and returns its name,
-/// e.g. "g" or "ctrl-s". The key doesn't go through the keymap.
+/// `greed.next_key()`: waits for the next key the acting client presses and
+/// returns its name, e.g. "g" or "ctrl-s". The key doesn't go through the
+/// keymap.
 pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(|lua, ()| {
-        let mut state = state_mut(lua);
+        let state = &mut *state_mut(lua);
         let token = state.tasks.token();
-        state.key_waiter = Some((token, state.limit.clone()));
+        let client = state.editor.client();
+        state
+            .key_waiter
+            .insert(client, (token, state.limit.clone()));
         Ok(token)
     })?;
     lua.load(

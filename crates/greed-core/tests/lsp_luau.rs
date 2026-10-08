@@ -4,8 +4,8 @@ mod support;
 
 use std::time::Duration;
 
-use greed_core::Editor;
 use greed_core::luau::Host;
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 fn host() -> Host {
@@ -69,7 +69,7 @@ fn commands_wait_for_answers() {
     )
     .unwrap();
     h.sync_lsp();
-    h.run("hover").unwrap();
+    h.run(FIRST_CLIENT, "hover").unwrap();
     let mut messages = Vec::new();
     pump(&h, |h| {
         messages.extend(h.with_editor_mut(Editor::take_messages));
@@ -93,7 +93,7 @@ fn a_command_waiting_on_a_server_that_stops_gets_an_error() {
     )
     .unwrap();
     h.sync_lsp();
-    h.run("ask").unwrap();
+    h.run(FIRST_CLIENT, "ask").unwrap();
     let mut messages = Vec::new();
     pump(&h, |h| {
         messages.extend(h.with_editor_mut(Editor::take_messages));
@@ -119,7 +119,7 @@ fn requests_need_a_server_and_a_command() {
         "local greed = require('@greed')\ngreed.command { name = 'ask', run = function(ctx) greed.lsp.request(ctx.buffer, 'x', {}) end }",
     )
     .unwrap();
-    let err = h.run("ask").unwrap_err().to_string();
+    let err = h.run(FIRST_CLIENT, "ask").unwrap_err().to_string();
     assert!(err.contains("no language server"), "{err}");
 }
 
@@ -397,7 +397,7 @@ fn without_a_formatter_the_language_server_formats() {
     // No formatter program for Rust here, so the server's turn.
     h.eval("require('@languages').set('rust', { formatter = {} })")
         .unwrap();
-    h.run("format").unwrap();
+    h.run(FIRST_CLIENT, "format").unwrap();
     pump(&h, |h| main_text(h).starts_with("// formatted\n"));
     assert_eq!(main_text(&h), "// formatted\nlet x = bad;");
 }
@@ -607,7 +607,7 @@ fn a_server_asking_to_pick_waits_for_the_picker_and_hears_the_answer() {
         "#,
     )
     .unwrap();
-    h.run("ask-server").unwrap();
+    h.run(FIRST_CLIENT, "ask-server").unwrap();
     pump(&h, |h| picker_items(h).is_some());
     assert_eq!(picker_items(&h).unwrap(), ["Yes", "No"]);
     h.press_keys("down enter").unwrap();

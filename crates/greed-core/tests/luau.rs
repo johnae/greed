@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use greed_core::luau::{Host, HostError};
 use greed_core::registry::Value;
-use greed_core::{Editor, ViewId};
+use greed_core::{Editor, FIRST_CLIENT, ViewId};
 use greed_text::{Author, ClientId, Range, Selection};
 
 fn host(text: &str) -> Host {
@@ -117,7 +117,7 @@ fn errors_name_the_plugin_and_line() {
         "local greed = require('@greed')\ngreed.command { name = 'boom', run = function()\n  error('nope')\nend }",
     )
     .unwrap();
-    let err = h.run("boom").unwrap_err().to_string();
+    let err = h.run(FIRST_CLIENT, "boom").unwrap_err().to_string();
     assert!(err.contains("broken:3"), "{err}");
     assert!(err.contains("nope"), "{err}");
 }
@@ -135,7 +135,10 @@ fn runaway_code_is_stopped() {
 #[test]
 fn unknown_commands_are_reported() {
     let h = host("");
-    assert!(matches!(h.run("nope"), Err(HostError::UnknownCommand(_))));
+    assert!(matches!(
+        h.run(FIRST_CLIENT, "nope"),
+        Err(HostError::UnknownCommand(_))
+    ));
     h.load_str(
         "k",
         "require('@greed').keymap.bind('helix', { x = 'missing' })",
@@ -183,7 +186,7 @@ fn plugin_directories_load_with_local_requires() {
     let h = host("");
     let name = h.load_dir(&dir).unwrap();
     assert_eq!(&*name, "greeter");
-    h.run("greet").unwrap();
+    h.run(FIRST_CLIENT, "greet").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["hi there"]);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -771,7 +774,7 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
             ),
         )
         .unwrap();
-        h.run("grep-test").unwrap();
+        h.run(FIRST_CLIENT, "grep-test").unwrap();
         h.settle().unwrap();
         h.with_editor_mut(Editor::take_messages).join("")
     };
@@ -1004,7 +1007,7 @@ fn running_a_command_is_announced() {
         "local greed = require('@greed')\ngreed.command { name = 'noop', run = function() end }\ngreed.on('command.run', function(ev) greed.echo('ran ' .. ev.name) end)",
     )
     .unwrap();
-    h.run("noop").unwrap();
+    h.run(FIRST_CLIENT, "noop").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["ran noop"]);
 }
 
@@ -1040,7 +1043,7 @@ end }
 fn commands_can_wait_without_blocking() {
     let h = host("");
     h.load_str("sleepy", SLEEPY).unwrap();
-    h.run("later").unwrap();
+    h.run(FIRST_CLIENT, "later").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["before"]);
     assert!(h.next_timer().is_some());
 
@@ -1071,19 +1074,19 @@ fn waiting_only_works_inside_commands() {
          greed.command { name = 'turn', run = function() coroutine.yield() greed.echo('carried on') end }",
     )
     .unwrap();
-    let err = h.run("raw").unwrap_err().to_string();
+    let err = h.run(FIRST_CLIENT, "raw").unwrap_err().to_string();
     assert!(
         err.contains("can only wait through greed functions"),
         "{err}"
     );
     // A bare yield gives the editor a turn, as a time slice running out
     // does. With no event loop to take it, it carries on at once.
-    h.run("turn").unwrap();
+    h.run(FIRST_CLIENT, "turn").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["carried on"]);
     assert!(h.next_timer().is_none());
     // With one, it carries on once the loop fires its timer.
     h.use_event_loop();
-    h.run("turn").unwrap();
+    h.run(FIRST_CLIENT, "turn").unwrap();
     assert!(h.with_editor_mut(Editor::take_messages).is_empty());
     h.fire_timers(std::time::Instant::now()).unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["carried on"]);
@@ -1099,7 +1102,7 @@ fn work_carried_on_after_a_turn_reports_its_errors() {
          greed.on('buffer.changed', function() coroutine.yield() greed.echo('handled') end)",
     )
     .unwrap();
-    let err = h.run("fails-later").unwrap_err().to_string();
+    let err = h.run(FIRST_CLIENT, "fails-later").unwrap_err().to_string();
     assert!(err.contains("after the turn"), "{err}");
     // What a call sets off, like an event's handlers, is done when it returns.
     h.eval("require('@greed').view():buffer():edit(function(e) e:insert(0, 'x') end)")
@@ -1132,14 +1135,14 @@ fn plugins_make_read_only_buffers_in_a_language() {
         "#,
     )
     .unwrap();
-    let err = h.run("type-x").unwrap_err().to_string();
+    let err = h.run(FIRST_CLIENT, "type-x").unwrap_err().to_string();
     assert!(err.contains("read-only"), "{err}");
-    h.run("comment-out").unwrap();
+    h.run(FIRST_CLIENT, "comment-out").unwrap();
     assert_eq!(text(&h), "// fn main() {}");
-    h.run("describe").unwrap();
-    h.run("unlock").unwrap();
-    h.run("describe").unwrap();
-    h.run("type-x").unwrap();
+    h.run(FIRST_CLIENT, "describe").unwrap();
+    h.run(FIRST_CLIENT, "unlock").unwrap();
+    h.run(FIRST_CLIENT, "describe").unwrap();
+    h.run(FIRST_CLIENT, "type-x").unwrap();
     assert_eq!(text(&h), "x// fn main() {}");
     assert_eq!(
         h.with_editor_mut(Editor::take_messages),
@@ -1473,7 +1476,7 @@ fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
     );
 
     // Another base replaces the whole of the last one.
-    h.run("switch").unwrap();
+    h.run(FIRST_CLIENT, "switch").unwrap();
     assert_eq!(fg("keyword").unwrap(), "green", "still on top");
     assert_eq!(fg("comment").unwrap(), "nil", "the old base's entries go");
     assert_eq!(fg("string").unwrap(), "cyan");
@@ -1709,14 +1712,14 @@ fn signals_wake_whoever_waits_with_the_value_sent() {
         "#,
     )
     .unwrap();
-    h.run("wait").unwrap();
+    h.run(FIRST_CLIENT, "wait").unwrap();
     assert!(
         h.with_editor_mut(Editor::take_messages).is_empty(),
         "still waiting"
     );
-    h.run("send").unwrap();
+    h.run(FIRST_CLIENT, "send").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["got yes"]);
-    h.run("early").unwrap();
+    h.run(FIRST_CLIENT, "early").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["early 42"]);
 }
 
@@ -2260,7 +2263,7 @@ fn a_paste_reaches_plugins_and_the_system_clipboard_becomes_the_editors() {
         "require('@greed').on('client.paste', function(e) require('@greed').echo('pasted ' .. e.text) end)",
     )
     .unwrap();
-    host.paste("from the browser").unwrap();
+    host.paste(FIRST_CLIENT, "from the browser").unwrap();
     let said = host.with_editor_mut(greed_core::Editor::take_messages);
     assert!(
         said.iter().any(|m| m == "pasted from the browser"),

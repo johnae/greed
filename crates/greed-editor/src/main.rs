@@ -241,7 +241,7 @@ fn host(
         }
     }
     // Last, the project's own config, which core runs if you trusted it.
-    if let Err(err) = host.run("project-config") {
+    if let Err(err) = host.run(greed_core::FIRST_CLIENT, "project-config") {
         host.with_editor_mut(|ed| ed.echo(format!("project config: {err}")));
     }
     // The file opened at the start was opened before plugins were there to
@@ -335,7 +335,7 @@ fn handle(host: &Host, line: &str) -> Result<Action, Box<dyn std::error::Error>>
     let arg = arg.trim();
     match name {
         "keys" => host.press_keys(arg)?,
-        "run" => host.run(arg)?,
+        "run" => host.run(greed_core::FIRST_CLIENT, arg)?,
         "reload" => host.reload(arg)?,
         "show" => {}
         "write" => return write(host).map(Action::Print),

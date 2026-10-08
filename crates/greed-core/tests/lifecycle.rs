@@ -4,9 +4,9 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use greed_core::Editor;
 use greed_core::image::ImageId;
 use greed_core::luau::Host;
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 fn host() -> Host {
@@ -100,7 +100,7 @@ fn unloading_stops_commands_and_handlers_mid_wait_and_wakes_their_waiters() {
         "#,
     )
     .unwrap();
-    h.run("call-slow").unwrap();
+    h.run(FIRST_CLIENT, "call-slow").unwrap();
     h.eval("require('@greed').view():buffer():edit(function(e) e:insert(0, 'x') end)")
         .unwrap();
     h.unload("slow").unwrap();
@@ -126,7 +126,7 @@ fn a_command_that_unloads_its_own_plugin_stops_when_it_next_waits() {
         "#,
     )
     .unwrap();
-    h.run("go").unwrap();
+    h.run(FIRST_CLIENT, "go").unwrap();
     pass(&h, start, 100);
     assert_eq!(messages(&h), ["still here"]);
 }
@@ -350,7 +350,7 @@ return {
 "#;
 
 fn names(h: &Host) -> String {
-    h.run("names").unwrap();
+    h.run(FIRST_CLIENT, "names").unwrap();
     messages(h).join(";")
 }
 

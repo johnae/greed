@@ -4,9 +4,27 @@
 --- Buffers are written with markers: `|` at each cursor or selection head,
 --- and `^` at the anchor of a selection. "^hello |world" selects "hello ".
 
+--- Another client, from `t:client`: what it does and sees, as `t`'s
+--- methods of the same names do for the first client.
+export type TestClient = {
+	--- Its id, as `greed.client.current().id` gives it to code running as it.
+	id: (self: TestClient) -> number,
+	keys: (self: TestClient, keys: string) -> (),
+	run: (self: TestClient, command: string, args: { string }?) -> (),
+	mouse: (self: TestClient, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> (),
+	draw: (self: TestClient, width: number, height: number) -> { string },
+	screen: (self: TestClient, width: number, height: number) -> { string },
+	status: (self: TestClient) -> (string?, string?),
+	marked: (self: TestClient) -> string,
+	expect: (self: TestClient, marked: string) -> (),
+	expect_mode: (self: TestClient, mode: string) -> (),
+}
+
 export type TestContext = {
 	--- Shows a fresh buffer in the main view, in the helix style's normal mode.
 	buffer: (self: TestContext, marked: string) -> (),
+	--- Another client, as if one attached, seeing what the first one does: the same views, selections and mode. `t`'s own methods act as the first client. `name` defaults to "test N".
+	client: (self: TestContext, name: string?) -> TestClient,
 	--- Presses keys, e.g. "g g" or "i h i esc".
 	keys: (self: TestContext, keys: string) -> (),
 	--- Runs a command, with arguments as from the command line, and waits

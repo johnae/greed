@@ -22,6 +22,21 @@ pub const FIRST_CLIENT: ClientId = ClientId(1);
 #[derive(Debug, Clone)]
 pub struct ClientState {
     pub(super) id: ClientId,
+    /// What it's called, like "tui@laptop": its kind and machine. A client
+    /// coming back with the same name gets its state back.
+    pub(super) name: Arc<str>,
+    /// What sort of client it is: "tui", "gui", "headless" or "test".
+    pub(super) kind: Arc<str>,
+    /// Whether it came over `greed ssh`.
+    pub(super) remote: bool,
+    /// Its screen's width and height in cells, once it has said.
+    pub(super) size: Option<(u16, u16)>,
+    /// Which of the peer colors, 1 to [`PEER_COLORS`], its cursors show in
+    /// for the others.
+    pub(super) color: u8,
+    pub(super) layout: ClientLayout,
+    /// When it last did something, as a count that only goes up.
+    pub(super) active_at: u64,
     /// The view keys go to.
     pub(super) focus: ViewId,
     /// Every open view as this client sees it: its selection and scroll.
@@ -57,6 +72,13 @@ impl ClientState {
     pub(super) fn new(id: ClientId) -> Self {
         Self {
             id,
+            name: "headless".into(),
+            kind: "headless".into(),
+            remote: false,
+            size: None,
+            color: 1,
+            layout: ClientLayout::Follow,
+            active_at: 0,
             focus: ViewId(0),
             views: BTreeMap::new(),
             tabs: HashMap::new(),
@@ -91,6 +113,78 @@ impl ClientState {
     pub fn id(&self) -> ClientId {
         self.id
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    pub fn remote(&self) -> bool {
+        self.remote
+    }
+
+    pub fn size(&self) -> Option<(u16, u16)> {
+        self.size
+    }
+
+    pub fn color(&self) -> u8 {
+        self.color
+    }
+
+    pub fn layout(&self) -> ClientLayout {
+        self.layout
+    }
+
+    pub fn mode(&self) -> &str {
+        &self.mode
+    }
+
+    /// The view its keys go to.
+    pub fn focus(&self) -> ViewId {
+        self.focus
+    }
+
+    /// View `id` as this client sees it.
+    pub fn view(&self, id: ViewId) -> Option<&View> {
+        self.views.get(&id)
+    }
+}
+
+/// How many colors clients' cursors come in for each other.
+pub const PEER_COLORS: u8 = 6;
+
+/// How a client's layout relates to the others': following them, with the
+/// same tab, project and panes shown, or laid out on its own.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClientLayout {
+    #[default]
+    Follow,
+    Independent,
+}
+
+impl ClientLayout {
+    pub fn name(self) -> &'static str {
+        match self {
+            ClientLayout::Follow => "follow",
+            ClientLayout::Independent => "independent",
+        }
+    }
+}
+
+/// What a client says about itself when it attaches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientInfo {
+    /// Like "tui@laptop"; a client coming back with the same name gets its
+    /// state back.
+    pub name: String,
+    /// "tui", "gui", "headless" or "test".
+    pub kind: String,
+    /// Whether it came over `greed ssh`.
+    pub remote: bool,
+    pub layout: ClientLayout,
 }
 
 /// A tab as one client has it: which pane is active, the panes in the

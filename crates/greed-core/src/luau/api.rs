@@ -74,23 +74,25 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         limit,
     } = how;
     let limit = limit.unwrap_or_else(|| state(lua).floor.clone());
-    let (handler, owner, author, view, buffer) = {
+    let (handler, owner, client, view, buffer) = {
         let state = state(lua);
         let command = state
             .registry
             .command(name)
             .ok_or_else(|| HostError::UnknownCommand(name.into()))?;
-        let author = Author::User(state.editor.client());
+        let client = state.editor.client();
         let view = state.editor.focus();
         (
             command.handler.clone(),
             command.owner.clone(),
-            author,
+            client,
             view,
             state.editor.view(view).buffer,
         )
     };
+    let author = Author::User(client);
     let ctx = lua.create_table()?;
+    ctx.set("client", client.0)?;
     ctx.set(
         "view",
         ViewRef {
@@ -129,7 +131,7 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         event.set("keys", keys_text(keys))?;
     }
     event.set("count", count)?;
-    emit(lua, "command.run", &event)?;
+    emit_for_client(lua, "command.run", &event)?;
     Ok(tasks::spawn_running(
         lua,
         handler,
@@ -145,14 +147,16 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
 /// for while it's at work, unless one before still is. A key a command
 /// waited for leaves that as it was.
 pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
-    let answers = {
+    let (client, answers) = {
         let state = &mut *state_mut(lua);
-        for recording in state.recording.values_mut() {
+        let client = state.editor.client();
+        let recordings = state.recording.get_mut(&client).into_iter();
+        for recording in recordings.flat_map(HashMap::values_mut) {
             recording.keys.push(key);
         }
-        state.key_waiter.is_some()
+        (client, state.key_waiter.contains_key(&client))
     };
-    let was_at_work = tasks::key_command_at_work(lua);
+    let was_at_work = tasks::key_command_at_work(lua, client);
     let running = press_key(lua, key, None)?;
     if !answers && !was_at_work {
         tasks::ran_for_key(lua, running);
@@ -171,13 +175,18 @@ pub(crate) struct Recording {
 /// to, without recording it, within `limit` when plugin code feeds it.
 /// Returns the coroutine of the command it ran, if that's still running.
 fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>, HostError> {
-    // A command waiting on greed.next_key gets the key instead of the keymap.
-    let waiter = state_mut(lua).key_waiter.take();
-    if let Some((token, waiting)) = waiter {
+    // A command waiting on greed.next_key for this client gets the key
+    // instead of the keymap.
+    let waiter = {
+        let state = &mut *state_mut(lua);
+        let client = state.editor.client();
+        state.key_waiter.remove(&client).map(|w| (client, w))
+    };
+    if let Some((client, (token, waiting))) = waiter {
         let fed = limit.unwrap_or_else(|| state(lua).floor.clone());
         if let Some(by) = capabilities::refused_answer(&fed, &waiting) {
             let error = format!("keys {by} feeds can't answer what waits for you to press a key");
-            state_mut(lua).key_waiter = Some((token, waiting));
+            state_mut(lua).key_waiter.insert(client, (token, waiting));
             return Err(HostError::Lua(mlua::Error::runtime(error)));
         }
         tasks::wake(lua, token, key.to_string())?;
@@ -218,7 +227,7 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>,
 fn keys_pending(lua: &Lua, keys: &str) -> LuaResult<()> {
     let payload = lua.create_table()?;
     payload.set("keys", keys)?;
-    emit(lua, "keys.pending", &payload)
+    emit_for_client(lua, "keys.pending", &payload)
 }
 
 fn keys_text(keys: &[Key]) -> String {
@@ -290,6 +299,13 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
         }
     }
     first_error.map_or(Ok(()), Err)
+}
+
+/// Emits `event`, which concerns the acting client, with its id as
+/// `client`. The handlers run as that client.
+pub(super) fn emit_for_client(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
+    payload.set("client", state(lua).editor.client().0)?;
+    emit(lua, event, payload)
 }
 
 /// `greed.on(event, handler)` and `greed.off(event, handler)`, which removes
@@ -863,7 +879,7 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             let payload = lua.create_table()?;
             payload.set("from", from)?;
             payload.set("to", name)?;
-            emit(lua, "mode.changed", &payload)
+            emit_for_client(lua, "mode.changed", &payload)
         })?,
     )?;
     let set_cursor = lua.create_function(|lua, (name, shape): (String, String)| {
@@ -935,9 +951,52 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
     Ok(clipboard)
 }
 
-/// `greed.client`: the attached client, as the user's desktop.
+/// What `greed.client.current` and `.list` say about a client.
+fn client_to_lua(lua: &Lua, client: &crate::ClientState) -> LuaResult<Table> {
+    let t = lua.create_table()?;
+    t.set("id", client.id().0)?;
+    t.set("name", client.name())?;
+    t.set("kind", client.kind())?;
+    t.set("remote", client.remote())?;
+    if let Some((width, height)) = client.size() {
+        let size = lua.create_table()?;
+        size.set("width", width)?;
+        size.set("height", height)?;
+        t.set("size", size)?;
+    }
+    t.set("layout", client.layout().name())?;
+    t.set("color", client.color())?;
+    // Every client is the session owner's until sessions can be shared.
+    t.set("person", "owner")?;
+    Ok(t)
+}
+
+/// `greed.client`: the clients you see the editor through, and the acting
+/// one as your desktop.
 fn client_module(lua: &Lua) -> LuaResult<Table> {
     let client = lua.create_table()?;
+    client.set(
+        "current",
+        lua.create_function(|lua, ()| {
+            let state = state(lua);
+            let editor = &state.editor;
+            let current = editor
+                .client_state(editor.client())
+                .ok_or_else(|| mlua::Error::runtime("no client is acting"))?;
+            client_to_lua(lua, current)
+        })?,
+    )?;
+    client.set(
+        "list",
+        lua.create_function(|lua, ()| {
+            let state = state(lua);
+            state
+                .editor
+                .clients()
+                .map(|c| client_to_lua(lua, c))
+                .collect::<LuaResult<Vec<_>>>()
+        })?,
+    )?;
     client.set(
         "notify",
         lua.create_function(|lua, (title, body): (String, Option<String>)| {
@@ -1779,7 +1838,9 @@ fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 Some(opts) => opts.get::<Option<bool>>("fed")?.unwrap_or(false),
                 None => false,
             };
-            state_mut(lua).recording.insert(
+            let state = &mut *state_mut(lua);
+            let client = state.editor.client();
+            state.recording.entry(client).or_default().insert(
                 name.unwrap_or_default(),
                 Recording {
                     keys: Vec::new(),
@@ -1792,16 +1853,24 @@ fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     keys.set(
         "stop",
         lua.create_function(|lua, name: Option<String>| {
-            Ok(state_mut(lua)
+            let state = &mut *state_mut(lua);
+            let client = state.editor.client();
+            Ok(state
                 .recording
-                .remove(&name.unwrap_or_default())
+                .get_mut(&client)
+                .and_then(|r| r.remove(&name.unwrap_or_default()))
                 .map(|r| r.keys.iter().map(ToString::to_string).collect::<Vec<_>>()))
         })?,
     )?;
     keys.set(
         "recording",
         lua.create_function(|lua, name: Option<String>| {
-            Ok(state(lua).recording.contains_key(&name.unwrap_or_default()))
+            let state = state(lua);
+            let client = state.editor.client();
+            Ok(state
+                .recording
+                .get(&client)
+                .is_some_and(|r| r.contains_key(&name.unwrap_or_default())))
         })?,
     )?;
     let owner = owner.clone();
@@ -1810,9 +1879,14 @@ fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(move |lua, sequence: String| {
             let limit = capabilities::limit_for(lua, &owner);
             for key in Key::parse_sequence(&sequence).map_err(mlua::Error::external)? {
-                for recording in state_mut(lua).recording.values_mut() {
-                    if recording.fed {
-                        recording.keys.push(key);
+                {
+                    let state = &mut *state_mut(lua);
+                    let client = state.editor.client();
+                    let recordings = state.recording.get_mut(&client).into_iter();
+                    for recording in recordings.flat_map(HashMap::values_mut) {
+                        if recording.fed {
+                            recording.keys.push(key);
+                        }
                     }
                 }
                 press_key(lua, key, Some(limit.clone())).map_err(into_lua)?;

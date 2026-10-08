@@ -23,8 +23,8 @@ local copied: Register? = nil
 local macros: { [string]: string } = {}
 -- The register the next copy, paste or macro uses, if one was picked.
 local picked: string? = nil
--- Where the macro being recorded goes.
-local recording_into: string? = nil
+-- Where the macro each client is recording goes, by the client's id.
+local recording_into: { [number]: string } = {}
 -- How deep macros are playing other macros, to stop one that plays itself.
 local depth = 0
 
@@ -120,9 +120,9 @@ function M.paste(ctx: greed.Context): Register?
 	return kept[name :: string]
 end
 
---- The register a macro is being recorded into, while one is.
+--- The register the acting client is recording a macro into, while it is.
 function M.recording(): string?
-	return recording_into
+	return recording_into[greed.client.current().id]
 end
 
 --- The keys of the macro in register `name`.
@@ -146,10 +146,13 @@ greed.command({
 })
 
 --- Starts recording a macro into `name`, or stops and keeps the keys,
---- leaving out `stop_keys` (the keys that stopped it).
+--- leaving out `stop_keys` (the keys that stopped it). Each client records
+--- its own keys.
 function M.toggle_recording(name: string, stop_keys: string?)
-	if recording_into == nil then
-		recording_into = name
+	local client = greed.client.current().id
+	local into = recording_into[client]
+	if into == nil then
+		recording_into[client] = name
 		greed.keys.record()
 		greed.echo(`recording @{name}`)
 		return
@@ -158,9 +161,9 @@ function M.toggle_recording(name: string, stop_keys: string?)
 	for _ = 1, #string.split(stop_keys or "", " ") do
 		table.remove(keys)
 	end
-	macros[recording_into] = table.concat(keys, " ")
-	greed.echo(`recorded @{recording_into}`)
-	recording_into = nil
+	macros[into] = table.concat(keys, " ")
+	greed.echo(`recorded @{into}`)
+	recording_into[client] = nil
 end
 
 --- Plays the macro in register `name`, `count` times.
@@ -189,7 +192,7 @@ greed.command({
 	name = "record-macro",
 	doc = "Start recording keys into a macro (@, or the register picked), or stop",
 	run = function(ctx)
-		M.toggle_recording(recording_into or M.take() or "@", ctx.keys)
+		M.toggle_recording(M.recording() or M.take() or "@", ctx.keys)
 	end,
 })
 

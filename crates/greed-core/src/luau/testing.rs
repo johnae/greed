@@ -380,7 +380,7 @@ fn mouse(
         alt: held("alt")?,
         shift: held("shift")?,
     };
-    let hit = renderer(lua).hit(&state(lua).editor, col, row);
+    let hit = with_renderer(lua, |r| r.hit(&state(lua).editor, col, row));
     super::mouse_event(lua, event, &hit)?;
     jobs::settle(lua)?;
     end_frame(lua)
@@ -394,38 +394,179 @@ fn end_frame(lua: &Lua) -> mlua::Result<()> {
     jobs::settle(lua)
 }
 
-/// The renderer `t:draw` and `t:mouse` share, so a click finds what the
-/// last draw put where, as the server's does.
-fn renderer(lua: &Lua) -> mlua::AppDataRef<'_, crate::render::Renderer<crate::render::CellWidth>> {
+/// The renderer of each client in a test, which its draws and clicks share,
+/// so a click finds what its last draw put where, as the server's do.
+#[derive(Default)]
+struct Renderers(HashMap<ClientId, crate::render::Renderer<crate::render::CellWidth>>);
+
+/// Calls `f` with the acting client's renderer.
+fn with_renderer<R>(
+    lua: &Lua,
+    f: impl FnOnce(&crate::render::Renderer<crate::render::CellWidth>) -> R,
+) -> R {
     use crate::render::{CellWidth, Renderer};
-    if lua.app_data_ref::<Renderer<CellWidth>>().is_none() {
-        lua.set_app_data(Renderer::new(CellWidth));
+    let client = state(lua).editor.client();
+    if lua.app_data_ref::<Renderers>().is_none() {
+        lua.set_app_data(Renderers::default());
     }
-    lua.app_data_ref().expect("it was just set")
+    lua.app_data_mut::<Renderers>()
+        .expect("it was just set")
+        .0
+        .entry(client)
+        .or_insert_with(|| Renderer::new(CellWidth));
+    let renderers = lua.app_data_ref::<Renderers>().expect("it was just set");
+    f(&renderers.0[&client])
 }
 
-/// `t:draw`, `t:screen` and `t:mouse`: what a client would see and send.
-fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
+/// Runs `f` as client `id` does something, then acts for the client acting
+/// before again.
+fn as_client<R>(lua: &Lua, id: ClientId, f: impl FnOnce() -> mlua::Result<R>) -> mlua::Result<R> {
+    let outer = {
+        let editor = &mut state_mut(lua).editor;
+        let outer = editor.client();
+        if !editor.set_acting(id) {
+            return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
+        }
+        outer
+    };
+    let result = f();
+    state_mut(lua).editor.act_as(outer);
+    result
+}
+
+/// Runs `f` acting for client `id` without that counting as its doing
+/// anything, as when looking at what it sees.
+fn seen_by<R>(lua: &Lua, id: ClientId, f: impl FnOnce() -> mlua::Result<R>) -> mlua::Result<R> {
+    let outer = {
+        let editor = &mut state_mut(lua).editor;
+        if editor.client_state(id).is_none() {
+            return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
+        }
+        let outer = editor.client();
+        editor.act_as(id);
+        outer
+    };
+    let result = f();
+    state_mut(lua).editor.act_as(outer);
+    result
+}
+
+/// What `t` and the clients `t:client` adds have in common: each is a
+/// client, which their methods act as.
+trait TestClient {
+    fn id(&self) -> ClientId;
+}
+
+/// What a client does and sees, for `t` and the clients `t:client` adds:
+/// `keys`, `run`, `mouse`, `draw`, `screen`, `marked`, `expect` and
+/// `expect_mode`, each as that client.
+fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(methods: &mut M) {
+    methods.add_method("keys", |lua, this, keys: String| {
+        as_client(lua, this.id(), || {
+            for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
+                restart_deadline(lua);
+                api::press(lua, key).map_err(api::into_lua)?;
+                jobs::settle(lua)?;
+            }
+            end_frame(lua)
+        })
+    });
+    methods.add_method(
+        "run",
+        |lua, this, (command, args): (String, Option<Vec<String>>)| {
+            as_client(lua, this.id(), || {
+                restart_deadline(lua);
+                api::run_command_with(lua, &command, args.unwrap_or_default())
+                    .map_err(api::into_lua)?;
+                jobs::settle(lua)?;
+                end_frame(lua)
+            })
+        },
+    );
     methods.add_method(
         "mouse",
         |lua,
-         _,
+         this,
          (kind, col, row, which, mods): (String, u16, u16, Option<String>, Option<Table>)| {
-            mouse(lua, &kind, col, row, which.as_deref(), mods.as_ref())
+            as_client(lua, this.id(), || {
+                mouse(lua, &kind, col, row, which.as_deref(), mods.as_ref())
+            })
         },
     );
-    methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
-        let frame = draw(lua, width, height)?;
+    methods.add_method("draw", |lua, this, (width, height): (u16, u16)| {
+        let frame = as_client(lua, this.id(), || draw(lua, width, height))?;
         Ok(crate::render::grid::text_rows(&frame))
     });
-    methods.add_method("screen", |lua, _, (width, height): (u16, u16)| {
+    methods.add_method("screen", |lua, this, (width, height): (u16, u16)| {
         use crate::render::grid::compose;
-        let frame = draw(lua, width, height)?;
+        let frame = as_client(lua, this.id(), || draw(lua, width, height))?;
         Ok(compose(&frame, crate::theme::Medium::Tui)
             .iter()
             .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
             .collect::<Vec<_>>())
     });
+    methods.add_method("status", |lua, this, ()| {
+        let join = |spans: &[crate::render::Span]| {
+            spans.iter().map(|s| s.text.as_str()).collect::<String>()
+        };
+        let line = seen_by(lua, this.id(), || api::status_line(lua, None, 200))?;
+        Ok(line.map_or((None, None), |l| {
+            (Some(join(&l.left)), Some(join(&l.right)))
+        }))
+    });
+    methods.add_method("marked", |lua, this, ()| {
+        seen_by(lua, this.id(), || Ok(focused_marked_text(lua)))
+    });
+    methods.add_method("expect", |lua, this, expected: String| {
+        let actual = seen_by(lua, this.id(), || Ok(focused_marked_text(lua)))?;
+        check(lua, "buffer", &expected, &actual)
+    });
+    methods.add_method("expect_mode", |lua, this, expected: String| {
+        let actual = seen_by(lua, this.id(), || Ok(state(lua).editor.mode().to_owned()))?;
+        check(lua, "mode", &expected, &actual)
+    });
+}
+
+/// A client a test added with `t:client`, as if it had attached.
+struct AddedClient(ClientId);
+
+impl TestClient for AddedClient {
+    fn id(&self) -> ClientId {
+        self.0
+    }
+}
+
+impl UserData for AddedClient {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("id", |_, this, ()| Ok(this.0.0));
+        add_client_view_methods(methods);
+    }
+}
+
+/// `t:client(name)`: a client seeing what the first one does, as one
+/// attaching would.
+fn add_client(lua: &Lua, name: Option<String>) -> mlua::Result<AddedClient> {
+    let id = {
+        let editor = &mut state_mut(lua).editor;
+        let id = editor.next_client_id();
+        let outer = editor.act_as(crate::FIRST_CLIENT);
+        editor.add_client(id);
+        editor.act_as(outer);
+        editor.set_client_info(
+            id,
+            crate::ClientInfo {
+                name: name.unwrap_or_else(|| format!("test {}", id.0)),
+                kind: "test".to_owned(),
+                remote: false,
+                layout: crate::ClientLayout::Follow,
+            },
+        );
+        id
+    };
+    // Where its selections and focus start, for what it does next to be
+    // told as a change.
+    end_frame(lua)?;
+    Ok(AddedClient(id))
 }
 
 /// `t:quitting`, `t:detached`, `t:switched` and `t:notices`: what the
@@ -461,7 +602,7 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     });
 }
 
-/// A frame drawn at this size.
+/// A frame drawn at this size, for the acting client, with its renderer.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame> {
     use crate::render::{Plain, Size, Status};
     let frame = || -> mlua::Result<_> {
@@ -469,14 +610,21 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame
             Some(line) => Status::Line(line),
             None => Status::Default { message: None },
         };
-        Ok(renderer(lua).frame(
-            &mut state_mut(lua).editor,
-            Size { width, height },
-            &status,
-            &Plain,
-        ))
+        Ok(with_renderer(lua, |r| {
+            r.frame(
+                &mut state_mut(lua).editor,
+                Size { width, height },
+                &status,
+                &Plain,
+            )
+        }))
     };
     restart_deadline(lua);
+    {
+        let editor = &mut state_mut(lua).editor;
+        let client = editor.client();
+        editor.set_client_size(client, Some((width, height)));
+    }
     end_frame(lua)?;
     let mut drawn = frame()?;
     // As the server does: what plugins do about views changing shows at once.
@@ -487,8 +635,14 @@ fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame
     Ok(drawn)
 }
 
-/// The `t` passed to each test.
+/// The `t` passed to each test, which acts as the first client.
 struct TestContext;
+
+impl TestClient for TestContext {
+    fn id(&self) -> ClientId {
+        crate::FIRST_CLIENT
+    }
+}
 
 impl UserData for TestContext {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
@@ -504,24 +658,10 @@ impl UserData for TestContext {
             state.editor.end_group();
             Ok(())
         });
-        methods.add_method("keys", |lua, _, keys: String| {
-            for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
-                restart_deadline(lua);
-                api::press(lua, key).map_err(api::into_lua)?;
-                jobs::settle(lua)?;
-            }
-            end_frame(lua)
+        methods.add_method("client", |lua, _, name: Option<String>| {
+            add_client(lua, name)
         });
-        methods.add_method(
-            "run",
-            |lua, _, (command, args): (String, Option<Vec<String>>)| {
-                restart_deadline(lua);
-                api::run_command_with(lua, &command, args.unwrap_or_default())
-                    .map_err(api::into_lua)?;
-                jobs::settle(lua)?;
-                end_frame(lua)
-            },
-        );
+        add_client_view_methods(methods);
         methods.add_method(
             "tempdir",
             |lua, _, files: Option<HashMap<String, mlua::LuaString>>| {
@@ -549,7 +689,6 @@ impl UserData for TestContext {
                 Duration::from_secs_f64(ms.unwrap_or(5000.0).max(0.0) / 1000.0),
             )
         });
-        methods.add_method("marked", |lua, _, ()| Ok(focused_marked_text(lua)));
         methods.add_method("floats", |lua, _, ()| {
             let state = state(lua);
             let editor = &state.editor;
@@ -559,26 +698,9 @@ impl UserData for TestContext {
                 .map(|f| editor.buffer(editor.view(f.view).buffer).text().to_string())
                 .collect::<Vec<_>>())
         });
-        methods.add_method("status", |lua, _, ()| {
-            let join = |spans: &[crate::render::Span]| {
-                spans.iter().map(|s| s.text.as_str()).collect::<String>()
-            };
-            let line = api::status_line(lua, None, 200)?;
-            Ok(line.map_or((None, None), |l| {
-                (Some(join(&l.left)), Some(join(&l.right)))
-            }))
-        });
-        add_screen_methods(methods);
         add_client_methods(methods);
         methods.add_method("messages", |lua, _, ()| {
             Ok(state_mut(lua).editor.take_messages())
-        });
-        methods.add_method("expect", |lua, _, expected: String| {
-            check(lua, "buffer", &expected, &focused_marked_text(lua))
-        });
-        methods.add_method("expect_mode", |lua, _, expected: String| {
-            let actual = state(lua).editor.mode().to_owned();
-            check(lua, "mode", &expected, &actual)
         });
     }
 }

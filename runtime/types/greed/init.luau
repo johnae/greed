@@ -331,6 +331,8 @@ export type Context = {
 	force: boolean,
 	--- The number typed before the keys, in modes with counts on.
 	count: number?,
+	--- The id of the client it runs for, whose view and selections these are.
+	client: number,
 }
 
 --- An argument a command takes, for completion and help.
@@ -995,8 +997,10 @@ export type Control = {
 --- One row of `greed.profile.stop()`: what a plugin (nil for the editor itself) spent doing one thing, in all and at most once, in milliseconds.
 export type ProfileRow = { plugin: string?, what: string, ms: number, longest: number, runs: number }
 
---- A client attached, e.g. `greed FILE` in a session that was running.
+--- A client attached, e.g. `greed FILE` in a session that was running. Handlers run as that client.
 export type ClientAttached = {
+	--- The client's id.
+	client: number,
 	--- The file or folder it asked to open, if any.
 	path: string?,
 	--- Whether it asked for a terminal, e.g. `greed ssh HOST --terminal`.
@@ -1005,8 +1009,15 @@ export type ClientAttached = {
 	remote: boolean,
 }
 
+--- A client went; the session goes on. Handlers run as that client, just before it's gone.
+export type ClientDetached = {
+	client: number,
+}
+
 --- Text pasted into the client from the system clipboard: a terminal's paste, or a window's paste keys (ctrl-shift-v, shift-insert, cmd-v). The core plugin puts it at the cursors.
 export type ClientPaste = {
+	--- The client it was pasted into, which handlers run as.
+	client: number,
 	text: string,
 }
 
@@ -1018,6 +1029,8 @@ export type ViewClosed = {
 
 --- What the mouse did, and what was under it.
 export type MouseEvent = {
+	--- The client whose mouse it was, which handlers run as.
+	client: number,
 	kind: "press" | "release" | "drag" | "move" | "scroll",
 	--- For a press, release or drag.
 	button: ("left" | "middle" | "right")?,
@@ -1047,32 +1060,38 @@ export type MouseEvent = {
 	edge: ("left" | "right" | "down")?,
 }
 
---- A view was drawn with room for a different number of rows or columns
---- of text than before.
+--- A view was drawn for a client with room for a different number of rows
+--- or columns of text than before. Handlers run as that client.
 export type ViewResized = {
+	client: number,
 	view: View,
 	rows: number,
 	cols: number,
 }
 
---- A view was drawn starting at a different line than before. What a
---- handler changes shows in the same frame, so a view can scroll another
---- along with it.
+--- A view was drawn for a client starting at a different line than before.
+--- What a handler changes shows in the same frame, so a view can scroll
+--- another along with it. Handlers run as that client.
 export type ViewScrolled = {
+	client: number,
 	view: View,
 	--- The 0-based line now at the top.
 	line: number,
 }
 
---- A view's selection changed, or it shows another buffer, since the last
---- frame: told once a frame however many changes there were, whatever made
---- them (keys, the mouse, undo, a plugin or an agent).
+--- A view's selection changed for a client, or it shows another buffer,
+--- since the last frame: told once a frame however many changes there were,
+--- whatever made them (keys, the mouse, undo, a plugin or an agent).
+--- Handlers run as that client.
 export type SelectionChanged = {
+	client: number,
 	view: View,
 }
 
---- Another view has focus. `from` had it before; nil when it was closed.
+--- Another view has a client's focus. `from` had it before; nil when it was
+--- closed. Handlers run as that client.
 export type ViewFocused = {
+	client: number,
 	view: View,
 	from: View?,
 }
@@ -1101,6 +1120,8 @@ export type PluginUnloaded = {
 }
 
 export type CommandRun = {
+	--- The client it runs for, which handlers run as.
+	client: number,
 	--- The command about to run.
 	name: string,
 	--- The keys that ran it, when keys did, e.g. "g g".
@@ -1110,6 +1131,8 @@ export type CommandRun = {
 }
 
 export type KeysPending = {
+	--- The client typing them, which handlers run as.
+	client: number,
 	--- The unfinished key sequence, e.g. "space"; "" once it's finished.
 	keys: string,
 }
@@ -1151,9 +1174,32 @@ export type Clipboard = {
 	history: () -> { { string } },
 }
 
---- The client you see the editor through, as your desktop.
+--- A client attached to the editor: a terminal or window, on this machine or over `greed ssh`.
+export type ClientInfo = {
+	id: number,
+	--- Its kind and machine, like "tui@laptop"; a client coming back with the same name gets its cursors, focus and mode back.
+	name: string,
+	--- "tui", "gui", "headless" (the editor's own, with nothing attached) or "test".
+	kind: string,
+	--- Whether it came over `greed ssh`.
+	remote: boolean,
+	--- Its screen in cells, once it has said.
+	size: { width: number, height: number }?,
+	--- "follow": it shows what the others do. "independent": a layout of its own.
+	layout: "follow" | "independent",
+	--- Which of the peer colors (1 to 6) its cursors show in for the other clients, as `ui.cursor.peer.N`.
+	color: number,
+	--- Who it belongs to: "owner", the session's owner, for now.
+	person: string,
+}
+
+--- The clients you see the editor through. Commands, keys and event handlers act for one client at a time: the one that typed, clicked or ran them, or the one an event is about.
 export type Client = {
-	--- Sends a notification to your desktop through the attached client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
+	--- The client the running code acts for.
+	current: () -> ClientInfo,
+	--- Every client, in the order they attached.
+	list: () -> { ClientInfo },
+	--- Sends a notification to your desktop through the acting client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
 	notify: (title: string, body: string?) -> (),
 }
 
@@ -1255,7 +1301,9 @@ export type DiagnosticsChanged = {
 	buffer: Buffer,
 }
 
+--- A client's mode changed. Handlers run as that client.
 export type ModeChanged = {
+	client: number,
 	from: string,
 	to: string,
 }
@@ -1529,7 +1577,7 @@ export type Greed = {
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "control.closed", handler: (event: ControlClosed) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())
-		& ((event: "client.detached", handler: (event: {}) -> ()) -> ())
+		& ((event: "client.detached", handler: (event: ClientDetached) -> ()) -> ())
 		& ((event: "client.paste", handler: (event: ClientPaste) -> ()) -> ())
 		& ((event: "buffer.opened", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "buffer.saved", handler: (event: BufferChanged) -> ()) -> ())

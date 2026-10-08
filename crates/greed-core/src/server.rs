@@ -21,7 +21,7 @@ use crate::luau::{Host, HostError};
 use crate::mouse::Mouse;
 use crate::render::{CellWidth, Decorations, Frame, Renderer, Size, Status, StatusLine};
 use crate::syntax::{Highlight, Syntax};
-use crate::{BufferId, Editor, Notice, SwitchTo};
+use crate::{BufferId, Editor, FIRST_CLIENT, Notice, SwitchTo};
 use greed_text::Rope;
 
 /// A message from a client to the server.
@@ -329,7 +329,7 @@ impl Server<'_> {
             Turn::Waits if !self.held.is_empty() => return true,
             Turn::Waits => {}
         }
-        let wait = self.host.key_command_at_work();
+        let wait = self.host.key_command_at_work(FIRST_CLIENT);
         if wait {
             self.held_since = Some(Instant::now());
         }
@@ -342,12 +342,12 @@ impl Server<'_> {
     /// was handled. False when the editor should stop.
     fn handle_held(&mut self, typed: &mut bool) -> bool {
         while !self.held.is_empty() {
-            if self.host.key_command_at_work() {
+            if self.host.key_command_at_work(FIRST_CLIENT) {
                 let since = *self.held_since.get_or_insert_with(Instant::now);
                 if since.elapsed() < KEYS_WAIT_AT_MOST {
                     return true;
                 }
-                self.host.let_keys_through();
+                self.host.let_keys_through(FIRST_CLIENT);
             }
             let input = self.held.pop_front().expect("not empty");
             *typed = true;
@@ -533,28 +533,36 @@ impl Server<'_> {
                 // brings another.
                 self.message = None;
                 self.key_at = Some(Instant::now());
-                let pressed = self.host.timed("a key", || self.host.press(key));
+                let pressed = self
+                    .host
+                    .timed("a key", || self.host.press(FIRST_CLIENT, key));
                 self.report(pressed);
             }
-            Input::Resize(new) => self.size = Some(new.limited()),
+            Input::Resize(new) => {
+                let size = new.limited();
+                self.size = Some(size);
+                self.host.with_editor_mut(|ed| {
+                    ed.set_client_size(FIRST_CLIENT, Some((size.width, size.height)));
+                });
+            }
             Input::Mouse(mouse) => {
                 let hit = self
                     .host
                     .with_editor(|ed| self.renderer.hit(ed, mouse.col, mouse.row));
-                let handled = self.host.mouse(mouse, &hit);
+                let handled = self.host.mouse(FIRST_CLIENT, mouse, &hit);
                 self.report(handled);
             }
             Input::CellSize(w, h) => {
                 self.host.with_editor_mut(|ed| ed.set_cell_size((w, h)));
             }
             Input::Run(ref name) => {
-                let ran = self.host.run(name);
+                let ran = self.host.run(FIRST_CLIENT, name);
                 self.report(ran);
             }
             Input::Paste(ref text) => {
                 self.message = None;
                 self.key_at = Some(Instant::now());
-                let pasted = self.host.paste(text);
+                let pasted = self.host.paste(FIRST_CLIENT, text);
                 self.report(pasted);
             }
             Input::Clipboard(ref text) => {
@@ -607,7 +615,7 @@ impl Server<'_> {
     fn let_client_go(&mut self) {
         self.size = None;
         if self.client.take().is_some() {
-            let detached = self.host.client_detached();
+            let detached = self.host.client_detached(FIRST_CLIENT, false);
             self.report(detached);
         }
     }
@@ -666,7 +674,9 @@ impl Server<'_> {
             last: None,
             images: HashSet::new(),
         });
-        let attached = self.host.client_attached(open.as_deref(), terminal, remote);
+        let attached = self
+            .host
+            .client_attached(FIRST_CLIENT, open.as_deref(), terminal, remote);
         self.report(attached);
     }
 

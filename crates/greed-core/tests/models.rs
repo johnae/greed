@@ -11,8 +11,8 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use greed_core::Editor;
 use greed_core::luau::Host;
+use greed_core::{Editor, FIRST_CLIENT};
 use greed_text::ClientId;
 
 fn plugin(name: &str) -> PathBuf {
@@ -136,21 +136,21 @@ fn host(address: &str) -> Host {
 #[test]
 fn anthropic_streams_its_answer_piece_by_piece() {
     let host = host(&serve());
-    host.run("ask-fast").unwrap();
+    host.run(FIRST_CLIENT, "ask-fast").unwrap();
     assert_eq!(messages(&host, 4), ["Hel", "lo", "end nil", "all Hello"]);
 }
 
 #[test]
 fn openai_compatible_servers_answer_too() {
     let host = host(&serve());
-    host.run("ask-local").unwrap();
+    host.run(FIRST_CLIENT, "ask-local").unwrap();
     assert_eq!(messages(&host, 1), ["Hi there"]);
 }
 
 #[test]
 fn a_refused_request_says_what_the_server_said() {
     let host = host(&serve());
-    host.run("ask-locked").unwrap();
+    host.run(FIRST_CLIENT, "ask-locked").unwrap();
     assert_eq!(
         messages(&host, 1),
         ["the model's server said 401: invalid x-api-key"]
@@ -192,7 +192,7 @@ fn a_model_pipe_rewrites_the_selection_as_one_operation() {
         ),
     )
     .unwrap();
-    host.run("pipe-test").unwrap();
+    host.run(FIRST_CLIENT, "pipe-test").unwrap();
     let said = messages(&host, 3);
     assert_eq!(said[1..], ["piped", "model: shout it"], "{said:?}");
     let text = host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string());
@@ -255,7 +255,7 @@ fn buffer_of_kind(host: &Host, kind: &str) -> Option<String> {
 #[test]
 fn explain_writes_the_answer_into_a_panel_as_it_arrives() {
     let host = assist_host(&serve(), "let x = 1;", None);
-    host.run("explain").unwrap();
+    host.run(FIRST_CLIENT, "explain").unwrap();
     until(&host, |h| {
         buffer_of_kind(h, "answer").as_deref() == Some("Hello")
     });
@@ -287,7 +287,7 @@ fn a_drafted_description_commits_what_is_staged() {
     std::fs::write(dir.join("a.txt"), "two\n").unwrap();
     git(&["add", "."]);
     let host = assist_host(&serve(), "two\n", Some(dir.join("a.txt")));
-    host.run("commit-message").unwrap();
+    host.run(FIRST_CLIENT, "commit-message").unwrap();
     until(&host, |h| {
         buffer_of_kind(h, "commit-message").as_deref() == Some("Hello")
     });
@@ -307,7 +307,7 @@ fn a_drafted_description_commits_what_is_staged() {
         "#,
     )
     .unwrap();
-    host.run("press-a").unwrap();
+    host.run(FIRST_CLIENT, "press-a").unwrap();
     until(&host, |_| git(&["log", "-1", "--format=%s"]) == "Hello\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -342,7 +342,7 @@ fn a_fix_comes_as_a_proposal_to_review() {
     while !support::has_diagnostics(&host) {
         step(&host);
     }
-    host.run("fix").unwrap();
+    host.run(FIRST_CLIENT, "fix").unwrap();
     let pending = |host: &Host| host.eval("require('@agent').pending()").unwrap();
     while pending(&host) == "0" {
         step(&host);
