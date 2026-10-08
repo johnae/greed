@@ -1,7 +1,7 @@
 -- How a shell's buffer shows its blocks. The text is only what was typed
 -- and what came out:
 --
---   ls src                  ← the command (❯ before it is a decoration)
+--   ls src                  ← the command (❯ 1 before it is a decoration)
 --   main.rs                 ← its output, one buffer line per line printed
 --   lib.rs
 --   cargo test              ← the next block
@@ -9,9 +9,9 @@
 --   git st                  ← the prompt, after the last block
 --
 -- Everything else is decorations per block, in `shell.block.N`: the prompt
--- glyph, the status after the command's line (✓ ✗ ◐ ↗ ■, the exit code,
--- how long it took, where cd went), the sign beside it, the blank line
--- after it, and how many lines were left out. Output styles (errors, a
+-- glyph and the block's number, the status after the command's line (✓ ✗
+-- ◐ ↗ ■, the exit code, how long it took, where cd went), the sign beside
+-- it, the blank line after it, and how many lines were left out. Output styles (errors, a
 -- program's colors) are in `shell.out.N`, and links on the places in files
 -- it names (`src/main.rs:12`) in `shell.ref.N`. Nothing is laid out to a
 -- view's width, so every client wraps the text at its own.
@@ -284,6 +284,8 @@ function M.draw_block(shell: Shell, block: Block)
 			style = if block.by == "agent" then "shell.agent" else "shell.prompt",
 			text = if block.by == "agent" then "◆ " else "❯ ",
 		},
+		-- Its number, for `$3`.
+		{ from = from, to = from, style = "shell.number", text = `{block.number} ` },
 		{
 			from = line_end,
 			to = line_end,

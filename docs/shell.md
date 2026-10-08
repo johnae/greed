@@ -9,10 +9,10 @@ editing, and for output you want to keep working with; a terminal pane is
 still the place for a long interactive session.
 
 ```text
-❯ cargo test -q                           ✗ exit 101 · 4.1s
+❯ 1 cargo test -q                         ✗ exit 101 · 4.1s
 error[E0308]: mismatched types
  --> src/main.rs:12:5
-❯ git status --short                      ✓ 0.02s
+❯ 2 git status --short                    ✓ 0.02s
  M src/main.rs
 ⎇ main ~/s/app ❯ |
 ```
@@ -50,11 +50,11 @@ them.
 ## Blocks
 
 A block's command is the line it starts on, with `❯` before it (`◆` for
-one an agent ran). After the command comes how it went: `◐` while it
-runs with how long so far, then `✓`, `✗ exit 1`, `■ INT` when it was
-stopped, or `↗` when it was handed to a terminal, how long it took, where
-`cd` went and which variables it set. A block that went quiet while it
-could be reading a line says it may be waiting for input.
+one an agent ran) and its number, the `3` of `$3`. After the command comes
+how it went: `◐` while it runs with how long so far, then `✓`, `✗ exit 1`,
+`■ INT` when it was stopped, or `↗` when it was handed to a terminal, how
+long it took, where `cd` went and which variables it set. A block that went
+quiet while it could be reading a line says it may be waiting for input.
 
 Output that's JSON or a table is kept as a value on the block too, and
 the status says so (`JSON · 3 items`, `table · 12 rows`); see [Filtering
@@ -205,7 +205,7 @@ words look in every cell. `space s` sorts the rows by the column under
 the cursor, again from the greatest, and a third time as they came.
 
 ```text
-❯ kubectl get pods                     ✓ 0.41s · 2 of 5 rows · / STATUS=Running api
+❯ 3 kubectl get pods                   ✓ 0.41s · 2 of 5 rows · / STATUS=Running api
 NAME                  READY   STATUS    RESTARTS        AGE
 api-7d9f8b6c5-2xkqz   1/1     Running   0               3d16h
 api-7d9f8b6c5-9wlmn   1/1     Running   3 (3d16h ago)   5d2h
@@ -234,7 +234,10 @@ program after them reads the table as text:
 ❯ $1 | where IMAGE ~ postgres > buf:databases
 ```
 
-`sort` without a column is the `sort` program, as always.
+`sort` without a column is the `sort` program, as always. The stages go
+first, right after `$3 |`: one after a program, as in `$3 | grep api |
+where ...`, says so instead of running, and so does one on output that
+isn't a table, saying what makes one.
 
 ### JSON
 
@@ -245,6 +248,20 @@ it. Many tools print JSON when asked, which is the surest way to a table:
 `kubectl get pods -o json` gives every field, where its columns give a
 few. The shell never runs your command again with other flags; it reads
 what it printed.
+
+The stages work on an object too: its fields are the columns of one row,
+so `$3 | select name` gives its name, and when one of its fields holds an
+array of objects, like kubectl's `items`, the columns it doesn't have are
+that array's, so `$3 | where phase = Failed` looks through the items.
+`get` picks a field:
+
+| | |
+|---|---|
+| `get PATH` | A field of JSON, like items or items.0.name (arrays count from 0) |
+
+`$3 | get items` is the items' table, `$3 | get items.0.name` the first
+one's name, `$3 | get metadata.labels` an object, printed as JSON, and
+`$3 | get items.name` each item's name.
 
 ### Saying what it is
 

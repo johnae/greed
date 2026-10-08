@@ -486,3 +486,19 @@ test("undo at the prompt takes back only what was typed, while output streams in
 	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
 	assert(sh.blocks[2].command == "echo" and string.find(sh.buffer:text(), "\necho\n\n", 1, true))
 end)
+
+test("each block shows its number beside its command, for $N", function(t)
+	local sh = open(t, t:tempdir())
+	type_line(t, sh, "echo one")
+	local second = finished(t, type_line(t, sh, "echo two"))
+	assert(second.number == 2)
+	local texts: { string } = {}
+	for _, mark in marks(sh, second) do
+		if mark.text and not mark.eol then
+			table.insert(texts, mark.text)
+		end
+	end
+	assert(table.concat(texts) == "❯ 2 ", table.concat(texts, "|"))
+	local drawn = table.concat(t:draw(80, 10), "\n")
+	assert(string.find(drawn, "❯ 2 echo two", 1, true), drawn)
+end)

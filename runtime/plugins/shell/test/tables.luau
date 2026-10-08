@@ -491,3 +491,78 @@ test("the real jc reads a command's output, when it's installed", function(t)
 	)
 	assert(tbl and #tbl.rows == 1, "jc read df")
 end)
+
+local LIST = [[{"apiVersion": "v1", "kind": "List", "metadata": {"labels": {"app": "api"}},
+"items": [{"name": "api-1", "phase": "Running", "restarts": 0},
+{"name": "worker-2", "phase": "Failed", "restarts": 4}]}]]
+
+test("a JSON object works with the stages, and get picks a field", function(t)
+	local dir = t:tempdir({ ["list.json"] = LIST, ["one.json"] = [[{"name": "api", "port": 80}]] })
+	local sh = open(t, dir)
+	local one = run(t, sh, "cat one.json")
+	assert(one.table == nil and type(one.value) == "table", "an object, not a table")
+	-- select on an object's own fields.
+	local name = run(t, sh, `${one.number} | select name`)
+	assert(name.status == "done", name.stderr)
+	assert(name.output == "name\napi\n", name.output)
+	local port = run(t, sh, `${one.number} | where port > 10 | select port`)
+	assert(port.output == "port\n80\n", port.output)
+	-- Columns of the array one field holds, like kubectl's items.
+	local list = run(t, sh, "cat list.json")
+	local failed = run(t, sh, `${list.number} | where phase = Failed | select name`)
+	assert(failed.status == "done", failed.stderr)
+	assert(failed.output == "name\nworker-2\n", failed.output)
+	local kind = run(t, sh, `${list.number} | select kind`)
+	assert(kind.output == "kind\nList\n", kind.output)
+	local sorted = run(t, sh, `${list.number} | sort restarts -r | select name`)
+	assert(sorted.output == "name\nworker-2\napi-1\n", sorted.output)
+	-- get: a field, an array's item from 0, a field of each item.
+	local items = run(t, sh, `${list.number} | get items`)
+	assert(columns(items.table) == "name,phase,restarts", columns(items.table))
+	local first = run(t, sh, `${list.number} | get items.0.name`)
+	assert(first.output == "api-1\n", first.output)
+	local labels = run(t, sh, `${list.number} | get metadata.labels`)
+	assert(labels.output == '{"app":"api"}\n', labels.output)
+	assert(type(labels.value) == "table" and labels.value.app == "api", "JSON again")
+	local names = run(t, sh, `${list.number} | get items.name`)
+	assert(names.output == '["api-1","worker-2"]\n', names.output)
+	local counted = run(t, sh, `${list.number} | get items.0.name | wc -c`)
+	assert(string.match(counted.output, "^%s*6%s*$"), counted.output)
+	local missing = run(t, sh, `${list.number} | get items.5`)
+	assert(missing.status == "failed", missing.status)
+	assert(string.find(missing.stderr, "items has 2 items, from 0", 1, true), missing.stderr)
+	local wrong = run(t, sh, `${list.number} | get spec`)
+	assert(
+		string.find(wrong.stderr, "has no spec; it has apiVersion, items", 1, true),
+		wrong.stderr
+	)
+	-- Text isn't JSON.
+	local text = run(t, sh, "echo hello")
+	local no = run(t, sh, `${text.number} | get a`)
+	assert(string.find(no.stderr, "get works on JSON", 1, true), no.stderr)
+end)
+
+test("a stage on text, or after a program, says why it can't run", function(t)
+	local sh = open(t, t:tempdir())
+	local text = run(t, sh, "printf 'b 1\\na 2\\n'")
+	local n = text.number
+	local where = run(t, sh, `${n} | where A = b`)
+	assert(where.status == "failed", where.status)
+	assert(
+		string.find(where.stderr, "columns, from csv/tsv/json, split or lines make one", 1, true),
+		where.stderr
+	)
+	-- sort X is the sort program on text; select after it is the shell's.
+	local mixed = run(t, sh, `${n} | sort X | select A`)
+	assert(mixed.status == "failed", mixed.status)
+	assert(string.find(mixed.stderr, "select works on a table", 1, true), mixed.stderr)
+	assert(not string.find(mixed.stderr, "syntax", 1, true), mixed.stderr)
+	-- On a table, a stage after a program says to put it first.
+	local split = run(t, sh, `${n} | split " "`)
+	local after = run(t, sh, `${split.number} | grep a | where 1 = a`)
+	assert(after.status == "failed", after.status)
+	assert(string.find(after.stderr, "where can't read what grep prints", 1, true), after.stderr)
+	-- lines makes one.
+	local lines = run(t, sh, `${n} | lines | where line ~ a`)
+	assert(lines.output == "line\na 2\n", lines.output)
+end)

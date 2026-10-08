@@ -181,6 +181,7 @@ return {
 	["shell.segment.warning"] = { fg = "red", bold = true },
 	["shell.prompt.warning"] = { fg = "red", bold = true },
 	["shell.status"] = { fg = "bright-black" },
+	["shell.number"] = { fg = "bright-black" },
 	["shell.running"] = { fg = "yellow" },
 	["shell.done"] = { fg = "green" },
 	["shell.failed"] = { fg = "red" },

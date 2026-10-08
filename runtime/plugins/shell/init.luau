@@ -362,16 +362,20 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	local block = add_block(shell, command, opts)
 	local input: string?, why: string? = nil, parsed.error
-	-- What table stages at the line's start made (`$3 | where ...`), and
-	-- what comes after them, to run on their text.
-	local staged: tables.Table?, rest: string? = nil, nil
+	-- What table stages at the line's start made (`$3 | where ...`), as
+	-- text, and what comes after them, to run on it.
+	local staged: tables.Table?, rest: string?, picked: string? = nil, nil, nil
 	if parsed.input and why == nil then
 		block.input = parsed.input
 		local text, value, err = data.read(shell, parsed.input, block.cwd)
 		input, why = text, err
 		if why == nil and parsed.kind ~= "source" then
 			local source = data.table(shell, parsed.input, text, value)
-			staged, rest, why = tables.pipeline(source, text, parsed.line)
+			local json: any
+			staged, rest, why, json = tables.pipeline(source, text, parsed.line, value)
+			if staged == nil and json ~= nil then
+				picked = tables.value_text(json) .. "\n"
+			end
 		end
 	end
 	local into = parsed.into
@@ -381,12 +385,15 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	if why then
 		run.fail(shell, block, why, 2)
-	elseif staged and rest then
+	elseif (staged or picked) and rest then
 		block.via = "shell"
-		fall_back(shell, block, rest, opts, false, tables.text(staged))
+		fall_back(shell, block, rest, opts, false, if staged then tables.text(staged) else picked)
 	elseif staged then
 		block.table = staged
 		run.write(shell, block, tables.text(staged), "stdout")
+		run.finish(shell, block, 0, nil)
+	elseif picked then
+		run.write(shell, block, picked, "stdout")
 		run.finish(shell, block, 0, nil)
 	elseif parsed.kind == "source" then
 		run.write(shell, block, input or "", "stdout")

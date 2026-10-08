@@ -254,20 +254,64 @@ local function column_names(tbl: tables.Table): { string }
 	return names
 end
 
--- The table the stage at `s` reads: the source's, through the stages
--- before it.
-local function stage_input(s: Spot): tables.Table?
+-- The table the stage at `s` reads, the source's through the stages before
+-- it, and the JSON when that's what it reads: for an object, its fields
+-- and those of the array it holds both name columns.
+local function stage_input(s: Spot): (tables.Table?, any?)
 	local source = s.source
 	if source == nil then
-		return nil
+		return nil, nil
 	end
 	local text, value = data.read(s.shell, source, s.shell.cwd)
 	local tbl = data.table(s.shell, source, text, value)
 	local before = s.stages
 	if before then
-		tbl = tables.pipeline(tbl, text, before)
+		local staged, _, _, json = tables.pipeline(tbl, text, before, value)
+		tbl, value = staged, json
 	end
-	return tbl
+	if tbl == nil then
+		local own, inner = tables.object_tables(value)
+		if own and inner then
+			local columns = table.clone(own.columns)
+			for _, column in inner.columns do
+				if not table.find(columns, column) then
+					table.insert(columns, column)
+				end
+			end
+			local rows = table.clone(own.rows)
+			table.move(inner.rows, 1, #inner.rows, #rows + 1, rows)
+			tbl = { columns = columns, rows = rows } :: tables.Table
+		else
+			tbl = own
+		end
+	end
+	return tbl, value
+end
+
+-- The fields of the JSON `value` at `s`'s word, up to its last dot: an
+-- object's keys, or an array's items from 0.
+local function json_paths(items: { Item }, s: Spot, value: any)
+	local prefix = string.match(s.word, "^(.*%.)") or ""
+	local at = value
+	if prefix ~= "" then
+		at = tables.get(value, string.sub(prefix, 1, -2))
+	end
+	if type(at) ~= "table" then
+		return
+	end
+	if #at > 0 then
+		for i = 0, math.min(#at, 100) - 1 do
+			add(items, s, `{prefix}{i}`, "item", M.BADGE)
+		end
+	else
+		for key in at do
+			local field = at[key]
+			local kind = if type(field) == "table"
+				then (if #field > 0 then "array" else "object")
+				else type(field)
+			add(items, s, prefix .. tostring(key), kind, M.BADGE)
+		end
+	end
 end
 
 -- The different cells of `column` in `tbl`, at most a hundred.
@@ -303,8 +347,13 @@ local function stage_args(items: { Item }, s: Spot, stage: tables.Stage)
 		end
 		return
 	end
-	local tbl = stage_input(s)
-	if tbl == nil then
+	local tbl, value = stage_input(s)
+	if args == "path" then
+		if count == 1 and value ~= nil then
+			json_paths(items, s, value)
+		end
+		return
+	elseif tbl == nil then
 		return
 	end
 	local word = s.word

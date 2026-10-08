@@ -157,6 +157,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["shell.segment.warning"] = { fg = p.red, bold = true },
 		["shell.prompt.warning"] = { fg = p.red, bold = true },
 		["shell.status"] = { fg = p.comment },
+		["shell.number"] = { fg = p.comment },
 		["shell.running"] = { fg = p.yellow },
 		["shell.done"] = { fg = p.green },
 		["shell.failed"] = { fg = p.red },

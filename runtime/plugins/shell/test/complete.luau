@@ -389,3 +389,16 @@ test("the shell's page in the docs lists every builtin and stage as declared", f
 		listed(stage.usage, stage.doc)
 	end
 end)
+
+test("after $3 | on JSON, get completes its fields and the stages an object's columns", function(t)
+	local list = [[{"kind": "List", "items": [{"name": "a", "phase": "Running"}]}]]
+	local dir = t:tempdir({ ["list.json"] = list })
+	local sh = open(t, dir)
+	run_and_wait(t, sh, "cat list.json")
+	assert(names(items_for(t, sh, "$1 | get ")) == "items kind", "the object's fields")
+	assert(item(items_for(t, sh, "$1 | get items"), "items").detail == "array")
+	assert(names(items_for(t, sh, "$1 | get items.")) == "items.0", "the array's items")
+	assert(names(items_for(t, sh, "$1 | get items.0.")) == "items.0.name items.0.phase")
+	local columns = items_for(t, sh, "$1 | where ")
+	assert(columns.kind and columns.phase and columns.name, names(columns))
+end)

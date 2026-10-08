@@ -861,7 +861,7 @@ M.OPS = { "!=", "<=", ">=", "!~", "=", "~", "<", ">" }
 --- A stage the shell runs on a table after `$3 |`: how it's typed, what
 --- it does, and what its arguments are, for completion: "condition"
 --- (COL OP VALUE), "columns" (COL,...), "column" (COL and -r), "header"
---- (-H), "format" (csv, tsv, json); nil for none.
+--- (-H), "format" (csv, tsv, json), "path" (a field of JSON); nil for none.
 export type Stage = { name: string, usage: string, doc: string, args: string? }
 
 --- The stages, in the order `help` lists them.
@@ -898,6 +898,12 @@ M.STAGES = {
 	},
 	{ name = "split", usage = "split SEP", doc = "Each line cut at SEP into columns 1, 2, ..." },
 	{ name = "lines", usage = "lines", doc = "A row for each line, in a column `line`" },
+	{
+		name = "get",
+		usage = "get PATH",
+		doc = "A field of JSON, like items or items.0.name (arrays count from 0)",
+		args = "path",
+	},
 } :: { Stage }
 
 --- Whether `cell` (in a column of durations or not) passes `op` `value`:
@@ -1135,57 +1141,227 @@ local function converter(word: string, rest: string): ((text: string) -> (Table?
 	return nil
 end
 
+-- Whether `value` is a JSON object (and not an array).
+local function is_object(value: any): boolean
+	return type(value) == "table" and #value == 0 and next(value) ~= nil
+end
+
+--- A JSON value as a stage prints it: a string as it is, a number as
+--- written, anything else as JSON.
+function M.value_text(value: any): string
+	return as_text(value)
+end
+
+--- What `path` names in JSON `value`: dots between an object's fields and
+--- an array's items, from 0 (`items.0.name`); a field after an array is
+--- that field of each item (`items.name`). Nil and why when it isn't there.
+function M.get(value: any, path: string): (any, string?)
+	local current = value
+	local walked = ""
+	for part in string.gmatch(path, "[^%.]+") do
+		local here = if walked == "" then "the JSON" else walked
+		local index = tonumber(part)
+		local found: any = nil
+		if type(current) ~= "table" then
+			return nil, `{here} is {as_text(current)}, with no {part} in it`
+		elseif is_object(current) then
+			found = current[part]
+			if found == nil then
+				local keys: { string } = {}
+				for key in current do
+					table.insert(keys, tostring(key))
+				end
+				table.sort(keys)
+				return nil, `{here} has no {part}; it has {table.concat(keys, ", ")}`
+			end
+		elseif index then
+			found = current[index + 1]
+			if found == nil then
+				return nil, `{here} has {#current} items, from 0`
+			end
+		else
+			local each: { any } = {}
+			for _, item in current do
+				if type(item) == "table" and item[part] ~= nil then
+					table.insert(each, item[part])
+				end
+			end
+			if #each == 0 then
+				return nil, `no item of {here} has {part}`
+			end
+			found = greed.json.array(each)
+		end
+		current = found
+		walked = if walked == "" then part else `{walked}.{part}`
+	end
+	return current, nil
+end
+
+-- The names of columns a stage's arguments `rest` name: where's column,
+-- select's columns, sort's column.
+local function named_columns(word: string, rest: string): { string }
+	local names: { string } = {}
+	if word == "where" then
+		for _, op in M.OPS do
+			local at = string.find(rest, op, 1, true)
+			if at then
+				table.insert(names, trim(string.sub(rest, 1, at - 1)))
+				break
+			end
+		end
+	elseif word == "select" then
+		for name in string.gmatch(rest, "[^,%s]+") do
+			table.insert(names, name)
+		end
+	else
+		for name in string.gmatch(rest, "%S+") do
+			if string.sub(name, 1, 1) ~= "-" and name ~= "asc" and name ~= "desc" then
+				table.insert(names, name)
+			end
+		end
+	end
+	return names
+end
+
+--- The tables a JSON object gives the stages: itself as one row, a column
+--- for each field, and the array of objects one of its fields holds, when
+--- just one does, like kubectl's `items`.
+function M.object_tables(object: any): (Table?, Table?)
+	if not is_object(object) then
+		return nil, nil
+	end
+	local inner: Table? = nil
+	local arrays = 0
+	for _, field in object do
+		local found = M.from_value(field)
+		if found then
+			arrays += 1
+			inner = found
+		end
+	end
+	return M.from_value({ object }), if arrays == 1 then inner else nil
+end
+
+-- The table stage `word` with `rest` works on in JSON object `object`: its
+-- own fields when they're the columns named, else the array of objects a
+-- field holds.
+local function object_table(object: any, word: string, rest: string): Table?
+	local own, inner = M.object_tables(object)
+	if own == nil or inner == nil then
+		return own
+	end
+	for _, name in named_columns(word, rest) do
+		if M.column(own, name) == nil then
+			return inner
+		end
+	end
+	return if word == "sort" then inner else own
+end
+
+-- The stages only the shell runs: no program has their names.
+local OWN: { [string]: boolean } = { where = true, select = true, get = true }
+
+-- Why `word`, a stage, can't read text.
+local function not_a_table(word: string): string
+	return `{word} works on a table, and this isn't one; columns, from csv/tsv/json, split or lines make one`
+end
+
 --- Runs the table stages at the start of `line` (what follows `$3 |`) on
---- `tbl`, or on `text` for those reading text as a table: `where`,
---- `select`, `sort` naming a column, `columns`, `from csv`, `from tsv`,
---- `from json`, `split SEP` and `lines`. Returns the table they made (nil
---- when `line` starts with none) and the rest of the line after them, for
---- a program to read as text; or nil and why they can't run, like a
---- column that isn't there.
-function M.pipeline(tbl: Table?, text: string?, line: string): (Table?, string?, string?)
+--- `tbl`, or on `text` for those reading text as a table, or on `value`
+--- when the text was JSON: `where`, `select`, `sort` naming a column,
+--- `columns`, `from csv`, `from tsv`, `from json`, `split SEP`, `lines`
+--- and `get PATH`. Returns the table they made, the rest of the line after
+--- them for a program to read as text, why they can't run (like a column
+--- that isn't there) when they can't, and the JSON `get` picked when it
+--- isn't a table. All nil when `line` starts with no stage.
+function M.pipeline(
+	tbl: Table?,
+	text: string?,
+	line: string,
+	value: any?
+): (Table?, string?, string?, any?)
 	local current = tbl
+	-- The JSON the stages read, while they've read nothing else.
+	local json = value
 	local parts = stages(line)
 	local done = 0
 	for _, part in parts do
 		local word, args = string.match(part, "^%s*(%S+)%s*(.-)%s*$")
 		local rest = args or ""
 		local convert = if word then converter(word, rest) else nil
+		-- What a stage on a table reads: an object's fields or array.
+		local input = current
+		if input == nil and is_object(json) and word then
+			input = object_table(json, word, rest)
+		end
 		if convert then
 			-- The text as it came, or what the stages before made.
-			local input = if done > 0 and current then M.text(current) else text or ""
-			local made, why = convert(input)
+			local from = if done > 0 and current
+				then M.text(current)
+				elseif done > 0 and json ~= nil then M.value_text(json)
+				else text or ""
+			local made, why = convert(from)
 			if made == nil then
 				return nil, nil, `{word}: {why}`
 			end
-			current = made
-		elseif word == "where" or word == "select" then
-			if current == nil then
+			current, json = made, nil
+		elseif word == "get" then
+			if json == nil and done == 0 and text and string.match(text, "^%s*[%[{]") then
+				json = greed.json.decode(text)
+			end
+			if json == nil then
 				return nil,
 					nil,
-					`{word} works on a table, and this isn't one; columns, from csv, from json or split SEP make one`
+					"get works on JSON, as many programs print when asked (kubectl get -o json); from json reads JSON lines"
+			elseif rest == "" then
+				return nil, nil, "get PATH, like get items.0.name"
+			end
+			local found, why = M.get(json, rest)
+			if why then
+				return nil, nil, `get: {why}`
+			end
+			json = found
+			current = M.from_value(found)
+		elseif word == "where" or word == "select" then
+			if input == nil then
+				return nil, nil, not_a_table(word)
 			end
 			local made: Table?, why: string?
 			if word == "where" then
-				made, why = M.where(current, rest)
+				made, why = M.where(input, rest)
 			else
-				made, why = M.select(current, rest)
+				made, why = M.select(input, rest)
 			end
 			if made == nil then
 				return nil, nil, `{word}: {why}`
 			end
-			current = made
-		elseif word == "sort" and current and sort_args(current, rest) then
-			current = M.sort(current, rest)
+			current, json = made, nil
+		elseif word == "sort" and input and sort_args(input, rest) then
+			current, json = M.sort(input, rest), nil
 		else
 			break
 		end
 		done += 1
 	end
+	-- A stage after a program would go to the program's shell, which has
+	-- no such command.
+	for i = done + 2, #parts do
+		local word = string.match(parts[i], "^%s*(%S+)")
+		if word and OWN[word] then
+			if current == nil and json == nil and done == 0 then
+				return nil, nil, not_a_table(word)
+			end
+			local program = string.match(parts[done + 1], "^%s*(%S+)") or "a program"
+			return nil,
+				nil,
+				`{word} can't read what {program} prints: the shell's stages go first, right after $3 |`
+		end
+	end
 	if done == 0 then
 		return nil, nil, nil
 	end
 	local after = trim(table.concat(parts, "|", done + 1))
-	return current, if after == "" then nil else after, nil
+	return current, if after == "" then nil else after, nil, if current then nil else json
 end
 
 --- Reads a command's output as a table: `text`, and the block it's from.
