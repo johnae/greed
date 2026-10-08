@@ -1,14 +1,16 @@
 //! A frame as a grid of cells, each a grapheme with its resolved style: the
-//! main view's rows, the status line, panels with their separators and
-//! titles, and floats with their borders. Clients draw the grid their own
-//! way: the TUI as terminal cells, the GUI on the GPU.
+//! panes with the lines between them, the tab line, the status line, panels
+//! with their separators and titles, and floats with their borders. Clients
+//! draw the grid their own way: the TUI as terminal cells, the GUI on the
+//! GPU.
 
 use std::ops::Range;
 
+use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::{FloatFrame, Frame, Row, Span, Tag};
+use super::{Frame, Rect, Role, Row, Span, Surface, SurfaceId, Tag};
 use crate::theme::{Medium, Style, Theme};
 
 /// One cell: a grapheme and its style. A wide grapheme's later cells have
@@ -58,76 +60,111 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
         scale: 1,
     };
     let mut grid = vec![vec![blank; width]; usize::from(size.height)];
-    if let Some((status, rows)) = frame.rows.split_last() {
-        let (x, w) = (usize::from(frame.main.x), usize::from(frame.main.width));
-        for (line, row) in grid.iter_mut().zip(rows) {
-            put_row(line, x, w, row, text, paint);
-        }
-        spread_scaled(&mut grid, 0..rows.len(), x..x + w);
-        if let Some(line) = grid.get_mut(rows.len()) {
-            put_row(line, 0, width, status, text, paint);
+    let pane_border = text.patch(&look(&Tag::PANE_BORDER));
+    for line in &frame.lines {
+        let (x, y) = (usize::from(line.x), usize::from(line.y));
+        let len = usize::from(line.len);
+        if line.down {
+            for row in grid.iter_mut().skip(y).take(len) {
+                put(row, x, 1, "│", pane_border, 1);
+            }
+        } else if let Some(row) = grid.get_mut(y) {
+            put(row, x, len, &"─".repeat(len), pane_border, 1);
         }
     }
+    let inactive = text.patch(&look(&Tag::PANE_INACTIVE));
     let panel = text.patch(&look(&Tag::PANEL));
     let separator = panel.patch(&look(&Tag::PANEL_BORDER));
-    for p in &frame.panels {
-        let (x, w) = (usize::from(p.rect.x), usize::from(p.rect.width));
-        let top = usize::from(p.rect.y).saturating_sub(usize::from(p.title.is_some()));
-        let rows = frame.rows.len().saturating_sub(1).saturating_sub(top);
-        for line in grid.iter_mut().skip(top).take(rows) {
-            put(line, usize::from(p.separator), 1, "│", separator, 1);
-        }
-        if let (Some(title), Some(line)) = (&p.title, grid.get_mut(top)) {
-            let style = panel.patch(&look(&Tag::PANEL_TITLE));
-            put(line, x, w, &format!("{title:<w$}"), style, 1);
-        }
-        for (line, row) in grid.iter_mut().skip(usize::from(p.rect.y)).zip(&p.rows) {
-            put_row(line, x, w, row, panel, paint);
-        }
-    }
     let body = text.patch(&look(&Tag::FLOAT));
     let border = body.patch(&look(&Tag::FLOAT_BORDER));
-    for float in &frame.floats {
-        let r = float.rect;
+    for surface in &frame.surfaces {
+        let r = surface.rect;
         let (x, y, w, h) = (
             usize::from(r.x),
             usize::from(r.y),
             usize::from(r.width),
             usize::from(r.height),
         );
-        if float.border {
-            draw_border(
-                &mut grid,
-                float,
-                border,
-                body,
-                look(&Tag::FLOAT_TITLE),
-                paint,
-            );
-        } else {
-            for line in grid.iter_mut().skip(y).take(h) {
-                put(line, x, w, &" ".repeat(w), body, 1);
+        match &surface.role {
+            Role::Pane { active } => {
+                // A pane other than the active one is dimmed to its edges.
+                let base = if *active { text } else { inactive };
+                put_rows(&mut grid, surface, base, !active, paint);
+                spread_scaled(&mut grid, y..y + h, x..x + w);
             }
-        }
-        for (line, row) in grid.iter_mut().skip(y).take(h).zip(&float.rows) {
-            put_row(line, x, w, row, body, paint);
+            Role::Tabline | Role::Status => put_rows(&mut grid, surface, text, false, paint),
+            Role::Panel {
+                separator: column,
+                title,
+            } => {
+                let top = y.saturating_sub(usize::from(title.is_some()));
+                for line in grid.iter_mut().take(y + h).skip(top) {
+                    put(line, usize::from(*column), 1, "│", separator, 1);
+                }
+                if let (Some(title), Some(line)) = (title, grid.get_mut(top)) {
+                    let style = panel.patch(&look(&Tag::PANEL_TITLE));
+                    put(line, x, w, &format!("{title:<w$}"), style, 1);
+                }
+                put_rows(&mut grid, surface, panel, false, paint);
+            }
+            Role::Float {
+                border: true,
+                title,
+                label,
+                footer,
+            } => {
+                let edges = Edges {
+                    title: title.as_deref(),
+                    label,
+                    footer,
+                };
+                let looks = (border, body, look(&Tag::FLOAT_TITLE));
+                draw_border(&mut grid, r, &edges, looks, paint);
+                put_rows(&mut grid, surface, body, false, paint);
+            }
+            Role::Float { border: false, .. } => {
+                for line in grid.iter_mut().skip(y).take(h) {
+                    put(line, x, w, &" ".repeat(w), body, 1);
+                }
+                put_rows(&mut grid, surface, body, false, paint);
+            }
         }
     }
     grid
 }
 
-/// Draws `float`'s border around its rect, blanking what's inside, with
-/// its title at the left of the top border, its label at the right and its
-/// footer in the middle of the bottom border.
+/// Draws `surface`'s rows in its rect over `base`; with `fill`, each to
+/// the rect's right edge.
+fn put_rows(grid: &mut [Vec<Cell>], surface: &Surface, base: Style, fill: bool, paint: Paint) {
+    let r = surface.rect;
+    let (x, w) = (usize::from(r.x), usize::from(r.width));
+    let lines = grid
+        .iter_mut()
+        .skip(usize::from(r.y))
+        .take(usize::from(r.height));
+    for (line, row) in lines.zip(&surface.rows) {
+        put_row(line, x, w, row, base, fill, paint);
+    }
+}
+
+/// What a float shows on its border.
+struct Edges<'a> {
+    title: Option<&'a str>,
+    label: &'a [Span],
+    footer: &'a [Span],
+}
+
+/// Draws a border around `r`, blanking what's inside, with the title at
+/// the left of the top border, the label at the right and the footer in
+/// the middle of the bottom border. `looks` are the border's, the inside's
+/// and the title's styles.
 fn draw_border(
     grid: &mut [Vec<Cell>],
-    float: &FloatFrame,
-    border: Style,
-    body: Style,
-    title_look: Style,
+    r: Rect,
+    edges: &Edges,
+    (border, body, title_look): (Style, Style, Style),
     paint: Paint,
 ) {
-    let r = float.rect;
     let (x, y, w, h) = (
         usize::from(r.x),
         usize::from(r.y),
@@ -165,11 +202,11 @@ fn draw_border(
             spans.iter().map(|s| s.text.width()).sum::<usize>() + 2
         }
     };
-    let label = padded(&float.label);
+    let label = padded(edges.label);
     let label = if label < w { label } else { 0 };
     if let Some(top) = grid.get_mut(y - 1) {
         let room = w - label - usize::from(label > 0);
-        if let Some(title) = float.title.as_deref().filter(|t| !t.is_empty()) {
+        if let Some(title) = edges.title.filter(|t| !t.is_empty()) {
             let style = border.patch(&title_look);
             put(
                 top,
@@ -181,10 +218,10 @@ fn draw_border(
             );
         }
         if label > 0 {
-            put_spans(top, x + w - 1 - label, label, &float.label, border, paint);
+            put_spans(top, x + w - 1 - label, label, edges.label, border, paint);
         }
     }
-    let footer = padded(&float.footer);
+    let footer = padded(edges.footer);
     if footer > 0
         && footer <= w
         && let Some(bottom) = grid.get_mut(y + h)
@@ -193,7 +230,7 @@ fn draw_border(
             bottom,
             x + (w - footer) / 2,
             footer,
-            &float.footer,
+            edges.footer,
             border,
             paint,
         );
@@ -214,8 +251,17 @@ fn put_spans(line: &mut [Cell], x: usize, width: usize, spans: &[Span], base: St
 }
 
 /// Draws `row` over `base`, each span styled by the row's tags and then its
-/// own, in order. A row with tags of its own fills its whole width.
-fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, paint: Paint) {
+/// own, in order. A row with tags of its own, or with `fill`, fills its
+/// whole width.
+fn put_row(
+    line: &mut [Cell],
+    x: usize,
+    width: usize,
+    row: &Row,
+    base: Style,
+    fill: bool,
+    paint: Paint,
+) {
     let layer = |style: Style, tags: &[Tag]| {
         tags.iter().fold(style, |style, tag| {
             style.patch(&paint.theme.style(tag.name(), paint.medium))
@@ -238,7 +284,7 @@ fn put_row(line: &mut [Cell], x: usize, width: usize, row: &Row, base: Style, pa
             used += cells + rest;
         }
     }
-    if !row.tags.is_empty() {
+    if fill || !row.tags.is_empty() {
         let fill = " ".repeat(width - used);
         put(line, x + used, width - used, &fill, base, 1);
     }
@@ -268,6 +314,109 @@ fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: Style, scal
         used += w;
     }
     used
+}
+
+/// The panes, the tab line and the lines between panes merged into one
+/// row per screen row of the area they share, then the status line; a
+/// single pane with no tab line is its rows as they are. Each pane's
+/// row-wide tags (`ui.pane.inactive` first, for all but the active pane)
+/// go on its spans and padding, so a merged row draws as the surfaces do.
+/// Panels and floats are left out. For tests that read a frame as text.
+pub fn screen_rows(frame: &Frame) -> Vec<Row> {
+    let panes: Vec<&Surface> = frame
+        .surfaces
+        .iter()
+        .filter(|s| matches!(s.role, Role::Pane { .. }))
+        .collect();
+    let tabline = frame.surface(SurfaceId::Tabline);
+    let mut rows = match (tabline, panes.as_slice()) {
+        (None, [pane]) => pane.rows.clone(),
+        _ => merged_rows(frame, &panes, tabline),
+    };
+    let status = frame.surface(SurfaceId::Status);
+    rows.extend(status.and_then(|s| s.rows.first()).cloned());
+    rows
+}
+
+/// The text of each of [`screen_rows`].
+pub fn text_rows(frame: &Frame) -> Vec<String> {
+    screen_rows(frame).iter().map(Row::text).collect()
+}
+
+/// `panes`, `tabline` and the frame's lines as one row per screen row,
+/// across the area they take together.
+fn merged_rows(frame: &Frame, panes: &[&Surface], tabline: Option<&Surface>) -> Vec<Row> {
+    let rects = || panes.iter().chain(&tabline).map(|s| s.rect);
+    let left = rects().map(|r| r.x).min().unwrap_or(0);
+    let top = rects().map(|r| r.y).min().unwrap_or(0);
+    let bottom = rects().map(|r| r.y.saturating_add(r.height)).max();
+    let bottom = bottom.unwrap_or(0).max(top);
+    // Each screen row, as the pieces on it: where each starts, its width
+    // and its row.
+    let mut pieces: Vec<Vec<(u16, u16, Row)>> = vec![Vec::new(); usize::from(bottom - top)];
+    let mut put = |y: u16, piece: (u16, u16, Row)| {
+        if let Some(row) = y
+            .checked_sub(top)
+            .and_then(|i| pieces.get_mut(usize::from(i)))
+        {
+            row.push(piece);
+        }
+    };
+    for surface in tabline.into_iter().chain(panes.iter().copied()) {
+        let r = surface.rect;
+        let inactive = matches!(surface.role, Role::Pane { active: false });
+        for (dy, row) in (0..r.height).zip(&surface.rows) {
+            let mut row = row.clone();
+            if inactive {
+                row.tags.insert(0, Tag::PANE_INACTIVE);
+            }
+            put(r.y + dy, (r.x, r.width, row));
+        }
+    }
+    let border = |text: String| Row {
+        spans: vec![Span::new(text, smallvec![Tag::PANE_BORDER])],
+        ..Row::default()
+    };
+    for line in &frame.lines {
+        if line.down {
+            for y in line.y..line.y.saturating_add(line.len) {
+                put(y, (line.x, 1, border("│".to_owned())));
+            }
+        } else {
+            let text = "─".repeat(usize::from(line.len));
+            put(line.y, (line.x, line.len, border(text)));
+        }
+    }
+    pieces
+        .into_iter()
+        .map(|mut row_pieces| {
+            row_pieces.sort_by_key(|(x, _, _)| *x);
+            let mut row = Row::default();
+            let mut at = left;
+            for (x, width, piece) in row_pieces {
+                if x > at {
+                    row.push(&" ".repeat(usize::from(x - at)), SmallVec::new());
+                }
+                append(&mut row, piece, usize::from(width));
+                at = x.saturating_add(width);
+            }
+            row
+        })
+        .collect()
+}
+
+/// Adds `piece` to the end of `row`, padded to `width` cells, with its
+/// row-wide tags on each of its spans so they stay within its width.
+fn append(row: &mut Row, piece: Row, width: usize) {
+    let mut used = 0;
+    for span in piece.spans {
+        used += span.text.graphemes(true).map(str::width).sum::<usize>();
+        let tags = piece.tags.iter().chain(&span.tags).cloned().collect();
+        row.push(&span.text, tags);
+    }
+    if used < width {
+        row.push(&" ".repeat(width - used), piece.tags.into_iter().collect());
+    }
 }
 
 /// Gives the cells under scaled text in `rows` and `cols`, in the rows it
@@ -307,12 +456,20 @@ mod tests {
     use smallvec::smallvec;
 
     use super::*;
-    use crate::CursorShape;
-    use crate::render::{Rect, Size, Span};
+    use crate::render::{Separator, Size, Span};
     use crate::theme::{Color, Entry};
+    use crate::{CursorShape, ViewId};
 
-    /// A frame 8 wide and 4 high: `rows` in the main view, then the status
-    /// line.
+    fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// A frame 8 wide and 4 high: `rows` in a pane, then the status line.
     fn frame(rows: Vec<Row>) -> Frame {
         let mut theme = Theme::default();
         theme.set(
@@ -324,21 +481,25 @@ mod tests {
         );
         let mut rows = rows;
         rows.resize_with(3, Row::default);
-        rows.push(Row::default());
+        let pane = Surface::new(
+            SurfaceId::View(ViewId(1)),
+            Role::Pane { active: true },
+            rect(0, 0, 8, 3),
+            rows,
+        );
+        let status = Surface::new(
+            SurfaceId::Status,
+            Role::Status,
+            rect(0, 3, 8, 1),
+            vec![Row::default()],
+        );
         Frame {
             size: Size {
                 width: 8,
                 height: 4,
             },
-            main: Rect {
-                x: 0,
-                y: 0,
-                width: 8,
-                height: 3,
-            },
-            rows,
-            panels: Vec::new(),
-            floats: Vec::new(),
+            surfaces: vec![pane, status],
+            lines: Vec::new(),
             images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
@@ -392,6 +553,96 @@ mod tests {
             grid[0][3].style.bg,
             Some(Color::Ansi(4)),
             "its cells keep its style"
+        );
+    }
+
+    #[test]
+    fn panes_draw_as_their_merged_rows_do() {
+        let mut f = frame(Vec::new());
+        f.size = Size {
+            width: 9,
+            height: 5,
+        };
+        for (name, look) in [("ui.pane.inactive", 8), ("ui.pane.border", 3), ("hl", 5)] {
+            let style = Style {
+                fg: Some(Color::Ansi(look)),
+                ..Style::default()
+            };
+            Arc::make_mut(&mut f.theme).set(name, Entry::new(style));
+        }
+        let text = |t: &str| Row {
+            spans: vec![Span::new(t, smallvec![])],
+            ..Row::default()
+        };
+        let marked = Row {
+            tags: smallvec![Tag::from("hl")],
+            ..text("ab")
+        };
+        let pane = |id, active, x, rows| {
+            let role = Role::Pane { active };
+            Surface::new(SurfaceId::View(ViewId(id)), role, rect(x, 1, 4, 3), rows)
+        };
+        let tabs = Surface::new(
+            SurfaceId::Tabline,
+            Role::Tabline,
+            rect(0, 0, 9, 1),
+            vec![text(" 1 a  2 b")],
+        );
+        let status = Surface::new(
+            SurfaceId::Status,
+            Role::Status,
+            rect(0, 4, 9, 1),
+            vec![text("NORMAL")],
+        );
+        f.surfaces = vec![
+            pane(1, true, 0, vec![text("one"), marked.clone(), text("")]),
+            pane(2, false, 5, vec![text("two"), marked, text("x")]),
+            tabs,
+            status,
+        ];
+        f.lines = vec![Separator {
+            x: 4,
+            y: 1,
+            len: 3,
+            down: true,
+        }];
+        assert_eq!(
+            text_rows(&f),
+            [" 1 a  2 b", "one │two ", "ab  │ab  ", "    │x   ", "NORMAL"]
+        );
+        // The same rows as one pane, the way frames used to hold them.
+        let rows = screen_rows(&f);
+        let mut merged = f.clone();
+        let (status, panes) = rows.split_last().unwrap();
+        merged.lines.clear();
+        merged.surfaces = vec![
+            Surface::new(
+                SurfaceId::View(ViewId(1)),
+                Role::Pane { active: true },
+                rect(0, 0, 9, 4),
+                panes.to_vec(),
+            ),
+            Surface::new(
+                SurfaceId::Status,
+                Role::Status,
+                rect(0, 4, 9, 1),
+                vec![status.clone()],
+            ),
+        ];
+        for medium in [Medium::Tui, Medium::Gui] {
+            assert_eq!(compose(&f, medium), compose(&merged, medium));
+        }
+        let grid = compose(&f, Medium::Tui);
+        assert_eq!(
+            grid[3][7].style.fg,
+            Some(Color::Ansi(8)),
+            "dimmed to its edge"
+        );
+        assert_eq!(grid[2][2].style.fg, Some(Color::Ansi(5)), "a marked row");
+        assert_eq!(
+            grid[1][4].style.fg,
+            Some(Color::Ansi(3)),
+            "the line between"
         );
     }
 }

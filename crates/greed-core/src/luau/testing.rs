@@ -416,11 +416,7 @@ fn add_screen_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     );
     methods.add_method("draw", |lua, _, (width, height): (u16, u16)| {
         let frame = draw(lua, width, height)?;
-        Ok(frame
-            .rows
-            .iter()
-            .map(crate::render::Row::text)
-            .collect::<Vec<_>>())
+        Ok(crate::render::grid::text_rows(&frame))
     });
     methods.add_method("screen", |lua, _, (width, height): (u16, u16)| {
         use crate::render::grid::compose;

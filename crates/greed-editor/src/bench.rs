@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use greed_core::control::{self, Attachment, Client};
 use greed_core::keymap::Key;
-use greed_core::render::{Frame, Row, Size};
+use greed_core::render::{Frame, Size, grid};
 use greed_core::server::{self, Input, Output};
 
 use crate::tui::{Painter, Terminal};
@@ -293,8 +293,9 @@ fn terminal_echo(
             let typed = &text[..i + c.len_utf8()];
             let took = client.timed_until(key, |frame| {
                 frame
-                    .rows
+                    .surfaces
                     .iter()
+                    .flat_map(|s| &s.rows)
                     .any(|row| row.text().trim_end().ends_with(typed))
             })?;
             if took > SLOW {
@@ -522,14 +523,10 @@ impl Bench {
         self.send(&Input::Key(key))?;
         loop {
             if let Err(err) = self.frame() {
-                let screen = self.current.as_ref().map_or_else(String::new, |frame| {
-                    frame
-                        .rows
-                        .iter()
-                        .map(Row::text)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                });
+                let screen = self
+                    .current
+                    .as_ref()
+                    .map_or_else(String::new, |frame| grid::text_rows(frame).join("\n"));
                 return Err(format!("{key} never showed ({err}); the screen:\n{screen}").into());
             }
             if self.current.as_ref().is_some_and(&shows) {

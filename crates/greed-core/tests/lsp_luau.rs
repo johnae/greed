@@ -249,10 +249,8 @@ fn the_lsp_plugin_marks_problems_with_signs_and_messages() {
             height: 2,
         };
         let status = Status::Default { message: None };
-        Renderer::new(CellWidth)
-            .frame(ed, size, &status, &Plain)
-            .rows[0]
-            .text()
+        let frame = Renderer::new(CellWidth).frame(ed, size, &status, &Plain);
+        greed_core::render::grid::text_rows(&frame).swap_remove(0)
     });
     assert_eq!(row, "E 1 let x = bad; bad word");
 

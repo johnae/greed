@@ -115,12 +115,7 @@ impl<'a> Chrome<'a> {
         Chrome {
             images: &frame.images,
             // A float without a border is plain cells, with no box drawn around it.
-            floats: frame
-                .floats
-                .iter()
-                .filter(|f| f.border)
-                .map(|f| f.rect)
-                .collect(),
+            floats: frame.bordered_floats().collect(),
             rounded: float.rounded == Some(true),
             shadows: float.shadow == Some(true),
             text: frame.theme.style("ui.text", Medium::Gui),

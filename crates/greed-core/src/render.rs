@@ -295,18 +295,18 @@ impl Row {
     }
 }
 
+/// One screen: the surfaces on it, the lines between panes, images, the
+/// cursor and what the tags look like.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Frame {
     pub size: Size,
-    /// Where the main view's rows go; panels take the rest of the width.
-    pub main: Rect,
-    /// The main view's rows, then the status line, which spans the screen.
-    pub rows: Vec<Row>,
-    /// Panels beside the main view.
-    pub panels: Vec<PanelFrame>,
-    /// Floating views to draw over the rows, bottom first.
-    pub floats: Vec<FloatFrame>,
-    /// Images to draw over the rows, after them.
+    /// What's on screen, bottom first: the shown tab's panes, the tab line,
+    /// the status line, panels, then floats.
+    pub surfaces: Vec<Surface>,
+    /// The lines between panes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<Separator>,
+    /// Images to draw over the surfaces, after them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ImagePlacement>,
     /// Where the primary cursor is, if it's on screen.
@@ -336,15 +336,116 @@ pub struct MenuItem {
     pub command: String,
 }
 
-/// A panel: its rows fill `rect`. The client draws a line down column
-/// `separator`, between the panel and the main view, and the title (if any)
-/// on the row above `rect`.
+impl Frame {
+    /// The surface `id`, if it's on screen.
+    pub fn surface(&self, id: SurfaceId) -> Option<&Surface> {
+        self.surfaces.iter().find(|s| s.id == id)
+    }
+
+    /// The text areas of the floats with a border, bottom first.
+    pub fn bordered_floats(&self) -> impl Iterator<Item = Rect> + '_ {
+        self.surfaces.iter().filter_map(|s| match s.role {
+            Role::Float { border: true, .. } => Some(s.rect),
+            _ => None,
+        })
+    }
+}
+
+/// A rectangle of rows on screen, drawn as its role says: a pane, a panel,
+/// a float, the tab line or the status line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PanelFrame {
+pub struct Surface {
+    pub id: SurfaceId,
+    pub role: Role,
+    /// Where its rows go.
     pub rect: Rect,
-    pub separator: u16,
-    pub title: Option<String>,
     pub rows: Vec<Row>,
+    /// The size of what it shows when that differs from `rect`, which the
+    /// client crops or pads to fit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<Size>,
+    /// A short text for the client to show on it, like why it's cropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl Surface {
+    /// `rows` in `rect`, showing all of what it has.
+    pub fn new(id: SurfaceId, role: Role, rect: Rect, rows: Vec<Row>) -> Self {
+        Surface {
+            id,
+            role,
+            rect,
+            rows,
+            content: None,
+            note: None,
+        }
+    }
+}
+
+/// Which surface: stays the same from frame to frame while the thing it
+/// shows is on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceId {
+    /// A pane, panel or float showing this view.
+    View(ViewId),
+    Tabline,
+    Status,
+}
+
+/// What a surface is, which decides how a client draws around it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Role {
+    /// A pane of the shown tab. All but the active one are drawn dimmed
+    /// (`ui.pane.inactive`).
+    Pane { active: bool },
+    /// A panel beside the panes, with a line down column `separator`
+    /// between them and its title (if any) on the row above its rect.
+    Panel {
+        separator: u16,
+        title: Option<String>,
+    },
+    /// A floating view over the rest, with a border one cell around its
+    /// rect unless `border` is false.
+    Float {
+        #[serde(default = "yes", skip_serializing_if = "is_true")]
+        border: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// Drawn at the right end of the top border.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        label: Vec<Span>,
+        /// Drawn in the middle of the bottom border.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        footer: Vec<Span>,
+    },
+    /// The row of tabs above the panes, when there's more than one tab.
+    Tabline,
+    /// The status line at the bottom.
+    Status,
+}
+
+/// A line drawn between two panes: down from (`x`, `y`) when `down`,
+/// across otherwise, `len` cells long.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Separator {
+    pub x: u16,
+    pub y: u16,
+    pub len: u16,
+    pub down: bool,
+}
+
+impl From<crate::layout::Line> for Separator {
+    fn from(line: crate::layout::Line) -> Self {
+        Separator {
+            x: line.x,
+            y: line.y,
+            len: line.len,
+            down: line.down,
+        }
+    }
 }
 
 /// Part of an image on screen: the image is `cols` by `rows` cells, and
@@ -358,23 +459,6 @@ pub struct ImagePlacement {
     pub row: u16,
     pub cols: u16,
     pub rows: u16,
-}
-
-/// A floating view: its rows fill `rect`, and the client draws a border
-/// around it, one cell wide, unless `border` is false.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FloatFrame {
-    pub rect: Rect,
-    pub title: Option<String>,
-    pub rows: Vec<Row>,
-    /// Drawn at the right end of the top border.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub label: Vec<Span>,
-    /// Drawn in the middle of the bottom border.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub footer: Vec<Span>,
-    #[serde(default = "yes", skip_serializing_if = "is_true")]
-    pub border: bool,
 }
 
 /// `line` as spans: its styled parts tagged with their style.
@@ -528,29 +612,40 @@ impl<M: Measure> Renderer<M> {
             height: size.height.saturating_sub(1),
         };
         let (area, placed) = layout_panels(editor.panels(), screen);
-        let (mut rows, main_cursor) = self.pane_rows(editor, area, decorations);
+        let mut surfaces = Vec::new();
+        let (lines, main_cursor) = self.panes(editor, area, decorations, &mut surfaces);
         let status = match status {
             Status::Default { message } => {
                 Self::default_status(editor, editor.view(main), *message)
             }
             Status::Line(line) => line.clone(),
         };
-        rows.push(self.status_row(&status, usize::from(size.width), screen.height));
+        let status_rect = Rect {
+            x: 0,
+            y: screen.height,
+            width: size.width,
+            height: 1,
+        };
+        let status = self.status_row(&status, usize::from(size.width), screen.height);
+        surfaces.push(Surface::new(
+            SurfaceId::Status,
+            Role::Status,
+            status_rect,
+            vec![status],
+        ));
 
         let mut cursor = main_cursor;
-        let mut panels = Vec::new();
-        for (view, mut panel) in placed {
-            let (rows, panel_cursor) = self.view_rows(editor, view, panel.rect, false, decorations);
+        for (view, rect, role) in placed {
+            let (rows, panel_cursor) = self.view_rows(editor, view, rect, false, decorations);
             if editor.focus() == view {
                 cursor = panel_cursor;
             }
-            panel.rows = rows;
-            panels.push(panel);
+            surfaces.push(Surface::new(SurfaceId::View(view), role, rect, rows));
         }
         // Images under a floating view are left out rather than drawn over
         // it.
         let mut images = self.images.take();
-        let mut floats = Vec::new();
+        let mut covered = Vec::new();
         let shown: Vec<Float> = editor.floats().into_iter().cloned().collect();
         for float in shown {
             let rect = place(&float.options, screen, cursor);
@@ -558,28 +653,23 @@ impl<M: Measure> Renderer<M> {
             if editor.focus() == float.view {
                 cursor = float_cursor;
             }
-            floats.push(FloatFrame {
-                rect,
-                title: float.options.title.as_deref().map(str::to_owned),
-                rows,
-                label: border_spans(float.options.label.as_ref()),
-                footer: border_spans(float.options.footer.as_ref()),
-                border: float.options.border,
-            });
+            let options = &float.options;
+            covered.push(if options.border { bordered(rect) } else { rect });
+            let role = Role::Float {
+                border: options.border,
+                title: options.title.as_deref().map(str::to_owned),
+                label: border_spans(options.label.as_ref()),
+                footer: border_spans(options.footer.as_ref()),
+            };
+            surfaces.push(Surface::new(SurfaceId::View(float.view), role, rect, rows));
         }
-        images.retain(|image| {
-            !floats
-                .iter()
-                .any(|f| overlaps(image.rect, if f.border { bordered(f.rect) } else { f.rect }))
-        });
+        images.retain(|image| !covered.iter().any(|&c| overlaps(image.rect, c)));
         images.extend(self.images.take());
 
         Frame {
             size,
-            main: area,
-            rows,
-            panels,
-            floats,
+            surfaces,
+            lines,
             images,
             cursor,
             cursor_shape: editor.cursor_shape(),
@@ -658,106 +748,51 @@ impl<M: Measure> Renderer<M> {
         }
     }
 
-    /// Lays out the shown tab's panes in `area`, with lines between them
-    /// and the tabs above when there's more than one. Returns the rows and
-    /// where the focused pane's cursor is, if a pane has focus.
-    fn pane_rows(
+    /// Lays out the shown tab's panes in `area`, and the tabs above them
+    /// when there's more than one, adding them to `surfaces`. Returns the
+    /// lines between the panes and where the focused pane's cursor is, if
+    /// a pane has focus.
+    fn panes(
         &self,
         editor: &mut Editor,
         area: Rect,
         decorations: &dyn Decorations,
-    ) -> (Vec<Row>, Option<Position>) {
-        let tabline = (editor.tabs().len() > 1).then(|| Self::tabline(editor));
-        let panes_area = match tabline {
-            Some(_) => Rect {
+        surfaces: &mut Vec<Surface>,
+    ) -> (Vec<Separator>, Option<Position>) {
+        let tabline = editor.tabs().len() > 1;
+        let panes_area = if tabline {
+            Rect {
                 y: area.y + 1,
                 height: area.height.saturating_sub(1),
                 ..area
-            },
-            None => area,
+            }
+        } else {
+            area
         };
         editor.set_tab_area(panes_area);
         let (panes, lines) = editor.current_tab().place(panes_area);
         let active = editor.current_tab().active();
         let mut cursor = None;
-        let mut drawn = Vec::with_capacity(panes.len());
         for (view, rect) in panes {
             let numbers = editor.buffer(editor.view(view).buffer).line_numbers();
             let (rows, pane_cursor) = self.view_rows(editor, view, rect, numbers, decorations);
             if editor.focus() == view {
                 cursor = pane_cursor;
             }
-            drawn.push((view, rect, rows));
+            let role = Role::Pane {
+                active: view == active,
+            };
+            surfaces.push(Surface::new(SurfaceId::View(view), role, rect, rows));
         }
-        if tabline.is_none() && drawn.len() == 1 {
-            let (_, _, rows) = drawn.pop().expect("one pane");
-            return (rows, cursor);
+        if tabline {
+            let rect = Rect {
+                height: area.height.min(1),
+                ..area
+            };
+            let rows = vec![Self::tabline(editor)];
+            surfaces.push(Surface::new(SurfaceId::Tabline, Role::Tabline, rect, rows));
         }
-        // Each screen row, as the pieces on it from left to right.
-        let mut pieces: Vec<Vec<(u16, u16, Row)>> = vec![Vec::new(); usize::from(area.height)];
-        // What falls below a screen too small for it is left out.
-        let mut put = |y: usize, piece: (u16, u16, Row)| {
-            if let Some(row) = pieces.get_mut(y) {
-                row.push(piece);
-            }
-        };
-        let index = |y: u16| usize::from(y.saturating_sub(area.y));
-        if let Some(tabline) = tabline {
-            put(0, (area.x, area.width, tabline));
-        }
-        for (view, rect, rows) in drawn {
-            for (i, mut row) in rows.into_iter().enumerate() {
-                if view != active {
-                    row.tags.insert(0, Tag::PANE_INACTIVE);
-                }
-                put(index(rect.y) + i, (rect.x, rect.width, row));
-            }
-        }
-        let border = |text: String| Row {
-            spans: vec![Span::new(text, smallvec![Tag::PANE_BORDER])],
-            ..Row::default()
-        };
-        for line in lines {
-            if line.down {
-                for y in line.y..line.y.saturating_add(line.len) {
-                    put(index(y), (line.x, 1, border("│".to_owned())));
-                }
-            } else {
-                let text = "─".repeat(usize::from(line.len));
-                put(index(line.y), (line.x, line.len, border(text)));
-            }
-        }
-        let rows = pieces
-            .into_iter()
-            .map(|mut row_pieces| {
-                row_pieces.sort_by_key(|(x, _, _)| *x);
-                let mut row = Row::default();
-                let mut at = area.x;
-                for (x, width, piece) in row_pieces {
-                    if x > at {
-                        row.push(&" ".repeat(usize::from(x - at)), SmallVec::new());
-                    }
-                    self.append(&mut row, piece, usize::from(width));
-                    at = x.saturating_add(width);
-                }
-                row
-            })
-            .collect();
-        (rows, cursor)
-    }
-
-    /// Adds `piece` to the end of `row`, padded to `width` cells, with its
-    /// row-wide tags on each of its spans so they stay within its width.
-    fn append(&self, row: &mut Row, piece: Row, width: usize) {
-        let mut used = 0;
-        for span in piece.spans {
-            used += self.text_width(&span.text);
-            let tags = piece.tags.iter().chain(&span.tags).cloned().collect();
-            row.push(&span.text, tags);
-        }
-        if used < width {
-            row.push(&" ".repeat(width - used), piece.tags.into_iter().collect());
-        }
+        (lines.into_iter().map(Separator::from).collect(), cursor)
     }
 
     /// The row of tabs above the panes: each tab's number and name, the
@@ -1616,8 +1651,8 @@ fn bordered(rect: Rect) -> Rect {
 /// Where panels go: each one takes its width from its side of `screen`,
 /// plus a column for the line between it and the main view, and a row for
 /// its title if it has one. Returns the main view's area and, for each
-/// panel shown, its view and its frame, still without rows.
-fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFrame)>) {
+/// panel shown, its view, where its rows go and its role.
+fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, Rect, Role)>) {
     let mut left = screen.x;
     let mut right = screen.x + screen.width;
     let mut placed = Vec::new();
@@ -1645,13 +1680,11 @@ fn layout_panels(panels: &[Panel], screen: Rect) -> (Rect, Vec<(ViewId, PanelFra
             width,
             height: screen.height.saturating_sub(title_rows),
         };
-        let frame = PanelFrame {
-            rect,
+        let role = Role::Panel {
             separator,
             title: panel.options.title.as_deref().map(str::to_owned),
-            rows: Vec::new(),
         };
-        placed.push((panel.view, frame));
+        placed.push((panel.view, rect, role));
     }
     let main = Rect {
         x: left,

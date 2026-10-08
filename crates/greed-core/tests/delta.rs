@@ -130,8 +130,9 @@ fn window_options_go_along_when_they_change() {
 
 #[test]
 fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
-    use greed_core::render::grid::compose;
-    use greed_core::render::{FloatFrame, PanelFrame, Rect};
+    use greed_core::ViewId;
+    use greed_core::render::grid::{compose, screen_rows};
+    use greed_core::render::{Rect, Role, Surface, SurfaceId};
     use greed_core::theme::Medium;
     let mut ed = editor("hel|lo");
     let mut f = frame(&mut ed);
@@ -142,32 +143,44 @@ fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
         height: 2,
     };
     // A bordered float and a titled panel with no room left for either.
-    f.floats.push(FloatFrame {
-        rect,
+    let float = Role::Float {
+        border: true,
         title: Some("t".into()),
-        rows: Vec::new(),
         label: Vec::new(),
         footer: Vec::new(),
-        border: true,
-    });
-    f.panels.push(PanelFrame {
-        rect,
+    };
+    let panel = Role::Panel {
         separator: 0,
         title: Some("p".into()),
-        rows: Vec::new(),
-    });
+    };
+    f.surfaces.extend([
+        Surface::new(SurfaceId::View(ViewId(98)), float, rect, Vec::new()),
+        Surface::new(SurfaceId::View(ViewId(99)), panel, rect, Vec::new()),
+    ]);
     for medium in [Medium::Tui, Medium::Gui] {
         compose(&f, medium);
     }
-    // No rows at all, then more than a screen has and the biggest size.
+    // No surfaces at all and the biggest size.
     let delta: FrameDelta =
-        serde_json::from_str(r#"{ "row_count": 0, "size": { "width": 65535, "height": 65535 } }"#)
+        serde_json::from_str(r#"{ "surfaces": [], "size": { "width": 65535, "height": 65535 } }"#)
             .unwrap();
     delta.apply(&mut f);
     compose(&f, Medium::Tui);
-    let delta: FrameDelta =
-        serde_json::from_str(&format!(r#"{{ "row_count": {} }}"#, usize::MAX)).unwrap();
+    screen_rows(&f);
+    // Panes and lines far off the screen, ending past what a u16 holds.
+    let delta: FrameDelta = serde_json::from_str(
+        r#"{ "surfaces": [
+            { "id": { "view": 1 }, "role": { "kind": "pane", "active": false },
+              "rect": { "x": 65000, "y": 65000, "width": 65535, "height": 65535 },
+              "rows": [{ "spans": [{ "text": "x", "tags": [] }], "tags": [] }] },
+            { "id": "tabline", "role": { "kind": "tabline" },
+              "rect": { "x": 0, "y": 65535, "width": 65535, "height": 1 }, "rows": [] }
+          ],
+          "lines": [{ "x": 65535, "y": 65535, "len": 65535, "down": true }] }"#,
+    )
+    .unwrap();
     delta.apply(&mut f);
+    screen_rows(&f);
     let grid = compose(&f, Medium::Tui);
     assert_eq!(grid.len(), usize::from(Size::MAX.height));
 }

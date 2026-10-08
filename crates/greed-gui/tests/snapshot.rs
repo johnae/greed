@@ -14,11 +14,13 @@ use std::sync::Arc;
 
 use smallvec::SmallVec;
 
-use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::compose;
-use greed_core::render::{FloatFrame, Frame, ImagePlacement, Position, Rect, Row, Size, Span, Tag};
+use greed_core::render::{
+    Frame, ImagePlacement, Position, Rect, Role, Row, Size, Span, Surface, SurfaceId, Tag,
+};
 use greed_core::theme::{Color, Entry, Medium, Style, Theme};
+use greed_core::{CursorShape, ViewId};
 use greed_gui::Palette;
 use greed_gui::draw::{Chrome, build};
 use greed_gui::gpu::Gpu;
@@ -68,37 +70,50 @@ fn frame() -> Frame {
         row(&[("}", "")]),
         row(&[]),
         row(&[]),
-        Row {
-            tags: [Tag::STATUS].into_iter().collect(),
-            ..row(&[(" NORMAL  main.rs", "")])
-        },
     ];
+    let status = Row {
+        tags: [Tag::STATUS].into_iter().collect(),
+        ..row(&[(" NORMAL  main.rs", "")])
+    };
+    let rect = |x, y, width, height| Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+    let float = Role::Float {
+        border: true,
+        title: Some("pick".to_owned()),
+        label: Vec::new(),
+        footer: Vec::new(),
+    };
     Frame {
         size: Size {
             width: 40,
             height: 7,
         },
-        main: Rect {
-            x: 0,
-            y: 0,
-            width: 40,
-            height: 6,
-        },
-        rows,
-        panels: Vec::new(),
-        floats: vec![FloatFrame {
-            rect: Rect {
-                x: 26,
-                y: 4,
-                width: 12,
-                height: 1,
-            },
-            title: Some("pick".to_owned()),
-            rows: vec![row(&[("a float", "")])],
-            label: Vec::new(),
-            footer: Vec::new(),
-            border: true,
-        }],
+        // The pane, the status line, then the float.
+        surfaces: vec![
+            Surface::new(
+                SurfaceId::View(ViewId(1)),
+                Role::Pane { active: true },
+                rect(0, 0, 40, 6),
+                rows,
+            ),
+            Surface::new(
+                SurfaceId::Status,
+                Role::Status,
+                rect(0, 6, 40, 1),
+                vec![status],
+            ),
+            Surface::new(
+                SurfaceId::View(ViewId(2)),
+                float,
+                rect(26, 4, 12, 1),
+                vec![row(&[("a float", "")])],
+            ),
+        ],
+        lines: Vec::new(),
         images: Vec::new(),
         cursor: Some(Position { col: 3, row: 0 }),
         cursor_shape: CursorShape::Block,
@@ -197,7 +212,7 @@ fn a_font_with_ligatures_joins_them_and_keeps_the_columns() {
     let mut atlas = Atlas::new(1024);
     let palette = Palette::default();
     let mut frame = frame();
-    frame.rows[1] = row(&[("    a -> b != c;", "")]);
+    frame.surfaces[0].rows[1] = row(&[("    a -> b != c;", "")]);
     let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
@@ -257,7 +272,7 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
     let mut atlas = Atlas::new(1024);
     let palette = Palette::default();
     let mut frame = frame();
-    frame.floats.clear();
+    frame.surfaces.truncate(2);
     let (whole, cut) = (ImageId(1), ImageId(2));
     let placement = |id, x, col| ImagePlacement {
         id,
@@ -323,10 +338,10 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
     let mut atlas = Atlas::new(1024);
     let palette = Palette::default();
     let mut frame = frame();
-    frame.floats.clear();
+    frame.surfaces.truncate(2);
     // "Hi" twice the size over columns 0-3 and rows 0-1, then "x" at the
     // normal size on the same baseline.
-    frame.rows[0] = Row {
+    frame.surfaces[0].rows[0] = Row {
         spans: vec![
             Span {
                 scale: 2,
@@ -337,7 +352,7 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
         covers: 1,
         ..Row::default()
     };
-    frame.rows[1] = Row::default();
+    frame.surfaces[0].rows[1] = Row::default();
     frame.cursor = Some(Position { col: 0, row: 0 });
     let grid = compose(&frame, Medium::Gui);
     let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
@@ -401,10 +416,10 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         }),
     );
     frame.theme = Arc::new(theme);
-    let status = frame.rows.len() - 1;
+    let status = usize::from(frame.surfaces[1].rect.y);
     // A pill as the status line plugin makes one: round ends from a
     // Powerline font around the mode.
-    frame.rows[status] = Row {
+    frame.surfaces[1].rows[0] = Row {
         spans: vec![
             Span::new("\u{e0b6}", [Tag::from("cap")].into_iter().collect()),
             Span::new(" NORMAL ", [Tag::MODE].into_iter().collect()),
@@ -492,7 +507,7 @@ fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
     let mut atlas = Atlas::new(1024);
     let palette = Palette::default();
     let mut frame = frame();
-    frame.floats.clear();
+    frame.surfaces.truncate(2);
     let mut theme = (*frame.theme).clone();
     theme.set(
         "prose",
@@ -506,7 +521,7 @@ fn prose_is_drawn_narrower_and_the_cursor_follows_the_text() {
     );
     frame.theme = Arc::new(theme);
     let words = "Illuminating paragraphs of prose";
-    frame.rows[0] = row(&[(words, "prose"), ("|", "")]);
+    frame.surfaces[0].rows[0] = row(&[(words, "prose"), ("|", "")]);
     let col = words.len() as u16;
     frame.cursor = Some(Position { col, row: 0 });
     let grid = compose(&frame, Medium::Gui);
@@ -564,7 +579,7 @@ fn a_float_over_prose_keeps_its_place() {
     );
     frame.theme = Arc::new(theme);
     // Prose all along the row the float ("a float", from cell 26) is on.
-    frame.rows[4] = row(&[("Illuminating paragraphs of prose run under", "prose")]);
+    frame.surfaces[0].rows[4] = row(&[("Illuminating paragraphs of prose run under", "prose")]);
     let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
@@ -633,8 +648,8 @@ fn a_badge_style_draws_a_box_inside_its_cells_over_the_background_beside_it() {
     );
     frame.theme = Arc::new(theme);
     // A hint between words, on a plain row and on one with a background.
-    frame.rows[4] = row(&[("one", ""), ("2", "hint"), ("two", "")]);
-    frame.rows[5] = row(&[("one", "line"), ("2", "hint"), ("two", "line")]);
+    frame.surfaces[0].rows[4] = row(&[("one", ""), ("2", "hint"), ("two", "")]);
+    frame.surfaces[0].rows[5] = row(&[("one", "line"), ("2", "hint"), ("two", "line")]);
     let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,
@@ -700,7 +715,7 @@ fn what_is_under_a_rounded_floats_border_goes_on_behind_it_and_its_title_is_a_pi
     frame.theme = Arc::new(theme);
     // A code block's rows over and under the float's top border (row 3).
     for y in [2, 3] {
-        frame.rows[y] = row(&[(&" ".repeat(40), "block")]);
+        frame.surfaces[0].rows[y] = row(&[(&" ".repeat(40), "block")]);
     }
     let grid = compose(&frame, Medium::Gui);
     let scene = build(
@@ -769,11 +784,11 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
     }
     frame.theme = Arc::new(theme);
     // A todo's box as notes shows it: a symbol and a space, then the text.
-    frame.rows[4] = row(&[("☐ ", "todo"), ("buy milk", "")]);
-    frame.rows[5] = row(&[("☑ ", "done"), ("call mum", "")]);
+    frame.surfaces[0].rows[4] = row(&[("☐ ", "todo"), ("buy milk", "")]);
+    frame.surfaces[0].rows[5] = row(&[("☑ ", "done"), ("call mum", "")]);
     // Choices, a ring and a ring with a dot.
-    frame.rows[2] = row(&[("◯ ", "choice"), ("dark", "")]);
-    frame.rows[3] = row(&[("◉ ", "chosen"), ("light", "")]);
+    frame.surfaces[0].rows[2] = row(&[("◯ ", "choice"), ("dark", "")]);
+    frame.surfaces[0].rows[3] = row(&[("◉ ", "chosen"), ("light", "")]);
     let grid = compose(&frame, Medium::Gui);
     let scene = build(
         &grid,

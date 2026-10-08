@@ -9,9 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::CursorShape;
-use crate::render::{
-    FloatFrame, Frame, ImagePlacement, Menu, PanelFrame, Position, Rect, Row, Size,
-};
+use crate::render::{Frame, ImagePlacement, Menu, Position, Row, Separator, Size, Surface};
 use crate::theme::Theme;
 
 /// The parts of a frame that changed. Anything left out is as it was.
@@ -19,18 +17,16 @@ use crate::theme::Theme;
 pub struct FrameDelta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Size>,
+    /// Every surface, when any of them came, went, moved or changed
+    /// otherwise than in its rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub main: Option<Rect>,
-    /// How many rows the frame has, when that changed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub row_count: Option<usize>,
-    /// Rows that changed, by index.
+    pub surfaces: Option<Vec<Surface>>,
+    /// Rows that changed, by index, counting the surfaces' rows bottom
+    /// surface first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rows: Vec<(u16, Row)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panels: Option<Vec<PanelFrame>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub floats: Option<Vec<FloatFrame>>,
+    pub lines: Option<Vec<Separator>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ImagePlacement>>,
     /// The cursor, when it moved, appeared or went away.
@@ -51,27 +47,48 @@ fn changed<T: PartialEq + Clone>(old: &T, new: &T) -> Option<T> {
     (old != new).then(|| new.clone())
 }
 
+/// Whether two surfaces differ in more than their rows' contents.
+fn reshaped(old: &Surface, new: &Surface) -> bool {
+    old.id != new.id
+        || old.role != new.role
+        || old.rect != new.rect
+        || old.content != new.content
+        || old.note != new.note
+        || old.rows.len() != new.rows.len()
+}
+
 impl FrameDelta {
     /// What turns `old` into `new`, or `None` if they're the same.
     pub fn between(old: &Frame, new: &Frame) -> Option<FrameDelta> {
-        let rows = new
-            .rows
-            .iter()
-            .enumerate()
-            .filter(|(i, row)| old.rows.get(*i) != Some(row))
-            .map(|(i, row)| (u16::try_from(i).unwrap_or(u16::MAX), row.clone()))
-            .collect();
+        let same_shape = old.surfaces.len() == new.surfaces.len()
+            && old
+                .surfaces
+                .iter()
+                .zip(&new.surfaces)
+                .all(|(a, b)| !reshaped(a, b));
+        let (surfaces, rows) = if same_shape {
+            let rows = new
+                .surfaces
+                .iter()
+                .flat_map(|s| &s.rows)
+                .zip(old.surfaces.iter().flat_map(|s| &s.rows))
+                .enumerate()
+                .filter(|(_, (new, old))| new != old)
+                .map(|(i, (row, _))| (u16::try_from(i).unwrap_or(u16::MAX), row.clone()))
+                .collect();
+            (None, rows)
+        } else {
+            (Some(new.surfaces.clone()), Vec::new())
+        };
         // Frames from the same theme share it, so this is usually a pointer
         // comparison.
         let theme = (!Arc::ptr_eq(&old.theme, &new.theme) && old.theme != new.theme)
             .then(|| new.theme.clone());
         let delta = FrameDelta {
             size: changed(&old.size, &new.size),
-            main: changed(&old.main, &new.main),
-            row_count: changed(&old.rows.len(), &new.rows.len()),
+            surfaces,
             rows,
-            panels: changed(&old.panels, &new.panels),
-            floats: changed(&old.floats, &new.floats),
+            lines: changed(&old.lines, &new.lines),
             images: changed(&old.images, &new.images),
             cursor: changed(&old.cursor, &new.cursor),
             cursor_shape: changed(&old.cursor_shape, &new.cursor_shape),
@@ -84,11 +101,9 @@ impl FrameDelta {
 
     fn is_empty(&self) -> bool {
         self.size.is_none()
-            && self.main.is_none()
-            && self.row_count.is_none()
+            && self.surfaces.is_none()
             && self.rows.is_empty()
-            && self.panels.is_none()
-            && self.floats.is_none()
+            && self.lines.is_none()
             && self.images.is_none()
             && self.cursor.is_none()
             && self.cursor_shape.is_none()
@@ -103,25 +118,23 @@ impl FrameDelta {
         if let Some(size) = self.size {
             frame.size = size;
         }
-        if let Some(main) = self.main {
-            frame.main = main;
+        if let Some(surfaces) = self.surfaces {
+            frame.surfaces = surfaces;
         }
-        if let Some(count) = self.row_count {
-            // Rows are numbered in a u16; a delta saying more is broken.
-            frame
-                .rows
-                .resize_with(count.min(usize::from(u16::MAX)), Row::default);
-        }
-        for (i, row) in self.rows {
-            if let Some(slot) = frame.rows.get_mut(usize::from(i)) {
-                *slot = row;
+        if !self.rows.is_empty() {
+            let mut slots: Vec<&mut Row> = frame
+                .surfaces
+                .iter_mut()
+                .flat_map(|s| &mut s.rows)
+                .collect();
+            for (i, row) in self.rows {
+                if let Some(slot) = slots.get_mut(usize::from(i)) {
+                    **slot = row;
+                }
             }
         }
-        if let Some(panels) = self.panels {
-            frame.panels = panels;
-        }
-        if let Some(floats) = self.floats {
-            frame.floats = floats;
+        if let Some(lines) = self.lines {
+            frame.lines = lines;
         }
         if let Some(images) = self.images {
             frame.images = images;

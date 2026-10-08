@@ -4,6 +4,7 @@ use std::time::Duration;
 use greed_core::Editor;
 use greed_core::keymap::Key;
 use greed_core::luau::Host;
+use greed_core::render::grid::screen_rows;
 use greed_core::render::{Frame, Size};
 use greed_core::server::{self, Connection, Input, Output};
 use greed_text::ClientId;
@@ -49,12 +50,12 @@ fn renders_after_resize_and_after_input() {
         }))
         .unwrap();
     let f = frame(&conn);
-    assert_eq!(f.rows[0].text(), "1 hello");
+    assert_eq!(screen_rows(&f)[0].text(), "1 hello");
 
     keys(&conn, "i > esc");
     // Input may be batched, so read frames until the edit shows up.
     let mut f = frame(&conn);
-    while f.rows[0].text() != "1 >hello" {
+    while screen_rows(&f)[0].text() != "1 >hello" {
         f = frame(&conn);
     }
     assert_eq!(f.cursor_shape, greed_core::CursorShape::Block);
@@ -73,15 +74,20 @@ fn errors_and_messages_show_on_the_status_line() {
     keys(&conn, "ctrl-s");
     let f = frame(&conn);
     assert!(
-        f.rows[1].text().contains("this buffer has no file"),
+        screen_rows(&f)[1]
+            .text()
+            .contains("this buffer has no file"),
         "{:?}",
-        f.rows[1].text()
+        screen_rows(&f)[1].text()
     );
 
     // The message goes with the next key.
     keys(&conn, "l");
     let mut f = frame(&conn);
-    while f.rows[1].text().contains("this buffer has no file") {
+    while screen_rows(&f)[1]
+        .text()
+        .contains("this buffer has no file")
+    {
         f = frame(&conn);
     }
 }
@@ -104,9 +110,9 @@ fn saving_writes_the_file_and_says_so() {
     keys(&conn, "ctrl-s");
     let f = frame(&conn);
     assert!(
-        f.rows[1].text().contains("wrote "),
+        screen_rows(&f)[1].text().contains("wrote "),
         "{:?}",
-        f.rows[1].text()
+        screen_rows(&f)[1].text()
     );
     assert_eq!(std::fs::read_to_string(path).unwrap(), "draft");
     std::fs::remove_file(path).unwrap();
@@ -164,7 +170,7 @@ fn the_server_wakes_up_for_timers() {
     frame(&conn);
     keys(&conn, "z");
     let mut f = frame(&conn);
-    while f.rows[0].text() != "1 woke" {
+    while screen_rows(&f)[0].text() != "1 woke" {
         f = frame(&conn);
     }
 }
@@ -195,7 +201,7 @@ fn frames_come_at_most_once_a_redraw_while_work_keeps_waking_the_server() {
     let mut frames = 0;
     loop {
         frames += 1;
-        if frame(&conn).rows[0].text() == "1 200" {
+        if screen_rows(&frame(&conn))[0].text() == "1 200" {
             break;
         }
     }
@@ -243,7 +249,7 @@ fn frames_carry_the_menus_and_a_window_runs_their_commands() {
         .send(Input::Run("select-all".to_owned()))
         .unwrap();
     let mut f = frame(&conn);
-    while !f.rows[0]
+    while !screen_rows(&f)[0]
         .spans
         .iter()
         .any(|s| s.text == "hello" && s.tags.contains(&greed_core::render::Tag::SELECTION))
@@ -307,7 +313,7 @@ fn start_keys() -> Connection {
 fn until_text(conn: &Connection, text: &str) {
     let want = format!("1 {text}");
     let mut f = frame(conn);
-    while f.rows[0].text() != want {
+    while screen_rows(&f)[0].text() != want {
         f = frame(conn);
     }
 }

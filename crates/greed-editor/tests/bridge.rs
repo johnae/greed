@@ -159,19 +159,9 @@ impl Bridge {
         );
         self.send(&json!({ "Resize": { "width": 40, "height": 5 } }));
         let frame = self.next();
-        frame["Frame"]["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| {
-                row["spans"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|span| span["text"].as_str().unwrap())
-                    .collect()
-            })
-            .collect()
+        let frame: greed_core::render::Frame =
+            serde_json::from_value(frame["Frame"].clone()).unwrap();
+        greed_core::render::grid::text_rows(&frame)
     }
 
     fn quit(mut self) {

@@ -655,7 +655,8 @@ fn terminal_color(color: ThemeColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use greed_core::render::{Row, Tag};
+    use greed_core::ViewId;
+    use greed_core::render::{Rect, Role, Row, Surface, SurfaceId, Tag};
     use greed_core::theme::Theme;
 
     #[test]
@@ -861,22 +862,7 @@ mod tests {
 
     #[test]
     fn only_changed_rows_are_redrawn() {
-        let frame = |text: &str| Frame {
-            size: Size {
-                width: 10,
-                height: 2,
-            },
-            main: main_rect(10, 1),
-            panels: Vec::new(),
-            rows: vec![Row::default(), plain(text)],
-            floats: Vec::new(),
-            images: Vec::new(),
-            cursor: None,
-            cursor_shape: CursorShape::Block,
-            theme: std::sync::Arc::default(),
-            gui: std::collections::BTreeMap::new(),
-            menus: Vec::new(),
-        };
+        let frame = |text: &str| frame_of(10, 2, vec![Row::default()], plain(text), Vec::new());
         let mut screen = Screen::default();
         let mut out = Vec::new();
         screen.draw(&mut out, &frame("one")).unwrap();
@@ -893,35 +879,24 @@ mod tests {
 
     #[test]
     fn floats_are_drawn_in_a_box_over_the_rows() {
-        use greed_core::render::{FloatFrame, Rect};
-        let frame = Frame {
-            size: Size {
-                width: 12,
-                height: 5,
-            },
-            main: main_rect(12, 4),
-            panels: Vec::new(),
-            rows: vec![plain("abcdefghijkl"); 5],
-            floats: vec![FloatFrame {
-                rect: Rect {
-                    x: 2,
-                    y: 1,
-                    width: 6,
-                    height: 2,
-                },
+        let float = Surface::new(
+            SurfaceId::View(ViewId(2)),
+            Role::Float {
+                border: true,
                 title: Some("hi".into()),
-                rows: vec![plain("one"), plain("日本語")],
                 label: Vec::new(),
                 footer: Vec::new(),
-                border: true,
-            }],
-            images: Vec::new(),
-            cursor: None,
-            cursor_shape: CursorShape::Block,
-            theme: std::sync::Arc::default(),
-            gui: std::collections::BTreeMap::new(),
-            menus: Vec::new(),
-        };
+            },
+            Rect {
+                x: 2,
+                y: 1,
+                width: 6,
+                height: 2,
+            },
+            vec![plain("one"), plain("日本語")],
+        );
+        let line = plain("abcdefghijkl");
+        let frame = frame_of(12, 5, vec![line.clone(); 4], line, vec![float]);
         let text: Vec<String> = compose(&frame, false)
             .iter()
             .map(|row| row.iter().map(|c| c.text.as_str()).collect())
@@ -938,54 +913,65 @@ mod tests {
         );
     }
 
-    /// The main view's area when there are no panels.
-    fn main_rect(width: u16, height: u16) -> greed_core::render::Rect {
-        greed_core::render::Rect {
+    /// A frame `width` by `height` cells: `rows` in one pane above the
+    /// status line, with `more` surfaces over them.
+    fn frame_of(width: u16, height: u16, rows: Vec<Row>, status: Row, more: Vec<Surface>) -> Frame {
+        let rect = |y, height| Rect {
             x: 0,
-            y: 0,
+            y,
             width,
             height,
-        }
-    }
-
-    #[test]
-    fn panels_get_a_line_beside_them_and_a_title() {
-        use greed_core::render::{PanelFrame, Rect};
-        let frame = Frame {
-            size: Size {
-                width: 10,
-                height: 4,
-            },
-            main: Rect {
-                x: 5,
-                y: 0,
-                width: 5,
-                height: 3,
-            },
-            rows: vec![
-                plain("main"),
-                Row::default(),
-                Row::default(),
-                plain("status"),
-            ],
-            panels: vec![PanelFrame {
-                rect: Rect {
-                    x: 0,
-                    y: 1,
-                    width: 4,
-                    height: 2,
-                },
-                separator: 4,
-                title: Some("Tree".into()),
-                rows: vec![plain("a/"), plain("b")],
-            }],
-            floats: Vec::new(),
+        };
+        let pane = Surface::new(
+            SurfaceId::View(ViewId(1)),
+            Role::Pane { active: true },
+            rect(0, height.saturating_sub(1)),
+            rows,
+        );
+        let status = Surface::new(
+            SurfaceId::Status,
+            Role::Status,
+            rect(height.saturating_sub(1), 1),
+            vec![status],
+        );
+        let mut surfaces = vec![pane, status];
+        surfaces.extend(more);
+        Frame {
+            size: Size { width, height },
+            surfaces,
+            lines: Vec::new(),
             images: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
             menus: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn panels_get_a_line_beside_them_and_a_title() {
+        let panel = Surface::new(
+            SurfaceId::View(ViewId(2)),
+            Role::Panel {
+                separator: 4,
+                title: Some("Tree".into()),
+            },
+            Rect {
+                x: 0,
+                y: 1,
+                width: 4,
+                height: 2,
+            },
+            vec![plain("a/"), plain("b")],
+        );
+        let rows = vec![plain("main"), Row::default(), Row::default()];
+        let mut frame = frame_of(10, 4, rows, plain("status"), vec![panel]);
+        frame.surfaces[0].rect = Rect {
+            x: 5,
+            y: 0,
+            width: 5,
+            height: 3,
         };
         let text: Vec<String> = compose(&frame, false)
             .iter()
@@ -1041,31 +1027,18 @@ mod tests {
                 ..Style::default()
             }),
         );
-        let frame = Frame {
-            size: Size {
-                width: 4,
-                height: 1,
-            },
-            main: main_rect(4, 0),
-            panels: Vec::new(),
-            rows: vec![Row {
-                spans: vec![Span::new(
-                    "fn",
-                    [Tag::from("keyword.function"), Tag::SELECTION]
-                        .into_iter()
-                        .collect(),
-                )],
-                tags: [Tag::from("current")].into_iter().collect(),
-                covers: 0,
-            }],
-            floats: Vec::new(),
-            images: Vec::new(),
-            cursor: None,
-            cursor_shape: CursorShape::Block,
-            theme: std::sync::Arc::new(theme),
-            gui: std::collections::BTreeMap::new(),
-            menus: Vec::new(),
+        let row = Row {
+            spans: vec![Span::new(
+                "fn",
+                [Tag::from("keyword.function"), Tag::SELECTION]
+                    .into_iter()
+                    .collect(),
+            )],
+            tags: [Tag::from("current")].into_iter().collect(),
+            covers: 0,
         };
+        let mut frame = frame_of(4, 1, Vec::new(), row, Vec::new());
+        frame.theme = std::sync::Arc::new(theme);
         let cell = &compose(&frame, false)[0][0];
         assert_eq!(cell.style.foreground_color, Some(Color::Magenta));
         assert_eq!(

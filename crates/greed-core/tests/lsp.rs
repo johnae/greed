@@ -789,8 +789,7 @@ fn diagnostics_underline_their_text_and_color_the_line_number() {
         &Status::Default { message: None },
         &Plain,
     );
-    let tagged: Vec<(String, Vec<String>)> = frame
-        .rows
+    let tagged: Vec<(String, Vec<String>)> = greed_core::render::grid::screen_rows(&frame)
         .iter()
         .flat_map(|r| &r.spans)
         .map(|span| {

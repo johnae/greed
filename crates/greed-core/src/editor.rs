@@ -17,7 +17,9 @@ use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualL
 mod panes;
 pub use panes::{Tab, TabId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct ViewId(pub u32);
 
 /// `Buffer::undo` or `Buffer::redo`.

@@ -94,7 +94,7 @@ impl Attached {
             Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame came first")),
             other => panic!("expected a frame, got {other:?}"),
         }
-        self.1.as_ref().unwrap().rows[0].text()
+        greed_core::render::grid::text_rows(self.1.as_ref().unwrap()).swap_remove(0)
     }
 }
 

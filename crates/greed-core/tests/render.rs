@@ -1,6 +1,7 @@
+use greed_core::render::grid::screen_rows;
 use greed_core::render::{
-    CellWidth, Decorations, Frame, Plain, Position, Renderer, Row, Size, Span, Status, StatusLine,
-    Tag,
+    CellWidth, Decorations, Frame, Plain, Position, Renderer, Role, Row, Size, Span, Status,
+    StatusLine, Surface, SurfaceId, Tag,
 };
 use greed_core::{Editor, Scroll, parse_marked};
 use greed_text::ClientId;
@@ -22,16 +23,43 @@ fn frame(ed: &mut Editor, width: u16, height: u16) -> Frame {
     )
 }
 
-/// The text of each row, without the status line.
+/// The text of each row of the panes and tab line, as one row per screen
+/// row (see `screen_rows`), without the status line.
 fn rows(frame: &Frame) -> Vec<String> {
-    let n = frame.rows.len() - 1;
-    frame.rows[..n].iter().map(Row::text).collect()
+    let mut rows = screen_rows(frame);
+    rows.pop();
+    rows.iter().map(Row::text).collect()
 }
 
-/// The text of every span in `frame` carrying `tag`.
+/// The status line.
+fn status(frame: &Frame) -> &Row {
+    &frame.surface(SurfaceId::Status).unwrap().rows[0]
+}
+
+/// The surfaces with roles `role` picks, bottom first.
+fn having(frame: &Frame, role: fn(&Role) -> bool) -> Vec<&Surface> {
+    frame.surfaces.iter().filter(|s| role(&s.role)).collect()
+}
+
+fn floats(frame: &Frame) -> Vec<&Surface> {
+    having(frame, |r| matches!(r, Role::Float { .. }))
+}
+
+fn panels(frame: &Frame) -> Vec<&Surface> {
+    having(frame, |r| matches!(r, Role::Panel { .. }))
+}
+
+/// The one pane's rect: where the main view goes.
+fn main_rect(frame: &Frame) -> greed_core::render::Rect {
+    let panes = having(frame, |r| matches!(r, Role::Pane { .. }));
+    assert_eq!(panes.len(), 1);
+    panes[0].rect
+}
+
+/// The text of every span in the panes, tab line and status line carrying
+/// `tag`.
 fn tagged(frame: &Frame, tag: &Tag) -> Vec<String> {
-    frame
-        .rows
+    screen_rows(frame)
         .iter()
         .flat_map(|r| &r.spans)
         .filter(|s| s.tags.contains(tag))
@@ -179,8 +207,7 @@ fn scrolling_counts_wrapped_rows() {
 fn the_status_line_shows_mode_file_and_position() {
     let mut ed = editor("ab\nc|d");
     let f = frame(&mut ed, 24, 3);
-    let status = f.rows.last().unwrap();
-    assert_eq!(status.text(), " HELIX  notes.md    2:2 ");
+    assert_eq!(status(&f).text(), " HELIX  notes.md    2:2 ");
     assert_eq!(tagged(&f, &Tag::MODE), [" HELIX "]);
 
     let f = Renderer::new(CellWidth).frame(
@@ -194,7 +221,7 @@ fn the_status_line_shows_mode_file_and_position() {
         },
         &Plain,
     );
-    assert_eq!(f.rows.last().unwrap().text(), " HELIX  saved       2:2 ");
+    assert_eq!(status(&f).text(), " HELIX  saved       2:2 ");
 }
 
 #[test]
@@ -208,7 +235,7 @@ fn long_paths_keep_their_end_on_the_status_line() {
     );
     ed.view_mut(view).selection = selection;
     let f = frame(&mut ed, 30, 2);
-    let status = f.rows.last().unwrap().text();
+    let status = status(&f).text();
     assert_eq!(status, " HELIX  …to/some/notes.md 1:1 ");
     assert_eq!(status.chars().count(), 30);
 }
@@ -240,7 +267,7 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
             highlights: highlights.clone(),
         },
     );
-    let syntax: Vec<(String, String)> = f.rows[0]
+    let syntax: Vec<(String, String)> = screen_rows(&f)[0]
         .spans
         .iter()
         .filter_map(|s| {
@@ -282,8 +309,9 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
         },
     );
     let f = frame(&mut ed, 20, 9);
-    assert_eq!(f.floats.len(), 1);
-    let float = &f.floats[0];
+    let floats = floats(&f);
+    assert_eq!(floats.len(), 1);
+    let float = floats[0];
     // 12x4 outside the border, centred in the 20x8 above the status line.
     assert_eq!(
         (
@@ -294,12 +322,15 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
         ),
         (5, 3, 10, 2)
     );
-    assert_eq!(float.title.as_deref(), Some("Files"));
+    let Role::Float { title, .. } = &float.role else {
+        panic!("a float")
+    };
+    assert_eq!(title.as_deref(), Some("Files"));
     let rows: Vec<String> = float.rows.iter().map(Row::text).collect();
     assert_eq!(rows, ["one", "two"]);
     assert_eq!(f.cursor, Some(Position { col: 5, row: 3 }));
     // The main view still renders underneath, with its status line.
-    assert_eq!(f.rows[0].text(), "1 main");
+    assert_eq!(screen_rows(&f)[0].text(), "1 main");
 }
 
 #[test]
@@ -321,7 +352,7 @@ fn plugin_status_lines_are_padded_and_trimmed() {
             &Status::Line(line.clone()),
             &Plain,
         );
-        f.rows.last().unwrap().text()
+        status(&f).text()
     };
     assert_eq!(render(32), " N  a/long/path/file.rs     3:4 ");
     assert_eq!(render(20), " N …ath/file.rs 3:4 ");
@@ -385,8 +416,8 @@ fn marks_can_style_the_line_numbers_of_their_lines() {
         vec![mark(1..6, "warning"), mark(2..3, "error")],
     );
     let f = frame(&mut ed, 20, 4);
-    let gutter: Vec<Vec<&str>> = f
-        .rows
+    let screen = screen_rows(&f);
+    let gutter: Vec<Vec<&str>> = screen
         .iter()
         .filter_map(|r| r.spans.iter().find(|s| s.tags.contains(&Tag::GUTTER)))
         .map(|s| s.tags.iter().map(Tag::name).collect())
@@ -426,8 +457,9 @@ fn decorations_tag_their_text_and_lines_style_whole_rows() {
     );
     let f = frame(&mut ed, 20, 3);
     assert_eq!(tagged(&f, &Tag::from("match")), ["w"]);
-    assert!(f.rows[0].tags.is_empty());
-    assert_eq!(f.rows[1].tags.as_slice(), [Tag::from("picker.current")]);
+    let rows = screen_rows(&f);
+    assert!(rows[0].tags.is_empty());
+    assert_eq!(rows[1].tags.as_slice(), [Tag::from("picker.current")]);
 }
 
 #[test]
@@ -508,7 +540,8 @@ fn marks_can_draw_above_the_selection() {
     };
     ed.decorate(buffer, "x", vec![mark("under", false), mark("flash", true)]);
     let f = frame(&mut ed, 20, 2);
-    let span = f.rows[0].spans.iter().find(|s| s.text == "abc").unwrap();
+    let rows = screen_rows(&f);
+    let span = rows[0].spans.iter().find(|s| s.text == "abc").unwrap();
     let names: Vec<&str> = span.tags.iter().map(Tag::name).collect();
     assert_eq!(names, ["under", "ui.selection", "flash"]);
 }
@@ -539,8 +572,7 @@ fn floats_can_be_placed_side_by_side() {
         float(Some(Extent::Percent(50)), Some(Extent::Cells(1))),
     );
     let f = frame(&mut ed, 20, 9);
-    let rects: Vec<_> = f
-        .floats
+    let rects: Vec<_> = floats(&f)
         .iter()
         .map(|f| (f.rect.x, f.rect.y, f.rect.width, f.rect.height))
         .collect();
@@ -551,7 +583,7 @@ fn floats_can_be_placed_side_by_side() {
     let edge = ed.create_buffer("x", "c");
     ed.float(edge, float(Some(Extent::Cells(18)), None));
     let f = frame(&mut ed, 20, 9);
-    assert_eq!(f.floats[2].rect.x, 11);
+    assert_eq!(floats(&f)[2].rect.x, 11);
 }
 
 #[test]
@@ -571,29 +603,36 @@ fn panels_take_room_from_the_main_view() {
     );
     let f = frame(&mut ed, 30, 5);
     // The panel is 8 wide, then a separator column, then the main view.
-    assert_eq!(f.panels.len(), 1);
-    let p = &f.panels[0];
+    assert_eq!(panels(&f).len(), 1);
+    let p = panels(&f)[0];
     assert_eq!(
         (p.rect.x, p.rect.y, p.rect.width, p.rect.height),
         (0, 1, 8, 3)
     );
-    assert_eq!(p.separator, 8);
-    assert_eq!(p.title.as_deref(), Some("Files"));
+    let title = Some("Files".to_owned());
+    assert_eq!(
+        p.role,
+        Role::Panel {
+            separator: 8,
+            title
+        }
+    );
     assert_eq!(p.rows[0].text(), "src/");
-    assert_eq!((f.main.x, f.main.width, f.main.height), (9, 21, 4));
-    assert_eq!(f.rows[0].text(), "1 hello");
+    let main_area = main_rect(&f);
+    assert_eq!((main_area.x, main_area.width, main_area.height), (9, 21, 4));
+    assert_eq!(screen_rows(&f)[0].text(), "1 hello");
     // The cursor sits in the main view, after the panel.
     assert_eq!(f.cursor, Some(Position { col: 9 + 7, row: 0 }));
     // The status line still spans the screen.
-    assert_eq!(f.rows.last().unwrap().text().chars().count(), 30);
+    assert_eq!(status(&f).text().chars().count(), 30);
 
     ed.set_focus(panel);
     assert_eq!(ed.focus(), panel);
     assert!(ed.close(panel));
     assert_eq!(ed.focus(), main);
     let f = frame(&mut ed, 30, 5);
-    assert!(f.panels.is_empty());
-    assert_eq!((f.main.x, f.main.width), (0, 30));
+    assert!(panels(&f).is_empty());
+    assert_eq!((main_rect(&f).x, main_rect(&f).width), (0, 30));
 }
 
 #[test]
@@ -611,10 +650,17 @@ fn right_panels_sit_after_the_main_view() {
         },
     );
     let f = frame(&mut ed, 40, 4);
-    let p = &f.panels[0];
+    let p = panels(&f)[0];
     assert_eq!((p.rect.x, p.rect.y, p.rect.width), (30, 0, 10));
-    assert_eq!(p.separator, 29);
-    assert_eq!((f.main.x, f.main.width), (0, 29));
+    let title = None;
+    assert_eq!(
+        p.role,
+        Role::Panel {
+            separator: 29,
+            title
+        }
+    );
+    assert_eq!((main_rect(&f).x, main_rect(&f).width), (0, 29));
     // The focused panel has the cursor.
     assert_eq!(f.cursor, Some(Position { col: 30, row: 0 }));
 }
@@ -663,7 +709,7 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
     let menu = ed.create_buffer("menu", "item");
     ed.float(menu, options.clone());
     let f = frame(&mut ed, 30, 10);
-    let rect = f.floats[0].rect;
+    let rect = floats(&f)[0].rect;
     // The list's text starts under the cursor, on the row below it.
     assert_eq!((rect.x, rect.y), (cursor.col, cursor.row + 2), "{rect:?}");
     assert_eq!(f.cursor, Some(cursor), "the cursor stays in the text");
@@ -672,7 +718,7 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
     let menu = ed.create_buffer("menu", "item");
     ed.float(menu, options);
-    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    let rect = floats(&frame(&mut ed, 30, 10))[0].rect;
     assert_eq!(
         rect.y + rect.height + 1,
         cursor.row,
@@ -701,14 +747,14 @@ fn a_float_anchored_above_the_cursor_opens_above_it_or_below_near_the_top() {
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
     let help = ed.create_buffer("signature", "fn f()");
     ed.float(help, options.clone());
-    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    let rect = floats(&frame(&mut ed, 30, 10))[0].rect;
     assert_eq!(rect.y + rect.height + 1, cursor.row, "above: {rect:?}");
 
     let mut ed = editor("ab|c\nd");
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
     let help = ed.create_buffer("signature", "fn f()");
     ed.float(help, options);
-    let rect = frame(&mut ed, 30, 10).floats[0].rect;
+    let rect = floats(&frame(&mut ed, 30, 10))[0].rect;
     assert_eq!(rect.y, cursor.row + 2, "no room above, so below: {rect:?}");
 }
 
@@ -935,7 +981,8 @@ fn more_than_one_tab_shows_the_tabs_above() {
     ed.new_tab(Some(buffer));
     let f = frame(&mut ed, 30, 4);
     assert_eq!(rows(&f)[0], " 1 notes.md  2 notes.md       ");
-    let active: Vec<_> = f.rows[0]
+    let screen = screen_rows(&f);
+    let active: Vec<_> = screen[0]
         .spans
         .iter()
         .filter(|s| s.tags.contains(&Tag::TABLINE_ACTIVE))
@@ -1048,10 +1095,11 @@ fn scaled_text_takes_that_many_cells_across_and_rows_down() {
     scaled(&mut ed, &[(0..5, 2)]);
     let f = frame(&mut ed, 20, 5);
     assert_eq!(rows(&f), ["1 # Big", "", "2 next", ""]);
-    assert_eq!(scales(&f.rows[0]), [("# Big".to_owned(), 2)]);
-    assert_eq!(f.rows[0].covers, 1, "the row below is part of it");
-    assert_eq!(f.rows[1].covers, 0);
-    assert_eq!(f.rows[2].covers, 0);
+    let screen = screen_rows(&f);
+    assert_eq!(scales(&screen[0]), [("# Big".to_owned(), 2)]);
+    assert_eq!(screen[0].covers, 1, "the row below is part of it");
+    assert_eq!(screen[1].covers, 0);
+    assert_eq!(screen[2].covers, 0);
 }
 
 #[test]
@@ -1059,11 +1107,12 @@ fn sizes_mix_in_a_line_and_the_row_is_as_tall_as_the_largest() {
     let mut ed = editor("|ab cd");
     scaled(&mut ed, &[(0..2, 3)]);
     let f = frame(&mut ed, 20, 5);
+    let screen = screen_rows(&f);
     assert_eq!(
-        scales(&f.rows[0]),
+        scales(&screen[0]),
         [("ab".to_owned(), 3), (" cd".to_owned(), 1)]
     );
-    assert_eq!(f.rows[0].covers, 2);
+    assert_eq!(screen[0].covers, 2);
     assert_eq!(rows(&f), ["1 ab cd", "", "", ""]);
 }
 
@@ -1074,7 +1123,8 @@ fn scaled_text_wraps_by_the_cells_it_takes() {
     scaled(&mut ed, &[(0..8, 2)]);
     let f = frame(&mut ed, 10, 5);
     assert_eq!(rows(&f), ["1 abcd", "", "  efgh", ""]);
-    assert_eq!((f.rows[0].covers, f.rows[2].covers), (1, 1));
+    let screen = screen_rows(&f);
+    assert_eq!((screen[0].covers, screen[2].covers), (1, 1));
 }
 
 #[test]
@@ -1308,8 +1358,8 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
         },
     );
     let f = frame(&mut ed, 20, 9);
-    assert_eq!(f.floats.len(), 2, "the hidden one isn't drawn");
-    let bare_rect = f.floats[1].rect;
+    assert_eq!(floats(&f).len(), 2, "the hidden one isn't drawn");
+    let bare_rect = floats(&f)[1].rect;
     assert_eq!(
         (bare_rect.x, bare_rect.y, bare_rect.width, bare_rect.height),
         (0, 6, 10, 1),
