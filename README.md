@@ -100,6 +100,8 @@ checking plugins.
   configuration.
 - [Several clients](docs/clients.md): terminals and windows on one
   session, following each other or laid out on their own.
+- [The shell](docs/shell.md): commands as blocks you keep, search and run
+  again, sending output to buffers or the next command; agents use it too.
 - [Writing plugins](docs/plugins.md): commands, keys, decorations, panels,
   tests and types.
 - [Agents](docs/agents.md): `greed ctl`, MCP, proposals, `/ide` and plugins

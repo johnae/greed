@@ -1181,54 +1181,13 @@ PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND
 
 ## Shells
 
-`:shell` opens a shell in a buffer: type a command at the prompt at the
-bottom and `enter` runs it. Each command becomes a block above the prompt,
-its command and then what it printed, with how it ended after the command
-(`✓`, `✗ exit 1`, how long it took, where `cd` went). Blocks stay, so you
-can search, fold (`tab`), copy and run them again. A project can have
-several shells, each with its own folder and variables.
-
-| Keys | |
-|---|---|
-| `space o s` | Switch to a shell, or open one |
-| `enter` | Run what's at the prompt; on a block, put its command at the prompt to change. `alt-enter` starts another line |
-| `[ p` `] p` | The block before or after the cursor (`ctrl-up`/`ctrl-down` in the vscode style) |
-| `g o` | Select the block's output |
-| `ctrl-c` | Interrupt the running block; in the vscode style it copies a selection first |
-| `ctrl-t` | Type into the running block's program, in a terminal in the shell's place |
-| `up` `down` | At the prompt: the commands typed before that start with what's typed there |
-| `ctrl-r` | Pick a command typed before, in any shell |
-| `tab` | Complete a program, a file or folder, a variable (`$HOME`), an earlier block (`$3`) or an open file (`buf:notes.md`) |
-| `space r` `space R` | Run the block again as it ran, or in the shell's folder now |
-| `space y` `space Y` | Copy the block's output, or its command |
-| `space x` | Stop the running block |
-| `space v` | Open the block's whole output in a buffer |
-| `space c` | Take the finished blocks away |
-
-The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
-`open` itself, and starts programs with plain arguments directly. Lines
-with pipes, globs or variables go to your `$SHELL` when it's sh, bash,
-zsh, dash, ksh, fish or nu, and to `sh` otherwise (`:set shell-fallback
-bash` picks one). `cd` and `export` in such a line carry over to the
-commands after, as in a terminal; a block says when they can't, in a
-shell of another kind. Your shell's startup files aren't read, so aliases
-don't work there unless you `:set shell-fallback-rc true`. Programs get
-`PAGER=cat` and `GIT_PAGER=cat`. A block shows the first and last
-`shell-max-lines` (5000) lines of its output between them; `space v`
-shows everything.
-
-Programs run in a pseudo terminal, so they print their colors and
-progress, and a long line stays one line however wide your screen is. One
-that wants the whole terminal (an editor, a pager, `htop`, `ssh`, a
-password prompt) takes over the shell's pane as a terminal, and the shell
-comes back when it's done, its block marked `↗` with how it exited. A
-block quiet for a while says it may be waiting for input: `ctrl-t` types
-into it. Start a line with `!` to run it in a terminal from the start.
-
-The commands you type at every shell are kept in your data folder
-(`~/.local/share/greed/shell/history.jsonl`), the last
-`shell-history-size` (5000) of them, so `up` and `ctrl-r` find them after
-a restart too.
+`:shell` opens a shell in a buffer, and `space o s` switches to one: type a
+command at the prompt at the bottom and `enter` runs it. Each command
+becomes a block above the prompt, its command, what it printed and how it
+ended, which stays to search, fold, copy, run again and send to the next
+command or to a buffer (`$3 | sort`, `cargo test > buf:tests`). Agents run
+their commands there too. [The shell](shell.md) has the rest: keys,
+builtins, which shell runs a line, terminals, and limits.
 
 ## Panes and tabs
 
