@@ -335,6 +335,24 @@ local function add_block(shell: Shell, command: string, opts: RunOptions): Block
 	return block
 end
 
+-- What `source` names for an agent, whose `$N` is the block with id N
+-- (the id shell_run gives back) in any shell: that shell and the block's
+-- `$` there, or nil when there's none. Anything else is as it is.
+local function by_id(shell: Shell, source: string): (Shell?, string)
+	local id = tonumber(string.match(source, "^%$(%d+)$"))
+	if id == nil then
+		return shell, source
+	end
+	for _, other in state.list() do
+		for _, block in other.blocks do
+			if block.uid == id then
+				return other, `${block.number}`
+			end
+		end
+	end
+	return nil, source
+end
+
 --- Runs `line` in `shell` as a new block after the others and returns it;
 --- nil for an empty line, `clear`, which takes the blocks away, or a
 --- question for a model (ask.luau), whose answer comes to the prompt.
@@ -369,10 +387,18 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	local staged: tables.Table?, rest: string?, picked: string? = nil, nil, nil
 	if parsed.input and why == nil then
 		block.input = parsed.input
-		local text, value, err = data.read(shell, parsed.input, block.cwd)
+		local from: Shell?, named = shell, parsed.input
+		if opts.by == "agent" then
+			from, named = by_id(shell, parsed.input)
+		end
+		local text: string?, value: any, err: string? =
+			nil, nil, `there's no block with id {string.sub(named, 2)}`
+		if from then
+			text, value, err = data.read(from, named, block.cwd)
+		end
 		input, why = text, err
-		if why == nil and parsed.kind ~= "source" then
-			local source = data.table(shell, parsed.input, text, value)
+		if from and why == nil and parsed.kind ~= "source" then
+			local source = data.table(from, named, text, value)
 			local json: any
 			staged, rest, why, json = tables.pipeline(source, text, parsed.line, value)
 			if staged == nil and json ~= nil then

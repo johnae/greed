@@ -355,7 +355,12 @@ local function call(
 		if own then
 			return own.run(s, c.input)
 		end
-		return agent.as_text((registered :: agent.Tool).run(c.input, state.caller))
+		local tool = registered :: agent.Tool
+		local wrong = agent.check(tool, c.input)
+		if wrong then
+			error(wrong, 0)
+		end
+		return agent.as_text(tool.run(c.input, state.caller))
 	end)
 	local text = if ok then result else tostring(result)
 	tool.status = if ok then "completed" else "failed"

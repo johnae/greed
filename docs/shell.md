@@ -383,19 +383,26 @@ without taking your screen) with the `shell` [tool group](agents.md#tool-groups)
 
 | Tool | |
 |---|---|
-| `shell_run` | Run a command line and get back its exit code, output and errors (cut to their start and end when long), how long it took, where `cd` went and what it set, the files and lines it names, its JSON, and a table's columns and rows |
+| `shell_run` | Run a command line and get back its id, exit code, output and errors (cut to whole lines at their start and end when long), how long it took, where `cd` went and what it set, the files and lines it names, its JSON, and a table's columns, first 50 rows and how many there are |
 | `shell_read` | A block by id, or the latest one, yours too |
 | `shell_wait` | Wait for a block `shell_run` left running past its `timeout_s` |
 | `shell_kill` | Stop a block an agent ran |
 
 An agent's commands run through a pipe with their input closed, from the
 project's root unless they ask for a folder, in `sh` without its startup
-files. Their blocks are
-marked `◆`, and their `cd` and `export` show in their block without
-changing your shell. What a command prints goes back to the model marked
-as someone else's text, to use as information and not to follow; `greed
-ctl` gets it as it is. `shell-agent-max-output` (30000 bytes) is how much
-of the output and of the errors an agent gets.
+files. Their blocks are marked `◆`, and their `cd` and `export` show in
+their block without changing your shell. What a command prints goes back
+to the model marked as someone else's text, to use as information and not
+to follow; `greed ctl` gets it as it is. `shell-agent-max-output` (30000
+bytes) is how much of the output and of the errors an agent gets; where
+it's cut says how many lines are left out and that `$ID | where`, `select`
+or `get` narrows it.
+
+Each block has one id, unique across shells, and in an agent's command
+`$ID` is that block, whichever shell it ran in, so `shell_run` with
+`$12 | where STATUS != Running` works on what block 12 printed. A tool
+called without an argument it needs, or with one it doesn't take, says
+which it takes and runs nothing; `greed ctl shell_run --help` lists them.
 
 ## Limits
 

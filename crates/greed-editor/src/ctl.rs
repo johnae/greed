@@ -13,6 +13,7 @@ const USAGE: &str = "\
 usage: greed ctl tools                 list the tools the editor offers
        greed ctl TOOL [JSON | KEY=VALUE...]
                                       run a tool, e.g. greed ctl read path=src/main.rs
+       greed ctl TOOL --help           what a tool does and the arguments it takes
        greed ctl sessions              list running editors
        greed ctl quit [--force] [SESSION]
                                       end a session, even one of another greed version,
@@ -20,8 +21,18 @@ usage: greed ctl tools                 list the tools the editor offers
                                       ends it anyway)
 The session is $GREED_SESSION, or the only editor running.";
 
+/// Whether `arg` asks for help.
+fn is_help(arg: &str) -> bool {
+    matches!(arg, "help" | "--help" | "-h")
+}
+
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
+        [cmd] if is_help(cmd) => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        [tool, flag] if flag == "--help" || flag == "-h" => tool_help(tool),
         [cmd, rest @ ..] if cmd == "quit" => {
             let force = rest.iter().any(|arg| arg == "--force");
             match rest
@@ -93,6 +104,48 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [] => Err(USAGE.into()),
     }
+}
+
+/// Prints what the tool `name` does and the arguments it takes, from the
+/// editor's list; for ctl's own commands, the usage.
+fn tool_help(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(name, "tools" | "sessions" | "quit") {
+        println!("{USAGE}");
+        return Ok(());
+    }
+    let tools = connect()?
+        .call("tools/list", &Value::Null)?
+        .map_err(io::Error::other)?;
+    let tool = tools["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|tool| tool["name"].as_str() == Some(name))
+        .ok_or_else(|| format!("no tool called {name}; greed ctl tools lists them"))?;
+    println!("{}", tool["description"].as_str().unwrap_or(""));
+    let schema = &tool["inputSchema"];
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let Some(properties) = schema["properties"].as_object().filter(|p| !p.is_empty()) else {
+        println!("\nIt takes no arguments.");
+        return Ok(());
+    };
+    println!("\nArguments, as KEY=VALUE or one JSON object:");
+    for (key, spec) in properties {
+        let kind = spec["type"].as_str().unwrap_or("any");
+        let needed = if required.contains(&key.as_str()) {
+            ", required"
+        } else {
+            ""
+        };
+        let about = spec["description"].as_str().unwrap_or("");
+        println!("  {key:<16} {kind}{needed}  {about}");
+    }
+    Ok(())
 }
 
 /// Ends the session `name`, or `$GREED_SESSION` or the only one running,

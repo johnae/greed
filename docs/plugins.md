@@ -1417,7 +1417,7 @@ A plugin offering tools lists `agent` in `requires`. The tool's parts:
 |---|---|
 | `name` | Letters, digits, `_` and `-` |
 | `description` | What it does, for the agent deciding whether to use it. Say when to use it and what comes back |
-| `input` | A JSON Schema for the arguments; `agent.schema.object({ path = { type = "string" } }, { "path" })` makes an object's, the second list naming the required ones. Left out, it takes none |
+| `input` | A JSON Schema for the arguments; `agent.schema.object({ path = { type = "string" } }, { "path" })` makes an object's, the second list naming the required ones. A call with an argument it doesn't name (unless `additionalProperties` allows any) or without a required one fails before `run`, saying what it takes. Left out, it takes none |
 | `group` | The group it's offered with; left out, it's always offered (below) |
 | `kind` | What it does beyond reading: `"edit"` (changes files or notes), `"execute"` (runs code or programs) or `"fetch"` (reaches the network); left out, `"read"` |
 | `reviews` | `true` when the tool puts what it does in front of the user itself, as a proposal or a question does |

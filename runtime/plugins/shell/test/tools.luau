@@ -97,8 +97,20 @@ test("long output is cut to its start and end", function(t)
 	assert(result.truncated, "says it was cut")
 	assert(string.sub(out, 1, 4) == "1\n2\n", out)
 	assert(string.sub(out, -5) == "1000\n", out)
-	assert(string.find(out, "bytes left out", 1, true), out)
-	assert(#out < 200, tostring(#out))
+	assert(string.find(out, "bytes) left out", 1, true), out)
+	assert(#out < 400, tostring(#out))
+	-- Cut between lines: every line kept is a whole number, in order.
+	local numbers: { number } = {}
+	for line in string.gmatch(out, "[^\n]+") do
+		if not string.find(line, "left out", 1, true) then
+			local number = tonumber(line)
+			assert(number, "a whole line: " .. line)
+			table.insert(numbers, number)
+		end
+	end
+	assert(numbers[#numbers] == 1000, tostring(numbers[#numbers]))
+	-- The marker says how to narrow it.
+	assert(string.find(out, `${result.id} | where`, 1, true), out)
 end)
 
 test("JSON output, tables and file:line places come back as data", function(t)
@@ -110,7 +122,68 @@ test("JSON output, tables and file:line places come back as data", function(t)
 	assert(refs.refs[1].line == 2 and refs.refs[1].text == nil, "the output's words stay marked")
 	local tbl =
 		tool("shell_run", { command = "printf 'NAME   AGE\\nweb    2h\\ndb     3d\\n'", cwd = dir })
-	assert(tbl.table and tbl.table.rows == 2 and tbl.table.columns == 2, "a table's shape")
+	local shape = assert(tbl.table, "a table")
+	assert(shape.total == 2 and shape.shown == 2, "its size")
+	-- Its rows come marked as the output's.
+	local rows = greed.json.decode(inside(shape.rows))
+	assert(table.concat(rows.columns, ",") == "NAME,AGE", inside(shape.rows))
+	assert(rows.rows[2].NAME == "db" and rows.rows[2].AGE == "3d", inside(shape.rows))
+	assert(tbl.number == nil, "one id, no number")
+end)
+
+test("a table gives back its first 50 rows and how many there are", function(t)
+	local result = tool("shell_run", {
+		command = "printf 'NAME   VALUE\\n'; seq 1 120 | sed 's/.*/row&   &/'",
+		cwd = t:tempdir(),
+	})
+	local shape = assert(result.table, "a table")
+	assert(shape.total == 120 and shape.shown == 50, `{shape.total} {shape.shown}`)
+	local rows = greed.json.decode(inside(shape.rows)).rows
+	assert(#rows == 50 and rows[50].NAME == "row50", tostring(#rows))
+end)
+
+test("$ID in an agent's line is the block shell_run gave that id", function(t)
+	local dir = t:tempdir()
+	-- The project's first shell, where the agent's commands go, then a
+	-- block in a second one, so ids and numbers differ.
+	t:run("shell")
+	t:run("shell")
+	local second = assert(shell.of(greed.view():buffer()))
+	local other = assert(shell.run(second, "echo other", { runner = "pipe" }))
+	t:wait_for(function()
+		return other.status ~= "running"
+	end)
+	local first = tool("shell_run", { command = 'echo \'[{"name": "a"}]\'', cwd = dir })
+	local ran = assert(shell.block(shell.list()[1], 1), "block 1 of the first shell")
+	assert(ran.uid == first.id and first.id ~= 1, "its id isn't its number")
+	local picked = tool("shell_run", { command = `${first.id} | select name`, cwd = dir })
+	assert(picked.status == "done", `{picked.status}: {picked.stderr} {picked.stdout}`)
+	assert(inside(picked.stdout) == "name\na\n", picked.stdout)
+	local gone = tool("shell_run", { command = "$9999 | select name", cwd = dir })
+	assert(string.find(inside(gone.stderr), "no block with id 9999", 1, true), gone.stderr)
+end)
+
+test("a tool called without what it needs, or with what it doesn't take, says so", function()
+	local missing = agent.call("shell_run", {}, agent.caller())
+	assert(missing.isError, "an error")
+	assert(
+		string.find(
+			agent.as_text(missing),
+			"shell_run needs command; it takes command (required)",
+			1,
+			true
+		),
+		agent.as_text(missing)
+	)
+	local wrong = agent.call("shell_run", { cmd = "ls" }, agent.caller())
+	assert(
+		string.find(agent.as_text(wrong), "shell_run has no argument cmd", 1, true),
+		agent.as_text(wrong)
+	)
+	-- Run directly, it still says so, and runs nothing.
+	local ok, err = pcall(tool, "shell_run", {})
+	assert(not ok and string.find(tostring(err), "needs command", 1, true), tostring(err))
+	assert(#shell.list() == 0, "no shell opened")
 end)
 
 test("shell_read reads the user's blocks too; only an agent's can be stopped", function(t)

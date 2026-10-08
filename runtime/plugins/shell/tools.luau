@@ -21,6 +21,9 @@ greed.option.define({
 	default = 30000,
 })
 
+-- How many of a table's rows a tool gives back.
+local TABLE_ROWS = 50
+
 -- How long shell_run waits for a command before saying it's still running,
 -- in seconds.
 local DEFAULT_TIMEOUT = 60
@@ -34,9 +37,11 @@ export type Shells = {
 	record: (block: Block) -> { [string]: any },
 }
 
--- `text` cut to its first and last `max` / 2 bytes, on character
--- boundaries, saying how much was left out; and whether it was cut.
-local function cut(text: string, max: number): (string, boolean)
+-- `text`, what block `id` printed, cut to whole lines in its first and
+-- last `max` / 2 bytes (a line longer than that on a character boundary),
+-- saying how much was left out and how to get at it; and whether it was
+-- cut.
+local function cut(text: string, max: number, id: number): (string, boolean)
 	if #text <= max then
 		return text, false
 	end
@@ -51,11 +56,25 @@ local function cut(text: string, max: number): (string, boolean)
 		end
 		return at
 	end
-	local head_end = boundary(max // 2 + 1) - 1
-	local tail_start = boundary(#text - max // 2 + 1)
+	-- The head ends after its last whole line, the tail starts at a line.
+	local half = max // 2
+	local head_end = boundary(half + 1) - 1
+	local last_break = string.find(string.sub(text, 1, half), "\n[^\n]*$")
+	if last_break then
+		head_end = last_break
+	end
+	local tail_start = boundary(#text - half + 1)
+	local next_break = string.find(text, "\n", #text - half, true)
+	if next_break and next_break < #text then
+		tail_start = next_break + 1
+	end
 	local head = string.sub(text, 1, head_end)
 	local tail = string.sub(text, tail_start)
-	return `{head}\n… {tail_start - head_end - 1} bytes left out …\n{tail}`, true
+	local gone = string.sub(text, head_end + 1, tail_start - 1)
+	local _, lines = string.gsub(gone, "\n", "")
+	local narrow =
+		`${id} | where COL = VALUE, ${id} | select COL,... or ${id} | get PATH narrows it`
+	return `{head}… {lines} lines ({#gone} bytes) left out; {narrow} …\n{tail}`, true
 end
 
 -- Waits up to `seconds` for `block` to finish; whether it did.
@@ -113,7 +132,6 @@ return function(shells: Shells)
 		local trusted = agent.from_shell(caller)
 		local out: { [string]: any } = {
 			id = block.uid,
-			number = block.number,
 			command = block.command,
 			by = block.by,
 			cwd = block.cwd,
@@ -141,7 +159,7 @@ return function(shells: Shells)
 		end
 		local max = greed.option.get("shell-agent-max-output") :: number
 		for _, name in { "stdout", "stderr" } do
-			local text, was_cut = cut(record[name] or "", max)
+			local text, was_cut = cut(record[name] or "", max, block.uid)
 			out.truncated = out.truncated or was_cut
 			if trusted or text == "" then
 				out[name] = text
@@ -166,13 +184,23 @@ return function(shells: Shells)
 		end
 		local tbl = block.table
 		if tbl then
-			-- Its shape, for `$N | where ...`; the names come from the output.
-			out.table = {
-				rows = #tbl.rows,
-				columns = if trusted
-					then greed.json.array(table.clone(tbl.columns))
-					else #tbl.columns,
-			}
+			-- Its columns and first rows; `$N | where ...` reaches the rest.
+			-- They come from the output, so a model gets them marked.
+			local rows = {}
+			for i = 1, math.min(#tbl.rows, TABLE_ROWS) do
+				rows[i] = tbl.rows[i]
+			end
+			local columns = greed.json.array(table.clone(tbl.columns))
+			out.table = { total = #tbl.rows, shown = #rows }
+			if trusted then
+				out.table.columns = columns
+				out.table.rows = greed.json.array(rows)
+			else
+				out.table.rows = agent.untrusted(
+					`the table \`{block.command}\` printed, its columns and first rows`,
+					greed.json.encode({ columns = columns, rows = greed.json.array(rows) })
+				)
+			end
 		end
 		return out
 	end
@@ -197,14 +225,15 @@ return function(shells: Shells)
 		kind = "execute",
 		description = "Run a command line in the project's shell (sh syntax; the user sees it there), from the "
 			.. "project's root or `cwd`, with its input closed, and get back how it ended and what it "
-			.. "printed: id, status, exit_code, stdout, stderr (each cut to its start and end when long), "
-			.. "duration_ms, cwd_after and env_changed (cd and export don't carry over to the next run), "
-			.. "refs (file:line places the output names), json (when stdout is JSON) and table (its "
-			.. "rows and columns, when it's a table like kubectl get prints; `$N | where COL = VALUE`, "
-			.. "`$N | select A,B` and `$N | sort COL` work on block N's table). After "
-			.. '`timeout_s` (default 60) it returns status "running" and the id, for shell_wait',
+			.. "printed: id, status, exit_code, stdout, stderr (each cut to whole lines at its start "
+			.. "and end when long), duration_ms, cwd_after and env_changed (cd and export don't carry "
+			.. "over to the next run), refs (file:line places the output names), json (when stdout is "
+			.. "JSON) and table (its columns, first 50 rows and total, when it's a table like kubectl "
+			.. "get prints). `$ID` in a later command is block ID's output: `$ID | where COL = VALUE`, "
+			.. "`$ID | select A,B`, `$ID | sort COL` and `$ID | get items.0.name` (JSON) work on it. "
+			.. 'After `timeout_s` (default 60) it returns status "running" and the id, for shell_wait',
 		input = object({
-			command = { type = "string" },
+			command = { type = "string", description = "The command line to run" },
 			cwd = { type = "string", description = "The folder to run in, from the project's root" },
 			timeout_s = { type = "number" },
 			env = {
@@ -214,6 +243,9 @@ return function(shells: Shells)
 			},
 		}, { "command" }),
 		run = function(args, caller)
+			if type(args.command) ~= "string" then
+				error("shell_run needs command, the command line to run", 0)
+			end
 			local shell = project_shell()
 			local root = greed.project.current().root
 			local env = table.clone(shell.env)
@@ -227,7 +259,7 @@ return function(shells: Shells)
 			if info == nil or info.kind ~= "dir" then
 				error(`no such folder: {args.cwd}`, 0)
 			end
-			local block = shells.run(shell, tostring(args.command), {
+			local block = shells.run(shell, args.command, {
 				by = "agent",
 				runner = "pipe",
 				cwd = core.project.clean(cwd),

@@ -39,6 +39,16 @@ fn ctl_says_when_no_editor_is_running() {
         "{:?}",
         text(&out)
     );
+    // Help needs no editor.
+    for help in ["--help", "help", "-h"] {
+        let out = world.greed(&["ctl", help]);
+        assert!(out.status.success(), "{help}: {:?}", text(&out));
+        assert!(
+            text(&out).0.contains("usage: greed ctl"),
+            "{help}: {:?}",
+            text(&out)
+        );
+    }
 }
 
 #[test]
@@ -79,6 +89,29 @@ fn ctl_runs_tools_with_arguments_as_pairs_or_json() {
         text(&bad).1.contains("expected KEY=VALUE"),
         "{:?}",
         text(&bad)
+    );
+    // A tool's help, and arguments it doesn't take.
+    let (help, _) = text(&world.greed(&["ctl", "shell_run", "--help"]));
+    assert!(
+        help.contains("Run a command line")
+            && help.contains("command")
+            && help.contains("required"),
+        "{help}"
+    );
+    let wrong = world.greed(&["ctl", "shell_run", "cmd=ls"]);
+    assert!(!wrong.status.success());
+    assert!(
+        text(&wrong)
+            .1
+            .contains("shell_run has no argument cmd; it takes command (required)"),
+        "{:?}",
+        text(&wrong)
+    );
+    let missing = world.greed(&["ctl", "shell_run"]);
+    assert!(
+        text(&missing).1.contains("shell_run needs command"),
+        "{:?}",
+        text(&missing)
     );
 
     world.eval("tools", "require('@greed').quit()");

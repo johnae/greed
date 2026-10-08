@@ -247,14 +247,60 @@ function M.connection(): number?
 	return running[coroutine.running()]
 end
 
+--- Why `arguments` don't fit `tool`'s schema, naming what it takes: one it
+--- doesn't know (unless its schema takes any), or a required one missing.
+--- Nil when they fit.
+function M.check(tool: Tool, arguments: any): string?
+	local input = tool.input
+	if input == nil or input.type ~= "object" then
+		return nil
+	end
+	local properties: { [string]: any } = input.properties or {}
+	local required: { string } = input.required or {}
+	local function takes(): string
+		local names: { string } = {}
+		for name in properties do
+			table.insert(names, if table.find(required, name) then `{name} (required)` else name)
+		end
+		table.sort(names)
+		return if #names == 0 then "nothing" else table.concat(names, ", ")
+	end
+	if type(arguments) ~= "table" then
+		return `{tool.name} takes an object of arguments: {takes()}`
+	end
+	if not input.additionalProperties then
+		local unknown: { string } = {}
+		for key in arguments do
+			local name = tostring(key)
+			if properties[name] == nil then
+				table.insert(unknown, name)
+			end
+		end
+		if #unknown > 0 then
+			table.sort(unknown)
+			return `{tool.name} has no argument {table.concat(unknown, ", ")}; it takes {takes()}`
+		end
+	end
+	for _, name in required do
+		if arguments[name] == nil then
+			return `{tool.name} needs {name}; it takes {takes()}`
+		end
+	end
+	return nil
+end
+
 --- Runs the tool `name` as `caller` would through MCP, and wraps what it
 --- returns the way MCP wants. Tools `caller` isn't offered are there to
 --- call too: an agent that remembers one needn't switch its group on
---- first.
-local function call(name: string, arguments: { [string]: any }, caller: Caller)
+--- first. Arguments that don't fit its schema are an error, before it runs.
+function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 	local tool = (tools[client_of(caller)] or {})[name]
 	if tool == nil then
 		return M.result(`there is no tool called {name}`, true)
+	end
+	local wrong = M.check(tool, arguments)
+	if wrong then
+		return M.result(wrong, true)
 	end
 	local thread = coroutine.running()
 	running[thread] = caller.connection
@@ -297,7 +343,7 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 	end,
 	["tools/call"] = function(request)
 		local params = request.params
-		return call(params.name, params.arguments or {}, caller_of(request))
+		return M.call(params.name, params.arguments or {}, caller_of(request))
 	end,
 }
 

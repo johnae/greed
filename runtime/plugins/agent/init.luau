@@ -70,6 +70,10 @@ return table.freeze({
 	as_text = registry.as_text,
 	--- Whether an agent asks you before a tool runs, by its kind (registry.luau).
 	asks = registry.asks,
+	--- Why arguments don't fit a tool's schema, and running a tool by name
+	--- as MCP does, arguments checked first (registry.luau).
+	check = registry.check,
+	call = registry.call,
 	--- Whether a tool's caller is a shell, `greed ctl` (registry.luau).
 	from_shell = registry.from_shell,
 	--- Text someone else wrote, wrapped so a model reads it as information

@@ -10,6 +10,7 @@ and agents that prefer a CLI.
 
 ```bash
 greed ctl tools                       # what the editor offers
+greed ctl read --help                 # what a tool does and the arguments it takes
 greed ctl focus                       # the current file, selections, visible lines
 greed ctl read path=src/main.rs from_line=10 to_line=20
 greed ctl diagnostics
@@ -17,8 +18,10 @@ greed ctl eval code='return require("@greed").mode.get()'
 ```
 
 Arguments are `key=value` pairs (values that parse as JSON are JSON) or one
-JSON object. A relative path is from the root of the project Greed shows,
-wherever Greed or the agent was started, and `~` is your home folder.
+JSON object; an argument a tool doesn't take, or a missing one it needs, is
+an error naming the ones it takes. A relative path is from the root of the
+project Greed shows, wherever Greed or the agent was started, and `~` is
+your home folder.
 `greed ctl` talks to the running session: the one named by
 `$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
@@ -66,7 +69,7 @@ claude mcp add greed -- greed mcp
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
-| `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its exit code, output, errors, how long it took, the files and lines it names and its JSON; one that runs past `timeout_s` comes back as running |
+| `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its id, exit code, output, errors, how long it took, the files and lines it names, its JSON and a table's first rows; one that runs past `timeout_s` comes back as running |
 | `shell_read`, `shell_wait`, `shell_kill` | A shell block by id, or the latest one (yours too), waiting for one still running, and stopping one an agent ran |
 | `tools` | The groups of tools below, and switching one on |
 
