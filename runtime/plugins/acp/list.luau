@@ -31,8 +31,10 @@ export type Row = {
 	saved: saved.Saved?,
 	agent: string,
 	title: string,
-	--- A session's status, or "saved".
+	--- A session's status, "failed" after a turn that failed, or "saved".
 	status: string,
+	--- Why it failed or exited, when it says.
+	reason: string?,
 	--- When it last did something, in seconds since 1970.
 	time: number,
 	tokens: number?,
@@ -43,8 +45,8 @@ export type Row = {
 	workspace: string?,
 }
 
-local HINTS = "enter shows · r resume · m mark · p t w s pane, tab, float, panel · "
-	.. "n new · f fork · x close · / filter · q quit"
+local HINTS = "enter shows · r resume · h resume here · m mark · p t w s pane, tab, float, panel · "
+	.. "n new · f fork · d diff · b bring in · R review · ctrl-c stop · x close · / filter · q quit"
 
 local STATUS: { [string]: string } = {
 	starting = "starting",
@@ -52,6 +54,7 @@ local STATUS: { [string]: string } = {
 	working = "● working",
 	waiting = "waiting for you",
 	exited = "exited",
+	failed = "failed",
 	saved = "saved",
 }
 
@@ -59,11 +62,15 @@ local STATUS_STYLE: { [string]: string } = {
 	working = "diff.plus",
 	waiting = "diagnostic.warning",
 	exited = "comment",
+	failed = "diagnostic.error",
 	saved = "comment",
 }
 
 -- The most of what you asked first that a line shows, in characters.
 local TITLE_WIDTH = 40
+
+-- The most of why a session failed that a line shows, in characters.
+local REASON_WIDTH = 50
 
 -- Where a working row's mark is, to spin it.
 type Spot = { from: number, to: number }
@@ -134,7 +141,8 @@ local function draw(
 		local cells = {
 			row.agent,
 			core.text.clip(row.title, TITLE_WIDTH),
-			STATUS[row.status] or row.status,
+			(STATUS[row.status] or row.status)
+				.. if row.reason then `: {core.text.clip(row.reason, REASON_WIDTH)}` else "",
 			core.text.ago(now - row.time),
 			if row.tokens then `{transcript.tokens(row.tokens)} tokens` else "",
 			where(row, root),

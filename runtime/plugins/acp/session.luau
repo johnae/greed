@@ -106,6 +106,8 @@ export type Session = {
 	--- model's provider having no key: the transcript says it in place of
 	--- "ready".
 	problem: string?,
+	--- Why its last turn failed or it couldn't start, until a turn starts.
+	failed: string?,
 }
 
 --- An agent run in the editor rather than as an ACP program.
@@ -694,6 +696,7 @@ function M.start(
 	end
 	-- Says why it can't start, to the transcript and whoever waits for it.
 	local function failed(text: string)
+		session.failed = text
 		note(text)
 		settle(session)
 	end
@@ -839,6 +842,7 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	elseif session.status == "working" or session.status == "waiting" then
 		return false, "the agent is still working; stop it first"
 	end
+	session.failed = nil
 	table.insert(session.entries, { kind = "user", text = text })
 	session.status = "working"
 	session.since = greed.now()
@@ -857,7 +861,8 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	end
 	session.tool = nil
 	if result == nil then
-		table.insert(session.entries, { kind = "note", text = `the turn failed: {err}` })
+		session.failed = `the turn failed: {err}`
+		table.insert(session.entries, { kind = "note", text = session.failed })
 	elseif result.stopReason and result.stopReason ~= "end_turn" then
 		table.insert(
 			session.entries,

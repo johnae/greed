@@ -466,6 +466,7 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 		return false, "the agent is still working; stop it first"
 	end
 	state.cancelled = false
+	s.failed = nil
 	table.insert(s.entries, { kind = "user", text = text })
 	local fresh = session.fresh_context(s, context)
 	local said = if fresh then `{fresh}\n\n{text}` else text
@@ -498,7 +499,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			say(s, piece)
 		end)
 		if turn == nil then
-			table.insert(s.entries, { kind = "note", text = `the model failed: {err}` })
+			s.failed = `the model failed: {err}`
+			table.insert(s.entries, { kind = "note", text = s.failed })
 			break
 		end
 		-- It answered, so nothing keeps it from working.

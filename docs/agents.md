@@ -301,6 +301,17 @@ Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), or any
 agent that speaks it, found on your `PATH`. Each gets a transcript buffer,
 and several can work at once. Greed has an agent of its own too, below.
 
+`space i n` lists them and says which aren't installed, with the command
+that installs each:
+
+```bash
+npm install -g @agentclientprotocol/claude-agent-acp   # Claude Code
+npm install -g @google/gemini-cli                      # Gemini CLI
+npm install -g @zed-industries/codex-acp               # Codex
+```
+
+A new session's transcript opens with you typing in its box.
+
 ### Greed's own agent
 
 Pick "Greed" in `space i n` for an agent that runs in the editor itself,
@@ -371,7 +382,7 @@ models.roles.agent = { provider = "ollama", model = "qwen2.5-coder", context = 1
 
 | Keys | |
 |---|---|
-| `space i n` (`:agent-new`) | Start an agent: pick which, and where it works |
+| `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |
 | `space i l` (`:agent-list`) | The [session list](#the-session-list): every session of the repository, running and kept |
 | `space i m` (`:agent-move`) | Move the transcript you're in to a pane, a tab, a float or a panel |
 | `:agent-fork` | Fork the agent of the transcript you're in |
@@ -463,7 +474,8 @@ back).
 and those kept to take up again, from every jj workspace or git worktree
 of it, with this one's first and then the newest. Each line says which
 agent, what you asked it first, what it's doing (`working`, spinning
-with effects on, `waiting for you`, `idle`, `exited` or `saved`), when it
+with effects on, `waiting for you`, `idle`, `failed` with why its last
+turn failed, `exited` or `saved`), when it
 last did something, the tokens it takes when the agent says, and where it
 works: `in other-workspace` for one that ran in another workspace of the
 repository, `workspace NAME` for one in a workspace of its own.
@@ -483,7 +495,7 @@ repository, `workspace NAME` for one in a workspace of its own.
 | `p`, `t`, `w`, `s` | Show it in a pane, a tab of its own, a floating view or a panel on the right |
 | `/` | Narrow the list to sessions with what you type in them; `esc` puts back the filter there was |
 | `n` | Start another, asking which agent as `space i n` does |
-| `f` | Fork it: a new session that starts with everything said so far |
+| `f` | Fork it: a new session that starts with everything said so far (not Greed's own sessions yet) |
 | `x` | Close it: stop it, forget it and remove its workspace, asking first when it's running or has a workspace |
 | `d`, `b`, `R` | What it changed in its workspace, bring that in, or review it (below) |
 | `ctrl-c` | Stop its turn |
@@ -571,7 +583,8 @@ most three work at once, so helpers starting helpers can't run away.
 
 Add an agent that isn't in the list in your
 `init.luau`; the first of its commands that's installed is used, and
-`model` is the model it starts with, when it offers models:
+`model` is the model it starts with, when it offers models, and `install`
+the command `space i n` shows when it isn't installed:
 
 ```luau
 require("@acp").register({
@@ -579,6 +592,7 @@ require("@acp").register({
 	title = "opencode",
 	commands = { { "opencode", "acp" } },
 	model = "berget/llama-3.3-70b",
+	install = "npm install -g opencode-ai",
 })
 ```
 

@@ -193,8 +193,10 @@ local function launch(
 ): (Session?, string?)
 	local command = agents.command_of(agent)
 	if command == nil then
+		return nil, agents.missing(agent)
+	elseif agent.native and (workspace or (extra and extra.fork)) then
 		return nil,
-			`{agent.title or agent.name} isn't installed: {table.concat(agent.commands[1], " ")}`
+			`{agent.title or agent.name} works in the project itself; it can't have a workspace or be forked yet`
 	end
 	-- The agent's name, numbered from 2 while sessions have it.
 	local named = agent.title or agent.name
@@ -219,10 +221,6 @@ local function launch(
 		changed(s)
 	end
 	if agent.native then
-		if workspace or (extra and extra.fork) then
-			return nil,
-				`{name} works in the project itself; it can't have a workspace or be forked yet`
-		end
 		local started, err = native.start({
 			name = name,
 			agent = agent.name,
@@ -329,7 +327,9 @@ end
 --- workspace of its own made from `s`'s if it has one.
 function M.fork(s: Session): (Session?, string?)
 	local agent = agent_of[s.id]
-	if agent == nil or s.session_id == nil then
+	if agent and agent.native then
+		return nil, "Greed's own sessions can't be forked yet"
+	elseif agent == nil or s.session_id == nil then
 		return nil, "it hasn't started yet"
 	end
 	local workspace = nil
@@ -568,7 +568,9 @@ local function rows(root: string): { list.Row }
 				session = s,
 				agent = s.name,
 				title = saved.title(s),
-				status = s.status :: string,
+				-- A turn that failed shows as failed, with why, until the next.
+				status = if s.failed and s.status == "idle" then "failed" else s.status :: string,
+				reason = if s.status == "idle" or s.status == "exited" then s.failed else nil,
 				time = active[s.id] or os.time(),
 				tokens = s.tokens,
 				root = s.root,
@@ -702,7 +704,7 @@ end
 
 greed.command({
 	name = "agent-new",
-	doc = "Start an agent over ACP: pick which, and whether it works in a workspace of its own",
+	doc = "Start an agent: Greed's own, or Claude Code, Gemini or Codex over ACP; pick which, and where it works",
 	run = function(ctx)
 		leave_list(ctx)
 		local items = {}
@@ -711,11 +713,15 @@ greed.command({
 			local how = if agent.native
 				then "in the editor, with the model in :models"
 				elseif command then table.concat(command, " ")
+				elseif agent.install then `not installed: {agent.install}`
 				else "not installed"
 			table.insert(items, { label = `{agent.title or agent.name}  ({how})`, value = agent })
 		end
 		local agent = picker.choose("Agent", items)
 		if agent == nil then
+			return
+		elseif agents.command_of(agent.value) == nil then
+			greed.echo(agents.missing(agent.value))
 			return
 		end
 		-- Greed's own agent works in the project; there's nothing to ask.
@@ -734,6 +740,8 @@ greed.command({
 			return
 		end
 		M.show(s)
+		-- Ready for the first message, so the first key types it.
+		greed.mode.set(core.style.typing_mode())
 	end,
 })
 
@@ -936,12 +944,15 @@ greed.command({
 	end,
 })
 
+local NO_SESSION = "no agent session here; use it in a transcript, or space i l lists them"
+
 greed.command({
 	name = "agent-mode",
 	doc = "Pick the mode the agent works in, like plan or accept edits",
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then
+			greed.echo(NO_SESSION)
 			return
 		elseif #s.modes == 0 then
 			greed.echo(`{s.name} has no modes to pick from`)
@@ -969,6 +980,7 @@ greed.command({
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then
+			greed.echo(NO_SESSION)
 			return
 		elseif #s.models == 0 then
 			greed.echo(`{s.name} has no models to pick from`)

@@ -713,3 +713,49 @@ test("without a key, the box says so before anything is sent, and keeps your mes
 	models.roles.agent = nil
 	models.providers.keyless = nil
 end)
+
+test("a session whose model failed shows as failed in the list, with why", function(t)
+	script({})
+	models.turn = function(): (any, string?)
+		return nil, "the model is busy"
+	end
+	local s, dir = ask(t, "hi")
+	assert(s.failed == "the model failed: the model is busy", tostring(s.failed))
+	acp.list(dir)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "failed: the model failed: the model is busy", 1, true), text)
+	assert(string.find(text, "h resume here", 1, true) and string.find(text, "R review", 1, true))
+	assert(string.find(text, "ctrl-c stop", 1, true) and string.find(text, "d diff", 1, true))
+end)
+
+test("forking Greed's own session says it can't, without naming a new session", function(t)
+	script({ { text = "ok", calls = {}, stop = "done" } })
+	local s = ask(t, "hi")
+	local fork, err = acp.fork(s)
+	assert(fork == nil and err == "Greed's own sessions can't be forked yet", tostring(err))
+	assert(#acp.sessions() == 1, "nothing new started")
+end)
+
+test("starting Greed's agent from space i n leaves you typing in its box", function(t)
+	script({})
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	greed.open(`{dir}/a.txt`)
+	t:run("agent-new")
+	t:keys("G r e e d enter")
+	t:wait(30)
+	assert(greed.view():buffer():kind() == "agent-transcript", greed.view():buffer():kind())
+	t:expect_mode("helix-insert")
+	t:keys("h i")
+	local typed = require("../transcript").prompt(greed.view():buffer())
+	assert(string.find(typed, "hi", 1, true), "the first key typed: " .. typed)
+end)
+
+test("agent-model outside a transcript says there's no session there", function(t)
+	t:buffer("|x")
+	t:run("agent-model")
+	local messages = t:messages()
+	assert(
+		string.find(messages[#messages] or "", "no agent session here", 1, true),
+		messages[#messages]
+	)
+end)

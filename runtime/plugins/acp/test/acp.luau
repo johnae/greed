@@ -360,12 +360,12 @@ test("a fork of an agent in a jj workspace gets a workspace with its edits", fun
 	acp.close(s)
 end)
 
-test("an agent that isn't installed says how it would run", function(t)
+test("an agent that isn't installed says what it needs", function(t)
 	local s, err = acp.start(
 		{ name = "nope", commands = { { "no-such-agent-here", "--acp" } } },
 		t:tempdir({})
 	)
-	assert(s == nil and err == "nope isn't installed: no-such-agent-here --acp", err)
+	assert(s == nil and err == "nope isn't installed; it needs no-such-agent-here --acp", err)
 end)
 
 test("in a jj workspace of its own, the agent's change is brought in with b", function(t)
@@ -539,3 +539,26 @@ test("an agent in the project asks again before writing outside it", function(t)
 	assert(greed.fs.read(root .. "/out.txt") == "edited\n", "written once you let it")
 	acp.close(s)
 end)
+
+test(
+	"an agent that isn't installed says how to install it, before asking where it works",
+	function(t)
+		acp.register({
+			name = "missing",
+			title = "Missing",
+			commands = { { "greed-test-no-such-agent" } },
+			install = "npm install -g greed-test-no-such-agent",
+		})
+		t:buffer("|x")
+		t:run("agent-new")
+		t:keys("M i s s i n g enter")
+		t:wait(10)
+		local messages = t:messages()
+		assert(
+			messages[#messages]
+				== "Missing isn't installed; install it with: npm install -g greed-test-no-such-agent",
+			messages[#messages]
+		)
+		assert(#t:floats() == 0, "nothing more is asked")
+	end
+)
