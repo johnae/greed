@@ -1035,6 +1035,15 @@ greed.spawn(function()
 end)
 ```
 
+To show a terminal you started yourself the way `:terminal` shows one,
+hand it to the terminal plugin: `require("@terminal").adopt(terminal, {
+return_on_primary = true })` shows it in the focused view, sized for your
+screen and typing into it, and with `return_on_primary` gives the view back
+once a full screen program is done or the program exits. The terminal
+stays yours to read and close. `references(buffer, { from, to, cwd })`
+finds the files and lines some output names, and `row_marks` turns a
+terminal's rows into marks for a buffer of your own.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

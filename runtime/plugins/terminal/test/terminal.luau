@@ -475,3 +475,82 @@ test("a terminal is sized for the client typing into it, not the others", functi
 	assert(rows() == 21 and sized(21, 70), `{rows()} rows for the first`)
 	t:keys("ctrl-d")
 end)
+
+test("a terminal another plugin started shows in a view and gives it back after", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "before" })
+	greed.open(dir .. "/a.txt")
+	local before = greed.view():buffer()
+	local script = "printf '\\033[?1049h'; sleep 0.2; printf '\\033[?1049l'; echo done"
+	local started = greed.terminal.spawn({ command = { "sh", "-c", script }, rows = 10, cols = 40 })
+	local terminal = require("@terminal")
+	local term = terminal.adopt(started, { return_on_primary = true, title = "full screen" })
+	local shown = greed.view():buffer()
+	assert(shown:kind() == "terminal" and terminal.terminal(shown) == started, shown:kind())
+	assert(greed.mode.get() == "terminal", greed.mode.get())
+	-- Leaving the alternate screen, or exiting, gives the view back.
+	t:wait_for(function()
+		return greed.view():buffer() == before
+	end)
+	assert(not terminal.is_open(term))
+	assert(greed.mode.get() == "helix", greed.mode.get())
+	-- The program goes on, and the terminal stays its starter's to read.
+	t:wait_for(function()
+		return started:exit_code() ~= nil
+	end)
+	local said = {}
+	for _, row in started:screen().rows do
+		table.insert(said, row.text)
+	end
+	assert(string.find(table.concat(said, "\n"), "done", 1, true), table.concat(said, "\n"))
+	started:close()
+end)
+
+test(
+	"an adopted terminal is sized for the view, and closing it ends its program but not the terminal",
+	function(t)
+		local dir = t:tempdir({ ["a.txt"] = "before" })
+		greed.open(dir .. "/a.txt")
+		t:draw(50, 12)
+		local rows, cols = greed.view():size()
+		local started = greed.terminal.spawn({
+			command = { "sh", "-c", "read x; stty size; sleep 30" },
+			rows = 5,
+			cols = 20,
+		})
+		local terminal = require("@terminal")
+		terminal.adopt(started, { title = "sleeper" })
+		t:keys("enter")
+		shows(t, `{rows} {cols}`)
+		t:keys("ctrl-\\")
+		t:run("terminal-close")
+		assert(text() == "before", text())
+		assert(started:valid(), "the starter still has it")
+		t:wait_for(function()
+			return started:exit_code() ~= nil
+		end)
+		started:close()
+	end
+)
+
+test("references in part of a buffer resolve against a given folder", function(t)
+	local dir = t:tempdir({ ["refs-here/main.rs"] = "fn main() {}\n", ["refs-here/lib.rs"] = "\n" })
+	local lines = {
+		"refs-here/main.rs:1:4 first",
+		"refs-here/lib.rs:1 second",
+		"refs-here/main.rs:1:1 third",
+	}
+	local buffer = greed.create_buffer("file", table.concat(lines, "\n"))
+	local terminal = require("@terminal")
+	assert(#terminal.references(buffer) == 0, "not from the project's root")
+	local all = terminal.references(buffer, { cwd = dir })
+	assert(#all == 3, tostring(#all))
+	assert(all[1].path == dir .. "/refs-here/main.rs" and all[1].line == 1 and all[1].col == 4)
+	local some = terminal.references(buffer, {
+		from = buffer:line_start(1),
+		to = buffer:line_end(1),
+		cwd = dir,
+	})
+	assert(#some == 1, tostring(#some))
+	assert(some[1].path == dir .. "/refs-here/lib.rs" and some[1].line == 1, some[1].path)
+	assert(some[1].text == "refs-here/lib.rs:1 second", some[1].text)
+end)

@@ -81,6 +81,14 @@ type Term = {
 	-- The size its screen was given for that client, and the note the
 	-- others see on it.
 	screen_size: { rows: number, cols: number, note: string }?,
+	-- Whether another plugin started its program and handed it over
+	-- (`adopt`): closing it ends the program, but the terminal stays that
+	-- plugin's to read and close.
+	adopted: boolean,
+	-- Whether it gives its views back once the program leaves the alternate
+	-- screen or exits, and whether that's due.
+	return_on_primary: boolean,
+	giving_back: boolean,
 }
 
 local M = {}
@@ -137,6 +145,11 @@ local function term_of(buffer: greed.Buffer): Term?
 	return terms[buffer:id()]
 end
 
+--- Whether `term` is still open.
+function M.is_open(term: Term): boolean
+	return terms[term.buffer:id()] == term
+end
+
 local function shown(term: Term): boolean
 	return greed.view():buffer() == term.buffer
 end
@@ -174,11 +187,12 @@ function M.asked(buffer: greed.Buffer): { string }?
 	return term and term.asked and table.clone(term.asked)
 end
 
--- Styles and images for `rows`, which start at line `line` of the buffer.
--- An image gets one mark, where its first row in the buffer is, reaching
--- to its last so it's drawn whenever any of it shows; `marked` holds the
--- images that have one already.
-local function marks(
+--- Styles, links and images for terminal `rows` shown in `buffer` from
+--- line `line` on, as marks to decorate it with. An image gets one mark,
+--- where its first row in the buffer is, reaching to its last so it's drawn
+--- whenever any of it shows; `marked` holds the images that have one
+--- already, and gains the new ones.
+function M.row_marks(
 	buffer: greed.Buffer,
 	rows: { greed.TerminalRow },
 	line: number,
@@ -407,17 +421,51 @@ local function show(term: Term)
 	if #scrolled.rows > 0 then
 		term.chunk += 1
 		local ns = `terminal.lines.{term.chunk}`
-		buffer:decorate(ns, marks(buffer, scrolled.rows, before, term.images))
+		buffer:decorate(ns, M.row_marks(buffer, scrolled.rows, before, term.images))
 		table.insert(term.chunks, { ns = ns, lines = #scrolled.rows })
 	end
 	trim(term)
 	-- The screen is new each time; images above it keep their marks.
 	local marked = table.clone(term.images)
-	buffer:decorate("terminal.screen", marks(buffer, screen.rows, term.history, marked))
+	buffer:decorate("terminal.screen", M.row_marks(buffer, screen.rows, term.history, marked))
+	if term.return_on_primary and term.alternate and not screen.alternate then
+		term.giving_back = true
+	end
 	term.alternate = screen.alternate
 	mark_failures(term)
 	follow(term, screen, before)
 	publish_size(term, screen.cursor)
+end
+
+-- Stops showing `term`: panes and floats opened for it close, and a view
+-- it took over shows what it showed before. Its program is left as it is.
+local function release(term: Term)
+	terms[term.buffer:id()] = nil
+	if last_used == term then
+		last_used = nil
+	end
+	for _, view in term.buffer:views() do
+		if not (term.owns and view:close()) then
+			local previous = term.previous
+			if previous and previous:valid() then
+				view:show(previous)
+			else
+				view:show(greed.create_buffer("file", ""))
+			end
+		end
+	end
+	term.buffer:set_kept(false)
+	M.settle(greed.view())
+end
+
+-- Ends `term`'s program. A terminal another plugin handed over stays that
+-- plugin's to read and close.
+local function stop(term: Term)
+	if not term.adopted then
+		term.terminal:close()
+	elseif term.terminal:valid() and term.terminal:exit_code() == nil then
+		term.terminal:kill()
+	end
 end
 
 --- Shows the terminal's latest output in its buffer.
@@ -438,6 +486,9 @@ function M.update(term: Term)
 	term.updating = false
 	if not ok then
 		error(err, 0)
+	end
+	if term.giving_back and M.is_open(term) then
+		release(term)
 	end
 end
 
@@ -465,23 +516,8 @@ end
 --- floats opened for it close; a view it took over shows what it showed
 --- before.
 function M.close(term: Term)
-	terms[term.buffer:id()] = nil
-	if last_used == term then
-		last_used = nil
-	end
-	term.terminal:close()
-	for _, view in term.buffer:views() do
-		if not (term.owns and view:close()) then
-			local previous = term.previous
-			if previous and previous:valid() then
-				view:show(previous)
-			else
-				view:show(greed.create_buffer("file", ""))
-			end
-		end
-	end
-	term.buffer:set_kept(false)
-	M.settle(greed.view())
+	stop(term)
+	release(term)
 end
 
 --- Ends the terminal in `buffer` if nothing shows it any more, e.g. after
@@ -498,7 +534,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	local term = terms[event.id]
 	if term then
 		terms[event.id] = nil
-		term.terminal:close()
+		stop(term)
 	end
 end)
 
@@ -531,18 +567,72 @@ function M.set_env(name: string, value: string)
 	greed.plugin.tie(core.registry.set(M.env, name, value))
 end
 
---- Opens a terminal running `command` (the user's shell without) and
---- types into it: in the focused view, a new pane or a float.
-function M.open(command: { string }?, options: OpenOptions?): Term
-	local opts: OpenOptions = options or {}
-	-- Opened from a terminal, it starts in the folder that one's shell is in.
-	local here = M.cwd(greed.view():buffer())
+-- A new buffer to show a terminal in.
+local function new_buffer(): greed.Buffer
 	local buffer = greed.create_buffer("terminal", "")
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
 	-- Every bit of output replaces the screen; keeping each one to undo
 	-- would grow without end in a long-running terminal.
 	buffer:forget_history()
+	return buffer
+end
+
+-- Starts showing `terminal` in `buffer`, which keeps it running while
+-- nothing shows it.
+local function track(
+	terminal: greed.Terminal,
+	buffer: greed.Buffer,
+	how: {
+		previous: greed.Buffer?,
+		owns: boolean,
+		command: string,
+		asked: { string }?,
+		keep: boolean,
+		client: number?,
+		adopted: boolean,
+		return_on_primary: boolean,
+	}
+): Term
+	buffer:set_kept(true)
+	local term: Term = {
+		terminal = terminal,
+		buffer = buffer,
+		history = 0,
+		next = 0,
+		limit = greed.option.get("terminal-scrollback") :: number,
+		chunks = {},
+		chunk = 0,
+		previous = how.previous,
+		owns = how.owns,
+		command = how.command,
+		asked = how.asked,
+		images = {},
+		alternate = false,
+		links = {},
+		screen_links = {},
+		dropped = 0,
+		marks_made = 0,
+		failures = {},
+		keep = how.keep,
+		updating = false,
+		stale = false,
+		client = how.client,
+		adopted = how.adopted,
+		return_on_primary = how.return_on_primary,
+		giving_back = false,
+	}
+	terms[buffer:id()] = term
+	return term
+end
+
+--- Opens a terminal running `command` (the user's shell without) and
+--- types into it: in the focused view, a new pane or a float.
+function M.open(command: { string }?, options: OpenOptions?): Term
+	local opts: OpenOptions = options or {}
+	-- Opened from a terminal, it starts in the folder that one's shell is in.
+	local here = M.cwd(greed.view():buffer())
+	local buffer = new_buffer()
 	local view, previous
 	if opts.float then
 		local spec = table.clone(FLOAT)
@@ -561,7 +651,6 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	end
 	-- A new view hasn't been drawn yet; it says its size once it is.
 	local rows, cols = view:size()
-	local limit = greed.option.get("terminal-scrollback") :: number
 	local given = if command and #command > 0 then command else shell()
 	-- Programs in it can tell which session they're in: `greed FILE` opens
 	-- the file here instead of starting another editor inside this one,
@@ -582,7 +671,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 			env = env,
 			rows = rows or 24,
 			cols = cols or 80,
-			scrollback = limit,
+			scrollback = greed.option.get("terminal-scrollback") :: number,
 		})
 	end)
 	if not spawned then
@@ -594,34 +683,72 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		end
 		error(started, 2)
 	end
-	-- It keeps running while nothing shows it.
-	buffer:set_kept(true)
-	local term: Term = {
-		terminal = started,
-		buffer = buffer,
-		history = 0,
-		next = 0,
-		limit = limit,
-		chunks = {},
-		chunk = 0,
+	local term = track(started, buffer, {
 		previous = previous,
 		owns = previous == nil,
 		command = if given then table.concat(given, " ") else "shell",
 		asked = if command and #command > 0 then table.clone(command) else nil,
-		images = {},
-		alternate = false,
-		links = {},
-		screen_links = {},
-		dropped = 0,
-		marks_made = 0,
-		failures = {},
 		keep = opts.keep == true,
-		updating = false,
-		stale = false,
 		client = greed.client.id(),
-	}
-	terms[buffer:id()] = term
+		adopted = false,
+		return_on_primary = false,
+	})
 	M.enter(view)
+	return term
+end
+
+export type AdoptOptions = {
+	--- The view to show it in; the focused one by default.
+	view: greed.View?,
+	--- What the view shows again when the terminal closes or gives it
+	--- back; by default what it showed before.
+	previous: greed.Buffer?,
+	--- Keep it open when its program ends well, to read the output.
+	keep: boolean?,
+	--- Give the view back to `previous` once the program leaves the
+	--- alternate screen (a full screen program is done) or exits. The
+	--- program goes on, for the plugin that started it.
+	return_on_primary: boolean?,
+	--- What to call it, e.g. in the terminal picker.
+	title: string?,
+}
+
+--- Shows `terminal`, which another plugin started with
+--- `greed.terminal.spawn`, in a view as if opened here, sized for the
+--- client's screen, and types into it when that view is focused. Closing
+--- it ends the program, but the terminal stays the starting plugin's: it
+--- still reads it and closes it.
+function M.adopt(terminal: greed.Terminal, options: AdoptOptions?): Term
+	local opts: AdoptOptions = options or {}
+	local view = opts.view or greed.view()
+	local previous = opts.previous or view:buffer()
+	local buffer = new_buffer()
+	view:show(buffer)
+	local term = track(terminal, buffer, {
+		previous = previous,
+		owns = false,
+		command = opts.title or "program",
+		asked = nil,
+		keep = opts.keep == true,
+		client = nil,
+		adopted = true,
+		return_on_primary = opts.return_on_primary == true,
+	})
+	-- Sized for the client's screen; a view not drawn yet says its size
+	-- once it is.
+	local rows, cols = view:size()
+	if rows and cols then
+		size_for_client(term, rows, cols)
+	end
+	if view == greed.view() and terminal:exit_code() == nil then
+		M.enter(view)
+	else
+		M.update(term)
+	end
+	-- Its end may have come and gone before it was handed over.
+	if term.return_on_primary and terminal:exit_code() ~= nil and M.is_open(term) then
+		release(term)
+	end
 	return term
 end
 
@@ -683,6 +810,12 @@ greed.on("terminal.exited", function(event)
 		return
 	end
 	M.update(term)
+	if term.return_on_primary then
+		if M.is_open(term) then
+			release(term)
+		end
+		return
+	end
 	if event.code == 0 and not term.keep then
 		M.close(term)
 		return
@@ -868,13 +1001,13 @@ local function find_all(
 	return buffer:find_all(pattern, from, to) or {}
 end
 
--- The file `text` (a match of PATH) names in `buffer`, and the line and
--- column after it, when that file is there: a relative path is taken from
--- the folder the terminal's shell is in, or the project's.
-local function resolve(buffer: greed.Buffer, text: string): (string?, number?, number?)
+-- The file `text` (a match of PATH) names, and the line and column after
+-- it, when that file is there: a relative path is taken from `cwd`, or the
+-- project's root.
+local function resolve(text: string, cwd: string?): (string?, number?, number?)
 	local before, row, col = string.match(text, "^(.-):(%d+):?(%d*)$")
 	local name = before or text
-	local path = core.project.resolve(name, M.cwd(buffer))
+	local path = core.project.resolve(name, cwd)
 	local info = greed.fs.stat(path)
 	if info == nil or info.kind ~= "file" then
 		return nil, nil, nil
@@ -889,7 +1022,7 @@ function M.file_at(buffer: greed.Buffer, pos: number): (string?, number?, number
 	local line = buffer:line_of(pos)
 	for _, found in find_all(buffer, PATH, buffer:line_start(line), buffer:line_end(line)) do
 		if pos >= found.from and pos < found.to then
-			return resolve(buffer, buffer:slice(found.from, found.to))
+			return resolve(buffer:slice(found.from, found.to), M.cwd(buffer))
 		end
 	end
 	return nil, nil, nil
@@ -925,18 +1058,29 @@ local function said_about(buffer: greed.Buffer, line: number): string
 	return text
 end
 
+export type ReferenceOptions = {
+	--- Only look from byte `from` to byte `to`; the whole buffer by default.
+	from: number?,
+	to: number?,
+	--- The folder relative paths are taken from; by default the one the
+	--- terminal's shell is in, or the project's root.
+	cwd: string?,
+}
+
 --- The places in files that the output in `buffer` points at, in order,
 --- for files that are there.
-function M.references(buffer: greed.Buffer): { Reference }
+function M.references(buffer: greed.Buffer, options: ReferenceOptions?): { Reference }
+	local opts: ReferenceOptions = options or {}
+	local cwd = opts.cwd or M.cwd(buffer)
 	local list: { Reference } = {}
 	-- Files named again and again, as test runs do, are looked for once.
 	local there: { [string]: boolean } = {}
-	for _, found in find_all(buffer, REFERENCE) do
+	for _, found in find_all(buffer, REFERENCE, opts.from, opts.to) do
 		local text = buffer:slice(found.from, found.to)
 		local name = string.match(text, "^(.-):%d") :: string
 		local path, line, col = nil, nil, nil
 		if there[name] ~= false then
-			path, line, col = resolve(buffer, text)
+			path, line, col = resolve(text, cwd)
 			there[name] = path ~= nil
 		end
 		if path and line then
@@ -1368,11 +1512,6 @@ greed.keymap.bind({ layer = "leader", kind = "terminal" }, {
 	d = "terminal-references",
 })
 
---- Whether `term` is still open.
-function M.is_open(term: Term): boolean
-	return terms[term.buffer:id()] == term
-end
-
 local tasks = require("@self/tasks")
 tasks.setup(M)
 --- Tasks from your config, by name (tasks.luau).
@@ -1390,7 +1529,7 @@ core.file.running("terminals", function()
 	local found = {}
 	for _, term in terms do
 		local t = term.terminal
-		if t:exit_code() == nil and (term.asked or t:busy()) then
+		if t:valid() and t:exit_code() == nil and (term.asked or term.adopted or t:busy()) then
 			local what = if term.asked then term.command else t:title() or "a command"
 			table.insert(found, `{what} in a terminal`)
 		end
