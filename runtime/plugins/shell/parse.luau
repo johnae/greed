@@ -2,6 +2,11 @@
 -- itself, a program with plain arguments it starts on its own, or anything
 -- else (pipes, globs, variables, redirects), which goes to a real shell.
 -- A leading `!` runs the line in a terminal.
+--
+-- Data from the editor goes in at the start of a line, `$3 | sort` (block
+-- 3's output), `buf:NAME | wc -l`, `@sel | jq .` or `@file | head`, and
+-- `... > buf:NAME` (or `>>` to add to it) sends what a command prints to a
+-- buffer. One of those alone, like `$3 > buf:keep`, passes it on as it is.
 
 local M = {}
 
@@ -13,7 +18,7 @@ M.BUILTINS = {
 	env = "List the variables this shell sets or leaves out",
 	history = "List the commands typed before",
 	clear = "Remove every block",
-	open = "Open files in the editor: PATH ...",
+	open = "Open files or buffers in the editor: PATH or buf:NAME ...",
 } :: { [string]: string }
 
 --- What a line asks for.
@@ -21,17 +26,35 @@ M.BUILTINS = {
 --- - "builtin": `name` with `args`.
 --- - "argv": a program and its arguments, quotes taken off.
 --- - "shell": anything else, for a real shell to run as `line`.
+--- - "source": nothing but `input`, to pass on.
 --- `terminal` is true for a line typed with a leading `!`, whose `line` is
---- the rest. `error` says why a line can't be read, like an unclosed quote.
+--- the rest. `input` is what goes to the command's input (`$3`, `buf:NAME`,
+--- `@sel` or `@file`), and `into` the buffer its output goes to. `error`
+--- says why a line can't be read, like an unclosed quote.
 export type Parsed = {
-	kind: "empty" | "builtin" | "argv" | "shell",
+	kind: "empty" | "builtin" | "argv" | "shell" | "source",
 	line: string,
 	name: string?,
 	args: { string }?,
 	argv: { string }?,
 	terminal: boolean,
+	input: string?,
+	into: Into?,
 	error: string?,
 }
+
+--- A buffer a command's output goes to: `> buf:NAME`, or with `append`
+--- `>> buf:NAME`.
+export type Into = { name: string, append: boolean }
+
+--- Whether `word` names data from the editor a command can read: `$3`,
+--- `buf:NAME`, `@sel` or `@file`.
+function M.is_source(word: string): boolean
+	return string.match(word, "^%$%d+$") ~= nil
+		or string.match(word, "^buf:[^%s|<>]+$") ~= nil
+		or word == "@sel"
+		or word == "@file"
+end
 
 -- Characters that mean something to a shell outside quotes, so a line with
 -- one needs a real shell.
@@ -126,17 +149,26 @@ function M.words(line: string, home: string?): ({ string }?, (string | boolean)?
 	return words, nil
 end
 
---- Reads `line`, typed at a prompt. `home` expands a leading `~`.
-function M.parse(line: string, home: string?): Parsed
-	local terminal = false
-	local rest = string.match(line, "^%s*(.-)%s*$") or ""
-	if string.sub(rest, 1, 1) == "!" then
-		terminal = true
-		rest = string.match(string.sub(rest, 2), "^%s*(.-)$") or ""
+-- `line` without a `> buf:NAME` or `>> buf:NAME` at its end, and that.
+local function split_into(line: string): (string, Into?)
+	local before, arrow, name = string.match(line, "^(.-)%s*(>>?)%s*buf:([%w_.%-/]+)$")
+	if before == nil or arrow == nil or name == nil then
+		return line, nil
 	end
-	if rest == "" then
-		return { kind = "empty", line = rest, terminal = terminal }
+	return before, { name = name, append = arrow == ">>" }
+end
+
+-- `line` without a `SOURCE |` at its start, and that source.
+local function split_input(line: string): (string, string?)
+	local first, rest = string.match(line, "^(%S+)%s*|%s*(.*)$")
+	if first == nil or rest == nil or string.sub(rest, 1, 1) == "|" or not M.is_source(first) then
+		return line, nil
 	end
+	return rest, first
+end
+
+-- Reads a command without data going in or out of it.
+local function parse_command(rest: string, terminal: boolean, home: string?): Parsed
 	local words, why = M.words(rest, home)
 	if words == nil then
 		local err = if type(why) == "string" then why else nil
@@ -153,6 +185,40 @@ function M.parse(line: string, home: string?): Parsed
 		return { kind = "builtin", line = rest, name = first, args = args, terminal = false }
 	end
 	return { kind = "argv", line = rest, argv = words, terminal = terminal }
+end
+
+--- Reads `line`, typed at a prompt. `home` expands a leading `~`.
+function M.parse(line: string, home: string?): Parsed
+	local terminal = false
+	local rest = string.match(line, "^%s*(.-)%s*$") or ""
+	if string.sub(rest, 1, 1) == "!" then
+		terminal = true
+		rest = string.match(string.sub(rest, 2), "^%s*(.-)$") or ""
+	end
+	if rest == "" then
+		return { kind = "empty", line = rest, terminal = terminal }
+	end
+	local into: Into?, input: string? = nil, nil
+	rest, into = split_into(rest)
+	rest, input = split_input(rest)
+	if into or input then
+		local why: string? = nil
+		if terminal then
+			why = "! runs a line in a terminal, which can't read or write buffers"
+		elseif rest == "" then
+			why = if input then "nothing after |" else "nothing to write to the buffer"
+		end
+		if why then
+			return { kind = "shell", line = rest, terminal = terminal, error = why }
+		end
+	end
+	if input == nil and not terminal and M.is_source(rest) then
+		return { kind = "source", line = rest, terminal = false, input = rest, into = into }
+	end
+	local parsed = parse_command(rest, terminal, home)
+	parsed.input = input
+	parsed.into = into
+	return parsed
 end
 
 --- `name=value` split in two, or nil when `text` isn't an assignment to a

@@ -465,6 +465,44 @@ function M.buffer(path: string, root: string?): greed.Buffer?
 	return greed.buffer_for(project.resolve(path, root))
 end
 
+-- The last view showing a file that had focus.
+local last_file_view: greed.View? = nil
+
+local function has_file(view: greed.View?): boolean
+	if view == nil then
+		return false
+	end
+	-- A closed view fails when asked anything.
+	local ok, path = pcall(function(): string?
+		return view:buffer():path()
+	end)
+	return ok and path ~= nil
+end
+
+greed.on("view.focused", function(event: greed.ViewFocused)
+	if has_file(event.view) then
+		last_file_view = event.view
+	elseif has_file(event.from) then
+		last_file_view = event.from
+	end
+end)
+
+--- The view with the file the user is in, for things typed elsewhere (an
+--- agent's pane, a shell) that are about it: the focused one when it shows
+--- a file, else the tab's active pane, else the last one with a file that
+--- had focus. Nil when none shows a file.
+function M.view(): greed.View?
+	local focused = greed.view()
+	if has_file(focused) then
+		return focused
+	end
+	local active = greed.tab.current().active
+	if has_file(active) then
+		return active
+	end
+	return if has_file(last_file_view) then last_file_view else nil
+end
+
 --- The text of the file at `path` as you have it: its buffer's, unsaved
 --- changes included, when it's open, otherwise what's on disk; nil and why
 --- when there's neither. Paths are taken as `M.buffer` takes them.

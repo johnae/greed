@@ -162,7 +162,7 @@ end
 -- output, and the line being printed shows until it's done (or, with
 -- `final`, for good). Lines the block would leave out anyway aren't made
 -- into lines at all, so a flood of output costs little more than its
--- record.
+-- record. Output sent to a buffer (`> buf:NAME`) goes there instead.
 local function draw(shell: Shell, block: Block, final: boolean)
 	local p = pending[block.uid]
 	if p == nil then
@@ -170,6 +170,24 @@ local function draw(shell: Shell, block: Block, final: boolean)
 	end
 	local pieces = p.pieces
 	p.pieces = {}
+	local target = block.target
+	if target then
+		local sent: { string } = {}
+		local kept: { Piece } = {}
+		for _, piece in pieces do
+			if piece.stream == "stdout" then
+				table.insert(sent, piece.text)
+			else
+				table.insert(kept, piece)
+			end
+		end
+		pieces = kept
+		if #sent > 0 and target:valid() then
+			target:edit(function(e)
+				e:insert(target:len(), table.concat(sent))
+			end)
+		end
+	end
 	-- Each whole line: its pieces, or for the many made of one piece, that
 	-- piece's text and stream.
 	local texts: { string } = {}
@@ -242,6 +260,15 @@ local function spill(block: Block, p: Pending)
 	end
 end
 
+-- `text` read as JSON, when it's an object or an array.
+local function json(text: string): any?
+	if string.match(text, "^%s*[%[{]") == nil then
+		return nil
+	end
+	local value = greed.json.decode(text)
+	return if type(value) == "table" then value else nil
+end
+
 -- Ends `block`, whose output is all drawn.
 local function complete(shell: Shell, block: Block, code: number?, signal: string?)
 	local p = pending[block.uid]
@@ -250,6 +277,10 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 		spill(block, p)
 		pending[block.uid] = nil
 	end
+	if not block.truncated then
+		block.value = json(block.stdout)
+	end
+	block.refs = log.draw_refs(shell, block)
 	block.finished = greed.now()
 	block.code = code
 	block.signal = signal
@@ -336,13 +367,14 @@ end
 
 --- Runs `argv` for `block` through a pipe: no terminal, its output and
 --- errors apart, in a process group of its own so an interrupt reaches
---- what it starts. Its input is closed. `before` hears how it exited
---- before the block finishes.
+--- what it starts. It reads `input`, if given, and then its input is
+--- closed. `before` hears how it exited before the block finishes.
 function M.pipe(
 	shell: Shell,
 	block: Block,
 	argv: { string },
-	before: ((code: number?, signal: string?) -> ())?
+	before: ((code: number?, signal: string?) -> ())?,
+	input: string?
 )
 	local child, err = greed.process.spawn(argv, {
 		cwd = block.cwd,
@@ -355,6 +387,9 @@ function M.pipe(
 		return
 	end
 	local c = child :: greed.Child
+	if input and input ~= "" then
+		c:write(input)
+	end
 	c:close()
 	local stopped: string? = nil
 	block.job = {

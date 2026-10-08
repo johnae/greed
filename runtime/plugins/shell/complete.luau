@@ -1,13 +1,15 @@
 -- Completion at a shell's prompt, through the completion menu's sources:
 -- the builtins and programs on PATH for a command's first word, files and
 -- folders from the shell's folder after it, `$` for variables and earlier
--- blocks' output (`$3`), and `buf:` for open files.
+-- blocks' output (`$3`), `buf:` for open files and buffers `> buf:` made,
+-- and `@sel` and `@file` at a line's start.
 
 local greed = require("@greed")
 local core = require("@core")
 local parse = require("./parse")
 local state = require("./state")
 local log = require("./log")
+local data = require("./data")
 
 type Shell = state.Shell
 type Item = { label: string, detail: string?, text: string, from: number? }
@@ -120,7 +122,13 @@ function M.items(view: greed.View): { Item }?
 		for name in environment(shell) do
 			add("$" .. name)
 		end
+	elseif first and string.sub(word, 1, 1) == "@" then
+		add("@sel", "the selection in the file you're in")
+		add("@file", "the file you're in")
 	elseif string.sub(word, 1, 4) == "buf:" then
+		for _, name in data.names() do
+			add("buf:" .. name, "made by > buf:")
+		end
 		for _, open in greed.buffers() do
 			local path = open:path()
 			if path then

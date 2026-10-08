@@ -12,8 +12,9 @@
 -- glyph, the status after the command's line (✓ ✗ ◐ ↗ ■, the exit code,
 -- how long it took, where cd went), the sign beside it, the blank line
 -- after it, and how many lines were left out. Output styles (errors, a
--- program's colors) are in `shell.out.N`. Nothing is laid out to a view's
--- width, so every client wraps the text at its own.
+-- program's colors) are in `shell.out.N`, and links on the places in files
+-- it names (`src/main.rs:12`) in `shell.ref.N`. Nothing is laid out to a
+-- view's width, so every client wraps the text at its own.
 --
 -- A block's output is stable lines, which only grow, then volatile ones
 -- drawn again on every update: a line still being printed, or a pseudo
@@ -22,10 +23,12 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local terminal = require("@terminal")
 local state = require("./state")
 
 type Shell = state.Shell
 type Block = state.Block
+type Ref = state.Ref
 
 local M = {}
 
@@ -80,6 +83,10 @@ end
 
 local function ns_out(block: Block): string
 	return `shell.out.{block.uid}`
+end
+
+local function ns_ref(block: Block): string
+	return `shell.ref.{block.uid}`
 end
 
 --- Where the prompt starts.
@@ -197,6 +204,18 @@ function M.status_text(block: Block): string
 		end
 		table.sort(names)
 		table.insert(parts, table.concat(names, " "))
+	end
+	if block.into then
+		table.insert(parts, `> {block.into}`)
+	end
+	local value = block.value
+	if type(value) == "table" then
+		local count = 0
+		for _ in value do
+			count += 1
+		end
+		local unit = if count > 0 and #value == 0 then "keys" else "items"
+		table.insert(parts, `JSON · {count} {unit}`)
 	end
 	if block.note then
 		table.insert(parts, block.note)
@@ -423,6 +442,40 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?
 	end
 end
 
+--- The places in files `block`'s output names, like `src/main.rs:12:5`,
+--- with paths from the folder it ran in, as the buffer has them now.
+function M.references(shell: Shell, block: Block): { terminal.Reference }
+	local from, to = M.output_range(shell, block)
+	if from == nil or to == nil then
+		return {}
+	end
+	return terminal.references(shell.buffer, { from = from, to = to, cwd = block.cwd })
+end
+
+--- Shows the places in files `block`'s output names as links, and returns
+--- them.
+function M.draw_refs(shell: Shell, block: Block): { Ref }
+	local marks: { greed.Mark } = {}
+	local refs: { Ref } = {}
+	for _, ref in M.references(shell, block) do
+		table.insert(marks, { from = ref.from, to = ref.to, style = "markup.link" })
+		table.insert(refs, { path = ref.path, line = ref.line, col = ref.col, text = ref.text })
+	end
+	shell.buffer:decorate(ns_ref(block), marks)
+	return refs
+end
+
+--- The places in files every block's output in `shell` names, in order.
+function M.all_references(shell: Shell): { terminal.Reference }
+	local list: { terminal.Reference } = {}
+	for _, block in shell.blocks do
+		for _, ref in M.references(shell, block) do
+			table.insert(list, ref)
+		end
+	end
+	return list
+end
+
 --- Takes `block` out of the buffer, with its decorations.
 function M.remove(shell: Shell, block: Block)
 	local from, to = M.range(block)
@@ -442,6 +495,7 @@ function M.remove(shell: Shell, block: Block)
 	end
 	buffer:decorate(ns_block(block), {})
 	buffer:decorate(ns_out(block), {})
+	buffer:decorate(ns_ref(block), {})
 	shown[block.uid] = nil
 	local index = table.find(shell.blocks, block)
 	if index then

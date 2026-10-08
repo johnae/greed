@@ -6,6 +6,7 @@
 --   enter       run what's at the prompt; on a block, edit its command
 --   [ p  ] p    the block before or after the cursor
 --   g o         select the block's output
+--   ] e  [ e    the next or previous file:line the output names; enter opens it
 --   ctrl-c      interrupt the running block (vscode style: copy a selection)
 --   ctrl-t      type into the running block's program, in a terminal
 --   space r     run the block again, as it ran; space R here and now
@@ -19,6 +20,11 @@
 -- (pty.luau), handed to a terminal when they want one; an agent's run
 -- through a pipe. Each shell has its own folder and variables, and a
 -- project can have several.
+--
+-- `$3 | sort`, `buf:NAME | ...`, `@sel | ...` and `@file | ...` send block
+-- 3's output, a buffer, the selection or the file you're in to a command,
+-- and `... > buf:NAME` (`>>` adds) sends its output to a buffer
+-- (data.luau). Output that's JSON is kept as a value on the block.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -31,6 +37,7 @@ local run = require("@self/run")
 local pty = require("@self/pty")
 local fallback = require("@self/fallback")
 local history = require("@self/history")
+local data = require("@self/data")
 require("@self/complete")
 
 type Shell = state.Shell
@@ -46,6 +53,7 @@ M.parse = parse
 M.log = log
 M.runners = run
 M.pty = pty
+M.data = data
 
 --- The shell shown in `buffer`, if it's one.
 M.of = state.of
@@ -213,6 +221,10 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		env_changed = nil,
 		note = nil,
 		value = nil,
+		input = nil,
+		into = nil,
+		target = nil,
+		refs = nil,
 		range = nil,
 		job = nil,
 		done = greed.signal(),
@@ -230,20 +242,24 @@ local function clear(shell: Shell)
 end
 
 -- Starts `argv` for `block`: in a pseudo terminal, handed to a terminal
--- right away for a line typed with `!`, or through a pipe for an agent or
--- when asked.
+-- right away for a line typed with `!`, or through a pipe for an agent,
+-- when asked, or for data going in (`input`) or out to a buffer.
 local function start(
 	shell: Shell,
 	block: Block,
 	argv: { string },
 	opts: RunOptions,
 	handoff: boolean,
+	input: string?,
 	before: ((code: number?, signal: string?) -> ())?
 )
 	local runner = opts.runner or (if block.by == "agent" then "pipe" else "pty")
+	if input or block.target then
+		runner = "pipe"
+	end
 	if runner == "pipe" and not handoff then
 		block.runner = "pipe"
-		run.pipe(shell, block, argv, before)
+		run.pipe(shell, block, argv, before, input)
 	else
 		pty.start(shell, block, argv, { terminal = handoff, before = before })
 	end
@@ -256,12 +272,13 @@ local function fall_back(
 	block: Block,
 	line: string,
 	opts: RunOptions,
-	handoff: boolean
+	handoff: boolean,
+	input: string?
 )
 	local agent = block.by == "agent"
 	local wrapped =
 		fallback.prepare(block, line, { program = if agent then "sh" else nil, rc = not agent })
-	start(shell, block, wrapped.argv, opts, handoff, function()
+	start(shell, block, wrapped.argv, opts, handoff, input, function()
 		local cwd, changed = fallback.collect(block, wrapped)
 		if not agent then
 			if cwd then
@@ -298,17 +315,31 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	log.add(shell, block)
 	tick(shell)
-	if parsed.error then
-		run.fail(shell, block, parsed.error, 2)
+	local input: string?, why: string? = nil, parsed.error
+	if parsed.input and why == nil then
+		block.input = parsed.input
+		local text, _, err = data.read(shell, parsed.input, block.cwd)
+		input, why = text, err
+	end
+	local into = parsed.into
+	if into and why == nil then
+		block.into = `buf:{into.name}`
+		block.target = data.target(into, block.cwd)
+	end
+	if why then
+		run.fail(shell, block, why, 2)
+	elseif parsed.kind == "source" then
+		run.write(shell, block, input or "", "stdout")
+		run.finish(shell, block, 0, nil)
 	elseif parsed.kind == "builtin" then
 		run.builtin(shell, block, parsed.name :: string, parsed.args or {})
 	elseif parsed.kind == "argv" then
 		block.via = "argv"
 		local argv = run.program(parsed.argv :: { string }, block.cwd)
-		start(shell, block, argv, opts, parsed.terminal)
+		start(shell, block, argv, opts, parsed.terminal, input)
 	else
 		block.via = "shell"
-		fall_back(shell, block, parsed.line, opts, parsed.terminal)
+		fall_back(shell, block, parsed.line, opts, parsed.terminal, input)
 	end
 	return block
 end
@@ -349,7 +380,18 @@ run.builtins.open = function(shell: Shell, block: Block, args: { string }): numb
 		return 2
 	end
 	for _, arg in args do
-		core.file.open(core.project.resolve(arg, block.cwd))
+		local name = string.match(arg, "^buf:(.+)$")
+		local buffer = if name then data.buffer(name, block.cwd) else nil
+		if buffer then
+			local main = greed.tab.current().active
+			main:show(buffer)
+			main:focus()
+		elseif name then
+			run.write(shell, block, `open: no buffer is called {name}\n`, "stderr")
+			return 1
+		else
+			core.file.open(core.project.resolve(arg, block.cwd))
+		end
 	end
 	return 0
 end
@@ -480,11 +522,63 @@ greed.command({
 		elseif core.style.is_typing() then
 			greed.run("insert-newline")
 		else
-			local block = log.block_at(shell, ctx.view:cursor())
-			if block then
-				edit(shell, block, ctx)
+			local pos = ctx.view:cursor()
+			local block = log.block_at(shell, pos)
+			if block == nil then
+				return
 			end
+			for _, ref in log.references(shell, block) do
+				if pos >= ref.from and pos < ref.to then
+					core.file.open_at(ref.path, ref.line - 1, if ref.col then ref.col - 1 else nil)
+					return
+				end
+			end
+			edit(shell, block, ctx)
 		end
+	end,
+})
+
+-- Selects the next file:line the output names after the cursor, or with
+-- `back` the one before it.
+local function to_reference(ctx: greed.Context, back: boolean)
+	local shell = shell_of(ctx)
+	if shell == nil then
+		return
+	end
+	local head = ctx.view:cursor()
+	local list = log.all_references(shell)
+	local found = nil
+	for _, ref in list do
+		if back and ref.to <= head then
+			found = ref
+		elseif not back and ref.from > head then
+			found = ref
+			break
+		end
+	end
+	if found == nil then
+		greed.echo(if #list == 0 then "no output names a file and line" else "no more")
+		return
+	end
+	ctx.view:set_selection({
+		ranges = { { anchor = found.from, head = found.to - 1 } },
+		primary = 1,
+	})
+end
+
+greed.command({
+	name = "shell-next-reference",
+	doc = "Go to the next file and line a block's output names, like an error's place; enter opens it",
+	run = function(ctx)
+		to_reference(ctx, false)
+	end,
+})
+
+greed.command({
+	name = "shell-prev-reference",
+	doc = "Go to the file and line a block's output names before the cursor",
+	run = function(ctx)
+		to_reference(ctx, true)
 	end,
 })
 
@@ -814,6 +908,8 @@ greed.keymap.bind({ style = "vscode", role = "typing", kind = KIND }, {
 	["ctrl-c"] = "shell-copy-or-interrupt",
 	["ctrl-up"] = "shell-prev-block",
 	["ctrl-down"] = "shell-next-block",
+	f8 = "shell-next-reference",
+	["shift-f8"] = "shell-prev-reference",
 })
 greed.keymap.bind({ role = "command", kind = KIND }, {
 	enter = "shell-enter",
@@ -823,6 +919,8 @@ greed.keymap.bind({ role = "command", kind = KIND }, {
 	["[ p"] = "shell-prev-block",
 	["] p"] = "shell-next-block",
 	["g o"] = "shell-select-output",
+	["] e"] = "shell-next-reference",
+	["[ e"] = "shell-prev-reference",
 })
 greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	r = "shell-rerun",

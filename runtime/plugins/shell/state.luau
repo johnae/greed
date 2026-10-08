@@ -63,8 +63,16 @@ export type Block = {
 	env_changed: { [string]: string | false }?,
 	--- A note about how it ran, e.g. that cd in it doesn't carry over.
 	note: string?,
-	--- The output read as JSON, when it is (for later stages).
+	--- The output read as JSON, when it's an object or an array.
 	value: any?,
+	--- What went to its input (`$3`, `buf:NAME`, `@sel` or `@file`), and
+	--- the buffer its output went to instead of the block (`buf:NAME`).
+	input: string?,
+	into: string?,
+	target: greed.Buffer?,
+	--- The places in files its output names, like `src/main.rs:12:5`,
+	--- once it's done.
+	refs: { Ref }?,
 	--- Where it is in the buffer.
 	range: greed.Tracked?,
 	--- The job running it, to interrupt or stop.
@@ -82,6 +90,10 @@ export type Job = {
 	--- The pseudo terminal it runs in, if it does.
 	terminal: greed.Terminal?,
 }
+
+--- A place in a file a block's output names: the file, its 1-based line
+--- and column, and the line of output saying what's there.
+export type Ref = { path: string, line: number, col: number?, text: string }
 
 --- A shell: a buffer of blocks with a prompt at the end, its own folder and
 --- environment.
@@ -202,6 +214,9 @@ function M.record(block: Block): { [string]: any }
 		env_changed = block.env_changed,
 		note = block.note,
 		value = block.value,
+		input = block.input,
+		into = block.into,
+		refs = block.refs,
 	}
 end
 

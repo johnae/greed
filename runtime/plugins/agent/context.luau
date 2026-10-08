@@ -11,43 +11,9 @@ local M = {}
 --- The most of a selection `describe` includes, in characters.
 M.MAX_SELECTION = 4000
 
--- The last view showing a file that had focus, kept so that while you type
--- in an agent's pane, its context is still the file you were in.
-local last: greed.View? = nil
-
-local function has_file(view: greed.View?): boolean
-	if view == nil then
-		return false
-	end
-	-- A closed view fails when asked anything.
-	local ok, path = pcall(function(): string?
-		return view:buffer():path()
-	end)
-	return ok and path ~= nil
-end
-
-greed.on("view.focused", function(event: greed.ViewFocused)
-	if has_file(event.view) then
-		last = event.view
-	elseif has_file(event.from) then
-		last = event.from
-	end
-end)
-
---- The view with the file the user is in: the focused one when it shows a
---- file, else the tab's active pane, else the last one with a file that
---- had focus. Nil when none shows a file.
-function M.view(): greed.View?
-	local focused = greed.view()
-	if has_file(focused) then
-		return focused
-	end
-	local active = greed.tab.current().active
-	if has_file(active) then
-		return active
-	end
-	return if has_file(last) then last else nil
-end
+--- The view with the file the user is in, so that while you type in an
+--- agent's pane, its context is still the file you were in (core.file).
+M.view = core.file.view
 
 -- 1-based line and column, as people and agents count them.
 local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }
