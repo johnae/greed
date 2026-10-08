@@ -175,10 +175,32 @@ function M.running(shell: Shell): { Block }
 	return list
 end
 
+-- The greed program, once it's known whether it prints the environment
+-- (`greed --env0`): false when it doesn't, as when the editor runs inside
+-- another program, like a test runner.
+local program: string | false | nil = nil
+
+--- The greed program running the editor, which prints the environment
+--- exactly on every system with `--env0`, or nil when it can't. Finding
+--- out runs it once, so before then (or where nothing can wait) it's nil.
+function M.program(): string?
+	if program == nil and coroutine.isyieldable() then
+		local path = greed.session.program()
+		local result = if path then greed.process.run({ path, "--env0" }) else nil
+		local works = result ~= nil
+			and result.code == 0
+			and string.find(result.stdout, "=", 1, true)
+		program = if works then path else false
+	end
+	return program or nil
+end
+
 --- The variables a command in `shell` gets on top of the editor's: pagers
---- off, so output comes back as text, then the shell's own.
+--- off, so output comes back as text, where greed is (`GREED_BIN`), then
+--- the shell's own.
 function M.environment(env: { [string]: string | false }): { [string]: string | false }
 	local out: { [string]: string | false } = { PAGER = "cat", GIT_PAGER = "cat" }
+	out.GREED_BIN = M.program() or false
 	for name, value: string | false in env do
 		out[name] = value
 	end

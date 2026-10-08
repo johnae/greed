@@ -24,7 +24,8 @@ local function editor_environment(): { [string]: string }
 		return editor_env
 	end
 	local vars: { [string]: string } = {}
-	local result = greed.process.run({ "env", "-0" })
+	local program = state.program()
+	local result = greed.process.run(if program then { program, "--env0" } else { "env", "-0" })
 	if result then
 		for _, entry in string.split(result.stdout, "\0") do
 			local name, value = string.match(entry, "^([^=]+)=(.*)$")

@@ -31,33 +31,46 @@ greed.option.define({
 })
 
 -- Runs the line (`$1`), then writes where it left the shell and what its
--- environment is to the folder `$2`, and exits as the line did.
+-- environment is to the folder `$2`, and exits as the line did. The
+-- environment comes from `greed --env0` (`$GREED_BIN`, which state.luau
+-- sets), the same on every system; without it, from `env -0`.
 local POSIX = [[
 __greed_line=$1
 __greed_dir=$2
 shift 2
-env -0 > "$__greed_dir/before"
+__greed_env() { if [ -n "${GREED_BIN:-}" ]; then "$GREED_BIN" --env0; else env -0; fi; }
+__greed_env > "$__greed_dir/before"
 eval "$__greed_line"
 __greed_status=$?
 pwd > "$__greed_dir/cwd"
-env -0 > "$__greed_dir/after"
+__greed_env > "$__greed_dir/after"
 exit "$__greed_status"]]
 
 local FISH = [[
 set -l __greed_line $argv[1]
 set -l __greed_dir $argv[2]
-env -0 > $__greed_dir/before
+function __greed_env
+	if test -n "$GREED_BIN"
+		$GREED_BIN --env0
+	else
+		env -0
+	end
+end
+__greed_env > $__greed_dir/before
 eval $__greed_line
 set -l __greed_status $status
 pwd > $__greed_dir/cwd
-env -0 > $__greed_dir/after
+__greed_env > $__greed_dir/after
 exit $__greed_status]]
 
 -- nu runs the line inside a command that keeps its environment changes,
 -- and prints what it gives back. An external program's exit code is lost
 -- once its output is printed, so only errors make a nu line fail.
 local NU = [[
-^env -0 | save -f --raw r#'DIR/before'#
+def __greed_env [] {
+	if ($env.GREED_BIN? | is-not-empty) { ^$env.GREED_BIN --env0 } else { ^env -0 }
+}
+__greed_env | save -f --raw r#'DIR/before'#
 def --env __greed_run [] {
 LINE
 }
@@ -69,7 +82,7 @@ let __greed_code = try {
 	if $code != 0 { $code } else { print -e $e.msg; 1 }
 }
 $env.PWD | save -f r#'DIR/cwd'#
-^env -0 | save -f --raw r#'DIR/after'#
+__greed_env | save -f --raw r#'DIR/after'#
 exit $__greed_code]]
 
 -- Picks the shell: `$5` when given, else `$SHELL`, which is `sh` when it
@@ -162,7 +175,7 @@ function M.prepare(block: Block, line: string, opts: { program: string?, rc: boo
 	}
 end
 
--- The variables in `text`, as `env -0` printed them.
+-- The variables in `text`, as `greed --env0` or `env -0` printed them.
 local function variables(text: string?): { [string]: string }?
 	if text == nil then
 		return nil

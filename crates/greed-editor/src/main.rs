@@ -60,6 +60,7 @@ fn main() -> ExitCode {
     }
     let result = match args.as_slice() {
         [] => edit(None, None, terminal),
+        [flag] if flag == "--env0" => print_environment(),
         [flag, name, rest @ ..] if flag == "--session" => {
             edit(Some(name), rest.first().map(PathBuf::from), terminal)
         }
@@ -110,6 +111,23 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `greed --env0`, not in the usage: prints the environment as `NAME=value`
+/// entries each ended by a NUL byte, for shells' wrappers to read back
+/// exactly, whatever the values hold. `env -0` does the same where `env`
+/// has it, which isn't everywhere.
+fn print_environment() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut out = io::BufWriter::new(io::stdout().lock());
+    for (name, value) in std::env::vars_os() {
+        out.write_all(name.as_bytes())?;
+        out.write_all(b"=")?;
+        out.write_all(value.as_bytes())?;
+        out.write_all(b"\0")?;
+    }
+    out.flush()?;
+    Ok(())
 }
 
 /// Greed's config directory on this machine: `$GREED_CONFIG_DIR`, or `greed` in
