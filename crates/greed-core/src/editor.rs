@@ -395,9 +395,9 @@ impl Editor {
         self.last_active
     }
 
-    /// The clients, in order of their ids.
+    /// The clients attached, in order of their ids: those not parked.
     pub fn clients(&self) -> impl Iterator<Item = &ClientState> {
-        self.clients.values()
+        self.clients.values().filter(|c| !c.parked)
     }
 
     /// Adds client `id`, seeing what the acting client sees. False if there
@@ -412,17 +412,58 @@ impl Editor {
         true
     }
 
-    /// The first peer color no other client has, or one by `id` when all
-    /// are taken.
+    /// A client attaching, which says `info` about itself: the one parked
+    /// under its name, back with its cursors, focus and mode, or a new one
+    /// seeing what the last active client sees.
+    pub fn attach_client(&mut self, info: ClientInfo) -> ClientId {
+        let returning = self
+            .clients
+            .values()
+            .find(|c| c.parked && *c.name == *info.name)
+            .map(ClientState::id);
+        let id = returning.unwrap_or_else(|| {
+            let id = self.next_client_id();
+            let mut state = self.clients[&self.last_active].seeing_as(id);
+            state.color = self.free_color(id);
+            self.clients.insert(id, state);
+            id
+        });
+        self.set_client_info(id, info);
+        if let Some(client) = self.clients.get_mut(&id) {
+            client.parked = false;
+        }
+        id
+    }
+
+    /// Parks client `id`, which went: its state stays, kept up with edits,
+    /// for when it comes back by the same name, but it no longer counts as
+    /// attached. The last active client becomes the attached one active
+    /// most recently, if there is one. False without such a client.
+    pub fn park_client(&mut self, id: ClientId) -> bool {
+        let Some(client) = self.clients.get_mut(&id) else {
+            return false;
+        };
+        client.parked = true;
+        client.size = None;
+        if self.last_active == id
+            && let Some(latest) = self.clients().max_by_key(|c| c.active_at)
+        {
+            self.last_active = latest.id;
+        }
+        true
+    }
+
+    /// The first peer color no attached client has, or one by `id` when
+    /// all are taken.
     fn free_color(&self, id: ClientId) -> u8 {
         (1..=PEER_COLORS)
-            .find(|c| self.clients.values().all(|s| s.color != *c))
+            .find(|c| self.clients().all(|s| s.color != *c))
             .unwrap_or_else(|| {
                 u8::try_from(id.0.saturating_sub(1) % u32::from(PEER_COLORS)).unwrap_or(0) + 1
             })
     }
 
-    /// An id no client has.
+    /// An id no client has had.
     pub fn next_client_id(&self) -> ClientId {
         let last = self.clients.keys().next_back().map_or(0, |id| id.0);
         ClientId(last + 1)
@@ -450,27 +491,6 @@ impl Editor {
         if let Some(client) = self.clients.get_mut(&id) {
             client.size = size;
         }
-    }
-
-    /// Takes client `id` away, returning its state. The first client stays:
-    /// removing it returns `None`. The editor acts for the last active
-    /// client left if it acted for this one.
-    pub fn remove_client(&mut self, id: ClientId) -> Option<ClientState> {
-        if id == FIRST_CLIENT {
-            return None;
-        }
-        let removed = self.clients.remove(&id)?;
-        if self.last_active == id {
-            self.last_active = self
-                .clients
-                .values()
-                .max_by_key(|c| c.active_at)
-                .map_or(FIRST_CLIENT, ClientState::id);
-        }
-        if self.acting == id {
-            self.acting = self.last_active;
-        }
-        Some(removed)
     }
 
     /// Acts for client `id` from now on, which counts as its doing
@@ -1200,9 +1220,9 @@ impl Editor {
         Ok(())
     }
 
-    /// Applies a change to a buffer, whether or not it's on screen. Every
-    /// view of it gets `selection`, or is mapped through the change if
-    /// `None`.
+    /// Applies a change to a buffer, whether or not it's on screen. The
+    /// acting client's views of it get `selection`; every other view is
+    /// mapped through the change, as all are with `None`.
     pub fn apply_to_buffer(
         &mut self,
         id: BufferId,
@@ -1217,13 +1237,15 @@ impl Editor {
             meta: self.meta(id, author, cause),
         };
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
-        if let Some(after) = buffer.apply_detached(tx)? {
-            let views = self.clients.values_mut().flat_map(|c| c.views.values_mut());
+        let after = buffer.apply_detached(tx)?;
+        self.map_views(id, None);
+        // A selection goes to the client the edit is made for, never to
+        // every client: the others' cursors move with the text.
+        if let Some(after) = after {
+            let views = self.acting_client_mut().views.values_mut();
             for view in views.filter(|v| v.buffer == id) {
                 view.selection = after.clone();
             }
-        } else {
-            self.map_views(id, None);
         }
         Ok(())
     }
@@ -1574,9 +1596,12 @@ impl Editor {
         self.acting_client_mut().copied.take()
     }
 
-    /// Asks the acting client to notify the user's desktop.
+    /// Asks the client used last to notify the user's desktop.
     pub fn notify(&mut self, notice: Notice) {
-        self.acting_client_mut().notices.push(notice);
+        let last = self.last_active;
+        if let Some(client) = self.clients.get_mut(&last) {
+            client.notices.push(notice);
+        }
     }
 
     /// The notifications not yet sent to the acting client, oldest first.

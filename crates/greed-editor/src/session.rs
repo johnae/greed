@@ -379,7 +379,7 @@ fn handshake(
     session: Option<&str>,
     terminal: bool,
 ) -> Result<(), Error> {
-    let mut params = control::handshake();
+    let mut params = control::attach_params("tui");
     if terminal {
         params["terminal"] = Value::Bool(true);
     }

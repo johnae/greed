@@ -52,7 +52,9 @@ the same way.
 
 Because the session owns the state, a terminal can detach and reattach
 without losing anything, and `greed ssh` attaches a terminal on one machine
-to a session on another. A client says which protocol it speaks when it
+to a session on another. Any number of clients can be attached at once,
+each with its own cursors, focus, mode and screen size; the server draws a
+frame for each. A client says which protocol it speaks when it
 attaches, and the session refuses clients it can't talk to instead of
 misreading them.
 

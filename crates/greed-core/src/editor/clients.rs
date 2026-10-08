@@ -37,6 +37,8 @@ pub struct ClientState {
     pub(super) layout: ClientLayout,
     /// When it last did something, as a count that only goes up.
     pub(super) active_at: u64,
+    /// It went, and its state waits for it to come back by its name.
+    pub(super) parked: bool,
     /// The view keys go to.
     pub(super) focus: ViewId,
     /// Every open view as this client sees it: its selection and scroll.
@@ -79,6 +81,7 @@ impl ClientState {
             color: 1,
             layout: ClientLayout::Follow,
             active_at: 0,
+            parked: false,
             focus: ViewId(0),
             views: BTreeMap::new(),
             tabs: HashMap::new(),

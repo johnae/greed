@@ -17,8 +17,14 @@ const SIZE: Size = Size {
 };
 
 /// A headless editor with the core plugin and a session socket, and a way
-/// to attach to it.
-fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
+/// to attach to it, and to attach by a name, maybe taking over.
+fn start(
+    label: &str,
+) -> (
+    Connection,
+    impl Fn() -> Attached,
+    impl Fn(&str, bool) -> Attached,
+) {
     sessions::private();
     let name = format!("attach-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
@@ -38,7 +44,8 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
                 "local greed = require('@greed')
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
-                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping' })",
+                 greed.command({ name = 'slow', run = function() greed.sleep(10000) end })
+                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -58,13 +65,21 @@ fn start(label: &str) -> (Connection, impl Fn() -> Attached) {
         },
         Some(session),
     );
+    let (socket2, token2) = (socket.clone(), token.clone());
     let attach = move || {
         Attached(
             Client::connect(&socket, &token).unwrap().attach().unwrap(),
             None,
         )
     };
-    (conn, attach)
+    let attach_as = move |name: &str, takeover: bool| {
+        let mut params = control::handshake();
+        params["client"] = serde_json::json!({ "kind": "tui", "name": name });
+        params["takeover"] = serde_json::Value::Bool(takeover);
+        let client = Client::connect(&socket2, &token2).unwrap();
+        Attached(client.attach_with(&params).unwrap(), None)
+    };
+    (conn, attach, attach_as)
 }
 
 /// A client: its connection, and the frame it has so far.
@@ -96,11 +111,58 @@ impl Attached {
         }
         greed_core::render::grid::text_rows(self.1.as_ref().unwrap()).swap_remove(0)
     }
+
+    /// Reads frames until one's first row is `row`, returning what else
+    /// came on the way.
+    fn until_row(&mut self, row: &str) -> Vec<Output> {
+        self.until_row_is(|r| r == row)
+    }
+
+    /// Reads frames until `wanted` says yes to one's first row, returning
+    /// what else came on the way.
+    fn until_row_is(&mut self, wanted: impl Fn(&str) -> bool) -> Vec<Output> {
+        let mut others = Vec::new();
+        loop {
+            match self.next() {
+                Output::Frame(frame) => self.1 = Some(frame),
+                Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame first")),
+                Output::Exit => panic!("the editor ended"),
+                other => {
+                    others.push(other);
+                    continue;
+                }
+            }
+            if wanted(&greed_core::render::grid::text_rows(self.1.as_ref().unwrap())[0]) {
+                return others;
+            }
+        }
+    }
+
+    /// Where the primary cursor is in the latest frame.
+    fn cursor_col(&self) -> u16 {
+        self.1.as_ref().unwrap().cursor.unwrap().col
+    }
+
+    /// Reads until `wanted` says yes to what came, skipping frames.
+    fn until(&mut self, wanted: impl Fn(&Output) -> bool) -> Output {
+        loop {
+            let next = self.next();
+            if wanted(&next) {
+                return next;
+            }
+            match next {
+                Output::Frame(frame) => self.1 = Some(frame),
+                Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame first")),
+                Output::Exit => panic!("the editor ended"),
+                _ => {}
+            }
+        }
+    }
 }
 
 #[test]
 fn clients_attach_over_the_socket_and_see_frames_and_edits() {
-    let (conn, attach) = start("frames");
+    let (conn, attach, _) = start("frames");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     assert_eq!(client.first_row(), "1 hello");
@@ -121,7 +183,7 @@ fn clients_attach_over_the_socket_and_see_frames_and_edits() {
 
 #[test]
 fn notifications_go_to_the_attached_client() {
-    let (conn, attach) = start("notify");
+    let (conn, attach, _) = start("notify");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     client.first_row();
@@ -143,25 +205,144 @@ fn notifications_go_to_the_attached_client() {
 }
 
 #[test]
-fn a_new_client_takes_over_from_the_one_before() {
-    let (conn, attach) = start("takeover");
-    let mut first = attach();
+fn a_client_taking_over_lets_the_others_go() {
+    let (conn, _, attach_as) = start("takeover");
+    let mut first = attach_as("tui@a", false);
     first.send(&Input::Resize(SIZE));
     assert_eq!(first.first_row(), "1 hello");
-    let mut second = attach();
-    loop {
-        if let Output::Detached = first.next() {
-            break;
-        }
-    }
+    let mut second = attach_as("tui@b", true);
+    first.until(|o| matches!(o, Output::Detached));
     second.send(&Input::Resize(SIZE));
     assert_eq!(second.first_row(), "1 hello");
     conn.input.send(Input::Quit).unwrap();
 }
 
+/// Two clients attached, each having drawn its first frame.
+fn two(attach_as: &impl Fn(&str, bool) -> Attached) -> (Attached, Attached) {
+    let mut a = attach_as("tui@a", false);
+    a.send(&Input::Resize(SIZE));
+    assert_eq!(a.first_row(), "1 hello");
+    let mut b = attach_as("tui@b", false);
+    b.send(&Input::Resize(SIZE));
+    assert_eq!(b.first_row(), "1 hello");
+    (a, b)
+}
+
+#[test]
+fn two_clients_both_get_frames_and_one_edit_shows_in_both() {
+    let (conn, _, attach_as) = start("two");
+    let (mut a, mut b) = two(&attach_as);
+    // B's cursor on the first "l".
+    b.keys("l l");
+    b.until_row("1 hello");
+    while b.cursor_col() != 4 {
+        b.until_row("1 hello");
+    }
+    a.keys("i X esc");
+    a.until_row("1 Xhello");
+    b.until_row("1 Xhello");
+    assert_eq!(b.cursor_col(), 5, "B's cursor stays on the same letter");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn one_client_leaving_leaves_the_other() {
+    let (conn, _, attach_as) = start("leave");
+    let (mut a, mut b) = two(&attach_as);
+    a.keys("ctrl-d");
+    a.until(|o| matches!(o, Output::Detached));
+    b.keys("i Y esc");
+    b.until_row("1 Yhello");
+    // A client other than the one in this process quitting only leaves.
+    b.send(&Input::Quit);
+    b.until(|o| matches!(o, Output::Detached));
+    let mut c = attach_as("tui@c", false);
+    c.send(&Input::Resize(SIZE));
+    assert_eq!(c.first_row(), "1 Yhello", "the editor goes on");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_copy_goes_to_the_client_that_copied_only() {
+    let (conn, _, attach_as) = start("copy");
+    let (mut a, mut b) = two(&attach_as);
+    a.keys("x y");
+    let Output::Clipboard(text) = a.until(|o| matches!(o, Output::Clipboard(_))) else {
+        unreachable!()
+    };
+    assert_eq!(text, "hello");
+    // B's next frame comes after everything sent for the copy.
+    b.keys("i Q esc");
+    let others = b.until_row("1 Qhello");
+    assert!(
+        !others.iter().any(|o| matches!(o, Output::Clipboard(_))),
+        "{others:?}"
+    );
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn switching_sends_only_the_client_that_asked() {
+    let (conn, _, attach_as) = start("switch-one");
+    let (mut a, mut b) = two(&attach_as);
+    a.keys("ctrl-o");
+    a.until(|o| matches!(o, Output::Switch(_)));
+    b.keys("i S esc");
+    let others = b.until_row("1 Shello");
+    assert!(
+        !others
+            .iter()
+            .any(|o| matches!(o, Output::Switch(_) | Output::Detached)),
+        "{others:?}"
+    );
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn keys_waiting_for_one_clients_slow_command_dont_hold_up_anothers() {
+    let (conn, _, attach_as) = start("held");
+    let (mut a, mut b) = two(&attach_as);
+    // A's keys wait for its command, which sleeps.
+    a.keys("ctrl-s i A esc");
+    b.keys("i B esc");
+    b.until_row("1 Bhello");
+    // A's come through once they've waited long enough.
+    let others = a.until_row_is(|row| row.contains('A'));
+    assert!(others.is_empty(), "{others:?}");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_client_coming_back_by_its_name_gets_its_cursor_back() {
+    let (conn, _, attach_as) = start("return");
+    let mut a = attach_as("tui@a", false);
+    a.send(&Input::Resize(SIZE));
+    a.first_row();
+    a.keys("l l");
+    while a.cursor_col() != 4 {
+        a.first_row();
+    }
+    a.keys("ctrl-d");
+    a.until(|o| matches!(o, Output::Detached));
+    // Another, new, starts where A was and moves on.
+    let mut b = attach_as("tui@b", false);
+    b.send(&Input::Resize(SIZE));
+    b.first_row();
+    assert_eq!(b.cursor_col(), 4, "a new client follows the last one");
+    b.keys("h");
+    while b.cursor_col() != 3 {
+        b.first_row();
+    }
+    let mut back = attach_as("tui@a", false);
+    back.send(&Input::Resize(SIZE));
+    back.first_row();
+    assert_eq!(back.cursor_col(), 4, "A's own cursor");
+    conn.input.send(Input::Quit).unwrap();
+}
+
 #[test]
 fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
-    let (conn, attach) = start("detach");
+    let (conn, attach, _) = start("detach");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     client.first_row();
@@ -187,7 +368,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
 
 #[test]
 fn after_the_first_frame_clients_get_what_changed() {
-    let (conn, attach) = start("deltas");
+    let (conn, attach, _) = start("deltas");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     assert!(
@@ -307,7 +488,7 @@ fn a_session_of_an_older_greed_says_how_to_start_over() {
 
 #[test]
 fn a_session_can_send_its_client_to_another_session() {
-    let (conn, attach) = start("switch");
+    let (conn, attach, _) = start("switch");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     client.first_row();
@@ -344,7 +525,7 @@ fn picture() -> std::path::PathBuf {
 
 #[test]
 fn an_image_is_sent_once_before_the_frame_that_shows_it() {
-    let (conn, attach) = start("image");
+    let (conn, attach, _) = start("image");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     client.first_row();
@@ -370,7 +551,7 @@ fn an_image_is_sent_once_before_the_frame_that_shows_it() {
 
 #[test]
 fn copies_go_to_the_client_for_the_system_clipboard() {
-    let (conn, attach) = start("clipboard");
+    let (conn, attach, _) = start("clipboard");
     let mut client = attach();
     client.send(&Input::Resize(SIZE));
     client.first_row();

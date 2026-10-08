@@ -24,6 +24,14 @@ alone.
 | `:quit-session`, `:qa` | End the session, whatever runs in it |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
+Several terminals can show one session at once: run `greed` or `greed
+attach` in another terminal, or `greed ssh` from another machine, and both
+stay attached. They share the buffers and their undo history; each has its
+own cursors, focus and mode, and `:detach` lets only that one go. A terminal
+that comes back from the same machine gets its cursors, focus and mode back;
+a new one starts where the one used last is. Copies go to the clipboard of
+the terminal that copied, and desktop notifications to the one used last.
+
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
 

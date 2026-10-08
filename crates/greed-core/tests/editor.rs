@@ -1297,7 +1297,7 @@ fn hidden_floats_give_up_focus_and_take_it_back_when_focused() {
 
 mod clients {
     use greed_core::render::{CellWidth, Plain, Renderer, Size, Status, grid};
-    use greed_core::{Editor, FIRST_CLIENT, Scroll};
+    use greed_core::{ClientInfo, ClientLayout, Editor, FIRST_CLIENT, Scroll};
     use greed_text::{Author, ChangeSet, ClientId, Selection};
 
     const SECOND: ClientId = ClientId(2);
@@ -1413,6 +1413,51 @@ mod clients {
         assert_eq!(super::text(&ed), "a");
         assert!(ed.undo(view).unwrap());
         assert_eq!(super::text(&ed), "");
+    }
+
+    #[test]
+    fn a_plugins_selection_goes_to_the_acting_client_alone() {
+        let mut ed = two_clients("one two");
+        let view = ed.focus();
+        let buffer = ed.view(view).buffer;
+        ed.set_acting(SECOND);
+        ed.view_mut(view).selection = Selection::point(4);
+        ed.set_acting(FIRST_CLIENT);
+        let changes = ChangeSet::from_changes(7, [(0, 0, Some(">"))]).unwrap();
+        let author = Author::Plugin("agent".into());
+        ed.apply_to_buffer(buffer, changes, author, None, Some(Selection::point(1)))
+            .unwrap();
+        assert_eq!(cursor(&ed), 1, "the acting client's");
+        ed.set_acting(SECOND);
+        assert_eq!(cursor(&ed), 5, "the other's moved with the text");
+    }
+
+    #[test]
+    fn parked_clients_come_back_by_name_and_new_ones_follow() {
+        let mut ed = super::editor("hello");
+        let info = |name: &str| ClientInfo {
+            name: name.to_owned(),
+            kind: "tui".to_owned(),
+            remote: false,
+            layout: ClientLayout::Follow,
+        };
+        let a = ed.attach_client(info("tui@a"));
+        ed.set_acting(a);
+        let view = ed.focus();
+        ed.view_mut(view).selection = Selection::point(3);
+        ed.set_mode("insert");
+        assert!(ed.park_client(a));
+        assert!(
+            ed.clients().all(|c| c.id() != a),
+            "a parked client isn't listed"
+        );
+        let b = ed.attach_client(info("tui@b"));
+        assert_ne!(a, b);
+        ed.set_acting(b);
+        ed.view_mut(view).selection = Selection::point(0);
+        assert_eq!(ed.attach_client(info("tui@a")), a, "back by its name");
+        ed.set_acting(a);
+        assert_eq!((cursor(&ed), ed.mode()), (3, "insert"));
     }
 
     #[test]

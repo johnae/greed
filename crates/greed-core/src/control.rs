@@ -54,6 +54,16 @@ pub fn handshake() -> Value {
     json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })
 }
 
+/// What a client of `kind` ("tui", "gui") asks to attach with: the
+/// handshake, and who it is, `kind@host`, so it gets its cursors, focus and
+/// mode back when it comes back.
+pub fn attach_params(kind: &str) -> Value {
+    let host = gethostname::gethostname().to_string_lossy().into_owned();
+    let mut params = handshake();
+    params["client"] = json!({ "kind": kind, "name": format!("{kind}@{host}") });
+    params
+}
+
 /// How to start over with the greed installed now when the session `name`
 /// runs another version, as happens after an upgrade while it ran.
 fn start_over(name: &str) -> String {
@@ -449,6 +459,40 @@ pub struct Attachment {
     pub terminal: bool,
     /// Whether it came over `greed ssh`, through `greed bridge`.
     pub remote: bool,
+    /// What sort of client it is: "tui" or "gui".
+    pub kind: String,
+    /// Who it is, like "tui@laptop"; a client coming back by the same name
+    /// gets its state back.
+    pub name: String,
+    pub layout: crate::ClientLayout,
+    /// Whether it asked to be the only client, letting the others go.
+    pub takeover: bool,
+}
+
+impl Attachment {
+    /// The attachment `params` of an "attach" request ask for, over
+    /// `reader` and `writer`. A client that doesn't say what it is counts
+    /// as a terminal.
+    fn asked(reader: BufReader<UnixStream>, writer: UnixStream, params: &Value) -> Self {
+        let client = &params["client"];
+        let kind = client["kind"].as_str().unwrap_or("tui").to_owned();
+        let name = client["name"]
+            .as_str()
+            .map_or_else(|| kind.clone(), str::to_owned);
+        Self {
+            reader,
+            writer,
+            open: params["open"].as_str().map(str::to_owned),
+            terminal: params["terminal"].as_bool() == Some(true),
+            remote: params["remote"].as_bool() == Some(true),
+            kind,
+            name,
+            // "independent" is taken, but until clients can be laid out on
+            // their own, every client follows.
+            layout: crate::ClientLayout::Follow,
+            takeover: params["takeover"].as_bool() == Some(true),
+        }
+    }
 }
 
 /// Sends a connection's id to `closed` when dropped, unless it was handed
@@ -521,17 +565,8 @@ fn serve_connection(
                 }
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
                 if writeln!(lock(&shared), "{ok}").is_ok() {
-                    let open = message["params"]["open"].as_str().map(str::to_owned);
-                    let terminal = message["params"]["terminal"].as_bool() == Some(true);
-                    let remote = message["params"]["remote"].as_bool() == Some(true);
                     closing.attached = true;
-                    let _ = attachments.send(Attachment {
-                        reader,
-                        writer,
-                        open,
-                        terminal,
-                        remote,
-                    });
+                    let _ = attachments.send(Attachment::asked(reader, writer, &message["params"]));
                 }
                 return;
             }
@@ -729,23 +764,23 @@ impl Client {
 
     /// Like [`Client::attach`], asking the session to open `path` too, and
     /// with `terminal`, a terminal.
-    pub fn attach_opening(mut self, path: Option<&Path>, terminal: bool) -> io::Result<Attachment> {
-        let mut params = handshake();
+    pub fn attach_opening(self, path: Option<&Path>, terminal: bool) -> io::Result<Attachment> {
+        let mut params = attach_params("tui");
         if let Some(path) = path {
             params["open"] = Value::from(path.to_string_lossy());
         }
         if terminal {
             params["terminal"] = Value::Bool(true);
         }
-        self.call("attach", &params)?
+        self.attach_with(&params)
+    }
+
+    /// Attaches asking with `params` as they are: [`attach_params`] and
+    /// whatever else, like "open", "terminal" or "takeover".
+    pub fn attach_with(mut self, params: &Value) -> io::Result<Attachment> {
+        self.call("attach", params)?
             .map_err(|said| io::Error::other(refused(self.session.as_deref(), &said)))?;
-        Ok(Attachment {
-            reader: self.reader,
-            writer: self.writer,
-            open: None,
-            terminal: false,
-            remote: false,
-        })
+        Ok(Attachment::asked(self.reader, self.writer, params))
     }
 
     /// Copies JSON-RPC lines from `input` to the session, and the session's
