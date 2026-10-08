@@ -1474,7 +1474,7 @@ a command works on; without one, it's the lines the selection touches.
 | Command | |
 |---|---|
 | `:42`, `:$` | Go to line 42, or the last line |
-| `:s/regex/text/flags` | Replace on the lines: `g` every match on a line, `i` ignore case, `n` only count; `\1` and `&` put back what matched |
+| `:s/regex/text/flags` | Replace on the lines: `g` every match on a line, `i` ignore case, `n` only count; `\1` and `&` put back what matched. Undo puts the cursor back on the first line changed |
 | `:g/regex/command`, `:v/regex/command` | Run a command on each line that matches, or doesn't; with no command, select those lines |
 | `:d` `:y` | Delete or copy the lines |
 | `:m 0` `:t $` | Move or copy the lines below a line (`0` is the top) |

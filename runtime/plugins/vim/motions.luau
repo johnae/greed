@@ -431,15 +431,27 @@ motions.G = goto_line(false)
 motions["g g"] = goto_line(true)
 motions["'"] = to_mark(false)
 motions["`"] = to_mark(true)
--- % goes to the matching bracket, or with a count, that percentage of the way
--- down the file.
+-- The brackets % looks for, as Vim's 'matchpairs' has them.
+local BRACKETS = "[%(%)%[%]{}]"
+
+-- % goes to the bracket matching the one under the cursor, or else the
+-- next one on the line, as Vim does; with a count, that percentage of the
+-- way down the file.
 motions["%"] = function(buffer: Buffer, pos: number, count: number): (number?, Kind)
 	if count > 0 then
 		local line =
 			math.clamp((count * buffer:line_count() + 99) // 100 - 1, 0, buffer:line_count() - 1)
 		return core.text.first_non_blank(buffer, buffer:line_start(line)), "line"
 	end
-	return core.text.matching_bracket(buffer, pos), "inclusive"
+	local stop = buffer:line_end(buffer:line_of(pos))
+	local at = pos
+	while at < stop and not string.match(buffer:char_at(at) or "", BRACKETS) do
+		at = buffer:next_char(at)
+	end
+	if at >= stop then
+		return nil, "inclusive"
+	end
+	return core.text.matching_bracket(buffer, at), "inclusive"
 end
 
 -- Motions whose count, left out, is 0 rather than 1: G and % act

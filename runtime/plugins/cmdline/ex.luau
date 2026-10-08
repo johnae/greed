@@ -121,6 +121,8 @@ greed.command({
 			greed.echo(`{#edits} matches on {changed_lines} lines`)
 			return
 		end
+		-- Undo puts the cursor back on the first line changed, as in Vim.
+		go_to_line(ctx.view, buffer:line_of(edits[1].from))
 		buffer:edit(function(e)
 			for _, edit in edits do
 				e:replace(edit.from, edit.to, edit.text)

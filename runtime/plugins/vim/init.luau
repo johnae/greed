@@ -355,20 +355,39 @@ local function repeat_insert(buffer: Buffer, pos: number): number
 	return pos + #typed
 end
 
+-- Whether insert mode was entered from ctrl-n's cursors, which esc goes
+-- back to, as in vim-visual-multi.
+local typing_from_multi = false
+
+-- Leaving insert mode steps back onto the last character typed.
+local function step_back(buffer: Buffer, pos: number): number
+	local _, start = line_bounds(buffer, pos)
+	return if pos > start then buffer:prev_char(pos) else pos
+end
+
 command("normal", "Back to normal mode", function(ctx)
 	local mode = greed.mode.get()
 	local buffer = ctx.buffer
+	local selection = ctx.view:selection()
+	if mode == "vim-insert" and typing_from_multi and #selection.ranges > 1 then
+		typing_from_multi = false
+		greed.history.end_group()
+		for i, range in selection.ranges do
+			local at = on_char(buffer, step_back(buffer, range.head))
+			selection.ranges[i] = { anchor = at, head = at }
+		end
+		ctx.view:set_selection(selection)
+		greed.mode.set("vim-multi")
+		return
+	end
+	typing_from_multi = false
 	local pos = if mode == "vim-visual-block" then block.cursor else cursor(ctx)
 	if mode == "vim-insert" or mode == "vim-replace" then
 		if mode == "vim-insert" then
 			pos = repeat_insert(buffer, pos)
 		end
 		set_mark(buffer, "^", pos)
-		-- Leaving insert mode steps back onto the last character typed.
-		local _, start = line_bounds(buffer, pos)
-		if pos > start then
-			pos = buffer:prev_char(pos)
-		end
+		pos = step_back(buffer, pos)
 	end
 	greed.history.end_group()
 	greed.mode.set("vim")
@@ -401,7 +420,8 @@ end)
 
 -- ctrl-n's multiple cursors, as vim-visual-multi has them: ctrl-n selects
 -- the word under the cursor, then adds its next match each time; c d y i a
--- I A act on every selection, and esc goes back to one cursor.
+-- I A act on every selection, esc after typing keeps the cursors, and esc
+-- with them goes back to one cursor.
 command("multi-next", "Select the word under the cursor, or add its next match", function(ctx)
 	if greed.mode.get() ~= "vim-multi" then
 		select_word(ctx)
@@ -451,6 +471,7 @@ end
 command("multi-change", "Delete every selection and type in each place", function()
 	greed.history.start_group()
 	greed.run("delete")
+	typing_from_multi = true
 	greed.mode.set("vim-insert")
 end)
 command("multi-delete", "Delete every selection", function(ctx)
@@ -470,11 +491,17 @@ for _, at_end in { false, true } do
 			local selection = ctx.view:selection()
 			for i, range in selection.ranges do
 				local from, to = core.text.span(range)
+				-- A cursor, as esc after typing leaves, appends after its character.
+				if at_end and to == from then
+					local _, _, finish = line_bounds(ctx.buffer, from)
+					to = math.min(ctx.buffer:next_char(from), finish)
+				end
 				local pos = if at_end then to else from
 				selection.ranges[i] = { anchor = pos, head = pos }
 			end
 			greed.history.start_group()
 			ctx.view:set_selection(selection)
+			typing_from_multi = true
 			greed.mode.set("vim-insert")
 		end
 	)

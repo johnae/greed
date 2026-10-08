@@ -102,7 +102,7 @@ character, and `v` starts a visual mode for selecting by hand.
 
 | Keys | |
 |---|---|
-| `h j k l` `w b e` `W B E` `g e` `0 ^ $` `g _` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket, `50 %` halfway down |
+| `h j k l` `w b e` `W B E` `g e` `0 ^ $` `g _` `g g` `G` `%` | Move, with counts: `3 w`; `%` to the matching bracket (of the next one on the line, off a bracket), `50 %` halfway down |
 | `{ }` `( )` `H M L` `- + _` `\|` | Paragraphs, sentences, the top, middle or bottom of the screen, lines, a column |
 | `f t F T` + a character, `; ,` | To the next or previous character on the line; again, or back |
 | `d c y` + a motion or text object | Delete, change or copy; doubled (`d d`) for whole lines |
@@ -125,7 +125,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `alt-shift-right` `alt-shift-left` | Move the selected syntax node past the next or previous one |
 | `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
 | `g s` | Label the words on screen and jump to the one you type |
-| `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last, `esc` goes back to one cursor |
+| `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last; `esc` after typing keeps a cursor in each place, and `esc` then goes back to one |
 | `Z Z` `Z Q` | Save and close, close without saving; in a split, like `:wq` and `:q`, they close just that window |
 | `ctrl-^` | The file you were in before, like `:b#` |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
