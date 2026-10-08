@@ -30,6 +30,8 @@ local log = require("@self/log")
 local run = require("@self/run")
 local pty = require("@self/pty")
 local fallback = require("@self/fallback")
+local history = require("@self/history")
+require("@self/complete")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -286,6 +288,9 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		return nil
 	end
 	local command = string.match(line, "^%s*(.-)%s*$") or line
+	if opts.by ~= "agent" then
+		history.add(command, opts.cwd or shell.cwd)
+	end
 	shell.count += 1
 	local block = new_block(shell, command, opts)
 	if opts.view then
@@ -350,10 +355,10 @@ run.builtins.open = function(shell: Shell, block: Block, args: { string }): numb
 end
 
 run.builtins.history = function(shell: Shell, block: Block, _args: { string }): number
-	for _, b in shell.blocks do
-		if b ~= block then
-			run.write(shell, block, `{b.number}  {b.command}\n`, "stdout")
-		end
+	local list = history.entries()
+	-- The last ones typed, oldest first, as a terminal's shell lists them.
+	for i = math.max(#list - 99, 1), #list do
+		run.write(shell, block, `{i}  {list[i].command}\n`, "stdout")
 	end
 	return 0
 end
@@ -600,6 +605,79 @@ greed.command({
 	end,
 })
 
+-- Each shell's walk through the history, while what's at its prompt is
+-- what the walk put there.
+local walks: { [number]: history.Walk } = {}
+
+-- Puts the command `step` (1 older, -1 newer) from the one at the prompt
+-- there, among those starting with what was typed. Away from the prompt,
+-- or on a line of it other than the first (going back) or the last, the
+-- arrow moves the cursor as usual.
+local function walk(ctx: greed.Context, step: number)
+	local buffer = ctx.buffer
+	local shell = state.of(buffer)
+	local pos = ctx.view:cursor()
+	local edge = if step > 0
+		then shell and buffer:line_of(log.prompt_start(shell))
+		else buffer:line_count() - 1
+	if shell == nil or not log.in_prompt(shell, pos) or buffer:line_of(pos) ~= edge then
+		greed.run(if step > 0 then "move-up" else "move-down")
+		return
+	end
+	local typed = log.prompt_text(shell)
+	local current = walks[shell.id]
+	if current == nil or current.shown ~= typed then
+		current = history.walk(typed)
+		walks[shell.id] = current
+	end
+	local found = history.step(current, step)
+	if found == nil then
+		greed.echo(if typed == "" then "no older command" else `no older command starting {typed}`)
+		return
+	end
+	log.set_prompt(shell, found, { ctx.view })
+end
+
+greed.command({
+	name = "shell-history-back",
+	doc = "Put the command typed before at the prompt, one starting with what's typed there",
+	run = function(ctx)
+		walk(ctx, 1)
+	end,
+})
+
+greed.command({
+	name = "shell-history-forward",
+	doc = "Put the command typed after at the prompt, or back to what was typed",
+	run = function(ctx)
+		walk(ctx, -1)
+	end,
+})
+
+greed.command({
+	name = "shell-history",
+	doc = "Pick a command typed before, in any shell, to put at the prompt",
+	run = function(ctx)
+		local shell = shell_of(ctx)
+		if shell == nil then
+			return
+		end
+		local items: { picker.Item } = {}
+		for _, command in history.commands() do
+			table.insert(items, { label = command, value = command })
+		end
+		if #items == 0 then
+			greed.echo("no commands typed yet")
+			return
+		end
+		local view = ctx.view
+		picker.pick("History", items, function(item)
+			log.set_prompt(shell, item.value, { view })
+			greed.mode.set(core.style.typing_mode())
+		end)
+	end,
+})
+
 -- Moves the cursor to the block before (`back`) or after its line.
 local function to_block(ctx: greed.Context, back: boolean)
 	local shell = shell_of(ctx)
@@ -725,6 +803,10 @@ greed.keymap.bind({ role = "typing", kind = KIND }, {
 	["alt-enter"] = "insert-newline",
 	["ctrl-c"] = "shell-interrupt",
 	["ctrl-t"] = "shell-handoff",
+	up = "shell-history-back",
+	down = "shell-history-forward",
+	["ctrl-r"] = "shell-history",
+	tab = "completion-ask",
 })
 -- In the vscode style ctrl-c copies a selection, and blocks are a ctrl-arrow
 -- away, there being no keys without modifiers to spare.
@@ -737,6 +819,7 @@ greed.keymap.bind({ role = "command", kind = KIND }, {
 	enter = "shell-enter",
 	["ctrl-c"] = "shell-interrupt",
 	["ctrl-t"] = "shell-handoff",
+	["ctrl-r"] = "shell-history",
 	["[ p"] = "shell-prev-block",
 	["] p"] = "shell-next-block",
 	["g o"] = "shell-select-output",

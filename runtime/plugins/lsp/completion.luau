@@ -24,7 +24,25 @@ local TYPING: { [string]: boolean } = {}
 -- At most this many items are listed.
 local SHOWN = 10
 
-type Item = { label: string, detail: string?, text: string, from: number? }
+local M = {}
+
+--- Something that could go at the cursor: `label` in the menu, `text` put
+--- in place of what's typed from `from` (the start of the word typed, by
+--- default) to the cursor.
+export type Item = { label: string, detail: string?, text: string, from: number? }
+
+--- Says what could go at the cursor in a view, or nil to leave it to the
+--- next source and then the language server.
+export type Source = (view: greed.View) -> { Item }?
+
+local sources: { Source } = {}
+
+--- Asks `source` what could go at the cursor before the language server is
+--- asked, in any buffer, a file or not: the first source to answer (even
+--- with nothing) decides. It goes when the plugin that added it does.
+function M.source(source: Source)
+	greed.plugin.tie(core.registry.put(sources, source))
+end
 
 type Open = {
 	view: greed.View,
@@ -34,11 +52,17 @@ type Open = {
 	items: { Item },
 	matches: { number },
 	current: number,
-	-- Where the word being completed starts.
-	start: number,
+	-- Where the word being completed starts, following edits elsewhere,
+	-- like a shell's output above its prompt.
+	start: greed.Anchor,
 	-- The mode to go back to.
 	mode: string,
 }
+
+-- Where the word `o` completes starts now.
+local function start_of(o: Open): number
+	return o.start:pos() or o.view:cursor()
+end
 
 -- The menu open for each client, by its id: each types on its own.
 local opened: { [number]: Open } = {}
@@ -121,7 +145,7 @@ end
 
 -- Draws the matching items and marks the current one.
 local function render(o: Open)
-	local typed = o.buffer:slice(o.start, o.view:cursor())
+	local typed = o.buffer:slice(start_of(o), o.view:cursor())
 	local labels = {}
 	local width = 0
 	for i, index in o.matches do
@@ -158,7 +182,7 @@ end
 
 -- Narrows the items to what's typed now, closing the menu when nothing's left.
 local function refresh(o: Open)
-	local typed = o.buffer:slice(o.start, o.view:cursor())
+	local typed = o.buffer:slice(start_of(o), o.view:cursor())
 	local labels = {}
 	for i, item in o.items do
 		labels[i] = item.label
@@ -195,6 +219,7 @@ local function show(view: greed.View, items: { Item }): boolean
 		{
 			mode = `completion-{mode}`,
 			on_close = function()
+				o.start:forget()
 				if opened[client] == o then
 					opened[client] = nil
 				end
@@ -208,7 +233,7 @@ local function show(view: greed.View, items: { Item }): boolean
 		items = items,
 		matches = {},
 		current = 1,
-		start = start,
+		start = buffer:track(start, { gravity = "left" }),
 		mode = mode,
 	}
 	opened[client] = o
@@ -216,12 +241,25 @@ local function show(view: greed.View, items: { Item }): boolean
 	return opened[client] ~= nil
 end
 
--- Asks the server what could go at the cursor in `view`, and opens the menu
--- if anything matches. `wanted` is the generation the ask was for.
+-- Asks the sources, then the server, what could go at the cursor in
+-- `view`, and opens the menu if anything matches. `wanted` is the
+-- generation the ask was for.
 local function ask(view: greed.View, wanted: number)
 	local mode = greed.mode.get()
 	local buffer = view:buffer()
-	if not TYPING[mode] or buffer:path() == nil then
+	if not TYPING[mode] then
+		return
+	end
+	for _, source in table.clone(sources) do
+		local answered, items = pcall(source, view)
+		if answered and items then
+			if wanted == generation() and greed.mode.get() == mode then
+				show(view, items)
+			end
+			return
+		end
+	end
+	if buffer:path() == nil then
 		return
 	end
 	local ok, result = pcall(greed.lsp.request, buffer, "textDocument/completion", {
@@ -247,13 +285,19 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if not typing then
 		return
 	end
-	local wanted = next_generation()
 	local buffer = view:buffer()
 	local pos = view:cursor()
+	-- Text changing away from the cursor's line, like a program's output
+	-- in a shell, isn't typing.
+	local line = buffer:line_of(pos)
+	if event.from_line and event.to_line and (line < event.from_line or line > event.to_line) then
+		return
+	end
+	local wanted = next_generation()
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
 	local in_word = is_word(ch)
 	if open then
-		if in_word and pos > open.start then
+		if in_word and pos > start_of(open) then
 			refresh(open)
 		else
 			close()
@@ -364,11 +408,11 @@ greed.command({
 			return
 		end
 		local item = o.items[o.matches[o.current]]
-		local to = o.view:cursor()
+		local from, to = start_of(o), o.view:cursor()
 		close()
 		o.buffer:edit(function(e)
-			e:replace(o.start, to, item.text)
-			local at = o.start + #item.text
+			e:replace(from, to, item.text)
+			local at = from + #item.text
 			e:select({ ranges = { { anchor = at, head = at } }, primary = 1 })
 		end)
 		-- What was just put in isn't something to complete again.
@@ -396,13 +440,37 @@ local KEYS = {
 	esc = "completion-close",
 }
 
+-- The typing modes the menu has a mode for, and the kinds of buffer its
+-- keys go ahead of.
+local typing_modes: { string } = {}
+local kinds: { [string]: boolean } = {}
+
+-- Binds the menu's keys in its mode for `mode`, for buffers of `kind`.
+local function keys_for(mode: string, kind: string)
+	greed.keymap.bind({ mode = `completion-{mode}`, kind = kind }, KEYS)
+end
+
+--- Keeps the menu's keys (tab, the arrows, enter, esc) its own in buffers
+--- of `kind` whose plugin binds those keys for typing: keys bound for a
+--- kind of buffer come before a mode's own.
+function M.keys_over(kind: string)
+	kinds[kind] = true
+	for _, mode in typing_modes do
+		keys_for(mode, kind)
+	end
+end
+
 -- The menu's mode keeps the typing mode's keys, and what it does with
 -- an unbound key.
 core.style.each_typing(function(mode)
 	TYPING[mode] = true
+	table.insert(typing_modes, mode)
 	local completing = `completion-{mode}`
 	greed.keymap.inherit(completing, mode)
 	greed.keymap.bind(completing, KEYS)
+	for kind in kinds do
+		keys_for(mode, kind)
+	end
 	greed.mode.set_cursor(completing, greed.mode.cursor_of(mode))
 	core.style.show_as(completing, mode)
 end)
@@ -411,4 +479,4 @@ end)
 greed.keymap.bind({ role = "typing" }, { ["ctrl-space"] = "completion-ask" })
 greed.keymap.bind({ style = "helix", role = "typing" }, { ["ctrl-x"] = "completion-ask" })
 
-return {}
+return M

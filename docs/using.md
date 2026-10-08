@@ -1196,6 +1196,9 @@ several shells, each with its own folder and variables.
 | `g o` | Select the block's output |
 | `ctrl-c` | Interrupt the running block; in the vscode style it copies a selection first |
 | `ctrl-t` | Type into the running block's program, in a terminal in the shell's place |
+| `up` `down` | At the prompt: the commands typed before that start with what's typed there |
+| `ctrl-r` | Pick a command typed before, in any shell |
+| `tab` | Complete a program, a file or folder, a variable (`$HOME`), an earlier block (`$3`) or an open file (`buf:notes.md`) |
 | `space r` `space R` | Run the block again as it ran, or in the shell's folder now |
 | `space y` `space Y` | Copy the block's output, or its command |
 | `space x` | Stop the running block |
@@ -1221,6 +1224,11 @@ password prompt) takes over the shell's pane as a terminal, and the shell
 comes back when it's done, its block marked `↗` with how it exited. A
 block quiet for a while says it may be waiting for input: `ctrl-t` types
 into it. Start a line with `!` to run it in a terminal from the start.
+
+The commands you type at every shell are kept in your data folder
+(`~/.local/share/greed/shell/history.jsonl`), the last
+`shell-history-size` (5000) of them, so `up` and `ctrl-r` find them after
+a restart too.
 
 ## Panes and tabs
 

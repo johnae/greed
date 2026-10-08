@@ -14,7 +14,7 @@ M.BUILTINS = {
 	history = "List the commands typed before",
 	clear = "Remove every block",
 	open = "Open files in the editor: PATH ...",
-}
+} :: { [string]: string }
 
 --- What a line asks for.
 --- - "empty": nothing but spaces.

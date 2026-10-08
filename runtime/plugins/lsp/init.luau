@@ -20,7 +20,7 @@ local core = require("@core")
 local picker = require("@picker")
 local common = require("@self/common")
 local marks = require("@self/marks")
-require("@self/completion")
+local completion = require("@self/completion")
 require("@self/edits")
 require("@self/places")
 require("@self/actions")
@@ -375,4 +375,7 @@ actions.action({
 return {
 	--- The language server piece of the status line, and the progress it shows.
 	status = status,
+	--- The completion menu: `completion.source(fn)` adds what to offer, in
+	--- any buffer, before the language server is asked.
+	completion = completion,
 }

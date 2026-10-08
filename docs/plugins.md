@@ -665,6 +665,14 @@ greed.tab.set_layout({
   the current one and `on_cancel` hears `esc`, for trying things out live.
   With `paths = { dirs = true, choose = function(path) ... end }`, typing a
   path lists the folder's contents, and `tab` completes one into the query.
+- The completion menu asks sources before the language server, in any
+  buffer, a file or not: `require("@lsp").completion.source(function(view)
+  ... end)` returns items like `{ label = "src/", text = "src/", from = 12
+  }` (`from` is where the text it replaces starts; the word before the
+  cursor by default), or nil to leave it to the next source. The shell
+  completes its prompt this way. A plugin that binds `tab`, `enter` or the
+  arrows for typing in its own kind of buffer calls
+  `completion.keys_over(kind)` so the menu keeps those keys while it's open.
 - The theme maps style names to looks, as in
   `greed.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those

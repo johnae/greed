@@ -51,3 +51,23 @@ test("a style no plugin names gets completion in its typing mode", function(t)
 	t:expect("apple\napple|")
 	t:expect_mode("mine-insert")
 end)
+
+test("a source offers completions in a buffer with no file, ahead of the server", function(t)
+	local lsp = require("@lsp")
+	t:buffer("|")
+	local asked = 0
+	lsp.completion.source(function(view)
+		if view:buffer():kind() ~= "file" then
+			return nil
+		end
+		asked += 1
+		return { { label = "greeting", text = "greeting", detail = "from a source" } }
+	end)
+	t:keys("i g r")
+	t:run("completion-ask")
+	assert(asked == 1, tostring(asked))
+	local menu = table.concat(t:floats(), "\n")
+	assert(string.find(menu, "from a source", 1, true), menu)
+	t:keys("enter")
+	t:expect("greeting|")
+end)
