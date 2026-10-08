@@ -1180,6 +1180,14 @@ impl Editor {
             .expect("view exists")
     }
 
+    /// The other attached clients and how each sees `view`: whose cursors
+    /// the acting client sees there.
+    pub fn peers(&self, view: ViewId) -> impl Iterator<Item = (&ClientState, &View)> + '_ {
+        self.clients()
+            .filter(|c| c.id != self.acting)
+            .filter_map(move |c| Some((c, c.views.get(&view)?)))
+    }
+
     /// The view the acting client's keys go to.
     pub fn focus(&self) -> ViewId {
         self.acting_client().focus

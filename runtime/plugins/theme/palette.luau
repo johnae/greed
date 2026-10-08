@@ -205,6 +205,11 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["markup.quote"] = { fg = p.comment, italic = true },
 		["markup.raw"] = { fg = str },
 	}
+	-- Other clients' cursors and selections, in each client's color.
+	for n, hue in { p.purple, p.green, p.yellow, p.cyan, p.red, p.blue } do
+		styles[`ui.cursor.peer.{n}`] = { bg = hue, fg = p.bg }
+		styles[`ui.selection.peer.{n}`] = { underline = true, underline_color = hue }
+	end
 	for name, color in severity do
 		styles[`ui.gutter.diagnostic.{name}`] = { fg = color }
 		styles[`diagnostic.{name}`] =

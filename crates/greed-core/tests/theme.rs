@@ -82,3 +82,28 @@ fn an_empty_theme_still_shows_selections_and_the_status_line() {
         Some(true)
     );
 }
+
+#[test]
+fn other_clients_cursors_fall_back_to_the_cursor_and_selection() {
+    let mut theme = Theme::default();
+    // With no entries, they look like the client's own: reversed.
+    assert_eq!(
+        theme.style("ui.cursor.peer.3", Medium::Tui),
+        theme.style("ui.cursor", Medium::Tui)
+    );
+    assert_eq!(
+        theme.style("ui.selection.peer.2", Medium::Tui).reverse,
+        Some(true)
+    );
+    theme.set("ui.cursor", Entry::new(fg(Color::Ansi(2))));
+    theme.set("ui.cursor.peer.1", Entry::new(fg(Color::Ansi(5))));
+    assert_eq!(
+        theme.style("ui.cursor.peer.1", Medium::Tui).fg,
+        Some(Color::Ansi(5))
+    );
+    assert_eq!(
+        theme.style("ui.cursor.peer.4", Medium::Tui).fg,
+        Some(Color::Ansi(2)),
+        "a color without its own entry"
+    );
+}

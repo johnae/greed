@@ -4,7 +4,7 @@ use greed_core::render::{
     StatusLine, Surface, SurfaceId, Tag,
 };
 use greed_core::{Editor, Scroll, parse_marked};
-use greed_text::ClientId;
+use greed_text::{ClientId, Selection};
 
 fn editor(marked: &str) -> Editor {
     let (text, selection) = parse_marked(marked).unwrap();
@@ -1370,4 +1370,36 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
     assert_eq!(line(0), "┌─ term ─ ‹ 2/3 › ─┐");
     assert_eq!(line(3), "└────── ○●○ ───────┘");
     assert_eq!(line(6), "bare                ");
+}
+
+#[test]
+fn other_clients_cursors_and_selections_show_in_their_colors() {
+    let mut ed = editor("|hello world");
+    let view = ed.focus();
+    let second = ClientId(2);
+    assert!(ed.add_client(second));
+    ed.set_acting(second);
+    ed.view_mut(view).selection = Selection::single(6, 11);
+    let color = ed.client_state(second).unwrap().color();
+    ed.set_acting(ClientId(1));
+    let f = frame(&mut ed, 20, 2);
+    let peer = |what: &str| Tag::from(format!("ui.{what}.peer.{color}").as_str());
+    assert_eq!(tagged(&f, &peer("selection")), ["worl", "d"]);
+    assert_eq!(tagged(&f, &peer("cursor")), ["d"]);
+    assert!(
+        tagged(&f, &Tag::SELECTION).is_empty(),
+        "the first client's is empty"
+    );
+    // The second sees the first's cursor in its color.
+    ed.set_acting(second);
+    let first_color = ed.client_state(ClientId(1)).unwrap().color();
+    let f = frame(&mut ed, 20, 2);
+    let first = Tag::from(format!("ui.cursor.peer.{first_color}").as_str());
+    assert_eq!(tagged(&f, &first), ["h"]);
+    assert_eq!(tagged(&f, &Tag::SELECTION), ["world"]);
+    // A client that went isn't drawn.
+    ed.set_acting(ClientId(1));
+    ed.park_client(second);
+    let f = frame(&mut ed, 20, 2);
+    assert!(tagged(&f, &peer("cursor")).is_empty());
 }

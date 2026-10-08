@@ -18,7 +18,7 @@ use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use greed_text::Rope;
+use greed_text::{Rope, Selection};
 
 mod hit;
 pub use hit::Hit;
@@ -28,8 +28,8 @@ use crate::image::ImageId;
 use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
-    Anchor, BufferId, CursorShape, Editor, Float, FloatOptions, LineNumbers, Mark, Panel, Reveal,
-    Scroll, Side, View, ViewId, VirtualLine,
+    Anchor, BufferId, ClientState, CursorShape, Editor, Float, FloatOptions, LineNumbers, Mark,
+    Panel, Reveal, Scroll, Side, View, ViewId, VirtualLine,
 };
 
 /// Syntax highlights drawn over a buffer's text, under its marks.
@@ -848,6 +848,7 @@ impl<M: Measure> Renderer<M> {
         );
         let styled = marks_in(editor, view.buffer, &visible);
         let (head, cursors) = cursors(text, view, editor.cursor_shape());
+        let peers = Peer::all(editor, text, view_id);
         let number = line_number(editor.line_numbers(), text, head);
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
@@ -905,7 +906,7 @@ impl<M: Measure> Renderer<M> {
                         .byte
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone());
-                    let cell_tags = cell_tags(view, cell, &cursors, capture, &styled);
+                    let cell_tags = cell_tags(view, cell, &cursors, &peers, capture, &styled);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
                         row.push_scaled(&cell.text, cell_tags, cell.scale);
                     }
@@ -1503,12 +1504,52 @@ fn gutter_width(editor: &Editor, view: &View) -> (usize, bool) {
     (numbers + if signs { SIGN_WIDTH } else { 0 }, signs)
 }
 
+/// Another client's selections and cursors in a view, and the tags they're
+/// drawn with: `ui.selection.peer.N` and `ui.cursor.peer.N` for its color
+/// N, which fall back to `ui.selection` and `ui.cursor`.
+struct Peer {
+    selection: Selection,
+    cursors: Vec<usize>,
+    selection_tag: Tag,
+    cursor_tag: Tag,
+}
+
+impl Peer {
+    /// Every other attached client's view `view`, of `text`.
+    fn all(editor: &Editor, text: &Rope, view: ViewId) -> Vec<Self> {
+        editor
+            .peers(view)
+            .map(|(client, seen)| {
+                Self::new(text, client, seen, editor.cursor_shape_of(client.mode()))
+            })
+            .collect()
+    }
+
+    /// How another client, `client`, sees `view`.
+    fn new(text: &Rope, client: &ClientState, view: &View, shape: CursorShape) -> Self {
+        let color = client.color();
+        Self {
+            selection: view.selection.clone(),
+            cursors: view
+                .selection
+                .ranges()
+                .iter()
+                .map(|&range| cursor_byte(text, range, shape))
+                .collect(),
+            selection_tag: Tag::from(format!("ui.selection.peer.{color}").as_str()),
+            cursor_tag: Tag::from(format!("ui.cursor.peer.{color}").as_str()),
+        }
+    }
+}
+
 /// The tags for one cell, bottom first: its syntax capture, the marks on it,
-/// then selections and cursors, then marks drawn above them.
+/// then other clients' selections and cursors, then the client's own, then
+/// marks drawn above them.
 fn cell_tags(
     view: &View,
     cell: &Cell,
     cursors: &[usize],
+    peers: &[Peer],
     capture: Option<Arc<str>>,
     marks: &[&Mark],
 ) -> SmallVec<[Tag; 2]> {
@@ -1522,21 +1563,40 @@ fn cell_tags(
     };
     let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
     tags.extend(on_cell(false));
-    tags.extend(selection_tags(view, cell, cursors));
+    for peer in peers {
+        tags.extend(selection_tags(
+            &peer.selection,
+            cell,
+            &peer.cursors,
+            (&peer.selection_tag, &peer.cursor_tag),
+        ));
+    }
+    tags.extend(selection_tags(
+        &view.selection,
+        cell,
+        cursors,
+        (&Tag::SELECTION, &Tag::CURSOR),
+    ));
     tags.extend(on_cell(true));
     tags
 }
 
-/// Selection and cursor tags for one cell.
-fn selection_tags(view: &View, cell: &Cell, cursors: &[usize]) -> SmallVec<[Tag; 2]> {
+/// Selection and cursor tags for one cell, as `tags` (for the selection, for
+/// the cursors).
+fn selection_tags(
+    selection: &Selection,
+    cell: &Cell,
+    cursors: &[usize],
+    tags: (&Tag, &Tag),
+) -> SmallVec<[Tag; 2]> {
     let mut out = SmallVec::new();
-    for range in view.selection.ranges() {
+    for range in selection.ranges() {
         if !cell.end_of_line && range.from() <= cell.byte && cell.byte < range.to() {
-            out.push(Tag::SELECTION);
+            out.push(tags.0.clone());
         }
     }
     if cursors.contains(&cell.byte) {
-        out.push(Tag::CURSOR);
+        out.push(tags.1.clone());
     }
     out
 }

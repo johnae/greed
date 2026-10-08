@@ -1596,6 +1596,12 @@ inherits. Names fall back to their parent, so `keyword.control` uses
 `keyword` unless it has its own entry; [Highlighting](highlighting.md) lists
 them.
 
+With several terminals attached to a session, each shows the others'
+cursors and selections in their own color: client color N (1 to 6) uses
+`ui.cursor.peer.N` and `ui.selection.peer.N`, which fall back to
+`ui.cursor` and `ui.selection`. The built-in themes give each a color of
+their palette, with selections underlined.
+
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
