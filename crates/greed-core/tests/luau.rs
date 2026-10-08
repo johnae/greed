@@ -192,6 +192,55 @@ fn plugin_directories_load_with_local_requires() {
 }
 
 #[test]
+fn evaluating_again_and_again_keeps_no_memory() {
+    // What 1000 evals may grow Luau's memory by: pages of its heap that the
+    // garbage left half used, nothing like a copy of what each eval made.
+    // Sandboxed code gets a whole `@greed` of its own each time.
+    for (code, allowed) in [
+        ("return loadstring('return 1')()", 64 * 1024),
+        (
+            "require('@greed').eval('1 + 1', { sandbox = true })",
+            4 * 1024 * 1024,
+        ),
+    ] {
+        let h = host("hello");
+        let run = |times| {
+            for _ in 0..times {
+                h.eval(code).unwrap();
+            }
+        };
+        run(200);
+        let before = h.luau_memory();
+        run(1000);
+        let grew = h.luau_memory().saturating_sub(before);
+        assert!(grew < allowed, "1000 evals of {code} kept {grew} bytes");
+    }
+}
+
+#[test]
+fn an_open_file_is_not_copied_into_luau() {
+    let dir = std::env::temp_dir().join(format!("greed-copied-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("big.txt");
+    let text = "a line of text that is long enough to add up\n".repeat(200_000);
+    std::fs::write(&path, &text).unwrap();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", &text, Some(path));
+    let h = Host::new(editor).unwrap();
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins/core");
+    h.load_dir(&core).unwrap();
+    let before = h.luau_memory();
+    h.announce_open_files().unwrap();
+    let grew = h.luau_memory().saturating_sub(before);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        grew < text.len() / 4,
+        "opening kept {grew} bytes of a {} byte file",
+        text.len()
+    );
+}
+
+#[test]
 fn eval_returns_values_and_keeps_globals() {
     let h = host("hello");
     assert_eq!(h.eval("x = 40").unwrap(), "");

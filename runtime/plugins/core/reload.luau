@@ -12,9 +12,15 @@ greed.option.define({
 	doc = "Load files changed on disk into their buffers, unless they have unsaved changes",
 })
 
--- What each buffer's file held when Greed last read or wrote it, so its own
--- saves aren't taken for changes.
+-- The digest of what each buffer's file held when Greed last read or wrote
+-- it, so its own saves aren't taken for changes. A digest rather than the
+-- text, so a big file isn't kept twice.
 local known: { [number]: string } = {}
+
+-- What's on disk at `path` now; "missing" while there's no file.
+local function digest(path: string): string
+	return greed.hash.sha256_file(path) or "missing"
+end
 
 local function name(path: string): string
 	return project.basename(path) or path
@@ -24,7 +30,7 @@ end
 local function watch(buffer: greed.Buffer)
 	local path = buffer:path()
 	if path and buffer:kind() == "file" and known[buffer:id()] == nil then
-		known[buffer:id()] = greed.fs.read(path) or buffer:text()
+		known[buffer:id()] = digest(path)
 		greed.fs.watch(path)
 	end
 end
@@ -38,7 +44,10 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 end)
 
 greed.on("buffer.saved", function(event: greed.BufferChanged)
-	known[event.buffer:id()] = event.buffer:text()
+	local path = event.buffer:path()
+	if path then
+		known[event.buffer:id()] = digest(path)
+	end
 end)
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
@@ -47,7 +56,7 @@ end)
 
 greed.on("file.changed", function(event: greed.FileChanged)
 	local buffer = greed.buffer_for(event.path)
-	local disk = greed.fs.read(event.path)
+	local disk = greed.hash.sha256_file(event.path)
 	if buffer == nil or disk == nil or disk == known[buffer:id()] then
 		return
 	end
@@ -63,10 +72,11 @@ greed.command({
 	name = "reload",
 	doc = "Load the file again from disk, as an edit undo can take back",
 	run = function(ctx)
-		if ctx.buffer:path() == nil then
+		local path = ctx.buffer:path()
+		if path == nil then
 			greed.echo("this buffer has no file")
 		elseif ctx.buffer:reload() then
-			known[ctx.buffer:id()] = ctx.buffer:text()
+			known[ctx.buffer:id()] = digest(path)
 		else
 			greed.echo("the file is the same as the buffer")
 		end

@@ -142,23 +142,22 @@ impl Modules {
         // Code the plugin loads at runtime is named after it and shares this
         // environment, so capabilities, which go by whose code runs, count
         // it as the plugin's whatever name the caller gave.
-        let loaded_env = env.clone();
         let name = format!("@{}/loadstring", self.owner);
-        env.raw_set(
-            "loadstring",
-            lua.create_function(move |lua, (source, _): (mlua::LuaString, Value)| {
+        let load = lua.create_function(
+            move |lua, (env, source, _): (Table, mlua::LuaString, Value)| {
                 let loaded = lua
                     .load(source.as_bytes().to_vec())
                     .set_name(&name)
                     .set_mode(mlua::chunk::ChunkMode::Text)
-                    .set_environment(loaded_env.clone())
+                    .set_environment(env)
                     .into_function();
                 Ok(match loaded {
                     Ok(f) => (Some(f), None),
                     Err(err) => (None, Some(err.to_string())),
                 })
-            })?,
+            },
         )?;
+        env.raw_set("loadstring", bind(lua, load, &env)?)?;
         Ok(env)
     }
 
@@ -281,6 +280,25 @@ fn own_code_only(lua: &Lua, globals: &Table) -> LuaResult<()> {
         )?;
     }
     Ok(())
+}
+
+/// `f` with `first` passed ahead of its own arguments. The binding is a
+/// Luau closure, which the garbage collector looks into: a Rust closure
+/// holding `first` would keep it alive for good, and with it whatever it
+/// holds, like the function itself when `first` is the table it's in.
+fn bind(lua: &Lua, f: Function, first: &Table) -> LuaResult<Function> {
+    const BINDER: &str = "greed.bind";
+    let binder = if let Some(binder) = lua.named_registry_value::<Option<Function>>(BINDER)? {
+        binder
+    } else {
+        let binder = lua
+            .load("local f, first = ...\nreturn function(...) return f(first, ...) end")
+            .set_name("=bind")
+            .into_function()?;
+        lua.set_named_registry_value(BINDER, &binder)?;
+        binder
+    };
+    binder.call((f, first))
 }
 
 /// Resolves `.` and `..` without touching the file system.

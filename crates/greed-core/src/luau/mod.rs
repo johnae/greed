@@ -527,6 +527,13 @@ impl Host {
         state_mut(&self.lua).stalls.quiet = true;
     }
 
+    /// The bytes Luau holds after a full garbage collection: what plugins
+    /// keep, without the garbage that hasn't been collected yet.
+    pub fn luau_memory(&self) -> usize {
+        let _ = self.lua.gc_collect();
+        self.lua.used_memory()
+    }
+
     pub fn with_editor<R>(&self, f: impl FnOnce(&Editor) -> R) -> R {
         f(&state(&self.lua).editor)
     }
