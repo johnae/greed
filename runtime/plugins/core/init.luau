@@ -134,4 +134,6 @@ return {
 	lookup = lookup,
 	--- Helpers for registries other plugins add to (registry.luau).
 	registry = require("@self/registry"),
+	--- The files you've been in, most recent first (recent.luau).
+	recent = require("@self/recent"),
 }

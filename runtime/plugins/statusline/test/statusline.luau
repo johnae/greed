@@ -135,19 +135,24 @@ test("opening another file sends the wave by itself", function(t)
 	greed.option.set("effects", false)
 end)
 
--- How many of the status line's left segments are lit letters now.
-local function lit_now(): number
+-- The letters lit in the status line's left side now.
+local function lit_letters(): string
 	local statusline = require("@statusline")
 	local ctx =
 		{ view = greed.view(), buffer = greed.view():buffer(), mode = greed.mode.get(), width = 80 }
-	local lit = 0
+	local lit = {}
 	local left: { greed.StatusSegment } = statusline.build(ctx :: any).left or {}
 	for _, segment in left do
 		if type(segment) == "table" and string.sub(segment.style or "", 1, 4) == "=fg:" then
-			lit += 1
+			table.insert(lit, segment.text)
 		end
 	end
-	return lit
+	return table.concat(lit)
+end
+
+-- How many of the status line's left segments are lit letters now.
+local function lit_now(): number
+	return #lit_letters()
 end
 
 test("the command line coming and going doesn't send light through the file", function(t)
@@ -158,7 +163,9 @@ test("the command line coming and going doesn't send light through the file", fu
 	t:wait(700)
 	t:keys(": esc")
 	t:wait(200)
-	assert(lit_now() == 0, "nothing lit: " .. lit_now())
+	-- The mode, back from COMMAND, may glow; the file's name doesn't.
+	local lit = lit_letters()
+	assert(not string.find(lit, "%l"), "the file isn't lit: " .. lit)
 	greed.option.set("effects", false)
 end)
 
@@ -380,4 +387,59 @@ test("names the focused panel rather than the pane beside it", function(t)
 	greed.float(greed.create_buffer("picker", ""), { focus = true })
 	left = t:status()
 	assert(left and string.find(left, " untitled ", 1, true), left)
+end)
+
+test("the position is where the cursor is drawn, after a selecting motion too", function(t)
+	t:buffer("|hello world")
+	t:keys("w")
+	local _, right = t:status()
+	assert(right and string.find(right, " 1:6 ", 1, true), "on the space: " .. tostring(right))
+	t:keys(";")
+	_, right = t:status()
+	assert(right and string.find(right, " 1:6 ", 1, true), "collapsed: " .. tostring(right))
+	-- A bar sits between characters, at the head.
+	t:keys("a")
+	_, right = t:status()
+	assert(right and string.find(right, " 1:7 ", 1, true), "typing: " .. tostring(right))
+end)
+
+test("typing a command says COMMAND, not the typing mode", function(t)
+	t:buffer("|abc")
+	t:keys(":")
+	local left = t:status()
+	assert(left and string.find(left, " COMMAND ", 1, true), tostring(left))
+	t:keys("esc")
+	left = t:status()
+	assert(left and string.find(left, " NORMAL ", 1, true), tostring(left))
+	t:keys("/")
+	left = t:status()
+	assert(left and string.find(left, " PROMPT ", 1, true), tostring(left))
+	t:keys("esc")
+end)
+
+test("recording shows once while the message saying so is up", function(t)
+	local statusline = require("@statusline")
+	t:buffer("|abc")
+	t:keys("Q")
+	local function left(message: string?): string
+		local parts = statusline.build({
+			view = greed.view(),
+			buffer = greed.view():buffer(),
+			mode = greed.mode.get(),
+			message = message,
+			width = 100,
+		})
+		local texts = {}
+		local segments: { greed.StatusSegment } = parts.left or {}
+		for _, segment in segments do
+			table.insert(texts, if type(segment) == "string" then segment else segment.text)
+		end
+		return table.concat(texts, " ")
+	end
+	for _, message in { "recording @@", "something else" } do
+		local line = left(message)
+		local _, count = string.gsub(line, "recording @@", "")
+		assert(count == 1, line)
+	end
+	t:keys("Q")
 end)

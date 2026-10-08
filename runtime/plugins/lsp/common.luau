@@ -12,19 +12,42 @@ function M.at(buffer: greed.Buffer, pos: number): any
 	}
 end
 
+--- Why `buffer` has no language server, in words: none for files like it,
+--- its server isn't installed, or it hasn't started.
+function M.no_server(buffer: greed.Buffer): string
+	local language = buffer:language()
+	local commands: { { string } }? = if buffer:path() and language
+		then greed.lsp.servers()[language]
+		else nil
+	if language == nil or commands == nil or #commands == 0 then
+		return "no language server for this buffer"
+	end
+	for _, command in commands do
+		if greed.which(command[1]) then
+			return `the {language} language server ({command[1]}) isn't running yet`
+		end
+	end
+	return `no language server for {language}: {commands[1][1]} isn't installed`
+end
+
 --- Sends `method` to the buffer's server with `params`. Returns whether it
 --- got an answer, then the result, or nil and the error. Without a server
 --- it says so.
 function M.request(buffer: greed.Buffer, method: string, params: () -> any): (boolean, any, any)
 	if buffer:path() == nil then
-		greed.echo("no language server for this buffer")
+		greed.echo(M.no_server(buffer))
 		return false
 	end
 	local ok, result, err = pcall(function()
 		return greed.lsp.request(buffer, method, params())
 	end)
 	if not ok then
-		greed.echo(tostring(result))
+		local message = tostring(result)
+		greed.echo(
+			if string.find(message, "no language server", 1, true)
+				then M.no_server(buffer)
+				else message
+		)
 		return false
 	end
 	return true, result, err

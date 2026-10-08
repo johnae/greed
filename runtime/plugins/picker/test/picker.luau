@@ -498,3 +498,23 @@ test("a client's picker is its own: others don't see it and their keys don't rea
 	t:keys("enter")
 	assert(picked[1] == "apple", `the first picked {picked[1]}`)
 end)
+
+test(
+	"the buffer picker names files from the project's root, the last one you were in first",
+	function(t)
+		local dir = t:tempdir({ [".git/HEAD"] = "", ["src/a.rs"] = "a", ["b.md"] = "b" })
+		greed.run("project", { args = { dir } })
+		greed.open(dir .. "/src/a.rs")
+		t:keys("i x esc")
+		greed.open(dir .. "/b.md")
+		t:keys("space b")
+		local listed = greed.view():buffer():text()
+		assert(not string.find(listed, dir, 1, true), listed)
+		local b, a =
+			string.find(listed, " b.md", 1, true), string.find(listed, " src/a.rs [+]", 1, true)
+		assert(b and a and b < a, listed)
+		local _, times = string.gsub(listed, "b%.md", "")
+		assert(times == 1, "each file once: " .. listed)
+		t:keys("esc")
+	end
+)

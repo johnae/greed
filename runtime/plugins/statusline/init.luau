@@ -180,7 +180,9 @@ local function pill(text: string?, look: string): Part?
 end
 
 M.add("left", "mode", function(ctx)
-	return pill(string.upper(style.label(ctx.mode)), "ui.statusline.mode")
+	-- Typing a command or into a prompt says so, rather than the typing mode.
+	local label = style.kind_label(greed.view():buffer():kind()) or style.label(ctx.mode)
+	return pill(string.upper(label), "ui.statusline.mode")
 end)
 
 M.add("left", "tab", function()
@@ -216,9 +218,11 @@ M.add("left", "file", function(ctx)
 	return if core.file.unsaved(buffer) then name .. " [+]" else name
 end)
 
-M.add("left", "macro", function()
+M.add("left", "macro", function(ctx)
 	local macro = core.registers.recording()
-	return pill(macro and `recording @{macro}`, "ui.statusline.message")
+	local text = macro and `recording @{macro}`
+	-- Said once, while the message saying it is up.
+	return pill(if text == ctx.message then nil else text, "ui.statusline.message")
 end)
 
 -- Counts of errors and warnings from the language server, if any.
@@ -295,10 +299,16 @@ M.add("right", "selections", function(ctx)
 	return if count > 1 then `{count} selections` else nil
 end)
 
+-- Where the cursor is drawn: a block sits on the last character of a
+-- selection going forward, a bar at the head.
 M.add("right", "position", function(ctx)
-	local head = ctx.view:cursor()
-	local line = ctx.buffer:line_of(head)
-	local column = (utf8.len(ctx.buffer:slice(ctx.buffer:line_start(line), head)) or 0) + 1
+	local selection = ctx.view:selection()
+	local range = selection.ranges[selection.primary]
+	local at = if greed.mode.cursor_of(ctx.mode) == "bar"
+		then range.head
+		else core.motions.cursor(ctx.buffer, range)
+	local line = ctx.buffer:line_of(at)
+	local column = (utf8.len(ctx.buffer:slice(ctx.buffer:line_start(line), at)) or 0) + 1
 	return `{line + 1}:{column}`
 end)
 

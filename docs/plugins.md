@@ -161,6 +161,8 @@ every mode, ahead of the mode's own, so a panel binds them once, with
 `{ kind = "tree" }`. A buffer kind you type into, like a prompt, says so
 with `core.style.typing_kind("my-prompt")`: focusing one goes to the
 style's typing mode, and `core.floats.typing` opens a float in it.
+`core.style.label_kind("my-prompt", "rename")` has the status line call
+the mode RENAME while one has focus, rather than the typing mode's name.
 Rather than naming other styles' modes, ask `core.style`:
 `is_typing()` says whether the current mode types (insert, Vim's insert,
 the vscode style), `role()` which role the current mode plays, `mode_for(role)`

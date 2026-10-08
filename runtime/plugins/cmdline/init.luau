@@ -625,6 +625,7 @@ for name, command in defaults do
 end
 
 core.style.typing_kind("cmdline")
+core.style.label_kind("cmdline", "command")
 greed.keymap.bind({ kind = "cmdline" }, {
 	enter = "command-line-run",
 	esc = "command-line-close",

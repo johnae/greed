@@ -131,15 +131,23 @@ end, { fallback = true })
 
 for _, place in
 	{
-		{ "goto-declaration", "declaration", "declared" },
-		{ "goto-type-definition", "typeDefinition", "its type is defined" },
-		{ "goto-implementation", "implementation", "implemented" },
+		{ "goto-declaration", "declaration", "Go to where the thing under the cursor is declared" },
+		{
+			"goto-type-definition",
+			"typeDefinition",
+			"Go to where the type of the thing under the cursor is defined",
+		},
+		{
+			"goto-implementation",
+			"implementation",
+			"Go to where the thing under the cursor is implemented",
+		},
 	}
 do
-	local name, method, what = place[1], place[2], place[3]
+	local name, method, doc = place[1], place[2], place[3]
 	greed.command({
 		name = name,
-		doc = `Go to where the thing under the cursor is {what}`,
+		doc = doc,
 		run = function(ctx)
 			go_to(ctx, method)
 		end,

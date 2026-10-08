@@ -25,17 +25,42 @@ test("hints go away when the sequence ends", function(t)
 end)
 
 test(
-	"keys that start longer sequences say more, and commands without a doc show their name",
+	"keys that start longer sequences show the group's name, and commands without a doc show theirs",
 	function(t)
 		greed.command({ name = "hint-test-nodoc", run = function() end })
 		greed.keymap.bind("helix", { ["g q"] = "hint-test-nodoc" })
 		t:buffer("|abc")
 		t:keys("m")
-		assert(string.find(t:floats()[1], "i        more...", 1, true), t:floats()[1])
+		assert(string.find(t:floats()[1], "i        select inside…", 1, true), t:floats()[1])
 		t:keys("esc g")
 		assert(string.find(t:floats()[1], "q        hint-test-nodoc", 1, true), t:floats()[1])
 	end
 )
+
+test("groups after the leader are named, and others by what they hold", function(t)
+	greed.keymap.bind({ layer = "leader" }, { ["w x"] = "goto-start" })
+	greed.keymap.bind("helix", { ["g Z a"] = "goto-start", ["g Z b"] = "goto-end" })
+	greed.keymap.bind("helix", { ["g Y a"] = "goto-start", ["g Y b"] = "undo" })
+	t:buffer("|abc")
+	t:keys("space")
+	assert(string.find(t:floats()[1], "w        panes…", 1, true), t:floats()[1])
+	t:keys("esc g")
+	local shown = t:floats()[1]
+	assert(string.find(shown, "Z        goto…", 1, true), shown)
+	assert(string.find(shown, "Y        2 more keys…", 1, true), shown)
+end)
+
+test("the hint is as wide as what it lists, at the bottom right", function(t)
+	t:buffer("|abc")
+	t:keys("m")
+	local screen = t:screen(200, 40)
+	-- The bottom border, above the status line.
+	local border = screen[#screen - 1]
+	local left = utf8.len(string.match(border, "^ *") :: string) :: number
+	assert(left > 80, "leaves the left free: " .. border)
+	assert(string.find(border, "┘$"), "reaches the right edge: " .. border)
+	t:keys("esc")
+end)
 
 test("long key names keep the descriptions lined up", function(t)
 	greed.keymap.bind("helix", { ["g ctrl-shift-home"] = "goto-start" })

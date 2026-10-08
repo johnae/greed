@@ -209,7 +209,7 @@ greed.keymap.counts("vim-visual-block")
 
 core.style.define({
 	name = "vim",
-	doc = "Say what to do, then where: `d w`, `c i w` (Vim)",
+	doc = "Say what to do, then where: d w, c i w (Vim)",
 	mode = "vim",
 	roles = { command = "vim", typing = "vim-insert", selecting = "vim-visual" },
 	leader = "space",

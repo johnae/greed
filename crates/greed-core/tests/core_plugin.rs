@@ -103,11 +103,13 @@ fn failures_name_the_line_and_what_differed() {
 
 #[test]
 fn statusline_plugin_tests_pass() {
+    // The mode says COMMAND on the command line.
     assert_all_pass(
         &[
             core(),
             plugin("helix"),
             plugin("picker"),
+            plugin("cmdline"),
             plugin("statusline"),
         ],
         &plugin("statusline"),

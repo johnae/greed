@@ -83,6 +83,7 @@ greed.command({
 })
 
 style.typing_kind("prompt")
+style.label_kind("prompt", "prompt")
 greed.keymap.bind({ kind = "prompt" }, {
 	enter = "prompt-submit",
 	esc = "prompt-cancel",

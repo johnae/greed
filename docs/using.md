@@ -565,7 +565,9 @@ waits three seconds instead. Put it in your `init.luau` to keep it:
 
 Greed knows the usual languages and their servers and starts a server when a
 file needs one and it's installed. `:health` shows each language's server,
-whether it was found, and the servers running.
+whether it was found, and the servers running. Without a server nothing
+complains until you ask for something only a server can answer, like `g d`;
+then it says which program to install.
 
 Each project gets a server of its own, so files from two projects (or two
 jj workspaces of one) are checked separately. A server runs in the topmost
@@ -1453,7 +1455,8 @@ tells you what a key does. `space h h` describes anything the editor is
 made of (commands, options with their values, events and who listens to
 them, the plugin API, plugins, modes and editing styles), and `enter` in
 the help window goes to where it's defined. After a key like `space`, a
-hint shows what can follow, and `f1` shows the keys of the mode you're in,
+hint at the bottom right shows what can follow, with groups of keys named
+(`w  panes…`), and `f1` shows the keys of the mode you're in,
 in every mode. A message on the status line goes away with the next key.
 
 The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
@@ -1576,7 +1579,10 @@ The status line shows the mode, the tab, the tab's layout when it isn't
 macro is recording on the left. The file is the one you're in: a focused
 panel or floating view (a floating terminal) counts, a picker or the
 command line doesn't. Buffers without a file show by name, like
-`terminal: nu ~/src`, or `untitled` for a new file. On the right it shows:
+`terminal: nu ~/src`, or `untitled` for a new file. While you type a
+command after `:` the mode says `COMMAND`, and in a prompt like search's
+`PROMPT`. The file gets `[+]` while it has unsaved changes; undoing back
+to what was saved takes it away. On the right it shows:
 
 - the branch and the lines added, changed and removed in the file, like
   `main +3 ~1 -2` (with jj the nearest bookmark and the change you're on,
@@ -1591,7 +1597,8 @@ command line doesn't. Buffers without a file show by name, like
   `tabs` (or `spaces`) where its language indents the other way, or
   `read-only`
 - how many selections there are, once there's more than one
-- the cursor's place, the machine and the session
+- the cursor's line and column (the character the cursor is drawn on, at
+  the end of a selection too), the machine and the session
 
 Two options make it livelier, both off unless you turn them on:
 

@@ -68,11 +68,23 @@ greed.command({
 	name = "pick-buffer",
 	doc = "Switch to an open file",
 	run = function()
+		-- The files you were in last come first, named as the file picker
+		-- names them, with [+] on those with unsaved changes.
 		local items: { picker.Item } = {}
+		local listed: { [number]: boolean } = {}
+		local buffers = core.recent.buffers()
 		for _, buffer in greed.buffers() do
+			table.insert(buffers, buffer)
+		end
+		for _, buffer in buffers do
 			local path = buffer:path()
-			if path then
-				table.insert(items, { label = path, value = path, kind = "file" })
+			if path and not listed[buffer:id()] then
+				listed[buffer:id()] = true
+				local label = project.short(path)
+				if core.file.unsaved(buffer) then
+					label ..= " [+]"
+				end
+				table.insert(items, { label = label, value = path, kind = "file" })
 			end
 		end
 		picker.pick("Buffers", items, function(item)

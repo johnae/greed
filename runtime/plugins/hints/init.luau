@@ -4,12 +4,43 @@
 -- typing into a terminal), a line in the status line says how to get out.
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
 --- What to say the first time you're in a mode, once a session.
 M.intro = {
 	terminal = "typing into the terminal: esc esc or ctrl-\\ stops, alt-p for panes, f1 for more",
+} :: { [string]: string }
+
+--- Names for keys that start longer sequences, as Helix names its menus,
+--- by the keys after the leader (`space` in Helix and Vim, `ctrl-space` in
+--- the vscode style)...
+M.leader_groups = {
+	g = "version control",
+	h = "help",
+	i = "agents",
+	l = "Luau",
+	m = "markdown and code blocks",
+	n = "notes",
+	o = "agent proposals",
+	u = "operations and undo",
+	w = "panes",
+	["w n"] = "new pane",
+} :: { [string]: string }
+
+--- ... and by the keys as typed.
+M.groups = {
+	g = "goto",
+	["g r"] = "language server",
+	m = "match",
+	["m a"] = "select around",
+	["m i"] = "select inside",
+	z = "view and folds",
+	["]"] = "next",
+	["["] = "previous",
+	space = "leader",
+	["ctrl-space"] = "leader",
 } :: { [string]: string }
 
 local shown: greed.View? = nil
@@ -24,9 +55,34 @@ local function hide()
 	helping = false
 end
 
-local function describe(command: string?, docs: { [string]: string }): string
+-- The name of the group of keys `keys` starts, from `M.groups` or, after
+-- the leader, `M.leader_groups`; else the word its commands share, as in
+-- "pane...", or how many keys follow.
+local function group(keys: string): string
+	local leader = core.style.current().leader
+	local after = if leader and string.sub(keys, 1, #leader + 1) == leader .. " "
+		then string.sub(keys, #leader + 2)
+		else nil
+	local name = M.groups[keys] or (after and M.leader_groups[after])
+	if name then
+		return name .. "…"
+	end
+	local words: { [string]: boolean } = {}
+	local count, distinct, word = 0, 0, ""
+	for _, following in greed.keymap.next(keys) do
+		count += 1
+		word = string.match(following.command or "", "^[^-]+") or ""
+		if not words[word] then
+			words[word] = true
+			distinct += 1
+		end
+	end
+	return if distinct == 1 and word ~= "" then `{word}…` else `{count} more keys…`
+end
+
+local function describe(keys: string, command: string?, docs: { [string]: string }): string
 	if command == nil then
-		return "more..."
+		return group(keys)
 	end
 	local doc = docs[command]
 	if doc == nil or doc == "" then
@@ -54,16 +110,21 @@ function M.show(keys: string, title: string): boolean
 		width = math.max(width, #next.key)
 	end
 	local lines = {}
+	-- As wide as the widest line, with room for the border and a space.
+	local widest = utf8.len(title) or #title
 	for _, next in nexts do
 		local key = next.key .. string.rep(" ", width - #next.key)
-		table.insert(lines, `{key} {describe(next.command, docs)}`)
+		local full = if keys == "" then next.key else `{keys} {next.key}`
+		local line = `{key} {describe(full, next.command, docs)}`
+		widest = math.max(widest, utf8.len(line) or #line)
+		table.insert(lines, line)
 	end
 	local buffer = greed.create_buffer("hints", table.concat(lines, "\n"))
 	shown = greed.float(buffer, {
 		title = title,
-		width = "100%",
+		width = widest + 4,
 		height = #lines + 2,
-		anchor = "bottom",
+		anchor = "bottom-right",
 		focus = false,
 	})
 	return true

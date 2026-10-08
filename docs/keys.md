@@ -14,7 +14,7 @@ how keymaps are organised.
 | `space h o` `space h e` `space h a` `space h p` `space h m` `space h s` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, a mode and its keys, or an editing style: its modes, the role each plays and its leader |
 | `space ?` | Every command, with its keys; enter runs one |
 | `space .` (`alt-.` in the vscode style) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |
-| `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow |
+| `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow, naming the groups of keys that lead further (`require("@hints").leader_groups` names your own) |
 
 Commands have names like `goto-end` or `select-line`, and `:` runs any of
 them by name. Keys starting with `space` are the leader's: in the vscode style

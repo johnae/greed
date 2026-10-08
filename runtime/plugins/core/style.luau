@@ -237,6 +237,23 @@ local function shown(mode: string): string
 	return mode
 end
 
+-- What the status line calls the mode while a buffer of each kind has
+-- focus; set with `label_kind`.
+local kind_labels: { [string]: string } = {}
+
+--- Makes the status line call the mode `label` while a buffer of `kind`
+--- has focus, e.g. "command" while typing on the command line rather than
+--- the typing mode's "insert". It goes when the plugin that set it does.
+function M.label_kind(kind: string, label: string)
+	greed.plugin.tie(registry.set(kind_labels, kind, label))
+end
+
+--- What the status line calls the mode while a buffer of `kind` has
+--- focus, if `label_kind` named it.
+function M.kind_label(kind: string): string?
+	return kind_labels[kind]
+end
+
 --- What the status line shows for `mode`.
 function M.label(mode: string): string
 	mode = shown(mode)
