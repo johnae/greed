@@ -1204,9 +1204,15 @@ several shells, each with its own folder and variables.
 
 The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
 `open` itself, and starts programs with plain arguments directly. Lines
-with pipes, globs or variables go to `sh`. Programs get `PAGER=cat` and
-`GIT_PAGER=cat`. A block shows the first and last `shell-max-lines` (5000)
-lines of its output between them; `space v` shows everything.
+with pipes, globs or variables go to your `$SHELL` when it's sh, bash,
+zsh, dash, ksh, fish or nu, and to `sh` otherwise (`:set shell-fallback
+bash` picks one). `cd` and `export` in such a line carry over to the
+commands after, as in a terminal; a block says when they can't, in a
+shell of another kind. Your shell's startup files aren't read, so aliases
+don't work there unless you `:set shell-fallback-rc true`. Programs get
+`PAGER=cat` and `GIT_PAGER=cat`. A block shows the first and last
+`shell-max-lines` (5000) lines of its output between them; `space v`
+shows everything.
 
 Programs run in a pseudo terminal, so they print their colors and
 progress, and a long line stays one line however wide your screen is. One

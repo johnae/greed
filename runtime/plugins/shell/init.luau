@@ -14,10 +14,11 @@
 --
 -- The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
 -- `open` itself, and starts a program with plain arguments on its own;
--- lines with pipes, globs or variables go to a real shell. Programs run in
--- a pseudo terminal (pty.luau), handed to a terminal when they want one;
--- an agent's run through a pipe. Each shell has its own folder and
--- variables, and a project can have several.
+-- lines with pipes, globs or variables go to a real shell, whose cd and
+-- export carry over (fallback.luau). Programs run in a pseudo terminal
+-- (pty.luau), handed to a terminal when they want one; an agent's run
+-- through a pipe. Each shell has its own folder and variables, and a
+-- project can have several.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -28,6 +29,7 @@ local state = require("@self/state")
 local log = require("@self/log")
 local run = require("@self/run")
 local pty = require("@self/pty")
+local fallback = require("@self/fallback")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -233,15 +235,41 @@ local function start(
 	block: Block,
 	argv: { string },
 	opts: RunOptions,
-	handoff: boolean
+	handoff: boolean,
+	before: ((code: number?, signal: string?) -> ())?
 )
 	local runner = opts.runner or (if block.by == "agent" then "pipe" else "pty")
 	if runner == "pipe" and not handoff then
 		block.runner = "pipe"
-		run.pipe(shell, block, argv)
+		run.pipe(shell, block, argv, before)
 	else
-		pty.start(shell, block, argv, { terminal = handoff })
+		pty.start(shell, block, argv, { terminal = handoff, before = before })
 	end
+end
+
+-- Runs `line` for `block` in a real shell: the user's (`sh` for an agent),
+-- whose cd and export carry over to the user's commands after.
+local function fall_back(
+	shell: Shell,
+	block: Block,
+	line: string,
+	opts: RunOptions,
+	handoff: boolean
+)
+	local agent = block.by == "agent"
+	local wrapped =
+		fallback.prepare(block, line, { program = if agent then "sh" else nil, rc = not agent })
+	start(shell, block, wrapped.argv, opts, handoff, function()
+		local cwd, changed = fallback.collect(block, wrapped)
+		if not agent then
+			if cwd then
+				run.move(shell, cwd)
+			end
+			if changed then
+				run.set_env(shell, changed)
+			end
+		end
+	end)
 end
 
 --- Runs `line` in `shell` as a new block after the others and returns it;
@@ -275,8 +303,7 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		start(shell, block, argv, opts, parsed.terminal)
 	else
 		block.via = "shell"
-		block.program = "sh"
-		start(shell, block, { "sh", "-c", parsed.line }, opts, parsed.terminal)
+		fall_back(shell, block, parsed.line, opts, parsed.terminal)
 	end
 	return block
 end

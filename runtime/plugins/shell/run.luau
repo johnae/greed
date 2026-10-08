@@ -336,8 +336,14 @@ end
 
 --- Runs `argv` for `block` through a pipe: no terminal, its output and
 --- errors apart, in a process group of its own so an interrupt reaches
---- what it starts. Its input is closed.
-function M.pipe(shell: Shell, block: Block, argv: { string })
+--- what it starts. Its input is closed. `before` hears how it exited
+--- before the block finishes.
+function M.pipe(
+	shell: Shell,
+	block: Block,
+	argv: { string },
+	before: ((code: number?, signal: string?) -> ())?
+)
 	local child, err = greed.process.spawn(argv, {
 		cwd = block.cwd,
 		env = state.environment(block.env),
@@ -370,7 +376,11 @@ function M.pipe(shell: Shell, block: Block, argv: { string })
 			M.write(shell, block, piece, from or "stdout")
 		end
 		local code, signal = c:wait()
-		M.finish(shell, block, code, signal or (if code == nil then stopped else nil))
+		signal = signal or (if code == nil then stopped else nil)
+		if before then
+			before(code, signal)
+		end
+		M.finish(shell, block, code, signal)
 	end)
 end
 

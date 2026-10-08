@@ -160,6 +160,7 @@ test("an agent's cd and export show in its block but leave the shell alone", fun
 end)
 
 test("lines with pipes or globs go to a real shell", function(t)
+	greed.option.set("shell-fallback", "sh")
 	local sh = open(t, t:tempdir({ ["a.log"] = "", ["b.log"] = "" }))
 	local block = finished(t, type_line(t, sh, "ls *.log | tr a-z A-Z"))
 	assert(block.via == "shell" and block.program == "sh", block.via)
