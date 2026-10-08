@@ -726,6 +726,13 @@ fn files_read_whole_or_up_to_a_limit() {
            .. ' ' .. select('#', greed.fs.stat(DIR .. '/a.txt/inside'))",
     );
     assert_eq!(stat, "file 13 dir nil 1", "nothing there is nil alone");
+    // When it last changed, close to now.
+    let modified = eval_in(
+        &h,
+        &dir,
+        "return math.abs(greed.fs.stat(DIR .. '/a.txt').modified - os.time()) < 600",
+    );
+    assert_eq!(modified, "true");
     // A folder that can't be read is another matter.
     std::fs::create_dir(dir.join("locked")).unwrap();
     std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();

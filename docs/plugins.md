@@ -461,8 +461,9 @@ greed.hash.sha256_file(path)                      -- to check a download
 Something already gone counts as removed. `remove` and `rename` raise an
 error rather than touch the root folder, your home folder, a path with `..`
 in it or a folder holding Greed's own approvals or secrets, so a path built
-wrong can't take more than it should. `greed.hostname()` is the machine's
-name.
+wrong can't take more than it should. `greed.fs.stat(path)` says what's
+there: its `kind`, `size`, `mode` and when it was `modified` (seconds
+since 1970). `greed.hostname()` is the machine's name.
 
 ### History
 

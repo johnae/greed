@@ -1365,6 +1365,8 @@ export type FileInfo = {
 	size: number,
 	--- Its permission bits, like 420 (644 in octal, as `string.format("%o", mode)` shows).
 	mode: number,
+	--- When it last changed, in seconds since 1970, where the system says.
+	modified: number?,
 }
 
 --- SHA-256 digests as lowercase hex, for checking a download or telling

@@ -91,6 +91,13 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             stat.set("kind", kind)?;
             stat.set("size", if meta.is_dir() { 0 } else { meta.len() })?;
             stat.set("mode", meta.permissions().mode() & 0o7777)?;
+            if let Some(since) = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            {
+                stat.set("modified", since.as_secs_f64())?;
+            }
             stat.into_lua_multi(lua)
         })?,
     )?;
