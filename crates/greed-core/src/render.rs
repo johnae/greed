@@ -1350,17 +1350,24 @@ impl<M: Measure> Renderer<M> {
         true
     }
 
-    /// As much of `text` as fits in `room` cells.
+    /// `text` if it fits in `room` cells, or as much of its start as fits
+    /// before an ellipsis, so it's plain that it goes on.
     fn keep_start(&self, text: &str, room: usize) -> String {
+        if self.text_width(text) <= room {
+            return text.to_owned();
+        }
         let mut kept = String::new();
         let mut used = 0;
         for g in text.graphemes(true) {
             let w = self.measure.width(g);
-            if used + w > room {
+            if used + w + 1 > room {
                 break;
             }
             used += w;
             kept.push_str(g);
+        }
+        if room > 0 {
+            kept.push('…');
         }
         kept
     }

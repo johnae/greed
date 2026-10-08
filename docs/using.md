@@ -479,11 +479,11 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 Patterns are regexes; ones written in lowercase ignore case.
 
 In the project search, `enter` opens a match and `ctrl-e` puts what was
-found in a panel: a multibuffer, with each matching line under its file's
-name and beside its line number. Edit those lines with any of the editing
-keys above (`s` to select the matches, then `c` to change them all) and
-the files change as you type; `:w` saves them, `enter` goes to the line and
-`q` closes the panel. A file that changed on disk since the search is left
+found in a panel, a third of the screen wide: a multibuffer, with each
+matching line under its file's name and beside its line number. Edit
+those lines with any of the editing keys above (`s` to select the
+matches, then `c` to change them all) and the files change as you type;
+`:w` saves them, `enter` goes to the line and `q` closes the panel. A file that changed on disk since the search is left
 alone and reported. `:grep PATTERN` fills the panel directly.
 
 ## Files and buffers
@@ -578,7 +578,8 @@ number. They move with your edits until the server checks the file again.
 
 In the `g r` and `space D` lists, `ctrl-e` puts the places shown in a panel
 like the project search's: each reference with a line around it, or each
-problem's line with its message beside the file name. Edit them there the
+problem's line with its message beside the file name (two on one line get
+a line each, and one too long for the panel ends in `…`). Edit them there the
 same way.
 
 A rename or code action that changes other files opens them without showing

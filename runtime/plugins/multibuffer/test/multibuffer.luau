@@ -154,3 +154,32 @@ test("text typed at the start of a file's first line goes into its excerpt", fun
 	end)
 	assert(buffer:text() == "two files\none\ntwo\n> only\n", buffer:text())
 end)
+
+test(
+	"two problems on one line get a line each under its file, cut short with an ellipsis",
+	function(t)
+		local dir = t:tempdir({ ["a.txt"] = "zero\none\n" })
+		t:buffer("|x")
+		local long = string.rep("very ", 30) .. "long"
+		local buffer = multibuffer.open({
+			{ path = dir .. "/a.txt", from = 1, label = "a.txt", note = "error: first" },
+			{ path = dir .. "/a.txt", from = 1, label = "a.txt", note = long },
+		}, { summary = "2 problems" })
+		local view = multibuffer.show(buffer, "Problems")
+		t:draw(120, 20)
+		local _, cols = view:size()
+		assert(cols and cols <= 120 * 0.36, `a third of the screen or so: {cols}`)
+		local screen = t:screen(120, 20)
+		local rows = {}
+		for _, row in screen do
+			if
+				string.find(row, "error: first", 1, true) or string.find(row, "very very", 1, true)
+			then
+				table.insert(rows, row)
+			end
+		end
+		assert(#rows == 2, `a line for each of the 2 problems:\n{table.concat(screen, "\n")}`)
+		assert(string.find(rows[2], "…", 1, true), rows[2])
+		view:close()
+	end
+)

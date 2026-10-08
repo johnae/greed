@@ -61,7 +61,8 @@ export type Options = {
 type Part = {
 	path: string,
 	label: string,
-	-- Shown after the label and line number; the notes of joined excerpts.
+	-- Shown after the label and line number; the notes of joined excerpts,
+	-- one a line.
 	note: string?,
 	-- Where its text is in the multibuffer.
 	shown: greed.Tracked,
@@ -230,14 +231,24 @@ local function first_line(part: Part): number
 	return part.start
 end
 
--- The line above `part`: its file and line, then its note.
-local function header(part: Part, line: number): { { text: string, style: string } }
-	local pieces = { { text = `{part.label}:{line + 1}`, style = "ui.multibuffer.file" } }
-	local note = part.note
-	if note then
-		table.insert(pieces, { text = `  {note}`, style = "ui.multibuffer.note" })
+-- The lines above `part`: its file and line, then its note; the notes of
+-- joined excerpts each on a line of their own under the first, so there's
+-- a line for each thing found.
+local function header(part: Part, line: number): { { { text: string, style: string } } }
+	local where = `{part.label}:{line + 1}`
+	local first = { { text = where, style = "ui.multibuffer.file" } }
+	local out = { first }
+	local indent = string.rep(" ", #where + 2)
+	for i, note in string.split(part.note or "", "\n") do
+		if note ~= "" then
+			if i == 1 then
+				table.insert(first, { text = `  {note}`, style = "ui.multibuffer.note" })
+			else
+				table.insert(out, { { text = indent .. note, style = "ui.multibuffer.note" } })
+			end
+		end
 	end
-	return pieces
+	return out
 end
 
 -- Draws each file's name above its excerpts and the files' line numbers
@@ -255,7 +266,10 @@ local function redraw(state: State)
 			local above = buffer:line_of(start - 1)
 			local line = first_line(part)
 			-- A blank line, then the file's name.
-			local lines: { any } = { "", header(part, line) }
+			local lines: { any } = { "" }
+			for _, header_line in header(part, line) do
+				table.insert(lines, header_line)
+			end
 			table.insert(headers, {
 				from = buffer:line_start(above),
 				to = buffer:line_end(above),
@@ -295,7 +309,7 @@ local function joined(excerpts: { Excerpt }, context: number): { Excerpt }
 		if last and last.path == excerpt.path and excerpt.from <= (last.to :: number) + 1 then
 			last.to = math.max(last.to :: number, excerpt.to :: number)
 			if excerpt.note then
-				last.note = if last.note then `{last.note}; {excerpt.note}` else excerpt.note
+				last.note = if last.note then `{last.note}\n{excerpt.note}` else excerpt.note
 			end
 			for _, mark in excerpt.marks :: { any } do
 				table.insert(last.marks :: { any }, mark)
@@ -676,7 +690,9 @@ function M.show(buffer: greed.Buffer, title: string): greed.View
 		current:focus()
 		return current
 	end
-	local view = greed.panel(buffer, { side = "right", width = "45%", title = title })
+	-- About a third of the screen, so the file you came from keeps most of
+	-- it; long notes end in an ellipsis and the text wraps.
+	local view = greed.panel(buffer, { side = "right", width = "35%", title = title })
 	panels[project] = view
 	return view
 end
