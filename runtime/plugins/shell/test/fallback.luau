@@ -155,3 +155,16 @@ test("without a shell named, an unknown $SHELL gives way to sh", function(t)
 	assert(sh.cwd == dir .. "/sub", sh.cwd)
 	assert(block.note == nil, tostring(block.note))
 end)
+
+test("an error names the line of what you typed, and the shell it ran in", function(t)
+	greed.option.set("shell-fallback", "sh")
+	local sh = open(t, t:tempdir({}))
+	local block = run(t, sh, "greed_no_such_command_x | cat")
+	assert(
+		string.find(block.output, "sh: line 1: greed_no_such_command_x", 1, true)
+			or string.find(block.output, "sh: 1: greed_no_such_command_x", 1, true),
+		block.output
+	)
+	assert(not string.find(block.output, "greed-shell", 1, true), block.output)
+	greed.option.set("shell-fallback", "")
+end)

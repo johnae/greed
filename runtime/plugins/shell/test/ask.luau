@@ -85,7 +85,10 @@ test("without a model to ask, a block says so", function(t)
 	end)
 	models.ask = ask
 	local block = sh.blocks[1]
-	assert(block.command == "? list big files" and block.status == "failed", block.status)
+	assert(block.command == "? list big files" and block.status == "asked", block.status)
+	assert(block.code == nil, "nothing ran, so there's no exit code")
+	local status = shell.log.status_text(block)
+	assert(not string.find(status, "exit", 1, true), status)
 	assert(string.find(block.output, "no model plays", 1, true), block.output)
 	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
 	done_asking(t)

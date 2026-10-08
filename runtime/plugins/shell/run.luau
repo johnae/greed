@@ -41,7 +41,7 @@ type Pending = {
 	drawing: boolean,
 	stale: boolean,
 	-- How it exited, once it did: it finishes after the last draw.
-	exit: { code: number?, signal: string? }?,
+	exit: { code: number?, signal: string?, status: string? }?,
 	-- The record, in pieces, each kind up to the limit, and past it the
 	-- whole output for the spill file.
 	output: { string },
@@ -288,8 +288,9 @@ local function from_jc(shell: Shell, block: Block)
 	end)
 end
 
--- Ends `block`, whose output is all drawn.
-local function complete(shell: Shell, block: Block, code: number?, signal: string?)
+-- Ends `block`, whose output is all drawn: as `status` says, or as how it
+-- exited says.
+local function complete(shell: Shell, block: Block, code: number?, signal: string?, status: string?)
 	local p = pending[block.uid]
 	if p then
 		M.fill(block)
@@ -313,8 +314,9 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 	block.code = code
 	block.signal = signal
 	block.job = nil
-	block.status = if signal
-		then "killed"
+	block.status = if status
+		then status
+		elseif signal then "killed"
 		elseif code == 0 then "done"
 		elseif code == nil then "error"
 		else "failed"
@@ -350,7 +352,7 @@ local function pump(shell: Shell, block: Block)
 	end
 	local exit = p.exit
 	if exit and block.status == "running" then
-		complete(shell, block, exit.code, exit.signal)
+		complete(shell, block, exit.code, exit.signal, exit.status)
 	end
 end
 
@@ -373,17 +375,18 @@ function M.write(shell: Shell, block: Block, text: string, stream: string)
 end
 
 --- Ends `block`: how it exited (a code, or the signal that ended it),
---- once what it printed is drawn for good.
-function M.finish(shell: Shell, block: Block, code: number?, signal: string?)
+--- once what it printed is drawn for good. `status` says how it ended in
+--- place of the code, like "asked" for a question to a model.
+function M.finish(shell: Shell, block: Block, code: number?, signal: string?, status: string?)
 	if block.status ~= "running" then
 		return
 	end
 	local p = pending[block.uid]
 	if p == nil then
-		complete(shell, block, code, signal)
+		complete(shell, block, code, signal, status)
 		return
 	end
-	p.exit = { code = code, signal = signal }
+	p.exit = { code = code, signal = signal, status = status }
 	pump(shell, block)
 end
 
@@ -391,6 +394,13 @@ end
 function M.fail(shell: Shell, block: Block, message: string, code: number?)
 	M.write(shell, block, message .. "\n", "stderr")
 	M.finish(shell, block, code or 127, nil)
+end
+
+--- Ends `block`, a question to a model that brought no command back,
+--- saying why. Nothing ran, so it has no exit code: it ends as "asked".
+function M.unanswered(shell: Shell, block: Block, message: string)
+	M.write(shell, block, message .. "\n", "stderr")
+	M.finish(shell, block, nil, nil, "asked")
 end
 
 --- Runs `argv` for `block` through a pipe: no terminal, its output and

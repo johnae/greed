@@ -54,7 +54,8 @@ them.
 A block's command is the line it starts on, with `❯` before it (`◆` for
 one an agent ran) and its number, the `3` of `$3`. After the command comes
 how it went: `◐` while it runs with how long so far, then `✓`, `✗ exit 1`,
-`■ INT` when it was stopped, or `↗` when it was handed to a terminal, how
+`■ INT` when it was stopped, `↗` when it was handed to a terminal, or `?`
+for a question to a model that brought no command back, how
 long it took, where `cd` went and which variables it set. A block that went
 quiet while it could be reading a line says it may be waiting for input.
 
@@ -311,7 +312,8 @@ they ended and the end of their output, marked as text someone else
 wrote. Its command goes to the prompt for you to read, change and run.
 
 It asks the model playing `shell-ask-role` (`fast`); `:models` shows and
-sets them up. Without one, or without its key, a block says why, naming
+sets them up. Without one, or without its key, a block marked `?` (nothing
+ran, so it has no exit code) says why, naming
 the variable that sets the key, like `ANTHROPIC_API_KEY`.
 
 ## History and completion

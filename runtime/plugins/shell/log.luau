@@ -10,8 +10,9 @@
 --
 -- Everything else is decorations per block, in `shell.block.N`: the prompt
 -- glyph and the block's number, the status after the command's line (✓ ✗
--- ◐ ↗ ■, the exit code, how long it took, where cd went), the sign beside
--- it, the blank line after it, and how many lines were left out. Output styles (errors, a
+-- ◐ ↗ ■, or ? for a question to a model that brought no command, the exit
+-- code, how long it took, where cd went), the sign beside it, the blank
+-- line after it, and how many lines were left out. Output styles (errors, a
 -- program's colors) are in `shell.out.N`, and links on the places in files
 -- it names (`src/main.rs:12`) in `shell.ref.N`. Nothing is laid out to a
 -- view's width, so every client wraps the text at its own.
@@ -73,6 +74,7 @@ local GLYPH: { [string]: string } = {
 	failed = "✗",
 	killed = "■",
 	error = "✗",
+	asked = "?",
 }
 
 local STYLE: { [string]: string } = {
@@ -81,6 +83,7 @@ local STYLE: { [string]: string } = {
 	failed = "shell.failed",
 	killed = "shell.failed",
 	error = "shell.failed",
+	asked = "shell.status",
 }
 
 -- The shell's own edits (blocks, their output, what it puts at the prompt)

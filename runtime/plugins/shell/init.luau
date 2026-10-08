@@ -374,7 +374,7 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		if draft and question then
 			greed.spawn(function()
 				ask.ask(shell, line, draft, question, function(why: string)
-					run.fail(shell, add_block(shell, command, opts), why, 1)
+					run.unanswered(shell, add_block(shell, command, opts), why)
 				end)
 			end)
 			return nil

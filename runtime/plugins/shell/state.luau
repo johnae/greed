@@ -40,7 +40,8 @@ export type Block = {
 	code: number?,
 	signal: string?,
 	--- "running", "done" (exit 0), "failed", "killed" (by a signal, or
-	--- stopped), or "error" (it couldn't start).
+	--- stopped), "error" (it couldn't start), or "asked" (a question to a
+	--- model that brought no command back).
 	status: string,
 	--- Whether it was handed to a terminal at some point.
 	handed: boolean,

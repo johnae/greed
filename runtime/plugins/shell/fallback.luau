@@ -33,14 +33,11 @@ greed.option.define({
 -- Runs the line (`$1`), then writes where it left the shell and what its
 -- environment is to the folder `$2`, and exits as the line did. The
 -- environment comes from `greed --env0` (`$GREED_BIN`, which state.luau
--- sets), the same on every system; without it, from `env -0`.
+-- sets), the same on every system; without it, from `env -0`. The line
+-- runs on the wrapper's first line, so the line numbers in its errors are
+-- its own: "bash: line 1: nope: command not found", as in a terminal.
 local POSIX = [[
-__greed_line=$1
-__greed_dir=$2
-shift 2
-__greed_env() { if [ -n "${GREED_BIN:-}" ]; then "$GREED_BIN" --env0; else env -0; fi; }
-__greed_env > "$__greed_dir/before"
-eval "$__greed_line"
+__greed_line=$1; __greed_dir=$2; shift 2; __greed_env() { if [ -n "${GREED_BIN:-}" ]; then "$GREED_BIN" --env0; else env -0; fi; }; __greed_env > "$__greed_dir/before"; eval "$__greed_line"
 __greed_status=$?
 pwd > "$__greed_dir/cwd"
 __greed_env > "$__greed_dir/after"
@@ -109,9 +106,9 @@ printf '%s\n%s\n' "$greed_family" "$greed_program" > "$greed_dir/shell"
 case $greed_family in
 posix)
 	if [ "$greed_rc" = 1 ]; then
-		exec "$greed_program" -i -c POSIX greed-shell "$greed_line" "$greed_dir"
+		exec "$greed_program" -i -c POSIX "${greed_program##*/}" "$greed_line" "$greed_dir"
 	fi
-	exec "$greed_program" -c POSIX greed-shell "$greed_line" "$greed_dir"
+	exec "$greed_program" -c POSIX "${greed_program##*/}" "$greed_line" "$greed_dir"
 	;;
 fish)
 	if [ "$greed_rc" = 1 ]; then
