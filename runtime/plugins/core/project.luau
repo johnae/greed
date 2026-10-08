@@ -206,14 +206,24 @@ function M.open(path: string): number
 	return id
 end
 
---- The files in the shown project that have unsaved changes.
-function M.unsaved(): { string }
+--- The buffers in the shown project that have unsaved changes.
+function M.unsaved_buffers(): { greed.Buffer }
 	local current = greed.project.current().id
 	local found = {}
 	for _, buffer in greed.buffers() do
 		if buffer:project() == current and unsaved.unsaved(buffer) then
-			table.insert(found, buffer:path() or "an unnamed buffer")
+			table.insert(found, buffer)
 		end
+	end
+	return found
+end
+
+--- The files in the shown project that have unsaved changes, named as
+--- `name` names them.
+function M.unsaved(): { string }
+	local found = {}
+	for _, buffer in M.unsaved_buffers() do
+		table.insert(found, M.name(buffer))
 	end
 	return found
 end
@@ -280,6 +290,13 @@ end
 function M.short(path: string, root: string?): string
 	local shown = M.relative(path, root)
 	return if string.sub(shown, 1, 1) == "/" then M.tilde(shown) else shown
+end
+
+--- A buffer's file as `short` shows it, for messages: "src/main.rs", or
+--- "an unnamed buffer" without one.
+function M.name(buffer: greed.Buffer): string
+	local path = buffer:path()
+	return if path then M.short(path) else "an unnamed buffer"
 end
 
 greed.command({

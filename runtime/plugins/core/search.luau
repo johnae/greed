@@ -211,6 +211,14 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "search-clear",
+	doc = "Take away the search's match highlights, as Vim's :noh does",
+	run = function(ctx)
+		ctx.buffer:decorate("search", {})
+	end,
+})
+
 local function word_char(c: string?): boolean
 	return c ~= nil and string.match(c, "^[%w_]$") ~= nil
 end

@@ -728,8 +728,13 @@ impl Server<'_> {
             let text = err.to_string();
             // Without Luau's "runtime error:", which says nothing to you.
             let line = first_line(&err.brief());
-            // Which plugin failed, and doing what; :errors has the rest.
-            let message = match self.host.error_source(&text) {
+            // For a bug, which plugin failed, and doing what; :errors has
+            // the rest. A refusal ("unsaved changes in ...") is said as is.
+            let source = err
+                .is_located()
+                .then(|| self.host.error_source(&text))
+                .flatten();
+            let message = match source {
                 Some(source) => format!("{source}: {line}"),
                 None => line,
             };

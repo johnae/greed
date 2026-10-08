@@ -8,6 +8,7 @@ local motions = require("./motions")
 local text = require("./text")
 local project = require("./project")
 local file = require("./file")
+local recent = require("./recent")
 
 local M = {}
 
@@ -22,33 +23,8 @@ local function files(): { greed.Buffer }
 	return out
 end
 
--- The file buffers shown in the main view, most recent last, and the last
--- one changed.
-local recent: { number } = {}
+-- The last file buffer changed.
 local changed: number? = nil
-
-local function seen(buffer: greed.Buffer)
-	if buffer:kind() ~= "file" then
-		return
-	end
-	local id = buffer:id()
-	if recent[#recent] ~= id then
-		local at = table.find(recent, id)
-		if at then
-			table.remove(recent, at)
-		end
-		table.insert(recent, id)
-	end
-end
-
-greed.on("selection.changed", function(event: greed.SelectionChanged)
-	if event.view == greed.view() then
-		seen(event.view:buffer())
-	end
-end)
-greed.on("view.focused", function(event: greed.ViewFocused)
-	seen(event.view:buffer())
-end)
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if event.buffer:kind() == "file" then
@@ -68,7 +44,7 @@ end
 local function show(view: greed.View, buffer: greed.Buffer?)
 	if buffer and buffer ~= view:buffer() then
 		view:show(buffer)
-		seen(buffer)
+		recent.seen(buffer)
 	end
 end
 
@@ -97,8 +73,48 @@ greed.command({
 	name = "goto-last-accessed-file",
 	doc = "Show the file you were in before this one",
 	run = function(ctx)
-		seen(ctx.buffer)
-		show(ctx.view, by_id(recent[#recent - 1]))
+		recent.seen(ctx.buffer)
+		show(ctx.view, recent.buffers()[2])
+	end,
+})
+
+-- The open files whose path, as `project.short` shows it, is `name`, or
+-- else contains it.
+local function named(name: string): { greed.Buffer }
+	local exact, partial = {}, {}
+	for _, buffer in files() do
+		local path = buffer:path()
+		if path then
+			local shown = project.short(path)
+			if shown == name or path == name then
+				table.insert(exact, buffer)
+			elseif string.find(shown, name, 1, true) then
+				table.insert(partial, buffer)
+			end
+		end
+	end
+	return if #exact > 0 then exact else partial
+end
+
+greed.command({
+	name = "buffer",
+	doc = "Show an open file by its name or part of it, as Vim's :b does; # is the one you were in before",
+	args = { { name = "name", doc = "The file's name, or part of its path", complete = "buffer" } },
+	run = function(ctx)
+		local name = table.concat(ctx.args, " ")
+		if name == "" then
+			greed.run("pick-buffer")
+		elseif name == "#" then
+			greed.run("goto-last-accessed-file")
+		else
+			local found = named(name)
+			if #found == 0 then
+				error(`no open file matches {name}`, 0)
+			elseif #found > 1 then
+				error(`more than one open file matches {name}`, 0)
+			end
+			show(ctx.view, found[1])
+		end
 	end,
 })
 
@@ -194,5 +210,12 @@ M.keys = {
 	["g c"] = "goto-window-center",
 	["g b"] = "goto-window-bottom",
 } :: { [string]: string }
+
+-- Vim's key for the file you were in before, in every style with a normal
+-- mode; terminals send ctrl-6 for it too.
+greed.keymap.bind({ role = "command" }, {
+	["ctrl-^"] = "goto-last-accessed-file",
+	["ctrl-6"] = "goto-last-accessed-file",
+})
 
 return M

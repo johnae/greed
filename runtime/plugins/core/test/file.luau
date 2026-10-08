@@ -380,3 +380,150 @@ test("quit goes ahead with only a scratch buffer changed", function(t)
 	t:run("quit")
 	assert(t:quitting(), "quit")
 end)
+
+-- What `f` failed with; fails if it didn't.
+local function refusal(f: () -> ()): string
+	local ok: boolean, err: unknown = pcall(f)
+	assert(not ok, "expected a refusal")
+	return tostring(err)
+end
+
+-- Splits the focused pane, showing its buffer in the new one, and focuses
+-- that, as the panes plugin's commands do.
+local function split(side: "right" | "down")
+	greed.view():split(side, greed.view():buffer()):focus()
+end
+
+test("quit in a pane with others beside it closes just that pane, unsaved or not", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	greed.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	split("right")
+	assert(#greed.tab.current().panes == 2)
+	-- Shown in the other pane too.
+	t:run("quit")
+	assert(not t:quitting(), "the editor goes on")
+	assert(#greed.tab.current().panes == 1, "the pane closed")
+	-- Shown only in the pane closing: the buffer stays open, unsaved.
+	split("right")
+	local buffer = greed.view():buffer()
+	greed.tab.current().panes[1]:show(greed.create_buffer("file", ""))
+	t:run("quit")
+	assert(#greed.tab.current().panes == 1 and not t:quitting())
+	assert(buffer:valid() and buffer:modified(), "still open, unsaved")
+	-- The last pane refuses over it.
+	local err = refusal(function()
+		t:run("quit")
+	end)
+	assert(string.find(err, "unsaved changes in", 1, true), err)
+end)
+
+test(":wq in a split saves and closes the pane", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	greed.open(dir .. "/a.txt")
+	split("down")
+	t:keys("i z esc")
+	t:run("save-quit")
+	assert(greed.fs.read(dir .. "/a.txt") == "za")
+	assert(#greed.tab.current().panes == 1 and not t:quitting())
+end)
+
+test("quit in a tab's last pane closes the tab when there are others", function(t)
+	t:buffer("|abc")
+	greed.tab.new()
+	assert(#greed.tab.list() == 2)
+	t:run("quit")
+	assert(#greed.tab.list() == 1 and not t:quitting())
+	t:run("quit")
+	assert(t:quitting())
+end)
+
+test(":qa names the unsaved files from the project, and :qa! quits anyway", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "", ["src/a.txt"] = "a", ["b.txt"] = "b" })
+	greed.run("project", { args = { dir } })
+	greed.open(dir .. "/src/a.txt")
+	t:keys("i x esc")
+	greed.open(dir .. "/b.txt")
+	t:keys("i y esc")
+	local err = refusal(function()
+		t:run("quit-all")
+	end)
+	assert(
+		string.find(
+			err,
+			"unsaved changes in src/a.txt, b.txt - :wa saves them, :qa! quits anyway",
+			1,
+			true
+		),
+		err
+	)
+	assert(not string.find(err, dir, 1, true), err)
+	greed.run("quit-session", { force = true })
+	assert(t:quitting())
+end)
+
+test(":wa saves every file, and :wqa saves them and quits", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b" })
+	greed.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	greed.open(dir .. "/b.txt")
+	t:keys("i y esc")
+	t:run("save-all")
+	assert(greed.fs.read(dir .. "/a.txt") == "xa" and greed.fs.read(dir .. "/b.txt") == "yb")
+	assert(not t:quitting())
+	t:keys("i z esc")
+	t:run("save-quit-all")
+	assert(greed.fs.read(dir .. "/b.txt") == "yzb", (greed.fs.read(dir .. "/b.txt")))
+	assert(t:quitting())
+end)
+
+test(":wa says when a buffer has no file to save to", function(t)
+	t:buffer("|abc")
+	t:keys("i x esc")
+	local err = refusal(function()
+		t:run("save-all")
+	end)
+	assert(string.find(err, "an unnamed buffer has no file", 1, true), err)
+end)
+
+test("quit-ask asks to save, not save or cancel", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	greed.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	t:run("quit-ask")
+	local shown = t:floats()[1]
+	assert(string.find(shown, "Don't save", 1, true), shown)
+	t:keys("esc")
+	assert(not t:quitting() and #t:floats() == 0, "cancelled")
+	t:run("quit-ask")
+	t:keys("d")
+	assert(t:quitting(), "quit without saving")
+	assert(greed.fs.read(dir .. "/a.txt") == "a")
+end)
+
+test("quit-ask leaves from a split too, as VS Code's ctrl-q quits", function(t)
+	t:buffer("|abc")
+	split("right")
+	t:run("quit-ask")
+	assert(t:quitting(), "quit, not just the pane")
+end)
+
+test("quit-ask saves first when asked to", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	greed.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	t:run("quit-ask")
+	t:keys("s")
+	assert(greed.fs.read(dir .. "/a.txt") == "xa")
+	assert(t:quitting())
+end)
+
+test(":bc shows the file you were in before, like closing an editor tab", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b", ["c.txt"] = "c" })
+	greed.open(dir .. "/a.txt")
+	greed.open(dir .. "/b.txt")
+	greed.open(dir .. "/c.txt")
+	greed.open(dir .. "/a.txt")
+	t:run("buffer-close")
+	assert(greed.view():buffer():path() == dir .. "/c.txt", greed.view():buffer():path())
+end)

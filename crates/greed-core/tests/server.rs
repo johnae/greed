@@ -531,3 +531,53 @@ fn a_refusal_shows_as_plain_words() {
     let line = screen_rows(&f)[1].text();
     assert!(!line.contains("runtime error"), "{line:?}");
 }
+
+/// The status line once it shows `want`, from a session with the command
+/// line plugin too.
+fn command_line_says(text: &'static str, typed: &str, want: &str) -> String {
+    let conn = server::spawn(move || {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", text, None);
+        let host = Host::new(editor)?;
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+        for plugin in ["core", "helix", "cmdline"] {
+            host.load_dir(&runtime.join(plugin))?;
+        }
+        host.load_str(
+            "buggy",
+            "require('@greed').command { name = 'buggy', run = function() local t = nil; t.x = 1 end }",
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 120,
+            height: 4,
+        }))
+        .unwrap();
+    frame(&conn);
+    keys(&conn, typed);
+    loop {
+        let f = frame(&conn);
+        let line = screen_rows(&f)[3].text();
+        if line.contains(want) {
+            return line;
+        }
+    }
+}
+
+#[test]
+fn refusals_and_unknown_commands_from_the_command_line_are_plain() {
+    let line = command_line_says("hi", "i x esc : q enter", "unsaved changes");
+    assert!(!line.contains("runtime error"), "{line:?}");
+    assert!(!line.contains("command-line-run"), "{line:?}");
+    let line = command_line_says("hi", ": n o p e enter", "no command called nope");
+    assert!(!line.contains("cmdline"), "{line:?}");
+    // A bug still says which plugin it's in and doing what.
+    let line = command_line_says("hi", ": b u g g y enter", "attempt to");
+    assert!(
+        line.contains("cmdline (command-line-run): buggy:1:"),
+        "{line:?}"
+    );
+    assert!(!line.contains("runtime error"), "{line:?}");
+}

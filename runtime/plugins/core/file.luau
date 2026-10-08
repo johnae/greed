@@ -2,7 +2,9 @@
 
 local greed = require("@greed")
 local project = require("./project")
+local recent = require("./recent")
 local registry = require("./registry")
+local transient = require("./transient")
 local unsaved = require("./unsaved")
 
 local M = {}
@@ -52,28 +54,87 @@ local function save(buffer: greed.Buffer, path: string?)
 		end, buffer)
 	end
 	buffer:save(path)
-	greed.echo("wrote " .. (buffer:path() or "?"))
+	greed.echo("wrote " .. project.name(buffer))
 end
 
--- Fails if any of `unsaved` has changes, unless `force` says to go ahead.
-local function check_unsaved(unsaved: { string }, force: boolean)
-	if #unsaved > 0 and not force then
-		error(
-			"unsaved changes in " .. table.concat(unsaved, ", ") .. " - :w saves, :q! quits anyway",
-			0
-		)
+-- The names of `buffers`, joined for a message.
+local function names(buffers: { greed.Buffer }): string
+	local list = {}
+	for _, buffer in buffers do
+		table.insert(list, project.name(buffer))
 	end
+	return table.concat(list, ", ")
 end
 
 -- Every file with unsaved changes, in any project.
-local function all_unsaved(): { string }
+local function all_unsaved(): { greed.Buffer }
 	local found = {}
 	for _, buffer in greed.buffers() do
 		if unsaved.unsaved(buffer) then
-			table.insert(found, buffer:path() or "an unnamed buffer")
+			table.insert(found, buffer)
 		end
 	end
 	return found
+end
+
+-- Saves each of `buffers` that has a file; fails naming how many have
+-- none, after saving the rest.
+local function save_all(buffers: { greed.Buffer })
+	local unnamed = 0
+	for _, buffer in buffers do
+		if buffer:path() then
+			save(buffer)
+		else
+			unnamed += 1
+		end
+	end
+	if unnamed == 1 then
+		error("an unnamed buffer has no file to save to - :w PATH saves it", 0)
+	elseif unnamed > 1 then
+		error(`{unnamed} unnamed buffers have no file to save to - :w PATH saves each`, 0)
+	end
+end
+
+-- How quitting goes on with unsaved files: what forcing it is typed as,
+-- for the refusal, or to ask instead.
+type Unsaved = { forced: string, ask: boolean? }
+
+-- Whether to go on with `buffers` unsaved: yes when there are none or
+-- `force` says so. With `how.ask`, asks whether to save them first, go on
+-- without saving, or stop, as VS Code does on quitting; otherwise fails,
+-- naming them.
+local function go_on(buffers: { greed.Buffer }, force: boolean, how: Unsaved): boolean
+	if #buffers == 0 or force then
+		return true
+	end
+	local list = names(buffers)
+	if not how.ask then
+		local saves = if #buffers == 1 then ":w saves it" else ":wa saves them"
+		error(`unsaved changes in {list} - {saves}, {how.forced} quits anyway`, 0)
+	end
+	local chosen: string? = nil
+	local function choose(choice: string): (switches: { [string]: boolean }) -> ()
+		return function(_switches)
+			chosen = choice
+		end
+	end
+	transient.show({
+		title = `Unsaved changes in {list}`,
+		groups = {
+			{
+				title = "Quit",
+				items = {
+					{ key = "s", doc = "Save, then quit", run = choose("save") },
+					{ key = "d", doc = "Don't save, quit", run = choose("discard") },
+					{ key = "esc", doc = "Cancel" },
+				},
+			},
+		},
+	})
+	if chosen == "save" then
+		save_all(buffers)
+	end
+	return chosen ~= nil
 end
 
 greed.option.define({
@@ -135,19 +196,45 @@ end
 -- Ends the session, whatever runs in it, unless files have unsaved changes
 -- and `force` doesn't say to go ahead.
 local function end_session(force: boolean)
-	check_unsaved(all_unsaved(), force)
+	go_on(all_unsaved(), force, { forced = ":qa!" })
 	greed.quit()
 end
 
--- Leaves the shown project: with others open it closes and the terminal
--- lets go, leaving the rest running. The last one ends the session or
--- keeps it, as on-quit says. In a panel or a float, like an agent's
--- transcript or a help page, it closes just that, as `:q` closes a window
--- in Vim.
-local function quit(force: boolean)
+-- Runs the command `name` if a plugin has it; says whether it did.
+local function run_if(name: string): boolean
+	for _, command in greed.commands() do
+		if command.name == name then
+			greed.run(name)
+			return true
+		end
+	end
+	return false
+end
+
+-- Closes what `:q` is in, as Vim's `:q` closes a window: a panel or a
+-- float (an agent's transcript, a help page), a pane with others beside
+-- it, or the last pane of a tab with others after it. Its buffer stays
+-- open, so this never refuses. Says whether there was one to close.
+local function close_window(): boolean
 	local view = greed.view()
 	if not view:is_pane() then
 		view:close()
+		return true
+	end
+	if #greed.tab.current().panes > 1 and (run_if("pane-close") or view:close()) then
+		return true
+	end
+	return #greed.tab.list() > 1
+		and (run_if("tab-close") or greed.tab.close(greed.tab.current().id))
+end
+
+-- Closes the window `:q` is in, if there's one to close, or else leaves
+-- the shown project: with others open it closes and the terminal lets go,
+-- leaving the rest running. The last one ends the session or keeps it, as
+-- on-quit says. With `ask`, as VS Code's ctrl-q, it leaves whatever window
+-- it's in, and unsaved files ask rather than refuse.
+local function quit(force: boolean, ask: boolean?)
+	if not ask and close_window() then
 		return
 	end
 	if #greed.project.list() == 1 then
@@ -156,12 +243,15 @@ local function quit(force: boolean)
 			greed.detach()
 			return
 		end
-		end_session(force)
+		if go_on(all_unsaved(), force, { forced = ":q!", ask = ask }) then
+			greed.quit()
+		end
 		return
 	end
-	check_unsaved(project.unsaved(), force)
-	greed.project.close(greed.project.current().id)
-	greed.detach()
+	if go_on(project.unsaved_buffers(), force, { forced = ":q!", ask = ask }) then
+		greed.project.close(greed.project.current().id)
+		greed.detach()
+	end
 end
 
 greed.command({
@@ -217,16 +307,26 @@ greed.command({
 
 greed.command({
 	name = "quit",
-	doc = "Close the project and leave, or exit the editor if it's the last one; "
-		.. "refuses with unsaved changes (force goes anyway)",
+	doc = "Close this pane when there are others; otherwise close the project and leave, "
+		.. "or exit the editor if it's the last one, refusing with unsaved changes (force goes anyway)",
 	run = function(ctx)
 		quit(ctx.force)
 	end,
 })
 
 greed.command({
+	name = "quit-ask",
+	doc = "Leave the project, or exit the editor, from any pane, as VS Code's ctrl-q does; "
+		.. "asks whether to save unsaved files first rather than refusing",
+	run = function(ctx)
+		quit(ctx.force, true)
+	end,
+})
+
+greed.command({
 	name = "quit-session",
-	doc = "End the session, whatever runs in it, unless files have unsaved changes (force ends it anyway)",
+	doc = "End the session, whatever runs in it, unless files have unsaved changes (force ends it anyway); "
+		.. "terminals, shells and agents never count as unsaved",
 	run = function(ctx)
 		end_session(ctx.force)
 	end,
@@ -273,6 +373,23 @@ greed.command({
 	run = function(ctx)
 		save(ctx.buffer)
 		quit(ctx.force)
+	end,
+})
+
+greed.command({
+	name = "save-all",
+	doc = "Write every file with unsaved changes",
+	run = function()
+		save_all(all_unsaved())
+	end,
+})
+
+greed.command({
+	name = "save-quit-all",
+	doc = "Write every file with unsaved changes, then end the session",
+	run = function(ctx)
+		save_all(all_unsaved())
+		end_session(ctx.force)
 	end,
 })
 
@@ -404,9 +521,15 @@ greed.command({
 	end,
 })
 
--- What views showing `closing` show instead: the file opened last in the
--- same project, or an empty buffer.
+-- What views showing `closing` show instead: the file in the same project
+-- you were in last, as editors go back to the one before, else the one
+-- opened last, or an empty buffer.
 local function replacement(closing: greed.Buffer): greed.Buffer
+	for _, buffer in recent.buffers() do
+		if buffer ~= closing and buffer:path() and buffer:project() == closing:project() then
+			return buffer
+		end
+	end
 	local best: greed.Buffer? = nil
 	for _, buffer in greed.buffers() do
 		if
@@ -425,10 +548,7 @@ end
 --- with unsaved changes unless `force`.
 function M.close(buffer: greed.Buffer, force: boolean?)
 	if unsaved.unsaved(buffer) and not force then
-		error(
-			`unsaved changes in {buffer:path() or "this buffer"} - :w saves, :bc! closes anyway`,
-			0
-		)
+		error(`unsaved changes in {project.name(buffer)} - :w saves, :bc! closes anyway`, 0)
 	end
 	local views = buffer:views()
 	if #views > 0 then
@@ -463,12 +583,12 @@ greed.command({
 		if not ctx.force then
 			local found = {}
 			for _, buffer in others do
-				if buffer:modified() then
-					table.insert(found, buffer:path() :: string)
+				if unsaved.unsaved(buffer) then
+					table.insert(found, buffer)
 				end
 			end
 			if #found > 0 then
-				error(`unsaved changes in {table.concat(found, ", ")} - :bco! closes anyway`, 0)
+				error(`unsaved changes in {names(found)} - :bco! closes anyway`, 0)
 			end
 		end
 		for _, buffer in others do

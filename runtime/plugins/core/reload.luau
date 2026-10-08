@@ -73,4 +73,20 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "reload-all",
+	doc = "Load every open file again from disk, as edits undo can take back",
+	run = function()
+		local count = 0
+		for _, buffer in greed.buffers() do
+			local path = buffer:path()
+			if buffer:kind() == "file" and path and greed.fs.stat(path) and buffer:reload() then
+				known[buffer:id()] = buffer:text()
+				count += 1
+			end
+		end
+		greed.echo(if count == 1 then "reloaded 1 file" else `reloaded {count} files`)
+	end,
+})
+
 return {}

@@ -153,12 +153,16 @@ fn prose_plugin_tests_pass() {
 
 #[test]
 fn cmdline_plugin_tests_pass() {
-    // :norm is tried in the Vim style, alt-x in the vscode style.
+    // :norm is tried in the Vim style, alt-x in the vscode style, and
+    // :only and :tabnew on the panes plugin's commands.
     assert_all_pass(
         &[
             core(),
             plugin("helix"),
             plugin("picker"),
+            plugin("terminal"),
+            plugin("statusline"),
+            plugin("panes"),
             plugin("vscode"),
             plugin("cmdline"),
             plugin("vim"),
@@ -170,11 +174,14 @@ fn cmdline_plugin_tests_pass() {
 #[test]
 fn vim_plugin_tests_pass() {
     // Vim uses the completion menu for ctrl-n in insert mode and the
-    // command line for :. Its tests paste in the vscode style too.
+    // command line for :, and :sp splits with the panes plugin. Its tests
+    // paste in the vscode style too.
     let plugins = [
         core(),
         plugin("helix"),
         plugin("picker"),
+        plugin("terminal"),
+        plugin("panes"),
         plugin("multibuffer"),
         plugin("statusline"),
         plugin("lsp"),

@@ -126,7 +126,8 @@ character, and `v` starts a visual mode for selecting by hand.
 | `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
 | `g s` | Label the words on screen and jump to the one you type |
 | `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last, `esc` goes back to one cursor |
-| `Z Z` `Z Q` | Save and close, close without saving |
+| `Z Z` `Z Q` | Save and close, close without saving; in a split, like `:wq` and `:q`, they close just that window |
+| `ctrl-^` | The file you were in before, like `:b#` |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
@@ -188,7 +189,7 @@ there is one, and the keys are the ones VS Code and most editors use.
 | `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file |
 | `ctrl-P` or `alt-x` | Run a command |
 | `ctrl-space` | The leader: `ctrl-space f` finds a file, `ctrl-space /` searches the project, the rest as `space` in Helix and Vim |
-| `ctrl-s` | Save |
+| `ctrl-s`, `ctrl-q` | Save; quit, asking first whether to save unsaved files |
 
 Keys with `ctrl-shift` need a terminal that reports them, such as one with
 the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).

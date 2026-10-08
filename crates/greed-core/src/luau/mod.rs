@@ -373,8 +373,21 @@ impl HostError {
     pub fn brief(&self) -> String {
         let text = self.to_string();
         let text = text.split("\nstack traceback:").next().unwrap_or(&text);
-        let text = text.strip_prefix("runtime error: ").unwrap_or(text);
-        text.trim().to_owned()
+        // An error passed on through other code can carry it more than once.
+        text.replace("runtime error: ", "").trim().to_owned()
+    }
+
+    /// Whether the error says where in Luau it happened ("core/x.luau:12:
+    /// ..."), as a bug does; a plugin refusing something on purpose
+    /// (`error("unsaved changes", 0)`) gives just the message.
+    pub fn is_located(&self) -> bool {
+        let brief = self.brief();
+        let Some((place, _)) = brief.split_once(": ") else {
+            return false;
+        };
+        place.rsplit_once(':').is_some_and(|(file, line)| {
+            !file.is_empty() && !line.is_empty() && line.bytes().all(|b| b.is_ascii_digit())
+        })
     }
 }
 

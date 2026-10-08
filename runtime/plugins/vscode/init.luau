@@ -74,6 +74,7 @@ greed.keymap.bind("vscode", {
 	["ctrl-backspace"] = "delete-word-back",
 	["ctrl-delete"] = "delete-word-forward",
 	["ctrl-w"] = "buffer-close",
+	["ctrl-q"] = "quit-ask",
 	f12 = "goto-definition",
 	["shift-f12"] = "goto-references",
 	f2 = "rename",

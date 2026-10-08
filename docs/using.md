@@ -20,8 +20,8 @@ alone.
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
 | `greed ls` | List running sessions and their projects |
 | `greed serve [PATH]` | Run a project's session with no terminal |
-| `:q` | Close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
-| `:quit-session`, `:qa` | End the session, whatever runs in it |
+| `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
+| `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
 Several terminals can show one session at once: run `greed` or `greed
@@ -68,13 +68,22 @@ it off with `greed.option.set("restore-session", false)`.
 
 ### Quitting or keeping a session
 
+`:q` and `:wq` in a pane with others beside it close just that pane, as
+they close a window in Vim, and in a tab's last pane they close the tab
+while there are others. The file stays open, so this never asks about
+unsaved changes. `ctrl-q` in the vscode style asks whether to save
+unsaved files, quit without saving or cancel, as VS Code does.
+
 `:q` on the last project ends the session, unless ending it would stop
 something: a command running in one of its terminals, a program like a
 task, or an agent at work. Then it detaches instead and the session keeps
 going, so `greed` comes back to it. A shell waiting at its prompt doesn't
 count. Over `greed ssh`, `:q` always keeps the session, since coming back
 to a running one is quicker than starting again over the network.
-`:quit-session` (or `:qa`) ends it whatever runs in it.
+`:quit-session` (or `:qa`) ends it whatever runs in it. Files with unsaved
+changes stop it: it lists them, `:wa` saves them and `:qa!` ends the
+session anyway. Terminals, shells, agents' panes and other scratch buffers
+never count as unsaved.
 
 To decide for yourself, set what `:q` does, here and over `greed ssh`:
 
@@ -460,7 +469,7 @@ those lines, `z j` `z k` to go to the next or previous block, and `z d`
 `z E` to unfold.
 
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
-edit` switch to those; [Editing styles](editing-styles.md) explains each.
+vscode` switch to those; [Editing styles](editing-styles.md) explains each.
 
 **Prose**: `m i p`, `m i s` and `m i h` select a paragraph, sentence or
 Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
@@ -498,12 +507,19 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
 | `:w` `:w PATH` | Save, or save as |
+| `:wa` (`:write-all`) | Save every file with unsaved changes |
 | `:e PATH` | Open a file |
 | `ctrl-s` | Save |
-| `:bc` (`:bd`) | Close the file; the one opened before it takes its place. `:bc!` closes it with unsaved changes |
+| `:b NAME` | Switch to the open file whose path is NAME or has it in it; `:b#` (or `ctrl-^` in normal mode) goes back to the one before |
+| `:ls` (`:buffers`) | Pick an open file, like `space b` |
+| `:bn` `:bp` | Next and previous open file |
+| `:bc` (`:bd`) | Close the file; the one you were in before takes its place. `:bc!` closes it with unsaved changes |
 | `:bco` | Close every other file |
-| `:close` | Close the pane (the file stays open), like `alt-p x` |
-| `:reload` | Load the file again from disk |
+| `:close` | Close the pane (the file stays open), like `alt-p x`; `:only` closes the others |
+| `:sp` `:vs` `:new` `:vnew` `:tabnew` | Split the pane, or open a new pane or tab, as in Vim |
+| `:reload` (`:rl`), `:rla` | Load the file again from disk, or every open file |
+| `:noh` | Take away search highlights |
+| `:set NAME VALUE` | Set an option. Yes-or-no ones also take Vim's `:set NAME`, `:set noNAME` and `:set NAME!`, `:set NAME?` shows one, and `:set nu`, `nonu`, `rnu` and `nornu` show and hide line numbers. `:toggle NAME` flips one, as in Helix |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 | `:errors` | Errors from plugin code that nothing caught, newest first: the plugin, what it was doing, the message and where in its code it failed |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
@@ -1439,6 +1455,15 @@ them, the plugin API, plugins, modes and editing styles), and `enter` in
 the help window goes to where it's defined. After a key like `space`, a
 hint shows what can follow, and `f1` shows the keys of the mode you're in,
 in every mode. A message on the status line goes away with the next key.
+
+The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
+`:wq` `:wqa` `:x` `:e` `:b` `:bn` `:bp` `:bc` `:ls` `:sp` `:vs` `:only`
+`:tabnew` `:noh` `:rl` `:rla` `:set` `:toggle`, and Helix's long ones like
+`:write-all` and `:buffer-close`. Arguments go after a space (`:w notes.md`);
+only Vim's line commands and `:b` take one right after the name (`:m0`,
+`:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says
+why in plain words; an error from a bug in a plugin also names the plugin,
+and `:errors` has the details.
 
 Vim's line commands work in every style. A range in front picks the lines
 a command works on; without one, it's the lines the selection touches.

@@ -29,6 +29,7 @@ local parse = require("@self/parse")
 local complete = require("@self/complete")
 local ex = require("@self/ex")
 require("@self/eval")
+require("@self/set")
 local core = require("@core")
 local menu = core.menu
 
@@ -39,6 +40,16 @@ local HISTORY = 100
 
 local aliases: { [string]: string } = {}
 local history: { string } = {}
+
+-- The commands whose argument can follow their short name with no space.
+local JOINED: { [string]: boolean } = {
+	["move-lines"] = true,
+	["copy-lines"] = true,
+	["delete-lines"] = true,
+	["yank-lines"] = true,
+	["join-lines"] = true,
+	buffer = true,
+}
 
 local function resolve(name: string): string
 	return aliases[name] or name
@@ -326,11 +337,16 @@ function execute(text: string, lines: { first: number, last: number }?)
 		names[command.name] = true
 	end
 	local name, args = resolve(parsed.name), parsed.args
-	-- Vim lets an argument follow a short name directly: :m0, :t$, :>.
+	-- Vim lets an address follow a line command's name directly (:m0, :t$,
+	-- :m-2), and :b# goes to the last file. Anything else typed onto a
+	-- name, like :write-all, is a name of its own.
 	local short, rest = string.match(parsed.name, "^(%a+)([^%a].*)$")
-	if not names[name] and short and rest and names[resolve(short)] then
-		name = resolve(short)
-		table.insert(args, 1, rest)
+	if not names[name] and short and rest and not string.match(rest, "^%-%a") then
+		local joined = resolve(short)
+		if JOINED[joined] and names[joined] then
+			name = joined
+			table.insert(args, 1, rest)
+		end
 	end
 	if not names[name] then
 		error("no command called " .. parsed.name, 0)
@@ -499,30 +515,6 @@ complete.register("editing-style", function()
 	return items
 end)
 
-local set_args: { greed.ArgSpec } = {
-	{ name = "option", doc = "The option to set", complete = "option" },
-	{ name = "value", doc = "true, false, a number or text", complete = "option-value" },
-}
-
-greed.command({
-	name = "set",
-	doc = "Set an option",
-	args = set_args,
-	run = function(ctx)
-		local name = ctx.args[1]
-		-- Text values can have spaces.
-		local value = table.concat(ctx.args, " ", 2)
-		if name == nil or value == "" then
-			error("set needs an option and a value, e.g. :set tab-width 2", 0)
-		end
-		local parsed: greed.OptionValue = if value == "true"
-			then true
-			elseif value == "false" then false
-			else tonumber(value) or value
-		greed.option.set(name, parsed)
-	end,
-})
-
 local M = {}
 
 --- Makes `name` run `command` on the command line, e.g. `alias("w", "save")`,
@@ -542,28 +534,76 @@ end
 local defaults: { [string]: string } = {
 	w = "save",
 	write = "save",
+	wa = "save-all",
+	wall = "save-all",
+	["write-all"] = "save-all",
 	q = "quit",
 	qa = "quit-all",
+	qall = "quit-all",
 	quitall = "quit-all",
 	wq = "save-quit",
 	x = "save-quit",
 	xit = "save-quit",
+	["write-quit"] = "save-quit",
+	wqa = "save-quit-all",
+	wqall = "save-quit-all",
+	xa = "save-quit-all",
+	xall = "save-quit-all",
+	["write-quit-all"] = "save-quit-all",
 	e = "open",
 	edit = "open",
 	o = "open",
 	h = "describe-command",
 	help = "describe-command",
+	b = "buffer",
+	ls = "pick-buffer",
+	buffers = "pick-buffer",
+	files = "pick-buffer",
+	bn = "buffer-next",
+	bnext = "buffer-next",
+	bp = "buffer-prev",
+	bN = "buffer-prev",
+	bprev = "buffer-prev",
+	bprevious = "buffer-prev",
+	bNext = "buffer-prev",
+	["buffer-previous"] = "buffer-prev",
 	bc = "buffer-close",
 	bclose = "buffer-close",
 	bd = "buffer-close",
 	bdelete = "buffer-close",
 	bco = "buffer-close-others",
+	bcloseother = "buffer-close-others",
+	rl = "reload",
+	rla = "reload-all",
+	noh = "search-clear",
+	nohlsearch = "search-clear",
+	toggle = "toggle-option",
+	get = "get-option",
+	["set-option"] = "set",
+	fmt = "format",
+	u = "undo",
+	red = "redo",
 	clo = "pane-close",
 	close = "pane-close",
+	on = "pane-only",
+	only = "pane-only",
 	sp = "pane-split-down",
 	split = "pane-split-down",
+	hs = "pane-split-down",
+	hsplit = "pane-split-down",
 	vs = "pane-split-right",
 	vsplit = "pane-split-right",
+	new = "pane-new-down",
+	vnew = "pane-new-right",
+	tabnew = "tab-new",
+	tabn = "tab-next",
+	tabnext = "tab-next",
+	tabp = "tab-previous",
+	tabprevious = "tab-previous",
+	tabN = "tab-previous",
+	tabc = "tab-close",
+	tabclose = "tab-close",
+	term = "terminal",
 	s = "substitute",
 	d = "delete-lines",
 	delete = "delete-lines",
