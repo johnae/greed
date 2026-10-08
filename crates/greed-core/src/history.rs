@@ -127,6 +127,17 @@ impl History {
         };
     }
 
+    /// Empties the log and undo tree and goes on keeping what comes after,
+    /// so undo can't go back past now.
+    pub(crate) fn clear(&mut self) {
+        *self = Self {
+            applied: self.applied,
+            latest: std::mem::take(&mut self.latest),
+            keep: self.keep,
+            ..Self::default()
+        };
+    }
+
     /// Every transaction applied to the buffer, oldest first, since the
     /// last edit kept out of undo.
     pub fn log(&self) -> &[Transaction] {

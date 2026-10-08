@@ -10,6 +10,7 @@
 --     table.insert(require("@core").project.markers, 1, "Cargo.lock")
 
 local greed = require("@greed")
+local unsaved = require("./unsaved")
 
 local M = {}
 
@@ -208,13 +209,13 @@ end
 --- The files in the shown project that have unsaved changes.
 function M.unsaved(): { string }
 	local current = greed.project.current().id
-	local unsaved = {}
+	local found = {}
 	for _, buffer in greed.buffers() do
-		if buffer:project() == current and buffer:kind() == "file" and buffer:modified() then
-			table.insert(unsaved, buffer:path() or "an unnamed buffer")
+		if buffer:project() == current and unsaved.unsaved(buffer) then
+			table.insert(found, buffer:path() or "an unnamed buffer")
 		end
 	end
-	return unsaved
+	return found
 end
 
 -- `path` with a leading `~` as the home folder, or nil if it has none.

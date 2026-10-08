@@ -26,6 +26,13 @@ local function open(t: test.TestContext): Shell
 	return sh
 end
 
+-- Fails unless the status line no longer says it's asking a model.
+local function done_asking(t: test.TestContext)
+	local messages = t:messages()
+	local last = messages[#messages] or ""
+	assert(not string.find(last, "asking the", 1, true), last)
+end
+
 -- Types `line` at the prompt and presses enter.
 local function enter(t: test.TestContext, sh: Shell, line: string)
 	shell.log.set_prompt(sh, line, { greed.view() })
@@ -55,6 +62,7 @@ test("? asks a model, and its command goes to the prompt without running", funct
 	end)
 	models.ask = ask
 	assert(#sh.blocks == 1, "nothing ran: " .. #sh.blocks)
+	done_asking(t)
 	assert(#asked == 1 and asked[1].role == "fast", tostring(asked[1] and asked[1].role))
 	local said = asked[1].request.messages[1].content :: string
 	assert(string.find(said, "The shell is sh", 1, true), said)
@@ -80,6 +88,7 @@ test("without a model to ask, a block says so", function(t)
 	assert(block.command == "? list big files" and block.status == "failed", block.status)
 	assert(string.find(block.output, "no model plays", 1, true), block.output)
 	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+	done_asking(t)
 end)
 
 test("output cut down for the model is cut between characters", function(t)

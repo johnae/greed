@@ -161,6 +161,10 @@ function M.open()
 	local buffer = greed.create_buffer("file", text(), { language = "markdown" })
 	page = buffer
 	buttons(buffer)
+	-- Picks change its text; nothing to save but the answers.
+	core.file.scratch(buffer)
+	-- esc and q close it, as they do other pages over the editor.
+	buffer:set_keys({ esc = "setup-close", q = "setup-close" })
 	greed.float(buffer, { title = "Setup", width = "80%", height = "90%" })
 end
 

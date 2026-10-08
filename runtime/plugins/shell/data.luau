@@ -107,6 +107,9 @@ function M.target(into: Into, cwd: string): greed.Buffer
 	if buffer == nil then
 		local new = greed.create_buffer("file", "")
 		new:set_kept(true)
+		-- A command's output, made again by running it: nothing to save
+		-- unless it's saved as a file.
+		core.file.scratch(new)
 		made[into.name] = new
 		return new
 	end

@@ -122,3 +122,28 @@ test("a plugin can't take over a login, change one, or read its tokens", functio
 	end
 	assert(table.find(names, "berget") and table.find(names, "test-new"), table.concat(names, " "))
 end)
+
+test("asking without a key names the variable that sets it", function(t)
+	models.providers.keyless =
+		{ kind = "anthropic", url = "https://api.anthropic.com", secret = "greed-test-nokey" }
+	models.roles.keyless = { provider = "keyless", model = "m" }
+	local why: string? = nil
+	greed.spawn(function()
+		local _, err = models.ask("keyless", { messages = { { role = "user", content = "hi" } } })
+		why = err
+	end)
+	t:wait_for(function()
+		return why ~= nil
+	end)
+	assert(
+		string.find(
+			why or "",
+			"no key for keyless: :secret-set greed-test-nokey, or set GREED_SECRET_GREED_TEST_NOKEY",
+			1,
+			true
+		),
+		why
+	)
+	models.roles.keyless = nil
+	models.providers.keyless = nil
+end)

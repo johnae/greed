@@ -205,7 +205,9 @@ M.add("left", "file", function(ctx)
 	local path = ctx.buffer:path()
 	-- Files in the project show from its root.
 	local name = if path then core.project.relative(path) else "[scratch]"
-	return if ctx.buffer:modified() then name .. " [+]" else name
+	-- A scratch buffer's changes, like a shell's, are nothing to save.
+	local changed = ctx.buffer:modified() and not core.file.is_scratch(ctx.buffer)
+	return if changed then name .. " [+]" else name
 end)
 
 M.add("left", "macro", function()

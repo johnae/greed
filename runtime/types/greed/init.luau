@@ -89,6 +89,9 @@ export type Buffer = {
 	--- Stops keeping undo history, for buffers whose edits nobody undoes,
 	--- like a terminal's: what's kept goes, and later edits aren't kept.
 	forget_history: (self: Buffer) -> (),
+	--- Lets go of the undo history so far and keeps later edits: undo can't
+	--- go back past now, as at a shell's prompt after a command runs.
+	clear_history: (self: Buffer) -> (),
 	--- The language the text is highlighted as, e.g. "rust".
 	language: (self: Buffer) -> string?,
 	--- Sets the language, or with nil goes back to the one the file's
@@ -552,6 +555,8 @@ export type Secrets = {
 	get: (name: string) -> (string?, string?),
 	--- Keeps `value` as the secret `name`: in the keyring if there is one, otherwise in Greed's secrets file. Returns where it went, or nil and why not.
 	set: (name: string, value: string) -> (string?, string?),
+	--- The environment variable that sets the secret `name`, to tell someone: the usual one, like ANTHROPIC_API_KEY, or GREED_SECRET_NAME. Reads nothing, so it needs no capability.
+	variable: (name: string) -> string,
 }
 
 --- Running other programs.

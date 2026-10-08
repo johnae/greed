@@ -144,6 +144,8 @@ function M.open(options: OpenOptions?): Shell
 	local buffer = greed.create_buffer(KIND, "", { language = LANGUAGE })
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
+	-- What's typed and printed here is nothing to save.
+	core.file.scratch(buffer)
 	local project = buffer:project() or greed.project.current().id
 	local shell: Shell = {
 		id = state.new_id(),
@@ -459,6 +461,12 @@ run.builtins.open = function(shell: Shell, block: Block, args: { string }): numb
 			core.file.open(core.project.resolve(arg, block.cwd))
 		end
 	end
+	-- What opened is for reading and moving around in, not the shell's
+	-- typing.
+	local view = greed.view()
+	if view:buffer() ~= shell.buffer then
+		greed.mode.set(core.style.home_for(view))
+	end
 	return 0
 end
 
@@ -717,6 +725,11 @@ greed.command({
 		if #shells == 0 then
 			M.open({ view = ctx.view })
 			return
+		elseif #shells == 1 and ctx.buffer ~= shells[1].buffer then
+			-- The only one: no need to pick. From it, the picker offers a
+			-- new one.
+			M.show(shells[1], ctx.view)
+			return
 		end
 		local items: { picker.Item } = { { label = "new shell", value = 0 } }
 		for _, shell in shells do
@@ -753,6 +766,9 @@ local function run_prompt(shell: Shell, ctx: greed.Context)
 		end
 	end
 	M.run(shell, line, { view = ctx.view })
+	-- Undo takes back typing since the last run, never what ran: the
+	-- steps before it would put their text back in the empty prompt.
+	shell.buffer:clear_history()
 end
 
 -- Puts `block`'s command at the prompt to change and run again.
@@ -932,6 +948,9 @@ block_command(
 		local buffer = if block.spill
 			then greed.load(block.spill)
 			else greed.create_buffer("file", block.output)
+		if block.spill == nil then
+			core.file.scratch(buffer)
+		end
 		if ctx.view:is_pane() then
 			ctx.view:split("right", buffer)
 		else
@@ -1147,6 +1166,19 @@ greed.command({
 })
 
 greed.command({
+	name = "shell-unfilter",
+	doc = "Show every line, or row, of the filtered block at the cursor again, keeping its sort",
+	run = function(ctx)
+		local shell, block = output_block(ctx)
+		local shown = block and block.shown
+		if shell and block and shown and shown.filter ~= "" then
+			rows.set(shell, block, "", shown.sort, shown.desc)
+			to_output(shell, block, ctx.view)
+		end
+	end,
+})
+
+greed.command({
 	name = "shell-show-all",
 	doc = "Show the block at the cursor's output as it came, without a filter or a sort",
 	run = function(ctx)
@@ -1275,6 +1307,7 @@ greed.keymap.bind({ role = "command", kind = KIND }, {
 	["] e"] = "shell-next-reference",
 	["[ e"] = "shell-prev-reference",
 	["/"] = "shell-filter",
+	esc = "shell-unfilter",
 })
 greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	r = "shell-rerun",

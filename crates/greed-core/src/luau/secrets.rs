@@ -79,14 +79,29 @@ fn check_name(name: &str) -> LuaResult<()> {
     }
 }
 
-fn from_env(name: &str) -> Option<String> {
-    let own = format!(
+/// Greed's own variable for the secret `name`: `GREED_SECRET_NAME`.
+fn own_variable(name: &str) -> String {
+    format!(
         "GREED_SECRET_{}",
         name.to_ascii_uppercase().replace('-', "_")
-    );
-    let usual = USUAL.iter().find(|(n, _)| *n == name).map(|(_, var)| *var);
+    )
+}
+
+/// The variable such a key usually has, like `ANTHROPIC_API_KEY`.
+fn usual_variable(name: &str) -> Option<&'static str> {
+    USUAL.iter().find(|(n, _)| *n == name).map(|(_, var)| *var)
+}
+
+/// The environment variable to set for the secret `name`: the usual one
+/// when it has one, else Greed's own.
+fn variable(name: &str) -> String {
+    usual_variable(name).map_or_else(|| own_variable(name), str::to_owned)
+}
+
+fn from_env(name: &str) -> Option<String> {
+    let own = own_variable(name);
     std::iter::once(own.as_str())
-        .chain(usual)
+        .chain(usual_variable(name))
         .find_map(|var| std::env::var(var).ok().filter(|v| !v.is_empty()))
 }
 
@@ -246,6 +261,13 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     })?;
     secrets.set("get", jobs::waiting(lua, "greed.secrets.get", start_get)?)?;
     secrets.set("set", jobs::waiting(lua, "greed.secrets.set", start_set)?)?;
+    secrets.set(
+        "variable",
+        lua.create_function(|_, name: String| {
+            check_name(&name)?;
+            Ok(variable(&name))
+        })?,
+    )?;
     Ok(secrets)
 }
 

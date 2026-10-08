@@ -819,6 +819,14 @@ impl Editor {
         }
     }
 
+    /// Lets go of `buffer`'s undo history so far (see
+    /// [`Buffer::clear_history`]).
+    pub fn clear_history(&mut self, buffer: BufferId) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.clear_history();
+        }
+    }
+
     /// Keeps `buffer` open while nothing shows it, like a terminal you'll
     /// come back to, or lets it go then again (right away if nothing shows
     /// it now).

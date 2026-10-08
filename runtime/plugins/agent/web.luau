@@ -109,7 +109,10 @@ export type Found = { title: string, url: string, snippet: string }
 local function key(service: string): string
 	local found = greed.secrets.get(service)
 	if found == nil then
-		error(`no key for {service}: :secret-set {service}`, 0)
+		error(
+			`no key for {service}: :secret-set {service}, or set {greed.secrets.variable(service)}`,
+			0
+		)
 	end
 	return found
 end

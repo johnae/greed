@@ -19,10 +19,12 @@ error[E0308]: mismatched types
 
 The prompt shows the shell's folder, every folder but the last cut to its
 first letter, and before it what [the prompt](#the-prompt) knows, like the
-git branch. `space o s` switches to a shell of this project, or opens one;
-`:shell NAME` opens another. Each shell has its own folder and variables,
-and a project can have several. Shells and their blocks last until you
-close them or the session ends. A new shell says to type `help`, which
+git branch. `space o s` switches to the shell of this project, or opens
+one; with several, or from the only one, it lists them with a new one to
+open. `:shell NAME` opens another. Each shell has its own folder and
+variables, and a project can have several. Shells and their blocks last
+until you close them or the session ends, and what you type in one is
+nothing to save: `:q` doesn't ask about it. A new shell says to type `help`, which
 lists what the shell runs itself, what a line can hold, which shell runs
 the rest, and the keys in the style you use; `help TOPIC` shows one part.
 
@@ -73,8 +75,9 @@ A prompt of more than `shell-confirm-lines` (5) lines, as pasting a
 transcript or a file can leave there, asks `y/n` before it runs as one
 command.
 
-Undo at the prompt takes back what you typed, while output keeps
-streaming in above it.
+Undo at the prompt takes back what you typed since the last command ran,
+while output keeps streaming in above it; it never reaches back into a
+command that ran.
 
 ## Keys
 
@@ -124,6 +127,9 @@ The shell runs a few commands itself:
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
 | `help [TOPIC]` | What works here, and the keys in the style you use; a topic for one part |
+
+What `open` opens comes up in your style's own mode, to read and move
+around in, not typing as at the prompt.
 
 Every other line goes to your shell, so `ls` and `ls | head` behave the
 same: your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and
@@ -185,7 +191,8 @@ can read out of it, and every layer below works on what's under it.
 `/` on a block's output keeps the lines with what you type in them, as you
 type it; several words keep the lines with all of them, in any case, and
 a filter that starts with `/` is a regex (`/^error|warn`). `enter` keeps
-the filter, and `esc` (or `space S`) shows every line again. The block
+the filter; `esc`, while typing it or after in normal mode on the block,
+shows every line again, and `space S` also undoes a sort. The block
 shows the lines kept and the status says so (`2 of 340 lines · / error`),
 while its record keeps them all, so `$3`, `space y` and `space v` give the
 whole output. On a block's command or at the prompt, `/` searches as
@@ -304,7 +311,8 @@ they ended and the end of their output, marked as text someone else
 wrote. Its command goes to the prompt for you to read, change and run.
 
 It asks the model playing `shell-ask-role` (`fast`); `:models` shows and
-sets them up. Without one, a block says why.
+sets them up. Without one, or without its key, a block says why, naming
+the variable that sets the key, like `ANTHROPIC_API_KEY`.
 
 ## History and completion
 

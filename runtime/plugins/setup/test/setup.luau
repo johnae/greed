@@ -67,3 +67,20 @@ test("Not now closes the page and marks it answered", function(t)
 	assert(greed.fs.stat(`{greed.fs.dirs().data}/setup-seen`), "marked as answered")
 	assert(greed.fs.stat(config_file()) == nil, "no config written")
 end)
+
+test("esc and q close the page, and its picks don't hold up :q", function(t)
+	for _, key in { "esc", "q" } do
+		t:buffer("|")
+		t:run("setup")
+		local page = greed.view():buffer()
+		markdown.choices.pick(page, line_of(page, "No, or it's a box"))
+		assert(page:modified(), "picked")
+		local core = require("@core")
+		assert(not core.file.unsaved(page), "nothing to save on the page")
+		t:keys(key)
+		assert(
+			not string.find(greed.view():buffer():text(), "Welcome", 1, true),
+			key .. " closed it"
+		)
+	end
+end)

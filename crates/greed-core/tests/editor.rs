@@ -1250,6 +1250,33 @@ fn a_buffer_that_forgets_its_history_counts_edits_and_still_maps_other_views() {
 }
 
 #[test]
+fn clearing_a_buffers_history_keeps_what_comes_after() {
+    let mut ed = editor("hello");
+    let v = ed.focus();
+    let buffer = ed.view(v).buffer;
+    let changes = ChangeSet::from_changes(5, [(0, 0, Some("a "))]).unwrap();
+    ed.apply(v, changes, Author::User(ClientId(1)), None, None)
+        .unwrap();
+    ed.clear_history(buffer);
+    assert!(
+        ed.buffer(buffer).history().log().is_empty(),
+        "what was kept goes"
+    );
+    assert!(!ed.undo(v).unwrap(), "undo can't go back past the clear");
+    let changes = ChangeSet::from_changes(7, [(7, 7, Some("!"))]).unwrap();
+    ed.apply(v, changes, Author::User(ClientId(1)), None, None)
+        .unwrap();
+    assert_eq!(
+        ed.buffer(buffer).history().applied(),
+        2,
+        "every edit counts"
+    );
+    assert!(ed.undo(v).unwrap(), "an edit after it is kept");
+    assert_eq!(text(&ed), "a hello");
+    assert!(!ed.undo(v).unwrap(), "and only that one");
+}
+
+#[test]
 fn hidden_floats_give_up_focus_and_take_it_back_when_focused() {
     let mut ed = editor("main text");
     let main = ed.main();

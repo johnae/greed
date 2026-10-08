@@ -726,7 +726,8 @@ impl Server<'_> {
     fn report(&mut self, result: Result<(), HostError>) {
         if let Err(err) = result {
             let text = err.to_string();
-            let line = first_line(&text);
+            // Without Luau's "runtime error:", which says nothing to you.
+            let line = first_line(&err.brief());
             // Which plugin failed, and doing what; :errors has the rest.
             let message = match self.host.error_source(&text) {
                 Some(source) => format!("{source}: {line}"),

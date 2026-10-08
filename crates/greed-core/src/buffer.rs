@@ -446,6 +446,12 @@ impl Buffer {
         self.history.forget();
     }
 
+    /// Lets go of the undo history so far, keeping later edits: undo can't
+    /// go back past now, as at a shell's prompt after a command runs.
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+    }
+
     /// Makes redo follow undo-tree node `child` (see `History::prefer`).
     pub(crate) fn prefer_branch(&mut self, child: usize) {
         self.history.prefer(child);

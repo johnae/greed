@@ -3,8 +3,21 @@
 local greed = require("@greed")
 local project = require("./project")
 local registry = require("./registry")
+local unsaved = require("./unsaved")
 
 local M = {}
+
+--- Marks a buffer as scratch: its changes don't count as unsaved, so `:q`
+--- doesn't refuse over them and the status line shows no [+], like a
+--- shell's or the output a command put in a buffer.
+M.scratch = unsaved.scratch
+
+--- Whether a buffer is marked as scratch.
+M.is_scratch = unsaved.is_scratch
+
+--- Whether a buffer has changes to save: a file's, not scratch, changed
+--- since it was opened or saved.
+M.unsaved = unsaved.unsaved
 
 -- How buffers that aren't files save, by kind.
 local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
@@ -54,13 +67,13 @@ end
 
 -- Every file with unsaved changes, in any project.
 local function all_unsaved(): { string }
-	local unsaved = {}
+	local found = {}
 	for _, buffer in greed.buffers() do
-		if buffer:kind() == "file" and buffer:modified() then
-			table.insert(unsaved, buffer:path() or "an unnamed buffer")
+		if unsaved.unsaved(buffer) then
+			table.insert(found, buffer:path() or "an unnamed buffer")
 		end
 	end
-	return unsaved
+	return found
 end
 
 greed.option.define({
@@ -405,7 +418,7 @@ end
 --- Closes `buffer`: views showing it show another file instead. Refuses
 --- with unsaved changes unless `force`.
 function M.close(buffer: greed.Buffer, force: boolean?)
-	if buffer:kind() == "file" and buffer:modified() and not force then
+	if unsaved.unsaved(buffer) and not force then
 		error(
 			`unsaved changes in {buffer:path() or "this buffer"} - :w saves, :bc! closes anyway`,
 			0
@@ -442,14 +455,14 @@ greed.command({
 			end
 		end
 		if not ctx.force then
-			local unsaved = {}
+			local found = {}
 			for _, buffer in others do
 				if buffer:modified() then
-					table.insert(unsaved, buffer:path() :: string)
+					table.insert(found, buffer:path() :: string)
 				end
 			end
-			if #unsaved > 0 then
-				error(`unsaved changes in {table.concat(unsaved, ", ")} - :bco! closes anyway`, 0)
+			if #found > 0 then
+				error(`unsaved changes in {table.concat(found, ", ")} - :bco! closes anyway`, 0)
 			end
 		end
 		for _, buffer in others do

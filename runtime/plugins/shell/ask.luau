@@ -133,6 +133,8 @@ function M.ask(
 			.. "fences. It goes to their prompt, where they read, change and run it.",
 		messages = { { role = "user", content = M.message(shell, draft, question, untrusted) } },
 	})
+	-- Asked, whatever came of it.
+	greed.echo("")
 	if answer == nil then
 		fail(`no answer from the {role} model: {err or "it said nothing"}; :models sets one up`)
 		return
@@ -142,7 +144,6 @@ function M.ask(
 		fail(`the {role} model gave no command`)
 	elseif log.prompt_text(shell) == line then
 		log.set_prompt(shell, command, shell.buffer:views())
-		greed.echo("")
 	else
 		greed.echo(`suggested: {command}`)
 	end

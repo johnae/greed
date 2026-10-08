@@ -575,6 +575,7 @@ local function new_buffer(): greed.Buffer
 	-- Every bit of output replaces the screen; keeping each one to undo
 	-- would grow without end in a long-running terminal.
 	buffer:forget_history()
+	core.file.scratch(buffer)
 	return buffer
 end
 

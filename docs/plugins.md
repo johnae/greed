@@ -421,6 +421,16 @@ written to disk. `{ from, to }` replaces just that part, and `{ load = true }`
 opens the file first. Both take paths as `core.project.resolve` does, and
 `core.file.buffer(path)` is the open buffer for one.
 
+A buffer of your own with no file, like a page of results or a command's
+output, can be scratch: `core.file.scratch(buffer)` keeps its changes from
+counting as unsaved, so `:q` doesn't refuse over them and the status line
+shows no `[+]`, until it's saved as a file. `core.file.unsaved(buffer)` says
+whether a buffer has changes to save. A buffer someone types into in turns,
+like a prompt, can let go of its undo history with `buffer:clear_history()`,
+so undo never reaches past the last turn. To tell someone how to set a
+secret, `greed.secrets.variable("anthropic")` is the variable that does
+(`ANTHROPIC_API_KEY`).
+
 To show a file to the user, `core.file.open(path)` opens it in the main
 view, as the picture for an image and the pages for a PDF, and
 `core.file.open_at(path, line, col)` puts the cursor there too (0-based

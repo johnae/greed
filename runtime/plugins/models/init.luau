@@ -300,6 +300,11 @@ local function may_send(name: string, url: string): string?
 	return nil
 end
 
+-- How to give the key `secret`, for messages about a missing one.
+local function how_to_set(secret: string): string
+	return `:secret-set {secret}, or set {greed.secrets.variable(secret)}`
+end
+
 -- The role's model and provider, and its key if it needs one. Callers vouch
 -- for it (greed.vouch): plugins asking a model never see the key, and it
 -- only goes where `may_send` lets it.
@@ -318,10 +323,7 @@ local function connect(role: string): (Role?, Provider?, string?, string?)
 	elseif provider.secret then
 		key, name = greed.secrets.get(provider.secret), provider.secret
 		if key == nil then
-			return nil,
-				nil,
-				nil,
-				`no key for {chosen.provider}: :secret-set {provider.secret}, or set it in the environment`
+			return nil, nil, nil, `no key for {chosen.provider}: {how_to_set(provider.secret)}`
 		end
 	end
 	local refused = name and may_send(name, provider.url)
@@ -534,7 +536,7 @@ function M.describe(): { string }
 			elseif provider.secret then
 				key = if greed.secrets.get(provider.secret)
 					then "key found"
-					else `no key: :secret-set {provider.secret}`
+					else `no key: {how_to_set(provider.secret)}`
 			end
 			table.insert(
 				lines,

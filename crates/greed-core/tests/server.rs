@@ -80,7 +80,6 @@ fn errors_and_messages_show_on_the_status_line() {
         "{:?}",
         screen_rows(&f)[1].text()
     );
-
     // The message goes with the next key.
     keys(&conn, "l");
     let mut f = frame(&conn);
@@ -512,4 +511,23 @@ fn odd_sizes_and_clicks_far_off_screen_dont_stop_the_server() {
 fn frame_sized(conn: &Connection, width: u16, height: u16) {
     let size = Size { width, height }.limited();
     while frame(conn).size != size {}
+}
+
+#[test]
+fn a_refusal_shows_as_plain_words() {
+    let conn = start("hi", None);
+    conn.input
+        .send(Input::Resize(Size {
+            width: 100,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    keys(&conn, "i x esc ctrl-q");
+    let mut f = frame(&conn);
+    while !screen_rows(&f)[1].text().contains("unsaved changes") {
+        f = frame(&conn);
+    }
+    let line = screen_rows(&f)[1].text();
+    assert!(!line.contains("runtime error"), "{line:?}");
 }
