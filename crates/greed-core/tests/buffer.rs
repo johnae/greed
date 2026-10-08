@@ -256,6 +256,42 @@ fn buffers_know_whether_they_changed_since_saving() {
 }
 
 #[test]
+fn undo_and_redo_back_to_the_saved_text_count_as_unmodified() {
+    let path = std::env::temp_dir().join(format!("greed-undo-saved-{}.txt", std::process::id()));
+    let mut f = Fixture::new("");
+    f.buffer = Buffer::new(BufferId(1), "file", "").with_path(&path);
+    f.edit(0, 0, "x");
+    assert!(f.undo());
+    assert!(!f.buffer.is_modified(), "back to the text as loaded");
+    assert!(f.redo());
+    assert!(f.buffer.is_modified());
+
+    f.buffer.save().unwrap();
+    f.edit(1, 1, "y");
+    assert!(f.undo());
+    assert!(!f.buffer.is_modified(), "back to the text as saved");
+    assert!(f.undo());
+    assert!(f.buffer.is_modified(), "before the save");
+    assert!(f.redo());
+    assert!(!f.buffer.is_modified(), "redone to the save");
+
+    // Typing on into the step that was saved changes it.
+    f.edit_by(1, 1, "a", USER, Some(7));
+    f.buffer.save().unwrap();
+    f.edit_by(2, 2, "b", USER, Some(7));
+    assert!(f.buffer.is_modified(), "merged into the saved step");
+
+    // An edit kept out of undo leaves no way back to the saved text.
+    f.buffer.save().unwrap();
+    f.edit(3, 3, "c");
+    f.unrecorded(0, 0, "z");
+    assert!(f.undo());
+    assert_eq!(f.text(), "zxab");
+    assert!(f.buffer.is_modified());
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
 fn text_before_a_transaction_comes_back_from_the_log() {
     let mut f = Fixture::new("one");
     let a = f.edit(3, 3, " two");

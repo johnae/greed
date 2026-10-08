@@ -44,3 +44,20 @@ test("alt-u and alt-U go through every state in the order it was made", function
 	local messages = t:messages()
 	assert(messages[#messages] == "already at the latest change", messages[#messages])
 end)
+
+test("undo back to the saved text takes the [+] away, and redo brings it back", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "a" })
+	greed.open(dir .. "/a.txt")
+	local function marked(): boolean
+		return string.find(table.concat(t:draw(60, 4), "\n"), "[+]", 1, true) ~= nil
+	end
+	t:keys("i x y esc")
+	assert(marked(), "changed")
+	t:keys("u")
+	assert(not marked() and not greed.view():buffer():modified(), "back to the file")
+	t:keys("U")
+	assert(marked(), "redone")
+	t:run("save")
+	t:keys("i z esc u")
+	assert(not marked(), "back to what was saved")
+end)

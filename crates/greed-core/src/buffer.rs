@@ -27,6 +27,9 @@ pub struct Buffer {
     version: SmallVec<[TxId; 1]>,
     /// The version last loaded from or written to the file.
     saved: SmallVec<[TxId; 1]>,
+    /// Where in the undo tree that text was, so undo or redo back to it
+    /// counts as unmodified.
+    saved_place: Option<u64>,
     readonly: bool,
     /// Whether the file wasn't UTF-8 and what couldn't be read was replaced,
     /// so saving over it would lose that.
@@ -193,6 +196,7 @@ impl Buffer {
             history: History::default(),
             version: SmallVec::new(),
             saved: SmallVec::new(),
+            saved_place: Some(0),
             readonly: false,
             lossy: false,
             line_numbers: true,
@@ -460,6 +464,7 @@ impl Buffer {
     /// Counts the text as what its file holds, as after a save.
     pub(crate) fn mark_saved(&mut self) {
         self.saved = self.version.clone();
+        self.saved_place = self.history.place();
     }
 
     pub fn history(&self) -> &History {
@@ -483,9 +488,11 @@ impl Buffer {
         self.history.prefer(child);
     }
 
-    /// True if the text changed since it was loaded or last saved.
+    /// True if the text changed since it was loaded or last saved, and undo
+    /// or redo hasn't brought it back to that.
     pub fn is_modified(&self) -> bool {
         self.version != self.saved
+            && (self.saved_place.is_none() || self.saved_place != self.history.place())
     }
 
     pub fn version(&self) -> &[TxId] {

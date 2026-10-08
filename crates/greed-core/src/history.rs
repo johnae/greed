@@ -27,11 +27,16 @@ pub struct History {
     /// Whether transactions are kept at all; buffers whose edits nobody
     /// undoes, like terminals, don't.
     keep: bool,
+    /// The last stamp handed to a node; see `Node::stamp`.
+    stamps: u64,
 }
 
 /// One undo step: one transaction, or several merged by group.
 #[derive(Debug)]
 struct Node {
+    /// Different for every text a node has stood for: a new step, one merged
+    /// into, and every step after a rebuild get a new one.
+    stamp: u64,
     parent: usize,
     /// The last child is the one redo follows.
     children: Vec<usize>,
@@ -87,6 +92,7 @@ impl Default for History {
             log: Vec::new(),
             inverses: Vec::new(),
             nodes: vec![Node {
+                stamp: 0,
                 parent: 0,
                 children: Vec::new(),
                 changes: ChangeSet::default(),
@@ -101,11 +107,33 @@ impl Default for History {
             applied: 0,
             latest: ChangeSet::default(),
             keep: true,
+            stamps: 0,
         }
     }
 }
 
 impl History {
+    /// Which text the undo tree is at now, to tell later whether undo or
+    /// redo came back to it: `None` when nothing is kept.
+    pub fn place(&self) -> Option<u64> {
+        self.keep.then(|| self.nodes[self.current].stamp)
+    }
+
+    fn next_stamp(&mut self) -> u64 {
+        self.stamps += 1;
+        self.stamps
+    }
+
+    /// A history like a new one, but with stamps after this one's.
+    fn fresh(&self) -> Self {
+        let mut fresh = Self {
+            stamps: self.stamps,
+            ..Self::default()
+        };
+        fresh.nodes[0].stamp = fresh.next_stamp();
+        fresh
+    }
+
     /// How many transactions were applied to the buffer, kept in the log or
     /// not: its version, for caches that follow its edits.
     pub fn applied(&self) -> usize {
@@ -123,7 +151,7 @@ impl History {
         *self = Self {
             applied: self.applied,
             keep: false,
-            ..Self::default()
+            ..self.fresh()
         };
     }
 
@@ -134,7 +162,7 @@ impl History {
             applied: self.applied,
             latest: std::mem::take(&mut self.latest),
             keep: self.keep,
-            ..Self::default()
+            ..self.fresh()
         };
     }
 
@@ -205,6 +233,7 @@ impl History {
         let group = tx.meta.group;
         let time = Some(tx.meta.time);
         let index = self.nodes.len();
+        let stamp = self.next_stamp();
         let node = &mut self.nodes[self.current];
         let merge =
             self.current != 0 && group.is_some() && node.group == group && node.children.is_empty();
@@ -218,9 +247,11 @@ impl History {
                 .expect("inverse applies before this node's inverse");
             node.after = after;
             node.time = time;
+            node.stamp = stamp;
         } else {
             node.children.push(index);
             self.nodes.push(Node {
+                stamp,
                 parent: self.current,
                 children: Vec::new(),
                 changes: tx.changes.clone(),
@@ -273,6 +304,10 @@ impl History {
                 self.nodes.push(step);
             }
             self.current = self.nodes.len() - 1;
+            // Each step now stands for a text it never had.
+            for at in 0..self.nodes.len() {
+                self.nodes[at].stamp = self.next_stamp();
+            }
         }
         self.latest = changes;
     }
@@ -298,6 +333,8 @@ impl History {
                 let mut before_step = text.clone();
                 inverse.apply(&mut before_step)?;
                 kept.push(Node {
+                    // Stamped once in the tree.
+                    stamp: 0,
                     parent: 0,
                     children: Vec::new(),
                     changes: inverse.invert(&text)?,
