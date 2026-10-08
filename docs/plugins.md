@@ -1065,6 +1065,62 @@ stays yours to read and close. `references(buffer, { from, to, cwd })`
 finds the files and lines some output names, and `row_marks` turns a
 terminal's rows into marks for a buffer of your own.
 
+### The shell
+
+`require("@shell")` is the [shell](shell.md): `shell.run(sh, line)` runs
+a line in a shell as a new block, `shell.of(buffer)` is the shell a buffer
+shows, and `shell.wait(block)` waits for a block to finish. A block's
+record has what ran and how it ended, its output, and `block.value` when
+the output was JSON.
+
+`block.table` is the output read as a table, when it was one: `columns`
+(the header's names, in order) and `rows`, each a map from a column's name
+to its cell's text. `shell.tables` reads and works on them:
+`tables.detect(text, command)`, `tables.from_value(json)`,
+`tables.where(tbl, "AGE < 1h")`, `tables.select(tbl, "NAME,AGE")`,
+`tables.sort(tbl, "AGE -r")` (each a new table), `tables.number("512Mi")`,
+and `tables.draw(tbl)` lines it up as text; `tables.columns(text, true)`,
+`tables.csv(text)`, `tables.from_json(text)`, `tables.split(text, ":")`
+and `tables.lines(text)` read text that's known to be a table.
+
+`shell.parser(match, parse)` reads the output of the commands `match`
+names as tables, ahead of the shell's own look for one: a program's name,
+or a pattern for the command line. `parse(text, block)` returns a table,
+a list of objects as JSON has them, or nil to leave it to the shell.
+
+```luau
+local shell = require("@shell")
+
+-- `terraform state list` prints one address a line.
+shell.parser("^terraform state list", function(text)
+	local rows = {}
+	for address in string.gmatch(text, "[^\n]+") do
+		table.insert(rows, { address = address, type = string.match(address, "^[%w_]+") or "" })
+	end
+	return rows
+end)
+```
+
+`shell.rows.row_at(sh, block, pos)` is the row under a position in the
+buffer, filtered and sorted as the block shows it, for actions on a row:
+
+```luau
+local shell = require("@shell")
+
+greed.command({
+	name = "pod-logs",
+	run = function(ctx)
+		local sh = shell.of(ctx.buffer)
+		local pos = ctx.view:cursor()
+		local block = sh and shell.log.block_at(sh, pos)
+		local row = block and block.table and shell.rows.row_at(sh, block, pos)
+		if sh and block and block.table and row then
+			shell.run(sh, `kubectl logs {block.table.rows[row].NAME}`)
+		end
+	end,
+})
+```
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

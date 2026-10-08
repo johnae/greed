@@ -3,6 +3,7 @@
 -- plugins and agents read.
 
 local greed = require("@greed")
+local tables = require("./tables")
 
 local M = {}
 
@@ -65,6 +66,12 @@ export type Block = {
 	note: string?,
 	--- The output read as JSON, when it's an object or an array.
 	value: any?,
+	--- The output read as a table, when it's one: aligned columns under a
+	--- header (kubectl, docker, ps), `ls -l`, or a JSON array of objects.
+	table: tables.Table?,
+	--- What a filter, or a sort of its table, shows of its output, when
+	--- one does.
+	shown: Shown?,
 	--- What went to its input (`$3`, `buf:NAME`, `@sel` or `@file`), and
 	--- the buffer its output went to instead of the block (`buf:NAME`).
 	input: string?,
@@ -79,6 +86,17 @@ export type Block = {
 	job: Job?,
 	--- Sent once it's done.
 	done: greed.Signal,
+}
+
+--- What a block shows of its output: the rows of its table (or the lines,
+--- without one) that `filter` keeps, indexes from 1 of `total`, sorted by
+--- `sort`, from the greatest with `desc`.
+export type Shown = {
+	filter: string,
+	sort: string?,
+	desc: boolean,
+	rows: { number },
+	total: number,
 }
 
 --- Something running a block.
@@ -259,6 +277,7 @@ function M.record(block: Block): { [string]: any }
 		env_changed = block.env_changed,
 		note = block.note,
 		value = block.value,
+		table = block.table,
 		input = block.input,
 		into = block.into,
 		refs = block.refs,

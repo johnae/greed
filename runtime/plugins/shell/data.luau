@@ -6,6 +6,7 @@ local core = require("@core")
 local state = require("./state")
 local run = require("./run")
 local parse = require("./parse")
+local tables = require("./tables")
 
 type Shell = state.Shell
 type Into = parse.Into
@@ -82,6 +83,21 @@ function M.read(shell: Shell, source: string, cwd: string): (string?, any?, stri
 		table.insert(parts, buffer:slice(from, to))
 	end
 	return table.concat(parts, "\n"), nil, nil
+end
+
+--- The table in what `source` holds (`text`, and `value` when it was JSON):
+--- block `$N`'s table, or one read from a buffer or the selection.
+function M.table(shell: Shell, source: string, text: string?, value: any?): tables.Table?
+	local number = tonumber(string.match(source, "^%$(%d+)$"))
+	if number then
+		local block = state.block(shell, number)
+		return block and block.table
+	end
+	if text == nil then
+		return nil
+	end
+	local decoded = if string.match(text, "^%s*%[") then greed.json.decode(text) else value
+	return tables.from_value(decoded) or tables.detect(text, nil)
 end
 
 --- The buffer `into` names, for a command's output: made (and kept open)

@@ -34,8 +34,9 @@ stopped, or `↗` when it was handed to a terminal, how long it took, where
 `cd` went and which variables it set. A block that went quiet while it
 could be reading a line says it may be waiting for input.
 
-Output that's a JSON object or array is kept as a value on the block, and
-the status says so (`JSON · 3 items`). Places in files the output names, like
+Output that's JSON or a table is kept as a value on the block too, and
+the status says so (`JSON · 3 items`, `table · 12 rows`); see [Filtering
+and tables](#filtering-and-tables). Places in files the output names, like
 `src/main.rs:12:5`, are links: `] e` and `[ e` go to them, and `enter` on
 one opens the file there, taking relative paths from the folder the block
 ran in.
@@ -72,13 +73,16 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `space x` | Stop the running block for good |
 | `space v` | Open the block's whole output in a buffer |
 | `space c` | Take the finished blocks away |
+| `/` | On a block's output, keep the lines (or a table's rows) with what you type; elsewhere, search |
+| `space s` `space S` | Sort a table by the column under the cursor; show a block as it came |
 
 In the vscode style you're always typing, so the keys that need normal
 mode have others: `ctrl-c` copies when something is selected and
 interrupts otherwise, `ctrl-up` and `ctrl-down` go between blocks, `f8`
-and `shift-f8` between the files and lines the output names, and the
-`space` keys above are `ctrl-space` ones. `space .` (`alt-.` in the vscode
-style) on a block lists what you can do with it.
+and `shift-f8` between the files and lines the output names, `ctrl-f`
+filters a block, and the `space` keys above are `ctrl-space` ones.
+`space .` (`alt-.` in the vscode style) on a block lists what you can do
+with it.
 
 ## What runs your commands
 
@@ -145,6 +149,102 @@ shows block 3's output again, `$3 > buf:keep` keeps it in a buffer, and
 than a terminal, so a `> buf:` gets only what the program printed, and
 can't be combined with `!`.
 
+## Filtering and tables
+
+Most output is text, and stays text. On top of it the shell keeps what it
+can read out of it, and every layer below works on what's under it.
+
+### Filtering a block
+
+`/` on a block's output keeps the lines with what you type in them, as you
+type it; several words keep the lines with all of them, in any case, and
+a filter that starts with `/` is a regex (`/^error|warn`). `enter` keeps
+the filter, and `esc` (or `space S`) shows every line again. The block
+shows the lines kept and the status says so (`2 of 340 lines · / error`),
+while its record keeps them all, so `$3`, `space y` and `space v` give the
+whole output. On a block's command or at the prompt, `/` searches as
+usual.
+
+### Tables
+
+Output in columns under a header, as `kubectl get`, `docker ps`, `ps aux`
+and `df` print it, is also kept as a table on the block, and the status
+says so (`table · 12 rows`). So is `ls -l`'s output. The shell looks for a
+header in capitals with the columns lined up under it in every row, and
+when it isn't sure, the output is text: prose is never taken for a table.
+
+In a table, `/` keeps rows: a word like `STATUS=Running` or `NAME~api`
+looks in one column, `RESTARTS>0` and `AGE<1h` compare numbers, and other
+words look in every cell. `space s` sorts the rows by the column under
+the cursor, again from the greatest, and a third time as they came.
+
+```text
+❯ kubectl get pods                     ✓ 0.41s · 2 of 5 rows · / STATUS=Running api
+NAME                  READY   STATUS    RESTARTS        AGE
+api-7d9f8b6c5-2xkqz   1/1     Running   0               3d16h
+api-7d9f8b6c5-9wlmn   1/1     Running   3 (3d16h ago)   5d2h
+```
+
+A table also goes to the next command through `$`, where the shell itself
+runs these on it, each making a new table:
+
+| | |
+|---|---|
+| `$3 \| where STATUS = Running` | The rows passing a test: `=`, `!=`, `~` (has in it), `!~`, `<`, `>`, `<=`, `>=` |
+| `$3 \| select NAME,AGE` | Only those columns, in that order |
+| `$3 \| sort AGE` | Sorted by a column; `sort AGE -r` from the greatest |
+
+Column names don't mind case, and `container_id` names `CONTAINER ID`.
+Numbers are compared as numbers, with sizes (`512Mi`, `1.5G`, `250m` of a
+CPU), percentages and ages (`45s`, `12m`, `3d16h`) read as what they
+mean, so `$3 | where AGE < 1h` and `$3 | sort RESTARTS` do what they
+say; kubectl's `3 (3d16h ago)` restarts count as 3. They chain, and a
+program after them reads the table as text:
+
+```text
+❯ $1 | where STATUS != Running | select NAME,STATUS,AGE
+❯ $1 | sort RESTARTS -r | where RESTARTS > 0 | wc -l
+❯ $1 | where IMAGE ~ postgres > buf:databases
+```
+
+`sort` without a column is the `sort` program, as always.
+
+### JSON
+
+Output that's JSON is kept as a value on the block (`JSON · 3 items`),
+and an array of objects is a table too, with a column for each key, so
+`/` and `space s` show it lined up in columns, and `$3 | where` works on
+it. Many tools print JSON when asked, which is the surest way to a table:
+`kubectl get pods -o json` gives every field, where its columns give a
+few. The shell never runs your command again with other flags; it reads
+what it printed.
+
+### Saying what it is
+
+When the shell finds no table, say how to read the output:
+
+| | |
+|---|---|
+| `$3 \| columns` | Text lined up in columns under a header; `columns -H` without one, the columns named `1`, `2`, ... |
+| `$3 \| from csv` | CSV, its first line naming the columns; `from tsv` for tab separated values |
+| `$3 \| from json` | JSON, or JSON lines (an object on each line, as many logs are) |
+| `$3 \| split :` | Each line cut at `:` into columns `1`, `2`, ... (`/etc/passwd`) |
+| `$3 \| lines` | A row for each line, in a column `line` |
+
+They make tables like any other, for `where`, `select` and `sort`:
+`$3 | split : | where 7 ~ zsh | select 1`. A buffer or the selection
+works too: `buf:data.csv | from csv | where total > 100`. A program in a
+terminal prints tabs as spaces, so tab separated output reads best from a
+file, with `buf:`.
+
+### Parsers from plugins
+
+A plugin can read its commands' output as tables, ahead of the shell's
+own look ([Writing plugins](plugins.md#the-shell) has how). And when
+[jc](https://github.com/kellyjonbrazil/jc) is installed, output the shell
+found no table in, from a command jc knows (`ifconfig`, `dig`, `mount`,
+`uptime` and many more), gets jc's reading of it.
+
 ## Asking for a command
 
 A line that starts with `?` asks a model for a command instead of running
@@ -176,7 +276,7 @@ without taking your screen) with the `shell` [tool group](agents.md#tool-groups)
 
 | Tool | |
 |---|---|
-| `shell_run` | Run a command line and get back its exit code, output and errors (cut to their start and end when long), how long it took, where `cd` went and what it set, the files and lines it names and its JSON |
+| `shell_run` | Run a command line and get back its exit code, output and errors (cut to their start and end when long), how long it took, where `cd` went and what it set, the files and lines it names, its JSON, and a table's columns and rows |
 | `shell_read` | A block by id, or the latest one, yours too |
 | `shell_wait` | Wait for a block `shell_run` left running past its `timeout_s` |
 | `shell_kill` | Stop a block an agent ran |

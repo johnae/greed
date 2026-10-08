@@ -222,6 +222,20 @@ function M.status_text(block: Block): string
 		local unit = if count > 0 and #value == 0 then "keys" else "items"
 		table.insert(parts, `JSON · {count} {unit}`)
 	end
+	local tbl = block.table
+	local view = block.shown
+	if view then
+		table.insert(parts, `{#view.rows} of {view.total} {if tbl then "rows" else "lines"}`)
+		if view.filter ~= "" then
+			table.insert(parts, `/ {view.filter}`)
+		end
+		if view.sort then
+			table.insert(parts, `by {view.sort} {if view.desc then "↓" else "↑"}`)
+		end
+	elseif tbl and value == nil then
+		local rows = #tbl.rows
+		table.insert(parts, `table · {rows} {if rows == 1 then "row" else "rows"}`)
+	end
 	if block.note then
 		table.insert(parts, block.note)
 	end
@@ -453,6 +467,67 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?
 		from = start,
 		to = if volatile then nil else start + #stable_text,
 	})
+	M.draw_block(shell, block)
+	if last_block then
+		M.draw_prompt(shell)
+	end
+end
+
+--- The lines of `block`'s output as the buffer shows them, with their
+--- styles, for a finished block.
+function M.output_lines(shell: Shell, block: Block): { Line }
+	local from, to = M.output_range(shell, block)
+	if from == nil or to == nil then
+		return {}
+	end
+	local buffer = shell.buffer
+	local first, last = buffer:line_of(from), buffer:line_of(to)
+	local lines: { Line } = {}
+	for line = first, last do
+		lines[line - first + 1] = { text = buffer:line_text(line), marks = {} }
+	end
+	for _, mark in buffer:decorations(ns_out(block)) do
+		local line = buffer:line_of(mark.from)
+		local into = lines[line - first + 1]
+		local marks = into and into.marks
+		if marks then
+			local start = buffer:line_start(line)
+			local moved: greed.Mark = table.clone(mark)
+			moved.from -= start
+			moved.to = math.min(mark.to, buffer:line_end(line)) - start
+			table.insert(marks, moved)
+		end
+	end
+	return lines
+end
+
+--- Shows `lines` as `block`'s output in place of what it shows, for a
+--- finished block, like the rows a filter kept of its table.
+function M.replace_output(shell: Shell, block: Block, lines: { Line })
+	local s = shown[block.uid]
+	local from, to = M.range(block)
+	if s == nil or from == nil or to == nil or block.status == "running" then
+		return
+	end
+	local buffer = shell.buffer
+	local last_block = M.prompt_start(shell) == to
+	local start = if s.stable + s.volatile == 0
+		then to
+		else buffer:line_start(first_output_line(shell, block, from))
+	local text = joined(lines)
+	buffer:edit(function(e)
+		e:replace(start, to, text)
+	end, OUT_OF_UNDO)
+	s.stable, s.volatile = #lines, 0
+	local stop = start + #text
+	track_block(shell, block, from, stop)
+	if last_block then
+		track_prompt(shell, stop)
+	end
+	local marks: { greed.Mark } = {}
+	placed(lines, start, marks)
+	buffer:decorate(ns_out(block), marks)
+	M.draw_refs(shell, block)
 	M.draw_block(shell, block)
 	if last_block then
 		M.draw_prompt(shell)

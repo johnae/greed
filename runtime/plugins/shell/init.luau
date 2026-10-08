@@ -23,7 +23,10 @@
 -- `$3 | sort`, `buf:NAME | ...`, `@sel | ...` and `@file | ...` send block
 -- 3's output, a buffer, the selection or the file you're in to a command,
 -- and `... > buf:NAME` (`>>` adds) sends its output to a buffer
--- (data.luau). Output that's JSON is kept as a value on the block.
+-- (data.luau). Output that's JSON is kept as a value on the block, and a
+-- table (kubectl get, docker ps, ps) as a table, which `$3 | where ...`,
+-- `select` and `sort` work on (tables.luau). `/` filters what a block
+-- shows, and `space s` sorts a table (rows.luau).
 --
 -- Agents run commands with shell_run and read blocks with shell_read
 -- (tools.luau).
@@ -41,10 +44,13 @@ local fallback = require("@self/fallback")
 local history = require("@self/history")
 local data = require("@self/data")
 local ask = require("@self/ask")
+local tables = require("@self/tables")
+local rows = require("@self/rows")
 require("@self/complete")
 
 type Shell = state.Shell
 type Block = state.Block
+export type Table = tables.Table
 
 local M = {}
 
@@ -58,6 +64,14 @@ M.runners = run
 M.pty = pty
 M.data = data
 M.ask = ask
+M.tables = tables
+M.rows = rows
+M.jc = require("@self/jc")
+
+--- Reads the output of the commands `match` names (a program, or a pattern
+--- for the command line) as tables with `parse`, ahead of the shell's own
+--- look for one; see `tables.parser`.
+M.parser = tables.parser
 
 --- The shell shown in `buffer`, if it's one.
 M.of = state.of
@@ -221,6 +235,8 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		env_changed = nil,
 		note = nil,
 		value = nil,
+		table = nil,
+		shown = nil,
 		input = nil,
 		into = nil,
 		target = nil,
@@ -332,10 +348,17 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	local block = add_block(shell, command, opts)
 	local input: string?, why: string? = nil, parsed.error
+	-- What table stages at the line's start made (`$3 | where ...`), and
+	-- what comes after them, to run on their text.
+	local staged: tables.Table?, rest: string? = nil, nil
 	if parsed.input and why == nil then
 		block.input = parsed.input
-		local text, _, err = data.read(shell, parsed.input, block.cwd)
+		local text, value, err = data.read(shell, parsed.input, block.cwd)
 		input, why = text, err
+		if why == nil and parsed.kind ~= "source" then
+			local source = data.table(shell, parsed.input, text, value)
+			staged, rest, why = tables.pipeline(source, text, parsed.line)
+		end
 	end
 	local into = parsed.into
 	if into and why == nil then
@@ -344,6 +367,13 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	if why then
 		run.fail(shell, block, why, 2)
+	elseif staged and rest then
+		block.via = "shell"
+		fall_back(shell, block, rest, opts, false, tables.text(staged))
+	elseif staged then
+		block.table = staged
+		run.write(shell, block, tables.text(staged), "stdout")
+		run.finish(shell, block, 0, nil)
 	elseif parsed.kind == "source" then
 		run.write(shell, block, input or "", "stdout")
 		run.finish(shell, block, 0, nil)
@@ -425,6 +455,8 @@ local HELP_KEYS = {
 		{ "ctrl-space r  R", "run the block again, as it ran or here" },
 		{ "ctrl-space y  Y", "copy its output or its command" },
 		{ "ctrl-space x  v  c", "stop it, open its output, clear finished blocks" },
+		{ "ctrl-f", "keep a block's lines with what's typed, or a table's rows (COL=VALUE)" },
+		{ "ctrl-space s  S", "sort a table by the column here; show it as it came" },
 	},
 	other = {
 		{ "enter", "run what's at the prompt; on a block, edit its command" },
@@ -439,6 +471,8 @@ local HELP_KEYS = {
 		{ "space r  R", "run the block again, as it ran or here" },
 		{ "space y  Y", "copy its output or its command" },
 		{ "space x  v  c", "stop it, open its output, clear finished blocks" },
+		{ "/", "keep a block's lines with what's typed, or a table's rows (COL=VALUE)" },
+		{ "space s  S", "sort a table by the column here; show it as it came" },
 	},
 }
 
@@ -480,6 +514,12 @@ function M.help(): string
 		{ "!cmd", "run cmd in a terminal from the start" },
 		{ "? question", "ask a model for a command, put at the prompt to run" },
 		{ "cmd ? question", "the same, starting from what's typed; or end with ?" },
+		{ "$3 | where COL > 2", "a table's rows passing a test: = != ~ !~ < > <= >=" },
+		{ "$3 | select A,B", "a table's columns A and B" },
+		{ "$3 | sort COL [-r]", "a table sorted by a column, numbers and ages as such" },
+		{ "$3 | columns", "text lined up in columns as a table; columns -H without a header" },
+		{ "$3 | from csv", "CSV as a table; from tsv, from json (or JSON lines) too" },
+		{ "$3 | split :", "each line cut at : into columns 1, 2, ...; lines: a line a row" },
 	})
 	table.insert(lines, "")
 	local carry = if carries
@@ -925,6 +965,93 @@ block_command(
 	end
 )
 
+-- The finished block whose output holds the cursor, if any; for a block
+-- a filter shows nothing of, its command line too.
+local function output_block(ctx: greed.Context): (Shell?, Block?)
+	local shell = state.of(ctx.buffer)
+	local pos = ctx.view:cursor()
+	local block = shell and log.block_at(shell, pos)
+	if shell == nil or block == nil or block.status == "running" then
+		return nil, nil
+	end
+	local from, to = log.output_range(shell, block)
+	local inside = from ~= nil and to ~= nil and pos >= from and pos <= to
+	if not inside and block.shown == nil then
+		return nil, nil
+	end
+	return shell, block
+end
+
+-- Puts the cursor of `view` on `block`'s first line of output, where a
+-- table's header is, or its command when a filter shows none of it, so
+-- it stays in the block as what it shows changes.
+local function to_output(shell: Shell, block: Block, view: greed.View)
+	local from = log.output_range(shell, block) or log.range(block)
+	if from then
+		view:set_cursor(from)
+	end
+end
+
+greed.command({
+	name = "shell-filter",
+	doc = "Keep the lines of the block at the cursor with what's typed in them (/ for a regex), or a table's rows (COL=VALUE, COL~TEXT, COL>N); elsewhere, search",
+	run = function(ctx)
+		local shell, block = output_block(ctx)
+		if shell == nil or block == nil then
+			greed.run("search")
+			return
+		end
+		local view = ctx.view
+		local shown = block.shown
+		local sort, desc = if shown then shown.sort else nil, shown ~= nil and shown.desc
+		local function set(text: string)
+			rows.set(shell, block, text, sort, desc)
+			to_output(shell, block, view)
+		end
+		core.prompt.open({
+			title = if block.table then "Filter rows" else "Filter lines",
+			text = if shown then shown.filter else "",
+			on_change = set,
+			on_submit = set,
+			on_cancel = function()
+				set("")
+			end,
+		})
+	end,
+})
+
+greed.command({
+	name = "shell-sort",
+	doc = "Sort the table at the cursor by the column under it; again to reverse, a third time as it came",
+	run = function(ctx)
+		local shell, block = output_block(ctx)
+		local pos = ctx.view:cursor()
+		local column = shell and block and rows.column_at(shell, block, pos)
+		if shell == nil or block == nil or column == nil then
+			greed.echo("put the cursor on a column of a table, like kubectl get pods prints")
+			return
+		end
+		local col = ctx.buffer:display_column(pos)
+		rows.sort(shell, block, column)
+		-- The cursor stays in the column, on the header.
+		local from = log.output_range(shell, block)
+		if from then
+			ctx.view:set_cursor(ctx.buffer:at_display_column(ctx.buffer:line_of(from), col))
+		end
+	end,
+})
+
+greed.command({
+	name = "shell-show-all",
+	doc = "Show the block at the cursor's output as it came, without a filter or a sort",
+	run = function(ctx)
+		local shell, block = output_block(ctx)
+		if shell and block then
+			rows.reset(shell, block)
+		end
+	end,
+})
+
 -- The prompt's glyph and folder follow what's typed.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local shell = state.of(event.buffer)
@@ -978,6 +1105,13 @@ for _, action in
 		{ "kill", "shell-kill", "Stop it for good" },
 		{ "type into it", "shell-handoff", "Show its program in a terminal" },
 		{ "open output", "shell-output-open", "Open its whole output in a buffer" },
+		{
+			"filter",
+			"shell-filter",
+			"Keep the lines of its output, or rows of its table, with some text",
+		},
+		{ "sort by this column", "shell-sort", "Sort its table by the column here" },
+		{ "show all", "shell-show-all", "Its output as it came, without a filter or a sort" },
 	}
 do
 	core.actions.command("shell-block", action[1], action[2], action[3])
@@ -1017,6 +1151,7 @@ greed.keymap.bind({ style = "vscode", role = "typing", kind = KIND }, {
 	["ctrl-down"] = "shell-next-block",
 	f8 = "shell-next-reference",
 	["shift-f8"] = "shell-prev-reference",
+	["ctrl-f"] = "shell-filter",
 })
 greed.keymap.bind({ role = "command", kind = KIND }, {
 	enter = "shell-enter",
@@ -1028,6 +1163,7 @@ greed.keymap.bind({ role = "command", kind = KIND }, {
 	["g o"] = "shell-select-output",
 	["] e"] = "shell-next-reference",
 	["[ e"] = "shell-prev-reference",
+	["/"] = "shell-filter",
 })
 greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	r = "shell-rerun",
@@ -1037,6 +1173,8 @@ greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	x = "shell-kill",
 	v = "shell-output-open",
 	c = "shell-clear",
+	s = "shell-sort",
+	S = "shell-show-all",
 })
 
 -- Agents' tools come from the agent plugin, which can be unloaded: they're

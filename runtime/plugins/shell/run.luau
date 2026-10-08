@@ -9,6 +9,8 @@ local core = require("@core")
 local parse = require("./parse")
 local state = require("./state")
 local log = require("./log")
+local tables = require("./tables")
+local jc = require("./jc")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -269,6 +271,23 @@ local function json(text: string): any?
 	return if type(value) == "table" then value else nil
 end
 
+-- Asks jc, when it's installed, for a table in what `block` printed, and
+-- shows it has one if jc found it.
+local function from_jc(shell: Shell, block: Block)
+	greed.spawn(function()
+		local own = block.env.PATH
+		local path = if type(own) == "string"
+			then own
+			elseif own == false then nil
+			else state.editor_environment().PATH
+		local found = jc.parse(plain(block.stdout), block.command, path)
+		if found and block.table == nil then
+			block.table = found
+			log.draw_block(shell, block)
+		end
+	end)
+end
+
 -- Ends `block`, whose output is all drawn.
 local function complete(shell: Shell, block: Block, code: number?, signal: string?)
 	local p = pending[block.uid]
@@ -279,6 +298,15 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 	end
 	if not block.truncated then
 		block.value = json(block.stdout)
+		-- A stage's block has its table already; a table some lines of
+		-- which aren't shown is left alone.
+		if block.table == nil and block.omitted == 0 then
+			block.table = tables.from_value(block.value)
+				or tables.parse(plain(block.stdout), block.command, block)
+			if block.table == nil and block.stdout ~= "" then
+				from_jc(shell, block)
+			end
+		end
 	end
 	block.refs = log.draw_refs(shell, block)
 	block.finished = greed.now()

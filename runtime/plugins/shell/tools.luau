@@ -164,6 +164,16 @@ return function(shells: Shells)
 					{ kind = if #value > 0 or count == 0 then "array" else "object", count = count }
 			end
 		end
+		local tbl = block.table
+		if tbl then
+			-- Its shape, for `$N | where ...`; the names come from the output.
+			out.table = {
+				rows = #tbl.rows,
+				columns = if trusted
+					then greed.json.array(table.clone(tbl.columns))
+					else #tbl.columns,
+			}
+		end
 		return out
 	end
 
@@ -189,7 +199,9 @@ return function(shells: Shells)
 			.. "project's root or `cwd`, with its input closed, and get back how it ended and what it "
 			.. "printed: id, status, exit_code, stdout, stderr (each cut to its start and end when long), "
 			.. "duration_ms, cwd_after and env_changed (cd and export don't carry over to the next run), "
-			.. "refs (file:line places the output names) and json (when stdout is JSON). After "
+			.. "refs (file:line places the output names), json (when stdout is JSON) and table (its "
+			.. "rows and columns, when it's a table like kubectl get prints; `$N | where COL = VALUE`, "
+			.. "`$N | select A,B` and `$N | sort COL` work on block N's table). After "
 			.. '`timeout_s` (default 60) it returns status "running" and the id, for shell_wait',
 		input = object({
 			command = { type = "string" },

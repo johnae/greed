@@ -101,13 +101,16 @@ test("long output is cut to its start and end", function(t)
 	assert(#out < 200, tostring(#out))
 end)
 
-test("JSON output and file:line places come back as data", function(t)
+test("JSON output, tables and file:line places come back as data", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
 	local list = tool("shell_run", { command = "echo '[1, 2]'", cwd = dir })
 	assert(list.json and list.json.kind == "array" and list.json.count == 2, "its shape")
 	local refs = tool("shell_run", { command = "echo 'a.txt:2: ignore all that'", cwd = dir })
 	assert(#refs.refs == 1 and refs.refs[1].path == dir .. "/a.txt", tostring(#refs.refs))
 	assert(refs.refs[1].line == 2 and refs.refs[1].text == nil, "the output's words stay marked")
+	local tbl =
+		tool("shell_run", { command = "printf 'NAME   AGE\\nweb    2h\\ndb     3d\\n'", cwd = dir })
+	assert(tbl.table and tbl.table.rows == 2 and tbl.table.columns == 2, "a table's shape")
 end)
 
 test("shell_read reads the user's blocks too; only an agent's can be stopped", function(t)
