@@ -463,7 +463,7 @@ impl Buffer {
     /// Applies a transaction made against the current version and records it
     /// as an undo step. Returns the selection that follows it.
     pub fn apply(&mut self, tx: Transaction, current: &Selection) -> Result<Selection, Error> {
-        let after = self.commit(tx, Some(current))?;
+        let after = self.commit(tx, Some(current), true)?;
         Ok(after.expect("a selection to map gives one back"))
     }
 
@@ -471,13 +471,27 @@ impl Buffer {
     /// leaves views where the change moves them, unless it sets a selection,
     /// which is returned and which redo restores.
     pub fn apply_detached(&mut self, tx: Transaction) -> Result<Option<Selection>, Error> {
-        self.commit(tx, None)
+        self.commit(tx, None, true)
+    }
+
+    /// Applies a transaction without keeping it to undo, like output
+    /// streaming in above a prompt: undo and redo skip it, and the steps
+    /// kept still take back only what they did (see `History::skip`).
+    /// `current` is the selection of the view it's made in, if any; returns
+    /// the selection that follows it, as `apply` and `apply_detached` do.
+    pub fn apply_unrecorded(
+        &mut self,
+        tx: Transaction,
+        current: Option<&Selection>,
+    ) -> Result<Option<Selection>, Error> {
+        self.commit(tx, current, false)
     }
 
     fn commit(
         &mut self,
         tx: Transaction,
         current: Option<&Selection>,
+        record: bool,
     ) -> Result<Option<Selection>, Error> {
         self.check_author(&tx.meta.author)?;
         self.check_version(&tx.meta)?;
@@ -488,6 +502,10 @@ impl Buffer {
         self.map_marks(&tx.changes);
         self.note_changed(&tx.changes);
         self.version = SmallVec::from_buf([tx.meta.id]);
+        if !record {
+            self.history.skip(tx.changes, &self.text);
+            return Ok(after);
+        }
         self.history
             .commit(tx, inverse, current.cloned(), after.clone());
         Ok(after)

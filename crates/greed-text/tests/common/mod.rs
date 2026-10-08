@@ -76,3 +76,11 @@ pub fn doc_and_two_changesets() -> impl Strategy<Value = (String, ChangeSet, Cha
         changeset_for(after).prop_map(move |(_, b)| (doc.clone(), a.clone(), b))
     })
 }
+
+/// A document and two change sets made to it at the same time, as two
+/// people editing one text would.
+pub fn doc_and_concurrent_changesets() -> impl Strategy<Value = (String, ChangeSet, ChangeSet)> {
+    text().prop_flat_map(|doc| {
+        (changeset_for(doc.clone()), changeset_for(doc)).prop_map(|((doc, a), (_, b))| (doc, a, b))
+    })
+}

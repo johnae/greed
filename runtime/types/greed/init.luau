@@ -109,8 +109,11 @@ export type Buffer = {
 	--- any query gives an empty list there.
 	query: (self: Buffer, source: string, range: { from: number?, to: number? }?) -> { { [string]: Node } },
 	--- Edits the buffer: `f` records edits on `e`, and they are applied
-	--- together, as one undoable change, when it returns.
-	edit: (self: Buffer, f: (e: Edits) -> ()) -> (),
+	--- together, as one undoable change, when it returns. With `undo = false`
+	--- the change isn't kept to undo, like output streaming in above where
+	--- someone types: undo skips it and still takes back only what the
+	--- steps before it did (redo branches are dropped).
+	edit: (self: Buffer, f: (e: Edits) -> (), opts: { undo: boolean? }?) -> (),
 	--- Writes the buffer to its file, or to `path`, which becomes its file.
 	save: (self: Buffer, path: string?) -> (),
 	--- True if the text changed since it was opened or last saved.

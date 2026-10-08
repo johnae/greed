@@ -270,6 +270,76 @@ impl ChangeSet {
         Ok(out)
     }
 
+    /// Rewrites `self`, a change to the same document as `other`, to apply
+    /// after `other`: the same edits, moved past what `other` inserted, and
+    /// leaving out deletes of text `other` deleted already. Text `other`
+    /// inserted stays, also inside what `self` deletes. Where both insert at
+    /// one place, `side` puts `self`'s text before `other`'s
+    /// ([`Assoc::Before`]) or after it ([`Assoc::After`]).
+    ///
+    /// The two orders meet: applying `a`, then `b.transform(&a, After)`
+    /// gives the same text as applying `b`, then `a.transform(&b, Before)`.
+    pub fn transform(&self, other: &Self, side: Assoc) -> Result<Self, Error> {
+        if self.len != other.len {
+            return Err(Error::LengthMismatch {
+                expected: other.len,
+                actual: self.len,
+            });
+        }
+        let mut out = Self::default();
+        let mut a_ops = self.ops.iter().cloned();
+        let mut b_ops = other.ops.iter().cloned();
+        let mut a = a_ops.next();
+        let mut b = b_ops.next();
+        loop {
+            match (a, b) {
+                (None, None) => break,
+                (Some(Operation::Insert(text)), rest) if side == Assoc::Before => {
+                    out.insert(&text);
+                    a = a_ops.next();
+                    b = rest;
+                }
+                (rest, Some(Operation::Insert(text))) => {
+                    out.retain(text.len());
+                    a = rest;
+                    b = b_ops.next();
+                }
+                (Some(Operation::Insert(text)), rest) => {
+                    out.insert(&text);
+                    a = a_ops.next();
+                    b = rest;
+                }
+                (Some(Operation::Retain(i)), Some(Operation::Retain(j))) => {
+                    let n = i.min(j);
+                    out.retain(n);
+                    a = remainder(Operation::Retain(i - n), &mut a_ops);
+                    b = remainder(Operation::Retain(j - n), &mut b_ops);
+                }
+                (Some(Operation::Delete(i)), Some(Operation::Retain(j))) => {
+                    let n = i.min(j);
+                    out.delete(n);
+                    a = remainder(Operation::Delete(i - n), &mut a_ops);
+                    b = remainder(Operation::Retain(j - n), &mut b_ops);
+                }
+                // What `other` deleted is gone, whether `self` keeps it or
+                // deletes it too.
+                (Some(Operation::Retain(i)), Some(Operation::Delete(j))) => {
+                    let n = i.min(j);
+                    a = remainder(Operation::Retain(i - n), &mut a_ops);
+                    b = remainder(Operation::Delete(j - n), &mut b_ops);
+                }
+                (Some(Operation::Delete(i)), Some(Operation::Delete(j))) => {
+                    let n = i.min(j);
+                    a = remainder(Operation::Delete(i - n), &mut a_ops);
+                    b = remainder(Operation::Delete(j - n), &mut b_ops);
+                }
+                // Lengths were checked up front, so both sides run out together.
+                (None, Some(_)) | (Some(_), None) => unreachable!("change set lengths disagree"),
+            }
+        }
+        Ok(out)
+    }
+
     /// Maps a byte position in the original document to the corresponding
     /// position after the change. A position at the start of or inside
     /// deleted or replaced text maps to the start of the replacement for

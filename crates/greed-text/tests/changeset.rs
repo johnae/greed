@@ -1,6 +1,6 @@
 mod common;
 
-use common::{apply, doc_and_changeset, doc_and_two_changesets};
+use common::{apply, doc_and_changeset, doc_and_concurrent_changesets, doc_and_two_changesets};
 use greed_text::{Assoc, ChangeSet, Error, Operation, Rope};
 use proptest::prelude::*;
 
@@ -169,6 +169,48 @@ fn invert_restores_original() {
     assert_eq!(apply(&inv, &apply(&cs, doc)), doc);
 }
 
+#[test]
+fn transform_moves_edits_past_what_the_other_change_did() {
+    let doc = "hello world";
+    // One person types at the end while another adds a word at the start.
+    let a = ChangeSet::from_changes(doc.len(), [(11, 11, Some("!"))]).unwrap();
+    let b = ChangeSet::from_changes(doc.len(), [(0, 0, Some("oh "))]).unwrap();
+    let a2 = a.transform(&b, Assoc::Before).unwrap();
+    assert_eq!(a2.len(), b.len_after());
+    assert_eq!(apply(&a2, &apply(&b, doc)), "oh hello world!");
+    // Deleting text the other deleted too leaves nothing more to delete, and
+    // text the other inserted inside it stays.
+    let del = ChangeSet::from_changes(doc.len(), [(0, 6, None::<&str>)]).unwrap();
+    let inside = ChangeSet::from_changes(doc.len(), [(2, 2, Some("X")), (4, 11, None)]).unwrap();
+    let del2 = del.transform(&inside, Assoc::Before).unwrap();
+    assert_eq!(apply(&inside, doc), "heXll");
+    assert_eq!(apply(&del2, &apply(&inside, doc)), "X");
+}
+
+#[test]
+fn transform_puts_inserts_at_one_place_in_the_order_asked() {
+    let doc = "ab";
+    let a = ChangeSet::from_changes(doc.len(), [(1, 1, Some("x"))]).unwrap();
+    let b = ChangeSet::from_changes(doc.len(), [(1, 1, Some("y"))]).unwrap();
+    let before = a.transform(&b, Assoc::Before).unwrap();
+    let after = a.transform(&b, Assoc::After).unwrap();
+    assert_eq!(apply(&before, &apply(&b, doc)), "axyb");
+    assert_eq!(apply(&after, &apply(&b, doc)), "ayxb");
+}
+
+#[test]
+fn transform_rejects_changes_to_other_documents() {
+    let a = ChangeSet::identity(3);
+    let b = ChangeSet::identity(4);
+    assert_eq!(
+        a.transform(&b, Assoc::Before),
+        Err(Error::LengthMismatch {
+            expected: 4,
+            actual: 3
+        })
+    );
+}
+
 // --- Properties -----------------------------------------------------------
 
 fn assert_canonical(cs: &ChangeSet) {
@@ -286,5 +328,55 @@ proptest! {
                 );
             }
         }
+    }
+}
+
+proptest! {
+    #[test]
+    fn transformed_changes_meet_in_the_same_text((doc, a, b) in doc_and_concurrent_changesets()) {
+        let a2 = a.transform(&b, Assoc::Before).unwrap();
+        let b2 = b.transform(&a, Assoc::After).unwrap();
+        assert_canonical(&a2);
+        assert_canonical(&b2);
+        prop_assert_eq!(a2.len(), b.len_after());
+        prop_assert_eq!(b2.len(), a.len_after());
+        prop_assert_eq!(apply(&a2, &apply(&b, &doc)), apply(&b2, &apply(&a, &doc)));
+    }
+
+    #[test]
+    fn transforming_over_nothing_changes_nothing((doc, cs) in doc_and_changeset()) {
+        let identity = ChangeSet::identity(doc.len());
+        prop_assert_eq!(&cs.transform(&identity, Assoc::Before).unwrap(), &cs);
+        prop_assert_eq!(
+            identity.transform(&cs, Assoc::After).unwrap(),
+            ChangeSet::identity(cs.len_after())
+        );
+    }
+
+    #[test]
+    fn transformed_changes_keep_what_the_other_inserted(
+        (doc, a, b) in doc_and_concurrent_changesets()
+    ) {
+        // With inserts marked apart, every character `b` inserted is still
+        // there after `a` follows it.
+        let a2 = a.transform(&b, Assoc::Before).unwrap();
+        let inserted: usize = b
+            .ops()
+            .iter()
+            .map(|op| match op {
+                Operation::Insert(text) => text.chars().filter(|&c| c == 'x').count(),
+                _ => 0,
+            })
+            .sum();
+        let added_by_a: usize = a
+            .ops()
+            .iter()
+            .map(|op| match op {
+                Operation::Insert(text) => text.chars().filter(|&c| c == 'x').count(),
+                _ => 0,
+            })
+            .sum();
+        let result = apply(&a2, &apply(&b, &doc));
+        prop_assert_eq!(result.chars().filter(|&c| c == 'x').count(), inserted + added_by_a);
     }
 }

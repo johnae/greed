@@ -505,6 +505,19 @@ A buffer whose edits nobody undoes, like a terminal's or a log a plugin
 keeps adding to, can stop keeping them with `buffer:forget_history()`, so
 it doesn't grow without end.
 
+When a plugin writes into a buffer someone also types in, like output
+streaming in above a prompt, `buffer:edit(f, { undo = false })` keeps its
+edit out of undo: undo skips it and still takes back only what was typed,
+moved to wherever the plugin's text put it. Redo can't go down other
+branches after such an edit, and typing the plugin's edit replaced or
+deleted is no longer there to undo.
+
+```luau
+buffer:edit(function(e)
+	e:insert(output_end, line .. "\n")
+end, { undo = false })
+```
+
 The `operations` plugin builds on groups: it names the work, remembers the
 files it changed and the programs it ran, and gives it a review and an
 undo key.

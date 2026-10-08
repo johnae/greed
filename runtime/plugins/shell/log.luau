@@ -77,6 +77,11 @@ local STYLE: { [string]: string } = {
 	error = "shell.failed",
 }
 
+-- The shell's own edits (blocks, their output, what it puts at the prompt)
+-- are kept out of undo, so undo at the prompt takes back only typing, while
+-- output streams in above it.
+local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
+
 local function ns_block(block: Block): string
 	return `shell.block.{block.uid}`
 end
@@ -113,7 +118,7 @@ function M.set_prompt(shell: Shell, text: string, views: { greed.View }?)
 	local start = M.prompt_start(shell)
 	buffer:edit(function(e)
 		e:replace(start, buffer:len(), text)
-	end)
+	end, OUT_OF_UNDO)
 	track_prompt(shell, start)
 	if views then
 		for _, view in views do
@@ -319,7 +324,7 @@ function M.add(shell: Shell, block: Block)
 	local text = block.command .. "\n"
 	buffer:edit(function(e)
 		e:replace(start, buffer:len(), text)
-	end)
+	end, OUT_OF_UNDO)
 	local _, breaks = string.gsub(block.command, "\n", "")
 	shown[block.uid] = { command = breaks + 1, stable = 0, volatile = 0 }
 	track_block(shell, block, start, start + #text)
@@ -415,7 +420,7 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?
 			e:delete(buffer:line_start(first + head), buffer:line_start(first + head + drop_shown))
 		end
 		e:replace(volatile_from, replace_to, text)
-	end)
+	end, OUT_OF_UNDO)
 	s.stable = s.stable - drop_shown + #kept
 	if volatile then
 		s.volatile = #volatile
@@ -484,7 +489,7 @@ function M.remove(shell: Shell, block: Block)
 		local was_last = M.prompt_start(shell) == to
 		buffer:edit(function(e)
 			e:delete(from, to)
-		end)
+		end, OUT_OF_UNDO)
 		if was_last then
 			track_prompt(shell, from)
 		end

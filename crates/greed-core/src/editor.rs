@@ -1362,6 +1362,30 @@ impl Editor {
         cause: Option<&str>,
         selection: Option<Selection>,
     ) -> Result<(), Error> {
+        self.apply_in_view(view, changes, author, cause, selection, true)
+    }
+
+    /// Applies a change as `apply` does, without keeping it to undo: undo
+    /// and redo skip it (see `Buffer::apply_unrecorded`).
+    pub fn apply_unrecorded(
+        &mut self,
+        view: ViewId,
+        changes: ChangeSet,
+        author: Author,
+        selection: Option<Selection>,
+    ) -> Result<(), Error> {
+        self.apply_in_view(view, changes, author, None, selection, false)
+    }
+
+    fn apply_in_view(
+        &mut self,
+        view: ViewId,
+        changes: ChangeSet,
+        author: Author,
+        cause: Option<&str>,
+        selection: Option<Selection>,
+        record: bool,
+    ) -> Result<(), Error> {
         let id = self.view(view).buffer;
         let tx = Transaction {
             changes,
@@ -1370,7 +1394,13 @@ impl Editor {
         };
         let current = self.view(view).selection.clone();
         let buffer = self.buffers.get_mut(&id).expect("view's buffer exists");
-        let after = buffer.apply(tx, &current)?;
+        let after = if record {
+            buffer.apply(tx, &current)?
+        } else {
+            buffer
+                .apply_unrecorded(tx, Some(&current))?
+                .expect("a selection to map gives one back")
+        };
         self.view_mut(view).selection = after;
         self.map_views(id, Some(view));
         Ok(())
@@ -1387,13 +1417,41 @@ impl Editor {
         cause: Option<&str>,
         selection: Option<Selection>,
     ) -> Result<(), Error> {
+        self.apply_in_buffer(id, changes, author, cause, selection, true)
+    }
+
+    /// Applies a change as `apply_to_buffer` does, without keeping it to
+    /// undo: undo and redo skip it (see `Buffer::apply_unrecorded`).
+    pub fn apply_to_buffer_unrecorded(
+        &mut self,
+        id: BufferId,
+        changes: ChangeSet,
+        author: Author,
+        selection: Option<Selection>,
+    ) -> Result<(), Error> {
+        self.apply_in_buffer(id, changes, author, None, selection, false)
+    }
+
+    fn apply_in_buffer(
+        &mut self,
+        id: BufferId,
+        changes: ChangeSet,
+        author: Author,
+        cause: Option<&str>,
+        selection: Option<Selection>,
+        record: bool,
+    ) -> Result<(), Error> {
         let tx = Transaction {
             changes,
             selection,
             meta: self.meta(id, author, cause),
         };
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
-        let after = buffer.apply_detached(tx)?;
+        let after = if record {
+            buffer.apply_detached(tx)?
+        } else {
+            buffer.apply_unrecorded(tx, None)?
+        };
         self.map_views(id, None);
         // A selection goes to the client the edit is made for, never to
         // every client: the others' cursors move with the text.

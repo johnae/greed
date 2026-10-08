@@ -49,6 +49,16 @@ impl Fixture {
         id
     }
 
+    /// Replaces `from..to` with `text` without keeping it to undo, as a
+    /// plugin streaming output in does; the cursor moves with the text.
+    fn unrecorded(&mut self, from: usize, to: usize, text: &str) {
+        let len = self.buffer.text().len_bytes();
+        let changes = ChangeSet::from_changes(len, [(from, to, Some(text))]).unwrap();
+        let tx = self.tx(changes, Author::Plugin("shell".into()), None);
+        let after = self.buffer.apply_unrecorded(tx, Some(&self.selection));
+        self.selection = after.unwrap().unwrap();
+    }
+
     fn undo(&mut self) -> bool {
         let id = self.replica.next_id();
         match self.buffer.undo(id, USER, &self.selection).unwrap() {
@@ -275,4 +285,132 @@ fn a_group_is_current_buried_or_undone() {
     f.undo();
     f.undo();
     assert_eq!(f.buffer.history().group_state(1), GroupState::Undone);
+}
+
+#[test]
+fn undo_skips_an_edit_kept_out_of_it_and_takes_back_only_the_typing() {
+    let mut f = Fixture::new("$ ");
+    f.selection = Selection::point(2);
+    f.edit(2, 2, "ls");
+    // Output arrives above the prompt while the cursor is after the typing.
+    f.unrecorded(0, 0, "out\n");
+    assert_eq!(f.text(), "out\n$ ls");
+    assert_eq!(f.selection.primary(), Range::point(8));
+    assert!(f.undo());
+    assert_eq!(f.text(), "out\n$ ");
+    // Where the typing started, moved along by the output.
+    assert_eq!(f.selection.primary(), Range::point(6));
+    assert!(!f.undo(), "the output isn't a step to undo");
+    assert!(f.redo());
+    assert_eq!(f.text(), "out\n$ ls");
+    assert_eq!(f.selection.primary(), Range::point(8));
+}
+
+#[test]
+fn an_edit_kept_out_of_undo_inside_typed_text_stays_when_the_typing_goes() {
+    let mut f = Fixture::new("");
+    f.edit_by(0, 0, "ab", USER, Some(1));
+    f.unrecorded(1, 1, "X");
+    f.edit_by(3, 3, "c", USER, Some(1));
+    assert_eq!(f.text(), "aXbc");
+    // The typing is one group still, and undo takes all of it back.
+    assert!(f.undo());
+    assert_eq!(f.text(), "X");
+    assert!(!f.undo());
+}
+
+#[test]
+fn steps_an_edit_kept_out_of_undo_took_away_go() {
+    let mut f = Fixture::new("");
+    f.edit(0, 0, "typed");
+    f.edit(5, 5, " more");
+    // A plugin replaces everything, as a shell does when a command runs.
+    f.unrecorded(0, 10, "block\n");
+    assert_eq!(f.text(), "block\n");
+    assert!(!f.undo(), "nothing typed is left to take back");
+    assert_eq!(f.text(), "block\n");
+}
+
+#[test]
+fn redo_branches_go_and_the_log_starts_again_after_an_edit_kept_out_of_undo() {
+    let mut f = Fixture::new("");
+    f.edit(0, 0, "a");
+    f.edit(1, 1, "b");
+    f.undo();
+    assert!(f.buffer.history().can_redo());
+    f.unrecorded(0, 0, ">");
+    assert!(!f.buffer.history().can_redo(), "the redo branch went");
+    assert!(f.buffer.history().log().is_empty());
+    assert_eq!(f.buffer.history().applied(), 4);
+    let id = f.edit(2, 2, "c");
+    assert_eq!(f.buffer.history().log().len(), 1);
+    let before = f.buffer.history().text_before(f.buffer.text(), id);
+    assert_eq!(before.map(|t| t.to_string()).as_deref(), Some(">a"));
+    assert!(f.undo());
+    assert!(f.undo());
+    assert_eq!(f.text(), ">");
+}
+
+/// Something done to a buffer: an edit that's kept to undo (`from`, how
+/// many characters it replaces, the text) or output kept out of it.
+#[derive(Debug, Clone)]
+enum Done {
+    Typed(usize, usize, String),
+    Output(usize, String),
+}
+
+fn done() -> impl Strategy<Value = Done> {
+    prop_oneof![
+        ("[a-cé]{0,3}", 0..12usize, 0..4usize).prop_map(|(t, at, n)| Done::Typed(at, n, t)),
+        ("X{1,3}", 0..12usize).prop_map(|(t, at)| Done::Output(at, t)),
+    ]
+}
+
+/// The byte offset of the `n`th character of `text`, or its end.
+fn char_at(text: &str, n: usize) -> usize {
+    text.char_indices()
+        .map(|(i, _)| i)
+        .chain([text.len()])
+        .nth(n)
+        .unwrap_or(text.len())
+}
+
+proptest! {
+    #[test]
+    fn undoing_every_kept_step_leaves_the_start_with_the_output_in(
+        start in "[a-cé]{0,6}",
+        steps in prop::collection::vec(done(), 1..16),
+    ) {
+        let mut f = Fixture::new(&start);
+        let mut output = 0;
+        for step in &steps {
+            let text = f.text();
+            match step {
+                Done::Typed(at, n, typed) => {
+                    let from = char_at(&text, *at);
+                    let to = char_at(&text, at + n);
+                    f.edit(from, to, typed);
+                }
+                Done::Output(at, out) => {
+                    let pos = char_at(&text, *at);
+                    f.unrecorded(pos, pos, out);
+                    output += out.len();
+                }
+            }
+        }
+        let end = f.text();
+        let mut undone = 0;
+        while f.undo() {
+            undone += 1;
+            prop_assert!(undone <= steps.len(), "more undo steps than edits");
+        }
+        let left = f.text();
+        // Every bit of output is there, and without it, the text it started as.
+        prop_assert_eq!(left.matches('X').count(), output);
+        prop_assert_eq!(left.replace('X', ""), start);
+        for _ in 0..undone {
+            prop_assert!(f.redo());
+        }
+        prop_assert_eq!(f.text(), end);
+    }
 }

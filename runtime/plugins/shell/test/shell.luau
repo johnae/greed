@@ -372,3 +372,38 @@ test("a project can have several shells, each with its own folder", function(t)
 		floats
 	)
 end)
+
+test("undo at the prompt takes back only what was typed, while output streams in", function(t)
+	local sh = open(t, t:tempdir())
+	local block = assert(shell.run(sh, "sh -c 'echo started; read x; echo more; echo lines'", {
+		view = greed.view(),
+	}))
+	t:wait_for(function()
+		return string.find(sh.buffer:text(), "started", 1, true) ~= nil
+	end)
+	-- Typed in one insert, which undo takes back as one step.
+	t:keys("esc")
+	greed.view():set_cursor(sh.buffer:len())
+	t:keys("i e c h o")
+	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
+	-- More output arrives above while the typing is at the prompt.
+	assert(assert(block.job).terminal):key("enter")
+	finished(t, block)
+	assert(string.find(sh.buffer:text(), "more\nlines\n", 1, true), sh.buffer:text())
+	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
+	local blocks = sh.buffer:slice(0, shell.log.prompt_start(sh))
+	t:keys("esc")
+	t:run("undo")
+	assert(shell.log.prompt_text(sh) == "", "the typing went: " .. shell.log.prompt_text(sh))
+	assert(sh.buffer:slice(0, shell.log.prompt_start(sh)) == blocks, sh.buffer:text())
+	t:run("redo")
+	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
+	-- Running it takes what's typed into a block, and undo doesn't bring it
+	-- back to the prompt.
+	t:keys("i enter")
+	finished(t, sh.blocks[2])
+	t:keys("esc")
+	t:run("undo")
+	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+	assert(sh.blocks[2].command == "echo" and string.find(sh.buffer:text(), "\necho\n\n", 1, true))
+end)

@@ -3,11 +3,12 @@
 //!
 //! The log is the durable record. Undo and redo don't rewrite it; they apply
 //! new transactions (with cause `"undo"` / `"redo"`) and move a pointer in
-//! the tree.
+//! the tree. An edit kept out of undo (`skip`) is the exception: the undo
+//! steps are rebased over it, and the log starts again after it.
 
 use std::time::SystemTime;
 
-use greed_text::{Author, ChangeSet, Rope, Selection, Transaction, TxId};
+use greed_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId};
 
 #[derive(Debug)]
 pub struct History {
@@ -126,7 +127,8 @@ impl History {
         };
     }
 
-    /// Every transaction applied to the buffer, oldest first.
+    /// Every transaction applied to the buffer, oldest first, since the
+    /// last edit kept out of undo.
     pub fn log(&self) -> &[Transaction] {
         &self.log
     }
@@ -232,6 +234,75 @@ impl History {
     pub fn redo_author(&self) -> Option<&Author> {
         let &child = self.nodes[self.current].children.last()?;
         self.nodes[child].author.as_ref()
+    }
+
+    /// Takes in `changes`, an edit applied to the text without being kept
+    /// to undo, like output streaming into a buffer you type in; `text` is
+    /// the text with it. Undo skips it: each step from the current one back
+    /// to the root is rebased over it, so undoing them takes back only what
+    /// they did and leaves the edit. Steps undo would leave nothing to do
+    /// for go, and so do the branches off that path, which redo would reach
+    /// but which don't fit the text any more.
+    ///
+    /// The log starts again after it: it holds every transaction since, as
+    /// the text before any of them can be rebuilt from it.
+    pub(crate) fn skip(&mut self, changes: ChangeSet, text: &Rope) {
+        self.applied += 1;
+        if self.keep {
+            self.log.clear();
+            self.inverses.clear();
+            // Steps that no longer fit can't be undone; drop them all rather
+            // than undo something else.
+            let kept = self.rebase(&changes, text).unwrap_or_default();
+            self.nodes[0].children.clear();
+            self.nodes.truncate(1);
+            for (at, mut step) in kept.into_iter().rev().enumerate() {
+                step.parent = at;
+                self.nodes[at].children.push(at + 1);
+                self.nodes.push(step);
+            }
+            self.current = self.nodes.len() - 1;
+        }
+        self.latest = changes;
+    }
+
+    /// The steps from the current one back to the root, rebased over
+    /// `changes`, made to the text at the current step; `text` is the text
+    /// with `changes` applied. Steps left with nothing to undo are left out.
+    /// See `skip`.
+    fn rebase(&self, changes: &ChangeSet, text: &Rope) -> Result<Vec<Node>, greed_text::Error> {
+        // The edit as it would be made to the text at each step, from the
+        // current one back, and that text with it.
+        let mut edit = changes.clone();
+        let mut text = text.clone();
+        let mut kept = Vec::new();
+        let mut node = self.current;
+        while node != 0 {
+            let step = &self.nodes[node];
+            // Undoing the step inserts at the edit's place after it, so
+            // what the edit inserted stays before what undo puts back.
+            let inverse = step.inverse.transform(&edit, Assoc::After)?;
+            let earlier = edit.transform(&step.inverse, Assoc::Before)?;
+            if !inverse.is_empty() {
+                let mut before_step = text.clone();
+                inverse.apply(&mut before_step)?;
+                kept.push(Node {
+                    parent: 0,
+                    children: Vec::new(),
+                    changes: inverse.invert(&text)?,
+                    inverse,
+                    before: step.before.as_ref().map(|s| s.map(&earlier)),
+                    after: step.after.as_ref().map(|s| s.map(&edit)),
+                    group: step.group,
+                    author: step.author.clone(),
+                    time: step.time,
+                });
+                text = before_step;
+            }
+            edit = earlier;
+            node = step.parent;
+        }
+        Ok(kept)
     }
 
     /// Records an undo or redo transaction in the log without touching the

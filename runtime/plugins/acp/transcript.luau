@@ -35,6 +35,10 @@ type Session = session.Session
 
 local M = {}
 
+-- What the transcript draws above the box, and emptying the box once it's
+-- sent, are kept out of undo, so undo in the box takes back only typing.
+local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
+
 local HINTS = "alt-enter sends · ctrl-c stops"
 
 -- The box's width when no view shows the transcript yet.
@@ -557,7 +561,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 		-- The box's top went; everything there was is history now.
 		buffer:edit(function(e)
 			e:replace(0, buffer:len(), wanted .. "\n")
-		end)
+		end, OUT_OF_UNDO)
 	else
 		local old = buffer:slice(0, stop)
 		if old ~= wanted then
@@ -576,7 +580,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 			end
 			buffer:edit(function(e)
 				e:replace(same, stop, string.sub(wanted, same + 1))
-			end)
+			end, OUT_OF_UNDO)
 		end
 	end
 	local at = #history.text
@@ -619,7 +623,7 @@ function M.clear_prompt(buffer: greed.Buffer)
 		local start = buffer:line_start(line + 1)
 		buffer:edit(function(e)
 			e:replace(start, buffer:len(), "")
-		end)
+		end, OUT_OF_UNDO)
 	end
 end
 

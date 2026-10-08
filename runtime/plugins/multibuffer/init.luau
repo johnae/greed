@@ -160,7 +160,7 @@ local function rewrite(buffer: greed.Buffer, start: number, old: string, new: st
 	syncing = true
 	local ok: boolean, err: unknown = pcall(buffer.edit, buffer, function(e: greed.Edits)
 		e:replace(start + from, start + to, text)
-	end)
+	end, nil)
 	syncing = false
 	if not ok then
 		error(err, 0)

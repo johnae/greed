@@ -117,10 +117,6 @@ function M.open(options: OpenOptions?): Shell
 	local buffer = greed.create_buffer(KIND, "", { language = LANGUAGE })
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
-	-- Output streams into the buffer as edits; keeping each to undo would
-	-- make undo at the prompt take output back. Edits kept out of undo can
-	-- replace this later.
-	buffer:forget_history()
 	local project = buffer:project() or greed.project.current().id
 	local shell: Shell = {
 		id = state.new_id(),

@@ -2312,3 +2312,22 @@ fn floats_hide_and_carry_border_text_through_their_spec() {
     h.eval("v:focus()").unwrap();
     assert_eq!(h.eval("#g.floats()").unwrap(), "1");
 }
+
+#[test]
+fn edits_kept_out_of_undo_are_skipped_by_it() {
+    let h = host("$ ");
+    let view = focus(&h);
+    h.eval(
+        "local b = require('@greed').view():buffer(); b:edit(function(e) e:insert(2, 'ls') end)",
+    )
+    .unwrap();
+    h.eval(
+        "local b = require('@greed').view():buffer(); \
+         b:edit(function(e) e:insert(0, 'out\\n') end, { undo = false })",
+    )
+    .unwrap();
+    assert_eq!(text(&h), "out\n$ ls");
+    assert!(h.with_editor_mut(|ed| ed.undo(view)).unwrap());
+    assert_eq!(text(&h), "out\n$ ");
+    assert!(!h.with_editor_mut(|ed| ed.undo(view)).unwrap());
+}

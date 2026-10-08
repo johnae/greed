@@ -295,8 +295,9 @@ impl BufferRef {
     }
 
     /// Calls `f` with an edit collector, then applies everything it collected
-    /// as one transaction and tells plugins the buffer changed.
-    fn edit(&self, lua: &Lua, f: &Function) -> LuaResult<()> {
+    /// as one transaction, kept to undo when `undo`, and tells plugins the
+    /// buffer changed.
+    fn edit(&self, lua: &Lua, f: &Function, undo: bool) -> LuaResult<()> {
         let edits = lua.create_userdata(Edits::default())?;
         f.call::<()>(&edits)?;
         let Edits {
@@ -313,17 +314,22 @@ impl BufferRef {
                 .find_view(*v)
                 .is_some_and(|v| v.buffer == self.buffer)
         });
-        match view {
-            Some(view) => state
+        let author = self.author.clone();
+        match (view, undo) {
+            (Some(view), true) => state.editor.apply(view, changes, author, None, selection),
+            (Some(view), false) => state
                 .editor
-                .apply(view, changes, self.author.clone(), None, selection),
-            None => state.editor.apply_to_buffer(
-                self.buffer,
-                changes,
-                self.author.clone(),
-                None,
-                selection,
-            ),
+                .apply_unrecorded(view, changes, author, selection),
+            (None, true) => {
+                state
+                    .editor
+                    .apply_to_buffer(self.buffer, changes, author, None, selection)
+            }
+            (None, false) => {
+                state
+                    .editor
+                    .apply_to_buffer_unrecorded(self.buffer, changes, author, selection)
+            }
         }
         .map_err(mlua::Error::external)?;
         drop(state);
@@ -931,7 +937,9 @@ impl UserData for BufferRef {
         super::syntax::add_methods(methods);
         super::history::add_methods(methods);
         super::track::add_methods(methods);
-        methods.add_method("edit", |lua, this, f: Function| this.edit(lua, &f));
+        methods.add_method("edit", |lua, this, (f, opts): (Function, Option<Table>)| {
+            this.edit(lua, &f, kept_to_undo(opts.as_ref())?)
+        });
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.save(lua, path)
         });
@@ -972,6 +980,15 @@ pub(super) fn same_handle<T: UserData + 'static>(other: &Value, same: impl Fn(&T
         Value::UserData(ud) => ud.borrow::<T>().is_ok_and(|o| same(&o)),
         _ => false,
     }
+}
+
+/// Whether `buffer:edit`'s options keep the edit to undo: unless they say
+/// `undo = false`.
+fn kept_to_undo(opts: Option<&Table>) -> LuaResult<bool> {
+    Ok(match opts {
+        Some(opts) => opts.get::<Option<bool>>("undo")?.unwrap_or(true),
+        None => true,
+    })
 }
 
 /// The end of `line`, before its line break.
