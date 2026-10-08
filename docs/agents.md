@@ -66,6 +66,8 @@ claude mcp add greed -- greed mcp
 | `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
+| `shell_run` | Run a command in the project's [shell](using.md#shells), where you see it marked ◆, and get back its exit code, output, errors, how long it took, the files and lines it names and its JSON; one that runs past `timeout_s` comes back as running |
+| `shell_read`, `shell_wait`, `shell_kill` | A shell block by id, or the latest one (yours too), waiting for one still running, and stopping one an agent ran |
 | `tools` | The groups of tools below, and switching one on |
 
 ### Tool groups
@@ -88,6 +90,7 @@ it needs them. These are always offered: `focus`, `buffers`, `read`,
 | `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install` |
 | `subagents` | `subagent` |
 | `web` | `web_search`, `web_fetch` |
+| `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
 
 `:set agent-tool-groups "plan notes"` gives agents those groups from the
 start (the default is `plan`), and `"all"` gives every tool. Claude Code

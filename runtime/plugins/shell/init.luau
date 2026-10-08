@@ -25,6 +25,9 @@
 -- 3's output, a buffer, the selection or the file you're in to a command,
 -- and `... > buf:NAME` (`>>` adds) sends its output to a buffer
 -- (data.luau). Output that's JSON is kept as a value on the block.
+--
+-- Agents run commands with shell_run and read blocks with shell_read
+-- (tools.luau).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -931,5 +934,21 @@ greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	v = "shell-output-open",
 	c = "shell-clear",
 })
+
+-- Agents' tools come from the agent plugin, which can be unloaded: they're
+-- offered while it's loaded.
+local function offer_tools()
+	require("@self/tools")(M)
+end
+
+if table.find(greed.plugin.list(), "agent") then
+	offer_tools()
+end
+
+greed.on("plugin.loaded", function(event: greed.PluginLoaded)
+	if event.name == "agent" then
+		offer_tools()
+	end
+end)
 
 return M
