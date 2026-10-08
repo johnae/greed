@@ -22,8 +22,8 @@ export type Block = {
 	--- output and errors apart), "pty" (in a pseudo terminal, as typed
 	--- commands run) or "terminal" (handed to a terminal).
 	runner: string,
-	--- What ran it: "argv" (a program and its arguments), "builtin", or
-	--- "shell" (the line went to a real shell, named in `program`).
+	--- What ran it: "builtin", or "shell" (the line went to a real shell,
+	--- named in `program`).
 	via: string,
 	program: string?,
 	--- "user" or "agent".
@@ -193,6 +193,29 @@ function M.program(): string?
 		program = if works then path else false
 	end
 	return program or nil
+end
+
+local editor_env: { [string]: string }? = nil
+
+--- The editor's environment, read once: what programs a shell starts get
+--- under the shell's own variables.
+function M.editor_environment(): { [string]: string }
+	if editor_env then
+		return editor_env
+	end
+	local vars: { [string]: string } = {}
+	local path = M.program()
+	local result = greed.process.run(if path then { path, "--env0" } else { "env", "-0" })
+	if result then
+		for _, entry in string.split(result.stdout, "\0") do
+			local name, value = string.match(entry, "^([^=]+)=(.*)$")
+			if name and value then
+				vars[name] = value
+			end
+		end
+	end
+	editor_env = vars
+	return vars
 end
 
 --- The variables a command in `shell` gets on top of the editor's: pagers

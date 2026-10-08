@@ -137,6 +137,41 @@ script = string.gsub(script, "FISH", function()
 	return parse.quote(FISH)
 end)
 
+-- The shells of each family the wrappers know, by their program's name.
+local FAMILY: { [string]: string } = {
+	sh = "posix",
+	bash = "posix",
+	zsh = "posix",
+	dash = "posix",
+	ksh = "posix",
+	mksh = "posix",
+	ash = "posix",
+	yash = "posix",
+	posh = "posix",
+	fish = "fish",
+	nu = "nu",
+}
+
+--- The shell your lines run in, as DISPATCH picks it, and whether cd
+--- and export in it carry over: `shell-fallback` when set, else `$SHELL`
+--- when it's of a family the wrappers know, else `sh`. Asks the editor's
+--- environment, so only where that can wait.
+function M.which(): (string, boolean)
+	local function basename(path: string): string
+		return string.match(path, "([^/]+)$") or path
+	end
+	local chosen = greed.option.get("shell-fallback") :: string
+	if chosen ~= "" then
+		local name = basename(chosen)
+		return name, FAMILY[name] ~= nil
+	end
+	local name = basename(state.editor_environment().SHELL or "")
+	if FAMILY[name] then
+		return name, true
+	end
+	return "sh", true
+end
+
 -- Variables every shell sets for itself, which don't count as changes.
 local OWN: { [string]: boolean } =
 	{ _ = true, PWD = true, OLDPWD = true, SHLVL = true, LAST_EXIT_CODE = true }

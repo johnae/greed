@@ -1,7 +1,6 @@
 -- Reading a line typed at a shell's prompt: a builtin the shell runs
--- itself, a program with plain arguments it starts on its own, or anything
--- else (pipes, globs, variables, redirects), which goes to a real shell.
--- A leading `!` runs the line in a terminal.
+-- itself, or anything else, which goes to a real shell (your own, or `sh`
+-- for an agent). A leading `!` runs the line in a terminal.
 --
 -- Data from the editor goes in at the start of a line, `$3 | sort` (block
 -- 3's output), `buf:NAME | wc -l`, `@sel | jq .` or `@file | head`, and
@@ -17,8 +16,9 @@ M.BUILTINS = {
 	unset = "Leave environment variables out of the commands after: NAME ...",
 	env = "List the variables this shell sets or leaves out",
 	history = "List the commands typed before",
-	clear = "Remove every block",
+	clear = "Take the finished blocks away",
 	open = "Open files or buffers in the editor: PATH or buf:NAME ...",
+	help = "What works here: these, what a line can hold, and the keys",
 } :: { [string]: string }
 
 --- What a line asks for.

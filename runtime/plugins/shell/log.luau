@@ -254,6 +254,9 @@ function M.draw_block(shell: Shell, block: Block)
 	local style = STYLE[block.status] or "shell.status"
 	local glyph = M.glyph(block)
 	local status = M.status_text(block)
+	-- Every mark here is empty, at a line's start or end, so none styles
+	-- the command or the output: only its own text and lines.
+	local line_end = buffer:line_end(line)
 	local marks: { greed.Mark } = {
 		{
 			from = from,
@@ -262,8 +265,8 @@ function M.draw_block(shell: Shell, block: Block)
 			text = if block.by == "agent" then "◆ " else "❯ ",
 		},
 		{
-			from = from,
-			to = buffer:line_end(line),
+			from = line_end,
+			to = line_end,
 			style = style,
 			sign = glyph,
 			text = if status ~= "" then `{glyph} {status}` else glyph,
@@ -273,39 +276,48 @@ function M.draw_block(shell: Shell, block: Block)
 	if block.omitted > 0 and s then
 		local first = first_output_line(shell, block, from)
 		local _, head = cap()
-		local at = math.min(first + head - 1, last)
+		local at = buffer:line_end(math.min(first + head - 1, last))
 		local said = `… {block.omitted} lines not shown; :shell-output-open shows them all`
-		table.insert(marks, {
-			from = buffer:line_start(at),
-			to = buffer:line_end(at),
-			style = "shell.status",
-			lines = { said },
-		})
+		table.insert(marks, { from = at, to = at, style = "shell.status", lines = { said } })
 	end
-	table.insert(marks, {
-		from = buffer:line_start(last),
-		to = buffer:line_end(last),
-		style = "shell.separator",
-		lines = { "" },
-	})
+	local after = buffer:line_end(last)
+	table.insert(marks, { from = after, to = after, style = "shell.separator", lines = { "" } })
 	buffer:decorate(ns_block(block), marks)
 end
 
---- Draws the prompt's glyph and, after its first line, the folder.
+--- `path` short, as fish writes it: from "~" under the home folder, with
+--- every folder but the last cut to its first letter, "~/D/greed".
+function M.short_folder(path: string): string
+	local parts = string.split(core.project.tilde(path), "/")
+	for i = 1, #parts - 1 do
+		local part = parts[i]
+		-- A dot folder keeps its dot and first letter.
+		local keep = if string.sub(part, 1, 1) == "." then 2 else 1
+		parts[i] = string.sub(part, 1, (utf8.offset(part, keep + 1) or #part + 1) - 1)
+	end
+	return table.concat(parts, "/")
+end
+
+--- Draws the prompt: the shell's folder and the glyph before what's
+--- typed, and in a shell with no blocks yet, a line under it saying where
+--- help is.
 function M.draw_prompt(shell: Shell)
 	local buffer = shell.buffer
 	local start = M.prompt_start(shell)
-	local line = buffer:line_of(start)
-	buffer:decorate("shell.prompt", {
+	local marks: { greed.Mark } = {
+		{ from = start, to = start, style = "shell.cwd", text = M.short_folder(shell.cwd) .. " " },
 		{ from = start, to = start, style = "shell.prompt", text = "❯ " },
-		{
-			from = start,
-			to = buffer:line_end(line),
-			style = "shell.cwd",
-			text = core.project.tilde(shell.cwd),
-			eol = true,
-		},
-	})
+	}
+	if #shell.blocks == 0 then
+		local stop = buffer:len()
+		table.insert(marks, {
+			from = stop,
+			to = stop,
+			style = "shell.status",
+			lines = { "type help for what works here" },
+		})
+	end
+	buffer:decorate("shell.prompt", marks)
 end
 
 -- Follows `block` from `from` to `to`.

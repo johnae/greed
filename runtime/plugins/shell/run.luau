@@ -419,18 +419,6 @@ function M.pipe(
 	end)
 end
 
---- A program in `argv` named with a relative path, like `./build.sh`, as
---- found from `cwd`.
-function M.program(argv: { string }, cwd: string): { string }
-	local first = argv[1]
-	if string.find(first, "/", 1, true) and string.sub(first, 1, 1) ~= "/" then
-		local out = table.clone(argv)
-		out[1] = core.project.resolve(first, cwd)
-		return out
-	end
-	return argv
-end
-
 --- Lines of `text`, for a builtin's output.
 local function say(shell: Shell, block: Block, text: string)
 	M.write(shell, block, text .. "\n", "stdout")

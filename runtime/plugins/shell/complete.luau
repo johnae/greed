@@ -16,33 +16,11 @@ type Item = { label: string, detail: string?, text: string, from: number? }
 
 local M = {}
 
-local editor_env: { [string]: string }? = nil
-
--- The editor's environment, read once.
-local function editor_environment(): { [string]: string }
-	if editor_env then
-		return editor_env
-	end
-	local vars: { [string]: string } = {}
-	local program = state.program()
-	local result = greed.process.run(if program then { program, "--env0" } else { "env", "-0" })
-	if result then
-		for _, entry in string.split(result.stdout, "\0") do
-			local name, value = string.match(entry, "^([^=]+)=(.*)$")
-			if name and value then
-				vars[name] = value
-			end
-		end
-	end
-	editor_env = vars
-	return vars
-end
-
 -- The variables programs started in `shell` get: the editor's, with the
 -- shell's own on top.
 local function environment(shell: Shell): { [string]: string }
 	local vars: { [string]: string } = {}
-	for name, value in editor_environment() do
+	for name, value in state.editor_environment() do
 		if shell.env[name] ~= false then
 			vars[name] = value
 		end

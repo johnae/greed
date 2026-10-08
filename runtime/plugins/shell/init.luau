@@ -13,13 +13,12 @@
 --   space y/Y   copy its output / its command
 --   space x     stop it; space v opens its whole output; space c clears
 --
--- The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
--- `open` itself, and starts a program with plain arguments on its own;
--- lines with pipes, globs or variables go to a real shell, whose cd and
--- export carry over (fallback.luau). Programs run in a pseudo terminal
--- (pty.luau), handed to a terminal when they want one; an agent's run
--- through a pipe. Each shell has its own folder and variables, and a
--- project can have several.
+-- The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear`,
+-- `open` and `help` itself; every other line goes to a real shell, yours
+-- (`sh` for an agent), whose cd and export carry over (fallback.luau). It
+-- runs in a pseudo terminal (pty.luau), handed to a terminal when a
+-- program wants one; an agent's run through a pipe. Each shell has its own
+-- folder and variables, and a project can have several.
 --
 -- `$3 | sort`, `buf:NAME | ...`, `@sel | ...` and `@file | ...` send block
 -- 3's output, a buffer, the selection or the file you're in to a command,
@@ -332,11 +331,10 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		run.finish(shell, block, 0, nil)
 	elseif parsed.kind == "builtin" then
 		run.builtin(shell, block, parsed.name :: string, parsed.args or {})
-	elseif parsed.kind == "argv" then
-		block.via = "argv"
-		local argv = run.program(parsed.argv :: { string }, block.cwd)
-		start(shell, block, argv, opts, parsed.terminal, input)
 	else
+		-- Everything else goes to a real shell, so `ls` and `ls | head`
+		-- behave the same, with its aliases (given startup files) and
+		-- builtins.
 		block.via = "shell"
 		fall_back(shell, block, parsed.line, opts, parsed.terminal, input)
 	end
@@ -392,6 +390,96 @@ run.builtins.open = function(shell: Shell, block: Block, args: { string }): numb
 			core.file.open(core.project.resolve(arg, block.cwd))
 		end
 	end
+	return 0
+end
+
+-- The keys `help` lists, in the vscode style and in the others.
+local HELP_KEYS = {
+	vscode = {
+		{ "enter", "run what's at the prompt; alt-enter starts another line" },
+		{ "up  down", "commands typed before, starting with what's typed" },
+		{ "ctrl-r", "pick a command typed before" },
+		{ "tab", "complete a program, a file, $3, buf: or @sel" },
+		{ "ctrl-c", "copy a selection, or interrupt the running block" },
+		{ "ctrl-t", "type into the running block's program" },
+		{ "ctrl-up  ctrl-down", "the block before or after the cursor" },
+		{ "f8  shift-f8", "the next or previous file:line the output names" },
+		{ "ctrl-space r  R", "run the block again, as it ran or here" },
+		{ "ctrl-space y  Y", "copy its output or its command" },
+		{ "ctrl-space x  v  c", "stop it, open its output, clear finished blocks" },
+	},
+	other = {
+		{ "enter", "run what's at the prompt; on a block, edit its command" },
+		{ "up  down", "commands typed before, starting with what's typed" },
+		{ "ctrl-r", "pick a command typed before" },
+		{ "tab", "complete a program, a file, $3, buf: or @sel" },
+		{ "ctrl-c", "interrupt the running block" },
+		{ "ctrl-t", "type into the running block's program" },
+		{ "[ p  ] p", "the block before or after the cursor (normal mode)" },
+		{ "] e  [ e", "the next or previous file:line the output names" },
+		{ "g o", "select the block's output" },
+		{ "space r  R", "run the block again, as it ran or here" },
+		{ "space y  Y", "copy its output or its command" },
+		{ "space x  v  c", "stop it, open its output, clear finished blocks" },
+	},
+}
+
+-- Adds `rows` to `lines` as two columns, the first padded to line the
+-- second up.
+local function add_columns(lines: { string }, rows: { { string } })
+	local wide = 0
+	for _, row in rows do
+		wide = math.max(wide, core.text.width(row[1]))
+	end
+	for _, row in rows do
+		table.insert(lines, `  {row[1]}{string.rep(" ", wide - core.text.width(row[1]))}  {row[2]}`)
+	end
+end
+
+--- The page `help` prints: what the shell runs itself, what it reads in a
+--- line, which shell runs the rest, and the keys in the style in use.
+function M.help(): string
+	local names: { string } = {}
+	for name in parse.BUILTINS do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local builtins: { { string } } = {}
+	for _, name in names do
+		table.insert(builtins, { name, parse.BUILTINS[name] })
+	end
+	local program, carries = fallback.which()
+	local lines = { "Run by the shell itself:" }
+	add_columns(lines, builtins)
+	table.insert(lines, "")
+	table.insert(lines, "Read by the shell in a line:")
+	add_columns(lines, {
+		{ "$3 | cmd", "block 3's output as cmd's input; $3 alone shows it again" },
+		{ "buf:NAME | cmd", "a buffer's text as input; open buf:NAME shows it" },
+		{ "@sel | cmd", "the selection in the file you're in" },
+		{ "@file | cmd", "the file you're in" },
+		{ "cmd > buf:NAME", "cmd's output into a buffer; >> adds to it" },
+		{ "!cmd", "run cmd in a terminal from the start" },
+	})
+	table.insert(lines, "")
+	local carry = if carries
+		then "cd and export there carry over"
+		else "cd and export there don't carry over"
+	table.insert(
+		lines,
+		`Everything else runs in {program} ({carry}); :set shell-fallback picks another.`
+	)
+	table.insert(lines, "")
+	local style = core.style.current().name
+	table.insert(lines, `Keys ({style} style):`)
+	add_columns(lines, if style == "vscode" then HELP_KEYS.vscode else HELP_KEYS.other)
+	table.insert(lines, "")
+	table.insert(lines, "The shell page in Greed's docs has the rest.")
+	return table.concat(lines, "\n") .. "\n"
+end
+
+run.builtins.help = function(shell: Shell, block: Block, _args: { string }): number
+	run.write(shell, block, M.help(), "stdout")
 	return 0
 end
 

@@ -14,13 +14,16 @@ error[E0308]: mismatched types
  --> src/main.rs:12:5
 ❯ git status --short                      ✓ 0.02s
  M src/main.rs
-❯ |                                       ~/src/app
+~/s/app ❯ |
 ```
 
-`space o s` switches to a shell of this project, or opens one; `:shell
-NAME` opens another. Each shell has its own folder and variables, and a
-project can have several. Shells and their blocks last until you close
-them or the session ends.
+The prompt starts with the shell's folder, every folder but the last cut
+to its first letter. `space o s` switches to a shell of this project, or
+opens one; `:shell NAME` opens another. Each shell has its own folder and
+variables, and a project can have several. Shells and their blocks last
+until you close them or the session ends. A new shell says to type `help`,
+which lists what the shell runs itself, what a line can hold, which shell
+runs the rest, and the keys in the style you use.
 
 ## Blocks
 
@@ -90,12 +93,11 @@ The shell runs a few commands itself:
 | `history` | The commands typed before |
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
+| `help` | What works here, and the keys in the style you use |
 
-A program with plain arguments, like `git status --short` or `cargo test
--q`, starts directly. Anything else (pipes, globs, `$VARS`, redirects,
-`&&`, `NAME=value program`, your shell's own syntax) goes to your shell:
-your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and the
-like), fish or nu, and `sh` otherwise; `:set shell-fallback bash` picks
+Every other line goes to your shell, so `ls` and `ls | head` behave the
+same: your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and
+the like), fish or nu, and `sh` otherwise; `:set shell-fallback bash` picks
 one. `cd` and `export` there carry over to the commands after, as they
 would in a terminal. If `shell-fallback` names a shell of another kind, the
 line still runs in it, and its block says `cd` and `export` in it don't
@@ -166,8 +168,8 @@ without taking your screen) with the `shell` [tool group](agents.md#tool-groups)
 | `shell_kill` | Stop a block an agent ran |
 
 An agent's commands run through a pipe with their input closed, from the
-project's root unless they ask for a folder, and lines that need a shell go
-to `sh` without its startup files. Their blocks are
+project's root unless they ask for a folder, in `sh` without its startup
+files. Their blocks are
 marked `◆`, and their `cd` and `export` show in their block without
 changing your shell. What a command prints goes back to the model marked
 as someone else's text, to use as information and not to follow; `greed

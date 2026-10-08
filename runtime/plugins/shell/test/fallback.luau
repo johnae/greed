@@ -116,10 +116,10 @@ end)
 
 test("a shell of another kind runs the line, and says cd doesn't carry over", function(t)
 	local dir = t:tempdir({ ["sub/x.txt"] = "x", ["myshell"] = 'exec sh "$@"\n' })
-	greed.option.set("shell-fallback", dir .. "/myshell")
 	local sh = open(t, dir)
-	-- Made runnable with the shell itself.
+	-- Made runnable with the shell itself, before it runs the lines.
 	run(t, sh, "chmod +x myshell")
+	greed.option.set("shell-fallback", dir .. "/myshell")
 	local block = run(t, sh, "cd sub && pwd")
 	assert(block.output == dir .. "/sub\n", block.output)
 	assert(block.program == "myshell", tostring(block.program))

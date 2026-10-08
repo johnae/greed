@@ -68,20 +68,67 @@ test(":shell opens a buffer of blocks with the prompt at the bottom", function(t
 	-- The cursor is back at the empty prompt.
 	assert(greed.view():cursor() == buffer:len())
 	assert(shell.log.prompt_text(sh) == "")
-	-- The prompt shows the folder, as a decoration.
-	local prompt = buffer:decorations("shell.prompt")
-	local shown = false
-	for _, mark in prompt do
-		shown = shown or (mark.eol == true and mark.text == core.project.tilde(dir))
+	-- The prompt shows the folder before the glyph, as decorations.
+	local texts = {}
+	for _, mark in buffer:decorations("shell.prompt") do
+		if mark.text then
+			table.insert(texts, mark.text)
+		end
 	end
-	assert(shown, "the folder after the prompt")
+	local short = shell.log.short_folder(dir)
+	assert(table.concat(texts) == `{short} ❯ `, table.concat(texts, "|"))
+	local drawn = table.concat(t:draw(80, 10), "\n")
+	assert(string.find(drawn, `{short} ❯ \n`, 1, true), drawn)
+end)
+
+test("the prompt's folder is short, and a new shell says where help is", function(t)
+	local home = assert(greed.fs.dirs().home)
+	assert(shell.log.short_folder(home .. "/Development/greed") == "~/D/greed")
+	assert(shell.log.short_folder(home .. "/.config/greed") == "~/.c/greed")
+	assert(shell.log.short_folder("/usr/local/bin") == "/u/l/bin")
+	assert(shell.log.short_folder(home) == "~")
+	local sh = open(t, t:tempdir())
+	local said = table.concat(t:draw(80, 10), "\n")
+	assert(string.find(said, "type help for what works here", 1, true), said)
+	finished(t, type_line(t, sh, "true"))
+	said = table.concat(t:draw(80, 10), "\n")
+	assert(not string.find(said, "type help", 1, true), "gone once something ran: " .. said)
+end)
+
+test("help lists the builtins, what a line can hold, the shell and the keys", function(t)
+	greed.option.set("shell-fallback", "sh")
+	local sh = open(t, t:tempdir())
+	local block = finished(t, type_line(t, sh, "help"))
+	for _, said in { "cd", "export", "$3 | cmd", "buf:NAME", "@sel", "!cmd", "runs in sh" } do
+		assert(string.find(block.output, said, 1, true), `{said}: {block.output}`)
+	end
+	assert(string.find(block.output, "space r", 1, true), block.output)
+	greed.option.set("editing-style", "vscode")
+	local vscode = finished(t, assert(shell.run(sh, "help")))
+	assert(string.find(vscode.output, "ctrl-space r", 1, true), vscode.output)
+	assert(string.find(vscode.output, "vscode style", 1, true), vscode.output)
+end)
+
+test("no block decoration styles a command's or its output's text", function(t)
+	greed.option.set("shell-max-lines", 4)
+	local sh = open(t, t:tempdir())
+	local block = finished(t, type_line(t, sh, "printf 'a\\nb\\nc\\nd\\ne\\nf\\n'"))
+	assert(block.omitted == 2, tostring(block.omitted))
+	local buffer = sh.buffer
+	for _, ns in { `shell.block.{block.uid}`, "shell.prompt" } do
+		for _, mark in buffer:decorations(ns) do
+			assert(mark.from == mark.to, `{ns} styles {buffer:slice(mark.from, mark.to)}`)
+		end
+	end
+	-- The last line's output looks like the others: only its own styles.
+	assert(#buffer:decorations(`shell.out.{block.uid}`) == 0, "plain output has no styles")
 end)
 
 test("a failing command says how it ended, beside its command", function(t)
 	local sh = open(t, t:tempdir())
 	local typed = finished(t, type_line(t, sh, "sh -c 'echo out; echo err >&2; exit 3'"))
 	assert(typed.status == "failed" and typed.code == 3, `{typed.status} {typed.code}`)
-	assert(typed.via == "argv" and typed.runner == "pty", typed.runner)
+	assert(typed.via == "shell" and typed.runner == "pty", typed.runner)
 	-- In a pseudo terminal what it prints comes merged, in order.
 	assert(typed.output == "out\nerr\n", typed.output)
 	assert(string.find(status(sh, typed), "✗ exit 3", 1, true), status(sh, typed))
@@ -109,7 +156,23 @@ test("a program that isn't there fails to start", function(t)
 	local sh = open(t, t:tempdir())
 	local block = finished(t, type_line(t, sh, "no-such-program-here"))
 	assert(block.status == "failed" and block.code == 127, `{block.status} {block.code}`)
-	assert(#block.stderr > 0, "says why")
+	-- The shell says why, in the merged output of its terminal.
+	assert(string.find(block.output, "not found", 1, true), block.output)
+end)
+
+test("plain programs and pipes both go through your shell", function(t)
+	greed.option.set("shell-fallback", "sh")
+	local sh = open(t, t:tempdir({ ["a.txt"] = "" }))
+	local plain = finished(t, type_line(t, sh, "ls"))
+	local piped = finished(t, type_line(t, sh, "ls | cat"))
+	assert(plain.via == "shell" and piped.via == "shell", plain.via)
+	assert(plain.program == "sh" and plain.output == piped.output, plain.output)
+	-- A variable set for one program works as in a terminal.
+	local one = finished(t, type_line(t, sh, "GREED_ONE=1 printenv GREED_ONE"))
+	assert(one.output == "1\n", one.output)
+	-- The shell's own builtins still run without it.
+	local env = finished(t, type_line(t, sh, "env"))
+	assert(env.via == "builtin", env.via)
 end)
 
 test("cd, export and unset change the shell for the commands after", function(t)
