@@ -131,3 +131,30 @@ test("an agent's note tools can't write a decision, so none reads as accepted", 
 		tool("plan_write", { text = "- [ ] x\n", version = tool("plan_read").version }) == "written"
 	)
 end)
+
+test("a proposed decision says how to accept it, and accepting says so, line for line", function(t)
+	local dir = project(t)
+	local name = tool("decision_propose", { title = "Use sqlite", text = "One file." })
+	local path = `{dir}/.greed/notes/decisions/{name}`
+	greed.open(path)
+	local buffer = greed.view():buffer()
+	local marks = buffer:decorations("decision")
+	assert(#marks == 2 and marks[1].action == "decision-accept", "a button to accept it")
+	assert(string.find(marks[2].text or "", ":decision-accept", 1, true), tostring(marks[2].text))
+	local before = buffer:text()
+	t:run("decision-accept")
+	local after = buffer:text()
+	assert(
+		after == (string.gsub(before, "Status: proposed", "Status: accepted")),
+		"only the status changed: " .. after
+	)
+	local messages = t:messages()
+	assert(
+		messages[#messages] == 'accepted "Use sqlite"; agents follow it from now on',
+		messages[#messages]
+	)
+	assert(#buffer:decorations("decision") == 0, "nothing more to say")
+	t:run("decision-accept")
+	messages = t:messages()
+	assert(messages[#messages] == '"Use sqlite" is accepted already', messages[#messages])
+end)

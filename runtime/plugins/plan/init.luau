@@ -264,6 +264,51 @@ greed.command({
 	end,
 })
 
+-- The line of `buffer` saying its decision's status, if it has one.
+local function status_line(buffer: greed.Buffer): number?
+	for line = 0, buffer:line_count() - 1 do
+		if string.match(buffer:line_text(line), "^Status:%s*%a+") then
+			return line
+		end
+	end
+	return nil
+end
+
+-- A proposed decision open in `buffer` says beside its status how to
+-- accept it; once accepted, it says nothing.
+local function show_status(buffer: greed.Buffer)
+	-- Only decisions: any other file, however big, isn't read at all.
+	local path = buffer:path()
+	if path == nil or not core.project.inside(path, M.decisions_dir()) then
+		return
+	end
+	local line = status_line(buffer)
+	local marks: { greed.Mark } = {}
+	if line and string.match(buffer:line_text(line), "^Status:%s*proposed") then
+		local at = buffer:line_start(line)
+		table.insert(marks, {
+			from = at,
+			to = at,
+			eol = true,
+			style = "ui.button",
+			text = "accept",
+			action = "decision-accept",
+		})
+		table.insert(marks, {
+			from = at,
+			to = at,
+			eol = true,
+			style = "comment",
+			text = "an agent proposed it; :decision-accept accepts it",
+		})
+	end
+	buffer:decorate("decision", marks)
+end
+
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	show_status(event.buffer)
+end)
+
 greed.command({
 	name = "decisions",
 	doc = "Pick a decision kept for this project to open it",
@@ -275,6 +320,7 @@ greed.command({
 		end
 		picker.pick("Decisions", items, function(item)
 			greed.open(item.value)
+			show_status(greed.view():buffer())
 		end)
 	end,
 })
@@ -299,16 +345,22 @@ greed.command({
 	doc = "Accept the proposed decision you're in, so agents follow it",
 	run = function(ctx)
 		local buffer = ctx.buffer
-		local text = buffer:text()
-		local from, to = string.find(text, "\nStatus:%s*%a+")
-		if from == nil or to == nil then
+		local line = status_line(buffer)
+		if line == nil then
 			greed.echo("this isn't a decision")
 			return
 		end
+		local title = string.match(buffer:line_text(0), "^#%s*(.-)%s*$") or "the decision"
+		if string.match(buffer:line_text(line), "^Status:%s*accepted") then
+			greed.echo(`"{title}" is accepted already`)
+			return
+		end
 		buffer:edit(function(e)
-			e:replace(from, to, "\nStatus: accepted")
+			e:replace(buffer:line_start(line), buffer:line_end(line), "Status: accepted")
 		end)
 		buffer:save()
+		show_status(buffer)
+		greed.echo(`accepted "{title}"; agents follow it from now on`)
 	end,
 })
 

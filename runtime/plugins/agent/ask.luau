@@ -38,9 +38,13 @@ local function plain(text: string): string
 	return line
 end
 
+-- How to answer, under the title.
+local HINT = "enter picks a choice or goes on to the next question; type your answer "
+	.. "after Answer:; ctrl-s sends, or Send at the end"
+
 -- The page for `questions`.
 local function page(title: string, questions: { Question }): string
-	local lines = { `# {plain(title)}`, "" }
+	local lines = { `# {plain(title)}`, "", HINT, "" }
 	for n, q in questions do
 		table.insert(lines, `### {n}. {plain(q.question)}`)
 		table.insert(lines, "")
@@ -127,6 +131,7 @@ function M.ask(title: string, questions: { Question }): ({ [string]: string }, b
 		}
 	end
 	buffer:decorate("ask", { button("Send", "ask-send"), button("Cancel", "ask-cancel") })
+	buffer:set_keys({ enter = "ask-enter", ["ctrl-s"] = "ask-send" })
 	-- As big as the questions, with room for the buttons and to type an
 	-- answer; a float bigger than the screen is drawn to fit it.
 	local widest = 0
@@ -141,6 +146,58 @@ function M.ask(title: string, questions: { Question }): ({ [string]: string }, b
 	local result = a.done:wait()
 	return result.answers, result.cancelled
 end
+
+-- The line after `line` where the next question is answered: its first
+-- choice or its Answer: line, or the last line, where Send is.
+local function next_answer(buffer: greed.Buffer, line: number): number
+	local last = buffer:line_count() - 1
+	local past_question = false
+	for n = line + 1, last do
+		local text = buffer:line_text(n)
+		if string.match(text, "^### %d+%. ") then
+			past_question = true
+		elseif
+			past_question and (string.match(text, "^Answer:") or markdown.choices.at(buffer, n))
+		then
+			return n
+		end
+	end
+	return last
+end
+
+greed.command({
+	name = "ask-enter",
+	doc = "On a page of questions: pick the choice under the cursor and go on to the next question, start typing an answer, or go on",
+	run = function(ctx)
+		local buffer, view = ctx.buffer, ctx.view
+		if asked_in(buffer) == nil then
+			return
+		end
+		local line = buffer:line_of(view:cursor())
+		if line == buffer:line_count() - 1 then
+			-- Send or Cancel, whichever you pick; their buttons are at its start.
+			view:set_cursor(buffer:line_start(line))
+			greed.run("press-button")
+			return
+		end
+		if string.match(buffer:line_text(line), "^Answer:") and not core.style.is_typing() then
+			-- Typing after what's there.
+			view:set_cursor(buffer:line_end(line))
+			greed.mode.set(core.style.typing_mode())
+			return
+		end
+		if markdown.choices.at(buffer, line) then
+			markdown.choices.pick(buffer, line)
+		end
+		local after = next_answer(buffer, line)
+		view:set_cursor(buffer:line_end(after))
+		greed.mode.set(
+			if string.match(buffer:line_text(after), "^Answer:")
+				then core.style.typing_mode()
+				else core.style.home()
+		)
+	end,
+})
 
 greed.command({
 	name = "ask-send",

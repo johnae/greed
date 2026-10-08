@@ -36,7 +36,7 @@ test("ask shows the questions as a page, and Send gives the answers back", funct
 	)
 	assert(string.find(text, "### 2. What should the plugin be called?\n\nAnswer: ", 1, true), text)
 	-- Pick Vim and type a name, as you would.
-	require("@markdown").choices.pick(page, 5)
+	require("@markdown").choices.pick(page, 7)
 	local answer_line = page:line_count() - 3
 	page:edit(function(e)
 		e:insert(page:line_end(answer_line), "tidy")
@@ -79,4 +79,35 @@ test("closing the page without sending is answering none", function(t)
 		return result() ~= nil
 	end)
 	assert(result().cancelled and next(result().answers) == nil, "nothing answered")
+end)
+
+test("the page says its keys, and enter goes from question to question", function(t)
+	t:buffer("|")
+	local questions: { Question } = {
+		{ id = "style", question = "Which?", choices = { "Helix", "Vim" } },
+		{ id = "name", question = "Called?" },
+	}
+	local result = ask({ questions = questions })
+	t:wait(10)
+	local page = greed.view():buffer()
+	assert(string.find(page:text(), "ctrl-s sends", 1, true), page:text())
+	-- On the blank line under the title's hint, enter goes to the first choice.
+	greed.view():set_cursor(page:line_start(3))
+	t:keys("enter")
+	local function line_text(): string
+		return page:line_text(page:line_of(greed.view():cursor()))
+	end
+	assert(line_text() == "- ( ) Helix", line_text())
+	-- Down to Vim; enter picks it and goes on to the typed answer.
+	t:keys("j enter")
+	assert(string.find(page:text(), "- (x) Vim", 1, true), page:text())
+	assert(line_text() == "Answer: ", line_text())
+	t:keys("t i d y enter")
+	assert(line_text() == "When you're done:", line_text())
+	t:keys("ctrl-s")
+	t:wait_for(function()
+		return result() ~= nil
+	end)
+	local got = result()
+	assert(got.answers.style == "Vim" and got.answers.name == "tidy", greed.json.encode(got))
 end)

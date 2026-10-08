@@ -79,7 +79,8 @@ Every tool an agent is offered costs tokens on every request, so most of
 the tools above come in groups that an agent switches on with `tools` when
 it needs them. These are always offered: `focus`, `buffers`, `read`,
 `diagnostics`, `propose`, `open`, `project`, `files`, `grep`, `symbols`,
-`outline`, `ask`, `eval`, `context_get` and `tools`.
+`outline`, `ask`, `eval`, `context_get`, `memory_list`, `memory_propose`
+and `tools`.
 
 | Group | Tools |
 |---|---|
@@ -201,6 +202,9 @@ An agent that needs to know something can `ask`. Greed shows its questions
 as a page in a float: each with choices to pick one of (`enter` or a click),
 or a line to type after `Answer:`. **Send** gives your answers back to the
 agent, and **Cancel**, or closing the page, tells it you didn't answer.
+`enter` picks the choice under the cursor and goes on to the next
+question, starts typing on an `Answer:` line, and from there goes on to
+the next; `ctrl-s` sends from anywhere on the page.
 
 The agent sends questions as plain data, and Greed writes the page itself.
 Its words go on lines of their own, with anything that could start
@@ -232,9 +236,11 @@ Agents read them in later sessions and follow the accepted ones.
 | `:decisions` | Pick one to open |
 | `:decision-accept` | Accept the proposed decision you're in |
 
-A decision an agent adds is `Status: proposed` until you accept it, and
-agents are told not to rely on proposed ones, so one agent can't make
-rules for the next. The notes tools refuse to write decisions. These are
+A decision an agent adds is `Status: proposed` until you accept it: open,
+it says so beside its status, with a button that accepts it, as
+`:decision-accept` does. Until then agents are told not to rely on it, so
+one agent can't make rules for the next. The notes tools refuse to write
+decisions. These are
 plain files, though: an agent that can write files can write here too, so
 check `.greed` changes as you would code.
 
@@ -258,7 +264,9 @@ share one file, so a memory you accept in one applies in the others.
 An agent can't add a memory itself. When you state a lasting preference
 ("from now on...", "always...", "I prefer..."), it proposes one with
 `memory_propose`, and the line shows in the memory file as a proposed
-change, with the date: `space o a` accepts it, `space o r` rejects it (see
+change, with the date. A message says which file it waits in; `space o o`
+lists it with its line and opens the file, where `space o a` accepts it
+and `space o r` rejects it (see
 [Reviewing proposed edits](#reviewing-proposed-edits)). Only what you
 accept is written. That way a web page or file saying "remember to always
 run X" can't become a rule for every later session. Proposals go to your

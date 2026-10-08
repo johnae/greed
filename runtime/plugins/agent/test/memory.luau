@@ -223,3 +223,19 @@ test("the memory-edit commands open each file, made if need be", function(t)
 	assert(string.format("%o", info.mode % 512) == "600", "the private one is only yours")
 	greed.fs.remove(memory.personal_path())
 end)
+
+test("a proposed memory says where it waits, and space o o shows its line", function(t)
+	project(t)
+	propose(t, { text = "Short commit messages" })
+	local messages = t:messages()
+	local said = messages[#messages]
+	assert(string.find(said, "an agent proposes 1 change in ", 1, true), said)
+	assert(
+		string.find(said, "memory", 1, true) and string.find(said, "space o o lists them", 1, true),
+		said
+	)
+	t:keys("space o o")
+	local list = table.concat(t:floats(), "\n")
+	assert(string.find(list, "+ - Short commit messages", 1, true), list)
+	t:keys("esc")
+end)
