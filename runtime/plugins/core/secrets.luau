@@ -10,11 +10,15 @@ greed.command({
 	doc = "Keep a secret, like an API key, in the system keyring (or Greed's secrets file)",
 	args = { { name = "name", doc = "e.g. anthropic" } },
 	run = function(ctx)
-		local name = ctx.args[1] or prompt.ask("Secret's name")
+		local name = ctx.args[1] or prompt.ask("Name of the secret, e.g. anthropic")
 		if name == nil or name == "" then
 			return
 		end
-		local value = prompt.ask(`Value of {name}`, nil, { secret = true })
+		local value = prompt.ask(
+			`API key or other secret for {name}, kept in the system keyring (or Greed's secrets file)`,
+			nil,
+			{ secret = true }
+		)
 		if value == nil or value == "" then
 			return
 		end

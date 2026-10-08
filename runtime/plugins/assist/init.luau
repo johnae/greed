@@ -66,6 +66,15 @@ function M.answer_into(buffer: greed.Buffer, request: models.Request): (string?,
 	end
 end
 
+-- Says in the panel's `buffer` why no answer came, after what did.
+local function failed(buffer: greed.Buffer, err: string)
+	local gap = if buffer:len() > 0 then "\n\n" else ""
+	buffer:edit(function(e)
+		e:insert(buffer:len(), `{gap}No answer: {err}\n`)
+	end)
+	greed.echo(err)
+end
+
 -- The selected text, or the line under the cursor when nothing more is
 -- selected, and the 1-based line it starts on.
 local function selected(view: greed.View): (string, number)
@@ -108,7 +117,7 @@ local function about_selection(view: greed.View, title: string, question: string
 		},
 	})
 	if err then
-		greed.echo(err)
+		failed(buffer, err)
 	end
 end
 
@@ -238,7 +247,9 @@ greed.command({
 			messages = { { role = "user", content = `Describe these changes:\n\n{diff}` } },
 		})
 		if err then
-			greed.echo(err)
+			-- There's nothing to apply.
+			describing[buffer:id()] = nil
+			failed(buffer, err)
 		end
 	end,
 })

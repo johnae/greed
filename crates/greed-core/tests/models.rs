@@ -97,7 +97,8 @@ fn host(address: &str) -> Host {
     editor.open("file", "", None);
     let host = Host::new(editor).unwrap();
     host.quiet_stalls();
-    host.load_dirs(&[plugin("core"), plugin("models")]).unwrap();
+    host.load_dirs(&[plugin("core"), plugin("picker"), plugin("models")])
+        .unwrap();
     host.load_str(
         "config",
         &format!(

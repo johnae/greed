@@ -2,7 +2,11 @@
 -- "reasoning", and your config says which provider and model plays it, so
 -- no plugin hard-codes a provider and switching to a local model is one line.
 --
---   :models   each role's provider and model, and whether its key is found
+--   :models   each role's provider and model and whether its key is found;
+--             enter changes a role, k sets a key, l signs in
+--
+-- What you pick in :models (or the setup page) is kept in Greed's data
+-- folder and read before your config, which has the last word.
 --
 -- In your config:
 --
@@ -10,10 +14,12 @@
 --     models.roles.fast = { provider = "ollama", model = "llama3.2" }
 --     models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", secret = "work" }
 --
--- Keys come from greed.secrets (`:secret-set anthropic`, or ANTHROPIC_API_KEY).
+-- Keys come from greed.secrets (`:models`, `:secret-set anthropic`, or
+-- ANTHROPIC_API_KEY).
 
 local greed = require("@greed")
 local core = require("@core")
+local picker = require("@picker")
 local registry = core.registry
 local sse = require("@self/sse")
 local turn = require("@self/turn")
@@ -94,6 +100,105 @@ end
 function M.role(role: string, spec: Role)
 	greed.plugin.tie(registry.set(M.roles, role, spec))
 end
+
+--- A role a plugin asks for that uses another role's model while none plays
+--- it, like Greed's agent's `agent`, which uses `reasoning` until you set
+--- one; `about` says who asks for it.
+export type Fallback = { to: string, about: string }
+
+--- The roles that fall back to another, by name; add with `fallback`.
+M.fallbacks = {} :: { [string]: Fallback? }
+
+--- Says that `role` uses `to`'s model while no model plays it, for :models
+--- to show and `playing` to follow. It goes when the plugin that said it
+--- does.
+function M.fallback(role: string, to: string, about: string)
+	greed.plugin.tie(registry.set(M.fallbacks, role, { to = to, about = about }))
+end
+
+--- The role whose model answers for `role`: itself when a model plays it,
+--- else the one it falls back to, followed as far as it goes.
+function M.playing(role: string): string
+	local seen: { [string]: boolean } = {}
+	while M.roles[role] == nil and M.fallbacks[role] and not seen[role] do
+		seen[role] = true
+		role = (M.fallbacks[role] :: Fallback).to
+	end
+	return role
+end
+
+-- The roles as Greed sets them, before your config: built in, or chosen
+-- in :models or the setup page. Another table in a role's place means
+-- your config (or a plugin) set it.
+local own: { [string]: Role } = {}
+for name, role in M.roles do
+	own[name] = role :: Role
+end
+
+--- Whether `role` is as Greed set it (built in, or chosen in :models or
+--- the setup page) rather than set by your config or a plugin.
+function M.is_own(role: string): boolean
+	local now = M.roles[role]
+	return now == nil or own[role] == now
+end
+
+-- Where the roles chosen in :models and the setup page are kept.
+local function chosen_path(): string?
+	local data = greed.fs.dirs().data
+	return data and `{data}/models.json`
+end
+
+-- What's kept at `path`, or an empty table when there's nothing readable.
+local function read_chosen(path: string?): { [string]: any }
+	local text = path and greed.fs.read(path)
+	local ok, saved = pcall(greed.json.decode, text or "{}")
+	return if ok and type(saved) == "table" then saved else {}
+end
+
+-- The roles chosen before, read as the plugin loads: your config, which
+-- runs after, still has the last word.
+do
+	local saved = read_chosen(chosen_path())
+	local roles = if type(saved.roles) == "table" then saved.roles else {}
+	for name, role in roles :: { [string]: any } do
+		if
+			type(role) == "table"
+			and type(role.provider) == "string"
+			and type(role.model) == "string"
+		then
+			local chosen: Role = { provider = role.provider, model = role.model }
+			M.roles[name] = chosen
+			own[name] = chosen
+		end
+	end
+end
+
+--- Has `role` played by `model` at `provider` from now on, kept in Greed's
+--- data folder for next time (your config's own settings still come
+--- first). Returns why not, if it can't keep it.
+function M.choose(role: string, provider: string, model: string): string?
+	local chosen: Role = { provider = provider, model = model }
+	M.roles[role] = chosen
+	own[role] = chosen
+	local path = chosen_path()
+	if path == nil then
+		return "there's no data folder to keep it in"
+	end
+	local out = read_chosen(path)
+	out.roles = if type(out.roles) == "table" then out.roles else {}
+	out.roles[role] = { provider = provider, model = model }
+	local written, err = greed.fs.write(path, greed.json.encode(out))
+	return if written then nil else err
+end
+
+--- The models the `fast` and `reasoning` roles get when you pick a
+--- provider in :models or the setup page, by provider.
+M.presets = {
+	anthropic = { fast = "claude-haiku-4-5-20251001", reasoning = "claude-opus-5-5" },
+	openai = { fast = "gpt-5-mini", reasoning = "gpt-5" },
+	berget = { fast = "meta-llama/Llama-3.3-70B-Instruct", reasoning = "openai/gpt-oss-120b" },
+	ollama = { fast = "llama3.2", reasoning = "llama3.2" },
+} :: { [string]: { fast: string, reasoning: string }? }
 
 -- How long an answer may be when the request doesn't say.
 local MAX_TOKENS = 4096
@@ -300,16 +405,98 @@ local function may_send(name: string, url: string): string?
 	return nil
 end
 
--- How to give the key `secret`, for messages about a missing one.
-local function how_to_set(secret: string): string
-	return `:secret-set {secret}, or set {greed.secrets.variable(secret)}`
+--- What every feature says when the provider `name` has no key: the
+--- variable that sets one, and how to add one instead.
+function M.no_key(name: string): string
+	local provider = M.providers[name]
+	local secret = (provider and provider.secret) or name
+	local sign_in = if provider and provider.login then `:login {provider.login}, ` else ""
+	return `no API key for {name}: {sign_in}set {greed.secrets.variable(secret)}, `
+		.. "or add one in :models"
+end
+
+local function key_state(name: string): (string?, string?)
+	local provider = M.providers[name]
+	if provider == nil then
+		return nil, `the provider "{name}" isn't set up`
+	elseif provider.login and login.signed_in(provider.login) then
+		return "signed in", nil
+	elseif provider.secret == nil then
+		return "no key needed", nil
+	elseif greed.secrets.get(provider.secret) then
+		return "key found", nil
+	end
+	return nil, M.no_key(name)
+end
+
+--- How the provider `name` stands for keys: "signed in", "key found" or
+--- "no key needed", or nil and the message saying it has no key. Any
+--- plugin may ask: it tells whether there's a key, never the key.
+function M.key_state(name: string): (string?, string?)
+	return greed.vouch(key_state, name)
+end
+
+--- Why the model for `role` can't be asked now, without asking it: no
+--- model plays the role, its provider isn't set up or has no key. Nil
+--- when nothing's missing as far as Greed can tell.
+function M.check(role: string): string?
+	local chosen, _, why = M.resolve(M.playing(role))
+	if chosen == nil then
+		return why
+	end
+	local _, missing = M.key_state(chosen.provider)
+	return missing
+end
+
+-- Whether `provider` is an Ollama: the one built in, or one at its port.
+local function is_ollama(name: string, provider: Provider): boolean
+	return name == "ollama" or string.find(provider.url, ":11434", 1, true) ~= nil
+end
+
+local function ollama_models(): ({ string }?, string?)
+	local ollama = M.providers.ollama
+	if ollama == nil then
+		return nil, "there's no ollama provider"
+	end
+	local base = string.gsub(ollama.url, "/v1/*$", "")
+	local response = greed.http.request({ url = `{base}/api/tags`, timeout = 3000 })
+	if response == nil or response.status >= 300 then
+		return nil, `Ollama isn't answering at {base}: start it with \`ollama serve\``
+	end
+	local ok, decoded = pcall(greed.json.decode, response.body)
+	local listed = if ok and type(decoded) == "table" then decoded.models else nil
+	local names: { string } = {}
+	if type(listed) == "table" then
+		for _, model in listed :: { any } do
+			if type(model) == "table" and type(model.name) == "string" then
+				table.insert(names, (string.gsub(model.name, ":latest$", "")))
+			end
+		end
+	end
+	return names, nil
+end
+
+--- The models the Ollama provider has pulled, or nil and what to do when
+--- it doesn't answer.
+function M.ollama_models(): ({ string }?, string?)
+	return greed.vouch(ollama_models)
+end
+
+-- What to do about `err` from a request to the role's Ollama, added to it.
+local function ollama_hint(chosen: Role, err: string, status: number?): string
+	if status == nil then
+		return `{err}; is Ollama running? \`ollama serve\` starts it`
+	elseif status == 404 then
+		return `{err}; \`ollama pull {chosen.model}\` fetches the model`
+	end
+	return err
 end
 
 -- The role's model and provider, and its key if it needs one. Callers vouch
 -- for it (greed.vouch): plugins asking a model never see the key, and it
 -- only goes where `may_send` lets it.
 local function connect(role: string): (Role?, Provider?, string?, string?)
-	local chosen, provider, why = M.resolve(role)
+	local chosen, provider, why = M.resolve(M.playing(role))
 	if chosen == nil or provider == nil then
 		return nil, nil, nil, why
 	end
@@ -323,7 +510,7 @@ local function connect(role: string): (Role?, Provider?, string?, string?)
 	elseif provider.secret then
 		key, name = greed.secrets.get(provider.secret), provider.secret
 		if key == nil then
-			return nil, nil, nil, `no key for {chosen.provider}: {how_to_set(provider.secret)}`
+			return nil, nil, nil, M.no_key(chosen.provider)
 		end
 	end
 	local refused = name and may_send(name, provider.url)
@@ -335,9 +522,12 @@ end
 
 -- Sends `request` and waits for the answer to start, or says why it won't.
 local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream?, string?)
+	local provider = M.providers[chosen.provider]
+	local ollama = provider ~= nil and is_ollama(chosen.provider, provider)
 	local response, err = greed.http.stream(request)
 	if response == nil then
-		return nil, `can't reach {chosen.provider}: {err}`
+		local why = `can't reach {chosen.provider}: {err}`
+		return nil, if ollama then ollama_hint(chosen, why, nil) else why
 	end
 	if response.status >= 300 then
 		local body = {}
@@ -348,7 +538,8 @@ local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream
 			end
 			table.insert(body, piece)
 		end
-		return nil, refusal(response.status, table.concat(body))
+		local why = refusal(response.status, table.concat(body))
+		return nil, if ollama then ollama_hint(chosen, why, response.status) else why
 	end
 	return response, nil
 end
@@ -519,45 +710,301 @@ function M.ask(role: string, request: Request): (string?, string?)
 	end
 end
 
---- One line per role: its model and provider, and whether the key is found.
-function M.describe(): { string }
-	local names = {}
+-- Whether `provider` has a key, as the :models page says it.
+local function key_text(name: string, provider: Provider): string
+	local state = M.key_state(name)
+	if state then
+		return state
+	end
+	local sign_in = if provider.login then "l signs in, " else ""
+	return `no API key: {sign_in}k adds one, or set {greed.secrets.variable(provider.secret or name)}`
+end
+
+-- What the :models page says of `name`, which a model plays.
+local function played(name: string): string
+	local chosen, provider, why = M.resolve(name)
+	if chosen == nil or provider == nil then
+		return why or "not set up"
+	end
+	local key = key_text(chosen.provider, provider)
+	return `{chosen.model} at {chosen.provider} ({provider.url}), {key}`
+end
+
+type Row = { role: string, text: string }
+
+-- A row per role, sorted: those a model plays, and those that fall back
+-- to another's.
+local function rows(): { Row }
+	local names: { string } = {}
 	for name in M.roles do
 		table.insert(names, name)
 	end
-	table.sort(names)
-	local lines = {}
-	for _, name in names do
-		local chosen, provider, why = M.resolve(name)
-		if chosen and provider then
-			local key = "no key needed"
-			if provider.login and login.signed_in(provider.login) then
-				key = "signed in"
-			elseif provider.secret then
-				key = if greed.secrets.get(provider.secret)
-					then "key found"
-					else `no key: {how_to_set(provider.secret)}`
-			end
-			table.insert(
-				lines,
-				`{name}: {chosen.model} at {chosen.provider} ({provider.url}), {key}`
-			)
-		else
-			table.insert(lines, `{name}: {why}`)
+	for name in M.fallbacks do
+		if M.roles[name] == nil then
+			table.insert(names, name)
 		end
+	end
+	table.sort(names)
+	local out: { Row } = {}
+	for _, name in names do
+		local fallback = M.fallbacks[name]
+		local text
+		if M.roles[name] then
+			text = `{name}: {played(name)}`
+			if not M.is_own(name) then
+				text ..= " (set in your config)"
+			end
+		elseif fallback then
+			local playing = M.playing(name)
+			text = `{name}: for {fallback.about}; none set, so it uses {playing}: {played(playing)}`
+		else
+			continue
+		end
+		table.insert(out, { role = name, text = text })
+	end
+	return out
+end
+
+--- One line per role: its model and provider and whether its key is
+--- found, or, for a role that falls back to another, whose model it uses.
+function M.describe(): { string }
+	local lines = {}
+	for _, row in rows() do
+		table.insert(lines, row.text)
 	end
 	return lines
 end
 
+--- Asks you for the API key of the provider `name` and keeps it with your
+--- secrets. Returns what happened, to tell you. Any plugin may ask: what
+--- you type goes to your secrets, never to the plugin.
+function M.ask_key(name: string): string
+	local provider = M.providers[name]
+	local secret = provider and provider.secret
+	if provider == nil or secret == nil then
+		return `{name} needs no key`
+	end
+	local key = core.prompt.ask(
+		`API key for {name}, kept in the system keyring (or Greed's secrets file)`,
+		nil,
+		{ secret = true }
+	)
+	if key == nil or key == "" then
+		return "no key given"
+	end
+	local where, err = greed.vouch(greed.secrets.set, secret, key)
+	return if where then `kept the {name} key in {where}` else `can't keep the {name} key: {err}`
+end
+
+--- Has `role` use a model at the provider `name`, asking which: from those
+--- Ollama has pulled, or typed, starting from the role's own or the
+--- provider's preset. Then asks for a key if the provider needs one it
+--- hasn't got. Returns what happened, to tell you.
+function M.ask_model(role: string, name: string): string
+	local provider = M.providers[name]
+	if provider == nil then
+		return `the provider "{name}" isn't set up`
+	end
+	local current = M.roles[role]
+	local preset = M.presets[name]
+	local start = if current and current.provider == name
+		then current.model
+		elseif preset then (if role == "fast" then preset.fast else preset.reasoning)
+		else nil
+	local model: string?
+	if is_ollama(name, provider) then
+		local pulled, why = M.ollama_models()
+		if pulled and #pulled > 0 then
+			local items = {}
+			for _, found in pulled do
+				table.insert(items, { label = found, value = found })
+			end
+			local item = picker.choose(`Model for {role}, of those Ollama has`, items)
+			model = item and item.value
+		else
+			greed.echo(why or `Ollama has no models yet: \`ollama pull {start or "llama3.2"}\``)
+			model = core.prompt.ask(`Model for {role} at {name}`, start)
+		end
+	else
+		model = core.prompt.ask(`Model for {role} at {name}`, start)
+	end
+	if model == nil or model == "" then
+		return "no model chosen"
+	end
+	local unkept = M.choose(role, name, model)
+	local said = `{role} uses {model} at {name}`
+		.. if unkept then ` for now (can't keep it: {unkept})` else ""
+	if M.key_state(name) == nil then
+		said ..= if provider.login
+			then `; :login {provider.login} signs in`
+			else "; " .. M.ask_key(name)
+	end
+	return said
+end
+
+--- Has the `fast` and `reasoning` roles use the provider `name`, with its
+--- presets (for Ollama, the first model it has pulled), kept for next
+--- time. Returns why not, if it can't keep the choice.
+function M.use_provider(name: string): string?
+	local preset = M.presets[name]
+	if preset == nil then
+		return `there are no models set for {name}; :models picks one`
+	end
+	local fast, reasoning = preset.fast, preset.reasoning
+	if name == "ollama" then
+		local pulled = M.ollama_models()
+		if pulled and #pulled > 0 then
+			fast, reasoning = pulled[1], pulled[1]
+		end
+	end
+	return M.choose("fast", name, fast) or M.choose("reasoning", name, reasoning)
+end
+
+-- The :models page while it's open, and the role on each of its lines.
+local page: { buffer: greed.Buffer, roles: { [number]: string } }? = nil
+
+local PAGE_HINT = "enter changes the role's model · k sets its provider's API key · "
+	.. "l signs in · q closes"
+
+-- Writes the page again, as roles and keys change.
+local function render()
+	local shown = page
+	if shown == nil or not shown.buffer:valid() then
+		page = nil
+		return
+	end
+	local lines = { "Models by role", PAGE_HINT, "" }
+	shown.roles = {}
+	for _, row in rows() do
+		shown.roles[#lines] = row.role
+		table.insert(lines, row.text)
+	end
+	local text = table.concat(lines, "\n")
+	local buffer = shown.buffer
+	if buffer:text() ~= text then
+		buffer:edit(function(e)
+			e:replace(0, buffer:len(), text)
+		end)
+	end
+	buffer:decorate("models", {
+		{ from = 0, to = #lines[1], style = "markup.heading" },
+		{ from = #lines[1] + 1, to = #lines[1] + 1 + #PAGE_HINT, style = "comment" },
+	})
+end
+
+-- The role on the cursor's line of the page, or why there's none.
+local function role_at(ctx: greed.Context): string?
+	local shown = page
+	if shown == nil or shown.buffer ~= ctx.buffer then
+		return nil
+	end
+	local role = shown.roles[ctx.buffer:line_of(ctx.view:cursor())]
+	if role == nil then
+		greed.echo("move to a role's line first")
+	end
+	return role
+end
+
+-- The provider whose model plays `role` now, following its fallback.
+local function provider_of(role: string): string?
+	local chosen = M.roles[M.playing(role)]
+	return chosen and chosen.provider
+end
+
 greed.command({
 	name = "models",
-	doc = "Show which provider and model plays each role, and whether its key is found",
+	doc = "Show and change which model plays each role, set API keys and sign in",
 	run = function()
-		core.floats.show_text(
-			"Models by role",
-			table.concat(M.describe(), "\n"),
-			{ kind = "models", height = "40%" }
-		)
+		local shown = page
+		if shown and shown.buffer:valid() then
+			for _, view in shown.buffer:views() do
+				view:focus()
+				render()
+				return
+			end
+		end
+		local buffer = greed.create_buffer("models", "", { readonly = true })
+		page = { buffer = buffer, roles = {} }
+		render()
+		buffer:set_keys({
+			enter = "models-change",
+			k = "models-key",
+			l = "models-login",
+			q = "models-close",
+			esc = "models-close",
+		})
+		local view = greed.float(buffer, { title = "Models", width = "90%", height = "50%" })
+		view:set_cursor(buffer:line_start(3))
+	end,
+})
+
+greed.command({
+	name = "models-change",
+	doc = "On the :models page, pick the provider and model that play the role under the cursor",
+	run = function(ctx)
+		local role = role_at(ctx)
+		if role == nil then
+			return
+		end
+		local names: { string } = {}
+		for name in M.providers do
+			table.insert(names, name)
+		end
+		table.sort(names)
+		local items = {}
+		for _, name in names do
+			local provider = M.providers[name] :: Provider
+			table.insert(items, {
+				label = `{name}  {provider.url}  {M.key_state(name) or "no key yet"}`,
+				value = name,
+			})
+		end
+		local item = picker.choose(`Provider for {role}`, items)
+		if item then
+			greed.echo(M.ask_model(role, item.value))
+			render()
+		end
+	end,
+})
+
+greed.command({
+	name = "models-key",
+	doc = "On the :models page, set the API key of the provider of the role under the cursor",
+	run = function(ctx)
+		local role = role_at(ctx)
+		local name = role and provider_of(role)
+		if name then
+			greed.echo(M.ask_key(name))
+			render()
+		end
+	end,
+})
+
+greed.command({
+	name = "models-login",
+	doc = "On the :models page, sign in to the provider of the role under the cursor",
+	run = function(ctx)
+		local role = role_at(ctx)
+		local name = role and provider_of(role)
+		local provider = name and M.providers[name]
+		if provider == nil then
+			return
+		elseif provider.login == nil then
+			greed.echo(`{name} has no sign-in; k sets its API key`)
+			return
+		end
+		greed.run("login", { args = { provider.login } })
+		render()
+	end,
+})
+
+greed.command({
+	name = "models-close",
+	doc = "Close the :models page",
+	run = function(ctx)
+		if page and page.buffer == ctx.buffer then
+			ctx.view:close()
+		end
 	end,
 })
 

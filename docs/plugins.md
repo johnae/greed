@@ -1305,7 +1305,20 @@ end
 `models.ask(role, request)` waits for the whole answer instead. Both wait
 like the rest of the API. The roles that come set up are `fast`,
 `reasoning` and `local`; a plugin can ask for any role, and the user maps it
-in their config.
+in their config or in `:models`.
+
+A role of your own can use another role's model until the user sets one,
+and `:models` lists it with the model it uses then:
+
+```luau
+models.fallback("summary", "fast", "summaries of long notes")
+models.playing("summary") -- "fast" until models.roles.summary is set
+```
+
+Before asking, `models.check(role)` says what's missing without sending
+anything: no model plays the role, its provider isn't set up, or it has no
+key. `models.no_key(provider)` is the message every feature shows for a
+missing key, naming the variable that sets it and `:models`.
 
 For a model that calls tools, `models.turn(role, request, on_text)` runs
 one turn: `request` has the conversation as `said` (each `{ role = "user",

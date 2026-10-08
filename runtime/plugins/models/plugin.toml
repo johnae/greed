@@ -1,4 +1,5 @@
 name = "models"
-requires = ["core"]
-# Providers are yours to choose, local ones too, so any host; keys by provider.
-capabilities = ["net", "secrets"]
+requires = ["core", "picker"]
+# Providers are yours to choose, local ones too, so any host; keys by
+# provider. The roles you pick in :models are kept in Greed's data folder.
+capabilities = ["net", "secrets", "fs.read", "fs.write"]

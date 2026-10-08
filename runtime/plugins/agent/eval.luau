@@ -53,6 +53,7 @@ The code comes from the agent, which may have read text written by someone else.
 -- reasoning model. A small fast model is too easy to talk round, so
 -- without either you're asked.
 local REVIEWERS = { "review", "reasoning" }
+models.fallback("review", "reasoning", "reviewing code an agent wants to run")
 
 -- The reviewer's verdict: "allow" or "ask" and why, or nil and why
 -- there's none.

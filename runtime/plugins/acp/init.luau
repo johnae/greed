@@ -892,6 +892,14 @@ greed.command({
 			greed.echo("the agent is still working; ctrl-c stops it")
 			return
 		end
+		-- A message it can't answer, like one to a model without a key,
+		-- stays in the box.
+		local problem = session.check(s)
+		changed(s)
+		if problem then
+			greed.echo(problem)
+			return
+		end
 		transcript.clear_prompt(ctx.buffer)
 		local context = if greed.option.get("agent-editor-context") == true
 			then agent_context.describe(s.root)

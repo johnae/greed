@@ -736,12 +736,33 @@ model plays it. Out of the box:
 | `reasoning` | Claude Opus 5.5, at Anthropic |
 | `local` | Llama 3.2, on [Ollama](https://ollama.com) on this machine |
 
-For Anthropic, give Greed your key with `:secret-set anthropic` (it goes in
-the system keyring), or set `ANTHROPIC_API_KEY`. `:models` shows each role,
-its model and whether its key is found.
+Greed's own agent asks for `agent`, which uses `reasoning` until you set
+it; reviewing code an agent wants to run asks for `review`, also
+`reasoning` until set.
 
-Change any of it in your `init.luau`, with OpenAI, Ollama or any server
-that speaks OpenAI's chat completions API:
+`:models` shows every role, its model and whether its provider's key is
+found, and lets you change them:
+
+| Key | |
+|---|---|
+| `enter` | Pick the provider and model for the role under the cursor (for Ollama, from the models it has pulled); asks for the key if it needs one |
+| `k` | Set the API key of the role's provider: it goes in the system keyring, or Greed's secrets file where there's none |
+| `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget |
+| `q` | Close |
+
+What you pick there is kept in Greed's data folder and comes back next
+time. Your `init.luau` is read after it, so a role set there wins, and
+`:models` says "(set in your config)" beside it. Instead of the key, you
+can set the variable `:models` names, like `ANTHROPIC_API_KEY`, or run
+`:secret-set anthropic`. Anything that needs a model and has no key says
+the same: which variable sets it, and that `:models` adds one.
+
+Ollama needs no key, but it has to run: `ollama serve` starts it, and
+`ollama pull llama3.2` fetches a model. Greed says so when it can't reach
+it or the model isn't there.
+
+You can also set any of it in your `init.luau`, with OpenAI, Ollama or any
+server that speaks OpenAI's chat completions API:
 
 ```luau
 local models = require("@models")

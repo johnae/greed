@@ -136,7 +136,7 @@ function M.ask(
 	-- Asked, whatever came of it.
 	greed.echo("")
 	if answer == nil then
-		fail(`no answer from the {role} model: {err or "it said nothing"}; :models sets one up`)
+		fail(`no answer from the {role} model: {err or "it said nothing"}`)
 		return
 	end
 	local command = string.match(models.unfenced(answer), "^%s*(.-)%s*$") or ""

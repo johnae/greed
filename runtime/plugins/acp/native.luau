@@ -24,6 +24,8 @@ local M = {}
 --- The role played by the model it uses, unless it's started with
 --- another; without a model in that role it uses `reasoning`.
 M.ROLE = "agent"
+models.fallback(M.ROLE, "reasoning", "Greed's own agent")
+models.fallback(compact.ROLE, M.ROLE, "compacting long conversations with Greed's agent")
 
 -- Turns one prompt may take, so a model that keeps calling tools stops.
 local MAX_TURNS = 50
@@ -499,6 +501,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			table.insert(s.entries, { kind = "note", text = `the model failed: {err}` })
 			break
 		end
+		-- It answered, so nothing keeps it from working.
+		s.problem = nil
 		table.insert(
 			state.said,
 			{ role = "assistant", text = turn.text, calls = turn.calls } :: models.Said
@@ -570,8 +574,12 @@ local DRIVER: session.Driver = {
 			return false, `no model plays the role "{id}"`
 		end
 		use(s, states[s.id], id)
+		session.check(s)
 		s.changed()
 		return true, nil
+	end,
+	check = function(s)
+		return models.check(states[s.id].role)
 	end,
 }
 
@@ -608,7 +616,7 @@ function M.start(opts: {
 		changed = opts.changed,
 		driver = DRIVER,
 	})
-	local role = opts.role or (if models.roles[M.ROLE] then M.ROLE else "reasoning")
+	local role = opts.role or models.playing(M.ROLE)
 	local state: State =
 		{ said = {}, role = role, cancelled = false, allowed = {}, caller = agent.caller() }
 	states[s.id] = state
@@ -631,6 +639,7 @@ function M.start(opts: {
 	end
 	s.models = roles()
 	use(s, state, role)
+	session.check(s)
 	return s, nil
 end
 

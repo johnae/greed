@@ -13,6 +13,10 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 	local asked: { any } = {}
 	local summarised: { any } = {}
 	local at = 0
+	-- The stand-in needs no key.
+	models.check = function(): string?
+		return nil
+	end
 	models.turn = function(_role, request, on_text): (any, string?)
 		local copy = table.clone(request)
 		copy.said = table.move(request.said, 1, #request.said, 1, {})
@@ -680,4 +684,32 @@ test("the memory files can't be written with the file tools, only proposed to", 
 	assert(greed.fs.read(`{dir}/.greed/memory.md`) == nil, "not written")
 	local result = asked[2].said[3]
 	assert(result.error and string.find(result.text, "memory_propose", 1, true), result.text)
+end)
+
+test("without a key, the box says so before anything is sent, and keeps your message", function(t)
+	models.providers.keyless =
+		{ kind = "anthropic", url = "https://api.anthropic.com", secret = "greed-test-nokey" }
+	models.roles.agent = { provider = "keyless", model = "m" }
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	assert(s.problem and string.find(s.problem, "no API key for keyless", 1, true), s.problem)
+	t:wait(30)
+	local box = ""
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		for _, piece in (mark.lines or {})[1] or {} do
+			box ..= piece.text
+		end
+	end
+	assert(string.find(box, "no API key for keyless", 1, true), box)
+	send(t, "hi")
+	local messages = t:messages()
+	assert(
+		string.find(messages[#messages], "set GREED_SECRET_GREED_TEST_NOKEY", 1, true),
+		messages[#messages]
+	)
+	assert(#s.entries == 0, "nothing went to the model")
+	local typed = require("../transcript").prompt(greed.view():buffer())
+	assert(string.find(typed, "hi", 1, true), typed)
+	models.roles.agent = nil
+	models.providers.keyless = nil
 end)

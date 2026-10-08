@@ -138,7 +138,7 @@ test("asking without a key names the variable that sets it", function(t)
 	assert(
 		string.find(
 			why or "",
-			"no key for keyless: :secret-set greed-test-nokey, or set GREED_SECRET_GREED_TEST_NOKEY",
+			"no API key for keyless: set GREED_SECRET_GREED_TEST_NOKEY, or add one in :models",
 			1,
 			true
 		),
@@ -146,4 +146,125 @@ test("asking without a key names the variable that sets it", function(t)
 	)
 	models.roles.keyless = nil
 	models.providers.keyless = nil
+end)
+
+-- A provider whose key no test machine has, and a role it plays.
+local function keyless(role: string)
+	models.providers.keyless =
+		{ kind = "anthropic", url = "https://api.anthropic.com", secret = "greed-test-nokey" }
+	models.roles[role] = { provider = "keyless", model = "m" }
+end
+
+test("a role that falls back to another uses its model, and :models says so", function(t)
+	models.fallback("poetry", "fast", "writing poems")
+	assert(models.playing("poetry") == "fast", models.playing("poetry"))
+	t:buffer("|x")
+	t:run("models")
+	local text = greed.view():buffer():text()
+	assert(
+		string.find(
+			text,
+			"poetry: for writing poems; none set, so it uses fast: claude-haiku",
+			1,
+			true
+		),
+		text
+	)
+	models.roles.poetry = { provider = "ollama", model = "m" }
+	assert(models.playing("poetry") == "poetry", "once set, it plays itself")
+	models.roles.poetry = nil
+	models.fallbacks.poetry = nil
+	t:keys("q")
+end)
+
+test("Greed's own agent falls back to reasoning, as :models shows", function(t)
+	t:buffer("|x")
+	t:run("models")
+	local text = greed.view():buffer():text()
+	assert(
+		string.find(text, "agent: for Greed's own agent; none set, so it uses reasoning", 1, true),
+		text
+	)
+	t:keys("q")
+end)
+
+test("check says what's missing before anything is asked", function()
+	keyless("poetry")
+	local why = models.check("poetry")
+	assert(why and string.find(why, "no API key for keyless", 1, true), tostring(why))
+	assert(string.find(models.check("nobody") or "", "models.roles.nobody", 1, true) ~= nil)
+	assert(models.check("local") == nil, "Ollama needs no key")
+	models.roles.poetry = nil
+	models.providers.keyless = nil
+end)
+
+test("a role chosen in :models is kept for next time, and your config's are marked", function(t)
+	assert(models.is_own("fast"), "built in")
+	assert(models.choose("fast", "openai", "gpt-test") == nil)
+	local fast = models.roles.fast :: models.Role
+	assert(fast.model == "gpt-test" and models.is_own("fast"))
+	local kept = greed.json.decode(greed.fs.read(`{greed.fs.dirs().data}/models.json`) :: string)
+	assert(kept.roles.fast.provider == "openai" and kept.roles.fast.model == "gpt-test")
+	models.roles.fast = { provider = "ollama", model = "mine" }
+	assert(not models.is_own("fast"), "set by config")
+	t:buffer("|x")
+	t:run("models")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "fast: mine at ollama", 1, true), text)
+	assert(string.find(text, "(set in your config)", 1, true), text)
+	t:keys("q")
+end)
+
+test("on the :models page, k sets the key of the role's provider", function(t)
+	keyless("poetry")
+	t:buffer("|x")
+	t:run("models")
+	local page = greed.view():buffer()
+	local line = 0
+	for n = 0, page:line_count() - 1 do
+		if string.find(page:line_text(n), "^poetry:") then
+			line = n
+		end
+	end
+	assert(
+		string.find(page:line_text(line), "no API key: k adds one", 1, true),
+		page:line_text(line)
+	)
+	greed.view():set_cursor(page:line_start(line))
+	t:keys("k")
+	t:keys("s e c r e t enter")
+	t:wait(100)
+	local messages = t:messages()
+	assert(
+		string.find(messages[#messages], "kept the keyless key in", 1, true),
+		messages[#messages]
+	)
+	assert(string.find(page:line_text(line), "key found", 1, true), page:line_text(line))
+	t:keys("q")
+	models.roles.poetry = nil
+	models.providers.keyless = nil
+end)
+
+test("using a provider sets the fast and reasoning roles to its models", function()
+	assert(models.use_provider("openai") == nil)
+	local fast = models.roles.fast :: models.Role
+	local reasoning = models.roles.reasoning :: models.Role
+	assert(fast.provider == "openai" and fast.model == "gpt-5-mini")
+	assert(reasoning.model == "gpt-5")
+	assert(models.use_provider("nowhere") ~= nil, "no preset")
+end)
+
+test("an Ollama that isn't running says how to start it", function(t)
+	models.providers.ollama = { kind = "openai", url = "http://127.0.0.1:9/v1" }
+	local found, why = models.ollama_models()
+	assert(found == nil and string.find(why or "", "ollama serve", 1, true), tostring(why))
+	local said: string? = nil
+	greed.spawn(function()
+		local _, err = models.ask("local", { messages = { { role = "user", content = "hi" } } })
+		said = err
+	end)
+	t:wait_for(function()
+		return said ~= nil
+	end)
+	assert(string.find(said or "", "`ollama serve` starts it", 1, true), tostring(said))
 end)

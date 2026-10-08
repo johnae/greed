@@ -102,6 +102,10 @@ export type Session = {
 	--- how many it has room for, when the agent says.
 	tokens: number?,
 	window: number?,
+	--- What keeps it from working before it's asked anything, like its
+	--- model's provider having no key: the transcript says it in place of
+	--- "ready".
+	problem: string?,
 }
 
 --- An agent run in the editor rather than as an ACP program.
@@ -109,6 +113,8 @@ export type Driver = {
 	prompt: (session: Session, text: string, context: string?) -> (boolean, string?),
 	cancel: (session: Session) -> (),
 	set_model: (session: Session, id: string) -> (boolean, string?),
+	--- What keeps it from working now, like a missing key, if anything.
+	check: ((session: Session) -> string?)?,
 }
 
 -- A terminal the agent asked for: a program and what it printed.
@@ -807,6 +813,14 @@ function M.fresh_context(session: Session, context: string?): string?
 	end
 	session.context_sent = context
 	return context
+end
+
+--- Works out again what keeps `session` from working now, like its model
+--- having no key, and keeps it as its `problem`. It can wait.
+function M.check(session: Session): string?
+	local driver = session.driver
+	session.problem = if driver and driver.check then driver.check(session) else nil
+	return session.problem
 end
 
 --- Sends `text` to the agent and waits for its turn to end; what it says

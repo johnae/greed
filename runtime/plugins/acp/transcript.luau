@@ -367,6 +367,8 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 		piece("starting…", "agent.hint")
 	elseif s.status == "exited" then
 		piece("exited", "agent.failed")
+	elseif s.problem then
+		piece(core.text.clip(s.problem, math.max(cells - 8, 10)), "agent.failed")
 	else
 		piece("ready", "agent.hint")
 	end
