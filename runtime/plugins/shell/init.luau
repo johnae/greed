@@ -40,6 +40,7 @@ local pty = require("@self/pty")
 local fallback = require("@self/fallback")
 local history = require("@self/history")
 local data = require("@self/data")
+local ask = require("@self/ask")
 require("@self/complete")
 
 type Shell = state.Shell
@@ -56,6 +57,7 @@ M.log = log
 M.runners = run
 M.pty = pty
 M.data = data
+M.ask = ask
 
 --- The shell shown in `buffer`, if it's one.
 M.of = state.of
@@ -289,8 +291,21 @@ local function fall_back(
 	end)
 end
 
+-- Adds a block for `command` to `shell`, running.
+local function add_block(shell: Shell, command: string, opts: RunOptions): Block
+	shell.count += 1
+	local block = new_block(shell, command, opts)
+	if opts.view then
+		state.views[block.uid] = opts.view
+	end
+	log.add(shell, block)
+	tick(shell)
+	return block
+end
+
 --- Runs `line` in `shell` as a new block after the others and returns it;
---- nil for an empty line, or `clear`, which takes the blocks away.
+--- nil for an empty line, `clear`, which takes the blocks away, or a
+--- question for a model (ask.luau), whose answer comes to the prompt.
 function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	local opts: RunOptions = options or {}
 	local parsed = parse.parse(line, greed.fs.dirs().home)
@@ -305,14 +320,17 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	local command = string.match(line, "^%s*(.-)%s*$") or line
 	if opts.by ~= "agent" then
 		history.add(command, opts.cwd or shell.cwd)
+		local draft, question = ask.question(line)
+		if draft and question then
+			greed.spawn(function()
+				ask.ask(shell, line, draft, question, function(why: string)
+					run.fail(shell, add_block(shell, command, opts), why, 1)
+				end)
+			end)
+			return nil
+		end
 	end
-	shell.count += 1
-	local block = new_block(shell, command, opts)
-	if opts.view then
-		state.views[block.uid] = opts.view
-	end
-	log.add(shell, block)
-	tick(shell)
+	local block = add_block(shell, command, opts)
 	local input: string?, why: string? = nil, parsed.error
 	if parsed.input and why == nil then
 		block.input = parsed.input
@@ -460,6 +478,8 @@ function M.help(): string
 		{ "@file | cmd", "the file you're in" },
 		{ "cmd > buf:NAME", "cmd's output into a buffer; >> adds to it" },
 		{ "!cmd", "run cmd in a terminal from the start" },
+		{ "? question", "ask a model for a command, put at the prompt to run" },
+		{ "cmd ? question", "the same, starting from what's typed; or end with ?" },
 	})
 	table.insert(lines, "")
 	local carry = if carries

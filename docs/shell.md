@@ -35,16 +35,16 @@ stopped, or `↗` when it was handed to a terminal, how long it took, where
 could be reading a line says it may be waiting for input.
 
 Output that's a JSON object or array is kept as a value on the block, and
-the status says so
-(`JSON · 3 items`). Places in files the output names, like
+the status says so (`JSON · 3 items`). Places in files the output names, like
 `src/main.rs:12:5`, are links: `] e` and `[ e` go to them, and `enter` on
 one opens the file there, taking relative paths from the folder the block
 ran in.
 
 A block shows at most `shell-max-lines` (5000) lines of its output, the
 first half and the latest half, saying how many it leaves out between them;
-`space v` opens all of it in a buffer of its own. Past `shell-max-record` (8 MB) the whole output
-goes to a file in the cache folder, which `space v` opens.
+`space v` opens all of it in a buffer of its own. Past `shell-max-record`
+(8 MB) the whole output goes to a file in the cache folder, which `space v`
+opens.
 
 Undo at the prompt takes back what you typed, while output keeps
 streaming in above it.
@@ -144,6 +144,20 @@ shows block 3's output again, `$3 > buf:keep` keeps it in a buffer, and
 `open buf:keep` shows that buffer. Such lines run through a pipe rather
 than a terminal, so a `> buf:` gets only what the program printed, and
 can't be combined with `!`.
+
+## Asking for a command
+
+A line that starts with `?` asks a model for a command instead of running
+anything: `? the ten biggest files under here`. So does a line ending in
+`?` that reads as a question (three words or more, so `ls a?` stays a
+glob), and one with a `?` between what you've typed so far and the
+question, `ls | where ? only files over 1 MB`. The model gets the shell's
+folder, which shell runs your lines, and your last few commands with how
+they ended and the end of their output, marked as text someone else
+wrote. Its command goes to the prompt for you to read, change and run.
+
+It asks the model playing `shell-ask-role` (`fast`); `:models` shows and
+sets them up. Without one, a block says why.
 
 ## History and completion
 
