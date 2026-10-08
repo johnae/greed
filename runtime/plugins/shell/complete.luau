@@ -24,23 +24,6 @@ local M = {}
 --- The badge on what the shell itself knows, as against programs.
 M.BADGE = "greed"
 
--- The variables programs started in `shell` get: the editor's, with the
--- shell's own on top.
-local function environment(shell: Shell): { [string]: string }
-	local vars: { [string]: string } = {}
-	for name, value in state.editor_environment() do
-		if shell.env[name] ~= false then
-			vars[name] = value
-		end
-	end
-	for name, value: string | false in shell.env do
-		if value ~= false then
-			vars[name] = value
-		end
-	end
-	return vars
-end
-
 -- The programs in the folders of the last PATH looked through.
 local programs: { path: string, names: { string } }? = nil
 
@@ -236,7 +219,7 @@ local function variables(items: { Item }, s: Spot, after: string)
 			add(items, s, name .. after, "set in this shell")
 		end
 	end
-	for name in environment(s.shell) do
+	for name in state.variables(s.shell) do
 		if not own[name] then
 			add(items, s, name .. after)
 		end
@@ -391,7 +374,7 @@ local function program_args(items: { Item }, s: Spot)
 	local words = table.clone(s.words)
 	table.insert(words, prefix)
 	local env: { [string]: string | false } = { PAGER = "cat", GIT_PAGER = "cat" }
-	for name, value in environment(s.shell) do
+	for name, value in state.variables(s.shell) do
 		env[name] = value
 	end
 	local found = sources.complete({
@@ -430,7 +413,7 @@ function M.items(view: greed.View, ask: { explicit: boolean }?): { Item }?
 		for _, block in shell.blocks do
 			add(items, s, `${block.number}`, block.command, M.BADGE)
 		end
-		for name in environment(shell) do
+		for name in state.variables(shell) do
 			add(items, s, "$" .. name)
 		end
 	elseif first and s.first_command and string.sub(word, 1, 1) == "@" then
@@ -448,7 +431,7 @@ function M.items(view: greed.View, ask: { explicit: boolean }?): { Item }?
 				add(items, s, stage.name, stage.doc, M.BADGE)
 			end
 		end
-		local path = environment(shell).PATH
+		local path = state.variables(shell).PATH
 		if path then
 			for _, name in executables(path) do
 				add(items, s, name)

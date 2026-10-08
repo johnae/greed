@@ -196,7 +196,7 @@ test("builtins' arguments complete as they're declared", function(t)
 	)
 	assert(items_for(t, sh, "unset GREED_M")["GREED_MINE"], "unset names variables")
 	local topics = items_for(t, sh, "help ")
-	assert(names(topics) == "builtins keys line tables", names(topics))
+	assert(names(topics) == "builtins keys line prompt tables", names(topics))
 	assert(topics.tables.badge == "greed")
 	assert(names(items_for(t, sh, "history ")) == "", "history takes nothing")
 	-- help with a topic shows that part.

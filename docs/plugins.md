@@ -1155,6 +1155,35 @@ shell.completer("deploy", function(request)
 end)
 ```
 
+`shell.segment(name, provider)` puts a piece in every shell's prompt
+before its folder, after the shell's own (the git branch and the
+kubernetes context). `provider(ctx)` gets the `shell`, its `cwd` and the
+`env` its programs get, and returns `{ text, style, warning }` or nil for
+nothing; `warning = true` turns the prompt's `❯` red too. It runs in the
+background when a shell opens and after each command, so it can run a
+program; the prompt shows the new pieces once every segment is done.
+
+```luau
+local shell = require("@shell")
+
+-- The AWS profile in use, from the shell's variables.
+shell.segment("aws", function(ctx)
+	local profile = ctx.env.AWS_PROFILE
+	if profile == nil then
+		return nil
+	end
+	local production = string.find(profile, "prod") ~= nil
+	return {
+		text = `aws:{profile}`,
+		style = if production then "shell.segment.warning" else "shell.segment",
+		warning = production,
+	}
+end)
+```
+
+`require("@vcs").branch(dir)` is the branch of the repository a folder is
+in, as the status line shows it.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

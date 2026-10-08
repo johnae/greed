@@ -47,6 +47,7 @@ local ask = require("@self/ask")
 local tables = require("@self/tables")
 local rows = require("@self/rows")
 local completion = require("@self/complete")
+local segments = require("@self/segments")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -69,6 +70,11 @@ M.rows = rows
 M.jc = require("@self/jc")
 M.sources = require("@self/sources")
 M.completion = completion
+M.segments = segments
+
+--- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
+--- in every shell's prompt before its folder; see `segments.segment`.
+M.segment = segments.segment
 
 --- Completes the arguments of program `name` with `complete`, ahead of
 --- Cobra, fish, carapace and the program's help; see `sources.completer`.
@@ -151,9 +157,11 @@ function M.open(options: OpenOptions?): Shell
 		count = 0,
 		prompt = buffer:track(0, { gravity = "left" }),
 		ticking = false,
+		segments = nil,
 	}
 	state.shells[buffer:id()] = shell
 	log.draw_prompt(shell)
+	segments.refresh(shell)
 	if opts.show ~= false then
 		M.show(shell, view)
 	end
@@ -541,6 +549,32 @@ local TOPICS: { [string]: () -> { string } } = {
 			table.insert(rows, { stage.usage, stage.doc })
 		end
 		add_columns(lines, rows)
+		return lines
+	end,
+	prompt = function()
+		local lines = { "Before the folder, the prompt shows:" }
+		add_columns(lines, {
+			{ "⎇ main", "the branch of the repository the shell is in" },
+			{
+				"⎈ context:namespace",
+				"the kubernetes context kubectl would use, from its config",
+			},
+		})
+		local production = greed.option.get("shell-production-contexts")
+		table.insert(lines, "")
+		table.insert(
+			lines,
+			`A context matching shell-production-contexts ({production}) shows in red, and so does ❯.`
+		)
+		local others: { string } = {}
+		for _, name in segments.names() do
+			if name ~= "git" and name ~= "kubernetes" then
+				table.insert(others, name)
+			end
+		end
+		if #others > 0 then
+			table.insert(lines, `From plugins: {table.concat(others, ", ")}.`)
+		end
 		return lines
 	end,
 	keys = function()
@@ -1168,6 +1202,12 @@ for _, action in
 do
 	core.actions.command("shell-block", action[1], action[2], action[3])
 end
+
+-- What the prompt shows can change with any command: a cd, a checkout,
+-- `kubectl config use-context`.
+run.on_finish(function(shell: Shell)
+	segments.refresh(shell)
+end)
 
 -- A running block keeps the session on :q (core's on-quit).
 core.file.running("shells", function()

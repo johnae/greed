@@ -14,16 +14,38 @@ error[E0308]: mismatched types
  --> src/main.rs:12:5
 ❯ git status --short                      ✓ 0.02s
  M src/main.rs
-~/s/app ❯ |
+⎇ main ~/s/app ❯ |
 ```
 
-The prompt starts with the shell's folder, every folder but the last cut
-to its first letter. `space o s` switches to a shell of this project, or
-opens one; `:shell NAME` opens another. Each shell has its own folder and
-variables, and a project can have several. Shells and their blocks last
-until you close them or the session ends. A new shell says to type `help`,
-which lists what the shell runs itself, what a line can hold, which shell
-runs the rest, and the keys in the style you use.
+The prompt shows the shell's folder, every folder but the last cut to its
+first letter, and before it what [the prompt](#the-prompt) knows, like the
+git branch. `space o s` switches to a shell of this project, or opens one;
+`:shell NAME` opens another. Each shell has its own folder and variables,
+and a project can have several. Shells and their blocks last until you
+close them or the session ends. A new shell says to type `help`, which
+lists what the shell runs itself, what a line can hold, which shell runs
+the rest, and the keys in the style you use; `help TOPIC` shows one part.
+
+## The prompt
+
+Before the folder, the prompt shows the branch of the repository the shell
+is in (with jj, the nearest bookmark and the change), and the kubernetes
+context and namespace `kubectl` would use. The context comes from
+kubectl's config file, the ones `KUBECONFIG` names or `~/.kube/config`,
+read without running kubectl, so it's there at once and costs nothing.
+They're worked out again after every command, so a `cd`, a checkout or
+`kubectl config use-context` shows on the next prompt.
+
+```text
+⎇ main ⎈ prod-eu:payments ~/s/infra ❯ kubectl get pods
+```
+
+A context matching a pattern in `shell-production-contexts` (`prod` by
+default; several go with spaces between them, as Luau patterns, like
+`:set shell-production-contexts "prod ^live%-"`) shows in red, and so
+does the `❯`, so a command about to run against production looks like it.
+Plugins add pieces of their own, like a cloud profile; `help prompt` lists
+them.
 
 ## Blocks
 

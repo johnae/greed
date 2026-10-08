@@ -53,6 +53,7 @@ M.HELP_TOPICS = {
 	{ name = "builtins", about = "what the shell runs itself" },
 	{ name = "line", about = "what the shell reads in a line" },
 	{ name = "tables", about = "filtering blocks, and tables after $3 |" },
+	{ name = "prompt", about = "what the prompt shows before the folder" },
 	{ name = "keys", about = "the keys in the style you use" },
 }
 

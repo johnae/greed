@@ -312,16 +312,36 @@ function M.short_folder(path: string): string
 	return table.concat(parts, "/")
 end
 
---- Draws the prompt: the shell's folder and the glyph before what's
---- typed, and in a shell with no blocks yet, a line under it saying where
---- help is.
+--- Draws the prompt: its segments (segments.luau), the shell's folder and
+--- the glyph before what's typed, red after a warning segment, and in a
+--- shell with no blocks yet, a line under it saying where help is.
 function M.draw_prompt(shell: Shell)
 	local buffer = shell.buffer
 	local start = M.prompt_start(shell)
-	local marks: { greed.Mark } = {
-		{ from = start, to = start, style = "shell.cwd", text = M.short_folder(shell.cwd) .. " " },
-		{ from = start, to = start, style = "shell.prompt", text = "❯ " },
-	}
+	local marks: { greed.Mark } = {}
+	local warning = false
+	local segments = shell.segments
+	if segments then
+		for _, segment in segments do
+			table.insert(marks, {
+				from = start,
+				to = start,
+				style = segment.style or "shell.segment",
+				text = segment.text .. " ",
+			})
+			warning = warning or segment.warning == true
+		end
+	end
+	table.insert(
+		marks,
+		{ from = start, to = start, style = "shell.cwd", text = M.short_folder(shell.cwd) .. " " }
+	)
+	table.insert(marks, {
+		from = start,
+		to = start,
+		style = if warning then "shell.prompt.warning" else "shell.prompt",
+		text = "❯ ",
+	})
 	if #shell.blocks == 0 then
 		local stop = buffer:len()
 		table.insert(marks, {

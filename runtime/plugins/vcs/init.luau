@@ -189,6 +189,18 @@ greed.spawn(function()
 	end
 end)
 
+--- The branch of the repository folder `dir` is in, as the status line
+--- shows it ("main", or with jj "main · nwpr"); nil outside one. It asks
+--- jj or git, so it waits.
+function M.branch(dir: string): string?
+	local repo = repo_of(dir .. "/.")
+	if repo == nil then
+		return nil
+	end
+	read_branch(repo)
+	return branches[repo.root]
+end
+
 -- The branch and the lines changed in the buffer, e.g. "main +3 ~1 -2".
 statusline.add("right", "branch", function(ctx)
 	local id = ctx.buffer:id()

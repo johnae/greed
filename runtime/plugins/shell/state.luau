@@ -113,6 +113,11 @@ export type Job = {
 --- and column, and the line of output saying what's there.
 export type Ref = { path: string, line: number, col: number?, text: string }
 
+--- A piece of the prompt before the folder, like the git branch: its text,
+--- its style ("shell.segment" by default), and whether it's a warning,
+--- which turns the prompt's glyph red too.
+export type Segment = { text: string, style: string?, warning: boolean? }
+
 --- A shell: a buffer of blocks with a prompt at the end, its own folder and
 --- environment.
 export type Shell = {
@@ -131,6 +136,8 @@ export type Shell = {
 	--- Where the prompt starts.
 	prompt: greed.Anchor,
 	ticking: boolean,
+	--- What the prompt shows before the folder, as last worked out.
+	segments: { Segment }?,
 }
 
 --- Shells by their buffer's id.
@@ -233,6 +240,23 @@ function M.editor_environment(): { [string]: string }
 		end
 	end
 	editor_env = vars
+	return vars
+end
+
+--- The variables programs started in `shell` get, all of them: the
+--- editor's, with the shell's own on top.
+function M.variables(shell: Shell): { [string]: string }
+	local vars: { [string]: string } = {}
+	for name, value in M.editor_environment() do
+		if shell.env[name] ~= false then
+			vars[name] = value
+		end
+	end
+	for name, value: string | false in shell.env do
+		if value ~= false then
+			vars[name] = value
+		end
+	end
 	return vars
 end
 
