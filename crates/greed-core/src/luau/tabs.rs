@@ -8,11 +8,11 @@ use super::handles::{BufferRef, ViewRef, view_closed};
 use super::{state, state_mut};
 use crate::layout::{Axis, Node};
 use crate::registry::PluginId;
-use crate::{Tab, TabId};
+use crate::{TabId, TabView};
 
 type LuaResult<T> = mlua::Result<T>;
 
-fn tab_to_lua(lua: &Lua, tab: &Tab, shown: TabId, author: &Author) -> LuaResult<Table> {
+fn tab_to_lua(lua: &Lua, tab: &TabView, shown: TabId, author: &Author) -> LuaResult<Table> {
     let t = lua.create_table()?;
     t.set("id", tab.id().0)?;
     t.set("name", tab.name())?;
@@ -127,7 +127,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let shown = state.editor.current_tab().id();
             let list = lua.create_table()?;
             for t in state.editor.tabs() {
-                list.push(tab_to_lua(lua, t, shown, &a)?)?;
+                list.push(tab_to_lua(lua, &t, shown, &a)?)?;
             }
             Ok(list)
         })?,
@@ -138,7 +138,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(move |lua, ()| {
             let state = state(lua);
             let current = state.editor.current_tab();
-            tab_to_lua(lua, current, current.id(), &a)
+            tab_to_lua(lua, &current, current.id(), &a)
         })?,
     )?;
     tab.set(

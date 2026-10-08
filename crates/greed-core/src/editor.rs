@@ -14,8 +14,11 @@ use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
 use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualLine};
 
+mod clients;
 mod panes;
-pub use panes::{Tab, TabId};
+use clients::TabState;
+pub use clients::{ClientState, FIRST_CLIENT};
+pub use panes::{Tab, TabId, TabView};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
@@ -25,7 +28,8 @@ pub struct ViewId(pub u32);
 /// `Buffer::undo` or `Buffer::redo`.
 type HistoryStep = fn(&mut Buffer, TxId, Author, &Selection) -> Result<Option<Selection>, Error>;
 
-/// A buffer shown on screen, with its own selection and scroll position.
+/// A buffer shown on screen, as one client sees it: with its selection and
+/// scroll position. Each client has its own of every view.
 #[derive(Debug, Clone)]
 pub struct View {
     pub buffer: BufferId,
@@ -191,12 +195,6 @@ impl Project {
         &self.root
     }
 
-    /// The active pane of the shown tab: where files open, and what the
-    /// status line describes.
-    pub fn main(&self) -> ViewId {
-        self.tabs[self.tab].active()
-    }
-
     pub fn tabs(&self) -> &[Tab] {
         &self.tabs
     }
@@ -207,6 +205,38 @@ impl Project {
             .iter()
             .flat_map(Tab::panes)
             .chain(self.panels.iter().map(|p| p.view))
+    }
+}
+
+/// The project the acting client is shown.
+#[derive(Debug, Clone, Copy)]
+pub struct CurrentProject<'a> {
+    project: &'a Project,
+    main: ViewId,
+}
+
+impl std::ops::Deref for CurrentProject<'_> {
+    type Target = Project;
+
+    fn deref(&self) -> &Project {
+        self.project
+    }
+}
+
+impl<'a> CurrentProject<'a> {
+    /// The active pane of the shown tab: where files open, and what the
+    /// status line describes.
+    pub fn main(&self) -> ViewId {
+        self.main
+    }
+
+    /// The project, borrowed from the editor rather than from this.
+    pub fn project(&self) -> &'a Project {
+        self.project
+    }
+
+    pub fn root(&self) -> &'a Path {
+        &self.project.root
     }
 }
 
@@ -279,47 +309,35 @@ pub enum KeyOutcome {
 
 #[derive(Debug)]
 pub struct Editor {
-    client: ClientId,
+    /// Numbers this editor's transactions; its id is the replica's, which
+    /// isn't any client's.
     replica: Replica,
     buffers: BTreeMap<BufferId, Buffer>,
-    views: BTreeMap<ViewId, View>,
+    /// Each client's own state, the first one's always there.
+    clients: BTreeMap<ClientId, ClientState>,
+    /// The client the editor acts for now: whose focus, selections and mode
+    /// its methods use.
+    acting: ClientId,
+    /// The client that last did something, for work nobody in particular
+    /// asked for, like timers.
+    last_active: ClientId,
     /// Open projects, each with its own main view and panels. Empty until the
     /// first view opens.
     projects: Vec<Project>,
-    /// Which of `projects` is shown.
-    current: usize,
     /// The project each buffer was opened in.
     buffer_projects: HashMap<BufferId, ProjectId>,
     /// Floating views, bottom first.
     floats: Vec<Float>,
-    focus: ViewId,
     next_id: u32,
-    mode: Arc<str>,
     keymap: Keymap,
-    pending: Vec<Key>,
-    /// A count typed before the pending keys.
-    count: Option<u32>,
-    /// Single keys bound for the next key press only, over every layer;
-    /// any other key drops them and goes through the keymap as usual.
-    overlay: Option<HashMap<Key, Arc<str>>>,
     messages: Vec<String>,
-    /// Edits made while a group is open become one undo step.
-    undo_group: Option<u64>,
     next_group: u64,
     /// Why edits are being made, e.g. the command running, when the edit
     /// itself doesn't say.
     cause: Option<Arc<str>>,
     quit_requested: bool,
-    /// The attached client asked to leave, with the editor running on.
-    detach_requested: bool,
-    /// Where the attached client was asked to go instead of this session.
-    switch_requested: Option<SwitchTo>,
     /// Copied text, oldest first. Each entry holds one piece per selection.
     clipboard: Vec<Vec<String>>,
-    /// The latest copy, until the client has been told.
-    copied: Option<String>,
-    /// Notifications for the attached client, until it has been told.
-    notices: Vec<Notice>,
     /// The cursor shape of each mode; modes not listed get a block.
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     /// How line numbers count, where buffers show them.
@@ -332,39 +350,28 @@ pub struct Editor {
     menus: Vec<crate::render::Menu>,
     /// Images marks can show.
     images: crate::image::Images,
-    /// How many pixels wide and high a cell is on the client's screen, for
-    /// sizing images.
-    cell_size: (u16, u16),
 }
 
 impl Editor {
-    pub fn new(client: ClientId) -> Self {
+    /// An editor whose transactions are numbered as replica `replica_id`,
+    /// with one client, [`FIRST_CLIENT`], acting.
+    pub fn new(replica_id: ClientId) -> Self {
         Self {
-            client,
-            replica: Replica::new(client.0),
+            replica: Replica::new(replica_id.0),
             buffers: BTreeMap::new(),
-            views: BTreeMap::new(),
+            clients: BTreeMap::from([(FIRST_CLIENT, ClientState::new(FIRST_CLIENT))]),
+            acting: FIRST_CLIENT,
+            last_active: FIRST_CLIENT,
             projects: Vec::new(),
-            current: 0,
             buffer_projects: HashMap::new(),
             floats: Vec::new(),
-            focus: ViewId(0),
             next_id: 1,
-            mode: "helix".into(),
             keymap: Keymap::default(),
-            pending: Vec::new(),
-            count: None,
-            overlay: None,
             messages: Vec::new(),
-            undo_group: None,
             next_group: 0,
             cause: None,
             quit_requested: false,
-            detach_requested: false,
-            switch_requested: None,
             clipboard: Vec::new(),
-            copied: None,
-            notices: Vec::new(),
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
             reveal: Reveal::Line,
@@ -372,12 +379,90 @@ impl Editor {
             theme: Arc::default(),
             menus: Vec::new(),
             images: crate::image::Images::default(),
-            cell_size: (8, 16),
         }
     }
 
+    /// The acting client: the one edits are made by and keys go to now.
     pub fn client(&self) -> ClientId {
-        self.client
+        self.acting
+    }
+
+    /// The client that last did something.
+    pub fn last_active(&self) -> ClientId {
+        self.last_active
+    }
+
+    /// The clients, in order of their ids.
+    pub fn clients(&self) -> impl Iterator<Item = &ClientState> {
+        self.clients.values()
+    }
+
+    /// Adds client `id`, seeing what the acting client sees. False if there
+    /// is one with that id already.
+    pub fn add_client(&mut self, id: ClientId) -> bool {
+        if self.clients.contains_key(&id) {
+            return false;
+        }
+        let state = self.acting_client().seeing_as(id);
+        self.clients.insert(id, state);
+        true
+    }
+
+    /// Acts for client `id` from now on, which counts as its doing
+    /// something. False, changing nothing, without such a client.
+    pub fn set_acting(&mut self, id: ClientId) -> bool {
+        if !self.clients.contains_key(&id) {
+            return false;
+        }
+        self.acting = id;
+        self.last_active = id;
+        true
+    }
+
+    fn acting_client(&self) -> &ClientState {
+        &self.clients[&self.acting]
+    }
+
+    fn acting_client_mut(&mut self) -> &mut ClientState {
+        self.clients
+            .get_mut(&self.acting)
+            .expect("the acting client exists")
+    }
+
+    /// Runs `f` acting for each client in turn, then for the one acting
+    /// before.
+    fn as_each_client(&mut self, mut f: impl FnMut(&mut Self)) {
+        let acting = self.acting;
+        let ids: Vec<ClientId> = self.clients.keys().copied().collect();
+        for id in ids {
+            self.acting = id;
+            f(self);
+        }
+        self.acting = acting;
+    }
+
+    /// The open views, as the acting client sees them.
+    fn views(&self) -> &BTreeMap<ViewId, View> {
+        &self.acting_client().views
+    }
+
+    /// Takes view `id` away from every client; returns the acting one's.
+    fn remove_view(&mut self, id: ViewId) -> Option<View> {
+        let acting = self.acting;
+        let mut removed = None;
+        for (client, state) in &mut self.clients {
+            let view = state.views.remove(&id);
+            if *client == acting {
+                removed = view;
+            }
+        }
+        removed
+    }
+
+    /// Whether any view shows `buffer`. Every client has the same views of
+    /// the same buffers, so the acting one's tell.
+    fn shown(&self, buffer: BufferId) -> bool {
+        self.views().values().any(|v| v.buffer == buffer)
     }
 
     /// Opens a buffer in a new view and focuses it. The first view opened
@@ -409,7 +494,7 @@ impl Editor {
 
     /// Adds `buffer`, belonging to the current project.
     fn insert_buffer(&mut self, buffer: Buffer) {
-        if let Some(project) = self.projects.get(self.current) {
+        if let Some(project) = self.projects.get(self.acting_client().current) {
             self.buffer_projects.insert(buffer.id(), project.id);
         }
         self.buffers.insert(buffer.id(), buffer);
@@ -418,6 +503,7 @@ impl Editor {
     fn add_project(&mut self, root: PathBuf, main: ViewId) -> ProjectId {
         let id = ProjectId(self.next_id());
         let tab = Tab::new(TabId(self.next_id()), main);
+        let tab_id = tab.id();
         self.projects.push(Project {
             id,
             root,
@@ -425,7 +511,10 @@ impl Editor {
             tab: 0,
             panels: Vec::new(),
         });
-        self.current = self.projects.len() - 1;
+        let current = self.projects.len() - 1;
+        let client = self.acting_client_mut();
+        client.current = current;
+        client.tabs.insert(tab_id, TabState::new(main));
         id
     }
 
@@ -443,8 +532,8 @@ impl Editor {
         let Some(index) = self.projects.iter().position(|p| p.id == id) else {
             return false;
         };
-        self.current = index;
-        self.focus = self.projects[index].main();
+        self.acting_client_mut().current = index;
+        self.focus_main();
         true
     }
 
@@ -459,7 +548,10 @@ impl Editor {
         }
         let project = self.projects.remove(index);
         for view in project.views() {
-            self.views.remove(&view);
+            self.remove_view(view);
+        }
+        for tab in project.tabs() {
+            self.forget_tab(tab.id());
         }
         let owned: Vec<BufferId> = self
             .buffer_projects
@@ -468,18 +560,22 @@ impl Editor {
             .map(|(buffer, _)| *buffer)
             .collect();
         for buffer in owned {
-            if !self.views.values().any(|v| v.buffer == buffer) {
+            if !self.shown(buffer) {
                 self.buffers.remove(&buffer);
                 self.buffer_projects.remove(&buffer);
             }
         }
         // The same project stays current unless it was the one closed; then
         // the one after it takes over, or the one before at the end.
-        if index < self.current {
-            self.current -= 1;
-        }
-        self.current = self.current.min(self.projects.len() - 1);
-        self.focus = self.projects[self.current].main();
+        let last = self.projects.len() - 1;
+        self.as_each_client(|ed| {
+            let client = ed.acting_client_mut();
+            if index < client.current {
+                client.current -= 1;
+            }
+            client.current = client.current.min(last);
+            ed.focus_main();
+        });
         true
     }
 
@@ -489,12 +585,22 @@ impl Editor {
     }
 
     /// The project shown. Panics before the first view opens.
-    pub fn current_project(&self) -> &Project {
-        &self.projects[self.current]
+    pub fn current_project(&self) -> CurrentProject<'_> {
+        let current = self.acting_client().current;
+        CurrentProject {
+            project: &self.projects[current],
+            main: self.main_of(current),
+        }
+    }
+
+    /// The project shown, without working out its main view.
+    fn shown_project(&self) -> &Project {
+        &self.projects[self.acting_client().current]
     }
 
     fn current_project_mut(&mut self) -> &mut Project {
-        &mut self.projects[self.current]
+        let current = self.acting_client().current;
+        &mut self.projects[current]
     }
 
     /// The project `buffer` was opened in.
@@ -666,21 +772,25 @@ impl Editor {
     /// Shows `buffer` in `view`, starting at the top.
     pub fn show(&mut self, view: ViewId, buffer: BufferId) {
         let old = self.view(view).buffer;
-        let view = self.view_mut(view);
-        view.buffer = buffer;
-        view.selection = Selection::point(0);
-        view.scroll = Scroll::default();
-        view.visible = None;
+        for client in self.clients.values_mut() {
+            let Some(view) = client.views.get_mut(&view) else {
+                continue;
+            };
+            view.buffer = buffer;
+            view.selection = Selection::point(0);
+            view.scroll = Scroll::default();
+            view.visible = None;
+        }
         self.drop_if_unused(old);
     }
 
     /// Shows `buffer` in a new view floating over the main one, focusing it
     /// if `options.focus` says so.
     pub fn float(&mut self, buffer: BufferId, options: FloatOptions) -> ViewId {
-        let previous = self.focus;
+        let previous = self.focus();
         let view = self.add_view(buffer, Selection::point(0));
         if !options.focus || options.hidden {
-            self.focus = previous;
+            self.acting_client_mut().focus = previous;
         }
         let tab = options.tab.then(|| self.current_tab().id());
         self.floats.push(Float {
@@ -714,10 +824,10 @@ impl Editor {
     /// Shows `buffer` in a new panel beside the main view, focusing it if
     /// `options.focus` says so. Later panels go inside earlier ones.
     pub fn panel(&mut self, buffer: BufferId, options: PanelOptions) -> ViewId {
-        let previous = self.focus;
+        let previous = self.focus();
         let view = self.add_view(buffer, Selection::point(0));
         if !options.focus {
-            self.focus = previous;
+            self.acting_client_mut().focus = previous;
         }
         self.current_project_mut()
             .panels
@@ -727,7 +837,7 @@ impl Editor {
 
     /// Panels, outermost first on each side.
     pub fn panels(&self) -> &[Panel] {
-        &self.current_project().panels
+        &self.shown_project().panels
     }
 
     /// How `view` is shown, if it's a floating view.
@@ -747,10 +857,21 @@ impl Editor {
         let hidden = options.hidden;
         float.options = options;
         let return_to = float.return_to;
-        if hidden && self.focus == view {
-            self.focus = self.focus_after(view, Some(return_to));
+        if hidden {
+            self.refocus_from(view, Some(return_to));
         }
         true
+    }
+
+    /// Moves the focus of each client that had it on `view`, which closed
+    /// or hid, to what it goes to next (see `focus_after`).
+    fn refocus_from(&mut self, view: ViewId, return_to: Option<ViewId>) {
+        self.as_each_client(|ed| {
+            if ed.focus() == view {
+                let next = ed.focus_after(view, return_to);
+                ed.acting_client_mut().focus = next;
+            }
+        });
     }
 
     /// What gets focus when `view` closes or hides: `return_to` if it's
@@ -759,13 +880,13 @@ impl Editor {
     fn focus_after(&self, view: ViewId, return_to: Option<ViewId>) -> ViewId {
         let shown = |v: &ViewId| {
             *v != view
-                && self.views.contains_key(v)
+                && self.views().contains_key(v)
                 && self.float_options(*v).is_none_or(|o| !o.hidden)
         };
         return_to
             .filter(shown)
             .or_else(|| self.floats().iter().map(|f| f.view).rfind(shown))
-            .unwrap_or(self.current_project().main())
+            .unwrap_or(self.main())
     }
 
     /// Brings a floating view in front of the others. Returns false if
@@ -780,7 +901,13 @@ impl Editor {
     }
 
     pub fn main(&self) -> ViewId {
-        self.current_project().main()
+        self.main_of(self.acting_client().current)
+    }
+
+    /// Moves the acting client's focus to its main view.
+    fn focus_main(&mut self) {
+        let main = self.main();
+        self.acting_client_mut().focus = main;
     }
 
     /// Closes a view. Focus moves to the top floating view, or the main view.
@@ -788,10 +915,10 @@ impl Editor {
     /// last pane closes the tab. Returns false for the project's last pane,
     /// which can't be closed.
     pub fn close(&mut self, view: ViewId) -> bool {
-        if !self.views.contains_key(&view) || !self.remove_pane(view) {
+        if !self.views().contains_key(&view) || !self.remove_pane(view) {
             return false;
         }
-        let Some(closed) = self.views.remove(&view) else {
+        let Some(closed) = self.remove_view(view) else {
             return false;
         };
         let return_to = self
@@ -803,9 +930,7 @@ impl Editor {
         for project in &mut self.projects {
             project.panels.retain(|p| p.view != view);
         }
-        if self.focus == view {
-            self.focus = self.focus_after(view, return_to);
-        }
+        self.refocus_from(view, return_to);
         self.drop_if_unused(closed.buffer);
         true
     }
@@ -849,9 +974,9 @@ impl Editor {
             )
             .map_err(std::io::Error::other)?;
             // Not part of whatever the user has going, like an insert.
-            let group = self.undo_group.take();
+            let group = self.acting_client_mut().undo_group.take();
             let applied = self.apply_to_buffer(id, changes, Author::External, Some("reload"), None);
-            self.undo_group = group;
+            self.acting_client_mut().undo_group = group;
             applied.map_err(std::io::Error::other)?;
         }
         self.buffers
@@ -906,7 +1031,7 @@ impl Editor {
 
     /// The view with `id`, if it's still open.
     pub fn find_view(&self, id: ViewId) -> Option<&View> {
-        self.views.get(&id)
+        self.views().get(&id)
     }
 
     pub fn buffers(&self) -> impl Iterator<Item = &Buffer> {
@@ -915,7 +1040,7 @@ impl Editor {
 
     /// The views showing `buffer`.
     pub fn views_of(&self, buffer: BufferId) -> Vec<ViewId> {
-        self.views
+        self.views()
             .iter()
             .filter(|(_, view)| view.buffer == buffer)
             .map(|(id, _)| *id)
@@ -924,42 +1049,49 @@ impl Editor {
 
     /// Each open view that has been drawn, with its rows and columns.
     pub fn view_sizes(&self) -> impl Iterator<Item = (ViewId, (u16, u16))> + '_ {
-        self.views
+        self.views()
             .iter()
             .filter_map(|(id, view)| Some((*id, view.size?)))
     }
 
     /// Each view's top line.
     pub fn view_scrolls(&self) -> impl Iterator<Item = (ViewId, usize)> + '_ {
-        self.views.iter().map(|(id, view)| (*id, view.scroll.line))
+        self.views()
+            .iter()
+            .map(|(id, view)| (*id, view.scroll.line))
     }
 
     /// Each view's buffer and selection, floats' too.
     pub fn view_selections(&self) -> impl Iterator<Item = (ViewId, BufferId, &Selection)> + '_ {
-        self.views
+        self.views()
             .iter()
             .map(|(id, view)| (*id, view.buffer, &view.selection))
     }
 
+    /// View `id` as the acting client sees it.
     pub fn view(&self, id: ViewId) -> &View {
-        &self.views[&id]
+        &self.views()[&id]
     }
 
     pub fn view_mut(&mut self, id: ViewId) -> &mut View {
-        self.views.get_mut(&id).expect("view exists")
+        self.acting_client_mut()
+            .views
+            .get_mut(&id)
+            .expect("view exists")
     }
 
+    /// The view the acting client's keys go to.
     pub fn focus(&self) -> ViewId {
-        self.focus
+        self.acting_client().focus
     }
 
     /// Focuses `view`, showing it if it's a hidden floating view.
     pub fn set_focus(&mut self, view: ViewId) {
-        assert!(self.views.contains_key(&view), "no view {view:?}");
+        assert!(self.views().contains_key(&view), "no view {view:?}");
         if let Some(float) = self.floats.iter_mut().find(|f| f.view == view) {
             float.options.hidden = false;
         }
-        self.focus = view;
+        self.acting_client_mut().focus = view;
         self.activate(view);
     }
 
@@ -980,8 +1112,9 @@ impl Editor {
             selection,
             meta: self.meta(id, author, cause),
         };
+        let current = self.view(view).selection.clone();
         let buffer = self.buffers.get_mut(&id).expect("view's buffer exists");
-        let after = buffer.apply(tx, &self.views[&view].selection)?;
+        let after = buffer.apply(tx, &current)?;
         self.view_mut(view).selection = after;
         self.map_views(id, Some(view));
         Ok(())
@@ -1005,7 +1138,8 @@ impl Editor {
         };
         let buffer = self.buffers.get_mut(&id).expect("buffer exists");
         if let Some(after) = buffer.apply_detached(tx)? {
-            for view in self.views.values_mut().filter(|v| v.buffer == id) {
+            let views = self.clients.values_mut().flat_map(|c| c.views.values_mut());
+            for view in views.filter(|v| v.buffer == id) {
                 view.selection = after.clone();
             }
         } else {
@@ -1018,7 +1152,7 @@ impl Editor {
     fn meta(&mut self, buffer: BufferId, author: Author, cause: Option<&str>) -> TxMeta {
         let version = self.buffers[&buffer].version();
         let mut meta = TxMeta::new(self.replica.next_id(), version, author);
-        meta.group = self.undo_group;
+        meta.group = self.acting_client().undo_group;
         if let Some(cause) = cause.or(self.cause.as_deref()) {
             meta = meta.with_cause(cause);
         }
@@ -1028,13 +1162,13 @@ impl Editor {
     /// Undoes the last change in `view`'s buffer. Returns false if there was
     /// nothing to undo.
     pub fn undo(&mut self, view: ViewId) -> Result<bool, Error> {
-        self.history_step(view, Buffer::undo)
+        self.history_step(view, true)
     }
 
     /// Redoes the last undone change in `view`'s buffer. Returns false if
     /// there was nothing to redo.
     pub fn redo(&mut self, view: ViewId) -> Result<bool, Error> {
-        self.history_step(view, Buffer::redo)
+        self.history_step(view, false)
     }
 
     /// Takes `view`'s buffer to node `target` of its undo tree, undoing up
@@ -1065,13 +1199,14 @@ impl Editor {
     /// Starts grouping edits into one undo step, e.g. for an insert mode
     /// session. Does nothing if a group is already open.
     pub fn start_group(&mut self) {
-        if self.undo_group.is_none() {
-            self.undo_group = Some(self.new_group());
+        if self.acting_client().undo_group.is_none() {
+            let group = self.new_group();
+            self.acting_client_mut().undo_group = Some(group);
         }
     }
 
     pub fn end_group(&mut self) {
-        self.undo_group = None;
+        self.acting_client_mut().undo_group = None;
     }
 
     /// A group id nothing has used yet.
@@ -1083,13 +1218,13 @@ impl Editor {
 
     /// The group edits go into now, if one is open.
     pub fn group(&self) -> Option<u64> {
-        self.undo_group
+        self.acting_client().undo_group
     }
 
     /// Puts the edits that follow into `group`, which can be one used
     /// before, or into none.
     pub fn set_group(&mut self, group: Option<u64>) {
-        self.undo_group = group;
+        self.acting_client_mut().undo_group = group;
     }
 
     /// Sets why the edits that follow are made, for those that don't say.
@@ -1130,17 +1265,18 @@ impl Editor {
     }
 
     pub fn mode(&self) -> &str {
-        &self.mode
+        &self.acting_client().mode
     }
 
     /// Switches mode. Returns false if already in that mode.
     pub fn set_mode(&mut self, mode: &str) -> bool {
-        if &*self.mode == mode {
+        let client = self.acting_client_mut();
+        if &*client.mode == mode {
             return false;
         }
-        self.mode = mode.into();
-        self.pending.clear();
-        self.count = None;
+        client.mode = mode.into();
+        client.pending.clear();
+        client.count = None;
         true
     }
 
@@ -1168,12 +1304,12 @@ impl Editor {
     /// A cell's width and height in pixels on the client's screen; 8 by 16
     /// until a client says.
     pub fn cell_size(&self) -> (u16, u16) {
-        self.cell_size
+        self.acting_client().cell_size
     }
 
     pub fn set_cell_size(&mut self, size: (u16, u16)) {
         if size.0 > 0 && size.1 > 0 {
-            self.cell_size = size;
+            self.acting_client_mut().cell_size = size;
         }
     }
 
@@ -1213,7 +1349,7 @@ impl Editor {
 
     /// The cursor shape for the current mode.
     pub fn cursor_shape(&self) -> CursorShape {
-        self.cursor_shape_of(&self.mode)
+        self.cursor_shape_of(self.mode())
     }
 
     /// The cursor shape for `mode`: a block unless set otherwise.
@@ -1231,21 +1367,29 @@ impl Editor {
 
     /// Keys pressed so far in an unfinished sequence.
     pub fn pending(&self) -> &[Key] {
-        &self.pending
+        &self.acting_client().pending
     }
 
     /// Binds `keys` for the next key press only (see `overlay`), or drops
     /// such bindings with `None`.
     pub fn set_overlay(&mut self, keys: Option<HashMap<Key, Arc<str>>>) {
-        self.overlay = keys;
+        self.acting_client_mut().overlay = keys;
     }
 
-    /// Feeds a key press into the keymap for the current mode and focused
-    /// buffer.
+    /// Feeds a key press into the keymap for the acting client's mode and
+    /// focused buffer.
     pub fn press(&mut self, key: Key) -> KeyOutcome {
-        if self.pending.is_empty()
-            && self.count.is_none()
-            && let Some(overlay) = self.overlay.take()
+        let Editor {
+            clients,
+            acting,
+            keymap,
+            buffers,
+            ..
+        } = self;
+        let client = clients.get_mut(acting).expect("the acting client exists");
+        if client.pending.is_empty()
+            && client.count.is_none()
+            && let Some(overlay) = client.overlay.take()
             && let Some(name) = overlay.get(&key)
         {
             return KeyOutcome::Command {
@@ -1254,9 +1398,10 @@ impl Editor {
                 count: None,
             };
         }
-        if self.pending.is_empty()
-            && self.count.is_none()
-            && let Some(name) = self.buffer(self.view(self.focus).buffer).key(key)
+        let buffer = &buffers[&client.views[&client.focus].buffer];
+        if client.pending.is_empty()
+            && client.count.is_none()
+            && let Some(name) = buffer.key(key)
         {
             return KeyOutcome::Command {
                 name: name.clone(),
@@ -1264,28 +1409,28 @@ impl Editor {
                 count: None,
             };
         }
-        if let Some(digit) = self.count_digit(key) {
-            self.count = Some(
-                self.count
+        if let Some(digit) = count_digit(keymap, client, key) {
+            client.count = Some(
+                client
+                    .count
                     .unwrap_or(0)
                     .saturating_mul(10)
                     .saturating_add(digit),
             );
             return KeyOutcome::Pending;
         }
-        self.pending.push(key);
-        let kind = self.buffer(self.view(self.focus).buffer).kind();
-        match self.keymap.resolve(&self.mode, kind, &self.pending) {
+        client.pending.push(key);
+        match keymap.resolve(&client.mode, buffer.kind(), &client.pending) {
             Resolution::Pending => KeyOutcome::Pending,
             Resolution::Command(name) => KeyOutcome::Command {
                 name,
-                keys: std::mem::take(&mut self.pending),
-                count: self.count.take(),
+                keys: std::mem::take(&mut client.pending),
+                count: client.count.take(),
             },
             Resolution::Unbound => {
-                let keys = std::mem::take(&mut self.pending);
-                let count = self.count.take();
-                match self.keymap.fallback(&self.mode) {
+                let keys = std::mem::take(&mut client.pending);
+                let count = client.count.take();
+                match keymap.fallback(&client.mode) {
                     Some(name) if keys.len() == 1 => KeyOutcome::Command {
                         name: name.clone(),
                         keys,
@@ -1295,20 +1440,6 @@ impl Editor {
                 }
             }
         }
-    }
-
-    /// The digit `key` adds to a count: counts are on in this mode, no
-    /// sequence has started, and it's a plain digit (0 only after another).
-    fn count_digit(&self, key: Key) -> Option<u32> {
-        let KeyCode::Char(c) = key.code else {
-            return None;
-        };
-        let digit = c.to_digit(10)?;
-        let counting = key.mods == Mods::NONE
-            && self.pending.is_empty()
-            && (digit != 0 || self.count.is_some())
-            && self.keymap.counts(&self.mode);
-        counting.then_some(digit)
     }
 
     /// The text of `view`'s buffer with its selection marked: `|` at each
@@ -1338,7 +1469,7 @@ impl Editor {
 
     /// Puts text on the clipboard: one piece per selection it came from.
     pub fn copy(&mut self, pieces: Vec<String>) {
-        self.copied = Some(pieces.join("\n"));
+        self.acting_client_mut().copied = Some(pieces.join("\n"));
         self.remember_copy(pieces);
     }
 
@@ -1360,17 +1491,17 @@ impl Editor {
     /// The latest copy, once, as one text, for the client to put on the
     /// system clipboard.
     pub fn take_copied(&mut self) -> Option<String> {
-        self.copied.take()
+        self.acting_client_mut().copied.take()
     }
 
-    /// Asks the attached client to notify the user's desktop.
+    /// Asks the acting client to notify the user's desktop.
     pub fn notify(&mut self, notice: Notice) {
-        self.notices.push(notice);
+        self.acting_client_mut().notices.push(notice);
     }
 
-    /// The notifications not yet sent to the client, oldest first.
+    /// The notifications not yet sent to the acting client, oldest first.
     pub fn take_notices(&mut self) -> Vec<Notice> {
-        std::mem::take(&mut self.notices)
+        std::mem::take(&mut self.acting_client_mut().notices)
     }
 
     /// The latest copy, if any.
@@ -1392,26 +1523,26 @@ impl Editor {
         self.quit_requested
     }
 
-    /// Asks whoever runs the editor to let the attached client go and keep
+    /// Asks whoever runs the editor to let the acting client go and keep
     /// running without it.
     pub fn request_detach(&mut self) {
-        self.detach_requested = true;
+        self.acting_client_mut().detach_requested = true;
     }
 
     /// Whether a detach was asked for since the last call.
     pub fn take_detach_request(&mut self) -> bool {
-        std::mem::take(&mut self.detach_requested)
+        std::mem::take(&mut self.acting_client_mut().detach_requested)
     }
 
-    /// Asks whoever runs the editor to send the attached client to another
+    /// Asks whoever runs the editor to send the acting client to another
     /// session, which lets it go from this one.
     pub fn request_switch(&mut self, to: SwitchTo) {
-        self.switch_requested = Some(to);
+        self.acting_client_mut().switch_requested = Some(to);
     }
 
     /// Where a switch was asked to go since the last call, if one was.
     pub fn take_switch_request(&mut self) -> Option<SwitchTo> {
-        self.switch_requested.take()
+        self.acting_client_mut().switch_requested.take()
     }
 
     /// Queues a message for the user.
@@ -1434,27 +1565,29 @@ impl Editor {
         id
     }
 
+    /// Opens a view of `buffer` for every client, all with `selection`, and
+    /// focuses it for the acting one.
     fn add_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
         let id = ViewId(self.next_id());
-        self.views.insert(
-            id,
-            View {
-                buffer,
-                selection,
-                scroll: Scroll::default(),
-                visible: None,
-                size: None,
-                area: None,
-            },
-        );
-        self.focus = id;
+        let view = View {
+            buffer,
+            selection,
+            scroll: Scroll::default(),
+            visible: None,
+            size: None,
+            area: None,
+        };
+        for client in self.clients.values_mut() {
+            client.views.insert(id, view.clone());
+        }
+        self.acting_client_mut().focus = id;
         id
     }
 
     /// Closes `buffer`, unsaved changes and all. Fails while a view shows it,
     /// so whoever closes it decides what those views show instead.
     pub fn close_buffer(&mut self, buffer: BufferId) -> Result<(), Error> {
-        if self.views.values().any(|v| v.buffer == buffer) {
+        if self.shown(buffer) {
             return Err(Error::Shown);
         }
         self.buffers.remove(&buffer);
@@ -1465,36 +1598,68 @@ impl Editor {
     /// Removes a buffer that has no file and no view left.
     fn drop_if_unused(&mut self, buffer: BufferId) {
         let b = &self.buffers[&buffer];
-        let unused =
-            b.path().is_none() && !b.is_kept() && !self.views.values().any(|v| v.buffer == buffer);
+        let unused = b.path().is_none() && !b.is_kept() && !self.shown(buffer);
         if unused {
             self.buffers.remove(&buffer);
         }
     }
 
-    fn history_step(&mut self, view: ViewId, step: HistoryStep) -> Result<bool, Error> {
+    /// Undoes, or redoes unless `undoing`, in `view`'s buffer, for the
+    /// acting client. A step it made itself puts its selection back where it
+    /// was; another client's step moves its selection along with the text,
+    /// as any edit does.
+    fn history_step(&mut self, view: ViewId, undoing: bool) -> Result<bool, Error> {
         let id = self.view(view).buffer;
         let tx_id = self.replica.next_id();
-        let author = Author::User(self.client);
+        let acting = self.acting;
+        let current = self.view(view).selection.clone();
         let buffer = self.buffers.get_mut(&id).expect("view's buffer exists");
-        let Some(selection) = step(buffer, tx_id, author, &self.views[&view].selection)? else {
+        let (step, by): (HistoryStep, _) = if undoing {
+            (Buffer::undo, buffer.history().undo_author())
+        } else {
+            (Buffer::redo, buffer.history().redo_author())
+        };
+        let theirs = matches!(by, Some(Author::User(client)) if *client != acting);
+        let Some(restored) = step(buffer, tx_id, Author::User(acting), &current)? else {
             return Ok(false);
         };
+        let selection = if theirs {
+            current.map(buffer.history().latest())
+        } else {
+            restored
+        };
         self.view_mut(view).selection = selection;
-        self.map_views(self.view(view).buffer, Some(view));
+        self.map_views(id, Some(view));
         Ok(true)
     }
 
-    /// Maps the selections of views on `buffer`, other than `except`, through
-    /// the buffer's latest transaction.
+    /// Maps the selections of views on `buffer` through the buffer's latest
+    /// transaction, for every client: all but the acting client's `except`.
     fn map_views(&mut self, buffer: BufferId, except: Option<ViewId>) {
         let changes = self.buffers[&buffer].history().latest();
-        for (id, other) in &mut self.views {
-            if Some(*id) != except && other.buffer == buffer {
-                other.selection = other.selection.map(changes);
+        for (client, state) in &mut self.clients {
+            for (id, other) in &mut state.views {
+                let skipped = *client == self.acting && Some(*id) == except;
+                if !skipped && other.buffer == buffer {
+                    other.selection = other.selection.map(changes);
+                }
             }
         }
     }
+}
+
+/// The digit `key` adds to `client`'s count: counts are on in its mode, no
+/// sequence has started, and it's a plain digit (0 only after another).
+fn count_digit(keymap: &Keymap, client: &ClientState, key: Key) -> Option<u32> {
+    let KeyCode::Char(c) = key.code else {
+        return None;
+    };
+    let digit = c.to_digit(10)?;
+    let counting = key.mods == Mods::NONE
+        && client.pending.is_empty()
+        && (digit != 0 || client.count.is_some())
+        && keymap.counts(&client.mode);
+    counting.then_some(digit)
 }
 
 /// `path` as buffers know their files: absolute (from the current

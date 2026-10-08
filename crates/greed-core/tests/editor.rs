@@ -1294,3 +1294,156 @@ fn hidden_floats_give_up_focus_and_take_it_back_when_focused() {
     assert_eq!(ed.focus(), main);
     assert!(ed.float_options(vc).unwrap().hidden);
 }
+
+mod clients {
+    use greed_core::render::{CellWidth, Plain, Renderer, Size, Status, grid};
+    use greed_core::{Editor, FIRST_CLIENT, Scroll};
+    use greed_text::{Author, ChangeSet, ClientId, Selection};
+
+    const SECOND: ClientId = ClientId(2);
+
+    /// An editor showing `text`, with a second client seeing what the
+    /// first one does.
+    fn two_clients(text: &str) -> Editor {
+        let mut ed = super::editor(text);
+        assert!(ed.add_client(SECOND));
+        assert!(!ed.add_client(SECOND), "one client per id");
+        ed
+    }
+
+    /// Inserts `text` at `at` in the focused view, as the acting client.
+    fn type_at(ed: &mut Editor, at: usize, text: &str) {
+        let view = ed.focus();
+        let len = super::text(ed).len();
+        let changes = ChangeSet::from_changes(len, [(at, at, Some(text))]).unwrap();
+        let author = Author::User(ed.client());
+        ed.apply(view, changes, author, None, None).unwrap();
+    }
+
+    /// Where the acting client's cursor is.
+    fn cursor(ed: &Editor) -> usize {
+        ed.view(ed.focus()).selection.primary().head
+    }
+
+    #[test]
+    fn clients_see_one_view_with_selections_of_their_own() {
+        let mut ed = two_clients("hello world");
+        let view = ed.focus();
+        assert_eq!(ed.client(), FIRST_CLIENT);
+        assert!(ed.set_acting(SECOND));
+        assert_eq!(ed.focus(), view, "it sees what the first one does");
+        ed.view_mut(view).selection = Selection::single(6, 11);
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.view(view).selection, Selection::point(0));
+        ed.set_acting(SECOND);
+        assert_eq!(ed.view(view).selection, Selection::single(6, 11));
+        assert!(!ed.set_acting(ClientId(3)), "no such client");
+        assert_eq!((ed.client(), ed.last_active()), (SECOND, SECOND));
+    }
+
+    #[test]
+    fn an_edit_by_one_client_moves_the_others_cursor() {
+        let mut ed = two_clients("hello world");
+        let view = ed.focus();
+        ed.set_acting(SECOND);
+        ed.view_mut(view).selection = Selection::point(6);
+        ed.set_acting(FIRST_CLIENT);
+        type_at(&mut ed, 0, ">> ");
+        assert_eq!(cursor(&ed), 3);
+        ed.set_acting(SECOND);
+        assert_eq!(cursor(&ed), 9, "still before \"world\"");
+    }
+
+    #[test]
+    fn undo_puts_back_the_authors_selection_and_moves_the_others() {
+        let mut ed = two_clients("one two");
+        let view = ed.focus();
+        // The first client replaces "one" it has selected; the second has
+        // its cursor on "two".
+        ed.view_mut(view).selection = Selection::single(0, 3);
+        ed.set_acting(SECOND);
+        ed.view_mut(view).selection = Selection::point(4);
+        ed.set_acting(FIRST_CLIENT);
+        let changes = ChangeSet::from_changes(7, [(0, 3, Some("three"))]).unwrap();
+        ed.apply(view, changes, Author::User(FIRST_CLIENT), None, None)
+            .unwrap();
+        ed.set_acting(SECOND);
+        assert_eq!(cursor(&ed), 6);
+
+        // Undone by its author: its selection is back as it was, and the
+        // other's cursor goes back with the text.
+        ed.set_acting(FIRST_CLIENT);
+        assert!(ed.undo(view).unwrap());
+        assert_eq!(super::text(&ed), "one two");
+        assert_eq!(ed.view(view).selection, Selection::single(0, 3));
+        ed.set_acting(SECOND);
+        assert_eq!(cursor(&ed), 4);
+
+        // Redone and undone again by the other client: its own cursor moves
+        // with the text each time, rather than to the author's selection.
+        assert!(ed.redo(view).unwrap());
+        assert_eq!(super::text(&ed), "three two");
+        assert_eq!(cursor(&ed), 6);
+        ed.view_mut(view).selection = Selection::point(7);
+        assert!(ed.undo(view).unwrap());
+        assert_eq!(super::text(&ed), "one two");
+        assert_eq!(
+            ed.view(view).selection,
+            Selection::point(5),
+            "still on the w"
+        );
+    }
+
+    #[test]
+    fn undo_groups_of_two_clients_stay_apart() {
+        let mut ed = two_clients("");
+        let view = ed.focus();
+        ed.start_group();
+        let first = ed.group();
+        type_at(&mut ed, 0, "a");
+        ed.set_acting(SECOND);
+        assert_eq!(ed.group(), None, "the first client's group is its own");
+        ed.start_group();
+        assert!(ed.group().is_some() && ed.group() != first);
+        type_at(&mut ed, 1, "b");
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.group(), first);
+        // "b" went into a step of its own, not into the first client's.
+        assert!(ed.undo(view).unwrap());
+        assert_eq!(super::text(&ed), "a");
+        assert!(ed.undo(view).unwrap());
+        assert_eq!(super::text(&ed), "");
+    }
+
+    #[test]
+    fn each_client_scrolls_on_its_own() {
+        let lines: Vec<String> = (1..=30).map(|n| format!("line {n}")).collect();
+        let mut ed = two_clients(&lines.join("\n"));
+        let view = ed.focus();
+        let first_row = |ed: &mut Editor| {
+            let frame = Renderer::new(CellWidth).frame(
+                ed,
+                Size {
+                    width: 20,
+                    height: 6,
+                },
+                &Status::Default { message: None },
+                &Plain,
+            );
+            grid::text_rows(&frame).swap_remove(0)
+        };
+        ed.set_acting(SECOND);
+        let line_20 = lines[..19].iter().map(|l| l.len() + 1).sum::<usize>();
+        ed.view_mut(view).selection = Selection::point(line_20);
+        assert!(
+            first_row(&mut ed).ends_with("line 16"),
+            "line 20 at the bottom"
+        );
+        assert_eq!(ed.view(view).scroll, Scroll { line: 15, row: 0 });
+        ed.set_acting(FIRST_CLIENT);
+        assert!(first_row(&mut ed).ends_with("line 1"));
+        assert_eq!(ed.view(view).scroll, Scroll::default());
+        ed.set_acting(SECOND);
+        assert!(first_row(&mut ed).ends_with("line 16"), "it stayed there");
+    }
+}

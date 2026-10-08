@@ -39,7 +39,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|lua, ()| {
             let state = state(lua);
             let current = state.editor.current_project();
-            project_to_lua(lua, current, current.id())
+            project_to_lua(lua, &current, current.id())
         })?,
     )?;
     project.set(

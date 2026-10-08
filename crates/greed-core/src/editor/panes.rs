@@ -1,10 +1,14 @@
 //! Tabs and panes: each project has tabs, each tab a tree of panes (see
 //! [`crate::layout`]), and the shown tab's active pane is the main view.
+//! The trees are shared; which pane is active, and whether only it shows,
+//! is each client's own.
 
+use std::ops::Deref;
 use std::sync::Arc;
 
 use greed_text::Selection;
 
+use super::clients::TabState;
 use super::{Editor, Extent, Project, Side, ViewId};
 use crate::layout::{Direction, Line, Node};
 use crate::render::Rect;
@@ -13,20 +17,12 @@ use crate::{Buffer, BufferId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TabId(pub u32);
 
+/// A tab: its panes, laid out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tab {
     id: TabId,
     name: Option<Arc<str>>,
     layout: Node,
-    /// The pane keys go to while the tab is shown.
-    active: ViewId,
-    /// Panes in the order they were last active, the latest last, so moving
-    /// left and back right returns to the same pane.
-    recent: Vec<ViewId>,
-    /// Only the active pane is shown, filling the tab.
-    zoomed: bool,
-    /// Where the panes went when the tab was last drawn.
-    area: Option<Rect>,
 }
 
 impl Tab {
@@ -35,10 +31,6 @@ impl Tab {
             id,
             name: None,
             layout: Node::Pane(pane),
-            active: pane,
-            recent: vec![pane],
-            zoomed: false,
-            area: None,
         }
     }
 
@@ -51,6 +43,31 @@ impl Tab {
         self.name.as_deref()
     }
 
+    /// Its panes, left to right and top to bottom.
+    pub fn panes(&self) -> Vec<ViewId> {
+        self.layout.panes()
+    }
+}
+
+/// A tab as the acting client has it.
+#[derive(Debug, Clone, Copy)]
+pub struct TabView<'a> {
+    tab: &'a Tab,
+    active: ViewId,
+    zoomed: bool,
+    area: Option<Rect>,
+}
+
+impl Deref for TabView<'_> {
+    type Target = Tab;
+
+    fn deref(&self) -> &Tab {
+        self.tab
+    }
+}
+
+impl TabView<'_> {
+    /// The pane keys go to while the tab is shown.
     pub fn active(&self) -> ViewId {
         self.active
     }
@@ -60,19 +77,9 @@ impl Tab {
         self.area
     }
 
+    /// Whether only the active pane is shown, filling the tab.
     pub fn zoomed(&self) -> bool {
         self.zoomed
-    }
-
-    /// Its panes, left to right and top to bottom.
-    pub fn panes(&self) -> Vec<ViewId> {
-        self.layout.panes()
-    }
-
-    fn activate(&mut self, view: ViewId) {
-        self.active = view;
-        self.recent.retain(|v| *v != view);
-        self.recent.push(view);
     }
 
     /// Where its panes go in `rect`, and the lines between them: only the
@@ -82,7 +89,7 @@ impl Tab {
             return (vec![(self.active, rect)], Vec::new());
         }
         let (mut panes, mut lines) = (Vec::new(), Vec::new());
-        self.layout.place(rect, &mut panes, &mut lines);
+        self.tab.layout.place(rect, &mut panes, &mut lines);
         (panes, lines)
     }
 }
@@ -145,40 +152,76 @@ impl Editor {
         Some(&mut self.projects[p].tabs[t])
     }
 
+    /// `tab` as the acting client has it.
+    pub(super) fn tab_view<'a>(&'a self, tab: &'a Tab) -> TabView<'a> {
+        let (active, zoomed, area) = match self.acting_client().tabs.get(&tab.id) {
+            Some(state) => (state.active, state.zoomed, state.area),
+            None => (tab.layout.panes()[0], false, None),
+        };
+        TabView {
+            tab,
+            active,
+            zoomed,
+            area,
+        }
+    }
+
+    /// The acting client's state of tab `id`, which starts out with the
+    /// tab's first pane active.
+    fn tab_state_mut(&mut self, id: TabId) -> &mut TabState {
+        let first = self.tab_position(id).map_or(ViewId(0), |(p, t)| {
+            self.projects[p].tabs[t].layout.panes()[0]
+        });
+        self.acting_client_mut()
+            .tabs
+            .entry(id)
+            .or_insert_with(|| TabState::new(first))
+    }
+
     /// Makes `view` its tab's active pane and shows its tab, and the project
     /// it's a pane or panel of.
     pub(super) fn activate(&mut self, view: ViewId) {
         if let Some((p, t)) = self.pane_position(view) {
-            self.current = p;
+            self.acting_client_mut().current = p;
             self.projects[p].tab = t;
-            self.projects[p].tabs[t].activate(view);
+            let id = self.projects[p].tabs[t].id;
+            self.tab_state_mut(id).activate(view);
         } else if let Some(p) = self
             .projects
             .iter()
             .position(|project| project.panels.iter().any(|panel| panel.view == view))
         {
-            self.current = p;
+            self.acting_client_mut().current = p;
         }
     }
 
     /// The shown project's tabs.
-    pub fn tabs(&self) -> &[Tab] {
-        &self.current_project().tabs
+    pub fn tabs(&self) -> Vec<TabView<'_>> {
+        let project = self.shown_project();
+        project.tabs.iter().map(|t| self.tab_view(t)).collect()
     }
 
-    pub fn current_tab(&self) -> &Tab {
-        let project = self.current_project();
-        &project.tabs[project.tab]
+    pub fn current_tab(&self) -> TabView<'_> {
+        let project = self.shown_project();
+        self.tab_view(&project.tabs[project.tab])
     }
 
-    fn current_tab_mut(&mut self) -> &mut Tab {
-        let project = &mut self.projects[self.current];
-        &mut project.tabs[project.tab]
+    /// The acting client's state of the shown tab.
+    fn current_tab_state_mut(&mut self) -> &mut TabState {
+        let id = self.current_tab().id;
+        self.tab_state_mut(id)
+    }
+
+    /// The active pane of project `p`'s shown tab, as the acting client has
+    /// it.
+    pub(super) fn main_of(&self, p: usize) -> ViewId {
+        let project = &self.projects[p];
+        self.tab_view(&project.tabs[project.tab]).active
     }
 
     /// Remembers where the shown tab's panes were drawn, for resizing.
     pub(crate) fn set_tab_area(&mut self, area: Rect) {
-        self.current_tab_mut().area = Some(area);
+        self.current_tab_state_mut().area = Some(area);
     }
 
     /// Opens a pane beside `view` on its `dir` side, showing `buffer`, or
@@ -197,7 +240,8 @@ impl Editor {
         };
         let tab = &mut self.projects[p].tabs[t];
         tab.layout.insert(view, new, dir);
-        tab.zoomed = false;
+        let id = tab.id;
+        self.tab_state_mut(id).zoomed = false;
         self.set_focus(new);
         Some(new)
     }
@@ -215,18 +259,29 @@ impl Editor {
             if project.tabs.len() == 1 {
                 return false;
             }
-            project.remove_tab(t);
+            let gone = project.remove_tab(t).id;
+            self.forget_tab(gone);
             return true;
         }
         tab.layout.remove(view);
-        tab.recent.retain(|v| *v != view);
-        if tab.active == view {
-            tab.active = match tab.recent.last() {
-                Some(view) => *view,
-                None => tab.layout.panes()[0],
+        let (id, first) = (tab.id, tab.layout.panes()[0]);
+        for client in self.clients.values_mut() {
+            let Some(state) = client.tabs.get_mut(&id) else {
+                continue;
             };
+            state.recent.retain(|v| *v != view);
+            if state.active == view {
+                state.active = state.recent.last().copied().unwrap_or(first);
+            }
         }
         true
+    }
+
+    /// Drops every client's state of tab `id`, which closed.
+    pub(super) fn forget_tab(&mut self, id: TabId) {
+        for client in self.clients.values_mut() {
+            client.tabs.remove(&id);
+        }
     }
 
     /// The pane next to `view` on its `dir` side in its tab, as last drawn:
@@ -234,26 +289,31 @@ impl Editor {
     /// count too, and `view` may be one.
     pub fn neighbor(&self, view: ViewId, dir: Direction) -> Option<ViewId> {
         let panels: Vec<ViewId> = self.panels().iter().map(|p| p.view).collect();
+        let shown = self.shown_project();
         let tab = match self.pane_position(view) {
             Some((p, t)) => &self.projects[p].tabs[t],
-            None if panels.contains(&view) => self.current_tab(),
+            None if panels.contains(&view) => &shown.tabs[shown.tab],
             None => return None,
         };
         let mut candidates = tab.layout.panes();
         if tab.id == self.current_tab().id {
             candidates.extend(panels);
         }
-        let from = self.views.get(&view)?.area?;
+        let recent = self
+            .acting_client()
+            .tabs
+            .get(&tab.id)
+            .map_or(&[][..], |state| &state.recent);
+        let from = self.find_view(view)?.area?;
         candidates
             .into_iter()
             .filter(|v| *v != view)
             .filter(|v| {
-                self.views
-                    .get(v)
+                self.find_view(*v)
                     .and_then(|v| v.area)
                     .is_some_and(|area| beside(from, area, dir))
             })
-            .max_by_key(|v| tab.recent.iter().position(|r| r == v))
+            .max_by_key(|v| recent.iter().position(|r| r == v))
     }
 
     /// Moves pane `view`'s edge on its `dir` side by `cells`. False when
@@ -263,11 +323,13 @@ impl Editor {
         let Some((p, t)) = self.pane_position(view) else {
             return self.resize_panel(view, dir, cells);
         };
-        let tab = &mut self.projects[p].tabs[t];
-        let Some(area) = tab.area else {
+        let tab = &self.projects[p].tabs[t];
+        let Some(area) = self.tab_view(tab).area else {
             return false;
         };
-        tab.layout.resize(view, dir, cells, area)
+        self.projects[p].tabs[t]
+            .layout
+            .resize(view, dir, cells, area)
     }
 
     /// Moves panel `view`'s edge by the main view by `cells`, when `dir`
@@ -296,7 +358,7 @@ impl Editor {
 
     /// Shows only the active pane of the shown tab, or all of them again.
     pub fn set_zoomed(&mut self, zoomed: bool) {
-        self.current_tab_mut().zoomed = zoomed;
+        self.current_tab_state_mut().zoomed = zoomed;
     }
 
     /// Opens a tab after the shown one with a pane showing `buffer` (or an
@@ -309,9 +371,13 @@ impl Editor {
         });
         let view = self.add_view(buffer, Selection::point(0));
         let id = TabId(self.next_id());
-        let project = &mut self.projects[self.current];
+        let current = self.acting_client().current;
+        let project = &mut self.projects[current];
         project.tab += 1;
         project.tabs.insert(project.tab, Tab::new(id, view));
+        self.acting_client_mut()
+            .tabs
+            .insert(id, TabState::new(view));
         id
     }
 
@@ -321,9 +387,9 @@ impl Editor {
         let Some((p, t)) = self.tab_position(id) else {
             return false;
         };
-        self.current = p;
+        self.acting_client_mut().current = p;
         self.projects[p].tab = t;
-        self.focus = self.projects[p].tabs[t].active;
+        self.focus_main();
         true
     }
 
@@ -336,6 +402,7 @@ impl Editor {
             return None;
         }
         let mut panes = project.remove_tab(t).panes();
+        self.forget_tab(id);
         // Its floats go with it.
         panes.extend(
             self.floats
@@ -343,13 +410,15 @@ impl Editor {
                 .map(|f| f.view),
         );
         for view in &panes {
-            if let Some(closed) = self.views.remove(view) {
+            if let Some(closed) = self.remove_view(*view) {
                 self.drop_if_unused(closed.buffer);
             }
         }
-        if !self.views.contains_key(&self.focus) {
-            self.focus = self.current_project().main();
-        }
+        self.as_each_client(|ed| {
+            if !ed.views().contains_key(&ed.focus()) {
+                ed.focus_main();
+            }
+        });
         Some(panes)
     }
 

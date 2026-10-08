@@ -41,6 +41,8 @@ struct Node {
     before: Option<Selection>,
     after: Option<Selection>,
     group: Option<u64>,
+    /// Who made it; the root, the buffer as loaded, has nobody.
+    author: Option<Author>,
     /// When it was last added to: the step's latest transaction. The root,
     /// the buffer as loaded, has none.
     time: Option<SystemTime>,
@@ -91,6 +93,7 @@ impl Default for History {
                 before: None,
                 after: None,
                 group: None,
+                author: None,
                 time: None,
             }],
             current: 0,
@@ -212,11 +215,23 @@ impl History {
                 before,
                 after,
                 group,
+                author: Some(tx.meta.author.clone()),
                 time,
             });
             self.current = index;
         }
         self.record(tx, inverse);
+    }
+
+    /// Who made the step undo would take back, if there is one.
+    pub fn undo_author(&self) -> Option<&Author> {
+        self.nodes[self.current].author.as_ref()
+    }
+
+    /// Who made the step redo would do again, if there is one.
+    pub fn redo_author(&self) -> Option<&Author> {
+        let &child = self.nodes[self.current].children.last()?;
+        self.nodes[child].author.as_ref()
     }
 
     /// Records an undo or redo transaction in the log without touching the

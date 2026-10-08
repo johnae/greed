@@ -1609,7 +1609,7 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
 const MIN_MAIN_WIDTH: u16 = 10;
 
 /// How tab `i` (0-based) shows in the tab line: its number and name.
-fn tab_label(editor: &Editor, i: usize, tab: &crate::Tab) -> String {
+fn tab_label(editor: &Editor, i: usize, tab: &crate::TabView) -> String {
     let name = tab
         .name()
         .map_or_else(|| tab_title(editor, tab.active()), str::to_owned);
