@@ -45,7 +45,8 @@ fn start(
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
                  greed.command({ name = 'slow', run = function() greed.sleep(10000) end })
-                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow' })",
+                 greed.command({ name = 'tab', run = function() greed.tab.new() end })
+                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow', ['ctrl-t'] = 'tab' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -453,17 +454,20 @@ fn a_session_of_an_older_greed_says_how_to_start_over() {
         let authed = r#"{"jsonrpc":"2.0","id":1,"result":{}}"#;
         let refused = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32001,"message":"this session runs greed 0.1.0 and speaks protocol 7, the client speaks protocol 8; use the same greed version on both ends"}}"#;
         // Other tests starting sessions connect to see what's still
-        // running, and say nothing.
+        // running, and say nothing or ask something else.
         for stream in listener.incoming() {
             let stream = stream.unwrap();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut writer = stream;
             let mut line = String::new();
-            if reader.read_line(&mut line).unwrap() == 0 {
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
                 continue;
             }
-            writeln!(writer, "{authed}").unwrap();
-            reader.read_line(&mut line).unwrap();
+            let _ = writeln!(writer, "{authed}");
+            line.clear();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 || !line.contains("\"attach\"") {
+                continue;
+            }
             writeln!(writer, "{refused}").unwrap();
             return;
         }
@@ -566,5 +570,39 @@ fn copies_go_to_the_client_for_the_system_clipboard() {
             other => panic!("expected the copy, got {other:?}"),
         }
     }
+    conn.input.send(Input::Quit).unwrap();
+}
+
+/// Attaches to the session `start(label)` runs as `name`, asking for
+/// `layout`.
+fn attach_laid_out(label: &str, name: &str, layout: &str) -> Attached {
+    let session = format!("attach-{label}-{}", std::process::id());
+    let (socket, token) = control::session_files(&session);
+    let token = std::fs::read_to_string(token).unwrap();
+    let mut params = control::attach_params("tui");
+    params["client"] = serde_json::json!({ "kind": "tui", "name": name });
+    params["layout"] = serde_json::Value::from(layout);
+    let client = Client::connect(&socket, &token).unwrap();
+    Attached(client.attach_with(&params).unwrap(), None)
+}
+
+#[test]
+fn a_client_asking_to_be_independent_gets_tabs_of_its_own() {
+    let (conn, _, attach_as) = start("independent");
+    let mut a = attach_as("tui@a", false);
+    a.send(&Input::Resize(SIZE));
+    assert_eq!(a.first_row(), "1 hello");
+    let mut b = attach_laid_out("independent", "tui@b", "independent");
+    b.send(&Input::Resize(SIZE));
+    assert_eq!(b.first_row(), "1 hello");
+    // A's new tab shows the tab line to A alone.
+    a.keys("ctrl-t");
+    a.until_row_is(|row| row != "1 hello");
+    b.keys("i B esc");
+    b.until_row("1 Bhello");
+    // A follower would be shown it.
+    let mut c = attach_laid_out("independent", "tui@c", "follow");
+    c.send(&Input::Resize(SIZE));
+    assert_ne!(c.first_row(), "1 Bhello", "the new tab's line");
     conn.input.send(Input::Quit).unwrap();
 }

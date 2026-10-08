@@ -47,9 +47,9 @@ use greed_text::TxId;
 pub use buffer::{Buffer, BufferId, Mark, MarkImage, Reveal, TrackId, Tracked, VirtualLine};
 pub use editor::{
     Anchor, ClientInfo, ClientLayout, ClientState, CurrentProject, CursorShape, Editor, Extent,
-    FIRST_CLIENT, Float, FloatOptions, KeyOutcome, LineNumbers, Notice, PEER_COLORS, Panel,
-    PanelOptions, Project, ProjectId, Scroll, Side, SwitchTo, Tab, TabId, TabView, View, ViewId,
-    file_path, parse_marked,
+    FIRST_CLIENT, Float, FloatOptions, KeyOutcome, LayoutChange, LineNumbers, Notice, PEER_COLORS,
+    Panel, PanelOptions, Project, ProjectId, Scroll, Side, SwitchTo, Tab, TabId, TabView, View,
+    ViewId, file_path, parse_marked,
 };
 pub use history::{GroupState, History};
 

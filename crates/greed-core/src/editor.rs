@@ -15,9 +15,12 @@ use crate::theme::Theme;
 use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualLine};
 
 mod clients;
+mod layouts;
 mod panes;
 use clients::TabState;
 pub use clients::{ClientInfo, ClientLayout, ClientState, FIRST_CLIENT, PEER_COLORS};
+pub use layouts::LayoutChange;
+use layouts::{Arrangement, LayoutId};
 pub use panes::{Tab, TabId, TabView};
 
 #[derive(
@@ -172,18 +175,15 @@ pub struct Panel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProjectId(pub u32);
 
-/// A folder being worked on: its tabs of panes, and panels. Buffers opened
-/// while it's current belong to it.
+/// A folder being worked on: its tabs of panes, and panels, in each layout.
+/// Buffers opened while it's current belong to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     id: ProjectId,
     root: PathBuf,
-    /// Never empty.
-    tabs: Vec<Tab>,
-    /// Which of `tabs` is shown.
-    tab: usize,
-    /// Views beside the panes, outermost first on each side.
-    panels: Vec<Panel>,
+    /// Its tabs and panels in the shared layout and in each independent
+    /// client's.
+    arrangements: BTreeMap<LayoutId, Arrangement>,
 }
 
 impl Project {
@@ -195,16 +195,9 @@ impl Project {
         &self.root
     }
 
-    pub fn tabs(&self) -> &[Tab] {
-        &self.tabs
-    }
-
-    /// Every pane of every tab, then the panels.
+    /// Every pane of every tab, then the panels, in every layout.
     pub fn views(&self) -> impl Iterator<Item = ViewId> + '_ {
-        self.tabs
-            .iter()
-            .flat_map(Tab::panes)
-            .chain(self.panels.iter().map(|p| p.view))
+        self.arrangements.values().flat_map(Arrangement::views)
     }
 }
 
@@ -326,6 +319,9 @@ pub struct Editor {
     /// Open projects, each with its own main view and panels. Empty until the
     /// first view opens.
     projects: Vec<Project>,
+    /// Every layout, the shared one and each independent client's, with the
+    /// project it shows: an index into `projects`.
+    shown: BTreeMap<LayoutId, usize>,
     /// The project each buffer was opened in.
     buffer_projects: HashMap<BufferId, ProjectId>,
     /// Floating views, bottom first.
@@ -366,6 +362,7 @@ impl Editor {
             last_active: FIRST_CLIENT,
             activity: 0,
             projects: Vec::new(),
+            shown: BTreeMap::from([(LayoutId::SHARED, 0)]),
             buffer_projects: HashMap::new(),
             floats: Vec::new(),
             next_id: 1,
@@ -400,21 +397,28 @@ impl Editor {
         self.clients.values().filter(|c| !c.parked)
     }
 
-    /// Adds client `id`, seeing what the acting client sees. False if there
-    /// is one with that id already.
+    /// Adds client `id`, following and seeing what the acting client sees.
+    /// False if there is one with that id already.
     pub fn add_client(&mut self, id: ClientId) -> bool {
         if self.clients.contains_key(&id) {
             return false;
         }
-        let mut state = self.acting_client().seeing_as(id);
-        state.color = self.free_color(id);
-        self.clients.insert(id, state);
+        self.add_client_like(id, self.acting);
         true
     }
 
+    /// Adds client `id`, seeing what client `like` sees, but following.
+    fn add_client_like(&mut self, id: ClientId, like: ClientId) {
+        let mut state = self.clients[&like].seeing_as(id);
+        state.color = self.free_color(id);
+        self.clients.insert(id, state);
+        // What `like` had focused may be in a layout of its own.
+        self.settle_focus_of(id);
+    }
+
     /// A client attaching, which says `info` about itself: the one parked
-    /// under its name, back with its cursors, focus and mode, or a new one
-    /// seeing what the last active client sees.
+    /// under its name, back with its cursors, focus, mode and layout, or a
+    /// new one following and seeing what the last active client sees.
     pub fn attach_client(&mut self, info: ClientInfo) -> ClientId {
         let returning = self
             .clients
@@ -423,9 +427,7 @@ impl Editor {
             .map(ClientState::id);
         let id = returning.unwrap_or_else(|| {
             let id = self.next_client_id();
-            let mut state = self.clients[&self.last_active].seeing_as(id);
-            state.color = self.free_color(id);
-            self.clients.insert(id, state);
+            self.add_client_like(id, self.last_active);
             id
         });
         self.set_client_info(id, info);
@@ -482,7 +484,6 @@ impl Editor {
         client.name = info.name.into();
         client.kind = info.kind.into();
         client.remote = info.remote;
-        client.layout = info.layout;
         true
     }
 
@@ -594,36 +595,53 @@ impl Editor {
 
     /// Adds `buffer`, belonging to the current project.
     fn insert_buffer(&mut self, buffer: Buffer) {
-        if let Some(project) = self.projects.get(self.acting_client().current) {
+        if let Some(project) = self.projects.get(self.shown_index()) {
             self.buffer_projects.insert(buffer.id(), project.id);
         }
         self.buffers.insert(buffer.id(), buffer);
     }
 
+    /// Adds a project at `root` with `main` as the main view of its one tab
+    /// in the acting client's layout, and shows it there. Every other
+    /// layout gets a tab of its own showing the same buffer.
     fn add_project(&mut self, root: PathBuf, main: ViewId) -> ProjectId {
         let id = ProjectId(self.next_id());
-        let tab = Tab::new(TabId(self.next_id()), main);
-        let tab_id = tab.id();
+        let buffer = self.view(main).buffer;
+        let acting = self.layout_id();
+        let layouts: Vec<LayoutId> = self.shown.keys().copied().collect();
+        let mut arrangements = BTreeMap::new();
+        for layout in layouts {
+            let pane = if layout == acting {
+                main
+            } else {
+                self.new_view(buffer, Selection::point(0))
+            };
+            let tab = Tab::new(TabId(self.next_id()), pane);
+            if layout == acting {
+                self.acting_client_mut()
+                    .tabs
+                    .insert(tab.id(), TabState::new(main));
+            }
+            arrangements.insert(layout, Arrangement::new(tab));
+        }
         self.projects.push(Project {
             id,
             root,
-            tabs: vec![tab],
-            tab: 0,
-            panels: Vec::new(),
+            arrangements,
         });
-        let current = self.projects.len() - 1;
-        let client = self.acting_client_mut();
-        client.current = current;
-        client.tabs.insert(tab_id, TabState::new(main));
+        let index = self.projects.len() - 1;
+        self.shown.insert(acting, index);
+        self.settle_others();
         id
     }
 
     /// Opens a project at `root` with an empty main view, and shows it.
     pub fn open_project(&mut self, root: PathBuf) -> ProjectId {
         let id = BufferId(self.next_id());
+        self.buffers.insert(id, Buffer::new(id, "file", ""));
         let view = self.add_view(id, Selection::point(0));
         let project = self.add_project(root, view);
-        self.insert_buffer(Buffer::new(id, "file", ""));
+        self.buffer_projects.insert(id, project);
         project
     }
 
@@ -632,8 +650,10 @@ impl Editor {
         let Some(index) = self.projects.iter().position(|p| p.id == id) else {
             return false;
         };
-        self.acting_client_mut().current = index;
+        let layout = self.layout_id();
+        self.shown.insert(layout, index);
         self.focus_main();
+        self.settle_others();
         true
     }
 
@@ -650,8 +670,10 @@ impl Editor {
         for view in project.views() {
             self.remove_view(view);
         }
-        for tab in project.tabs() {
-            self.forget_tab(tab.id());
+        for arrangement in project.arrangements.values() {
+            for tab in &arrangement.tabs {
+                self.forget_tab(tab.id());
+            }
         }
         let owned: Vec<BufferId> = self
             .buffer_projects
@@ -668,14 +690,13 @@ impl Editor {
         // The same project stays current unless it was the one closed; then
         // the one after it takes over, or the one before at the end.
         let last = self.projects.len() - 1;
-        self.as_each_client(|ed| {
-            let client = ed.acting_client_mut();
-            if index < client.current {
-                client.current -= 1;
+        for shown in self.shown.values_mut() {
+            if index < *shown {
+                *shown -= 1;
             }
-            client.current = client.current.min(last);
-            ed.focus_main();
-        });
+            *shown = (*shown).min(last);
+        }
+        self.as_each_client(Self::focus_main);
         true
     }
 
@@ -686,21 +707,19 @@ impl Editor {
 
     /// The project shown. Panics before the first view opens.
     pub fn current_project(&self) -> CurrentProject<'_> {
-        let current = self.acting_client().current;
+        let current = self.shown_index();
         CurrentProject {
             project: &self.projects[current],
             main: self.main_of(current),
         }
     }
 
-    /// The project shown, without working out its main view.
-    fn shown_project(&self) -> &Project {
-        &self.projects[self.acting_client().current]
-    }
-
-    fn current_project_mut(&mut self) -> &mut Project {
-        let current = self.acting_client().current;
-        &mut self.projects[current]
+    /// The tabs of project `id` as the acting client has them, in its
+    /// layout; `None` without such a project.
+    pub fn project_tabs(&self, id: ProjectId) -> Option<Vec<TabView<'_>>> {
+        let p = self.projects.iter().position(|p| p.id == id)?;
+        let tabs = &self.arrangement(p).tabs;
+        Some(tabs.iter().map(|t| self.tab_view(t)).collect())
     }
 
     /// The project `buffer` was opened in.
@@ -929,7 +948,7 @@ impl Editor {
         if !options.focus {
             self.acting_client_mut().focus = previous;
         }
-        self.current_project_mut()
+        self.shown_arrangement_mut()
             .panels
             .push(Panel { view, options });
         view
@@ -937,7 +956,7 @@ impl Editor {
 
     /// Panels, outermost first on each side.
     pub fn panels(&self) -> &[Panel] {
-        &self.shown_project().panels
+        &self.shown_arrangement().panels
     }
 
     /// How `view` is shown, if it's a floating view.
@@ -1001,7 +1020,7 @@ impl Editor {
     }
 
     pub fn main(&self) -> ViewId {
-        self.main_of(self.acting_client().current)
+        self.main_of(self.shown_index())
     }
 
     /// Moves the acting client's focus to its main view.
@@ -1027,8 +1046,12 @@ impl Editor {
             .find(|f| f.view == view)
             .map(|f| f.return_to);
         self.floats.retain(|f| f.view != view);
-        for project in &mut self.projects {
-            project.panels.retain(|p| p.view != view);
+        for arrangement in self
+            .projects
+            .iter_mut()
+            .flat_map(|p| p.arrangements.values_mut())
+        {
+            arrangement.panels.retain(|p| p.view != view);
         }
         self.refocus_from(view, return_to);
         self.drop_if_unused(closed.buffer);
@@ -1181,11 +1204,21 @@ impl Editor {
     }
 
     /// The other attached clients and how each sees `view`: whose cursors
-    /// the acting client sees there.
+    /// the acting client sees there. One with its own layout, where `view`
+    /// isn't shown, has its cursors where it works: in the view it has
+    /// focused, when that shows the same buffer.
     pub fn peers(&self, view: ViewId) -> impl Iterator<Item = (&ClientState, &View)> + '_ {
+        let buffer = self.views().get(&view).map(|v| v.buffer);
+        let layout = self.layout_of(view);
         self.clients()
             .filter(|c| c.id != self.acting)
-            .filter_map(move |c| Some((c, c.views.get(&view)?)))
+            .filter_map(move |c| {
+                if layout.is_none_or(|l| l == c.layout) {
+                    return Some((c, c.views.get(&view)?));
+                }
+                let focused = c.views.get(&c.focus)?;
+                (Some(focused.buffer) == buffer).then_some((c, focused))
+            })
     }
 
     /// The view the acting client's keys go to.
@@ -1681,19 +1714,29 @@ impl Editor {
     /// Opens a view of `buffer` for every client, all with `selection`, and
     /// focuses it for the acting one.
     fn add_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
-        let id = ViewId(self.next_id());
-        let view = View {
+        let id = self.new_view(buffer, selection);
+        self.acting_client_mut().focus = id;
+        id
+    }
+
+    /// Opens a view of `buffer` for every client, all with `selection`.
+    fn new_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
+        self.open_view(&View {
             buffer,
             selection,
             scroll: Scroll::default(),
             visible: None,
             size: None,
             area: None,
-        };
+        })
+    }
+
+    /// Opens a view for every client, each seeing it as `view`.
+    fn open_view(&mut self, view: &View) -> ViewId {
+        let id = ViewId(self.next_id());
         for client in self.clients.values_mut() {
             client.views.insert(id, view.clone());
         }
-        self.acting_client_mut().focus = id;
         id
     }
 

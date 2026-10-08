@@ -194,3 +194,84 @@ test("a click lands where the client that clicked shows things", function(t)
 	assert(string.find(second:marked(), "\nli|ne 46\n", 1, true), "the second's cursor moved there")
 	assert(string.sub(t:marked(), 1, 1) == "|", "the first's stayed")
 end)
+
+test("a client gone independent has tabs of its own, and follows again", function(t)
+	t:buffer("|hello")
+	local second = t:client()
+	local closed: { number } = {}
+	greed.on("view.closed", function(event: greed.ViewClosed)
+		table.insert(closed, event.view)
+	end)
+	local tabs: { [number]: number } = {}
+	greed.command({
+		name = "test-tabs",
+		run = function(ctx)
+			tabs[ctx.client] = #greed.tab.list()
+		end,
+	})
+	greed.command({
+		name = "test-new-tab",
+		run = function()
+			greed.tab.new()
+		end,
+	})
+	second:run("client-independent")
+	second:run("test-new-tab")
+	t:run("test-tabs")
+	second:run("test-tabs")
+	assert(tabs[1] == 1 and tabs[second:id()] == 2, `tabs: {tabs[1]} {tabs[second:id()]}`)
+	assert(greed.client.list()[2].layout == "independent", "listed as independent")
+	-- Its edits still go to the same buffer.
+	greed.command({
+		name = "test-first-tab",
+		run = function()
+			greed.tab.switch(greed.tab.list()[1].id)
+		end,
+	})
+	second:run("test-first-tab")
+	second:keys("i X esc")
+	t:expect("X|hello")
+	t:keys("i Y esc")
+	second:expect("XY|hello")
+
+	second:run("client-follow")
+	assert(greed.client.list()[2].layout == "follow", "following again")
+	second:run("test-tabs")
+	assert(tabs[second:id()] == 1, `the shared tabs: {tabs[second:id()]}`)
+	assert(#closed == 2, `its two panes closed: {#closed}`)
+	t:run("test-new-tab")
+	second:run("test-tabs")
+	assert(tabs[second:id()] == 2, "it follows the first's new tab")
+end)
+
+test("zoom is each client's own while following", function(t)
+	t:buffer("|hello")
+	local second = t:client()
+	greed.command({
+		name = "test-split",
+		run = function(ctx)
+			ctx.view:split("right")
+		end,
+	})
+	t:run("test-split")
+	local zoomed: { [number]: boolean } = {}
+	greed.command({
+		name = "test-zoomed",
+		run = function(ctx)
+			zoomed[ctx.client] = greed.tab.current().zoomed
+		end,
+	})
+	greed.command({
+		name = "test-zoom",
+		run = function()
+			greed.tab.set_zoomed(true)
+		end,
+	})
+	t:run("test-zoom")
+	t:run("test-zoomed")
+	second:run("test-zoomed")
+	assert(zoomed[1] == true and zoomed[second:id()] == false, "the first's alone")
+	local mine, theirs = t:draw(30, 6), second:draw(30, 6)
+	assert(not string.find(mine[1], "│", 1, true), `one pane: {mine[1]}`)
+	assert(string.find(theirs[1], "│", 1, true), `two panes: {theirs[1]}`)
+end)

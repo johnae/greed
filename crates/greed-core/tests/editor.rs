@@ -869,8 +869,7 @@ fn tabs_of_a_project_that_isnt_shown_work_by_id() {
     let second_main = ed.main();
 
     assert!(ed.rename_tab(tab, Some("logs".into())));
-    let project = ed.projects().iter().find(|p| p.id() == first).unwrap();
-    assert_eq!(project.tabs()[1].name(), Some("logs"));
+    assert_eq!(ed.project_tabs(first).unwrap()[1].name(), Some("logs"));
     let layout = ed.tab_layout(tab).cloned().unwrap();
     assert_eq!(layout.panes(), [pane]);
     ed.set_tab_layout(tab, layout).unwrap();
@@ -1296,8 +1295,11 @@ fn hidden_floats_give_up_focus_and_take_it_back_when_focused() {
 }
 
 mod clients {
-    use greed_core::render::{CellWidth, Plain, Renderer, Size, Status, grid};
-    use greed_core::{ClientInfo, ClientLayout, Editor, FIRST_CLIENT, Scroll};
+    use greed_core::layout::Direction;
+    use greed_core::render::{CellWidth, Plain, Rect, Renderer, Size, Status, grid};
+    use greed_core::{
+        Anchor, ClientInfo, ClientLayout, Editor, Extent, FIRST_CLIENT, FloatOptions, Scroll,
+    };
     use greed_text::{Author, ChangeSet, ClientId, Selection};
 
     const SECOND: ClientId = ClientId(2);
@@ -1439,7 +1441,6 @@ mod clients {
             name: name.to_owned(),
             kind: "tui".to_owned(),
             remote: false,
-            layout: ClientLayout::Follow,
         };
         let a = ed.attach_client(info("tui@a"));
         ed.set_acting(a);
@@ -1490,5 +1491,214 @@ mod clients {
         assert_eq!(ed.view(view).scroll, Scroll::default());
         ed.set_acting(SECOND);
         assert!(first_row(&mut ed).ends_with("line 16"), "it stayed there");
+    }
+
+    #[test]
+    fn followers_share_the_shown_tab_and_each_keeps_its_own_focus() {
+        let mut ed = two_clients("hello");
+        let first_tab = ed.current_tab().id();
+        let pane = ed.focus();
+        // The second splits; the first keeps its focus, and sees both.
+        ed.set_acting(SECOND);
+        let split = ed.split_pane(pane, Direction::Right, None).unwrap();
+        assert_eq!(ed.focus(), split);
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.focus(), pane, "its own focus");
+        assert_eq!(ed.current_tab().panes(), [pane, split]);
+
+        // The first opens a tab: the second is shown it too, and its focus
+        // moves there, as what it had focused isn't shown any more.
+        let tab = ed.new_tab(None);
+        let new_pane = ed.focus();
+        ed.set_acting(SECOND);
+        assert_eq!(ed.current_tab().id(), tab);
+        assert_eq!(ed.focus(), new_pane);
+
+        // Back to the first tab: the first follows, with focus on its own
+        // active pane there.
+        assert!(ed.switch_tab(first_tab));
+        assert_eq!(ed.focus(), split, "the second's active pane");
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.current_tab().id(), first_tab);
+        assert_eq!(ed.focus(), pane, "the first's");
+    }
+
+    #[test]
+    fn followers_share_the_shown_project() {
+        let mut ed = two_clients("hello");
+        let first = ed.current_project().id();
+        let second = ed.open_project("/elsewhere".into());
+        ed.set_acting(SECOND);
+        assert_eq!(ed.current_project().id(), second);
+        assert_eq!(ed.focus(), ed.main());
+        assert!(ed.switch_project(first));
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.current_project().id(), first);
+    }
+
+    #[test]
+    fn zoom_is_each_clients_own_even_while_following() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        ed.split_pane(pane, Direction::Down, None).unwrap();
+        ed.set_zoomed(true);
+        assert!(ed.current_tab().zoomed());
+        ed.set_acting(SECOND);
+        assert!(!ed.current_tab().zoomed(), "the other's isn't");
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 9,
+        };
+        assert_eq!(ed.current_tab().place(area).0.len(), 2);
+    }
+
+    #[test]
+    fn an_independent_client_lays_out_on_its_own_from_a_copy() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        let buffer = ed.view(pane).buffer;
+        ed.set_acting(SECOND);
+        ed.view_mut(pane).selection = Selection::point(3);
+        let change = ed.set_layout(SECOND, ClientLayout::Independent).unwrap();
+        assert!(
+            ed.set_layout(SECOND, ClientLayout::Independent).is_none(),
+            "it is already"
+        );
+        assert_eq!(
+            ed.client_state(SECOND).unwrap().layout(),
+            ClientLayout::Independent
+        );
+        let [(original, copy)] = change.opened[..] else {
+            panic!("one pane copied: {change:?}");
+        };
+        assert_eq!(original, pane);
+        assert_ne!(copy, pane);
+        // Its focus and cursor went over to the copy, of the same buffer.
+        assert_eq!(ed.focus(), copy);
+        assert_eq!(ed.view(copy).buffer, buffer);
+        assert_eq!(cursor(&ed), 3);
+
+        // Its tabs and panes are its own now.
+        let tab = ed.new_tab(None);
+        ed.split_pane(ed.focus(), Direction::Right, None).unwrap();
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.tabs().len(), 1, "the first has one tab still");
+        assert_eq!(ed.current_tab().panes(), [pane]);
+        assert!(!ed.switch_tab(tab), "another layout's tab");
+        let own = ed.new_tab(None);
+        ed.set_acting(SECOND);
+        assert_eq!(ed.current_tab().id(), tab, "the first's tab isn't shown");
+        assert_eq!(ed.tabs().len(), 2);
+        assert!(ed.tabs().iter().all(|t| t.id() != own));
+    }
+
+    #[test]
+    fn going_back_to_following_closes_its_own_views_and_keeps_their_buffers() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        ed.set_acting(SECOND);
+        ed.set_layout(SECOND, ClientLayout::Independent).unwrap();
+        let copy = ed.focus();
+        let scratch = ed.create_buffer("scratch", "notes");
+        ed.new_tab(Some(scratch));
+        let in_tab = ed.focus();
+        let change = ed.set_layout(SECOND, ClientLayout::Follow).unwrap();
+        let mut closed = change.closed.clone();
+        closed.sort();
+        assert_eq!(closed, [copy, in_tab]);
+        assert!(change.opened.is_empty());
+        assert!(ed.find_view(copy).is_none() && ed.find_view(in_tab).is_none());
+        assert!(ed.find_buffer(scratch).is_some(), "the buffer stays");
+        assert_eq!(ed.focus(), pane, "back on the shared pane");
+        assert_eq!(
+            ed.client_state(SECOND).unwrap().layout(),
+            ClientLayout::Follow
+        );
+        ed.set_acting(FIRST_CLIENT);
+        assert_eq!(ed.focus(), pane);
+    }
+
+    #[test]
+    fn floats_of_a_tab_are_copied_with_it_and_floats_over_every_tab_are_not() {
+        let mut ed = two_clients("hello");
+        let terminal = ed.create_buffer("terminal", "");
+        let options = |tab| FloatOptions {
+            tab,
+            focus: false,
+            ..FloatOptions {
+                title: None,
+                width: Extent::Cells(10),
+                height: Extent::Cells(3),
+                anchor: Anchor::Center,
+                focus: false,
+                x: None,
+                y: None,
+                tab: false,
+                label: None,
+                footer: None,
+                border: true,
+                hidden: false,
+            }
+        };
+        let in_tab = ed.float(terminal, options(true));
+        let over_all = ed.float(terminal, options(false));
+        let change = ed.set_layout(SECOND, ClientLayout::Independent).unwrap();
+        let float_copy = change
+            .opened
+            .iter()
+            .find(|(original, _)| *original == in_tab)
+            .map(|(_, copy)| *copy)
+            .expect("the tab's float is copied");
+        assert!(
+            change
+                .opened
+                .iter()
+                .all(|(original, _)| *original != over_all)
+        );
+        let shown = |ed: &Editor| ed.floats().iter().map(|f| f.view).collect::<Vec<_>>();
+        assert_eq!(shown(&ed), [in_tab, over_all], "the first's");
+        ed.set_acting(SECOND);
+        assert_eq!(shown(&ed), [over_all, float_copy], "the second's");
+        let change = ed.set_layout(SECOND, ClientLayout::Follow).unwrap();
+        assert!(change.closed.contains(&float_copy));
+        assert_eq!(shown(&ed), [in_tab, over_all]);
+    }
+
+    #[test]
+    fn an_independent_clients_cursor_shows_where_it_works_in_the_same_buffer() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        ed.set_acting(SECOND);
+        ed.set_layout(SECOND, ClientLayout::Independent).unwrap();
+        let copy = ed.focus();
+        ed.view_mut(copy).selection = Selection::point(4);
+        ed.set_acting(FIRST_CLIENT);
+        let peers: Vec<_> = ed
+            .peers(pane)
+            .map(|(c, v)| (c.id(), v.selection.primary().head))
+            .collect();
+        assert_eq!(peers, [(SECOND, 4)]);
+        ed.set_acting(SECOND);
+        let peers: Vec<_> = ed.peers(copy).map(|(c, _)| c.id()).collect();
+        assert_eq!(peers, [FIRST_CLIENT], "the first's, in its own pane");
+    }
+
+    #[test]
+    fn a_new_client_follows_even_when_the_last_active_one_is_independent() {
+        let mut ed = super::editor("hello");
+        let pane = ed.focus();
+        ed.set_layout(FIRST_CLIENT, ClientLayout::Independent)
+            .unwrap();
+        let info = ClientInfo {
+            name: "tui@b".to_owned(),
+            kind: "tui".to_owned(),
+            remote: false,
+        };
+        let b = ed.attach_client(info);
+        ed.set_acting(b);
+        assert_eq!(ed.client_state(b).unwrap().layout(), ClientLayout::Follow);
+        assert_eq!(ed.focus(), pane, "on the shared pane");
     }
 }

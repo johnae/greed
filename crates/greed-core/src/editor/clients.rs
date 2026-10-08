@@ -1,16 +1,17 @@
 //! What belongs to each person using the editor rather than to the editor
 //! itself: where their focus and cursors are, how far each view is
 //! scrolled for them, their mode and half-typed keys, their undo group, and
-//! what's waiting to be sent to their client. Buffers, panes and floats are
-//! shared. The editor acts for one client at a time, the acting one, and
-//! its methods read and change that one's state.
+//! what's waiting to be sent to their client. Buffers and floats are
+//! shared, and so are tabs and panes between the clients that follow. The
+//! editor acts for one client at a time, the acting one, and its methods
+//! read and change that one's state.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use greed_text::ClientId;
 
-use super::{Notice, SwitchTo, TabId, View, ViewId};
+use super::{LayoutId, Notice, SwitchTo, TabId, View, ViewId};
 use crate::keymap::Key;
 use crate::render::Rect;
 
@@ -34,7 +35,9 @@ pub struct ClientState {
     /// Which of the peer colors, 1 to [`PEER_COLORS`], its cursors show in
     /// for the others.
     pub(super) color: u8,
-    pub(super) layout: ClientLayout,
+    /// The tabs and panels it's shown: [`LayoutId::SHARED`] while it
+    /// follows, its own while it's independent.
+    pub(super) layout: LayoutId,
     /// When it last did something, as a count that only goes up.
     pub(super) active_at: u64,
     /// It went, and its state waits for it to come back by its name.
@@ -46,8 +49,6 @@ pub struct ClientState {
     pub(super) views: BTreeMap<ViewId, View>,
     /// Each tab's active pane and the like, for this client.
     pub(super) tabs: HashMap<TabId, TabState>,
-    /// Which of the editor's projects is shown.
-    pub(super) current: usize,
     pub(super) mode: Arc<str>,
     pub(super) pending: Vec<Key>,
     /// A count typed before the pending keys.
@@ -79,13 +80,12 @@ impl ClientState {
             remote: false,
             size: None,
             color: 1,
-            layout: ClientLayout::Follow,
+            layout: LayoutId::SHARED,
             active_at: 0,
             parked: false,
             focus: ViewId(0),
             views: BTreeMap::new(),
             tabs: HashMap::new(),
-            current: 0,
             mode: "helix".into(),
             pending: Vec::new(),
             count: None,
@@ -99,14 +99,14 @@ impl ClientState {
         }
     }
 
-    /// A new client `id` seeing what this one sees: the same project, tabs,
-    /// focus, selections and mode, with nothing typed or waiting yet.
+    /// A new client `id` seeing what this one sees: the same focus,
+    /// selections and mode, with nothing typed or waiting yet. It follows,
+    /// whether or not this one does.
     pub(super) fn seeing_as(&self, id: ClientId) -> Self {
         Self {
             focus: self.focus,
             views: self.views.clone(),
             tabs: self.tabs.clone(),
-            current: self.current,
             mode: self.mode.clone(),
             cell_size: self.cell_size,
             ..Self::new(id)
@@ -138,7 +138,11 @@ impl ClientState {
     }
 
     pub fn layout(&self) -> ClientLayout {
-        self.layout
+        if self.layout == LayoutId::SHARED {
+            ClientLayout::Follow
+        } else {
+            ClientLayout::Independent
+        }
     }
 
     pub fn mode(&self) -> &str {
@@ -160,7 +164,8 @@ impl ClientState {
 pub const PEER_COLORS: u8 = 6;
 
 /// How a client's layout relates to the others': following them, with the
-/// same tab, project and panes shown, or laid out on its own.
+/// same project, tab and panes shown (each client with its own focus and
+/// zoom), or laid out on its own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClientLayout {
     #[default]
@@ -175,6 +180,15 @@ impl ClientLayout {
             ClientLayout::Independent => "independent",
         }
     }
+
+    /// The layout called `name`: "follow" or "independent".
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "follow" => Some(ClientLayout::Follow),
+            "independent" => Some(ClientLayout::Independent),
+            _ => None,
+        }
+    }
 }
 
 /// What a client says about itself when it attaches.
@@ -187,7 +201,6 @@ pub struct ClientInfo {
     pub kind: String,
     /// Whether it came over `greed ssh`.
     pub remote: bool,
-    pub layout: ClientLayout,
 }
 
 /// A tab as one client has it: which pane is active, the panes in the

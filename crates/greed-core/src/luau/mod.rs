@@ -785,6 +785,20 @@ impl Host {
         })
     }
 
+    /// Has `client` follow the others or lays it out on its own, as
+    /// `greed.client.set_layout` does.
+    pub fn set_client_layout(
+        &self,
+        client: ClientId,
+        layout: crate::ClientLayout,
+    ) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            api::set_client_layout(&self.lua, client, layout)
+                .map(|_| ())
+                .map_err(HostError::from)
+        })
+    }
+
     /// Tells plugins `client` went, with "client.detached", its handlers
     /// running as that client; the session goes on without it. With
     /// `others` false, no other client is attached.

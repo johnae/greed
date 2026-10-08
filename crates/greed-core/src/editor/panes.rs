@@ -1,15 +1,17 @@
-//! Tabs and panes: each project has tabs, each tab a tree of panes (see
-//! [`crate::layout`]), and the shown tab's active pane is the main view.
-//! The trees are shared; which pane is active, and whether only it shows,
-//! is each client's own.
+//! Tabs and panes: each project has tabs in each layout, each tab a tree of
+//! panes (see [`crate::layout`]), and the shown tab's active pane is the
+//! main view. The clients that follow share the trees; which pane is
+//! active, and whether only it shows, is each client's own.
 
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use greed_text::Selection;
 
 use super::clients::TabState;
-use super::{Editor, Extent, Project, Side, ViewId};
+use super::layouts::{Arrangement, LayoutId};
+use super::{Editor, Extent, Side, ViewId};
 use crate::layout::{Direction, Line, Node};
 use crate::render::Rect;
 use crate::{Buffer, BufferId};
@@ -36,6 +38,17 @@ impl Tab {
 
     pub fn id(&self) -> TabId {
         self.id
+    }
+
+    /// A copy of it as tab `id`, each pane `p` replaced with `copies[p]`.
+    pub(super) fn copied(&self, id: TabId, copies: &HashMap<ViewId, ViewId>) -> Self {
+        let mut layout = self.layout.clone();
+        layout.rename(&|pane| copies.get(&pane).copied().unwrap_or(pane));
+        Self {
+            id,
+            name: self.name.clone(),
+            layout,
+        }
     }
 
     /// The name it was given, if any.
@@ -110,30 +123,27 @@ fn beside(a: Rect, b: Rect, dir: Direction) -> bool {
     }
 }
 
-impl Project {
-    /// Takes out tab `t`, keeping the shown tab shown if it's another one.
-    fn remove_tab(&mut self, t: usize) -> Tab {
-        let tab = self.tabs.remove(t);
-        if t < self.tab {
-            self.tab -= 1;
-        }
-        self.tab = self.tab.min(self.tabs.len() - 1);
-        tab
-    }
-}
+/// Where a tab is: its layout, its project's index, and its own index in
+/// that project's arrangement.
+pub(super) type TabPosition = (LayoutId, usize, usize);
 
 impl Editor {
-    /// The project and position of the first tab that `matches`, whichever
-    /// project it's in.
-    fn find_tab(&self, matches: impl Fn(&Tab) -> bool) -> Option<(usize, usize)> {
+    /// Where the first tab that `matches` is, in whichever layout and
+    /// project.
+    fn find_tab(&self, matches: impl Fn(&Tab) -> bool) -> Option<TabPosition> {
         self.projects.iter().enumerate().find_map(|(p, project)| {
-            let t = project.tabs.iter().position(&matches)?;
-            Some((p, t))
+            project
+                .arrangements
+                .iter()
+                .find_map(|(layout, arrangement)| {
+                    let t = arrangement.tabs.iter().position(&matches)?;
+                    Some((*layout, p, t))
+                })
         })
     }
 
-    /// The project and tab `view` is a pane of.
-    fn pane_position(&self, view: ViewId) -> Option<(usize, usize)> {
+    /// Where the tab that `view` is a pane of is.
+    pub(super) fn pane_position(&self, view: ViewId) -> Option<TabPosition> {
         self.find_tab(|t| t.layout.contains(view))
     }
 
@@ -142,14 +152,26 @@ impl Editor {
         self.pane_position(view).is_some()
     }
 
-    /// The project and position of tab `id`.
-    fn tab_position(&self, id: TabId) -> Option<(usize, usize)> {
+    /// Where tab `id` is.
+    pub(super) fn tab_position(&self, id: TabId) -> Option<TabPosition> {
         self.find_tab(|t| t.id == id)
     }
 
+    fn arrangement_at_mut(&mut self, (layout, p, _): TabPosition) -> &mut Arrangement {
+        self.arrangement_mut(layout, p)
+    }
+
+    fn tab_at(&self, (layout, p, t): TabPosition) -> &Tab {
+        &self.projects[p].arrangements[&layout].tabs[t]
+    }
+
+    fn tab_at_mut(&mut self, at: TabPosition) -> &mut Tab {
+        &mut self.arrangement_at_mut(at).tabs[at.2]
+    }
+
     fn tab_mut(&mut self, id: TabId) -> Option<&mut Tab> {
-        let (p, t) = self.tab_position(id)?;
-        Some(&mut self.projects[p].tabs[t])
+        let at = self.tab_position(id)?;
+        Some(self.tab_at_mut(at))
     }
 
     /// `tab` as the acting client has it.
@@ -169,9 +191,9 @@ impl Editor {
     /// The acting client's state of tab `id`, which starts out with the
     /// tab's first pane active.
     fn tab_state_mut(&mut self, id: TabId) -> &mut TabState {
-        let first = self.tab_position(id).map_or(ViewId(0), |(p, t)| {
-            self.projects[p].tabs[t].layout.panes()[0]
-        });
+        let first = self
+            .tab_position(id)
+            .map_or(ViewId(0), |at| self.tab_at(at).layout.panes()[0]);
         self.acting_client_mut()
             .tabs
             .entry(id)
@@ -179,31 +201,39 @@ impl Editor {
     }
 
     /// Makes `view` its tab's active pane and shows its tab, and the project
-    /// it's a pane or panel of.
+    /// it's a pane or panel of, in the acting client's layout.
     pub(super) fn activate(&mut self, view: ViewId) {
-        if let Some((p, t)) = self.pane_position(view) {
-            self.acting_client_mut().current = p;
-            self.projects[p].tab = t;
-            let id = self.projects[p].tabs[t].id;
+        let layout = self.layout_id();
+        let before = self.shown_place();
+        if let Some(at @ (l, p, t)) = self.pane_position(view) {
+            if l == layout {
+                self.shown.insert(layout, p);
+                self.arrangement_at_mut(at).tab = t;
+            }
+            let id = self.tab_at(at).id;
             self.tab_state_mut(id).activate(view);
-        } else if let Some(p) = self
-            .projects
-            .iter()
-            .position(|project| project.panels.iter().any(|panel| panel.view == view))
-        {
-            self.acting_client_mut().current = p;
+        } else if let Some(p) = self.projects.iter().position(|project| {
+            project.arrangements[&layout]
+                .panels
+                .iter()
+                .any(|panel| panel.view == view)
+        }) {
+            self.shown.insert(layout, p);
+        }
+        if self.shown_place() != before {
+            self.settle_others();
         }
     }
 
     /// The shown project's tabs.
     pub fn tabs(&self) -> Vec<TabView<'_>> {
-        let project = self.shown_project();
-        project.tabs.iter().map(|t| self.tab_view(t)).collect()
+        let arrangement = self.shown_arrangement();
+        arrangement.tabs.iter().map(|t| self.tab_view(t)).collect()
     }
 
     pub fn current_tab(&self) -> TabView<'_> {
-        let project = self.shown_project();
-        self.tab_view(&project.tabs[project.tab])
+        let arrangement = self.shown_arrangement();
+        self.tab_view(&arrangement.tabs[arrangement.tab])
     }
 
     /// The acting client's state of the shown tab.
@@ -215,8 +245,8 @@ impl Editor {
     /// The active pane of project `p`'s shown tab, as the acting client has
     /// it.
     pub(super) fn main_of(&self, p: usize) -> ViewId {
-        let project = &self.projects[p];
-        self.tab_view(&project.tabs[project.tab]).active
+        let arrangement = self.arrangement(p);
+        self.tab_view(&arrangement.tabs[arrangement.tab]).active
     }
 
     /// Remembers where the shown tab's panes were drawn, for resizing.
@@ -233,12 +263,12 @@ impl Editor {
         dir: Direction,
         buffer: Option<BufferId>,
     ) -> Option<ViewId> {
-        let (p, t) = self.pane_position(view)?;
+        let at = self.pane_position(view)?;
         let new = match buffer {
             Some(buffer) => self.add_view(buffer, Selection::point(0)),
             None => self.split(view),
         };
-        let tab = &mut self.projects[p].tabs[t];
+        let tab = self.tab_at_mut(at);
         tab.layout.insert(view, new, dir);
         let id = tab.id;
         self.tab_state_mut(id).zoomed = false;
@@ -250,16 +280,16 @@ impl Editor {
     /// pane. False for the project's last pane. Not a pane: true, nothing
     /// to do.
     pub(super) fn remove_pane(&mut self, view: ViewId) -> bool {
-        let Some((p, t)) = self.pane_position(view) else {
+        let Some(at) = self.pane_position(view) else {
             return true;
         };
-        let project = &mut self.projects[p];
-        let tab = &mut project.tabs[t];
+        let arrangement = self.arrangement_at_mut(at);
+        let tab = &mut arrangement.tabs[at.2];
         if tab.layout == Node::Pane(view) {
-            if project.tabs.len() == 1 {
+            if arrangement.tabs.len() == 1 {
                 return false;
             }
-            let gone = project.remove_tab(t).id;
+            let gone = arrangement.remove_tab(at.2).id;
             self.forget_tab(gone);
             return true;
         }
@@ -289,10 +319,12 @@ impl Editor {
     /// count too, and `view` may be one.
     pub fn neighbor(&self, view: ViewId, dir: Direction) -> Option<ViewId> {
         let panels: Vec<ViewId> = self.panels().iter().map(|p| p.view).collect();
-        let shown = self.shown_project();
         let tab = match self.pane_position(view) {
-            Some((p, t)) => &self.projects[p].tabs[t],
-            None if panels.contains(&view) => &shown.tabs[shown.tab],
+            Some(at) => self.tab_at(at),
+            None if panels.contains(&view) => {
+                let shown = self.shown_arrangement();
+                &shown.tabs[shown.tab]
+            }
             None => return None,
         };
         let mut candidates = tab.layout.panes();
@@ -320,16 +352,13 @@ impl Editor {
     /// there's no pane on that side, or the tab hasn't been drawn. A panel
     /// moves its edge toward the main view, its only side that moves.
     pub fn resize_pane(&mut self, view: ViewId, dir: Direction, cells: i32) -> bool {
-        let Some((p, t)) = self.pane_position(view) else {
+        let Some(at) = self.pane_position(view) else {
             return self.resize_panel(view, dir, cells);
         };
-        let tab = &self.projects[p].tabs[t];
-        let Some(area) = self.tab_view(tab).area else {
+        let Some(area) = self.tab_view(self.tab_at(at)).area else {
             return false;
         };
-        self.projects[p].tabs[t]
-            .layout
-            .resize(view, dir, cells, area)
+        self.tab_at_mut(at).layout.resize(view, dir, cells, area)
     }
 
     /// Moves panel `view`'s edge by the main view by `cells`, when `dir`
@@ -338,8 +367,8 @@ impl Editor {
         let Some(width) = self.find_view(view).and_then(|v| v.area).map(|a| a.width) else {
             return false;
         };
-        let project = self.current_project_mut();
-        let Some(panel) = project.panels.iter_mut().find(|p| p.view == view) else {
+        let arrangement = self.shown_arrangement_mut();
+        let Some(panel) = arrangement.panels.iter_mut().find(|p| p.view == view) else {
             return false;
         };
         let inward = match panel.options.side {
@@ -356,7 +385,8 @@ impl Editor {
         true
     }
 
-    /// Shows only the active pane of the shown tab, or all of them again.
+    /// Shows only the active pane of the shown tab, or all of them again,
+    /// for the acting client alone.
     pub fn set_zoomed(&mut self, zoomed: bool) {
         self.current_tab_state_mut().zoomed = zoomed;
     }
@@ -371,37 +401,41 @@ impl Editor {
         });
         let view = self.add_view(buffer, Selection::point(0));
         let id = TabId(self.next_id());
-        let current = self.acting_client().current;
-        let project = &mut self.projects[current];
-        project.tab += 1;
-        project.tabs.insert(project.tab, Tab::new(id, view));
+        let arrangement = self.shown_arrangement_mut();
+        arrangement.tab += 1;
+        arrangement.tabs.insert(arrangement.tab, Tab::new(id, view));
         self.acting_client_mut()
             .tabs
             .insert(id, TabState::new(view));
+        self.settle_others();
         id
     }
 
     /// Shows tab `id`, and the project it's in. False if there's no such
-    /// tab.
+    /// tab in the acting client's layout.
     pub fn switch_tab(&mut self, id: TabId) -> bool {
-        let Some((p, t)) = self.tab_position(id) else {
+        let Some(at @ (layout, p, t)) = self.tab_position(id) else {
             return false;
         };
-        self.acting_client_mut().current = p;
-        self.projects[p].tab = t;
+        if layout != self.layout_id() {
+            return false;
+        }
+        self.shown.insert(layout, p);
+        self.arrangement_at_mut(at).tab = t;
         self.focus_main();
+        self.settle_others();
         true
     }
 
     /// Closes tab `id` and its panes, returning the views that closed. `None`
     /// for its project's last tab, or no such tab.
     pub fn close_tab(&mut self, id: TabId) -> Option<Vec<ViewId>> {
-        let (p, t) = self.tab_position(id)?;
-        let project = &mut self.projects[p];
-        if project.tabs.len() == 1 {
+        let at = self.tab_position(id)?;
+        let arrangement = self.arrangement_at_mut(at);
+        if arrangement.tabs.len() == 1 {
             return None;
         }
-        let mut panes = project.remove_tab(t).panes();
+        let mut panes = arrangement.remove_tab(at.2).panes();
         self.forget_tab(id);
         // Its floats go with it.
         panes.extend(
@@ -419,13 +453,14 @@ impl Editor {
                 ed.focus_main();
             }
         });
+        self.settle_others();
         Some(panes)
     }
 
     /// How tab `id` lays out its panes.
     pub fn tab_layout(&self, id: TabId) -> Option<&Node> {
-        let (p, t) = self.tab_position(id)?;
-        Some(&self.projects[p].tabs[t].layout)
+        let at = self.tab_position(id)?;
+        Some(&self.tab_at(at).layout)
     }
 
     /// Lays out tab `id`'s panes as `layout` instead, which has to hold

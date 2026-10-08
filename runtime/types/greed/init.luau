@@ -1185,7 +1185,7 @@ export type ClientInfo = {
 	remote: boolean,
 	--- Its screen in cells, once it has said.
 	size: { width: number, height: number }?,
-	--- "follow": it shows what the others do. "independent": a layout of its own.
+	--- "follow": it shows the project, tab and panes the other followers do, with its own focus and zoom. "independent": a layout of its own.
 	layout: "follow" | "independent",
 	--- Which of the peer colors (1 to 6) its cursors show in for the other clients, as `ui.cursor.peer.N`.
 	color: number,
@@ -1201,6 +1201,8 @@ export type Client = {
 	list: () -> { ClientInfo },
 	--- Sends a notification to your desktop through the acting client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
 	notify: (title: string, body: string?) -> (),
+	--- Lays a client (the acting one by default) out on its own, "independent", starting from a copy of the tabs, panes and panels it had, with views of its own; or has it "follow" the others again, closing those views (their buffers stay). Returns whether it changed.
+	set_layout: (layout: "follow" | "independent", client: number?) -> boolean,
 }
 
 --- A problem a language server found.

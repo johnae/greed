@@ -558,7 +558,6 @@ fn add_client(lua: &Lua, name: Option<String>) -> mlua::Result<AddedClient> {
                 name: name.unwrap_or_else(|| format!("test {}", id.0)),
                 kind: "test".to_owned(),
                 remote: false,
-                layout: crate::ClientLayout::Follow,
             },
         );
         id

@@ -32,6 +32,12 @@ that comes back from the same machine gets its cursors, focus and mode back;
 a new one starts where the one used last is. Copies go to the clipboard of
 the terminal that copied, and desktop notifications to the one used last.
 
+Attached terminals follow each other: they show the same project, tab and
+panes, each with its own focus and pane zoom. `:client-independent` lays one
+out on its own, starting from a copy of what it shows, so its tabs and panes
+change apart from the others'; `:client-follow` has it follow again, closing
+the panes it had on its own (their buffers stay open).
+
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
 

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use greed_text::Author;
+use greed_text::{Author, ClientId};
 use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
@@ -18,8 +18,8 @@ use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{
-    Anchor, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, Notice, PanelOptions, Side,
-    VirtualLine,
+    Anchor, ClientLayout, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, Notice,
+    PanelOptions, Side, VirtualLine,
 };
 
 type LuaResult<T> = mlua::Result<T>;
@@ -1005,7 +1005,42 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
             Ok(())
         })?,
     )?;
+    client.set(
+        "set_layout",
+        lua.create_function(|lua, (layout, id): (String, Option<u32>)| {
+            let layout = ClientLayout::parse(&layout).ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "a layout is \"follow\" or \"independent\", not {layout:?}"
+                ))
+            })?;
+            let id = id.map_or_else(|| state(lua).editor.client(), ClientId);
+            if state(lua).editor.client_state(id).is_none() {
+                return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
+            }
+            set_client_layout(lua, id, layout)
+        })?,
+    )?;
     Ok(client)
+}
+
+/// Lays client `id` out as `layout` says: the views of its own layout
+/// belong to the plugins the views they copy do, and plugins hear of those
+/// that close as it goes back to following. Whether anything changed.
+pub(super) fn set_client_layout(lua: &Lua, id: ClientId, layout: ClientLayout) -> LuaResult<bool> {
+    let change = {
+        let state = &mut *state_mut(lua);
+        let Some(change) = state.editor.set_layout(id, layout) else {
+            return Ok(false);
+        };
+        for &(original, copy) in &change.opened {
+            state.owned.copied_view(original, copy);
+        }
+        change
+    };
+    for view in change.closed {
+        handles::view_closed(lua, view)?;
+    }
+    Ok(true)
 }
 
 fn history_module(lua: &Lua) -> LuaResult<Table> {

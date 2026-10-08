@@ -64,6 +64,13 @@ impl Owned {
         self.views.insert(id, by);
     }
 
+    /// Notes that `copy` belongs to whoever `original` does, if anyone.
+    pub fn copied_view(&mut self, original: ViewId, copy: ViewId) {
+        if let Some(by) = self.views.get(&original).cloned() {
+            self.views.insert(copy, by);
+        }
+    }
+
     pub fn file_type(
         &mut self,
         by: PluginId,

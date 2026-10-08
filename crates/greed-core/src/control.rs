@@ -464,7 +464,10 @@ pub struct Attachment {
     /// Who it is, like "tui@laptop"; a client coming back by the same name
     /// gets its state back.
     pub name: String,
-    pub layout: crate::ClientLayout,
+    /// "follow" or "independent", if it asked to be laid out one way: a
+    /// client coming back otherwise keeps the layout it had, and a new one
+    /// follows.
+    pub layout: Option<crate::ClientLayout>,
     /// Whether it asked to be the only client, letting the others go.
     pub takeover: bool,
 }
@@ -487,9 +490,9 @@ impl Attachment {
             remote: params["remote"].as_bool() == Some(true),
             kind,
             name,
-            // "independent" is taken, but until clients can be laid out on
-            // their own, every client follows.
-            layout: crate::ClientLayout::Follow,
+            layout: params["layout"]
+                .as_str()
+                .and_then(crate::ClientLayout::parse),
             takeover: params["takeover"].as_bool() == Some(true),
         }
     }

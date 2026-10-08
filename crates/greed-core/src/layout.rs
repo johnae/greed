@@ -106,6 +106,18 @@ impl Node {
         }
     }
 
+    /// Replaces each pane `p` with `to(p)`, keeping the splits.
+    pub fn rename(&mut self, to: &impl Fn(ViewId) -> ViewId) {
+        match self {
+            Node::Pane(view) => *view = to(*view),
+            Node::Split { children, .. } => {
+                for (child, _) in children {
+                    child.rename(to);
+                }
+            }
+        }
+    }
+
     /// Puts `new` beside `target`, on its `dir` side, in half of its room.
     /// Returns false if `target` isn't here.
     pub fn insert(&mut self, target: ViewId, new: ViewId, dir: Direction) -> bool {

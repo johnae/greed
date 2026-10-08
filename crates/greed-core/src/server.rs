@@ -762,10 +762,10 @@ impl Server<'_> {
     }
 
     /// Adds `attachment` as a client: the one that left by its name, back
-    /// where it was, or a new one following the others. Asking to take
-    /// over lets the others go first. The client in this process, when it
-    /// never showed anything, as when a session runs in the background,
-    /// makes way for the first to attach.
+    /// where it was, or a new one following the others, laid out as it
+    /// asked if it did. Asking to take over lets the others go first. The
+    /// client in this process, when it never showed anything, as when a
+    /// session runs in the background, makes way for the first to attach.
     fn attach(&mut self, attachment: Attachment) {
         let Attachment {
             mut reader,
@@ -794,12 +794,7 @@ impl Server<'_> {
         for id in others {
             self.detach(id);
         }
-        let info = ClientInfo {
-            name,
-            kind,
-            remote,
-            layout,
-        };
+        let info = ClientInfo { name, kind, remote };
         let id = self.host.with_editor_mut(|ed| ed.attach_client(info));
         self.connections += 1;
         let connection = self.connections;
@@ -846,6 +841,10 @@ impl Server<'_> {
         let mut client = Client::new(output, false, connection);
         client.message = unseen;
         self.clients.insert(id, client);
+        if let Some(layout) = layout {
+            let laid_out = self.host.set_client_layout(id, layout);
+            self.report(laid_out);
+        }
         let attached = self
             .host
             .client_attached(id, open.as_deref(), terminal, remote);
