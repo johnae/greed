@@ -31,6 +31,7 @@
 		"blocks": "./plugins/blocks",
 		"lsp": "./plugins/lsp",
 		"setup": "./plugins/setup",
-		"plan": "./plugins/plan"
+		"plan": "./plugins/plan",
+		"shell": "./plugins/shell"
 	}
 }

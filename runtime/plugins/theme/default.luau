@@ -170,4 +170,16 @@ return {
 	["agent.waiting"] = { bg = "yellow", fg = "black", bold = true },
 	["agent.done"] = { fg = "green" },
 	["agent.failed"] = { fg = "red" },
+
+	-- A shell's blocks: the prompt glyph (an agent's own), the folder after
+	-- the prompt, each block's status, and what programs printed as errors.
+	["shell.prompt"] = { fg = "blue", bold = true },
+	["shell.agent"] = { fg = "magenta", bold = true },
+	["shell.cwd"] = { fg = "bright-black" },
+	["shell.status"] = { fg = "bright-black" },
+	["shell.running"] = { fg = "yellow" },
+	["shell.done"] = { fg = "green" },
+	["shell.failed"] = { fg = "red" },
+	["shell.stderr"] = { fg = "red" },
+	["shell.separator"] = { fg = "bright-black" },
 }

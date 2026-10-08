@@ -1179,6 +1179,34 @@ and for bash, in `PROMPT_COMMAND`:
 PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 ```
 
+## Shells
+
+`:shell` opens a shell in a buffer: type a command at the prompt at the
+bottom and `enter` runs it. Each command becomes a block above the prompt,
+its command and then what it printed, with how it ended after the command
+(`✓`, `✗ exit 1`, how long it took, where `cd` went). Blocks stay, so you
+can search, fold (`tab`), copy and run them again. A project can have
+several shells, each with its own folder and variables.
+
+| Keys | |
+|---|---|
+| `space o s` | Switch to a shell, or open one |
+| `enter` | Run what's at the prompt; on a block, put its command at the prompt to change. `alt-enter` starts another line |
+| `[ p` `] p` | The block before or after the cursor (`ctrl-up`/`ctrl-down` in the vscode style) |
+| `g o` | Select the block's output |
+| `ctrl-c` | Interrupt the running block; in the vscode style it copies a selection first |
+| `space r` `space R` | Run the block again as it ran, or in the shell's folder now |
+| `space y` `space Y` | Copy the block's output, or its command |
+| `space x` | Stop the running block |
+| `space v` | Open the block's whole output in a buffer |
+| `space c` | Take the finished blocks away |
+
+The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
+`open` itself, and starts programs with plain arguments directly. Lines
+with pipes, globs or variables go to `sh`. Programs get `PAGER=cat` and
+`GIT_PAGER=cat`. A block shows the first and last `shell-max-lines` (5000)
+lines of its output between them; `space v` shows everything.
+
 ## Panes and tabs
 
 Split the screen between files and terminals, the way a terminal
