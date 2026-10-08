@@ -156,3 +156,18 @@ test("space u o picks an operation to review", function(t)
 	t:keys("space u o enter")
 	assert(string.find(review():text(), "^picked, by user"), review():text())
 end)
+
+test(
+	"undoing an operation that takes a file back to what's on disk leaves it unchanged",
+	function(t)
+		local dir = t:tempdir({ ["a.txt"] = "a\n" })
+		local a = greed.load(dir .. "/a.txt")
+		t:buffer("|x")
+		local op = operations.run("add", function()
+			append(a, "more\n")
+		end, "agent")
+		assert(a:modified(), "changed")
+		assert(operations.undo(op))
+		assert(a:text() == "a\n" and not a:modified(), "as on disk, and not marked changed")
+	end
+)

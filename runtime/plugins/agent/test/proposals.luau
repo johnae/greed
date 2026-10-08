@@ -166,7 +166,15 @@ test("changes to several files are one operation, undone in one step", function(
 	t:run("test-propose-files")
 	assert(agent.pending() == 2)
 	local messages = t:messages()
-	assert(string.find(messages[#messages], "2 changes to 2 files", 1, true), messages[#messages])
+	assert(
+		string.find(
+			messages[#messages],
+			"2 changes in 2 files (numbers): space o o lists them",
+			1,
+			true
+		),
+		messages[#messages]
+	)
 	greed.open(dir .. "/a.txt")
 	t:keys("space o A")
 	greed.open(dir .. "/b.txt")
@@ -220,4 +228,95 @@ test("a note with nothing written leaves the change waiting", function(t)
 	local answer = propose(t, path, { { old_text = "one", new_text = "1" } })
 	t:keys("] o space o n esc")
 	assert(agent.pending() == 1 and answer() == nil)
+end)
+
+-- The new text a proposal shows in `buffer`: the lines under the old
+-- ones, and what shows inline after it.
+local function shown_new(buffer: greed.Buffer): ({ string }, { string })
+	local lines: { string } = {}
+	local inline: { string } = {}
+	local seen: { [string]: boolean } = {}
+	for pos = 0, buffer:len() do
+		for _, mark in buffer:marks_at(pos) do
+			local key = `{mark.ns} {mark.from} {mark.to} {mark.style}`
+			if mark.style == "diff.plus" and not seen[key] then
+				seen[key] = true
+				local under: { any } = mark.lines or {}
+				for _, line in under do
+					local text = line
+					if type(line) ~= "string" then
+						text = ""
+						for _, piece in line do
+							text ..= piece.text
+						end
+					end
+					table.insert(lines, text)
+				end
+				if mark.text then
+					table.insert(inline, mark.text)
+				end
+			end
+		end
+	end
+	return lines, inline
+end
+
+test("whole lines without their newline show as lines under the old ones", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "keep\nold one\nold two\nlast\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	-- As Claude Code sends them: whole lines, the last without its newline.
+	propose(
+		t,
+		path,
+		{ { old_text = "old one\nold two", new_text = "new one\nnew two\nnew three" } }
+	)
+	local buffer = greed.view():buffer()
+	local lines, inline = shown_new(buffer)
+	assert(#inline == 0, "nothing inline: " .. table.concat(inline, " | "))
+	assert(table.concat(lines, "|") == "new one|new two|new three", table.concat(lines, "|"))
+	t:keys("space o A")
+	assert(buffer:text() == "keep\nnew one\nnew two\nnew three\nlast\n", buffer:text())
+end)
+
+test("the message says how many, where in the project, and the keys", function(t)
+	local dir = t:tempdir({ ["src/a.txt"] = "one two\n" })
+	greed.project.open(dir)
+	local path = dir .. "/src/a.txt"
+	greed.open(path)
+	propose(t, path, { { old_text = "one", new_text = "1" } })
+	local messages = t:messages()
+	assert(
+		messages[#messages]
+			== "an agent proposes 1 change in src/a.txt (numbers): ] o goes to each, space o a accepts, space o r rejects",
+		messages[#messages]
+	)
+end)
+
+test("space o o lists a change that adds text by the text it adds", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local path = dir .. "/a.txt"
+	local buffer = greed.load(path)
+	greed.command({
+		name = "test-propose-insert",
+		run = function()
+			agent.propose_changes(
+				buffer,
+				path,
+				{ { from = 4, to = 4, text = "- added\n" } },
+				"memory"
+			)
+		end,
+	})
+	t:buffer("|x")
+	t:run("test-propose-insert")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "space o o lists them", 1, true), messages[#messages])
+	t:keys("space o o")
+	local list = t:floats()
+	assert(
+		string.find(table.concat(list, "\n"), "a.txt:2: + - added", 1, true),
+		table.concat(list, "\n")
+	)
+	t:keys("esc")
 end)

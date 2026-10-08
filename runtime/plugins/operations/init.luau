@@ -284,6 +284,17 @@ local function revert_what_remains(op: Operation): (number, number)
 	return put, left
 end
 
+-- Files `op` took back to what's on disk count as saved again, so they
+-- don't show as changed once its undo leaves them as they were.
+local function settle(op: Operation)
+	for _, file in op.files do
+		local buffer = greed.buffer_for(file.path)
+		if buffer and buffer:modified() and greed.fs.read(file.path) == buffer:text() then
+			buffer:reload()
+		end
+	end
+end
+
 --- Undoes `op` in every file it changed, as one step. When something was
 --- done on top of it since (or Greed restarted), it puts back the changes
 --- nobody edited since and leaves the rest. Returns whether it changed
@@ -295,6 +306,7 @@ function M.undo(op: Operation): (boolean, string?)
 	if not op.restored and op.status == "done" and greed.history.undo_group(op.id) then
 		op.status = "undone"
 		save()
+		settle(op)
 		return true, nil
 	end
 	local put, left = revert_what_remains(op)
@@ -304,6 +316,7 @@ function M.undo(op: Operation): (boolean, string?)
 	end
 	op.status = if left == 0 then "undone" else "partly undone"
 	save()
+	settle(op)
 	return true, if left > 0 then `left {count(left, "change")} edited since` else nil
 end
 

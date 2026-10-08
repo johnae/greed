@@ -165,10 +165,13 @@ session** and **Deny**; closing it, or leaving it five minutes, denies.
 `propose` takes a file and a list of edits, or several files each with its
 own, each edit replacing some exact text with new text. The old text is
 struck through in the buffer and the new text shows after it; when whole
-lines change, as in Claude Code's diffs, the new lines show under the old
-ones, with the words that changed picked out on both. Nothing changes
-until you decide, with the keys or by clicking `accept`, `reject` or `note`
-after each change:
+lines change, as in Claude Code's diffs (with or without the last line's
+newline), the new lines show under the old ones, with the words that
+changed picked out on both. A message says how many changes came in, in
+which file, and the keys to review them: in a file on screen, the keys
+that go to each change and decide; otherwise the key that lists them all.
+Nothing changes until you decide, with the keys or by clicking `accept`,
+`reject` or `note` after each change:
 
 | Keys | |
 |---|---|
@@ -186,7 +189,8 @@ broke without running the compiler. An agent that goes away while its
 proposal waits, like a Claude Code session you quit, takes the proposal
 with it: what's left of it is rejected. What you accept from one proposal is an
 operation (see [Using Greed](using.md#operations)): `space u u` undoes it in
-every file at once, and `space u o` reviews it.
+every file at once, and `space u o` reviews it. A file the undo takes back to
+what's saved no longer shows as changed.
 
 Side by side, the two panes scroll together, matching lines across the
 changes, and the right one keeps up as you edit, accept and reject.

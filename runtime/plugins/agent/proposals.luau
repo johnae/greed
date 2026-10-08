@@ -75,19 +75,32 @@ end
 
 -- The line to show the hunk's new lines under, when it replaces whole
 -- lines with whole lines (as diffs from Claude Code do): its last old
--- line, or the line before where the new ones go in.
-local function line_above(buffer: greed.Buffer, hunk: Hunk, at: Span): number?
+-- line, or the line before where the new ones go in. The second result
+-- says whether the old and new text end with their last line's newline;
+-- Claude Code sends both kinds.
+local function line_above(buffer: greed.Buffer, hunk: Hunk, at: Span): (number?, boolean)
 	local function line_start(pos: number): boolean
 		return pos == 0 or buffer:slice(pos - 1, pos) == "\n"
 	end
-	if not (line_start(at.from) and line_start(at.to) and string.sub(hunk.new, -1) == "\n") then
-		return nil
-	elseif at.to > at.from then
-		return buffer:line_of(at.to - 1)
-	elseif at.from > 0 then
-		return buffer:line_of(at.from - 1)
+	local function line_end(pos: number): boolean
+		return pos == buffer:len() or buffer:slice(pos, pos + 1) == "\n"
 	end
-	return nil
+	if not line_start(at.from) or hunk.new == "" then
+		return nil, false
+	elseif string.sub(hunk.new, -1) ~= "\n" then
+		-- Up to the end of a line, without its newline.
+		if at.to > at.from and line_end(at.to) then
+			return buffer:line_of(at.to), false
+		end
+		return nil, false
+	elseif not line_start(at.to) then
+		return nil, false
+	elseif at.to > at.from then
+		return buffer:line_of(at.to - 1), true
+	elseif at.from > 0 then
+		return buffer:line_of(at.from - 1), true
+	end
+	return nil, false
 end
 
 -- Letters, digits, "_" and anything outside ASCII.
@@ -146,12 +159,22 @@ end
 
 -- The marks showing whole new lines under `line`, with the words that
 -- changed picked out in old and new lines that pair up one to one.
-local function line_marks(buffer: greed.Buffer, hunk: Hunk, at: Span, line: number): { greed.Mark }
-	local new_lines = string.split(string.sub(hunk.new, 1, -2), "\n")
-	local old_text = buffer:slice(at.from, at.to)
-	local old_lines: { string } = if old_text == ""
-		then {}
-		else string.split(string.sub(old_text, 1, -2), "\n")
+-- `newline` says whether both texts end with their last line's newline.
+local function line_marks(
+	buffer: greed.Buffer,
+	hunk: Hunk,
+	at: Span,
+	line: number,
+	newline: boolean
+): { greed.Mark }
+	local function lines(text: string): { string }
+		if text == "" then
+			return {}
+		end
+		return string.split(if newline then string.sub(text, 1, -2) else text, "\n")
+	end
+	local new_lines = lines(hunk.new)
+	local old_lines = lines(buffer:slice(at.from, at.to))
 	local marks: { greed.Mark } = {}
 	local shown: { any } = table.clone(new_lines)
 	if #old_lines == #new_lines then
@@ -202,10 +225,10 @@ end
 local function draw(p: Proposal, hunk: Hunk, at: Span)
 	local buffer = p.buffer
 	buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
-	local line = line_above(buffer, hunk, at)
+	local line, newline = line_above(buffer, hunk, at)
 	local marks = buttons(at)
 	if line then
-		for _, mark in line_marks(buffer, hunk, at, line) do
+		for _, mark in line_marks(buffer, hunk, at, line, newline) do
 			table.insert(marks, mark)
 		end
 	else
@@ -452,11 +475,14 @@ greed.command({
 				local at = position(p, hunk)
 				if at then
 					local line = p.buffer:line_of(at.from) + 1
-					local first = string.match(hunk.old, "^[^\n]*")
-					table.insert(
-						items,
-						{ label = `{p.path}:{line}: {first}`, value = { p = p, at = at } }
-					)
+					-- What it replaces, or for text it adds, the text.
+					local first = if hunk.old == ""
+						then "+ " .. (string.match(hunk.new, "^[^\n]*") or "")
+						else string.match(hunk.old, "^[^\n]*")
+					table.insert(items, {
+						label = `{core.project.short(p.path)}:{line}: {first}`,
+						value = { p = p, at = at },
+					})
 				end
 			end
 		end
@@ -515,14 +541,34 @@ local function start(
 	return p
 end
 
+-- `files` as messages name them: the one file's path, short, or how many.
 local function where(files: { string }): string
-	return if #files == 1 then files[1] else `{#files} files`
+	return if #files == 1 then core.project.short(files[1]) else `{#files} files`
 end
 
--- Tells the user what came in to review.
+-- The keys that run `command` where you are, like "space o a", or else
+-- the command to type.
+local function keys_for(command: string): string
+	for _, binding in greed.keymap.active() do
+		if binding.command == command then
+			return binding.keys
+		end
+	end
+	return `:{command}`
+end
+
+-- Tells the user what came in to review, and the keys that review it: in
+-- a file on screen, the keys that go to each change and decide on it;
+-- otherwise the list of every change, which opens its file.
 local function announce(changes: number, files: { string }, reason: string?)
-	local why = if reason then `: {reason}` else ""
-	greed.echo(`an agent proposes {changes} changes to {where(files)}{why} - space o o to review`)
+	local count = if changes == 1 then "1 change" else `{changes} changes`
+	local why = if reason then ` ({reason})` else ""
+	local buffer = if #files == 1 then greed.buffer_for(files[1]) else nil
+	local how = if buffer and #buffer:views() > 0
+		then `{keys_for("proposal-next")} goes to each, {keys_for("proposal-accept")} accepts, `
+			.. `{keys_for("proposal-reject")} rejects`
+		else `{keys_for("proposals")} lists them`
+	greed.echo(`an agent proposes {count} in {where(files)}{why}: {how}`)
 end
 
 local M = {}
