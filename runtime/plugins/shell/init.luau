@@ -46,7 +46,7 @@ local data = require("@self/data")
 local ask = require("@self/ask")
 local tables = require("@self/tables")
 local rows = require("@self/rows")
-require("@self/complete")
+local completion = require("@self/complete")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -67,6 +67,12 @@ M.ask = ask
 M.tables = tables
 M.rows = rows
 M.jc = require("@self/jc")
+M.sources = require("@self/sources")
+M.completion = completion
+
+--- Completes the arguments of program `name` with `complete`, ahead of
+--- Cobra, fish, carapace and the program's help; see `sources.completer`.
+M.completer = M.sources.completer
 
 --- Reads the output of the commands `match` names (a program, or a pattern
 --- for the command line) as tables with `parse`, ahead of the shell's own
@@ -447,7 +453,7 @@ local HELP_KEYS = {
 		{ "enter", "run what's at the prompt; alt-enter starts another line" },
 		{ "up  down", "commands typed before, starting with what's typed" },
 		{ "ctrl-r", "pick a command typed before" },
-		{ "tab", "complete a program, a file, $3, buf: or @sel" },
+		{ "tab", "complete a program, its flags and arguments, a file, $3, buf:" },
 		{ "ctrl-c", "copy a selection, or interrupt the running block" },
 		{ "ctrl-t", "type into the running block's program" },
 		{ "ctrl-up  ctrl-down", "the block before or after the cursor" },
@@ -462,7 +468,7 @@ local HELP_KEYS = {
 		{ "enter", "run what's at the prompt; on a block, edit its command" },
 		{ "up  down", "commands typed before, starting with what's typed" },
 		{ "ctrl-r", "pick a command typed before" },
-		{ "tab", "complete a program, a file, $3, buf: or @sel" },
+		{ "tab", "complete a program, its flags and arguments, a file, $3, buf:" },
 		{ "ctrl-c", "interrupt the running block" },
 		{ "ctrl-t", "type into the running block's program" },
 		{ "[ p  ] p", "the block before or after the cursor (normal mode)" },
@@ -488,58 +494,104 @@ local function add_columns(lines: { string }, rows: { { string } })
 	end
 end
 
---- The page `help` prints: what the shell runs itself, what it reads in a
---- line, which shell runs the rest, and the keys in the style in use.
-function M.help(): string
+-- The lines of each part of `help` (parse.HELP_TOPICS), by topic.
+local TOPICS: { [string]: () -> { string } } = {
+	builtins = function()
+		local rows: { { string } } = {}
+		for _, name in parse.builtin_names() do
+			local builtin = parse.BUILTINS[name]
+			table.insert(rows, { builtin.usage, builtin.doc })
+		end
+		local lines = { "Run by the shell itself:" }
+		add_columns(lines, rows)
+		local program, carries = fallback.which()
+		local carry = if carries
+			then "cd and export there carry over"
+			else "cd and export there don't carry over"
+		table.insert(lines, "")
+		table.insert(
+			lines,
+			`Everything else runs in {program} ({carry}); :set shell-fallback picks another.`
+		)
+		return lines
+	end,
+	line = function()
+		local lines = { "Read by the shell in a line:" }
+		add_columns(lines, {
+			{ "$3 | cmd", "block 3's output as cmd's input; $3 alone shows it again" },
+			{ "buf:NAME | cmd", "a buffer's text as input; open buf:NAME shows it" },
+			{ "@sel | cmd", "the selection in the file you're in" },
+			{ "@file | cmd", "the file you're in" },
+			{ "cmd > buf:NAME", "cmd's output into a buffer; >> adds to it" },
+			{ "!cmd", "run cmd in a terminal from the start" },
+			{ "? question", "ask a model for a command, put at the prompt to run" },
+			{ "cmd ? question", "the same, starting from what's typed; or end with ?" },
+		})
+		return lines
+	end,
+	tables = function()
+		local lines = {
+			"/ on a block's output keeps the lines with what's typed (/ again for a regex);",
+			"in a table, COL=VALUE, COL~TEXT and COL>N look in a column.",
+			"",
+			"Run by the shell on a table, or on text to make one, after $3 |:",
+		}
+		local rows: { { string } } = {}
+		for _, stage in tables.STAGES do
+			table.insert(rows, { stage.usage, stage.doc })
+		end
+		add_columns(lines, rows)
+		return lines
+	end,
+	keys = function()
+		local style = core.style.current().name
+		local lines = { `Keys ({style} style):` }
+		add_columns(lines, if style == "vscode" then HELP_KEYS.vscode else HELP_KEYS.other)
+		return lines
+	end,
+}
+
+-- The topics' names, for saying which there are.
+local function topic_names(): string
 	local names: { string } = {}
-	for name in parse.BUILTINS do
-		table.insert(names, name)
+	for _, topic in parse.HELP_TOPICS do
+		table.insert(names, topic.name)
 	end
-	table.sort(names)
-	local builtins: { { string } } = {}
-	for _, name in names do
-		table.insert(builtins, { name, parse.BUILTINS[name] })
+	return table.concat(names, ", ")
+end
+
+--- The page `help` prints: what the shell runs itself and which shell runs
+--- the rest, what it reads in a line, tables, and the keys in the style in
+--- use; with `topic`, only that part. Nil for a topic it doesn't know.
+function M.help(topic: string?): string?
+	local lines: { string } = {}
+	for _, part in parse.HELP_TOPICS do
+		if topic == nil or topic == part.name then
+			if #lines > 0 then
+				table.insert(lines, "")
+			end
+			local more = TOPICS[part.name]()
+			table.move(more, 1, #more, #lines + 1, lines)
+		end
 	end
-	local program, carries = fallback.which()
-	local lines = { "Run by the shell itself:" }
-	add_columns(lines, builtins)
-	table.insert(lines, "")
-	table.insert(lines, "Read by the shell in a line:")
-	add_columns(lines, {
-		{ "$3 | cmd", "block 3's output as cmd's input; $3 alone shows it again" },
-		{ "buf:NAME | cmd", "a buffer's text as input; open buf:NAME shows it" },
-		{ "@sel | cmd", "the selection in the file you're in" },
-		{ "@file | cmd", "the file you're in" },
-		{ "cmd > buf:NAME", "cmd's output into a buffer; >> adds to it" },
-		{ "!cmd", "run cmd in a terminal from the start" },
-		{ "? question", "ask a model for a command, put at the prompt to run" },
-		{ "cmd ? question", "the same, starting from what's typed; or end with ?" },
-		{ "$3 | where COL > 2", "a table's rows passing a test: = != ~ !~ < > <= >=" },
-		{ "$3 | select A,B", "a table's columns A and B" },
-		{ "$3 | sort COL [-r]", "a table sorted by a column, numbers and ages as such" },
-		{ "$3 | columns", "text lined up in columns as a table; columns -H without a header" },
-		{ "$3 | from csv", "CSV as a table; from tsv, from json (or JSON lines) too" },
-		{ "$3 | split :", "each line cut at : into columns 1, 2, ...; lines: a line a row" },
-	})
-	table.insert(lines, "")
-	local carry = if carries
-		then "cd and export there carry over"
-		else "cd and export there don't carry over"
-	table.insert(
-		lines,
-		`Everything else runs in {program} ({carry}); :set shell-fallback picks another.`
-	)
-	table.insert(lines, "")
-	local style = core.style.current().name
-	table.insert(lines, `Keys ({style} style):`)
-	add_columns(lines, if style == "vscode" then HELP_KEYS.vscode else HELP_KEYS.other)
-	table.insert(lines, "")
-	table.insert(lines, "The shell page in Greed's docs has the rest.")
+	if #lines == 0 then
+		return nil
+	end
+	if topic == nil then
+		table.insert(lines, "")
+		table.insert(lines, `help TOPIC shows one part: {topic_names()}.`)
+		table.insert(lines, "The shell page in Greed's docs has the rest.")
+	end
 	return table.concat(lines, "\n") .. "\n"
 end
 
-run.builtins.help = function(shell: Shell, block: Block, _args: { string }): number
-	run.write(shell, block, M.help(), "stdout")
+run.builtins.help = function(shell: Shell, block: Block, args: { string }): number
+	local page = M.help(args[1])
+	if page == nil then
+		run.write(shell, block, `help: no topic {args[1]}; there's {topic_names()}\n`, "stderr")
+		return 1
+	end
+	run.write(shell, block, page, "stdout")
 	return 0
 end
 

@@ -858,6 +858,48 @@ end
 --- The comparisons `where` and a filter know.
 M.OPS = { "!=", "<=", ">=", "!~", "=", "~", "<", ">" }
 
+--- A stage the shell runs on a table after `$3 |`: how it's typed, what
+--- it does, and what its arguments are, for completion: "condition"
+--- (COL OP VALUE), "columns" (COL,...), "column" (COL and -r), "header"
+--- (-H), "format" (csv, tsv, json); nil for none.
+export type Stage = { name: string, usage: string, doc: string, args: string? }
+
+--- The stages, in the order `help` lists them.
+M.STAGES = {
+	{
+		name = "where",
+		usage = "where COL OP VALUE",
+		doc = "The rows passing a test: = != ~ !~ < > <= >=",
+		args = "condition",
+	},
+	{
+		name = "select",
+		usage = "select COL,...",
+		doc = "Only those columns, in that order",
+		args = "columns",
+	},
+	{
+		name = "sort",
+		usage = "sort COL [-r]",
+		doc = "Sorted by a column, from the greatest with -r",
+		args = "column",
+	},
+	{
+		name = "columns",
+		usage = "columns [-H]",
+		doc = "Text lined up in columns, under a header or with -H none",
+		args = "header",
+	},
+	{
+		name = "from",
+		usage = "from csv|tsv|json",
+		doc = "CSV, tab separated values, or JSON or JSON lines",
+		args = "format",
+	},
+	{ name = "split", usage = "split SEP", doc = "Each line cut at SEP into columns 1, 2, ..." },
+	{ name = "lines", usage = "lines", doc = "A row for each line, in a column `line`" },
+} :: { Stage }
+
 --- Whether `cell` (in a column of durations or not) passes `op` `value`:
 --- = and != without minding case, or as numbers when both are; ~ and !~
 --- for text in it; <, >, <= and >= as numbers when both are, else as text.

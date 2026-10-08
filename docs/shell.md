@@ -62,7 +62,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `alt-enter` | Another line at the prompt |
 | `up` `down` | At the prompt: the commands typed before that start with what's typed |
 | `ctrl-r` | Pick a command typed before, in any shell |
-| `tab` | Complete a program, a file or folder, a variable, `$3`, `buf:` or `@sel` |
+| `tab` | Complete a program, its arguments and flags, a file or folder, a variable, `$3`, `buf:` or `@sel` |
 | `ctrl-c` | Interrupt the running block |
 | `ctrl-t` | Type into the running block's program, in a terminal in the shell's place |
 | `[ p` `] p` | The block before or after the cursor |
@@ -97,7 +97,7 @@ The shell runs a few commands itself:
 | `history` | The commands typed before |
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
-| `help` | What works here, and the keys in the style you use |
+| `help [TOPIC]` | What works here, and the keys in the style you use; a topic for one part |
 
 Every other line goes to your shell, so `ls` and `ls | head` behave the
 same: your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and
@@ -186,13 +186,14 @@ api-7d9f8b6c5-9wlmn   1/1     Running   3 (3d16h ago)   5d2h
 ```
 
 A table also goes to the next command through `$`, where the shell itself
-runs these on it, each making a new table:
+runs these on it, each making a new table, as in `$3 | where STATUS =
+Running`:
 
 | | |
 |---|---|
-| `$3 \| where STATUS = Running` | The rows passing a test: `=`, `!=`, `~` (has in it), `!~`, `<`, `>`, `<=`, `>=` |
-| `$3 \| select NAME,AGE` | Only those columns, in that order |
-| `$3 \| sort AGE` | Sorted by a column; `sort AGE -r` from the greatest |
+| `where COL OP VALUE` | The rows passing a test: = != ~ !~ < > <= >= |
+| `select COL,...` | Only those columns, in that order |
+| `sort COL [-r]` | Sorted by a column, from the greatest with -r |
 
 Column names don't mind case, and `container_id` names `CONTAINER ID`.
 Numbers are compared as numbers, with sizes (`512Mi`, `1.5G`, `250m` of a
@@ -221,15 +222,18 @@ what it printed.
 
 ### Saying what it is
 
-When the shell finds no table, say how to read the output:
+When the shell finds no table, say how to read the output, as in `$3 |
+from csv`:
 
 | | |
 |---|---|
-| `$3 \| columns` | Text lined up in columns under a header; `columns -H` without one, the columns named `1`, `2`, ... |
-| `$3 \| from csv` | CSV, its first line naming the columns; `from tsv` for tab separated values |
-| `$3 \| from json` | JSON, or JSON lines (an object on each line, as many logs are) |
-| `$3 \| split :` | Each line cut at `:` into columns `1`, `2`, ... (`/etc/passwd`) |
-| `$3 \| lines` | A row for each line, in a column `line` |
+| `columns [-H]` | Text lined up in columns, under a header or with -H none |
+| `from csv\|tsv\|json` | CSV, tab separated values, or JSON or JSON lines |
+| `split SEP` | Each line cut at SEP into columns 1, 2, ... |
+| `lines` | A row for each line, in a column `line` |
+
+`columns -H` names the columns `1`, `2`, ..., as `split` does, and `from
+json` reads JSON lines too, an object on each line, as many logs are.
 
 They make tables like any other, for `where`, `select` and `sort`:
 `$3 | split : | where 7 ~ zsh | select 1`. A buffer or the selection
@@ -264,10 +268,48 @@ sets them up. Without one, a block says why.
 The commands you type at every shell are kept in your data folder
 (`~/.local/share/greed/shell/history.jsonl`), the last
 `shell-history-size` (5000) of them, so `up` and `ctrl-r` find them in
-every session. `tab` completes programs on your `PATH` and the builtins as
-a command's first word, files and folders from the shell's folder after
-it, variables and earlier blocks after `$`, buffers after `buf:`, and
-`@sel` and `@file`. An agent's commands aren't kept.
+every session. An agent's commands aren't kept.
+
+`tab` completes what fits where the cursor is. What the shell itself
+knows is marked `greed` in the menu, with what it does beside it:
+
+- A command's first word: the builtins and the programs on your `PATH`;
+  after `$3 |`, the stages too.
+- A builtin's arguments: folders after `cd`, files and buffers after
+  `open`, variables after `export` and `unset`, topics after `help`.
+- A stage's: the columns of the table it reads (`$3 | where `), then the
+  comparisons, then the values in that column; `from`'s formats.
+- `$` for variables and earlier blocks, `buf:` for buffers, and `@sel`
+  and `@file`.
+
+A program's arguments come from what knows them, the first that answers:
+a completer a plugin added for the program; the program itself when it's
+built with Cobra (kubectl, helm, gh, docker, flux, argocd, and any other
+with Cobra's completion inside); fish's completions when fish is
+installed; carapace's when it is; and for a flag, the program's man page,
+read from the file. Last, when you press `tab` on a flag, what the
+program prints for `--help` (and for a subcommand its help lists, that
+one's). Files and folders when none of them knows, or the program says
+files fit.
+
+```text
+~/s/app ❯ kubectl get po
+  pods                  Pod
+  podtemplates          PodTemplate
+  poddisruptionbudgets  PodDisruptionBudget
+```
+
+The programs asked run in the background, in the shell's folder with its
+variables, for at most `shell-completion-timeout` (2000) milliseconds;
+typing on stops one that's no longer needed, and an answer is kept a few
+seconds, so typing more of a word narrows it without asking again. Your
+program runs only for `--help`: a Cobra program is asked with its
+`__complete` command, the way every shell asks it, and whether a program
+is Cobra's is found by looking inside it. `:set shell-help-completion
+never` stops `--help` from running at all, and `shell-help-never` lists
+programs it never runs for (`reboot`, `shutdown` and the like).
+`shell-completion-sources` (`cobra fish carapace man help`) says which
+sources to ask, in order.
 
 ## Agents
 

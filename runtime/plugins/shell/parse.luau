@@ -9,17 +9,62 @@
 
 local M = {}
 
---- The commands the shell runs itself.
+--- A command the shell runs itself: how it's typed, what it does, and
+--- what its arguments are, for completion: "folder", "path" (files and
+--- `buf:` buffers), "assignment" (NAME=VALUE), "variable" or "topic" (of
+--- `help`); nil for none. `help`, completion and the shell's page in the
+--- docs all show these.
+export type Builtin = { usage: string, doc: string, args: string? }
+
+--- The commands the shell runs itself, by name.
 M.BUILTINS = {
-	cd = "Change the shell's folder: a path, `-` for the one before, nothing for home",
-	export = "Set environment variables for the commands after: NAME=VALUE ...",
-	unset = "Leave environment variables out of the commands after: NAME ...",
-	env = "List the variables this shell sets or leaves out",
-	history = "List the commands typed before",
-	clear = "Take the finished blocks away",
-	open = "Open files or buffers in the editor: PATH or buf:NAME ...",
-	help = "What works here: these, what a line can hold, and the keys",
-} :: { [string]: string }
+	cd = {
+		usage = "cd [DIR]",
+		doc = "Change the shell's folder: a path, `-` for the one before, nothing for home",
+		args = "folder",
+	},
+	export = {
+		usage = "export NAME=VALUE ...",
+		doc = "Set variables for the commands after",
+		args = "assignment",
+	},
+	unset = {
+		usage = "unset NAME ...",
+		doc = "Leave variables out of the commands after",
+		args = "variable",
+	},
+	env = { usage = "env", doc = "List the variables this shell sets or leaves out" },
+	history = { usage = "history", doc = "The commands typed before" },
+	clear = { usage = "clear", doc = "Take the finished blocks away" },
+	open = {
+		usage = "open PATH ...",
+		doc = "Open files, or `buf:NAME` buffers, in the editor",
+		args = "path",
+	},
+	help = {
+		usage = "help [TOPIC]",
+		doc = "What works here, and the keys in the style you use; a topic for one part",
+		args = "topic",
+	},
+} :: { [string]: Builtin }
+
+--- The parts of `help`, each a topic `help TOPIC` shows alone.
+M.HELP_TOPICS = {
+	{ name = "builtins", about = "what the shell runs itself" },
+	{ name = "line", about = "what the shell reads in a line" },
+	{ name = "tables", about = "filtering blocks, and tables after $3 |" },
+	{ name = "keys", about = "the keys in the style you use" },
+}
+
+--- The builtins' names, in order.
+function M.builtin_names(): { string }
+	local names: { string } = {}
+	for name in M.BUILTINS do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	return names
+end
 
 --- What a line asks for.
 --- - "empty": nothing but spaces.

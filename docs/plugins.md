@@ -680,13 +680,18 @@ greed.tab.set_layout({
   With `paths = { dirs = true, choose = function(path) ... end }`, typing a
   path lists the folder's contents, and `tab` completes one into the query.
 - The completion menu asks sources before the language server, in any
-  buffer, a file or not: `require("@lsp").completion.source(function(view)
-  ... end)` returns items like `{ label = "src/", text = "src/", from = 12
-  }` (`from` is where the text it replaces starts; the word before the
-  cursor by default), or nil to leave it to the next source. The shell
-  completes its prompt this way. A plugin that binds `tab`, `enter` or the
-  arrows for typing in its own kind of buffer calls
-  `completion.keys_over(kind)` so the menu keeps those keys while it's open.
+  buffer, a file or not: `require("@lsp").completion.source(function(view,
+  ask) ... end)` returns items like `{ label = "src/", text = "src/", from
+  = 12 }` (`from` is where the text it replaces starts; the word before the
+  cursor by default), or nil to leave it to the next source. `detail`
+  shows dimmed after the label and `badge` before it, a word saying whose
+  it is (the shell's own things say `greed`). `ask.explicit` is true when
+  you asked with `tab` or `ctrl-space` rather than by a pause in typing. A
+  source can wait, for a program say; its answer is dropped if more was
+  typed meanwhile. The shell completes its prompt this way. A plugin that
+  binds `tab`, `enter` or the arrows for typing in its own kind of buffer
+  calls `completion.keys_over(kind)` so the menu keeps those keys while
+  it's open.
 - The theme maps style names to looks, as in
   `greed.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those
@@ -1120,6 +1125,34 @@ greed.command({
 		end
 	end,
 })
+```
+
+`shell.completer(name, complete)` completes program `name`'s arguments
+at a shell's prompt, ahead of Cobra, fish, carapace and the program's
+help. `complete(request)` gets the command's `words` (the program first,
+the word being completed last), its `line` so far, the `cwd` and `env` it
+would run with, and `explicit` (you pressed `tab`), and returns candidates
+as text or `{ text, detail }`, or nil to leave it to the other sources. It
+can run programs; `shell.sources.run(name, argv, cwd, env)` runs one the
+way the shell's sources do, stopped by a newer run of the same name and
+by `shell-completion-timeout`.
+
+```luau
+local shell = require("@shell")
+
+-- `deploy ENV`: the environments are the folders under deploy/.
+shell.completer("deploy", function(request)
+	if #request.words ~= 2 then
+		return nil
+	end
+	local found = {}
+	for _, entry in greed.fs.list(request.cwd .. "/deploy") or {} do
+		if entry.dir then
+			table.insert(found, { text = entry.name, detail = "environment" })
+		end
+	end
+	return found
+end)
 ```
 
 ## The command line

@@ -28,12 +28,19 @@ local M = {}
 
 --- Something that could go at the cursor: `label` in the menu, `text` put
 --- in place of what's typed from `from` (the start of the word typed, by
---- default) to the cursor.
-export type Item = { label: string, detail: string?, text: string, from: number? }
+--- default) to the cursor. `detail` says what it is, dimmed after the
+--- label, and `badge`, a word before the detail, whose it is, like a
+--- shell's "greed" for its own commands.
+export type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
+
+--- How the menu was asked for: `explicit` when you asked (tab,
+--- ctrl-space), not by a pause in typing.
+export type Ask = { explicit: boolean }
 
 --- Says what could go at the cursor in a view, or nil to leave it to the
---- next source and then the language server.
-export type Source = (view: greed.View) -> { Item }?
+--- next source and then the language server. It can wait, as for a
+--- program's answer; one that comes after more typing is dropped.
+export type Source = (view: greed.View, ask: Ask) -> { Item }?
 
 local sources: { Source } = {}
 
@@ -147,22 +154,37 @@ end
 local function render(o: Open)
 	local typed = o.buffer:slice(start_of(o), o.view:cursor())
 	local labels = {}
-	local width = 0
+	local width, badges = 0, 0
 	for i, index in o.matches do
 		if i > SHOWN then
 			break
 		end
-		local label = o.items[index].label
-		table.insert(labels, label)
-		width = math.max(width, #label)
+		local item = o.items[index]
+		table.insert(labels, item.label)
+		width = math.max(width, core.text.width(item.label))
+		badges = math.max(badges, if item.badge then core.text.width(item.badge) else 0)
 	end
 	local lines, marks = {}, {}
 	local from = 0
 	for i, label in labels do
 		local item = o.items[o.matches[i]]
-		local line = ` {label}{string.rep(" ", width - #label)}`
+		local line = ` {label}{string.rep(" ", width - core.text.width(label))}`
+		local badge = item.badge
+		if badges > 0 then
+			local at = #line + 2
+			local shown = badge or ""
+			line ..= `  {shown}{string.rep(" ", badges - core.text.width(shown))}`
+			if badge then
+				table.insert(
+					marks,
+					{ from = from + at, to = from + at + #badge, style = "ui.menu.badge" }
+				)
+			end
+		end
 		if item.detail then
+			local at = #line + 2
 			line ..= `  {item.detail}`
+			table.insert(marks, { from = from + at, to = from + #line, style = "ui.menu.doc" })
 		end
 		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(typed, label), 1)
 		table.insert(lines, line)
@@ -243,17 +265,35 @@ end
 
 -- Asks the sources, then the server, what could go at the cursor in
 -- `view`, and opens the menu if anything matches. `wanted` is the
--- generation the ask was for.
-local function ask(view: greed.View, wanted: number)
+-- generation the ask was for, and `explicit` whether it was asked for.
+local function ask(view: greed.View, wanted: number, explicit: boolean)
 	local mode = greed.mode.get()
 	local buffer = view:buffer()
 	if not TYPING[mode] then
 		return
 	end
+	-- What's before the cursor on its line: when a source took a while and
+	-- that's still the same, nothing was typed meanwhile, though the
+	-- buffer may have changed around it, like a shell's output above,
+	-- moving the cursor along.
+	local function before_cursor(): string
+		local pos = view:cursor()
+		return buffer:slice(buffer:line_start(buffer:line_of(pos)), pos)
+	end
+	local typed, asked_at = before_cursor(), view:cursor()
 	for _, source in table.clone(sources) do
-		local answered, items = pcall(source, view)
+		local answered, items = pcall(source, view, { explicit = explicit })
 		if answered and items then
-			if wanted == generation() and greed.mode.get() == mode then
+			local current = wanted == generation() or (mine() == nil and before_cursor() == typed)
+			if current and greed.mode.get() == mode and view:valid() then
+				local moved = view:cursor() - asked_at
+				if moved ~= 0 then
+					for _, item in items do
+						if item.from then
+							item.from += moved
+						end
+					end
+				end
 				show(view, items)
 			end
 			return
@@ -312,7 +352,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	-- The view typed into may have closed meanwhile, like the command line
 	-- on enter; only the one still focused gets asked about.
 	if wanted == generation() and mine() == nil and greed.view() == view then
-		ask(view, wanted)
+		ask(view, wanted, false)
 	end
 end)
 
@@ -320,7 +360,7 @@ greed.command({
 	name = "completion-ask",
 	doc = "Ask the language server what could go at the cursor",
 	run = function(ctx)
-		ask(ctx.view, next_generation())
+		ask(ctx.view, next_generation(), true)
 	end,
 })
 

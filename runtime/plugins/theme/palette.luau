@@ -95,6 +95,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.menu.selected"] = { bg = p.selection, fg = p.fg },
 		["ui.menu.match"] = { fg = p.yellow, bold = true },
 		["ui.menu.doc"] = { fg = p.comment },
+		["ui.menu.badge"] = { fg = accent },
 		["ui.button"] = { bg = p.bg_high, fg = p.fg, gui = { badge = true } },
 		["ui.signature.parameter"] = { fg = p.yellow, bold = true },
 		["ui.search.match"] = { bg = p.yellow, fg = p.bg },

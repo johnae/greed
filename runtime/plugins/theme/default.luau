@@ -42,6 +42,7 @@ return {
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },
 	["ui.menu.doc"] = { dim = true },
+	["ui.menu.badge"] = { fg = "cyan" },
 	["ui.button"] = { bg = "bright-black", fg = "bright-white", gui = { badge = true } },
 	["ui.signature.parameter"] = { fg = "yellow", bold = true },
 	["ui.search.match"] = { bg = "yellow", fg = "black" },
