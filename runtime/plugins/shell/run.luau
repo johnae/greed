@@ -26,13 +26,20 @@ greed.option.define({
 -- frame's worth at a time.
 local FRAME_MS = 16
 
+type Piece = { text: string, stream: string }
+
 -- What a running block printed and hasn't been drawn yet, and its record
 -- as pieces until it's done.
 type Pending = {
 	-- Pieces not drawn yet, and those of the line being printed.
-	pieces: { { text: string, stream: string } },
-	partial: { { text: string, stream: string } },
+	pieces: { Piece },
+	partial: { Piece },
+	-- Whether a draw is due, under way, and whether more came in meanwhile.
+	due: boolean,
 	drawing: boolean,
+	stale: boolean,
+	-- How it exited, once it did: it finishes after the last draw.
+	exit: { code: number?, signal: string? }?,
 	-- The record, in pieces, each kind up to the limit, and past it the
 	-- whole output for the spill file.
 	output: { string },
@@ -52,7 +59,10 @@ local function pending_of(block: Block): Pending
 	local p: Pending = {
 		pieces = {},
 		partial = {},
+		due = false,
 		drawing = false,
+		stale = false,
+		exit = nil,
 		output = {},
 		stdout = {},
 		stderr = {},
@@ -64,9 +74,8 @@ local function pending_of(block: Block): Pending
 end
 
 -- Adds `text` to the record's `kind` ("output", "stdout" or "stderr") up
--- to the limit.
-local function keep(p: Pending, block: Block, kind: string, text: string)
-	local limit = greed.option.get("shell-max-record") :: number
+-- to `limit` bytes.
+local function keep(p: Pending, block: Block, kind: string, text: string, limit: number)
 	local size = p.sizes[kind]
 	local list: { string } = (p :: any)[kind]
 	if size + #text <= limit then
@@ -84,14 +93,15 @@ end
 --- record, without drawing it.
 function M.record(block: Block, text: string, stream: string)
 	local p = pending_of(block)
+	local limit = greed.option.get("shell-max-record") :: number
 	local spilled = p.spill
 	if spilled then
 		table.insert(spilled, text)
-	elseif p.sizes.output + #text > (greed.option.get("shell-max-record") :: number) then
+	elseif p.sizes.output + #text > limit then
 		p.spill = { table.concat(p.output), text }
 	end
-	keep(p, block, "output", text)
-	keep(p, block, if stream == "stderr" then "stderr" else "stdout", text)
+	keep(p, block, "output", text, limit)
+	keep(p, block, if stream == "stderr" then "stderr" else "stdout", text, limit)
 end
 
 --- The record so far: `block.output`, `stdout` and `stderr` are filled in
@@ -115,7 +125,14 @@ end
 
 -- A line made of `pieces`, with what came on stderr styled as errors. A
 -- carriage return starts the line over, as on a terminal.
-local function line_of(pieces: { { text: string, stream: string } }): Line
+local function line_of(pieces: { Piece }): Line
+	if
+		#pieces == 1
+		and pieces[1].stream ~= "stderr"
+		and not string.find(pieces[1].text, "[\r\27]")
+	then
+		return { text = pieces[1].text }
+	end
 	local parts: { string } = {}
 	local marks: { greed.Mark } = {}
 	local at = 0
@@ -143,73 +160,60 @@ end
 
 -- Draws what `block` printed since last time: whole lines join the
 -- output, and the line being printed shows until it's done (or, with
--- `final`, for good).
+-- `final`, for good). Lines the block would leave out anyway aren't made
+-- into lines at all, so a flood of output costs little more than its
+-- record.
 local function draw(shell: Shell, block: Block, final: boolean)
 	local p = pending[block.uid]
 	if p == nil then
 		return
 	end
-	local lines: { Line } = {}
-	local current = p.partial
-	for _, piece in p.pieces do
-		local start = 1
-		while true do
-			local stop = string.find(piece.text, "\n", start, true)
-			if stop == nil then
-				if start <= #piece.text then
-					table.insert(
-						current,
-						{ text = string.sub(piece.text, start), stream = piece.stream }
-					)
-				end
-				break
-			end
-			if stop > start then
-				table.insert(
-					current,
-					{ text = string.sub(piece.text, start, stop - 1), stream = piece.stream }
-				)
-			end
-			table.insert(lines, line_of(current))
-			current = {}
-			start = stop + 1
-		end
-	end
+	local pieces = p.pieces
 	p.pieces = {}
+	-- Each whole line: its pieces, or for the many made of one piece, that
+	-- piece's text and stream.
+	local texts: { string } = {}
+	local streams: { string } = {}
+	local joined: { [number]: { Piece } } = {}
+	local current = p.partial
+	local function close(text: string, stream: string)
+		if #current == 0 then
+			table.insert(texts, text)
+			table.insert(streams, stream)
+			return
+		end
+		if text ~= "" then
+			table.insert(current, { text = text, stream = stream })
+		end
+		table.insert(texts, "")
+		table.insert(streams, "")
+		joined[#texts] = current
+		current = {}
+	end
+	for _, piece in pieces do
+		local parts = string.split(piece.text, "\n")
+		for i, part in parts do
+			if i < #parts then
+				close(part, piece.stream)
+			elseif part ~= "" then
+				table.insert(current, { text = part, stream = piece.stream })
+			end
+		end
+	end
+	if final and #current > 0 then
+		close("", "stdout")
+	end
 	p.partial = current
-	local volatile: { Line } = {}
-	if #current > 0 then
-		if final then
-			table.insert(lines, line_of(current))
-			p.partial = {}
-		else
-			table.insert(volatile, line_of(current))
+	local count = #texts
+	local fill, skip = log.room(block, count)
+	local lines: { Line } = {}
+	for i = 1, count do
+		if i <= fill or i > fill + skip then
+			table.insert(lines, line_of(joined[i] or { { text = texts[i], stream = streams[i] } }))
 		end
 	end
-	log.update(shell, block, lines, volatile)
-end
-
---- Adds what `block` printed to its record, and draws it soon.
-function M.write(shell: Shell, block: Block, text: string, stream: string)
-	M.record(block, text, stream)
-	local p = pending_of(block)
-	table.insert(p.pieces, { text = text, stream = stream })
-	if p.drawing then
-		return
-	end
-	p.drawing = true
-	greed.spawn(function()
-		greed.sleep(FRAME_MS)
-		p.drawing = false
-		if block.status == "running" then
-			draw(shell, block, false)
-		end
-	end)
-end
-
---- Draws everything `block` printed, for good.
-function M.flush(shell: Shell, block: Block)
-	draw(shell, block, true)
+	local volatile: { Line } = if #current > 0 then { line_of(current) } else {}
+	log.update(shell, block, lines, volatile, skip)
 end
 
 -- Called with each block that finishes.
@@ -238,13 +242,8 @@ local function spill(block: Block, p: Pending)
 	end
 end
 
---- Ends `block`: how it exited (a code, or the signal that ended it),
---- with what it printed drawn for good.
-function M.finish(shell: Shell, block: Block, code: number?, signal: string?)
-	if block.status ~= "running" then
-		return
-	end
-	M.flush(shell, block)
+-- Ends `block`, whose output is all drawn.
+local function complete(shell: Shell, block: Block, code: number?, signal: string?)
 	local p = pending[block.uid]
 	if p then
 		M.fill(block)
@@ -265,6 +264,68 @@ function M.finish(shell: Shell, block: Block, code: number?, signal: string?)
 		pcall(call, shell, block)
 	end
 	block.done:send(block)
+end
+
+-- Draws `block` until nothing more came in meanwhile, and ends it once it
+-- exited. A draw's time slice can run out partway and another start on the
+-- half-drawn block; that one leaves it to the first.
+local function pump(shell: Shell, block: Block)
+	local p = pending[block.uid]
+	if p == nil then
+		return
+	end
+	if p.drawing then
+		p.stale = true
+		return
+	end
+	p.drawing = true
+	local ok, err = pcall(function()
+		repeat
+			p.stale = false
+			draw(shell, block, p.exit ~= nil)
+		until not p.stale
+	end)
+	p.drawing = false
+	if not ok then
+		error(err, 0)
+	end
+	local exit = p.exit
+	if exit and block.status == "running" then
+		complete(shell, block, exit.code, exit.signal)
+	end
+end
+
+--- Adds what `block` printed to its record, and draws it soon.
+function M.write(shell: Shell, block: Block, text: string, stream: string)
+	M.record(block, text, stream)
+	local p = pending_of(block)
+	table.insert(p.pieces, { text = text, stream = stream })
+	if p.due then
+		return
+	end
+	p.due = true
+	greed.spawn(function()
+		greed.sleep(FRAME_MS)
+		p.due = false
+		if block.status == "running" then
+			pump(shell, block)
+		end
+	end)
+end
+
+--- Ends `block`: how it exited (a code, or the signal that ended it),
+--- once what it printed is drawn for good.
+function M.finish(shell: Shell, block: Block, code: number?, signal: string?)
+	if block.status ~= "running" then
+		return
+	end
+	local p = pending[block.uid]
+	if p == nil then
+		complete(shell, block, code, signal)
+		return
+	end
+	p.exit = { code = code, signal = signal }
+	pump(shell, block)
 end
 
 --- Ends `block` as one that couldn't run, saying why.

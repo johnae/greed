@@ -79,17 +79,23 @@ end)
 
 test("a failing command says how it ended, beside its command", function(t)
 	local sh = open(t, t:tempdir())
-	local block = finished(t, type_line(t, sh, "sh -c 'echo out; echo err >&2; exit 3'"))
-	assert(block.status == "failed" and block.code == 3, `{block.status} {block.code}`)
-	assert(block.via == "argv" and block.runner == "pipe", block.via)
-	assert(block.stdout == "out\n" and block.stderr == "err\n", block.stderr)
-	assert(string.find(status(sh, block), "✗ exit 3", 1, true), status(sh, block))
+	local typed = finished(t, type_line(t, sh, "sh -c 'echo out; echo err >&2; exit 3'"))
+	assert(typed.status == "failed" and typed.code == 3, `{typed.status} {typed.code}`)
+	assert(typed.via == "argv" and typed.runner == "pty", typed.runner)
+	-- In a pseudo terminal what it prints comes merged, in order.
+	assert(typed.output == "out\nerr\n", typed.output)
+	assert(string.find(status(sh, typed), "✗ exit 3", 1, true), status(sh, typed))
 	local sign = false
-	for _, mark in marks(sh, block) do
+	for _, mark in marks(sh, typed) do
 		sign = sign or mark.sign == "✗"
 	end
 	assert(sign, "a sign beside it")
-	-- What it printed as errors is styled as errors.
+	-- Through a pipe, as agents run commands, errors come apart and are
+	-- styled as errors.
+	local line = "sh -c 'echo out; echo err >&2; exit 3'"
+	local block = finished(t, assert(shell.run(sh, line, { runner = "pipe" })))
+	assert(block.runner == "pipe" and block.code == 3, block.runner)
+	assert(block.stdout == "out\n" and block.stderr == "err\n", block.stderr)
 	local styled = {}
 	for _, mark in sh.buffer:decorations(`shell.out.{block.uid}`) do
 		if mark.style == "shell.stderr" then
@@ -306,6 +312,22 @@ test("long output keeps its first and last lines, and the record spills to a fil
 	assert(#whole == 3893 and string.sub(whole, -5) == "1000\n", tostring(#whole))
 	-- What's shown stays within the cap either way.
 	assert(sh.buffer:line_count() < 40, tostring(sh.buffer:line_count()))
+end)
+
+test("a flood of output through a pipe keeps its first and last lines", function(t)
+	greed.option.set("shell-max-lines", 10)
+	local sh = open(t, t:tempdir())
+	local block = finished(t, assert(shell.run(sh, "seq 1 100000", { runner = "pipe" })))
+	assert(block.lines == 100000 and block.omitted == 99990, `{block.lines} {block.omitted}`)
+	local shown = {}
+	for line = 1, 10 do
+		table.insert(shown, sh.buffer:line_text(line))
+	end
+	assert(
+		table.concat(shown, " ") == "1 2 3 4 5 99996 99997 99998 99999 100000",
+		table.concat(shown, " ")
+	)
+	assert(string.sub(block.output, -7) == "100000\n")
 end)
 
 test("two clients each wrap a block at their own width", function(t)

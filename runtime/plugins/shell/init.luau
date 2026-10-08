@@ -7,14 +7,17 @@
 --   [ p  ] p    the block before or after the cursor
 --   g o         select the block's output
 --   ctrl-c      interrupt the running block (vscode style: copy a selection)
+--   ctrl-t      type into the running block's program, in a terminal
 --   space r     run the block again, as it ran; space R here and now
 --   space y/Y   copy its output / its command
 --   space x     stop it; space v opens its whole output; space c clears
 --
 -- The shell runs `cd`, `export`, `unset`, `env`, `history`, `clear` and
 -- `open` itself, and starts a program with plain arguments on its own;
--- lines with pipes, globs or variables go to a real shell. Each shell has
--- its own folder and variables, and a project can have several.
+-- lines with pipes, globs or variables go to a real shell. Programs run in
+-- a pseudo terminal (pty.luau), handed to a terminal when they want one;
+-- an agent's run through a pipe. Each shell has its own folder and
+-- variables, and a project can have several.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -24,6 +27,7 @@ local parse = require("@self/parse")
 local state = require("@self/state")
 local log = require("@self/log")
 local run = require("@self/run")
+local pty = require("@self/pty")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -37,10 +41,7 @@ local LANGUAGE = "greed-shell"
 M.parse = parse
 M.log = log
 M.runners = run
-
--- The view each block was run from, by its uid: where a handoff shows,
--- and whose client sizes a pseudo terminal.
-local views: { [number]: greed.View } = {}
+M.pty = pty
 
 --- The shell shown in `buffer`, if it's one.
 M.of = state.of
@@ -170,6 +171,10 @@ export type RunOptions = {
 	env: { [string]: string | false }?,
 	--- The view it was typed in, where a handoff shows.
 	view: greed.View?,
+	--- How programs run: "pty" (a pseudo terminal, the default for the
+	--- user's commands) or "pipe" (output and errors apart, the default
+	--- for an agent's).
+	runner: ("pty" | "pipe")?,
 }
 
 -- A new block for `command` in `shell`, running.
@@ -192,6 +197,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		signal = nil,
 		status = "running",
 		handed = false,
+		waiting = false,
 		output = "",
 		stdout = "",
 		stderr = "",
@@ -214,8 +220,27 @@ local function clear(shell: Shell)
 	for _, block in table.clone(shell.blocks) do
 		if block.status ~= "running" then
 			log.remove(shell, block)
-			views[block.uid] = nil
+			state.views[block.uid] = nil
 		end
+	end
+end
+
+-- Starts `argv` for `block`: in a pseudo terminal, handed to a terminal
+-- right away for a line typed with `!`, or through a pipe for an agent or
+-- when asked.
+local function start(
+	shell: Shell,
+	block: Block,
+	argv: { string },
+	opts: RunOptions,
+	handoff: boolean
+)
+	local runner = opts.runner or (if block.by == "agent" then "pipe" else "pty")
+	if runner == "pipe" and not handoff then
+		block.runner = "pipe"
+		run.pipe(shell, block, argv)
+	else
+		pty.start(shell, block, argv, { terminal = handoff })
 	end
 end
 
@@ -236,7 +261,7 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	shell.count += 1
 	local block = new_block(shell, command, opts)
 	if opts.view then
-		views[block.uid] = opts.view
+		state.views[block.uid] = opts.view
 	end
 	log.add(shell, block)
 	tick(shell)
@@ -245,14 +270,13 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	elseif parsed.kind == "builtin" then
 		run.builtin(shell, block, parsed.name :: string, parsed.args or {})
 	elseif parsed.kind == "argv" then
-		block.runner = "pipe"
 		block.via = "argv"
-		run.pipe(shell, block, run.program(parsed.argv :: { string }, block.cwd))
+		local argv = run.program(parsed.argv :: { string }, block.cwd)
+		start(shell, block, argv, opts, parsed.terminal)
 	else
-		block.runner = "pipe"
 		block.via = "shell"
 		block.program = "sh"
-		run.pipe(shell, block, { "sh", "-c", parsed.line })
+		start(shell, block, { "sh", "-c", parsed.line }, opts, parsed.terminal)
 	end
 	return block
 end
@@ -490,6 +514,18 @@ block_command(
 	running_target
 )
 
+block_command(
+	"shell-handoff",
+	"Show the running block's program in a terminal, to type into it",
+	function(_shell, block)
+		local job = block.job
+		if job == nil or job.handoff == nil or not job.handoff() then
+			greed.echo("only a program running in a pseudo terminal can be typed into")
+		end
+	end,
+	running_target
+)
+
 greed.command({
 	name = "shell-copy-or-interrupt",
 	doc = "Copy the selection, or with nothing selected interrupt the running block",
@@ -600,7 +636,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	state.shells[event.id] = nil
 	for _, block in shell.blocks do
 		M.kill(block)
-		views[block.uid] = nil
+		state.views[block.uid] = nil
 	end
 	log.forget(shell)
 end)
@@ -634,6 +670,7 @@ for _, action in
 		{ "copy command", "shell-copy-command", "Copy its command" },
 		{ "interrupt", "shell-interrupt", "Interrupt it" },
 		{ "kill", "shell-kill", "Stop it for good" },
+		{ "type into it", "shell-handoff", "Show its program in a terminal" },
 		{ "open output", "shell-output-open", "Open its whole output in a buffer" },
 	}
 do
@@ -651,11 +688,16 @@ core.file.running("shells", function()
 	return found
 end)
 
+-- Coming back from a terminal a program was handed to, the prompt takes
+-- typing again.
+core.style.typing_kind(KIND)
+
 greed.keymap.bind({ layer = "leader" }, { ["o s"] = "pick-shell" })
 greed.keymap.bind({ role = "typing", kind = KIND }, {
 	enter = "shell-enter",
 	["alt-enter"] = "insert-newline",
 	["ctrl-c"] = "shell-interrupt",
+	["ctrl-t"] = "shell-handoff",
 })
 -- In the vscode style ctrl-c copies a selection, and blocks are a ctrl-arrow
 -- away, there being no keys without modifiers to spare.
@@ -667,6 +709,7 @@ greed.keymap.bind({ style = "vscode", role = "typing", kind = KIND }, {
 greed.keymap.bind({ role = "command", kind = KIND }, {
 	enter = "shell-enter",
 	["ctrl-c"] = "shell-interrupt",
+	["ctrl-t"] = "shell-handoff",
 	["[ p"] = "shell-prev-block",
 	["] p"] = "shell-next-block",
 	["g o"] = "shell-select-output",

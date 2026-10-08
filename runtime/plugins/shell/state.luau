@@ -43,6 +43,8 @@ export type Block = {
 	status: string,
 	--- Whether it was handed to a terminal at some point.
 	handed: boolean,
+	--- Whether it has been quiet a while, maybe waiting for input.
+	waiting: boolean,
 	--- What it printed, as it came, and apart: `stdout` and `stderr` for
 	--- the pipe runner; a pseudo terminal has only `output`. Each holds at
 	--- most the record limit; past that `truncated` is set and the whole
@@ -77,6 +79,8 @@ export type Job = {
 	kill: () -> (),
 	--- Shows it in a terminal to type into, if it can be.
 	handoff: (() -> boolean)?,
+	--- The pseudo terminal it runs in, if it does.
+	terminal: greed.Terminal?,
 }
 
 --- A shell: a buffer of blocks with a prompt at the end, its own folder and
@@ -101,6 +105,10 @@ export type Shell = {
 
 --- Shells by their buffer's id.
 M.shells = {} :: { [number]: Shell }
+
+--- The view each block was run from, by its uid: where a handoff shows,
+--- and whose size a pseudo terminal starts at.
+M.views = {} :: { [number]: greed.View }
 
 local next_id = 0
 local next_uid = 0

@@ -51,6 +51,13 @@ type Shown = {
 
 local shown: { [number]: Shown } = {}
 
+-- The most output lines a block shows, and how many of them are its head,
+-- which stays.
+local function cap(): (number, number)
+	local max = math.max(greed.option.get("shell-max-lines") :: number, 2)
+	return max, max // 2
+end
+
 local GLYPH: { [string]: string } = {
 	running = "◐",
 	done = "✓",
@@ -194,6 +201,9 @@ function M.status_text(block: Block): string
 	if block.note then
 		table.insert(parts, block.note)
 	end
+	if block.waiting and block.status == "running" then
+		table.insert(parts, "waiting for input? ctrl-t types into it")
+	end
 	return table.concat(parts, " · ")
 end
 
@@ -238,7 +248,7 @@ function M.draw_block(shell: Shell, block: Block)
 	}
 	if block.omitted > 0 and s then
 		local first = first_output_line(shell, block, from)
-		local head = (greed.option.get("shell-max-lines") :: number) // 2
+		local _, head = cap()
 		local at = math.min(first + head - 1, last)
 		local said = `… {block.omitted} lines not shown; :shell-output-open shows them all`
 		table.insert(marks, {
@@ -328,28 +338,40 @@ local function placed(lines: { Line }, pos: number, into: { greed.Mark })
 	end
 end
 
+--- Of `count` lines `block` printed next, how many fill its head, and how
+--- many after those it would leave out at once, past the cap: only the
+--- rest need making into lines for `update`.
+function M.room(block: Block, count: number): (number, number)
+	local s = shown[block.uid]
+	local max, head = cap()
+	local stable = if s then s.stable else 0
+	local fill = math.min(math.max(head - stable, 0), count)
+	return fill, math.max(count - fill - (max - head), 0)
+end
+
 --- Shows more of `block`'s output: `add` joins the stable lines, and
---- `volatile` replaces the volatile ones. Lines past `shell-max-lines` are
---- left out, oldest first after the first half; `block.lines` and
---- `block.omitted` count them.
-function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line })
+--- `volatile` replaces the volatile ones (nil keeps them). `skipped` lines
+--- came between `add`'s first `room` and the rest, already left out. Lines
+--- past `shell-max-lines` are left out, oldest first after the first half;
+--- `block.lines` and `block.omitted` count them.
+function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?, skipped: number?)
 	local s = shown[block.uid]
 	local from, to = M.range(block)
-	if s == nil or from == nil or to == nil then
+	local skip = skipped or 0
+	if s == nil or from == nil or to == nil or (volatile == nil and #add == 0 and skip == 0) then
 		return
 	end
 	local buffer = shell.buffer
-	local max = math.max(greed.option.get("shell-max-lines") :: number, 2)
-	local head = max // 2
+	local max, head = cap()
 	local first = first_output_line(shell, block, from)
 	local last_block = M.prompt_start(shell) == to
 	-- Lines going into the head, which stays, then the rest; past the cap,
 	-- the oldest after the head go, from those shown and then from `add`.
-	local total = s.stable + #add
+	local total = s.stable + #add + skip
 	local excess = math.max(total - max, 0)
 	local drop_shown = math.min(excess, math.max(s.stable - head, 0))
 	local fill = math.max(head - s.stable, 0)
-	local drop_added = excess - drop_shown
+	local drop_added = math.max(excess - drop_shown - skip, 0)
 	-- `add` without the lines that go: those after the ones filling the
 	-- head.
 	local kept: { Line } = {}
@@ -358,32 +380,43 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line })
 			table.insert(kept, line)
 		end
 	end
-	block.lines += #add
+	block.lines += #add + skip
 	block.omitted += excess
 	local volatile_from = if s.stable + s.volatile == 0
 		then to
 		else buffer:line_start(first + s.stable)
+	local replace_to = if volatile then to else volatile_from
+	local dropped = if drop_shown > 0
+		then buffer:line_start(first + head + drop_shown) - buffer:line_start(first + head)
+		else 0
 	local stable_text = joined(kept)
-	local text = stable_text .. joined(volatile)
+	local text = stable_text .. (if volatile then joined(volatile) else "")
 	buffer:edit(function(e)
 		if drop_shown > 0 then
 			e:delete(buffer:line_start(first + head), buffer:line_start(first + head + drop_shown))
 		end
-		e:replace(volatile_from, to, text)
+		e:replace(volatile_from, replace_to, text)
 	end)
 	s.stable = s.stable - drop_shown + #kept
-	s.volatile = #volatile
+	if volatile then
+		s.volatile = #volatile
+	end
 	-- Where `text` went, and where the block ends now.
 	local start = buffer:line_start(first + s.stable - #kept)
-	local stop = start + #text
+	local stop = to - dropped - (replace_to - volatile_from) + #text
 	track_block(shell, block, from, stop)
 	if last_block then
 		track_prompt(shell, stop)
 	end
 	local marks: { greed.Mark } = {}
 	placed(kept, start, marks)
-	placed(volatile, start + #stable_text, marks)
-	buffer:decorate(ns_out(block), marks, { from = start })
+	if volatile then
+		placed(volatile, start + #stable_text, marks)
+	end
+	buffer:decorate(ns_out(block), marks, {
+		from = start,
+		to = if volatile then nil else start + #stable_text,
+	})
 	M.draw_block(shell, block)
 	if last_block then
 		M.draw_prompt(shell)
