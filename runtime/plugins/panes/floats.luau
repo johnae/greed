@@ -563,9 +563,11 @@ function M.pick_from_dock()
 	end
 	local at = index_of(st.order, st.current) or 1
 	local chosen: greed.View? = nil
+	local numbers = if n > 1 then `1 to {math.min(n, 9)}` else "1"
 	while chosen == nil do
 		st.picking = at
 		arrange()
+		greed.echo(`pick a floating view: {numbers}, or h and l then enter; esc leaves it`)
 		local key = greed.next_key()
 		local number = tonumber(key)
 		if number and number >= 1 and number <= n then

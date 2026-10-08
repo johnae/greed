@@ -123,7 +123,7 @@ two modes where single keys act until `esc`.
 
 | Keys | |
 |---|---|
-| `alt-h` `alt-j` `alt-k` `alt-l` (or `alt` and an arrow) | Move to the pane or panel (the file tree, an agent) on that side; left and right go on to the next tab at the edge |
+| `alt-h` `alt-j` `alt-k` `alt-l` (or `alt` and an arrow) | Move to the pane or panel (the file tree, an agent) on that side; from a pane at the left or right edge, on to the tab before or after, stopping at the first and last tab. A panel at the edge stays. In a zoomed tab, every pane shows again |
 | `alt-n` | A terminal in a new pane, on the pane's longer side; while floating views are shown, a floating terminal |
 | `alt-f` | Hide the tab's floating views or show them again, where they were (terminals keep running); with none, open a floating terminal |
 | `alt-F` | This file in a new floating view (`:float-file PATH` for another) |
@@ -131,12 +131,12 @@ two modes where single keys act until `esc`.
 | `alt-{` `alt-}` | Bring the floating view before or after to the front (in `one`, the one that shows) |
 | `alt-W` | Pick a floating view from the dock: its number, or the arrows and `enter` |
 | `alt-=` `alt--` | Give the pane more room, or less |
-| `alt-[` `alt-]`, `alt-1` to `alt-9` | The tab before or after, or tab N |
+| `alt-<` `alt->`, `alt-1` to `alt-9` | The tab before or after (round the ends), or tab N. `alt-[` and `alt-]` too, in terminals with the kitty keyboard protocol: in others they start an escape code |
 | `alt-space` | Arrange the tab with the next layout |
 | `alt-m` | Swap the pane with the main one |
-| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type, `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or put a float back, `T` tile the floats, `C` cascade them, `O` one at a time, `Y` pick a float layout, `{ }` the float before or after, `H J K L` move an edge, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `esc` done |
-| `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename, `esc` done |
-| `alt-r` | Resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it from that side, arrows move a floating view, `= -` every way, `esc` done |
+| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type (`esc` leaves the mode), `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or put a float back, `T` tile the floats, `C` cascade them, `O` one at a time, `Y` pick a float layout, `{ }` the float before or after, `H J K L` make the pane bigger toward that side, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `f1` every key, `esc` done. Keys that open something (`n`, `x`, `y`, `Y`, `p`) leave the mode |
+| `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename (these four leave the mode), `f1` every key, `esc` done |
+| `alt-r` | Resize mode: `h j k l` make the pane, panel or floating view bigger toward that side, `H J K L` smaller from that side (at the screen's edge the other edge moves), arrows move a floating view, `= -` every way, `esc` done |
 
 In normal mode (Helix and Vim), `ctrl-w` and the leader's `w` (`space w`)
 start the window keys from Vim and Helix: `v` and `s` split, `h j k l`

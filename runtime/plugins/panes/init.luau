@@ -8,9 +8,10 @@
 --   alt-n opens a terminal pane (a floating one while floats are shown),
 --   alt-f shows or hides the tab's floating views (opening a floating
 --   terminal when there are none), alt-F floats this file, alt-= and
---   alt-- resize, alt-[ and alt-] or alt-1..9 change tabs. alt-w changes
---   how the tab lays out its floats (see floats.luau), alt-{ and alt-}
---   cycle through them and alt-W picks one from the dock.
+--   alt-- resize, alt-< and alt-> (alt-[ and alt-] too) or alt-1..9
+--   change tabs. alt-w changes how the tab lays out its floats (see
+--   floats.luau), alt-{ and alt-} cycle through them and alt-W picks one
+--   from the dock.
 -- - alt-p and alt-t open the pane and tab modes, where single keys act until
 --   esc.
 -- - In normal mode, ctrl-w (and the leader's w) is the window prefix Vim and Helix
@@ -70,6 +71,13 @@ local function tabs(): ({ greed.TabInfo }, number)
 	return list, 1
 end
 
+-- Shows every pane of a zoomed tab again.
+local function unzoom()
+	greed.tab.set_zoomed(false)
+	-- Lets the panes be drawn where they now are.
+	greed.sleep(0)
+end
+
 --- Shows the tab `offset` places from the shown one, round the ends.
 function M.cycle_tab(offset: number)
 	local list, i = tabs()
@@ -88,18 +96,33 @@ function M.go_to_tab(n: number)
 end
 
 --- Moves to the pane or panel (the file tree, an agent) on the `dir` side.
---- Left and right go on to the tab before or after at the edge, as zellij
---- does.
+--- From a pane at the left or right edge it goes on to the tab before or
+--- after, as zellij does, stopping at the first and last tab; a panel at
+--- the edge stays where it is. In a zoomed tab it shows every pane again
+--- to move, and stays zoomed when there's no pane that way.
 function M.move(dir: Direction)
 	local view = greed.view()
 	local from = if core.floats.is_float(view) then M.pane() else view
+	local zoomed = from:is_pane() and greed.tab.current().zoomed
+	if zoomed then
+		unzoom()
+	end
 	local next = from:neighbor(dir)
 	if next then
 		M.focus(next)
-	elseif dir == "left" or dir == "right" then
-		if #greed.tab.list() > 1 then
-			M.cycle_tab(if dir == "left" then -1 else 1)
-		end
+		return
+	end
+	if zoomed then
+		greed.tab.set_zoomed(true)
+	end
+	if not from:is_pane() or (dir ~= "left" and dir ~= "right") then
+		return
+	end
+	local list, i = tabs()
+	local to = list[i + (if dir == "left" then -1 else 1)]
+	if to then
+		greed.tab.switch(to.id)
+		settle(greed.view())
 	end
 end
 
@@ -126,13 +149,13 @@ function M.resize(dir: Direction, steps: number?)
 		return
 	end
 	-- A panel (the file tree, an agent) moves its edge by the main view.
-	if not view:is_pane() and (view:resize(dir, cells) or view:resize(OPPOSITE[dir], -cells)) then
+	if not view:is_pane() and (view:resize(dir, cells) or view:resize(OPPOSITE[dir], cells)) then
 		return
 	end
 	layouts.made_manual("a pane was resized by hand")
 	local pane = M.pane()
 	if not pane:resize(dir, cells) then
-		pane:resize(OPPOSITE[dir], -cells)
+		pane:resize(OPPOSITE[dir], cells)
 	end
 end
 
@@ -251,12 +274,11 @@ local LABELS = "123456789abcdefghijklmnopqrstuvwxyz"
 
 --- Puts a label over each pane of the tab and focuses the one whose label
 --- is typed next; any other key leaves things as they were. In a zoomed
---- tab every pane shows again first. Returns whether a pane was picked.
-function M.pick(): boolean
+--- tab every pane shows again first. Returns whether a pane was picked,
+--- and the key typed.
+function M.pick(): (boolean, string)
 	if greed.tab.current().zoomed then
-		greed.tab.set_zoomed(false)
-		-- Lets the panes be drawn where they now are.
-		greed.sleep(0)
+		unzoom()
 	end
 	local badges: { greed.View } = {}
 	local labelled: { [string]: greed.View } = {}
@@ -285,7 +307,7 @@ function M.pick(): boolean
 	if pane then
 		M.focus(pane)
 	end
-	return pane ~= nil
+	return pane ~= nil, key
 end
 
 --- Opens a tab, empty or with a terminal.
@@ -317,13 +339,33 @@ function M.rename_tab()
 end
 
 -- The pane and tab modes: single keys act until esc, like zellij's.
-local modes: { [string]: { back: string, hint: string } } = {}
+local modes: { [string]: { back: string, hints: { string } } } = {}
+
+-- The line saying what `mode`'s keys do: as many of its hints as fit the
+-- client's screen beside the rest of the status line, then how to see
+-- them all and how to leave.
+local function hint(mode: string): string
+	local size = greed.client.current().size
+	local room = math.max((if size then size.width else 100) - 30, 40)
+	local tail = "f1 all keys  esc done"
+	local parts = {}
+	local used = #tail
+	for _, part in modes[mode].hints do
+		if used + #part + 2 > room then
+			break
+		end
+		table.insert(parts, part)
+		used += #part + 2
+	end
+	table.insert(parts, tail)
+	return table.concat(parts, "  ")
+end
 
 local function enter(mode: string)
 	local current = greed.mode.get()
 	modes[mode].back = if modes[current] then modes[current].back else current
 	greed.mode.set(mode)
-	greed.echo(modes[mode].hint)
+	greed.echo(hint(mode))
 end
 
 local function leave()
@@ -334,11 +376,12 @@ local function leave()
 	end
 end
 
--- Runs `f`, then leaves the mode.
+-- Leaves the mode, then runs `f`: what it opens (a prompt, a terminal)
+-- goes back to where you were before the mode, never to the mode.
 local function once(f: () -> ()): (greed.Context) -> ()
 	return function()
-		f()
 		leave()
+		f()
 	end
 end
 
@@ -372,6 +415,7 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 		name = "layout-pick",
 		doc = "Pick how this tab arranges its panes",
 		run = function()
+			leave()
 			local items = {}
 			for _, name in layouts.names() do
 				local label = name .. if name == layouts.current() then "  (now)" else ""
@@ -422,9 +466,12 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	{ name = "pane-zoom", doc = "Show only this pane, or all of them again", run = M.toggle_zoom },
 	{
 		name = "pane-pick",
-		doc = "Label the panes and go to the one whose label you type next",
+		doc = "Label the panes and go to the one whose label you type next; esc leaves the pane mode",
 		run = function()
-			M.pick()
+			local picked, key = M.pick()
+			if not picked and key == "esc" then
+				leave()
+			end
 		end,
 	},
 	{
@@ -542,7 +589,10 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 	{
 		name = "float-layout-pick",
 		doc = "Pick how this tab lays out its floating views",
-		run = M.floats.pick,
+		run = function()
+			leave()
+			M.floats.pick()
+		end,
 	},
 	{
 		name = "float-next",
@@ -623,12 +673,20 @@ local function add_side(side: Direction)
 	add(`pane-swap-{side}`, `Swap this pane with the one {w.its}`, function()
 		M.swap(side)
 	end)
-	add(`pane-resize-{side}`, `Move this pane's {w.edge} {w.out}`, function()
-		M.resize(side)
-	end)
-	add(`pane-shrink-{side}`, `Move this pane's {w.edge} {w.back}`, function()
-		M.resize(side, -1)
-	end)
+	add(
+		`pane-resize-{side}`,
+		`Make this pane bigger by moving its {w.edge} {w.out}, or the other edge at the screen's edge`,
+		function()
+			M.resize(side)
+		end
+	)
+	add(
+		`pane-shrink-{side}`,
+		`Make this pane smaller by moving its {w.edge} {w.back}, or the other edge at the screen's edge`,
+		function()
+			M.resize(side, -1)
+		end
+	)
 	add(`float-move-{side}`, `Move the floating view {side}`, function()
 		M.move_float(side)
 	end)
@@ -667,9 +725,9 @@ for _, c in commands do
 			run()
 			-- Messages go with the next key; while still in a mode, its keys
 			-- stay on the status line.
-			local mode = modes[greed.mode.get()]
-			if mode then
-				greed.echo(mode.hint)
+			local mode = greed.mode.get()
+			if modes[mode] then
+				greed.echo(hint(mode))
 			end
 		end,
 	})
@@ -798,6 +856,10 @@ M.keys = {
 		["alt-="] = "pane-grow",
 		["alt-+"] = "pane-grow",
 		["alt--"] = "pane-shrink",
+		["alt-<"] = "tab-previous",
+		["alt->"] = "tab-next",
+		-- Terminals without the kitty keyboard protocol send these as the start
+		-- of an escape code, so they only work in ones with it.
 		["alt-["] = "tab-previous",
 		["alt-]"] = "tab-next",
 		["alt-p"] = "pane-mode",
@@ -829,6 +891,7 @@ M.keys = {
 		["+"] = "pane-grow",
 		["-"] = "pane-shrink",
 		esc = "pane-mode-leave",
+		f1 = "keys-help",
 		enter = "pane-mode-leave",
 		["alt-r"] = "pane-mode-leave",
 	} :: { [string]: string },
@@ -878,6 +941,7 @@ M.keys = {
 		["{"] = "float-previous",
 		["}"] = "float-next",
 		esc = "pane-mode-leave",
+		f1 = "keys-help",
 		enter = "pane-mode-leave",
 		["alt-p"] = "pane-mode-leave",
 	} :: { [string]: string },
@@ -893,6 +957,7 @@ M.keys = {
 		x = "tab-close-done",
 		r = "tab-rename-done",
 		esc = "pane-mode-leave",
+		f1 = "keys-help",
 		enter = "pane-mode-leave",
 		["alt-t"] = "pane-mode-leave",
 	} :: { [string]: string },
@@ -940,61 +1005,37 @@ for n = 1, 9 do
 	M.keys.everywhere[`alt-{n}`] = "tab-go"
 end
 
--- What each mode's keys do, for the line shown on entering it.
-local function hint(keys: { [string]: string }, order: { string }): string
-	local parts = {}
-	for _, key in order do
-		local name = keys[key]
-		if name then
-			local short = string.gsub(string.gsub(name, "^pane%-", ""), "^tab%-", "")
-			local what = string.gsub(short, "%-done$", "")
-			table.insert(parts, `{key} {what}`)
-		end
-	end
-	return table.concat(parts, "  ")
-end
-
+-- What each mode's keys do, most used first, for the line shown in it.
 modes.pane = {
 	back = "helix",
-	hint = hint(M.keys.pane, {
-		"h",
-		"j",
-		"k",
-		"l",
-		"n",
-		"r",
-		"d",
-		"v",
-		"s",
-		"x",
-		"g",
-		"f",
-		"w",
-		"space",
-		"m",
-		"o",
-		"y",
-		"H",
-		"R",
-		"W",
-		"F",
-		"z",
-		"T",
-		"C",
-		"O",
-		"D",
-		"Y",
-		"{",
-		"}",
-		"=",
-		"-",
-		"esc",
-	}),
+	hints = {
+		"hjkl move",
+		"n/r/d terminal",
+		"v/s split",
+		"x close",
+		"f zoom",
+		"g pick",
+		"e float",
+		"space layout",
+		"y layouts",
+		"m main",
+		"o rotate",
+		"HJKL resize",
+		"R resize mode",
+		"w floats",
+		"W float terminal",
+		"T/C/O float layout",
+		"{ } floats",
+		"= - size",
+	},
 }
-modes.tab = { back = "helix", hint = hint(M.keys.tab, { "h", "l", "n", "t", "x", "r", "esc" }) }
+modes.tab = {
+	back = "helix",
+	hints = { "h/l switch", "n new", "t terminal", "x close", "r rename" },
+}
 modes.resize = {
 	back = "helix",
-	hint = "h j k l grow  H J K L shrink  arrows move a float  = - every way  esc",
+	hints = { "hjkl grow", "HJKL shrink", "arrows move a float", "= - every way" },
 }
 
 -- Binds `M.keys` in the layers they belong to. The terminal's mode takes
@@ -1077,5 +1118,19 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		dragging = nil
 	end
 end)
+
+-- The status line says how the tab is laid out when that isn't by hand,
+-- and when only one pane shows, before the file: "main-stack · zoomed".
+require("@statusline").add("left", "layout", function()
+	local parts: { string } = {}
+	local layout = layouts.current()
+	if layout ~= "manual" then
+		table.insert(parts, layout)
+	end
+	if greed.tab.current().zoomed then
+		table.insert(parts, "zoomed")
+	end
+	return if #parts > 0 then table.concat(parts, " · ") else nil
+end, "file")
 
 return M

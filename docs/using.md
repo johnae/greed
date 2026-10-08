@@ -1211,7 +1211,7 @@ panes, tabs and terminals are where you left them.
 
 | Keys | |
 |---|---|
-| `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane or panel (the file tree, an agent) on that side, and on to the next tab |
+| `alt-h` `alt-j` `alt-k` `alt-l` | Move to the pane or panel (the file tree, an agent) on that side; from a pane at the left or right edge, on to the tab before or after, stopping at the first and last. In a zoomed tab it shows every pane again |
 | `alt-n` | A terminal in a new pane, or a floating one while floating views are shown |
 | `alt-f` | Hide the tab's floating views or show them again; with none, open a floating terminal |
 | `alt-F` | This file in a new floating view |
@@ -1219,20 +1219,25 @@ panes, tabs and terminals are where you left them.
 | `alt-{` `alt-}` | Bring the floating view before or after to the front |
 | `alt-W` | Pick a floating view from the dock |
 | `alt-=` `alt--` | More room for the pane (or floating view), or less |
-| `alt-[` `alt-]`, `alt-1`... | Tabs |
+| `alt-<` `alt->`, `alt-1`... | The tab before or after (round the ends), or tab N. `alt-[` and `alt-]` do the same in terminals with the kitty keyboard protocol; in others they start an escape code, so they can't be keys |
 | `alt-p`, `alt-t` | The pane and tab modes, for everything else |
-| `alt-r` | The resize mode: `h j k l` grow the pane, panel or floating view toward that side, `H J K L` shrink it, the arrows move a floating view |
+| `alt-r` | The resize mode: `h j k l` make the pane, panel or floating view bigger toward that side, `H J K L` smaller from it (at the screen's edge, the other edge moves), the arrows move a floating view |
 | `ctrl-w v`, `ctrl-w s`, `ctrl-w q` | Split and close, as in Vim and Helix; `ctrl-w H J K L` swap with the pane on that side, `ctrl-w f` the file under the cursor in a split, `ctrl-w n s` an empty one |
 
 The `alt` keys work everywhere, including inside terminals. Moving to a
 terminal pane types into it; moving to a file goes back to normal mode.
-Entering the pane or tab mode shows its keys at the bottom. All the keys,
-and how to change them, are in [Keys](keys.md#panes-tabs-and-terminals).
+Entering the pane or tab mode shows its most used keys at the bottom, as
+many as fit; `f1` there lists them all. Keys in these modes that open
+something (a terminal, a new tab, a prompt to name the tab, a picker of
+layouts) leave the mode, so what they open goes back to where you were.
+All the keys, and how to change them, are in
+[Keys](keys.md#panes-tabs-and-terminals).
 
 To act on a pane without moving to it first, `alt-p g` puts a number over
 each pane; type one to go there, and you're still in the pane mode, so
-`alt-p g 3 f` zooms the third pane and `alt-p g 3 x` closes it. `ctrl-w g`
-and `space w g` label them too.
+`alt-p g 3 f` zooms the third pane and `alt-p g 3 x` closes it; `esc`
+leaves the pane mode. `ctrl-w g` and `space w g` label them too. While a
+pane is zoomed the status line says "zoomed".
 
 Floating views belong to the tab they opened in: switching tabs hides them
 and closing the tab closes them. As in zellij, `alt-f` hides all of the
@@ -1263,7 +1268,8 @@ Each tab has a layout that arranges its panes as they open and close:
 - `spiral`: each pane takes half of what's left, winding inward.
 
 `alt-space` goes to the next layout and `alt-p y` picks one; either says
-which at the bottom. A tab's panes keep an order, and that's what you change:
+which at the bottom, and the status line shows it while it isn't `manual`. A
+tab's panes keep an order, and that's what you change:
 `alt-m` swaps the pane into main, `alt-p o` moves them all one place
 along, and `alt-p [` and `]` give main less room or more. Resizing a pane
 by hand switches the tab to `manual`, keeping the shape it had.
