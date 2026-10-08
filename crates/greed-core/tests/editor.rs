@@ -1727,4 +1727,110 @@ mod clients {
         assert_eq!(ed.client_state(b).unwrap().layout(), ClientLayout::Follow);
         assert_eq!(ed.focus(), pane, "on the shared pane");
     }
+
+    #[test]
+    fn two_clients_of_one_kind_on_one_machine_get_names_apart_and_come_back_by_them() {
+        let mut ed = super::editor("hello");
+        let info = |name: &str| ClientInfo {
+            name: name.to_owned(),
+            kind: "tui".to_owned(),
+            remote: false,
+        };
+        let name = |ed: &Editor, id| ed.client_state(id).unwrap().name().to_owned();
+        let a = ed.attach_client(info("tui@desk"));
+        let b = ed.attach_client(info("tui@desk"));
+        let c = ed.attach_client(info("tui@desk"));
+        assert_eq!(
+            [name(&ed, a), name(&ed, b), name(&ed, c)],
+            ["tui@desk", "tui@desk#2", "tui@desk#3"]
+        );
+        ed.set_acting(b);
+        ed.set_mode("insert");
+        // The second leaves and comes back: its name is the first free one,
+        // with its state.
+        ed.park_client(b);
+        assert_eq!(ed.attach_client(info("tui@desk")), b);
+        ed.set_acting(b);
+        assert_eq!((name(&ed, b).as_str(), ed.mode()), ("tui@desk#2", "insert"));
+        // With the first gone, a new one takes its name and state.
+        ed.park_client(a);
+        assert_eq!(ed.attach_client(info("tui@desk")), a);
+        assert_eq!(name(&ed, a), "tui@desk");
+    }
+
+    #[test]
+    fn a_focus_moved_by_another_client_drops_half_typed_keys_and_says_so() {
+        let mut ed = two_clients("hello");
+        ed.keymap_mut()
+            .bind(
+                greed_core::keymap::Layer::mode("helix"),
+                &super::keys("g g"),
+                "goto-start",
+                "core",
+            )
+            .unwrap();
+        ed.set_acting(SECOND);
+        assert_eq!(
+            ed.press(greed_core::keymap::Key::char('g')),
+            greed_core::KeyOutcome::Pending
+        );
+        // Its own moves aren't moves under it.
+        let pane = ed.focus();
+        ed.split_pane(pane, Direction::Right, None).unwrap();
+        assert!(!ed.take_moved());
+        assert_eq!(ed.pending().len(), 1, "still half typed");
+        // The first shows another tab, so the second's focus moves under it.
+        ed.set_acting(FIRST_CLIENT);
+        ed.new_tab(None);
+        let new_pane = ed.focus();
+        assert!(!ed.take_moved(), "the first's focus moved by its own doing");
+        ed.set_acting(SECOND);
+        assert_eq!(ed.focus(), new_pane);
+        assert!(ed.pending().is_empty(), "what it typed halfway is dropped");
+        assert!(ed.take_moved());
+        assert!(!ed.take_moved(), "told once");
+    }
+
+    #[test]
+    fn a_focus_still_shown_stays_where_it_is() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        ed.set_acting(SECOND);
+        let split = ed.split_pane(pane, Direction::Right, None).unwrap();
+        ed.set_acting(FIRST_CLIENT);
+        ed.split_pane(pane, Direction::Down, None).unwrap();
+        assert!(ed.close(pane));
+        ed.set_acting(SECOND);
+        assert_eq!(ed.focus(), split);
+        assert!(!ed.take_moved());
+        // Closing what it has focused moves it.
+        ed.set_acting(FIRST_CLIENT);
+        assert!(ed.close(split));
+        ed.set_acting(SECOND);
+        assert_ne!(ed.focus(), split);
+        assert!(ed.take_moved());
+    }
+
+    #[test]
+    fn following_again_goes_on_in_the_same_buffer_where_the_others_show_it() {
+        let mut ed = two_clients("hello");
+        let pane = ed.focus();
+        let notes = ed.create_buffer("file", "notes");
+        let beside = ed.split_pane(pane, Direction::Right, Some(notes)).unwrap();
+        ed.set_focus(pane);
+        ed.set_acting(SECOND);
+        ed.set_layout(SECOND, ClientLayout::Independent).unwrap();
+        // In its own copy of the pane with the notes.
+        let copy = ed
+            .current_tab()
+            .panes()
+            .into_iter()
+            .find(|v| ed.view(*v).buffer == notes)
+            .unwrap();
+        ed.set_focus(copy);
+        ed.set_layout(SECOND, ClientLayout::Follow).unwrap();
+        assert_eq!(ed.focus(), beside, "the shared pane with the notes");
+        assert_eq!(ed.current_tab().active(), beside);
+        assert!(ed.take_moved());
+    }
 }

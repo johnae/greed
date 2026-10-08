@@ -554,3 +554,37 @@ test("references in part of a buffer resolve against a given folder", function(t
 	assert(some[1].path == dir .. "/refs-here/lib.rs" and some[1].line == 1, some[1].path)
 	assert(some[1].text == "refs-here/lib.rs:1 second", some[1].text)
 end)
+
+test("a client typing into a terminal isn't left typing into what another client shows", function(t)
+	t:buffer("|hello")
+	t:run("terminal", { "cat" })
+	local term = greed.view():buffer()
+	local second = t:client()
+	second:expect_mode("terminal")
+	-- The first opens a tab: the second is moved there, out of the terminal's mode.
+	t:keys("ctrl-\\")
+	greed.command({
+		name = "test-new-tab",
+		run = function()
+			greed.tab.new()
+		end,
+	})
+	t:run("test-new-tab")
+	second:expect_mode("helix")
+	second:keys("j k")
+	assert(not string.find(term:text(), "jk", 1, true), term:text())
+	assert(not greed.view():buffer():modified(), "nothing typed into the new tab's buffer")
+	-- Closing the terminal another client types into does the same.
+	greed.command({
+		name = "test-first-tab",
+		run = function()
+			greed.tab.switch(greed.tab.list()[1].id)
+		end,
+	})
+	second:run("test-first-tab")
+	second:keys("i")
+	second:expect_mode("terminal")
+	t:run("test-first-tab")
+	t:run("terminal-close")
+	second:expect_mode("helix")
+end)

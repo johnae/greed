@@ -382,6 +382,10 @@ pub struct Editor {
     /// The client the editor acts for now: whose focus, selections and mode
     /// its methods use.
     acting: ClientId,
+    /// Whose doing what the editor does now is: the client it was asked to
+    /// act for, while it acts for each of the others in turn to keep them
+    /// up with it.
+    doer: ClientId,
     /// The client that last did something, for work nobody in particular
     /// asked for, like timers.
     last_active: ClientId,
@@ -430,6 +434,7 @@ impl Editor {
             buffers: BTreeMap::new(),
             clients: BTreeMap::from([(FIRST_CLIENT, ClientState::new(FIRST_CLIENT))]),
             acting: FIRST_CLIENT,
+            doer: FIRST_CLIENT,
             last_active: FIRST_CLIENT,
             activity: 0,
             projects: Vec::new(),
@@ -489,13 +494,22 @@ impl Editor {
 
     /// A client attaching, which says `info` about itself: the one parked
     /// under its name, back with its cursors, focus, mode and layout, or a
-    /// new one following and seeing what the last active client sees.
-    pub fn attach_client(&mut self, info: ClientInfo) -> ClientId {
-        let returning = self
-            .clients
-            .values()
-            .find(|c| c.parked && *c.name == *info.name)
-            .map(ClientState::id);
+    /// new one following and seeing what the last active client sees. Two
+    /// of the same kind on one machine are told apart by a number: one
+    /// gets the first name no attached client has, like "tui@laptop#2",
+    /// and the one parked under that name, if any, comes back.
+    pub fn attach_client(&mut self, mut info: ClientInfo) -> ClientId {
+        let base = info.name.clone();
+        let mut n = 1;
+        let returning = loop {
+            match self.clients.values().find(|c| *c.name == *info.name) {
+                Some(c) if !c.parked => {
+                    n += 1;
+                    info.name = format!("{base}#{n}");
+                }
+                found => break found.map(ClientState::id),
+            }
+        };
         let id = returning.unwrap_or_else(|| {
             let id = self.next_client_id();
             self.add_client_like(id, self.last_active);
@@ -572,6 +586,7 @@ impl Editor {
             return false;
         }
         self.acting = id;
+        self.doer = id;
         self.last_active = id;
         self.activity += 1;
         let activity = self.activity;
@@ -588,6 +603,7 @@ impl Editor {
         } else {
             self.last_active
         };
+        self.doer = self.acting;
         self.acting
     }
 
@@ -1098,7 +1114,7 @@ impl Editor {
             self.as_each_client(|ed| {
                 if ed.acting != owner && ed.focus() == view {
                     let next = ed.focus_after(view, Some(return_to));
-                    ed.acting_client_mut().focus = next;
+                    ed.move_focus(next);
                 }
             });
         }
@@ -1111,7 +1127,7 @@ impl Editor {
         self.as_each_client(|ed| {
             if ed.focus() == view {
                 let next = ed.focus_after(view, return_to);
-                ed.acting_client_mut().focus = next;
+                ed.move_focus(next);
             }
         });
     }
@@ -1149,7 +1165,28 @@ impl Editor {
     /// Moves the acting client's focus to its main view.
     fn focus_main(&mut self) {
         let main = self.main();
-        self.acting_client_mut().focus = main;
+        self.move_focus(main);
+    }
+
+    /// Moves the acting client's focus to `view`. When that's another
+    /// client's doing, it was moved under it: what it typed halfway is
+    /// dropped, and it's told so with the focus change.
+    fn move_focus(&mut self, view: ViewId) {
+        let under = self.acting != self.doer;
+        let client = self.acting_client_mut();
+        if client.focus == view {
+            return;
+        }
+        client.focus = view;
+        if under {
+            client.moved_under();
+        }
+    }
+
+    /// Whether the acting client's focus was moved under it since this was
+    /// last asked: by another client's doing, or by its following again.
+    pub fn take_moved(&mut self) -> bool {
+        std::mem::take(&mut self.acting_client_mut().moved)
     }
 
     /// Closes a view. Focus moves to the top floating view, or the main view.

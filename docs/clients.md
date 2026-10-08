@@ -33,16 +33,23 @@ are shared. Desktop notifications go to the client you used last.
 
 A client that attaches follows the others: it shows the same project, the
 same tab and the same panes, with its own focus and zoom. When one opens a
-tab, switches project or splits a pane, the others show that too, and a
-client whose focused pane went out of sight moves to the shown tab's
-active pane.
+tab, switches project or splits a pane, the others show that too.
+
+Another client never moves you while what you're in still shows: you can
+go on typing in a file or a terminal while someone splits a pane or opens
+a panel. When what you had focused goes out of sight (another tab or
+project is shown, or the pane closes), you move to the shown tab's active
+pane, what you had typed halfway is dropped, and you're back in normal
+mode there, so keys meant for a terminal never land in a file.
 
 `:client-independent` gives the client you type it in a layout of its own.
 It starts from a copy of what it showed (the same tabs, panes, panels and
 the tab's floating terminals, as new views of the same buffers, scrolled
 and selected the same) and from then on its tabs, panes and project change
 apart from the others'. `:client-follow` has it follow again: the panes it
-had on its own close, while their buffers stay open.
+had on its own close, while their buffers stay open, and you go on in the
+file you were in, in the pane the others show it in. Both say what they did
+at the bottom.
 
 Floats keep their place and size in proportion on screens of different
 sizes: a float in the middle of a big window is in the middle of a small
@@ -75,9 +82,12 @@ focused them, in the same way.
 
 `:detach` (or closing the terminal) lets one client go and leaves the
 others attached. A client is known by its kind and machine, like
-`tui@laptop` or `gui@desk`: one coming back by the same name gets its
-cursors, focus, mode and layout back. A new one follows the others and
-starts where the last-used client is.
+`tui@laptop` or `gui@desk`, with a number when there are two of a kind on
+one machine (`tui@laptop#2`). One coming back by the same name gets its
+cursors, focus, mode and layout back: it takes the first name no attached
+client has, so the second terminal on a laptop to come back gets what
+`tui@laptop#2` had. A new one follows the others and starts where the
+last-used client is.
 
 `:quit-session` ends the session for every client, whatever runs in it.
 From a shell, `greed ctl quit NAME` ends it unless files have unsaved

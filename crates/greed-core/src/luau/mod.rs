@@ -1395,10 +1395,13 @@ fn report_selections(lua: &Lua) -> mlua::Result<()> {
 fn report_selections_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
     let (focused, changed) = {
         let state = &mut *state_mut(lua);
+        // Taken every round, so a move it isn't told of (a client that
+        // just attached) isn't told with a later focus change of its own.
+        let moved = state.editor.take_moved();
         let editor = &state.editor;
         let focus = editor.focus();
         let focused = match state.focus_told.insert(client, focus) {
-            Some(old) if old != focus => Some((focus, editor.find_view(old).map(|_| old))),
+            Some(old) if old != focus => Some((focus, editor.find_view(old).map(|_| old), moved)),
             _ => None,
         };
         let now: HashMap<_, _> = editor
@@ -1426,10 +1429,11 @@ fn report_selections_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
     let heard = |event: &str| !state(lua).registry.handlers(event).is_empty();
     let reported = (focused.is_some() && heard("view.focused"))
         || (!changed.is_empty() && heard("selection.changed"));
-    if let Some((id, from)) = focused {
+    if let Some((id, from, moved)) = focused {
         let payload = lua.create_table()?;
         payload.set("view", view(id))?;
         payload.set("from", from.map(&view))?;
+        payload.set("moved", moved)?;
         api::emit_for_client(lua, "view.focused", &payload)?;
     }
     for id in changed {

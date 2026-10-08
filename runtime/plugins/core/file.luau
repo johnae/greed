@@ -192,7 +192,11 @@ greed.command({
 	doc = "Lay this client out on its own, starting from what it shows now: "
 		.. "its tabs, panes and project no longer follow the other clients",
 	run = function()
-		if not greed.client.set_layout("independent") then
+		if greed.client.set_layout("independent") then
+			greed.echo(
+				"this client is laid out on its own now; :client-follow follows the others again"
+			)
+		else
 			greed.echo("this client is laid out on its own already")
 		end
 	end,
@@ -203,7 +207,9 @@ greed.command({
 	doc = "Have this client show the project, tabs and panes the other clients follow, "
 		.. "closing the panes it had on its own (their buffers stay open)",
 	run = function()
-		if not greed.client.set_layout("follow") then
+		if greed.client.set_layout("follow") then
+			greed.echo("this client follows the others again")
+		else
 			greed.echo("this client follows already")
 		end
 	end,

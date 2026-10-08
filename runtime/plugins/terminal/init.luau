@@ -834,6 +834,20 @@ greed.on("terminal.exited", function(event)
 	end
 end)
 
+-- Keys meant for a program never go on to anything else: out of the
+-- terminal's mode when the focused `view` shows something other than a
+-- terminal, as when another client closed the terminal or moved this one.
+local function leave_unless_terminal(view: greed.View)
+	if
+		greed.mode.get() == MODE
+		and view:valid()
+		and view == greed.view()
+		and term_of(view:buffer()) == nil
+	then
+		greed.mode.set(core.style.home_for(view))
+	end
+end
+
 -- A terminal you look at again no longer needs you, and is sized for your
 -- screen from then on.
 greed.on("view.focused", function(event: greed.ViewFocused)
@@ -841,7 +855,13 @@ greed.on("view.focused", function(event: greed.ViewFocused)
 	if term then
 		core.floats.attention(event.view:buffer(), false)
 		claim(term, event.view)
+	else
+		leave_unless_terminal(event.view)
 	end
+end)
+
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	leave_unless_terminal(event.view)
 end)
 
 -- Only the screen of the client a terminal is sized for resizes it: the

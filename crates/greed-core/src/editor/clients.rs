@@ -21,6 +21,10 @@ pub const FIRST_CLIENT: ClientId = ClientId(1);
 
 /// One person's state in the editor.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each says something of its own about the client"
+)]
 pub struct ClientState {
     pub(super) id: ClientId,
     /// What it's called, like "tui@laptop": its kind and machine. A client
@@ -44,6 +48,9 @@ pub struct ClientState {
     pub(super) parked: bool,
     /// The view keys go to.
     pub(super) focus: ViewId,
+    /// Its focus was moved under it, by another client's doing or by
+    /// following again, since it was last told of a focus change.
+    pub(super) moved: bool,
     /// Every open view as this client sees it: its selection and scroll.
     /// Each client has every view.
     pub(super) views: BTreeMap<ViewId, View>,
@@ -84,6 +91,7 @@ impl ClientState {
             active_at: 0,
             parked: false,
             focus: ViewId(0),
+            moved: false,
             views: BTreeMap::new(),
             tabs: HashMap::new(),
             mode: "helix".into(),
@@ -111,6 +119,15 @@ impl ClientState {
             cell_size: self.cell_size,
             ..Self::new(id)
         }
+    }
+
+    /// Its focus was moved under it: keys it typed halfway are dropped, as
+    /// they were meant for what it had focused.
+    pub(super) fn moved_under(&mut self) {
+        self.moved = true;
+        self.pending.clear();
+        self.count = None;
+        self.overlay = None;
     }
 
     pub fn id(&self) -> ClientId {

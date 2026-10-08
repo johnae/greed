@@ -275,3 +275,52 @@ test("zoom is each client's own while following", function(t)
 	assert(not string.find(mine[1], "│", 1, true), `one pane: {mine[1]}`)
 	assert(string.find(theirs[1], "│", 1, true), `two panes: {theirs[1]}`)
 end)
+
+test("a client typing keeps typing where it is while what it's in still shows", function(t)
+	t:buffer("|hello")
+	local second = t:client()
+	greed.command({
+		name = "test-split",
+		run = function(ctx)
+			ctx.view:split("right")
+		end,
+	})
+	greed.command({
+		name = "test-new-tab",
+		run = function()
+			greed.tab.new()
+		end,
+	})
+	second:keys("i")
+	t:run("test-split")
+	second:expect_mode("helix-insert")
+	second:keys("a b")
+	second:expect("ab|hello")
+	-- Another tab shown takes it out of insert mode, where it's moved to.
+	t:run("test-new-tab")
+	second:expect_mode("helix")
+	second:keys("x")
+	t:keys("i y esc")
+	t:expect("y|")
+end)
+
+test("following and laying out on its own say so, and following keeps the focus", function(t)
+	t:buffer("|hello")
+	local second = t:client()
+	second:run("client-independent")
+	local messages = t:messages()
+	assert(
+		string.find(messages[#messages], "laid out on its own now", 1, true),
+		messages[#messages]
+	)
+	second:keys("i")
+	second:run("client-follow")
+	messages = t:messages()
+	assert(
+		string.find(messages[#messages], "follows the others again", 1, true),
+		messages[#messages]
+	)
+	second:expect_mode("helix")
+	second:keys("i X esc")
+	t:expect("X|hello")
+end)

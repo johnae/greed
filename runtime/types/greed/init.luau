@@ -1140,6 +1140,8 @@ export type ViewFocused = {
 	client: number,
 	view: View,
 	from: View?,
+	--- The focus was moved under the client rather than by it: what it had focused went out of sight by another client's doing (another tab or project shown, a pane closed), or it followed the others again. Its half-typed keys were dropped.
+	moved: boolean,
 }
 
 --- An option was set, with `greed.option.set` or `:set`.

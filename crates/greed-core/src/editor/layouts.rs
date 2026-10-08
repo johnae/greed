@@ -270,6 +270,7 @@ impl Editor {
     /// layout but keeping their buffers.
     fn drop_own_layout(&mut self) -> LayoutChange {
         let own = self.layout_id();
+        let was_in = self.views().get(&self.focus()).map(|v| v.buffer);
         let mut closed = Vec::new();
         let mut tabs = Vec::new();
         for project in &mut self.projects {
@@ -291,6 +292,19 @@ impl Editor {
         }
         self.shown.remove(&own);
         self.acting_client_mut().layout = LayoutId::SHARED;
+        if !self.views().contains_key(&self.focus()) {
+            // It goes on in what it was in, where the others show that.
+            let tab = self.current_tab();
+            let same = std::iter::once(tab.active())
+                .chain(tab.panes())
+                .chain(self.panels().iter().map(|p| p.view))
+                .find(|v| Some(self.view(*v).buffer) == was_in);
+            let to = same.unwrap_or_else(|| self.main());
+            let client = self.acting_client_mut();
+            client.focus = to;
+            client.moved_under();
+            self.activate(to);
+        }
         self.as_each_client(|ed| {
             if !ed.views().contains_key(&ed.focus()) {
                 ed.focus_main();

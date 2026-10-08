@@ -906,7 +906,7 @@ end)
 | `mode.changed` | A client's mode changed | `from`, `to` |
 | `command.run` | A command is about to run | `name`, the `keys` that ran it, `count` |
 | `selection.changed` | A view's selection changed for a client, or it shows another buffer, by anything: keys, the mouse, undo, a plugin or an agent. Once a frame per view, before it's drawn, however many changes there were | `view` |
-| `view.focused` | Another view has a client's focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, and `from`, the view that had it (nil if it was closed) |
+| `view.focused` | Another view has a client's focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, `from`, the view that had it (nil if it was closed), and `moved`, true when it moved under the client: another client showed another tab or closed what it had focused, or it followed again |
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
 | `option.changed` | An option was set | `name`, `value` |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
