@@ -47,14 +47,15 @@ pub struct View {
 }
 
 impl View {
-    /// Notes what drawing it showed: the bytes on screen, where it went, and
-    /// how wide its text was.
+    /// Notes what drawing it showed: the bytes on screen, and where it went,
+    /// with its text right of a gutter `gutter` cells wide.
     pub(crate) fn drawn(
         &mut self,
         shown: std::ops::Range<usize>,
         area: crate::render::Rect,
-        text_width: usize,
+        gutter: usize,
     ) {
+        let text_width = usize::from(area.width).saturating_sub(gutter).max(1);
         self.visible = Some(shown);
         self.size = Some((area.height, u16::try_from(text_width).unwrap_or(u16::MAX)));
         self.area = Some(area);
@@ -825,6 +826,15 @@ impl Editor {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_kept(kept);
             self.drop_if_unused(buffer);
+        }
+    }
+
+    /// Lays `buffer`'s text out at `size` in every view, whatever room each
+    /// has, like a terminal's screen sized for one client; or with `None`,
+    /// at each view's own size again.
+    pub fn set_screen_size(&mut self, buffer: BufferId, size: Option<crate::ScreenSize>) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_screen_size(size);
         }
     }
 

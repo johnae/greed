@@ -39,7 +39,11 @@ change apart from the others'; `:client-follow` has it follow again, closing
 the panes it had on its own (their buffers stay open). Pickers, prompts, the
 command line and completion menus show only on the terminal that opened
 them, and `.` repeats that terminal's own last change. Floats keep their
-place and size in proportion on screens of different sizes.
+place and size in proportion on screens of different sizes. A program in a
+terminal pane has one screen size: the size of the client that last typed
+into it or focused it. The others show it cropped to the rows with its
+cursor, with a note like `80×24 for tui@laptop` where it doesn't fill the
+pane; a window scales it to fit.
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).

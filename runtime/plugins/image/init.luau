@@ -15,6 +15,9 @@ type Viewer = {
 	image: number,
 	-- How much bigger than its own size it's drawn; nil to fit the view.
 	zoom: number?,
+	-- The client whose view it's fit to: the one that opened it or last
+	-- focused it. Others' views of other sizes leave it be.
+	client: number,
 }
 
 local viewers: { [number]: Viewer } = {}
@@ -77,7 +80,7 @@ function M.open(path: string, views: { greed.View }?): (greed.Buffer?, string?)
 	local buffer = greed.create_buffer("image", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	buffer:forget_history()
-	local v: Viewer = { buffer = buffer, path = path, image = image }
+	local v: Viewer = { buffer = buffer, path = path, image = image, client = greed.client.id() }
 	viewers[buffer:id()] = v
 	local shown_in: { greed.View } = views or { greed.view() }
 	for _, view in shown_in do
@@ -159,10 +162,27 @@ end, function(path, views)
 	return err
 end)
 
+-- The image fits the view of the client it's fit to; one focusing it
+-- has it fit its own.
 greed.on("view.resized", function(event: greed.ViewResized)
 	local v = viewers[event.view:buffer():id()]
-	if v and v.zoom == nil then
+	if v and v.zoom == nil and event.client == v.client then
 		show(v, event.cols)
+	end
+end)
+
+greed.on("view.focused", function(event: greed.ViewFocused)
+	local v = if event.view:valid() then viewers[event.view:buffer():id()] else nil
+	if v == nil or event.client == v.client then
+		return
+	end
+	local _, cols = event.view:size()
+	if cols == nil then
+		return
+	end
+	v.client = event.client
+	if v.zoom == nil then
+		show(v, cols)
 	end
 end)
 

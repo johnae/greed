@@ -74,12 +74,61 @@ type Term = {
 	-- Whether an update is under way, and whether more came in meanwhile.
 	updating: boolean,
 	stale: boolean,
+	-- The client whose screen it's sized for: the one that last typed into
+	-- it or focused it. A program has one screen size, so the others see it
+	-- cropped or scaled.
+	client: number?,
+	-- The size its screen was given for that client, and the note the
+	-- others see on it.
+	screen_size: { rows: number, cols: number, note: string }?,
 }
 
 local M = {}
 
 -- Terminals by the id of their buffer.
 local terms: { [number]: Term } = {}
+
+-- Says how every view lays `term`'s screen out: at the size it was given,
+-- with the row of the program's `cursor` kept in sight where a view crops
+-- it.
+local function publish_size(term: Term, cursor: { row: number, col: number }?)
+	local size = term.screen_size
+	if size == nil then
+		return
+	end
+	term.buffer:set_screen_size({
+		rows = size.rows,
+		cols = size.cols,
+		note = size.note,
+		cursor_row = cursor and cursor.row,
+	})
+end
+
+-- Sizes `term`'s screen at `rows` by `cols`, for the acting client, whose
+-- screen it follows from now on: the program's, and how every view lays
+-- it out.
+local function size_for_client(term: Term, rows: number, cols: number)
+	term.client = greed.client.id()
+	local running = term.terminal:exit_code() == nil
+	if running then
+		term.terminal:resize(rows, cols)
+	end
+	local name = greed.client.current().name
+	term.screen_size = { rows = rows, cols = cols, note = ` {cols}×{rows} for {name} ` }
+	publish_size(term, if running then term.terminal:screen().cursor else nil)
+end
+
+-- Has `term` follow the acting client's screen, as its `view` of it has
+-- room, unless it does already or the view hasn't been drawn yet.
+local function claim(term: Term, view: greed.View)
+	if term.client == greed.client.id() then
+		return
+	end
+	local rows, cols = view:size()
+	if rows and cols then
+		size_for_client(term, rows, cols)
+	end
+end
 
 -- The terminal last typed into, where text sent from files goes.
 local last_used: Term? = nil
@@ -368,6 +417,7 @@ local function show(term: Term)
 	term.alternate = screen.alternate
 	mark_failures(term)
 	follow(term, screen, before)
+	publish_size(term, screen.cursor)
 end
 
 --- Shows the terminal's latest output in its buffer.
@@ -565,6 +615,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		keep = opts.keep == true,
 		updating = false,
 		stale = false,
+		client = greed.client.id(),
 	}
 	terms[buffer:id()] = term
 	M.enter(view)
@@ -646,17 +697,32 @@ greed.on("terminal.exited", function(event)
 	end
 end)
 
--- A terminal you look at again no longer needs you.
+-- A terminal you look at again no longer needs you, and is sized for your
+-- screen from then on.
 greed.on("view.focused", function(event: greed.ViewFocused)
-	if event.view:valid() and term_of(event.view:buffer()) then
+	local term = if event.view:valid() then term_of(event.view:buffer()) else nil
+	if term then
 		core.floats.attention(event.view:buffer(), false)
+		claim(term, event.view)
 	end
 end)
 
+-- Only the screen of the client a terminal is sized for resizes it: the
+-- others' views of it changing size would only fight over it.
 greed.on("view.resized", function(event: greed.ViewResized)
 	local term = term_of(event.view:buffer())
-	if term and term.terminal:exit_code() == nil then
-		term.terminal:resize(event.rows, event.cols)
+	if term and (term.client == nil or term.client == event.client) then
+		size_for_client(term, event.rows, event.cols)
+	end
+end)
+
+-- A client that went no longer holds its terminals' size; the next to
+-- type into one or focus it does.
+greed.on("client.detached", function(event: greed.ClientDetached)
+	for _, term in terms do
+		if term.client == event.client then
+			term.client = nil
+		end
 	end
 end)
 
@@ -683,6 +749,8 @@ local function send(ctx: greed.Context, key: string)
 		greed.mode.set(core.style.home())
 		return
 	end
+	-- Typing into it sizes it for the screen you type on.
+	claim(term, ctx.view)
 	term.terminal:key(key)
 end
 
@@ -717,6 +785,7 @@ greed.command({
 	run = function(ctx)
 		local term = term_of(ctx.buffer)
 		if term and term.terminal:exit_code() == nil then
+			claim(term, ctx.view)
 			greed.mode.set(MODE)
 			M.update(term)
 		end
@@ -747,8 +816,10 @@ greed.command({
 -- Text pasted into the client goes to the program in the terminal pane
 -- you're in, marked as a paste if it asked for that.
 greed.on("client.paste", function(event: greed.ClientPaste)
-	local term = term_of(greed.view():buffer())
+	local view = greed.view()
+	local term = term_of(view:buffer())
 	if term then
+		claim(term, view)
 		term.terminal:paste(event.text)
 	end
 end)

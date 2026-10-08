@@ -443,3 +443,35 @@ test("a program in a terminal, or a command its shell runs, keeps the session", 
 	assert(#file.busy() == 1, "sh was asked for by name, so it counts as a program")
 	t:keys("e x i t enter")
 end)
+
+test("a terminal is sized for the client typing into it, not the others", function(t)
+	t:draw(60, 20)
+	t:run("terminal", { "cat" })
+	local buffer = greed.view():buffer()
+	local terminal = require("@terminal").terminal(buffer) :: greed.Terminal
+	local function rows(): number
+		return #terminal:screen().rows
+	end
+	local function sized(want_rows: number, want_cols: number): boolean
+		local size = buffer:screen_size()
+		return size ~= nil and size.rows == want_rows and size.cols == want_cols
+	end
+	assert(rows() == 19, `{rows()} rows`)
+	local second = t:client("laptop")
+	second:draw(40, 10)
+	assert(rows() == 19, "the second's smaller view doesn't resize it")
+	-- Typing into it sizes it for the second's screen.
+	second:keys("x")
+	assert(rows() == 9 and sized(9, 40), `{rows()} rows for the second`)
+	-- The first sees it at that size, with a note on whose it is.
+	local screen = table.concat(t:screen(60, 20), "\n")
+	assert(string.find(screen, "40×9 for laptop", 1, true), screen)
+	-- The first's window changing size doesn't fight over it.
+	t:draw(70, 22)
+	second:draw(40, 10)
+	assert(rows() == 9 and sized(9, 40), "still the second's")
+	-- Until the first types into it again.
+	t:keys("y")
+	assert(rows() == 21 and sized(21, 70), `{rows()} rows for the first`)
+	t:keys("ctrl-d")
+end)

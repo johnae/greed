@@ -7,7 +7,7 @@ use bytemuck::{Pod, Zeroable};
 use cosmic_text::PhysicalGlyph;
 use greed_core::CursorShape;
 use greed_core::image::ImageId;
-use greed_core::render::grid::Cell;
+use greed_core::render::grid::{Cell, Content};
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
 use greed_core::theme::{Checkbox, Medium, Style};
 use unicode_width::UnicodeWidthStr;
@@ -242,6 +242,45 @@ pub fn build(
         images: images(chrome.images, cw, ch),
         columns,
     })
+}
+
+/// Draws each of `contents`, views laid out at another size than they have
+/// (like a terminal sized for another client's screen), scaled into its
+/// rect from its top left, keeping its shape, over `scene`.
+pub fn add_scaled(
+    scene: &mut Scene,
+    contents: &[Content],
+    shape: CursorShape,
+    chrome: &Chrome,
+    fonts: &mut Fonts,
+    atlas: &mut Atlas,
+    palette: &Palette,
+) -> Result<(), Full> {
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let plain = Chrome {
+        text: chrome.text,
+        ..Chrome::default()
+    };
+    for content in contents {
+        let rows = content.grid.len();
+        let cols = content.grid.first().map_or(0, Vec::len);
+        if rows == 0 || cols == 0 {
+            continue;
+        }
+        let r = content.rect;
+        let scale = (f32::from(r.width) / cols as f32).min(f32::from(r.height) / rows as f32);
+        let cursor = content.cursor.map(|at| (at, shape));
+        let drawn = build(&content.grid, cursor, &plain, fonts, atlas, palette)?;
+        let (left, top) = (f32::from(r.x) * cw, f32::from(r.y) * ch);
+        scene
+            .instances
+            .extend(drawn.instances.into_iter().map(|mut quad| {
+                quad.pos = [left + quad.pos[0] * scale, top + quad.pos[1] * scale];
+                quad.size = [quad.size[0] * scale, quad.size[1] * scale];
+                quad
+            }));
+    }
+    Ok(())
 }
 
 /// A run of cells shaped together: the text, and the cell each byte starts.

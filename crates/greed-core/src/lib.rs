@@ -44,7 +44,9 @@ use std::fmt;
 
 use greed_text::TxId;
 
-pub use buffer::{Buffer, BufferId, Mark, MarkImage, Reveal, TrackId, Tracked, VirtualLine};
+pub use buffer::{
+    Buffer, BufferId, Mark, MarkImage, Reveal, ScreenSize, TrackId, Tracked, VirtualLine,
+};
 pub use editor::{
     Anchor, ClientInfo, ClientLayout, ClientState, CurrentProject, CursorShape, Editor, Extent,
     FIRST_CLIENT, Float, FloatOptions, KeyOutcome, LayoutChange, LineNumbers, Notice, PEER_COLORS,

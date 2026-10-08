@@ -210,27 +210,31 @@ impl App {
             return;
         };
         let grid = grid::compose(frame, Medium::Gui);
-        let cursor = frame.cursor.map(|c| (c, frame.cursor_shape));
+        // Views laid out at another size, like a terminal sized for another
+        // client's screen, are drawn scaled to fit, the cursor with them.
+        let contents = grid::compose_content(frame);
+        let cursor = frame
+            .cursor
+            .filter(|_| contents.iter().all(|c| c.cursor.is_none()))
+            .map(|c| (c, frame.cursor_shape));
         let chrome = draw::Chrome::of(frame);
-        let Ok(scene) = draw::build(
-            &grid,
-            cursor,
-            &chrome,
-            &mut self.fonts,
-            &mut self.atlas,
-            &self.palette,
-        )
-        .or_else(|_| {
+        let build = |fonts: &mut _, atlas: &mut _| {
+            let mut scene = draw::build(&grid, cursor, &chrome, fonts, atlas, &self.palette)?;
+            draw::add_scaled(
+                &mut scene,
+                &contents,
+                frame.cursor_shape,
+                &chrome,
+                fonts,
+                atlas,
+                &self.palette,
+            )?;
+            Ok::<_, crate::text::Full>(scene)
+        };
+        let Ok(scene) = build(&mut self.fonts, &mut self.atlas).or_else(|_| {
             // The atlas is full: start it again with this frame's glyphs.
             self.atlas.clear();
-            draw::build(
-                &grid,
-                cursor,
-                &chrome,
-                &mut self.fonts,
-                &mut self.atlas,
-                &self.palette,
-            )
+            build(&mut self.fonts, &mut self.atlas)
         }) else {
             return;
         };

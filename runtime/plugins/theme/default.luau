@@ -37,6 +37,7 @@ return {
 	["ui.float.border"] = { fg = "bright-black" },
 	["ui.float.title"] = { fg = "white", bold = true },
 	["ui.float.hint"] = { fg = "bright-black" },
+	["ui.screen.note"] = { fg = "bright-black", italic = true },
 	["ui.float.attention"] = { fg = "yellow", bold = true },
 	["ui.menu.selected"] = { bg = "bright-black", fg = "bright-white" },
 	["ui.menu.match"] = { fg = "yellow", bold = true },

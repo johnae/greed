@@ -22,7 +22,9 @@ use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::layout::Direction;
 use crate::search::{self, Direction as SearchDirection};
-use crate::{Buffer, BufferId, Mark, MarkImage, Reveal, Scroll, View, ViewId, VirtualLine};
+use crate::{
+    Buffer, BufferId, Mark, MarkImage, Reveal, ScreenSize, Scroll, View, ViewId, VirtualLine,
+};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -406,6 +408,28 @@ fn direction(name: &str) -> LuaResult<Direction> {
             "{name:?} isn't a direction: use \"left\", \"right\", \"up\" or \"down\""
         ))
     })
+}
+
+/// `{ rows, cols, note, cursor_row }`, as `buffer:set_screen_size` takes
+/// it.
+fn screen_size_from(t: &Table) -> LuaResult<ScreenSize> {
+    let rows = screen_cells(t, "rows")?;
+    let cursor_row = t
+        .get::<Option<u32>>("cursor_row")?
+        .map(|row| u16::try_from(row).unwrap_or(u16::MAX).min(rows - 1));
+    Ok(ScreenSize {
+        rows,
+        cols: screen_cells(t, "cols")?,
+        note: t.get::<Option<String>>("note")?.map(Into::into),
+        cursor_row,
+    })
+}
+
+/// A screen's `key`, its rows or columns: at least 1.
+fn screen_cells(t: &Table, key: &str) -> LuaResult<u16> {
+    let n: u32 = t.get(key)?;
+    u16::try_from(n.max(1))
+        .map_err(|_| mlua::Error::runtime(format!("a screen's {key} are at most {}", u16::MAX)))
 }
 
 /// Emits "view.closed" with the id of `view`, so plugins holding it can let
@@ -800,6 +824,24 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.set_kept(this.buffer, kept);
         Ok(())
+    });
+    methods.add_method("set_screen_size", |lua, this, size: Option<Table>| {
+        let size = size.map(|t| screen_size_from(&t)).transpose()?;
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_screen_size(this.buffer, size);
+        Ok(())
+    });
+    methods.add_method("screen_size", |lua, this, ()| {
+        let size = this.with_buffer(lua, |b| Ok(b.screen_size().cloned()))?;
+        size.map(|size| {
+            let t = lua.create_table()?;
+            t.set("rows", size.rows)?;
+            t.set("cols", size.cols)?;
+            t.set("note", size.note.as_deref())?;
+            t.set("cursor_row", size.cursor_row)?;
+            Ok(t)
+        })
+        .transpose()
     });
     methods.add_method(
         "set_keys",

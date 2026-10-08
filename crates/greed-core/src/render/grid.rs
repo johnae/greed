@@ -10,7 +10,7 @@ use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::{Frame, Rect, Role, Row, Span, Surface, SurfaceId, Tag};
+use super::{Frame, Position, Rect, Role, Row, Size, Span, Surface, SurfaceId, Tag};
 use crate::theme::{Medium, Style, Theme};
 
 /// One cell: a grapheme and its style. A wide grapheme's later cells have
@@ -79,6 +79,7 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
     let border = body.patch(&look(&Tag::FLOAT_BORDER));
     for surface in &frame.surfaces {
         let r = surface.rect;
+        let cropped = cropped_rows(frame, surface);
         let (x, y, w, h) = (
             usize::from(r.x),
             usize::from(r.y),
@@ -89,10 +90,12 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
             Role::Pane { active } => {
                 // A pane other than the active one is dimmed to its edges.
                 let base = if *active { text } else { inactive };
-                put_rows(&mut grid, surface, base, !active, paint);
+                put_rows(&mut grid, surface, cropped, base, !active, paint);
                 spread_scaled(&mut grid, y..y + h, x..x + w);
             }
-            Role::Tabline | Role::Status => put_rows(&mut grid, surface, text, false, paint),
+            Role::Tabline | Role::Status => {
+                put_rows(&mut grid, surface, cropped, text, false, paint);
+            }
             Role::Panel {
                 separator: column,
                 title,
@@ -105,7 +108,7 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
                     let style = panel.patch(&look(&Tag::PANEL_TITLE));
                     put(line, x, w, &format!("{title:<w$}"), style, 1);
                 }
-                put_rows(&mut grid, surface, panel, false, paint);
+                put_rows(&mut grid, surface, cropped, panel, false, paint);
             }
             Role::Float {
                 border: true,
@@ -120,13 +123,13 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
                 };
                 let looks = (border, body, look(&Tag::FLOAT_TITLE));
                 draw_border(&mut grid, r, &edges, looks, paint);
-                put_rows(&mut grid, surface, body, false, paint);
+                put_rows(&mut grid, surface, cropped, body, false, paint);
             }
             Role::Float { border: false, .. } => {
                 for line in grid.iter_mut().skip(y).take(h) {
                     put(line, x, w, &" ".repeat(w), body, 1);
                 }
-                put_rows(&mut grid, surface, body, false, paint);
+                put_rows(&mut grid, surface, cropped, body, false, paint);
             }
         }
     }
@@ -134,17 +137,167 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
 }
 
 /// Draws `surface`'s rows in its rect over `base`; with `fill`, each to
-/// the rect's right edge.
-fn put_rows(grid: &mut [Vec<Cell>], surface: &Surface, base: Style, fill: bool, paint: Paint) {
+/// the rect's right edge. Rows laid out at another size than the rect are
+/// cropped to it (see [`cropped_rows`]), and where they don't reach its
+/// edge, the surface's note says why.
+fn put_rows(
+    grid: &mut [Vec<Cell>],
+    surface: &Surface,
+    cropped: u16,
+    base: Style,
+    fill: bool,
+    paint: Paint,
+) {
+    // The window scales rows laid out at another size to fit instead (see
+    // `compose_content`).
+    if paint.medium == Medium::Gui && surface.content.is_some() {
+        return;
+    }
     let r = surface.rect;
     let (x, w) = (usize::from(r.x), usize::from(r.width));
     let lines = grid
         .iter_mut()
         .skip(usize::from(r.y))
         .take(usize::from(r.height));
-    for (line, row) in lines.zip(&surface.rows) {
+    let rows = surface.rows.iter().skip(usize::from(cropped));
+    for (line, row) in lines.zip(rows) {
         put_row(line, x, w, row, base, fill, paint);
     }
+    if let (Some(content), Some(note)) = (surface.content, &surface.note) {
+        let style = base.patch(&paint.theme.style(Tag::SCREEN_NOTE.name(), paint.medium));
+        put_note(grid, r, content, note, style);
+    }
+}
+
+/// A surface laid out at another size than its rect, as its own grid of
+/// that size for the window to scale into the rect, with where the cursor
+/// is in that grid if it's there.
+pub struct Content {
+    pub rect: Rect,
+    pub grid: Vec<Vec<Cell>>,
+    pub cursor: Option<Position>,
+}
+
+/// The surfaces of `frame` laid out at another size than their rects, like
+/// a terminal sized for another client's screen, which [`compose`] leaves
+/// blank in the window, bottom first.
+pub fn compose_content(frame: &Frame) -> Vec<Content> {
+    let theme = &frame.theme;
+    let paint = Paint {
+        theme,
+        medium: Medium::Gui,
+        scaled: true,
+    };
+    let look = |tag: &Tag| theme.style(tag.name(), Medium::Gui);
+    let text = look(&Tag::TEXT);
+    frame
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let content = surface.content?;
+            let base = match surface.role {
+                Role::Pane { active: false } => text.patch(&look(&Tag::PANE_INACTIVE)),
+                Role::Panel { .. } => text.patch(&look(&Tag::PANEL)),
+                Role::Float { .. } => text.patch(&look(&Tag::FLOAT)),
+                _ => text,
+            };
+            let blank = Cell {
+                text: " ".to_owned(),
+                style: base,
+                scale: 1,
+            };
+            let width = usize::from(content.width);
+            let mut grid = vec![vec![blank; width]; usize::from(content.height)];
+            for (line, row) in grid.iter_mut().zip(&surface.rows) {
+                put_row(line, 0, width, row, base, false, paint);
+            }
+            let r = surface.rect;
+            let cursor = frame
+                .cursor
+                .filter(|c| in_content(*c, r, content))
+                .map(|c| Position {
+                    row: c.row - r.y,
+                    col: c.col - r.x,
+                });
+            Some(Content {
+                rect: r,
+                grid,
+                cursor,
+            })
+        })
+        .collect()
+}
+
+/// Puts `note` in the room `rect` has that `content` doesn't fill: right
+/// at the end of its last row when the content is shorter, else at the
+/// end of its first row when it's narrower and the note fits beside it.
+fn put_note(grid: &mut [Vec<Cell>], rect: Rect, content: Size, note: &str, style: Style) {
+    let width = note.width();
+    let (x, w) = (usize::from(rect.x), usize::from(rect.width));
+    let row = if content.height < rect.height {
+        rect.y + rect.height - 1
+    } else if usize::from(rect.width.saturating_sub(content.width)) > width {
+        rect.y
+    } else {
+        return;
+    };
+    if let Some(line) = grid.get_mut(usize::from(row)) {
+        let at = x + w.saturating_sub(width);
+        put(line, at, w.min(width), note, style, 1);
+    }
+}
+
+/// How many rows of `surface` are cropped off its top: none unless it was
+/// laid out taller than its rect, like a terminal sized for a bigger
+/// screen, and then as few as keep the row it says to keep showing (where
+/// a terminal's program has its cursor), else the cursor's row when the
+/// cursor is in it, or else as many as show its bottom.
+pub fn cropped_rows(frame: &Frame, surface: &Surface) -> u16 {
+    let Some(content) = surface.content else {
+        return 0;
+    };
+    let r = surface.rect;
+    let extra = content.height.saturating_sub(r.height);
+    let cursor = frame.cursor.filter(|c| in_content(*c, r, content));
+    match surface.keep.or(cursor.map(|c| c.row - r.y)) {
+        _ if extra == 0 => 0,
+        Some(row) => (row + 1).saturating_sub(r.height).min(extra),
+        None => extra,
+    }
+}
+
+/// Whether `at` is in what a surface in `rect` laid out at `content` shows,
+/// before cropping.
+fn in_content(at: Position, rect: Rect, content: Size) -> bool {
+    let inside = |p: u16, start: u16, len: u16| {
+        p >= start && u32::from(p) < u32::from(start) + u32::from(len)
+    };
+    inside(at.col, rect.x, content.width) && inside(at.row, rect.y, content.height)
+}
+
+/// Where the cursor shows once surfaces are cropped: moved up with the
+/// rows cropped off the surface it's in, and `None` when it's cropped off
+/// that surface's side.
+pub fn cursor(frame: &Frame) -> Option<Position> {
+    let at = frame.cursor?;
+    let Some(surface) = frame
+        .surfaces
+        .iter()
+        .rev()
+        .find(|s| s.content.is_some_and(|c| in_content(at, s.rect, c)))
+    else {
+        return Some(at);
+    };
+    let r = surface.rect;
+    let moved = Position {
+        row: at.row - cropped_rows(frame, surface),
+        ..at
+    };
+    let room = Size {
+        width: r.width,
+        height: r.height,
+    };
+    in_content(moved, r, room).then_some(moved)
 }
 
 /// What a float shows on its border.

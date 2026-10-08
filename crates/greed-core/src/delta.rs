@@ -35,7 +35,11 @@ pub struct FrameDelta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ImagePlacement>>,
     /// The cursor, when it moved, appeared or went away.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "changed_to"
+    )]
     pub cursor: Option<Option<Position>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_shape: Option<CursorShape>,
@@ -56,16 +60,45 @@ pub struct SurfaceDelta {
     pub role: Option<Role>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rect: Option<Rect>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "changed_to"
+    )]
     pub content: Option<Option<Size>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "changed_to"
+    )]
     pub note: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "changed_to"
+    )]
+    pub keep: Option<Option<u16>>,
     /// How many rows it has, when that changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub row_count: Option<usize>,
     /// Rows that changed, by index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rows: Vec<(u16, Row)>,
+}
+
+/// Reads a field saying what something optional changed to: `null` is that
+/// it went away. Left out, the field is `None` by its default: unchanged.
+/// Without this, `null` would read as unchanged too.
+#[expect(
+    clippy::option_option,
+    reason = "the fields it reads are unchanged, gone or a new value"
+)]
+fn changed_to<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// `new` if it differs from `old`.
@@ -87,6 +120,7 @@ impl SurfaceDelta {
             rect: Some(new.rect),
             content: new.content.map(Some),
             note: new.note.clone().map(Some),
+            keep: new.keep.map(Some),
             row_count: Some(new.rows.len()),
             rows: (new.rows.iter().enumerate())
                 .map(|(i, row)| (index(i), row.clone()))
@@ -106,6 +140,7 @@ impl SurfaceDelta {
             rect: changed(&old.rect, &new.rect),
             content: changed(&old.content, &new.content),
             note: changed(&old.note, &new.note),
+            keep: changed(&old.keep, &new.keep),
             row_count: changed(&old.rows.len(), &new.rows.len()),
             rows,
         };
@@ -117,6 +152,7 @@ impl SurfaceDelta {
             && self.rect.is_none()
             && self.content.is_none()
             && self.note.is_none()
+            && self.keep.is_none()
             && self.row_count.is_none()
             && self.rows.is_empty()
     }
@@ -133,6 +169,9 @@ impl SurfaceDelta {
         }
         if let Some(note) = self.note {
             surface.note = note;
+        }
+        if let Some(keep) = self.keep {
+            surface.keep = keep;
         }
         if let Some(count) = self.row_count {
             // A delta saying more than a u16 numbers is broken.

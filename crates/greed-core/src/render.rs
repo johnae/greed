@@ -29,7 +29,7 @@ use crate::syntax::Highlight;
 use crate::theme::Theme;
 use crate::{
     Anchor, BufferId, ClientState, CursorShape, Editor, Float, FloatOptions, LineNumbers, Mark,
-    Panel, Reveal, Scroll, Side, View, ViewId, VirtualLine,
+    Panel, Reveal, ScreenSize, Scroll, Side, View, ViewId, VirtualLine,
 };
 
 /// Syntax highlights drawn over a buffer's text, under its marks.
@@ -163,6 +163,9 @@ impl Tag {
     pub const PANE_INACTIVE: Tag = Tag::fixed("ui.pane.inactive");
     pub const TABLINE: Tag = Tag::fixed("ui.tabline");
     pub const TABLINE_ACTIVE: Tag = Tag::fixed("ui.tabline.active");
+    /// A view's note on why what it shows doesn't fit it, like a terminal
+    /// sized for another client's screen.
+    pub const SCREEN_NOTE: Tag = Tag::fixed("ui.screen.note");
 
     pub const fn fixed(name: &'static str) -> Self {
         Tag(Name::Fixed(name))
@@ -367,6 +370,10 @@ pub struct Surface {
     /// A short text for the client to show on it, like why it's cropped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The row of what it shows to keep in sight when it's cropped, like
+    /// where a terminal's program has its cursor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<u16>,
 }
 
 impl Surface {
@@ -379,7 +386,46 @@ impl Surface {
             rows,
             content: None,
             note: None,
+            keep: None,
         }
+    }
+}
+
+/// A view laid out: its rows, where its cursor is on screen, and the size
+/// it was laid out at with a note saying why, when that isn't the room it
+/// has.
+struct Laid {
+    rows: Vec<Row>,
+    cursor: Option<Position>,
+    sized: Option<Sized>,
+}
+
+/// A view laid out at its buffer's screen size rather than its own room:
+/// that size, the note saying so, and the row to keep in sight.
+struct Sized {
+    size: Size,
+    note: String,
+    keep: Option<u16>,
+}
+
+impl Laid {
+    fn new(rows: Vec<Row>, cursor: Option<Position>, sized: Option<Sized>) -> Self {
+        Self {
+            rows,
+            cursor,
+            sized,
+        }
+    }
+
+    /// The surface showing view `view` as `role` in `rect`.
+    fn surface(self, view: ViewId, role: Role, rect: Rect) -> Surface {
+        let mut surface = Surface::new(SurfaceId::View(view), role, rect, self.rows);
+        if let Some(sized) = self.sized {
+            surface.content = Some(sized.size);
+            surface.note = Some(sized.note);
+            surface.keep = sized.keep;
+        }
+        surface
     }
 }
 
@@ -636,11 +682,11 @@ impl<M: Measure> Renderer<M> {
 
         let mut cursor = main_cursor;
         for (view, rect, role) in placed {
-            let (rows, panel_cursor) = self.view_rows(editor, view, rect, false, decorations);
+            let laid = self.view_rows(editor, view, rect, false, decorations);
             if editor.focus() == view {
-                cursor = panel_cursor;
+                cursor = laid.cursor;
             }
-            surfaces.push(Surface::new(SurfaceId::View(view), role, rect, rows));
+            surfaces.push(laid.surface(view, role, rect));
         }
         // Images under a floating view are left out rather than drawn over
         // it.
@@ -649,9 +695,9 @@ impl<M: Measure> Renderer<M> {
         let shown: Vec<Float> = editor.floats().into_iter().cloned().collect();
         for float in shown {
             let rect = place(&float.options, screen, cursor);
-            let (rows, float_cursor) = self.view_rows(editor, float.view, rect, false, decorations);
+            let laid = self.view_rows(editor, float.view, rect, false, decorations);
             if editor.focus() == float.view {
-                cursor = float_cursor;
+                cursor = laid.cursor;
             }
             let options = &float.options;
             covered.push(if options.border { bordered(rect) } else { rect });
@@ -661,7 +707,7 @@ impl<M: Measure> Renderer<M> {
                 label: border_spans(options.label.as_ref()),
                 footer: border_spans(options.footer.as_ref()),
             };
-            surfaces.push(Surface::new(SurfaceId::View(float.view), role, rect, rows));
+            surfaces.push(laid.surface(float.view, role, rect));
         }
         images.retain(|image| !covered.iter().any(|&c| overlaps(image.rect, c)));
         images.extend(self.images.take());
@@ -779,14 +825,14 @@ impl<M: Measure> Renderer<M> {
         let mut cursor = None;
         for (view, rect) in panes {
             let numbers = editor.buffer(editor.view(view).buffer).line_numbers();
-            let (rows, pane_cursor) = self.view_rows(editor, view, rect, numbers, decorations);
+            let laid = self.view_rows(editor, view, rect, numbers, decorations);
             if editor.focus() == view {
-                cursor = pane_cursor;
+                cursor = laid.cursor;
             }
             let role = Role::Pane {
                 active: view == active,
             };
-            surfaces.push(Surface::new(SurfaceId::View(view), role, rect, rows));
+            surfaces.push(laid.surface(view, role, rect));
         }
         if tabline {
             let rect = Rect {
@@ -817,25 +863,27 @@ impl<M: Measure> Renderer<M> {
         row
     }
 
-    /// Lays out one view to fill `area`, scrolling it to keep its primary
-    /// cursor visible. Returns its rows and where that cursor is on screen.
+    /// Lays out one view to fill `room`, scrolling it to keep its primary
+    /// cursor visible: its rows, and where that cursor is on screen. A
+    /// buffer with a screen size of its own, like a terminal's, is laid out
+    /// at that size from `room`'s top left, whatever room the view has, for
+    /// the client to crop or scale to fit.
     fn view_rows(
         &self,
         editor: &mut Editor,
         view_id: ViewId,
-        area: Rect,
+        room: Rect,
         line_numbers: bool,
         decorations: &dyn Decorations,
-    ) -> (Vec<Row>, Option<Position>) {
+    ) -> Laid {
+        let (gutter, signs) = gutter_width(editor, editor.view(view_id), line_numbers);
+        let screen = editor.buffer(editor.view(view_id).buffer).screen_size();
+        let (area, sized) = laid_out_at(screen, room, gutter);
         let text_rows = usize::from(area.height);
-        let (gutter, signs) = if line_numbers {
-            gutter_width(editor, editor.view(view_id))
-        } else {
-            (0, false)
-        };
         let text_width = usize::from(area.width).saturating_sub(gutter).max(1);
 
-        let scroll = self.scroll_to_cursor(editor, editor.view(view_id), text_width, text_rows);
+        let view = editor.view(view_id);
+        let scroll = self.scroll_for(editor, view, sized.is_some(), text_width, text_rows);
         editor.view_mut(view_id).scroll = scroll;
 
         let view = editor.view(view_id);
@@ -928,9 +976,11 @@ impl<M: Measure> Renderer<M> {
         let text_area = text_area(area, gutter, text_width);
         self.place_images(editor, view, &styled, text_area, &hidden);
         let shown = shown_bytes(text, first_shown, last_shown);
-        editor.view_mut(view_id).drawn(shown, area, text_width);
+        // The view's own room is what it says it has, so the client the
+        // screen size is for can tell its own changing.
+        editor.view_mut(view_id).drawn(shown, room, gutter);
         rows.resize_with(text_rows, Row::default);
-        (rows, cursor)
+        Laid::new(rows, cursor, sized)
     }
 
     /// Adds each mark's text after the end of a line that reaches column
@@ -1113,6 +1163,27 @@ impl<M: Measure> Renderer<M> {
         rows.iter()
             .position(|cells| cells.last().is_some_and(|c| c.byte >= pos))
             .unwrap_or(rows.len() - 1)
+    }
+
+    /// Where `view` starts, laid out `width` by `height`: at the screen, its
+    /// buffer's last lines, when it's laid out at its buffer's screen size
+    /// (`screen`), else keeping its primary cursor on screen.
+    fn scroll_for(
+        &self,
+        editor: &Editor,
+        view: &View,
+        screen: bool,
+        width: usize,
+        height: usize,
+    ) -> Scroll {
+        if !screen {
+            return self.scroll_to_cursor(editor, view, width, height);
+        }
+        let lines = editor.buffer(view.buffer).text().len_lines();
+        Scroll {
+            line: lines.saturating_sub(height),
+            row: 0,
+        }
     }
 
     /// The scroll position that keeps the primary cursor on screen, moving
@@ -1497,7 +1568,11 @@ fn line_number(style: LineNumbers, text: &Rope, head: usize) -> impl Fn(usize) -
 
 /// The gutter's width: line numbers plus one space, after a sign column if
 /// any mark in the buffer has a sign. Also whether there is a sign column.
-fn gutter_width(editor: &Editor, view: &View) -> (usize, bool) {
+/// Without `line_numbers`, there's no gutter.
+fn gutter_width(editor: &Editor, view: &View, line_numbers: bool) -> (usize, bool) {
+    if !line_numbers {
+        return (0, false);
+    }
     let buffer = editor.buffer(view.buffer);
     let numbers = buffer.text().len_lines().to_string().len() + 1;
     let signs = buffer.all_marks().any(|m| m.sign.is_some());
@@ -1686,6 +1761,38 @@ fn tab_title(editor: &Editor, pane: ViewId) -> String {
         None if buffer.kind() == "file" => "untitled".to_owned(),
         None => buffer.kind().to_owned(),
     }
+}
+
+/// Where a view in `room` with a `gutter` that wide lays its text out: in
+/// `room`, or from its top left at `screen`'s size when its buffer has one
+/// other than the room's, with that size and a note saying why it doesn't
+/// fit.
+fn laid_out_at(screen: Option<&ScreenSize>, room: Rect, gutter: usize) -> (Rect, Option<Sized>) {
+    let room_width = usize::from(room.width).saturating_sub(gutter).max(1);
+    let Some(s) = screen.filter(|s| {
+        (usize::from(s.rows), usize::from(s.cols)) != (usize::from(room.height), room_width)
+    }) else {
+        return (room, None);
+    };
+    let area = Rect {
+        width: u16::try_from(gutter).unwrap_or(0).saturating_add(s.cols),
+        height: s.rows,
+        ..room
+    };
+    let note = s
+        .note
+        .as_deref()
+        .map_or_else(|| format!("{}×{}", s.cols, s.rows), str::to_owned);
+    let size = Size {
+        width: area.width,
+        height: area.height,
+    };
+    let sized = Sized {
+        size,
+        note,
+        keep: s.cursor_row,
+    };
+    (area, Some(sized))
 }
 
 /// The part of a view's `area` its text takes, right of a `gutter` cells

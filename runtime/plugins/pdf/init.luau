@@ -19,6 +19,9 @@ type Viewer = {
 	-- The image of the page shown, and the line each page's text starts on.
 	image: number?,
 	starts: { number },
+	-- The client whose view the page is fit to: the one that opened it or
+	-- last focused it. Others' views of other sizes leave it be.
+	client: number,
 }
 
 local viewers: { [number]: Viewer } = {}
@@ -118,7 +121,15 @@ function M.open(path: string, views: { greed.View }?): (greed.Buffer?, string?)
 	end
 	local buffer = greed.create_buffer("pdf", "", { readonly = true })
 	buffer:set_line_numbers(false)
-	local v: Viewer = { doc = doc, buffer = buffer, page = 1, zoom = 1, text = false, starts = {} }
+	local v: Viewer = {
+		doc = doc,
+		buffer = buffer,
+		page = 1,
+		zoom = 1,
+		text = false,
+		starts = {},
+		client = greed.client.id(),
+	}
 	viewers[buffer:id()] = v
 	local shown_in: { greed.View } = views or { greed.view() }
 	for _, view in shown_in do
@@ -217,10 +228,27 @@ end, function(path, views)
 	return err
 end)
 
+-- The page fits the view of the client it's fit to; one focusing it has
+-- it fit its own.
 greed.on("view.resized", function(event: greed.ViewResized)
 	local v = viewers[event.view:buffer():id()]
-	if v and not v.text then
+	if v and not v.text and event.client == v.client then
 		show_page(v, event.cols)
+	end
+end)
+
+greed.on("view.focused", function(event: greed.ViewFocused)
+	local v = if event.view:valid() then viewers[event.view:buffer():id()] else nil
+	if v == nil or event.client == v.client then
+		return
+	end
+	local _, cols = event.view:size()
+	if cols == nil then
+		return
+	end
+	v.client = event.client
+	if not v.text then
+		show_page(v, cols)
 	end
 end)
 

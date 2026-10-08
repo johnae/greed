@@ -80,6 +80,10 @@ export type Buffer = {
 	--- to; with false it goes once nothing shows it (right away if nothing
 	--- does now).
 	set_kept: (self: Buffer, kept: boolean) -> (),
+	--- Lays the text out at `rows` by `cols` in every view, whatever room a view has, like a terminal whose program has one screen size for one client: the screen is the buffer's last `rows` lines. A client whose view is another size crops it (a terminal), keeping row `cursor_row` (0-based, where the program's cursor is) in sight, or scales it (a window), and shows `note` (default "COLSxROWS") in the room left over. nil lays it out at each view's own size again.
+	set_screen_size: (self: Buffer, size: { rows: number, cols: number, note: string?, cursor_row: number? }?) -> (),
+	--- The size `set_screen_size` set, if any.
+	screen_size: (self: Buffer) -> { rows: number, cols: number, note: string?, cursor_row: number? }?,
 	--- Binds single keys for this buffer alone, e.g. `{ y = "answer-yes" }`, in every mode and ahead of every other binding, while it has focus. Replaces what was bound for it before; nil drops them.
 	set_keys: (self: Buffer, keys: { [string]: string }?) -> (),
 	--- Stops keeping undo history, for buffers whose edits nobody undoes,

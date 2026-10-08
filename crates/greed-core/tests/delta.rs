@@ -468,3 +468,27 @@ fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
     let grid = compose(&f, Medium::Tui);
     assert_eq!(grid.len(), usize::from(Size::MAX.height));
 }
+
+#[test]
+fn what_goes_away_goes_away_after_a_trip_through_json() {
+    use greed_core::render::Size;
+    let mut ed = editor("|hello");
+    let before = frame(&mut ed);
+    // The cursor goes, and a surface stops being laid out at a size of its
+    // own, as a terminal does when its client's screen is the size again.
+    let mut sized = before.clone();
+    sized.surfaces[0].content = Some(Size {
+        width: 40,
+        height: 12,
+    });
+    sized.surfaces[0].note = Some("40×12 for tui@desk".to_owned());
+    let mut after = before.clone();
+    after.cursor = None;
+    let d = delta(&sized, &after);
+    let pane = &d.surfaces[0];
+    assert_eq!(
+        (pane.content, pane.note.as_ref()),
+        (Some(None), Some(&None))
+    );
+    assert_eq!(d.cursor, Some(None));
+}

@@ -48,6 +48,22 @@ pub struct Buffer {
     next_track: u64,
     /// The text edits changed since plugins were last told, as it is now.
     changed: Option<Range<usize>>,
+    /// The size its text is laid out at in every view, whatever room a view
+    /// has, like a terminal's screen, which can be one size only.
+    screen_size: Option<ScreenSize>,
+}
+
+/// The size a buffer's text is laid out at, in rows and columns, and what a
+/// client shows on a view of another size: why it doesn't fit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenSize {
+    pub rows: u16,
+    pub cols: u16,
+    pub note: Option<Arc<str>>,
+    /// The row of the screen, its buffer's last `rows` lines, to keep in
+    /// sight where it's cropped, like where a terminal's program has its
+    /// cursor.
+    pub cursor_row: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -185,6 +201,7 @@ impl Buffer {
             tracked: HashMap::new(),
             next_track: 0,
             changed: None,
+            screen_size: None,
         }
     }
 
@@ -357,6 +374,17 @@ impl Buffer {
 
     pub(crate) fn set_kept(&mut self, kept: bool) {
         self.kept = kept;
+    }
+
+    /// The size its text is laid out at in every view, if it has one.
+    pub fn screen_size(&self) -> Option<&ScreenSize> {
+        self.screen_size.as_ref()
+    }
+
+    /// Lays its text out at `size` in every view, or with `None` at each
+    /// view's own size again.
+    pub fn set_screen_size(&mut self, size: Option<ScreenSize>) {
+        self.screen_size = size;
     }
 
     /// The command `key` runs in this buffer whatever the mode, if it's

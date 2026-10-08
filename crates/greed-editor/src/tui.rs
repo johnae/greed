@@ -467,7 +467,9 @@ impl Screen {
         }
         self.grid = grid;
         self.graphics.draw(out, &frame.images)?;
-        if let Some(pos) = frame.cursor {
+        // Where it shows once a view laid out at another size, like a
+        // terminal sized for another client's screen, is cropped to fit.
+        if let Some(pos) = grid::cursor(frame) {
             let shape = match frame.cursor_shape {
                 CursorShape::Block => SetCursorStyle::SteadyBlock,
                 CursorShape::Bar => SetCursorStyle::SteadyBar,

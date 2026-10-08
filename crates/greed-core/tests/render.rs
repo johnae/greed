@@ -1509,3 +1509,140 @@ fn other_clients_cursors_and_selections_show_in_their_colors() {
     let f = frame(&mut ed, 20, 2);
     assert!(tagged(&f, &peer("cursor")).is_empty());
 }
+
+/// An editor showing `lines` numbered lines without line numbers, laid out
+/// at a screen size of `rows` by `cols`, like a terminal sized for another
+/// client, the cursor on line `at`.
+fn sized_screen(lines: usize, rows: u16, cols: u16, at: usize) -> Editor {
+    sized_screen_keeping(lines, rows, cols, at, None)
+}
+
+/// As `sized_screen`, keeping row `keep` of the screen in sight, like where
+/// a terminal's program has its cursor.
+fn sized_screen_keeping(
+    lines: usize,
+    rows: u16,
+    cols: u16,
+    at: usize,
+    keep: Option<u16>,
+) -> Editor {
+    let text: Vec<String> = (0..lines).map(|n| format!("line {n}")).collect();
+    let mut ed = Editor::new(ClientId(1));
+    let (buffer, view) = ed.open("terminal", &text.join("\n"), None);
+    ed.set_line_numbers(buffer, false);
+    ed.set_screen_size(
+        buffer,
+        Some(greed_core::ScreenSize {
+            rows,
+            cols,
+            note: Some("sized for tui@desk".into()),
+            cursor_row: keep,
+        }),
+    );
+    let pos = text[..at].iter().map(|l| l.len() + 1).sum();
+    ed.view_mut(view).selection = Selection::point(pos);
+    ed
+}
+
+/// Each row's text, as `compose` draws them for a terminal.
+fn composed(frame: &Frame) -> Vec<String> {
+    use greed_core::render::grid::compose;
+    compose(frame, greed_core::theme::Medium::Tui)
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|c| c.text.as_str())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn a_screen_shows_its_buffers_last_lines_cropped_to_the_programs_cursor() {
+    // Fifteen lines, the screen the last ten; six rows of room.
+    let mut ed = sized_screen_keeping(15, 10, 12, 0, Some(2));
+    let f = frame(&mut ed, 30, 7);
+    assert_eq!(
+        f.surfaces[0].rows[0].text(),
+        "line 5",
+        "the screen's first line"
+    );
+    let shown = composed(&f);
+    assert_eq!(
+        (&*shown[0], &*shown[5]),
+        ("line 5", "line 10"),
+        "row 2 in sight"
+    );
+    // The client's own cursor, up in the scrollback, isn't on screen.
+    assert_eq!(greed_core::render::grid::cursor(&f), None);
+    // Without a row to keep, nor the cursor in the screen, the bottom shows.
+    let mut ed = sized_screen(15, 10, 12, 0);
+    let f = frame(&mut ed, 30, 7);
+    let shown = composed(&f);
+    assert_eq!((&*shown[0], &*shown[5]), ("line 9", "line 14"));
+}
+
+#[test]
+fn a_buffer_with_a_screen_size_is_laid_out_at_it_whatever_room_its_view_has() {
+    use greed_core::render::grid::{compose, cursor};
+    use greed_core::theme::Medium;
+    // Six rows of room, a screen of ten: the last line is the cursor's.
+    let mut ed = sized_screen(10, 10, 12, 9);
+    let f = frame(&mut ed, 30, 7);
+    let pane = &f.surfaces[0];
+    assert_eq!(pane.rect.height, 6);
+    assert_eq!(pane.rows.len(), 10, "laid out at the screen's size");
+    assert_eq!(
+        pane.content,
+        Some(Size {
+            width: 12,
+            height: 10
+        })
+    );
+    assert_eq!(pane.note.as_deref(), Some("sized for tui@desk"));
+    // The view says the room it has, for its own client to follow.
+    let view = ed.view(ed.focus());
+    assert_eq!(view.size, Some((6, 30)));
+
+    // A terminal crops it to the rows with the cursor, which moves up with
+    // them; no note, as nothing's left over.
+    let text = |grid: Vec<Vec<greed_core::render::grid::Cell>>| -> Vec<String> {
+        grid.iter()
+            .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
+            .collect()
+    };
+    let shown = text(compose(&f, Medium::Tui));
+    assert_eq!(shown[0].trim_end(), "line 4");
+    assert_eq!(shown[5].trim_end(), "line 9");
+    let at = cursor(&f).unwrap();
+    assert_eq!((at.row, f.cursor.unwrap().row), (5, 9));
+
+    // The cursor near the top: the rows from the top show.
+    let mut ed = sized_screen(10, 10, 12, 1);
+    let f = frame(&mut ed, 30, 7);
+    let shown = text(compose(&f, Medium::Tui));
+    assert_eq!(shown[0].trim_end(), "line 0");
+    assert_eq!(cursor(&f).unwrap().row, 1);
+}
+
+#[test]
+fn a_screen_smaller_than_the_view_leaves_room_with_its_note() {
+    use greed_core::render::grid::compose;
+    use greed_core::theme::Medium;
+    let mut ed = sized_screen(3, 3, 12, 0);
+    let f = frame(&mut ed, 30, 7);
+    let rows: Vec<String> = compose(&f, Medium::Tui)
+        .iter()
+        .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
+        .collect();
+    assert_eq!(rows[0].trim_end(), "line 0");
+    assert_eq!(rows[2].trim_end(), "line 2");
+    assert_eq!(rows[3].trim(), "", "nothing below the screen");
+    assert!(
+        rows[5].ends_with("sized for tui@desk"),
+        "the note at the bottom right: {:?}",
+        rows[5]
+    );
+}
