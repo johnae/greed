@@ -98,6 +98,8 @@ checking plugins.
 
 - [Using Greed](docs/using.md): editing, searching, files, sessions,
   configuration.
+- [Several clients](docs/clients.md): terminals and windows on one
+  session, following each other or laid out on their own.
 - [Writing plugins](docs/plugins.md): commands, keys, decorations, panels,
   tests and types.
 - [Agents](docs/agents.md): `greed ctl`, MCP, proposals, `/ide` and plugins

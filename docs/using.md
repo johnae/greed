@@ -34,16 +34,10 @@ the terminal that copied, and desktop notifications to the one used last.
 
 Attached terminals follow each other: they show the same project, tab and
 panes, each with its own focus and pane zoom. `:client-independent` lays one
-out on its own, starting from a copy of what it shows, so its tabs and panes
-change apart from the others'; `:client-follow` has it follow again, closing
-the panes it had on its own (their buffers stay open). Pickers, prompts, the
-command line and completion menus show only on the terminal that opened
-them, and `.` repeats that terminal's own last change. Floats keep their
-place and size in proportion on screens of different sizes. A program in a
-terminal pane has one screen size: the size of the client that last typed
-into it or focused it. The others show it cropped to the rows with its
-cursor, with a note like `80×24 for tui@laptop` where it doesn't fill the
-pane; a window scales it to fit.
+out on its own, and `:client-follow` has it follow again. Pickers, prompts
+and the command line show only on the terminal that opened them, and a
+program in a terminal pane is sized for the client that last typed into it.
+[Several clients](clients.md) has the details.
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
@@ -58,9 +52,8 @@ and returns, rather than starting an editor inside the editor, and
 `greed ctl` talks to that session. Programs there can tell from
 `$GREED_TERMINAL`, which names the session.
 
-Attaching from a second terminal takes the session over from the first. If
-a session can't start in the background, `GREED_NO_SESSION=1 greed FILE` runs
-the editor directly in the terminal.
+If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
+runs the editor directly in the terminal.
 
 A session keeps running the greed it started with. After an upgrade, a
 session from before may not understand the new client, and `greed` says so

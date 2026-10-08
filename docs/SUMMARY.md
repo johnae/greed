@@ -3,6 +3,7 @@
 [Greed](README.md)
 
 - [Using Greed](using.md)
+  - [Several clients](clients.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)

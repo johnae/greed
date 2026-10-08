@@ -58,6 +58,16 @@ frame for each. A client says which protocol it speaks when it
 attaches, and the session refuses clients it can't talk to instead of
 misreading them.
 
+The editor acts for one client at a time, and every command, key and event
+handler knows which. Clients that follow share one layout of projects,
+tabs and panes, each with its own focus and zoom; an independent client
+has a layout of its own, a copy of the shared one with views of its own.
+Floats are placed in shares of the screen, so they keep their proportions
+on screens of other sizes, and the ones a client opens, like a picker, are
+drawn for it alone. A view can be laid out at one size for every client,
+as a terminal is for the client typing into it; the others crop or scale
+it. [Several clients](clients.md) describes this from the user's side.
+
 Frames describe what to show by meaning, like "selection", "keyword" or
 "diagnostic.error", and carry the theme that maps those names to colors.
 A terminal and a GUI can draw the same frame, and theme entries can style
