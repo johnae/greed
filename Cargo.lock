@@ -1411,6 +1411,7 @@ dependencies = [
  "ignore",
  "image",
  "mlua",
+ "nix",
  "nucleo-matcher",
  "portable-pty",
  "proptest",

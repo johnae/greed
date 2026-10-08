@@ -70,6 +70,27 @@ fn run(how: Run) -> std::io::Result<Finished> {
     })
 }
 
+/// A program's `env` option: each name to a string to set it, or `false` to
+/// leave the variable out of what it inherits.
+pub(super) fn env_from_lua(env: Option<Table>) -> LuaResult<Vec<(String, Option<String>)>> {
+    let Some(env) = env else {
+        return Ok(Vec::new());
+    };
+    env.pairs::<String, mlua::Value>()
+        .map(|pair| {
+            let (name, value) = pair?;
+            match value {
+                mlua::Value::String(s) => Ok((name, Some(s.to_str()?.to_owned()))),
+                mlua::Value::Boolean(false) => Ok((name, None)),
+                other => Err(mlua::Error::runtime(format!(
+                    "env.{name} is a {}; give a string, or false to unset it",
+                    other.type_name()
+                ))),
+            }
+        })
+        .collect()
+}
+
 fn run_from_lua(command: Vec<String>, opts: Option<&Table>) -> LuaResult<Run> {
     let (stdin, cwd) = match opts {
         Some(opts) => (

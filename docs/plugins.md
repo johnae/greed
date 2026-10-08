@@ -991,8 +991,13 @@ in a terminal: `terminal.output` events say there's something new to read
 with `terminal:screen()` and `terminal:scrollback(from)`, and
 `terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,
 cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
-which you can use in your own marks too. A terminal ends with the plugin
-that started it.
+which you can use in your own marks too. A row says `wrapped` when its
+line carries on on the next row, so long lines can be joined again.
+`terminal:modes()` tells what kind of program runs: `alternate` (a full
+screen program), `canonical` and `echo` (both off in raw mode, only `echo`
+off while a password is read), `mouse`, `app_cursor` and
+`bracketed_paste`. In `env`, a variable set to `false` is left out of what
+the program inherits. A terminal ends with the plugin that started it.
 
 `greed.process.spawn(command, { cwd, env })` starts a program to talk to
 over its input and output, like an agent or a server speaking JSON-RPC.

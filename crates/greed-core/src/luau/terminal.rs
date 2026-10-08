@@ -15,7 +15,7 @@ use crate::image::ImageId;
 use crate::keymap::Key;
 use crate::mouse::{Mouse, MouseKind};
 use crate::registry::PluginId;
-use crate::terminal::{Event, Mark, MarkKind, Options, Row, Terminal, TerminalId};
+use crate::terminal::{Event, Mark, MarkKind, Modes, Options, Row, Terminal, TerminalId};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -57,11 +57,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let options = Options {
                 command: spec.get("command")?,
                 cwd: spec.get::<Option<String>>("cwd")?.map(Into::into),
-                env: spec
-                    .get::<Option<HashMap<String, String>>>("env")?
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect(),
+                env: super::process::env_from_lua(spec.get("env")?)?,
                 rows: spec.get("rows")?,
                 cols: spec.get("cols")?,
                 scrollback: spec
@@ -169,6 +165,7 @@ fn row_to_lua(lua: &Lua, row: Row) -> LuaResult<Table> {
         links.push(l)?;
     }
     t.set("links", links)?;
+    t.set("wrapped", row.wrapped)?;
     Ok(t)
 }
 
@@ -223,6 +220,17 @@ fn marks_to_lua(lua: &Lua, marks: Vec<Mark>) -> LuaResult<Table> {
         list.push(t)?;
     }
     Ok(list)
+}
+
+fn modes_to_lua(lua: &Lua, modes: Modes) -> LuaResult<Table> {
+    let t = lua.create_table()?;
+    t.set("alternate", modes.alternate)?;
+    t.set("canonical", modes.canonical)?;
+    t.set("echo", modes.echo)?;
+    t.set("mouse", modes.mouse)?;
+    t.set("app_cursor", modes.app_cursor)?;
+    t.set("bracketed_paste", modes.bracketed_paste)?;
+    Ok(t)
 }
 
 impl UserData for TerminalRef {
@@ -281,6 +289,9 @@ impl UserData for TerminalRef {
             let cell = state(lua).editor.cell_size();
             this.with(lua, |t| t.resize(rows, cols, cell))?
                 .map_err(mlua::Error::external)
+        });
+        methods.add_method("modes", |lua, this, ()| {
+            modes_to_lua(lua, this.with(lua, |t| t.modes())?)
         });
         methods.add_method("wants_mouse", |lua, this, ()| {
             this.with(lua, |t| t.wants_mouse())

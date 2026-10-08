@@ -4,14 +4,14 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 use greed_core::keymap::Key;
-use greed_core::terminal::{Event, Options, Screen, Terminal, TerminalId};
+use greed_core::terminal::{Event, Modes, Options, Screen, Terminal, TerminalId};
 
 fn start(command: &[&str], rows: u16, cols: u16) -> (Terminal, Receiver<Event>) {
     let (events, received) = crossbeam_channel::unbounded();
     let options = Options {
         command: Some(command.iter().map(ToString::to_string).collect()),
         cwd: None,
-        env: vec![("PS1".into(), "$ ".into())],
+        env: vec![("PS1".into(), Some("$ ".into()))],
         rows,
         cols,
         scrollback: 1000,
@@ -293,6 +293,53 @@ mod from_luau {
     }
 
     #[test]
+    fn plugins_see_wrapping_modes_and_can_unset_variables() {
+        let h = host();
+        h.load_str(
+            "term",
+            r#"
+            local greed = require("@greed")
+            local seen: any = {}
+            local script = "printf '%s %s' \"${COLORTERM-unset}\" 0123456789ab"
+            local t = greed.terminal.spawn({
+                command = { "sh", "-c", script },
+                env = { COLORTERM = false },
+                rows = 3,
+                cols = 10,
+            })
+            greed.on("terminal.exited", function()
+                local rows = {}
+                for _, row in t:screen().rows do
+                    table.insert(rows, row.text .. (if row.wrapped then "+" else ""))
+                end
+                seen.rows = rows
+                seen.modes = t:modes()
+            end)
+            return seen
+            "#,
+        )
+        .unwrap();
+        pump(&h, "require(\"@term\").rows ~= nil");
+        assert_eq!(
+            h.eval("table.concat(require(\"@term\").rows, '|')")
+                .unwrap(),
+            "unset 0123+|456789ab|"
+        );
+        assert_eq!(
+            h.eval("require(\"@term\").modes.alternate").unwrap(),
+            "false"
+        );
+        let err = h
+            .eval(
+                "require('@greed').terminal.spawn({ command = { 'true' }, \
+                 env = { A = 1 }, rows = 1, cols = 1 })",
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("env.A"), "{err}");
+    }
+
+    #[test]
     fn unloading_the_plugin_ends_its_terminals() {
         let h = host();
         h.load_str(
@@ -391,4 +438,93 @@ fn a_shell_is_busy_while_a_command_runs() {
         assert!(start.elapsed() < Duration::from_secs(10), "never busy");
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn long_lines_say_they_wrap() {
+    let (terminal, events) = start(&["printf", &"x".repeat(30)], 5, 10);
+    exited(&events);
+    let screen = terminal.screen();
+    let wrapped: Vec<bool> = screen.rows[..3].iter().map(|row| row.wrapped).collect();
+    assert_eq!(wrapped, [true, true, false], "{:?}", text(&screen));
+    assert!(!screen.rows[3].wrapped);
+}
+
+/// Waits until the program's modes are as `done` accepts.
+fn until_modes(terminal: &Terminal, done: impl Fn(&Modes) -> bool) -> Modes {
+    let start = Instant::now();
+    loop {
+        let modes = terminal.modes();
+        if done(&modes) {
+            return modes;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "gave up waiting: {modes:?}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn raw_mode_and_echo_are_reported() {
+    let script = "printf ready; read x; stty -icanon -echo; printf raw; sleep 30";
+    let (terminal, _events) = start(&["sh", "-c", script], 3, 20);
+    until(&terminal, |s| s.rows[0].text == "ready");
+    let modes = terminal.modes();
+    assert!(modes.canonical && modes.echo, "{modes:?}");
+    terminal.write(b"\r".to_vec());
+    let modes = until_modes(&terminal, |m| !m.canonical);
+    assert!(!modes.echo, "{modes:?}");
+    assert!(!modes.alternate);
+}
+
+#[test]
+fn the_alternate_screen_and_other_modes_are_reported() {
+    let script = "printf '\\033[?1049h\\033[?1000h\\033[?1h\\033[?2004hin'; read x; \
+                  printf '\\033[?1049l\\033[?1000l\\033[?1l\\033[?2004lout'; sleep 30";
+    let (terminal, _events) = start(&["sh", "-c", script], 3, 20);
+    until(&terminal, |s| s.rows[0].text == "in");
+    assert_eq!(
+        terminal.modes(),
+        Modes {
+            alternate: true,
+            canonical: true,
+            echo: true,
+            mouse: true,
+            app_cursor: true,
+            bracketed_paste: true,
+        }
+    );
+    terminal.write(b"\r".to_vec());
+    until(&terminal, |s| text(s).iter().any(|l| l.ends_with("out")));
+    let modes = terminal.modes();
+    assert!(
+        !modes.alternate && !modes.mouse && !modes.app_cursor && !modes.bracketed_paste,
+        "{modes:?}"
+    );
+}
+
+#[test]
+fn a_variable_can_be_unset() {
+    let (events, received) = crossbeam_channel::unbounded();
+    let options = Options {
+        command: Some(vec![
+            "sh".into(),
+            "-c".into(),
+            "printf '%s %s' \"${COLORTERM-unset}\" \"$GREETING\"".into(),
+        ]),
+        cwd: None,
+        env: vec![
+            ("COLORTERM".into(), None),
+            ("GREETING".into(), Some("hi".into())),
+        ],
+        rows: 3,
+        cols: 20,
+        scrollback: 10,
+        cell: (10, 20),
+    };
+    let terminal = Terminal::spawn(TerminalId(1), &options, events).unwrap();
+    exited(&received);
+    assert_eq!(terminal.screen().rows[0].text, "unset hi");
 }

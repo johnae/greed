@@ -566,7 +566,10 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	-- Programs in it can tell which session they're in: `greed FILE` opens
 	-- the file here instead of starting another editor inside this one,
 	-- and `greed ctl` talks to this session.
-	local env = table.clone(M.env)
+	local env: { [string]: string | false } = {}
+	for name, value in M.env do
+		env[name] = value
+	end
 	local session = greed.session.current()
 	if session then
 		env.GREED_TERMINAL = session

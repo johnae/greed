@@ -22,6 +22,7 @@ use alacritty_terminal::term::cell::{Cell, Flags, ImagePiece};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as TermColor, NamedColor, Processor, Rgb};
 use crossbeam_channel::Sender;
+use nix::sys::termios::LocalFlags;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use crate::image::{Image, ImageId};
@@ -50,7 +51,8 @@ pub struct Options {
     /// The program and its arguments; without, the user's shell.
     pub command: Option<Vec<String>>,
     pub cwd: Option<PathBuf>,
-    pub env: Vec<(String, String)>,
+    /// Variables to set, or with `None`, to leave out.
+    pub env: Vec<(String, Option<String>)>,
     pub rows: u16,
     pub cols: u16,
     /// How many lines that scrolled off the top are kept.
@@ -69,6 +71,9 @@ pub struct Row {
     pub images: Vec<RowImage>,
     /// The links on it (OSC 8): byte ranges and where they go.
     pub links: Vec<RowLink>,
+    /// Whether the text carries on on the next row: the program printed
+    /// past the last column, so the terminal wrapped the line.
+    pub wrapped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +110,25 @@ pub struct Screen {
     pub cursor: Option<(usize, usize)>,
     /// Whether a full screen program, like an editor or a pager, is showing.
     pub alternate: bool,
+}
+
+/// The modes the program set, for telling what kind of program runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(clippy::struct_excessive_bools, reason = "independent modes")]
+pub struct Modes {
+    /// A full screen program, like an editor or a pager, is showing.
+    pub alternate: bool,
+    /// The terminal hands over input a line at a time, as for a shell
+    /// reading a command; off in raw mode, which editors and prompts set.
+    pub canonical: bool,
+    /// Typed text is echoed back; off while a program reads a password.
+    pub echo: bool,
+    /// The program asked for mouse events.
+    pub mouse: bool,
+    /// Arrow keys are sent in application mode.
+    pub app_cursor: bool,
+    /// Pastes are marked as pastes.
+    pub bracketed_paste: bool,
 }
 
 /// What a shell marked, with `OSC 133`.
@@ -367,6 +391,27 @@ impl Terminal {
         }
     }
 
+    /// The modes the program set. Line input and echo come from the
+    /// terminal's settings, and count as on where the system can't say.
+    pub fn modes(&self) -> Modes {
+        let mode = *lock(&self.shared.term).mode();
+        let (canonical, echo) = self.master.get_termios().map_or((true, true), |termios| {
+            let flags = termios.local_flags;
+            (
+                flags.contains(LocalFlags::ICANON),
+                flags.contains(LocalFlags::ECHO),
+            )
+        });
+        Modes {
+            alternate: mode.contains(TermMode::ALT_SCREEN),
+            canonical,
+            echo,
+            mouse: mode.intersects(TermMode::MOUSE_MODE),
+            app_cursor: mode.contains(TermMode::APP_CURSOR),
+            bracketed_paste: mode.contains(TermMode::BRACKETED_PASTE),
+        }
+    }
+
     /// Whether the program asked for mouse events, as editors and `htop` do.
     pub fn wants_mouse(&self) -> bool {
         lock(&self.shared.term)
@@ -475,7 +520,10 @@ fn command(options: &Options) -> CommandBuilder {
         command.cwd(cwd);
     }
     for (key, value) in &options.env {
-        command.env(key, value);
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        }
     }
     command
 }
@@ -670,6 +718,7 @@ fn row(
         }
     }
     finish_run(&mut row, run);
+    row.wrapped = cells[Column(cols - 1)].flags.contains(Flags::WRAPLINE);
     if cursor == Some(end) {
         offset = row.text.len();
     }

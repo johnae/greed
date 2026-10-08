@@ -594,6 +594,24 @@ export type TerminalRow = {
 	images: { { from: number, id: number, col: number, row: number, cols: number, rows: number } },
 	--- Links the program printed (OSC 8), as byte ranges and where they go.
 	links: { TerminalLink },
+	--- Whether the line carries on on the next row: the program printed past the last column and the terminal wrapped it.
+	wrapped: boolean,
+}
+
+--- The modes a terminal's program set, from `terminal:modes()`.
+export type TerminalModes = {
+	--- A full screen program, like an editor or a pager, is showing.
+	alternate: boolean,
+	--- Input goes to the program a line at a time; off in raw mode, which editors and prompts set.
+	canonical: boolean,
+	--- Typed text is echoed; off while a program reads a password.
+	echo: boolean,
+	--- The program asked for mouse events.
+	mouse: boolean,
+	--- Arrow keys are sent in application mode.
+	app_cursor: boolean,
+	--- Pastes are marked as pastes.
+	bracketed_paste: boolean,
 }
 
 export type TerminalLink = { from: number, to: number, uri: string }
@@ -645,6 +663,8 @@ export type Terminal = {
 	resize: (self: Terminal, rows: number, cols: number) -> (),
 	--- Whether the program asked for mouse events, as editors and htop do.
 	wants_mouse: (self: Terminal) -> boolean,
+	--- The modes the program set: the alternate screen, line input and echo (from the terminal's settings), mouse, application cursor keys and bracketed paste.
+	modes: (self: Terminal) -> TerminalModes,
 	--- Sends a mouse event at the program's screen cell (`col`, `row`),
 	--- 0-based, if it asked for that kind: `kind` as in a MouseEvent, with
 	--- a button or a scroll direction. Returns whether it was sent.
@@ -667,8 +687,9 @@ export type Terminals = {
 	--- without) in a terminal of `rows` by `cols`. Its output arrives as
 	--- "terminal.output" events and its end as "terminal.exited".
 	--- `scrollback` lines are kept above the screen (default 10000). The
-	--- size is kept to between 1 by 1 and 1024 rows by 2048 columns.
-	spawn: (spec: { command: { string }?, cwd: string?, env: { [string]: string }?, rows: number, cols: number, scrollback: number? }) -> Terminal,
+	--- size is kept to between 1 by 1 and 1024 rows by 2048 columns. In
+	--- `env`, `false` leaves a variable out of what the program inherits.
+	spawn: (spec: { command: { string }?, cwd: string?, env: { [string]: string | false }?, rows: number, cols: number, scrollback: number? }) -> Terminal,
 }
 
 --- A place a shell marked in a terminal, from `terminal:marks()`.
