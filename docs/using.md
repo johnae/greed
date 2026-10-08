@@ -105,12 +105,24 @@ can say what of theirs is running with `require("@core").file.running`.
 
 Started without a config (`~/.config/greed/init.luau`), Greed shows a page
 with a few questions: how you like to edit, which theme, whether your font
-has icons, and whether to add Greed's tools to Claude Code. A style or
-theme you pick switches at once, so you can try it on the page. **Save**
-writes a short `init.luau` from your answers and opens it; **Not now**
-closes the page. Either way it doesn't show again by itself, and `:setup`
-brings it back. Save never replaces a config that's there; it shows what to
-add instead.
+has icons, whether to add Greed's tools to Claude Code, and which language
+model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
+for now). A style or theme you pick switches at once, so you can try it on
+the page.
+
+The page is a form in every editing style: `tab` and `shift-tab` go from
+choice to choice, `enter` or `space` picks one or presses a button, and a
+click does too. Under the models, a button sets the API key (it goes in the
+system keyring) or signs you in; for Ollama the page says whether it
+answers, and if not, to run `ollama serve` and `ollama pull llama3.2`.
+
+**Save** writes a short `init.luau` from your answers and opens it, and has
+the `fast` and `reasoning` roles use the provider you picked (`:models`
+changes them later). **Not now**, `esc`, `q` or closing the page any other
+way closes it without writing anything. Either way it doesn't show again by
+itself, and `:setup` brings it back, or goes to it if it's open. Save never
+replaces a config that's there; it shows what to add instead, and `esc`
+closes that.
 
 ### In a window
 

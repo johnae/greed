@@ -1,5 +1,5 @@
 name = "setup"
-requires = ["core", "markdown", "picker", "theme"]
+requires = ["core", "picker", "theme", "models"]
 # Save writes your init.luau and notes the page was answered (fs); the
 # Claude Code answer runs `claude mcp add` (proc).
 capabilities = ["proc", "fs.read", "fs.write"]

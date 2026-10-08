@@ -101,14 +101,9 @@ local function press(view: greed.View, event: greed.MouseEvent, pos: number)
 	end
 end
 
-greed.on("mouse", function(event: greed.MouseEvent)
-	local view = event.view
-	if view == nil then
-		if event.kind == "press" and event.button == "left" and event.action then
-			greed.run(event.action)
-		end
-		return
-	end
+-- What a click over `view` does: run a button, go to a plugin that
+-- claimed its kind of buffer, or move the cursor, select or scroll.
+local function handle(event: greed.MouseEvent, view: greed.View)
 	-- A mark's text with an action is a button: the click runs it.
 	if event.kind == "press" and event.button == "left" and event.action and event.pos then
 		view:focus()
@@ -137,6 +132,22 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		pressed[event.client] = nil
 	elseif event.kind == "scroll" and (event.dir == "up" or event.dir == "down") then
 		M.scroll(view, if event.dir == "up" then -M.lines else M.lines)
+	end
+end
+
+greed.on("mouse", function(event: greed.MouseEvent)
+	local view = event.view
+	if view == nil then
+		if event.kind == "press" and event.button == "left" and event.action then
+			greed.run(event.action)
+		end
+		return
+	end
+	handle(event, view)
+	-- A click can close its view, like a page's Close button: the handlers
+	-- after this one then hear of a click over no view.
+	if not view:valid() then
+		(event :: any).view = nil
 	end
 end)
 

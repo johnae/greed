@@ -62,6 +62,7 @@ fn core_plugin_tests_pass() {
         plugin("cmdline"),
         plugin("theme"),
         plugin("markdown"),
+        plugin("models"),
         plugin("setup"),
         plugin("describe"),
     ];
