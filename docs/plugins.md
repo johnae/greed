@@ -1003,14 +1003,35 @@ the program inherits. A terminal ends with the plugin that started it.
 over its input and output, like an agent or a server speaking JSON-RPC.
 `child:write(text)` sends it input, `child:read()` waits for the next
 piece it prints (nil once it exited), `child:close()` closes its input,
-and `child:wait()` waits for its exit code. It ends with the plugin that
-started it, too.
+and `child:wait()` waits for its exit code, or nil and the signal that
+ended it (`nil, "INT"`). It ends with the plugin that started it, too.
 
 ```luau
 greed.spawn(function()
 	local child = assert(greed.process.spawn({ "sh", "-c", "read x; echo got $x" }))
 	child:write("hello\n")
 	greed.echo(child:read()) -- got hello
+end)
+```
+
+What it prints as errors is kept for `child:stderr()`. With `stderr =
+"stream"` it arrives from `child:read()` as well, in the order it comes,
+and `read` says where each piece came from. With `group = true` the
+program starts a process group of its own, so `child:signal("INT")` and
+`child:kill()` reach whatever it started too, as ctrl-c does in a shell.
+As for terminals, `false` in `env` leaves a variable out.
+
+```luau
+greed.spawn(function()
+	local child = assert(greed.process.spawn({ "make" }, { stderr = "stream", group = true }))
+	while true do
+		local piece, from = child:read()
+		if piece == nil then
+			break
+		end
+		greed.echo(`{from}: {piece}`)
+	end
+	print(child:wait()) -- 0, or nil and "INT" after child:signal("INT")
 end)
 ```
 

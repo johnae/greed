@@ -99,3 +99,110 @@ test("output arrives while the editor goes on, for code waiting in a command", f
 	end)
 	assert(got == "late\n", tostring(got))
 end)
+
+-- Every piece `child` prints until it exits, with where each came from.
+local function read_all(child: greed.Child): { { piece: string, from: string } }
+	local pieces = {}
+	while true do
+		local piece, from = child:read()
+		if piece == nil then
+			return pieces
+		end
+		table.insert(pieces, { piece = piece, from = from or "?" })
+	end
+end
+
+-- The pieces from `from` joined, in the order they came.
+local function joined(pieces: { { piece: string, from: string } }, from: string): string
+	local parts = {}
+	for _, p in pieces do
+		if p.from == from then
+			table.insert(parts, p.piece)
+		end
+	end
+	return table.concat(parts)
+end
+
+test("error output can arrive with the rest, each piece saying where it came from", function(t)
+	-- It waits for a line between its outputs, so they come in this order.
+	local script = "echo a; read x; echo b >&2; read x; echo c"
+	local child, err = greed.process.spawn({ "sh", "-c", script }, { stderr = "stream" })
+	assert(child, err)
+	local function next_piece(): string
+		local piece, from = child:read()
+		return `{from}: {piece}`
+	end
+	local first = next_piece()
+	assert(first == "stdout: a\n", first)
+	child:write("\n")
+	local second = next_piece()
+	assert(second == "stderr: b\n", second)
+	child:write("\n")
+	local third = next_piece()
+	assert(third == "stdout: c\n", third)
+	assert(child:read() == nil, "nothing more")
+	assert(child:wait() == 0)
+	assert(child:stderr() == "b\n", "and it's kept too")
+end)
+
+test("both outputs arrive in their own order when streamed", function(t)
+	local script = "echo a; echo b >&2; echo c; echo d >&2"
+	local child = assert(greed.process.spawn({ "sh", "-c", script }, { stderr = "stream" }))
+	local pieces = read_all(child)
+	assert(joined(pieces, "stdout") == "a\nc\n", joined(pieces, "stdout"))
+	assert(joined(pieces, "stderr") == "b\nd\n", joined(pieces, "stderr"))
+end)
+
+test("by default error output is only kept, and read gives what it printed", function(t)
+	local child = assert(greed.process.spawn({ "sh", "-c", "echo a; echo b >&2; echo c" }))
+	local pieces = read_all(child)
+	assert(joined(pieces, "stdout") == "a\nc\n", joined(pieces, "stdout"))
+	assert(joined(pieces, "stderr") == "", "no error output from read")
+	assert(child:stderr() == "b\n", child:stderr())
+	local code, signal = child:wait()
+	assert(code == 0 and signal == nil, `{code} {signal}`)
+end)
+
+test("a program in a group of its own is signalled with what it started", function(t)
+	-- The sleep ignores INT, so it outlives the shell and holds its output
+	-- open; it says so once it does.
+	local script = "(trap '' INT; echo started; exec sleep 100) & wait"
+	local child = assert(greed.process.spawn({ "sh", "-c", script }, { group = true }))
+	assert(child:read() == "started\n", "the sleep is running")
+	assert(child:signal("INT"), "sent")
+	local code, signal = child:wait()
+	assert(code == nil and signal == "INT", `{code} {signal}`)
+	-- The sleep is still in the group, and goes with it.
+	assert(child:signal("KILL"), "what's left of the group is reached")
+	local ok, err = pcall(function()
+		child:signal("NOPE")
+	end)
+	assert(not ok and string.find(tostring(err), "isn't a signal", 1, true), tostring(err))
+end)
+
+test("a program on its own is signalled by name and says which ended it", function(t)
+	local child = assert(greed.process.spawn({ "sleep", "30" }))
+	assert(child:signal("term"), "names are any case, without SIG")
+	local code, signal = child:wait()
+	assert(code == nil and signal == "TERM", `{code} {signal}`)
+	assert(not child:signal("SIGTERM"), "once it's gone nothing is sent")
+end)
+
+test("a variable can be left out of what a program inherits", function(t)
+	-- `env` lists what it got; found by its full path, as there's no PATH.
+	local found = assert(greed.process.run({ "sh", "-c", "command -v env" }))
+	local env = (string.gsub(found.stdout, "%s+$", ""))
+	local vars: { [string]: string | false } = { PATH = false, GREED_TEST_A = "1" }
+	local child = assert(greed.process.spawn({ env }, { env = vars }))
+	local listed = "\n" .. joined(read_all(child), "stdout")
+	assert(string.find(listed, "\nGREED_TEST_A=1\n", 1, true), listed)
+	assert(not string.find(listed, "\nPATH=", 1, true), listed)
+end)
+
+test("spawn refuses options it can't use", function(t)
+	local spawn = greed.process.spawn :: any
+	local ok, err = pcall(spawn, { "true" }, { env = { A = 1 } })
+	assert(not ok and string.find(tostring(err), "env.A", 1, true), tostring(err))
+	local ok2, err2 = pcall(spawn, { "true" }, { stderr = "merge" })
+	assert(not ok2 and string.find(tostring(err2), "stream", 1, true), tostring(err2))
+end)

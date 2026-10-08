@@ -562,8 +562,8 @@ export type Process = {
 		command: { string },
 		opts: { stdin: string?, cwd: string? }?
 	) -> ({ code: number?, stdout: string, stderr: string }?, string?),
-	--- Starts `command` to talk to over its input and output, like an agent speaking JSON-RPC, and returns at once; nil and the error if it couldn't start. It runs until it exits, is killed, or the plugin that started it unloads.
-	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string }? }?) -> (Child?, string?),
+	--- Starts `command` to talk to over its input and output, like an agent speaking JSON-RPC, and returns at once; nil and the error if it couldn't start. It runs until it exits, is killed, or the plugin that started it unloads. In `env`, `false` leaves a variable out of what it inherits. With `stderr = "stream"`, what it prints as errors arrives from `read` too, in the order it comes; by default it's only kept for `child:stderr()`. With `group`, it starts a process group of its own, which `kill` and `signal` reach, so the programs it starts end with it.
+	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string | false }?, stderr: ("keep" | "stream")?, group: boolean? }?) -> (Child?, string?),
 }
 
 --- A program started with `greed.process.spawn`.
@@ -571,13 +571,16 @@ export type Child = {
 	pid: number,
 	--- Sends `text` to its input; false once that's closed.
 	write: (self: Child, text: string) -> boolean,
-	--- Waits for the next piece of what it prints, and returns it; nil once it exited and everything was read. Only in commands, event handlers and greed.spawn.
-	read: (self: Child) -> string?,
+	--- Waits for the next piece of what it prints, and returns it with the output it came from, "stdout" or "stderr" (only with `stderr = "stream"`); nil once it exited and everything was read. Only in commands, event handlers and greed.spawn.
+	read: (self: Child) -> (string?, ("stdout" | "stderr")?),
 	--- Closes its input, which tells most programs to finish.
 	close: (self: Child) -> (),
+	--- Ends it (and with `group`, its process group) with KILL.
 	kill: (self: Child) -> (),
-	--- Waits for it to exit and returns its exit code, nil if a signal ended it.
-	wait: (self: Child) -> number?,
+	--- Sends it a signal by name, like "INT", "TERM", "HUP" or "QUIT"; with `group`, to its process group, even after it exited, as a shell signals a job. Returns whether it went.
+	signal: (self: Child, name: string) -> boolean,
+	--- Waits for it to exit and returns its exit code, or nil and the name of the signal that ended it, like "INT".
+	wait: (self: Child) -> (number?, string?),
 	--- The end of what it printed as errors so far.
 	stderr: (self: Child) -> string,
 }

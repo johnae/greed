@@ -103,6 +103,12 @@ fn declared_api_exists() {
                  check(t) t:close()"
             ),
         ),
+        (
+            "Child",
+            format!(
+                "{greed} local c = assert(greed.process.spawn({{ 'true' }})) check(c) c:kill()"
+            ),
+        ),
     ];
     let h = host();
     for (name, setup) in cases {

@@ -41,8 +41,8 @@ unicode-width.workspace = true
 url.workspace = true
 alacritty_terminal = { path = "../../vendor/alacritty_terminal" }
 portable-pty = "0.9"
-# The version portable-pty uses, for its terminal settings.
-nix = { version = "0.28", default-features = false, features = ["term"] }
+# The version portable-pty uses: terminal settings and signals.
+nix = { version = "0.28", default-features = false, features = ["term", "signal"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 base64 = "0.22"
 gethostname = "1.1"

@@ -470,7 +470,7 @@ local function handlers(session: Session): rpc.Handlers
 		for _, arg in params.args or {} do
 			table.insert(command, tostring(arg))
 		end
-		local env = {}
+		local env: { [string]: string | false } = {}
 		for _, var in params.env or {} do
 			env[tostring(var.name)] = tostring(var.value)
 		end

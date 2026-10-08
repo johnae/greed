@@ -5,11 +5,15 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use mlua::{Function, IntoLuaMulti, Lua, Table};
+use nix::sys::signal::Signal;
+use nix::unistd::Pid;
 
 use super::jobs::{self, Output};
 use super::{state, state_mut, tasks};
@@ -143,11 +147,30 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     Ok(process)
 }
 
-/// What a running program's reader thread sends: a piece of what it
-/// printed, or how it exited once it closed its output.
+/// Which of a program's outputs a piece came from.
+#[derive(Clone, Copy)]
+pub(crate) enum Stream {
+    Stdout,
+    Stderr,
+}
+
+impl Stream {
+    fn name(self) -> &'static str {
+        match self {
+            Stream::Stdout => "stdout",
+            Stream::Stderr => "stderr",
+        }
+    }
+}
+
+/// What a running program's threads send: a piece of what it printed, or
+/// how it exited: its code, or the signal that ended it.
 pub(crate) enum Piece {
-    Out(Vec<u8>),
-    Exited(Option<i32>),
+    Out(Stream, Vec<u8>),
+    Exited {
+        code: Option<i32>,
+        signal: Option<i32>,
+    },
 }
 
 /// The most of a program's error output kept, from the end.
@@ -159,32 +182,69 @@ struct Child {
     /// Where its input goes, until closed.
     stdin: Option<Sender<Vec<u8>>>,
     /// What it printed and nobody read yet.
-    queue: VecDeque<Vec<u8>>,
+    queue: VecDeque<(Stream, Vec<u8>)>,
     /// The command waiting for the next piece, and those waiting for it to
     /// exit.
     reader: Option<u64>,
     waiting: Vec<u64>,
-    /// Whether it exited, and its code if it had one.
+    /// Whether it exited, and its code or the signal that ended it.
     exited: bool,
     code: Option<i32>,
+    signal: Option<&'static str>,
     process: Arc<Mutex<std::process::Child>>,
+    /// Whether it leads a process group of its own, which signals go to.
+    group: bool,
     stderr: Arc<Mutex<Vec<u8>>>,
 }
 
 impl Child {
-    fn kill(&self) {
-        if let Ok(mut process) = self.process.lock() {
-            let _ = process.kill();
+    /// Sends `signal` to the program, or with `group` to its process group,
+    /// as a shell signals a job: what's left of the group, even once the
+    /// program itself has gone. Returns whether it went.
+    fn signal(&self, signal: Signal) -> bool {
+        let Ok(mut process) = self.process.lock() else {
+            return false;
+        };
+        let Ok(pid) = i32::try_from(process.id()) else {
+            return false;
+        };
+        let pid = Pid::from_raw(pid);
+        if self.group {
+            return nix::sys::signal::killpg(pid, signal).is_ok();
         }
+        // Holding the lock, the program can't be reaped meanwhile, so its
+        // id can't go to another.
+        matches!(process.try_wait(), Ok(None)) && nix::sys::signal::kill(pid, signal).is_ok()
     }
 }
 
 impl Drop for Child {
     fn drop(&mut self) {
-        if !self.exited {
-            self.kill();
+        if !self.exited || self.group {
+            self.signal(Signal::SIGKILL);
         }
     }
+}
+
+/// The signal named `name`, like "INT" or "SIGINT".
+fn signal_named(name: &str) -> LuaResult<Signal> {
+    let upper = name.to_ascii_uppercase();
+    let full = if upper.starts_with("SIG") {
+        upper
+    } else {
+        format!("SIG{upper}")
+    };
+    full.parse().map_err(|_| {
+        mlua::Error::runtime(format!(
+            "{name:?} isn't a signal; give one like \"INT\", \"TERM\" or \"KILL\""
+        ))
+    })
+}
+
+/// The name of signal number `number`, like "INT".
+fn signal_name(number: i32) -> Option<&'static str> {
+    let signal = Signal::try_from(number).ok()?;
+    Some(signal.as_str().trim_start_matches("SIG"))
 }
 
 /// Programs started with `spawn`, by id.
@@ -209,14 +269,28 @@ struct Started {
     stderr: Arc<Mutex<Vec<u8>>>,
 }
 
+/// How `spawn` starts a program, besides its command line.
+#[derive(Default)]
+struct SpawnOptions {
+    cwd: Option<String>,
+    env: Vec<(String, Option<String>)>,
+    /// Whether its error output arrives as pieces too, not only kept.
+    stream_stderr: bool,
+    /// Whether it starts a process group of its own.
+    group: bool,
+}
+
+/// How long the end of a program's output may take to arrive once it has
+/// exited. Something it started can hold its output open for longer.
+const OUTPUT_AFTER_EXIT: Duration = Duration::from_secs(1);
+
 /// Starts `command` with piped input and output, and threads that write
-/// its input, read its output (sending each piece with `send`) and keep the
-/// end of its error output.
+/// its input, read its output (sending each piece with `send`), keep the
+/// end of its error output and wait for it to exit.
 fn start_child(
     command: &[String],
-    cwd: Option<&str>,
-    env: &HashMap<String, String>,
-    send: impl Fn(Piece) + Send + 'static,
+    options: &SpawnOptions,
+    send: impl Fn(Piece) + Send + Sync + 'static,
 ) -> std::io::Result<Started> {
     let (program, args) = command
         .split_first()
@@ -224,12 +298,20 @@ fn start_child(
     let mut builder = Command::new(program);
     builder
         .args(args)
-        .envs(env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(cwd) = cwd {
+    for (name, value) in &options.env {
+        match value {
+            Some(value) => builder.env(name, value),
+            None => builder.env_remove(name),
+        };
+    }
+    if let Some(cwd) = &options.cwd {
         builder.current_dir(cwd);
+    }
+    if options.group {
+        builder.process_group(0);
     }
     let mut child = builder.spawn().map_err(|err| cant_run(program, &err))?;
     let pid = child.id();
@@ -252,12 +334,16 @@ fn start_child(
             }
         }
     });
+    let send = Arc::new(send);
     let kept = Arc::new(Mutex::new(Vec::new()));
     let errors = kept.clone();
-    // Dropped when all the error output is read.
-    let (reading, read) = crossbeam_channel::bounded::<()>(0);
+    // Each dropped when all of that output is read.
+    let (stderr_reading, stderr_read) = crossbeam_channel::bounded::<()>(0);
+    let (stdout_reading, stdout_read) = crossbeam_channel::bounded::<()>(0);
+    let stream_stderr = options.stream_stderr;
+    let sender = send.clone();
     std::thread::spawn(move || {
-        let _reading = reading;
+        let _reading = stderr_reading;
         let mut buffer = [0; 4096];
         while let Ok(n @ 1..) = stderr.read(&mut buffer) {
             if let Ok(mut kept) = errors.lock() {
@@ -265,25 +351,31 @@ fn start_child(
                 let over = kept.len().saturating_sub(STDERR_KEPT);
                 kept.drain(..over);
             }
+            if stream_stderr {
+                sender(Piece::Out(Stream::Stderr, buffer[..n].to_vec()));
+            }
+        }
+    });
+    let sender = send.clone();
+    std::thread::spawn(move || {
+        let _reading = stdout_reading;
+        let mut buffer = vec![0; 16 * 1024];
+        while let Ok(n @ 1..) = stdout.read(&mut buffer) {
+            sender(Piece::Out(Stream::Stdout, buffer[..n].to_vec()));
         }
     });
     let watched = process.clone();
     std::thread::spawn(move || {
-        let mut buffer = vec![0; 16 * 1024];
-        while let Ok(n @ 1..) = stdout.read(&mut buffer) {
-            send(Piece::Out(buffer[..n].to_vec()));
-        }
-        let code = loop {
-            match watched.lock().map(|mut p| p.try_wait()) {
-                Ok(Ok(Some(status))) => break status.code(),
-                Ok(Ok(None)) => std::thread::sleep(std::time::Duration::from_millis(20)),
-                _ => break None,
-            }
-        };
+        let status = wait_for_exit(&watched, &stdout_read);
         // What it said last is there when its exit is, unless something it
-        // started keeps its error output open.
-        let _ = read.recv_timeout(std::time::Duration::from_secs(1));
-        send(Piece::Exited(code));
+        // started keeps its output open.
+        let until = Instant::now() + OUTPUT_AFTER_EXIT;
+        let _ = stdout_read.recv_deadline(until);
+        let _ = stderr_read.recv_deadline(until);
+        send(Piece::Exited {
+            code: status.and_then(|s| s.code()),
+            signal: status.and_then(|s| s.signal()),
+        });
     });
     Ok(Started {
         pid,
@@ -291,6 +383,29 @@ fn start_child(
         process,
         stderr: kept,
     })
+}
+
+/// Waits for the program to exit, taking its lock only to look, so it can
+/// be signalled meanwhile. Most programs close their output as they exit,
+/// so once that's closed it looks often; before, less and less often.
+fn wait_for_exit(
+    process: &Mutex<std::process::Child>,
+    output_closed: &Receiver<()>,
+) -> Option<std::process::ExitStatus> {
+    const OFTEN: Duration = Duration::from_millis(20);
+    const SELDOM: Duration = Duration::from_millis(500);
+    let mut pause = OFTEN;
+    loop {
+        match process.lock().map(|mut p| p.try_wait()) {
+            Ok(Ok(Some(status))) => return Some(status),
+            Ok(Ok(None)) => {}
+            _ => return None,
+        }
+        match output_closed.recv_timeout(pause) {
+            Err(RecvTimeoutError::Disconnected) => std::thread::sleep(OFTEN),
+            _ => pause = (pause * 2).min(SELDOM),
+        }
+    }
 }
 
 /// A piece of what program `id` printed, or its exit, arrived: the command
@@ -302,20 +417,22 @@ pub(super) fn piece_arrived(lua: &Lua, id: u64, piece: Piece) -> LuaResult<()> {
             return Ok(());
         };
         match piece {
-            Piece::Out(bytes) => {
+            Piece::Out(stream, bytes) => {
                 if let Some(token) = child.reader.take() {
-                    vec![(token, lua.create_string(&bytes)?.into_lua_multi(lua)?)]
+                    let piece = (lua.create_string(&bytes)?, stream.name());
+                    vec![(token, piece.into_lua_multi(lua)?)]
                 } else {
-                    child.queue.push_back(bytes);
+                    child.queue.push_back((stream, bytes));
                     vec![]
                 }
             }
-            Piece::Exited(code) => {
+            Piece::Exited { code, signal } => {
                 child.exited = true;
                 child.code = code;
+                child.signal = signal.and_then(signal_name);
                 let mut wake = Vec::new();
                 for token in child.waiting.drain(..) {
-                    wake.push((token, code.into_lua_multi(lua)?));
+                    wake.push((token, (code, child.signal).into_lua_multi(lua)?));
                 }
                 if let Some(token) = child.reader.take() {
                     wake.push((token, mlua::Value::Nil.into_lua_multi(lua)?));
@@ -339,17 +456,17 @@ pub(super) fn awaited(lua: &Lua) -> bool {
         .any(|child| !child.exited && (child.reader.is_some() || !child.waiting.is_empty()))
 }
 
-/// What `read` gives now: `true` and a piece, or `true` and nil once the
-/// program exited with nothing left to read; otherwise `false` and the
-/// token the next piece wakes.
+/// What `read` gives now: `true`, a piece and the output it came from, or
+/// `true` and nil once the program exited with nothing left to read;
+/// otherwise `false` and the token the next piece wakes.
 fn read_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
     let mut state = state_mut(lua);
     let state = &mut *state;
     let Some(child) = state.children.open.get_mut(&id) else {
         return (true, mlua::Value::Nil).into_lua_multi(lua);
     };
-    if let Some(bytes) = child.queue.pop_front() {
-        return (true, lua.create_string(&bytes)?).into_lua_multi(lua);
+    if let Some((stream, bytes)) = child.queue.pop_front() {
+        return (true, lua.create_string(&bytes)?, stream.name()).into_lua_multi(lua);
     }
     if child.exited {
         return (true, mlua::Value::Nil).into_lua_multi(lua);
@@ -359,8 +476,8 @@ fn read_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
     (false, token).into_lua_multi(lua)
 }
 
-/// How program `id` exited if it has: `true` and its code; otherwise
-/// `false` and the token its exit wakes.
+/// How program `id` exited if it has: `true`, its code and the signal that
+/// ended it; otherwise `false` and the token its exit wakes.
 fn wait_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
     let mut state = state_mut(lua);
     let state = &mut *state;
@@ -368,7 +485,7 @@ fn wait_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
         return (true, mlua::Value::Nil).into_lua_multi(lua);
     };
     if child.exited {
-        return (true, child.code).into_lua_multi(lua);
+        return (true, child.code, child.signal).into_lua_multi(lua);
     }
     let token = state.tasks.token();
     child.waiting.push(token);
@@ -383,9 +500,9 @@ fn waiting_call(lua: &Lua, name: &str, now: Function) -> LuaResult<Function> {
         r"
         local name, now = ...
         return function()
-            local ready, a = now()
+            local ready, a, b = now()
             if ready then
-                return a
+                return a, b
             end
             if not coroutine.isyieldable() then
                 error(name .. ' waits, so it only works in a command, an event handler or greed.spawn', 3)
@@ -428,9 +545,20 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
         "kill",
         lua.create_function(move |lua, ()| {
             if let Some(child) = state(lua).children.open.get(&id) {
-                child.kill();
+                child.signal(Signal::SIGKILL);
             }
             Ok(())
+        })?,
+    )?;
+    child.set(
+        "signal",
+        lua.create_function(move |lua, name: String| {
+            let signal = signal_named(&name)?;
+            Ok(state(lua)
+                .children
+                .open
+                .get(&id)
+                .is_some_and(|child| child.signal(signal)))
         })?,
     )?;
     child.set(
@@ -461,12 +589,22 @@ fn spawn(
     command: &[String],
     opts: Option<&Table>,
 ) -> LuaResult<mlua::MultiValue> {
-    let (cwd, env): (Option<String>, HashMap<String, String>) = match opts {
-        Some(opts) => (
-            opts.get("cwd")?,
-            opts.get::<Option<_>>("env")?.unwrap_or_default(),
-        ),
-        None => (None, HashMap::new()),
+    let options = match opts {
+        Some(opts) => SpawnOptions {
+            cwd: opts.get("cwd")?,
+            env: env_from_lua(opts.get("env")?)?,
+            stream_stderr: match opts.get::<Option<String>>("stderr")?.as_deref() {
+                None | Some("keep") => false,
+                Some("stream") => true,
+                Some(other) => {
+                    return Err(mlua::Error::runtime(format!(
+                        "stderr = {other:?}: give \"keep\" or \"stream\""
+                    )));
+                }
+            },
+            group: opts.get::<Option<bool>>("group")?.unwrap_or(false),
+        },
+        None => SpawnOptions::default(),
     };
     let id = {
         let mut state = state_mut(lua);
@@ -474,7 +612,7 @@ fn spawn(
         state.children.next
     };
     let sender = jobs::sender(lua);
-    let started = start_child(command, cwd.as_deref(), &env, move |piece| {
+    let started = start_child(command, &options, move |piece| {
         let _ = sender.send(jobs::Done::uncounted(Output::Child(id, piece)));
     });
     match started {
@@ -489,7 +627,9 @@ fn spawn(
                     waiting: Vec::new(),
                     exited: false,
                     code: None,
+                    signal: None,
                     process: started.process,
+                    group: options.group,
                     stderr: started.stderr,
                 },
             );
