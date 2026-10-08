@@ -54,3 +54,22 @@ test("a prompt whose view closes some other way is cancelled", function(t)
 	t:run("prompt-cancel")
 	assert(cancelled == 1, "nothing left to cancel")
 end)
+
+test("each client answers its own prompt", function(t)
+	t:buffer("|x")
+	local second = t:client()
+	local answers: { [number]: string } = {}
+	greed.command({
+		name = "test-ask",
+		run = function(ctx)
+			local client = ctx.client
+			answers[client] = core.prompt.ask("Name") or "nil"
+		end,
+	})
+	second:run("test-ask")
+	t:run("test-ask")
+	second:keys("b o b enter")
+	t:keys("a n n enter")
+	assert(answers[second:id()] == "bob", `the second's: {answers[second:id()]}`)
+	assert(answers[1] == "ann", `the first's: {answers[1]}`)
+end)

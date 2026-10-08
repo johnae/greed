@@ -62,6 +62,8 @@ local function first_words(): { complete.Candidate }
 end
 
 type Open = {
+	-- The client it's open for; each has its own.
+	client: number,
 	buffer: greed.Buffer,
 	view: greed.View,
 	float: core.TypingFloat,
@@ -85,7 +87,8 @@ type Open = {
 	history_index: number,
 }
 
-local open: Open? = nil
+-- The command line open for each client, by its id.
+local opened: { [number]: Open } = {}
 
 -- The prompt line, which is always the last one.
 local function prompt_start(o: Open): number
@@ -130,7 +133,7 @@ end
 -- Closes the command line; unless what's typed is about to run, a preview
 -- shown while going through matches is undone (see command-line).
 local function close(running: boolean?)
-	local o = open
+	local o = opened[greed.client.id()]
 	if o then
 		o.running = running
 		o.float.close()
@@ -151,7 +154,7 @@ local function set_text(o: Open, text: string)
 end
 
 local function changed(o: Open)
-	if open ~= o then
+	if opened[o.client] ~= o then
 		return
 	end
 	local line = o.buffer:slice(prompt_start(o), o.buffer:len())
@@ -351,6 +354,7 @@ greed.command({
 	args = { { name = "text" } },
 	run = function(ctx)
 		close()
+		local client = greed.client.id()
 		local o: Open
 		local float = core.floats.typing(
 			greed.create_buffer("cmdline", ":"),
@@ -361,8 +365,8 @@ greed.command({
 				end,
 				-- However it closed, if it's not to run what's typed.
 				on_close = function()
-					if open == o then
-						open = nil
+					if opened[client] == o then
+						opened[client] = nil
 					end
 					if o.previewed and not o.running then
 						o.previewed(nil)
@@ -372,6 +376,7 @@ greed.command({
 		)
 		float.view:set_cursor(1)
 		o = {
+			client = client,
 			buffer = float.buffer,
 			view = float.view,
 			float = float,
@@ -381,7 +386,7 @@ greed.command({
 			current = 0,
 			history_index = 0,
 		} :: Open
-		open = o
+		opened[client] = o
 		set_text(o, ctx.args[1] or "")
 	end,
 })
@@ -390,7 +395,7 @@ greed.command({
 	name = "command-line-run",
 	doc = "Run what's typed on the command line",
 	run = function()
-		local o = open
+		local o = opened[greed.client.id()]
 		if o == nil then
 			return
 		end
@@ -411,7 +416,7 @@ greed.command({
 
 -- Fills in the next (`delta` 1) or previous (-1) match.
 local function cycle(delta: number)
-	local o = open
+	local o = opened[greed.client.id()]
 	if o == nil or #o.candidates == 0 then
 		return
 	end
@@ -446,7 +451,7 @@ greed.command({
 -- Steps through history (`delta` -1 is older), only through lines that
 -- start with what was typed when stepping began.
 local function step(delta: number)
-	local o = open
+	local o = opened[greed.client.id()]
 	if o == nil then
 		return
 	end

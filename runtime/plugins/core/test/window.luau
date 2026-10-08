@@ -38,3 +38,29 @@ test("ctrl-0 goes back to the size set before zooming, not the default", functio
 	t:keys("ctrl-0")
 	assert(size() == 13, `{size()}`)
 end)
+
+test("each window zooms on its own, and setting the size sets it for all", function(t)
+	t:buffer("|hello")
+	local second = t:client()
+	local sizes: { [number]: number } = {}
+	greed.command({
+		name = "test-size",
+		run = function(ctx)
+			sizes[ctx.client] = size()
+		end,
+	})
+	second:keys("ctrl-= ctrl-=")
+	t:run("test-size")
+	second:run("test-size")
+	assert(sizes[1] == 15 and sizes[second:id()] == 17, `{sizes[1]} and {sizes[second:id()]}`)
+	t:keys("ctrl--")
+	second:run("test-size")
+	assert(sizes[second:id()] == 17, "the first's zoom leaves the second's")
+	greed.option.set("gui-font-size", 20)
+	t:run("test-size")
+	second:run("test-size")
+	assert(sizes[1] == 20 and sizes[second:id()] == 20, "set for every window")
+	second:keys("ctrl-= ctrl-0")
+	second:run("test-size")
+	assert(sizes[second:id()] == 20, `back to everyone's: {sizes[second:id()]}`)
+end)

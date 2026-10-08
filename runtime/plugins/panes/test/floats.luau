@@ -20,6 +20,12 @@ local function three(t: test.TestContext, spec: greed.FloatSpec?): { greed.View 
 	return views
 end
 
+-- Where `view` is placed, in cells of the acting client's screen: layouts
+-- place floats in shares of it.
+local function placed(view: greed.View): Area
+	return core.floats.in_cells(view:float_spec() :: greed.FloatSpec) :: Area
+end
+
 -- The text of the floats that show, bottom first.
 local function shown(): { string }
 	local out = {}
@@ -101,16 +107,16 @@ test("one at a time keeps every float in one place, so cycling never moves anyth
 	assert(table.concat(shown()) == "c")
 	views[3]:configure({ x = 5, y = 2, width = 40, height = 12 })
 	t:keys("alt-}")
-	local spec = views[1]:float_spec() :: greed.FloatSpec
+	local box = placed(views[1])
 	assert(table.concat(shown()) == "a")
-	assert(spec.x == 5 and spec.y == 2 and spec.width == 40 and spec.height == 12, "in its place")
+	assert(box.x == 5 and box.y == 2 and box.width == 40 and box.height == 12, "in its place")
 	t:keys("alt-}")
-	spec = views[2]:float_spec() :: greed.FloatSpec
-	assert(spec.x == 5 and spec.width == 40, "the next one too")
+	box = placed(views[2])
+	assert(box.x == 5 and box.width == 40, "the next one too")
 	-- Back in free, each float is where it was before.
 	floats.use("free")
-	spec = views[1]:float_spec() :: greed.FloatSpec
-	assert(spec.x == 1 and spec.y == 1 and spec.width == 20 and spec.height == 8, "its own place")
+	box = placed(views[1])
+	assert(box.x == 1 and box.y == 1 and box.width == 20 and box.height == 8, "its own place")
 	-- "deck" is the older name of one.
 	floats.use("deck")
 	assert(floats.current() == "one")
@@ -297,4 +303,42 @@ test("a command finishing in a hidden floating terminal wants a look", function(
 	t:keys("alt-}")
 	t:draw(80, 24)
 	assert(not core.floats.needs_attention(term.buffer), "seen")
+end)
+
+test("a float layout places floats in proportion on clients of other sizes", function(t)
+	local views = three(t)
+	local second = t:client()
+	t:keys("alt-p T esc")
+	t:draw(80, 25)
+	second:draw(40, 13)
+	-- The first's screen above the status line is 80 by 24, the second's
+	-- 40 by 12: every float is where it is on the first's, halved.
+	local mine: { Area } = {}
+	t:draw(80, 25)
+	for i, view in views do
+		mine[i] = view:area() :: Area
+	end
+	second:draw(40, 13)
+	local theirs: { Area } = {}
+	greed.command({
+		name = "test-areas",
+		run = function()
+			for i, view in views do
+				theirs[i] = view:area() :: Area
+			end
+		end,
+	})
+	second:run("test-areas")
+	for i in views do
+		-- The outside of each box, border included, halves exactly.
+		local a, b = mine[i], theirs[i]
+		assert(
+			b.x - 1 == (a.x - 1) // 2 and b.y - 1 == (a.y - 1) // 2,
+			`float {i}: {a.x},{a.y} and {b.x},{b.y}`
+		)
+		assert(
+			b.width + 2 == (a.width + 2) // 2 and b.height + 2 == (a.height + 2) // 2,
+			`float {i}: {a.width}x{a.height} and {b.width}x{b.height}`
+		)
+	end
 end)

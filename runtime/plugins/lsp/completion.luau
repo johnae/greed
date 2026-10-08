@@ -40,9 +40,29 @@ type Open = {
 	mode: string,
 }
 
-local open: Open? = nil
--- Goes up with each keystroke, so a slow answer for older text is dropped.
-local generation = 0
+-- The menu open for each client, by its id: each types on its own.
+local opened: { [number]: Open } = {}
+-- Each client's count of keystrokes, which goes up with each, so a slow
+-- answer for older text is dropped.
+local generations: { [number]: number } = {}
+
+-- The acting client's menu, if it has one open.
+local function mine(): Open?
+	return opened[greed.client.id()]
+end
+
+-- The acting client's count of keystrokes.
+local function generation(): number
+	return generations[greed.client.id()] or 0
+end
+
+-- Counts a keystroke of the acting client's, returning the new count.
+local function next_generation(): number
+	local client = greed.client.id()
+	local count = (generations[client] or 0) + 1
+	generations[client] = count
+	return count
+end
 
 -- Letters, digits, "_" and anything outside ASCII.
 local function is_word(ch: string): boolean
@@ -93,8 +113,9 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 end
 
 local function close()
-	if open then
-		open.float.close()
+	local o = mine()
+	if o then
+		o.float.close()
 	end
 end
 
@@ -166,6 +187,7 @@ local function show(view: greed.View, items: { Item }): boolean
 			start = math.min(start, item.from)
 		end
 	end
+	local client = greed.client.id()
 	local o: Open
 	local float = core.floats.typing(
 		greed.create_buffer("completion", "", { readonly = true }),
@@ -173,8 +195,8 @@ local function show(view: greed.View, items: { Item }): boolean
 		{
 			mode = `completion-{mode}`,
 			on_close = function()
-				if open == o then
-					open = nil
+				if opened[client] == o then
+					opened[client] = nil
 				end
 			end,
 		}
@@ -189,9 +211,9 @@ local function show(view: greed.View, items: { Item }): boolean
 		start = start,
 		mode = mode,
 	}
-	open = o
+	opened[client] = o
 	refresh(o)
-	return open ~= nil
+	return opened[client] ~= nil
 end
 
 -- Asks the server what could go at the cursor in `view`, and opens the menu
@@ -206,7 +228,7 @@ local function ask(view: greed.View, wanted: number)
 		textDocument = { uri = greed.lsp.uri(buffer) },
 		position = greed.lsp.position(buffer, view:cursor()),
 	})
-	if not ok or result == nil or wanted ~= generation or greed.mode.get() ~= mode then
+	if not ok or result == nil or wanted ~= generation() or greed.mode.get() ~= mode then
 		return
 	end
 	show(view, items_from(result, buffer))
@@ -220,12 +242,12 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 		return
 	end
 	local mode = greed.mode.get()
+	local open = mine()
 	local typing = TYPING[mode] == true or (open ~= nil and mode == `completion-{open.mode}`)
 	if not typing then
 		return
 	end
-	generation += 1
-	local wanted = generation
+	local wanted = next_generation()
 	local buffer = view:buffer()
 	local pos = view:cursor()
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
@@ -245,7 +267,7 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	greed.sleep(delay)
 	-- The view typed into may have closed meanwhile, like the command line
 	-- on enter; only the one still focused gets asked about.
-	if wanted == generation and open == nil and greed.view() == view then
+	if wanted == generation() and mine() == nil and greed.view() == view then
 		ask(view, wanted)
 	end
 end)
@@ -254,13 +276,12 @@ greed.command({
 	name = "completion-ask",
 	doc = "Ask the language server what could go at the cursor",
 	run = function(ctx)
-		generation += 1
-		ask(ctx.view, generation)
+		ask(ctx.view, next_generation())
 	end,
 })
 
 local function move(delta: number)
-	local o = open
+	local o = mine()
 	if o == nil then
 		return
 	end
@@ -338,7 +359,7 @@ greed.command({
 	name = "completion-accept",
 	doc = "Put the current completion in place of the word being typed",
 	run = function()
-		local o = open
+		local o = mine()
 		if o == nil then
 			return
 		end
@@ -351,7 +372,7 @@ greed.command({
 			e:select({ ranges = { { anchor = at, head = at } }, primary = 1 })
 		end)
 		-- What was just put in isn't something to complete again.
-		generation += 1
+		next_generation()
 	end,
 })
 

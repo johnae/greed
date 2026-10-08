@@ -7,7 +7,8 @@
 -- Each command run from a style's own mode (normal, vim) starts a run of
 -- keys; the next one ends it. A run that changed the buffer it started in
 -- becomes the last change. Commands tagged "no-repeat" (see commands.luau),
--- like undo, macros and `.` itself, don't start runs.
+-- like undo, macros and `.` itself, don't start runs. Each client has its
+-- own runs and its own last change.
 
 local greed = require("@greed")
 local commands = require("./commands")
@@ -15,28 +16,32 @@ local style = require("./style")
 
 commands.tag("no-repeat", { "undo", "redo", "repeat-change", "play-macro", "record-macro" })
 
--- The run being recorded: what started it and whether it changed its buffer.
+-- A run being recorded: what started it and whether it changed its buffer.
 type Run = { keys: string, count: number?, buffer: number, changed: boolean }
-local run: Run? = nil
 
--- The last change: its keys after the count, and the count it had.
-local last: { keys: string, count: number? }? = nil
+-- The run each client is recording, by its id.
+local runs: { [number]: Run } = {}
 
--- Ends the run being recorded, dropping the last `extra` keys, which belong
--- to the command that ended it, and keeps it if it changed something.
+-- Each client's last change: its keys after the count, and the count it had.
+local last: { [number]: { keys: string, count: number? } } = {}
+
+-- Ends the run the acting client is recording, dropping the last `extra`
+-- keys, which belong to the command that ended it, and keeps it if it
+-- changed something.
 local function finish(extra: number)
-	local ended = run
+	local client = greed.client.id()
+	local ended = runs[client]
 	if ended == nil then
 		return
 	end
-	run = nil
+	runs[client] = nil
 	local keys = greed.keys.stop("again") or {}
 	for _ = 1, extra do
 		table.remove(keys)
 	end
 	if ended.changed then
 		local typed = table.concat(keys, " ")
-		last = {
+		last[client] = {
 			keys = if typed == "" then ended.keys else `{ended.keys} {typed}`,
 			count = ended.count,
 		}
@@ -56,7 +61,7 @@ greed.on("command.run", function(event: greed.CommandRun)
 	if commands.has(event.name, "no-repeat") or event.keys == nil then
 		return
 	end
-	run = {
+	runs[greed.client.id()] = {
 		keys = event.keys,
 		count = event.count,
 		buffer = greed.view():buffer():id(),
@@ -66,6 +71,7 @@ greed.on("command.run", function(event: greed.CommandRun)
 end)
 
 greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local run = runs[greed.client.id()]
 	if run and event.buffer:id() == run.buffer then
 		run.changed = true
 	end
@@ -75,7 +81,7 @@ greed.command({
 	name = "repeat-change",
 	doc = "Repeat the last change, at the cursors; a count replaces the one it had",
 	run = function(ctx)
-		local change = last
+		local change = last[ctx.client]
 		if change == nil then
 			return
 		end

@@ -646,6 +646,15 @@ greed.tab.set_layout({
   pieces), leave the border off (`border = false`, for a one-line strip),
   or hide it (`hidden = true`: its view and buffer stay, and focusing it
   shows it again; `greed.floats({ hidden = true })` lists hidden ones too).
+  Sizes and places (`x`, `y`) are cells, or shares of the screen like
+  `"37.5%"`, which keep a float in proportion on every attached client's
+  screen; `core.floats.in_shares(box)` turns a box in cells into those.
+  `anchor` puts it in a corner or at an edge (`"top-left"`, `"right"`,
+  ...) when `x` or `y` is left out. With several clients attached, a float
+  is shown only to the client it opened for, like a picker or a prompt,
+  unless it's `shared = true` (meant for everyone, like a review) or
+  belongs to a tab (`tab = true`). Keep what a float you open belongs to
+  apart for each client too, by `greed.client.id()`.
   To show something in a float of the tab, laid out by its
   [float layout](using.md#float-layouts), use
   `require("@panes").floats.show(buffer)`, and say a buffer needs the

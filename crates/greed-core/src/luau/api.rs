@@ -1006,6 +1006,10 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     client.set(
+        "id",
+        lua.create_function(|lua, ()| Ok(state(lua).editor.client().0))?,
+    )?;
+    client.set(
         "set_layout",
         lua.create_function(|lua, (layout, id): (String, Option<u32>)| {
             let layout = ClientLayout::parse(&layout).ok_or_else(|| {
@@ -1151,27 +1155,16 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set(
         "get",
         lua.create_function(|lua, name: String| {
-            let value = state(lua).registry.option(&name).cloned();
+            let state = state(lua);
+            let value = state
+                .registry
+                .option_for(state.editor.client(), &name)
+                .cloned();
+            drop(state);
             value.map(|v| option_to_lua(lua, v)).transpose()
         })?,
     )?;
-    option.set(
-        "set",
-        lua.create_function(|lua, (name, value): (String, Value)| {
-            {
-                let state = &mut *state_mut(lua);
-                let by = state.running.clone();
-                state
-                    .registry
-                    .set_option_by(&name, option_value(value.clone())?, by)
-                    .map_err(mlua::Error::external)?;
-            }
-            let payload = lua.create_table()?;
-            payload.set("name", name)?;
-            payload.set("value", value)?;
-            emit(lua, "option.changed", &payload)
-        })?,
-    )?;
+    option.set("set", lua.create_function(set_option)?)?;
     option.set(
         "list",
         lua.create_function(|lua, ()| {
@@ -1183,7 +1176,11 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 let entry = lua.create_table()?;
                 entry.set("name", &*option.def.name)?;
                 entry.set("doc", &*option.def.doc)?;
-                entry.set("value", option_to_lua(lua, option.value.clone())?)?;
+                let value = state
+                    .registry
+                    .option_for(state.editor.client(), &option.def.name)
+                    .unwrap_or(option.value);
+                entry.set("value", option_to_lua(lua, value.clone())?)?;
                 entry.set("default", option_to_lua(lua, option.def.default.clone())?)?;
                 let choices: Vec<Value> = option
                     .def
@@ -1201,6 +1198,42 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
     Ok(option)
+}
+
+/// `greed.option.set(name, value, { client })`: sets an option for every
+/// client, or with `client` a value of the acting client's own (nil takes
+/// it away), and tells plugins.
+fn set_option(lua: &Lua, (name, value, opts): (String, Value, Option<Table>)) -> LuaResult<()> {
+    let own = match opts {
+        Some(opts) => opts.get::<Option<bool>>("client")?.unwrap_or(false),
+        None => false,
+    };
+    let client = {
+        let state = &mut *state_mut(lua);
+        let client = state.editor.client();
+        if own {
+            let value = (!value.is_nil()).then(|| option_value(value.clone()));
+            state
+                .registry
+                .set_option_for(client, &name, value.transpose()?)
+                .map_err(mlua::Error::external)?;
+        } else {
+            let by = state.running.clone();
+            state
+                .registry
+                .set_option_by(&name, option_value(value.clone())?, by)
+                .map_err(mlua::Error::external)?;
+        }
+        client
+    };
+    let payload = lua.create_table()?;
+    payload.set("name", name.as_str())?;
+    let now = state(lua).registry.option_for(client, &name).cloned();
+    payload.set("value", now.map(|v| option_to_lua(lua, v)).transpose()?)?;
+    if own {
+        payload.set("client", client.0)?;
+    }
+    emit(lua, "option.changed", &payload)
 }
 
 fn option_value(value: Value) -> LuaResult<OptionValue> {
@@ -1538,7 +1571,7 @@ fn files(dir: &Path) -> Vec<String> {
     files
 }
 
-const DEFAULT_FLOAT_SIZE: Extent = Extent::Percent(60);
+const DEFAULT_FLOAT_SIZE: Extent = Extent::percent(60);
 
 /// How a float looks when its spec leaves everything out.
 pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
@@ -1554,6 +1587,7 @@ pub(super) const DEFAULT_FLOAT: FloatOptions = FloatOptions {
     footer: None,
     border: true,
     hidden: false,
+    shared: false,
 };
 
 /// A border label from a spec: text or styled pieces, or nil to keep
@@ -1567,24 +1601,22 @@ fn border_text(value: Value, base: Option<VirtualLine>) -> LuaResult<Option<Virt
 }
 
 /// Reads `{ title, width, height, anchor, focus, x, y, tab, label, footer,
-/// border, hidden }` onto `base`; fields left out keep their value in
-/// `base`. Sizes are cells, or a string like "60%".
+/// border, hidden, shared }` onto `base`; fields left out keep their value
+/// in `base`. Sizes and places are cells, or a share of the screen as a
+/// string like "60%" or "37.5%".
 pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResult<FloatOptions> {
     let Some(spec) = spec else {
         return Ok(base);
     };
     let anchor = match spec.get::<Option<String>>("anchor")?.as_deref() {
         None => base.anchor,
-        Some("center") => Anchor::Center,
-        Some("top") => Anchor::Top,
-        Some("bottom") => Anchor::Bottom,
-        Some("cursor") => Anchor::Cursor,
-        Some("above-cursor") => Anchor::AboveCursor,
-        Some(other) => {
-            return Err(mlua::Error::runtime(format!(
-                "anchor must be \"center\", \"top\", \"bottom\", \"cursor\" or \"above-cursor\", not {other:?}"
-            )));
-        }
+        Some(name) => Anchor::parse(name).ok_or_else(|| {
+            let names: Vec<String> = Anchor::names().map(|n| format!("{n:?}")).collect();
+            mlua::Error::runtime(format!(
+                "anchor must be one of {}, not {name:?}",
+                names.join(", ")
+            ))
+        })?,
     };
     Ok(FloatOptions {
         title: spec
@@ -1602,6 +1634,7 @@ pub(super) fn float_options(base: FloatOptions, spec: Option<Table>) -> LuaResul
         footer: border_text(spec.get("footer")?, base.footer)?,
         border: spec.get::<Option<bool>>("border")?.unwrap_or(base.border),
         hidden: spec.get::<Option<bool>>("hidden")?.unwrap_or(base.hidden),
+        shared: spec.get::<Option<bool>>("shared")?.unwrap_or(base.shared),
     })
 }
 
@@ -1633,27 +1666,19 @@ pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> 
     let to_lua = |extent: Extent| -> LuaResult<Value> {
         match extent {
             Extent::Cells(n) => Ok(Value::Integer(n.into())),
-            Extent::Percent(p) => lua.create_string(format!("{p}%")).map(Value::String),
+            Extent::Share(share) => lua.create_string(share_text(share)).map(Value::String),
         }
     };
     let spec = lua.create_table()?;
     spec.set("title", options.title.as_deref())?;
     spec.set("width", to_lua(options.width)?)?;
     spec.set("height", to_lua(options.height)?)?;
-    spec.set(
-        "anchor",
-        match options.anchor {
-            Anchor::Center => "center",
-            Anchor::Top => "top",
-            Anchor::Bottom => "bottom",
-            Anchor::Cursor => "cursor",
-            Anchor::AboveCursor => "above-cursor",
-        },
-    )?;
+    spec.set("anchor", options.anchor.name())?;
     spec.set("focus", options.focus)?;
     spec.set("tab", options.tab)?;
     spec.set("border", options.border)?;
     spec.set("hidden", options.hidden)?;
+    spec.set("shared", options.shared)?;
     for (key, text) in [("label", &options.label), ("footer", &options.footer)] {
         if let Some(text) = text {
             spec.set(key, super::handles::virtual_line_to_lua(lua, text)?)?;
@@ -1668,8 +1693,37 @@ pub(super) fn float_spec(lua: &Lua, options: &FloatOptions) -> LuaResult<Table> 
     Ok(spec)
 }
 
-/// A size: a number of cells, or a string like "60%".
+/// A share of the screen, in hundredths of a percent, as Luau writes it:
+/// "60%", "37.5%", "33.33%".
+fn share_text(share: u16) -> String {
+    let (whole, part) = (share / 100, share % 100);
+    match part {
+        0 => format!("{whole}%"),
+        _ if part % 10 == 0 => format!("{whole}.{}%", part / 10),
+        _ => format!("{whole}.{part:02}%"),
+    }
+}
+
+/// A share of the screen written like "37.5%", in hundredths of a percent,
+/// to two decimals; more than 100% is all of it.
+fn parse_share(text: &str) -> Option<u16> {
+    let percent: f64 = text.strip_suffix('%')?.trim().parse().ok()?;
+    if percent.is_nan() || percent < 0.0 {
+        return None;
+    }
+    let percent = percent.min(100.0);
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "between 0 and 10000"
+    )]
+    Some((percent * 100.0).round() as u16)
+}
+
+/// A size or a place: a number of cells, or a string like "60%".
 fn extent(value: Value) -> LuaResult<Option<Extent>> {
+    const SAY: &str = "sizes and places are a number of cells or a share of the screen, \
+                       a string like \"60%\" or \"37.5%\"";
     match value {
         Value::Nil => Ok(None),
         Value::Integer(n) => Ok(Some(Extent::Cells(u16::try_from(n).unwrap_or(u16::MAX)))),
@@ -1682,16 +1736,11 @@ fn extent(value: Value) -> LuaResult<Option<Extent>> {
             )]
             Ok(Some(Extent::Cells(n.min(f64::from(u16::MAX)) as u16)))
         }
-        Value::String(s) => s
-            .to_str()?
-            .strip_suffix('%')
-            .and_then(|p| p.trim().parse().ok())
-            .map(|p| Some(Extent::Percent(p)))
-            .ok_or_else(|| {
-                mlua::Error::runtime("sizes are a number of cells or a string like \"60%\"")
-            }),
+        Value::String(s) => parse_share(&s.to_str()?)
+            .map(|share| Some(Extent::Share(share)))
+            .ok_or_else(|| mlua::Error::runtime(SAY)),
         other => Err(mlua::Error::runtime(format!(
-            "sizes are a number of cells or a string like \"60%\", not {}",
+            "{SAY}, not {}",
             other.type_name()
         ))),
     }

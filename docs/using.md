@@ -36,7 +36,10 @@ Attached terminals follow each other: they show the same project, tab and
 panes, each with its own focus and pane zoom. `:client-independent` lays one
 out on its own, starting from a copy of what it shows, so its tabs and panes
 change apart from the others'; `:client-follow` has it follow again, closing
-the panes it had on its own (their buffers stay open).
+the panes it had on its own (their buffers stay open). Pickers, prompts, the
+command line and completion menus show only on the terminal that opened
+them, and `.` repeats that terminal's own last change. Floats keep their
+place and size in proportion on screens of different sizes.
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
@@ -136,8 +139,9 @@ nothing selected in the vscode style paste above or below the line in all three.
 Text copied in another program pastes where the cursor is.
 
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
-it back to the size it had before. Pick another font and size in your
-`init.luau`; the window follows as soon as they change:
+it back to the size it had before; with several windows on one session,
+each zooms on its own. Pick another font and size in your `init.luau`; the
+windows follow as soon as they change:
 
 ```luau
 local greed = require("@greed")

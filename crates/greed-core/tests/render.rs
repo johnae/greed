@@ -306,6 +306,7 @@ fn floating_views_get_a_box_and_the_cursor_when_focused() {
             footer: None,
             border: true,
             hidden: false,
+            shared: false,
         },
     );
     let f = frame(&mut ed, 20, 9);
@@ -552,7 +553,7 @@ fn floats_can_be_placed_side_by_side() {
     let mut ed = editor("|main");
     let float = |x: Option<Extent>, y: Option<Extent>| FloatOptions {
         title: None,
-        width: Extent::Percent(50),
+        width: Extent::percent(50),
         height: Extent::Cells(4),
         anchor: Anchor::Center,
         focus: false,
@@ -563,13 +564,14 @@ fn floats_can_be_placed_side_by_side() {
         footer: None,
         border: true,
         hidden: false,
+        shared: false,
     };
     let left = ed.create_buffer("picker", "a");
     let right = ed.create_buffer("preview", "b");
     ed.float(left, float(Some(Extent::Cells(0)), Some(Extent::Cells(1))));
     ed.float(
         right,
-        float(Some(Extent::Percent(50)), Some(Extent::Cells(1))),
+        float(Some(Extent::percent(50)), Some(Extent::Cells(1))),
     );
     let f = frame(&mut ed, 20, 9);
     let rects: Vec<_> = floats(&f)
@@ -584,6 +586,107 @@ fn floats_can_be_placed_side_by_side() {
     ed.float(edge, float(Some(Extent::Cells(18)), None));
     let f = frame(&mut ed, 20, 9);
     assert_eq!(floats(&f)[2].rect.x, 11);
+}
+
+/// A bordered float with nothing set but what's given.
+fn float_options(
+    width: greed_core::Extent,
+    height: greed_core::Extent,
+    anchor: greed_core::Anchor,
+) -> greed_core::FloatOptions {
+    greed_core::FloatOptions {
+        title: None,
+        width,
+        height,
+        anchor,
+        focus: false,
+        x: None,
+        y: None,
+        tab: false,
+        label: None,
+        footer: None,
+        border: true,
+        hidden: false,
+        shared: false,
+    }
+}
+
+#[test]
+fn a_float_in_shares_keeps_its_proportions_on_screens_of_other_sizes() {
+    use greed_core::{Anchor, Extent};
+    let mut ed = editor("|main");
+    let buffer = ed.create_buffer("x", "a");
+    let options = greed_core::FloatOptions {
+        x: Some(Extent::Share(2500)),
+        y: Some(Extent::Share(1250)),
+        ..float_options(Extent::Share(3750), Extent::percent(50), Anchor::Center)
+    };
+    ed.float(buffer, options);
+    // The outside of the border, as cells of the screen above the status
+    // line.
+    let outside = |f: &Frame| {
+        let r = floats(f)[0].rect;
+        (r.x - 1, r.y - 1, r.width + 2, r.height + 2)
+    };
+    assert_eq!(outside(&frame(&mut ed, 80, 33)), (20, 4, 30, 16));
+    assert_eq!(outside(&frame(&mut ed, 160, 65)), (40, 8, 60, 32));
+    assert_eq!(outside(&frame(&mut ed, 40, 17)), (10, 2, 15, 8));
+}
+
+#[test]
+fn floats_go_to_the_edge_or_corner_their_anchor_says() {
+    use greed_core::{Anchor, Extent};
+    let at = |anchor: Anchor| {
+        let mut ed = editor("|main");
+        let buffer = ed.create_buffer("x", "a");
+        ed.float(
+            buffer,
+            float_options(Extent::Cells(6), Extent::Cells(4), anchor),
+        );
+        let r = floats(&frame(&mut ed, 20, 11))[0].rect;
+        (r.x - 1, r.y - 1)
+    };
+    // 20 by 10 above the status line, the box 6 by 4.
+    assert_eq!(at(Anchor::TopLeft), (0, 0));
+    assert_eq!(at(Anchor::TopRight), (14, 0));
+    assert_eq!(at(Anchor::BottomLeft), (0, 6));
+    assert_eq!(at(Anchor::BottomRight), (14, 6));
+    assert_eq!(at(Anchor::Left), (0, 3));
+    assert_eq!(at(Anchor::Right), (14, 3));
+    assert_eq!(at(Anchor::Top), (7, 0));
+    assert_eq!(at(Anchor::Bottom), (7, 6));
+    assert_eq!(at(Anchor::Center), (7, 3));
+}
+
+#[test]
+fn a_clients_own_float_is_drawn_for_it_alone_and_a_shared_one_for_all() {
+    use greed_core::{Anchor, Extent};
+    let mut ed = editor("|main");
+    assert!(ed.add_client(ClientId(2)));
+    let own = ed.create_buffer("picker", "mine");
+    let shared = ed.create_buffer("review", "ours");
+    ed.set_acting(ClientId(2));
+    let options = float_options(Extent::Cells(10), Extent::Cells(3), Anchor::Center);
+    let picker = ed.float(own, options.clone());
+    let review = ed.float(
+        shared,
+        greed_core::FloatOptions {
+            shared: true,
+            ..options
+        },
+    );
+    let ids = |f: &Frame| -> Vec<SurfaceId> { floats(f).iter().map(|s| s.id).collect() };
+    let theirs = frame(&mut ed, 30, 9);
+    assert_eq!(
+        ids(&theirs),
+        [SurfaceId::View(picker), SurfaceId::View(review)]
+    );
+    ed.set_acting(ClientId(1));
+    let mine = frame(&mut ed, 30, 9);
+    assert_eq!(ids(&mine), [SurfaceId::View(review)]);
+    // Its own goes when it does.
+    assert_eq!(ed.close_floats_of(ClientId(2)), [picker]);
+    assert!(ed.find_view(picker).is_none() && ed.find_view(review).is_some());
 }
 
 #[test]
@@ -644,7 +747,7 @@ fn right_panels_sit_after_the_main_view() {
         b,
         PanelOptions {
             side: Side::Right,
-            width: Extent::Percent(25),
+            width: Extent::percent(25),
             title: None,
             focus: true,
         },
@@ -701,6 +804,7 @@ fn a_float_anchored_at_the_cursor_opens_below_it_or_above_near_the_bottom() {
         footer: None,
         border: true,
         hidden: false,
+        shared: false,
     };
     let mut ed = editor("ab|c\nd");
     let cursor = frame(&mut ed, 30, 10)
@@ -742,6 +846,7 @@ fn a_float_anchored_above_the_cursor_opens_above_it_or_below_near_the_top() {
         footer: None,
         border: true,
         hidden: false,
+        shared: false,
     };
     let mut ed = editor("a\nb\nc\nd\ne|");
     let cursor = frame(&mut ed, 30, 10).cursor.unwrap();
@@ -1334,6 +1439,7 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
         footer: Some(VirtualLine::from("○●○")),
         border: true,
         hidden: false,
+        shared: false,
     };
     let boxed = ed.create_buffer("x", "boxed");
     let hidden = ed.create_buffer("x", "hidden");

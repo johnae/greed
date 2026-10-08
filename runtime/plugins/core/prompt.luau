@@ -25,16 +25,17 @@ type Open = {
 	finish: (() -> ())?,
 }
 
-local open: Open? = nil
+-- The prompt open for each client, by its id.
+local opened: { [number]: Open } = {}
 
 local function text(o: Open): string
 	return (string.gsub(o.float.buffer:text(), "\n", ""))
 end
 
--- Closes the prompt, then calls `finish` with its options and what was
--- typed, read first since closing the view drops the buffer.
+-- Closes the acting client's prompt, then calls `finish` with its options
+-- and what was typed, read first since closing the view drops the buffer.
 local function close(finish: (options: Options, typed: string) -> ())
-	local o = open
+	local o = opened[greed.client.id()]
 	if o == nil then
 		return
 	end
@@ -90,9 +91,11 @@ greed.keymap.bind({ kind = "prompt" }, {
 
 local M = {}
 
---- Asks for a line of text at the bottom of the screen.
+--- Asks for a line of text at the bottom of the screen, of the acting
+--- client alone.
 function M.open(options: Options)
-	if open then
+	local client = greed.client.id()
+	if opened[client] then
 		greed.run("prompt-cancel")
 	end
 	local start = options.text or ""
@@ -110,8 +113,8 @@ function M.open(options: Options)
 				end,
 				-- Closed some other way, it counts as cancelled.
 				on_close = function()
-					if open == o then
-						open = nil
+					if opened[client] == o then
+						opened[client] = nil
 					end
 					local finish = o.finish
 					if finish then
@@ -124,7 +127,7 @@ function M.open(options: Options)
 		),
 		options = options,
 	} :: Open
-	open = o
+	opened[client] = o
 	o.float.view:set_cursor(#start)
 	mask(o)
 end

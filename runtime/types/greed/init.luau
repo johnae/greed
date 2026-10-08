@@ -439,9 +439,10 @@ export type OptionValue = boolean | number | string
 export type Options = {
 	--- Defines an option. With `choices`, it takes only those values (the default among them), and `:set` completes them.
 	define: (spec: { name: string, doc: string?, default: OptionValue, choices: { OptionValue }? }) -> (),
+	--- The option's value for the acting client: its own, if it has one, else everyone's.
 	get: (name: string) -> OptionValue?,
-	--- Sets an option; fails on an unknown name, the wrong type or a value that isn't one of its choices.
-	set: (name: string, value: OptionValue) -> (),
+	--- Sets an option for every client; fails on an unknown name, the wrong type or a value that isn't one of its choices. With `client`, sets a value of the acting client's own instead, like a window's font size, which nil takes away again; setting it for every client takes away each client's own.
+	set: (name: string, value: OptionValue?, opts: { client: boolean? }?) -> (),
 	--- Every option, sorted by name.
 	list: () -> { OptionInfo },
 }
@@ -743,27 +744,34 @@ export type History = {
 	undo_group: (group: number) -> (number?, string?),
 }
 
---- How a floating view looks. Sizes are cells, or a string like "60%";
---- both default to "60%".
+--- How a floating view looks. Sizes are cells, or a share of the screen as
+--- a string like "60%" or "37.5%", which keeps the float in proportion on
+--- clients with screens of other sizes; both default to "60%".
 export type FloatSpec = {
 	title: string?,
 	width: (number | string)?,
 	height: (number | string)?,
-	--- "cursor" opens it just below the cursor (or above, near the bottom),
-	--- like a completion menu; "above-cursor" prefers above, like signature
-	--- help.
-	anchor: ("center" | "top" | "bottom" | "cursor" | "above-cursor")?,
+	--- Where it goes when `x` or `y` is left out: in the middle, at an edge
+	--- or in a corner. "cursor" opens it just below the cursor (or above,
+	--- near the bottom), like a completion menu; "above-cursor" prefers
+	--- above, like signature help.
+	anchor: ("center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "cursor" | "above-cursor")?,
 	--- Whether the view takes focus. Defaults to true.
 	focus: boolean?,
 	--- Where the outside of the border goes, from the screen's left and top
-	--- edges, in cells or like "50%". Left out, the float centers across and
-	--- follows `anchor` up and down. It's always kept on screen.
+	--- edges, in cells or like "37.5%". Left out, the float goes where
+	--- `anchor` says on that axis. It's always kept on screen.
 	x: (number | string)?,
 	y: (number | string)?,
 	--- Whether it belongs to the tab it opens in: shown only with that tab,
 	--- and closed with it, like a floating terminal. Otherwise it floats over
 	--- every tab, like a picker. Defaults to false.
 	tab: boolean?,
+	--- Whether every client is shown it, like a review meant for everyone.
+	--- Otherwise only the client it opened for is (the one acting then),
+	--- as with a picker or a prompt, unless it belongs to a tab, which every
+	--- client showing the tab sees. Defaults to false.
+	shared: boolean?,
 	--- Text at the right end of the top border, e.g. "‹ 2/5 ›", or pieces
 	--- with styles of their own. "" takes it off.
 	label: MarkLine?,
@@ -1099,7 +1107,10 @@ export type ViewFocused = {
 --- An option was set, with `greed.option.set` or `:set`.
 export type OptionChanged = {
 	name: string,
+	--- Its value now, as the client it was set for has it.
 	value: OptionValue,
+	--- The client it was set for, when one got a value of its own.
+	client: number?,
 }
 
 --- A file watched with `greed.fs.watch` was written, created or removed.
@@ -1197,6 +1208,8 @@ export type ClientInfo = {
 export type Client = {
 	--- The client the running code acts for.
 	current: () -> ClientInfo,
+	--- The id of the client the running code acts for: `current().id`, without building the rest. For keeping what each client has open apart, like a picker of its own.
+	id: () -> number,
 	--- Every client, in the order they attached.
 	list: () -> { ClientInfo },
 	--- Sends a notification to your desktop through the acting client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.

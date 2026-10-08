@@ -11,14 +11,18 @@ local typing = core.style.is_typing
 
 type Open = { view: greed.View, list: greed.Buffer }
 
-local open: Open? = nil
--- Goes up with each keystroke, so a slow answer for older text is dropped.
-local generation = 0
+-- What each client is shown, by its id: each types on its own.
+local opened: { [number]: Open } = {}
+-- Each client's count of asks, which goes up with each, so a slow answer
+-- for older text is dropped.
+local generations: { [number]: number } = {}
 
 local function close()
-	if open then
-		open.view:close()
-		open = nil
+	local client = greed.client.id()
+	local o = opened[client]
+	if o then
+		o.view:close()
+		opened[client] = nil
 	end
 end
 
@@ -73,15 +77,15 @@ local function show(help: any)
 	end
 	local label: string = signature.label
 	local width = math.min(core.text.width(label) + 2, 80)
-	local o: Open
-	if open == nil then
+	local client = greed.client.id()
+	local o = opened[client]
+	if o == nil then
 		local list = greed.create_buffer("signature", label, { readonly = true })
 		local view =
 			greed.float(list, { anchor = "above-cursor", width = width, height = 3, focus = false })
 		o = { view = view, list = list }
-		open = o
+		opened[client] = o
 	else
-		o = open
 		o.list:edit(function(e)
 			e:replace(0, o.list:len(), label)
 		end)
@@ -103,14 +107,15 @@ local function ask(view: greed.View, context: any)
 	if buffer:path() == nil then
 		return
 	end
-	generation += 1
-	local wanted = generation
+	local client = greed.client.id()
+	local wanted = (generations[client] or 0) + 1
+	generations[client] = wanted
 	local ok, help = pcall(greed.lsp.request, buffer, "textDocument/signatureHelp", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
 		position = greed.lsp.position(buffer, view:cursor()),
 		context = context,
 	})
-	if wanted ~= generation or not typing(greed.mode.get()) then
+	if wanted ~= generations[client] or not typing(greed.mode.get()) then
 		return
 	end
 	if ok and help then
@@ -129,8 +134,9 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local pos = view:cursor()
 	local ch = if pos > 0 then buffer:char_at(buffer:prev_char(pos)) or "" else ""
 	local trigger, retrigger = triggers(buffer)
+	local open = opened[greed.client.id()] ~= nil
 	if table.find(trigger, ch) then
-		ask(view, { triggerKind = 2, triggerCharacter = ch, isRetrigger = open ~= nil })
+		ask(view, { triggerKind = 2, triggerCharacter = ch, isRetrigger = open })
 	elseif open then
 		local again = if table.find(retrigger, ch) then 2 else 3
 		ask(view, { triggerKind = again, triggerCharacter = ch, isRetrigger = true })
@@ -151,7 +157,7 @@ greed.command({
 			greed.echo("signature help shows while typing")
 			return
 		end
-		ask(ctx.view, { triggerKind = 1, isRetrigger = open ~= nil })
+		ask(ctx.view, { triggerKind = 1, isRetrigger = opened[ctx.client] ~= nil })
 	end,
 })
 

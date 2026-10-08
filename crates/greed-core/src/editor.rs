@@ -69,37 +69,93 @@ pub struct Scroll {
     pub row: usize,
 }
 
-/// A size given in cells, or as a percentage of the screen.
+/// A size or a place given in cells, or as a share of the screen, which
+/// keeps it in proportion on screens of other sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Extent {
     Cells(u16),
-    Percent(u16),
+    /// In hundredths of a percent: 3750 is 37.5%.
+    Share(u16),
 }
 
 impl Extent {
+    /// All of the screen, as a share.
+    pub const WHOLE: u16 = 10_000;
+
+    /// `p` percent of the screen.
+    pub const fn percent(p: u16) -> Self {
+        Extent::Share(p.saturating_mul(100))
+    }
+
     /// The size in cells, out of `total`.
     pub fn resolve(self, total: u16) -> u16 {
         match self {
             Extent::Cells(n) => n.min(total),
-            Extent::Percent(p) => {
-                u16::try_from(u32::from(total) * u32::from(p.min(100)) / 100).unwrap_or(total)
+            Extent::Share(share) => {
+                let share = u32::from(share.min(Self::WHOLE));
+                u16::try_from(u32::from(total) * share / u32::from(Self::WHOLE)).unwrap_or(total)
             }
         }
     }
 }
 
-/// Where on the screen a floating view goes.
+/// Where on the screen a floating view goes, across and down. A position
+/// given in its options wins over its anchor on that axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
     Center,
     Top,
     Bottom,
+    /// At the left edge, halfway down.
+    Left,
+    /// At the right edge, halfway down.
+    Right,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
     /// Just below the focused view's cursor, or above it when there's no
     /// room below, like a completion menu.
     Cursor,
     /// Just above the focused view's cursor, or below it when there's no
     /// room above, like signature help, so a completion menu fits below.
     AboveCursor,
+}
+
+impl Anchor {
+    const NAMES: [(Anchor, &str); 11] = [
+        (Anchor::Center, "center"),
+        (Anchor::Top, "top"),
+        (Anchor::Bottom, "bottom"),
+        (Anchor::Left, "left"),
+        (Anchor::Right, "right"),
+        (Anchor::TopLeft, "top-left"),
+        (Anchor::TopRight, "top-right"),
+        (Anchor::BottomLeft, "bottom-left"),
+        (Anchor::BottomRight, "bottom-right"),
+        (Anchor::Cursor, "cursor"),
+        (Anchor::AboveCursor, "above-cursor"),
+    ];
+
+    /// The anchor called `name`, like "top-left".
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(_, n)| *n == name)
+            .map(|(anchor, _)| *anchor)
+    }
+
+    pub fn name(self) -> &'static str {
+        Self::NAMES
+            .iter()
+            .find(|(anchor, _)| *anchor == self)
+            .map_or("center", |(_, name)| name)
+    }
+
+    /// Every anchor's name, in order, for saying what's allowed.
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        Self::NAMES.iter().map(|(_, name)| *name)
+    }
 }
 
 /// How a floating view is shown.
@@ -133,6 +189,10 @@ pub struct FloatOptions {
     /// Whether it's hidden: its view and buffer stay, but it isn't drawn
     /// and the mouse goes through it. Focusing it shows it again.
     pub hidden: bool,
+    /// Whether every client is shown it, like a review meant for everyone.
+    /// Otherwise, unless it belongs to a tab, only the client it opened for
+    /// is, as with a picker or a prompt.
+    pub shared: bool,
 }
 
 /// A view floating over the main one.
@@ -145,6 +205,16 @@ pub struct Float {
     pub(crate) return_to: ViewId,
     /// The tab it belongs to, if it belongs to one.
     pub(crate) tab: Option<TabId>,
+    /// The client it's shown to alone: the one it opened for, unless it's
+    /// shared or belongs to a tab.
+    pub(crate) owner: Option<ClientId>,
+}
+
+impl Float {
+    /// The client it's shown to alone, if it isn't shown to all.
+    pub fn owner(&self) -> Option<ClientId> {
+        self.owner
+    }
 }
 
 /// Which edge of the screen a panel is on.
@@ -912,17 +982,26 @@ impl Editor {
             self.acting_client_mut().focus = previous;
         }
         let tab = options.tab.then(|| self.current_tab().id());
+        let owner = self.owner_for(&options);
         self.floats.push(Float {
             view,
             options,
             return_to: previous,
             tab,
+            owner,
         });
         view
     }
 
-    /// The floating views shown: those over every tab and the shown tab's
-    /// own, bottom first, leaving out hidden ones.
+    /// Who a float shown as `options` says is shown to alone: the acting
+    /// client, unless it's shared or belongs to a tab.
+    fn owner_for(&self, options: &FloatOptions) -> Option<ClientId> {
+        (!options.shared && !options.tab).then_some(self.acting)
+    }
+
+    /// The floating views the acting client is shown: those over every tab
+    /// and the shown tab's own, bottom first, leaving out hidden ones and
+    /// other clients' own.
     pub fn floats(&self) -> Vec<&Float> {
         self.floats_hidden_too()
             .into_iter()
@@ -931,13 +1010,26 @@ impl Editor {
     }
 
     /// The floating views over every tab and the shown tab's own, hidden
-    /// or not, bottom first.
+    /// or not, bottom first, leaving out other clients' own.
     pub fn floats_hidden_too(&self) -> Vec<&Float> {
         let tab = self.current_tab().id();
         self.floats
             .iter()
             .filter(|f| f.tab.is_none_or(|t| t == tab))
+            .filter(|f| f.owner.is_none_or(|c| c == self.acting))
             .collect()
+    }
+
+    /// Closes the floating views client `id` alone was shown, returning
+    /// them: it went, and they were open for it.
+    pub fn close_floats_of(&mut self, id: ClientId) -> Vec<ViewId> {
+        let views: Vec<ViewId> = self
+            .floats
+            .iter()
+            .filter(|f| f.owner == Some(id))
+            .map(|f| f.view)
+            .collect();
+        views.into_iter().filter(|view| self.close(*view)).collect()
     }
 
     /// Shows `buffer` in a new panel beside the main view, focusing it if
@@ -968,16 +1060,29 @@ impl Editor {
     }
 
     /// Changes how a floating view is shown. Returns false if `view` isn't
-    /// floating. Hiding the focused one moves focus as closing it would.
+    /// floating. Hiding the focused one moves focus as closing it would. One
+    /// no longer shared is the acting client's own from then on.
     pub fn configure_float(&mut self, view: ViewId, options: FloatOptions) -> bool {
+        let owner = self.owner_for(&options);
         let Some(float) = self.floats.iter_mut().find(|f| f.view == view) else {
             return false;
         };
         let hidden = options.hidden;
+        if options.shared != float.options.shared {
+            float.owner = owner;
+        }
         float.options = options;
-        let return_to = float.return_to;
+        let (return_to, owner) = (float.return_to, float.owner);
         if hidden {
             self.refocus_from(view, Some(return_to));
+        } else if let Some(owner) = owner {
+            // The others' focus can't stay on what they aren't shown.
+            self.as_each_client(|ed| {
+                if ed.acting != owner && ed.focus() == view {
+                    let next = ed.focus_after(view, Some(return_to));
+                    ed.acting_client_mut().focus = next;
+                }
+            });
         }
         true
     }

@@ -1,6 +1,7 @@
 -- How the window (`greed --gui`) draws text. A window reads every option
 -- named `gui-...`; terminals ignore them. `ctrl-=` and `ctrl--` make the
--- text bigger and smaller, `ctrl-0` puts it back.
+-- text bigger and smaller in the window you type them in, and `ctrl-0`
+-- puts it back: each window attached to a session zooms on its own.
 --
 --     greed.option.set("gui-font", "JetBrains Mono")
 --     greed.option.set("gui-font-size", 14)
@@ -24,20 +25,22 @@ greed.option.define({
 
 greed.option.define({
 	name = "gui-font-size",
-	doc = "The size of the window's text in pixels, before the screen's scale",
+	doc = "The size of the window's text in pixels, before the screen's scale; "
+		.. "zooming gives a window a size of its own",
 	default = SIZE,
 })
-
--- The size before zooming started, which `font-reset` goes back to.
-local before: number? = nil
 
 local function current(): number
 	return greed.option.get("gui-font-size") :: number
 end
 
+-- Zooms the acting client's window alone, with a size of its own.
 local function zoom(by: number)
-	before = before or current()
-	greed.option.set("gui-font-size", math.clamp(current() + by, SMALLEST, LARGEST))
+	greed.option.set(
+		"gui-font-size",
+		math.clamp(current() + by, SMALLEST, LARGEST),
+		{ client = true }
+	)
 end
 
 greed.command({
@@ -60,8 +63,7 @@ greed.command({
 	name = "font-reset",
 	doc = "Put the window's text back to its size before zooming",
 	run = function()
-		greed.option.set("gui-font-size", before or current())
-		before = nil
+		greed.option.set("gui-font-size", nil, { client = true })
 	end,
 })
 

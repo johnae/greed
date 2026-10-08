@@ -46,27 +46,28 @@ function M.scroll(view: greed.View, lines: number)
 	end
 end
 
--- Where the left button went down, while it's down: the view and the
--- place in its buffer, which a drag selects from.
-local pressed: { view: number, pos: number }? = nil
+-- Where the left button went down for each client, while it's down: the
+-- view and the place in its buffer, which a drag selects from.
+local pressed: { [number]: { view: number, pos: number } } = {}
 
 --- Presses on the same place this close together (in milliseconds) make
 --- a double or triple click.
 M.double_click = 400
 
--- The last left press, to count clicks: 1, 2 or 3.
-local last_click: { view: number, pos: number, at: number, count: number }? = nil
+-- Each client's last left press, to count clicks: 1, 2 or 3.
+local last_click: { [number]: { view: number, pos: number, at: number, count: number } } = {}
 
 local function clicks(view: greed.View, pos: number): number
 	local now = greed.now()
-	local last = last_click
+	local client = greed.client.id()
+	local last = last_click[client]
 	local count = if last
 			and last.view == view:id()
 			and last.pos == pos
 			and now - last.at <= M.double_click
 		then last.count % 3 + 1
 		else 1
-	last_click = { view = view:id(), pos = pos, at = now, count = count }
+	last_click[client] = { view = view:id(), pos = pos, at = now, count = count }
 	return count
 end
 
@@ -80,7 +81,7 @@ local function press(view: greed.View, event: greed.MouseEvent, pos: number)
 	if event.shift then
 		local anchor = selection.ranges[selection.primary].anchor
 		point(view, pos, anchor)
-		pressed = { view = view:id(), pos = anchor }
+		pressed[greed.client.id()] = { view = view:id(), pos = anchor }
 	elseif event.alt then
 		table.insert(selection.ranges, { anchor = pos, head = pos })
 		selection.primary = #selection.ranges
@@ -96,7 +97,7 @@ local function press(view: greed.View, event: greed.MouseEvent, pos: number)
 		point(view, to, buffer:line_start(line))
 	else
 		point(view, pos)
-		pressed = { view = view:id(), pos = pos }
+		pressed[greed.client.id()] = { view = view:id(), pos = pos }
 	end
 end
 
@@ -128,11 +129,12 @@ greed.on("mouse", function(event: greed.MouseEvent)
 			press(view, event, event.pos)
 		end
 	elseif event.kind == "drag" and left then
-		if pressed and pressed.view == view:id() and event.pos then
-			point(view, event.pos, pressed.pos)
+		local held = pressed[event.client]
+		if held and held.view == view:id() and event.pos then
+			point(view, event.pos, held.pos)
 		end
 	elseif event.kind == "release" then
-		pressed = nil
+		pressed[event.client] = nil
 	elseif event.kind == "scroll" and (event.dir == "up" or event.dir == "down") then
 		M.scroll(view, if event.dir == "up" then -M.lines else M.lines)
 	end

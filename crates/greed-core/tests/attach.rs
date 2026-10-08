@@ -606,3 +606,18 @@ fn a_client_asking_to_be_independent_gets_tabs_of_its_own() {
     assert_ne!(c.first_row(), "1 Bhello", "the new tab's line");
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn each_window_gets_its_own_font_size_in_its_frames() {
+    let (conn, _, attach_as) = start("font");
+    let (mut a, mut b) = two(&attach_as);
+    let size = |c: &Attached| c.1.as_ref().unwrap().gui["gui-font-size"].clone();
+    a.keys("ctrl-= ctrl-=");
+    while size(&a) != "17" {
+        a.first_row();
+    }
+    b.keys("i B esc");
+    b.until_row("1 Bhello");
+    assert_eq!(size(&b), "15", "the other window's stays");
+    conn.input.send(Input::Quit).unwrap();
+}

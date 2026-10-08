@@ -557,13 +557,17 @@ impl Host {
         f(&state(&self.lua).registry)
     }
 
-    /// The options named `gui-...`, as text, for a window to read.
-    pub fn gui_options(&self) -> BTreeMap<String, String> {
+    /// The options named `gui-...` as `client` has them, as text, for its
+    /// window to read: a window can have its own, like its font size.
+    pub fn gui_options(&self, client: ClientId) -> BTreeMap<String, String> {
         self.with_registry(|registry| {
             registry
                 .option_states()
                 .filter(|o| o.def.name.starts_with("gui-"))
-                .map(|o| (o.def.name.to_string(), o.value.to_string()))
+                .map(|o| {
+                    let value = registry.option_for(client, &o.def.name).unwrap_or(o.value);
+                    (o.def.name.to_string(), value.to_string())
+                })
                 .collect()
         })
     }
@@ -801,7 +805,8 @@ impl Host {
 
     /// Tells plugins `client` went, with "client.detached", its handlers
     /// running as that client; the session goes on without it. With
-    /// `others` false, no other client is attached.
+    /// `others` false, no other client is attached. Then the floats it alone
+    /// was shown close, like a picker it left open.
     pub fn client_detached(&self, client: ClientId, others: bool) -> Result<(), HostError> {
         state_mut(&self.lua).attached = others;
         let outer = self.with_editor_mut(|ed| {
@@ -811,8 +816,14 @@ impl Host {
         });
         let told = budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
-            api::emit_for_client(&self.lua, "client.detached", &payload).map_err(HostError::from)
-        });
+            api::emit_for_client(&self.lua, "client.detached", &payload)?;
+            let closed = self.with_editor_mut(|ed| ed.close_floats_of(client));
+            for view in closed {
+                handles::view_closed(&self.lua, view)?;
+            }
+            Ok::<_, mlua::Error>(())
+        })
+        .map_err(HostError::from);
         self.with_editor_mut(|ed| ed.act_as(outer));
         told
     }

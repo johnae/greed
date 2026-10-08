@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use greed_text::ClientId;
+
 /// A plugin name, e.g. `"core"` or `"user/jump-to-crate"`.
 pub type PluginId = Arc<str>;
 
@@ -163,6 +165,9 @@ pub struct Registry<H> {
     /// The values set on options whose plugin was removed, and who set
     /// them, for when it defines them again.
     kept: HashMap<Arc<str>, (Value, Option<PluginId>)>,
+    /// Values of options that one client has for itself, like a window's
+    /// own font size, over the value every other client has.
+    own: HashMap<ClientId, HashMap<Arc<str>, Value>>,
 }
 
 impl<H> Default for Registry<H> {
@@ -172,6 +177,7 @@ impl<H> Default for Registry<H> {
             events: HashMap::new(),
             options: HashMap::new(),
             kept: HashMap::new(),
+            own: HashMap::new(),
         }
     }
 }
@@ -302,34 +308,72 @@ impl<H> Registry<H> {
         self.set_option_by(name, value, None)
     }
 
-    /// Sets an option, noting `by` as the plugin that set it.
+    /// Sets an option, noting `by` as the plugin that set it. It's set for
+    /// every client: one that had a value of its own takes this one too.
     pub fn set_option_by(
         &mut self,
         name: &str,
         value: Value,
         by: Option<PluginId>,
     ) -> Result<(), OptionError> {
+        let slot = self.checked(name, &value)?;
+        slot.value = value;
+        slot.set_by = by;
+        slot.set = true;
+        for own in self.own.values_mut() {
+            own.remove(name);
+        }
+        Ok(())
+    }
+
+    /// Option `name`'s slot, if `value` is of its type and one of its
+    /// choices.
+    fn checked(&mut self, name: &str, value: &Value) -> Result<&mut OptionSlot, OptionError> {
         let slot = self
             .options
             .get_mut(name)
             .ok_or_else(|| OptionError::Unknown(name.into()))?;
-        if std::mem::discriminant(&slot.value) != std::mem::discriminant(&value) {
+        if std::mem::discriminant(&slot.value) != std::mem::discriminant(value) {
             return Err(OptionError::WrongType {
                 name: name.into(),
                 expected: slot.value.type_name(),
                 actual: value.type_name(),
             });
         }
-        if !slot.def.allows(&value) {
+        if !slot.def.allows(value) {
             return Err(OptionError::NotAChoice {
                 name: name.into(),
-                value,
+                value: value.clone(),
                 choices: slot.def.choices.clone(),
             });
         }
-        slot.value = value;
-        slot.set_by = by;
-        slot.set = true;
+        Ok(slot)
+    }
+
+    /// Option `name` as `client` has it: its own value, or everyone's.
+    pub fn option_for(&self, client: ClientId, name: &str) -> Option<&Value> {
+        self.own
+            .get(&client)
+            .and_then(|own| own.get(name))
+            .or_else(|| self.option(name))
+    }
+
+    /// Gives `client` a value of option `name` of its own, which only it
+    /// sees, or with `None` has it see everyone's again.
+    pub fn set_option_for(
+        &mut self,
+        client: ClientId,
+        name: &str,
+        value: Option<Value>,
+    ) -> Result<(), OptionError> {
+        let Some(value) = value else {
+            if let Some(own) = self.own.get_mut(&client) {
+                own.remove(name);
+            }
+            return Ok(());
+        };
+        let name = self.checked(name, &value)?.def.name.clone();
+        self.own.entry(client).or_default().insert(name, value);
         Ok(())
     }
 
@@ -345,6 +389,9 @@ impl<H> Registry<H> {
         self.events.retain(|_, handlers| !handlers.is_empty());
         let removed = self.options.extract_if(|_, slot| &*slot.def.owner == owner);
         for (name, slot) in removed {
+            for own in self.own.values_mut() {
+                own.remove(&name);
+            }
             if slot.set {
                 self.kept.insert(name, (slot.value, slot.set_by));
             }

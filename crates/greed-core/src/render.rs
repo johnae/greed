@@ -1795,22 +1795,26 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
             .min((area.x + area.width).saturating_sub(outer_width));
         return inside(x, y);
     }
-    // Whatever the position, the box stays on screen.
-    let x = match options.x {
-        Some(x) => x.resolve(area.width),
-        None => area.width.saturating_sub(outer_width) / 2,
+    // Whatever the position, the box stays on screen. With no cursor on
+    // screen, a cursor float centers.
+    let (room_x, room_y) = (
+        area.width.saturating_sub(outer_width),
+        area.height.saturating_sub(outer_height),
+    );
+    let x = match (options.x, options.anchor) {
+        (Some(x), _) => x.resolve(area.width),
+        (None, Anchor::Left | Anchor::TopLeft | Anchor::BottomLeft) => 0,
+        (None, Anchor::Right | Anchor::TopRight | Anchor::BottomRight) => room_x,
+        (None, _) => room_x / 2,
     }
-    .min(area.width.saturating_sub(outer_width));
+    .min(room_x);
     let y = match (options.y, options.anchor) {
         (Some(y), _) => y.resolve(area.height),
-        (None, Anchor::Top) => 0,
-        // With no cursor on screen, a cursor float centers.
-        (None, Anchor::Center | Anchor::Cursor | Anchor::AboveCursor) => {
-            area.height.saturating_sub(outer_height) / 2
-        }
-        (None, Anchor::Bottom) => area.height.saturating_sub(outer_height),
+        (None, Anchor::Top | Anchor::TopLeft | Anchor::TopRight) => 0,
+        (None, Anchor::Bottom | Anchor::BottomLeft | Anchor::BottomRight) => room_y,
+        (None, _) => room_y / 2,
     }
-    .min(area.height.saturating_sub(outer_height));
+    .min(room_y);
     inside(area.x + x, area.y + y)
 }
 

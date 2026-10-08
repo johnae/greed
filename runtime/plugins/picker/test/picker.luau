@@ -462,3 +462,39 @@ test("esc closes a picker in a style no plugin names", function(t)
 	greed.mode.set("mine")
 	assert(greed.keymap.resolve("esc") == "picker-close")
 end)
+
+test("a client's picker is its own: others don't see it and their keys don't reach it", function(t)
+	t:buffer("|abc")
+	local second = t:client()
+	local picked: { [number]: string } = {}
+	greed.command({
+		name = "test-pick",
+		run = function(ctx)
+			local client = ctx.client
+			require("@picker").pick("Fruit", {
+				{ label = "apple", value = "apple" },
+				{ label = "banana", value = "banana" },
+			}, function(item)
+				picked[client] = item.value
+			end)
+		end,
+	})
+	second:run("test-pick")
+	local function has(rows: { string }, text: string): boolean
+		return string.find(table.concat(rows, "\n"), text, 1, true) ~= nil
+	end
+	assert(has(second:screen(40, 12), "Fruit"), "the second sees its picker")
+	assert(not has(t:screen(40, 12), "Fruit"), "the first doesn't")
+	-- The first types in its own buffer, not in the second's picker.
+	t:keys("i z esc")
+	t:expect("z|abc")
+	second:expect_mode("helix-insert")
+	-- The first opens one of its own, and both stay open.
+	t:run("test-pick")
+	second:keys("b a n enter")
+	assert(picked[second:id()] == "banana", `the second picked {picked[second:id()]}`)
+	assert(picked[1] == nil, "the first hasn't")
+	assert(has(t:screen(40, 12), "Fruit"), "the first's is still open")
+	t:keys("enter")
+	assert(picked[1] == "apple", `the first picked {picked[1]}`)
+end)

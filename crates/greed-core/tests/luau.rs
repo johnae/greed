@@ -534,7 +534,7 @@ fn scratch_buffers_float_and_go_away_when_closed() {
         let float = &ed.floats()[0];
         assert_eq!(float.options.title.as_deref(), Some("Pick"));
         assert_eq!(float.options.width, greed_core::Extent::Cells(30));
-        assert_eq!(float.options.height, greed_core::Extent::Percent(50));
+        assert_eq!(float.options.height, greed_core::Extent::percent(50));
     });
     assert_eq!(h.eval("v:close()").unwrap(), "true");
     assert_eq!(
@@ -547,7 +547,7 @@ fn scratch_buffers_float_and_go_away_when_closed() {
     assert!(err.contains("this view was closed"), "{err}");
     assert!(
         h.eval(
-            "require('@greed').float(require('@greed').create_buffer('x'), { anchor = 'left' })"
+            "require('@greed').float(require('@greed').create_buffer('x'), { anchor = 'sideways' })"
         )
         .is_err()
     );
@@ -1601,7 +1601,7 @@ fn plugins_open_panels_beside_the_main_view() {
     h.with_editor(|ed| {
         let panel = &ed.panels()[0];
         assert_eq!(panel.options.side, Side::Right);
-        assert_eq!(panel.options.width, Extent::Percent(30));
+        assert_eq!(panel.options.width, Extent::percent(30));
         assert_eq!(panel.options.title.as_deref(), Some("Files"));
         assert_eq!(ed.focus(), ed.main(), "focus stays");
     });

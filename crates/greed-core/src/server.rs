@@ -881,9 +881,8 @@ impl Server<'_> {
         if let Err(err) = reported {
             self.say(first_line(&err.to_string()));
         }
-        let gui = host.gui_options();
         for (id, mut frame) in frames {
-            frame.gui.clone_from(&gui);
+            frame.gui = host.gui_options(id);
             if !self.send_frame(id, frame) {
                 return false;
             }

@@ -141,7 +141,15 @@ end)
 test("the API's functions show their signature and doc", function(t)
 	t:buffer("|")
 	local text = describe.text("greed.option.set", "api") :: string
-	assert(string.find(text, "(name: string, value: OptionValue) -> ()", 1, true), text)
+	assert(
+		string.find(
+			text,
+			"(name: string, value: OptionValue?, opts: { client: boolean? }?) -> ()",
+			1,
+			true
+		),
+		text
+	)
 	local method = describe.text("Buffer:edit", "api") :: string
 	assert(string.find(method, "Edits the buffer", 1, true), method)
 end)

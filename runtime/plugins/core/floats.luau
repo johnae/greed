@@ -18,9 +18,11 @@ M.min_height = 3
 
 type Area = { x: number, y: number, width: number, height: number }
 
--- The float being dragged: which part was pressed, where, and the box it
--- had then, border included.
-local dragging: { view: greed.View, part: string, col: number, row: number, box: Area }? = nil
+type Drag = { view: greed.View, part: string, col: number, row: number, box: Area }
+
+-- The float each client is dragging, by its id: which part was pressed,
+-- where, and the box it had then, border included.
+local dragging: { [number]: Drag } = {}
 
 --- Where `box` would go after dragging its `part` by `dx` and `dy`
 --- cells: the top border moves it, the other edges and the corners resize it.
@@ -56,6 +58,73 @@ function M.is_float(view: greed.View): boolean
 	return view:float_spec() ~= nil
 end
 
+-- `n` cells out of `total` as a share, like "37.5%": just enough that it
+-- comes back as `n` cells on that screen, so nothing moves there.
+local function share(n: number, total: number): string
+	local hundredths = math.ceil(n * 10000 / total)
+	if hundredths % 100 == 0 then
+		return `{hundredths // 100}%`
+	end
+	local text = string.gsub(string.format("%.2f", hundredths / 100), "0$", "")
+	return text .. "%"
+end
+
+-- The room floats go in on the acting client's screen, the screen above
+-- the status line, in cells; nil before the client has said how big its
+-- screen is.
+local function screen(): (number?, number?)
+	local size = greed.client.current().size
+	if size == nil or size.width <= 0 or size.height <= 1 then
+		return nil, nil
+	end
+	return size.width, size.height - 1
+end
+
+--- `box`, in cells of the acting client's screen, as a spec placing a
+--- float there as shares of the screen ("37.5%"): it keeps its place and
+--- size in proportion on clients with screens of other sizes. In cells
+--- before the client has said how big its screen is.
+function M.in_shares(box: Area): greed.FloatSpec
+	local width, height = screen()
+	if width == nil or height == nil then
+		return { x = box.x, y = box.y, width = box.width, height = box.height }
+	end
+	return {
+		x = share(box.x, width),
+		y = share(box.y, height),
+		width = share(box.width, width),
+		height = share(box.height, height),
+	}
+end
+
+-- `extent`, cells or a share like "37.5%", as cells out of `total`, as
+-- the editor works it out.
+local function cells(extent: (number | string)?, total: number?): number?
+	if type(extent) == "number" then
+		return extent
+	end
+	local percent = if type(extent) == "string" then tonumber(string.sub(extent, 1, -2)) else nil
+	if percent == nil or total == nil then
+		return nil
+	end
+	local hundredths = math.min(math.floor(percent * 100 + 0.5), 10000)
+	return total * hundredths // 10000
+end
+
+--- Where `spec` puts a float on the acting client's screen, in cells,
+--- border included: nil unless it gives all of `x`, `y`, `width` and
+--- `height`, or before the client has said how big its screen is when one
+--- is a share.
+function M.in_cells(spec: greed.FloatSpec): Area?
+	local width, height = screen()
+	local x, y = cells(spec.x, width), cells(spec.y, height)
+	local w, h = cells(spec.width, width), cells(spec.height, height)
+	if x == nil or y == nil or w == nil or h == nil then
+		return nil
+	end
+	return { x = x, y = y, width = w, height = h }
+end
+
 -- `view`'s box as last drawn, border included; nil before it's drawn.
 local function box_of(view: greed.View): Area?
 	local area = view:area()
@@ -66,7 +135,7 @@ local function box_of(view: greed.View): Area?
 end
 
 local function place(view: greed.View, box: Area)
-	view:configure({ x = box.x, y = box.y, width = box.width, height = box.height })
+	view:configure(M.in_shares(box))
 end
 
 --- Grows the float `view` by `cells` toward `side` ("left", "right", "up"
@@ -93,6 +162,8 @@ function M.move(view: greed.View, dx: number, dy: number)
 end
 
 greed.on("mouse", function(event: greed.MouseEvent)
+	local client = event.client
+	local drag = dragging[client]
 	if event.kind == "press" and event.button == "left" and event.border and event.view then
 		local view = event.view
 		local box = box_of(view)
@@ -102,16 +173,15 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		local part: string = event.border
 		view:raise()
 		view:focus()
-		dragging = { view = view, part = part, col = event.col, row = event.row, box = box }
-	elseif event.kind == "drag" and dragging then
-		local drag = dragging
+		dragging[client] = { view = view, part = part, col = event.col, row = event.row, box = box }
+	elseif event.kind == "drag" and drag then
 		local box = M.dragged(drag.box, drag.part, event.col - drag.col, event.row - drag.row)
 		-- The float may have closed under the mouse.
 		if not pcall(place, drag.view, box) then
-			dragging = nil
+			dragging[client] = nil
 		end
 	elseif event.kind == "release" then
-		dragging = nil
+		dragging[client] = nil
 	end
 end)
 
@@ -220,30 +290,38 @@ export type TextOptions = {
 	height: (number | string)?,
 }
 
--- The float last showing text of each kind.
-local showing: { [string]: greed.View } = {}
+-- The float last showing text of each kind to each client, by client id,
+-- and the kinds whose keys are bound.
+local showing: { [number]: { [string]: greed.View } } = {}
+local bound: { [string]: boolean } = {}
 
 greed.command({
 	name = "text-float-close",
 	doc = "Close the float showing text",
 	run = function(ctx)
-		if showing[ctx.buffer:kind()] == ctx.view then
+		local mine = showing[ctx.client]
+		if mine and mine[ctx.buffer:kind()] == ctx.view then
 			ctx.view:close()
 		end
 	end,
 })
 
---- Shows `text` in a float titled `title`, to read: it can't be changed,
---- and esc or q closes it.
+--- Shows `text` in a float titled `title`, to read, to the acting client:
+--- it can't be changed, and esc or q closes it.
 ---
 ---     core.floats.show_text("Stalls", table.concat(lines, "\n"), { kind = "stalls" })
 function M.show_text(title: string, text: string, options: TextOptions?): greed.View
 	local opts: TextOptions = options or {}
 	local kind = opts.kind or "text"
-	local before = showing[kind]
-	if before == nil then
+	if not bound[kind] then
+		bound[kind] = true
 		greed.keymap.bind({ kind = kind }, { esc = "text-float-close", q = "text-float-close" })
-	elseif before:valid() then
+	end
+	local client = greed.client.id()
+	local mine = showing[client] or {}
+	showing[client] = mine
+	local before = mine[kind]
+	if before and before:valid() then
 		before:close()
 	end
 	local buffer = greed.create_buffer(kind, text, { readonly = true, language = opts.language })
@@ -254,7 +332,7 @@ function M.show_text(title: string, text: string, options: TextOptions?): greed.
 		buffer,
 		{ title = title, width = opts.width or "80%", height = opts.height or "60%" }
 	)
-	showing[kind] = view
+	mine[kind] = view
 	return view
 end
 

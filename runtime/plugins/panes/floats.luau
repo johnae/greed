@@ -224,20 +224,13 @@ local function room(): Area
 	return { x = left, y = top, width = right - left, height = bottom - top }
 end
 
--- Where `view` is, its border included: as it was placed, in cells, or
--- else as it was last drawn.
+-- Where `view` is, its border included: as it was placed, in cells of the
+-- acting client's screen, or else as it was last drawn.
 local function box_of(view: greed.View): Area?
 	local spec = view:float_spec()
-	if spec then
-		local x, y, width, height = spec.x, spec.y, spec.width, spec.height
-		if
-			type(x) == "number"
-			and type(y) == "number"
-			and type(width) == "number"
-			and type(height) == "number"
-		then
-			return { x = x, y = y, width = width, height = height }
-		end
+	local placed = spec and core.floats.in_cells(spec)
+	if placed then
+		return placed
 	end
 	local area = view:area()
 	if area == nil then
@@ -327,7 +320,8 @@ local function apply(view: greed.View, place: Place?, label: { Piece }, footer: 
 	end
 	local change: greed.FloatSpec = {}
 	local changed = false
-	local box = place and place.box
+	-- In shares of the screen, so it's in the same place on every client's.
+	local box = place and place.box and core.floats.in_shares(place.box)
 	if
 		box
 		and (
@@ -400,9 +394,9 @@ local function draw_dock(st: TabState, shown: boolean)
 		end)
 	end
 	buffer:decorate("float-dock", marks)
-	local area = room()
-	local spec: greed.FloatSpec =
-		{ x = area.x, y = area.y + area.height - 1, width = area.width, height = 1 }
+	-- Along the bottom, as wide as the room on every client's screen.
+	local area = core.floats.in_shares(room())
+	local spec: greed.FloatSpec = { x = area.x, width = area.width, height = 1, anchor = "bottom" }
 	if view and view:valid() then
 		view:configure(spec)
 	else
@@ -603,7 +597,12 @@ local function cascaded(): greed.FloatSpec?
 	if area == nil then
 		return nil
 	end
-	return { x = area.x + 3, y = area.y + 1, width = area.width + 2, height = area.height + 2 }
+	return core.floats.in_shares({
+		x = area.x + 3,
+		y = area.y + 1,
+		width = area.width + 2,
+		height = area.height + 2,
+	})
 end
 
 --- Opens another floating terminal in the tab, a step down and right from

@@ -210,7 +210,7 @@ fn grouped_edits_undo_as_one_step() {
 fn float_options() -> greed_core::FloatOptions {
     greed_core::FloatOptions {
         title: Some("pick".into()),
-        width: greed_core::Extent::Percent(50),
+        width: greed_core::Extent::percent(50),
         height: greed_core::Extent::Cells(5),
         anchor: greed_core::Anchor::Center,
         focus: true,
@@ -221,6 +221,7 @@ fn float_options() -> greed_core::FloatOptions {
         footer: None,
         border: true,
         hidden: false,
+        shared: false,
     }
 }
 
@@ -333,8 +334,8 @@ fn extents_resolve_against_the_screen() {
     use greed_core::Extent;
     assert_eq!(Extent::Cells(10).resolve(80), 10);
     assert_eq!(Extent::Cells(100).resolve(80), 80);
-    assert_eq!(Extent::Percent(50).resolve(81), 40);
-    assert_eq!(Extent::Percent(150).resolve(80), 80);
+    assert_eq!(Extent::percent(50).resolve(81), 40);
+    assert_eq!(Extent::percent(150).resolve(80), 80);
 }
 
 #[test]
@@ -1091,7 +1092,7 @@ mod panes {
             notes,
             greed_core::PanelOptions {
                 side: greed_core::Side::Right,
-                width: greed_core::Extent::Percent(25),
+                width: greed_core::Extent::percent(25),
                 ..super::panel_options()
             },
         );
@@ -1624,23 +1625,21 @@ mod clients {
     fn floats_of_a_tab_are_copied_with_it_and_floats_over_every_tab_are_not() {
         let mut ed = two_clients("hello");
         let terminal = ed.create_buffer("terminal", "");
+        // One belonging to the tab, and one shared over every tab.
         let options = |tab| FloatOptions {
-            tab,
+            title: None,
+            width: Extent::Cells(10),
+            height: Extent::Cells(3),
+            anchor: Anchor::Center,
             focus: false,
-            ..FloatOptions {
-                title: None,
-                width: Extent::Cells(10),
-                height: Extent::Cells(3),
-                anchor: Anchor::Center,
-                focus: false,
-                x: None,
-                y: None,
-                tab: false,
-                label: None,
-                footer: None,
-                border: true,
-                hidden: false,
-            }
+            x: None,
+            y: None,
+            tab,
+            label: None,
+            footer: None,
+            border: true,
+            hidden: false,
+            shared: !tab,
         };
         let in_tab = ed.float(terminal, options(true));
         let over_all = ed.float(terminal, options(false));

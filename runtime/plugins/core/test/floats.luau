@@ -160,3 +160,39 @@ test("text to read shows in a float that esc or q closes, one per kind", functio
 	t:keys("q")
 	assert(not third:valid(), "q closes it in another style")
 end)
+
+test("a float moved with one client's mouse lands in proportion on another's screen", function(t)
+	t:buffer("|x")
+	local second = t:client()
+	local view = greed.float(
+		greed.create_buffer("scratch", "hello"),
+		{ title = "f", x = 4, y = 2, width = 20, height = 6, shared = true }
+	)
+	type Area = { x: number, y: number, width: number, height: number }
+	-- 60 by 20 above the status line for the first, 120 by 40 for the second.
+	t:draw(60, 21)
+	second:draw(120, 41)
+	local before = view:area() :: Area
+	t:mouse("press", before.x + 3, before.y - 1)
+	t:mouse("drag", before.x + 9, before.y + 3)
+	t:mouse("release", before.x + 9, before.y + 3)
+	t:draw(60, 21)
+	local mine = view:area() :: Area
+	assert(mine.x == before.x + 6 and mine.y == before.y + 4, `moved to {mine.x},{mine.y}`)
+	second:draw(120, 41)
+	local theirs: Area? = nil
+	greed.command({
+		name = "test-area",
+		run = function()
+			theirs = view:area()
+		end,
+	})
+	second:run("test-area")
+	assert(theirs, "the second draws it")
+	-- The outside of the border, twice as far on a screen twice the size.
+	assert(
+		theirs.x - 1 == 2 * (mine.x - 1) and theirs.y - 1 == 2 * (mine.y - 1),
+		`at {theirs.x},{theirs.y}`
+	)
+	assert(theirs.width + 2 == 2 * (mine.width + 2), `{theirs.width} wide`)
+end)

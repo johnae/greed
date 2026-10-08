@@ -94,6 +94,7 @@ fn float_at(x: u16) -> FloatOptions {
         footer: None,
         border: true,
         hidden: false,
+        shared: false,
     }
 }
 

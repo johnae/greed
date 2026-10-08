@@ -58,6 +58,8 @@ export type Options = {
 local LIMIT = 200
 
 type Open = {
+	-- The client it's open for; each has its own picker.
+	client: number,
 	buffer: greed.Buffer,
 	view: greed.View,
 	items: { Item },
@@ -120,7 +122,18 @@ local function update_preview(o: Open)
 	end
 end
 
-local open: Open? = nil
+-- The picker open for each client, by its id.
+local opened: { [number]: Open } = {}
+
+-- The acting client's picker, if it has one open.
+local function mine(): Open?
+	return opened[greed.client.id()]
+end
+
+-- Whether `o` is still its client's open picker.
+local function still_open(o: Open): boolean
+	return opened[o.client] == o
+end
 
 local function query(o: Open): string
 	return o.buffer:slice(0, o.buffer:line_end(0))
@@ -180,10 +193,10 @@ end
 -- Typing while it works makes it go again; answers in between are dropped.
 local function search(o: Open, source: (query: string) -> { Item })
 	o.searching = true
-	while open == o do
+	while still_open(o) do
 		local generation = o.generation
 		local ok, items = pcall(source, o.query or "")
-		if open ~= o then
+		if not still_open(o) then
 			break
 		end
 		if generation == o.generation then
@@ -259,16 +272,16 @@ local function refresh(o: Open)
 		return
 	end
 	greed.sleep(o.delay)
-	if open == o and generation == o.generation and not o.searching then
+	if still_open(o) and generation == o.generation and not o.searching then
 		search(o, source)
 	end
 end
 
--- Closes the picker. Unless an item was chosen, `on_cancel` hears that it
--- ended, however it did: esc, another picker, or its view closing (see
--- `pick`).
+-- Closes the acting client's picker. Unless an item was chosen,
+-- `on_cancel` hears that it ended, however it did: esc, another picker, or
+-- its view closing (see `pick`).
 local function close(chosen: boolean?)
-	local o = open
+	local o = mine()
 	if o then
 		o.chosen = chosen
 		o.float.close()
@@ -276,10 +289,11 @@ local function close(chosen: boolean?)
 end
 
 local function move(delta: number)
-	if open and #open.matches > 0 then
-		local count = math.min(#open.matches, LIMIT)
-		open.current = (open.current - 1 + delta) % count + 1
-		render(open)
+	local o = mine()
+	if o and #o.matches > 0 then
+		local count = math.min(#o.matches, LIMIT)
+		o.current = (o.current - 1 + delta) % count + 1
+		render(o)
 	end
 end
 
@@ -315,7 +329,7 @@ greed.command({
 	name = "picker-choose",
 	doc = "Choose the current item and close the picker",
 	run = function()
-		local o = open
+		local o = mine()
 		if o == nil then
 			return
 		end
@@ -339,7 +353,7 @@ greed.command({
 	name = "picker-complete",
 	doc = "Put the current path in the picker's query, to go on from there",
 	run = function()
-		local o = open
+		local o = mine()
 		local index = o and o.matches[o.current]
 		if o == nil or index == nil or o.given == nil then
 			return
@@ -364,7 +378,7 @@ greed.command({
 	name = "picker-key",
 	doc = "Run what the open picker does for the key pressed",
 	run = function(ctx)
-		local o = open
+		local o = mine()
 		local key = ctx.keys or ""
 		local action = o and o.keys[key]
 		if o == nil or action == nil then
@@ -394,14 +408,17 @@ local M = {}
 
 M.KEYS = KEYS
 
--- The last picker opened, for `resume`.
-local last: { title: string, items: { Item }, choose: (item: Item) -> (), options: Options? }? = nil
+type Last = { title: string, items: { Item }, choose: (item: Item) -> (), options: Options? }
 
--- Opens a picker over `items`. `choose` gets the item picked with enter;
--- `options.preview` shows the current item beside the list, and
--- `options.source` makes the items follow the query.
+-- The last picker each client opened, for `resume`.
+local last: { [number]: Last } = {}
+
+-- Opens a picker over `items`, for the acting client alone. `choose` gets
+-- the item picked with enter; `options.preview` shows the current item
+-- beside the list, and `options.source` makes the items follow the query.
 function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), options: Options?)
-	last = { title = title, items = items, choose = choose, options = options }
+	local client = greed.client.id()
+	last[client] = { title = title, items = items, choose = choose, options = options }
 	close()
 	local labels = {}
 	for i, item in items do
@@ -423,7 +440,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 			else { title = title, width = "60%", height = "60%" },
 		{
 			on_change = function()
-				if open == o then
+				if opened[client] == o then
 					refresh(o)
 				end
 			end,
@@ -431,8 +448,8 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 				if preview_view and preview_view:valid() then
 					preview_view:close()
 				end
-				if open == o then
-					open = nil
+				if opened[client] == o then
+					opened[client] = nil
 				end
 				if o.on_cancel and not o.chosen then
 					o.on_cancel()
@@ -441,6 +458,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		}
 	)
 	o = {
+		client = client,
 		buffer = float.buffer,
 		view = float.view,
 		float = float,
@@ -467,13 +485,14 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 			greed.keymap.bind({ kind = "picker" }, { [key] = "picker-key" })
 		end
 	end
-	open = o
+	opened[client] = o
 	refresh(o)
 end
 
---- Opens the last picker again, as Helix's space '. False if there's none.
+--- Opens the acting client's last picker again, as Helix's space '. False
+--- if there's none.
 function M.resume(): boolean
-	local again = last
+	local again = last[greed.client.id()]
 	if again == nil then
 		return false
 	end
@@ -511,7 +530,7 @@ greed.command({
 	name = "picker-act",
 	doc = "List what you can do with the current item, and do it",
 	run = function()
-		local o = open
+		local o = mine()
 		local index = o and o.matches[o.current]
 		local item = o and index and o.items[index]
 		if item == nil or item.kind == nil then
