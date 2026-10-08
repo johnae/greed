@@ -16,6 +16,9 @@ export type Options = {
 	on_cancel: (() -> ())?,
 	--- Shows a dot for each character typed, for passwords and keys.
 	secret: boolean?,
+	--- The kind of buffer it's typed in, for keys of its own, like the find
+	--- bar's; "prompt" by default.
+	kind: string?,
 }
 
 type Open = {
@@ -93,8 +96,8 @@ greed.keymap.bind({ kind = "prompt" }, {
 local M = {}
 
 --- Asks for a line of text at the bottom of the screen, of the acting
---- client alone.
-function M.open(options: Options)
+--- client alone. Returns its view, e.g. to put a label on its border.
+function M.open(options: Options): greed.View
 	local client = greed.client.id()
 	if opened[client] then
 		greed.run("prompt-cancel")
@@ -103,7 +106,7 @@ function M.open(options: Options)
 	local o: Open
 	o = {
 		float = floats.typing(
-			greed.create_buffer("prompt", start),
+			greed.create_buffer(options.kind or "prompt", start),
 			{ title = options.title, width = "100%", height = 3, anchor = "bottom" },
 			{
 				on_change = function()
@@ -131,6 +134,7 @@ function M.open(options: Options)
 	opened[client] = o
 	o.float.view:set_cursor(#start)
 	mask(o)
+	return o.float.view
 end
 
 --- Like `open`, but waits for the answer and returns what was typed, or

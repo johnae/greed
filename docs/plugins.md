@@ -805,7 +805,10 @@ greed.command({
 `greed.plugin.check(...)` wait like this, and so do
 `picker.choose(title, items)` and `core.prompt.ask(title)`, which give nil
 when you close them. (`picker.pick` and `core.prompt.open` take callbacks
-instead, for pickers that stay open while you work.) `greed.signal()` lets
+instead, for pickers that stay open while you work. `core.prompt.open`
+returns the prompt's view, to put a label on its border, and its `kind`
+option gives the prompt keys of its own, the way the vscode style's find bar
+binds `enter` to the next match.) `greed.signal()` lets
 one piece of code wait for a value another sends. `greed.animate(ms, step)`
 calls `step(t)` once a frame, which is all the flash on copy is.
 `greed.fs.watch(path)` makes a "file.changed" event come whenever that file

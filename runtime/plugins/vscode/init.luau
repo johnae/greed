@@ -51,7 +51,7 @@ greed.keymap.bind("vscode", {
 	["ctrl-p"] = "pick-file",
 	["ctrl-b"] = "pick-buffer",
 	["ctrl-P"] = "command-palette",
-	["ctrl-f"] = "search",
+	["ctrl-f"] = "find",
 	f3 = "search-next",
 	["shift-f3"] = "search-prev",
 	["ctrl-h"] = "replace-in-file",
@@ -88,6 +88,16 @@ greed.keymap.bind("vscode", {
 	["alt-right"] = "jump-forward",
 	["ctrl-u"] = "selection-undo",
 	["ctrl-U"] = "selection-redo",
+	["ctrl-\\"] = "pane-split-right",
+	-- ctrl-k starts VS Code's chords, so it never deletes to the line's end
+	-- here as it does in other styles' typing modes.
+	["ctrl-k ctrl-0"] = "fold-close-all",
+	["ctrl-k ctrl-j"] = "fold-open-all",
+	["ctrl-k ctrl-l"] = "fold-toggle",
+	["ctrl-k ctrl-i"] = "hover",
+	["ctrl-k ctrl-q"] = "goto-last-modification",
+	["ctrl-k ctrl-t"] = "theme",
+	["ctrl-k s"] = "save-all",
 })
 
 -- Without modes there's no ":" to find, so switching here says where

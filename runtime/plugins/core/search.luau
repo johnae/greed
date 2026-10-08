@@ -6,6 +6,7 @@ local greed = require("@greed")
 local prompt = require("./prompt")
 local registers = require("./registers")
 local registry = require("./registry")
+local style = require("./style")
 local span = require("./text").span
 
 -- The last pattern searched for, and which way.
@@ -223,6 +224,11 @@ local function word_char(c: string?): boolean
 	return c ~= nil and string.match(c, "^[%w_]$") ~= nil
 end
 
+-- `text` with a backslash before what regexes take as more than itself.
+local function escape(text: string): string
+	return (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0"))
+end
+
 -- Searches for the primary selection's text, as plain text in the same
 -- case. With `words`, a selection that starts or ends a word only matches
 -- there, so a whole word doesn't match inside a longer one.
@@ -234,7 +240,7 @@ local function search_selection(ctx: greed.Context, words: boolean)
 		greed.echo("nothing selected to search for")
 		return
 	end
-	local pattern = (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?{}|\\]", "\\%0"))
+	local pattern = escape(text)
 	if words then
 		local before = if from > 0 then buffer:char_at(buffer:prev_char(from)) else nil
 		if word_char(buffer:char_at(from)) and not word_char(before) then
@@ -264,6 +270,200 @@ greed.command({
 	doc = "Search for the selected text, also inside longer words",
 	run = function(ctx)
 		search_selection(ctx, false)
+	end,
+})
+
+-- VS Code's find and replace. ctrl-f opens a bar that finds the text as
+-- typed, in any case, and counts the matches; enter and shift-enter go to
+-- the next and previous one with the bar open, and esc closes it, leaving
+-- the match selected and n (f3) going on from there. ctrl-h asks what to
+-- find, lighting the matches, then what to put instead, and replaces them
+-- all as one change.
+
+-- `text` as a regex that finds it as written, in any case.
+local function plain(text: string): string
+	return "(?i)" .. escape(text)
+end
+
+-- How the matches of `regex` stand: "3 of 12" when `range` is one of them,
+-- else how many there are, or "No results".
+local function count(buffer: greed.Buffer, regex: string, range: greed.Range?): string
+	local found: { { from: number, to: number } } = buffer:find_all(regex) or {}
+	if #found == 0 then
+		return "No results"
+	end
+	if range then
+		local from, to = span(range)
+		for i, m in found do
+			if m.from == from and m.to == to then
+				return `{i} of {#found}`
+			end
+		end
+	end
+	return if #found == 1 then "1 match" else `{#found} matches`
+end
+
+-- The selected text, to start finding with, when it's on one line.
+local function selected_text(view: greed.View): string?
+	local from, to = span(primary(view))
+	local text = view:buffer():slice(from, to)
+	return if text ~= "" and not string.find(text, "\n", 1, true) then text else nil
+end
+
+local function select_range(view: greed.View, from: number, to: number)
+	view:set_selection({ ranges = { { anchor = from, head = to } }, primary = 1 })
+end
+
+-- The find bar open for each client, by its id: the view it finds in, what
+-- it finds, and the bar.
+type Finding = { view: greed.View, regex: string, bar: greed.View }
+local finding: { [number]: Finding } = {}
+
+local function show_count(f: Finding)
+	f.bar:configure({
+		label = if f.regex == "" then "" else count(f.view:buffer(), f.regex, primary(f.view)),
+	})
+end
+
+greed.command({
+	name = "find",
+	doc = "Find text in the file as you type, as VS Code's ctrl-f does: "
+		.. "enter and shift-enter go to the next and previous match, esc closes",
+	run = function(ctx)
+		local view, buffer = ctx.view, ctx.buffer
+		local client = greed.client.id()
+		local start = span(primary(view))
+		local f: Finding = { view = view, regex = "", bar = nil :: any }
+		local function close()
+			buffer:decorate("search", {})
+			if finding[client] == f then
+				finding[client] = nil
+			end
+			if f.regex ~= "" then
+				last, backward = f.regex, false
+				registers.set("/", { f.regex })
+			end
+		end
+		-- Each change finds from where the bar opened, so typing on keeps the
+		-- same match while it still matches.
+		local function changed(text: string)
+			f.regex = if text == "" then "" else plain(text)
+			highlight(buffer, f.regex)
+			if f.regex ~= "" then
+				local from, to = buffer:find(f.regex, start, { wrap = true })
+				if from and to then
+					select_range(view, from, to)
+				end
+			end
+			show_count(f)
+		end
+		local text = selected_text(view)
+		f.bar = prompt.open({
+			title = "find",
+			text = text,
+			kind = "find",
+			on_change = changed,
+			on_submit = close,
+			on_cancel = close,
+		})
+		finding[client] = f
+		if text then
+			changed(text)
+		end
+	end,
+})
+
+-- Goes to the next match (or the previous, `back`) with the find bar open.
+local function find_again(back: boolean)
+	local f = finding[greed.client.id()]
+	if f == nil or f.regex == "" then
+		return
+	end
+	local from, to = next_match(f.view:buffer(), f.regex, primary(f.view), back)
+	if from and to then
+		select_range(f.view, from, to)
+	end
+	show_count(f)
+end
+
+greed.command({
+	name = "find-next",
+	doc = "Go to the next match with the find bar open",
+	run = function()
+		find_again(false)
+	end,
+})
+
+greed.command({
+	name = "find-prev",
+	doc = "Go to the previous match with the find bar open",
+	run = function()
+		find_again(true)
+	end,
+})
+
+style.typing_kind("find")
+style.label_kind("find", "find")
+greed.keymap.bind({ kind = "find" }, {
+	enter = "find-next",
+	["shift-enter"] = "find-prev",
+	f3 = "find-next",
+	["shift-f3"] = "find-prev",
+	esc = "prompt-cancel",
+	["ctrl-c"] = "prompt-cancel",
+})
+
+greed.command({
+	name = "replace-in-file",
+	doc = "Replace text everywhere in the file, as VS Code's ctrl-h does: "
+		.. "what to find, with its matches lit and counted, then what to put instead",
+	run = function(ctx)
+		local view, buffer = ctx.view, ctx.buffer
+		local regex = ""
+		local function clear()
+			buffer:decorate("search", {})
+		end
+		local bar: greed.View
+		local function changed(text: string)
+			regex = if text == "" then "" else plain(text)
+			highlight(buffer, regex)
+			bar:configure({ label = if regex == "" then "" else count(buffer, regex) })
+		end
+		local function replace_with(replacement: string)
+			clear()
+			local found: { { from: number, to: number } } = buffer:find_all(regex) or {}
+			buffer:edit(function(e)
+				for _, m in found do
+					e:replace(m.from, m.to, replacement)
+				end
+			end)
+			greed.echo(if #found == 1 then "replaced 1 match" else `replaced {#found} matches`)
+		end
+		local text = selected_text(view)
+		bar = prompt.open({
+			title = "replace",
+			text = text,
+			on_change = changed,
+			on_cancel = clear,
+			on_submit = function(typed)
+				local found = buffer:find_all(regex) or {}
+				if typed == "" or #found == 0 then
+					clear()
+					if typed ~= "" then
+						greed.echo(`no match for {typed}`)
+					end
+					return
+				end
+				prompt.open({
+					title = `replace {count(buffer, regex)} of {typed} with`,
+					on_submit = replace_with,
+					on_cancel = clear,
+				})
+			end,
+		})
+		if text then
+			changed(text)
+		end
 	end,
 })
 

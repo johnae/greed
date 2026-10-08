@@ -450,14 +450,6 @@ greed.command({
 	end,
 })
 
-greed.command({
-	name = "replace-in-file",
-	doc = "Replace a regex everywhere in the file, on the command line",
-	run = function()
-		greed.run("command-line", { args = { "%s/" } })
-	end,
-})
-
 --- Whether `mode` is the one mode of a style without modes, where typing
 --- and pasting replace the selection.
 function M.is(mode: string): boolean

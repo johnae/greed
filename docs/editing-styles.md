@@ -179,14 +179,18 @@ there is one, and the keys are the ones VS Code and most editors use.
 | `ctrl-d`, `ctrl-shift-l` | Select the word, then add its next match as another cursor; select every match |
 | `ctrl-alt-up` `ctrl-alt-down`, `alt`-click | Add a cursor above or below, or where you click |
 | `ctrl-/` | Comment or uncomment the lines |
-| `ctrl-f`, `f3` `shift-f3`, `ctrl-h` | Find, the next or previous match, replace in the file (`:%s/`) |
+| `ctrl-f` | Find as you type, in any case, with the matches counted (`2 of 5`); `enter` and `shift-enter` go to the next and previous match with the find bar open, `esc` closes it and leaves the match selected |
+| `f3` `shift-f3` | The next or previous match |
+| `ctrl-h` | Replace in the file: type what to find (its matches light up and are counted), `enter`, then what to put instead; `enter` replaces them all as one change |
 | `ctrl-g` | Go to a line: type its number |
 | `f12` `shift-f12` `f2` `ctrl-.` | Go to the definition, find references, rename, code actions |
 | `f8` `shift-f8`, `ctrl-shift-m` | The next or previous problem, all problems |
 | `ctrl-shift-o` `ctrl-t` | Go to a symbol in the file, in the project |
 | `alt-left` `alt-right` | Back and forward through where you jumped from |
 | `ctrl-u` `ctrl-shift-u` | Back to the cursors before the last command, and forward again |
-| `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file |
+| `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file (the one you were in before takes its place) |
+| `ctrl-\` | Split the pane to the right |
+| `ctrl-k` then a key | VS Code's chords: `ctrl-k ctrl-0` and `ctrl-k ctrl-j` fold and unfold everything, `ctrl-k ctrl-l` folds or unfolds the block, `ctrl-k ctrl-i` shows what's under the cursor, `ctrl-k ctrl-q` goes to the last change, `ctrl-k ctrl-t` picks a theme, `ctrl-k s` saves every file |
 | `ctrl-P` or `alt-x` | Run a command |
 | `ctrl-space` | The leader: `ctrl-space f` finds a file, `ctrl-space /` searches the project, the rest as `space` in Helix and Vim |
 | `ctrl-s`, `ctrl-q` | Save; quit, asking first whether to save unsaved files |
