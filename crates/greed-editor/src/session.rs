@@ -14,7 +14,7 @@ use greed_core::project;
 use greed_core::server::{self, Input, Output};
 use serde_json::{Value, json};
 
-use crate::{ctl, host, read};
+use crate::{client, ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -144,8 +144,11 @@ pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
 fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Result<(), Error> {
     // A terminal is asked for once, not again after a switch.
     loop {
-        let Attachment { reader, writer, .. } =
-            ctl::connect_to(Some(&name))?.attach_opening(open.as_deref(), terminal)?;
+        let Attachment { reader, writer, .. } = ctl::connect_to(Some(&name))?.attach_opening(
+            client::kind(),
+            open.as_deref(),
+            terminal,
+        )?;
         terminal = false;
         match show(reader, writer)? {
             Output::Switch(to) => (name, open) = resolve(&to)?,
@@ -381,7 +384,7 @@ fn handshake(
     session: Option<&str>,
     terminal: bool,
 ) -> Result<(), Error> {
-    let mut params = control::attach_params("tui");
+    let mut params = control::attach_params(client::kind());
     if terminal {
         params["terminal"] = Value::Bool(true);
     }

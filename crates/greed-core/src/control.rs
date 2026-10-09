@@ -764,13 +764,18 @@ impl Client {
     /// Attaches to the editor: from now on the connection carries input
     /// one way and frames the other, one JSON message per line.
     pub fn attach(self) -> io::Result<Attachment> {
-        self.attach_opening(None, false)
+        self.attach_opening("tui", None, false)
     }
 
-    /// Like [`Client::attach`], asking the session to open `path` too, and
-    /// with `terminal`, a terminal.
-    pub fn attach_opening(self, path: Option<&Path>, terminal: bool) -> io::Result<Attachment> {
-        let mut params = attach_params("tui");
+    /// Like [`Client::attach`] as a client of `kind` ("tui", "gui"), asking
+    /// the session to open `path` too, and with `terminal`, a terminal.
+    pub fn attach_opening(
+        self,
+        kind: &str,
+        path: Option<&Path>,
+        terminal: bool,
+    ) -> io::Result<Attachment> {
+        let mut params = attach_params(kind);
         if let Some(path) = path {
             params["open"] = Value::from(path.to_string_lossy());
         }

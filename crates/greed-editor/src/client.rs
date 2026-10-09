@@ -20,6 +20,16 @@ pub fn use_gui() -> Result<(), &'static str> {
     }
 }
 
+/// What sort of client this is, as it tells the session when attaching:
+/// "gui" for a window, "tui" otherwise.
+pub fn kind() -> &'static str {
+    if GUI.load(Ordering::Relaxed) {
+        "gui"
+    } else {
+        "tui"
+    }
+}
+
 /// Runs the client until the session exits or lets it go, and returns how
 /// it ended. Closing the window lets the session go, as `:detach` does.
 pub fn run(
