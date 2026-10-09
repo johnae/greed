@@ -99,7 +99,8 @@ impl OptionDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionError {
-    Unknown(Arc<str>),
+    /// No option is called `name`; `like` are names that look like it.
+    Unknown { name: Arc<str>, like: Vec<Arc<str>> },
     WrongType {
         name: Arc<str>,
         expected: &'static str,
@@ -115,7 +116,14 @@ pub enum OptionError {
 impl fmt::Display for OptionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OptionError::Unknown(name) => write!(f, "there is no option called {name:?}"),
+            OptionError::Unknown { name, like } => {
+                write!(f, "there is no option called {name:?}")?;
+                if !like.is_empty() {
+                    let like: Vec<String> = like.iter().map(|n| format!("{n:?}")).collect();
+                    write!(f, "; did you mean {}?", like.join(" or "))?;
+                }
+                Ok(())
+            }
             OptionError::WrongType {
                 name,
                 expected,
@@ -326,13 +334,54 @@ impl<H> Registry<H> {
         Ok(())
     }
 
+    /// Up to three option names like `name`, best first: the same with
+    /// dashes for underscores, or sharing a word of four letters or more
+    /// (`relativenumber` and `line-numbers` share "number").
+    fn options_like(&self, name: &str) -> Vec<Arc<str>> {
+        let wanted = name.to_lowercase().replace(['_', ' '], "-");
+        let stem = |word: &str| word.strip_suffix('s').unwrap_or(word).to_owned();
+        let words: Vec<String> = wanted
+            .split('-')
+            .filter(|w| w.len() >= 4)
+            .map(stem)
+            .collect();
+        let mut like: Vec<(usize, &Arc<str>)> = self
+            .options
+            .keys()
+            .filter_map(|option| {
+                if **option == *wanted {
+                    return Some((usize::MAX, option));
+                }
+                let shared = option
+                    .split('-')
+                    .map(stem)
+                    .filter(|word| word.len() >= 4)
+                    .filter(|word| {
+                        wanted.contains(word.as_str())
+                            || words.iter().any(|w| word.contains(w.as_str()))
+                    })
+                    .map(|word| word.len())
+                    .sum::<usize>();
+                (shared > 0).then_some((shared, option))
+            })
+            .collect();
+        like.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+        like.into_iter()
+            .take(3)
+            .map(|(_, option)| option.clone())
+            .collect()
+    }
+
     /// Option `name`'s slot, if `value` is of its type and one of its
     /// choices.
     fn checked(&mut self, name: &str, value: &Value) -> Result<&mut OptionSlot, OptionError> {
-        let slot = self
-            .options
-            .get_mut(name)
-            .ok_or_else(|| OptionError::Unknown(name.into()))?;
+        if !self.options.contains_key(name) {
+            return Err(OptionError::Unknown {
+                name: name.into(),
+                like: self.options_like(name),
+            });
+        }
+        let slot = self.options.get_mut(name).expect("just looked");
         if std::mem::discriminant(&slot.value) != std::mem::discriminant(value) {
             return Err(OptionError::WrongType {
                 name: name.into(),

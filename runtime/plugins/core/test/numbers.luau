@@ -41,3 +41,21 @@ test("with a whole line selected, 0 is the line the cursor is drawn on", functio
 	t:keys("x")
 	assert(numbers(t) == "1 0 1 2", numbers(t))
 end)
+
+test("an option set by a name that isn't one says the names that are like it", function()
+	for _, wrong in { "line_numbers", "relativenumber" } do
+		local ok, err = pcall(function()
+			greed.option.set(wrong, "relative")
+		end)
+		assert(not ok, wrong)
+		assert(
+			string.find(tostring(err), `there is no option called "{wrong}"`, 1, true),
+			tostring(err)
+		)
+		assert(string.find(tostring(err), '"line-numbers"', 1, true), tostring(err))
+	end
+	local _, err = pcall(function()
+		greed.option.set("zzqx", true)
+	end)
+	assert(not string.find(tostring(err), "did you mean", 1, true), tostring(err))
+end)
