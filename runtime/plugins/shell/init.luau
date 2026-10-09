@@ -349,6 +349,8 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		table = nil,
 		called = nil,
 		watching = nil,
+		change = nil,
+		notify = nil,
 		shown = nil,
 		input = nil,
 		into = nil,
@@ -1338,6 +1340,24 @@ block_command(
 )
 
 block_command(
+	"shell-notify",
+	"Send a notification each time a watch's rows change, saying how, while Greed isn't focused; again to stop",
+	function(shell, block)
+		if block.watching == nil or block.status ~= "running" then
+			greed.echo("only a running watch (or kubectl get -w) notifies")
+			return
+		end
+		block.notify = not block.notify
+		log.draw_block(shell, block)
+		greed.echo(
+			if block.notify
+				then `{block.number} notifies when it changes`
+				else `{block.number} doesn't notify any more`
+		)
+	end
+)
+
+block_command(
 	"shell-rerun",
 	"Run the block's command again, in the folder and with the variables it had",
 	function(shell, block, ctx)
@@ -1766,6 +1786,11 @@ for _, action in
 			"open in a float",
 			"shell-peek",
 			"Look at it more closely, filter it or act on its rows; esc closes it",
+		},
+		{
+			"notify on changes",
+			"shell-notify",
+			"A notification each time its rows change, saying how; again to stop",
 		},
 	}
 do

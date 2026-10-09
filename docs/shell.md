@@ -459,16 +459,24 @@ on, as any `kubectl get` block's are. It ends when kubectl does, or with
 A watch, or anything else still running, scrolls up out of sight as you
 run more commands. So every running block but the last gets a line just
 above the prompt, saying what it shows now (how many rows, for a table)
-or how long it has run:
+and what changed in it last, or how long it has run:
 
 ```text
 ❯ 9 git status --short                    ✓ 0.02s
  M src/main.rs
 
-◐ 7 watch kubectl get pods  · 3 pods
+◐ 7 watch kubectl get pods  · 3 pods · api-7d9: STATUS Running → Error · 14:05
 ◐ 8 cargo build --release   · 1m 12s
 ~/s/infra ❯
 ```
+
+What changed names the row: `new worker-abc`, `worker-abc gone`, or the
+first column that changed, with how many more rows did. Columns that
+change by themselves, like `AGE` or the `(5m ago)` of `RESTARTS`, don't
+count, so a quiet watch stays quiet. To hear about changes while you're
+in another window, `space .` on the block (or its line) and "notify on
+changes" (`shell-notify`): each change then sends a desktop notification
+saying the same, while Greed isn't focused. Again to stop.
 
 Such a line stands for its block, a line or two up from the prompt:
 `ctrl-c` or `space x` there stops that block rather than the latest,

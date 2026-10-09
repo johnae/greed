@@ -285,6 +285,12 @@ function M.status_text(block: Block): string
 	if block.note then
 		table.insert(parts, block.note)
 	end
+	if block.change and block.status == "running" then
+		table.insert(parts, block.change)
+	end
+	if block.notify and block.status == "running" then
+		table.insert(parts, "notifies")
+	end
 	if block.waiting and block.status == "running" then
 		table.insert(parts, "waiting for input? ctrl-t types into it")
 	end
@@ -361,11 +367,12 @@ local function summary(block: Block): string
 	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
 end
 
--- What the strip says of a running block: for a live one, what it shows;
--- else how long it has run.
+-- What the strip says of a running block: for a live one, what it shows
+-- and what changed in it last; else how long it has run.
 local function strip_status(block: Block): string
 	if block.watching then
-		return summary(block)
+		local now = summary(block)
+		return if block.change then `{now} · {block.change}` else now
 	end
 	return duration(greed.now() - block.started)
 end

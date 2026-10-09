@@ -80,6 +80,10 @@ export type Block = {
 	--- For a live block (`watch`), the command it runs each time, whose
 	--- output it shows.
 	watching: string?,
+	--- For a live block, what changed in it last and when, as "new
+	--- worker-abc · 14:05", and whether a notification says so each time.
+	change: string?,
+	notify: boolean?,
 	--- What a filter, or a sort of its table, shows of its output, when
 	--- one does.
 	shown: Shown?,

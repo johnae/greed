@@ -148,3 +148,57 @@ test("each after a watch runs for every row each time", function(t)
 	end)
 	shell.interrupt(block)
 end)
+
+test("a watch says which rows changed and how, leaving out what ticks by itself", function(t)
+	local sh = open(t)
+	local rows = `{sh.cwd}/rows`
+	greed.fs.write(
+		rows,
+		"NAME  STATUS   RESTARTS     AGE\napi   Running  0            3m\nweb   Running  1 (2m ago)   5m\n"
+	)
+	local block = assert(shell.run(sh, "watch -n 1 cat rows", { view = greed.view() }))
+	t:wait_for(function()
+		return block.table ~= nil
+	end)
+	-- Ages and "(N ago)" moving on aren't a change.
+	greed.fs.write(
+		rows,
+		"NAME  STATUS   RESTARTS     AGE\napi   Running  0            4m\nweb   Running  1 (3m ago)   6m\n"
+	)
+	greed.sleep(1000)
+	t:wait_for(function()
+		return string.find(block.output, "4m", 1, true) ~= nil
+	end)
+	assert(block.change == nil, tostring(block.change))
+	assert(string.find(block.note or "", "0 changed", 1, true), tostring(block.note))
+	greed.fs.write(
+		rows,
+		"NAME  STATUS   RESTARTS     AGE\napi   Error    0            4m\nweb   Running  1 (3m ago)   6m\n"
+	)
+	greed.sleep(1000)
+	t:wait_for(function()
+		return block.change ~= nil
+	end)
+	local change: string = block.change or ""
+	assert(string.find(change, "^api: STATUS Running → Error · "), change)
+	greed.fs.write(
+		rows,
+		"NAME  STATUS   RESTARTS     AGE\napi   Error    0            4m\ndb    Pending  0            1s\n"
+	)
+	greed.sleep(1000)
+	t:wait_for(function()
+		return string.find(block.change or "", "new db", 1, true) ~= nil
+	end)
+	assert(string.find(block.change or "", "^new db %+1 more"), tostring(block.change))
+	-- A notification each time can be asked for, and stopped again.
+	local view = greed.view()
+	local from = shell.log.range(block)
+	view:set_cursor(assert(from))
+	t:run("shell-notify")
+	local on: boolean? = block.notify
+	assert(on == true)
+	t:run("shell-notify")
+	local off: boolean? = block.notify
+	assert(off == false)
+	shell.interrupt(block)
+end)

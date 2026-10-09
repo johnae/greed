@@ -81,52 +81,177 @@ local function split(text: string): { string }
 	return lines
 end
 
--- What each of `lines`, `block`'s output, is known by between runs: the
--- thing its row is, when a kind reads its table, as the same file or pod
--- can move up or down; else its first word and how many lines before had
+-- A row (or line) of a live block's output as it was on one run: what it's
+-- called, its cells and the columns that change by themselves when it's a
+-- table's row, and its words.
+type Seen = {
+	label: string,
+	cells: { [string]: string }?,
+	columns: { string }?,
+	ticking: { [string]: boolean }?,
+	sig: string,
+}
+
+-- A run's rows by what they're known by, in the order they came.
+type Snapshot = { order: { string }, rows: { [string]: Seen } }
+
+-- `cell` without what changes in it by itself, as the "(5m ago)" of
+-- kubectl's RESTARTS, and with its spaces made one.
+local function settled(cell: string): string
+	local without = string.gsub(cell, "%s*%([^()]*ago%)", "")
+	return (string.gsub(without, "%s+", " "))
+end
+
+-- Columns of how long ago something was, which change by themselves even
+-- when they're only minutes ("3m"), which `tables.durations` can't tell
+-- from a size.
+local AGES = { AGE = true, ["LAST SEEN"] = true, CREATED = true, UPTIME = true }
+
+-- The columns of `tbl` that change by themselves, as durations like AGE do.
+local function ticking(tbl: tables.Table): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	for _, column in tbl.columns do
+		if AGES[string.upper(column)] or tables.durations(tbl, column) then
+			out[column] = true
+		end
+	end
+	return out
+end
+
+-- `row` of `tbl` (or a line, `text`, outside a table) as `Seen`. A line
+-- has changed when its words did, as columns lined up again when one grows
+-- aren't a change; a row as `differs` says.
+local function seen(
+	label: string,
+	text: string,
+	tbl: tables.Table?,
+	row: { [string]: string }?,
+	skip: { [string]: boolean }
+): Seen
+	local words = string.gsub(text, "%s+", " ")
+	if tbl == nil or row == nil then
+		return { label = label, sig = words }
+	end
+	return { label = label, cells = row, columns = tbl.columns, ticking = skip, sig = words }
+end
+
+-- `lines`, `block`'s output, as a snapshot. A line is known by the thing
+-- its row is, when a kind reads its table, as the same file or pod can
+-- move up or down; else by its first word and how many lines before had
 -- it, as every row of `ls -l` starts alike.
-local function keys_of(lines: { string }, block: Block): { string }
-	local keys: { string } = {}
-	local seen: { [string]: number } = {}
+local function snapshot(lines: { string }, block: Block): Snapshot
+	local shot: Snapshot = { order = {}, rows = {} }
+	local counts: { [string]: number } = {}
 	local tbl = block.table
+	local skip = if tbl then ticking(tbl) else {}
 	local first = if tbl and tbl.first
 		then tbl.first + (if tbl.header ~= false then 1 else 0)
 		else nil
 	for i, text in lines do
-		local thing = if first and i >= first then kinds.thing(block, i - first + 1) else nil
+		local index = if first and i >= first then i - first + 1 else nil
+		local row = if tbl and index then tbl.rows[index] else nil
+		local thing = if index then kinds.thing(block, index) else nil
+		local word = string.match(text, "^%s*(%S+)") or ""
+		local key
 		if thing then
-			keys[i] = `\1{thing.kind}\0{thing.label}`
+			key = `\1{thing.kind}\0{thing.label}`
 		else
-			local word = string.match(text, "^%s*(%S+)") or ""
-			seen[word] = (seen[word] or 0) + 1
-			keys[i] = `{word}\0{seen[word]}`
+			counts[word] = (counts[word] or 0) + 1
+			key = `{word}\0{counts[word]}`
+		end
+		table.insert(shot.order, key)
+		shot.rows[key] = seen(if thing then thing.label else word, text, tbl, row, skip)
+	end
+	return shot
+end
+
+-- Whether `was` and `is`, the same row (or line) on two runs, differ: the
+-- first column whose cell changed, but for columns that change by
+-- themselves on either run, as a column of durations stops looking like
+-- one when it reads "2m"; "" for lines whose words changed; nil when
+-- nothing did.
+local function differs(was: Seen, is: Seen): string?
+	local before, now, columns = was.cells, is.cells, is.columns
+	if before == nil or now == nil or columns == nil then
+		return if was.sig ~= is.sig then "" else nil
+	end
+	local old, new = was.ticking or {}, is.ticking or {}
+	for _, column in columns do
+		local a, b = before[column] or "", now[column] or ""
+		if not old[column] and not new[column] and settled(a) ~= settled(b) then
+			return column
 		end
 	end
-	return keys
+	return nil
+end
+
+-- How `was` and `is`, the same row on two runs, differ, as `describe` says.
+local function difference(was: Seen, is: Seen, column: string): string
+	local before, now = was.cells, is.cells
+	if column == "" or before == nil or now == nil then
+		return `{is.label} changed`
+	end
+	return `{is.label}: {column} {before[column] or ""} → {now[column] or ""}`
+end
+
+-- What changed in a table from one run to the next, in a few words,
+-- naming its rows: "new worker-abc", "api-7d9: STATUS Running → Error",
+-- "worker-abc gone", and how many more changed. Nil when nothing did, or
+-- it isn't a table.
+local function describe(before: Snapshot, now: Snapshot): string?
+	local said: { string } = {}
+	for _, key in now.order do
+		local was, is = before.rows[key], now.rows[key]
+		if is.cells then
+			local column = if was then differs(was, is) else nil
+			if was == nil then
+				table.insert(said, `new {is.label}`)
+			elseif column then
+				table.insert(said, difference(was, is, column))
+			end
+		end
+	end
+	for _, key in before.order do
+		local was = before.rows[key]
+		if was.cells and now.rows[key] == nil then
+			table.insert(said, `{was.label} gone`)
+		end
+	end
+	if #said == 0 then
+		return nil
+	end
+	return if #said == 1 then said[1] else `{said[1]} +{#said - 1} more`
+end
+
+-- After a run of `block` that changed what it shows (`said`, as `describe`
+-- puts it): the strip says so, and so does a notification when you asked
+-- for them.
+local function tell(block: Block, said: string?)
+	if said == nil then
+		return
+	end
+	block.change = `{said} · {os.date("%H:%M")}`
+	if block.notify then
+		greed.client.notify(string.match(block.command, "^[^\n]*") or block.command, said)
+	end
 end
 
 -- What `block` printed this time as the lines it shows: its output, those
--- whose key is new or whose text changed since `before` marked, then its
--- errors. Also how many changed, and the output's lines now (their words), by
--- key.
-local function lines_of(
-	block: Block,
-	before: { [string]: string }?
-): ({ Line }, number, { [string]: string })
+-- that are new or changed since `before` marked, then its errors. Also how
+-- many changed, and the snapshot of this run.
+local function lines_of(block: Block, before: Snapshot?): ({ Line }, number, Snapshot)
 	local lines: { Line } = {}
-	local now: { [string]: string } = {}
 	local changed = 0
 	local out = split(block.stdout)
-	for i, key in keys_of(out, block) do
+	local now = snapshot(out, block)
+	for i, key in now.order do
 		local text = out[i]
-		-- Columns lined up again when one grows aren't a change.
-		local words = string.gsub(text, "%s+", " ")
 		local marks: { greed.Mark } = {}
-		if before and before[key] ~= words then
+		local was = before and before.rows[key]
+		if before and (was == nil or differs(was, now.rows[key]) ~= nil) then
 			changed += 1
 			table.insert(marks, { from = 0, to = #text, style = "shell.changed" })
 		end
-		now[key] = words
 		table.insert(lines, { text = text, marks = marks })
 	end
 	for _, text in split(block.stderr) do
@@ -158,7 +283,7 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 	local minutes = greed.option.get("shell-watch-minutes") :: number
 	local started = greed.now()
 	greed.spawn(function()
-		local before: { [string]: string }? = nil
+		local before: Snapshot? = nil
 		local code: number? = 0
 		local why = "stopped"
 		while not stopped do
@@ -177,6 +302,9 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			block.table = tables.from_value(block.value) or tables.parse(out, line, block)
 			kinds.finished(shell, block)
 			local lines, changed, now = lines_of(block, before)
+			if before then
+				tell(block, describe(before, now))
+			end
 			before = now
 			block.note = `every {every}s · {changed} changed · {os.date("%H:%M:%S")}`
 			rows.renew(shell, block, lines)
@@ -269,6 +397,7 @@ function M.follow(shell: Shell, block: Block, line: string, open: Open)
 		local partial = ""
 		local shown = false
 		local changes = 0
+		local last: Snapshot? = nil
 		while true do
 			local piece, from = c:read()
 			if piece == nil then
@@ -315,6 +444,11 @@ function M.follow(shell: Shell, block: Block, line: string, open: Open)
 				block.stderr = table.concat(errors)
 				block.output = block.stdout .. block.stderr
 				kinds.finished(shell, block)
+				local now = snapshot(drawn, block)
+				if last then
+					tell(block, describe(last, now))
+				end
+				last = now
 				local lines: { Line } = {}
 				for i, text in drawn do
 					local key = order[i - 1]
