@@ -1,0 +1,9 @@
+{
+  "prompt": "I keep a daily journal. Could you add a command that opens today's journal entry, journal/YYYY-MM-DD.md in this project, creating it with a heading for the date if it doesn't exist yet? Bind it to space j please.",
+  "open": "README.md",
+  "luau_check": [
+    "local greed = require('@greed') local cmd = greed.keymap.resolve('space j') if cmd == nil or cmd == 'pick-jump' then return 'space j is still ' .. tostring(cmd) end greed.run(cmd) return 'ran ' .. cmd",
+    "local greed = require('@greed') local date = os.date('%Y-%m-%d') local path = TASK_DIR .. '/journal/' .. date .. '.md' local b = greed.buffer_for(path) local text = (b and b:text()) or greed.fs.read(path) return text ~= nil and string.find(text, date, 1, true) ~= nil and string.find(text, '#', 1, true) ~= nil"
+  ],
+  "timeout_s": 900
+}

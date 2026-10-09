@@ -32,10 +32,22 @@ type Run = {
 	label: string,
 	url: string?,
 	repeats: number,
+	solutions: boolean?,
 	role: { provider: string, model: string, edits: string?, context: number? },
 }
 
-type Task = { prompt: string, check: string?, luau_check: string?, timeout_s: number? }
+type Task = {
+	prompt: string,
+	check: string?,
+	luau_check: (string | { string })?,
+	timeout_s: number?,
+	-- A shell step after the copy, like a commit for blame to find.
+	setup: string?,
+	-- A file in the project to show before the Luau check.
+	open: string?,
+	-- What a solution says, for checks of an answer.
+	solution_answer: string?,
+}
 
 type Totals = { requests: number, input: number, cached: number, output: number, edits_ok: number, edits_failed: number }
 
@@ -148,8 +160,9 @@ local function answer_pages(dir: string, running: () -> boolean)
 	end)
 end
 
--- Runs `name` once in a folder of its own, and returns what happened.
-local function run_task(run: Run, name: string, rep: number): { [string]: any }
+-- Copies task `name` to a folder of its own and makes it the project, as
+-- when you work in it. Returns the task, its folder and the task's own.
+local function prepare(run: Run, name: string, rep: number): (Task, string, string)
 	local source = `{run.tasks_dir}/{name}`
 	local task: Task = greed.json.decode(assert(greed.fs.read(`{source}/task.json`)))
 	local dir = `{run.work}/{name}-{rep}`
@@ -157,9 +170,14 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 	-- A repository of its own, as a project is, so the project is this
 	-- folder and not the Greed repository the work folder may sit in.
 	assert(greed.process.run({ "git", "init", "-q" }, { cwd = dir }))
+	if task.setup then
+		assert(greed.process.run({ "sh", "-c", task.setup }, { cwd = dir }))
+	end
 	fresh_config()
-	-- Showing one of its files makes it the editor's project, as when you
-	-- work in it: Greed's tools for agents find files from there.
+	-- Notes of its own, never yours.
+	greed.option.set("notes-folder", `{dir}-notes`)
+	-- Showing one of its files makes it the editor's project: Greed's tools
+	-- for agents find files from there.
 	local entries = greed.fs.list(dir) or {}
 	table.sort(entries, function(a, b)
 		return a.name < b.name
@@ -170,7 +188,13 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 			break
 		end
 	end
-	local before = totals(run.role.provider, run.role.model)
+	return task, dir, source
+end
+
+-- Runs Greed's agent on `task` in `dir` until it's done or out of time, and
+-- returns how it went: whether it answered, why not, seconds, timing out,
+-- its conversation and what it said last.
+local function run_agent(task: Task, dir: string): { [string]: any }
 	local data = greed.fs.dirs().data or ""
 	local started = os.time()
 	local agent = assert(acp.installed("greed"), "Greed's own agent isn't there")
@@ -194,40 +218,93 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 		greed.sleep(1000)
 	end
 	finished = true
-	local seconds = os.time() - started
-	-- What it said last, for checks of an answer.
 	local last = ""
 	for _, entry in s.entries do
 		if entry.kind == "agent" and entry.text then
 			last = entry.text
 		end
 	end
-	greed.fs.write(`{dir}/.bench-answer`, last)
-	local passed, output = false, ""
+	local conversation = newest(`{data}/agent-sessions`)
+	local text = conversation and greed.fs.read(conversation)
+	acp.close(s)
+	return {
+		failed = if prompted then nil else err,
+		seconds = os.time() - started,
+		timed_out = timed_out,
+		conversation = text,
+		calls = calls_of(conversation),
+		answer = last,
+	}
+end
+
+-- Puts the task's own solution in place of the agent, to show its check
+-- can pass: `solution.luau` becomes the config, and `solution_answer`
+-- what it said.
+local function run_solution(task: Task, source: string): { [string]: any }
+	local solution = greed.fs.read(`{source}/solution.luau`)
+	local config = greed.fs.dirs().config
+	if solution and config then
+		greed.fs.write(`{config}/init.luau`, solution)
+		core.config.reload()
+	end
+	return {
+		failed = if solution then nil else "no solution.luau",
+		seconds = 0,
+		timed_out = false,
+		calls = calls_of(nil),
+		answer = task.solution_answer or "",
+	}
+end
+
+-- Whether `task` in `dir` passes its check, and what the check said.
+local function check(task: Task, dir: string, source: string): (boolean, string)
 	if task.check then
 		local done = greed.process.run(
 			{ "sh", "-c", `export TASK_DIR={shell_quote(source)}; {task.check}` },
 			{ cwd = dir }
 		)
-		passed = done ~= nil and done.code == 0
-		output = if done then done.stdout .. done.stderr else ""
-	elseif task.luau_check then
-		-- A config saved a moment ago reloads first.
+		return done ~= nil and done.code == 0, if done then done.stdout .. done.stderr else ""
+	end
+	-- A config saved a moment ago reloads first.
+	greed.sleep(1500)
+	if task.open then
+		greed.open(`{dir}/{task.open}`)
 		greed.sleep(1500)
-		local ok, said = greed.eval(task.luau_check)
-		passed = ok and said == "true"
-		output = said
 	end
+	-- One step, or several with a pause between, as when one runs a command
+	-- and the next looks at what it showed; the last says true to pass.
+	local steps: { string } = if type(task.luau_check) == "table"
+		then task.luau_check
+		else { task.luau_check :: string }
+	local said = ""
+	for n, step in steps do
+		local ok, result = greed.eval(`local TASK_DIR = {string.format("%q", dir)}\n{step}`)
+		said = result
+		if not ok then
+			return false, `step {n}: {result}`
+		end
+		if n < #steps then
+			greed.sleep(1500)
+		end
+	end
+	return said == "true", said
+end
+
+-- Runs `name` once in a folder of its own, and returns what happened.
+local function run_task(run: Run, name: string, rep: number): { [string]: any }
+	local task, dir, source = prepare(run, name, rep)
+	local before = totals(run.role.provider, run.role.model)
+	local ran = if run.solutions then run_solution(task, source) else run_agent(task, dir)
+	-- What it said last, for checks of an answer.
+	greed.fs.write(`{dir}/.bench-answer`, ran.answer)
+	local passed, output = check(task, dir, source)
 	local after = totals(run.role.provider, run.role.model)
-	local conversation = newest(`{data}/agent-sessions`)
-	local calls = calls_of(conversation)
 	-- Kept beside the results, to see what happened in a run.
-	local kept = string.gsub(run.results, "%.jsonl$", "")
-	local text = conversation and greed.fs.read(conversation)
-	if text then
-		greed.fs.write(`{kept}/{name}-{rep}.json`, text)
+	if ran.conversation then
+		local kept = string.gsub(run.results, "%.jsonl$", "")
+		greed.fs.write(`{kept}/{name}-{rep}.json`, ran.conversation)
 	end
-	acp.close(s)
+	local calls = ran.calls
 	return {
 		label = run.label,
 		task = name,
@@ -236,9 +313,9 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 		model = run.role.model,
 		edits = run.role.edits or "replace",
 		passed = passed,
-		timed_out = timed_out,
-		failed = if prompted then nil else err,
-		seconds = seconds,
+		timed_out = ran.timed_out,
+		failed = ran.failed,
+		seconds = ran.seconds,
 		turns = calls.turns,
 		calls = calls.calls,
 		by_tool = calls.by_tool,

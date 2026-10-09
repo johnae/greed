@@ -1,0 +1,6 @@
+{
+  "prompt": "Could you make me a plugin that highlights TODO, FIXME and NOTE in every buffer, each in its own colour? I'd like it in my config so it loads every time.",
+  "open": "notes.txt",
+  "luau_check": "local b = require('@greed').view():buffer() local function style_at(line) for _, m in b:marks_at(b:line_start(line) + 1) do if m.style and m.style ~= '' then return m.style end end return nil end local t, f, n = style_at(0), style_at(2), style_at(3) return t ~= nil and f ~= nil and n ~= nil and t ~= f and f ~= n and t ~= n",
+  "timeout_s": 1200
+}

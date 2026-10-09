@@ -1,0 +1,6 @@
+local greed = require("@greed")
+local languages = require("@languages")
+languages.set("lua", { indent = 2 })
+languages.set("luau", { indent = 2 })
+require("@theme").use("nord")
+greed.option.set("line-numbers", "relative")

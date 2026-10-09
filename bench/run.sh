@@ -5,6 +5,7 @@
 #   bench/run.sh [--provider P] [--model M] [--edits replace|hashline]
 #                [--tasks fix-bug,rename] [--repeat N] [--label NAME]
 #                [--url http://host:11434/v1 --context 32768]   (a server like Ollama elsewhere)
+#                [--solutions]   (each task's solution.luau in place of the agent, to test the checks)
 #
 # Keys come from your usual state folder (GREED_STATE_DIR, or
 # ~/.local/state/greed), or ANTHROPIC_API_KEY and the like.
@@ -21,6 +22,7 @@ repeats=1
 label=""
 url=""
 context=0
+solutions=false
 while [ $# -gt 0 ]; do
 	case $1 in
 	--provider) provider=$2; shift 2 ;;
@@ -31,6 +33,7 @@ while [ $# -gt 0 ]; do
 	--label) label=$2; shift 2 ;;
 	--url) url=$2; shift 2 ;;
 	--context) context=$2; shift 2 ;;
+	--solutions) solutions=true; shift ;;
 	*) echo "bench/run.sh: unknown argument $1" >&2; exit 2 ;;
 	esac
 done
@@ -63,6 +66,7 @@ cat >"$profile/config/bench.json" <<EOF
   "label": "$label",
   "repeats": $repeats,
   "url": "$url",
+  "solutions": $solutions,
   "role": { "provider": "$provider", "model": "$model", "edits": "$edits", "context": $context }
 }
 EOF

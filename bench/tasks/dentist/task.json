@@ -1,0 +1,5 @@
+{
+  "prompt": "Add a todo to call the dentist tomorrow, and remind me at 9:30. Then tell me what's on my todo list.",
+  "luau_check": "local greed = require('@greed') local tomorrow = string.gsub(os.date('%Y-%m-%d', os.time() + 86400), '%-', '%%-') local function walk(dir) local entries = greed.fs.list(dir) or {} for _, e in entries do local p = dir .. '/' .. e.name if e.dir then if walk(p) then return true end elseif string.match(e.name, '%.md$') then for line in string.gmatch(greed.fs.read(p) or '', '[^\\n]+') do if string.find(line, '%[ %]') and string.find(string.lower(line), 'dentist') and string.find(line, 'remind:' .. tomorrow .. ' 0?9:30') then return true end end end end return false end return walk(TASK_DIR .. '-notes')",
+  "timeout_s": 600
+}

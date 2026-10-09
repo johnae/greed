@@ -1,0 +1,6 @@
+{
+  "prompt": "Write me a small plugin that gives agents a tool called word_stats: for a file (or the buffer I'm in), it returns the number of words, lines and the 5 most common words. Once it's installed, use that tool on README.md and tell me what it says.",
+  "luau_check": "local found = false for _, t in require('@agent').tools() do if t.name == 'word_stats' then found = true end end if not found then return 'no word_stats tool' end local answer = require('@greed').fs.read(TASK_DIR .. '/.bench-answer') or '' return string.find(answer, '16', 1, true) ~= nil and string.find(string.lower(answer), 'greed', 1, true) ~= nil",
+  "solution_answer": "README.md has 16 words and 3 lines; the most common words are greed (4), has (2) and agents (2).",
+  "timeout_s": 1200
+}
