@@ -136,8 +136,15 @@ done
 true
 ]]
 
--- Copies plugin $4 from folder $3 on machine $2 into folder $1.
-local COPY = [[mkdir -p "$1" && ssh "$2" "tar -C '$3' -cf - '$4'" | tar -C "$1" -xf -]]
+-- Copies plugin $4 from folder $3 on machine $2 into folder $1. The far
+-- end's login shell may not be sh (fish, nushell), so it runs only `sh -s`
+-- and the script comes on its stdin, as greed ssh does; `$GREED_SSH`
+-- replaces ssh there too.
+local COPY =
+	[[mkdir -p "$1" && printf '%s\n' "tar -C '$3' -cf - '$4'" | ${GREED_SSH:-ssh} "$2" sh -s | tar -C "$1" -xf -]]
+
+-- Runs REMOTE_PLUGINS on machine $1 the same way.
+local LIST = [[${GREED_SSH:-ssh} "$1" sh -s]]
 
 greed.cli({
 	name = "bring",
@@ -152,7 +159,10 @@ greed.cli({
 		if config == nil then
 			error("there's no config folder here", 0)
 		end
-		local listed, err = greed.process.run({ "ssh", host, REMOTE_PLUGINS })
+		local listed, err = greed.process.run(
+			{ "sh", "-c", LIST, "sh", host },
+			{ stdin = REMOTE_PLUGINS }
+		)
 		if listed == nil or listed.code ~= 0 then
 			error(`can't reach {host}: {if listed then listed.stderr else err}`, 0)
 		end
@@ -186,7 +196,7 @@ greed.cli({
 		if done == nil or done.code ~= 0 then
 			error(`copying {plugin} failed: {if done then done.stderr else failed}`, 0)
 		end
-		return `copied {plugin} from {host} into {target}/{plugin}; Greed asks you to approve it when it next starts`
+		return `copied {plugin} from {host} into {target}/{plugin}; a running Greed loads it, asking first if it uses capabilities`
 	end,
 })
 
