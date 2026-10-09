@@ -1,0 +1,4 @@
+name = "bench-runner"
+requires = ["acp", "models", "core"]
+# Everything you could do yourself: the agent's session gets what starts it.
+capabilities = ["proc", "fs.read", "fs.write", "eval", "plugins", "net", "clipboard"]

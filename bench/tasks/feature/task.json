@@ -1,0 +1,5 @@
+{
+  "prompt": "Add a `median` function next to `mean` in src/stats.rs, with the same kind of signature: the middle value of the sorted values, the mean of the two middle ones for an even count, and None for no values. Then have main.rs print the median too, as \"median X\" on its own line after the mean.",
+  "check": "mkdir -p tests && cp \"$TASK_DIR/hidden/median.rs\" tests/ && cargo test --offline -q && cargo run --offline -q -- 1 3 2 | grep -qx 'median 2'",
+  "timeout_s": 600
+}

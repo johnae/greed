@@ -1,0 +1,5 @@
+{
+  "prompt": "Add a command count-todos to Greed that says how many lines of the current buffer contain TODO.",
+  "luau_check": "for _, c in require('@greed').commands() do if c.name == 'count-todos' then return true end end return false",
+  "timeout_s": 900
+}

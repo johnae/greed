@@ -1,0 +1,5 @@
+{
+  "prompt": "settings and section in src/lib.rs repeat the same line parsing. Pull it out into one function they both use, keeping their behaviour and the tests as they are.",
+  "check": "cargo test --offline -q && test \"$(grep -c \"split_once('=')\" src/lib.rs)\" = 1 && test \"$(grep -c \"starts_with('#')\" src/lib.rs)\" = 1",
+  "timeout_s": 600
+}

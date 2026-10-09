@@ -1,0 +1,5 @@
+{
+  "prompt": "The tests in this project fail. Find out why and fix the code so they pass. Don't change the tests.",
+  "check": "cargo test --offline -q && cmp tests/scores.rs \"$TASK_DIR/project/tests/scores.rs\"",
+  "timeout_s": 600
+}

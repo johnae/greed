@@ -1,0 +1,5 @@
+{
+  "prompt": "In my Greed config, make Rust files indent with 4 spaces, and turn on relative line numbers.",
+  "luau_check": "local greed = require('@greed') local rust = require('@languages').get('rust') return greed.option.get('line-numbers') == 'relative' and rust ~= nil and rust.indent == 4",
+  "timeout_s": 300
+}

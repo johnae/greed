@@ -1,0 +1,5 @@
+{
+  "prompt": "Rename the `Usr` type to `User` everywhere, and its module from `usr` to `user` (the file too). Keep everything building and the tests passing.",
+  "check": "cargo test --offline -q && test -f src/user.rs && ! test -e src/usr.rs && ! grep -rqw Usr src",
+  "timeout_s": 600
+}
