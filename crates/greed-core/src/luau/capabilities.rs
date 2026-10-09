@@ -516,6 +516,12 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
     ("http", "use the network", &[]),
     ("secrets", "read or keep secrets", &[]),
     ("fs", "read or write files", &["cwd", "dirs"]),
+    // Switching to a project elsewhere would move what counts as in it.
+    (
+        "project",
+        "open, switch or close projects",
+        &["list", "current"],
+    ),
     ("hash", "read files", &["sha256"]),
     ("files", "read files", &[]),
     ("image", "read files", &[]),
@@ -606,7 +612,20 @@ fn in_project(lua: &Lua, path: &str) -> bool {
     } else {
         std::env::current_dir().unwrap_or_default().join(path)
     };
-    full.starts_with(root)
+    // Links are followed, so one in the project can't lead out of it.
+    real(&full).starts_with(real(root))
+}
+
+/// `path` with its links followed, as far as it exists: a file not made yet
+/// is taken as in its folder.
+fn real(path: &Path) -> std::path::PathBuf {
+    if let Ok(real) = std::fs::canonicalize(path) {
+        return real;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => real(parent).join(name),
+        _ => path.to_owned(),
+    }
 }
 
 /// What sandboxed code is granted: `fs.read`, which only its `load` and

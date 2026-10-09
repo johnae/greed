@@ -2298,6 +2298,10 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
         ("greed.view():buffer():save()", "write a file"),
         ("require('@core')", "require @core"),
         (
+            "greed.project.switch(greed.project.open('/'))",
+            "open, switch or close projects",
+        ),
+        (
             "greed.load('/etc/hostname')",
             "open a file outside the project",
         ),
