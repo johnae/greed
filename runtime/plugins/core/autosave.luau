@@ -6,6 +6,7 @@ local greed = require("@greed")
 
 greed.option.define({
 	name = "auto-save",
+	needs = "fs.write",
 	default = false,
 	doc = "Save files on their own a moment after their edits stop",
 })

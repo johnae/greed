@@ -83,6 +83,7 @@ end
 
 greed.option.define({
 	name = "agent-tool-groups",
+	needs = "eval",
 	doc = 'The tool groups agents get from the start, besides those they switch on: names with spaces between, or "all"',
 	default = "plan",
 })

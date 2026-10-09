@@ -20,6 +20,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "web-search-url",
+	needs = "net",
 	default = "",
 	doc = "Where your SearXNG is, for web-search searxng",
 })

@@ -61,6 +61,7 @@ end
 
 greed.option.define({
 	name = "shell-completion-sources",
+	needs = "proc",
 	doc = "Where a shell completes a program's arguments from, in order: cobra, fish, carapace, man, help",
 	default = "cobra fish carapace man help",
 })

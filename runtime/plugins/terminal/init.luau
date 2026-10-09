@@ -18,6 +18,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "terminal-shell",
+	needs = "proc",
 	doc = 'What a new terminal runs, e.g. "fish -l"; empty for your $SHELL',
 	default = "",
 })

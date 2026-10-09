@@ -88,6 +88,9 @@ pub struct OptionDef {
     pub default: Value,
     /// The values it can take; empty when any value of its type will do.
     pub choices: Vec<Value>,
+    /// The capability code needs to set it, for an option whose value runs
+    /// something (a program, Luau) or trusts agents more.
+    pub needs: Option<Arc<str>>,
 }
 
 impl OptionDef {

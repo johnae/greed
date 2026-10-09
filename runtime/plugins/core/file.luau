@@ -534,6 +534,7 @@ end)
 
 greed.option.define({
 	name = "link-opener",
+	needs = "proc",
 	doc = 'What opens a link, e.g. "firefox"; empty for xdg-open, or open on macOS',
 	default = "",
 })

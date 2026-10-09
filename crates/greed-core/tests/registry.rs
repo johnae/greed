@@ -104,6 +104,7 @@ fn options_are_typed() {
         source: None,
         default: Value::Int(4),
         choices: Vec::new(),
+        needs: None,
     });
     assert_eq!(reg.option("tab-width"), Some(&Value::Int(4)));
     reg.set_option("tab-width", Value::Int(2)).unwrap();
@@ -122,6 +123,7 @@ fn removing_the_owner_removes_its_options() {
         source: None,
         default: Value::Bool(false),
         choices: Vec::new(),
+        needs: None,
     });
     reg.remove_owned_by("user/me");
     assert_eq!(reg.option("wrap"), None);
@@ -135,6 +137,7 @@ fn option(name: &str, owner: &str, default: Value) -> OptionDef {
         source: None,
         default,
         choices: Vec::new(),
+        needs: None,
     }
 }
 

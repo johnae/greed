@@ -85,6 +85,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "agent-workspace-edits",
+	needs = "eval",
 	doc = "Let agents in a workspace of their own edit, move and delete files there without asking",
 	default = true,
 })

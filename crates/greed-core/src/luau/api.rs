@@ -1160,43 +1160,7 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let o = owner.clone();
     option.set(
         "define",
-        lua.create_function(move |lua, spec: Table| {
-            let name: String = spec.get("name")?;
-            let default = option_value(spec.get("default")?)?;
-            let choices = spec
-                .get::<Option<Vec<Value>>>("choices")?
-                .unwrap_or_default()
-                .into_iter()
-                .map(option_value)
-                .collect::<LuaResult<Vec<_>>>()?;
-            if let Some(odd) = choices
-                .iter()
-                .find(|c| std::mem::discriminant(*c) != std::mem::discriminant(&default))
-            {
-                return Err(mlua::Error::runtime(format!(
-                    "option {name:?}: the choice \"{odd}\" isn't a {}",
-                    default.type_name()
-                )));
-            }
-            if !choices.is_empty() && !choices.contains(&default) {
-                return Err(mlua::Error::runtime(format!(
-                    "option {name:?}: the default \"{default}\" isn't one of its choices"
-                )));
-            }
-            let def = OptionDef {
-                name: name.into(),
-                doc: spec
-                    .get::<Option<String>>("doc")?
-                    .unwrap_or_default()
-                    .into(),
-                owner: o.clone(),
-                source: caller(lua),
-                default,
-                choices,
-            };
-            state_mut(lua).registry.define_option(def);
-            Ok(())
-        })?,
+        lua.create_function(move |lua, spec: Table| define_option(lua, &o, &spec))?,
     )?;
     option.set(
         "get",
@@ -1246,6 +1210,71 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     Ok(option)
 }
 
+/// `greed.option.define(spec)` for `o`'s code.
+fn define_option(lua: &Lua, o: &PluginId, spec: &Table) -> LuaResult<()> {
+    let name: String = spec.get("name")?;
+    let default = option_value(spec.get("default")?)?;
+    let choices = spec
+        .get::<Option<Vec<Value>>>("choices")?
+        .unwrap_or_default()
+        .into_iter()
+        .map(option_value)
+        .collect::<LuaResult<Vec<_>>>()?;
+    if let Some(odd) = choices
+        .iter()
+        .find(|c| std::mem::discriminant(*c) != std::mem::discriminant(&default))
+    {
+        return Err(mlua::Error::runtime(format!(
+            "option {name:?}: the choice \"{odd}\" isn't a {}",
+            default.type_name()
+        )));
+    }
+    if !choices.is_empty() && !choices.contains(&default) {
+        return Err(mlua::Error::runtime(format!(
+            "option {name:?}: the default \"{default}\" isn't one of its choices"
+        )));
+    }
+    let needs = spec.get::<Option<String>>("needs")?;
+    if let Some(needs) = &needs
+        && capabilities::what(needs).is_none()
+    {
+        return Err(mlua::Error::runtime(format!(
+            "option {name:?}: there is no capability {needs:?}"
+        )));
+    }
+    {
+        // Another plugin's option stays as it defined it: taken
+        // over, its default or what it needs could change.
+        let state = state(lua);
+        if let Some(def) = state.registry.option_def(&name)
+            && def.owner != *o
+            && state
+                .grants
+                .get(o)
+                .is_some_and(|g| *g != capabilities::Grant::All)
+        {
+            return Err(mlua::Error::runtime(format!(
+                "option {name:?} is {}'s",
+                def.owner
+            )));
+        }
+    }
+    let def = OptionDef {
+        needs: needs.map(Into::into),
+        name: name.into(),
+        doc: spec
+            .get::<Option<String>>("doc")?
+            .unwrap_or_default()
+            .into(),
+        owner: o.clone(),
+        source: caller(lua),
+        default,
+        choices,
+    };
+    state_mut(lua).registry.define_option(def);
+    Ok(())
+}
+
 /// `greed.option.set(name, value, { client })`: sets an option for every
 /// client, or with `client` a value of the acting client's own (nil takes
 /// it away), and tells plugins.
@@ -1254,6 +1283,13 @@ fn set_option(lua: &Lua, (name, value, opts): (String, Value, Option<Table>)) ->
         Some(opts) => opts.get::<Option<bool>>("client")?.unwrap_or(false),
         None => false,
     };
+    let needs = state(lua)
+        .registry
+        .option_def(&name)
+        .and_then(|def| def.needs.clone());
+    if let Some(needs) = needs {
+        capabilities::check_setting(lua, &needs)?;
+    }
     let client = {
         let state = &mut *state_mut(lua);
         let client = state.editor.client();

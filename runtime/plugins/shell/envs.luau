@@ -40,6 +40,7 @@ export type Provider = {
 
 greed.option.define({
 	name = "shell-environments",
+	needs = "proc",
 	doc = "Which environments a shell loads in folders that bring one, in order, the first that applies winning: devenv, direnv, and those plugins add; empty for none",
 	default = "devenv direnv",
 })

@@ -459,8 +459,8 @@ export type Mode = {
 export type OptionValue = boolean | number | string
 
 export type Options = {
-	--- Defines an option. With `choices`, it takes only those values (the default among them), and `:set` completes them.
-	define: (spec: { name: string, doc: string?, default: OptionValue, choices: { OptionValue }? }) -> (),
+	--- Defines an option. With `choices`, it takes only those values (the default among them), and `:set` completes them. With `needs`, a capability like "proc", only code that has it, or you yourself (`:set`, your config), may set it: for an option whose value is run, like a command line. A plugin can't define an option another plugin defined.
+	define: (spec: { name: string, doc: string?, default: OptionValue, choices: { OptionValue }?, needs: string? }) -> (),
 	--- The option's value for the acting client: its own, if it has one, else everyone's.
 	get: (name: string) -> OptionValue?,
 	--- Sets an option for every client; fails on an unknown name, the wrong type or a value that isn't one of its choices. With `client`, sets a value of the acting client's own instead, like a window's font size, which nil takes away again; setting it for every client takes away each client's own.

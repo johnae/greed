@@ -1080,6 +1080,23 @@ greed.option.define({
 })
 ```
 
+An option whose value gets run, like a command line, says which
+capability setting it takes with `needs`. Then only code with that
+capability can set it, besides you (`:set`, your config), so a plugin
+without `proc` can't make yours run a program of its choosing. Greed's own
+options like `link-opener` and `terminal-shell` need `proc`, and
+`agent-eval` needs `eval`. An option belongs to the plugin that defined
+it: another plugin can't define it again.
+
+```luau
+greed.option.define({
+	name = "deploy-command",
+	default = "make deploy",
+	needs = "proc",
+	doc = "What :deploy runs",
+})
+```
+
 ## Programs and terminals
 
 `greed.process.run(command, opts)` runs a program to the end and returns

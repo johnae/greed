@@ -417,3 +417,45 @@ return M
 	t:wait(50)
 	assert(greed.fs.read(`{dir}/started.txt`) == nil, "not written")
 end)
+
+test(
+	"an option whose value runs a program is set only by code that may run them, or by you",
+	function(t)
+		t:buffer("|x")
+		local before = greed.option.get("link-opener")
+		-- A plugin without proc, directly, through :set, or by taking it over.
+		greed.plugin.load(plugin(t, "opener", "", 'greed.option.set("link-opener", "sh -c evil")'))
+		t:run("opener-go")
+		local said = last(t)
+		assert(string.find(said, 'add "proc" to capabilities in its plugin.toml', 1, true), said)
+		greed.plugin.load(
+			plugin(
+				t,
+				"setter",
+				"",
+				'greed.run("set", { args = { "link-opener", "sh -c evil" }, wait = true })'
+			)
+		)
+		t:run("setter-go")
+		t:wait(20)
+		greed.plugin.load(
+			plugin(
+				t,
+				"taker",
+				"",
+				'greed.option.define({ name = "link-opener", default = "sh -c evil" })'
+			)
+		)
+		t:run("taker-go")
+		said = last(t)
+		assert(string.find(said, "is core's", 1, true), said)
+		assert(greed.option.get("link-opener") == before, tostring(greed.option.get("link-opener")))
+		-- You, at the command line.
+		t:keys(": s e t space l i n k - o p e n e r space f i r e f o x enter")
+		assert(
+			greed.option.get("link-opener") == "firefox",
+			tostring(greed.option.get("link-opener"))
+		)
+		greed.option.set("link-opener", before)
+	end
+)

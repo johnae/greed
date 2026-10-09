@@ -8,6 +8,7 @@ local ide = require("./ide")
 
 greed.option.define({
 	name = "claude-command",
+	needs = "proc",
 	doc = 'How the Claude pane starts Claude Code, e.g. "claude --continue"',
 	default = "claude",
 })

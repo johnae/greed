@@ -20,12 +20,14 @@ local M = {}
 
 greed.option.define({
 	name = "shell-fallback",
+	needs = "proc",
 	doc = 'The shell that runs lines with pipes, globs and the like, e.g. "bash"; empty for your $SHELL (sh unless it\'s sh, bash, zsh, dash, ksh, fish or nu)',
 	default = "",
 })
 
 greed.option.define({
 	name = "shell-fallback-rc",
+	needs = "proc",
 	doc = "Whether the shell running those lines reads its startup files (-i), for your aliases and functions",
 	default = false,
 })

@@ -701,6 +701,27 @@ pub(super) fn check(lua: &Lua, capability: &str) -> LuaResult<()> {
     check_for(lua, &owner, capability)
 }
 
+/// Fails unless the code running may set an option that needs
+/// `capability`: code that has it, or what you typed yourself, like `:set`,
+/// which only holders of `commands` passed on and nothing started.
+pub(super) fn check_setting(lua: &Lua, capability: &str) -> LuaResult<()> {
+    let Some(owner) = state(lua).running.clone() else {
+        return Ok(());
+    };
+    let refused = match check_for(lua, &owner, capability) {
+        Ok(()) => return Ok(()),
+        Err(err) => err,
+    };
+    let yours = current_limit(lua).is_empty() && {
+        let callers = on_stack(lua);
+        let state = state(lua);
+        callers
+            .iter()
+            .all(|name| state.grants.get(name).is_none_or(|g| g.allows("commands")))
+    };
+    if yours { Ok(()) } else { Err(refused) }
+}
+
 /// [`check`] for `owner`'s code, whether or not it's the code running.
 pub(super) fn check_for(lua: &Lua, owner: &PluginId, capability: &str) -> LuaResult<()> {
     allowed(lua, owner, capability, |g| g.allows(capability))

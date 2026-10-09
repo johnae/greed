@@ -27,6 +27,7 @@ local M = {}
 
 greed.option.define({
 	name = "agent-eval",
+	needs = "eval",
 	doc = 'How Luau from agents runs: "auto" (sandboxed, a reviewer or you for more), "ask", "allow" or "off"',
 	default = "auto",
 	choices = { "auto", "ask", "allow", "off" },
