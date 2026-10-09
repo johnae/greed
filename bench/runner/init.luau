@@ -30,8 +30,9 @@ type Run = {
 	results: string,
 	done: string,
 	label: string,
+	url: string?,
 	repeats: number,
-	role: { provider: string, model: string, edits: string? },
+	role: { provider: string, model: string, edits: string?, context: number? },
 }
 
 type Task = { prompt: string, check: string?, luau_check: string?, timeout_s: number? }
@@ -256,6 +257,13 @@ end
 --- file; the `done` file says it's over.
 function M.start(path: string): string
 	local run: Run = greed.json.decode(assert(greed.fs.read(path)))
+	-- A server elsewhere, like Ollama on another machine, by the provider's name.
+	if run.url and run.url ~= "" then
+		models.provider(run.role.provider, { kind = "openai", url = run.url })
+	end
+	if run.role.context == 0 then
+		run.role.context = nil
+	end
 	models.role("agent", run.role)
 	-- No one is here to look at code before it runs.
 	greed.option.set("agent-eval", "allow")

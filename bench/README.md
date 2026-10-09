@@ -23,7 +23,8 @@ command run in that folder, with `$TASK_DIR` the task's folder) or a
 seconds it may take (`timeout_s`). The code tasks are Rust crates without
 dependencies, checked with `cargo test --offline`.
 
-`run.sh` starts `greed serve` in a profile of its own under `$TMPDIR`, with
+`run.sh` starts `greed serve` in a profile of its own under `target/b/` (or
+`$BENCH_WORK`), with
 the runner (`runner/`) loaded among Greed's own plugins. For each task the
 runner starts a fresh session of Greed's agent, allows what it asks to do,
 installs plugins it asks to install, cancels its questions (no one is

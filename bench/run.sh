@@ -4,6 +4,7 @@
 #
 #   bench/run.sh [--provider P] [--model M] [--edits replace|hashline]
 #                [--tasks fix-bug,rename] [--repeat N] [--label NAME]
+#                [--url http://host:11434/v1 --context 32768]   (a server like Ollama elsewhere)
 #
 # Keys come from your usual state folder (GREED_STATE_DIR, or
 # ~/.local/state/greed), or ANTHROPIC_API_KEY and the like.
@@ -18,6 +19,8 @@ edits=replace
 tasks=""
 repeats=1
 label=""
+url=""
+context=0
 while [ $# -gt 0 ]; do
 	case $1 in
 	--provider) provider=$2; shift 2 ;;
@@ -26,6 +29,8 @@ while [ $# -gt 0 ]; do
 	--tasks) tasks=$2; shift 2 ;;
 	--repeat) repeats=$2; shift 2 ;;
 	--label) label=$2; shift 2 ;;
+	--url) url=$2; shift 2 ;;
+	--context) context=$2; shift 2 ;;
 	*) echo "bench/run.sh: unknown argument $1" >&2; exit 2 ;;
 	esac
 done
@@ -34,8 +39,9 @@ if [ -z "$tasks" ]; then
 fi
 stamp=$(date +%Y%m%d-%H%M%S)
 label=${label:-$model-$edits}
-# Short, since session sockets live under it.
-work=${TMPDIR:-/tmp}/gb-$stamp
+# On disk (a /tmp in memory fills with the builds), and short, since session
+# sockets live under it.
+work=${BENCH_WORK:-$repo/target/b}/$stamp
 profile=$work/p
 mkdir -p "$profile/config" "$here/results"
 : >"$profile/config/init.luau"
@@ -56,7 +62,8 @@ cat >"$profile/config/bench.json" <<EOF
   "done": "$work/done",
   "label": "$label",
   "repeats": $repeats,
-  "role": { "provider": "$provider", "model": "$model", "edits": "$edits" }
+  "url": "$url",
+  "role": { "provider": "$provider", "model": "$model", "edits": "$edits", "context": $context }
 }
 EOF
 
