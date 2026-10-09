@@ -346,6 +346,121 @@ local function fall_back(
 	end)
 end
 
+-- Runs `line`, programs with `input` going in, in a real shell for
+-- `block`, and gives back what they printed, their errors and how they
+-- exited (nil when stopped). Interrupting the block stops them. What they
+-- print goes to the table stages after them, so it isn't shown.
+local function capture(
+	shell: Shell,
+	block: Block,
+	line: string,
+	input: string?
+): (string, string, number?)
+	envs.prepare(shell, block)
+	local program = if block.by == "agent" then "sh" else nil
+	local wrapped = fallback.prepare(block, line, { program = program, rc = false })
+	local child, err = greed.process.spawn(wrapped.argv, {
+		cwd = block.cwd,
+		env = state.environment(block),
+		group = true,
+	})
+	if child == nil then
+		return "", err or `can't start {wrapped.argv[1]}`, 127
+	end
+	local c = child :: greed.Child
+	block.job = {
+		interrupt = function()
+			c:signal("INT")
+		end,
+		kill = function()
+			c:kill()
+		end,
+	}
+	if input and input ~= "" then
+		c:write(input)
+	end
+	c:close()
+	local parts: { string } = {}
+	while true do
+		local piece = c:read()
+		if piece == nil then
+			break
+		end
+		table.insert(parts, piece)
+	end
+	local code = c:wait()
+	block.job = nil
+	-- A pipeline's cd and export are its own.
+	fallback.collect(block, wrapped)
+	block.cwd_after, block.env_changed = nil, nil
+	return table.concat(parts), c:stderr(), code
+end
+
+-- `text` read as JSON, when it's an object or an array.
+local function as_json(text: string): any
+	if string.match(text, "^%s*[%[{]") == nil then
+		return nil
+	end
+	local value = greed.json.decode(text)
+	return if type(value) == "table" then value else nil
+end
+
+-- Runs `line` for `block` on `text`, what goes into it (with `value` when
+-- that was JSON and `tbl` when it was a table): the table stages at its
+-- start, then the programs after them in a real shell. Table stages after
+-- programs, as in `kubectl get pods | where STATUS != Running`, run on what
+-- the programs print, read as a table as a block's output is. With
+-- `raw` the line starts with a program, `^sort`; with `handoff` it runs in
+-- a terminal.
+local function flow(
+	shell: Shell,
+	block: Block,
+	line: string,
+	opts: RunOptions,
+	text: string?,
+	value: any,
+	tbl: tables.Table?,
+	flags: { raw: boolean?, handoff: boolean? }
+)
+	if text ~= nil and not flags.raw then
+		local staged, rest, why, json = tables.pipeline(tbl, text, line, value)
+		if why then
+			run.fail(shell, block, why, 2)
+			return
+		end
+		if staged or json ~= nil then
+			local out = if staged then tables.text(staged) else tables.value_text(json) .. "\n"
+			if rest == nil then
+				block.table = staged
+				run.write(shell, block, out, "stdout")
+				run.finish(shell, block, 0, nil)
+				return
+			end
+			line, text, value, tbl = rest, out, if staged then nil else json, staged
+		end
+	end
+	block.via = "shell"
+	local programs, stages = tables.after_programs(line)
+	if programs == nil or stages == nil or flags.handoff then
+		fall_back(shell, block, line, opts, flags.handoff == true, text)
+		return
+	end
+	local out, errors, code = capture(shell, block, programs, text)
+	if errors ~= "" then
+		run.write(shell, block, errors, "stderr")
+	end
+	if code == nil then
+		run.finish(shell, block, nil, "INT")
+		return
+	elseif out == "" and code ~= 0 then
+		run.finish(shell, block, code, nil)
+		return
+	end
+	local json = as_json(out)
+	local made = tables.from_value(json) or tables.parse(out, programs, block)
+	flow(shell, block, stages, opts, out, json, made, {})
+end
+
 -- Adds a block for `command` to `shell`, running.
 local function add_block(shell: Shell, command: string, opts: RunOptions): Block
 	shell.count += 1
@@ -409,30 +524,21 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		end
 	end
 	local block = add_block(shell, command, opts)
-	local input: string?, why: string? = nil, parsed.error
-	-- What table stages at the line's start made (`$3 | where ...`), as
-	-- text, and what comes after them, to run on it.
-	local staged: tables.Table?, rest: string?, picked: string? = nil, nil, nil
+	local why = parsed.error
+	-- What goes in (`$3 | ...`): its text, its JSON and its table.
+	local input: string?, value: any, source: tables.Table? = nil, nil, nil
 	if parsed.input and why == nil then
 		block.input = parsed.input
 		local from: Shell?, named = shell, parsed.input
 		if opts.by == "agent" then
 			from, named = by_id(shell, parsed.input)
 		end
-		local text: string?, value: any, err: string? =
-			nil, nil, `there's no block with id {string.sub(named, 2)}`
+		local err: string? = `there's no block with id {string.sub(named, 2)}`
 		if from then
-			text, value, err = data.read(from, named, block.cwd)
+			input, value, err = data.read(from, named, block.cwd)
+			source = data.table(from, named, input, value)
 		end
-		input, why = text, err
-		if from and why == nil and parsed.kind ~= "source" and not parsed.raw then
-			local source = data.table(from, named, text, value)
-			local json: any
-			staged, rest, why, json = tables.pipeline(source, text, parsed.line, value)
-			if staged == nil and json ~= nil then
-				picked = tables.value_text(json) .. "\n"
-			end
-		end
+		why = err
 	end
 	local into = parsed.into
 	if into and why == nil then
@@ -441,16 +547,6 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	end
 	if why then
 		run.fail(shell, block, why, 2)
-	elseif (staged or picked) and rest then
-		block.via = "shell"
-		fall_back(shell, block, rest, opts, false, if staged then tables.text(staged) else picked)
-	elseif staged then
-		block.table = staged
-		run.write(shell, block, tables.text(staged), "stdout")
-		run.finish(shell, block, 0, nil)
-	elseif picked then
-		run.write(shell, block, picked, "stdout")
-		run.finish(shell, block, 0, nil)
 	elseif parsed.kind == "source" then
 		run.write(shell, block, input or "", "stdout")
 		run.finish(shell, block, 0, nil)
@@ -459,9 +555,18 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	else
 		-- Everything else goes to a real shell, so `ls` and `ls | head`
 		-- behave the same, with its aliases (given startup files) and
-		-- builtins.
-		block.via = "shell"
-		fall_back(shell, block, parsed.line, opts, parsed.terminal, input)
+		-- builtins; table stages run on what goes in and what programs
+		-- print.
+		flow(
+			shell,
+			block,
+			parsed.line,
+			opts,
+			input,
+			value,
+			source,
+			{ raw = parsed.raw, handoff = parsed.terminal }
+		)
 	end
 	return block
 end

@@ -300,10 +300,22 @@ program after them reads the table as text:
 ❯ $1 | where IMAGE ~ postgres > buf:databases
 ```
 
-`sort` without a column is the `sort` program, as always. The stages go
-first, right after `$3 |`: one after a program, as in `$3 | grep api |
-where ...`, says so instead of running, and so does one on output that
-isn't a table, saying what makes one.
+`sort` without a column is the `sort` program, as always.
+
+They work after a program too, in one line: what it prints is read as a
+table, as a block's output is, and the stages run on that.
+
+```text
+❯ kubectl get pods | where STATUS != Running | select NAME,AGE
+❯ docker ps --format json | where Image ~ postgres
+❯ $1 | grep api | where RESTARTS > 0
+```
+
+`where`, `select`, `get`, `columns`, `from` and `lines` start the stages
+after a program, since no program goes by those names; `sort` and `split`
+go on from them. What the program prints before the stages isn't shown,
+only what comes out at the end, and its errors. A stage on output that
+isn't a table says so, and what makes one.
 
 ### JSON
 

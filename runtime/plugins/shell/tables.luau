@@ -1258,9 +1258,6 @@ local function object_table(object: any, word: string, rest: string): Table?
 	return if word == "sort" then inner else own
 end
 
--- The stages only the shell runs: no program has their names.
-local OWN: { [string]: boolean } = { where = true, select = true, get = true }
-
 -- Why `word`, a stage, can't read text.
 local function not_a_table(word: string): string
 	return `{word} works on a table, and this isn't one; columns, from csv/tsv/json, split or lines make one`
@@ -1348,25 +1345,31 @@ function M.pipeline(
 		end
 		done += 1
 	end
-	-- A stage after a program would go to the program's shell, which has
-	-- no such command.
-	for i = done + 2, #parts do
-		local word = string.match(parts[i], "^%s*(%S+)")
-		if word and OWN[word] then
-			if current == nil and json == nil and done == 0 then
-				return nil, nil, not_a_table(word)
-			end
-			local program = string.match(parts[done + 1], "^%s*(%S+)") or "a program"
-			return nil,
-				nil,
-				`{word} can't read what {program} prints: the shell's stages go first, right after $3 |`
-		end
-	end
 	if done == 0 then
 		return nil, nil, nil
 	end
 	local after = trim(table.concat(parts, "|", done + 1))
 	return current, if after == "" then nil else after, nil, if current then nil else json
+end
+
+-- The stages a line can go on with after a program, as no program has
+-- their names; `sort` and `split` are programs too, so they only go on
+-- from these.
+local STARTERS: { [string]: boolean } =
+	{ where = true, select = true, get = true, columns = true, from = true, lines = true }
+
+--- `line` cut where table stages start after programs, as in `kubectl get
+--- pods | where STATUS != Running`: the programs, then the stages and
+--- what follows them. Nil when no stage comes after a program.
+function M.after_programs(line: string): (string?, string?)
+	local parts = stages(line)
+	for i = 2, #parts do
+		local word = string.match(parts[i], "^%s*(%S+)")
+		if word and STARTERS[word] then
+			return trim(table.concat(parts, "|", 1, i - 1)), trim(table.concat(parts, "|", i))
+		end
+	end
+	return nil, nil
 end
 
 --- Reads a command's output as a table: `text`, and the block it's from.

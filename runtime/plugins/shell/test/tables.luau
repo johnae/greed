@@ -542,7 +542,7 @@ test("a JSON object works with the stages, and get picks a field", function(t)
 	assert(string.find(no.stderr, "get works on JSON", 1, true), no.stderr)
 end)
 
-test("a stage on text, or after a program, says why it can't run", function(t)
+test("a stage on text says why it can't run, after a program too", function(t)
 	local sh = open(t, t:tempdir())
 	local text = run(t, sh, "printf 'b 1\\na 2\\n'")
 	local n = text.number
@@ -552,19 +552,47 @@ test("a stage on text, or after a program, says why it can't run", function(t)
 		string.find(where.stderr, "columns, from csv/tsv/json, split or lines make one", 1, true),
 		where.stderr
 	)
-	-- sort X is the sort program on text; select after it is the shell's.
-	local mixed = run(t, sh, `${n} | sort X | select A`)
+	-- sort is the sort program on text; select after it is the shell's,
+	-- on what sort printed, which isn't a table either.
+	local mixed = run(t, sh, `${n} | sort | select A`)
 	assert(mixed.status == "failed", mixed.status)
 	assert(string.find(mixed.stderr, "select works on a table", 1, true), mixed.stderr)
-	assert(not string.find(mixed.stderr, "syntax", 1, true), mixed.stderr)
-	-- On a table, a stage after a program says to put it first.
-	local split = run(t, sh, `${n} | split " "`)
-	local after = run(t, sh, `${split.number} | grep a | where 1 = a`)
-	assert(after.status == "failed", after.status)
-	assert(string.find(after.stderr, "where can't read what grep prints", 1, true), after.stderr)
+	-- A program that fails without printing ends the line there.
+	local failed = run(t, sh, `${n} | sort /nowhere | select A`)
+	assert(failed.status == "failed", failed.status)
+	assert(
+		not string.find(failed.stderr, "select", 1, true),
+		"it stopped at sort: " .. failed.stderr
+	)
+	assert(string.find(failed.stderr, "nowhere", 1, true), failed.stderr)
 	-- lines makes one.
 	local lines = run(t, sh, `${n} | lines | where line ~ a`)
 	assert(lines.output == "line\na 2\n", lines.output)
+end)
+
+test("stages after a program read what it prints as a table", function(t)
+	local sh = open(t, t:tempdir())
+	local table_line = "printf 'NAME   AGE\\nann    3\\nbob    5\\ncid    9\\n'"
+	local old = run(t, sh, `{table_line} | where AGE > 4 | select NAME`)
+	assert(old.status == "done", old.stderr)
+	assert(old.output == "NAME\nbob\ncid\n", old.output)
+	assert(old.table and #old.table.rows == 2, "kept as a table")
+	-- Programs after the stages read their text, and stages can follow
+	-- those programs again.
+	local counted = run(t, sh, `{table_line} | where AGE > 4 | grep -v NAME | wc -l`)
+	assert(string.match(counted.output, "^%s*2%s*$"), counted.output)
+	local again = run(t, sh, `{table_line} | grep -v cid | where AGE < 4`)
+	assert(
+		again.table and #again.table.rows == 1 and again.table.rows[1].NAME == "ann",
+		again.output
+	)
+	-- JSON from a program works the same.
+	local json = run(t, sh, `printf '[\{"a":1\},\{"a":7\}]' | where a > 3`)
+	assert(json.table and #json.table.rows == 1, json.output)
+	-- From a block too, past a program.
+	local first = run(t, sh, table_line)
+	local through = run(t, sh, `${first.number} | grep -v ann | where AGE > 6`)
+	assert(through.table and through.table.rows[1].NAME == "cid", through.output)
 end)
 
 test("esc in normal mode shows a filtered block's every line again", function(t)
