@@ -78,6 +78,30 @@ end)
 	assert(report.tests.passed == 1, tostring(report.tests.error))
 end)
 
+test("a checked plugin's tests open their own files without fs.read, and only those", function(t)
+	local dir = t:tempdir({
+		["plugin.toml"] = 'name = "opener"\n',
+		["init.luau"] = "return {}\n",
+		["test/open.luau"] = [[
+local test = require("@greed/test")
+local greed = require("@greed")
+test("opens a file it made", function(t)
+	local dir = t:tempdir({ ["a.md"] = "hi\n" })
+	t:open(dir .. "/a.md")
+	assert(greed.view():buffer():text() == "hi\n")
+end)
+test("can't open what it didn't make", function(t)
+	local ok, err = pcall(function()
+		t:open("/etc/hostname")
+	end)
+	assert(not ok and string.find(tostring(err), "t:tempdir", 1, true), tostring(err))
+end)
+]],
+	})
+	local report = check(t, dir)
+	assert(report.tests.passed == 2, greed.json.encode(report.tests))
+end)
+
 test("plugins load while the editor runs", function(t)
 	local dir = t:tempdir(GOOD)
 	assert(greed.plugin.load(dir) == "hello")

@@ -685,6 +685,22 @@ impl UserData for TestContext {
                 tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)
             },
         );
+        // Opens a file the test made, as greed.open does, without the
+        // plugin needing fs.read just for its tests. Only inside the test's
+        // own folder: a test's failures go back to whoever wrote it.
+        methods.add_method("open", |lua, _, path: String| {
+            let inside = state(lua).dirs.as_ref().is_some_and(|dirs| {
+                std::fs::canonicalize(&path).is_ok_and(|path| {
+                    std::fs::canonicalize(dirs).is_ok_and(|d| path.starts_with(d))
+                })
+            });
+            if !inside {
+                return Err(mlua::Error::runtime(format!(
+                    "t:open opens files a test made with t:tempdir; {path} isn't one"
+                )));
+            }
+            super::api::open_file(lua, &path)
+        });
         add_repo_methods(methods);
         methods.add_method("wait", |lua, _, ms: f64| {
             restart_deadline(lua);

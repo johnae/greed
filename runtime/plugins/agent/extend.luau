@@ -96,7 +96,8 @@ Tests:
 text. `buffer:decorations("my-plugin")` gives back the marks a plugin drew, to check them.
 `t:buffer` makes an untitled buffer, which fires no "buffer.opened" (only files do, as in the
 editor); to test a plugin reacting to opened files, write one with `t:tempdir({ ["a.txt"] =
-"..." })` and `greed.open` it. A plugin decorating every buffer goes through
+"..." })` and open it with `t:open(path)`, which needs no capability (`greed.open` would
+make the plugin need fs.read). A plugin decorating every buffer goes through
 `greed.buffers()` as it loads, then follows "buffer.opened" and "buffer.changed".
 
 Before writing one, check whether Greed does it already (describe a likely command name, or

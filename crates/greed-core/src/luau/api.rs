@@ -2000,7 +2000,7 @@ fn keys_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 /// `greed.open`: shows the file at `path` in the main view, opening it if it
 /// isn't open, and tells plugins with "buffer.opened".
-fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
+pub(super) fn open_file(lua: &Lua, path: &str) -> LuaResult<()> {
     let mut state = state_mut(lua);
     let buffer = state
         .editor

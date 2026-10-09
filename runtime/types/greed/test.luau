@@ -42,6 +42,9 @@ export type TestContext = {
 	--- A new, empty directory holding `files` (paths in it, to their text).
 	--- Folders in the paths are created.
 	tempdir: (self: TestContext, files: { [string]: string }?) -> string,
+	--- Opens a file in a tempdir, as greed.open does (firing "buffer.opened"),
+	--- without the plugin needing the fs.read capability for it.
+	open: (self: TestContext, path: string) -> (),
 	--- A new jj or git repository in a tempdir, with `files` committed as
 	--- "first" if given, and a way to run jj or git there as a made-up user:
 	--- it returns what the command printed and fails the test if it fails.
