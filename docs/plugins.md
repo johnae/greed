@@ -1285,6 +1285,46 @@ the block; it returns the exit code, 0 when it returns nothing, and an
 error fails the block with its message. It can wait, as commands can.
 Neither can replace the shell's own, and both go when the plugin does.
 
+`shell.kind(spec)` says what the rows of some commands' tables are, so
+they're [things to act on](shell.md#rows-you-can-act-on) like any other
+(`core.actions`). `spec.match` names the commands as `shell.parser` does.
+`spec.capture(block, shell)` runs once as the block finishes and keeps
+what the rows can't say themselves, like the context a command ran
+against; returning nil says the block isn't this kind's after all.
+`spec.row(row, captured, block)` gives `{ kind, label, value }` for a row
+(its cells by column), and `spec.called(captured, block)` what one row
+and several are called in the block's status ("pod", "pods"). Rows then take the actions of their kind,
+whoever added them; `ls -l` rows are `file` things, so every file action
+works on them.
+
+`shell.action_command(kind, name, command, opts)` adds an action that runs
+a command as a block in the shell, so what it does is there to read and
+run again. `command` is a template whose `{field}`s are the thing's
+value's fields, quoted, or a function from the value to the line.
+`opts.doc` says what it does, `opts.danger` makes it ask first (saying
+when the value's `context` is a production one), and `opts.default`
+makes it what `enter` on such a row does.
+
+```luau
+-- `systemctl list-units`'s rows as services.
+shell.kind({
+	name = "systemd",
+	match = "^systemctl list%-units",
+	row = function(row)
+		local unit = row.UNIT
+		if unit == nil or not string.match(unit, "%.service$") then
+			return nil
+		end
+		return { kind = "service", label = unit, value = { unit = unit } }
+	end,
+	called = function()
+		return "unit", "units"
+	end,
+})
+shell.action_command("service", "status", "systemctl status {unit}", { doc = "How it's doing", default = true })
+shell.action_command("service", "restart", "sudo systemctl restart {unit}", { doc = "Restart it", danger = true })
+```
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

@@ -243,7 +243,8 @@ function M.status_text(block: Block): string
 		end
 	elseif tbl and value == nil then
 		local rows = #tbl.rows
-		table.insert(parts, `table · {rows} {if rows == 1 then "row" else "rows"}`)
+		local called = block.called or { one = "row", many = "rows" }
+		table.insert(parts, `table · {rows} {if rows == 1 then called.one else called.many}`)
 	end
 	if block.note then
 		table.insert(parts, block.note)

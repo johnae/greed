@@ -1716,23 +1716,28 @@ function M.parser(match: string, parse: Parser)
 	greed.plugin.tie(core.registry.put(parsers, { match = match, parse = parse }))
 end
 
+--- Whether `command` is one `match` names: a program's name ("kubectl"),
+--- or a Luau pattern for the whole command line ("^helm list").
+function M.matches(match: string, command: string): boolean
+	if match == M.program(command) then
+		return true
+	elseif not string.find(match, MAGIC) then
+		return false
+	end
+	-- A pattern that isn't one matches nothing.
+	local ok, found = pcall(function(): boolean
+		return string.find(command, match) ~= nil
+	end)
+	return ok and found
+end
+
 --- `text`, what `command` printed, read as a table: by a parser a plugin
 --- added for the command, or else by the shell's careful look for one
 --- (`detect`). Nil when it's text.
 function M.parse(text: string, command: string, block: any?): Table?
-	local program = M.program(command)
 	for i = #parsers, 1, -1 do
 		local entry = parsers[i]
-		local match = entry.match
-		local hit = match == program
-		if not hit and string.find(match, MAGIC) then
-			-- A pattern that isn't one matches nothing.
-			local ok, found = pcall(function(): boolean
-				return string.find(command, match) ~= nil
-			end)
-			hit = ok and found
-		end
-		if hit then
+		if M.matches(entry.match, command) then
 			local ok, found = pcall(entry.parse, text, block)
 			if ok and type(found) == "table" then
 				local tbl = if type(found.columns) == "table"

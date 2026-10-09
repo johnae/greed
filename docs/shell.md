@@ -91,7 +91,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 
 | Keys | |
 |---|---|
-| `enter` | At the prompt, run what's there. On a block, put its command at the prompt to change; on a file and line it names, open it there |
+| `enter` | At the prompt, run what's there. On a block, put its command at the prompt to change; on a file and line it names, open it there; on a row that's a thing (a file, a pod), do its usual action |
 | `alt-enter` | Another line at the prompt |
 | `up` `down` | At the prompt: the commands typed before that start with what's typed |
 | `ctrl-r` | Pick a command typed before, in any shell |
@@ -115,8 +115,9 @@ mode have others: `ctrl-c` copies when something is selected and
 interrupts otherwise, `ctrl-up` and `ctrl-down` go between blocks, `f8`
 and `shift-f8` between the files and lines the output names, `ctrl-f`
 filters a block, and the `space` keys above are `ctrl-space` ones.
-`space .` (`alt-.` in the vscode style) on a block lists what you can do
-with it.
+`space .` (`alt-.` in the vscode style) on a block, or on a row that's a
+thing (see [Rows you can act on](#rows-you-can-act-on)), lists what you
+can do with it.
 
 ## What runs your commands
 
@@ -418,6 +419,52 @@ own look ([Writing plugins](plugins.md#the-shell) has how). And when
 [jc](https://github.com/kellyjonbrazil/jc) is installed, output the shell
 found no table in, from a command jc knows (`ifconfig`, `dig`, `mount`,
 `uptime` and many more), gets jc's reading of it.
+
+## Rows you can act on
+
+Some tables' rows are things: an `ls -l` row is a file or a folder, a
+`ps` row a process, a `kubectl get` row a pod, deployment or other
+kubernetes object, a `docker ps` row a container. The status says so
+(`table · 5 pods`). On such a row, `space .` lists what you can do with
+it, the same actions that kind of thing has anywhere in Greed, and
+`enter` does the usual one: a file opens, a folder becomes the shell's
+folder, a pod or another kubernetes object is described, a container
+shows its logs.
+
+```text
+❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods
+NAME                     READY   STATUS             RESTARTS   AGE
+api-7d9f8b6c5-2xkqz      1/1     Running            0          3d16h
+worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   12         2h      ← space .
+                                   describe · logs · follow logs · shell
+                                   yaml · json · events · delete
+```
+
+What an action does is a command, run as a block of its own, so you see
+it, can run it again and change it:
+
+```text
+❯ 5 kubectl logs worker-5c6b7d8f9-abcde --tail 200 --context prod-eu -n payments
+```
+
+A row remembers where it came from. The kubernetes context and namespace
+are the ones the command ran against, from its flags or else kubectl's
+config as it was when the block finished, so acting on a row of an old
+block after `kubectl config use-context` still goes to that row's
+cluster, and the command says which. With `-A`, each row's namespace is
+its own. `docker --context` is kept the same way.
+
+Actions that delete or stop something (`delete`, `restart`, killing a
+process, stopping a container) ask first, and say so when the row is in
+a context matching `shell-production-contexts`:
+
+```text
+delete worker-5c6b7d8f9-abcde - in PRODUCTION (prod-eu)? y/n
+```
+
+`shell` on a pod or a container opens a shell in it in a terminal.
+Plugins add kinds of rows and actions of their own
+([Writing plugins](plugins.md#the-shell)).
 
 ## Asking for a command
 

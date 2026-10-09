@@ -74,6 +74,9 @@ export type Block = {
 	--- The output read as a table, when it's one: aligned columns under a
 	--- header (kubectl, docker, ps), `ls -l`, or a JSON array of objects.
 	table: tables.Table?,
+	--- What its table's rows are, like "pods", when a kind reads them
+	--- (kinds.luau).
+	called: { one: string, many: string }?,
 	--- What a filter, or a sort of its table, shows of its output, when
 	--- one does.
 	shown: Shown?,

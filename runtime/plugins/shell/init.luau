@@ -51,6 +51,10 @@ local segments = require("@self/segments")
 local envs = require("@self/envs")
 local aliases = require("@self/aliases")
 local suggest = require("@self/suggest")
+local kinds = require("@self/kinds")
+require("@self/kubernetes")
+require("@self/docker")
+require("@self/processes")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -81,6 +85,7 @@ M.envs = envs
 M.aliases = aliases
 M.suggest = suggest
 M.history = history
+M.kinds = kinds
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
@@ -101,6 +106,13 @@ M.parser = tables.parser
 
 --- Adds a table stage, as in `$3 | NAME ...`; see `tables.stage`.
 M.stage = tables.stage
+
+--- Says what the rows of some commands' tables are, to act on; see
+--- `kinds.kind`.
+M.kind = kinds.kind
+
+--- Adds an action running a command made from a thing; see `kinds.command`.
+M.action_command = kinds.command
 
 --- What a plugin's builtin gets besides its arguments: the shell and the
 --- block it runs for, the block's folder, and how to print in the block,
@@ -330,6 +342,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		note = nil,
 		value = nil,
 		table = nil,
+		called = nil,
 		shown = nil,
 		input = nil,
 		into = nil,
@@ -1126,7 +1139,7 @@ end
 
 greed.command({
 	name = "shell-enter",
-	doc = "Run what's at the prompt; on a block, put its command at the prompt to edit",
+	doc = "Run what's at the prompt; on a block, put its command at the prompt to edit, or on a row that's a file or a pod, open or describe it",
 	run = function(ctx)
 		local shell = shell_of(ctx)
 		if shell == nil then
@@ -1147,6 +1160,10 @@ greed.command({
 					core.file.open_at(ref.path, ref.line - 1, if ref.col then ref.col - 1 else nil)
 					return
 				end
+			end
+			-- A row that's a thing does what its kind does first.
+			if kinds.default(shell, pos) then
+				return
 			end
 			edit(shell, block, ctx)
 		end
@@ -1628,11 +1645,17 @@ end
 
 -- What the prompt shows can change with any command: a cd, a checkout,
 -- `kubectl config use-context`; and so can the environment the folder
--- brings.
-run.on_finish(function(shell: Shell)
+-- brings. A block's rows are read as things as it finishes, while what
+-- they came from (a kubernetes context) is still what it ran against.
+run.on_finish(function(shell: Shell, block: Block)
+	kinds.finished(shell, block)
 	greed.spawn(function()
 		envs.refresh(shell)
 	end)
+end)
+
+kinds.runs_with(function(shell: Shell, line: string, view: greed.View)
+	M.run(shell, line, { view = view })
 end)
 
 -- A running block keeps the session on :q (core's on-quit).
