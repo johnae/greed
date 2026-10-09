@@ -88,7 +88,7 @@ test("rejecting an edit leaves the file alone", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
 	local s = start(t, dir)
 	send(t, s, "edit a.txt")
-	t:keys("alt-p n")
+	t:keys("alt-q n")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
@@ -288,7 +288,7 @@ test("where an agent works shows in your file and the status line while it works
 	assert(marks[1].sign == "◆" and marks[1].eol, "a sign and a note at the end of the line")
 	assert(marks[1].text == "  ◆ Fake: waiting for you", tostring(marks[1].text))
 	assert(acp.status() == "◆ 1 waiting for you", tostring(acp.status()))
-	t:keys("alt-p y")
+	t:keys("alt-q y")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)

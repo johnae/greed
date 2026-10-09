@@ -505,7 +505,7 @@ you answer it from there in any mode and editing style:
 | `enter` | The highlighted choice (the first, until you move) |
 | `tab`, `shift-tab`, `left`, `right` | Highlight the next or previous choice |
 | A choice's letter | That choice, unless you're typing with something in the box already |
-| `esc` | Hide the row, to read the question in the transcript; `enter` outside typing (or `alt-p`) shows it again |
+| `esc` | Hide the row, to read the question in the transcript; `enter` outside typing (or `alt-q`) shows it again |
 
 Clicking a choice picks it too. What you've typed in the box stays as it
 was. Letters type as usual once the box has something in it, so a

@@ -162,7 +162,7 @@ function M.hint(s: Session, draft: string): string
 	if state == nil then
 		return ""
 	elseif state.hidden then
-		return if typing then "alt-p shows the question" else "enter shows the question"
+		return if typing then "alt-q shows the question" else "enter shows the question"
 	elseif letters_answer(draft) then
 		return `{table.concat(keys_of(state.permission), "/")} or enter answers · esc hides`
 	end

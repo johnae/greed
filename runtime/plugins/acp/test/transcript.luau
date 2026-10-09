@@ -304,7 +304,7 @@ test("while you type, enter answers and what you typed stays in the box", functi
 	assert(greed.mode.get() == "helix-insert", greed.mode.get())
 end)
 
-test("esc hides the choices, leaving the question; alt-p brings them back", function(t)
+test("esc hides the choices, leaving the question; alt-q brings them back", function(t)
 	local s = start(t)
 	ask(t, s)
 	t:keys("esc")
@@ -314,8 +314,8 @@ test("esc hides the choices, leaving the question; alt-p brings them back", func
 	assert(string.find(bottom(), "enter shows the question", 1, true), bottom())
 	-- Keys do what they always do again: i starts typing.
 	t:keys("i")
-	assert(string.find(bottom(), "alt-p shows the question", 1, true), bottom())
-	t:keys("alt-p")
+	assert(string.find(bottom(), "alt-q shows the question", 1, true), bottom())
+	t:keys("alt-q")
 	t:keys("right")
 	t:keys("left")
 	t:keys("enter")

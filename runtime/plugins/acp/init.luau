@@ -1211,7 +1211,7 @@ greed.keymap.bind({ kind = "agents" }, {
 -- These work in every mode, while typing too.
 greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-enter"] = "agent-send",
-	["alt-p"] = "agent-answer",
+	["alt-q"] = "agent-answer",
 	["alt-m"] = "agent-mode",
 	["alt-M"] = "agent-model",
 })
