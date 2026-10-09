@@ -168,6 +168,29 @@ test("a long block can be stopped, and timeout= stops one on its own", function(
 	assert(string.find(text(), "started", 1, true), text())
 end)
 
+test("stopping a block stops what it started too, like a server", function(t)
+	-- Whether the program the block starts in the background runs, once
+	-- it's had a moment to start or to end.
+	local function running(wanted: boolean): boolean
+		local found = false
+		for _ = 1, 50 do
+			local listed = greed.process.run({ "pgrep", "-f", "^sleep 3137$" })
+			found = listed ~= nil and listed.code == 0
+			if found == wanted then
+				break
+			end
+			greed.sleep(100)
+		end
+		return found
+	end
+	t:buffer("```sh\nsleep 3137 &\necho started; wait\n```|")
+	t:run("block-run")
+	assert(running(true), "it started")
+	t:run("block-stop")
+	t:wait_for(has("(stopped)"))
+	assert(not running(false), "the program the block started in the background ended with it")
+end)
+
 test("runners from a plugin go when it does", function(t)
 	local remove = blocks.runner("shout", function(run)
 		return { output = string.upper(run.code) }

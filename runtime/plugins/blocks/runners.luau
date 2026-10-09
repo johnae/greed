@@ -61,7 +61,9 @@ function M.program(command: { string }): Runner
 	return function(run: Run): Outcome
 		local args = table.clone(command)
 		table.insert(args, run.code)
-		local child, err = greed.process.spawn(args, { cwd = run.dir })
+		-- A group of its own, so stopping it stops what it started too, like a
+		-- server a script runs.
+		local child, err = greed.process.spawn(args, { cwd = run.dir, group = true })
 		if child == nil then
 			return { output = "", error = err or `can't start {command[1]}` }
 		end
