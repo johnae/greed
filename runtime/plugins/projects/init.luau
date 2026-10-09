@@ -44,6 +44,8 @@ type Found = { path: string, from: string }
 local M = {}
 
 local sources: { Source } = {}
+-- The plugin that set them, whose limit their commands run within.
+local sources_by: string? = nil
 -- What the sources found the last time they were looked at.
 local found: { Found } = {}
 local looking = false
@@ -152,7 +154,7 @@ function M.refresh()
 	local all: { Found } = {}
 	local seen: { [string]: boolean } = {}
 	for _, source in sources do
-		local ok, paths, from = pcall(look, source)
+		local ok, paths, from = pcall(greed.plugin.within, sources_by, look, source)
 		if ok then
 			for _, path in paths do
 				if not seen[path] then
@@ -168,8 +170,10 @@ function M.refresh()
 end
 
 --- Sets where projects are found besides those open, running and recent.
+--- Their commands run within the limit of the plugin that set them.
 function M.sources(list: { Source })
 	sources = list
+	sources_by = greed.plugin.caller()
 end
 
 --- What the sources found the last time they were looked at.

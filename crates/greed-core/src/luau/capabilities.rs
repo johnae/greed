@@ -301,20 +301,67 @@ fn depth(lua: &Lua) -> usize {
 /// how many frames of the stack lie outside what it vouches for.
 fn vouched(lua: &Lua) -> Option<(usize, PluginId)> {
     let list: Table = state(lua).vouches.get(lua.current_thread()).ok()?;
-    let innermost: Table = list.get(list.raw_len()).ok()?;
-    let outside: usize = innermost.get("outside").ok()?;
-    let owner: String = innermost.get("owner").ok()?;
-    Some((outside, owner.into()))
+    (1..=list.raw_len()).rev().find_map(|i| {
+        let entry: Table = list.get(i).ok()?;
+        let outside: usize = entry.get("outside").ok()?;
+        let owner: String = entry.get("owner").ok()?;
+        Some((outside, owner.into()))
+    })
+}
+
+/// The plugins `greed.plugin.within` runs the running coroutine's code
+/// within, innermost first, up to the innermost vouch with `stop_at_vouch`,
+/// and whether one was found.
+fn withins(lua: &Lua, stop_at_vouch: bool) -> (Limit, bool) {
+    let state = state(lua);
+    let mut out = Limit::new();
+    let Ok(list) = state.vouches.get::<Table>(lua.current_thread()) else {
+        return (out, false);
+    };
+    for i in (1..=list.raw_len()).rev() {
+        let Ok(entry) = list.get::<Table>(i) else {
+            continue;
+        };
+        if let Ok(name) = entry.get::<String>("within") {
+            let name: PluginId = name.into();
+            if let Some(grant @ Grant::Only(_)) = state.grants.get(&name) {
+                out.push((name, grant.clone()));
+            }
+        } else if stop_at_vouch && entry.contains_key("outside").unwrap_or(false) {
+            return (out, true);
+        }
+    }
+    (out, false)
+}
+
+/// `limit` with what's in `more` and not in it already.
+fn joined(mut limit: Limit, more: Limit) -> Limit {
+    for (name, grant) in more {
+        if !limit.iter().any(|(by, _)| *by == name) {
+            limit.push((name, grant));
+        }
+    }
+    limit
 }
 
 /// What runs within: the limit what started it set, except where a plugin
-/// vouches for it, which sets none.
+/// vouches for it, which sets none, and the plugins `greed.plugin.within`
+/// adds inside either.
 fn current_limit(lua: &Lua) -> Limit {
-    if vouched(lua).is_some() {
+    let (added, vouched) = withins(lua, true);
+    let base = if vouched {
         Vec::new()
     } else {
         state(lua).limit.clone()
-    }
+    };
+    joined(base, added)
+}
+
+/// What started what runs now, whatever vouches for it: the limit, and the
+/// plugins `greed.plugin.within` adds. What it starts runs within this.
+pub(super) fn started_by(lua: &Lua) -> Limit {
+    let base = state(lua).limit.clone();
+    joined(base, withins(lua, false).0)
 }
 
 /// `greed.vouch` for `owner`: runs a function as `owner`'s own action, so
@@ -372,9 +419,48 @@ pub(super) fn trusted_eval<R>(lua: &Lua, f: impl FnOnce() -> LuaResult<R>) -> Lu
     result
 }
 
+/// `greed.plugin.within(name, f, ...)`: runs `f` within the limit of the
+/// plugin `name` too, as when it started it, so what a plugin registered
+/// (a formatter, a runner) can do no more than it may when another plugin
+/// runs it later. Unknown names and config add nothing.
+pub(super) fn within_function(lua: &Lua) -> LuaResult<Function> {
+    let enter = lua.create_function(|lua, name: Option<String>| {
+        let entry = lua.create_table()?;
+        entry.set("within", name.unwrap_or_default())?;
+        push_entry(lua, entry)
+    })?;
+    let leave = lua.create_function(|lua, ()| pop_vouch(lua))?;
+    // In Luau, so what it runs can wait.
+    lua.load(
+        r"
+        local enter, leave = ...
+        return function(name, f, ...)
+            enter(name)
+            local results = table.pack(pcall(f, ...))
+            leave()
+            if not results[1] then
+                error(results[2], 0)
+            end
+            return table.unpack(results, 2, results.n)
+        end
+        ",
+    )
+    .set_name("=greed.plugin.within")
+    .call((enter, leave))
+}
+
 /// Starts vouching for what the running coroutine runs as `owner`, with
 /// `outside` frames of its stack outside what's vouched for.
 fn push_vouch(lua: &Lua, outside: usize, owner: &str) -> LuaResult<()> {
+    let entry = lua.create_table()?;
+    entry.set("outside", outside)?;
+    entry.set("owner", owner)?;
+    push_entry(lua, entry)
+}
+
+/// Adds `entry`, a vouch or a `within`, innermost to the running
+/// coroutine's list.
+fn push_entry(lua: &Lua, entry: Table) -> LuaResult<()> {
     let vouches = state(lua).vouches.clone();
     let thread = lua.current_thread();
     let list = if let Some(list) = vouches.get::<Option<Table>>(&thread)? {
@@ -384,13 +470,10 @@ fn push_vouch(lua: &Lua, outside: usize, owner: &str) -> LuaResult<()> {
         vouches.set(&thread, &list)?;
         list
     };
-    let entry = lua.create_table()?;
-    entry.set("outside", outside)?;
-    entry.set("owner", owner)?;
     list.push(entry)
 }
 
-/// Ends the innermost vouch [`push_vouch`] started.
+/// Ends the innermost vouch or `within` [`push_entry`] started.
 fn pop_vouch(lua: &Lua) -> LuaResult<()> {
     let list: Option<Table> = state(lua).vouches.get(lua.current_thread())?;
     if let Some(list) = list {
@@ -728,8 +811,7 @@ pub(super) fn check_setting(lua: &Lua, capability: &str) -> LuaResult<()> {
 /// or plugins that have it. Unlike the checks, a vouch doesn't hide what
 /// started it, so a plugin can't get it by starting one that vouches.
 pub(super) fn started_within(lua: &Lua, capability: &str) -> bool {
-    state(lua)
-        .limit
+    started_by(lua)
         .iter()
         .all(|(_, grant)| grant.allows(capability))
 }

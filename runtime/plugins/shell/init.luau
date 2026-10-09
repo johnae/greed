@@ -312,6 +312,10 @@ export type RunOptions = {
 	--- user's commands) or "pipe" (output and errors apart, the default
 	--- for an agent's).
 	runner: ("pty" | "pipe")?,
+	--- Set once aliases have been put in, so they aren't again.
+	expanded: boolean?,
+	--- What was typed, shown in the block, when that isn't `line`.
+	typed: string?,
 }
 
 -- A new block for `command` in `shell`, running.
@@ -687,9 +691,17 @@ end
 --- the block shows what you typed.
 function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	local opts: RunOptions = options or {}
-	local command = string.match(line, "^%s*(.-)%s*$") or line
-	if opts.by ~= "agent" then
-		line = aliases.expand(line)
+	local command = opts.typed or string.match(line, "^%s*(.-)%s*$") or line
+	if opts.by ~= "agent" and not opts.expanded then
+		local by
+		line, by = aliases.expand(line)
+		if by then
+			-- A plugin's alias runs as that plugin may.
+			local again = table.clone(opts)
+			again.expanded = true
+			again.typed = command
+			return greed.plugin.within(by, M.run, shell, line, again)
+		end
 	end
 	-- `$3` after the first word is a file holding what block 3 printed.
 	local with_files, file_error = data.files(shell, line, opts.by == "agent")

@@ -127,3 +127,19 @@ test("the prompt suggests a command typed before, and right takes it", function(
 	t:keys("right")
 	assert(view:cursor() == sh.buffer:len())
 end)
+
+test("an alias a plugin gave runs only as that plugin may", function(t)
+	local dir = t:tempdir()
+	local marker = `{dir}/ran`
+	local plugin = t:tempdir({
+		["plugin.toml"] = 'name = "aliaser"\nrequires = ["shell"]\n',
+		["init.luau"] = `require("@shell").aliases.use(\{ boom = "touch {marker}" \})\n`,
+	})
+	greed.plugin.load(plugin)
+	local sh = open(t)
+	local ok, err = pcall(ran, t, sh, "boom")
+	local said = if ok then (err :: Block).stderr else tostring(err)
+	assert(string.find(said, "aliaser", 1, true), said)
+	assert(greed.fs.stat(marker) == nil, "it didn't run")
+	shell.aliases.use(nil)
+end)

@@ -20,7 +20,7 @@ export type Language = defaults.Language
 
 local languages: { [string]: Language } = {}
 
--- Tells the editor about a language's files and servers.
+-- Tells the editor about a language's files.
 local function apply(name: string, language: Language)
 	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
@@ -29,6 +29,10 @@ local function apply(name: string, language: Language)
 		openers = language.indent_after,
 		closers = language.outdent_before,
 	})
+end
+
+-- Tells the editor about a language's servers.
+local function apply_servers(name: string, language: Language)
 	local servers = language.servers
 	if servers and #servers > 0 then
 		greed.lsp.server({ language = name, commands = servers, root_markers = language.roots })
@@ -37,21 +41,56 @@ local function apply(name: string, language: Language)
 	end
 end
 
+-- Who set each language's fields, by language and field: the plugin, or
+-- nil for this one and your config.
+local set_by: { [string]: { [string]: string } } = {}
+
+-- A copy of `value`, tables inside it too.
+local function copy(value: any): any
+	if type(value) ~= "table" then
+		return value
+	end
+	local out = {}
+	for k, v in value do
+		out[k] = copy(v)
+	end
+	return out
+end
+
 local M = {}
 
---- The entry for language `name`, if Greed knows it.
+--- Language `name`, or nil if Greed doesn't know it. A copy: change it with
+--- `set`.
 function M.get(name: string): Language?
-	return languages[name]
+	return copy(languages[name])
 end
 
 --- Changes language `name`, or adds it: each field given replaces that field.
+--- What runs a program, its servers and formatter, runs within the limit of
+--- the plugin that set it, so it can do no more than that plugin may.
 function M.set(name: string, changes: Language)
+	local by = greed.plugin.caller()
 	local language: Language = table.clone(languages[name] or {} :: Language)
 	for key, value in changes :: { [string]: any } do
-		(language :: { [string]: any })[key] = value
+		(language :: { [string]: any })[key] = copy(value)
+	end
+	if changes.servers ~= nil or changes.roots ~= nil then
+		greed.plugin.within(by, apply_servers, name, language)
 	end
 	languages[name] = language
+	local fields = set_by[name] or {}
+	set_by[name] = fields
+	for key in changes :: { [string]: any } do
+		fields[key] = by
+	end
 	apply(name, language)
+end
+
+--- The plugin that set `field` of language `name`, nil for Greed's own and
+--- your config: what runs from it runs within that plugin's limit.
+function M.set_by(name: string, field: string): string?
+	local fields = set_by[name]
+	return fields and fields[field]
 end
 
 --- Every language's name, sorted.

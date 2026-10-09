@@ -141,7 +141,12 @@ local M = {}
 function M.format(buffer: greed.Buffer): (boolean, string?)
 	local command = formatter(buffer)
 	if command then
-		local err = run_formatter(buffer, command)
+		-- A formatter a plugin set runs as that plugin may.
+		local by = languages.set_by(buffer:language() or "", "formatter")
+		local ran, err = pcall(greed.plugin.within, by, run_formatter, buffer, command)
+		if not ran then
+			return false, tostring(err)
+		end
 		return err == nil, err
 	end
 	return server_format(buffer), nil

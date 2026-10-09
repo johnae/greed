@@ -27,13 +27,14 @@ export type Outcome = { output: string, exit: number?, error: string? }
 
 export type Runner = (run: Run) -> Outcome
 
-local runners: { [string]: { run: Runner } } = {}
+local runners: { [string]: { run: Runner, by: string? } } = {}
 
 --- Makes blocks in language `name` run with `run`. It goes when the plugin
 --- that added it does, or when what it returns is called. A third
---- argument, once the plugin's name, is ignored.
+--- argument, once the plugin's name, is ignored. It runs within the limit
+--- of the plugin that added it, so a runner can do no more than its plugin.
 function M.add(name: string, run: Runner, _plugin: string?): () -> ()
-	local remove = registry.set(runners, name, { run = run })
+	local remove = registry.set(runners, name, { run = run, by = greed.plugin.caller() })
 	greed.plugin.tie(remove)
 	return remove
 end
@@ -41,7 +42,12 @@ end
 --- The runner for blocks in language `name`, if there is one.
 function M.get(name: string): Runner?
 	local entry = runners[name]
-	return entry and entry.run
+	if entry == nil then
+		return nil
+	end
+	return function(run: Run): Outcome
+		return greed.plugin.within(entry.by, entry.run, run)
+	end
 end
 
 --- The languages blocks can run in, sorted.

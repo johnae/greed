@@ -347,6 +347,7 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
             Ok(capabilities::caller(lua, Some(&o)).map(|name| name.to_string()))
         })?,
     )?;
+    plugin.set("within", capabilities::within_function(lua)?)?;
     plugin.set(
         "started_within",
         lua.create_function(|lua, capability: String| {

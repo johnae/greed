@@ -1500,6 +1500,8 @@ export type Plugins = {
 	caller: () -> string?,
 	--- Whether everything that started the code running now may use `capability`: you (keys, the command line, your config), or plugins that have it. A vouch doesn't hide what started it. For actions only you should take, like accepting a review.
 	started_within: (capability: string) -> boolean,
+	--- Runs `f` with `...` within the limit of the plugin `name` too, as if it had started it: for running what a plugin registered (a formatter, a runner, a source) later, from your plugin, so it can do no more than its plugin may. Config and unknown names add nothing. It can wait.
+	within: <A..., R...>(name: string?, f: (A...) -> R..., A...) -> R...,
 	--- For registries: runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added goes with it. Returns that plugin's name, or nil (and does nothing) if none but yours called.
 	tie: (remove: () -> ()) -> string?,
 }

@@ -235,7 +235,7 @@ pub(super) fn spawn(
     owner: PluginId,
     cause: Option<Arc<str>>,
 ) -> LuaResult<()> {
-    let limit = state(lua).limit.clone();
+    let limit = super::capabilities::started_by(lua);
     spawn_running(lua, f, args, owner, cause, limit).map(|_| ())
 }
 

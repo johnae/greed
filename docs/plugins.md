@@ -86,6 +86,13 @@ plugin to another:
   you let it. Code handed to a vouched function still counts as its own
   plugin's. Anything you vouch for, any plugin can make you do, so vouch
   only for narrow operations you check yourself.
+- What a plugin registers and another runs later, like a formatter, a block
+  runner, a project source or a shell alias, runs within the limit of the
+  plugin that registered it, so it can do no more than that plugin may.
+  Your own registries can do the same: note `greed.plugin.caller()` when
+  something is registered, and run it with `greed.plugin.within(by, f,
+  ...)`. Hand out copies of what you keep, so callers change it only
+  through your functions.
 - Luau run with `greed.eval` has every capability, as `:lua` needs, even
   though it runs inside the command line's code. Calling `greed.eval`
   takes `eval` from every plugin whose code is running and every one that

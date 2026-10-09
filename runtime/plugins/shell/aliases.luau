@@ -153,29 +153,35 @@ function M.loaded(): { [string]: string }
 	return known or {}
 end
 
+-- The plugin that gave the aliases with `use`, if one did.
+local used_by: string? = nil
+
 --- Uses `aliases` from now on, or with nil reads your shell's again the
---- next time they're needed, as after changing its startup files.
+--- next time they're needed, as after changing its startup files. A line
+--- one of a plugin's aliases changed runs within that plugin's limit.
 function M.use(aliases: { [string]: string }?)
 	known = aliases
+	used_by = if aliases then greed.plugin.caller() else nil
 end
 
 --- `line` with its first word put in place when it's an alias, again for
 --- the alias that gives, as a shell does; one that names itself, like
---- `ls='ls --color'`, isn't put in again. A `!` before it stays.
-function M.expand(line: string): string
+--- `ls='ls --color'`, isn't put in again. A `!` before it stays. Also the
+--- plugin whose aliases changed it, when one's did.
+function M.expand(line: string): (string, string?)
 	if not greed.option.get("shell-aliases") or not coroutine.isyieldable() then
-		return line
+		return line, nil
 	end
 	local aliases = M.known()
 	local seen: { [string]: boolean } = {}
 	while true do
 		local lead, word, rest = string.match(line, "^(%s*!?%s*)([^%s|;&<>()'\"\\^]+)(.*)$")
 		if word == nil or lead == nil or rest == nil then
-			return line
+			return line, if next(seen) then used_by else nil
 		end
 		local value = aliases[word]
 		if value == nil or seen[word] or parse.BUILTINS[word] then
-			return line
+			return line, if next(seen) then used_by else nil
 		end
 		seen[word] = true
 		line = lead .. value .. rest
