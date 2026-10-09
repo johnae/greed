@@ -927,6 +927,9 @@ local function add_columns(lines: { string }, rows: { { string } })
 	end
 end
 
+-- The prompt's segments `help prompt` describes itself.
+local OWN_SEGMENTS = { git = true, kubernetes = true, environment = true, pinned = true }
+
 -- The lines of each part of `help` (parse.HELP_TOPICS), by topic.
 local TOPICS: { [string]: () -> { string } } = {
 	builtins = function()
@@ -985,6 +988,7 @@ local TOPICS: { [string]: () -> { string } } = {
 				"the kubernetes context kubectl would use, from its config",
 			},
 			{ "❄ devenv", "the environment the folder brings (env says more)" },
+			{ "⚑ 3 pods", "what a pinned watch shows now (space . on it: pin to the prompt)" },
 		})
 		local production = greed.option.get("shell-production-contexts")
 		table.insert(lines, "")
@@ -994,7 +998,7 @@ local TOPICS: { [string]: () -> { string } } = {
 		)
 		local others: { string } = {}
 		for _, name in segments.names() do
-			if name ~= "git" and name ~= "kubernetes" and name ~= "environment" then
+			if not OWN_SEGMENTS[name] then
 				table.insert(others, name)
 			end
 		end
@@ -1311,6 +1315,20 @@ block_command(
 	end
 )
 
+block_command(
+	"shell-pin",
+	"Show what a watch shows now in the shell's prompt as it changes, with a notification when it does",
+	function(shell, block)
+		if not live.pin(shell, block) then
+			greed.echo("only a running watch (or kubectl get -w) can be pinned")
+		end
+	end
+)
+
+block_command("shell-unpin", "Take a watch out of the shell's prompt", function(shell, block)
+	live.unpin(shell, block)
+end)
+
 block_command("shell-copy-output", "Copy what the block printed", function(_shell, block)
 	run.fill(block)
 	greed.clipboard.set(block.output)
@@ -1587,6 +1605,7 @@ greed.command({
 		local sort, desc = if shown then shown.sort else nil, shown ~= nil and shown.desc
 		local function set(text: string)
 			rows.set(shell, block, text, sort, desc)
+			live.reshown(shell, block)
 			to_output(shell, block, view)
 		end
 		core.prompt.open({
@@ -1630,6 +1649,7 @@ greed.command({
 		local shown = block and block.shown
 		if shell and block and shown and shown.filter ~= "" then
 			rows.set(shell, block, "", shown.sort, shown.desc)
+			live.reshown(shell, block)
 			to_output(shell, block, ctx.view)
 		end
 	end,
@@ -1642,6 +1662,7 @@ greed.command({
 		local shell, block = output_block(ctx)
 		if shell and block then
 			rows.reset(shell, block)
+			live.reshown(shell, block)
 		end
 	end,
 })
@@ -1706,6 +1727,12 @@ for _, action in
 		},
 		{ "sort by this column", "shell-sort", "Sort its table by the column here" },
 		{ "show all", "shell-show-all", "Its output as it came, without a filter or a sort" },
+		{
+			"pin to the prompt",
+			"shell-pin",
+			"Show what this watch shows in the prompt as it changes",
+		},
+		{ "unpin", "shell-unpin", "Take it out of the prompt" },
 	}
 do
 	core.actions.command("shell-block", action[1], action[2], action[3])

@@ -128,3 +128,50 @@ test("a filter or a sort on a watch stays as it shows what's new", function(t)
 	assert(not string.find(shown, "c     1", 1, true), shown)
 	shell.interrupt(block)
 end)
+
+test("a pinned watch shows in the prompt as it changes, until it stops", function(t)
+	local sh = open(t)
+	-- The pinned segment's text, or nil.
+	local function pinned(): string?
+		local found = sh.segments
+		if found == nil then
+			return nil
+		end
+		for _, segment in found do
+			if string.sub(segment.text, 1, 3) == "⚑" then
+				return segment.text
+			end
+		end
+		return nil
+	end
+	assert(not shell.live.pin(sh, assert(shell.run(sh, "true"))), "only a watch is pinned")
+	greed.fs.write(`{sh.cwd}/rows`, "NAME  COUNT\na     1\nb     1\n")
+	local block = assert(shell.run(sh, "watch -n 1 cat rows", { view = greed.view() }))
+	t:wait_for(function()
+		return block.table ~= nil
+	end)
+	assert(shell.live.pin(sh, block))
+	t:wait_for(function()
+		return pinned() == "⚑ 2 rows"
+	end)
+	greed.fs.write(`{sh.cwd}/rows`, "NAME  COUNT\na     1\nb     1\nc     2\n")
+	greed.sleep(1000)
+	t:wait_for(function()
+		return pinned() == "⚑ 3 rows"
+	end)
+	-- A filter changes what it shows, and so what the prompt shows.
+	shell.rows.set(sh, block, "COUNT>1")
+	shell.live.reshown(sh, block)
+	t:wait_for(function()
+		return pinned() == "⚑ 1 row"
+	end)
+	assert(shell.live.unpin(sh, block) and not shell.live.unpin(sh, block))
+	t:wait_for(function()
+		return pinned() == nil
+	end)
+	assert(shell.live.pin(sh, block))
+	shell.interrupt(block)
+	t:wait_for(function()
+		return block.status ~= "running" and pinned() == nil
+	end)
+end)

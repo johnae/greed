@@ -454,6 +454,17 @@ marked, rather than a longer and longer list. Its rows are pods to act
 on, as any `kubectl get` block's are. It ends when kubectl does, or with
 `ctrl-c`.
 
+To keep an eye on a watch while you work further down, pin it: `space .`
+on its block, then "pin to the prompt" (`shell-pin`). The prompt then
+shows what it shows now, as `⚑ 3 pods` (the rows its filter keeps), and
+when that changes while Greed isn't focused, your desktop gets a
+notification. "unpin" (`shell-unpin`) takes it out, and it goes by itself
+when the watch stops.
+
+```text
+⎈ prod:api ⚑ 3 pods ~/src/api ❯
+```
+
 ## Rows you can act on
 
 Some tables' rows are things: an `ls -l` row is a file or a folder, a
