@@ -2302,6 +2302,22 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
             "open, switch or close projects",
         ),
         (
+            "greed.view():buffer():set_keys({ y = 'quit' })",
+            "change a buffer's keys",
+        ),
+        (
+            "greed.view():buffer():set_readonly(false)",
+            "read-only or writable",
+        ),
+        (
+            "greed.view():buffer():decorate('x', { { from = 0, to = 1, style = 'ui', action = 'quit' } })",
+            "add buttons",
+        ),
+        (
+            "local b = greed.create_buffer('page', 'ok', { readonly = true }) b:edit(function(e) e:insert(0, 'x') end)",
+            "change a read-only buffer",
+        ),
+        (
             "greed.load('/etc/hostname')",
             "open a file outside the project",
         ),

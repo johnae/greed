@@ -305,6 +305,11 @@ impl BufferRef {
     /// as one transaction, kept to undo when `undo`, and tells plugins the
     /// buffer changed.
     fn edit(&self, lua: &Lua, f: &Function, undo: bool) -> LuaResult<()> {
+        // Read-only buffers are pages plugins draw, some of them asking
+        // you something: sandboxed code doesn't get to change what they say.
+        if self.with_buffer(lua, |b| Ok(b.is_readonly()))? {
+            super::capabilities::unless_sandboxed(lua, "change a read-only buffer")?;
+        }
         let edits = lua.create_userdata(Edits::default())?;
         f.call::<()>(&edits)?;
         let Edits {
@@ -573,6 +578,14 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "decorate",
         |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
+            // A button runs a command when clicked; sandboxed code could
+            // make one look like something else on a page asking you.
+            if list
+                .iter()
+                .any(|t| t.contains_key("action").unwrap_or(false))
+            {
+                super::capabilities::unless_sandboxed(lua, "add buttons that run commands")?;
+            }
             let marks = list
                 .iter()
                 .map(|t| {
@@ -817,6 +830,7 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         this.with_buffer(lua, |b| Ok(b.is_readonly()))
     });
     methods.add_method("set_readonly", |lua, this, readonly: bool| {
+        super::capabilities::unless_sandboxed(lua, "make a buffer read-only or writable")?;
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.set_readonly(this.buffer, readonly);
         Ok(())
@@ -879,6 +893,7 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "set_keys",
         |lua, this, bindings: Option<HashMap<String, String>>| {
+            super::capabilities::unless_sandboxed(lua, "change a buffer's keys")?;
             this.with_buffer(lua, |_| Ok(()))?;
             let keys = single_keys(bindings.unwrap_or_default())?;
             state_mut(lua).editor.set_buffer_keys(this.buffer, keys);
