@@ -1322,6 +1322,34 @@ test("answers cut off again and again stop it", function(t)
 	assert(string.find(said(s), "stopped: the answer ran out of room", 1, true), said(s))
 end)
 
+test("an empty answer after a tool's result is sent back to go on, twice at most", function(t)
+	local empty = { text = "", calls = {}, stop = "done" }
+	local read = {
+		text = "",
+		calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+		stop = "tools",
+	}
+	local asked = script({ read, empty, { text = "Done.", calls = {}, stop = "done" } })
+	local s = ask(t, "look")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(#asked == 3, `asked again after the empty answer: {#asked}`)
+	local last = asked[3].said[#asked[3].said]
+	assert(
+		last.role == "tool" and string.find(last.text, "came back empty", 1, true),
+		tostring(last.text)
+	)
+	assert(string.find(said(s), "agent: Done.", 1, true), said(s))
+	-- An answer that stays empty doesn't go round for ever.
+	local again = script({ read, empty, empty, empty, empty })
+	local s2 = ask(t, "look")
+	t:wait_for(function()
+		return s2.status == "idle"
+	end)
+	assert(#again == 4, `the first and two more: {#again}`)
+end)
+
 test("a call made again with the same result says so, and running out of turns too", function(t)
 	local again = {
 		text = "",

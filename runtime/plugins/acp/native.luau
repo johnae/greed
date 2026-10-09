@@ -37,6 +37,12 @@ local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, 
 	.. "call in it was lost and nothing ran. Go on in smaller pieces: write a long file with "
 	.. "write_file holding its first part, then add the rest with edit_file, a part at a time."
 
+-- Empty answers after a tool's result it goes on from in one prompt, and
+-- what the model hears of one.
+local MAX_EMPTIES = 2
+local EMPTY = "\n\n(Your answer after this came back empty, with no text and no tool call. "
+	.. "Go on with the task, or say what you found.)"
+
 -- How many times a request the provider turns down as too long is compacted
 -- and tried again.
 local MAX_OVERFLOWS = 3
@@ -1242,6 +1248,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local may_compact = true
 	-- Answers cut off at their length in a row.
 	local cuts = 0
+	-- Empty answers after a tool's result, sent back to go on from.
+	local empties = 0
 	-- Requests the provider turned down as too long, compacted and tried again.
 	local overflows = 0
 	-- What each call (tool and arguments) gave back this prompt.
@@ -1315,6 +1323,22 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			continue
 		end
 		cuts = 0
+		-- An empty answer right after a tool's result: models that think
+		-- first sometimes stop there. The empty answer goes (providers turn
+		-- one down), and the result says so, to go on from.
+		local previous = state.said[#state.said - 1]
+		if
+			#turn.calls == 0
+			and not string.find(turn.text, "%S")
+			and previous
+			and previous.role == "tool"
+			and empties < MAX_EMPTIES
+		then
+			empties += 1
+			table.remove(state.said)
+			previous.text = (previous.text or "") .. EMPTY
+			continue
+		end
 		if turn.stop ~= "tools" or #turn.calls == 0 then
 			break
 		end
