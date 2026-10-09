@@ -186,13 +186,31 @@ test("the tokens the conversation takes come from what the provider reports", fu
 	})
 	assert(anthropic.tokens == 1015, tostring(anthropic.tokens))
 	assert(anthropic.input == 1010 and anthropic.output == 5, "read and written apart")
+	assert(anthropic.cached == 1000, "read from the cache")
 	local openai = events("openai", {
 		{ choices = { { delta = { content = "hi" }, finish_reason = "stop" } } },
-		{ choices = {}, usage = { prompt_tokens = 200, completion_tokens = 7 } },
+		{
+			choices = {},
+			usage = {
+				prompt_tokens = 200,
+				completion_tokens = 7,
+				prompt_tokens_details = { cached_tokens = 150 },
+			},
+		},
 		"[DONE]",
 	})
 	assert(openai.tokens == 207, tostring(openai.tokens))
 	assert(openai.input == 200 and openai.output == 7, "read and written apart")
+	assert(openai.cached == 150, "read from the cache")
+	local moonshot = events("openai", {
+		{ choices = { { delta = { content = "hi" }, finish_reason = "stop" } } },
+		{
+			choices = {},
+			usage = { prompt_tokens = 200, completion_tokens = 7, cached_tokens = 120 },
+		},
+		"[DONE]",
+	})
+	assert(moonshot.cached == 120, "said at the top, as Moonshot does")
 	local quiet = events("openai", { { choices = { { delta = { content = "hi" } } } } })
 	assert(quiet.tokens == nil, "nothing reported")
 end)

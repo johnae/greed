@@ -30,7 +30,8 @@ export type Said = {
 --- its calls run first), "length" (it ran out of room), or what the
 --- provider said. `tokens` is how much of the model's context the
 --- conversation takes after the turn, when the provider says; `input`
---- and `output` are the tokens this request read and wrote.
+--- and `output` are the tokens this request read and wrote, `cached` how
+--- many of those read came from the provider''s cache.
 export type Turn = {
 	text: string,
 	calls: { Call },
@@ -38,6 +39,7 @@ export type Turn = {
 	tokens: number?,
 	input: number?,
 	output: number?,
+	cached: number?,
 }
 
 -- A tool's schema, with an empty object for one that takes nothing.
@@ -208,7 +210,7 @@ function M.reader(kind: string): Reader
 	local by_index: { [number]: number } = {}
 	local stop: string = "done"
 	-- Tokens read (the prompt, cached or not) and written, as reported.
-	local read: number?, written: number? = nil, nil
+	local read: number?, written: number?, cached: number? = nil, nil, nil
 	local function call_at(index: number, id: string?, name: string?)
 		local at = by_index[index]
 		if at == nil then
@@ -254,6 +256,7 @@ function M.reader(kind: string): Reader
 						read = usage.input_tokens
 							+ (usage.cache_creation_input_tokens or 0)
 							+ (usage.cache_read_input_tokens or 0)
+						cached = usage.cache_read_input_tokens
 					end
 					written = usage.output_tokens or written
 				end
@@ -281,6 +284,10 @@ function M.reader(kind: string): Reader
 			local usage = decoded.usage
 			if type(usage) == "table" and usage.prompt_tokens then
 				read, written = usage.prompt_tokens, usage.completion_tokens
+				local details = usage.prompt_tokens_details
+				cached = if type(details) == "table" and details.cached_tokens
+					then details.cached_tokens
+					else usage.cached_tokens
 			end
 			local choice = decoded.choices and decoded.choices[1]
 			if choice == nil then
@@ -324,6 +331,7 @@ function M.reader(kind: string): Reader
 				tokens = tokens,
 				input = read,
 				output = written,
+				cached = cached,
 			}
 		end,
 	}

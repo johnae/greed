@@ -286,18 +286,34 @@ end)
 
 test("tokens used are counted a day at a time, and :usage says how many", function(t)
 	models.count("berget", "moonshotai/Kimi-K3", 1000, 50)
-	models.count("berget", "moonshotai/Kimi-K3", 3000, 20)
+	models.count("berget", "moonshotai/Kimi-K3", 3000, 20, 2500)
 	models.count("anthropic", "claude-haiku-4-5-20251001", 200, 10)
 	local today = models.usage(os.date("%Y-%m-%d"))
 	local key = `{os.date("%H")} berget/moonshotai/Kimi-K3`
 	local kimi = today[key]
-	assert(kimi and kimi.requests == 2 and kimi.input == 4000 and kimi.output == 70, key)
+	assert(
+		kimi
+			and kimi.requests == 2
+			and kimi.input == 4000
+			and kimi.output == 70
+			and kimi.cached == 2500,
+		key
+	)
 	local report = table.concat(models.usage_report(), "\n")
 	assert(
-		string.find(report, "berget/moonshotai/Kimi-K3: 2 requests, 4000 in, 70 out", 1, true),
+		string.find(
+			report,
+			"berget/moonshotai/Kimi-K3: 2 requests, 4000 in (2500 cached), 70 out",
+			1,
+			true
+		),
 		report
 	)
-	assert(string.find(report, "3 requests, 4200 in, 80 out", 1, true), report)
+	assert(string.find(report, "3 requests, 4200 in (2500 cached), 80 out", 1, true), report)
+	assert(
+		string.find(report, "claude-haiku-4-5-20251001: 1 requests, 200 in, 10 out", 1, true),
+		report
+	)
 	t:buffer("|")
 	t:run("usage")
 	assert(string.find(greed.view():buffer():text(), "Today", 1, true), "shown in a float")

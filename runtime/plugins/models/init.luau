@@ -631,8 +631,9 @@ local function usage_path(day: string): string?
 end
 
 --- What was used on `day` ("2026-10-09"): `{ [hour .. " " .. model] = { requests,
---- input, output } }`, models as "provider/model".
-export type Used = { requests: number, input: number, output: number }
+--- input, output, cached } }`, models as "provider/model"; `cached` is the
+--- part of `input` read from the provider''s cache.
+export type Used = { requests: number, input: number, output: number, cached: number? }
 function M.usage(day: string): { [string]: Used }
 	local path = usage_path(day)
 	local text = if path then greed.fs.read(path) else nil
@@ -640,9 +641,9 @@ function M.usage(day: string): { [string]: Used }
 	return if ok and type(kept) == "table" then kept else {}
 end
 
---- Counts a request to `model` at `provider` that read `input` tokens and
---- wrote `output`, as each turn does.
-function M.count(provider: string, model: string, input: number?, output: number?)
+--- Counts a request to `model` at `provider` that read `input` tokens,
+--- `cached` of them from its cache, and wrote `output`, as each turn does.
+function M.count(provider: string, model: string, input: number?, output: number?, cached: number?)
 	local day, hour = os.date("%Y-%m-%d"), os.date("%H")
 	local path = usage_path(day)
 	if path == nil then
@@ -650,10 +651,11 @@ function M.count(provider: string, model: string, input: number?, output: number
 	end
 	local kept = M.usage(day)
 	local key = `{hour} {provider}/{model}`
-	local used = kept[key] or { requests = 0, input = 0, output = 0 }
+	local used: Used = kept[key] or { requests = 0, input = 0, output = 0 }
 	used.requests += 1
 	used.input += input or 0
 	used.output += output or 0
+	used.cached = (used.cached or 0) + (cached or 0)
 	kept[key] = used
 	greed.fs.write(path, greed.json.encode(kept))
 end
@@ -668,6 +670,21 @@ local function short(n: number): string
 	return tostring(n)
 end
 
+-- What `used` read and wrote, in words: "4000 in (2500 cached), 70 out".
+local function amounts(used: Used): string
+	local cached = used.cached or 0
+	local from_cache = if cached > 0 then ` ({short(cached)} cached)` else ""
+	return `{used.requests} requests, {short(used.input)} in{from_cache}, {short(used.output)} out`
+end
+
+-- `used` added to `sum`.
+local function add(sum: Used, used: Used)
+	sum.requests += used.requests
+	sum.input += used.input
+	sum.output += used.output
+	sum.cached = (sum.cached or 0) + (used.cached or 0)
+end
+
 --- What models were used for over the last `days` days (7 by default),
 --- as lines to read: today by model, then each day's totals.
 function M.usage_report(days: number?): { string }
@@ -676,10 +693,8 @@ function M.usage_report(days: number?): { string }
 	local by_model: { [string]: Used } = {}
 	for key, used in today do
 		local model = string.match(key, "^%d+ (.+)$") or key
-		local sum = by_model[model] or { requests = 0, input = 0, output = 0 }
-		sum.requests += used.requests
-		sum.input += used.input
-		sum.output += used.output
+		local sum: Used = by_model[model] or { requests = 0, input = 0, output = 0 }
+		add(sum, used)
 		by_model[model] = sum
 	end
 	table.insert(lines, "Today")
@@ -692,28 +707,19 @@ function M.usage_report(days: number?): { string }
 		table.insert(lines, "  nothing yet")
 	end
 	for _, model in models do
-		local used = by_model[model]
-		table.insert(
-			lines,
-			`  {model}: {used.requests} requests, {short(used.input)} in, {short(used.output)} out`
-		)
+		table.insert(lines, `  {model}: {amounts(by_model[model])}`)
 	end
 	table.insert(lines, "")
 	table.insert(lines, "Each day")
 	local now = os.time()
 	for back = 0, (days or 7) - 1 do
 		local day = os.date("%Y-%m-%d", now - back * 86400)
-		local requests, input, output = 0, 0, 0
+		local sum: Used = { requests = 0, input = 0, output = 0 }
 		for _, used in M.usage(day) do
-			requests += used.requests
-			input += used.input
-			output += used.output
+			add(sum, used)
 		end
-		if requests > 0 then
-			table.insert(
-				lines,
-				`  {day}: {requests} requests, {short(input)} in, {short(output)} out`
-			)
+		if sum.requests > 0 then
+			table.insert(lines, `  {day}: {amounts(sum)}`)
 		end
 	end
 	return lines
@@ -750,7 +756,7 @@ function M.turn(
 	-- The turn as it ended, its tokens counted.
 	local function ended(): turn.Turn
 		local done = reader.turn()
-		greed.vouch(M.count, chosen.provider, chosen.model, done.input, done.output)
+		greed.vouch(M.count, chosen.provider, chosen.model, done.input, done.output, done.cached)
 		return done
 	end
 	while true do
