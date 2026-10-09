@@ -16,6 +16,7 @@ local data = require("./data")
 local tables = require("./tables")
 local sources = require("./sources")
 local aliases = require("./aliases")
+local kinds = require("./kinds")
 
 type Shell = state.Shell
 type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
@@ -427,6 +428,14 @@ local function program_args(items: { Item }, s: Spot)
 	local prefix = settled(s.word)
 	local words = table.clone(s.words)
 	table.insert(words, prefix)
+	-- What the rows of blocks above offer goes first, like the pods of a
+	-- `kubectl get pods` for `kubectl logs`; the program's own answers
+	-- come after, without what's there already.
+	local offered: { [string]: boolean } = {}
+	for _, offer in kinds.complete(s.shell, words) do
+		offered[offer.text] = true
+		add(items, s, offer.text, offer.detail, M.BADGE)
+	end
 	local env: { [string]: string | false } = { PAGER = "cat", GIT_PAGER = "cat" }
 	for name, value in state.variables(s.shell) do
 		env[name] = value
@@ -440,7 +449,9 @@ local function program_args(items: { Item }, s: Spot)
 	})
 	if found then
 		for _, item in found.items do
-			add(items, s, item.text, item.detail)
+			if not offered[item.text] then
+				add(items, s, item.text, item.detail)
+			end
 		end
 	end
 	if found == nil or found.files then

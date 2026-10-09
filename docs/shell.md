@@ -463,6 +463,16 @@ delete worker-5c6b7d8f9-abcde - in PRODUCTION (prod-eu)? y/n
 ```
 
 `shell` on a pod or a container opens a shell in it in a terminal.
+
+What the blocks above showed completes the next command. After `kubectl
+get pods`, `kubectl logs <tab>` offers those pods first, each saying which
+block it's from (`pod · $4`), then whatever kubectl itself offers; so do
+`exec`, `describe pod`, `delete deploy` and `rollout restart deployment`
+for theirs. Only rows from where the command goes are offered: the
+context and namespace its flags name, or else kubectl's config now.
+`docker logs <tab>` offers the containers of a `docker ps` above, and
+`kill <tab>` the processes of a `ps`.
+
 Plugins add kinds of rows and actions of their own
 ([Writing plugins](plugins.md#the-shell)).
 

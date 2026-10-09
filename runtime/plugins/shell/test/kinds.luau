@@ -189,3 +189,64 @@ test("ps's rows are processes and docker ps's containers", function(t)
 	assert(logs.command == "docker logs --tail 200 web", logs.command)
 	assert(string.find(logs.output, "docker logs --tail 200 web", 1, true), logs.output)
 end)
+
+-- What completion offers with `text` at `sh`'s prompt, in order.
+local function offered(
+	t: test.TestContext,
+	sh: Shell,
+	text: string
+): { { label: string, detail: string? } }
+	shell.log.set_prompt(sh, text, { greed.view() })
+	local found: { any }? = nil
+	greed.spawn(function()
+		found = shell.completion.items(greed.view(), { explicit = true }) or {}
+	end)
+	t:wait_for(function()
+		return found ~= nil
+	end, 10000)
+	return assert(found)
+end
+
+local function labels(items: { { label: string, detail: string? } }): string
+	local out = {}
+	for _, item in items do
+		table.insert(out, item.label)
+	end
+	return table.concat(out, ",")
+end
+
+test("completion offers the rows of blocks above, where the command goes", function(t)
+	local sh = fake(t, "prod-eu")
+	local pods = ran(t, sh, "kubectl get pods")
+	local logs = offered(t, sh, "kubectl logs ")
+	assert(logs[1] and logs[1].label == "api-7d9f8b6c5-2xkqz", labels(logs))
+	assert(logs[2] and logs[2].label == "worker-5c6b7d8f9-abcde", labels(logs))
+	assert(logs[1].detail == `pod · ${pods.number}`, tostring(logs[1].detail))
+	-- Named the same way after describe and the resource.
+	assert(offered(t, sh, "kubectl describe po ")[1].label == "api-7d9f8b6c5-2xkqz")
+	-- Not for another context, another namespace, another resource or a flag.
+	local function none(line: string)
+		for _, item in offered(t, sh, line) do
+			assert(
+				not string.find(item.label, "api-7d9f", 1, true),
+				`{line}: {labels(offered(t, sh, line))}`
+			)
+		end
+	end
+	none("kubectl logs --context staging ")
+	none("kubectl logs -n other ")
+	none("kubectl describe deploy ")
+	none("kubectl logs -")
+	-- Processes for kill, containers for docker logs.
+	local listed = ran(t, sh, "ps aux")
+	local kill = offered(t, sh, "kill ")
+	assert(kill[1] and string.match(kill[1].label, "^%d+$"), labels(kill))
+	assert(string.find(kill[1].detail or "", `${listed.number}`, 1, true), tostring(kill[1].detail))
+	ran(t, sh, "docker ps")
+	assert(offered(t, sh, "docker logs --tail 50 ")[1].label == "web")
+	-- A one-word alias or a path to the program counts as it.
+	shell.aliases.use({ k = "kubectl" })
+	assert(offered(t, sh, "k logs ")[1].label == "api-7d9f8b6c5-2xkqz")
+	assert(offered(t, sh, `{sh.cwd}/bin/kubectl logs `)[1].label == "api-7d9f8b6c5-2xkqz")
+	shell.aliases.use(nil)
+end)

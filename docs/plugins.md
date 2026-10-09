@@ -1293,9 +1293,17 @@ what the rows can't say themselves, like the context a command ran
 against; returning nil says the block isn't this kind's after all.
 `spec.row(row, captured, block)` gives `{ kind, label, value }` for a row
 (its cells by column), and `spec.called(captured, block)` what one row
-and several are called in the block's status ("pod", "pods"). Rows then take the actions of their kind,
-whoever added them; `ls -l` rows are `file` things, so every file action
-works on them.
+and several are called in the block's status ("pod", "pods"). Rows then
+take the actions of their kind, whoever added them; `ls -l` rows are
+`file` things, so every file action works on them.
+
+`spec.complete` makes the rows complete later commands. It maps a
+program's name to a function given the command's words (the word being
+completed last) and the shell; it returns nil when no thing of this kind
+fits there, or a function giving the word to put in for a thing's value,
+nil for one that doesn't fit (from another context, say). The rows of
+the newest blocks come first in the menu, before what the program
+offers itself.
 
 `shell.action_command(kind, name, command, opts)` adds an action that runs
 a command as a block in the shell, so what it does is there to read and

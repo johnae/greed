@@ -98,19 +98,30 @@ local function kind_of(resource: string): string
 	return "kubernetes"
 end
 
--- What `kubectl get` was asked for: the resource, the context and
--- namespace flags it was given, and whether it got every namespace.
-type Asked = {
-	resource: string?,
+-- A kubectl command line read: the words that aren't flags (the command,
+-- then what it's about), and the flags saying where and how.
+type Read = {
+	args: { string },
 	context: string?,
 	namespace: string?,
 	all: boolean,
+	output: string?,
 }
 
--- Reads `words`, a `kubectl get` command line; nil for any other kubectl.
-local function asked(words: { string }): Asked?
-	local found: Asked = { resource = nil, context = nil, namespace = nil, all = false }
-	local getting = false
+-- The flags that take a value, besides those naming where.
+local VALUED: { [string]: boolean } = {
+	["-l"] = true,
+	["--selector"] = true,
+	["--field-selector"] = true,
+	["-c"] = true,
+	["--container"] = true,
+	["--tail"] = true,
+	["--since"] = true,
+}
+
+-- Reads `words`, a kubectl command line from its second word.
+local function read_line(words: { string }): Read
+	local found: Read = { args = {}, context = nil, namespace = nil, all = false, output = nil }
 	local i = 2
 	while i <= #words do
 		local word = words[i]
@@ -120,7 +131,7 @@ local function asked(words: { string }): Asked?
 		if flag == nil then
 			flag, value = string.match(word, "^(%-[no])(.+)$")
 		end
-		flag = flag or word
+		local name: string = flag or word
 		local function take(): string?
 			if value then
 				return value
@@ -128,41 +139,79 @@ local function asked(words: { string }): Asked?
 			i += 1
 			return words[i]
 		end
-		if flag == "-n" or flag == "--namespace" then
+		if name == "-n" or name == "--namespace" then
 			found.namespace = take()
-		elseif flag == "--context" then
+		elseif name == "--context" then
 			found.context = take()
-		elseif flag == "-A" or flag == "--all-namespaces" then
+		elseif name == "-A" or name == "--all-namespaces" then
 			found.all = true
-		elseif flag == "-o" or flag == "--output" then
-			local format = take()
-			if format and format ~= "wide" then
-				return nil
-			end
-		elseif flag == "-l" or flag == "--selector" or flag == "--field-selector" then
+		elseif name == "-o" or name == "--output" then
+			found.output = take()
+		elseif VALUED[name] then
 			take()
+		elseif word == "--" then
+			break
 		elseif string.sub(word, 1, 1) ~= "-" then
-			if not getting then
-				if word ~= "get" then
-					return nil
-				end
-				getting = true
-			elseif found.resource == nil then
-				local first = string.match(word, "^([^,/]+)") or word
-				found.resource = SHORT[first] or first
-			end
+			table.insert(found.args, word)
 		end
 		i += 1
 	end
-	return if getting then found else nil
+	return found
+end
+
+-- A resource as typed (`po`, `deploy`, `pods`) by its full plural name.
+local function resource_of(word: string): string
+	local first = string.match(word, "^([^,/]+)") or word
+	return SHORT[first] or first
+end
+
+-- The kubectl commands whose next word is a pod.
+local POD_COMMANDS: { [string]: boolean } =
+	{ logs = true, exec = true, attach = true, ["port-forward"] = true }
+
+-- The kubectl commands whose next words are a resource and one of its
+-- objects: `describe pod NAME`.
+local NAMED_COMMANDS: { [string]: boolean } = {
+	get = true,
+	describe = true,
+	delete = true,
+	edit = true,
+	label = true,
+	annotate = true,
+	scale = true,
+}
+
+-- What `kubectl get` was asked for: the resource, the context and
+-- namespace flags it was given, and whether it got every namespace.
+type Asked = {
+	resource: string,
+	context: string?,
+	namespace: string?,
+	all: boolean,
+}
+
+-- Reads `words`, a `kubectl get` command line printing a table; nil for
+-- any other kubectl.
+local function asked(words: { string }): Asked?
+	local line = read_line(words)
+	local output = line.output
+	if line.args[1] ~= "get" or line.args[2] == nil or (output and output ~= "wide") then
+		return nil
+	end
+	return {
+		resource = resource_of(line.args[2]),
+		context = line.context,
+		namespace = line.namespace,
+		all = line.all,
+	}
 end
 
 -- What a `kubectl get` block was about, kept as it finished.
 type Captured = { resource: string, context: string?, namespace: string?, all: boolean }
 
 -- The context and namespace kubectl's config makes current for `shell`.
-local function current(shell: Shell, block: Block): (string?, string?)
-	local ctx = { shell = shell, cwd = block.cwd, env = state.variables(shell) }
+local function current(shell: Shell, cwd: string): (string?, string?)
+	local ctx = { shell = shell, cwd = cwd, env = state.variables(shell) }
 	for _, path in segments.kubeconfigs(ctx) do
 		local context, namespace = segments.read_kubeconfig(greed.fs.read(path) or "")
 		if context then
@@ -201,10 +250,10 @@ kinds.kind({
 	capture = function(block: Block, shell: Shell): any
 		local words = parse.words(block.command, greed.fs.dirs().home)
 		local got = if words then asked(words) else nil
-		if got == nil or got.resource == nil then
+		if got == nil then
 			return nil
 		end
-		local context, namespace = current(shell, block)
+		local context, namespace = current(shell, block.cwd)
 		local captured: Captured = {
 			resource = got.resource,
 			context = got.context or context,
@@ -243,6 +292,37 @@ kinds.kind({
 	called = function(captured: Captured): (string, string)
 		return singular(captured.resource), captured.resource
 	end,
+	complete = {
+		kubectl = function(words: { string }, shell: Shell): ((value: any) -> string?)?
+			if string.sub(words[#words] or "", 1, 1) == "-" then
+				return nil
+			end
+			local line = read_line(table.move(words, 1, #words - 1, 1, {}))
+			local args = line.args
+			local resource: string? = nil
+			if POD_COMMANDS[args[1]] and #args == 1 then
+				resource = "pods"
+			elseif NAMED_COMMANDS[args[1]] and #args == 2 then
+				resource = resource_of(args[2])
+			elseif args[1] == "rollout" and #args == 3 then
+				resource = resource_of(args[3])
+			end
+			if resource == nil then
+				return nil
+			end
+			-- Only what's where this command goes: its flags, else kubectl's
+			-- config now.
+			local context, namespace = current(shell, shell.cwd)
+			context = line.context or context
+			namespace = if line.all then nil else line.namespace or namespace or "default"
+			return function(value: any): string?
+				local fits = value.resource == resource
+					and value.context == context
+					and (namespace == nil or value.namespace == nil or value.namespace == namespace)
+				return if fits then value.name else nil
+			end
+		end,
+	},
 })
 
 -- What every kubernetes object has.

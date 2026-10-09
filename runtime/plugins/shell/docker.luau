@@ -8,14 +8,48 @@ local kinds = require("./kinds")
 
 type Block = state.Block
 
--- docker's own flags that take a value, before its command.
-local VALUED: { [string]: boolean } =
-	{ ["-H"] = true, ["--host"] = true, ["--config"] = true, ["-l"] = true, ["--log-level"] = true }
+-- The flags that take a value: docker's own before its command, and those
+-- of the commands acting on a container.
+local VALUED: { [string]: boolean } = {
+	["-H"] = true,
+	["--host"] = true,
+	["--config"] = true,
+	["-l"] = true,
+	["--log-level"] = true,
+	["-n"] = true,
+	["--tail"] = true,
+	["--since"] = true,
+	["--until"] = true,
+	["-u"] = true,
+	["--user"] = true,
+	["-w"] = true,
+	["--workdir"] = true,
+	["-e"] = true,
+	["--env"] = true,
+}
 
--- The docker context `words`, a `docker ps` or `docker container ls`
--- command line, named (false when none); nil for any other docker.
-local function context_of(words: { string }): (string | false)?
-	local context: string | false = false
+-- The commands whose next word is a container.
+local CONTAINER_COMMANDS: { [string]: boolean } = {
+	logs = true,
+	exec = true,
+	stop = true,
+	start = true,
+	restart = true,
+	inspect = true,
+	rm = true,
+	kill = true,
+	attach = true,
+	top = true,
+	port = true,
+	stats = true,
+	pause = true,
+	unpause = true,
+}
+
+-- `words`, a docker command line from its second word: the words that
+-- aren't flags, and the context it names, if it does.
+local function read_line(words: { string }): ({ string }, string?)
+	local context: string? = nil
 	local rest: { string } = {}
 	local i = 2
 	while i <= #words do
@@ -23,7 +57,7 @@ local function context_of(words: { string }): (string | false)?
 		local named = string.match(word, "^%-%-context=(.*)$")
 		if word == "--context" or word == "-c" then
 			i += 1
-			context = words[i] or false
+			context = words[i]
 		elseif named then
 			context = named
 		elseif VALUED[word] then
@@ -33,9 +67,16 @@ local function context_of(words: { string }): (string | false)?
 		end
 		i += 1
 	end
-	local listing = rest[1] == "ps"
+	return rest, context
+end
+
+-- Whether `words` is a `docker ps` or `docker container ls` command line,
+-- and the docker context it names, if it does.
+local function listing(words: { string }): (boolean, string?)
+	local rest, context = read_line(words)
+	local lists = rest[1] == "ps"
 		or (rest[1] == "container" and (rest[2] == "ls" or rest[2] == "ps"))
-	return if listing then context else nil
+	return lists, context
 end
 
 -- `docker` with `args`, in the context `value` came from.
@@ -49,11 +90,11 @@ kinds.kind({
 	match = "docker",
 	capture = function(block: Block): any
 		local words = parse.words(block.command, greed.fs.dirs().home)
-		local context = if words then context_of(words) else nil
-		if context == nil then
+		if words == nil then
 			return nil
 		end
-		return { context = context or nil }
+		local lists, context = listing(words)
+		return if lists then { context = context } else nil
 	end,
 	row = function(row: { [string]: string }, captured: any): kinds.Thing?
 		local name = row.NAMES or row.Names
@@ -71,6 +112,20 @@ kinds.kind({
 	called = function(): (string, string)
 		return "container", "containers"
 	end,
+	complete = {
+		docker = function(words: { string }, _shell: state.Shell): ((value: any) -> string?)?
+			if string.sub(words[#words] or "", 1, 1) == "-" then
+				return nil
+			end
+			local rest, context = read_line(table.move(words, 1, #words - 1, 1, {}))
+			if not CONTAINER_COMMANDS[rest[1]] or #rest ~= 1 then
+				return nil
+			end
+			return function(value: any): string?
+				return if value.context == context then value.name else nil
+			end
+		end,
+	},
 })
 
 kinds.command("container", "logs", function(value: any): string

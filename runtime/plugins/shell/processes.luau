@@ -29,6 +29,16 @@ kinds.kind({
 	called = function(): (string, string)
 		return "process", "processes"
 	end,
+	complete = {
+		kill = function(words: { string }, _shell: state.Shell): ((value: any) -> string?)?
+			if string.sub(words[#words] or "", 1, 1) == "-" then
+				return nil
+			end
+			return function(value: any): string?
+				return value.pid
+			end
+		end,
+	},
 })
 
 kinds.command("process", "stop", "kill {pid}", { doc = "Ask it to stop (TERM)", danger = true })

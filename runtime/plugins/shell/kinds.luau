@@ -17,6 +17,7 @@ local rows = require("./rows")
 local tables = require("./tables")
 local parse = require("./parse")
 local segments = require("./segments")
+local aliases = require("./aliases")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -42,6 +43,11 @@ export type Kind = {
 	--- What one of its rows is called and what several are, for the
 	--- block's status ("pod", "pods").
 	called: ((captured: any, block: Block) -> (string, string))?,
+	--- Which of its things fit the word being completed, by the program
+	--- being completed ("kubectl", "kill"): given the command's words (the
+	--- word being completed last), what to put there for a thing that
+	--- fits, or nil when none do there.
+	complete: { [string]: (words: { string }, shell: Shell) -> ((value: any) -> string?)? }?,
 }
 
 local kinds: { Kind } = {}
@@ -105,6 +111,59 @@ function M.thing(block: Block, index: number): Thing?
 	end
 	local ok, thing = pcall(r.kind.row, tbl.rows[index], r.captured, block)
 	return if ok then thing else nil
+end
+
+--- Something the rows of a block offer to complete a word: what goes in,
+--- and what it is and where it's from.
+export type Offer = { text: string, detail: string }
+
+-- The program `word`, a command's first, runs: its name without its
+-- folder, or what an alias of one word stands for.
+local function program_of(word: string): string
+	local name = string.match(word, "([^/]+)$") or word
+	local alias = aliases.loaded()[name]
+	if alias and string.match(alias, "^%S+$") then
+		return string.match(alias, "([^/]+)$") or alias
+	end
+	return name
+end
+
+--- What the rows of `shell`'s blocks offer to complete the last of
+--- `words`, the newest blocks' first, each once: the things kinds say fit
+--- there, like the pods above for `kubectl logs`.
+function M.complete(shell: Shell, words: { string }): { Offer }
+	local out: { Offer } = {}
+	local seen: { [string]: boolean } = {}
+	local program = program_of(words[1] or "")
+	for _, kind in kinds do
+		local ask = if kind.complete then kind.complete[program] else nil
+		local ok, fits = false, nil
+		if ask then
+			ok, fits = pcall(ask, words, shell)
+		end
+		if ok and fits then
+			for i = #shell.blocks, 1, -1 do
+				local block = shell.blocks[i]
+				local r = read[block]
+				local tbl = block.table
+				if r and r.kind == kind and tbl then
+					for index in tbl.rows do
+						local thing = M.thing(block, index)
+						local found, text = false, nil
+						if thing then
+							found, text = pcall(fits, thing.value)
+						end
+						if thing and found and type(text) == "string" and not seen[text] then
+							seen[text] = true
+							local what = if thing.label == text then thing.kind else thing.label
+							table.insert(out, { text = text, detail = `{what} · ${block.number}` })
+						end
+					end
+				end
+			end
+		end
+	end
+	return out
 end
 
 --- The thing on the line at `pos` in `shell`, and the line's start and
