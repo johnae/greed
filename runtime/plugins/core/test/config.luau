@@ -77,3 +77,16 @@ test("a config made after the editor started runs once it's written", function(t
 	assert(commands()["from-its-change"] and not commands()["from-new-config"])
 	greed.plugin.unload("user/config")
 end)
+
+test(":config-open opens your config, a new one in its folder when there's none", function(t)
+	t:buffer("|")
+	local file = `{greed.fs.dirs().config}/init.luau`
+	greed.fs.remove(file)
+	t:run("config-open")
+	assert(greed.view():buffer():path() == file, tostring(greed.view():buffer():path()))
+	assert(string.find(t:messages()[1] or "", ":setup", 1, true), "says setup writes one")
+	greed.fs.write(file, "-- mine\n")
+	t:buffer("|")
+	t:keys(": c o n f i g enter")
+	assert(greed.view():buffer():path() == file, "the alias opens it too")
+end)

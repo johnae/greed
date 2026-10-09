@@ -86,6 +86,27 @@ end)
 greed.on("editor.started", M.watch)
 
 greed.command({
+	name = "config-open",
+	doc = "Open your config, init.luau, to change it; it runs again when saved",
+	run = function()
+		local dir = greed.fs.dirs().config
+		if dir == nil then
+			greed.echo("there's no config folder")
+			return
+		end
+		local file = `{dir}/init.luau`
+		local new = greed.fs.stat(file) == nil
+		if new then
+			greed.fs.mkdir(dir)
+		end
+		greed.open(file)
+		if new then
+			greed.echo("a new config: :setup writes one with settings to try")
+		end
+	end,
+})
+
+greed.command({
 	name = "config-reload",
 	doc = "Run your config again, as saving it does",
 	run = function()
