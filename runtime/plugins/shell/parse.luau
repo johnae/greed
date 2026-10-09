@@ -54,6 +54,10 @@ M.BUILTINS = {
 		usage = "which NAME ...",
 		doc = "What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program",
 	},
+	stop = {
+		usage = "stop [N ... | all]",
+		doc = "Stop running blocks by their number, or all of them; without one, list them",
+	},
 	watch = {
 		usage = "watch [-n SECONDS] COMMAND",
 		doc = "Run a command again and again, every two seconds, its block showing what it printed last with the changes marked",

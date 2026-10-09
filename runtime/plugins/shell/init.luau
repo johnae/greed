@@ -860,6 +860,51 @@ local function which(shell: Shell, name: string): { string }
 	return found
 end
 
+-- A block's number and its command's first line, as `stop` lists it.
+local function stop_line(block: Block): string
+	local command = string.match(block.command, "^[^\n]*") or block.command
+	return `{block.number}  {command}\n`
+end
+
+run.builtins.stop = function(shell: Shell, block: Block, args: { string }): number
+	local running: { Block } = {}
+	for _, other in state.running(shell) do
+		if other ~= block then
+			table.insert(running, other)
+		end
+	end
+	if #args == 0 then
+		if #running == 0 then
+			run.write(shell, block, "nothing else is running\n", "stdout")
+		end
+		for _, other in running do
+			run.write(shell, block, stop_line(other), "stdout")
+		end
+		return 0
+	end
+	local code = 0
+	for _, arg in args do
+		local targets: { Block } = {}
+		if arg == "all" then
+			targets = running
+		else
+			local number = tonumber(string.match(arg, "^[$%%]?(%d+)$"))
+			local found = if number then state.block(shell, number) else nil
+			if found and found ~= block and found.status == "running" then
+				targets = { found }
+			else
+				run.write(shell, block, `stop: {arg} isn't a running block\n`, "stderr")
+				code = 1
+			end
+		end
+		for _, target in targets do
+			M.interrupt(target)
+			run.write(shell, block, `stopped {stop_line(target)}`, "stdout")
+		end
+	end
+	return code
+end
+
 run.builtins.which = function(shell: Shell, block: Block, args: { string }): number
 	if #args == 0 then
 		run.write(shell, block, "which: which names?\n", "stderr")
@@ -1385,12 +1430,27 @@ block_command("shell-copy-command", "Copy the block's command", function(_shell,
 	greed.echo(`copied {block.command}`)
 end)
 
+-- Interrupts `block` of `shell`, saying which blocks still run when others
+-- do, as ctrl-c at the prompt stops only the latest.
+local function interrupt(shell: Shell, block: Block)
+	M.interrupt(block)
+	local others: { string } = {}
+	for _, other in state.running(shell) do
+		if other ~= block then
+			table.insert(others, tostring(other.number))
+		end
+	end
+	if #others > 0 then
+		greed.echo(
+			`stopped {block.number} · still running: {table.concat(others, ", ")} (ctrl-c on its line above the prompt, or stop N)`
+		)
+	end
+end
+
 block_command(
 	"shell-interrupt",
 	"Interrupt the running block at the cursor, or the latest one, as ctrl-c does",
-	function(_shell, block)
-		M.interrupt(block)
-	end,
+	interrupt,
 	running_target
 )
 
@@ -1427,8 +1487,8 @@ greed.command({
 		end
 		local shell = shell_of(ctx)
 		local block = shell and running_target(shell, ctx)
-		if block then
-			M.interrupt(block)
+		if shell and block then
+			interrupt(shell, block)
 		else
 			greed.echo("nothing running to interrupt")
 		end

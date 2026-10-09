@@ -127,3 +127,44 @@ test("a block's float closes when the block is cleared away", function(t)
 	t:run("shell-clear")
 	assert(not float:valid(), "its float closed with it")
 end)
+
+test("ctrl-c at the prompt says which blocks still run", function(t)
+	local sh = open(t)
+	local first = assert(shell.run(sh, "sleep 30", { view = greed.view() }))
+	local second = assert(shell.run(sh, "sleep 31", { view = greed.view() }))
+	t:messages()
+	greed.view():set_cursor(sh.buffer:len())
+	t:run("shell-interrupt")
+	t:wait_for(function()
+		return second.status ~= "running"
+	end)
+	local said = table.concat(t:messages(), "|")
+	assert(
+		string.find(said, `stopped {second.number} · still running: {first.number}`, 1, true),
+		said
+	)
+	shell.interrupt(first)
+end)
+
+test("stop lists what runs, and stops blocks by number or all of them", function(t)
+	local sh = open(t)
+	local first = assert(shell.run(sh, "sleep 30", { view = greed.view() }))
+	local second = assert(shell.run(sh, "sleep 31", { view = greed.view() }))
+	local listed = done(t, sh, "stop")
+	assert(listed.stdout == `{first.number}  sleep 30\n{second.number}  sleep 31\n`, listed.stdout)
+	local one = done(t, sh, `stop {first.number} 99`)
+	assert(
+		one.code == 1 and string.find(one.stderr, "99 isn't a running block", 1, true),
+		one.stderr
+	)
+	t:wait_for(function()
+		return first.status ~= "running"
+	end)
+	assert(second.status == "running")
+	done(t, sh, "stop all")
+	t:wait_for(function()
+		return second.status ~= "running"
+	end)
+	local none = done(t, sh, "stop")
+	assert(none.stdout == "nothing else is running\n", none.stdout)
+end)

@@ -149,6 +149,7 @@ The shell runs a few commands itself:
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
 | `help [TOPIC]` | What works here, and the keys in the style you use; a topic for one part |
 | `which NAME ...` | What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program |
+| `stop [N ... \| all]` | Stop running blocks by their number, or all of them; without one, list them |
 | `watch [-n SECONDS] COMMAND` | Run a command again and again, every two seconds, its block showing what it printed last with the changes marked |
 
 What `open` opens comes up in your style's own mode, to read and move
@@ -503,6 +504,10 @@ and `ctrl-c` stops it. A watch's float follows it as it refreshes, and
 grows and shrinks with it. `esc` closes it, keeping the filter, which a
 watch keeps on each run. `space .` on any block offers "open in a float"
 too. A line goes when its block ends.
+
+At the prompt, `ctrl-c` stops the latest running block and says which
+others still run. `stop` lists them by number, `stop 7` stops block 7,
+and `stop all` stops them all.
 
 ## Rows you can act on
 
