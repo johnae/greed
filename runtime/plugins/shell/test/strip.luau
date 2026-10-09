@@ -168,3 +168,34 @@ test("stop lists what runs, and stops blocks by number or all of them", function
 	local none = done(t, sh, "stop")
 	assert(none.stdout == "nothing else is running\n", none.stdout)
 end)
+
+test("space o w lists what runs in every shell: enter peeks, ctrl-x stops", function(t)
+	local sh = open(t)
+	t:run("pick-running")
+	assert(#t:floats() == 0, "nothing to pick")
+	local first = assert(shell.run(sh, "sleep 30", { view = greed.view() }))
+	local second = assert(shell.run(sh, "sleep 31", { view = greed.view() }))
+	t:keys("esc space o w")
+	assert(#t:floats() > 0, "a picker")
+	t:keys("3 1")
+	-- Beside it, the block as its shell shows it.
+	t:wait_for(function()
+		for _, text in t:floats() do
+			if string.find(text, "^sleep 31\n") then
+				return true
+			end
+		end
+		return false
+	end)
+	t:keys("enter")
+	local float = greed.view()
+	assert(shell.peek.of(float) == second, "enter opened the block in a float")
+	t:keys("esc")
+	t:keys("space o w")
+	t:keys("3 0 ctrl-x")
+	t:wait_for(function()
+		return first.status ~= "running"
+	end)
+	assert(second.status == "running")
+	shell.interrupt(second)
+end)

@@ -1454,6 +1454,84 @@ block_command(
 	running_target
 )
 
+-- Puts the cursor of the focused view on `block` of `shell`, showing the
+-- shell there first.
+local function go_to(shell: Shell, block: Block)
+	local view = greed.view()
+	if view:buffer() ~= shell.buffer then
+		view:show(shell.buffer)
+	end
+	local from = log.range(block)
+	if from then
+		view:set_cursor(from)
+		greed.mode.set(core.style.home())
+	end
+end
+
+greed.command({
+	name = "pick-running",
+	doc = "Pick among what runs in every shell, its output beside: enter opens it in a float, ctrl-o goes to it, ctrl-x stops it",
+	run = function()
+		local items: { picker.Item } = {}
+		local here = greed.project.current().id
+		local shells = state.list(here)
+		for _, shell in state.list() do
+			if shell.project ~= here then
+				table.insert(shells, shell)
+			end
+		end
+		for _, shell in shells do
+			for _, block in state.running(shell) do
+				local command = string.match(block.command, "^[^\n]*") or block.command
+				table.insert(items, {
+					label = `{shell.name} {block.number}  {command}  · {log.running_status(block)}`,
+					value = { shell = shell, block = block },
+				})
+			end
+		end
+		if #items == 0 then
+			greed.echo("nothing is running in any shell")
+			return
+		end
+		local function chosen(item: picker.Item?): (Shell?, Block?)
+			local value = item and item.value
+			return value and value.shell, value and value.block
+		end
+		picker.pick("Running", items, function(item)
+			local shell, block = chosen(item)
+			if shell and block then
+				peek.open(shell, block)
+			end
+		end, {
+			preview = function(item)
+				local shell, block = chosen(item)
+				if shell == nil or block == nil then
+					return nil
+				end
+				local from, to = log.range(block)
+				if from == nil or to == nil then
+					return nil
+				end
+				return { text = shell.buffer:slice(from, to) }
+			end,
+			keys = {
+				["ctrl-o"] = function(_items, current)
+					local shell, block = chosen(current)
+					if shell and block then
+						go_to(shell, block)
+					end
+				end,
+				["ctrl-x"] = function(_items, current)
+					local shell, block = chosen(current)
+					if shell and block then
+						interrupt(shell, block)
+					end
+				end,
+			},
+		})
+	end,
+})
+
 block_command(
 	"shell-kill",
 	"Stop the running block at the cursor, or the latest one, for good",
@@ -1888,7 +1966,7 @@ end)
 -- typing again.
 core.style.typing_kind(KIND)
 
-greed.keymap.bind({ layer = "leader" }, { ["o s"] = "pick-shell" })
+greed.keymap.bind({ layer = "leader" }, { ["o s"] = "pick-shell", ["o w"] = "pick-running" })
 greed.keymap.bind({ role = "typing", kind = KIND }, {
 	enter = "shell-enter",
 	["alt-enter"] = "insert-newline",

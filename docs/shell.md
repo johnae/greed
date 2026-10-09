@@ -509,6 +509,11 @@ At the prompt, `ctrl-c` stops the latest running block and says which
 others still run. `stop` lists them by number, `stop 7` stops block 7,
 and `stop all` stops them all.
 
+From anywhere, even a file you're editing, `space o w` lists what runs
+in every shell, this project's first, with each one's output beside it:
+`enter` opens it in a float, `ctrl-o` goes to it in its shell, and
+`ctrl-x` stops it.
+
 ## Rows you can act on
 
 Some tables' rows are things: an `ls -l` row is a file or a folder, a

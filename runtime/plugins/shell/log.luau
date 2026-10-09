@@ -426,9 +426,9 @@ local function summary(block: Block): string
 	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
 end
 
--- What the strip says of a running block: for a live one, what it shows
--- and what changed in it last; else how long it has run.
-local function strip_status(block: Block): string
+--- What the strip says of a running block: for a live one, what it shows
+--- and what changed in it last; else how long it has run.
+function M.running_status(block: Block): string
 	if block.watching then
 		local now = summary(block)
 		return if block.change then `{now} · {block.change}` else now
@@ -506,7 +506,7 @@ local function draw_strip(shell: Shell)
 				from = to,
 				to = to,
 				style = "shell.status",
-				text = `· {strip_status(block)}`,
+				text = `· {M.running_status(block)}`,
 				eol = true,
 			})
 		end
