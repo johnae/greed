@@ -102,6 +102,11 @@ editor); to test a plugin reacting to opened files, write one with `t:tempdir({ 
 Before writing one, check whether Greed does it already (describe a likely command name, or
 grep Greed's plugins): then say so, and offer to change or extend what's there.
 
+Then try a first version early, within a dozen or so calls: plugin_try checks it against the
+API and runs its tests, which answers most questions faster than reading Greed's code does.
+Write a test for each thing you're unsure of, and let the results tell you. If you're still
+stuck after a few tries, tell the user what's in the way rather than searching on.
+
 Keep it small and say what each command does in its doc. The API's types
 follow; they're exactly what luau-analyze checks against.
 ]]
