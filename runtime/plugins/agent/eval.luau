@@ -126,6 +126,8 @@ local function page(code: string, needs: string, why: string?): string
 		code,
 		fence,
 		"",
+		"r runs it · s runs it and every run until the editor quits · d denies it",
+		"",
 		"Run it?",
 	}, "\n")
 end
@@ -153,6 +155,7 @@ local function ask_you(code: string, needs: string, why: string?): string
 		button("Allow for this session", "eval-allow-session"),
 		button("Deny", "eval-deny"),
 	})
+	buffer:set_keys({ r = "eval-run", s = "eval-allow-session", d = "eval-deny" })
 	a.view = greed.float(buffer, { title = "Run this?", width = "80%", height = "70%" })
 	-- Nobody answering, like a session no one is looking at, is denying.
 	greed.spawn(function()

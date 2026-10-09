@@ -82,7 +82,8 @@ test("in auto, code that needs more asks you when there's no reviewer, and runs 
 	assert(string.find(page, "It would change options.", 1, true), page)
 	assert(string.find(page, "none set up", 1, true), "no reviewer: " .. page)
 	assert(#asked == 0, "no model was asked")
-	t:run("eval-run")
+	assert(string.find(page, "r runs it", 1, true), "says its keys: " .. page)
+	t:keys("r")
 	assert(settle(t, result) == "done", tostring(result()))
 	-- The sandbox's edit was taken back before the full run, so it's there once.
 	assert(greed.view():buffer():text() == "hi!", greed.view():buffer():text())
@@ -104,7 +105,7 @@ test("a reviewer can let code run, or leave it to you with its reason", function
 	t:wait(10)
 	local page = greed.view():buffer():text()
 	assert(string.find(page, "Reviewer: changes how the editor works", 1, true), page)
-	t:run("eval-deny")
+	t:keys("d")
 	assert(settle(t, result) == "error: the user didn't let this run", tostring(result()))
 	assert(greed.view():buffer():text() == "hi", "nothing ran: " .. greed.view():buffer():text())
 	greed.option.set("indent", "    ")

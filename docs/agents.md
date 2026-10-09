@@ -161,7 +161,8 @@ try to talk it into allowing, and answers in a fixed form. A model can
 still be fooled, so set `agent-eval` to `"ask"` if you'd rather see every
 run past the sandbox yourself. When you're asked, the page shows the code,
 what it would do and the reviewer's reason, with **Run**, **Allow for this
-session** and **Deny**; closing it, or leaving it five minutes, denies.
+session** and **Deny** (or `r`, `s` and `d`); closing it, or leaving it five
+minutes, denies.
 `:eval-log` lists every run past the sandbox and who let it.
 
 ## Reviewing proposed edits
