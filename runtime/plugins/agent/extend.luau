@@ -56,6 +56,10 @@ else c` expressions, string interpolation with backticks, `+=`, and
 - Showing text to read: `require("@core").floats.show_text("Title", text, { anchor = "cursor",
   width = 60, height = 8 })` opens a float that esc or q closes (`requires = ["core"]`);
   `greed.echo(text)` says one line on the status line.
+- Status line: `require("@statusline").add("right", "my-piece", function(ctx) return text or nil
+  end, "language")` (`requires = ["statusline"]`). It runs on every redraw, so keep it cheap:
+  work over the whole buffer is remembered by `ctx.buffer:version()`, which changes with each
+  edit. `add_async` is for pieces that wait on a program.
 - Events: `greed.on("buffer.saved", function(event) ... end)`; also "buffer.changed" (every
   edit, so keep it cheap and wait for a quiet moment before heavy work), "buffer.opened",
   "mode.changed", "lsp.diagnostics", "option.changed", "editor.started" and more.
