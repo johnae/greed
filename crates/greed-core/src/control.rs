@@ -548,7 +548,7 @@ fn serve_connection(
     let mut reader = BufReader::new(stream);
     let mut authed = false;
     // Whether the connection said at its first auth that it's a shell's.
-    let mut shell = false;
+    let mut shell: Option<bool> = None;
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -602,7 +602,7 @@ fn answer(
     message: &Value,
     token: &str,
     authed: &mut bool,
-    shell: &mut bool,
+    shell: &mut Option<bool>,
     requests: &Sender<Request>,
     notifier: &Notifier,
     reader: &mut BufReader<UnixStream>,
@@ -618,8 +618,10 @@ fn answer(
         })
     };
     if method == "auth" {
-        if !*authed {
-            *shell = params.get("shell").and_then(Value::as_bool) == Some(true);
+        // Settled by the first auth, right or wrong, so a connection can't
+        // fail once and come back as a shell's.
+        if shell.is_none() {
+            *shell = Some(params.get("shell").and_then(Value::as_bool) == Some(true));
         }
         *authed = params.get("token").and_then(Value::as_str) == Some(token);
         return respond(if *authed {
@@ -633,7 +635,11 @@ fn answer(
     }
     let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
-        client: if *shell { "shell" } else { "socket" },
+        client: if *shell == Some(true) {
+            "shell"
+        } else {
+            "socket"
+        },
         connection: Some(notifier.clone()),
         method: method.to_owned(),
         params,

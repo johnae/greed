@@ -173,6 +173,19 @@ fn greed_ctls_connections_are_a_shells_and_nothing_else_can_become_one() {
         plain.call("who", &json!(null)).unwrap(),
         Ok(json!("socket"))
     );
+    // Nor after a wrong token, which leaves it unauthed for a moment.
+    plain
+        .call("auth", &json!({ "token": "wrong" }))
+        .unwrap()
+        .unwrap_err();
+    plain
+        .call("auth", &json!({ "token": token, "shell": true }))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        plain.call("who", &json!(null)).unwrap(),
+        Ok(json!("socket"))
+    );
     conn.input.send(Input::Quit).unwrap();
     conn.server.join().unwrap().unwrap();
 }
