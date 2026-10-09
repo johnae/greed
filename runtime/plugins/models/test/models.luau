@@ -348,3 +348,18 @@ test("tokens used are counted a day at a time, and :usage says how many", functi
 	t:run("usage")
 	assert(string.find(greed.view():buffer():text(), "Today", 1, true), "shown in a float")
 end)
+
+test("which models see images is known by name, and a role can say otherwise", function()
+	local function sees(model: string, images: boolean?): boolean
+		models.roles.eyes = { provider = "berget", model = model, images = images }
+		local seen = models.sees_images("eyes")
+		models.roles.eyes = nil
+		return seen
+	end
+	assert(sees("moonshotai/Kimi-K3") and sees("moonshotai/Kimi-K2.5"), "Kimi from K2.5 on")
+	assert(not sees("moonshotai/Kimi-K2-Instruct"), "K2 itself doesn't")
+	assert(sees("claude-sonnet-5") and sees("Qwen/Qwen2.5-VL-72B-Instruct") and sees("gpt-4o"))
+	assert(not sees("meta-llama/Llama-3.3-70B-Instruct") and not sees("openai/gpt-oss-120b"))
+	assert(sees("some-model", true) and not sees("claude-x", false), "the role says")
+	assert(not models.sees_images("nobody-plays-this"))
+end)

@@ -86,12 +86,19 @@ local SYSTEM = table.concat({
 M.NOTE = "(The conversation so far was compacted to save room; your summary of it follows. "
 	.. "Carry on from it. If you kept a plan, plan_read gives it as it is now.)"
 
+-- What an image counts for, in characters: about the 1600 tokens a large
+-- one takes once the provider has scaled it down.
+local IMAGE = 6400
+
 -- About how many characters `said` from `from` on takes, as sent.
 local function size(said: { models.Said }, from: number): number
 	local total = 0
 	for i = from, #said do
 		local s = said[i]
 		total += #(s.text or "")
+		if s.images then
+			total += #s.images * IMAGE
+		end
 		local calls: { models.Call } = s.calls or {}
 		for _, call in calls do
 			total += #call.name + #greed.json.encode(call.input)

@@ -17,13 +17,16 @@ export type ToolSpec = { name: string, description: string, input: { [string]: a
 export type Call = { id: string, name: string, input: { [string]: any } }
 
 --- What was said: by you (`text`), by the model (`text` and the `calls` it
---- asked for), or a tool's result for the call `call`.
+--- asked for), or a tool's result for the call `call`. What you said can
+--- have `images` with it, PNG files by their paths, read when the request
+--- is made.
 export type Said = {
 	role: "user" | "assistant" | "tool",
 	text: string?,
 	calls: { Call }?,
 	call: string?,
 	error: boolean?,
+	images: { string }?,
 }
 
 --- How a turn ended: "done" (the model has finished), "tools" (it wants
@@ -45,6 +48,29 @@ export type Turn = {
 -- A tool's schema, with an empty object for one that takes nothing.
 local function schema(tool: ToolSpec): { [string]: any }
 	return tool.input or { type = "object", properties = {} }
+end
+
+-- The images that go with `s`, each as its PNG in base64, and a note for
+-- each that's no longer kept (its file was removed), to say instead.
+local function images_of(s: Said): ({ string }, { string })
+	local data: { string } = {}
+	local gone: { string } = {}
+	local paths: { string } = s.images or {}
+	for _, path in paths do
+		local png = greed.fs.read_bytes(path)
+		if png then
+			table.insert(data, greed.base64.encode(png))
+		else
+			table.insert(gone, `[an image that was here, {path}, is no longer kept]`)
+		end
+	end
+	return data, gone
+end
+
+-- What you said in `s`, with notes for images no longer kept.
+local function user_text(s: Said, gone: { string }): string
+	local text = s.text or ""
+	return if #gone > 0 then `{text}\n{table.concat(gone, "\n")}` else text
 end
 
 -- The conversation as Anthropic's messages: tool results go in the next
@@ -80,7 +106,14 @@ local function anthropic_messages(said: { Said }): { any }
 				)
 			end
 		else
-			add("user", { type = "text", text = s.text or "" })
+			local data, gone = images_of(s)
+			for _, png in data do
+				add("user", {
+					type = "image",
+					source = { type = "base64", media_type = "image/png", data = png },
+				})
+			end
+			add("user", { type = "text", text = user_text(s, gone) })
 		end
 	end
 	return messages
@@ -113,7 +146,20 @@ local function openai_messages(system: string?, said: { Said }): { any }
 			end
 			table.insert(messages, message)
 		else
-			table.insert(messages, { role = "user", content = s.text or "" })
+			local data, gone = images_of(s)
+			if #data == 0 then
+				table.insert(messages, { role = "user", content = user_text(s, gone) })
+			else
+				-- With images, the content is parts: the text, then each image.
+				local parts: { any } = { { type = "text", text = user_text(s, gone) } }
+				for _, png in data do
+					table.insert(
+						parts,
+						{ type = "image_url", image_url = { url = `data:image/png;base64,{png}` } }
+					)
+				end
+				table.insert(messages, { role = "user", content = parts })
+			end
 		end
 	end
 	return messages

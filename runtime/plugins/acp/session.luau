@@ -129,10 +129,14 @@ export type Driver = {
 		session: Session,
 		text: string,
 		context: string?,
-		shown: string?
+		shown: string?,
+		images: { Attachment }?
 	) -> (boolean, string?),
 	cancel: (session: Session) -> (),
 	set_model: (session: Session, id: string) -> (boolean, string?),
+	--- Whether its model sees images now, so a prompt's images go to it
+	--- (`images`) rather than only their files' paths.
+	sees_images: ((session: Session) -> boolean)?,
 	--- What keeps it from working now, like a missing key, if anything.
 	check: ((session: Session) -> string?)?,
 }
@@ -909,7 +913,8 @@ function M.attach(session: Session, png: string): (boolean, string?)
 	local attached = session.attached or {}
 	local dirs = greed.fs.dirs()
 	local cache = dirs.cache or dirs.data or "."
-	local path = `{cache}/agent-images/{session.id}-{os.time()}-{math.floor(greed.now() % 1000000)}-{#attached + 1}.png`
+	local path =
+		`{cache}/agent-images/{session.id}-{os.time()}-{math.floor(greed.now() % 1000000)}-{#attached + 1}.png`
 	local ok, err = greed.fs.write(path, png)
 	if not ok then
 		return false, `couldn't keep the image: {err}`
@@ -967,15 +972,18 @@ end
 --- files' paths to one that doesn't. False and why when it can't.
 function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
 	local attached = session.attached
-	local seen = session.driver == nil and session.sees_images == true
+	local driver = session.driver
+	local seen = if driver
+		then driver.sees_images ~= nil and driver.sees_images(session)
+		else session.sees_images == true
 	local said, shown = text, text
 	if attached then
 		said = `{text}\n\n{about_images(attached, seen)}`
 		shown = `{text}\n{M.chips(attached)}`
 	end
-	if session.driver then
+	if driver then
 		session.attached = nil
-		local ok, err = session.driver.prompt(session, said, context, shown)
+		local ok, err = driver.prompt(session, said, context, shown, if seen then attached else nil)
 		if not ok then
 			session.attached = attached
 		end

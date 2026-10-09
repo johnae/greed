@@ -342,11 +342,13 @@ holds an image. The image goes with your next message, shown as a chip in
 the box (`🖼 image 1 · 1280×720`), and `alt-x` drops it. It's read from
 the clipboard of the machine you're at, so with `greed ssh` it's your
 laptop's, and kept in Greed's cache folder where the agent runs. An agent
-that can see images (Claude Code can) gets the image itself; one that
-can't, like Greed's own agent for now, is told where the file is and that
-it can't see it, so it can still work with the file. In a terminal, Greed
-reads the clipboard with `wl-paste` (Wayland), `xclip` (X11) or
-`osascript` (macOS).
+that can see images gets the image itself: Claude Code, and Greed's own
+agent when its model can (Claude, GPT-4o and later, Gemini, Kimi K2.5 and
+later, Qwen-VL, Llama 4 and the like, known by name; `images = true` on a
+role says so for a model Greed doesn't know). One that can't is told
+where the file is and that it can't see it, so it can still work with the
+file. In a terminal, Greed reads the clipboard with `wl-paste` (Wayland),
+`xclip` (X11) or `osascript` (macOS).
 
 ### Greed's own agent
 

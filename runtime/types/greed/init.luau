@@ -1410,6 +1410,8 @@ export type Fs = {
 	list: (dir: string, opts: { hidden: boolean?, ignored: boolean? }?) -> ({ DirEntry }?, string?),
 	--- The file's text, or its first `limit` bytes.
 	read: (path: string, limit: number?) -> (string?, string?),
+	--- The file's bytes as they are, for a file that isn't text, like an image.
+	read_bytes: (path: string) -> (string?, string?),
 	--- What's at `path`; nil if nothing is, and nil and why when it can't tell, as when a folder above it can't be read.
 	stat: (path: string) -> (FileInfo?, string?),
 	--- Replaces the file's contents with `text`, creating it and its folders

@@ -667,3 +667,41 @@ test("an image pasted in a transcript goes with the next message", function(t)
 	send(t, sees, "pictures")
 	assert(last_said(sees) == "image yes, file yes", last_said(sees))
 end)
+
+test("Greed's own agent gets pasted images when its model sees them", function(t)
+	local got: any = nil
+	models.turn = function(_role, request, on_text)
+		got = request.said[#request.said]
+		on_text("Seen.")
+		return { text = "Seen.", calls = {}, stop = "done", tokens = 10 }, nil
+	end
+	local s = assert(
+		acp.start({ name = "greed", title = "Greed", commands = {}, native = true }, t:tempdir())
+	)
+	acp.show(s)
+	t:clipboard_image(PIXEL)
+	local function ask()
+		got = nil
+		t:run("paste-image")
+		greed.spawn(function()
+			acp.prompt(s, "what's this?")
+		end)
+		t:wait_for(function()
+			return got ~= nil and s.status == "idle"
+		end)
+	end
+	models.sees_images = function()
+		return true
+	end
+	ask()
+	assert(got.images and #got.images == 1, "the image's file goes with it")
+	assert(greed.fs.read_bytes(got.images[1]) == PIXEL, "and holds the image")
+	assert(not string.find(got.text, "can't see images", 1, true), got.text)
+	-- A model that doesn't see them gets the file's path, and that it can't.
+	models.sees_images = function()
+		return false
+	end
+	ask()
+	assert(got.images == nil, "no image")
+	assert(string.find(got.text, "You can't see images", 1, true), got.text)
+end)

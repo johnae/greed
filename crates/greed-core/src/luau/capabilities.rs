@@ -60,6 +60,7 @@ const GATED: &[(&str, &str)] = &[
     ("terminal.spawn", "proc"),
     ("lsp.server", "proc"),
     ("fs.read", "fs.read"),
+    ("fs.read_bytes", "fs.read"),
     ("fs.list", "fs.read"),
     ("fs.stat", "fs.read"),
     ("fs.grep", "fs.read"),

@@ -51,6 +51,7 @@ export type Provider = {
 
 --- Which provider and model play a role, and optionally how many tokens
 --- the model has room for (its context window) and may write in one answer,
+--- whether it sees images, when its name doesn't tell (see `M.sees_images`),
 --- and how Greed's agent has it edit files (see `M.edits`).
 export type Role = {
 	provider: string,
@@ -58,6 +59,7 @@ export type Role = {
 	context: number?,
 	output: number?,
 	edits: string?,
+	images: boolean?,
 }
 
 export type Message = { role: "user" | "assistant", content: string }
@@ -272,6 +274,45 @@ function M.window(role: string): (number, boolean)
 		end
 	end
 	return M.WINDOW, false
+end
+
+-- Models that see images, by a pattern in their name, lowercased.
+local SEES = {
+	"claude",
+	"gpt%-4o",
+	"gpt%-4%.1",
+	"gpt%-5",
+	"gemini",
+	"gemma%-?3",
+	"kimi%-k2%.[5-9]",
+	"kimi%-k[3-9]",
+	"kimi%-vl",
+	"llama%-?4",
+	"pixtral",
+	"mistral%-small%-3%.[1-9]",
+	"mistral%-medium",
+	"qwen[%d.]*%-vl",
+	"glm%-4%.[5-9]v",
+	"llava",
+	"vision",
+}
+
+--- Whether the model playing `role` sees images: the role's `images`, or
+--- else what's known of the model by name.
+function M.sees_images(role: string): boolean
+	local chosen = M.resolve(role)
+	if chosen == nil then
+		return false
+	elseif chosen.images ~= nil then
+		return chosen.images
+	end
+	local name = string.lower(chosen.model)
+	for _, pattern in SEES do
+		if string.find(name, pattern) then
+			return true
+		end
+	end
+	return false
 end
 
 -- The longest answer asked for when nothing says: enough to write a file
@@ -837,6 +878,25 @@ greed.command({
 	end,
 })
 
+-- `request` with its images left out, for a model that doesn't see them,
+-- as after switching to one once they were pasted. What you said already
+-- tells where each image is saved.
+local function unseen(request: turn.Request): turn.Request
+	local said: { turn.Said } = {}
+	for _, s in request.said do
+		if s.images then
+			s = table.clone(s)
+			s.images = nil
+			s.text =
+				`{s.text or ""}\n[You can't see images, so they're left out; work with their files.]`
+		end
+		table.insert(said, s)
+	end
+	local out = table.clone(request)
+	out.said = said
+	return out
+end
+
 --- One turn of a conversation with tools, by the model playing `role`:
 --- `on_text` gets its text as it arrives, and the turn says what it said,
 --- the tool calls it asked for and why it stopped. Waits like greed.sleep.
@@ -848,6 +908,9 @@ function M.turn(
 	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
 		return nil, why
+	end
+	if not M.sees_images(role) then
+		request = unseen(request)
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, M.output(role)))

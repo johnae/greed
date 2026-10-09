@@ -246,3 +246,30 @@ test(
 		assert(openai.tools[#openai.tools].cache_control == nil, "OpenAI caches by itself")
 	end
 )
+
+test("images you said go as image blocks to Anthropic and as data URLs to the rest", function(t)
+	local dir = t:tempdir()
+	local png = "\x89PNG\r\n\x1a\nfake"
+	assert(greed.fs.write(`{dir}/a.png`, png))
+	local said: { any } = {
+		{ role = "user", text = "what's this?", images = { `{dir}/a.png`, `{dir}/gone.png` } },
+	}
+	local encoded = greed.base64.encode(png)
+	local anthropic = turn.body("anthropic", "m", { said = said }, 100)
+	local blocks = anthropic.messages[1].content
+	assert(blocks[1].type == "image" and blocks[1].source.data == encoded, "the image first")
+	assert(blocks[1].source.media_type == "image/png")
+	assert(
+		blocks[2].type == "text"
+			and string.find(blocks[2].text, "gone.png, is no longer kept", 1, true)
+	)
+	local openai = turn.body("openai", "m", { said = said }, 100)
+	local parts = openai.messages[1].content
+	assert(parts[1].type == "text" and string.find(parts[1].text, "^what's this%?"))
+	assert(
+		parts[2].type == "image_url" and parts[2].image_url.url == `data:image/png;base64,{encoded}`
+	)
+	-- Without images, what you said stays plain text.
+	local plain = turn.body("openai", "m", { said = { { role = "user", text = "hi" } } }, 100)
+	assert(plain.messages[1].content == "hi")
+end)

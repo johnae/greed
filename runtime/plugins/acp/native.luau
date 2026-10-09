@@ -1253,7 +1253,8 @@ local function prompt(
 	s: Session,
 	text: string,
 	context: string?,
-	shown: string?
+	shown: string?,
+	images: { session.Attachment }?
 ): (boolean, string?)
 	local state = states[s.id]
 	if s.status == "working" or s.status == "waiting" then
@@ -1265,7 +1266,17 @@ local function prompt(
 	local fresh = session.fresh_context(s, context)
 	local sent = `<time>{os.date("%A %Y-%m-%d %H:%M %Z")}</time>`
 	local said = if fresh then `{sent}\n{fresh}\n\n{text}` else `{sent}\n{text}`
-	table.insert(state.said, { role = "user", text = said } :: models.Said)
+	-- Images go by their files' paths, read each time a request is made.
+	local paths: { string } = {}
+	if images then
+		for _, image in images do
+			table.insert(paths, image.path)
+		end
+	end
+	table.insert(
+		state.said,
+		{ role = "user", text = said, images = if #paths > 0 then paths else nil } :: models.Said
+	)
 	s.status = "working"
 	s.since = greed.now()
 	s.changed()
@@ -1460,6 +1471,9 @@ local DRIVER: session.Driver = {
 		session.check(s)
 		s.changed()
 		return true, nil
+	end,
+	sees_images = function(s)
+		return models.sees_images(states[s.id].role)
 	end,
 	check = function(s)
 		return models.check(states[s.id].role)

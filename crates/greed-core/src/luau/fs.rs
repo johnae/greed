@@ -64,6 +64,16 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             }
         })?,
     )?;
+    fs.set(
+        "read_bytes",
+        lua.create_function(|lua, path: String| {
+            super::secrets::guard(lua, Path::new(&path))?;
+            match std::fs::read(&path) {
+                Ok(bytes) => lua.create_string(bytes)?.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't read {path}: {err}")),
+            }
+        })?,
+    )?;
 
     fs.set(
         "stat",
