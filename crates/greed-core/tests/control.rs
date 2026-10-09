@@ -348,3 +348,24 @@ fn a_line_too_long_ends_its_connection_and_the_session_goes_on() {
     assert!(client.call("echo", &json!(1)).unwrap().is_ok());
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn a_sessions_folder_others_can_write_in_or_a_link_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let base = std::env::temp_dir().join(format!("greed-sessions-dir-{}", std::process::id()));
+    let ours = base.join("ours");
+    std::fs::create_dir_all(&ours).unwrap();
+    std::fs::set_permissions(&ours, std::fs::Permissions::from_mode(0o700)).unwrap();
+    control::check_sessions_dir(&ours).unwrap();
+    let open = base.join("open");
+    std::fs::create_dir_all(&open).unwrap();
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+    assert!(
+        control::check_sessions_dir(&open).is_err(),
+        "anyone can write in it"
+    );
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&ours, &link).unwrap();
+    assert!(control::check_sessions_dir(&link).is_err(), "a link");
+    std::fs::remove_dir_all(&base).unwrap();
+}

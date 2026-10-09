@@ -279,6 +279,7 @@ fn session_client(name: Option<&str>, shell: bool) -> Result<Client, Box<dyn std
         },
     };
     let (socket, token_file) = control::session_files(&name);
+    control::check_sessions_dir(&control::sessions_dir())?;
     let token = read_token(&socket, &token_file)
         .map_err(|err| format!("can't read the token for session {name}: {err}"))?;
     Ok(Client::connect_as(&socket, token.trim(), shell)?)

@@ -233,6 +233,22 @@ fn pick_runtime_dir(set: Option<OsString>, uid: Option<u32>, run_user: &Path) ->
     (meta.is_dir() && meta.uid() == uid).then_some(dir)
 }
 
+/// Fails unless `dir`, a sessions folder, is a folder only you can use: not
+/// a link, yours, and no one else can write in it. In a shared temporary
+/// folder, another user could make it first and catch sessions and tokens.
+pub fn check_sessions_dir(dir: &Path) -> io::Result<()> {
+    let meta = std::fs::symlink_metadata(dir)?;
+    let yours = meta.uid() == nix::unistd::getuid().as_raw();
+    if !meta.is_dir() || !yours || meta.mode() & 0o022 != 0 {
+        return Err(io::Error::other(format!(
+            "the sessions folder {} isn't a folder only you can use; remove it, or set \
+             GREED_RUN_DIR to one that is",
+            dir.display()
+        )));
+    }
+    Ok(())
+}
+
 /// The socket and token files of the session called `name`.
 pub fn session_files(name: &str) -> (PathBuf, PathBuf) {
     let dir = sessions_dir();
@@ -342,6 +358,7 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
         .recursive(true)
         .mode(0o700)
         .create(&dir)?;
+    check_sessions_dir(&dir)?;
     // Editors that crashed leave sockets behind, which would also stop a
     // new one with the same name from taking their place.
     prune(&dir);
