@@ -572,9 +572,20 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	end
 	local response, err =
 		greed.vouch(open, chosen, http_request(provider, chosen.model, request, key))
+	-- Newer models refuse a temperature; they're asked again without one.
+	if
+		response == nil
+		and request.temperature
+		and string.find(err or "", "temperature", 1, true)
+	then
+		local plain = table.clone(request)
+		plain.temperature = nil
+		response, err = greed.vouch(open, chosen, http_request(provider, chosen.model, plain, key))
+	end
 	if response == nil then
 		return nil, err
 	end
+	local reply: greed.HttpStream = response
 	local pending: { string } = {}
 	local buffered = ""
 	local done = false
@@ -583,7 +594,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 		text = "",
 		next = function(_: Stream): (string?, string?)
 			while #pending == 0 and not done do
-				local piece, failed = response:read()
+				local piece, failed = reply:read()
 				if piece == nil then
 					done = true
 					if failed then
@@ -597,7 +608,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 					local text, finished, problem = read_event(provider.kind, event)
 					if problem then
 						done = true
-						response:close()
+						reply:close()
 						return nil, problem
 					end
 					if text and text ~= "" then
@@ -605,7 +616,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 					end
 					if finished then
 						done = true
-						response:close()
+						reply:close()
 					end
 				end
 			end
@@ -617,7 +628,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 		end,
 		close = function(_: Stream): ()
 			done = true
-			response:close()
+			reply:close()
 		end,
 	}
 	return stream, nil

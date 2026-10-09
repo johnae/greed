@@ -23,7 +23,8 @@ fn plugin(name: &str) -> PathBuf {
 
 /// Streams "Hello" from `/v1/messages` and "Hi there" from
 /// `/v1/chat/completions`, events cut across pieces, and refuses the model
-/// "refuse" as a bad key would be.
+/// "refuse" as a bad key would be, and a temperature for the model "cold"
+/// as newer models do.
 fn serve() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
@@ -59,6 +60,16 @@ fn answer(stream: TcpStream) {
         write!(
             out,
             "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\n\r\n{refused}",
+            refused.len()
+        )
+        .unwrap();
+        return;
+    }
+    if body.contains("\"cold\"") && body.contains("\"temperature\"") {
+        let refused = r#"{"type":"error","error":{"type":"invalid_request_error","message":"`temperature` is deprecated for this model."}}"#;
+        write!(
+            out,
+            "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{refused}",
             refused.len()
         )
         .unwrap();
@@ -110,6 +121,7 @@ fn host(address: &str) -> Host {
             models.roles.fast = {{ provider = "fake", model = "m1" }}
             models.roles["local"] = {{ provider = "compat", model = "m2" }}
             models.roles.locked = {{ provider = "fake", model = "refuse" }}
+            models.roles.cold = {{ provider = "fake", model = "cold" }}
             local hi = {{ messages = {{ {{ role = "user", content = "hi" }} }} }}
             greed.command {{ name = "ask-fast", run = function()
                 local stream = assert(models.stream("fast", hi))
@@ -122,6 +134,10 @@ fn host(address: &str) -> Host {
             end }}
             greed.command {{ name = "ask-local", run = function()
                 greed.echo((assert(models.ask("local", hi))))
+            end }}
+            greed.command {{ name = "ask-cold", run = function()
+                local answer, err = models.ask("cold", {{ messages = hi.messages, temperature = 0 }})
+                greed.echo(answer or err)
             end }}
             greed.command {{ name = "ask-locked", run = function()
                 local _, err = models.ask("locked", hi)
@@ -156,6 +172,13 @@ fn a_refused_request_says_what_the_server_said() {
         messages(&host, 1),
         ["the model's server said 401: invalid x-api-key"]
     );
+}
+
+#[test]
+fn a_model_that_takes_no_temperature_is_asked_again_without_one() {
+    let host = host(&serve());
+    host.run(FIRST_CLIENT, "ask-cold").unwrap();
+    assert_eq!(messages(&host, 1), ["Hello"]);
 }
 
 #[test]
