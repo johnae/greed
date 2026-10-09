@@ -152,6 +152,18 @@ test("the API's functions show their signature and doc", function(t)
 	)
 	local method = describe.text("Buffer:edit", "api") :: string
 	assert(string.find(method, "Edits the buffer", 1, true), method)
+	-- A signature over several lines is found, and shown whole.
+	local grep = describe.text("greed.fs.grep", "api") :: string
+	assert(grep and string.find(grep, "pattern: string,", 1, true), grep)
+	assert(string.find(grep, "-> ({ GrepLine }?, string?)", 1, true), grep)
+end)
+
+test("a plugin's module function says where the plugin's code is", function(t)
+	t:buffer("|")
+	local text = describe.text("picker.pick") :: string
+	assert(text and string.find(text, "picker is a plugin", 1, true), text)
+	assert(string.find(text, greed.plugin.dirs().picker .. "/init.luau", 1, true), text)
+	assert(describe.text("nosuchplugin.pick") == nil)
 end)
 
 test("a plugin says where it's from and what it defines; a mode lists its keys", function(t)

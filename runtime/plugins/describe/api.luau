@@ -72,6 +72,31 @@ function M.read(): Api?
 	-- The lines of the table type being read, to show it whole.
 	local body: { string }? = nil
 	local typed: Entry? = nil
+	-- A field of the table type `inside`, its doc the comments above it.
+	local function add_field(field: string, signature: string, number: number)
+		local owner = if inside == "Greed" then "greed" elseif inside then modules[inside] else nil
+		local entry = {
+			name = field,
+			signature = signature,
+			doc = table.concat(doc, " "),
+			line = number,
+		}
+		table.insert(api.fields[inside :: string], entry)
+		local qualified = if string.find(signature, "^%(%s*self: ")
+			then `{inside}:{field}`
+			elseif owner and string.find(signature, "%->") then `{owner}.{field}`
+			else nil
+		if qualified then
+			table.insert(api.entries, {
+				name = qualified,
+				signature = signature,
+				doc = entry.doc,
+				line = number,
+			})
+		end
+	end
+	-- A field whose signature goes over several lines, while it's read.
+	local spread: { field: string, line: number, lines: { string } }? = nil
 	for number, line in lines do
 		local comment = string.match(line, "^\t?%-%-%- ?(.*)$")
 		local name = string.match(line, "^export type (%w+) = ")
@@ -101,31 +126,26 @@ function M.read(): Api?
 			body, typed = nil, nil
 			inside = nil
 			doc = {}
+		elseif spread then
+			-- On until the line back at the field's indent that ends it.
+			table.insert(spread.lines, (string.gsub(line, "^\t", "")))
+			if string.match(line, "^\t[^\t].*,$") then
+				local whole = table.concat(spread.lines, "\n")
+				add_field(spread.field, string.sub(whole, 1, -2), spread.line)
+				spread = nil
+				doc = {}
+			end
 		elseif inside then
 			local field, signature = string.match(line, "^\t([%w_]+): (.*),$")
-			if field and signature then
-				local entry = {
-					name = field,
-					signature = signature,
-					doc = table.concat(doc, " "),
-					line = number,
-				}
-				table.insert(api.fields[inside], entry)
-				local owner = if inside == "Greed" then "greed" else modules[inside]
-				local qualified = if string.find(signature, "^%(self: ")
-					then `{inside}:{field}`
-					elseif owner and string.find(signature, "%->") then `{owner}.{field}`
-					else nil
-				if qualified then
-					table.insert(api.entries, {
-						name = qualified,
-						signature = signature,
-						doc = entry.doc,
-						line = number,
-					})
-				end
+			local opens, start = string.match(line, "^\t([%w_]+): (.*[({])$")
+			if opens and start then
+				spread = { field = opens, line = number, lines = { start } }
+			elseif field and signature then
+				add_field(field, signature, number)
+				doc = {}
+			else
+				doc = {}
 			end
-			doc = {}
 		else
 			doc = {}
 		end

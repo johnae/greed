@@ -337,7 +337,17 @@ function M.text(name: string, kind: string?): string?
 			table.insert(found, table.concat(lines, "\n"))
 		end
 	end
-	return if #found > 0 then table.concat(found, "\n\n") else nil
+	if #found > 0 then
+		return table.concat(found, "\n\n")
+	end
+	-- A plugin's module, like picker.pick: its code is the doc there is.
+	local plugin, rest = string.match(name, "^([%w_%-]+)[%.:]([%w_]+)$")
+	local dir = if plugin and plugin ~= "greed" then greed.plugin.dirs()[plugin] else nil
+	if dir == nil then
+		return nil
+	end
+	return `{plugin} is a plugin; what require("@{plugin}") gives, {rest} with it, is in `
+		.. `{dir}/init.luau and the files it requires. Read them, or grep {dir} for {rest}.`
 end
 
 type Open = {
