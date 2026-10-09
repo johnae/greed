@@ -32,7 +32,61 @@ type Staged = {
 	passed: boolean,
 	--- The report as the install review shows it.
 	shown: string,
+	--- The installed copy's files as they were when it was tried, if there
+	--- was one.
+	installed: { [string]: string }?,
 }
+
+-- The files under `dir` a plugin holds, by their path in it, into `out`.
+local function collect(dir: string, prefix: string, out: { [string]: string })
+	local entries = greed.fs.list(dir)
+	if entries == nil then
+		return
+	end
+	for _, entry in entries do
+		local path = prefix .. entry.name
+		if entry.dir then
+			collect(`{dir}/{entry.name}`, path .. "/", out)
+		elseif
+			string.match(path, "%.luau$")
+			or path == "plugin.toml"
+			or string.match(path, "%.md$")
+		then
+			out[path] = greed.fs.read(`{dir}/{entry.name}`) or ""
+		end
+	end
+end
+
+-- The files of plugin `name` as installed, if it is.
+local function installed_files(name: string): { [string]: string }?
+	for _, base in { M.dirs.plugins, M.dirs.fallback } do
+		local dir = `{base}/{name}`
+		if greed.fs.stat(dir) then
+			local files = {}
+			collect(dir, "", files)
+			return files
+		end
+	end
+	return nil
+end
+
+-- Whether `a` and `b` hold the same files, or are both nothing.
+local function same(a: { [string]: string }?, b: { [string]: string }?): boolean
+	if a == nil or b == nil then
+		return a == b
+	end
+	for path, text in a do
+		if b[path] ~= text then
+			return false
+		end
+	end
+	for path in b do
+		if a[path] == nil then
+			return false
+		end
+	end
+	return true
+end
 
 -- The latest try of each plugin, by name.
 local staged: { [string]: Staged } = {}
@@ -118,10 +172,11 @@ follow; they're exactly what luau-analyze checks against.
 local function read_types(): string
 	local core = greed.plugin.dirs().core
 	local path = if core then core .. "/../../types/greed/init.luau" else nil
-	local types = if path then greed.fs.read(path) else nil
-	if path == nil or types == nil then
+	local read = if path then greed.fs.read(path) else nil
+	if path == nil or read == nil then
 		return "(Greed's type definitions weren't found)"
 	end
+	local types = read :: string
 	local kept = {}
 	for _, line in string.split(types, "\n") do
 		if not string.match(line, "^%s*%-%-%-") then
@@ -252,7 +307,13 @@ function M.try(name: string, given: { [string]: string }): (string, boolean)
 	-- On from the last try: what's given replaces or adds to it, and a file
 	-- given empty goes.
 	local before = staged[name]
-	local files: { [string]: string } = if before then table.clone(before.files) else {}
+	-- From the installed copy when it changed since the last try (edited in
+	-- place), or there was none this session: it's the newer.
+	local installed = installed_files(name)
+	local base = if before and same(installed, before.installed)
+		then before.files
+		else installed or (before and before.files)
+	local files: { [string]: string } = if base then table.clone(base) else {}
 	for path, text in given do
 		if text == "" then
 			files[path] = nil
@@ -274,7 +335,14 @@ function M.try(name: string, given: { [string]: string }): (string, boolean)
 	local check, declares = greed.plugin.check(dir), declared(dir)
 	local report, passed = M.describe(check, declares)
 	local shown = M.describe(check, declares, true)
-	staged[name] = { files = files, dir = dir, report = report, passed = passed, shown = shown }
+	staged[name] = {
+		files = files,
+		dir = dir,
+		report = report,
+		passed = passed,
+		shown = shown,
+		installed = installed,
+	}
 	local paths = {}
 	for path in files do
 		table.insert(paths, path)
@@ -370,6 +438,16 @@ function M.install(name: string): string
 	if not s.passed then
 		error(`{name} doesn't pass its checks yet:\n{s.report}`, 0)
 	end
+	-- Changed in place since the try, it would lose those changes.
+	local installed = installed_files(name)
+	if not same(installed, s.installed) and not same(installed, s.files) then
+		error(
+			`the installed {name} changed after your last plugin_try (edited in place), and `
+				.. "installing the try would undo that. plugin_try again: it starts from the "
+				.. "installed files",
+			0
+		)
+	end
 	return pages.one_at_a_time(function()
 		return review_and_install(name, s)
 	end)
@@ -429,8 +507,8 @@ registry.tool({
 	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
 		.. "then its tests. Returns what failed; fix and try again until it passes, giving only the "
-		.. 'files that change: the rest are kept from the last try, and a file given as "" is '
-		.. "dropped. This is how "
+		.. "files that change: the rest are kept from the last try (or from the installed plugin, "
+		.. 'when that is newer), and a file given as "" is dropped. This is how '
 		.. "to add anything new to Greed for the user: the plugin is kept apart from the project "
 		.. "and installed in their config with plugin_install, so don't write plugins into the "
 		.. "project's files unless they ask you to change the project",

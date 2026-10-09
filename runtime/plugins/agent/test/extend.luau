@@ -93,6 +93,40 @@ test("a try keeps the files left out from the last one, and drops those given em
 	assert(without == 1, "the last try has no test file")
 end)
 
+test("an installed plugin edited after its try is what the next try starts from", function(t)
+	local dir = sandbox(t)
+	in_command(t, function()
+		return (agent.try("shout", PLUGIN))
+	end)
+	local answer = in_command(t, function()
+		return agent.install("shout")
+	end)
+	t:keys("a")
+	assert(answer() and string.find(answer() :: string, "installed", 1, true), answer())
+	-- Edited in place, as an agent's edit_file would.
+	local edited = PLUGIN["init.luau"] .. "-- edited in place\n"
+	greed.fs.write(dir .. "/plugins/shout/init.luau", edited)
+	local refused = in_command(t, function()
+		local ok, err = pcall(agent.install, "shout")
+		return if ok then "installed" else tostring(err)
+	end)()
+	assert(refused and string.find(refused, "changed after your last plugin_try", 1, true), refused)
+	in_command(t, function()
+		return (
+			agent.try(
+				"shout",
+				{ ["test/more.luau"] = 'require("@greed/test")("more", function() end)\n' }
+			)
+		)
+	end)
+	local again = in_command(t, function()
+		return agent.install("shout")
+	end)
+	t:keys("a")
+	assert(again() and string.find(again() :: string, "installed", 1, true), again())
+	assert(greed.fs.read(dir .. "/plugins/shout/init.luau") == edited, "the edit is kept")
+end)
+
 test("installing waits for the user, then loads the plugin", function(t)
 	local dir = sandbox(t)
 	in_command(t, function()
