@@ -97,6 +97,17 @@ test("grep searches Greed's plugins and types, and says when a path is out of re
 	assert(one[1] and one[1].path == "src/unused.rs", one[1] and one[1].path)
 end)
 
+test("grep searches the plugins in your config, which agents write", function(t)
+	project(t)
+	local plugins = t:tempdir({ ["mine/init.luau"] = "return { answer = 42 }\n" })
+	local before = agent.dirs.plugins
+	agent.dirs.plugins = plugins
+	local hits, err = agent.map.grep("answer", `{plugins}/mine`)
+	agent.dirs.plugins = before
+	assert(hits, err)
+	assert(hits[1] and hits[1].path == `{plugins}/mine/init.luau`, hits[1] and hits[1].path)
+end)
+
 test("grep finding nothing in the project looks in Greed's own code, and says so", function(t)
 	project(t)
 	local tool: any

@@ -12,6 +12,7 @@ local greed = require("@greed")
 local core = require("@core")
 local registry = require("./registry")
 local working = require("./working")
+local extend = require("./extend")
 
 local M = {}
 
@@ -306,14 +307,21 @@ function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, strin
 		end
 		if dir == base or string.sub(dir, 1, #base + 1) == base .. "/" then
 			dir = if dir == base then nil else string.sub(dir, #base + 2)
-		elseif inside(runtime) or inside(output) then
+		elseif
+			inside(runtime)
+			or inside(output)
+			or inside(greed.fs.dirs().config)
+			or inside(extend.dirs.plugins)
+			or inside(extend.dirs.fallback)
+		then
 			-- Greed's own plugins and types, the best examples for a plugin,
-			-- and tool results too long to have been given whole.
+			-- tool results too long to have been given whole, and your config
+			-- with the plugins agents write in it.
 			where, prefix = dir, dir .. "/"
 			dir = nil
 		else
 			local also = if runtime
-				then `, or in Greed's own plugins and types in {runtime}`
+				then `, in your config, or in Greed's own plugins and types in {runtime}`
 				else ""
 			return nil, `{dir} is outside the project; grep searches in it{also}`
 		end
@@ -421,8 +429,9 @@ registry.tool({
 		pattern = { type = "string" },
 		path = {
 			type = "string",
-			description = "A folder in the project to search in, or Greed's runtime folder "
-				.. "(its own plugins and their types), given in full",
+			description = "A folder in the project to search in, or, given in full, your "
+				.. "config folder (and its plugins) or Greed's runtime folder (its own plugins "
+				.. "and their types)",
 		},
 		limit = { type = "number", description = "200 lines by default" },
 	}, { "pattern" }),

@@ -239,7 +239,9 @@ registry.tool({
 	description = "Ask the user questions and wait for their answers. Each question has an id "
 		.. "(the key of its answer), the question, and either choices to pick one of or none, "
 		.. "for a typed answer. Greed shows them as a page; the user answers and sends it, or "
-		.. "cancels. Returns the answers by id and whether they cancelled.",
+		.. "cancels. Returns the answers by id and whether they cancelled. Ask only what you "
+		.. "can't settle yourself: pick names and sensible defaults on your own and say what "
+		.. "you picked.",
 	input = registry.schema.object({
 		title = { type = "string" },
 		questions = {
