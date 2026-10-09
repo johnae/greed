@@ -362,6 +362,19 @@ end
 type Change = { old_text: string, new_text: string, replace_all: boolean? }
 
 -- The changes an edit_file call asks for: its `edits`, or the one it gives.
+-- `value`, the list of edits a model gave: some send it as JSON text, which
+-- is read; anything else fails, with what one looks like (`example`).
+local function edits_list(value: any, example: string): { any }
+	if type(value) == "string" then
+		local ok, decoded = pcall(greed.json.decode, value)
+		value = if ok then decoded else nil
+	end
+	if type(value) ~= "table" then
+		error(`edits should be a list of edits, like [{example}]`, 0)
+	end
+	return value
+end
+
 local function changes_of(args: any): { Change }
 	local changes: { Change } = {}
 	if args.old_text ~= nil or args.new_text ~= nil then
@@ -370,8 +383,9 @@ local function changes_of(args: any): { Change }
 			{ old_text = args.old_text, new_text = args.new_text, replace_all = args.replace_all }
 		)
 	end
-	if type(args.edits) == "table" then
-		table.move(args.edits, 1, #args.edits, #changes + 1, changes)
+	if args.edits ~= nil then
+		local more = edits_list(args.edits, '{"old_text": "...", "new_text": "..."}')
+		table.move(more, 1, #more, #changes + 1, changes)
 	end
 	if #changes == 0 then
 		error("old_text and new_text are missing: the text to change, and what it becomes", 0)
@@ -554,7 +568,12 @@ type LineEdit = { from: string?, to: string?, after: string?, text: string }
 local function resolve_anchor(path: string, lines: { string }, anchor: string): number
 	local number, hash = string.match(anchor, "^%s*(%d+)#(%x%x%x)")
 	local n = tonumber(number)
-	if n == nil or hash == nil then
+	if string.match(anchor, "^%s*%d+%s*$") then
+		error(
+			`"{anchor}" needs its hash too: copy the line's name as read gives it, like 12#a3f`,
+			0
+		)
+	elseif n == nil or hash == nil then
 		error(`"{anchor}" isn't a line as read gives them, like 12#a3f`, 0)
 	end
 	hash = string.lower(hash)
@@ -578,7 +597,8 @@ end
 
 -- `text` of `path` with `edits` made, or a failure saying which and why,
 -- and then none is made.
-local function apply_lines(path: string, text: string, edits: { LineEdit }): string
+local function apply_lines(path: string, text: string, given: any): string
+	local edits: { LineEdit } = edits_list(given, '{"from": "12#a3f", "text": "..."}')
 	local lines = string.split(text, "\n")
 	type Span = { from: number, to: number, lines: { string }, n: number }
 	local spans: { Span } = {}
