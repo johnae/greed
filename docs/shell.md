@@ -42,6 +42,9 @@ They're worked out again after every command, so a `cd`, a checkout or
 ⎇ main ⎈ prod-eu:payments ~/s/infra ❯ kubectl get pods
 ```
 
+In a project with a devenv environment, `❄ devenv` shows too (see [Project
+environments](#project-environments)).
+
 A context matching a pattern in `shell-production-contexts` (`prod` by
 default; several go with spaces between them, as Luau patterns, like
 `:set shell-production-contexts "prod ^live%-"`) shows in red, and so
@@ -123,7 +126,7 @@ The shell runs a few commands itself:
 | `cd [DIR]` | Change the shell's folder: a path, `-` for the one before, nothing for home |
 | `export NAME=VALUE ...` | Set variables for the commands after |
 | `unset NAME ...` | Leave variables out of the commands after |
-| `env` | List the variables this shell sets or leaves out |
+| `env [reload]` | List the variables this shell sets or leaves out, and the environment its folder brings (devenv); reload loads that again |
 | `history` | The commands typed before |
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
@@ -159,6 +162,24 @@ shell.
 
 `greed edit FILE...` works from any terminal too: it opens the files in
 the running editor, and with `--wait` returns once each is done with.
+
+## Project environments
+
+In a folder with a `devenv.nix`, the shell loads devenv's environment, as
+`devenv shell` would, and its commands run with it: the project's tools on
+the `PATH`, its variables, and what `enterShell` sets up. No direnv is
+needed, and devenv's own rule applies: a project loads once you've run
+`devenv allow` there. The prompt says it's there, `❄ devenv`, with `…`
+while it loads (a command typed meanwhile waits for it, and `ctrl-c` runs
+it without), or that it failed, which `env` says more about.
+
+Changing `devenv.nix`, `devenv.yaml`, `devenv.lock` or anything else devenv
+read loads it again; `env reload` does too. Leaving the project leaves its
+environment behind, and what you `export` wins over it. Every shell in a
+project shares one load, and an agent's commands get it too.
+
+`:set shell-environments ""` turns it off. Plugins add other kinds, named
+in that option in the order they're asked.
 
 ## Terminals
 

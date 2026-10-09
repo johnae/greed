@@ -1215,6 +1215,40 @@ end)
 `require("@vcs").branch(dir)` is the branch of the repository a folder is
 in, as the status line shows it.
 
+`shell.environment(name, provider)` adds a kind of [project
+environment](shell.md#project-environments), like devenv's, for
+`shell-environments` to name. `provider.root(dir, env)` says which folder's
+environment applies in `dir`, or nil, with a reason when there's one it
+won't load ("not allowed"); it runs after every command, so keep it quick.
+`provider.load(root, env)` loads it and returns `{ vars, watch, output }`:
+the variables to set (a string) or leave out (`false`), the files whose
+change loads it again, and what loading printed. It can run programs and
+wait; an error says why it failed.
+
+```luau
+local greed = require("@greed")
+local shell = require("@shell")
+
+-- A folder with a .env file brings its NAME=VALUE lines.
+shell.environment("dotenv", {
+	root = function(dir)
+		return if greed.fs.stat(`{dir}/.env`) then dir else nil
+	end,
+	load = function(root)
+		local vars = {}
+		for _, line in string.split(greed.fs.read(`{root}/.env`) or "", "\n") do
+			local name, value = string.match(line, "^([%w_]+)=(.*)$")
+			if name and value then
+				vars[name] = value
+			end
+		end
+		return { vars = vars, watch = { `{root}/.env` }, output = "" }
+	end,
+})
+```
+
+`:set shell-environments "devenv dotenv"` then asks devenv first.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

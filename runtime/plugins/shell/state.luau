@@ -20,6 +20,9 @@ export type Block = {
 	--- (false) for it.
 	cwd: string,
 	env: { [string]: string | false },
+	--- The variables the folder's environment (devenv, direnv) gave it,
+	--- under `env`.
+	provided: { [string]: string | false },
 	--- How it ran: "builtin" (the shell itself), "pipe" (a program with its
 	--- output and errors apart), "pty" (in a pseudo terminal, as typed
 	--- commands run) or "terminal" (handed to a terminal).
@@ -140,6 +143,29 @@ export type Shell = {
 	ticking: boolean,
 	--- What the prompt shows before the folder, as last worked out.
 	segments: { Segment }?,
+	--- The environment the folder it's in brings, as devenv or direnv
+	--- gives it (envs.luau), and its variables, under `env`; or why one
+	--- there isn't loaded, like it not being allowed yet.
+	environment: Environment?,
+	provided: { [string]: string | false },
+	unloaded: string?,
+}
+
+--- An environment a folder brings: who gives it and for which folder,
+--- whether it's loaded, its variables, what loading it printed, and the
+--- files whose change means loading it again.
+export type Environment = {
+	provider: string,
+	root: string,
+	status: "loading" | "loaded" | "failed",
+	vars: { [string]: string | false },
+	output: string,
+	error: string?,
+	seconds: number?,
+	watch: { string },
+	stale: boolean,
+	--- What waits for a load to finish, each sent once it has.
+	waiters: { greed.Signal },
 }
 
 --- Shells by their buffer's id.
@@ -259,17 +285,16 @@ function M.editor_environment(): { [string]: string }
 end
 
 --- The variables programs started in `shell` get, all of them: the
---- editor's, with the shell's own on top.
+--- editor's, then its folder's environment's, then the shell's own.
 function M.variables(shell: Shell): { [string]: string }
-	local vars: { [string]: string } = {}
-	for name, value in M.editor_environment() do
-		if shell.env[name] ~= false then
-			vars[name] = value
-		end
-	end
-	for name, value: string | false in shell.env do
-		if value ~= false then
-			vars[name] = value
+	local vars: { [string]: string } = table.clone(M.editor_environment())
+	for _, layer in { shell.provided, shell.env } do
+		for name, value: string | false in layer do
+			if value == false then
+				vars[name] = nil
+			else
+				vars[name] = value
+			end
 		end
 	end
 	return vars
@@ -288,7 +313,7 @@ local EDITOR_VARIABLES = { "EDITOR", "VISUAL", "GIT_EDITOR", "JJ_EDITOR", "KUBE_
 --- The variables `block`'s command gets on top of the editor's: pagers
 --- off, so output comes back as text, where greed is (`GREED_BIN`), the
 --- session and block it runs in, an editor that opens files here for a
---- block you ran, then the block's own.
+--- block you ran, then its folder's environment's, then the block's own.
 function M.environment(block: Block): { [string]: string | false }
 	local out: { [string]: string | false } = { PAGER = "cat", GIT_PAGER = "cat" }
 	out.GREED_BIN = M.program() or false
@@ -302,8 +327,10 @@ function M.environment(block: Block): { [string]: string | false }
 			out[name] = editor
 		end
 	end
-	for name, value: string | false in block.env do
-		out[name] = value
+	for _, layer in { block.provided, block.env } do
+		for name, value: string | false in layer do
+			out[name] = value
+		end
 	end
 	return out
 end

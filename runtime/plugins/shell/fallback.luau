@@ -240,14 +240,26 @@ function M.collect(block: Block, run: Run): (string?, { [string]: string | false
 	end
 	local cwd = greed.fs.read(`{dir}/cwd`)
 	local moved = if cwd then string.match(cwd, "^(.-)\n?$") else nil
-	local before = variables((greed.fs.read(`{dir}/before`)))
-	local after = variables((greed.fs.read(`{dir}/after`)))
+	local changed = M.changes(dir)
 	greed.fs.remove(dir, { recursive = true })
 	if moved and moved ~= "" and moved ~= block.cwd then
 		block.cwd_after = moved
 	end
-	if before == nil or after == nil then
+	if changed == nil or next(changed) == nil then
 		return block.cwd_after, nil
+	end
+	block.env_changed = changed
+	return block.cwd_after, changed
+end
+
+--- The variables set (a string) or taken away (false) between the files
+--- `before` and `after` in `dir`, each as `greed --env0` printed them; nil
+--- without both.
+function M.changes(dir: string): { [string]: string | false }?
+	local before = variables((greed.fs.read(`{dir}/before`)))
+	local after = variables((greed.fs.read(`{dir}/after`)))
+	if before == nil or after == nil then
+		return nil
 	end
 	local changed: { [string]: string | false } = {}
 	for name, value in after do
@@ -260,11 +272,7 @@ function M.collect(block: Block, run: Run): (string?, { [string]: string | false
 			changed[name] = false
 		end
 	end
-	if next(changed) == nil then
-		return block.cwd_after, nil
-	end
-	block.env_changed = changed
-	return block.cwd_after, changed
+	return changed
 end
 
 return M

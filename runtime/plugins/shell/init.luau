@@ -48,10 +48,13 @@ local tables = require("@self/tables")
 local rows = require("@self/rows")
 local completion = require("@self/complete")
 local segments = require("@self/segments")
+local envs = require("@self/envs")
 
 type Shell = state.Shell
 type Block = state.Block
 export type Table = tables.Table
+export type EnvironmentProvider = envs.Provider
+export type LoadedEnvironment = envs.Loaded
 
 local M = {}
 
@@ -72,10 +75,15 @@ M.sources = require("@self/sources")
 M.completion = completion
 M.segments = segments
 M.edit = require("@self/edit")
+M.envs = envs
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
 M.segment = segments.segment
+
+--- Loads the environment folders bring for provider `name` (as devenv
+--- does), for `shell-environments` to name; see `envs.provider`.
+M.environment = envs.provider
 
 --- Completes the arguments of program `name` with `complete`, ahead of
 --- Cobra, fish, carapace and the program's help; see `sources.completer`.
@@ -161,10 +169,15 @@ function M.open(options: OpenOptions?): Shell
 		prompt = buffer:track(0, { gravity = "left" }),
 		ticking = false,
 		segments = nil,
+		environment = nil,
+		provided = {},
+		unloaded = nil,
 	}
 	state.shells[buffer:id()] = shell
 	log.draw_prompt(shell)
-	segments.refresh(shell)
+	greed.spawn(function()
+		envs.refresh(shell)
+	end)
 	if opts.show ~= false then
 		M.show(shell, view)
 	end
@@ -228,6 +241,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		command = command,
 		cwd = opts.cwd or shell.cwd,
 		env = table.clone(opts.env or shell.env),
+		provided = {},
 		runner = "builtin",
 		via = "builtin",
 		program = nil,
@@ -309,6 +323,7 @@ local function fall_back(
 	input: string?
 )
 	local agent = block.by == "agent"
+	envs.prepare(shell, block)
 	local wrapped =
 		fallback.prepare(block, line, { program = if agent then "sh" else nil, rc = not agent })
 	start(shell, block, wrapped.argv, opts, handoff, input, function()
@@ -469,6 +484,24 @@ function M.kill(block: Block): boolean
 	return true
 end
 
+-- `env` also says what environment the folder brings (envs.luau), and
+-- `env reload` loads it again.
+local list_env = run.builtins.env
+run.builtins.env = function(shell: Shell, block: Block, args: { string }): number
+	local reload = #args == 1 and args[1] == "reload"
+	local code = 0
+	if reload then
+		envs.reload(shell)
+	else
+		code = list_env(shell, block, args)
+	end
+	for _, line in envs.describe(shell) do
+		run.write(shell, block, line .. "\n", "stdout")
+	end
+	local failed = shell.environment and shell.environment.status == "failed"
+	return if reload and failed then 1 else code
+end
+
 run.builtins.open = function(shell: Shell, block: Block, args: { string }): number
 	if #args == 0 then
 		run.write(shell, block, "open: which files?\n", "stderr")
@@ -601,6 +634,7 @@ local TOPICS: { [string]: () -> { string } } = {
 				"⎈ context:namespace",
 				"the kubernetes context kubectl would use, from its config",
 			},
+			{ "❄ devenv", "the environment the folder brings (env says more)" },
 		})
 		local production = greed.option.get("shell-production-contexts")
 		table.insert(lines, "")
@@ -610,7 +644,7 @@ local TOPICS: { [string]: () -> { string } } = {
 		)
 		local others: { string } = {}
 		for _, name in segments.names() do
-			if name ~= "git" and name ~= "kubernetes" then
+			if name ~= "git" and name ~= "kubernetes" and name ~= "environment" then
 				table.insert(others, name)
 			end
 		end
@@ -1282,9 +1316,12 @@ do
 end
 
 -- What the prompt shows can change with any command: a cd, a checkout,
--- `kubectl config use-context`.
+-- `kubectl config use-context`; and so can the environment the folder
+-- brings.
 run.on_finish(function(shell: Shell)
-	segments.refresh(shell)
+	greed.spawn(function()
+		envs.refresh(shell)
+	end)
 end)
 
 -- A running block keeps the session on :q (core's on-quit).
