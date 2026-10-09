@@ -19,8 +19,16 @@ require("@greed").theme.set({
 })
 ```
 
-These are the names Greed's own queries use, and the ones to use in queries
-you write. They're the names Helix uses, so its queries work as they are.
+These are the names Greed's queries and themes use, and the ones to use in
+queries you write. They're the names Helix uses, so its queries work as
+they are. A theme entry can also be set for one kind of client only, with
+`tui` and `gui` parts:
+
+```luau
+require("@greed").theme.set({
+	comment = { fg = "bright-black", gui = { italic = true } },
+})
+```
 
 ## Code
 

@@ -1,15 +1,16 @@
 # Editing styles
 
-Greed comes with three ways to edit, and you can switch between them while
-it runs. Each one follows the editor it comes from closely, so what your
-hands know works here: Helix's selections and motions, Vim's operators,
-text objects, registers, macros and visual modes, the usual shortcuts of
-modeless editors. Where one still differs from the original, its section
+Greed comes with three ways to edit, two with modes and one without, and
+you can switch between them while it runs. They're equals: each is a
+plugin with its own modes, written against the same API, and each follows
+the editor it comes from closely, so what your hands know works here:
+Helix's selections and motions, Vim's operators, text objects, registers,
+macros and visual modes, the usual shortcuts of modeless editors. Where one still differs from the original, its section
 below says so.
 
 | Style | How it works | Like |
 |---|---|---|
-| `helix` (the default) | Select text, then say what to do with it | Helix, Kakoune |
+| `helix` | Select text, then say what to do with it | Helix, Kakoune |
 | `vim` | Say what to do, then where: `d w`, `c i w`, `y y` | Vim |
 | `vscode` | No modes, VS Code's keys: typing inserts, shift and the arrows select | VS Code, most editors |
 
@@ -23,7 +24,8 @@ opens the same list. The mode on the left reads the way the style's
 editor says it: NORMAL, INSERT, SELECT in Helix's, VISUAL in Vim's.
 
 The first time you start Greed it asks which you'd like (`:setup` asks
-again). To start in a style every time, set it in `~/.config/greed/init.luau`:
+again). To start in a style every time, set it in `~/.config/greed/init.luau`
+(with none set, Greed starts in Helix's):
 
 ```luau
 require("@greed").option.set("editing-style", "vim")
@@ -45,7 +47,7 @@ you use, styles added later included:
 ```luau
 local greed = require("@greed")
 
-greed.keymap.bind({ layer = "leader" }, { w = "save" })          -- space w, or ctrl-space w
+greed.keymap.bind({ layer = "leader" }, { W = "save-all" })      -- space W, or ctrl-space W
 greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })   -- insert mode, or vscode's mode
 greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" })
 ```
@@ -71,7 +73,7 @@ x x d      select two lines, delete them
 The cursor sits on a character, as in Helix, and is part of what you
 select: `v l l` selects three characters, `;` leaves the cursor on the
 character it was on, and `d` on a bare cursor deletes that character.
-`w`, `b` and `e` move exactly as Helix's do.
+`w`, `b` and `e` move as Helix's do.
 
 With `:set motion-hints true` (off by default), a word motion (`w` `b`
 `e` and their WORD forms) numbers the next nine places doing it again
@@ -85,7 +87,7 @@ numbers use the theme's `ui.motion.hint` style and the rest the quieter
 A number sits on the space beside its place when the place is a letter, so
 it hides none of the text.
 
-Why it's the default: you see what a command will act on before you run
+Why it's here: you see what a command will act on before you run
 it, and many selections are part of the model rather than a separate
 feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then
 happens at each one, which covers most of what macros and
@@ -191,7 +193,7 @@ there is one, and the keys are the ones VS Code and most editors use.
 | `ctrl-p` `ctrl-b`, `ctrl-w` | Find a file, switch to an open file, close the file (the one you were in before takes its place) |
 | `ctrl-\` | Split the pane to the right |
 | `ctrl-k` then a key | VS Code's chords: `ctrl-k ctrl-0` and `ctrl-k ctrl-j` fold and unfold everything, `ctrl-k ctrl-l` folds or unfolds the block, `ctrl-k ctrl-i` shows what's under the cursor, `ctrl-k ctrl-q` goes to the last change, `ctrl-k ctrl-t` picks a theme, `ctrl-k s` saves every file |
-| `ctrl-P` or `alt-x` | Run a command |
+| `ctrl-P`, `alt-x` | Pick a command to run from a list; open the command line (`:` in the other styles) |
 | `ctrl-space` | The leader: `ctrl-space f` finds a file, `ctrl-space /` searches the project, the rest as `space` in Helix and Vim |
 | `ctrl-s`, `ctrl-q` | Save; quit, asking first whether to save unsaved files |
 
@@ -242,8 +244,8 @@ typing mode; a style without modes makes its own mode the typing one
 (`roles = { typing = "mine" }`). `.` works in any style: it types the keys
 of the last change again;
 `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
-commands that shouldn't count as one. The Vim plugin in
-`runtime/plugins/vim` is a full example.
+commands that shouldn't count as one. The `vim` plugin, which is the Vim
+style, is a full example to read.
 
 A style without modes, like a JetBrains keymap, is shorter still: bind
 its keys in its one mode, and core's editing without modes (the vscode

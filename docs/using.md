@@ -22,7 +22,7 @@ alone.
 | `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |
-| `greed edit [--wait] FILE...` | Open files in the running editor; with `--wait`, return once each is closed with `:q` or `:wq` (`:cq` fails it), as `$EDITOR` for `git commit` |
+| `greed edit [--wait] FILE...` | Open files in the running editor; with `--wait`, return once each is closed with `:q` or `:wq` (`:cq` fails it), as `$EDITOR` for `git commit`. Greed's own shells set this up already |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
 Several terminals can show one session at once: run `greed` or `greed
@@ -79,7 +79,7 @@ unsaved files, quit without saving or cancel, as VS Code does.
 something: a command running in one of its terminals, a program like a
 task, or an agent at work. Then it detaches instead and the session keeps
 going, so `greed` comes back to it. A shell waiting at its prompt doesn't
-count. Over `greed ssh`, `:q` always keeps the session, since coming back
+count. Over `greed ssh`, `:q` keeps the session by default, since coming back
 to a running one is quicker than starting again over the network.
 `:quit-session` (or `:qa`) ends it whatever runs in it. Files with unsaved
 changes stop it: it lists them, `:wa` saves them and `:qa!` ends the
@@ -202,7 +202,7 @@ picker, project search and tree work within the shown one.
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |
-| `:q` | Close the shown project and leave; on the last one, end the session unless something runs in it |
+| `:q` | In the last pane of the last tab, close the shown project and leave; on the last project, end the session unless something runs in it |
 | `:qa` | End the session and every project in it |
 
 A recent project or a folder typed into `space P` opens in its own session,
@@ -259,7 +259,8 @@ session that was already running keeps the config it started with.
 To keep a plugin you made over there, bring it home. `greed bring HOST`
 lists the plugins in the other machine's own config and data folders, and
 `greed bring HOST PLUGIN` copies one into your config's `plugins` folder.
-Greed asks you to approve what it uses the next time it starts.
+A running Greed loads it at once, asking you first to approve what it
+uses.
 
 ```sh
 $ greed bring build-box
@@ -277,7 +278,9 @@ the programs in its terminals.
 Greed has to be installed on both machines. The two ends check that they
 speak the same protocol and say so if they don't, so mismatched versions
 fail with a clear message. `GREED_REMOTE` sets the path of `greed` on the
-other machine, and `GREED_SSH` the ssh command to use.
+other machine, and `GREED_SSH` the ssh program to use. It's run as one
+program, so for options like a port use `~/.ssh/config` or a small wrapper
+script.
 
 ## Editing
 
@@ -309,7 +312,7 @@ cursor is a selection one character wide.
 | `w` `b` `e` | Select to the next word, previous word, word end |
 | `W` `B` `E` | The same for WORDs, which include punctuation (`a.b`) |
 | `f` `t` + a character | Select to the next one, or up to it; `F` `T` go back |
-| `x` | Select the line |
+| `x` | Select the line; again, the next one too |
 | `g g` `g e` | Start of the file, start of its last line |
 | `G`, `5 G` | The last line, or line 5 |
 | `g h` `g l` `g s` | Start and end of the line, first character that isn't a space |
@@ -458,7 +461,7 @@ selects every place it appears.
 | `m a c` | The comment |
 | `m i T` `m a T` | Inside or around the test (Rust, Python, Go, JavaScript and TypeScript) |
 | `m a e` | An entry in a table, map or struct |
-| `] f` `[ f` | The next or previous function; also `t`, `a` and `c` |
+| `] f` `[ f` | The next or previous function; also `t`, `a`, `c`, `T` and `e` |
 | `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
 | `] n` `[ n` | The next or previous node beside it (Helix has these on `alt-n` `alt-p`, which are pane keys here) |
 | `alt-a` `alt-I` | Every node beside it, or every node inside it |
@@ -484,10 +487,10 @@ cursor's line, from the language's grammar. In a language without one,
 it's the lines indented under the nearest line indented less, and in
 Markdown it's a fenced code block, a list item with lines under it (a todo
 and its subtasks) or the section under a heading, whichever is innermost.
-Vim's style has the same `z` keys (`tab` stays `ctrl-i` there),
-and also `z M` to fold every outermost block, `z f` + a motion to fold
-those lines, `z j` `z k` to go to the next or previous block, and `z d`
-`z E` to unfold.
+Vim's style folds with `tab`, `z a`, `z o`, `z R` and `z c` (it has no
+`z C` or `shift-tab`), and also `z M` to fold every outermost block, `z f`
++ a motion to fold those lines, `z j` `z k` to go to the next or previous
+fold, and `z d` `z E` to unfold.
 
 If you'd rather edit like Vim, or without modes, `:style vim` and `:style
 vscode` switch to those; [Editing styles](editing-styles.md) explains each.
@@ -530,8 +533,8 @@ found in a panel, a third of the screen wide: a multibuffer, with each
 matching line under its file's name and beside its line number. Edit
 those lines with any of the editing keys above (`s` to select the
 matches, then `c` to change them all) and the files change as you type;
-`:w` saves them, `enter` goes to the line and `q` closes the panel. A file that changed on disk since the search is left
-alone and reported. `:grep PATTERN` fills the panel directly.
+`:w` saves them, `enter` goes to the line and `q` closes the panel. A file
+that changed on disk since the search is left alone and reported. `:grep PATTERN` fills the panel directly.
 
 ## Files and buffers
 
@@ -540,6 +543,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `space f` | Find a file in the project |
 | `space F` | Find a file under the folder Greed was started in |
 | `space '` | Open the last picker again |
+| `space .` | What you can do with what's under the cursor (a file, link, symbol, problem, change or the selection), to pick one; `alt-.` in the vscode style |
 | `space b` | Switch to an open file |
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
@@ -557,7 +561,7 @@ alone and reported. `:grep PATTERN` fills the panel directly.
 | `:sp` `:vs` `:new` `:vnew` `:tabnew` | Split the pane, or open a new pane or tab, as in Vim |
 | `:reload` (`:rl`), `:rla` | Load the file again from disk, or every open file |
 | `:noh` | Take away search highlights |
-| `:set NAME VALUE` | Set an option. Yes-or-no ones also take Vim's `:set NAME`, `:set noNAME` and `:set NAME!`, `:set NAME?` shows one, and `:set nu`, `nonu`, `rnu` and `nornu` show and hide line numbers. `:toggle NAME` flips one, as in Helix |
+| `:set NAME VALUE` | Set an option. Yes-or-no ones also take Vim's `:set NAME`, `:set noNAME` and `:set NAME!`, `:set NAME?` shows one, and `:set nu`, `nonu`, `rnu` and `nornu` show and hide line numbers. `:toggle NAME` flips one, as in Helix. A name that isn't an option gets the names like it |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 | `:errors` | Errors from plugin code that nothing caught, newest first: the plugin, what it was doing, the message and where in its code it failed |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
@@ -603,14 +607,18 @@ waits three seconds instead. Put it in your `init.luau` to keep it:
 The file tree's icons and the status line's rounded ends come from
 [Nerd Fonts](https://www.nerdfonts.com). The window (`greed --gui`) has
 them built in, so they show whatever font you draw in, even when another
-installed font claims the same characters. Emoji come from your system's
-emoji font; one it can't draw in color, like the newest Noto Color Emoji,
-is passed over for another, or the plain Noto Emoji. A terminal shows
-them only if its own font has them: install a Nerd Font, or one of its
-icon-only "Symbols" fonts, and set your terminal to use it. Without one
-you see boxes where icons should be.
+installed font claims the same characters. A terminal shows them only if
+its own font has them: install a Nerd Font, or one of its icon-only
+"Symbols" fonts, and set your terminal to use it. Without one you see
+boxes where icons should be.
 
-Two options use them, and both default to plain text that works anywhere:
+In the window, emoji come from your system's emoji font; one it can't draw
+in color, like the newest Noto Color Emoji, is passed over for another, or
+the plain Noto Emoji.
+
+Two options use them. Out of the box you see plain text that works
+anywhere: `tree-icons` is `"none"`, and the rounded ends show only once
+`statusline-pills` is on (see [The status line](#the-status-line)).
 
 ```luau
 local option = require("@greed").option
@@ -647,7 +655,7 @@ support it hear only what changed with each edit, so big files stay quick.
 | `g r` | Pick a place it's used, with a preview |
 | `space H` | Select every place in this file it's used (Helix's space h, which is help here) |
 | `space S` | Pick a symbol anywhere in the project |
-| `space r` | Rename it everywhere it's used |
+| `:rename` | Rename it everywhere it's used (`space r`; also `g r n` in the Vim style, `f2` in the vscode style) |
 | `space a` | Pick a fix or refactor for the cursor or selection |
 | `space d` | Pick a problem in this file |
 | `space D` | Pick a problem in any file the server checked, open or not |
@@ -800,7 +808,8 @@ model plays it. Out of the box:
 
 Greed's own agent asks for `agent`, which uses `reasoning` until you set
 it; reviewing code an agent wants to run asks for `review`, also
-`reasoning` until set.
+`reasoning` until set; and compacting a long conversation of Greed's agent
+asks for `compact`, which uses `agent` until set.
 
 `:models` shows every role, its model and whether its provider's key is
 found, and lets you change them:
@@ -991,7 +1000,7 @@ using.md
 
 | Keys | |
 |---|---|
-| `space m r`, or `enter` on the fence | Run the block under the cursor |
+| `space m r`, or `enter` on the fence once it shows `▶ run` | Run the block under the cursor |
 | `space m R` | Run every block in the file, in order |
 | `space m c` | Clear the block's result (`:blocks-results-clear` clears them all) |
 | `space m s` | Stop the block running under the cursor |
@@ -1018,6 +1027,10 @@ Options go after the language:
   input runs again every time, so it never reads a stale result.
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
+
+While a block runs, its fence shows `■ running`; click that or press
+`space m s` to stop it, along with anything it started, like a server. A
+result keeps at most `blocks-max-lines` lines of output (1000).
 
 Nothing runs when a file opens. The first time you run a block in a file,
 Greed asks whether to: `y` for now, `a` to always trust that file
@@ -1229,12 +1242,12 @@ macOS), or whatever `:set link-opener firefox` names.
 
 ### Tasks
 
-`space r` picks a task to run: a command you run again and again, like
+`space o t` picks a task to run: a command you run again and again, like
 building or testing. It runs in a terminal below the file, which stays
 open when it's done so you can read it, and running it again replaces the
 last run. `] e` and `space d` in its output go to the files and lines it
 names, like a compiler's errors. The last task you ran comes first, so
-`space r enter` runs it again; `:task test` runs one by name.
+`space o t enter` runs it again; `:task test` runs one by name.
 
 Greed finds tasks in the project: Cargo's `build`, `test`, `run` and
 `clippy`, a `package.json`'s scripts, and a `Makefile`'s targets. Add your
@@ -1312,7 +1325,11 @@ command at the prompt at the bottom and `enter` runs it. Each command
 becomes a block above the prompt, its command, what it printed and how it
 ended, which stays to search, fold, copy, run again and send to the next
 command or to a buffer (`$3 | sort`, `cargo test > buf:tests`). Agents run
-their commands there too. [The shell](shell.md) has the rest: keys,
+their commands there too. `space o w` lists what's running in every shell:
+`enter` opens one in a float, `ctrl-o` goes to it and `ctrl-x` stops it.
+Programs a shell runs that want an editor, like `git commit`, open the
+file in Greed (`$EDITOR` is `greed edit --wait` there; `:set shell-editor
+false` turns that off). [The shell](shell.md) has the rest: keys,
 builtins, which shell runs a line, terminals, and limits.
 
 ## Panes and tabs
@@ -1358,8 +1375,9 @@ tab's floats and shows them again where they were (terminals keep
 running), and opens a floating terminal when there are none. While floats
 are shown, `alt-n` opens another floating terminal rather than a pane.
 `alt-F` opens the file you're in as a floating view (`:float-file PATH`
-for another), and `alt-p e` takes the pane you're in out to float over the
-tab, or puts a floating view back in as a pane. Drag a float by its top
+for another), and `alt-p e` takes the pane or panel you're in out to float
+over the tab, or puts a floating view back in as a pane. Floating the tab's
+last pane leaves that pane showing another open file. Drag a float by its top
 border to move it or by an edge to resize it, or use the resize mode
 (`alt-r`). How the floats are laid out is up to the tab's
 [float layout](#float-layouts).
@@ -1553,7 +1571,8 @@ in every mode. A message on the status line goes away with the next key.
 
 The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
 `:wq` `:wqa` `:x` `:e` `:b` `:bn` `:bp` `:bc` `:ls` `:sp` `:vs` `:only`
-`:tabnew` `:noh` `:rl` `:rla` `:set` `:toggle`, and Helix's long ones like
+`:tabnew` `:noh` `:rl` `:rla` `:set` `:toggle`, `:colo` (`:colorscheme`)
+for `:theme`, Neovim's `:checkhealth` for `:health`, and Helix's long ones like
 `:write-all` and `:buffer-close`. Arguments go after a space (`:w notes.md`);
 only Vim's line commands and `:b` take one right after the name (`:m0`,
 `:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says
@@ -1561,12 +1580,13 @@ why in plain words; an error from a bug in a plugin also names the plugin,
 and `:errors` has the details.
 
 Vim's line commands work in every style. A range in front picks the lines
-a command works on; without one, it's the lines the selection touches.
+a command works on; without one, it's the lines the selection touches
+(`:g` and `:v` take the whole file).
 
 | Command | |
 |---|---|
 | `:42`, `:$` | Go to line 42, or the last line |
-| `:s/regex/text/flags` | Replace on the lines: `g` every match on a line, `i` ignore case, `n` only count; `\1` and `&` put back what matched. Undo puts the cursor back on the first line changed |
+| `:s/regex/text/flags` | Replace on the lines: `g` every match on a line, `i` ignore case, `I` match case, `n` only count; `\1` and `&` put back what matched. Undo puts the cursor back on the first line changed |
 | `:g/regex/command`, `:v/regex/command` | Run a command on each line that matches, or doesn't; with no command, select those lines |
 | `:d` `:y` | Delete or copy the lines |
 | `:m 0` `:t $` | Move or copy the lines below a line (`0` is the top) |
@@ -1589,7 +1609,11 @@ enter, and `esc` leaves the file as it was.
 ## Configuration
 
 Your config is `~/.config/greed/init.luau`, plain Luau with the full plugin
-API. Your own plugins go in `~/.config/greed/plugins/NAME/`.
+API. `:config-open` (or `:config`) opens it, making the folder if it isn't
+there yet. Your own plugins go in `~/.config/greed/plugins/NAME/`. A plugin
+that appears there, or whose files change, loads by itself, asking you
+first if it wants something you haven't approved; `:plugin-reload NAME`
+loads one again by hand. [Writing plugins](plugins.md) has more.
 
 ### Where Greed keeps things, and profiles
 
@@ -1653,7 +1677,7 @@ to stop trusting one.
 local greed = require("@greed")
 
 -- Keys
-greed.keymap.bind({ layer = "leader" }, { w = "save" })
+greed.keymap.bind({ layer = "leader" }, { W = "save-all" })
 
 -- Options (`:set` changes them while running)
 greed.option.set("flash-duration", 150)
@@ -1688,6 +1712,7 @@ to what was saved takes it away. On the right it shows:
 - the branch and the lines added, changed and removed in the file, like
   `main +3 ~1 -2` (with jj the nearest bookmark and the change you're on,
   like `main · nwpr`)
+- todos due today, like `2 due today` (see [Reminders](#reminders))
 - problems
 - the language and the features on for the file, like `markdown · notes`
 - the language server: its name, what it's working on
@@ -1698,6 +1723,7 @@ to what was saved takes it away. On the right it shows:
   `tabs` (or `spaces`) where its language indents the other way, or
   `read-only`
 - how many selections there are, once there's more than one
+- agents at work or waiting for you, like `◆ 1 working · 1 waiting for you`
 - the cursor's line and column (the character the cursor is drawn on, at
   the end of a selection too), the machine and the session
 
@@ -1706,9 +1732,8 @@ Two options make it livelier, both off unless you turn them on:
 ```luau
 local option = require("@greed").option
 -- The mode, tab, machine and session as pills in their theme colors, with
--- rounded ends (they need a Nerd Font; "none" makes them square)
+-- rounded ends (they need a Nerd Font; statusline-caps "none" makes them square)
 option.set("statusline-pills", true)
-option.set("statusline-caps", "round")
 -- A wave of light through the letters of the tab or the file when you go
 -- to another, a glow from the middle of the mode when it changes, and in
 -- an agent's pane, spinning tools and a status that moves while it works
@@ -1763,7 +1788,8 @@ statusline.add_async("right", "change", {
 `:theme` lists the themes and tries each one as you move through the list.
 `enter` keeps it, `esc` goes back to the one you had, and `:theme nord`
 switches straight away. Tab through the matches after `:theme ` tries each
-one the same way. The theme you pick is remembered for next time.
+one the same way. The theme you pick is remembered for next time, unless
+your `init.luau` sets one with `theme.use`, which runs later and wins.
 
 Greed comes with `default` (your terminal's 16 colors, so it follows your
 terminal's palette), `nord`, `nord-light`, `dracula`, `catppuccin-mocha`,
@@ -1785,7 +1811,8 @@ theme.define("my-nord", {
 })
 
 -- A theme from a palette: backgrounds, text and hues, and optionally
--- colors for keywords, functions, strings, types, constants and operators
+-- fg_alt, accent, and colors for syntax: keyword, func, string, type,
+-- constant and operator
 theme.define("mine", {
 	palette = {
 		bg = "#101418", bg_alt = "#181e24", bg_high = "#232b33", selection = "#2c3640",
@@ -1819,6 +1846,7 @@ only: the first two make floats boxes with rounded corners and a soft
 shadow, `badge` draws a style's background as a small box with rounded
 corners, like a key cap (motion hints and buttons use it), `checkbox =
 "empty"` or `"checked"` draws a checkbox over the text (todo boxes use it),
+`"choice"` or `"chosen"` a round button (Markdown choices use it),
 and `font = "prose"` sets text in the proportional font.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit

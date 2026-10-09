@@ -22,7 +22,9 @@ In Luau:
 - The theme and every animation.
 - Language settings, which language server to start and how.
 - The agent integration: the MCP tools, the review of proposed edits,
-  Claude Code's `/ide` protocol, plugins written by agents.
+  Claude Code's `/ide` protocol, plugins written by agents, and Greed's
+  own agent with its chat.
+- The shell: its prompt, blocks, tables, completion and watches.
 
 In Rust:
 
@@ -30,6 +32,8 @@ In Rust:
 - Layout and rendering: turning buffers, decorations and the theme into
   frames a client draws.
 - Parsing (tree-sitter), regex search, project-wide grep and diffs.
+- Programs and terminals: running processes, the terminal emulator, and
+  reading images and PDFs.
 - Talking to the outside: language servers, the session socket, Claude
   Code's WebSocket, files.
 - Running things off the editor thread, and waking the Luau code waiting
@@ -46,9 +50,9 @@ panel and writing edits back are Luau.
 
 The editor runs as a session: one process that owns the buffers, the Luau
 plugins and the language servers. Clients connect to it. The terminal UI is
-one client: it sends keys and draws the frames it gets back. `greed ctl`,
-`greed mcp` and Claude Code are others, and a graphical client can be added
-the same way.
+one client: it sends keys and draws the frames it gets back. The window
+(`greed --gui`) is another that draws the same frames, and `greed ctl`,
+`greed mcp` and Claude Code connect too.
 
 Because the session owns the state, a terminal can detach and reattach
 without losing anything, and `greed ssh` attaches a terminal on one machine
@@ -94,8 +98,10 @@ callbacks, and the editor keeps responding meanwhile.
 
 ## Agents are clients too
 
-Agents see the same editor state you do, and their edits arrive as
-proposals in the buffer that you accept or reject. When they extend Greed,
+Agents see the same editor state you do, and their edits still go
+through you: they arrive as proposals in the buffer that you accept or
+reject, or, for Greed's own agent, ask first with the change shown as a
+diff, unless you allowed that kind of change for the session. When they extend Greed,
 their plugins go through the same type checking and tests as any other, and
 you review them before they load.
 

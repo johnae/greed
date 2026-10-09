@@ -143,8 +143,9 @@ shows it.
 
 `greed ctl eval` from a shell runs as you: whoever runs it can already run
 anything. Greed knows a call came from `greed ctl` by its connection, so
-a plugin calling the tool can't claim to be one. For agents, through `greed mcp`, Claude Code's `/ide` or Greed's
-own agents, `eval` runs as the `agent-eval` option says:
+a plugin calling the tool can't claim to be one. For agents, through
+`greed mcp`, Claude Code's `/ide` or Greed's own agents, `eval` runs as the
+`agent-eval` option says:
 
 | Value | |
 |---|---|
@@ -382,7 +383,9 @@ language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file
 over one it hasn't read, or over your changes made since it read it, and
 it can't write a line like `// ... existing code ...` in place of code it
-left out.
+left out. When it edits your config, the config runs again right away, and
+the agent hears whether it ran or what error it hit, so a setting that
+doesn't exist gets fixed in the same turn.
 
 By default the model edits by giving the text to replace. Some models copy
 text badly and do better naming lines instead: with `edits = "hashline"`
@@ -396,7 +399,9 @@ models.roles.agent = { provider = "berget", model = "moonshotai/Kimi-K3", edits 
 ```
 
 `:usage` shows how the edits went, by model and way of editing, to compare
-the two. Its system
+the two, beside the tokens each model was sent and wrote today and over the
+last week, and how many came from the provider's cache
+([Models](using.md#models) has more). Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
 in the project itself, without a workspace of its own.
 
@@ -455,7 +460,8 @@ models.roles.compact = { provider = "anthropic", model = "claude-haiku-4-5-20251
 ```
 
 Greed knows the context window of Claude, GPT and common open models
-(Llama 3, Mistral Small, Qwen, GLM, DeepSeek, gpt-oss) by their names, and
+(Llama 3, Mistral Small, Devstral, Qwen3 Coder, GLM, DeepSeek, Gemma 3, Kimi,
+gpt-oss) by their names, and
 assumes 32k tokens for any other. Set `context` on the role or provider
 when it's wrong, as for an Ollama model whose context you've raised:
 

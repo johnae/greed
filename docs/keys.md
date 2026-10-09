@@ -31,16 +31,19 @@ whichever style you use:
 ```luau
 local greed = require("@greed")
 
--- space w in Helix and Vim, ctrl-space w in the vscode style
+-- space q in Helix and Vim, ctrl-space q in the vscode style
 greed.keymap.bind({ layer = "leader" }, {
-	w = "save",
 	q = "quit",
+	W = "save-all",
 	["g p"] = "pick-changed-file",
 })
 ```
 
 After the leader's keys, a hint lists what can follow, the same in every
-style.
+style. Check a key is free first (`space h k`, or the hint): a binding
+replaces every longer sequence that starts with the same keys, so binding
+the leader's `w` alone would take away `space w v` and the other window
+keys.
 
 Other keys belong to a role. Each style says which of its modes plays
 each one: `command` is where you move around and run commands (Helix's
@@ -55,7 +58,7 @@ plugin adds later; add `style` for one style only:
 greed.keymap.bind({ role = "typing" }, { ["ctrl-s"] = "save" })
 
 -- In normal mode in every style that has one
-greed.keymap.bind({ role = "command" }, { ["g p"] = "pick-changed-file" })
+greed.keymap.bind({ role = "command" }, { ["g P"] = "pick-changed-file" })
 
 -- Only in Vim's normal mode
 greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" })
@@ -64,7 +67,7 @@ greed.keymap.bind({ style = "vim", role = "command" }, { ["g h"] = "line-start" 
 For exact control, bind in a mode by its name:
 
 ```luau
-greed.keymap.bind("helix", { Q = "quit-all" })
+greed.keymap.bind("helix", { ["g q"] = "quit-all" })
 ```
 
 The mode names depend on your editing style: `helix`, `helix-insert` and
@@ -87,7 +90,9 @@ specific wins:
 Within one place, a newer binding replaces an older one for the same
 keys, so your config, loaded last, wins over the default plugins. To
 change a key a style binds itself, bind it for that style's role or its
-mode; a binding for every style's role stays behind it.
+mode; a binding for every style's role stays behind it. Helix's `g p`, for
+one, still goes to the previous buffer whatever you bind for
+`{ role = "command" }`.
 
 Roles decide where keys live, not what commands mean: Helix still
 selects and then acts, and Vim's `d w` reads its motion straight from the
@@ -138,11 +143,13 @@ two modes where single keys act until `esc`.
 | `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename (these four leave the mode), `f1` every key, `esc` done |
 | `alt-r` | Resize mode: `h j k l` make the pane, panel or floating view bigger toward that side, `H J K L` smaller from that side (at the screen's edge the other edge moves), arrows move a floating view, `= -` every way, `esc` done |
 
-In normal mode (Helix and Vim), `ctrl-w` and the leader's `w` (`space w`)
-start the window keys from Vim and Helix: `v` and `s` split, `h j k l`
-move, `w` the next pane, `q` close, `o` close the others, `t` a terminal,
-`z` zoom, `g` label the panes. In the Vim style, `g t` and `g T` change
-tabs.
+The window keys from Vim and Helix follow `ctrl-w` in normal mode, and
+the leader's `w` in every style (`space w`, or `ctrl-space w`): `v` and `s`
+split, `h j k l` move, `H J K L` swap the pane with its neighbour, `w` the
+next pane, `q` close, `o` close the others, `t` a terminal, `z` zoom, `g`
+label the panes, `f` and `F` open the file named under the cursor below or
+to the right, `n s` and `n v` a new empty buffer below or to the right. In
+the Vim style, `g t` and `g T` change tabs.
 
 All of these are ordinary bindings to commands (`pane-left`,
 `pane-terminal`, `tab-next`, ...), so they change like any other:
@@ -187,7 +194,7 @@ Bindings live in layers. Most belong to a mode:
 |---|---|
 | `helix`, `helix-insert`, `helix-select` | The Helix style |
 | `vscode` | The vscode style |
-| `vim`, `vim-insert`, `vim-visual` | The Vim style |
+| `vim`, `vim-insert`, `vim-visual` (and `vim-visual-line`, `vim-visual-block`, `vim-replace`, `vim-multi`) | The Vim style |
 | `terminal` | Typing into a terminal (takes every key) |
 | `pane`, `tab`, `resize` | The pane, tab and resize modes |
 | `view` | The sticky view mode (`Z` in the Helix style) |
@@ -248,7 +255,8 @@ greed.command({
 	end,
 })
 
-greed.keymap.bind({ role = "command" }, { ["g u"] = "upcase-line" })
+-- alt-u while typing, in every style
+greed.keymap.bind({ role = "typing" }, { ["alt-u"] = "upcase-line" })
 ```
 
 [Writing plugins](plugins.md) covers commands, and the rest of the API,

@@ -153,7 +153,9 @@ The shell runs a few commands itself:
 | `watch [-n SECONDS] COMMAND` | Run a command again and again, every two seconds, its block showing what it printed last with the changes marked |
 
 What `open` opens comes up in your style's own mode, to read and move
-around in, not typing as at the prompt.
+around in, not typing as at the prompt. Plugins add commands of their own
+([Writing plugins](plugins.md#the-shell)), and `help builtins` lists them
+with these.
 
 Every other line goes to your shell, so `ls` and `ls | head` behave the
 same: your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and
@@ -384,6 +386,9 @@ wrote can't do anything else either.
 quoted for your shell; the commands run one after another in your shell
 and print into the block. What comes after `each` is all the command, so
 `each echo {NAME} | wc -c` counts each name.
+
+Plugins add stages of their own ([Writing plugins](plugins.md#the-shell)),
+and `help tables` lists them all.
 
 ### JSON
 

@@ -14,11 +14,14 @@ is the project search, `agent` the MCP tools.
   test/greet.luau    tests, run with `greed test greet`
 ```
 
-`greed new greet` creates this, with a working test and type checking set up.
+Run in `~/.config/greed/plugins`, `greed new greet` creates this, with a
+working test and type checking set up.
 `plugin.toml` can list plugins this one uses, like
 `requires = ["core", "picker"]`; they load first and are available as
-`require("@core")` and `require("@picker")`. Files inside a plugin require
-each other with `require("@self/name")` or `require("./name")`.
+`require("@core")` and `require("@picker")`. A plugin's `init.luau`
+requires its other files with `require("@self/name")`, and those files
+require each other with `require("./name")`. A plugin can't require files
+outside its folder.
 
 ### Capabilities
 
@@ -87,7 +90,10 @@ plugin to another:
   though it runs inside the command line's code. Calling `greed.eval`
   takes `eval` from every plugin whose code is running and every one that
   started it, so a plugin without `eval` can't get it by calling or
-  starting one that has it.
+  starting one that has it. `greed.eval(code, { sandbox = true })` runs
+  the code in a fresh environment that can read the editor and edit
+  buffers and nothing else: running programs or commands, changing keys
+  or reaching files fails with an error starting "needs approval:".
 
 And they limit plugins only: an agent that runs commands in a shell of its
 own isn't affected.
@@ -146,7 +152,8 @@ usually means a typo. `greed.plugin.check` reports both as warnings.
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count
-was typed, `ctx.char` for keys that type a character, and `ctx.client`, the
+was typed, `ctx.keys` that ran it, `ctx.force` for `!` (as in `:q!`),
+`ctx.char` for keys that type a character, and `ctx.client`, the
 id of the client that ran it (see [Clients](#clients)). Keys for
 commands people reach for by name go in the leader, `{ layer = "leader" }`,
 which every editing style opens its own way (`space g` in Helix and Vim,
@@ -229,8 +236,9 @@ An action that is an existing command has a short form:
 (kind, name, command, doc).
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
-`problem`, `change`, `button`, `text` (the selection) and `command`, so a
-plugin can add actions to those too. A plugin's finders and actions go
+`problem`, `change`, `button`, `text` (the selection) and `command`, and
+the shell's rows add `process`, `container`, `pod`, `deployment` and
+`shell-block`, so a plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
 ### Going to definitions and hover
@@ -359,9 +367,10 @@ comes back with `linewise` false.
 the client you're at, as PNG bytes, read on that client's own machine (so
 with `greed ssh` it's the laptop's), or nil. To take pasted images in a
 kind of buffer, register with `core.images.taker(kind, function(png, ctx)
-... end)`: `paste-image`, which the window's paste keys run when the
-clipboard holds only an image, then hands them to it. `greed.base64`
-encodes the bytes for JSON.
+... end)`. The `paste-image` command then hands the image to it: the
+window's paste keys run it when the clipboard holds an image and no text,
+and in a terminal, whose paste carries only text, bind a key to it (the
+agent box uses `alt-v`). `greed.base64` encodes the bytes for JSON.
 
 `greed.open(path)` shows a file as text (`core.file.open`, below, also
 knows images and PDFs), `greed.load(path)` opens one without showing
@@ -510,8 +519,8 @@ for), `time`, `group` and `changes`. Filter by any of those, or with
 -- What did the user just change?
 for _, tx in buffer:history({ author = "user", limit = 5 }) do
 	print(tx.cause, tx.changes[1].text)
+	local before = buffer:text_before(tx.id) -- the text before it
 end
-local before = buffer:text_before(tx.id)
 ```
 
 A command's edits carry its name as their cause; `greed.history.set_cause`
@@ -766,8 +775,8 @@ greed.tab.set_layout({
   syntax tree, so a `# comment` in a code block isn't a heading. Give it a
   file's text instead of a buffer to read that.
   `markdown.conceal({ ns, wants, draw })` draws marks over the Markdown
-  buffers `wants` says, calling `draw(buffer, structure, first, last)` for
-  the lines an edit changed (and any code block or table they touch)
+  buffers `wants` says, calling `draw(buffer, structure, first, last)`,
+  which returns the marks, for the lines an edit changed (and any code block or table they touch)
   rather than the whole file. It returns a function that draws a buffer,
   or all of them, again in full.
 
@@ -863,8 +872,8 @@ Heavy work doesn't freeze it either. A command or handler that works for
 more than 15 ms without waiting is paused, the editor handles keys and
 draws, and it carries on where it was, so a slow plugin is only slow
 itself. On Linux only time spent working counts toward the 15 ms, so a
-busy machine doesn't change where code is paused. (`coroutine.yield()` with nothing does the same on purpose.) Your
-own coroutines, like a generator made with `coroutine.wrap`, are never
+busy machine doesn't change where code is paused. `coroutine.yield()`
+with nothing pauses the same way on purpose. Your own coroutines, like a generator made with `coroutine.wrap`, are never
 paused this way. One that works for a whole minute without finishing is
 stopped and Greed says so. Code that can't be paused, like a status line
 piece or a plugin's top level, is timed instead: anything that holds the
@@ -888,7 +897,9 @@ An error your command, handler or task doesn't catch shows on the status
 line with your plugin and what it was running ("myplugin (on
 buffer.opened): ..."). The last 100 are kept with where in your code they
 happened: `:errors` lists them, `greed.errors()` returns them, and a
-session also writes them to its log.
+session also writes them to its log. A message of several lines, from
+`greed.echo` or an error, shows its first line on the status line;
+`:messages` shows recent ones whole, and `greed.messages()` returns them.
 
 Whatever you pass the API, it answers with a value or an error: a position
 past the end, a closed buffer or a size no screen has is an error you can
@@ -1034,9 +1045,13 @@ trimming example does, or it goes round forever.
 `greed.option.define({ name, doc, default })` adds an option users set
 with `:set name value` or `greed.option.set(name, value)` in their config.
 The default fixes its type, a boolean, a number or a string, and setting it
-to anything else is refused. `greed.option.get(name)` reads it, and
+to anything else is refused, as is a name no plugin defined (the error
+names options with names like it). `greed.option.get(name)` reads it, and
 `option.changed` says when it changes. When a plugin is reloaded, an option
 it defines again with the same type keeps the value it was set to.
+`greed.option.set(name, value, { client = true })` sets a value for the
+client you're at alone, like a window's font size; `get` gives that
+client its own value when it has one.
 
 ```luau
 greed.option.define({
@@ -1211,12 +1226,14 @@ end)
 ```
 
 `shell.segment(name, provider)` puts a piece in every shell's prompt
-before its folder, after the shell's own (the git branch and the
-kubernetes context). `provider(ctx)` gets the `shell`, its `cwd` and the
-`env` its programs get, and returns `{ text, style, warning }` or nil for
-nothing; `warning = true` turns the prompt's `❯` red too. It runs in the
-background when a shell opens and after each command, so it can run a
-program; the prompt shows the new pieces once every segment is done.
+before its folder, after the shell's own (the git branch, the kubernetes
+context and the project environment). `provider(ctx)` gets the `shell`,
+its `cwd` and the `env` its programs get, and returns `{ text, style,
+warning }` or nil for nothing; `warning = true` turns the prompt's `❯` red
+too. It runs in the background when a shell opens and after each command,
+so it can run a program; the prompt shows the new pieces once every
+segment is done. With `shell-prompt` set to `starship`, starship draws the
+prompt instead, and segments only add their warnings.
 
 ```luau
 local shell = require("@shell")
@@ -1485,7 +1502,10 @@ text = ... }`, `{ role = "assistant", text = ..., calls = ... }` or `{ role =
 its `text`, the `calls` it asks for (`id`, `name`, `input`) and `stop`:
 `"done"`, or `"tools"` when it wants them run and their results sent in the
 next turn. It works the same with Anthropic and with servers that speak
-OpenAI's chat completions.
+OpenAI's chat completions. A user's turn can carry `images`, a list of PNG
+file paths read when the request goes out; `models.sees_images(role)` says
+whether the role's model can see them, and they're left out for one that
+can't.
 
 ### Providers you sign in to
 
@@ -1543,8 +1563,8 @@ answer is kept, so each key and address asks once.
 out. Tokens are renewed with OAuth's own refresh at `token_url`. A provider
 that renews another way gives a `renew` function, which gets the tokens
 (`access`, `refresh`, `expires` in seconds like `os.time()`) and returns new
-ones, or nil and why. Berget's, in the models plugin's `login.luau`, posts
-the refresh token to its own API:
+ones, or nil and why. Berget's posts the refresh token to its own API,
+like this:
 
 ```luau
 renew = function(tokens)
@@ -1693,18 +1713,28 @@ end)
 default plugins loaded. Give it several folders (`greed test
 runtime/plugins/*/`) to test several plugins at once. Tests run side by
 side, as many at a time as the machine has cores, and the results are
-printed plugin by plugin. `t:wait(ms)` moves the clock forward for code
-that sleeps, `t:wait_for(check)` waits for real until `check()` is true
-(for a program's output), and `t:tempdir(files)` makes a folder of files
-to work on; `t:open(path)` opens one of them as `greed.open` does, without
-your plugin needing `fs.read` for it. `local dir, git = t:repo("git", files)` makes a repository
-(jj or git) with the files committed and returns a function that runs git
-there and fails the test if it fails; `t:vcs("jj", dir)` gives that
-function for a folder you set up yourself. Tests don't show the message
-about code that held the editor up, so a busy machine doesn't change what `t:messages()` returns. Each key
-a test presses and each command it runs gets the time limit a key press
-gets in the editor, and time spent waiting for programs and background
-work doesn't count toward it.
+printed plugin by plugin.
+
+`t:keys("i")` presses keys and `t:type("hello world")` types text a
+character at a time, newlines as `enter`. `t:draw(cols, rows)` and
+`t:screen(cols, rows)` give what a client would show, as lines of text,
+`t:status()` the status line, `t:floats()` the floats' text and
+`t:notices()` the desktop notifications sent; `t:clipboard_image(png)`
+sets what `greed.clipboard.image()` gives. `t:wait(ms)` moves the clock
+forward for code that sleeps, `t:wait_for(check)` waits for real until
+`check()` is true (for a program's output), and `t:tempdir(files)` makes a
+folder of files to work on; `t:open(path)` opens one of them as
+`greed.open` does, without your plugin needing `fs.read` for it.
+`local dir, git = t:repo("git", files)` makes a repository (jj or git)
+with the files committed and returns a function that runs git there and
+fails the test if it fails; `t:vcs("jj", dir)` gives that function for a
+folder you set up yourself.
+
+Tests don't show the message about code that held the editor up, so a
+busy machine doesn't change what `t:messages()` returns. Each key a test
+presses and each command it runs gets the time limit a key press gets in
+the editor, and time spent waiting for programs and background work
+doesn't count toward it.
 
 `t` acts as the session's first client. `t:client(name)` adds another, as
 if a second terminal attached, seeing what the first one does; it has
