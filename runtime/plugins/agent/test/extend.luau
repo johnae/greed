@@ -191,8 +191,10 @@ test("tests failing only for want of approval don't keep a plugin from install",
 	local said, may = agent.describe_check(report({ waiting }), { "proc" })
 	assert(may, said)
 	assert(string.find(said, "plugin_install may go ahead", 1, true), said)
+	assert(string.find(said, "tests: 1 passed, 0 failed, 1 waiting for approval", 1, true), said)
 	local shown = agent.describe_check(report({ waiting }), { "proc" }, true)
 	assert(string.find(shown, "they run again once you install it", 1, true), shown)
+	assert(not string.find(shown, "runs gh", 1, true), "a test that only waits isn't listed")
 	assert(not string.find(shown, "plugin_install", 1, true), "the review speaks to you")
 	local broken = { file = "a.luau", name = "adds", message = "expected 2, got 3" }
 	local _, may_not = agent.describe_check(report({ waiting, broken }), { "proc" })

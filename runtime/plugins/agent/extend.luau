@@ -187,7 +187,9 @@ function M.describe(
 	else
 		local failed: { { file: string, name: string, message: string } } = report.tests.failed
 			or {}
-		local waiting = 0
+		-- Tests that only need what the plugin asks for wait for it to be
+		-- approved; the rest failed.
+		local broken, waiting = {}, 0
 		for _, f in failed do
 			local needs: string? = nil
 			if string.sub(f.message, 1, #NEEDS_APPROVAL) == NEEDS_APPROVAL then
@@ -195,16 +197,19 @@ function M.describe(
 			end
 			if needs and table.find(declared, needs) then
 				waiting += 1
+			else
+				table.insert(broken, f)
 			end
 		end
-		passed = passed and #failed == waiting
+		passed = passed and #broken == 0
 		local passed_count = report.tests.passed or 0
 		if passed_count == 0 and #failed == 0 then
 			table.insert(lines, "tests: none yet; add some in test/*.luau")
 		else
-			table.insert(lines, `tests: {passed_count} passed, {#failed} failed`)
+			local wait = if waiting > 0 then `, {waiting} waiting for approval` else ""
+			table.insert(lines, `tests: {passed_count} passed, {#broken} failed{wait}`)
 		end
-		for _, f in failed do
+		for _, f in broken do
 			table.insert(lines, `  {f.file}: {f.name}: {f.message}`)
 		end
 		if waiting > 0 then
@@ -213,7 +218,7 @@ function M.describe(
 				else "plugin_install may go ahead"
 			table.insert(
 				lines,
-				`  {waiting} of them only need what the plugin asks for, which installing it approves; `
+				`  those waiting need only what the plugin asks for, which installing it approves; `
 					.. next_step
 			)
 		end
