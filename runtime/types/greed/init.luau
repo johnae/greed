@@ -1494,10 +1494,12 @@ export type Plugins = {
 	describe: (dir: string) -> PluginInfo,
 	--- The plugins waiting until what they use is approved.
 	pending: () -> { PluginInfo },
-	--- Approves what the plugin in `dir` declares, loads it, and loads the plugins that waited for it. Returns its name.
+	--- Approves what the plugin in `dir` declares, loads it, and loads the plugins that waited for it. Returns its name. Fails when a plugin without "plugins" started what runs: approving is yours to do.
 	approve: (dir: string) -> string,
 	--- The plugin whose code called yours: the innermost other plugin on the stack, or the one whose command, handler or task is running; nil if none but yours.
 	caller: () -> string?,
+	--- Whether everything that started the code running now may use `capability`: you (keys, the command line, your config), or plugins that have it. A vouch doesn't hide what started it. For actions only you should take, like accepting a review.
+	started_within: (capability: string) -> boolean,
 	--- For registries: runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added goes with it. Returns that plugin's name, or nil (and does nothing) if none but yours called.
 	tie: (remove: () -> ()) -> string?,
 }

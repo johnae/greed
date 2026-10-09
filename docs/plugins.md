@@ -45,7 +45,7 @@ capabilities = ["proc", "fs.read"]
 | `secrets:NAME` | `greed.secrets.get("NAME")`, e.g. `secrets:anthropic` for an API key |
 | `secrets` | Every secret, and keeping new ones |
 | `eval` | `greed.eval`, which runs Luau with every capability |
-| `plugins` | Loading, unloading and checking other plugins |
+| `plugins` | Loading, approving, unloading and checking other plugins. A plugin it loads can have any capability, so this is full access. Approving still needs you, or a plugin with `plugins`, to have started it |
 | `commands` | Running any command or keys for you with what the command's own plugin may do, as the command line and the command picker do (see below) |
 | `control` | `greed.control`: answering agents and editors connected to the session, as the agent plugin does |
 

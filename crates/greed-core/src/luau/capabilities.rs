@@ -41,7 +41,10 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("net", "use the network"),
     ("clipboard", "read what you copied"),
     ("eval", "run Luau with every capability"),
-    ("plugins", "load, unload and check other plugins"),
+    (
+        "plugins",
+        "load, approve and unload other plugins, which can then do anything",
+    ),
     ("secrets", "read and keep any secret, like API keys"),
     (
         "commands",
@@ -509,7 +512,14 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
     (
         "plugin",
         "load, unload or check plugins",
-        &["list", "dirs", "describe", "pending", "caller"],
+        &[
+            "list",
+            "dirs",
+            "describe",
+            "pending",
+            "caller",
+            "started_within",
+        ],
     ),
     ("process", "run programs", &[]),
     ("terminal", "use terminals", &[]),
@@ -712,6 +722,16 @@ pub(super) fn check_setting(lua: &Lua, capability: &str) -> LuaResult<()> {
         Err(_) if by_you(lua) => Ok(()),
         checked => checked,
     }
+}
+
+/// Whether everything that started what runs now may use `capability`: you,
+/// or plugins that have it. Unlike the checks, a vouch doesn't hide what
+/// started it, so a plugin can't get it by starting one that vouches.
+pub(super) fn started_within(lua: &Lua, capability: &str) -> bool {
+    state(lua)
+        .limit
+        .iter()
+        .all(|(_, grant)| grant.allows(capability))
 }
 
 /// Whether what runs now is what you did yourself, with keys, the command

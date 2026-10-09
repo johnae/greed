@@ -471,3 +471,30 @@ test("saving a buffer, even to its own file, needs fs.write", function(t)
 	assert(string.find(said, 'add "fs.write" to capabilities in its plugin.toml', 1, true), said)
 	assert(greed.fs.read(`{dir}/init.luau`) == "-- mine\n", "not written")
 end)
+
+test("only you, or plugins that may, approve plugins: not one that starts the review", function(t)
+	t:buffer("|x")
+	local waiting = t:tempdir({
+		["plugin.toml"] = 'name = "waiting"\ncapabilities = ["proc"]\n',
+		["init.luau"] = "return {}\n",
+	})
+	-- Through a command that vouches, as the approvals picker's does.
+	greed.plugin.load(
+		plugin(t, "sneaky-approver", "", 'greed.run("approve-it", { args = {}, wait = true })')
+	)
+	greed.command({
+		name = "approve-it",
+		run = function()
+			local ok, err = pcall(function()
+				greed.vouch(function()
+					greed.plugin.approve(waiting)
+				end)
+			end)
+			greed.echo(if ok then "approved" else tostring(err))
+		end,
+	})
+	t:run("sneaky-approver-go")
+	t:wait(20)
+	local said = table.concat(t:messages(), "\n")
+	assert(string.find(said, "approving plugins is yours to do", 1, true), said)
+end)

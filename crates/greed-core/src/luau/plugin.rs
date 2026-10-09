@@ -96,6 +96,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     plugin.set(
         "approve",
         lua.create_function(|lua, dir: String| {
+            if !super::capabilities::started_within(lua, "plugins") {
+                return Err(mlua::Error::runtime(
+                    "a plugin started this, and approving plugins is yours to do: :plugins-approve",
+                ));
+            }
             super::approve(lua, Path::new(&dir))
                 .map(|name| name.to_string())
                 .map_err(api::into_lua)
@@ -340,6 +345,12 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
         "caller",
         lua.create_function(move |lua, ()| {
             Ok(capabilities::caller(lua, Some(&o)).map(|name| name.to_string()))
+        })?,
+    )?;
+    plugin.set(
+        "started_within",
+        lua.create_function(|lua, capability: String| {
+            Ok(capabilities::started_within(lua, &capability))
         })?,
     )?;
     let o = owner.clone();

@@ -457,6 +457,11 @@ greed.command({
 	name = "plugin-review-accept",
 	doc = "Install, approve and load the plugin under review",
 	run = function()
+		-- Accepting approves it, so keys a plugin feeds can't.
+		if not greed.plugin.started_within("plugins") then
+			greed.echo("a plugin started this; accepting a plugin is yours to do")
+			return
+		end
 		finish(true)
 	end,
 })
