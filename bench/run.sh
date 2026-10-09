@@ -47,6 +47,9 @@ label=${label:-$model-$edits}
 work=${BENCH_WORK:-$repo/target/b}/$stamp
 profile=$work/p
 mkdir -p "$profile/config" "$here/results"
+# A repository of its own, so the session's project (and the folder it
+# works from, where relative paths go) is this one and not Greed's.
+git init -q "$work"
 : >"$profile/config/init.luau"
 results=$here/results/$stamp.jsonl
 

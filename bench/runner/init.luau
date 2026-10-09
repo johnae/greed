@@ -49,7 +49,14 @@ type Task = {
 	solution_answer: string?,
 }
 
-type Totals = { requests: number, input: number, cached: number, output: number, edits_ok: number, edits_failed: number }
+type Totals = {
+	requests: number,
+	input: number,
+	cached: number,
+	output: number,
+	edits_ok: number,
+	edits_failed: number,
+}
 
 local function shell_quote(s: string): string
 	return "'" .. string.gsub(s, "'", "'\\''") .. "'"
@@ -57,7 +64,8 @@ end
 
 -- What `model` at `provider` used today, all hours together.
 local function totals(provider: string, model: string): Totals
-	local sum: Totals = { requests = 0, input = 0, cached = 0, output = 0, edits_ok = 0, edits_failed = 0 }
+	local sum: Totals =
+		{ requests = 0, input = 0, cached = 0, output = 0, edits_ok = 0, edits_failed = 0 }
 	for key, used in models.usage(os.date("%Y-%m-%d")) do
 		if string.match(key, "^%d+ (.+)$") == `{provider}/{model}` then
 			sum.requests += used.requests
@@ -101,10 +109,10 @@ end
 -- only finding its way.
 local CHANGES = { edit_file = true, write_file = true, plugin_try = true, run = true, eval = true }
 
--- What the saved conversation says about the calls the agent made.
-local function calls_of(file: string?): { [string]: any }
-	local out: { [string]: any } = { calls = 0, by_tool = {}, before_change = 0, tool_errors = 0, turns = 0, asked = 0 }
-	local text = file and greed.fs.read(file)
+-- What the saved conversation, `text`, says about the calls the agent made.
+local function calls_of(text: string?): { [string]: any }
+	local out: { [string]: any } =
+		{ calls = 0, by_tool = {}, before_change = 0, tool_errors = 0, turns = 0, asked = 0 }
 	local ok, saved = pcall(greed.json.decode, text or "{}")
 	if not ok or type(saved) ~= "table" or type(saved.said) ~= "table" then
 		return out
@@ -232,7 +240,7 @@ local function run_agent(task: Task, dir: string): { [string]: any }
 		seconds = os.time() - started,
 		timed_out = timed_out,
 		conversation = text,
-		calls = calls_of(conversation),
+		calls = calls_of(text),
 		answer = last,
 	}
 end
@@ -364,7 +372,13 @@ function M.start(path: string): string
 			for _, name in run.tasks do
 				local ok, result = pcall(run_task, run, name, rep)
 				if not ok then
-					result = { label = run.label, task = name, rep = rep, passed = false, failed = tostring(result) }
+					result = {
+						label = run.label,
+						task = name,
+						rep = rep,
+						passed = false,
+						failed = tostring(result),
+					}
 				end
 				table.insert(lines, greed.json.encode(result))
 				greed.fs.write(run.results, table.concat(lines, "\n") .. "\n")
