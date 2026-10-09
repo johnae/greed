@@ -154,6 +154,9 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 	local task: Task = greed.json.decode(assert(greed.fs.read(`{source}/task.json`)))
 	local dir = `{run.work}/{name}-{rep}`
 	assert(greed.process.run({ "cp", "-R", `{source}/project`, dir }))
+	-- A repository of its own, as a project is, so the project is this
+	-- folder and not the Greed repository the work folder may sit in.
+	assert(greed.process.run({ "git", "init", "-q" }, { cwd = dir }))
 	fresh_config()
 	-- Showing one of its files makes it the editor's project, as when you
 	-- work in it: Greed's tools for agents find files from there.
