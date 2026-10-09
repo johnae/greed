@@ -240,6 +240,18 @@ shows block 3's output again, `$3 > buf:keep` keeps it in a buffer, and
 than a terminal, so a `> buf:` gets only what the program printed, and
 can't be combined with `!`.
 
+After a command's first word, `$3` is a file holding what block 3
+printed, for programs that read files rather than their input:
+
+```text
+❯ diff $3 $5
+❯ kubectl apply -f $7
+❯ open $3
+```
+
+The file ends `.json` when the block printed JSON. Single quotes keep
+`$3` as it is (`awk '{print $3}'`), and so does `\$3`.
+
 ## Filtering and tables
 
 Most output is text, and stays text. On top of it the shell keeps what it

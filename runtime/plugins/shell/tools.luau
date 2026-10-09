@@ -219,7 +219,8 @@ return function(shells: Shells)
 			.. "over to the next run), refs (file:line places the output names), json (when stdout is "
 			.. "JSON) and table (its columns, first 50 rows and total, when it's a table like kubectl "
 			.. "get prints). `$ID` in a later command is block ID's output: `$ID | where COL = VALUE`, "
-			.. "`$ID | select A,B`, `$ID | sort COL` and `$ID | get items.0.name` (JSON) work on it. "
+			.. "`$ID | select A,B`, `$ID | sort COL` and `$ID | get items.0.name` (JSON) work on it, "
+			.. "and after a command's first word `$ID` is a file holding it (`diff $ID1 $ID2`). "
 			.. 'After `timeout_s` (default 60) it returns status "running" and the id, for shell_wait',
 		input = object({
 			command = { type = "string", description = "The command line to run" },

@@ -601,6 +601,9 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	if opts.by ~= "agent" then
 		line = aliases.expand(line)
 	end
+	-- `$3` after the first word is a file holding what block 3 printed.
+	local with_files, file_error = data.files(shell, line, opts.by == "agent")
+	line = with_files or line
 	local parsed = parse.parse(line, greed.fs.dirs().home)
 	if parsed.kind == "empty" then
 		return nil
@@ -623,7 +626,7 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		end
 	end
 	local block = add_block(shell, command, opts)
-	local why = parsed.error
+	local why = file_error or parsed.error
 	-- What goes in (`$3 | ...`): its text, its JSON and its table.
 	local input: string?, value: any, source: tables.Table? = nil, nil, nil
 	if parsed.input and why == nil then

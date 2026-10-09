@@ -36,6 +36,84 @@ function M.buffer(name: string, cwd: string?): greed.Buffer?
 	return nil
 end
 
+-- A file holding what `block` printed, for a command to read: its whole
+-- output's file when it had to keep one, else one written for it in the
+-- cache folder, ending .json when it printed JSON. Nil and why when there's
+-- no cache folder.
+local function file_of(block: state.Block): (string?, string?)
+	run.fill(block)
+	if block.spill then
+		return block.spill, nil
+	end
+	local cache = greed.fs.dirs().cache
+	if cache == nil then
+		return nil, "there's no cache folder to write it to"
+	end
+	local extension = if block.value ~= nil then "json" else "txt"
+	local path = `{cache}/shell/files/{block.uid}.{extension}`
+	local ok, err = greed.fs.write(path, block.stdout)
+	if not ok then
+		return nil, err or `can't write {path}`
+	end
+	return path, nil
+end
+
+--- `line` with each `$N` after its first word, outside single quotes, as
+--- a file holding what block N of `shell` printed, as in `diff $3 $5` or
+--- `kubectl apply -f $3`. For an agent, `by_id`, N is a block's id in any
+--- shell. Nil and why when a block isn't there.
+function M.files(shell: Shell, line: string, by_id: boolean): (string?, string?)
+	local _, first_end = string.find(line, "^%s*%S+")
+	local out: { string } = {}
+	local quote: string? = nil
+	local i = 1
+	while i <= #line do
+		local ch = string.sub(line, i, i)
+		local number = string.match(line, "^%$(%d+)", i)
+		local before = if i == 1 then " " else string.sub(line, i - 1, i - 1)
+		local after = if number then string.sub(line, i + 1 + #number, i + 1 + #number) else ""
+		if quote == "'" then
+			if ch == "'" then
+				quote = nil
+			end
+		elseif quote == nil and (ch == "'" or ch == '"') then
+			quote = ch
+		elseif quote == '"' and ch == '"' then
+			quote = nil
+		elseif
+			number
+			and i > (first_end or #line)
+			and string.match(before, '[%s=("]')
+			and (after == "" or string.match(after, '[%s;|&)"]'))
+		then
+			local id = tonumber(number) :: number
+			local block: state.Block? = nil
+			if by_id then
+				local _, found = state.find(id)
+				block = found
+			else
+				block = state.block(shell, id)
+			end
+			if block == nil then
+				return nil,
+					if by_id
+						then `there's no block with id {id}`
+						else `there's no block {id} in this shell`
+			end
+			local path, why = file_of(block)
+			if path == nil then
+				return nil, `\${id}: {why}`
+			end
+			table.insert(out, if quote then path else parse.quote(path))
+			i += 1 + #number
+			continue
+		end
+		table.insert(out, ch)
+		i += 1
+	end
+	return table.concat(out), nil
+end
+
 --- The names of the buffers `> buf:NAME` made that are still open.
 function M.names(): { string }
 	local names: { string } = {}

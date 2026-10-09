@@ -153,3 +153,36 @@ test("file:line in a block's output is a link, ] e goes to it and enter opens it
 	local cursor = view:cursor()
 	assert(view:buffer():line_of(cursor) == 1, tostring(cursor))
 end)
+
+test("$3 after a command's first word is a file holding what block 3 printed", function(t)
+	local sh = open(t, t:tempdir())
+	local one = run(t, sh, "printf 'a\\nb\\n'")
+	local two = run(t, sh, "printf 'a\\nc\\n'")
+	local diff = run(t, sh, `diff ${one.number} ${two.number}`)
+	assert(diff.status == "failed" and diff.code == 1, diff.status)
+	assert(string.find(diff.output, "< b", 1, true) and string.find(diff.output, "> c", 1, true))
+	assert(diff.command == `diff ${one.number} ${two.number}`, "the block shows what was typed")
+	local cat = run(t, sh, `cat "${one.number}"`)
+	assert(string.gsub(cat.output, "\r", "") == "a\nb\n", cat.output)
+	local quoted = run(t, sh, `echo '${one.number}'`)
+	assert(string.find(quoted.output, `${one.number}`, 1, true), "single quotes keep it")
+	local inside = run(t, sh, `echo "it's ${one.number}"`)
+	assert(
+		string.find(inside.output, "it's /", 1, true),
+		"a ' in double quotes is a ': " .. inside.output
+	)
+	local json = run(t, sh, `printf '\{"a": 1\}'`)
+	local named = run(t, sh, `echo ${json.number}`)
+	assert(string.find(named.output, "%.json"), "JSON goes in a .json file: " .. named.output)
+	local missing = run(t, sh, "cat $99")
+	assert(missing.status == "failed" and string.find(missing.stderr, "no block 99", 1, true))
+	-- As the first word it's still what goes in.
+	local piped = run(t, sh, `${one.number} | wc -l`)
+	assert(string.match(piped.output, "^%s*2%s*$"), piped.output)
+	-- An agent names blocks by id, in any shell.
+	local agent = finished(t, shell.run(sh, `cat ${two.uid}`, { by = "agent", runner = "pipe" }))
+	assert(agent.stdout == "a\nc\n", agent.stdout)
+	-- open shows it in the editor.
+	run(t, sh, `open ${one.number}`)
+	assert(greed.view():buffer():text() == "a\nb\n", greed.view():buffer():text())
+end)
