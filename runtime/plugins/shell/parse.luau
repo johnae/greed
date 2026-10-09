@@ -49,6 +49,10 @@ M.BUILTINS = {
 		doc = "What works here, and the keys in the style you use; a topic for one part",
 		args = "topic",
 	},
+	which = {
+		usage = "which NAME ...",
+		doc = "What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program",
+	},
 } :: { [string]: Builtin }
 
 --- The parts of `help`, each a topic `help TOPIC` shows alone.
@@ -79,7 +83,10 @@ end
 --- `terminal` is true for a line typed with a leading `!`, whose `line` is
 --- the rest. `input` is what goes to the command's input (`$3`, `buf:NAME`,
 --- `@sel` or `@file`), and `into` the buffer its output goes to. `error`
---- says why a line can't be read, like an unclosed quote.
+--- says why a line can't be read, like an unclosed quote. `raw` is true
+--- for a command typed `^NAME`, which runs the program NAME even where the
+--- shell has a builtin or table stage of that name; `line` is without the
+--- `^`.
 export type Parsed = {
 	kind: "empty" | "builtin" | "argv" | "shell" | "source",
 	line: string,
@@ -90,6 +97,7 @@ export type Parsed = {
 	input: string?,
 	into: Into?,
 	error: string?,
+	raw: boolean?,
 }
 
 --- A buffer a command's output goes to: `> buf:NAME`, or with `append`
@@ -217,23 +225,25 @@ local function split_input(line: string): (string, string?)
 end
 
 -- Reads a command without data going in or out of it.
-local function parse_command(rest: string, terminal: boolean, home: string?): Parsed
+local function parse_command(line: string, terminal: boolean, home: string?): Parsed
+	local raw = string.match(line, "^%^[^%s^]") ~= nil
+	local rest = if raw then string.sub(line, 2) else line
 	local words, why = M.words(rest, home)
 	if words == nil then
 		local err = if type(why) == "string" then why else nil
-		return { kind = "shell", line = rest, terminal = terminal, error = err }
+		return { kind = "shell", line = rest, terminal = terminal, error = err, raw = raw }
 	end
 	local first = words[1]
 	-- `NAME=value program` sets a variable for one program; a shell does that.
 	if string.find(first, "=", 1, true) then
-		return { kind = "shell", line = rest, terminal = terminal }
+		return { kind = "shell", line = rest, terminal = terminal, raw = raw }
 	end
-	if M.BUILTINS[first] and not terminal then
+	if M.BUILTINS[first] and not terminal and not raw then
 		local args = table.clone(words)
 		table.remove(args, 1)
 		return { kind = "builtin", line = rest, name = first, args = args, terminal = false }
 	end
-	return { kind = "argv", line = rest, argv = words, terminal = terminal }
+	return { kind = "argv", line = rest, argv = words, terminal = terminal, raw = raw }
 end
 
 --- Reads `line`, typed at a prompt. `home` expands a leading `~`.

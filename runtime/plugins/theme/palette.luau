@@ -163,6 +163,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["shell.failed"] = { fg = p.red },
 		["shell.stderr"] = { fg = p.red },
 		["shell.separator"] = { fg = p.gutter },
+		["shell.suggestion"] = { fg = p.comment },
 		fold = { fg = p.comment },
 		["ui.glow"] = { fg = glow },
 

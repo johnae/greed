@@ -98,6 +98,68 @@ function M.commands(): { string }
 	return out
 end
 
+--- The newest command that starts with `typed` and goes on past it, on one
+--- line, to suggest as it's typed; nil when there's none.
+function M.suggest(typed: string): string?
+	if typed == "" then
+		return nil
+	end
+	local list = M.entries()
+	for i = #list, 1, -1 do
+		local command = list[i].command
+		if
+			#command > #typed
+			and string.sub(command, 1, #typed) == typed
+			and not string.find(command, "\n", 1, true)
+		then
+			return command
+		end
+	end
+	return nil
+end
+
+--- `line` with a shell's history expansion: `!!` is `previous`, `!$` its
+--- last word, and a line `^old^new` is `previous` with the first `old`
+--- changed to `new`. Single quotes keep `!` as it is, and an `old` with
+--- spaces at its ends is a `^NAME` command instead. Nil and why when
+--- there's nothing to expand from or `old` isn't in `previous`.
+function M.expand(line: string, previous: string?): (string?, string?)
+	local old, new = string.match(line, "^%^([^%s^][^^]-)%^([^^]*)%^?$")
+	if old and new and not string.match(old, "%s$") then
+		if previous == nil then
+			return nil, "there's no command before to change"
+		end
+		local at = string.find(previous, old, 1, true)
+		if at == nil then
+			return nil, `{old} isn't in {previous}`
+		end
+		return string.sub(previous, 1, at - 1) .. new .. string.sub(previous, at + #old), nil
+	end
+	local out: { string } = {}
+	local quoted = false
+	local i = 1
+	while i <= #line do
+		local ch = string.sub(line, i, i)
+		local after = string.sub(line, i + 1, i + 1)
+		if ch == "'" then
+			quoted = not quoted
+		elseif not quoted and ch == "!" and (after == "!" or after == "$") then
+			if previous == nil then
+				return nil, `there's no command before for !{after}`
+			end
+			table.insert(
+				out,
+				if after == "!" then previous else string.match(previous, "(%S+)%s*$") or ""
+			)
+			i += 2
+			continue
+		end
+		table.insert(out, ch)
+		i += 1
+	end
+	return table.concat(out), nil
+end
+
 --- Where a shell is in going through the history: the text typed before
 --- it started, which commands it goes through, the one shown and the text
 --- it put at the prompt.

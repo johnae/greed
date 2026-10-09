@@ -95,6 +95,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `alt-enter` | Another line at the prompt |
 | `up` `down` | At the prompt: the commands typed before that start with what's typed |
 | `ctrl-r` | Pick a command typed before, in any shell |
+| `right` `end` `ctrl-e` | At the end of the prompt, take the rest of the command it suggests |
 | `tab` | Complete a program, its arguments and flags, a file or folder, a variable, `$3`, `buf:` or `@sel`: the only match or what they all start with at once, else a menu, which `tab` again goes through |
 | `ctrl-c` | Interrupt the running block |
 | `ctrl-t` | Type into the running block's program, in a terminal in the shell's place |
@@ -131,6 +132,7 @@ The shell runs a few commands itself:
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
 | `help [TOPIC]` | What works here, and the keys in the style you use; a topic for one part |
+| `which NAME ...` | What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program |
 
 What `open` opens comes up in your style's own mode, to read and move
 around in, not typing as at the prompt.
@@ -141,8 +143,20 @@ the like), fish or nu, and `sh` otherwise; `:set shell-fallback bash` picks
 one. `cd` and `export` there carry over to the commands after, as they
 would in a terminal. If `shell-fallback` names a shell of another kind, the
 line still runs in it, and its block says `cd` and `export` in it don't
-carry over. Your shell's startup files aren't read, so aliases and
+carry over. Your shell's startup files aren't read for each line, so its
 functions aren't there unless you `:set shell-fallback-rc true`.
+
+Your aliases are. The shell asks your shell for them once, with its
+startup files, and a line starting with one runs what it stands for, as
+in a terminal; the block shows what you typed. The shell's own commands
+win over an alias of the same name, `^NAME` runs the program `NAME`
+whatever else has that name (`^env`, or `$3 | ^sort` for the `sort`
+program rather than the table stage), and `which NAME` says what runs.
+`:set shell-aliases false` leaves aliases alone.
+
+As in bash and zsh, `!!` in a line is the command before, `!$` its last
+word, and a line `^old^new` runs the command before with `old` changed to
+`new`. The block shows the command as it ran.
 
 Programs get `PAGER=cat` and `GIT_PAGER=cat`, so their output comes back as
 text, `GREED_BIN`, the greed program running the editor, `GREED_SESSION`
@@ -367,6 +381,15 @@ The commands you type at every shell are kept in your data folder
 `shell-history-size` (5000) of them, so `up` and `ctrl-r` find them in
 every session. An agent's commands aren't kept.
 
+As you type, the prompt suggests the rest of the newest command that
+starts with what's there, dimmed after the cursor, as fish does: `right`,
+`end` or `ctrl-e` at the end takes it, and typing on goes past it.
+`:set shell-suggestions false` turns it off.
+
+```text
+~/s/app ❯ cargo t|est -q --workspace
+```
+
 `tab` completes what fits where the cursor is, as a shell does: the only
 match goes in at once, and with several, what they all start with. When
 that's all there is, `tab` shows the menu, and `tab` again puts each item
@@ -384,8 +407,8 @@ take the menu's first item instead.
 What the shell itself knows is marked `greed` in the menu, with what it
 does beside it:
 
-- A command's first word: the builtins and the programs on your `PATH`;
-  after `$3 |`, the stages too.
+- A command's first word: the builtins, your aliases and the programs on
+  your `PATH`; after `$3 |`, the stages too.
 - A builtin's arguments: folders after `cd`, files and buffers after
   `open`, variables after `export` and `unset`, topics after `help`.
 - A stage's: the columns of the table it reads (`$3 | where `), then the

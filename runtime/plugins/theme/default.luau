@@ -187,4 +187,5 @@ return {
 	["shell.failed"] = { fg = "red" },
 	["shell.stderr"] = { fg = "red" },
 	["shell.separator"] = { fg = "bright-black" },
+	["shell.suggestion"] = { fg = "bright-black" },
 }

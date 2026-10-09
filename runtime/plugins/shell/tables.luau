@@ -1285,9 +1285,14 @@ function M.pipeline(
 	local json = value
 	local parts = stages(line)
 	local done = 0
-	for _, part in parts do
+	for i, part in parts do
 		local word, args = string.match(part, "^%s*(%S+)%s*(.-)%s*$")
 		local rest = args or ""
+		-- `^NAME` is the program NAME, which ends the stages.
+		if word and #word > 1 and string.sub(word, 1, 1) == "^" then
+			parts[i] = (string.gsub(part, "%^", "", 1))
+			break
+		end
 		local convert = if word then converter(word, rest) else nil
 		-- What a stage on a table reads: an object's fields or array.
 		local input = current

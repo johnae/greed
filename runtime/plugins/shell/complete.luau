@@ -15,6 +15,7 @@ local log = require("./log")
 local data = require("./data")
 local tables = require("./tables")
 local sources = require("./sources")
+local aliases = require("./aliases")
 
 type Shell = state.Shell
 type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
@@ -474,6 +475,11 @@ function M.items(view: greed.View, ask: { explicit: boolean }?): { Item }?
 		if s.first_command then
 			for _, name in parse.builtin_names() do
 				add(items, s, name, parse.BUILTINS[name].doc, M.BADGE)
+			end
+			for name, value in aliases.loaded() do
+				if parse.BUILTINS[name] == nil then
+					add(items, s, name, `alias for {value}`)
+				end
 			end
 		elseif s.source then
 			for _, stage in tables.STAGES do

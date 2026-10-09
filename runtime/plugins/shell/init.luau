@@ -49,6 +49,8 @@ local rows = require("@self/rows")
 local completion = require("@self/complete")
 local segments = require("@self/segments")
 local envs = require("@self/envs")
+local aliases = require("@self/aliases")
+local suggest = require("@self/suggest")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -76,6 +78,9 @@ M.completion = completion
 M.segments = segments
 M.edit = require("@self/edit")
 M.envs = envs
+M.aliases = aliases
+M.suggest = suggest
+M.history = history
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
@@ -178,6 +183,8 @@ function M.open(options: OpenOptions?): Shell
 	greed.spawn(function()
 		envs.refresh(shell)
 	end)
+	-- Read now, so the first line typed needn't wait for them.
+	greed.spawn(aliases.known)
 	if opts.show ~= false then
 		M.show(shell, view)
 	end
@@ -371,9 +378,15 @@ end
 
 --- Runs `line` in `shell` as a new block after the others and returns it;
 --- nil for an empty line, `clear`, which takes the blocks away, or a
---- question for a model (ask.luau), whose answer comes to the prompt.
+--- question for a model (ask.luau), whose answer comes to the prompt. A
+--- line of yours starting with one of your shell's aliases runs it, and
+--- the block shows what you typed.
 function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 	local opts: RunOptions = options or {}
+	local command = string.match(line, "^%s*(.-)%s*$") or line
+	if opts.by ~= "agent" then
+		line = aliases.expand(line)
+	end
 	local parsed = parse.parse(line, greed.fs.dirs().home)
 	if parsed.kind == "empty" then
 		return nil
@@ -383,7 +396,6 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		clear(shell)
 		return nil
 	end
-	local command = string.match(line, "^%s*(.-)%s*$") or line
 	if opts.by ~= "agent" then
 		history.add(command, opts.cwd or shell.cwd)
 		local draft, question = ask.question(line)
@@ -413,7 +425,7 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 			text, value, err = data.read(from, named, block.cwd)
 		end
 		input, why = text, err
-		if from and why == nil and parsed.kind ~= "source" then
+		if from and why == nil and parsed.kind ~= "source" and not parsed.raw then
 			local source = data.table(from, named, text, value)
 			local json: any
 			staged, rest, why, json = tables.pipeline(source, text, parsed.line, value)
@@ -502,6 +514,50 @@ run.builtins.env = function(shell: Shell, block: Block, args: { string }): numbe
 	return if reload and failed then 1 else code
 end
 
+-- What `name` at the start of a line runs, first what wins: a line each.
+local function which(shell: Shell, name: string): { string }
+	local found: { string } = {}
+	local builtin = parse.BUILTINS[name]
+	if builtin then
+		table.insert(found, `{name}: the shell's builtin, {builtin.usage}`)
+	end
+	for _, stage in tables.STAGES do
+		if stage.name == name then
+			table.insert(found, `{name}: a table stage after $3 |, {stage.usage}`)
+			break
+		end
+	end
+	local alias = aliases.known()[name]
+	if alias and builtin == nil then
+		table.insert(found, `{name}: your alias for {alias}`)
+	end
+	local program = M.sources.find(name, state.variables(shell).PATH)
+	if program then
+		local caret = if builtin or alias then ` (^{name} runs it)` else ""
+		table.insert(found, `{name}: {program}{caret}`)
+	end
+	return found
+end
+
+run.builtins.which = function(shell: Shell, block: Block, args: { string }): number
+	if #args == 0 then
+		run.write(shell, block, "which: which names?\n", "stderr")
+		return 2
+	end
+	local code = 0
+	for _, name in args do
+		local found = which(shell, name)
+		if #found == 0 then
+			run.write(shell, block, `{name}: not found\n`, "stderr")
+			code = 1
+		end
+		for _, line in found do
+			run.write(shell, block, line .. "\n", "stdout")
+		end
+	end
+	return code
+end
+
 run.builtins.open = function(shell: Shell, block: Block, args: { string }): number
 	if #args == 0 then
 		run.write(shell, block, "open: which files?\n", "stderr")
@@ -535,6 +591,7 @@ local HELP_KEYS = {
 	vscode = {
 		{ "enter", "run what's at the prompt; alt-enter starts another line" },
 		{ "up  down", "commands typed before, starting with what's typed" },
+		{ "right  end", "take the rest of the command the prompt suggests" },
 		{ "ctrl-r", "pick a command typed before" },
 		{ "tab", "complete a program, its flags, a file, $3, buf:; again for each in the menu" },
 		{ "ctrl-c", "copy a selection, or interrupt the running block" },
@@ -550,6 +607,7 @@ local HELP_KEYS = {
 	other = {
 		{ "enter", "run what's at the prompt; on a block, edit its command" },
 		{ "up  down", "commands typed before, starting with what's typed" },
+		{ "right  end", "take the rest of the command the prompt suggests" },
 		{ "ctrl-r", "pick a command typed before" },
 		{ "tab", "complete a program, its flags, a file, $3, buf:; again for each in the menu" },
 		{ "ctrl-c", "interrupt the running block" },
@@ -812,10 +870,27 @@ greed.command({
 	end,
 })
 
--- Runs what's at the prompt. Many lines, as a paste of a transcript or a
--- file can leave there, run only once you say so.
+-- The last command you ran in `shell`, or else typed at any shell.
+local function previous_command(shell: Shell): string?
+	for i = #shell.blocks, 1, -1 do
+		local block = shell.blocks[i]
+		if block.by == "user" then
+			return block.command
+		end
+	end
+	return history.commands()[1]
+end
+
+-- Runs what's at the prompt, with `!!`, `!$` and `^old^new` as a shell
+-- expands them. Many lines, as a paste of a transcript or a file can leave
+-- there, run only once you say so.
 local function run_prompt(shell: Shell, ctx: greed.Context)
-	local line = log.prompt_text(shell)
+	local expanded, why = history.expand(log.prompt_text(shell), previous_command(shell))
+	if expanded == nil then
+		greed.echo(why or "")
+		return
+	end
+	local line = expanded
 	local _, breaks = string.gsub(line, "\n", "")
 	local most = greed.option.get("shell-confirm-lines") :: number
 	if breaks + 1 > most then
@@ -1063,6 +1138,31 @@ local function walk(ctx: greed.Context, step: number)
 	end
 	log.set_prompt(shell, found, { ctx.view })
 end
+
+-- Takes what the prompt suggests, or else runs `otherwise`, the key's
+-- usual command.
+local function accept_or(ctx: greed.Context, otherwise: string)
+	local shell = state.of(ctx.buffer)
+	if shell == nil or not suggest.accept(shell, ctx.view) then
+		greed.run(otherwise)
+	end
+end
+
+greed.command({
+	name = "shell-accept-or-right",
+	doc = "At the end of the prompt, take the rest of the command it suggests; elsewhere move right",
+	run = function(ctx)
+		accept_or(ctx, "move-right")
+	end,
+})
+
+greed.command({
+	name = "shell-accept-or-end",
+	doc = "At the end of the prompt, take the rest of the command it suggests; elsewhere go to the end of the line",
+	run = function(ctx)
+		accept_or(ctx, "line-end")
+	end,
+})
 
 greed.command({
 	name = "shell-history-back",
@@ -1349,6 +1449,9 @@ greed.keymap.bind({ role = "typing", kind = KIND }, {
 	down = "shell-history-forward",
 	["ctrl-r"] = "shell-history",
 	tab = "completion-ask",
+	right = "shell-accept-or-right",
+	["end"] = "shell-accept-or-end",
+	["ctrl-e"] = "shell-accept-or-end",
 })
 -- In the vscode style ctrl-c copies a selection, and blocks are a ctrl-arrow
 -- away, there being no keys without modifiers to spare.
