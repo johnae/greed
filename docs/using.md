@@ -960,8 +960,10 @@ key again goes back to editing, at the same place.
 
 A link to `#a-heading` goes to that heading, a link to another Markdown
 file opens it in the reading view too (at its heading, with
-`other.md#a-heading`), and a web link opens in your browser (the
-`link-opener` option says which).
+`other.md#a-heading`), a web or mail link opens in your browser or mail
+program (the `link-opener` option says which), and a `file://` link opens
+the file in Greed. Links of other kinds, which any file you read could
+hold, don't open.
 
 ### Choices
 

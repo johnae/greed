@@ -539,10 +539,26 @@ greed.option.define({
 	default = "",
 })
 
---- Opens `uri` (a web address, or any link the system knows how to open)
---- with the link-opener option, or the system's opener. Says why when it
+-- The kinds of links the system's opener gets. Others, like file:// (which
+-- macOS's open runs when it's a program), could come from any file you
+-- read, so they aren't opened.
+local OPENED = { http = true, https = true, mailto = true }
+
+--- Opens `uri`, a web or mail address, with the link-opener option, or the
+--- system's opener; a file:// link opens the file here. Says why when it
 --- can't.
 function M.open_link(uri: string)
+	local scheme = string.lower(string.match(uri, "^(%a[%w+.-]*):") or "")
+	local path = if scheme == "file" then string.match(uri, "^%a+://(/.*)$") else nil
+	if path then
+		M.open((string.gsub(path, "%%(%x%x)", function(hex: string): string
+			return string.char(tonumber(hex, 16) :: number)
+		end)))
+		return
+	elseif not OPENED[scheme] then
+		greed.echo(`not opening {uri}: only http, https and mailto links open from Greed`)
+		return
+	end
 	local given = greed.option.get("link-opener") :: string
 	local done, err
 	if given ~= "" then
