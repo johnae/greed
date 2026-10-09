@@ -127,7 +127,7 @@ end
 --- filter starting with `/` is a regex for the lines. With neither, the
 --- output shows as it came.
 function M.set(shell: Shell, block: Block, filter: string, sort: string?, desc: boolean?)
-	if block.status == "running" then
+	if block.status == "running" and block.watching == nil then
 		return
 	end
 	if filter == "" and sort == nil then
@@ -231,6 +231,19 @@ function M.row_at(shell: Shell, block: Block, pos: number): number?
 		return view.rows[index]
 	end
 	return if index >= 1 and index <= #tbl.rows then index else nil
+end
+
+--- Shows `lines` as what `block`, a live one (`watch`), printed now, with
+--- the filter and sort it shows kept on them.
+function M.renew(shell: Shell, block: Block, lines: { Line })
+	local view = block.shown
+	if view == nil then
+		log.replace_output(shell, block, lines)
+		return
+	end
+	original[block] = lines
+	drawn[block] = nil
+	M.set(shell, block, view.filter, view.sort, view.desc)
 end
 
 --- Sorts `block`'s table by `column`: from the least, and from the

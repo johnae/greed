@@ -14,6 +14,7 @@ local log = require("./log")
 local run = require("./run")
 local tables = require("./tables")
 local kinds = require("./kinds")
+local rows = require("./rows")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -177,7 +178,7 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			local lines, changed, now = lines_of(block, before)
 			before = now
 			block.note = `every {every}s · {changed} changed · {os.date("%H:%M:%S")}`
-			log.replace_output(shell, block, lines)
+			rows.renew(shell, block, lines)
 			if minutes > 0 and greed.now() - started >= minutes * 60000 then
 				why = `stopped after {minutes} minutes; space r watches again`
 				break

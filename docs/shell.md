@@ -437,8 +437,9 @@ api-7d9f8b6c5-2xkqz      1/1     Running            0          3d16h
 worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   13         2h
 ```
 
-The table and its [rows](#rows-you-can-act-on) follow along: `space .` on
-a pod acts on it as it is now, and `$7 | where STATUS != Running` reads
+The table and its [rows](#rows-you-can-act-on) follow along: a `/` filter
+or a `space s` sort stays on what each run shows, `space .` on a pod acts
+on it as it is now, and `$7 | where STATUS != Running` reads
 what it shows. The whole line is watched, pipes and table stages
 included, so `watch kubectl get pods | where RESTARTS > 0` shows only the
 pods that restarted, as they are now. `ctrl-c` or `space x` stops it,
