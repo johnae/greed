@@ -155,11 +155,22 @@ export type Shell = {
 	environment: Environment?,
 	provided: { [string]: string | false },
 	unloaded: string?,
+	--- The strip of running blocks between the others and the prompt, when
+	--- some have scrolled up out of the way (log.luau).
+	strip: Strip?,
 }
 
 --- An environment a folder brings: who gives it and for which folder,
 --- whether it's loaded, its variables, what loading it printed, and the
 --- files whose change means loading it again.
+--- The lines above the prompt that stand for running blocks: where they
+--- start, the blocks, a line each, and their text.
+export type Strip = {
+	at: greed.Anchor,
+	blocks: { Block },
+	text: string,
+}
+
 export type Environment = {
 	provider: string,
 	root: string,

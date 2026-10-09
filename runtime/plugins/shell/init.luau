@@ -53,6 +53,7 @@ local aliases = require("@self/aliases")
 local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
 local live = require("@self/live")
+local peek = require("@self/peek")
 require("@self/kubernetes")
 require("@self/docker")
 require("@self/processes")
@@ -88,6 +89,7 @@ M.suggest = suggest
 M.history = history
 M.kinds = kinds
 M.live = live
+M.peek = peek
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
@@ -247,6 +249,7 @@ function M.open(options: OpenOptions?): Shell
 		environment = nil,
 		provided = {},
 		unloaded = nil,
+		strip = nil,
 	}
 	state.shells[buffer:id()] = shell
 	log.draw_prompt(shell)
@@ -362,6 +365,7 @@ local function clear(shell: Shell)
 	for _, block in table.clone(shell.blocks) do
 		if block.status ~= "running" then
 			log.remove(shell, block)
+			peek.follow(block)
 			state.views[block.uid] = nil
 		end
 	end
@@ -949,9 +953,6 @@ local function add_columns(lines: { string }, rows: { { string } })
 	end
 end
 
--- The prompt's segments `help prompt` describes itself.
-local OWN_SEGMENTS = { git = true, kubernetes = true, environment = true, pinned = true }
-
 -- The lines of each part of `help` (parse.HELP_TOPICS), by topic.
 local TOPICS: { [string]: () -> { string } } = {
 	builtins = function()
@@ -1010,7 +1011,6 @@ local TOPICS: { [string]: () -> { string } } = {
 				"the kubernetes context kubectl would use, from its config",
 			},
 			{ "❄ devenv", "the environment the folder brings (env says more)" },
-			{ "⚑ 3 pods", "what a pinned watch shows now (space . on it: pin to the prompt)" },
 		})
 		local production = greed.option.get("shell-production-contexts")
 		table.insert(lines, "")
@@ -1018,9 +1018,14 @@ local TOPICS: { [string]: () -> { string } } = {
 			lines,
 			`A context matching shell-production-contexts ({production}) shows in red, and so does ❯.`
 		)
+		table.insert(lines, "")
+		table.insert(
+			lines,
+			"Above it, a line for each running block before the last: enter there opens the block in a float, and its keys (ctrl-c, space x, /) act on it."
+		)
 		local others: { string } = {}
 		for _, name in segments.names() do
-			if not OWN_SEGMENTS[name] then
+			if name ~= "git" and name ~= "kubernetes" and name ~= "environment" then
 				table.insert(others, name)
 			end
 		end
@@ -1106,7 +1111,7 @@ local function target(shell: Shell, ctx: greed.Context): Block?
 	if log.in_prompt(shell, pos) then
 		return shell.blocks[#shell.blocks]
 	end
-	return log.block_at(shell, pos)
+	return log.block_for(shell, pos)
 end
 
 -- The running block at the cursor, or else the latest running one.
@@ -1239,12 +1244,15 @@ greed.command({
 		if shell == nil then
 			return
 		end
-		if log.in_prompt(shell, ctx.view:cursor()) then
+		local pos = ctx.view:cursor()
+		local stripped = log.strip_block(shell, pos)
+		if log.in_prompt(shell, pos) then
 			run_prompt(shell, ctx)
+		elseif stripped then
+			peek.open(shell, stripped)
 		elseif core.style.is_typing() then
 			greed.run("insert-newline")
 		else
-			local pos = ctx.view:cursor()
 			local block = log.block_at(shell, pos)
 			if block == nil then
 				return
@@ -1322,6 +1330,14 @@ greed.command({
 block_command("shell-edit", "Put the block's command at the prompt, to change and run again", edit)
 
 block_command(
+	"shell-peek",
+	"Open the block in a float, to filter it, act on its rows or stop it, and close it again with esc",
+	function(shell, block)
+		peek.open(shell, block)
+	end
+)
+
+block_command(
 	"shell-rerun",
 	"Run the block's command again, in the folder and with the variables it had",
 	function(shell, block, ctx)
@@ -1336,20 +1352,6 @@ block_command(
 		M.run(shell, block.command, { view = ctx.view })
 	end
 )
-
-block_command(
-	"shell-pin",
-	"Show what a watch shows now in the shell's prompt as it changes, with a notification when it does",
-	function(shell, block)
-		if not live.pin(shell, block) then
-			greed.echo("only a running watch (or kubectl get -w) can be pinned")
-		end
-	end
-)
-
-block_command("shell-unpin", "Take a watch out of the shell's prompt", function(shell, block)
-	live.unpin(shell, block)
-end)
 
 block_command("shell-copy-output", "Copy what the block printed", function(_shell, block)
 	run.fill(block)
@@ -1586,13 +1588,13 @@ block_command(
 	end
 )
 
--- The finished block whose output holds the cursor, if any; for a block
--- a filter shows nothing of, its command line too.
-local function output_block(ctx: greed.Context): (Shell?, Block?)
-	local shell = state.of(ctx.buffer)
-	local pos = ctx.view:cursor()
+-- The finished or live block whose output holds the cursor, if any; for a
+-- block a filter shows nothing of, its command line too.
+local function output_block(view: greed.View): (Shell?, Block?)
+	local shell = state.of(view:buffer())
+	local pos = view:cursor()
 	local block = shell and log.block_at(shell, pos)
-	if shell == nil or block == nil or block.status == "running" then
+	if shell == nil or block == nil or (block.status == "running" and block.watching == nil) then
 		return nil, nil
 	end
 	local from, to = log.output_range(shell, block)
@@ -1617,17 +1619,23 @@ greed.command({
 	name = "shell-filter",
 	doc = "Keep the lines of the block at the cursor with what's typed in them (/ for a regex), or a table's rows (COL=VALUE, COL~TEXT, COL>N); elsewhere, search",
 	run = function(ctx)
-		local shell, block = output_block(ctx)
+		local view = ctx.view
+		-- On a line of the strip, it works on the block in a float.
+		local here = state.of(ctx.buffer)
+		local stripped = here and log.strip_block(here, view:cursor())
+		if here and stripped then
+			view = peek.open(here, stripped) or view
+		end
+		local shell, block = output_block(view)
 		if shell == nil or block == nil then
 			greed.run("search")
 			return
 		end
-		local view = ctx.view
 		local shown = block.shown
 		local sort, desc = if shown then shown.sort else nil, shown ~= nil and shown.desc
 		local function set(text: string)
 			rows.set(shell, block, text, sort, desc)
-			live.reshown(shell, block)
+			peek.follow(block)
 			to_output(shell, block, view)
 		end
 		core.prompt.open({
@@ -1646,7 +1654,7 @@ greed.command({
 	name = "shell-sort",
 	doc = "Sort the table at the cursor by the column under it; again to reverse, a third time as it came",
 	run = function(ctx)
-		local shell, block = output_block(ctx)
+		local shell, block = output_block(ctx.view)
 		local pos = ctx.view:cursor()
 		local column = shell and block and rows.column_at(shell, block, pos)
 		if shell == nil or block == nil or column == nil then
@@ -1655,6 +1663,7 @@ greed.command({
 		end
 		local col = ctx.buffer:display_column(pos)
 		rows.sort(shell, block, column)
+		peek.follow(block)
 		-- The cursor stays in the column, on the header.
 		local from = log.output_range(shell, block)
 		if from then
@@ -1665,13 +1674,17 @@ greed.command({
 
 greed.command({
 	name = "shell-unfilter",
-	doc = "Show every line, or row, of the filtered block at the cursor again, keeping its sort",
+	doc = "Show every line, or row, of the filtered block at the cursor again, keeping its sort; in a block's float, close it",
 	run = function(ctx)
-		local shell, block = output_block(ctx)
+		if peek.of(ctx.view) then
+			peek.close()
+			return
+		end
+		local shell, block = output_block(ctx.view)
 		local shown = block and block.shown
 		if shell and block and shown and shown.filter ~= "" then
 			rows.set(shell, block, "", shown.sort, shown.desc)
-			live.reshown(shell, block)
+			peek.follow(block)
 			to_output(shell, block, ctx.view)
 		end
 	end,
@@ -1681,10 +1694,10 @@ greed.command({
 	name = "shell-show-all",
 	doc = "Show the block at the cursor's output as it came, without a filter or a sort",
 	run = function(ctx)
-		local shell, block = output_block(ctx)
+		local shell, block = output_block(ctx.view)
 		if shell and block then
 			rows.reset(shell, block)
-			live.reshown(shell, block)
+			peek.follow(block)
 		end
 	end,
 })
@@ -1724,7 +1737,7 @@ core.actions.finder({
 	name = "shell-block",
 	find = function(view, range)
 		local shell = state.of(view:buffer())
-		local block = shell and log.block_at(shell, range.head)
+		local block = shell and log.block_for(shell, range.head)
 		if block == nil then
 			return nil
 		end
@@ -1750,11 +1763,10 @@ for _, action in
 		{ "sort by this column", "shell-sort", "Sort its table by the column here" },
 		{ "show all", "shell-show-all", "Its output as it came, without a filter or a sort" },
 		{
-			"pin to the prompt",
-			"shell-pin",
-			"Show what this watch shows in the prompt as it changes",
+			"open in a float",
+			"shell-peek",
+			"Look at it more closely, filter it or act on its rows; esc closes it",
 		},
-		{ "unpin", "shell-unpin", "Take it out of the prompt" },
 	}
 do
 	core.actions.command("shell-block", action[1], action[2], action[3])

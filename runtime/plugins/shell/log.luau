@@ -120,6 +120,25 @@ local function track_prompt(shell: Shell, pos: number)
 	shell.prompt = shell.buffer:track(pos, { gravity = "left" })
 end
 
+--- Where the blocks end: where the strip starts, or else the prompt.
+function M.blocks_end(shell: Shell): number
+	local strip = shell.strip
+	local at = strip and strip.at:pos()
+	return at or M.prompt_start(shell)
+end
+
+-- The last block ends at `pos` now, so the strip, or else the prompt,
+-- starts there.
+local function end_blocks(shell: Shell, pos: number)
+	local strip = shell.strip
+	if strip then
+		strip.at:forget()
+		strip.at = shell.buffer:track(pos)
+	else
+		track_prompt(shell, pos)
+	end
+end
+
 --- Puts `text` at the prompt, in place of what's there, with the cursor
 --- of each of `views` at its end.
 function M.set_prompt(shell: Shell, text: string, views: { greed.View }?)
@@ -170,7 +189,8 @@ function M.output_range(shell: Shell, block: Block): (number?, number?)
 	return buffer:line_start(first), math.max(buffer:line_start(first), to - 1)
 end
 
---- The block whose text holds `pos`, if any; nil in the prompt.
+--- The block whose text holds `pos`, if any; nil in the strip and the
+--- prompt.
 function M.block_at(shell: Shell, pos: number): Block?
 	for _, block in shell.blocks do
 		local from, to = M.range(block)
@@ -179,6 +199,22 @@ function M.block_at(shell: Shell, pos: number): Block?
 		end
 	end
 	return nil
+end
+
+--- The block whose line in the strip `pos` is on, if it's on one.
+function M.strip_block(shell: Shell, pos: number): Block?
+	local strip = shell.strip
+	local at = strip and strip.at:pos()
+	if strip == nil or at == nil or pos < at or pos >= M.prompt_start(shell) then
+		return nil
+	end
+	local buffer = shell.buffer
+	return strip.blocks[buffer:line_of(pos) - buffer:line_of(at) + 1]
+end
+
+--- The block whose text holds `pos`, or whose line in the strip it's on.
+function M.block_for(shell: Shell, pos: number): Block?
+	return M.strip_block(shell, pos) or M.block_at(shell, pos)
 end
 
 -- How long `ms` milliseconds is, shortly: 0.04s, 3.2s, 2m 05s.
@@ -309,6 +345,107 @@ function M.draw_block(shell: Shell, block: Block)
 	local after = buffer:line_end(last)
 	table.insert(marks, { from = after, to = after, style = "shell.separator", lines = { "" } })
 	buffer:decorate(ns_block(block), marks)
+	M.draw_strip(shell)
+end
+
+-- What a live block shows now, in a few words: how many rows its table
+-- shows (the ones its filter keeps) and what they are, or its first line.
+local function summary(block: Block): string
+	local tbl = block.table
+	if tbl then
+		local count = if block.shown then #block.shown.rows else #tbl.rows
+		local called = block.called or { one = "row", many = "rows" }
+		return `{count} {if count == 1 then called.one else called.many}`
+	end
+	local first = string.match(block.stdout, "^%s*([^\n]*)") or ""
+	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
+end
+
+-- What the strip says of a running block: for a live one, what it shows;
+-- else how long it has run.
+local function strip_status(block: Block): string
+	if block.watching then
+		return summary(block)
+	end
+	return duration(greed.now() - block.started)
+end
+
+--- Draws the strip: a line between the blocks and the prompt for each
+--- running block but the last, whose status shows right above the prompt
+--- anyway, so the ones that scrolled up stay in reach. On its line, a
+--- block's keys act on it, and `enter` (or a click on its number) opens it
+--- in a float.
+function M.draw_strip(shell: Shell)
+	local buffer = shell.buffer
+	local blocks: { Block } = {}
+	local lines: { string } = {}
+	for i, block in shell.blocks do
+		if i < #shell.blocks and block.status == "running" and M.range(block) then
+			table.insert(blocks, block)
+			table.insert(lines, string.match(block.command, "^[^\n]*") or "")
+		end
+	end
+	local text = if #lines > 0 then table.concat(lines, "\n") .. "\n" else ""
+	local strip = shell.strip
+	if text ~= (if strip then strip.text else "") then
+		local start = M.blocks_end(shell)
+		local prompt = M.prompt_start(shell)
+		-- A cursor at the prompt stays where it was in what's typed.
+		local views = buffer:views()
+		local typed: { [number]: number } = {}
+		for i, view in views do
+			local cursor = view:cursor()
+			if cursor >= prompt then
+				typed[i] = cursor - prompt
+			end
+		end
+		buffer:edit(function(e)
+			e:replace(start, prompt, text)
+		end, OUT_OF_UNDO)
+		if strip then
+			strip.at:forget()
+		end
+		shell.strip = if text == ""
+			then nil
+			else { at = buffer:track(start), blocks = blocks, text = text }
+		track_prompt(shell, start + #text)
+		for i, view in views do
+			local offset = typed[i]
+			if offset and view:valid() then
+				view:set_cursor(start + #text + offset)
+			end
+		end
+		M.draw_prompt(shell)
+	elseif strip then
+		strip.blocks = blocks
+	end
+	local marks: { greed.Mark } = {}
+	local now = shell.strip
+	local at = now and now.at:pos()
+	if now and at then
+		local first = buffer:line_of(at)
+		for i, block in now.blocks do
+			local from = buffer:line_start(first + i - 1)
+			local to = buffer:line_end(first + i - 1)
+			local glyph = M.glyph(block)
+			table.insert(marks, {
+				from = from,
+				to = from,
+				style = STYLE[block.status] or "shell.status",
+				text = `{glyph} {block.number} `,
+				action = "shell-peek",
+			})
+			table.insert(marks, { from = from, to = to, style = "shell.strip" })
+			table.insert(marks, {
+				from = to,
+				to = to,
+				style = "shell.status",
+				text = `· {strip_status(block)}`,
+				eol = true,
+			})
+		end
+	end
+	buffer:decorate("shell.strip", marks)
 end
 
 --- `path` short, as fish writes it: from "~" under the home folder, with
@@ -374,19 +511,21 @@ local function track_block(shell: Shell, block: Block, from: number, to: number)
 	block.range = shell.buffer:track_range(from, to)
 end
 
---- Adds `block` after the others, in place of what's at the prompt, which
---- empties. Its command is its text for now.
+--- Adds `block` after the others, before the strip, and empties the
+--- prompt. Its command is its text for now.
 function M.add(shell: Shell, block: Block)
 	local buffer = shell.buffer
-	local start = M.prompt_start(shell)
+	local start = M.blocks_end(shell)
 	local text = block.command .. "\n"
+	local strip = if shell.strip then shell.strip.text else ""
 	buffer:edit(function(e)
-		e:replace(start, buffer:len(), text)
+		e:replace(start, buffer:len(), text .. strip)
 	end, OUT_OF_UNDO)
 	local _, breaks = string.gsub(block.command, "\n", "")
 	shown[block.uid] = { command = breaks + 1, stable = 0, volatile = 0 }
 	track_block(shell, block, start, start + #text)
-	track_prompt(shell, start + #text)
+	end_blocks(shell, start + #text)
+	track_prompt(shell, start + #text + #strip)
 	table.insert(shell.blocks, block)
 	M.draw_block(shell, block)
 	M.draw_prompt(shell)
@@ -446,7 +585,7 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?
 	local buffer = shell.buffer
 	local max, head = cap()
 	local first = first_output_line(shell, block, from)
-	local last_block = M.prompt_start(shell) == to
+	local last_block = M.blocks_end(shell) == to
 	-- Lines going into the head, which stays, then the rest; past the cap,
 	-- the oldest after the head go, from those shown and then from `add`.
 	local total = s.stable + #add + skip
@@ -488,7 +627,7 @@ function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?
 	local stop = to - dropped - (replace_to - volatile_from) + #text
 	track_block(shell, block, from, stop)
 	if last_block then
-		track_prompt(shell, stop)
+		end_blocks(shell, stop)
 	end
 	local marks: { greed.Mark } = {}
 	placed(kept, start, marks)
@@ -544,7 +683,7 @@ function M.replace_output(shell: Shell, block: Block, lines: { Line })
 		return
 	end
 	local buffer = shell.buffer
-	local last_block = M.prompt_start(shell) == to
+	local last_block = M.blocks_end(shell) == to
 	local start = if s.stable + s.volatile == 0
 		then to
 		else buffer:line_start(first_output_line(shell, block, from))
@@ -556,7 +695,7 @@ function M.replace_output(shell: Shell, block: Block, lines: { Line })
 	local stop = start + #text
 	track_block(shell, block, from, stop)
 	if last_block then
-		track_prompt(shell, stop)
+		end_blocks(shell, stop)
 	end
 	local marks: { greed.Mark } = {}
 	placed(lines, start, marks)
@@ -607,12 +746,12 @@ function M.remove(shell: Shell, block: Block)
 	local from, to = M.range(block)
 	local buffer = shell.buffer
 	if from and to then
-		local was_last = M.prompt_start(shell) == to
+		local was_last = M.blocks_end(shell) == to
 		buffer:edit(function(e)
 			e:delete(from, to)
 		end, OUT_OF_UNDO)
 		if was_last then
-			track_prompt(shell, from)
+			end_blocks(shell, from)
 		end
 	end
 	if block.range then
@@ -627,6 +766,7 @@ function M.remove(shell: Shell, block: Block)
 	if index then
 		table.remove(shell.blocks, index)
 	end
+	M.draw_strip(shell)
 	M.draw_prompt(shell)
 end
 

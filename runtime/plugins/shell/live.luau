@@ -15,7 +15,7 @@ local run = require("./run")
 local tables = require("./tables")
 local kinds = require("./kinds")
 local rows = require("./rows")
-local segments = require("./segments")
+local peek = require("./peek")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -138,81 +138,6 @@ local function lines_of(
 	return lines, changed, now
 end
 
--- What each pinned block showed last in the prompt.
-local pinned: { [Block]: string } = setmetatable({}, { __mode = "k" }) :: any
-
---- What a live block shows now, in a few words, for the prompt: how many
---- rows its table shows (the ones its filter keeps) and what they are, or
---- its first line.
-function M.value(block: Block): string
-	local tbl = block.table
-	if tbl then
-		local count = if block.shown then #block.shown.rows else #tbl.rows
-		local called = block.called or { one = "row", many = "rows" }
-		return `{count} {if count == 1 then called.one else called.many}`
-	end
-	local first = string.match(block.stdout, "^%s*([^\n]*)") or ""
-	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
-end
-
---- Shows what `block`, a live one, shows now in its shell's prompt, as it
---- changes, and tells you when it does while you're elsewhere. False when
---- it isn't live.
-function M.pin(shell: Shell, block: Block): boolean
-	if block.watching == nil or block.status ~= "running" then
-		return false
-	end
-	pinned[block] = M.value(block)
-	segments.refresh(shell)
-	return true
-end
-
---- Takes `block` out of its shell's prompt. False when it wasn't there.
-function M.unpin(shell: Shell, block: Block): boolean
-	if pinned[block] == nil then
-		return false
-	end
-	pinned[block] = nil
-	segments.refresh(shell)
-	return true
-end
-
---- After `block` shows something new: when it's pinned and what it shows
---- changed, the prompt shows that, and a notification says so.
-function M.renewed(shell: Shell, block: Block)
-	local before = pinned[block]
-	if before == nil then
-		return
-	end
-	local now = M.value(block)
-	if now ~= before then
-		pinned[block] = now
-		greed.client.notify(block.command, `{before} → {now}`)
-		segments.refresh(shell)
-	end
-end
-
---- After `block`'s filter changed: when it's pinned, the prompt shows what
---- it keeps now, without a notification, as you changed it yourself.
-function M.reshown(shell: Shell, block: Block)
-	if pinned[block] ~= nil then
-		pinned[block] = M.value(block)
-		segments.refresh(shell)
-	end
-end
-
--- The prompt shows what each pinned block of the shell shows now.
-segments.segment("pinned", function(ctx: segments.Context): state.Segment?
-	local parts: { string } = {}
-	for _, block in ctx.shell.blocks do
-		local value = pinned[block]
-		if value then
-			table.insert(parts, `⚑ {value}`)
-		end
-	end
-	return if #parts > 0 then { text = table.concat(parts, " ") } else nil
-end)
-
 --- Runs `line` in `block` again and again, `every` seconds apart, with
 --- `capture`, showing what it printed each time; it ends when stopped.
 function M.start(shell: Shell, block: Block, line: string, every: number, capture: Capture)
@@ -255,7 +180,7 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			before = now
 			block.note = `every {every}s · {changed} changed · {os.date("%H:%M:%S")}`
 			rows.renew(shell, block, lines)
-			M.renewed(shell, block)
+			peek.follow(block)
 			if minutes > 0 and greed.now() - started >= minutes * 60000 then
 				why = `stopped after {minutes} minutes; space r watches again`
 				break
@@ -270,7 +195,6 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			wake = nil
 		end
 		block.note = why
-		M.unpin(shell, block)
 		run.finish(shell, block, code, if code == nil then "INT" else nil)
 	end)
 end
@@ -408,13 +332,12 @@ function M.follow(shell: Shell, block: Block, line: string, open: Open)
 				end
 				block.note = `{changes} changed · {os.date("%H:%M:%S")}`
 				rows.renew(shell, block, lines)
-				M.renewed(shell, block)
+				peek.follow(block)
 				shown = true
 			end
 		end
 		local code, signal = c:wait()
 		done()
-		M.unpin(shell, block)
 		run.finish(shell, block, code, signal)
 	end)
 end

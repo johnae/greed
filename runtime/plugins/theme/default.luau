@@ -189,4 +189,5 @@ return {
 	["shell.separator"] = { fg = "bright-black" },
 	["shell.suggestion"] = { fg = "bright-black" },
 	["shell.changed"] = { fg = "yellow" },
+	["shell.strip"] = { italic = true },
 }

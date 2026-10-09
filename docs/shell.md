@@ -91,7 +91,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 
 | Keys | |
 |---|---|
-| `enter` | At the prompt, run what's there. On a block, put its command at the prompt to change; on a file and line it names, open it there; on a row that's a thing (a file, a pod), do its usual action |
+| `enter` | At the prompt, run what's there. On a running block's line above the prompt, open the block in a float. On a block, put its command at the prompt to change; on a file and line it names, open it there; on a row that's a thing (a file, a pod), do its usual action |
 | `alt-enter` | Another line at the prompt |
 | `up` `down` | At the prompt: the commands typed before that start with what's typed |
 | `ctrl-r` | Pick a command typed before, in any shell |
@@ -454,16 +454,32 @@ marked, rather than a longer and longer list. Its rows are pods to act
 on, as any `kubectl get` block's are. It ends when kubectl does, or with
 `ctrl-c`.
 
-To keep an eye on a watch while you work further down, pin it: `space .`
-on its block, then "pin to the prompt" (`shell-pin`). The prompt then
-shows what it shows now, as `⚑ 3 pods` (the rows its filter keeps), and
-when that changes while Greed isn't focused, your desktop gets a
-notification. "unpin" (`shell-unpin`) takes it out, and it goes by itself
-when the watch stops.
+## Running blocks above the prompt
+
+A watch, or anything else still running, scrolls up out of sight as you
+run more commands. So every running block but the last gets a line just
+above the prompt, saying what it shows now (how many rows, for a table)
+or how long it has run:
 
 ```text
-⎈ prod:api ⚑ 3 pods ~/src/api ❯
+❯ 9 git status --short                    ✓ 0.02s
+ M src/main.rs
+
+◐ 7 watch kubectl get pods  · 3 pods
+◐ 8 cargo build --release   · 1m 12s
+~/s/infra ❯
 ```
+
+Such a line stands for its block, a line or two up from the prompt:
+`ctrl-c` or `space x` there stops that block rather than the latest,
+`space .` lists what you can do with it, and `space r` runs it again.
+`enter` (or a click on its number) opens the block in a float, and `/`
+opens it there to filter. In the float it's the block itself: `/`
+filters it, `enter` or `space .` on a row acts on the pod or file it is,
+and `ctrl-c` stops it. A watch's float follows it as it refreshes, and
+grows and shrinks with it. `esc` closes it, keeping the filter, which a
+watch keeps on each run. `space .` on any block offers "open in a float"
+too. A line goes when its block ends.
 
 ## Rows you can act on
 

@@ -165,6 +165,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["shell.separator"] = { fg = p.gutter },
 		["shell.suggestion"] = { fg = p.comment },
 		["shell.changed"] = { fg = p.yellow },
+		["shell.strip"] = { italic = true },
 		fold = { fg = p.comment },
 		["ui.glow"] = { fg = glow },
 
