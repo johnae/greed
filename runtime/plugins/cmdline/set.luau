@@ -2,7 +2,8 @@
 -- option. A yes-or-no option also takes Vim's forms: `:set NAME` turns it
 -- on, `:set noNAME` off, `:set NAME!` (or `invNAME`) flips it, and
 -- `:set NAME?` shows any option's value. Vim's `number` (`nu`),
--- `relativenumber` (`rnu`) and `textwidth` (`tw`) work too.
+-- `relativenumber` (`rnu`), `textwidth` (`tw`), `ignorecase` (`ic`) and
+-- `smartcase` (`scs`) work too; its indent ones say how indent goes here.
 
 local greed = require("@greed")
 
@@ -69,22 +70,67 @@ local vim_flags: { [string]: (change: Change) -> () } = {
 }
 vim_flags.nu = vim_flags.number
 vim_flags.rnu = vim_flags.relativenumber
+-- Vim's case settings, as search-case: ignorecase is "ignore", smartcase
+-- "smart" (Vim needs both on for that; here smartcase alone does).
+local function case(on: string, off: string, name: string): (change: Change) -> ()
+	return function(change)
+		local now = greed.option.get("search-case")
+		if change == "show" then
+			greed.echo(`{name} is {if now == on then "on" else "off"} (search-case is {now})`)
+			return
+		end
+		local turn_on = if change == "flip" then now ~= on else change == "on"
+		greed.option.set("search-case", if turn_on then on else off)
+	end
+end
+vim_flags.ignorecase = case("ignore", "match", "ignorecase")
+vim_flags.ic = vim_flags.ignorecase
+vim_flags.smartcase = case("smart", "ignore", "smartcase")
+vim_flags.scs = vim_flags.smartcase
 local vim_names: { [string]: string } = { tw = "text-width", textwidth = "text-width" }
+
+-- Vim's indent settings, which Greed has per language instead.
+local INDENT_HELP = "indent is per language here: "
+	.. 'require("@languages").set("python", { indent = 4 }) in your config, '
+	.. "or :set indent 4 for files in no language"
+local vim_hints: { [string]: string } = {}
+for _, name in { "shiftwidth", "sw", "tabstop", "ts", "softtabstop", "sts", "expandtab", "et" } do
+	vim_hints[name] = INDENT_HELP
+end
 
 local function option_name(name: string): string
 	return vim_names[name] or name
 end
 
--- The value typed for an option, as the type it takes.
-local function value_of(text: string): greed.OptionValue
-	return if text == "true" then true elseif text == "false" then false else tonumber(text) or text
+-- Fails saying how Greed does what Vim's `name` does, if it's one of those.
+local function hint(name: string)
+	local base = string.match(name, "^no(.+)$") or name
+	local said = vim_hints[name] or vim_hints[base]
+	if said then
+		error(`{name}: {said}`, 0)
+	end
+end
+
+-- The value typed for an option, as the type it takes: a number for
+-- indent is that many spaces.
+local function value_of(text: string, option: string?): greed.OptionValue
+	local value: greed.OptionValue = if text == "true"
+		then true
+		elseif text == "false" then false
+		else tonumber(text) or text
+	if option == "indent" and type(value) == "number" then
+		return string.rep(" ", value)
+	end
+	return value
 end
 
 -- One word after `:set`: NAME, noNAME, invNAME, NAME!, NAME? or NAME=VALUE.
 local function set_word(word: string)
 	local name, value = string.match(word, "^([^=]+)=(.*)$")
 	if name and value then
-		greed.option.set(option_name(name), value_of(value))
+		hint(name)
+		local option = option_name(name)
+		greed.option.set(option, value_of(value, option))
 		return
 	end
 	local change: Change = "on"
@@ -113,7 +159,9 @@ local function set_word(word: string)
 	end
 	local option = option_name(base)
 	if not exists(option) then
-		error(`no option called {base}`, 0)
+		hint(base)
+		-- The option module's own error names options like it.
+		greed.option.set(option, true)
 	end
 	local current = greed.option.get(option)
 	if change == "show" or (type(current) ~= "boolean" and change == "on") then
@@ -128,12 +176,15 @@ end
 --- Runs `:set` with the words typed after it.
 function M.set(args: { string })
 	if #args == 0 then
-		error("set needs an option, e.g. :set tab-width 2 or :set auto-save", 0)
+		error(
+			"set needs an option, e.g. :set text-width 100 or :set auto-save; space h o lists them",
+			0
+		)
 	end
 	-- NAME VALUE, where text values can have spaces.
 	local option = option_name(args[1])
 	if #args >= 2 and not string.find(args[1], "=", 1, true) and exists(option) then
-		greed.option.set(option, value_of(table.concat(args, " ", 2)))
+		greed.option.set(option, value_of(table.concat(args, " ", 2), option))
 		return
 	end
 	for _, word in args do
@@ -175,7 +226,7 @@ greed.command({
 	run = function(ctx)
 		local name = ctx.args[1]
 		if name == nil then
-			error("get-option needs an option, e.g. :get tab-width", 0)
+			error("get-option needs an option, e.g. :get text-width", 0)
 		end
 		set_word(name .. "?")
 	end,

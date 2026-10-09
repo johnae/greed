@@ -60,9 +60,8 @@ pub enum Value {
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Bool(_) => "bool",
-            Value::Int(_) => "int",
-            Value::Float(_) => "float",
+            Value::Bool(_) => "true or false value",
+            Value::Int(_) | Value::Float(_) => "number",
             Value::String(_) => "string",
         }
     }
@@ -327,6 +326,7 @@ impl<H> Registry<H> {
         value: Value,
         by: Option<PluginId>,
     ) -> Result<(), OptionError> {
+        let value = self.fitting(name, value);
         let slot = self.checked(name, &value)?;
         slot.value = value;
         slot.set_by = by;
@@ -375,6 +375,19 @@ impl<H> Registry<H> {
             .collect()
     }
 
+    /// `value` as option `name` takes it: a whole number where it takes
+    /// numbers with decimals.
+    fn fitting(&self, name: &str, value: Value) -> Value {
+        match (self.options.get(name).map(|slot| &slot.value), value) {
+            (Some(Value::Float(_)), Value::Int(n)) =>
+            {
+                #[expect(clippy::cast_precision_loss, reason = "an option's whole number")]
+                Value::Float(n as f64)
+            }
+            (_, value) => value,
+        }
+    }
+
     /// Option `name`'s slot, if `value` is of its type and one of its
     /// choices.
     fn checked(&mut self, name: &str, value: &Value) -> Result<&mut OptionSlot, OptionError> {
@@ -386,9 +399,13 @@ impl<H> Registry<H> {
         }
         let slot = self.options.get_mut(name).expect("just looked");
         if std::mem::discriminant(&slot.value) != std::mem::discriminant(value) {
+            let expected = match (&slot.value, value) {
+                (Value::Int(_), Value::Float(_)) => "whole number",
+                (option, _) => option.type_name(),
+            };
             return Err(OptionError::WrongType {
                 name: name.into(),
-                expected: slot.value.type_name(),
+                expected,
                 actual: value.type_name(),
             });
         }
@@ -424,6 +441,7 @@ impl<H> Registry<H> {
             }
             return Ok(());
         };
+        let value = self.fitting(name, value);
         let name = self.checked(name, &value)?.def.name.clone();
         self.own.entry(client).or_default().insert(name, value);
         Ok(())

@@ -181,7 +181,7 @@ test(":set turns yes-or-no options on, off and over as Vim does", function(t)
 	local err = fails(function()
 		set("nope")
 	end)
-	assert(string.find(err, "no option called nope", 1, true), err)
+	assert(string.find(err, 'no option called "nope"', 1, true), err)
 end)
 
 test(":set nu, nonu, rnu and nornu show and hide line numbers as in Vim", function(t)
@@ -427,3 +427,29 @@ test("each client types in a command line of its own", function(t)
 	t:expect("abc|")
 	assert(#t:floats() == 0, "closed")
 end)
+
+test(
+	":set takes Vim's case names, says how indent goes, and a number of spaces for indent",
+	function(t)
+		t:buffer("|x")
+		local case = greed.option.get("search-case")
+		t:run("set", { "ic" })
+		assert(greed.option.get("search-case") == "ignore")
+		t:run("set", { "scs" })
+		assert(greed.option.get("search-case") == "smart")
+		t:run("set", { "noic" })
+		assert(greed.option.get("search-case") == "match")
+		greed.option.set("search-case", case)
+		local ok, err = pcall(function()
+			t:run("set", { "sw=2" })
+		end)
+		assert(
+			not ok and string.find(tostring(err), "indent is per language", 1, true),
+			tostring(err)
+		)
+		local indent = greed.option.get("indent")
+		t:run("set", { "indent", "2" })
+		assert(greed.option.get("indent") == "  ", tostring(greed.option.get("indent")))
+		greed.option.set("indent", indent)
+	end
+)
