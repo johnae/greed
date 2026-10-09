@@ -99,3 +99,41 @@ test("wrapped text can't hold the marker that ends it", function()
 	assert(string.find(said, "\nbefore >>> after \n", 1, true), said)
 	assert(agent.untrusted("x", "hi") ~= agent.untrusted("x", "hi"), "a new word each time")
 end)
+
+test("redirects are followed, but never to this machine or a private network", function()
+	local asked = {}
+	web.request = function(request: any): (any, string?)
+		table.insert(asked, request.url)
+		if request.url == "https://example.com/old" then
+			return {
+				status = 301,
+				body = "",
+				headers = { location = "https://www.example.com/new" },
+			},
+				nil
+		elseif request.url == "https://example.com/inside" then
+			return {
+				status = 302,
+				body = "",
+				headers = { location = "http://169.254.169.254/latest" },
+			},
+				nil
+		end
+		return { status = 200, body = "moved here", headers = { ["content-type"] = "text/plain" } },
+			nil
+	end
+	local said = run("web_fetch", { url = "https://example.com/old" })
+	assert(string.find(said, "moved here", 1, true), said)
+	for _, url in
+		{
+			"http://localhost:8080/",
+			"http://127.0.0.1/",
+			"http://192.168.1.1/",
+			"https://example.com/inside",
+		}
+	do
+		local ok, err = pcall(run, "web_fetch", { url = url })
+		assert(not ok and string.find(tostring(err), "private network", 1, true), `{url}: {err}`)
+	end
+	assert(not table.find(asked, "http://169.254.169.254/latest"), "never asked")
+end)

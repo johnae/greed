@@ -82,16 +82,64 @@ function M.text_of(html: string): string
 	return (string.match(text, "^%s*(.-)%s*$") or "")
 end
 
+-- Whether `url` points at this machine or a private network (a router, a
+-- metadata service, a dev server): a page an agent reads can't send it
+-- there. Names are judged as written, so a public name for a private
+-- address still gets through; it shuts the plain cases.
+local function private(url: string): boolean
+	local host = string.lower(
+		string.match(url, "^https?://%[([^%]]+)%]")
+			or string.match(url, "^https?://[^/?#@]*@([^/:?#]+)")
+			or string.match(url, "^https?://([^/:?#]+)")
+			or ""
+	)
+	if
+		host == "localhost"
+		or string.match(host, "%.localhost$")
+		or string.match(host, "%.local$")
+	then
+		return true
+	end
+	local a, b = string.match(host, "^(%d+)%.(%d+)%.%d+%.%d+$")
+	local first, second = tonumber(a), tonumber(b)
+	if first and second then
+		return first == 127
+			or first == 10
+			or first == 0
+			or (first == 169 and second == 254)
+			or (first == 192 and second == 168)
+			or (first == 172 and second >= 16 and second <= 31)
+			or (first == 100 and second >= 64 and second <= 127)
+	end
+	return host == "::1"
+		or string.match(host, "^f[cd]") ~= nil
+		or string.match(host, "^fe80:") ~= nil
+end
+
 --- Fetches `url` (http or https) and returns its text, cut at MOST
---- characters, or fails with why.
+--- characters, or fails with why. Redirects are followed, a few, never to
+--- this machine or a private network.
 function M.fetch(url: string): string
 	if not string.match(url, "^https?://") then
 		error("only http and https addresses", 0)
 	end
-	local response, err = M.request({ url = url, method = "GET", timeout = 20000 })
+	local response, err
+	for _ = 1, 5 do
+		if private(url) then
+			error(`{url} is on this machine or a private network, which agents don't fetch from`, 0)
+		end
+		response, err = M.request({ url = url, method = "GET", timeout = 20000 })
+		local location = response and response.headers.location
+		if not (response and response.status >= 300 and response.status < 400 and location) then
+			break
+		end
+		url = if string.match(location, "^https?://")
+			then location
+			else (string.match(url, "^(https?://[^/?#]+)") or "") .. location
+	end
 	if response == nil then
 		error(`can't fetch {url}: {err}`, 0)
-	elseif response.status >= 400 then
+	elseif response.status >= 300 then
 		error(`{url} answered {response.status}`, 0)
 	end
 	local kind = response.headers["content-type"] or ""

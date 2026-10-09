@@ -187,6 +187,15 @@ function M.fetch(url: string, path: string)
 		return
 	end
 	local response, err = greed.http.request({ url = url, save = path, timeout = 120000 })
+	-- GitHub's downloads redirect to another host, which greed.http leaves
+	-- to us; what arrives is checked against its sha256 either way.
+	for _ = 1, 5 do
+		local location = response and response.headers.location
+		if not (response and response.status >= 300 and response.status < 400 and location) then
+			break
+		end
+		response, err = greed.http.request({ url = location, save = path, timeout = 120000 })
+	end
 	if response == nil then
 		error(`downloading {url}: {err}`, 0)
 	elseif response.status < 200 or response.status >= 300 then

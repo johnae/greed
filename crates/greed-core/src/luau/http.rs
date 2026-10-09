@@ -110,10 +110,58 @@ fn request_from_lua(lua: &Lua, owner: &PluginId, opts: &Table) -> LuaResult<Requ
     })
 }
 
+/// How many redirects within one host a request follows.
+const MAX_REDIRECTS: usize = 10;
+
 /// Sends `request` and returns the response, its body not read yet.
-fn send(request: Request) -> Result<(Head, ureq::Body), String> {
+/// Redirects are followed only within the host asked for: the capability
+/// check was for that host, and the headers (an API key, often) are meant
+/// for it. A redirect elsewhere comes back as it is, for the plugin to
+/// follow with a request of its own if it may.
+fn send(mut request: Request) -> Result<(Head, ureq::Body), String> {
+    for _ in 0..MAX_REDIRECTS {
+        let (head, body) = send_once(&request)?;
+        let location = head
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("location"))
+            .map(|(_, value)| value.clone());
+        let Some(next) = location
+            .filter(|_| matches!(head.status, 301 | 302 | 303 | 307 | 308))
+            .and_then(|location| redirected(&request.url, &location))
+        else {
+            return Ok((head, body));
+        };
+        // 303, and 301 and 302 after a POST, go on as a GET, as browsers do.
+        if head.status == 303 || (matches!(head.status, 301 | 302) && request.method == "POST") {
+            "GET".clone_into(&mut request.method);
+            request.body = None;
+        }
+        request.url = next;
+    }
+    Err(format!("more than {MAX_REDIRECTS} redirects"))
+}
+
+/// Where a redirect from `url` to `location` goes, if it stays on the same
+/// host: `location` whole, or a path on `url`'s origin.
+fn redirected(url: &str, location: &str) -> Option<String> {
+    let next = if location.starts_with("http://") || location.starts_with("https://") {
+        location.to_owned()
+    } else {
+        let path = location.strip_prefix('/').filter(|p| !p.starts_with('/'))?;
+        let (scheme, rest) = url.split_once("://")?;
+        let authority = rest.split(['/', '?', '#']).next()?;
+        format!("{scheme}://{authority}/{path}")
+    };
+    let same = host_of(&next)?.eq_ignore_ascii_case(host_of(url)?);
+    same.then_some(next)
+}
+
+/// Sends `request` once, without following redirects.
+fn send_once(request: &Request) -> Result<(Head, ureq::Body), String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        .max_redirects(0)
         .timeout_connect(Some(CONNECT))
         .timeout_global(request.timeout)
         .build()
@@ -124,7 +172,7 @@ fn send(request: Request) -> Result<(Head, ureq::Body), String> {
     for (name, value) in &request.headers {
         builder = builder.header(name, value);
     }
-    let response = match request.body {
+    let response = match request.body.clone() {
         Some(body) => builder.body(body).map(|r| agent.run(r)),
         None => builder.body(()).map(|r| agent.run(r)),
     }

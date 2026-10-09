@@ -52,6 +52,20 @@ fn answer(stream: TcpStream) {
             )
             .unwrap();
         }
+        "/here" => {
+            write!(
+                out,
+                "HTTP/1.1 302 Found\r\nLocation: /hello\r\nContent-Length: 0\r\n\r\n"
+            )
+            .unwrap();
+        }
+        "/away" => {
+            write!(
+                out,
+                "HTTP/1.1 302 Found\r\nLocation: http://elsewhere.invalid/hello\r\nContent-Length: 0\r\n\r\n"
+            )
+            .unwrap();
+        }
         "/echo" => {
             write!(
                 out,
@@ -201,4 +215,30 @@ fn host() -> Host {
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", "", None);
     Host::new(editor).unwrap()
+}
+
+#[test]
+fn redirects_are_followed_only_on_the_same_host() {
+    let address = serve();
+    let host = host();
+    host.load_str(
+        "fetch",
+        &format!(
+            r#"
+            local greed = require("@greed")
+            greed.command {{ name = "fetch", run = function()
+                local here = assert(greed.http.request({{ url = "{address}/here" }}))
+                greed.echo(`{{here.status}} {{here.body}}`)
+                local away = assert(greed.http.request({{ url = "{address}/away" }}))
+                greed.echo(`{{away.status}} {{away.headers.location}}`)
+            end }}
+            "#
+        ),
+    )
+    .unwrap();
+    host.run(FIRST_CLIENT, "fetch").unwrap();
+    assert_eq!(
+        messages(&host, 2),
+        ["200 hello", "302 http://elsewhere.invalid/hello"]
+    );
 }
