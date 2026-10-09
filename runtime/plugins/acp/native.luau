@@ -45,6 +45,14 @@ local MAX_OVERFLOWS = 3
 local REPEATED = "\n\n(You made this same call already and got the same result. "
 	.. "Asking again won't change it: try something else.)"
 
+-- Calls in a row that only read or search before the model hears it's been
+-- a while: models can go on looking long after trying would have told them
+-- more.
+local READS = 40
+local READING = `\n\n({READS} calls reading and searching in a row. If you're making something, `
+	.. "try a first version now and let its checks and tests answer the rest; if something's "
+	.. "in the way, tell the user what. If you're only answering a question, carry on.)"
+
 -- The most of a tool's result the model gets back, in characters and lines;
 -- the rest of a longer one is in a file it can read on in. Such files go
 -- after `OUTPUT_DAYS`.
@@ -661,6 +669,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	local overflows = 0
 	-- What each call (tool and arguments) gave back this prompt.
 	local seen: { [string]: string } = {}
+	-- Calls that only read in a row, and whether it heard about them.
+	local reads, nudged = 0, false
 	for _ = 1, MAX_TURNS do
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
@@ -740,6 +750,13 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			seen[key] = result
 			if before == result then
 				result ..= REPEATED
+			end
+			-- Asking the user counts as doing something, as an edit does.
+			local tool = s.tools[c.id]
+			reads = if tool and tool.kind == "read" and c.name ~= "ask" then reads + 1 else 0
+			if reads >= READS and not nudged then
+				nudged = true
+				result ..= READING
 			end
 			table.insert(
 				state.said,

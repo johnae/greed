@@ -987,6 +987,50 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
 end)
 
+-- `count` turns that each read a.txt from another line, with a write as
+-- turn `write_at`, if given, then an answer.
+local function reading(count: number, write_at: number?): { any }
+	local turns = {}
+	for n = 1, count do
+		local call = if n == write_at
+			then { id = `c{n}`, name = "write_file", input = { path = "b.txt", text = "b\n" } }
+			else { id = `c{n}`, name = "read", input = { path = "a.txt", from_line = n } }
+		table.insert(turns, { text = "", calls = { call }, stop = "tools" })
+	end
+	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
+	return turns
+end
+
+test("forty calls that only read, in a row, bring a nudge to try something, once", function(t)
+	local asked = script(reading(45))
+	local s = ask(t, "look")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local said_last = asked[#asked].said
+	local function result(n: number): string
+		return said_last[2 * n + 1].text :: string
+	end
+	assert(not string.find(result(39), "in a row", 1, true), result(39))
+	assert(string.find(result(40), "40 calls reading and searching in a row", 1, true), result(40))
+	assert(not string.find(result(45), "in a row", 1, true), "once a prompt")
+end)
+
+test("a call that does something starts the count of reads again", function(t)
+	local asked = script(reading(45, 30))
+	local s = ask(t, "look")
+	t:wait_for(function()
+		return s.status == "waiting"
+	end)
+	waiting(s).answer:send("once")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	for _, said_one in asked[#asked].said do
+		assert(not string.find(said_one.text or "", "in a row", 1, true), said_one.text)
+	end
+end)
+
 test("writing over a file shows only what changes before you're asked", function(t)
 	script({
 		{
