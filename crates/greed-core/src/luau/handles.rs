@@ -8,7 +8,7 @@
 //! `{ ranges = { range, ... }, primary = i }` with a 1-based `primary`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use greed_text::{Author, ChangeSet, Range, Rope, Selection};
 use mlua::{
@@ -264,11 +264,18 @@ impl BufferRef {
         self.with_buffer(lua, |_| Ok(()))?;
         super::capabilities::unless_sandboxed(lua, "write a file")?;
         let path = path.map(|path| super::fs::expand_home(lua, path));
-        // Its own file is the buffer's to write; another path is any file.
-        if let Some(path) = &path {
-            super::capabilities::check(lua, "fs.write")?;
-            super::approvals::guard(lua, Path::new(path))?;
-            super::secrets::guard(lua, Path::new(path))?;
+        super::capabilities::check(lua, "fs.write")?;
+        // Greed's approvals and secrets are written only by Greed, or by
+        // you at its own file; a buffer a plugin loaded could be either.
+        let target = path.clone().map(PathBuf::from).or_else(|| {
+            self.with_buffer(lua, |b| Ok(b.path().map(Path::to_owned)))
+                .ok()?
+        });
+        if let Some(target) = target
+            && (path.is_some() || !super::capabilities::by_you(lua))
+        {
+            super::approvals::guard(lua, &target)?;
+            super::secrets::guard(lua, &target)?;
         }
         {
             let mut state = state_mut(lua);

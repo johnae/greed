@@ -459,3 +459,15 @@ test(
 		greed.option.set("link-opener", before)
 	end
 )
+
+test("saving a buffer, even to its own file, needs fs.write", function(t)
+	t:buffer("|x")
+	local dir = t:tempdir({ ["init.luau"] = "-- mine\n" })
+	local body =
+		`local b = greed.load("{dir}/init.luau") b:edit(function(e) e:insert(0, "evil()\\n") end) b:save()`
+	greed.plugin.load(plugin(t, "reader", '"fs.read"', body))
+	t:run("reader-go")
+	local said = last(t)
+	assert(string.find(said, 'add "fs.write" to capabilities in its plugin.toml', 1, true), said)
+	assert(greed.fs.read(`{dir}/init.luau`) == "-- mine\n", "not written")
+end)

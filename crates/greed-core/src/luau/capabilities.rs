@@ -708,18 +708,23 @@ pub(super) fn check_setting(lua: &Lua, capability: &str) -> LuaResult<()> {
     let Some(owner) = state(lua).running.clone() else {
         return Ok(());
     };
-    let refused = match check_for(lua, &owner, capability) {
-        Ok(()) => return Ok(()),
-        Err(err) => err,
-    };
-    let yours = current_limit(lua).is_empty() && {
+    match check_for(lua, &owner, capability) {
+        Err(_) if by_you(lua) => Ok(()),
+        checked => checked,
+    }
+}
+
+/// Whether what runs now is what you did yourself, with keys, the command
+/// line or your config: nothing started it, and every plugin whose code is
+/// running only passes on what you typed (`commands`).
+pub(super) fn by_you(lua: &Lua) -> bool {
+    current_limit(lua).is_empty() && {
         let callers = on_stack(lua);
         let state = state(lua);
         callers
             .iter()
             .all(|name| state.grants.get(name).is_none_or(|g| g.allows("commands")))
-    };
-    if yours { Ok(()) } else { Err(refused) }
+    }
 }
 
 /// [`check`] for `owner`'s code, whether or not it's the code running.
