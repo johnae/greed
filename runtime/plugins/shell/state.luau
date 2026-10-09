@@ -77,6 +77,9 @@ export type Block = {
 	--- What its table's rows are, like "pods", when a kind reads them
 	--- (kinds.luau).
 	called: { one: string, many: string }?,
+	--- For a live block (`watch`), the command it runs each time, whose
+	--- output it shows.
+	watching: string?,
 	--- What a filter, or a sort of its table, shows of its output, when
 	--- one does.
 	shown: Shown?,

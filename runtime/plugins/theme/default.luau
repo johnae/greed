@@ -188,4 +188,5 @@ return {
 	["shell.stderr"] = { fg = "red" },
 	["shell.separator"] = { fg = "bright-black" },
 	["shell.suggestion"] = { fg = "bright-black" },
+	["shell.changed"] = { fg = "yellow" },
 }

@@ -52,6 +52,7 @@ local envs = require("@self/envs")
 local aliases = require("@self/aliases")
 local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
+local live = require("@self/live")
 require("@self/kubernetes")
 require("@self/docker")
 require("@self/processes")
@@ -86,6 +87,7 @@ M.aliases = aliases
 M.suggest = suggest
 M.history = history
 M.kinds = kinds
+M.live = live
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
@@ -343,6 +345,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		value = nil,
 		table = nil,
 		called = nil,
+		watching = nil,
 		shown = nil,
 		input = nil,
 		into = nil,
@@ -496,13 +499,33 @@ local function each_lines(tbl: tables.Table?, template: string): (string?, strin
 	return table.concat(lines, "\n"), nil
 end
 
--- `text` read as JSON, when it's an object or an array.
-local function as_json(text: string): any
-	if string.match(text, "^%s*[%[{]") == nil then
-		return nil
+-- Runs `line` once as `capture` does, table stages after its programs
+-- included, as `kubectl get pods | where RESTARTS > 0`: what it printed in
+-- the end, its errors, and how it exited (nil when stopped).
+local function capture_all(shell: Shell, block: Block, line: string): (string, string, number?)
+	local programs, stages = tables.after_programs(line)
+	if programs == nil or stages == nil then
+		return capture(shell, block, line, nil)
 	end
-	local value = greed.json.decode(text)
-	return if type(value) == "table" then value else nil
+	local out, errors, code = capture(shell, block, programs, nil)
+	if code == nil then
+		return out, errors, code
+	end
+	local value = tables.json(out)
+	local tbl = tables.from_value(value) or tables.parse(out, programs, block)
+	local staged, rest, why, json = tables.pipeline(tbl, out, stages, value)
+	if why then
+		return "", errors .. why .. "\n", 2
+	end
+	local text = if staged
+		then tables.text(staged)
+		elseif json ~= nil then tables.value_text(json) .. "\n"
+		else out
+	if rest == nil then
+		return text, errors, code
+	end
+	local more, more_errors, more_code = capture(shell, block, rest, text)
+	return more, errors .. more_errors, more_code
 end
 
 -- Runs `line` for `block` on `text`, what goes into it (with `value` when
@@ -568,7 +591,7 @@ local function flow(
 		run.finish(shell, block, code, nil)
 		return
 	end
-	local json = as_json(out)
+	local json = tables.json(out)
 	local made = tables.from_value(json) or tables.parse(out, programs, block)
 	flow(shell, block, stages, opts, out, json, made, {})
 end
@@ -637,6 +660,19 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 			end)
 			return nil
 		end
+	end
+	-- `watch COMMAND` runs the command again and again in its block.
+	local watched, every, unwatchable = live.read(line)
+	if watched or unwatchable then
+		local watching = add_block(shell, command, opts)
+		if opts.by == "agent" then
+			run.fail(shell, watching, "watch runs until it's stopped; run the command once", 2)
+		elseif watched then
+			live.start(shell, watching, watched, every, capture_all)
+		else
+			run.fail(shell, watching, unwatchable or "", 2)
+		end
+		return watching
 	end
 	local block = add_block(shell, command, opts)
 	local why = file_error or parsed.error

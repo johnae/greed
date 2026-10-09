@@ -60,20 +60,29 @@ function M.kind(kind: Kind)
 	end))
 end
 
+--- The command whose output `block` shows: what it ran, or for a live
+--- block (`watch`) what it runs each time.
+function M.command_line(block: Block): string
+	return block.watching or block.command
+end
+
 -- What each block's rows are: the kind and what it kept, once the block
 -- finished with a table.
 type Read = { kind: Kind, captured: any }
 local read: { [Block]: Read } = setmetatable({}, { __mode = "k" }) :: any
 
---- Works out what `block`'s rows are, as it finishes: the first kind whose
---- `match` names its command and whose `capture` keeps something.
+--- Works out what `block`'s rows are, as it finishes, or each time a live
+--- block shows new output: the first kind whose `match` names its command
+--- and whose `capture` keeps something.
 function M.finished(shell: Shell, block: Block)
+	read[block] = nil
+	block.called = nil
 	if block.table == nil then
 		return
 	end
 	for i = #kinds, 1, -1 do
 		local kind = kinds[i]
-		if tables.matches(kind.match, block.command) then
+		if tables.matches(kind.match, M.command_line(block)) then
 			local ok, captured = true, true
 			if kind.capture then
 				ok, captured = pcall(kind.capture, block, shell)
@@ -313,7 +322,7 @@ end
 -- The folder `ls` listed for `block`: the one it ran in, or the folder
 -- named after its flags when there's one.
 local function listed(block: Block): string?
-	local words = parse.words(block.command, greed.fs.dirs().home)
+	local words = parse.words(M.command_line(block), greed.fs.dirs().home)
 	if words == nil then
 		return nil
 	end

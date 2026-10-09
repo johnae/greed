@@ -534,11 +534,13 @@ function M.output_lines(shell: Shell, block: Block): { Line }
 end
 
 --- Shows `lines` as `block`'s output in place of what it shows, for a
---- finished block, like the rows a filter kept of its table.
+--- finished block, like the rows a filter kept of its table, or a live
+--- one (`watch`) showing what it got this time.
 function M.replace_output(shell: Shell, block: Block, lines: { Line })
 	local s = shown[block.uid]
 	local from, to = M.range(block)
-	if s == nil or from == nil or to == nil or block.status == "running" then
+	local streaming = block.status == "running" and block.watching == nil
+	if s == nil or from == nil or to == nil or streaming then
 		return
 	end
 	local buffer = shell.buffer

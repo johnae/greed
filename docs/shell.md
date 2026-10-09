@@ -134,6 +134,7 @@ The shell runs a few commands itself:
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
 | `help [TOPIC]` | What works here, and the keys in the style you use; a topic for one part |
 | `which NAME ...` | What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program |
+| `watch [-n SECONDS] COMMAND` | Run a command again and again, every two seconds, its block showing what it printed last with the changes marked |
 
 What `open` opens comes up in your style's own mode, to read and move
 around in, not typing as at the prompt.
@@ -419,6 +420,31 @@ own look ([Writing plugins](plugins.md#the-shell) has how). And when
 [jc](https://github.com/kellyjonbrazil/jc) is installed, output the shell
 found no table in, from a command jc knows (`ifconfig`, `dig`, `mount`,
 `uptime` and many more), gets jc's reading of it.
+
+## Watching a command
+
+`watch COMMAND` runs a command again and again, every two seconds (`-n 5`
+for every five), and its block shows what it printed last in place of
+what it printed before, with the lines that changed since the time before
+marked. It's the shell's own, so it stays a block among the others
+rather than taking the screen; `^watch` runs the watch program in a
+terminal.
+
+```text
+❯ 7 watch kubectl get pods       ◐ 1m12s · every 2s · 1 changed · 14:05:02
+NAME                     READY   STATUS             RESTARTS   AGE
+api-7d9f8b6c5-2xkqz      1/1     Running            0          3d16h
+worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   13         2h
+```
+
+The table and its [rows](#rows-you-can-act-on) follow along: `space .` on
+a pod acts on it as it is now, and `$7 | where STATUS != Running` reads
+what it shows. The whole line is watched, pipes and table stages
+included, so `watch kubectl get pods | where RESTARTS > 0` shows only the
+pods that restarted, as they are now. `ctrl-c` or `space x` stops it,
+keeping what it showed last; it also stops by itself after
+`shell-watch-minutes` (60), and `space r` starts it again. Agents can't
+watch, as a watch runs until someone stops it.
 
 ## Rows you can act on
 

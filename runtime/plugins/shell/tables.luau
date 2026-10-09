@@ -604,6 +604,16 @@ end
 -- Keys a JSON object names itself by, which go first.
 local FIRST: { [string]: number } = { name = 1, id = 2 }
 
+--- `text`, a command's output, read as JSON when it's an object or an
+--- array; nil otherwise.
+function M.json(text: string): any
+	if string.match(text, "^%s*[%[{]") == nil then
+		return nil
+	end
+	local value = greed.json.decode(text)
+	return if type(value) == "table" then value else nil
+end
+
 --- `value` (JSON read from output) as a table, when it's an array of
 --- objects: a column for each key, the ones naming a row first.
 function M.from_value(value: any): Table?

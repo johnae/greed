@@ -54,6 +54,10 @@ M.BUILTINS = {
 		usage = "which NAME ...",
 		doc = "What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program",
 	},
+	watch = {
+		usage = "watch [-n SECONDS] COMMAND",
+		doc = "Run a command again and again, every two seconds, its block showing what it printed last with the changes marked",
+	},
 } :: { [string]: Builtin }
 
 --- The parts of `help`, each a topic `help TOPIC` shows alone.

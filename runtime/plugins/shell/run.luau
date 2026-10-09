@@ -262,15 +262,6 @@ local function spill(block: Block, p: Pending)
 	end
 end
 
--- `text` read as JSON, when it's an object or an array.
-local function json(text: string): any?
-	if string.match(text, "^%s*[%[{]") == nil then
-		return nil
-	end
-	local value = greed.json.decode(text)
-	return if type(value) == "table" then value else nil
-end
-
 -- Asks jc, when it's installed, for a table in what `block` printed, and
 -- shows it has one if jc found it.
 local function from_jc(shell: Shell, block: Block)
@@ -298,7 +289,7 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 		pending[block.uid] = nil
 	end
 	if not block.truncated then
-		block.value = json(block.stdout)
+		block.value = tables.json(block.stdout)
 		-- A stage's block has its table already; a table some lines of
 		-- which aren't shown is left alone.
 		if block.table == nil and block.omitted == 0 then
