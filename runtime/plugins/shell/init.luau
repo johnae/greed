@@ -524,32 +524,54 @@ local function open_stream(
 		end
 end
 
--- Runs `line` once as `capture` does, table stages after its programs
--- included, as `kubectl get pods | where RESTARTS > 0`: what it printed in
--- the end, its errors, and how it exited (nil when stopped).
-local function capture_all(shell: Shell, block: Block, line: string): (string, string, number?)
+-- Runs `line` once as `flow` would, but gives back what it printed in the
+-- end rather than showing it: table stages after its programs included, as
+-- `kubectl get pods | where RESTARTS > 0`, and `each`. Also its errors and
+-- how it exited (nil when stopped). `text` is what goes into it (with
+-- `value` when that was JSON and `tbl` when it was a table).
+local function capture_all(
+	shell: Shell,
+	block: Block,
+	line: string,
+	text: string?,
+	value: any,
+	tbl: tables.Table?
+): (string, string, number?)
+	if text ~= nil then
+		local staged, rest, why, json = tables.pipeline(tbl, text, line, value)
+		if why then
+			return "", why .. "\n", 2
+		end
+		if staged or json ~= nil then
+			local out = if staged then tables.text(staged) else tables.value_text(json) .. "\n"
+			if rest == nil then
+				return out, "", 0
+			end
+			line, text, value, tbl = rest, out, if staged then nil else json, staged
+		end
+		local template = string.match(line, "^%s*each%s+(.-)%s*$")
+		if template then
+			local script, problem = each_lines(tbl or tables.from_value(value), template)
+			if script == nil then
+				return "", (problem or "") .. "\n", 2
+			end
+			if script == "" then
+				return "", "", 0
+			end
+			return capture(shell, block, script, nil)
+		end
+	end
 	local programs, stages = tables.after_programs(line)
 	if programs == nil or stages == nil then
-		return capture(shell, block, line, nil)
+		return capture(shell, block, line, text)
 	end
-	local out, errors, code = capture(shell, block, programs, nil)
-	if code == nil then
+	local out, errors, code = capture(shell, block, programs, text)
+	if code == nil or (out == "" and code ~= 0) then
 		return out, errors, code
 	end
-	local value = tables.json(out)
-	local tbl = tables.from_value(value) or tables.parse(out, programs, block)
-	local staged, rest, why, json = tables.pipeline(tbl, out, stages, value)
-	if why then
-		return "", errors .. why .. "\n", 2
-	end
-	local text = if staged
-		then tables.text(staged)
-		elseif json ~= nil then tables.value_text(json) .. "\n"
-		else out
-	if rest == nil then
-		return text, errors, code
-	end
-	local more, more_errors, more_code = capture(shell, block, rest, text)
+	local json = tables.json(out)
+	local made = tables.from_value(json) or tables.parse(out, programs, block)
+	local more, more_errors, more_code = capture_all(shell, block, stages, out, json, made)
 	return more, errors .. more_errors, more_code
 end
 

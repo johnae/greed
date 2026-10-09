@@ -175,3 +175,23 @@ test("a pinned watch shows in the prompt as it changes, until it stops", functio
 		return block.status ~= "running" and pinned() == nil
 	end)
 end)
+
+test("each after a watch runs for every row each time", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/rows`, "NAME  COUNT\na     1\nb     2\n")
+	local block =
+		assert(shell.run(sh, "watch -n 1 cat rows | where COUNT > 1 | each echo hi {NAME}", {
+			view = greed.view(),
+		}))
+	t:wait_for(function()
+		return block.output ~= ""
+	end)
+	local first: string = block.stdout
+	assert(first == "hi b\n", block.output)
+	greed.fs.write(`{sh.cwd}/rows`, "NAME  COUNT\na     3\nb     2\n")
+	greed.sleep(1000)
+	t:wait_for(function()
+		return block.stdout == "hi a\nhi b\n"
+	end)
+	shell.interrupt(block)
+end)
