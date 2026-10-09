@@ -326,6 +326,16 @@ npm install -g @zed-industries/codex-acp               # Codex
 
 A new session's transcript opens with you typing in its box.
 
+Shell code an agent writes (a `sh`, `bash` or `console` block) has buttons
+on its opening fence. `▶ run` runs it in this project's shell, in the
+folder the agent works in, as a block of its own there: output as it
+comes, `ctrl-c` to stop it, and `space o w` to find it later. `↳ prompt`
+puts it at that shell's prompt to look over and change first, and `⧉ copy`
+copies it. Click one, press `enter` on the fence to pick, or `space .` on
+it. A command that destroys or stops something (`rm`, `kill`, `git push
+--force`, `kubectl delete` and the like) asks y/n before it runs. A
+`console` block's commands are its lines after a `$ ` prompt.
+
 ### Greed's own agent
 
 Pick "Greed" in `space i n` for an agent that runs in the editor itself,

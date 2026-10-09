@@ -562,3 +562,53 @@ test("tool lines are drawn without Markdown's colours, what was said with them",
 	assert(not plain_at("Some **bold**"), "the agent's words")
 	acp.stop(s)
 end)
+
+test("shell code in a transcript has run, prompt and copy buttons", function(t)
+	local s = start(t)
+	send(t, s, "code")
+	local buffer = greed.view():buffer()
+	local found: { string } = {}
+	for _, mark in buffer:decorations("acp-code") do
+		table.insert(found, mark.action or "")
+	end
+	assert(#found == 6, `three buttons on each of two blocks: {table.concat(found, " ")}`)
+	-- Run runs it in the project's shell, in the agent's folder.
+	local text = buffer:text()
+	local fence = string.find(text, "```sh", 1, true)
+	assert(fence, "a sh block")
+	greed.view():set_cursor(fence - 1)
+	-- Enter on the fence offers its buttons to pick from.
+	t:keys("esc enter")
+	local offered = table.concat(t:floats(), "\n")
+	assert(string.find(offered, "▶ run", 1, true), offered)
+	t:keys("esc")
+	greed.view():set_cursor(fence - 1)
+	t:run("agent-code-run")
+	local shell = require("@shell")
+	local sh = assert(shell.list(greed.project.current().id)[1], "a shell")
+	local block = assert(sh.blocks[#sh.blocks])
+	t:wait_for(function()
+		return block.status ~= "running"
+	end)
+	assert(
+		block.command == "echo from the chat" and block.output == "from the chat\n",
+		block.output
+	)
+	assert(block.cwd == s.cwd, "where the agent works")
+	-- A console block's commands are its lines after `$ `; a risky one asks.
+	local console = string.find(text, "```console", 1, true)
+	assert(console, "a console block")
+	greed.view():set_cursor(console - 1)
+	t:run("agent-code-copy")
+	local copied = greed.clipboard.get()
+	assert(copied and copied[1] == "kill 999999", copied and copied[1])
+	local before = #sh.blocks
+	greed.spawn(function()
+		greed.run("agent-code-run")
+	end)
+	t:keys("n")
+	assert(#sh.blocks == before, "n leaves it be")
+	assert(acp.code.risky("ls\nsudo rm -rf x") and not acp.code.risky("echo kill"))
+	assert(acp.code.risky("cd x && rm -rf y") and acp.code.risky("git push -f"))
+	assert(not acp.code.risky("git push origin fix-foo"))
+end)

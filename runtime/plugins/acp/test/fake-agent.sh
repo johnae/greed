@@ -13,6 +13,7 @@
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
+#   code         says to run two shell blocks, one of them risky
 #   twice        asks two questions, one after the other
 #   mcp          reports two MCP tool calls, as Claude Code names them
 #   widen        writes a plugin.toml asking for "proc", and says if it could
@@ -155,6 +156,10 @@ while IFS= read -r line; do
 			update '{"sessionUpdate":"plan","entries":[{"content":"look around","priority":"high","status":"completed"},{"content":"fix it","priority":"high","status":"in_progress"}]}'
 			update '{"sessionUpdate":"tool_call","toolCallId":"t2","title":"Run tests","kind":"execute","status":"in_progress"}'
 			update '{"sessionUpdate":"tool_call_update","toolCallId":"t2","status":"failed","content":[{"type":"content","content":{"type":"text","text":"```\n1 test failed\nat pager.rs:3\nexpected 2\n```"}}]}'
+			turn_done "$id" end_turn
+			;;
+		code*)
+			say 'Run this:\n\n```sh\necho from the chat\n```\n\nor this:\n\n```console\n$ kill 999999\n```'
 			turn_done "$id" end_turn
 			;;
 		markdown*)

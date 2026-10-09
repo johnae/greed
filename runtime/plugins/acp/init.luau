@@ -24,6 +24,7 @@ local agents = require("@self/agents")
 local session = require("@self/session")
 local native = require("@self/native")
 local transcript = require("@self/transcript")
+local code = require("@self/code")
 local question = require("@self/question")
 local participants = require("@self/participants")
 local review = require("@self/review")
@@ -1062,15 +1063,64 @@ greed.command({
 
 greed.command({
 	name = "agent-answer",
-	doc = "Show the question the agent waits on in the box, to answer it there",
+	doc = "Show the question the agent waits on in the box, to answer it there; on a button, like a code block's run, press it",
 	run = function(ctx)
 		local s = current(ctx)
 		local buffer = s and buffers[s.id]
 		if s == nil or buffer == nil or not question.show(s) then
-			greed.echo("no question waiting")
+			if #core.buttons.at(ctx.buffer, ctx.view:cursor()) > 0 then
+				greed.run("press-button")
+			else
+				greed.echo("no question waiting")
+			end
 			return
 		end
 		transcript.render(buffer, s)
+	end,
+})
+
+-- The shell code block at the cursor in a transcript, or nil having said
+-- there's none.
+local function code_here(ctx: greed.Context): code.Code?
+	local found = if by_buffer[ctx.buffer:id()]
+		then transcript.code_at(ctx.buffer, ctx.view:cursor())
+		else nil
+	if found == nil then
+		greed.echo("there's no shell code here")
+	end
+	return found
+end
+
+greed.command({
+	name = "agent-code-run",
+	doc = "Run the shell code block at the cursor in this project's shell, as a block there; one that destroys something asks first",
+	run = function(ctx)
+		local found = code_here(ctx)
+		if found then
+			code.run(found, by_buffer[ctx.buffer:id()].cwd)
+		end
+	end,
+})
+
+greed.command({
+	name = "agent-code-prompt",
+	doc = "Put the shell code block at the cursor at this project's shell's prompt, to look over before running it",
+	run = function(ctx)
+		local found = code_here(ctx)
+		if found then
+			code.to_prompt(found, ctx.view)
+		end
+	end,
+})
+
+greed.command({
+	name = "agent-code-copy",
+	doc = "Copy the shell code block at the cursor",
+	run = function(ctx)
+		local found = code_here(ctx)
+		if found then
+			code.copy(found)
+		end
 	end,
 })
 
@@ -1220,6 +1270,9 @@ greed.keymap.bind({ layer = "leader" }, {
 	["i l"] = "agent-list",
 	["i m"] = "agent-move",
 })
+
+--- Shell code in transcripts and its buttons (code.luau).
+M.code = code
 
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")

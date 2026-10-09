@@ -31,6 +31,7 @@ local core = require("@core")
 local markdown = require("@markdown")
 local session = require("./session")
 local question = require("./question")
+local code = require("./code")
 
 type Session = session.Session
 
@@ -462,12 +463,20 @@ function M.prompt(buffer: greed.Buffer): string
 	return buffer:slice(start, buffer:len())
 end
 
--- Per transcript buffer: its session, the tool call on each line and the
--- running tools' marks as last drawn, and whether its status is ticking.
+-- Per transcript buffer: its session, the tool call on each line, the
+-- lines nobody said and the running tools' marks as last drawn, and
+-- whether its status is ticking.
 local shown: { [number]: Session } = {}
 local rows: { [number]: { [number]: string } } = {}
+local plains: { [number]: { [number]: boolean } } = {}
 local spinning: { [number]: { { from: number, to: number } } } = {}
 local ticking: { [number]: boolean } = {}
+
+--- The shell code block `pos` in `buffer` is on, if you or the agent wrote
+--- it above the box.
+function M.code_at(buffer: greed.Buffer, pos: number): code.Code?
+	return code.at(buffer, pos, prompt_head(buffer), plains[buffer:id()])
+end
 
 --- The id of the tool call drawn on `line` of `buffer`, if any.
 function M.tool_at(buffer: greed.Buffer, line: number): string?
@@ -582,6 +591,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 	shown[id] = s
 	local history = M.history(s)
 	rows[id] = history.tools
+	plains[id] = history.plain
 	spinning[id] = history.running
 	local cells = box_width(buffer)
 	local top, top_styles = M.top(s, cells)
@@ -640,6 +650,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 		mark.to += row_at
 	end
 	buffer:decorate("acp-choices", row_marks)
+	code.draw(buffer, at, history.plain)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
 	tick(buffer, s)
 end
@@ -744,6 +755,7 @@ end)
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	shown[event.id] = nil
 	rows[event.id] = nil
+	plains[event.id] = nil
 	spinning[event.id] = nil
 end)
 
