@@ -303,19 +303,11 @@ end
 -- long to have been given whole, and your config with the plugins agents
 -- write in it.
 local function reachable(dir: string): boolean
-	local folders = {
-		runtime_dir(),
-		M.output_dir(),
-		greed.fs.dirs().config,
-		extend.dirs.plugins,
-		extend.dirs.fallback,
-	}
-	for i = 1, 5 do
-		if inside(dir, folders[i]) then
-			return true
-		end
-	end
-	return false
+	return inside(dir, runtime_dir())
+		or inside(dir, M.output_dir())
+		or inside(dir, greed.fs.dirs().config)
+		or inside(dir, extend.dirs.plugins)
+		or inside(dir, extend.dirs.fallback)
 end
 
 -- Why `dir` can't be reached, for a tool that `does` in the project.

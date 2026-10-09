@@ -172,6 +172,21 @@ local function marked(out: { string }, mark: string, text: string)
 	end
 end
 
+-- What changes from `old` to `new`, marked as above.
+local function diffed(old: string, new: string): { string }
+	local out = {}
+	for _, hunk in greed.diff(old, new) do
+		local gone = string.sub(old, hunk.from + 1, hunk.to)
+		if gone ~= "" then
+			marked(out, "- ", (string.gsub(gone, "\n$", "")))
+		end
+		if hunk.text ~= "" then
+			marked(out, "+ ", (string.gsub(hunk.text, "\n$", "")))
+		end
+	end
+	return out
+end
+
 local object = agent.schema.object
 
 -- What each session's agent last saw of each file, by session and full
@@ -193,9 +208,13 @@ local function saw(s: Session, path: string, text: string)
 	seen(s)[core.project.resolve(path, s.cwd)] = greed.hash.sha256(text)
 end
 
+local function last_seen(s: Session, path: string): string?
+	return seen(s)[core.project.resolve(path, s.cwd)]
+end
+
 -- Whether `text` of `path` is other than what `s`'s agent last saw of it.
 local function changed_since(s: Session, path: string, text: string): boolean
-	local last = seen(s)[core.project.resolve(path, s.cwd)]
+	local last = last_seen(s, path)
 	return last ~= nil and last ~= greed.hash.sha256(text)
 end
 
@@ -407,8 +426,6 @@ end
 -- The most lines an edit's result shows of what it changed.
 local SHOWN_LINES = 30
 
--- Lines `first` to `last` (1-based) of `text`, numbered as an editor shows
--- them, with two more on each side.
 -- The lines of `text`, without the empty one after a last newline, which
 -- ends the last line rather than starting another.
 local function lines_of(text: string): { string }
@@ -451,6 +468,8 @@ local function anchored(text: string, first: number): string
 	return table.concat(out, "\n")
 end
 
+-- Lines `first` to `last` (1-based) of `text`, numbered as an editor shows
+-- them, with two more on each side.
 local function numbered(text: string, first: number, last: number, anchors: boolean): string
 	local lines = lines_of(text)
 	local from, to = math.max(first - 2, 1), math.min(last + 2, #lines)
@@ -682,21 +701,12 @@ local OWN: { Own } = {
 			return `Edit {args.path}`
 		end,
 		preview = function(s, args)
-			local out = {}
 			local text = core.file.text(args.path, s.cwd)
-			local ok, new = pcall(apply_lines, args.path, text or "", args.edits or {})
-			if ok and text then
-				for _, hunk in greed.diff(text, new) do
-					local gone = string.sub(text, hunk.from + 1, hunk.to)
-					if gone ~= "" then
-						marked(out, "- ", (string.gsub(gone, "\n$", "")))
-					end
-					if hunk.text ~= "" then
-						marked(out, "+ ", (string.gsub(hunk.text, "\n$", "")))
-					end
-				end
+			if text == nil then
+				return {}
 			end
-			return out
+			local ok, new = pcall(apply_lines, args.path, text, args.edits or {})
+			return if ok then diffed(text, new) else {}
 		end,
 		widens = function(s, args)
 			local text = core.file.text(args.path, s.cwd)
@@ -728,19 +738,8 @@ local OWN: { Own } = {
 			return `Write {args.path}`
 		end,
 		preview = function(s, args)
-			local out = {}
-			local old = core.file.text(args.path, s.cwd) or ""
 			-- Only what changes, for a file that's there already.
-			for _, hunk in greed.diff(old, args.text) do
-				local gone = string.sub(old, hunk.from + 1, hunk.to)
-				if gone ~= "" then
-					marked(out, "- ", (string.gsub(gone, "\n$", "")))
-				end
-				if hunk.text ~= "" then
-					marked(out, "+ ", (string.gsub(hunk.text, "\n$", "")))
-				end
-			end
-			return out
+			return diffed(core.file.text(args.path, s.cwd) or "", args.text)
 		end,
 		widens = function(s, args)
 			return agent.widens(args.path, core.file.text(args.path, s.cwd), args.text)
@@ -750,7 +749,7 @@ local OWN: { Own } = {
 			-- now: the user may have changed it, and their change would go.
 			local old = core.file.text(args.path, s.cwd)
 			if old and old ~= args.text then
-				if seen(s)[core.project.resolve(args.path, s.cwd)] == nil then
+				if last_seen(s, args.path) == nil then
 					error(
 						`{args.path} is there already and you haven't read it: read it first, `
 							.. "or change it with edit_file",

@@ -300,15 +300,10 @@ M.EDITS = { "replace", "hashline" }
 --- `edits`, its provider's, or "replace".
 function M.edits(role: string): string
 	local chosen, provider = M.resolve(M.playing(role))
-	local said = chosen and chosen.edits
-	if said and table.find(M.EDITS, said) then
-		return said
+	local function known(said: string?): string?
+		return if said and table.find(M.EDITS, said) then said else nil
 	end
-	said = provider and provider.edits
-	if said and table.find(M.EDITS, said) then
-		return said
-	end
-	return "replace"
+	return known(chosen and chosen.edits) or known(provider and provider.edits) or "replace"
 end
 
 -- The request to send, as the provider's API wants it.
@@ -692,9 +687,9 @@ function M.usage(day: string): { [string]: Used }
 	return if ok and type(kept) == "table" then kept else {}
 end
 
---- Counts a request to `model` at `provider` that read `input` tokens,
---- `cached` of them from its cache, and wrote `output`, as each turn does.
-function M.count(provider: string, model: string, input: number?, output: number?, cached: number?)
+-- Changes what `model` at `provider` used this hour as `change` says, and
+-- keeps it.
+local function record(provider: string, model: string, change: (used: Used) -> ())
 	local day, hour = os.date("%Y-%m-%d"), os.date("%H")
 	local path = usage_path(day)
 	if path == nil then
@@ -703,34 +698,34 @@ function M.count(provider: string, model: string, input: number?, output: number
 	local kept = M.usage(day)
 	local key = `{hour} {provider}/{model}`
 	local used: Used = kept[key] or { requests = 0, input = 0, output = 0 }
-	used.requests += 1
-	used.input += input or 0
-	used.output += output or 0
-	used.cached = (used.cached or 0) + (cached or 0)
+	change(used)
 	kept[key] = used
 	greed.fs.write(path, greed.json.encode(kept))
 end
 
+--- Counts a request to `model` at `provider` that read `input` tokens,
+--- `cached` of them from its cache, and wrote `output`, as each turn does.
+function M.count(provider: string, model: string, input: number?, output: number?, cached: number?)
+	record(provider, model, function(used: Used)
+		used.requests += 1
+		used.input += input or 0
+		used.output += output or 0
+		used.cached = (used.cached or 0) + (cached or 0)
+	end)
+end
+
 local function count_edit(provider: string, model: string, how: string, ok: boolean)
-	local day, hour = os.date("%Y-%m-%d"), os.date("%H")
-	local path = usage_path(day)
-	if path == nil then
-		return
-	end
-	local kept = M.usage(day)
-	local key = `{hour} {provider}/{model}`
-	local used: Used = kept[key] or { requests = 0, input = 0, output = 0 }
-	local edits: { [string]: Tally } = used.edits or {}
-	local tally: Tally = edits[how] or { ok = 0, failed = 0 }
-	if ok then
-		tally.ok += 1
-	else
-		tally.failed += 1
-	end
-	edits[how] = tally
-	used.edits = edits
-	kept[key] = used
-	greed.fs.write(path, greed.json.encode(kept))
+	record(provider, model, function(used: Used)
+		local edits: { [string]: Tally } = used.edits or {}
+		local tally: Tally = edits[how] or { ok = 0, failed = 0 }
+		if ok then
+			tally.ok += 1
+		else
+			tally.failed += 1
+		end
+		edits[how] = tally
+		used.edits = edits
+	end)
 end
 
 --- Counts an edit Greed's agent had `model` at `provider` make, the way
@@ -763,13 +758,14 @@ local function add(sum: Used, used: Used)
 	sum.input += used.input
 	sum.output += used.output
 	sum.cached = (sum.cached or 0) + (used.cached or 0)
-	local made: { [string]: Tally } = used.edits or {}
-	for how, tally in made do
+	if used.edits then
 		local edits: { [string]: Tally } = sum.edits or {}
-		local into: Tally = edits[how] or { ok = 0, failed = 0 }
-		into.ok += tally.ok
-		into.failed += tally.failed
-		edits[how] = into
+		for how, tally in used.edits do
+			local into: Tally = edits[how] or { ok = 0, failed = 0 }
+			into.ok += tally.ok
+			into.failed += tally.failed
+			edits[how] = into
+		end
 		sum.edits = edits
 	end
 end
