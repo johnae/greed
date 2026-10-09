@@ -1556,6 +1556,12 @@ and last line) and `%` (every line), with `+n` or `-n` after any of them:
 search. In Vim's style, `:` in visual mode starts with `'<,'>` and `3 :`
 with `.,.+2`.
 
+While you type `:s`, the lines on screen show what it will do: the
+pattern's matches, then, once you start the replacement, each match struck
+through with its replacement next to it. Nothing changes until you press
+enter, and `esc` leaves the file as it was.
+`:set substitute-preview false` turns it off.
+
 ## Configuration
 
 Your config is `~/.config/greed/init.luau`, plain Luau with the full plugin

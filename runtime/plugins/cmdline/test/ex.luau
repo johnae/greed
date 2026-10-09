@@ -53,6 +53,75 @@ test(":s replaces on the cursor's line, :%s everywhere, with groups and flags", 
 	assert(string.find(err, "pattern not found", 1, true), err)
 end)
 
+-- Types `text` after ":" without running it.
+local function typing(t: test.TestContext, text: string)
+	local keys = { ":" }
+	for _, code in utf8.codes(text) do
+		local char = utf8.char(code)
+		table.insert(keys, if char == " " then "space" else char)
+	end
+	t:keys(table.concat(keys, " "))
+end
+
+-- The preview's marks on `buffer` as "from-to style text", in order.
+local function preview(buffer: greed.Buffer): { string }
+	local out = {}
+	for _, mark in buffer:decorations("substitute-preview") do
+		table.insert(out, `{mark.from}-{mark.to} {mark.style} {mark.text or ""}`)
+	end
+	table.sort(out)
+	return out
+end
+
+test(":s shows what it will change as you type it, and nothing changes until it runs", function(t)
+	t:buffer("|a x\nx a")
+	local main = greed.view():buffer()
+	-- The pattern alone: its matches on the lines it would change.
+	typing(t, "%s/a")
+	local found = preview(main)
+	assert(
+		#found == 2 and string.find(found[1], "0-1 ui.search.match", 1, true),
+		table.concat(found, " | ")
+	)
+	-- With a replacement: the old text struck through and the new beside it.
+	t:keys("/ b b")
+	found = preview(main)
+	assert(
+		table.concat(found, " | ")
+			== "0-1 diff.minus  | 1-1 diff.plus bb | 6-7 diff.minus  | 7-7 diff.plus bb",
+		table.concat(found, " | ")
+	)
+	assert(main:text() == "a x\nx a", "nothing changed yet")
+	-- Closed without running, it's all gone.
+	t:keys("esc")
+	assert(#preview(main) == 0 and main:text() == "a x\nx a", "gone")
+	-- Run, it changes and the preview goes.
+	ex(t, "%s/a/bb/")
+	assert(main:text() == "bb x\nx bb" and #preview(main) == 0, main:text())
+	-- Brought back from history, it shows again.
+	t:buffer("|a")
+	local other = greed.view():buffer()
+	t:keys(": up")
+	assert(#preview(other) == 2, table.concat(preview(other), " | "))
+	t:keys("esc")
+end)
+
+test("the :s preview follows the range, skips a bad pattern, and can be turned off", function(t)
+	t:buffer("|a\na")
+	local main = greed.view():buffer()
+	typing(t, "s/a/b")
+	assert(#preview(main) == 2, "the cursor's line only: " .. table.concat(preview(main), " | "))
+	t:keys("esc")
+	typing(t, "%s/(")
+	assert(#preview(main) == 0, "a pattern half typed shows nothing")
+	t:keys("esc")
+	greed.option.set("substitute-preview", false)
+	typing(t, "%s/a/b")
+	assert(#preview(main) == 0, "turned off")
+	t:keys("esc")
+	greed.option.set("substitute-preview", true)
+end)
+
 test(":g runs a command on matching lines, :v on the others", function(t)
 	t:buffer("|keep 1\ndrop\nkeep 2\ndrop")
 	ex(t, "g/drop/d")

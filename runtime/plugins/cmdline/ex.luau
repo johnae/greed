@@ -67,6 +67,58 @@ local function expand(replacement: string, buffer: greed.Buffer, groups: { Group
 	return table.concat(out)
 end
 
+--- A change :s makes: the text from `from` to `to` becomes `text`.
+export type Substitution = { from: number, to: number, text: string }
+
+--- What :s/`pattern`/`replacement`/`flags` changes on lines `first` to
+--- `last` of `buffer`, and the last line it changes on (`first` when none).
+--- Fails with why for a bad pattern, or none when there's no last search.
+function M.substitutions(
+	buffer: greed.Buffer,
+	pattern: string,
+	replacement: string,
+	flags: string,
+	first: number,
+	last: number
+): ({ Substitution }, number)
+	if pattern == "" then
+		pattern = core.search.last() or ""
+		if pattern == "" then
+			error("no pattern to substitute", 0)
+		end
+	end
+	local all = string.find(flags, "g", 1, true) ~= nil
+	local regex = "(?m)"
+		.. (
+			if string.find(flags, "i", 1, true)
+				then "(?i)" .. pattern
+				elseif string.find(flags, "I", 1, true) then pattern
+				else core.search.smart_case(pattern)
+		)
+	local edits: { Substitution } = {}
+	local last_changed = first
+	for line = first, last do
+		local found, err = buffer:find_groups(regex, buffer:line_start(line), buffer:line_end(line))
+		if found == nil then
+			error(err, 0)
+		end
+		for i, groups in found do
+			local whole: Group? = groups[1]
+			if whole and (all or i == 1) then
+				table.insert(edits, {
+					from = whole.from,
+					to = whole.to,
+					text = expand(replacement, buffer, groups),
+				})
+			end
+		end
+		if #found > 0 then
+			last_changed = line
+		end
+	end
+	return edits, last_changed
+end
+
 greed.command({
 	name = "substitute",
 	doc = "Replace a regex with text on the selected lines (:s/regex/text/flags)",
@@ -74,48 +126,22 @@ greed.command({
 	run = function(ctx)
 		local buffer = ctx.buffer
 		local pattern = ctx.args[1] or ""
-		local replacement = ctx.args[2] or ""
 		local flags = ctx.args[3] or ""
-		if pattern == "" then
-			pattern = core.search.last() or ""
-			if pattern == "" then
-				error("no pattern to substitute", 0)
-			end
-		end
-		local all = string.find(flags, "g", 1, true) ~= nil
-		local regex = "(?m)"
-			.. (
-				if string.find(flags, "i", 1, true)
-					then "(?i)" .. pattern
-					elseif string.find(flags, "I", 1, true) then pattern
-					else core.search.smart_case(pattern)
-			)
 		local first, last = M.selected_lines(ctx.view)
-		local edits: { { from: number, to: number, text: string } } = {}
-		local changed_lines, last_changed = 0, first
-		for line = first, last do
-			local found, err =
-				buffer:find_groups(regex, buffer:line_start(line), buffer:line_end(line))
-			if found == nil then
-				error(err, 0)
-			end
-			for i, groups in found do
-				local whole: Group? = groups[1]
-				if whole and (all or i == 1) then
-					table.insert(edits, {
-						from = whole.from,
-						to = whole.to,
-						text = expand(replacement, buffer, groups),
-					})
-				end
-			end
-			if #found > 0 then
+		local edits, last_changed =
+			M.substitutions(buffer, pattern, ctx.args[2] or "", flags, first, last)
+		local lines: { [number]: boolean } = {}
+		local changed_lines = 0
+		for _, edit in edits do
+			local line = buffer:line_of(edit.from)
+			if not lines[line] then
+				lines[line] = true
 				changed_lines += 1
-				last_changed = line
 			end
 		end
 		if #edits == 0 then
-			error(`pattern not found: {pattern}`, 0)
+			local shown = if pattern ~= "" then pattern else core.search.last() or ""
+			error(`pattern not found: {shown}`, 0)
 		end
 		if string.find(flags, "n", 1, true) then
 			greed.echo(`{#edits} matches on {changed_lines} lines`)

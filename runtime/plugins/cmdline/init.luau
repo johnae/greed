@@ -33,6 +33,12 @@ require("@self/set")
 local core = require("@core")
 local menu = core.menu
 
+greed.option.define({
+	name = "substitute-preview",
+	doc = "Show what :s will change as you type it, before it runs",
+	default = true,
+})
+
 -- At most this many matches are shown.
 local SHOWN = 8
 -- At most this many command lines are remembered.
@@ -77,6 +83,8 @@ type Open = {
 	client: number,
 	buffer: greed.Buffer,
 	view: greed.View,
+	-- The view it was opened from, which what's typed runs in.
+	target: greed.View,
 	float: core.TypingFloat,
 	-- Closing to run what's typed.
 	running: boolean?,
@@ -158,10 +166,13 @@ local function update(o: Open, text: string)
 	o.word_start = nil
 end
 
+local preview_substitute: (o: Open) -> ()
+
 -- Shows `text` on the prompt with fresh matches, cursor at the end.
 local function set_text(o: Open, text: string)
 	update(o, text)
 	render(o, true)
+	preview_substitute(o)
 end
 
 local function changed(o: Open)
@@ -179,6 +190,7 @@ local function changed(o: Open)
 		o.history_prefix = nil
 		update(o, text)
 		render(o)
+		preview_substitute(o)
 	end
 end
 
@@ -221,6 +233,73 @@ local function pattern_command(text: string): (string?, { string }, boolean)
 	-- What :g runs is the rest of the line, delimiters and all.
 	local command = table.concat(parts, delimiter, 2)
 	return "global", { parts[1], command }, name == "v" or bang == "!"
+end
+
+-- The marks showing what :s would change.
+local PREVIEW = "substitute-preview"
+
+-- How a line break in a replacement shows in the preview.
+local BREAK = "⏎"
+
+-- Shows on `o`'s view what the :s typed would change, on the lines in sight:
+-- its matches while only the pattern is typed, then each match struck
+-- through with its replacement beside it. Anything else, or a pattern half
+-- typed, shows nothing.
+function preview_substitute(o: Open)
+	local view = o.target
+	if not view:valid() then
+		return
+	end
+	local buffer = view:buffer()
+	buffer:decorate(PREVIEW, {})
+	if not greed.option.get("substitute-preview") then
+		return
+	end
+	local selection = view:selection()
+	local selected_first, selected_last = ex.selected_lines(view)
+	local ok, first, last, rest = pcall(parse.range, o.text, {
+		buffer = buffer,
+		current = buffer:line_of(core.motions.cursor(buffer, selection.ranges[selection.primary])),
+		first = selected_first,
+		last = selected_last,
+	})
+	if not ok then
+		return
+	end
+	local delimiter, body = string.match(rest, '^%s*s([^%w%s\\"|])(.*)$')
+	if delimiter == nil or body == nil then
+		return
+	end
+	local parts = split_at(body, delimiter)
+	-- Only what's in sight: a whole file's matches would slow every key.
+	local shown_from, shown_to = view:visible()
+	local from = math.max(first or selected_first, buffer:line_of(shown_from))
+	local to = math.min(last or selected_last, buffer:line_of(shown_to))
+	if from > to then
+		return
+	end
+	local found, edits = pcall(function(): { ex.Substitution }
+		return (ex.substitutions(buffer, parts[1], parts[2] or "", parts[3] or "", from, to))
+	end)
+	if not found then
+		return
+	end
+	local marks: { greed.Mark } = {}
+	for _, edit in edits do
+		if parts[2] == nil then
+			table.insert(marks, { from = edit.from, to = edit.to, style = "ui.search.match" })
+		else
+			table.insert(marks, { from = edit.from, to = edit.to, style = "diff.minus" })
+			if edit.text ~= "" then
+				local shown = string.gsub(edit.text, "\n", BREAK)
+				table.insert(
+					marks,
+					{ from = edit.to, to = edit.to, style = "diff.plus", text = shown }
+				)
+			end
+		end
+	end
+	buffer:decorate(PREVIEW, marks)
 end
 
 local execute: (text: string, lines: { first: number, last: number }?) -> ()
@@ -393,6 +472,9 @@ greed.command({
 					if o.previewed and not o.running then
 						o.previewed(nil)
 					end
+					if o.target:valid() then
+						o.target:buffer():decorate(PREVIEW, {})
+					end
 				end,
 			}
 		)
@@ -401,6 +483,7 @@ greed.command({
 			client = client,
 			buffer = float.buffer,
 			view = float.view,
+			target = ctx.view,
 			float = float,
 			text = "",
 			candidates = {},
