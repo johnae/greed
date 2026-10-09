@@ -515,3 +515,10 @@ test("a plugin without commands can't leave a macro for you to play", function(t
 	assert(string.find(said, "can't set a macro", 1, true), said)
 	assert(require("@core").registers.macro("@") == nil, "not set")
 end)
+
+test("searching files never reads Greed's secrets file", function(t)
+	greed.secrets.set("grep-test", "find-me-not-1234")
+	local home = assert(greed.fs.dirs().home)
+	local found = greed.fs.grep("find%-me%-not%-1234", home, { hidden = true, ignored = true })
+	assert(#(found or {}) == 0, greed.json.encode(found))
+end)

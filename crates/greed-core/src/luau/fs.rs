@@ -210,10 +210,20 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(
         |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
             let (dir, options) = grep_args(dir, opts.as_ref())?;
+            // Greed's secrets file is read only through greed.secrets.
+            let secrets = super::secrets::file(lua);
             Ok(jobs::start(
                 lua,
                 format!("greed.fs.grep {pattern:?} in {dir}"),
-                move || Output::Grep(search::grep(Path::new(&dir), &pattern, options)),
+                move || {
+                    let mut found = search::grep(Path::new(&dir), &pattern, options);
+                    if let (Ok(lines), Some(secrets)) = (&mut found, &secrets) {
+                        let root = Path::new(&dir);
+                        lines
+                            .retain(|m| !super::approvals::same_file(&root.join(&m.path), secrets));
+                    }
+                    Output::Grep(found)
+                },
             ))
         },
     )?;
