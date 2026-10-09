@@ -1,5 +1,5 @@
 -- Tasks: commands you run again and again, like building and testing, each
--- in a terminal of its own that stays open when it's done. `space r` picks
+-- in a terminal of its own that stays open when it's done. `space o t` picks
 -- one (the last run first), `:task NAME` runs one. In its output, `] e`
 -- and `space d` go to the files and lines it names.
 --
@@ -140,7 +140,7 @@ function M.setup(terminal: any)
 			end)
 		end,
 	})
-	greed.keymap.bind({ layer = "leader" }, { r = "task" })
+	greed.keymap.bind({ layer = "leader" }, { ["o t"] = "task" })
 end
 
 return M

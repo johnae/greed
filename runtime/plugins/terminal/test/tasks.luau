@@ -47,7 +47,7 @@ test("running a task again replaces its last run", function(t)
 	forget(terminal.tasks, "count")
 end)
 
-test("tasks come from the project's files, and space r picks one, the last run first", function(t)
+test("tasks come from the project's files, and space o t picks one, the last run first", function(t)
 	local dir = t:tempdir({
 		["package.json"] = '{ "scripts": { "lint": "eslint ." } }',
 		["Makefile"] = "all: build\nbuild:\n\techo building\nVAR := 1\n.PHONY: all\n",
@@ -56,7 +56,7 @@ test("tasks come from the project's files, and space r picks one, the last run f
 	local all = terminal.all_tasks(dir)
 	assert(all.lint and all.build and all.all, "npm scripts and make targets")
 	assert(all.VAR == nil and all[".PHONY"] == nil, "not variables or special targets")
-	t:keys("space r")
+	t:keys("space o t")
 	local floats = table.concat(t:floats(), "\n")
 	assert(string.find(floats, "lint  npm run lint", 1, true), floats)
 end)
