@@ -104,7 +104,8 @@ test("the page says its keys, and enter goes from question to question", functio
 	assert(line_text() == "Answer: ", line_text())
 	t:keys("t i d y enter")
 	assert(line_text() == "When you're done:", line_text())
-	t:keys("ctrl-s")
+	-- Enter there sends, as ctrl-s does anywhere.
+	t:keys("enter")
 	t:wait_for(function()
 		return result() ~= nil
 	end)

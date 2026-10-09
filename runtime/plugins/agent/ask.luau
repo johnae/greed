@@ -167,7 +167,7 @@ end
 
 greed.command({
 	name = "ask-enter",
-	doc = "On a page of questions: pick the choice under the cursor and go on to the next question, start typing an answer, or go on",
+	doc = "On a page of questions: pick the choice under the cursor and go on to the next question, start typing an answer, or go on; on the last line, send",
 	run = function(ctx)
 		local buffer, view = ctx.buffer, ctx.view
 		if asked_in(buffer) == nil then
@@ -175,9 +175,8 @@ greed.command({
 		end
 		local line = buffer:line_of(view:cursor())
 		if line == buffer:line_count() - 1 then
-			-- Send or Cancel, whichever you pick; their buttons are at its start.
-			view:set_cursor(buffer:line_start(line))
-			greed.run("press-button")
+			-- Where Send is; Cancel is a click, or closing the page.
+			greed.run("ask-send")
 			return
 		end
 		if string.match(buffer:line_text(line), "^Answer:") and not core.style.is_typing() then

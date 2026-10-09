@@ -207,7 +207,8 @@ or a line to type after `Answer:`. **Send** gives your answers back to the
 agent, and **Cancel**, or closing the page, tells it you didn't answer.
 `enter` picks the choice under the cursor and goes on to the next
 question, starts typing on an `Answer:` line, and from there goes on to
-the next; `ctrl-s` sends from anywhere on the page.
+the next, and on the last line sends; `ctrl-s` sends from anywhere on the
+page.
 
 The agent sends questions as plain data, and Greed writes the page itself.
 Its words go on lines of their own, with anything that could start
