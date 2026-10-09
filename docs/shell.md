@@ -52,6 +52,21 @@ does the `❯`, so a command about to run against production looks like it.
 Plugins add pieces of their own, like a cloud profile; `help prompt` lists
 them.
 
+Each piece has a color of its own from the theme (`shell.segment.git`,
+`shell.segment.kubernetes`, `shell.segment.environment`). With a Nerd Font,
+`:set shell-icons nerd` uses its icons in place of `⎇ ⎈ ❄`.
+
+If you use [starship](https://starship.rs), `:set shell-prompt starship`
+shows your starship prompt instead, as your other shells do, with its
+colors: Greed runs `starship prompt` after each command with the shell's
+folder, variables, the last exit code and how long it took. The `❯` stays
+Greed's own, red in production, so starship's prompt character is left
+out. Put it in your config to keep it:
+
+```lua
+greed.option.set("shell-prompt", "starship")
+```
+
 ## Blocks
 
 A block's command is the line it starts on, with `❯` before it (`◆` for

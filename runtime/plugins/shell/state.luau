@@ -130,8 +130,16 @@ export type Ref = { path: string, line: number, col: number?, text: string }
 
 --- A piece of the prompt before the folder, like the git branch: its text,
 --- its style ("shell.segment" by default), and whether it's a warning,
---- which turns the prompt's glyph red too.
-export type Segment = { text: string, style: string?, warning: boolean? }
+--- which turns the prompt's glyph red too. A `tight` one has no space
+--- after it, as a run of a longer piece; with `folder` it shows the folder
+--- already, as starship's prompt does, so the prompt doesn't again.
+export type Segment = {
+	text: string,
+	style: string?,
+	warning: boolean?,
+	tight: boolean?,
+	folder: boolean?,
+}
 
 --- A shell: a buffer of blocks with a prompt at the end, its own folder and
 --- environment.

@@ -90,6 +90,7 @@ M.history = history
 M.kinds = kinds
 M.live = live
 M.peek = peek
+M.starship = require("@self/starship")
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.

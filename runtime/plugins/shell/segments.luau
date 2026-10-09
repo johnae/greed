@@ -12,6 +12,7 @@ local greed = require("@greed")
 local core = require("@core")
 local state = require("./state")
 local log = require("./log")
+local starship = require("./starship")
 
 type Shell = state.Shell
 
@@ -36,6 +37,37 @@ greed.option.define({
 	doc = "Patterns for kubernetes contexts a shell's prompt warns about, like prod; space between them",
 	default = "prod",
 })
+
+greed.option.define({
+	name = "shell-prompt",
+	doc = 'What draws a shell\'s prompt before its ❯: "greed" (its own segments and folder) or "starship" (your starship prompt, when starship is installed)',
+	default = "greed",
+	choices = { "greed", "starship" },
+})
+
+greed.option.define({
+	name = "shell-icons",
+	doc = 'The icons of a shell\'s own segments: "plain" ones any font has, or "nerd" ones a Nerd Font has',
+	default = "plain",
+	choices = { "plain", "nerd" },
+})
+
+-- The icon of each of the shell's own segments, plain and from a Nerd Font.
+local ICONS: { [string]: { plain: string, nerd: string } } = {
+	git = { plain = "⎇", nerd = "\u{e0a0}" },
+	kubernetes = { plain = "⎈", nerd = "\u{f10fe}" },
+	environment = { plain = "❄", nerd = "\u{f313}" },
+}
+
+--- The icon segment `name` (one of the shell's own: "git", "kubernetes"
+--- or "environment") starts with, as `shell-icons` says.
+function M.icon(name: string): string
+	local icons = ICONS[name]
+	if icons == nil then
+		return ""
+	end
+	return if greed.option.get("shell-icons") == "nerd" then icons.nerd else icons.plain
+end
 
 --- Shows what `provider` says in the prompt of every shell, before its
 --- folder, after the segments added before it; one added again with the
@@ -65,7 +97,8 @@ end
 local busy: { [Shell]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 --- Works out `shell`'s segments again in the background and draws its
---- prompt with them.
+--- prompt with them: starship's, with `shell-prompt` set to "starship",
+--- keeping the warnings the shell's own segments give.
 function M.refresh(shell: Shell)
 	if busy[shell] ~= nil then
 		busy[shell] = true
@@ -77,13 +110,22 @@ function M.refresh(shell: Shell)
 			busy[shell] = false
 			local ctx: Context = { shell = shell, cwd = shell.cwd, env = state.variables(shell) }
 			local found: { Segment } = {}
+			local warning = false
 			for _, entry in table.clone(providers) do
 				local ok, segment = pcall(entry.provider, ctx)
 				if ok and segment and segment.text ~= "" then
 					table.insert(found, segment)
+					warning = warning or segment.warning == true
 				end
 			end
-			shell.segments = found
+			local drawn = if greed.option.get("shell-prompt") == "starship"
+				then starship.prompt(shell, ctx.cwd, ctx.env)
+				else nil
+			if drawn then
+				drawn[1].folder = true
+				drawn[1].warning = warning
+			end
+			shell.segments = drawn or found
 			if shell.buffer:valid() then
 				log.draw_prompt(shell)
 			end
@@ -222,7 +264,9 @@ M.segment("git", function(ctx: Context): Segment?
 	local branch = if table.find(greed.plugin.list(), "vcs")
 		then require("@vcs").branch(ctx.cwd)
 		else M.head_branch(ctx.cwd)
-	return if branch then { text = `⎇ {branch}` } else nil
+	return if branch
+		then { text = `{M.icon("git")} {branch}`, style = "shell.segment.git" }
+		else nil
 end)
 
 M.segment("kubernetes", function(ctx: Context): Segment?
@@ -230,14 +274,24 @@ M.segment("kubernetes", function(ctx: Context): Segment?
 		local context, namespace = M.read_kubeconfig(greed.fs.read(path) or "")
 		if context then
 			local warn = M.production(context)
+			local icon = M.icon("kubernetes")
 			return {
-				text = if namespace then `⎈ {context}:{namespace}` else `⎈ {context}`,
-				style = if warn then "shell.segment.warning" else "shell.segment",
+				text = if namespace then `{icon} {context}:{namespace}` else `{icon} {context}`,
+				style = if warn then "shell.segment.warning" else "shell.segment.kubernetes",
 				warning = warn,
 			}
 		end
 	end
 	return nil
+end)
+
+-- Another prompt or other icons show at once.
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "shell-prompt" or event.name == "shell-icons" then
+		for _, shell in state.list() do
+			M.refresh(shell)
+		end
+	end
 end)
 
 return M

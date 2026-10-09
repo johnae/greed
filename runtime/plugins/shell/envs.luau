@@ -285,15 +285,18 @@ end)
 -- failed or isn't allowed.
 segments.segment("environment", function(ctx: segments.Context): state.Segment?
 	local entry = ctx.shell.environment
+	local icon = segments.icon("environment")
+	local style = "shell.segment.environment"
 	if entry == nil then
-		return if ctx.shell.unloaded then { text = `❄ {ctx.shell.unloaded}` } else nil
+		local unloaded = ctx.shell.unloaded
+		return if unloaded then { text = `{icon} {unloaded}`, style = style } else nil
 	end
 	if entry.status == "loading" then
-		return { text = `❄ {entry.provider}…` }
+		return { text = `{icon} {entry.provider}…`, style = style }
 	elseif entry.status == "failed" then
-		return { text = `❄ {entry.provider} failed`, style = "shell.failed" }
+		return { text = `{icon} {entry.provider} failed`, style = "shell.failed" }
 	end
-	return { text = `❄ {entry.provider}` }
+	return { text = `{icon} {entry.provider}`, style = style }
 end)
 
 -- devenv: the nearest folder up with a devenv.nix, when `devenv allow`

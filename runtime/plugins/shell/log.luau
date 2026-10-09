@@ -476,6 +476,7 @@ function M.draw_prompt(shell: Shell)
 	local start = M.prompt_start(shell)
 	local marks: { greed.Mark } = {}
 	local warning = false
+	local folder = true
 	local segments = shell.segments
 	if segments then
 		for _, segment in segments do
@@ -483,15 +484,22 @@ function M.draw_prompt(shell: Shell)
 				from = start,
 				to = start,
 				style = segment.style or "shell.segment",
-				text = segment.text .. " ",
+				text = if segment.tight then segment.text else segment.text .. " ",
 			})
 			warning = warning or segment.warning == true
+			folder = folder and not segment.folder
 		end
 	end
-	table.insert(
-		marks,
-		{ from = start, to = start, style = "shell.cwd", text = M.short_folder(shell.cwd) .. " " }
-	)
+	if folder then
+		table.insert(marks, {
+			from = start,
+			to = start,
+			style = "shell.cwd",
+			text = M.short_folder(shell.cwd) .. " ",
+		})
+	elseif segments and #segments > 0 and segments[#segments].tight then
+		table.insert(marks, { from = start, to = start, style = "shell.segment", text = " " })
+	end
 	table.insert(marks, {
 		from = start,
 		to = start,
