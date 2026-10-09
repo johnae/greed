@@ -498,3 +498,20 @@ test("only you, or plugins that may, approve plugins: not one that starts the re
 	local said = table.concat(t:messages(), "\n")
 	assert(string.find(said, "approving plugins is yours to do", 1, true), said)
 end)
+
+test("a plugin without commands can't leave a macro for you to play", function(t)
+	t:buffer("|x")
+	greed.plugin.load(
+		plugin(
+			t,
+			"macro-setter",
+			"",
+			'require("@core").registers.set_macro("@", ": l u a space x enter")',
+			'"core"'
+		)
+	)
+	t:run("macro-setter-go")
+	local said = last(t)
+	assert(string.find(said, "can't set a macro", 1, true), said)
+	assert(require("@core").registers.macro("@") == nil, "not set")
+end)

@@ -130,7 +130,32 @@ function M.macro(name: string): string?
 	return macros[name]
 end
 
+-- Whether the plugin `name` may type keys as you: your config, or a plugin
+-- with "commands".
+local function types_as_you(name: string): boolean
+	if string.sub(name, 1, 5) == "user/" then
+		return true
+	end
+	local dir = greed.plugin.dirs()[name]
+	local ok, about = pcall(greed.plugin.describe, dir or "")
+	if not ok then
+		return false
+	end
+	for _, capability in (about :: greed.PluginInfo).capabilities do
+		if capability.name == "commands" then
+			return true
+		end
+	end
+	return false
+end
+
+--- Puts `keys` in register `name` as a macro. Playing it types them as you
+--- do, so only your config and plugins with "commands" may.
 function M.set_macro(name: string, keys: string)
+	local by = greed.plugin.caller()
+	if by and not types_as_you(by) then
+		error(`{by} can't set a macro: playing it types keys as you, which needs "commands"`, 2)
+	end
 	macros[name] = keys
 end
 
