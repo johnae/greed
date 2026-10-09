@@ -197,6 +197,24 @@ test("several edits to a file are made in order as one, or none is", function(t)
 	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\nTWO\n", (greed.fs.read(`{dir}/a.txt`)))
 end)
 
+test("a change with more after it makes them all, and a missing part is named", function(t)
+	local got, dir = results(t, {
+		{
+			"edit_file",
+			{
+				path = "a.txt",
+				old_text = "one",
+				new_text = "ONE",
+				edits = { { old_text = "two", new_text = "TWO" } },
+			},
+		},
+		{ "edit_file", { path = "a.txt", old_text = "ONE" } },
+	}, { ["a.txt"] = "one\ntwo\n" })
+	assert(not got[1].error, got[1].text)
+	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\nTWO\n", (greed.fs.read(`{dir}/a.txt`)))
+	assert(got[2].error and string.find(got[2].text, "new_text is missing", 1, true), got[2].text)
+end)
+
 test("old_text found more than once says where, and replace_all changes each", function(t)
 	local got, dir = results(t, {
 		{ "edit_file", { path = "a.txt", old_text = "x", new_text = "y" } },

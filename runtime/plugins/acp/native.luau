@@ -357,15 +357,29 @@ type Change = { old_text: string, new_text: string, replace_all: boolean? }
 
 -- The changes an edit_file call asks for: its `edits`, or the one it gives.
 local function changes_of(args: any): { Change }
-	if type(args.edits) == "table" and #args.edits > 0 then
-		return args.edits
+	local changes: { Change } = {}
+	if args.old_text ~= nil or args.new_text ~= nil then
+		table.insert(
+			changes,
+			{ old_text = args.old_text, new_text = args.new_text, replace_all = args.replace_all }
+		)
 	end
-	if type(args.old_text) ~= "string" or type(args.new_text) ~= "string" then
-		error("give old_text and new_text, or edits", 0)
+	if type(args.edits) == "table" then
+		table.move(args.edits, 1, #args.edits, #changes + 1, changes)
 	end
-	return {
-		{ old_text = args.old_text, new_text = args.new_text, replace_all = args.replace_all },
-	}
+	if #changes == 0 then
+		error("old_text and new_text are missing: the text to change, and what it becomes", 0)
+	end
+	-- Weaker models leave a part out; say which.
+	for n, change in changes do
+		local which = if #changes > 1 then `edit {n}: ` else ""
+		if type(change.old_text) ~= "string" then
+			error(`{which}old_text is missing: the text to change, as the file has it`, 0)
+		elseif type(change.new_text) ~= "string" then
+			error(`{which}new_text is missing: the text old_text becomes ("" to delete it)`, 0)
+		end
+	end
+	return changes
 end
 
 -- `text` of `path` with `changes` made in order; fails saying which and why
@@ -621,8 +635,8 @@ local OWN: { Own } = {
 			name = "edit_file",
 			description = "Replace text in a file: `old_text` must appear in it exactly once (give enough "
 				.. "lines around it to be sure), and becomes `new_text`; with replace_all, every place "
-				.. "it is does. For several changes to one file, give them as `edits`: they're made in "
-				.. "order, as one change, or none is. An open file is edited as the user has it, and "
+				.. "it is does. More changes to the same file can follow in `edits`: they're all made "
+				.. "in order, as one change, or none is. An open file is edited as the user has it, and "
 				.. "saved. Returns the changed lines, numbered, and new problems the language server sees",
 			input = object({
 				path = { type = "string" },
@@ -634,14 +648,14 @@ local OWN: { Own } = {
 				},
 				edits = {
 					type = "array",
-					description = "Several changes, in place of old_text and new_text",
+					description = "More changes to the same file, made after this one",
 					items = object({
 						old_text = { type = "string" },
 						new_text = { type = "string" },
 						replace_all = { type = "boolean" },
 					}, { "old_text", "new_text" }),
 				},
-			}, { "path" }),
+			}, { "path", "old_text", "new_text" }),
 		},
 		kind = "edit",
 		title = function(args)
