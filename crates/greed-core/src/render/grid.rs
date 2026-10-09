@@ -443,17 +443,37 @@ fn put_row(
     }
 }
 
+/// `grapheme` as it can safely be shown: control characters, which a
+/// terminal would act on (an escape sequence in a file could set the
+/// clipboard or hide lines), become their Unicode pictures, like `␛`.
+fn visible(grapheme: &str) -> std::borrow::Cow<'_, str> {
+    if !grapheme.chars().any(char::is_control) {
+        return std::borrow::Cow::Borrowed(grapheme);
+    }
+    grapheme
+        .chars()
+        .map(|c| match u32::from(c) {
+            code @ 0..=0x1f => char::from_u32(0x2400 + code).unwrap_or('�'),
+            0x7f => '␡',
+            _ if c.is_control() => '�',
+            _ => c,
+        })
+        .collect::<String>()
+        .into()
+}
+
 /// Writes `text` into `line` from cell `x`, within `width` cells, `scale`
 /// times its size. Returns how many cells it used.
 fn put(line: &mut [Cell], x: usize, width: usize, text: &str, style: Style, scale: u8) -> usize {
     let mut used = 0;
     for grapheme in text.graphemes(true) {
-        let w = grapheme.width().max(1) * usize::from(scale);
+        let shown = visible(grapheme);
+        let w = shown.width().max(1) * usize::from(scale);
         if used + w > width || x + used + w > line.len() {
             break;
         }
         line[x + used] = Cell {
-            text: grapheme.to_owned(),
+            text: shown.into_owned(),
             style,
             scale,
         };
@@ -797,5 +817,25 @@ mod tests {
             Some(Color::Ansi(3)),
             "the line between"
         );
+    }
+
+    #[test]
+    fn control_characters_show_as_their_pictures_and_never_reach_the_terminal() {
+        let blank = Cell {
+            text: String::new(),
+            style: Style::default(),
+            scale: 1,
+        };
+        let mut line = vec![blank; 12];
+        let used = put(
+            &mut line,
+            0,
+            12,
+            "a\u{1b}]52;\u{7}\u{9b}\u{7f}é",
+            Style::default(),
+            1,
+        );
+        let shown: String = line[..used].iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(shown, "a␛]52;␇�␡é");
     }
 }
