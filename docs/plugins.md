@@ -1216,7 +1216,8 @@ shell.completer("deploy", function(request)
 		return nil
 	end
 	local found = {}
-	for _, entry in greed.fs.list(request.cwd .. "/deploy") or {} do
+	local entries: { greed.DirEntry } = greed.fs.list(request.cwd .. "/deploy") or {}
+	for _, entry in entries do
 		if entry.dir then
 			table.insert(found, { text = entry.name, detail = "environment" })
 		end

@@ -269,7 +269,7 @@ export type Mark = {
 	--- A command that clicking `text` runs, with the cursor put at `from`
 	--- first, so the text works as a button, e.g. "proposal-accept".
 	action: string?,
-	--- How many times bigger the range's text (and `text`) is, 1 to 4, e.g. 2 for a heading: each character takes that many cells across, and its row that many rows down. In the window it's drawn big; terminals show it at the normal size.
+	--- How many times bigger the range's text (and `text`) is, 1 to 4, e.g. 2 for a heading: each character takes that many cells across, and its row that many rows down. The window draws it big, and so does kitty (its text sizing); other terminals show it at the normal size.
 	scale: number?,
 	--- Anything to keep with the mark, given back where it is read: plain data (tables, strings, numbers, booleans), never drawn.
 	data: any?,
