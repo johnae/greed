@@ -170,18 +170,248 @@ end
 
 local object = agent.schema.object
 
+-- What each session's agent last saw of each file, by session and full
+-- path, as a hash of the file's whole text: from reading, editing or
+-- writing it. write_file won't write over a file that changed since, or
+-- that it never saw.
+local seen_by: { [number]: { [string]: string } } = {}
+
+local function seen(s: Session): { [string]: string }
+	local files = seen_by[s.id]
+	if files == nil then
+		files = {}
+		seen_by[s.id] = files
+	end
+	return files
+end
+
+local function saw(s: Session, path: string, text: string)
+	seen(s)[core.project.resolve(path, s.cwd)] = greed.hash.sha256(text)
+end
+
+-- Whether `text` of `path` is other than what `s`'s agent last saw of it.
+local function changed_since(s: Session, path: string, text: string): boolean
+	local last = seen(s)[core.project.resolve(path, s.cwd)]
+	return last ~= nil and last ~= greed.hash.sha256(text)
+end
+
+-- The 1-based line of byte `at` in `text`.
+local function line_at(text: string, at: number): number
+	local _, breaks = string.gsub(string.sub(text, 1, at - 1), "\n", "")
+	return breaks + 1
+end
+
+-- Where `needle` is in `text`, as byte offsets, without overlaps.
+local function places(text: string, needle: string): { number }
+	local out = {}
+	local from = 1
+	while true do
+		local at = string.find(text, needle, from, true)
+		if at == nil then
+			return out
+		end
+		table.insert(out, at)
+		from = at + #needle
+	end
+end
+
+-- `s` without the spaces around it.
+local function trimmed(s: string): string
+	return string.match(s, "^%s*(.-)%s*$") or s
+end
+
+-- Why `old` isn't in `text` of `path`, with what's nearest, so the model
+-- can put it right without reading the whole file again.
+local function missing(path: string, text: string, old: string, stale: boolean): string
+	local said = `old_text isn't in {path}`
+	if stale then
+		return said
+			.. "; the file changed since you last read it (the user may be editing it), so read it again"
+	end
+	local wanted = {}
+	for _, line in string.split(old, "\n") do
+		if trimmed(line) ~= "" then
+			table.insert(wanted, trimmed(line))
+		end
+	end
+	if #wanted == 0 then
+		return said
+	end
+	local lines = string.split(text, "\n")
+	local starts = {}
+	for n, line in lines do
+		if trimmed(line) == wanted[1] then
+			table.insert(starts, n)
+		end
+	end
+	for _, n in starts do
+		-- The same lines with other spacing or indentation.
+		local i, w = n, 1
+		while i <= #lines and w <= #wanted do
+			if trimmed(lines[i]) == wanted[w] then
+				w += 1
+			elseif trimmed(lines[i]) ~= "" then
+				break
+			end
+			i += 1
+		end
+		if w > #wanted then
+			return `{said} as written, but it is on line {n} with other spacing or indentation: `
+				.. "copy it exactly as read gives it"
+		end
+	end
+	if #starts > 0 then
+		local at = table.concat(starts, ", ", 1, math.min(#starts, 5))
+		return `{said}: its first line is on line {at}, but what follows differs; read from there`
+	end
+	return `{said}, nor its first line: read the file again`
+end
+
+-- `text` with each place `old` is (just the first unless `all`) made `new`.
+local function replaced(text: string, old: string, new: string, all: boolean): string
+	local out = {}
+	local from = 1
+	for _, at in places(text, old) do
+		table.insert(out, string.sub(text, from, at - 1))
+		table.insert(out, new)
+		from = at + #old
+		if not all then
+			break
+		end
+	end
+	table.insert(out, string.sub(text, from))
+	return table.concat(out)
+end
+
+type Change = { old_text: string, new_text: string, replace_all: boolean? }
+
+-- The changes an edit_file call asks for: its `edits`, or the one it gives.
+local function changes_of(args: any): { Change }
+	if type(args.edits) == "table" and #args.edits > 0 then
+		return args.edits
+	end
+	if type(args.old_text) ~= "string" or type(args.new_text) ~= "string" then
+		error("give old_text and new_text, or edits", 0)
+	end
+	return {
+		{ old_text = args.old_text, new_text = args.new_text, replace_all = args.replace_all },
+	}
+end
+
+-- `text` of `path` with `changes` made in order; fails saying which and why
+-- when one can't be, and then none is.
+local function apply(path: string, text: string, changes: { Change }, stale: boolean): string
+	for n, change in changes do
+		local which = if #changes > 1 then `edit {n} of {#changes}: ` else ""
+		local none = if #changes > 1 then " (none of the edits were made)" else ""
+		if change.old_text == "" then
+			error(`{which}old_text is empty{none}`, 0)
+		end
+		local at = places(text, change.old_text)
+		if #at == 0 then
+			error(which .. missing(path, text, change.old_text, stale) .. none, 0)
+		elseif #at > 1 and not change.replace_all then
+			local lines = {}
+			for i = 1, math.min(#at, 10) do
+				table.insert(lines, tostring(line_at(text, at[i])))
+			end
+			error(
+				`{which}old_text is in {path} {#at} times, on lines {table.concat(lines, ", ")}: `
+					.. `give more of it to pick one, or set replace_all{none}`,
+				0
+			)
+		end
+		text = replaced(text, change.old_text, change.new_text, change.replace_all == true)
+	end
+	return text
+end
+
+-- How many bytes `a` and `b` share at their start and, after that, at
+-- their end, kept to whole characters.
+local function shared(a: string, b: string): (number, number)
+	local most = math.min(#a, #b)
+	local head = 0
+	-- A block at a time first: files are long and edits small.
+	while
+		head + 4096 <= most
+		and string.sub(a, head + 1, head + 4096) == string.sub(b, head + 1, head + 4096)
+	do
+		head += 4096
+	end
+	while head < most and string.byte(a, head + 1) == string.byte(b, head + 1) do
+		head += 1
+	end
+	-- Not in the middle of a character.
+	while head > 0 and bit32.band(string.byte(a, head + 1) or 0, 0xC0) == 0x80 do
+		head -= 1
+	end
+	local tail = 0
+	local left = most - head
+	while
+		tail + 4096 <= left
+		and string.sub(a, #a - tail - 4095, #a - tail)
+			== string.sub(b, #b - tail - 4095, #b - tail)
+	do
+		tail += 4096
+	end
+	while tail < left and string.byte(a, #a - tail) == string.byte(b, #b - tail) do
+		tail += 1
+	end
+	while tail > 0 and bit32.band(string.byte(a, #a - tail + 1) or 0, 0xC0) == 0x80 do
+		tail -= 1
+	end
+	return head, tail
+end
+
+-- The most lines an edit's result shows of what it changed.
+local SHOWN_LINES = 30
+
+-- Lines `first` to `last` (1-based) of `text`, numbered as an editor shows
+-- them, with two more on each side.
+local function numbered(text: string, first: number, last: number): string
+	local lines = string.split(text, "\n")
+	-- A last newline ends the last line; nothing comes after it.
+	if #lines > 1 and lines[#lines] == "" then
+		table.remove(lines)
+	end
+	local from, to = math.max(first - 2, 1), math.min(last + 2, #lines)
+	local out = {}
+	for n = from, math.min(to, from + SHOWN_LINES - 1) do
+		table.insert(out, string.format("%6d  %s", n, lines[n]))
+	end
+	if to > from + SHOWN_LINES - 1 then
+		table.insert(out, `       (… to line {to})`)
+	end
+	return table.concat(out, "\n")
+end
+
 local OWN: { Own } = {
 	{
 		spec = {
 			name = "edit_file",
 			description = "Replace text in a file: `old_text` must appear in it exactly once (give enough "
-				.. "lines around it to be sure), and becomes `new_text`. An open file is edited as the "
-				.. "user has it, and saved",
+				.. "lines around it to be sure), and becomes `new_text`; with replace_all, every place "
+				.. "it is does. For several changes to one file, give them as `edits`: they're made in "
+				.. "order, as one change, or none is. An open file is edited as the user has it, and "
+				.. "saved. Returns the changed lines, numbered, and new problems the language server sees",
 			input = object({
 				path = { type = "string" },
 				old_text = { type = "string" },
 				new_text = { type = "string" },
-			}, { "path", "old_text", "new_text" }),
+				replace_all = {
+					type = "boolean",
+					description = "Change every place old_text is, not just one",
+				},
+				edits = {
+					type = "array",
+					description = "Several changes, in place of old_text and new_text",
+					items = object({
+						old_text = { type = "string" },
+						new_text = { type = "string" },
+						replace_all = { type = "boolean" },
+					}, { "old_text", "new_text" }),
+				},
+			}, { "path" }),
 		},
 		kind = "edit",
 		title = function(args)
@@ -189,40 +419,45 @@ local OWN: { Own } = {
 		end,
 		preview = function(_, args)
 			local out = {}
-			marked(out, "- ", args.old_text)
-			marked(out, "+ ", args.new_text)
+			local ok, changes = pcall(changes_of, args)
+			if ok then
+				for _, change in changes do
+					marked(out, "- ", change.old_text)
+					marked(out, "+ ", change.new_text)
+				end
+			end
 			return out
 		end,
 		widens = function(s, args)
 			local text = core.file.text(args.path, s.cwd)
-			local from, to = string.find(text or "", args.old_text, 1, true)
-			if text == nil or from == nil or to == nil then
+			if text == nil then
 				return nil
 			end
-			local new = string.sub(text, 1, from - 1) .. args.new_text .. string.sub(text, to + 1)
-			return agent.widens(args.path, text, new)
+			local ok, new = pcall(function()
+				return apply(args.path, text, changes_of(args), false)
+			end)
+			return if ok then agent.widens(args.path, text, new) else nil
 		end,
 		run = function(s, args)
 			local text = core.file.text(args.path, s.cwd)
 			if text == nil then
 				error(`there's no file {args.path}`, 0)
 			end
-			local from, to = string.find(text, args.old_text, 1, true)
-			if from == nil or to == nil then
-				error(`old_text isn't in {args.path}`, 0)
-			end
-			if string.find(text, args.old_text, to + 1, true) then
-				error(`old_text is in {args.path} more than once; give more of it`, 0)
-			end
+			local new = apply(args.path, text, changes_of(args), changed_since(s, args.path, text))
 			agent.memory.guard(args.path, s.cwd)
-			-- Through its buffer, opened if need be, so undo takes it back and
-			-- its language server sees it.
+			-- Only the part that changed, through its buffer (opened if need
+			-- be), so undo takes it back, cursors elsewhere stay put and its
+			-- language server sees it.
+			local head, tail = shared(text, new)
 			local buffer = core.file.write(
 				args.path,
-				args.new_text,
-				{ root = s.cwd, from = from - 1, to = to, load = true }
+				string.sub(new, head + 1, #new - tail),
+				{ root = s.cwd, from = head, to = #text - tail, load = true }
 			)
-			return changed(`edited {args.path}`, buffer)
+			saw(s, args.path, new)
+			local first = line_at(new, head + 1)
+			local last = math.max(line_at(new, #new - tail), first)
+			return changed(`edited {args.path}:\n{numbered(new, first, last)}`, buffer)
 		end,
 	},
 	{
@@ -257,11 +492,28 @@ local OWN: { Own } = {
 			return agent.widens(args.path, core.file.text(args.path, s.cwd), args.text)
 		end,
 		run = function(s, args)
+			-- Writing over a file needs its agent to have seen it as it is
+			-- now: the user may have changed it, and their change would go.
+			local old = core.file.text(args.path, s.cwd)
+			if old and old ~= args.text then
+				if seen(s)[core.project.resolve(args.path, s.cwd)] == nil then
+					error(
+						`{args.path} is there already and you haven't read it: read it first, `
+							.. "or change it with edit_file",
+						0
+					)
+				elseif changed_since(s, args.path, old) then
+					error(
+						`{args.path} changed since you last read it (the user may be editing it): `
+							.. "read it again, then change it with edit_file",
+						0
+					)
+				end
+			end
 			agent.memory.guard(args.path, s.cwd)
-			return changed(
-				`wrote {args.path}`,
-				core.file.write(args.path, args.text, { root = s.cwd, load = true })
-			)
+			local buffer = core.file.write(args.path, args.text, { root = s.cwd, load = true })
+			saw(s, args.path, args.text)
+			return changed(`wrote {args.path}`, buffer)
 		end,
 	},
 	{
@@ -547,7 +799,15 @@ local function call(
 		if wrong then
 			error(wrong, 0)
 		end
-		return agent.as_text(tool.run(c.input, state.caller))
+		-- A path from where it works, as its own tools take them: Greed's
+		-- shared ones go from the project shown, which may be another.
+		local input = c.input
+		local path = input.path
+		if type(path) == "string" and not string.match(path, "^[/~]") then
+			input = table.clone(input)
+			input.path = core.project.resolve(path, s.cwd)
+		end
+		return agent.as_text(tool.run(input, state.caller))
 	end)
 	local text = if ok then result else agent.error_text(result)
 	tool.status = if ok then "completed" else "failed"
@@ -750,6 +1010,13 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 			seen[key] = result
 			if before == result then
 				result ..= REPEATED
+			end
+			-- What it read is what it saw, for writing over it later.
+			if c.name == "read" and not failed and type(c.input.path) == "string" then
+				local now = core.file.text(c.input.path, s.cwd)
+				if now then
+					saw(s, c.input.path, now)
+				end
 			end
 			-- Asking the user counts as doing something, as an edit does.
 			local tool = s.tools[c.id]

@@ -44,8 +44,8 @@ end
 
 -- Starts Greed's agent in a project and sends `text`, in the background,
 -- as the transcript does.
-local function ask(t: test.TestContext, text: string): (any, string)
-	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+local function ask(t: test.TestContext, text: string, files: { [string]: string }?): (any, string)
+	local dir = t:tempdir(files or { ["a.txt"] = "one\ntwo\n" })
 	local s = assert(acp.start(GREED, dir))
 	greed.spawn(function()
 		acp.prompt(s, text)
@@ -122,8 +122,167 @@ test("an edit asks first, and once allowed it's made and the model hears so", fu
 	question.answer:send("once")
 	t:wait(10)
 	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\n", "edited")
-	assert(asked[2].said[3].role == "tool" and asked[2].said[3].text == "edited a.txt", "told")
+	local told = asked[2].said[3]
+	assert(told.role == "tool", told.role)
+	-- With the lines around the change, numbered.
+	assert(told.text == "edited a.txt:\n     1  one\n     2  TWO", told.text)
 	assert(s.status == "idle" and string.find(said(s), "agent: Done.", 1, true), said(s))
+end)
+
+-- Runs `calls` one turn each in a project holding `files`, allowing every
+-- one, and returns what the model got back from each, and the project.
+local function results(t: any, calls: { { any } }, files: { [string]: string }): ({ any }, string)
+	local turns = {}
+	for n, call in calls do
+		table.insert(turns, {
+			text = "",
+			calls = { { id = `c{n}`, name = call[1], input = call[2] } },
+			stop = "tools",
+		})
+	end
+	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
+	local asked = script(turns)
+	local s, dir = ask(t, "go", files)
+	t:wait_for(function()
+		if s.status == "waiting" then
+			waiting(s).answer:send("always")
+		end
+		return s.status == "idle"
+	end)
+	local out = {}
+	for _, one in asked[#asked].said do
+		if one.role == "tool" then
+			table.insert(out, one)
+		end
+	end
+	return out, dir
+end
+
+test("several edits to a file are made in order as one, or none is", function(t)
+	local got, dir = results(t, {
+		{
+			"edit_file",
+			{
+				path = "a.txt",
+				edits = {
+					{ old_text = "one", new_text = "ONE" },
+					{ old_text = "ONE\ntwo", new_text = "ONE\nTWO" },
+				},
+			},
+		},
+		{
+			"edit_file",
+			{
+				path = "a.txt",
+				edits = {
+					{ old_text = "ONE", new_text = "1" },
+					{ old_text = "nowhere", new_text = "x" },
+				},
+			},
+		},
+	}, { ["a.txt"] = "one\ntwo\n" })
+	assert(not got[1].error, got[1].text)
+	assert(got[2].error, "the second fails")
+	assert(string.find(got[2].text, "edit 2 of 2", 1, true), got[2].text)
+	assert(string.find(got[2].text, "none of the edits were made", 1, true), got[2].text)
+	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\nTWO\n", (greed.fs.read(`{dir}/a.txt`)))
+end)
+
+test("old_text found more than once says where, and replace_all changes each", function(t)
+	local got, dir = results(t, {
+		{ "edit_file", { path = "a.txt", old_text = "x", new_text = "y" } },
+		{ "edit_file", { path = "a.txt", old_text = "x", new_text = "y", replace_all = true } },
+	}, { ["a.txt"] = "x\nkeep\nx\n" })
+	assert(
+		got[1].error and string.find(got[1].text, "2 times, on lines 1, 3", 1, true),
+		got[1].text
+	)
+	assert(not got[2].error, got[2].text)
+	assert(greed.fs.read(`{dir}/a.txt`) == "y\nkeep\ny\n", (greed.fs.read(`{dir}/a.txt`)))
+end)
+
+test("old_text that isn't there says what's nearest", function(t)
+	local got = results(t, {
+		{ "edit_file", { path = "a.lua", old_text = "if x then\n  y()\nend", new_text = "" } },
+		{ "edit_file", { path = "a.lua", old_text = "if x then\n\tz()\nend", new_text = "" } },
+		{ "edit_file", { path = "a.lua", old_text = "while true do", new_text = "" } },
+	}, { ["a.lua"] = "local x = 1\nif x then\n\ty()\nend\n" })
+	assert(
+		string.find(got[1].text, "on line 2 with other spacing or indentation", 1, true),
+		got[1].text
+	)
+	assert(
+		string.find(got[2].text, "its first line is on line 2, but what follows differs", 1, true),
+		got[2].text
+	)
+	assert(string.find(got[3].text, "nor its first line", 1, true), got[3].text)
+end)
+
+test("writing over a file needs it read first, as it is now", function(t)
+	local got, dir = results(t, {
+		{ "write_file", { path = "a.txt", text = "new\n" } },
+		{ "read", { path = "a.txt" } },
+		{ "write_file", { path = "a.txt", text = "new\n" } },
+		{ "write_file", { path = "b.txt", text = "a new file\n" } },
+	}, { ["a.txt"] = "old\n" })
+	assert(got[1].error and string.find(got[1].text, "you haven't read it", 1, true), got[1].text)
+	assert(not got[2].error, "read: " .. got[2].text)
+	assert(not got[3].error, got[3].text)
+	assert(not got[4].error, "a new file needs no reading")
+	assert(greed.fs.read(`{dir}/a.txt`) == "new\n", "written once read")
+end)
+
+test("a file changed since it was read isn't written over, and a failed edit says why", function(t)
+	local turns = {
+		{
+			text = "",
+			calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+			stop = "tools",
+		},
+		{
+			text = "",
+			calls = {
+				{ id = "c2", name = "write_file", input = { path = "a.txt", text = "mine\n" } },
+			},
+			stop = "tools",
+		},
+		{
+			text = "",
+			calls = {
+				{
+					id = "c3",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "old", new_text = "x" },
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	}
+	local asked = script(turns)
+	local s, dir = ask(t, "go", { ["a.txt"] = "old\n" })
+	-- The user changes the file while the agent waits to write.
+	t:wait_for(function()
+		return s.status == "waiting"
+	end)
+	greed.fs.write(`{dir}/a.txt`, "theirs\n")
+	t:wait_for(function()
+		if s.status == "waiting" then
+			waiting(s).answer:send("once")
+		end
+		return s.status == "idle"
+	end)
+	local said_last = asked[#asked].said
+	local write, edit = said_last[5], said_last[7]
+	assert(
+		write.error and string.find(write.text, "changed since you last read it", 1, true),
+		write.text
+	)
+	assert(
+		edit.error and string.find(edit.text, "changed since you last read it", 1, true),
+		edit.text
+	)
+	assert(greed.fs.read(`{dir}/a.txt`) == "theirs\n", "theirs is kept")
 end)
 
 test("a rejected edit isn't made, and the model hears it wasn't allowed", function(t)
