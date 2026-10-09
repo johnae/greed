@@ -126,7 +126,7 @@ The shell runs a few commands itself:
 | `cd [DIR]` | Change the shell's folder: a path, `-` for the one before, nothing for home |
 | `export NAME=VALUE ...` | Set variables for the commands after |
 | `unset NAME ...` | Leave variables out of the commands after |
-| `env [reload]` | List the variables this shell sets or leaves out, and the environment its folder brings (devenv); reload loads that again |
+| `env [reload]` | List the variables this shell sets or leaves out, and the environment its folder brings (devenv, direnv); reload loads that again |
 | `history` | The commands typed before |
 | `clear` | Take the finished blocks away |
 | `open PATH ...` | Open files, or `buf:NAME` buffers, in the editor |
@@ -178,8 +178,15 @@ read loads it again; `env reload` does too. Leaving the project leaves its
 environment behind, and what you `export` wins over it. Every shell in a
 project shares one load, and an agent's commands get it too.
 
-`:set shell-environments ""` turns it off. Plugins add other kinds, named
-in that option in the order they're asked.
+A folder with an `.envrc` and no `devenv.nix` loads it through
+[direnv](https://direnv.net), when that's installed and you've run `direnv
+allow` there, the prompt saying `❄ direnv`. Changing the `.envrc` loads it
+again; for other files it reads, `env reload` does. A project with both,
+like an `.envrc` holding `use devenv`, gets devenv's straight away.
+
+`shell-environments` (`devenv direnv`) says which kinds load and which
+is asked first; `:set shell-environments ""` turns them off. Plugins add
+other kinds.
 
 ## Terminals
 

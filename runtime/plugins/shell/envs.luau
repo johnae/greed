@@ -1,7 +1,7 @@
--- Environments a folder brings with it, as devenv gives them: a shell in
--- such a folder runs its commands with them, loads them again when the
--- files they come from change, and drops them on leaving. The prompt says
--- which is loaded, and `env` says more.
+-- Environments a folder brings with it, as devenv and direnv give them: a
+-- shell in such a folder runs its commands with them, loads them again
+-- when the files they come from change, and drops them on leaving. The
+-- prompt says which is loaded, and `env` says more.
 --
 -- A provider says which folder's environment applies where a shell is
 -- (`root`) and loads it (`load`). They're asked in the order
@@ -40,8 +40,8 @@ export type Provider = {
 
 greed.option.define({
 	name = "shell-environments",
-	doc = "Which environments a shell loads in folders that bring one, in order, the first that applies winning: devenv, and those plugins add; empty for none",
-	default = "devenv",
+	doc = "Which environments a shell loads in folders that bring one, in order, the first that applies winning: devenv, direnv, and those plugins add; empty for none",
+	default = "devenv direnv",
 })
 
 local providers: { [string]: Provider } = {}
@@ -352,13 +352,13 @@ local function nearest(dir: string, file: string): string?
 end
 
 -- Runs `argv` in `cwd` with `env` on top of the editor's, its input
--- closed, and gives back its exit code and everything it printed.
+-- closed, and gives back its exit code, what it printed and its errors.
 local function run(
 	argv: { string },
 	cwd: string,
 	env: { [string]: string | false }
-): (number?, string)
-	local child, err = greed.process.spawn(argv, { cwd = cwd, env = env, stderr = "stream" })
+): (number?, string, string)
+	local child, err = greed.process.spawn(argv, { cwd = cwd, env = env })
 	if child == nil then
 		error(err or `can't start {argv[1]}`, 0)
 	end
@@ -372,14 +372,18 @@ local function run(
 		end
 		table.insert(parts, piece)
 	end
-	return c:wait(), table.concat(parts)
+	return c:wait(), table.concat(parts), c:stderr()
+end
+
+-- devenv and direnv keep what you allowed in your home, so they load only
+-- there: a test's own home never loads your projects.
+local function yours(): boolean
+	return greed.fs.dirs().home == state.editor_environment().HOME
 end
 
 M.provider("devenv", {
 	root = function(dir: string, env: { [string]: string }): (string?, string?)
-		-- devenv keeps what you allowed in your home, so only there: a
-		-- test's own home never loads your projects.
-		if greed.fs.dirs().home ~= state.editor_environment().HOME then
+		if not yours() then
 			return nil, nil
 		end
 		local found = nearest(dir, "devenv.nix")
@@ -407,7 +411,8 @@ M.provider("devenv", {
 		end
 		local dir = `{cache}/shell/env/{state.new_uid()}`
 		greed.fs.mkdir(dir)
-		local code, output = run({ "bash", "-c", DEVENV_SCRIPT, "greed-env", dir }, root, env)
+		local code, out, errors = run({ "bash", "-c", DEVENV_SCRIPT, "greed-env", dir }, root, env)
+		local output = out .. errors
 		local vars = fallback.changes(dir)
 		greed.fs.remove(dir, { recursive = true })
 		if code ~= 0 or vars == nil then
@@ -427,6 +432,86 @@ M.provider("devenv", {
 			end
 		end
 		return { vars = vars, watch = watch, output = output }
+	end,
+})
+
+-- direnv: the nearest folder up with an .envrc, once `direnv allow` let
+-- it, loaded with `direnv export json`. It's asked as if nothing was
+-- loaded, so it gives the whole environment rather than a change to the
+-- one the editor started in.
+
+-- The variables where direnv keeps what it loaded.
+local DIRENV_STATE = { "DIRENV_DIR", "DIRENV_FILE", "DIRENV_DIFF", "DIRENV_WATCHES" }
+
+-- `env` without what direnv loaded.
+local function unloaded(env: { [string]: string | false }): { [string]: string | false }
+	local clean = table.clone(env)
+	for _, name in DIRENV_STATE do
+		clean[name] = false
+	end
+	return clean
+end
+
+-- direnv's program, on `path` or else the editor's PATH.
+local function direnv(path: (string | false)?): string?
+	return sources.find(
+		"direnv",
+		if type(path) == "string" then path else state.editor_environment().PATH
+	)
+end
+
+--- What `direnv export json` printed, as variables: `null` is one it
+--- takes away, which decoding would lose, so it's read as false.
+function M.direnv_vars(text: string): { [string]: string | false }
+	local marked = string.gsub(text, '("[^"\\]*"%s*:%s*)null', "%1false")
+	local decoded = greed.json.decode(marked)
+	local vars: { [string]: string | false } = {}
+	if type(decoded) == "table" then
+		for name, value in decoded do
+			if type(name) == "string" and (type(value) == "string" or value == false) then
+				vars[name] = value
+			end
+		end
+	end
+	return vars
+end
+
+M.provider("direnv", {
+	root = function(dir: string, env: { [string]: string }): (string?, string?)
+		if not yours() or nearest(dir, ".envrc") == nil then
+			return nil, nil
+		end
+		local program = direnv(env.PATH)
+		if program == nil then
+			return nil, "not installed"
+		end
+		local _, out = run({ program, "status", "--json" }, dir, unloaded({}))
+		local status = greed.json.decode(out)
+		local found = type(status) == "table"
+			and type(status.state) == "table"
+			and status.state.foundRC
+		if type(found) ~= "table" or type(found.path) ~= "string" then
+			return nil, nil
+		end
+		if found.allowed ~= 0 then
+			return nil, if found.allowed == 2 then "denied" else "not allowed, direnv allow"
+		end
+		return string.match(found.path, "^(.*)/[^/]*$"), nil
+	end,
+	load = function(root: string, env: { [string]: string | false }): Loaded
+		local program = direnv(env.PATH)
+		if program == nil then
+			error("direnv isn't installed", 0)
+		end
+		local code, out, errors = run({ program, "export", "json" }, root, unloaded(env))
+		if code ~= 0 then
+			error(if errors ~= "" then errors else `direnv exited with {code}`, 0)
+		end
+		return {
+			vars = M.direnv_vars(out),
+			watch = { `{root}/.envrc`, `{root}/.env` },
+			output = errors,
+		}
 	end,
 })
 

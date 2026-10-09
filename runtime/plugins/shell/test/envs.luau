@@ -212,3 +212,11 @@ test("an agent's commands get it too, without it in what the agent reads", funct
 	assert(block.stdout == "one\n", block.stdout)
 	assert(shell.record(block).env.GREED_T == nil, "not in its record's variables")
 end)
+
+test("direnv's variables are read with the ones it takes away", function()
+	local vars =
+		envs.direnv_vars('{\n  "GREED_A": "1",\n  "GREED_B": null,\n  "GREED_C": "x: null"\n}')
+	assert(vars.GREED_A == "1" and vars.GREED_B == false, greed.json.encode(vars))
+	assert(vars.GREED_C == "x: null", "a value that says null stays")
+	assert(next(envs.direnv_vars("")) == nil, "nothing to load")
+end)

@@ -35,7 +35,7 @@ M.BUILTINS = {
 	},
 	env = {
 		usage = "env [reload]",
-		doc = "List the variables this shell sets or leaves out, and the environment its folder brings (devenv); reload loads that again",
+		doc = "List the variables this shell sets or leaves out, and the environment its folder brings (devenv, direnv); reload loads that again",
 	},
 	history = { usage = "history", doc = "The commands typed before" },
 	clear = { usage = "clear", doc = "Take the finished blocks away" },
