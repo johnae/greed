@@ -91,6 +91,65 @@ local STYLE: { [string]: string } = {
 -- output streams in above it.
 local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
 
+-- Whose turn it is to change a shell's text, how deep in, and who waits.
+type Turn = { thread: thread, depth: number, waiting: { greed.Signal } }
+
+local turns: { [Shell]: Turn } = setmetatable({}, { __mode = "k" }) :: any
+
+-- Runs `change` to `shell`'s text when it's its turn. An edit can let
+-- other tasks run, as event handlers do, and each change works out where
+-- blocks, the strip and the prompt are before it edits and tracks them
+-- after, so changes to one shell's text go one at a time. The task whose
+-- turn it is can change it again meanwhile, as `update` drawing the strip
+-- does. A task that ended without giving its turn back, as one stopped
+-- for taking too long does, loses it; one that can't wait goes ahead.
+local function exclusive(shell: Shell, change: () -> ())
+	local me = coroutine.running()
+	local turn: Turn? = turns[shell]
+	while
+		turn
+		and turn.thread ~= me
+		and coroutine.status(turn.thread) ~= "dead"
+		and coroutine.isyieldable()
+	do
+		local signal = greed.signal()
+		table.insert(turn.waiting, signal)
+		-- Look again now and then, in case its task ended without a word.
+		greed.spawn(function()
+			greed.sleep(1000)
+			signal:send(true)
+		end)
+		signal:wait()
+		turn = turns[shell]
+	end
+	if turn and turn.thread ~= me then
+		if coroutine.status(turn.thread) ~= "dead" then
+			-- Its task can't wait, and the turn stays with the other.
+			change()
+			return
+		end
+		turn = nil
+	end
+	local mine: Turn = turn or { thread = me, depth = 0, waiting = {} }
+	turns[shell] = mine
+	mine.depth += 1
+	-- Its error, if it failed, comes back as the second value.
+	local ok, err = pcall(function(): any
+		change()
+		return nil
+	end)
+	mine.depth -= 1
+	if mine.depth == 0 then
+		turns[shell] = nil
+		for _, signal in mine.waiting do
+			signal:send(true)
+		end
+	end
+	if not ok then
+		error(err, 0)
+	end
+end
+
 local function ns_block(block: Block): string
 	return `shell.block.{block.uid}`
 end
@@ -141,7 +200,7 @@ end
 
 --- Puts `text` at the prompt, in place of what's there, with the cursor
 --- of each of `views` at its end.
-function M.set_prompt(shell: Shell, text: string, views: { greed.View }?)
+local function set_prompt(shell: Shell, text: string, views: { greed.View }?)
 	local buffer = shell.buffer
 	local start = M.prompt_start(shell)
 	buffer:edit(function(e)
@@ -382,7 +441,7 @@ end
 --- anyway, so the ones that scrolled up stay in reach. On its line, a
 --- block's keys act on it, and `enter` (or a click on its number) opens it
 --- in a float.
-function M.draw_strip(shell: Shell)
+local function draw_strip(shell: Shell)
 	local buffer = shell.buffer
 	local blocks: { Block } = {}
 	local lines: { string } = {}
@@ -528,7 +587,7 @@ end
 
 --- Adds `block` after the others, before the strip, and empties the
 --- prompt. Its command is its text for now.
-function M.add(shell: Shell, block: Block)
+local function add(shell: Shell, block: Block)
 	local buffer = shell.buffer
 	local start = M.blocks_end(shell)
 	local text = block.command .. "\n"
@@ -590,7 +649,13 @@ end
 --- came between `add`'s first `room` and the rest, already left out. Lines
 --- past `shell-max-lines` are left out, oldest first after the first half;
 --- `block.lines` and `block.omitted` count them.
-function M.update(shell: Shell, block: Block, add: { Line }, volatile: { Line }?, skipped: number?)
+local function update(
+	shell: Shell,
+	block: Block,
+	add: { Line },
+	volatile: { Line }?,
+	skipped: number?
+)
 	local s = shown[block.uid]
 	local from, to = M.range(block)
 	local skip = skipped or 0
@@ -690,7 +755,7 @@ end
 --- Shows `lines` as `block`'s output in place of what it shows, for a
 --- finished block, like the rows a filter kept of its table, or a live
 --- one (`watch`) showing what it got this time.
-function M.replace_output(shell: Shell, block: Block, lines: { Line })
+local function replace_output(shell: Shell, block: Block, lines: { Line })
 	local s = shown[block.uid]
 	local from, to = M.range(block)
 	local streaming = block.status == "running" and block.watching == nil
@@ -757,7 +822,7 @@ function M.all_references(shell: Shell): { terminal.Reference }
 end
 
 --- Takes `block` out of the buffer, with its decorations.
-function M.remove(shell: Shell, block: Block)
+local function remove(shell: Shell, block: Block)
 	local from, to = M.range(block)
 	local buffer = shell.buffer
 	if from and to then
@@ -781,7 +846,7 @@ function M.remove(shell: Shell, block: Block)
 	if index then
 		table.remove(shell.blocks, index)
 	end
-	M.draw_strip(shell)
+	draw_strip(shell)
 	M.draw_prompt(shell)
 end
 
@@ -833,6 +898,50 @@ function M.neighbor(shell: Shell, pos: number, back: boolean): number?
 		return M.prompt_start(shell)
 	end
 	return found
+end
+
+-- Each change to a shell's text takes its turn (`exclusive`).
+
+M.set_prompt = function(shell: Shell, text: string, views: { greed.View }?)
+	exclusive(shell, function()
+		set_prompt(shell, text, views)
+	end)
+end
+
+M.draw_strip = function(shell: Shell)
+	exclusive(shell, function()
+		draw_strip(shell)
+	end)
+end
+
+M.add = function(shell: Shell, block: Block)
+	exclusive(shell, function()
+		add(shell, block)
+	end)
+end
+
+M.update = function(
+	shell: Shell,
+	block: Block,
+	lines: { Line },
+	volatile: { Line }?,
+	skipped: number?
+)
+	exclusive(shell, function()
+		update(shell, block, lines, volatile, skipped)
+	end)
+end
+
+M.replace_output = function(shell: Shell, block: Block, lines: { Line })
+	exclusive(shell, function()
+		replace_output(shell, block, lines)
+	end)
+end
+
+M.remove = function(shell: Shell, block: Block)
+	exclusive(shell, function()
+		remove(shell, block)
+	end)
 end
 
 return M
