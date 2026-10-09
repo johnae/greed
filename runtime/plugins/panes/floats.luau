@@ -675,6 +675,16 @@ end
 
 --- Takes the focused pane out of the tab to float over it, or puts the
 --- focused float back in as a pane beside the active one.
+-- A buffer to show in place of `buffer`: another open file, or an empty one.
+local function other_buffer(buffer: greed.Buffer): greed.Buffer
+	for _, other in greed.buffers() do
+		if other ~= buffer and other:path() ~= nil then
+			return other
+		end
+	end
+	return greed.create_buffer("file", "")
+end
+
 function M.flip(view: greed.View)
 	local buffer, selection = view:buffer(), view:selection()
 	local moved: greed.View
@@ -682,18 +692,21 @@ function M.flip(view: greed.View)
 		local active = greed.tab.current().active
 		local rows, cols = active:size()
 		moved = active:split(if (cols or 80) > (rows or 24) * 2 then "right" else "down", buffer)
-	elseif #greed.tab.current().panes > 1 then
-		-- A file by its name; a named buffer, like a terminal, shows its own.
+	else
+		-- A pane or a panel. A file by its name; a named buffer, like a
+		-- terminal, shows its own.
 		moved = greed.float(
 			buffer,
 			{ title = file_name(buffer), width = "70%", height = "70%", tab = true }
 		)
-	else
-		greed.echo("the last pane stays in the tab")
-		return
 	end
 	moved:set_selection(selection)
-	view:close()
+	-- The tab keeps a pane: the last one shows another buffer instead.
+	if view:is_pane() and #greed.tab.current().panes <= 1 then
+		view:show(other_buffer(buffer))
+	else
+		view:close()
+	end
 	moved:focus()
 	terminal.settle(moved)
 end

@@ -810,6 +810,33 @@ test("P in pane mode moves the pane into a panel, keeping its cursor", function(
 	assert(string.find(said[#said], "last pane stays", 1, true), said[#said])
 end)
 
+test(
+	"e in pane mode floats a panel, and the last pane too, leaving the pane another buffer",
+	function(t)
+		t:buffer("hel|lo")
+		local file = greed.view():buffer()
+		local notes = greed.create_buffer("file", "one\ntwo")
+		local panel = greed.panel(notes)
+		panes.focus(panel)
+		t:draw(80, 20)
+		t:keys("alt-p e esc")
+		local floated = greed.view()
+		assert(floated:float_spec() ~= nil and floated:buffer() == notes, "the panel floats")
+		assert(not panel:valid(), "and the panel is gone")
+		-- The tab's only pane: its buffer floats, and the pane shows another.
+		local pane = greed.tab.current().panes[1]
+		panes.focus(pane)
+		t:keys("alt-p e")
+		local second = greed.view()
+		assert(
+			second:float_spec() ~= nil and second:buffer() == file,
+			"the last pane's buffer floats"
+		)
+		local left = greed.tab.current().panes
+		assert(#left == 1 and left[1]:buffer() ~= file, "the pane stays, with another buffer")
+	end
+)
+
 test("a floating terminal moves to a tab and keeps running", function(t)
 	cat()
 	t:buffer("|hello")
