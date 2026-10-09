@@ -34,7 +34,7 @@ use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed mcp             MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -104,6 +104,7 @@ fn main() -> ExitCode {
             .map_err(Into::into)
             .and_then(|dir| test(&[dir.join("plugins/core")])),
         [cmd, rest @ ..] if cmd == "ctl" => ctl::run(rest),
+        [cmd, rest @ ..] if cmd == "edit" && !rest.is_empty() => ctl::edit(rest),
         [cmd] if cmd == "mcp" => ctl::mcp(),
         [cmd, dirs @ ..] if cmd == "test" => {
             test(&dirs.iter().map(PathBuf::from).collect::<Vec<_>>())

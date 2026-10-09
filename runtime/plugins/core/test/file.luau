@@ -527,3 +527,71 @@ test(":bc shows the file you were in before, like closing an editor tab", functi
 	t:run("buffer-close")
 	assert(greed.view():buffer():path() == dir .. "/c.txt", greed.view():buffer():path())
 end)
+
+local files = require("@core").file
+
+-- Waits on the file `path` opens as in a spawned task, as a program run
+-- through `greed edit --wait` does; the outcome comes in the table.
+local function waiting_on(path: string): { outcome: string? }
+	greed.open(path)
+	local buffer = greed.view():buffer()
+	local got: { outcome: string? } = {}
+	greed.spawn(function()
+		got.outcome = files.wait(buffer)
+	end)
+	return got
+end
+
+test(":q in a file a program waits on ends the wait, and doesn't quit", function(t)
+	local dir = t:tempdir({ ["msg"] = "fix" })
+	local got = waiting_on(dir .. "/msg")
+	assert(files.waited(greed.view():buffer()))
+	t:run("quit")
+	t:wait_for(function()
+		return got.outcome ~= nil
+	end)
+	assert(got.outcome == "done", tostring(got.outcome))
+	assert(not t:quitting(), "still running")
+	assert(not files.waited(greed.view():buffer()))
+end)
+
+test(":q refuses over unsaved changes in it, :wq saves and ends the wait", function(t)
+	local dir = t:tempdir({ ["msg"] = "fix" })
+	local got = waiting_on(dir .. "/msg")
+	t:keys("g l a ! esc")
+	local ok, err = pcall(function()
+		t:run("quit")
+	end)
+	assert(not ok and string.find(tostring(err), "unsaved changes", 1, true), tostring(err))
+	assert(got.outcome == nil, "still waiting")
+	t:run("save-quit")
+	t:wait_for(function()
+		return got.outcome ~= nil
+	end)
+	assert(got.outcome == "done" and greed.fs.read(dir .. "/msg") == "fix!")
+	assert(not t:quitting(), "still running")
+end)
+
+test(":cq stops the program; elsewhere it says nothing waits", function(t)
+	local dir = t:tempdir({ ["msg"] = "fix" })
+	local got = waiting_on(dir .. "/msg")
+	t:run("quit-abort")
+	t:wait_for(function()
+		return got.outcome ~= nil
+	end)
+	assert(got.outcome == "aborted", tostring(got.outcome))
+	local ok, err = pcall(function()
+		t:run("quit-abort")
+	end)
+	assert(not ok and string.find(tostring(err), "no program waits", 1, true), tostring(err))
+end)
+
+test("closing a file a program waits on ends the wait", function(t)
+	local dir = t:tempdir({ ["msg"] = "fix" })
+	local got = waiting_on(dir .. "/msg")
+	files.close(greed.view():buffer())
+	t:wait_for(function()
+		return got.outcome ~= nil
+	end)
+	assert(got.outcome == "done", tostring(got.outcome))
+end)

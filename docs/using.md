@@ -22,6 +22,7 @@ alone.
 | `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |
+| `greed edit [--wait] FILE...` | Open files in the running editor; with `--wait`, return once each is closed with `:q` or `:wq` (`:cq` fails it), as `$EDITOR` for `git commit` |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
 Several terminals can show one session at once: run `greed` or `greed

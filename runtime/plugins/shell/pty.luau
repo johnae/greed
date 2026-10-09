@@ -368,7 +368,7 @@ function M.start(shell: Shell, block: Block, argv: { string }, options: Options?
 		return greed.terminal.spawn({
 			command = argv,
 			cwd = block.cwd,
-			env = state.environment(block.env),
+			env = state.environment(block),
 			rows = rows or 24,
 			cols = cols or 80,
 			scrollback = SCROLLBACK,

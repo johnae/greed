@@ -71,6 +71,7 @@ M.jc = require("@self/jc")
 M.sources = require("@self/sources")
 M.completion = completion
 M.segments = segments
+M.edit = require("@self/edit")
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.

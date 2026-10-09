@@ -82,14 +82,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     &json!({ "name": tool, "arguments": arguments }),
                 )?
                 .map_err(io::Error::other)?;
-            // An MCP result: text content, and whether the tool failed.
-            let text: String = result["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| part["text"].as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let text = result_text(&result);
             if result["isError"].as_bool() == Some(true) {
                 return Err(text.into());
             }
@@ -162,9 +155,7 @@ fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error
         other => other?.map_err(io::Error::other)?,
     };
     if result["isError"].as_bool() == Some(true) {
-        let text: String = (result["content"].as_array().into_iter().flatten())
-            .filter_map(|part| part["text"].as_str())
-            .collect();
+        let text = result_text(&result);
         // The reason, without where in the plugins it came from.
         let why = text.split("\nstack traceback:").next().unwrap_or_default();
         let why = why.trim_start_matches("runtime error: ");
@@ -174,6 +165,60 @@ fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error
         return Err(format!("{why} (greed ctl quit --force ends it anyway)").into());
     }
     Ok(())
+}
+
+/// `greed edit [--wait] FILE...`: shows the files in the running editor,
+/// where the shell block in `$GREED_BLOCK` ran, as `$EDITOR` for the
+/// programs Greed's shell runs. With `--wait` it returns once each is done
+/// with, failing when `:cq` stopped one, so `git commit` gives up.
+pub fn edit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let wait = args.iter().any(|arg| arg == "--wait");
+    let mut paths = Vec::new();
+    for arg in args.iter().filter(|arg| *arg != "--wait") {
+        // Some programs pass `+LINE` before the file, as for Vim.
+        if arg.starts_with('+') {
+            continue;
+        }
+        if arg.starts_with('-') {
+            return Err(format!("edit: unknown flag {arg}; it takes --wait").into());
+        }
+        paths.push(std::path::absolute(arg)?.to_string_lossy().into_owned());
+    }
+    if paths.is_empty() {
+        return Err("usage: greed edit [--wait] FILE...".into());
+    }
+    let mut arguments = json!({ "paths": paths, "wait": wait });
+    if let Some(block) = std::env::var("GREED_BLOCK")
+        .ok()
+        .and_then(|b| b.parse::<u64>().ok())
+    {
+        arguments["block"] = json!(block);
+    }
+    let result = connect()?
+        .call(
+            "tools/call",
+            &json!({ "name": "shell_edit", "arguments": arguments }),
+        )?
+        .map_err(io::Error::other)?;
+    let text = result_text(&result);
+    if result["isError"].as_bool() == Some(true) {
+        return Err(text.into());
+    }
+    if text == "aborted" {
+        return Err("edit: stopped with :cq".into());
+    }
+    Ok(())
+}
+
+/// An MCP tool result's text content, its parts on lines of their own.
+fn result_text(result: &Value) -> String {
+    result["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|part| part["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A tool's arguments: one JSON object, or `key=value` pairs where each

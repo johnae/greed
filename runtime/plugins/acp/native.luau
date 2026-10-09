@@ -990,7 +990,7 @@ local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agen
 		end
 	end
 	for _, tool in agent.tools() do
-		if not LEFT_OUT[tool.name] then
+		if not LEFT_OUT[tool.name] and not tool.shell_only then
 			by_name[tool.name] = tool
 		end
 	end

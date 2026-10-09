@@ -51,6 +51,9 @@ export type Tool = {
 	--- It does more than read but nothing that needs your say, like
 	--- checking a plugin in a sandbox, so agents don't ask before it runs.
 	sandboxed: boolean?,
+	--- Only for `greed ctl` and the programs Greed's shell runs, like
+	--- `greed edit`: agents aren't offered it and can't call it.
+	shell_only: boolean?,
 	--- Does the work for `caller`. It can wait, e.g. for the user. A string
 	--- result goes to the agent as is, one made with `result` as that MCP
 	--- result, anything else as JSON. Errors go back as errors.
@@ -236,7 +239,7 @@ function M.offered(caller: Caller): { Tool }
 	end
 	local list = {}
 	for _, tool in all do
-		if tool.group == nil or has(caller, tool.group) then
+		if not tool.shell_only and (tool.group == nil or has(caller, tool.group)) then
 			table.insert(list, tool)
 		end
 	end
@@ -327,7 +330,7 @@ end
 --- first. Arguments that don't fit its schema are an error, before it runs.
 function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 	local tool = (tools[client_of(caller)] or {})[name]
-	if tool == nil then
+	if tool == nil or (tool.shell_only and not M.from_shell(caller)) then
 		return M.result(`there is no tool called {name}`, true)
 	end
 	local wrong = M.check(tool, arguments)

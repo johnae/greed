@@ -11,6 +11,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local state = require("./state")
+local edit = require("./edit")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -94,18 +95,6 @@ local function wait(block: Block, seconds: number): boolean
 		woke:send(false)
 	end)
 	return woke:wait()
-end
-
--- The block with id `id` in any shell.
-local function by_id(id: number): Block?
-	for _, shell in state.list() do
-		for _, block in shell.blocks do
-			if block.uid == id then
-				return block
-			end
-		end
-	end
-	return nil
 end
 
 return function(shells: Shells)
@@ -207,7 +196,7 @@ return function(shells: Shells)
 
 	-- The block `args.id` names, or an error saying there's none.
 	local function named(args: { [string]: any }): Block
-		local block = by_id(tonumber(args.id) or -1)
+		local _, block = state.find(tonumber(args.id))
 		if block == nil then
 			error(`there's no block {args.id}; shell_read with last shows the latest`, 0)
 		end
@@ -334,6 +323,30 @@ return function(shells: Shells)
 				shells.wait(block)
 			end
 			return describe(block, caller, true)
+		end,
+	})
+
+	agent.tool({
+		name = "shell_edit",
+		shell_only = true,
+		description = "Show files to edit, for a program run from a shell (greed edit): in the view "
+			.. "where block `block` ran, and with `wait` until each is done with (:q or :wq). "
+			.. 'Gives back "done", or "aborted" when :cq stopped one',
+		input = object({
+			paths = {
+				type = "array",
+				items = { type = "string" },
+				description = "The files, as absolute paths",
+			},
+			block = { type = "number", description = "The block asking, $GREED_BLOCK" },
+			wait = { type = "boolean" },
+		}, { "paths" }),
+		run = function(args)
+			local paths: { string } = {}
+			for _, path in args.paths do
+				table.insert(paths, tostring(path))
+			end
+			return edit.open(paths, { block = tonumber(args.block), wait = args.wait == true })
 		end,
 	})
 end

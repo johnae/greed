@@ -416,7 +416,7 @@ function M.pipe(
 )
 	local child, err = greed.process.spawn(argv, {
 		cwd = block.cwd,
-		env = state.environment(block.env),
+		env = state.environment(block),
 		stderr = "stream",
 		group = true,
 	})

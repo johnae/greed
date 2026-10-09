@@ -228,12 +228,60 @@ local function close_window(): boolean
 		and (run_if("tab-close") or greed.tab.close(greed.tab.current().id))
 end
 
+-- What ends the wait on each buffer a program waits on, by buffer id.
+local waiting: { [number]: greed.Signal } = {}
+
+--- Waits until `buffer` is done with, for a program that opened it to be
+--- edited, as `git commit` does through `greed edit --wait`: `:q` or `:wq`
+--- in it, or closing it, give "done", and `:cq` "aborted". Until then `:q`
+--- there ends the wait rather than closing a window or leaving, refusing
+--- over unsaved changes as it always does. Waits in a command, handler or
+--- greed.spawn.
+function M.wait(buffer: greed.Buffer): "done" | "aborted"
+	local id = buffer:id()
+	local signal = waiting[id] or greed.signal()
+	waiting[id] = signal
+	return signal:wait()
+end
+
+--- Whether a program waits on `buffer` (see `wait`).
+function M.waited(buffer: greed.Buffer): boolean
+	return waiting[buffer:id()] ~= nil
+end
+
+local function finish(id: number, outcome: "done" | "aborted"): boolean
+	local signal = waiting[id]
+	if signal == nil then
+		return false
+	end
+	waiting[id] = nil
+	signal:send(outcome)
+	return true
+end
+
+--- Ends the wait on `buffer` with `outcome`, "done" by default, as `:q` in
+--- it does. False when nothing waited on it.
+function M.finish(buffer: greed.Buffer, outcome: ("done" | "aborted")?): boolean
+	return finish(buffer:id(), outcome or "done")
+end
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	finish(event.id, "done")
+end)
+
 -- Closes the window `:q` is in, if there's one to close, or else leaves
 -- the shown project: with others open it closes and the terminal lets go,
 -- leaving the rest running. The last one ends the session or keeps it, as
 -- on-quit says. With `ask`, as VS Code's ctrl-q, it leaves whatever window
--- it's in, and unsaved files ask rather than refuse.
+-- it's in, and unsaved files ask rather than refuse. In a buffer a program
+-- waits on, it ends the wait instead.
 local function quit(force: boolean, ask: boolean?)
+	local buffer = greed.view():buffer()
+	if not ask and M.waited(buffer) then
+		go_on(if unsaved.unsaved(buffer) then { buffer } else {}, force, { forced = ":q!" })
+		M.finish(buffer)
+		return
+	end
 	if not ask and close_window() then
 		return
 	end
@@ -311,6 +359,17 @@ greed.command({
 		.. "or exit the editor if it's the last one, refusing with unsaved changes (force goes anyway)",
 	run = function(ctx)
 		quit(ctx.force)
+	end,
+})
+
+greed.command({
+	name = "quit-abort",
+	doc = "In a file a program waits on, like git commit's message, stop the program with an error, "
+		.. "as Vim's :cq does; whatever was written is left as it is",
+	run = function(ctx)
+		if not M.finish(ctx.buffer, "aborted") then
+			error("no program waits on this buffer", 0)
+		end
 	end,
 })
 

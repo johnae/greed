@@ -3,6 +3,7 @@
 -- plugins and agents read.
 
 local greed = require("@greed")
+local parse = require("./parse")
 local tables = require("./tables")
 
 local M = {}
@@ -190,6 +191,19 @@ function M.block(shell: Shell, number: number): Block?
 	return nil
 end
 
+--- The block with id `uid` in any shell, and that shell, if it's still
+--- there.
+function M.find(uid: number?): (Shell?, Block?)
+	for _, shell in M.list() do
+		for _, block in shell.blocks do
+			if block.uid == uid then
+				return shell, block
+			end
+		end
+	end
+	return nil, nil
+end
+
 --- The blocks still running in `shell`.
 function M.running(shell: Shell): { Block }
 	local list: { Block } = {}
@@ -261,13 +275,34 @@ function M.variables(shell: Shell): { [string]: string }
 	return vars
 end
 
---- The variables a command in `shell` gets on top of the editor's: pagers
---- off, so output comes back as text, where greed is (`GREED_BIN`), then
---- the shell's own.
-function M.environment(env: { [string]: string | false }): { [string]: string | false }
+greed.option.define({
+	name = "shell-editor",
+	doc = "Whether programs you run in a shell, like git commit, open files to edit in Greed: $EDITOR, $VISUAL, $GIT_EDITOR, $JJ_EDITOR and $KUBE_EDITOR are greed edit --wait",
+	default = true,
+})
+
+-- The variables programs read for an editor, the tools' own first, which
+-- would otherwise win over a git or jj config's editor.
+local EDITOR_VARIABLES = { "EDITOR", "VISUAL", "GIT_EDITOR", "JJ_EDITOR", "KUBE_EDITOR" }
+
+--- The variables `block`'s command gets on top of the editor's: pagers
+--- off, so output comes back as text, where greed is (`GREED_BIN`), the
+--- session and block it runs in, an editor that opens files here for a
+--- block you ran, then the block's own.
+function M.environment(block: Block): { [string]: string | false }
 	local out: { [string]: string | false } = { PAGER = "cat", GIT_PAGER = "cat" }
 	out.GREED_BIN = M.program() or false
-	for name, value: string | false in env do
+	out.GREED_SESSION = greed.session.current() or false
+	out.GREED_BLOCK = tostring(block.uid)
+	local program = greed.session.program()
+	if program and block.by == "user" and greed.option.get("shell-editor") then
+		-- Programs run it through a shell, so the path is quoted.
+		local editor = `{parse.quote(program)} edit --wait`
+		for _, name in EDITOR_VARIABLES do
+			out[name] = editor
+		end
+	end
+	for name, value: string | false in block.env do
 		out[name] = value
 	end
 	return out

@@ -142,7 +142,23 @@ carry over. Your shell's startup files aren't read, so aliases and
 functions aren't there unless you `:set shell-fallback-rc true`.
 
 Programs get `PAGER=cat` and `GIT_PAGER=cat`, so their output comes back as
-text, and `GREED_BIN`, the greed program running the editor.
+text, `GREED_BIN`, the greed program running the editor, `GREED_SESSION`
+and `GREED_BLOCK`, the block they run in.
+
+## Editing files from a command
+
+A program that opens an editor, like `git commit`, `jj describe`, `kubectl
+edit` or `crontab -e`, opens the file in Greed, in the pane the command
+ran from. `:wq` (or `:q` once it's saved) hands it back and the shell shows
+there again; `:cq` stops the program with an error, so `git commit` gives
+up. `EDITOR`, `VISUAL`, `GIT_EDITOR`, `JJ_EDITOR` and `KUBE_EDITOR` are
+`greed edit --wait`, so this wins over an editor set in git's or jj's
+config. An agent's commands keep your own editor, and `:set shell-editor
+false` turns it off; `export EDITOR=vim` in a shell picks another for that
+shell.
+
+`greed edit FILE...` works from any terminal too: it opens the files in
+the running editor, and with `--wait` returns once each is done with.
 
 ## Terminals
 

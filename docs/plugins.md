@@ -1456,6 +1456,8 @@ MCP clients see the others marked read-only. Set `kind` on every tool
 that changes, runs or fetches something, so it isn't run unasked.
 `sandboxed = true` marks a tool that does more than read but needs no say
 from the user, like checking a plugin in an editor of its own.
+`shell_only = true` keeps a tool for `greed ctl` and the programs Greed's
+shell runs, like `greed edit`: agents aren't offered it and can't call it.
 
 Agents connected when a plugin loads or unloads hear that their tools
 changed, so a tool from a plugin you've just approved can be used in the

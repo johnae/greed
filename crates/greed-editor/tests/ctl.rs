@@ -200,3 +200,49 @@ fn greed_mcp_speaks_mcp_on_stdio() {
     world.eval("mcp", "require('@greed').quit()");
     let _ = server.wait();
 }
+
+#[test]
+fn edit_opens_files_and_waits_until_they_are_done_with() {
+    let Some(world) = World::new("ctl-edit") else {
+        return;
+    };
+    let project = world.project("edit", &[("a.txt", "a\n"), ("msg", "msg\n")]);
+    let mut server = serve(&world, &project.join("a.txt"));
+    world.wait_for("the session", running);
+    let shown = "require('@greed').view():buffer():path() or ''";
+
+    let opened = world.greed(&["edit", project.join("a.txt").to_str().unwrap()]);
+    assert!(opened.status.success(), "{:?}", text(&opened));
+
+    let msg = project.join("msg");
+    let wait = |world: &World| {
+        let mut command = Command::new(GREED);
+        command
+            .args(["edit", "--wait", msg.to_str().unwrap()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        world.env(&mut command);
+        command.spawn().unwrap()
+    };
+    let msg_shown = |w: &World| w.eval("edit", shown).ends_with("/msg");
+    // :q in it lets `greed edit` go, succeeding.
+    let mut editing = wait(&world);
+    world.wait_for("msg to show", msg_shown);
+    assert!(editing.try_wait().unwrap().is_none(), "it waits");
+    world.eval("edit", "require('@greed').run('quit')");
+    assert!(editing.wait().unwrap().success());
+    // :cq fails it.
+    let editing = wait(&world);
+    world.wait_for("msg to show again", msg_shown);
+    world.eval("edit", "require('@greed').run('quit-abort')");
+    let out = editing.wait_with_output().unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains(":cq"),
+        "{out:?}"
+    );
+
+    world.eval("edit", "require('@greed').quit()");
+    let _ = server.wait();
+}
