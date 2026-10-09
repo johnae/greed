@@ -1,0 +1,5 @@
+{
+  "prompt": "The tests fail. Find the cause and fix the code, not the tests.",
+  "check": "cargo test --offline -q && cmp tests/ledger.rs \"$TASK_DIR/project/tests/ledger.rs\" && cmp src/model/money.rs \"$TASK_DIR/project/src/model/money.rs\"",
+  "timeout_s": 600
+}

@@ -1,0 +1,5 @@
+{
+  "prompt": "People say the bill splitter loses money: shares sometimes don't add up to the total. Make the shares always add up, with the first people paying the leftover cents, one each. Add a test that would have caught it.",
+  "check": "test \"$(grep -c '#\\[test\\]' src/lib.rs)\" -ge 2 && mkdir -p tests && cp \"$TASK_DIR/hidden/shares.rs\" tests/ && cargo test --offline -q",
+  "timeout_s": 600
+}

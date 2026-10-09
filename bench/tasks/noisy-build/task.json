@@ -1,0 +1,5 @@
+{
+  "prompt": "This crate doesn't build. Fix what stops it building; leave the warnings alone for now.",
+  "check": "cargo build --offline -q 2>/dev/null && test \"$(grep -c 'let unused_' src/lib.rs)\" = 60",
+  "timeout_s": 600
+}

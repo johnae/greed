@@ -1,0 +1,5 @@
+{
+  "prompt": "Add triangles: a `Triangle { a, b, c }` shape (its three sides, in metres) that `parse` reads from \"triangle 3 4 5\" (refusing sides that can't make a triangle), `area` handles (Heron's formula), and `describe` writes as \"a triangle with sides 3, 4 and 5 m\".",
+  "check": "mkdir -p tests && cp \"$TASK_DIR/hidden/triangle.rs\" tests/ && cargo test --offline -q",
+  "timeout_s": 600
+}

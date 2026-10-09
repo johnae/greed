@@ -1,0 +1,5 @@
+{
+  "prompt": "Add a `parse` function that returns a std::time::Duration and also takes combined units, like \"1h30m\" or \"2m5s\". Code elsewhere calls `parse_duration` as it is, so it must keep working exactly as before.",
+  "check": "mkdir -p tests && cp \"$TASK_DIR/hidden/api.rs\" tests/ && cargo test --offline -q",
+  "timeout_s": 600
+}
