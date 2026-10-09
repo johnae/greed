@@ -447,6 +447,13 @@ keeping what it showed last; it also stops by itself after
 `shell-watch-minutes` (60), and `space r` starts it again. Agents can't
 watch, as a watch runs until someone stops it.
 
+`kubectl get pods -w` needs no `watch`: kubectl prints a pod again each
+time it changes, and the block shows each pod once, in its place, lined
+up under the header, the ones that changed since they first showed
+marked, rather than a longer and longer list. Its rows are pods to act
+on, as any `kubectl get` block's are. It ends when kubectl does, or with
+`ctrl-c`.
+
 ## Rows you can act on
 
 Some tables' rows are things: an `ls -l` row is a file or a folder, a

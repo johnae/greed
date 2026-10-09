@@ -34,7 +34,7 @@ contexts:
 -- say what they were asked otherwise, with kubectl's config in `context`.
 local function fake(t: test.TestContext, context: string): (Shell, string)
 	local dir = t:tempdir({
-		["bin/kubectl"] = '#!/bin/sh\nif [ "$1 $2" = "get pods" ]; then\n  case "$*" in *-A*) cat "$(dirname "$0")/all" ;; *) cat "$(dirname "$0")/pods" ;; esac\nelse\n  echo "kubectl $*"\nfi\n',
+		["bin/kubectl"] = '#!/bin/sh\nif [ "$1 $2" = "get pods" ]; then\n  case "$*" in *-w*) cat "$(dirname "$0")/pods"; sleep 0.3; printf "worker-5c6b7d8f9-abcde   0/1   CrashLoopBackOff   13 (5s ago)   2h\\n" ;; *-A*) cat "$(dirname "$0")/all" ;; *) cat "$(dirname "$0")/pods" ;; esac\nelse\n  echo "kubectl $*"\nfi\n',
 		["bin/docker"] = '#!/bin/sh\nif [ "$1" = "ps" ]; then\n  printf "CONTAINER ID   IMAGE      NAMES\\n3f2a1b4c5d6e   nginx      web\\n"\nelse\n  echo "docker $*"\nfi\n',
 		["bin/pods"] = PODS,
 		["bin/all"] = ALL,
@@ -249,4 +249,25 @@ test("completion offers the rows of blocks above, where the command goes", funct
 	assert(offered(t, sh, "k logs ")[1].label == "api-7d9f8b6c5-2xkqz")
 	assert(offered(t, sh, `{sh.cwd}/bin/kubectl logs `)[1].label == "api-7d9f8b6c5-2xkqz")
 	shell.aliases.use(nil)
+end)
+
+test("kubectl get -w shows each pod in place, the ones that changed marked", function(t)
+	local sh = fake(t, "prod-eu")
+	local block = ran(t, sh, "kubectl get pods -w")
+	assert(block.watching == "kubectl get pods -w", tostring(block.watching))
+	local tbl = assert(block.table, "a table")
+	assert(#tbl.rows == 2, "one row a pod: " .. block.output)
+	assert(tbl.rows[2].RESTARTS == "13 (5s ago)", tostring(tbl.rows[2].RESTARTS))
+	local _, count = string.gsub(block.output, "worker%-5c6b7d8f9%-abcde", "")
+	assert(count == 1, "shown once: " .. block.output)
+	local changed = {}
+	for _, mark in sh.buffer:decorations(`shell.out.{block.uid}`) do
+		if mark.style == "shell.changed" then
+			table.insert(changed, sh.buffer:slice(mark.from, mark.to))
+		end
+	end
+	assert(#changed == 1 and string.find(changed[1], "worker", 1, true), table.concat(changed, "|"))
+	on(sh, block, "worker-5c6b7d8f9-abcde")
+	local pod = assert(thing_here("pod"))
+	assert(pod.value.context == "prod-eu", tostring(pod.value.context))
 end)

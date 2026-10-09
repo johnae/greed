@@ -48,9 +48,32 @@ export type Kind = {
 	--- word being completed last), what to put there for a thing that
 	--- fits, or nil when none do there.
 	complete: { [string]: (words: { string }, shell: Shell) -> ((value: any) -> string?)? }?,
+	--- Whether a command line of its (as words) keeps printing rows again
+	--- as they change, like `kubectl get pods -w`: the shell shows such a
+	--- stream as its rows, each in place, rather than every line it prints.
+	streams: ((words: { string }) -> boolean)?,
 }
 
 local kinds: { Kind } = {}
+
+--- Whether `line` keeps printing rows again as they change, as a kind
+--- whose commands it names says.
+function M.streams(line: string): boolean
+	local words = parse.words(line, greed.fs.dirs().home)
+	if words == nil then
+		return false
+	end
+	for _, kind in kinds do
+		local streams = kind.streams
+		if streams and tables.matches(kind.match, line) then
+			local ok, yes = pcall(streams, words)
+			if ok and yes then
+				return true
+			end
+		end
+	end
+	return false
+end
 
 --- Says what the rows of the commands `kind.match` names are. The latest
 --- added is asked first. It goes when the plugin that added it does.

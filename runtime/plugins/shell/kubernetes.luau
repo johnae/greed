@@ -106,6 +106,7 @@ type Read = {
 	namespace: string?,
 	all: boolean,
 	output: string?,
+	watch: boolean,
 }
 
 -- The flags that take a value, besides those naming where.
@@ -121,7 +122,8 @@ local VALUED: { [string]: boolean } = {
 
 -- Reads `words`, a kubectl command line from its second word.
 local function read_line(words: { string }): Read
-	local found: Read = { args = {}, context = nil, namespace = nil, all = false, output = nil }
+	local found: Read =
+		{ args = {}, context = nil, namespace = nil, all = false, output = nil, watch = false }
 	local i = 2
 	while i <= #words do
 		local word = words[i]
@@ -145,6 +147,8 @@ local function read_line(words: { string }): Read
 			found.context = take()
 		elseif name == "-A" or name == "--all-namespaces" then
 			found.all = true
+		elseif name == "-w" or name == "--watch" or name == "--watch-only" then
+			found.watch = true
 		elseif name == "-o" or name == "--output" then
 			found.output = take()
 		elseif VALUED[name] then
@@ -291,6 +295,9 @@ kinds.kind({
 	end,
 	called = function(captured: Captured): (string, string)
 		return singular(captured.resource), captured.resource
+	end,
+	streams = function(words: { string }): boolean
+		return read_line(words).watch and asked(words) ~= nil
 	end,
 	complete = {
 		kubectl = function(words: { string }, shell: Shell): ((value: any) -> string?)?

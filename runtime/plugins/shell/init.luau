@@ -499,6 +499,31 @@ local function each_lines(tbl: tables.Table?, template: string): (string?, strin
 	return table.concat(lines, "\n"), nil
 end
 
+-- Starts `line`'s programs in a real shell for `block`, to read what they
+-- print as it comes: the program, or nil and why, and what to do once it's
+-- done.
+local function open_stream(
+	shell: Shell,
+	block: Block,
+	line: string
+): (greed.Child?, string?, () -> ())
+	envs.prepare(shell, block)
+	local wrapped = fallback.prepare(block, line, { program = nil, rc = false })
+	local child, err = greed.process.spawn(wrapped.argv, {
+		cwd = block.cwd,
+		env = state.environment(block),
+		stderr = "stream",
+		group = true,
+	})
+	return child,
+		err,
+		function()
+			-- A stream's cd and export are its own.
+			fallback.collect(block, wrapped)
+			block.cwd_after, block.env_changed = nil, nil
+		end
+end
+
 -- Runs `line` once as `capture` does, table stages after its programs
 -- included, as `kubectl get pods | where RESTARTS > 0`: what it printed in
 -- the end, its errors, and how it exited (nil when stopped).
@@ -660,6 +685,13 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 			end)
 			return nil
 		end
+	end
+	-- A command printing rows again as they change, `kubectl get pods -w`,
+	-- shows them in place, as its kind says.
+	if opts.by ~= "agent" and not parsed.raw and kinds.streams(line) then
+		local following = add_block(shell, command, opts)
+		live.follow(shell, following, line, open_stream)
+		return following
 	end
 	-- `watch COMMAND` runs the command again and again in its block.
 	local watched, every, unwatchable = live.read(line)

@@ -1305,6 +1305,11 @@ nil for one that doesn't fit (from another context, say). The rows of
 the newest blocks come first in the menu, before what the program
 offers itself.
 
+`spec.streams(words)` says whether a command line of the kind keeps
+printing rows again as they change, as `kubectl get pods -w` does. The
+shell then reads it through a pipe and shows each row once, in its place,
+known by its first cell (its first two under a `NAMESPACE` column).
+
 `shell.action_command(kind, name, command, opts)` adds an action that runs
 a command as a block in the shell, so what it does is there to read and
 run again. `command` is a template whose `{field}`s are the thing's

@@ -197,4 +197,149 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 	end)
 end
 
+--- A program printing what `line` prints as it comes, for `follow`, and
+--- what to do once it's done.
+export type Open = (shell: Shell, block: Block, line: string) -> (greed.Child?, string?, () -> ())
+
+-- `text`'s cells: what's between runs of two spaces or more, as programs
+-- that don't line their rows up with their header still keep them apart.
+local function cells(text: string): { string }
+	local out: { string } = {}
+	for cell in string.gmatch(string.gsub(text, "%s%s+", "\0"), "[^%z]+") do
+		local trimmed = string.match(cell, "^%s*(.-)%s*$") or cell
+		if trimmed ~= "" then
+			table.insert(out, trimmed)
+		end
+	end
+	return out
+end
+
+-- `header` and the rows of `order`, each as `rows` has it now, as a table:
+-- a row with more cells than the header has the rest in its last column.
+local function stream_table(
+	header: string,
+	order: { string },
+	texts: { [string]: string }
+): tables.Table
+	local columns = cells(header)
+	local rows: { { [string]: string } } = {}
+	for _, key in order do
+		local parts = cells(texts[key])
+		local row: { [string]: string } = {}
+		for i, column in columns do
+			row[column] = if i == #columns then table.concat(parts, "  ", i) else parts[i] or ""
+		end
+		table.insert(rows, row)
+	end
+	return { columns = columns, rows = rows }
+end
+
+--- Shows what `line`, a command printing rows again as they change (`kubectl
+--- get pods -w`, as its kind says), prints as its rows: each in its place,
+--- lined up under the header, those that changed since they first came
+--- marked. A row is known by its first cell, or its first two under a
+--- NAMESPACE column. It ends when the command does, or is stopped.
+function M.follow(shell: Shell, block: Block, line: string, open: Open)
+	block.watching = line
+	block.via = "shell"
+	block.runner = "pipe"
+	local child, why, done = open(shell, block, line)
+	if child == nil then
+		run.fail(shell, block, why or `can't start {line}`, 127)
+		return
+	end
+	local c = child :: greed.Child
+	c:close()
+	block.job = {
+		interrupt = function()
+			c:signal("INT")
+		end,
+		kill = function()
+			c:kill()
+		end,
+	}
+	greed.spawn(function()
+		local header: string? = nil
+		local two = false
+		local order: { string } = {}
+		local texts: { [string]: string } = {}
+		local errors: { string } = {}
+		local partial = ""
+		local shown = false
+		local changes = 0
+		while true do
+			local piece, from = c:read()
+			if piece == nil then
+				break
+			end
+			if from == "stderr" then
+				table.insert(errors, piece)
+				continue
+			end
+			partial ..= string.gsub(piece, "\r", "")
+			local updated: { [string]: boolean } = {}
+			while true do
+				local stop = string.find(partial, "\n", 1, true)
+				if stop == nil then
+					break
+				end
+				local text = string.sub(partial, 1, stop - 1)
+				partial = string.sub(partial, stop + 1)
+				if header == nil then
+					header = text
+					two = string.match(text, "^%s*NAMESPACE%s") ~= nil
+				elseif text ~= header and string.match(text, "%S") then
+					local key = if two
+						then string.match(text, "^%s*(%S+%s+%S+)")
+						else string.match(text, "^%s*(%S+)")
+					local at: string = key or text
+					if texts[at] == nil then
+						table.insert(order, at)
+					end
+					if shown and texts[at] ~= text then
+						updated[at] = true
+						changes += 1
+					end
+					texts[at] = text
+				end
+			end
+			local head = header
+			if head and #order > 0 and shell.buffer:valid() then
+				local tbl = stream_table(head, order, texts)
+				local drawn, starts = tables.draw(tbl)
+				tbl.starts, tbl.first, tbl.header = starts, 1, true
+				block.table = tbl
+				block.stdout = table.concat(drawn, "\n") .. "\n"
+				block.stderr = table.concat(errors)
+				block.output = block.stdout .. block.stderr
+				kinds.finished(shell, block)
+				local lines: { Line } = {}
+				for i, text in drawn do
+					local key = order[i - 1]
+					local marked = key and updated[key]
+					local marks: { greed.Mark } = if marked
+						then { { from = 0, to = #text, style = "shell.changed" } }
+						else {}
+					table.insert(lines, { text = text, marks = marks })
+				end
+				for _, text in split(block.stderr) do
+					table.insert(
+						lines,
+						{
+							text = text,
+							marks = { { from = 0, to = #text, style = "shell.stderr" } },
+						}
+					)
+				end
+				block.note = `{changes} changed · {os.date("%H:%M:%S")}`
+				rows.renew(shell, block, lines)
+				shown = true
+			end
+		end
+		local code, signal = c:wait()
+		done()
+		run.finish(shell, block, code, signal)
+	end)
+end
+
 return M
