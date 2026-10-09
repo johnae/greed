@@ -1,5 +1,5 @@
 {
   "prompt": "Which function decides whether an order ships for free, and what does an order need for that? Answer briefly; don't change any files.",
-  "check": "grep -q qualifies .bench-answer && grep -Eq '75|7[ _,]?500' .bench-answer && grep -Eqi 'SE|Swed' .bench-answer && diff -rq -x .bench-answer -x target -x Cargo.lock . \"$TASK_DIR/project\"",
+  "check": "grep -q qualifies .bench-answer && grep -Eq '75|7[ _,]?500' .bench-answer && grep -Eqi 'SE|Swed' .bench-answer && diff -rq -x .bench-answer -x .git -x target -x Cargo.lock . \"$TASK_DIR/project\"",
   "timeout_s": 300
 }
