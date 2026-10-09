@@ -237,6 +237,24 @@ test("writing over a file needs it read first, as it is now", function(t)
 	assert(greed.fs.read(`{dir}/a.txt`) == "new\n", "written once read")
 end)
 
+test("writing the user's config runs it again, and a mistake in it comes back", function(t)
+	local config = assert(greed.fs.dirs().config) .. "/init.luau"
+	local got = results(t, {
+		{
+			"write_file",
+			{ path = config, text = 'require("@greed").option.set("line_numbers", "relative")\n' },
+		},
+		{
+			"write_file",
+			{ path = config, text = 'require("@greed").option.set("line-numbers", "relative")\n' },
+		},
+	}, { ["a.txt"] = "" })
+	assert(string.find(got[1].text, "the config failed when it ran again", 1, true), got[1].text)
+	assert(string.find(got[1].text, 'did you mean "line-numbers"', 1, true), got[1].text)
+	assert(string.find(got[2].text, "the config ran again without errors", 1, true), got[2].text)
+	assert(greed.option.get("line-numbers") == "relative", "it took")
+end)
+
 test("text standing in for code left out isn't written, unless the file had it", function(t)
 	local long = string.rep("keep\n", 50)
 	local got, dir = results(t, {

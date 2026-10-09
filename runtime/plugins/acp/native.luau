@@ -136,11 +136,22 @@ type State = {
 
 local states: { [number]: State } = {}
 
--- What a tool says after changing `buffer`, with what its language server
--- reports about it then.
-local function changed(said: string, buffer: greed.Buffer?): string
+-- What a tool says after changing the file at `path` (in full) through
+-- `buffer`, with what its language server reports about it then.
+local function changed(said: string, buffer: greed.Buffer?, path: string): string
 	local found = if buffer then agent.problems_after({ buffer }) else nil
-	return if found then `{said}\n{found}` else said
+	if found then
+		said ..= `\n{found}`
+	end
+	-- The user's config runs again now, so a mistake in it shows here: the
+	-- language server can't tell a setting that doesn't exist.
+	if core.config.is_config(path) then
+		local ok, err = core.config.reload()
+		said ..= if ok
+			then "\nthe config ran again without errors"
+			else `\nthe config failed when it ran again: {err}`
+	end
+	return said
 end
 
 -- A tool of the agent's own: what the model is told, the kind of call it
@@ -505,7 +516,11 @@ local function write_change(
 	saw(s, path, new)
 	local first = line_at(new, head + 1)
 	local last = math.max(line_at(new, #new - tail), first)
-	return changed(`edited {path}:\n{numbered(new, first, last, anchors)}`, buffer)
+	return changed(
+		`edited {path}:\n{numbered(new, first, last, anchors)}`,
+		buffer,
+		core.project.resolve(path, s.cwd)
+	)
 end
 
 -- An edit by hashlines: lines `from` to `to` (or just `from`) replaced by
@@ -774,7 +789,7 @@ local OWN: { Own } = {
 			if before >= 40 and after < before / 2 then
 				said ..= ` (it went from {before} lines to {after})`
 			end
-			return changed(said, buffer)
+			return changed(said, buffer, core.project.resolve(args.path, s.cwd))
 		end,
 	},
 	{

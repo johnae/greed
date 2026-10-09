@@ -38,8 +38,9 @@ local function files(): { [string]: string }
 end
 
 --- Runs the configs again, in order, and says how it went: the loaded
---- ones, and this machine's own once it has one.
-function M.reload()
+--- ones, and this machine's own once it has one. Returns whether they ran,
+--- and why not.
+function M.reload(): (boolean, string?)
 	local dirs = folders()
 	for _, name in M.names do
 		local dir = dirs[name]
@@ -47,11 +48,22 @@ function M.reload()
 			local ok, err = pcall(greed.plugin.load, dir, name)
 			if not ok then
 				greed.echo(`config: {err}`)
-				return
+				return false, tostring(err)
 			end
 		end
 	end
 	greed.echo("config reloaded")
+	return true, nil
+end
+
+--- Whether `path` (in full) is one of the configs' files.
+function M.is_config(path: string): boolean
+	for _, file in files() do
+		if file == path then
+			return true
+		end
+	end
+	return false
 end
 
 --- Watches the loaded configs, so they run again when they change.
@@ -76,7 +88,9 @@ greed.on("editor.started", M.watch)
 greed.command({
 	name = "config-reload",
 	doc = "Run your config again, as saving it does",
-	run = M.reload,
+	run = function()
+		M.reload()
+	end,
 })
 
 return M
