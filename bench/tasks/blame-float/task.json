@@ -1,6 +1,6 @@
 {
   "prompt": "I'd like a command that shows who last changed the line I'm on (git blame), with the commit message, in a small float next to the cursor. Bind it to space g b please.",
-  "setup": "git add -A && git -c user.name='Ada Bench' -c user.email=ada@example.com commit -qm 'Count words, not lines'",
+  "setup": "G=\"git -c user.name=Bench -c user.email=bench@example.com\"; mv main.rs main.final && printf 'fn main() {}\\n' > main.rs && git add -A && $G commit -qm Start && mv main.final main.rs && git add -A && git -c user.name='Ada Bench' -c user.email=ada@example.com commit -qm 'Count words, not lines'",
   "open": "main.rs",
   "luau_check": [
     "local greed = require('@greed') local cmd = greed.keymap.resolve('space g b') if not cmd then return 'nothing on space g b' end greed.run(cmd) return 'ran ' .. cmd",

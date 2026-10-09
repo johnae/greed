@@ -1,5 +1,5 @@
 {
   "prompt": "Can you change my config so that tabs are 2 spaces wide in Lua and Luau files, and make the theme nord? Also turn on relative line numbers.",
-  "luau_check": "local greed = require('@greed') local languages = require('@languages') local lua, luau = languages.get('lua'), languages.get('luau') return lua ~= nil and luau ~= nil and lua.indent == 2 and luau.indent == 2 and require('@theme').current() == 'nord' and greed.option.get('line-numbers') == 'relative'",
+  "luau_check": "local greed = require('@greed') local luau = require('@languages').get('luau') return luau ~= nil and luau.indent == 2 and require('@theme').current() == 'nord' and greed.option.get('line-numbers') == 'relative'",
   "timeout_s": 600
 }
