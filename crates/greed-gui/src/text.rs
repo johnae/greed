@@ -97,6 +97,80 @@ const PROSE: [&str; 9] = [
 /// system (fonts/OFL.txt has its license).
 const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
 
+/// The family of [`SYMBOLS`], which draws private-use characters first, so
+/// a system font that puts something else at a Nerd Font icon's place
+/// doesn't win.
+const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
+
+/// Whether `c` is a private-use character, as Nerd Font icons are.
+fn private_use(c: char) -> bool {
+    matches!(u32::from(c), 0xE000..=0xF8FF | 0xF_0000..=0xF_FFFD | 0x10_0000..=0x10_FFFD)
+}
+
+/// The tables of face `index` in the font file `data`: each one's tag and
+/// where it starts.
+fn tables(data: &[u8], index: u32) -> Option<Vec<([u8; 4], usize)>> {
+    let u16_at = |at: usize| {
+        data.get(at..at + 2)
+            .map(|b| u16::from_be_bytes([b[0], b[1]]))
+    };
+    let u32_at = |at: usize| {
+        let b = data.get(at..at + 4)?;
+        usize::try_from(u32::from_be_bytes([b[0], b[1], b[2], b[3]])).ok()
+    };
+    let start = if data.get(..4) == Some(b"ttcf") {
+        u32_at(12 + 4 * usize::try_from(index).ok()?)?
+    } else {
+        0
+    };
+    (0..usize::from(u16_at(start + 4)?))
+        .map(|i| {
+            let record = start + 12 + 16 * i;
+            let tag: [u8; 4] = data.get(record..record + 4)?.try_into().ok()?;
+            Some((tag, u32_at(record + 8)?))
+        })
+        .collect()
+}
+
+/// Whether face `index` of `data` has colored glyphs the rasterizer can't
+/// draw, leaving a gap where they go: only `COLRv1` layers (and SVG), with no
+/// bitmaps and no `COLRv0` glyphs, as the Noto Color Emoji some font packages
+/// ship has. Taken out, its glyphs fall back to a face that draws, such as
+/// the bitmap Noto Color Emoji, or the plain Noto Emoji.
+fn undrawable(data: &[u8], index: u32) -> bool {
+    let Some(tables) = tables(data, index) else {
+        return false;
+    };
+    let Some(&(_, colr)) = tables.iter().find(|(tag, _)| tag == b"COLR") else {
+        return false;
+    };
+    let bitmaps = tables
+        .iter()
+        .any(|(tag, _)| tag == b"CBDT" || tag == b"sbix");
+    // Version 1, and no base glyph records for version 0.
+    data.get(colr..colr + 4) == Some(&[0, 1, 0, 0]) && !bitmaps
+}
+
+/// Takes the emoji faces out of `system` that [`undrawable`] says it can't
+/// draw. Only emoji families are looked at, as reading every font's tables
+/// would slow the start.
+fn drop_undrawable(system: &mut FontSystem) {
+    let db = system.db();
+    let undrawn: Vec<_> = db
+        .faces()
+        .filter(|face| {
+            face.families
+                .iter()
+                .any(|(name, _)| name.to_lowercase().contains("emoji"))
+        })
+        .filter(|face| db.with_face_data(face.id, undrawable).unwrap_or(false))
+        .map(|face| face.id)
+        .collect();
+    for id in undrawn {
+        system.db_mut().remove_face(id);
+    }
+}
+
 /// The installed families named in `wanted`, the first found, or else with
 /// `monospaced` any installed family with monospaced faces.
 fn pick(installed: &Installed, wanted: &[&str], monospaced: bool) -> Option<String> {
@@ -165,6 +239,7 @@ impl Fonts {
     pub fn new(family: Option<String>, size: f32) -> Self {
         let mut system = FontSystem::new();
         system.db_mut().load_font_data(SYMBOLS.to_vec());
+        drop_undrawable(&mut system);
         let metrics = Metrics::new(size, size);
         let mut buffer = Buffer::new(&mut system, metrics);
         buffer.set_wrap(Wrap::None);
@@ -272,7 +347,29 @@ impl Fonts {
             self.metrics.font_size * k,
             self.metrics.line_height * k,
         ));
-        self.buffer.set_text(text, &attrs, Shaping::Advanced, None);
+        if text.chars().any(private_use) {
+            // Icons from the bundled symbols, the rest as asked.
+            let icons = attrs.clone().family(Family::Name(SYMBOLS_FAMILY));
+            let mut spans: Vec<(&str, Attrs)> = Vec::new();
+            let mut from = 0;
+            let mut icon = false;
+            for (at, c) in text.char_indices() {
+                let is_icon = private_use(c);
+                if is_icon != icon && at > from {
+                    spans.push((
+                        &text[from..at],
+                        if icon { icons.clone() } else { attrs.clone() },
+                    ));
+                    from = at;
+                }
+                icon = is_icon;
+            }
+            spans.push((&text[from..], if icon { icons } else { attrs.clone() }));
+            self.buffer
+                .set_rich_text(spans, &attrs, Shaping::Advanced, None);
+        } else {
+            self.buffer.set_text(text, &attrs, Shaping::Advanced, None);
+        }
         self.buffer.shape_until_scroll(&mut self.system, false);
         let mut glyphs = Vec::new();
         let mut baseline = self.baseline * k;
@@ -471,6 +568,74 @@ mod tests {
             );
         }
         assert_ne!(fonts.grid_family(), Some("Symbols Nerd Font Mono"));
+    }
+
+    #[test]
+    fn nerd_font_icons_come_from_the_bundled_symbols_first() {
+        let mut fonts = Fonts::new(None, 15.0);
+        // The git branch, which other fonts put something else at, among
+        // text drawn as usual.
+        let (glyphs, _) = fonts.shape("a \u{e0a0} b", TextStyle::default());
+        let family = |glyph: &LayoutGlyph| {
+            fonts
+                .system
+                .db()
+                .face(glyph.font_id)
+                .map(|face| face.families[0].0.clone())
+        };
+        let icon = glyphs.iter().find(|g| g.start == 2).expect("the icon");
+        assert_eq!(family(icon).as_deref(), Some(SYMBOLS_FAMILY));
+        let text = glyphs.iter().find(|g| g.start == 0).expect("the a");
+        assert_ne!(family(text).as_deref(), Some(SYMBOLS_FAMILY));
+        assert_eq!(glyphs.last().map(|g| g.start), Some(6), "every glyph");
+    }
+
+    /// A font file of `tables`, each a tag and its bytes.
+    fn font_file(tables: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+        let count = u16::try_from(tables.len()).unwrap();
+        let mut file = vec![0, 1, 0, 0];
+        file.extend(count.to_be_bytes());
+        file.extend([0; 6]);
+        let mut at = 12 + 16 * tables.len();
+        for (tag, bytes) in tables {
+            file.extend(*tag);
+            file.extend([0; 4]);
+            file.extend(u32::try_from(at).unwrap().to_be_bytes());
+            file.extend(u32::try_from(bytes.len()).unwrap().to_be_bytes());
+            at += bytes.len();
+        }
+        for (_, bytes) in tables {
+            file.extend(*bytes);
+        }
+        file
+    }
+
+    #[test]
+    fn color_fonts_with_only_colr_v1_glyphs_are_undrawable() {
+        let v1 = [0, 1, 0, 0];
+        let v1_with_v0_glyphs = [0, 1, 0, 3];
+        let v0 = [0, 0, 0, 3];
+        assert!(undrawable(&font_file(&[(b"COLR", &v1)]), 0));
+        assert!(!undrawable(
+            &font_file(&[(b"COLR", &v1), (b"CBDT", &[0])]),
+            0
+        ));
+        assert!(!undrawable(&font_file(&[(b"COLR", &v1_with_v0_glyphs)]), 0));
+        assert!(!undrawable(&font_file(&[(b"COLR", &v0)]), 0));
+        assert!(!undrawable(&font_file(&[(b"glyf", &[0])]), 0));
+        assert!(!undrawable(b"not a font", 0));
+    }
+
+    #[test]
+    fn an_installed_emoji_font_draws_its_emoji() {
+        let mut fonts = Fonts::new(None, 15.0);
+        let (glyphs, _) = fonts.shape("\u{1f4c5}", TextStyle::default());
+        let Some(glyph) = glyphs.first().filter(|g| g.glyph_id != 0) else {
+            // No emoji font on this system.
+            return;
+        };
+        let key = glyph.physical((0.0, 0.0), 1.0).cache_key;
+        assert!(fonts.rasterize(key).is_some(), "drawn, not a gap");
     }
 
     #[test]

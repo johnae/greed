@@ -582,7 +582,10 @@ waits three seconds instead. Put it in your `init.luau` to keep it:
 
 The file tree's icons and the status line's rounded ends come from
 [Nerd Fonts](https://www.nerdfonts.com). The window (`greed --gui`) has
-them built in, so they show whatever font you draw in. A terminal shows
+them built in, so they show whatever font you draw in, even when another
+installed font claims the same characters. Emoji come from your system's
+emoji font; one it can't draw in color, like the newest Noto Color Emoji,
+is passed over for another, or the plain Noto Emoji. A terminal shows
 them only if its own font has them: install a Nerd Font, or one of its
 icon-only "Symbols" fonts, and set your terminal to use it. Without one
 you see boxes where icons should be.
