@@ -343,9 +343,10 @@ models.roles.agent = { provider = "berget", model = "the model you want" }
 -- then :login berget for a Berget Code plan, or :secret-set berget for an API key
 ```
 
-It has every tool the list above gives agents (the repo map, working set,
-grep, symbols, diagnostics, the plan, proposals, ...) plus `edit_file`,
-`write_file` and `run` for shell commands. Reading never asks; editing and
+It has the tools the list above gives agents (the repo map, working set,
+grep, symbols, diagnostics, the plan, ...) but `propose`, plus `edit_file`,
+`write_file` and `run` for shell commands: its edits show the change and ask
+first, so a proposal left for review isn't needed. Reading never asks; editing and
 running ask the way other agents' questions do (`y` once, `a` for the rest
 of the session, `n` no), and your policies answer them too. So do the
 tools above that write, run or fetch something, like `notes_write`,

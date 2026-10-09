@@ -927,6 +927,11 @@ local function system(s: Session, env: string?, edits: string?): string
 	return table.concat(lines, "\n\n")
 end
 
+-- Greed's tools for agents it doesn't get: its own edits ask first and show
+-- the change, and a proposal left for review let a model think it had
+-- changed a file it hadn't.
+local LEFT_OUT = { propose = true }
+
 -- The tools the model is told about now (Greed's tools for agents in the
 -- groups it has, and its own), and every tool it may call, by name, with
 -- what to do for each.
@@ -934,11 +939,15 @@ local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agen
 	local offered: { [string]: models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
 	for _, tool in agent.offered(state.caller) do
-		offered[tool.name] =
-			{ name = tool.name, description = tool.description, input = tool.input }
+		if not LEFT_OUT[tool.name] then
+			offered[tool.name] =
+				{ name = tool.name, description = tool.description, input = tool.input }
+		end
 	end
 	for _, tool in agent.tools() do
-		by_name[tool.name] = tool
+		if not LEFT_OUT[tool.name] then
+			by_name[tool.name] = tool
+		end
 	end
 	for _, own in OWN do
 		if own.edits == nil or own.edits == (state.edits or "replace") then

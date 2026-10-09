@@ -89,6 +89,10 @@ test("a prompt gets the model's answer in the transcript", function(t)
 	assert(said(s) == "user: hi | agent: Hello there", said(s))
 	assert(untimed(asked[1].said[1].text) == "hi", "the prompt went to the model")
 	assert(#asked[1].tools > 3, "with tools")
+	-- Its own edits ask first and show the change, so it doesn't propose.
+	for _, tool in asked[1].tools do
+		assert(tool.name ~= "propose", "no propose")
+	end
 	assert(string.find(asked[1].system or "", "Greed's coding agent", 1, true), "and who it is")
 	local config = assert(greed.fs.dirs().config)
 	assert(
