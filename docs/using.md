@@ -118,13 +118,16 @@ click does too. Under the models, a button sets the API key (it goes in the
 system keyring) or signs you in; for Ollama the page says whether it
 answers, and if not, to run `ollama serve` and `ollama pull llama3.2`.
 
-**Save** writes a short `init.luau` from your answers and opens it, and has
-the `fast` and `reasoning` roles use the provider you picked (`:models`
-changes them later). **Not now**, `esc`, `q` or closing the page any other
-way closes it without writing anything. Either way it doesn't show again by
-itself, and `:setup` brings it back, or goes to it if it's open. Save never
-replaces a config that's there; it shows what to add instead, and `esc`
-closes that.
+**Save** writes an `init.luau` from your answers and opens it, and has the
+`fast` and `reasoning` roles use the provider you picked (`:models` changes
+them later). Under your answers it lists settings worth trying, commented
+out: remove the `--` in front of one and save, and it applies at once. It
+also says how to find the rest: `space h o` describes an option, and
+`:set NAME VALUE` tries one for the session. **Not now**, `esc`, `q` or
+closing the page any other way closes it without writing anything. Either
+way it doesn't show again by itself, and `:setup` brings it back, or goes
+to it if it's open. Save never replaces a config that's there; it shows
+what to add instead, and `esc` closes that.
 
 ### In a window
 

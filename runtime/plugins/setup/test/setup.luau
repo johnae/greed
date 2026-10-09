@@ -58,7 +58,7 @@ test(":setup asks its questions, with what's in use picked", function(t)
 	local text = greed.view():buffer():text()
 	assert(string.find(text, "Welcome to Greed", 1, true), text)
 	assert(string.find(text, "◉ Select text", 1, true), text)
-	assert(string.find(text, "Theme: ", 1, true), text)
+	assert(string.find(text, "Which theme?", 1, true), text)
 	assert(string.find(text, "Which language model should Greed use?", 1, true), text)
 	assert(string.find(text, "◉ Anthropic", 1, true), "the model in use: " .. text)
 end)
@@ -189,7 +189,7 @@ test("clicks press the button drawn where they land", function(t)
 	t:buffer("|")
 	t:run("setup")
 	local function click(text: string)
-		for row, line in t:screen(100, 50) do
+		for row, line in t:screen(100, 60) do
 			local at = string.find(line, text, 1, true)
 			if at then
 				local col = utf8.len(string.sub(line, 1, at - 1)) :: number
@@ -253,4 +253,35 @@ test("a window isn't asked about icons: it has them, and they're on", function(t
 	window:run("setup-save")
 	local written = greed.fs.read(assert(greed.fs.dirs().config) .. "/init.luau") or ""
 	assert(string.find(written, 'option.set("tree-icons", "nerd")', 1, true), written)
+end)
+
+test("picking a theme on the page switches to it and remembers it, as :theme does", function(t)
+	local theme = require("@theme")
+	local before = theme.current()
+	t:buffer("|")
+	t:run("setup")
+	press(t, "◯ nord")
+	assert(theme.current() == "nord", theme.current())
+	assert(string.find(line_with("◉ nord"), "◉ nord", 1, true), "picked on the page")
+	local kept = greed.fs.read(`{greed.fs.dirs().cache}/theme`) or ""
+	assert(string.find(kept, "nord", 1, true), kept)
+	t:run("theme", { before })
+end)
+
+test("the config's commented-out settings run once uncommented, and name real options", function()
+	local config = require("@setup").config({ icons = false })
+	local lines = {}
+	for line in string.gmatch(config, "[^\n]*") do
+		local code = string.match(line, "^%-%- (greed%..*)$")
+			or string.match(line, "^%-%- (require%(.*)$")
+		table.insert(lines, code or line)
+	end
+	local uncommented = table.concat(lines, "\n")
+	assert(loadstring(uncommented), "the uncommented config compiles")
+	local names = 0
+	for name in string.gmatch(uncommented, 'option%.set%("([%-%w]+)"') do
+		greed.option.get(name)
+		names += 1
+	end
+	assert(names > 10, `{names} options`)
 end)

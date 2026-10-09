@@ -13,7 +13,6 @@
 local greed = require("@greed")
 local core = require("@core")
 local models = require("@models")
-local picker = require("@picker")
 local theme = require("@theme")
 local types = require("@self/types")
 
@@ -104,28 +103,42 @@ local function render(p: Page)
 		table.insert(lines, line)
 		at += #line + 1
 	end
+	-- The options of question `group`, `columns` to a line (one by default),
+	-- each column `width` wide.
 	local function choices(
 		group: string,
 		options: { { value: string, text: string } },
-		picked: string
+		picked: string,
+		columns: number?,
+		width: number?
 	)
-		for _, option in options do
-			local chosen = option.value == picked
-			local glyph = if chosen then "◉" else "◯"
-			local start = at + 2
-			table.insert(marks, {
-				from = start,
-				to = start + #glyph,
-				style = if chosen then "markdown.chosen" else "markdown.choice",
-			})
-			table.insert(controls, {
-				kind = "choice",
-				group = group,
-				value = option.value,
-				from = start,
-				to = start + #glyph + 1 + #option.text,
-			})
-			add(`  {glyph} {option.text}`)
+		local per = columns or 1
+		for first = 1, #options, per do
+			local line = ""
+			for i = first, math.min(first + per - 1, #options) do
+				local option = options[i]
+				local chosen = option.value == picked
+				local glyph = if chosen then "◉" else "◯"
+				local cell = `{glyph} {option.text}`
+				local pad = if i < math.min(first + per - 1, #options) and width
+					then string.rep(" ", math.max(1, width - utf8.len(cell) :: number))
+					else ""
+				local start = at + 2 + #line
+				table.insert(marks, {
+					from = start,
+					to = start + #glyph,
+					style = if chosen then "markdown.chosen" else "markdown.choice",
+				})
+				table.insert(controls, {
+					kind = "choice",
+					group = group,
+					value = option.value,
+					from = start,
+					to = start + #cell,
+				})
+				line ..= cell .. pad
+			end
+			add("  " .. line)
 		end
 	end
 	-- A line of buttons after `text`, each [ label ].
@@ -159,7 +172,16 @@ local function render(p: Page)
 	end
 	choices("style", styles, greed.option.get("editing-style") :: string)
 	add("")
-	buttons(`Theme: {theme.current()}`, { { text = "Pick…", action = "setup-pick-theme" } })
+	add("Which theme?", "markup.heading")
+	add("")
+	local themes = {}
+	for _, name in theme.list() do
+		table.insert(themes, { value = name, text = name })
+	end
+	-- As many columns as fit, three before the page is drawn.
+	local _, room = p.view:size()
+	local width = 24
+	choices("theme", themes, theme.current(), math.max(1, ((room or 74) - 2) // width), width)
 	add("")
 	if in_window() then
 		-- The window draws Nerd Font icons whatever its font.
@@ -199,6 +221,10 @@ local function render(p: Page)
 		{ text = "Not now", action = "setup-close" },
 	})
 	local text = table.concat(lines, "\n")
+	-- Asking about the model can wait, and the page close meanwhile.
+	if not buffer:valid() then
+		return
+	end
 	if buffer:text() ~= text then
 		buffer:edit(function(e)
 			e:replace(0, buffer:len(), text)
@@ -267,6 +293,9 @@ local function pick(p: Page, control: Control)
 	local value = control.value :: string
 	if control.group == "style" then
 		greed.option.set("editing-style", value)
+	elseif control.group == "theme" then
+		-- As :theme NAME does: switched to and remembered.
+		greed.run("theme", { args = { value } })
 	elseif control.group == "icons" then
 		p.answers.icons = value == "yes"
 	elseif control.group == "claude" then
@@ -291,19 +320,75 @@ local function press(p: Page, control: Control)
 	end
 end
 
---- The config the page's answers make.
+--- The config the page's answers make: what was picked, then settings
+--- worth trying, commented out.
 function M.config(answers: { icons: boolean }): string
 	local style = greed.option.get("editing-style") :: string
 	local icons = answers.icons
+	local leader = if style == "vscode" then "ctrl-space" else "space"
 	return table.concat({
 		"-- Written by Greed's setup; :setup shows its questions again.",
-		"-- Change anything here: see the docs, or :options.",
+		"-- This file runs again each time you save it, so a change shows at once.",
+		"--",
+		"-- Finding more settings:",
+		`--   {leader} h o   describe an option: what it does, its value and default`,
+		`--   {leader} h h   describe anything: commands, options, keys, plugins`,
+		"--   :set NAME VALUE   try an option for this session; tab completes",
+		"--                     names and values (:set NAME? shows one)",
 		"",
 		'local greed = require("@greed")',
 		"",
+		"-- helix, vim or vscode; :style switches while Greed runs.",
 		`greed.option.set("editing-style", "{style}")`,
+		"",
+		"-- Icons in the file tree, and round ends on status line pills; both",
+		"-- need a Nerd Font in a terminal (the window has the icons built in).",
 		`greed.option.set("tree-icons", "{if icons then "nerd" else "none"}")`,
 		`greed.option.set("statusline-caps", "{if icons then "round" else "none"}")`,
+		"",
+		"-- The theme you pick with :theme is remembered; to fix one here instead:",
+		`-- require("@theme").use("{theme.current()}")`,
+		"",
+		"-- Remove the -- in front of a line to try it.",
+		"",
+		"-- Line numbers relative to the cursor's line, or hybrid (the cursor's",
+		"-- line keeps its own number).",
+		'-- greed.option.set("line-numbers", "relative")',
+		"",
+		"-- The mode, tab and session as coloured pills in the status line, and",
+		"-- small animations, like a wave of light when you switch files.",
+		'-- greed.option.set("statusline-pills", true)',
+		'-- greed.option.set("effects", true)',
+		"",
+		"-- Save on its own a moment after you stop typing.",
+		'-- greed.option.set("auto-save", true)',
+		"",
+		"-- Number where the next word motions would go; a digit jumps there.",
+		'-- greed.option.set("motion-hints", true)',
+		"",
+		"-- How new tabs arrange their panes: manual, main-stack, columns or spiral.",
+		'-- greed.option.set("pane-layout", "main-stack")',
+		"",
+		"-- What a terminal pane runs (your $SHELL by default), and the prompt of",
+		"-- Greed's own shell: its own, or your starship prompt.",
+		'-- greed.option.set("terminal-shell", "fish -l")',
+		'-- greed.option.set("shell-prompt", "starship")',
+		"",
+		"-- Where your notes live.",
+		'-- greed.option.set("notes-folder", "~/notes")',
+		"",
+		"-- The window (greed --gui): its font and size. ctrl-= and ctrl-- zoom.",
+		'-- greed.option.set("gui-font", "JetBrains Mono")',
+		'-- greed.option.set("gui-font-size", 16)',
+		"",
+		"-- A language's indent and formatter.",
+		'-- require("@languages").set("python", { indent = 4, formatter = { "black", "-q", "-" } })',
+		"",
+		"-- Your own keys, here after the leader: in Helix and Vim space W saves every file.",
+		'-- greed.keymap.bind({ layer = "leader" }, { W = "save-all" })',
+		"",
+		"-- One colour changed on top of the theme, here the comments.",
+		'-- greed.theme.set({ comment = { fg = "#7f8c98", italic = true } })',
 		"",
 	}, "\n")
 end
@@ -389,6 +474,14 @@ greed.on("option.changed", function(event)
 	end
 end)
 
+-- The themes take as many columns as the page has room for.
+greed.on("view.resized", function(event: greed.ViewResized)
+	local p = page
+	if p and p.view == event.view and p.view:valid() then
+		render(p)
+	end
+end)
+
 -- However the page closes (Not now, :q, a click elsewhere closing it), it
 -- counts as answered, so it doesn't come back by itself.
 greed.on("view.closed", function(event: greed.ViewClosed)
@@ -451,35 +544,6 @@ greed.command({
 		if p and control then
 			press(p, control)
 		end
-	end,
-})
-
-greed.command({
-	name = "setup-pick-theme",
-	doc = "Pick the theme on the setup page, trying each as you move",
-	run = function()
-		local p = page
-		if p == nil then
-			return
-		end
-		local before = theme.current()
-		local items = {}
-		for _, name in theme.list() do
-			table.insert(items, { label = name, value = name })
-		end
-		picker.pick("Theme", items, function(item)
-			greed.run("theme", { args = { item.value } })
-			if page == p then
-				render(p)
-			end
-		end, {
-			on_move = function(item)
-				theme.use(item.value)
-			end,
-			on_cancel = function()
-				theme.use(before)
-			end,
-		})
 	end,
 })
 
