@@ -747,6 +747,20 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "agent",
+	doc = "Show the latest agent session, or start one when none runs",
+	run = function(ctx)
+		local latest = sessions[#sessions]
+		if latest then
+			leave_list(ctx)
+			M.show(latest)
+		else
+			greed.run("agent-new")
+		end
+	end,
+})
+
 -- Opens the list, or closes it from inside.
 local function toggle_list(ctx: greed.Context)
 	if list.is(ctx.buffer) then

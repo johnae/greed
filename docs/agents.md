@@ -427,6 +427,7 @@ goes on in smaller pieces, and stops after three such answers in a row.
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |
+| `:agent` | Show the latest session, or start one as `space i n` does when none runs |
 | `space i l` (`:agent-list`) | The [session list](#the-session-list): every session of the repository, running and kept |
 | `space i m` (`:agent-move`) | Move the transcript you're in to a pane, a tab, a float or a panel |
 | `:agent-fork` | Fork the agent of the transcript you're in |
