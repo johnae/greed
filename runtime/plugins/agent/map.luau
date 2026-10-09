@@ -293,37 +293,53 @@ end
 
 type Hit = { path: string, line: number, text: string }
 
+-- Whether `path` is `folder` or in it.
+local function inside(path: string, folder: string?): boolean
+	return folder ~= nil and (path == folder or string.sub(path, 1, #folder + 1) == folder .. "/")
+end
+
+-- Whether agents may search and list `dir` outside the project: Greed's
+-- own plugins and types, the best examples for a plugin, tool results too
+-- long to have been given whole, and your config with the plugins agents
+-- write in it.
+local function reachable(dir: string): boolean
+	local folders = {
+		runtime_dir(),
+		M.output_dir(),
+		greed.fs.dirs().config,
+		extend.dirs.plugins,
+		extend.dirs.fallback,
+	}
+	for i = 1, 5 do
+		if inside(dir, folders[i]) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Why `dir` can't be reached, for a tool that `does` in the project.
+local function out_of_reach(dir: string, does: string): string
+	local runtime = runtime_dir()
+	local also = if runtime
+		then `, in your config, or in Greed's own plugins and types in {runtime}`
+		else ""
+	return `{dir} is outside the project; {does} in it{also}`
+end
+
 --- The lines matching the regex `pattern` under `dir` (relative to the
 --- project; all of it by default), with open files as you have them.
 function M.grep(pattern: string, dir: string?, limit: number?): ({ Hit }?, string?)
 	local base = root()
 	local where, prefix = base, ""
 	if dir and string.sub(dir, 1, 1) == "/" then
-		local runtime = runtime_dir()
-		local output = M.output_dir()
-		local function inside(folder: string?): boolean
-			return folder ~= nil
-				and (dir == folder or string.sub(dir :: string, 1, #folder + 1) == folder .. "/")
-		end
-		if dir == base or string.sub(dir, 1, #base + 1) == base .. "/" then
+		if inside(dir, base) then
 			dir = if dir == base then nil else string.sub(dir, #base + 2)
-		elseif
-			inside(runtime)
-			or inside(output)
-			or inside(greed.fs.dirs().config)
-			or inside(extend.dirs.plugins)
-			or inside(extend.dirs.fallback)
-		then
-			-- Greed's own plugins and types, the best examples for a plugin,
-			-- tool results too long to have been given whole, and your config
-			-- with the plugins agents write in it.
+		elseif reachable(dir) then
 			where, prefix = dir, dir .. "/"
 			dir = nil
 		else
-			local also = if runtime
-				then `, in your config, or in Greed's own plugins and types in {runtime}`
-				else ""
-			return nil, `{dir} is outside the project; grep searches in it{also}`
+			return nil, out_of_reach(dir, "grep searches")
 		end
 	end
 	if dir then
@@ -465,10 +481,32 @@ registry.tool({
 		.. "whose paths match it fuzzily, best first",
 	input = object({
 		query = { type = "string" },
+		path = {
+			type = "string",
+			description = "A folder to list instead of the project: one in it, or, given in "
+				.. "full, your config folder (and its plugins) or Greed's runtime folder",
+		},
 		limit = { type = "number", description = "200 by default" },
 	}),
 	run = function(args)
-		local all = greed.files(root())
+		local base = root()
+		local dir: string = args.path or base
+		if string.sub(dir, 1, 1) ~= "/" then
+			dir = `{base}/{dir}`
+		elseif not inside(dir, base) and not reachable(dir) then
+			error(out_of_reach(dir, "files lists"), 0)
+		end
+		local all = greed.files(dir)
+		-- Paths from the project's root, and outside it in full, so they can be read.
+		local prefix = if dir == base
+			then ""
+			elseif inside(dir, base) then string.sub(dir, #base + 2) .. "/"
+			else dir .. "/"
+		if prefix ~= "" then
+			for i, path in all do
+				all[i] = prefix .. path
+			end
+		end
 		local found = {}
 		local limit = args.limit or 200
 		if args.query then

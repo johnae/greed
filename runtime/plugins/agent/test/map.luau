@@ -108,6 +108,31 @@ test("grep searches the plugins in your config, which agents write", function(t)
 	assert(hits[1] and hits[1].path == `{plugins}/mine/init.luau`, hits[1] and hits[1].path)
 end)
 
+test("files lists a folder of the project, or your config's plugins, by path", function(t)
+	local dir = project(t)
+	local tool: any
+	for _, each in agent.tools() do
+		if each.name == "files" then
+			tool = each
+		end
+	end
+	local function list(args: { [string]: any }): { string }
+		return tool.run(args, agent.caller())
+	end
+	local src = list({ path = "src" })
+	assert(table.find(src, "src/unused.rs") and #src == 4, table.concat(src, " "))
+	local full = list({ path = `{dir}/src` })
+	assert(table.find(full, "src/unused.rs"), table.concat(full, " "))
+	local plugins = t:tempdir({ ["mine/init.luau"] = "return {}\n" })
+	local before = agent.dirs.plugins
+	agent.dirs.plugins = plugins
+	local mine = list({ path = `{plugins}/mine` })
+	agent.dirs.plugins = before
+	assert(mine[1] == `{plugins}/mine/init.luau`, mine[1])
+	local ok, err = pcall(list, { path = "/etc" })
+	assert(not ok and string.find(tostring(err), "files lists in it", 1, true), tostring(err))
+end)
+
 test("grep finding nothing in the project looks in Greed's own code, and says so", function(t)
 	project(t)
 	local tool: any

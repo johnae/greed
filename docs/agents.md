@@ -48,8 +48,8 @@ to go. The tools:
 | `working_set` | The files you've worked in lately, most active first, with how much you and agents edited each and the lines you were on |
 | `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward what you're working on (below) |
 | `symbols` | Functions and types anywhere in the project whose names match, with their files and lines |
-| `grep` | The lines matching a regex in the project, with open files searched as you have them, unsaved changes included |
-| `files` | The project's files, or those whose paths match a fuzzy query |
+| `grep` | The lines matching a regex in the project, with open files searched as you have them, unsaved changes included; also in your config and its plugins, and Greed's own plugins and types |
+| `files` | The project's files, or those whose paths match a fuzzy query; or a folder's, in the project, your config or Greed's own plugins |
 | `outline` | A file's functions and types with their lines, from its syntax tree |
 | `syntax_query` | Run a tree-sitter query over a file and get what it matched |
 | `open` | Open a file for you, at a line |
