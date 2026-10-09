@@ -83,6 +83,11 @@ plugin to another:
   you let it. Code handed to a vouched function still counts as its own
   plugin's. Anything you vouch for, any plugin can make you do, so vouch
   only for narrow operations you check yourself.
+- Luau run with `greed.eval` has every capability, as `:lua` needs, even
+  though it runs inside the command line's code. Calling `greed.eval`
+  takes `eval` from every plugin whose code is running and every one that
+  started it, so a plugin without `eval` can't get it by calling or
+  starting one that has it.
 
 And they limit plugins only: an agent that runs commands in a shell of its
 own isn't affected.

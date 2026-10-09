@@ -373,3 +373,47 @@ return {
 	local said = last(t)
 	assert(string.find(said, 'add "fs.write" to capabilities in sneaky', 1, true), said)
 end)
+
+test("greed.eval code has every capability, unless a plugin without eval is involved", function(t)
+	t:buffer("|x")
+	local dir = t:tempdir({})
+	-- It may eval, and nothing more: its own code can't write files.
+	greed.plugin.load(t:tempdir({
+		["plugin.toml"] = 'name = "evaluator"\ncapabilities = ["eval"]\n',
+		["init.luau"] = [[
+local greed = require("@greed")
+local M = {}
+function M.run(code: string): string
+	local ok, said = greed.eval(code)
+	return if ok then "ok" else said
+end
+greed.command({ name = "evaluator-go", args = { { name = "code" } }, run = function(ctx)
+	greed.echo(M.run(ctx.args[1]))
+end })
+return M
+]],
+	}))
+	local function write(name: string): string
+		return `require("@greed").fs.write("{dir}/{name}", "x")`
+	end
+	-- Started by you, as :lua is.
+	t:run("evaluator-go", { write("yours.txt") })
+	local said = last(t)
+	assert(said == "ok", said)
+	assert(greed.fs.read(`{dir}/yours.txt`) == "x", "written")
+	-- A plugin without eval handing it code gets no more than it has.
+	local handed =
+		`local said = require("@evaluator").run([[{write("handed.txt")}]]) assert(said == "ok", said)`
+	greed.plugin.load(plugin(t, "deputy", "", handed, '"evaluator"'))
+	t:run("deputy-go")
+	said = last(t)
+	assert(string.find(said, 'add "eval" to capabilities in deputy', 1, true), said)
+	assert(greed.fs.read(`{dir}/handed.txt`) == nil, "not written")
+	-- Nor does a command it starts.
+	local started =
+		`greed.run("evaluator-go", \{ args = \{ [[{write("started.txt")}]] \}, wait = true \})`
+	greed.plugin.load(plugin(t, "starter2", "", started))
+	t:run("starter2-go")
+	t:wait(50)
+	assert(greed.fs.read(`{dir}/started.txt`) == nil, "not written")
+end)

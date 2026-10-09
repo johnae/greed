@@ -496,7 +496,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let ran = if sandbox {
                 super::eval_sandboxed(lua, &source)
             } else {
-                super::eval_repl(lua, &source)
+                super::capabilities::trusted_eval(lua, || super::eval_repl(lua, &source))
             };
             Ok(match ran {
                 Ok(values) => (true, values),

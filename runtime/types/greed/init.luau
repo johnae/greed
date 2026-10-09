@@ -1637,7 +1637,8 @@ export type Greed = {
 	run: (name: string, opts: { args: { string }?, force: boolean?, count: number?, wait: boolean? }?) -> (),
 	--- Runs Luau code in a scratch environment whose globals persist, like a
 	--- REPL. Returns true and the values as text (tab-separated), or false
-	--- and the error. With `sandbox`, it runs in a fresh environment that can
+	--- and the error. The code has every capability; calling it needs `eval`
+	--- from every plugin involved. With `sandbox`, it runs in a fresh environment that can
 	--- read the editor and edit buffers and nothing else: what it would do
 	--- beyond that (run programs or commands, change keys, reach files) fails
 	--- with an error starting "needs approval:".

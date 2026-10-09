@@ -322,27 +322,9 @@ fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let enter = lua.create_function(move |lua, ()| {
         // Below this function and the Luau wrapper that called it.
         let outside = depth(lua).saturating_sub(2);
-        let vouches = state(lua).vouches.clone();
-        let thread = lua.current_thread();
-        let list = if let Some(list) = vouches.get::<Option<Table>>(&thread)? {
-            list
-        } else {
-            let list = lua.create_table()?;
-            vouches.set(&thread, &list)?;
-            list
-        };
-        let entry = lua.create_table()?;
-        entry.set("outside", outside)?;
-        entry.set("owner", name.as_str())?;
-        list.push(entry)
+        push_vouch(lua, outside, &name)
     })?;
-    let leave = lua.create_function(|lua, ()| {
-        let list: Option<Table> = state(lua).vouches.get(lua.current_thread())?;
-        if let Some(list) = list {
-            list.raw_remove(list.raw_len())?;
-        }
-        Ok(())
-    })?;
+    let leave = lua.create_function(|lua, ()| pop_vouch(lua))?;
     // In Luau, so what it runs can wait.
     lua.load(
         r"
@@ -360,6 +342,58 @@ fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     )
     .set_name("=greed.vouch")
     .call((enter, leave))
+}
+
+/// Runs `f`, the Luau a plugin passes to `greed.eval`, with every
+/// capability, as `eval` promises: the frames below it and the limit what
+/// started them set stop counting. Only when every plugin on the stack and
+/// in that limit may `eval`, though; otherwise a plugin without it could
+/// get anything through one that has it, and `f` runs as any code would.
+pub(super) fn trusted_eval<R>(lua: &Lua, f: impl FnOnce() -> LuaResult<R>) -> LuaResult<R> {
+    let callers = on_stack(lua);
+    let limit = current_limit(lua);
+    let trusted = {
+        let state = state(lua);
+        limit.iter().all(|(_, grant)| grant.allows("eval"))
+            && callers
+                .iter()
+                .all(|name| state.grants.get(name).is_none_or(|g| g.allows("eval")))
+    };
+    if !trusted {
+        return f();
+    }
+    // Everything below `greed.eval` itself.
+    push_vouch(lua, depth(lua).saturating_sub(1), super::REPL)?;
+    let result = f();
+    pop_vouch(lua)?;
+    result
+}
+
+/// Starts vouching for what the running coroutine runs as `owner`, with
+/// `outside` frames of its stack outside what's vouched for.
+fn push_vouch(lua: &Lua, outside: usize, owner: &str) -> LuaResult<()> {
+    let vouches = state(lua).vouches.clone();
+    let thread = lua.current_thread();
+    let list = if let Some(list) = vouches.get::<Option<Table>>(&thread)? {
+        list
+    } else {
+        let list = lua.create_table()?;
+        vouches.set(&thread, &list)?;
+        list
+    };
+    let entry = lua.create_table()?;
+    entry.set("outside", outside)?;
+    entry.set("owner", owner)?;
+    list.push(entry)
+}
+
+/// Ends the innermost vouch [`push_vouch`] started.
+fn pop_vouch(lua: &Lua) -> LuaResult<()> {
+    let list: Option<Table> = state(lua).vouches.get(lua.current_thread())?;
+    if let Some(list) = list {
+        list.raw_remove(list.raw_len())?;
+    }
+    Ok(())
 }
 
 /// The plugin whose code called into Greed: the innermost plugin on the
