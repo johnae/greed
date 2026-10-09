@@ -26,7 +26,10 @@ export type Edits = {
 	replace: (self: Edits, from: number, to: number, text: string) -> (),
 	--- Sets the selection after the edit (of every view showing the buffer,
 	--- when the buffer didn't come from a view). Without this, the current
-	--- selection is moved along with the text.
+	--- selection is moved along with the text: a cursor ends up after text
+	--- inserted where it is, and after the new text of a replace or delete
+	--- that covers it; a range doesn't grow to take in text inserted at its
+	--- edges.
 	select: (self: Edits, selection: Selection) -> (),
 }
 
