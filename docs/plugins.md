@@ -1580,8 +1580,9 @@ elsewhere.
 Any plugin can add a provider, so a key or a sign-in goes only where the
 user let it: the built-in providers' keys to their own servers, and any
 other the first time it would go somewhere new, after Greed asks
-("send your acme key to https://api.acme.example? y yes, n no"). The
-answer is kept, so each key and address asks once.
+("Send your acme key to https://api.acme.example from now on? Type yes to
+allow it"; anything but `yes` says no). The answer is kept, so each key
+and address asks once.
 
 `scope` needs whatever the server wants for a refresh token, often
 `offline_access`; without one, you'd sign in again whenever the token runs

@@ -498,10 +498,11 @@ local function may_send(name: string, url: string): string?
 	if known[name] and known[name][origin] then
 		return nil
 	end
-	greed.echo(`send your {name} key to {origin}? y yes, from now on; n no`)
-	local answer = greed.next_key()
-	greed.echo("")
-	if answer ~= "y" then
+	-- The whole word, so keys pressed while typing something else don't
+	-- answer it.
+	local answer =
+		core.prompt.ask(`Send your {name} key to {origin} from now on? Type yes to allow it`)
+	if answer == nil or string.lower(string.match(answer, "^%s*(.-)%s*$") or "") ~= "yes" then
 		return `you didn't let your {name} key go to {origin}`
 	end
 	known[name] = known[name] or {}

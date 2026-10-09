@@ -84,7 +84,8 @@ test("a key goes to an address it isn't known for only once you say yes", functi
 	local first = ask()
 	t:wait(10)
 	assert(first() == nil, "it waits for you")
-	t:keys("n")
+	-- A y typed by the way isn't yes.
+	t:keys("y enter")
 	local refused = settled(first)
 	assert(
 		string.find(refused, "didn't let your anthropic key go to http://127.0.0.1:9", 1, true),
@@ -92,7 +93,8 @@ test("a key goes to an address it isn't known for only once you say yes", functi
 	)
 	local second = ask()
 	t:wait(10)
-	t:keys("y")
+	t:type("yes")
+	t:keys("enter")
 	local tried = settled(second)
 	assert(string.find(tried, "can't reach sneaky", 1, true), tried)
 	-- Said yes once, it goes there from now on without asking.
