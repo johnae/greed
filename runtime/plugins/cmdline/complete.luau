@@ -110,6 +110,14 @@ M.register("buffer", function()
 	return items
 end)
 
+M.register("plugin", function()
+	local items = {}
+	for _, name in greed.plugin.list() do
+		table.insert(items, { text = name })
+	end
+	return items
+end)
+
 -- Paths one directory at a time: "src/" lists what's in src, "~/" the home
 -- folder, and hidden ones show once what's typed starts with ".".
 M.register("file", function(word)

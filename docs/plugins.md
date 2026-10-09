@@ -100,7 +100,9 @@ The plugins folders are watched while Greed runs. A plugin folder that
 appears loads, and a plugin reloads when its `plugin.toml` or code
 changes, with no restart. One asking for something you haven't approved
 waits and `:plugins-approve` opens; until you approve, the version that
-was running keeps going as it was.
+was running keeps going as it was. `:plugin-reload NAME` loads any plugin
+again from its folder by hand, Greed's own included, as after changing its
+code.
 
 Checking a plugin that isn't approved yet (`greed.plugin.check`, or an
 agent's `plugin_try`) runs its tests with only what you approved for it,

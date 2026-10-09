@@ -4,6 +4,7 @@
 --
 --   :plugins-approve   review the waiting plugins and approve one
 --   :plugins           every plugin, where it comes from and what it may use
+--   :plugin-reload NAME load a plugin again from its folder
 
 local greed = require("@greed")
 local picker = require("@picker")
@@ -46,6 +47,24 @@ local function approve(dir: string): (boolean, string?)
 	end
 	return false, `{dir} isn't waiting for approval`
 end
+
+greed.command({
+	name = "plugin-reload",
+	doc = "Load a plugin again from its folder, as after changing its code",
+	args = { { name = "plugin", doc = "Its name", complete = "plugin" } },
+	run = function(ctx)
+		local name = ctx.args[1] or ""
+		local dir = greed.plugin.dirs()[name]
+		if dir == nil then
+			greed.echo(`no plugin called {name}`)
+			return
+		end
+		-- A config's folder has no plugin.toml, so its name goes with it.
+		local manifest = greed.fs.stat(`{dir}/plugin.toml`) ~= nil
+		local ok, err = pcall(greed.plugin.load, dir, if manifest then nil else name)
+		greed.echo(if ok then `reloaded {name}` else `{name}: {err}`)
+	end,
+})
 
 greed.command({
 	name = "plugins-approve",

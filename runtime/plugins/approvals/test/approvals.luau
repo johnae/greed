@@ -79,3 +79,25 @@ test("a plugin put in the plugins folder loads, and reloads when it changes", fu
 	assert(said(t, "hello-watch") == "two", "it reloaded")
 	greed.plugin.unload("hello-watch")
 end)
+
+test(":plugin-reload loads a plugin again from its folder, and says so", function(t)
+	t:buffer("|")
+	local dir = t:tempdir({
+		["plugin.toml"] = 'name = "greeter"\n',
+		["init.luau"] = 'require("@greed").command({ name = "greet", run = function() require("@greed").echo("hi") end })\nreturn {}\n',
+	})
+	greed.plugin.load(dir)
+	greed.fs.write(
+		dir .. "/init.luau",
+		'require("@greed").command({ name = "greet", run = function() require("@greed").echo("hello again") end })\nreturn {}\n'
+	)
+	t:run("plugin-reload", { "greeter" })
+	local said = t:messages()
+	assert(said[#said] == "reloaded greeter", said[#said])
+	t:run("greet")
+	said = t:messages()
+	assert(said[#said] == "hello again", said[#said])
+	t:run("plugin-reload", { "nobody" })
+	said = t:messages()
+	assert(string.find(said[#said], "no plugin called nobody", 1, true), said[#said])
+end)
