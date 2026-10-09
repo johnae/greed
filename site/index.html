@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Greed: a modal editor you can change while it runs</title>
-<meta name="description" content="Greed is a modal editor for the terminal and the window: a small Rust core, with keys, modes, commands, themes and the agent integration in Luau plugins you can read, change or replace while it runs.">
+<title>Greed: an editor you change while it runs</title>
+<meta name="description" content="Greed is an editor and workspace you can change while it runs: Helix, Vim or VS Code style editing, shells, terminals, tiled and floating panes, runnable notes and agents, in your terminal, in a window, or on a remote machine. A small Rust core, with everything else in Luau plugins.">
 <meta property="og:title" content="Greed">
-<meta property="og:description" content="A modal editor with a small Rust core and everything else in Luau plugins.">
+<meta property="og:description" content="An editor and workspace with a small Rust core and everything else in Luau plugins: modal or modeless, terminal or window, local or remote.">
 <meta property="og:image" content="https://greed.rs/assets/social.jpg">
 <meta property="og:url" content="https://greed.rs/">
 <meta name="twitter:card" content="summary_large_image">
@@ -36,9 +36,14 @@
   </section>
 
   <section class="intro">
-    <p class="lead">Greed is a modal editor for the terminal and the window. The core is a
-    small amount of Rust. Keys, modes, commands, pickers, themes and the agent
-    integration are Luau plugins you can read, change or replace while it runs.</p>
+    <p class="lead">Greed is an editor you can change while it runs. Edit the Helix
+    way, the Vim way or without modes. Around your files: shells, terminals,
+    tiled and floating panes, notes whose code runs, and agents. Use it in a
+    terminal or in its own window, on your machine or on the one where the
+    work happens.</p>
+    <p class="sub">A small Rust core does what needs speed. Keys, modes, commands,
+    pickers, themes and the agents are Luau plugins you can read, change or
+    replace.</p>
     <p class="actions">
       <a class="button primary" href="docs/using.html">Get started</a>
       <a class="button" href="docs/plugins.html">Write a plugin</a>
@@ -46,62 +51,173 @@
   </section>
 
   <section class="demo">
-    <pre class="term"><code><span class="prompt">$</span> greed src/main.rs          <span class="c"># edit; the session keeps running if you detach</span>
-<span class="prompt">:</span>detach                      <span class="c"># leave it running in the background</span>
-<span class="prompt">$</span> greed attach               <span class="c"># come back to it</span>
-<span class="prompt">$</span> greed ssh build-box        <span class="c"># or edit on another machine, your config along</span>
-<span class="prompt">$</span> greed ctl focus            <span class="c"># ask the running editor what you're looking at</span>
-{ "path": "src/main.rs", "mode": "normal", "selections": [ ... ] }</code></pre>
+    <pre class="term"><code><span class="prompt">$</span> greed src/main.rs          <span class="c"># in this terminal</span>
+<span class="prompt">$</span> greed --gui                <span class="c"># the same session in a window drawn on the GPU</span>
+<span class="prompt">:</span>detach                      <span class="c"># leave it running: files, undo, servers, shells</span>
+<span class="prompt">$</span> greed attach               <span class="c"># and come back to it, from either</span>
+<span class="prompt">$</span> greed ssh build-box        <span class="c"># or work on another machine, your config brought along</span></code></pre>
+  </section>
+
+  <section class="showcase wide">
+    <div class="text">
+      <h2>Three ways to edit, all first class</h2>
+      <p>Pick the one your hands know. Each style has its own modes and keys,
+      and they share the rest: commands, the leader menu, pickers and every
+      plugin. <code>:style</code> switches while it runs.</p>
+      <p><a href="docs/editing-styles.html">Editing styles</a></p>
+    </div>
+    <div class="styles">
+      <div class="style">
+        <h3>Helix</h3>
+        <p>Select, then act.</p>
+        <p class="keys"><kbd>%</kbd> <kbd>s</kbd> <span>todo</span> <kbd>enter</kbd> <kbd>c</kbd> <span>done</span></p>
+        <p class="what">Every <code>todo</code> in the file, changed at once.</p>
+      </div>
+      <div class="style">
+        <h3>Vim</h3>
+        <p>Say what, then where.</p>
+        <p class="keys"><kbd>:</kbd><span>%s/todo/done/g</span></p>
+        <p class="what">The changes show as you type, before it runs.</p>
+      </div>
+      <div class="style">
+        <h3>VS Code</h3>
+        <p>No modes, the keys you know.</p>
+        <p class="keys"><kbd>ctrl-d</kbd> <kbd>ctrl-d</kbd> <span>done</span></p>
+        <p class="what">The next matches, one more each time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="showcase flip">
+    <div class="text">
+      <h2>Panes, tabs and floats</h2>
+      <p>Split the screen yourself, or let a layout do it:
+      <code>main-stack</code>, <code>columns</code>, <code>spiral</code> or
+      your own in Luau. Float any pane above the rest, and lay the floats out
+      freely, tiled, cascaded or one at a time. The keys follow zellij and
+      work everywhere, even while you type into a terminal.</p>
+      <p><a href="docs/keys.html#panes-tabs-and-terminals">Panes and their keys</a></p>
+    </div>
+    <div class="screen" aria-label="A Greed tab: code in the main pane, a shell and an agent stacked beside it, and a floating terminal above them">
+      <div class="pane main"><span class="label">src/server.rs</span>
+        <i style="width:62%"></i><i style="width:80%"></i><i style="width:45%"></i><i style="width:70%"></i><i style="width:55%"></i><i style="width:76%"></i><i style="width:38%"></i><i style="width:66%"></i>
+      </div>
+      <div class="pane"><span class="label">shell</span>
+        <i class="ok" style="width:58%"></i><i style="width:72%"></i><i class="ok" style="width:40%"></i>
+      </div>
+      <div class="pane"><span class="label">agent</span>
+        <i style="width:68%"></i><i style="width:52%"></i><i style="width:74%"></i>
+      </div>
+      <div class="pane float"><span class="label">terminal · htop</span>
+        <i style="width:84%"></i><i style="width:60%"></i><i style="width:72%"></i>
+      </div>
+      <div class="status"><span class="pill">NORMAL</span><span>1 work</span><span class="right">main-stack</span></div>
+    </div>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
+      <h2>A shell that keeps its output</h2>
+      <p>Each command becomes a block you can search, fold, filter and run
+      again. <code>$3</code> is block 3's output. Tables from
+      <code>kubectl</code>, <code>docker</code> or <code>ps</code> filter and
+      sort in place, a <code>watch</code> marks what changed, and the rows are
+      things to act on: a pod's logs, a file, a process. When you want your own
+      shell, a terminal pane runs whatever you like.</p>
+      <p><a href="docs/shell.html">The shell</a></p>
+    </div>
+    <pre class="term"><code><span class="prompt">❯</span> <span class="n">1</span> kubectl get pods                  <span class="ok">✓</span> <span class="c">0.4s · 2 rows</span>
+NAME                   READY   STATUS             RESTARTS
+api-7d9f8b6c5-2xkqz    1/1     Running            0
+worker-5c6b7d8f9-ab    0/1     CrashLoopBackOff   13
+<span class="prompt">❯</span> <span class="n">2</span> $1 | where RESTARTS &gt; 0 | select NAME   <span class="ok">✓</span>
+NAME
+worker-5c6b7d8f9-ab
+<span class="dim">⎇ main ⎈ prod:payments ~/s/infra</span> <span class="prompt">❯</span> |</code></pre>
+  </section>
+
+  <section class="showcase flip">
+    <div class="text">
+      <h2>Notes whose code runs</h2>
+      <p>A fenced block in Markdown runs when you ask: <code>sh</code>,
+      <code>python</code>, <code>luau</code> in the editor itself,
+      <code>http</code> requests and more. Its output is saved under it, so the
+      file reads well anywhere and a diff shows what changed. Name a block and
+      feed its result to the next one, and a page becomes a small pipeline.
+      Notes have links, todos and an agenda, all in plain files.</p>
+      <p><a href="docs/using.html#runnable-code-blocks">Runnable blocks</a> ·
+      <a href="docs/using.html#notes">Notes</a></p>
+    </div>
+    <pre class="code"><code><span class="c">```python id=primes</span>
+primes = [n <span class="k">for</span> n <span class="k">in</span> <span class="f">range</span>(<span class="n">2</span>, <span class="n">30</span>)
+          <span class="k">if</span> <span class="f">all</span>(n % d <span class="k">for</span> d <span class="k">in</span> <span class="f">range</span>(<span class="n">2</span>, n))]
+<span class="f">print</span>(*primes)
+<span class="c">```</span>
+
+<span class="c">```result</span>
+2 3 5 7 11 13 17 19 23 29
+<span class="c">```</span>
+
+<span class="c">```luau input=primes</span>
+<span class="k">local</span> sum <span class="o">=</span> <span class="n">0</span>
+<span class="k">for</span> n <span class="k">in</span> string.<span class="f">gmatch</span>(input, <span class="s">"%d+"</span>) <span class="k">do</span>
+	sum <span class="o">+=</span> <span class="f">tonumber</span>(n)
+<span class="k">end</span>
+<span class="k">return</span> sum
+<span class="c">```</span>
+
+<span class="c">```result</span>
+129
+<span class="c">```</span></code></pre>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
+      <h2>Agents, as clients and inside</h2>
+      <p>Claude Code, Gemini, Codex or Greed's own agent with the model of your
+      choice run in a pane next to your work. Outside agents connect over
+      MCP, <code>greed ctl</code> and Claude Code's <code>/ide</code>. They see
+      your unsaved changes and selections, and propose edits you review in the
+      buffer. Ask one for a command or a setting and it can write you a
+      plugin, which Greed type checks and tests before you approve it.</p>
+      <p><a href="docs/agents.html">Agents</a></p>
+    </div>
+    <pre class="term"><code><span class="prompt">$</span> claude mcp add greed -- greed mcp
+<span class="prompt">$</span> greed ctl focus
+{ "path": "src/main.rs", "mode": "normal", "selections": [ ... ] }
+<span class="prompt">$</span> greed ctl diagnostics</code></pre>
   </section>
 
   <section class="features">
     <article>
-      <h2>Select, then act</h2>
-      <p>Editing works like Helix: <kbd>w</kbd> selects a word, <kbd>x</kbd> a line,
-      <kbd>s</kbd> every match of a regex, and typing then edits all of them at once.
-      Prefer Vim, or no modes at all? <code>:style vim</code> and <code>:style edit</code>
-      switch while it runs.</p>
-    </article>
-    <article>
       <h2>Plugins all the way down</h2>
-      <p>Everything you see comes from plugins in Luau, written against the same
-      typed API yours use. Each runs in a sandbox with a time budget, and unloading
-      one takes away everything it added.</p>
-    </article>
-    <article>
-      <h2>Sessions that keep running</h2>
-      <p>The editor runs as a session with thin clients. Detach and come back to your
-      open files, undo history and language servers, or use <code>greed ssh</code> to
-      edit on another machine with your config brought along.</p>
-    </article>
-    <article>
-      <h2>Agents as clients</h2>
-      <p>Agents reach the editor over MCP, <code>greed ctl</code> and Claude Code's
-      <code>/ide</code>. They see what you have open and propose edits you review in
-      the buffer. They can write plugins too, which Greed type checks and tests
-      before you approve them.</p>
+      <p>What you see comes from Luau plugins written against the same typed
+      API yours use. Each declares what it may touch (files, programs, the
+      network), runs within a time budget, and takes everything it added
+      with it when unloaded.</p>
     </article>
     <article>
       <h2>Terminal or window</h2>
-      <p>The same session shows in your terminal or in a window drawn on the GPU,
-      with ligatures, images, PDFs, prose in a proportional font and Markdown shown
-      as a document. One theme styles both.</p>
+      <p>The window draws on the GPU, with ligatures, images, PDFs, prose in a
+      proportional font and Markdown shown as a document. The terminal gets
+      the same session and the same theme.</p>
     </article>
     <article>
-      <h2>Notes and todos</h2>
-      <p>Markdown notes with links, todos and an agenda, kept as plain files in a
-      folder of your choosing, with tools agents can use to read and add to
-      them.</p>
+      <h2>Close to the work</h2>
+      <p>Run the session on the machine with the code and the builds, and
+      attach from your laptop. Shells, terminals, language servers and agents
+      all run there; your keys and your config come with you.</p>
     </article>
   </section>
 
   <section class="example">
     <div class="text">
       <h2>A plugin is a folder</h2>
-      <p>This one adds a command and binds it to <kbd>g u</kbd>. Put it in
-      <code>~/.config/greed/plugins/upper/</code>, or run <code>greed new upper</code>
-      there to get one with a test. <code>greed test upper</code> runs its tests in a
-      headless editor.</p>
+      <p>This one adds a command and binds it to the leader's <kbd>U</kbd> (<kbd>space U</kbd>, or
+      <kbd>ctrl-space U</kbd> in the VS Code style). Put it in
+      <code>~/.config/greed/plugins/upper/</code>, or run <code>greed new
+      upper</code> there to get one with a test. <code>greed test upper</code>
+      runs its tests in a headless editor.</p>
       <p><a href="docs/plugins.html">Writing plugins</a> ·
       <a href="docs/reference/api.html">The Luau API</a></p>
     </div>
@@ -120,24 +236,26 @@ greed.<span class="f">command</span>({
 	<span class="k">end</span>,
 })
 
-greed.keymap.<span class="f">bind</span>(<span class="s">"normal"</span>, { [<span class="s">"g u"</span>] <span class="o">=</span> <span class="s">"upper"</span> })</code></pre>
+greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span class="s">"leader"</span> }, { U <span class="o">=</span> <span class="s">"upper"</span> })</code></pre>
   </section>
 
   <section class="install">
     <h2>Try it</h2>
-    <p>Greed builds with a recent stable Rust and cmake:</p>
+    <p>Greed builds with a recent stable Rust and cmake, on Linux and macOS:</p>
     <pre class="term"><code><span class="prompt">$</span> git clone https://github.com/johnae/greed &amp;&amp; cd greed
 <span class="prompt">$</span> cargo build --release
 <span class="prompt">$</span> ./target/release/greed README.md</code></pre>
     <p>To install it, <code>cargo install --path crates/greed-editor</code>, or with Nix,
     <code>nix-build</code>. The default plugins are built into the binary, so it runs
-    from anywhere.</p>
+    from anywhere. The first start asks how you like to edit and which theme
+    you want, and writes a config with settings to try.</p>
   </section>
 </main>
 
 <footer>
   <p>Greed is early and changes often.</p>
-  <p><a href="docs/using.html">Using Greed</a> · <a href="docs/reference/plugins.html">Plugins</a> ·
+  <p><a href="docs/using.html">Using Greed</a> · <a href="docs/shell.html">The shell</a> ·
+  <a href="docs/reference/plugins.html">Plugins</a> ·
   <a href="docs/reference/options.html">Options</a> · <a href="docs/agents.html">Agents</a> ·
   <a href="docs/design.html">How it's built</a></p>
 </footer>
