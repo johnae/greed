@@ -119,9 +119,11 @@ local function calls_of(file: string?): { [string]: any }
 	return out
 end
 
--- Answers for the user while a task runs: installs a plugin under review
--- and cancels questions, as no one is there to answer them.
-local function answer_pages(running: () -> boolean)
+-- Answers for the user while a task runs in `dir`: accepts the changes it
+-- proposes, installs a plugin under review and cancels questions, as no
+-- one is there to answer them.
+local function answer_pages(dir: string, running: () -> boolean)
+	local agent = require("@agent")
 	greed.spawn(function()
 		while running() do
 			greed.sleep(500)
@@ -131,6 +133,14 @@ local function answer_pages(running: () -> boolean)
 					greed.run("plugin-review-accept")
 				elseif string.find(buffer:text(), "When you're done:", 1, true) then
 					greed.run("ask-cancel")
+				elseif agent.pending() > 0 then
+					for _, proposed in greed.buffers() do
+						local path = proposed:path()
+						if path and string.sub(path, 1, #dir) == dir then
+							greed.open(path)
+							greed.run("proposal-accept-all")
+						end
+					end
 				end
 			end)
 		end
@@ -162,17 +172,23 @@ local function run_task(run: Run, name: string, rep: number): { [string]: any }
 	local agent = assert(acp.installed("greed"), "Greed's own agent isn't there")
 	local s = assert(acp.start(agent, dir))
 	local finished, timed_out = false, false
-	answer_pages(function()
+	answer_pages(dir, function()
 		return not finished
 	end)
+	local prompted, err = false, nil
 	greed.spawn(function()
-		greed.sleep((task.timeout_s or 600) * 1000)
-		if not finished then
+		prompted, err = acp.prompt(s, task.prompt)
+		finished = true
+	end)
+	-- Past its time it's stopped; a turn stuck in a tool after that is left.
+	local limit = os.time() + (task.timeout_s or 600)
+	while not finished and os.time() < limit + 30 do
+		if os.time() >= limit and not timed_out then
 			timed_out = true
 			acp.stop(s)
 		end
-	end)
-	local prompted, err = acp.prompt(s, task.prompt)
+		greed.sleep(1000)
+	end
 	finished = true
 	local seconds = os.time() - started
 	-- What it said last, for checks of an answer.
