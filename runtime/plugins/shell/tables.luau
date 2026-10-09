@@ -904,6 +904,48 @@ M.STAGES = {
 		doc = "A field of JSON, like items or items.0.name (arrays count from 0)",
 		args = "path",
 	},
+	{
+		name = "filter",
+		usage = "filter EXPR",
+		doc = "The rows a Luau expression holds for, with the row's cells as r and its numbers as n",
+	},
+	{
+		name = "map",
+		usage = "map COL = EXPR",
+		doc = "A column made (or changed) by a Luau expression on r and n",
+	},
+	{ name = "count", usage = "count", doc = "How many rows there are" },
+	{ name = "first", usage = "first [N]", doc = "The first N rows, one without N" },
+	{ name = "last", usage = "last N", doc = "The last N rows" },
+	{
+		name = "uniq",
+		usage = "uniq COL",
+		doc = "The first row for each value in a column",
+		args = "column",
+	},
+	{
+		name = "sum",
+		usage = "sum COL",
+		doc = "The numbers in a column added up",
+		args = "column",
+	},
+	{
+		name = "group",
+		usage = "group COL",
+		doc = "Each value in a column and how many rows have it",
+		args = "column",
+	},
+	{
+		name = "to",
+		usage = "to json|csv|tsv",
+		doc = "The table as JSON, CSV or tab separated values",
+		args = "format",
+	},
+	{
+		name = "each",
+		usage = "each COMMAND",
+		doc = "Run a command for every row, {COL} in it the row's cell, quoted",
+	},
 } :: { Stage }
 
 --- Whether `cell` (in a column of durations or not) passes `op` `value`:
@@ -1263,14 +1305,225 @@ local function not_a_table(word: string): string
 	return `{word} works on a table, and this isn't one; columns, from csv/tsv/json, split or lines make one`
 end
 
+-- A table of `columns` and `rows`.
+local function new(columns: { string }, rows: { { [string]: string } }): Table
+	return { columns = columns, rows = rows }
+end
+
+-- Runs an expression for every row, in a sandbox: it reads the editor and
+-- nothing else, as what's typed here may come from an agent.
+local PER_ROW = [==[
+local json = require("@greed").json
+local rows, numbers = json.decode(%q), json.decode(%q)
+local out = {}
+for i, r in rows do
+	local n = numbers[i] or {}
+	out[i] = { v = (function() return %s end)() }
+end
+return json.encode(out)]==]
+
+-- What `expr`, Luau, gives for each row of `tbl`, with the row's cells as
+-- `r` and, those that read as numbers (sizes and ages too), as `n`; nil and
+-- why when it fails.
+local function per_row(tbl: Table, expr: string): ({ any }?, string?)
+	if trim(expr) == "" then
+		return nil,
+			"it takes a Luau expression on the row r, or n for its numbers, like n.RESTARTS > 0"
+	end
+	local numbers: { { [string]: number } } = {}
+	for i, row in tbl.rows do
+		local n: { [string]: number } = {}
+		for _, column in tbl.columns do
+			local number = M.number(row[column] or "", M.durations(tbl, column))
+			if number then
+				n[column] = number
+			end
+		end
+		numbers[i] = n
+	end
+	local code =
+		string.format(PER_ROW, greed.json.encode(tbl.rows), greed.json.encode(numbers), expr)
+	local ok, result = greed.eval(code, { sandbox = true })
+	if not ok then
+		local message = string.match(result, "^[^\n]*") or result
+		message = string.gsub(message, "^runtime error: ", "")
+		return nil, (string.gsub(message, "^repl:%d+: ", ""))
+	end
+	local decoded = greed.json.decode(result)
+	local out: { any } = {}
+	for i = 1, #tbl.rows do
+		local item = if type(decoded) == "table" then decoded[i] else nil
+		out[i] = if type(item) == "table" then item.v else nil
+	end
+	return out, nil
+end
+
+-- `cell` quoted for CSV when it has to be.
+local function csv_cell(cell: string): string
+	if string.find(cell, '[,"\n]') then
+		return '"' .. string.gsub(cell, '"', '""') .. '"'
+	end
+	return cell
+end
+
+-- `tbl` as JSON (a list of objects), CSV or tab separated values.
+local function to_format(tbl: Table, format: string): (string?, string?)
+	if format == "json" then
+		local list = {}
+		for i, row in tbl.rows do
+			list[i] = row
+		end
+		return greed.json.encode(greed.json.array(list)), nil
+	elseif format ~= "csv" and format ~= "tsv" then
+		return nil, "to json, to csv or to tsv"
+	end
+	local function line(cells: { string }): string
+		local out = {}
+		for i, cell in cells do
+			out[i] = if format == "tsv" then (string.gsub(cell, "[\t\n]", " ")) else csv_cell(cell)
+		end
+		return table.concat(out, if format == "tsv" then "\t" else ",")
+	end
+	local lines = { line(tbl.columns) }
+	for _, row in tbl.rows do
+		local cells = {}
+		for i, column in tbl.columns do
+			cells[i] = row[column] or ""
+		end
+		table.insert(lines, line(cells))
+	end
+	return table.concat(lines, "\n"), nil
+end
+
+-- The stages working on a table's rows, by name: each makes a new table,
+-- or, for `to`, text; nil and why when it can't.
+local ROWS: { [string]: (tbl: Table, rest: string) -> ((Table | string)?, string?) } = {
+	count = function(tbl: Table): ((Table | string)?, string?)
+		return new({ "count" }, { { count = tostring(#tbl.rows) } }), nil
+	end,
+	first = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local count = if rest == "" then 1 else tonumber(rest)
+		if count == nil then
+			return nil, "first N, like first 5"
+		end
+		return new(tbl.columns, table.move(tbl.rows, 1, math.min(count, #tbl.rows), 1, {})), nil
+	end,
+	last = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local count = tonumber(rest) or 1
+		local from = math.max(#tbl.rows - count + 1, 1)
+		return new(tbl.columns, table.move(tbl.rows, from, #tbl.rows, 1, {})), nil
+	end,
+	uniq = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local column = M.column(tbl, rest)
+		if column == nil then
+			return nil, no_column(tbl, rest)
+		end
+		local seen: { [string]: boolean } = {}
+		local kept = {}
+		for _, row in tbl.rows do
+			local cell = row[column] or ""
+			if not seen[cell] then
+				seen[cell] = true
+				table.insert(kept, row)
+			end
+		end
+		return new(tbl.columns, kept), nil
+	end,
+	sum = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local column = M.column(tbl, rest)
+		if column == nil then
+			return nil, no_column(tbl, rest)
+		end
+		local durations = M.durations(tbl, column)
+		local total = 0
+		for _, row in tbl.rows do
+			total += M.number(row[column] or "", durations) or 0
+		end
+		return new({ "sum" }, { { sum = as_text(total) } }), nil
+	end,
+	group = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local column = M.column(tbl, rest)
+		if column == nil then
+			return nil, no_column(tbl, rest)
+		end
+		local counts: { [string]: number } = {}
+		local order: { string } = {}
+		for _, row in tbl.rows do
+			local cell = row[column] or ""
+			if counts[cell] == nil then
+				counts[cell] = 0
+				table.insert(order, cell)
+			end
+			counts[cell] += 1
+		end
+		local rows = {}
+		for _, cell in order do
+			table.insert(rows, { [column] = cell, count = tostring(counts[cell]) })
+		end
+		return new({ column, "count" }, rows), nil
+	end,
+	to = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		return to_format(tbl, string.lower(rest))
+	end,
+	filter = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local results, why = per_row(tbl, rest)
+		if results == nil then
+			return nil, why
+		end
+		local kept = {}
+		for i, row in tbl.rows do
+			if results[i] ~= nil and results[i] ~= false then
+				table.insert(kept, row)
+			end
+		end
+		return new(tbl.columns, kept), nil
+	end,
+	map = function(tbl: Table, rest: string): ((Table | string)?, string?)
+		local name, expr = string.match(rest, "^%s*([^=]-)%s*=%s*(.+)$")
+		if name == nil or expr == nil or name == "" then
+			return nil, "map NAME = EXPR, like map hours = n.AGE / 3600"
+		end
+		local results, why = per_row(tbl, expr)
+		if results == nil then
+			return nil, why
+		end
+		local column = M.column(tbl, name) or name
+		local columns = table.clone(tbl.columns)
+		if not table.find(columns, column) then
+			table.insert(columns, column)
+		end
+		local rows = {}
+		for i, row in tbl.rows do
+			local copy = table.clone(row)
+			copy[column] = as_text(results[i])
+			rows[i] = copy
+		end
+		return new(columns, rows), nil
+	end,
+}
+
+-- Whether `word rest` is the row stage rather than the program of that
+-- name: `uniq` and `sum` when they name a column, `last` with a number.
+local function takes(word: string, input: Table?, rest: string): boolean
+	if word == "uniq" or word == "sum" then
+		return input ~= nil and M.column(input, rest) ~= nil
+	elseif word == "last" then
+		return input ~= nil and tonumber(rest) ~= nil
+	end
+	return true
+end
+
 --- Runs the table stages at the start of `line` (what follows `$3 |`) on
 --- `tbl`, or on `text` for those reading text as a table, or on `value`
 --- when the text was JSON: `where`, `select`, `sort` naming a column,
---- `columns`, `from csv`, `from tsv`, `from json`, `split SEP`, `lines`
---- and `get PATH`. Returns the table they made, the rest of the line after
---- them for a program to read as text, why they can't run (like a column
---- that isn't there) when they can't, and the JSON `get` picked when it
---- isn't a table. All nil when `line` starts with no stage.
+--- `columns`, `from csv`, `from tsv`, `from json`, `split SEP`, `lines`,
+--- `get PATH`, and the row stages (`filter`, `map`, `count`, `first`,
+--- `last`, `uniq`, `sum`, `group`, `to`). `each` is left in the rest of
+--- the line, for the shell to run. Returns the table they made, the rest
+--- of the line after them for a program to read as text, why they can't
+--- run (like a column that isn't there) when they can't, and the JSON
+--- `get` picked (or the text `to` made) when it isn't a table. All nil
+--- when `line` starts with no stage.
 function M.pipeline(
 	tbl: Table?,
 	text: string?,
@@ -1340,6 +1593,19 @@ function M.pipeline(
 			current, json = made, nil
 		elseif word == "sort" and input and sort_args(input, rest) then
 			current, json = M.sort(input, rest), nil
+		elseif word and ROWS[word] and takes(word, input, rest) then
+			if input == nil then
+				return nil, nil, not_a_table(word)
+			end
+			local made: (Table | string)?, why = ROWS[word](input, rest)
+			if made == nil then
+				return nil, nil, `{word}: {why}`
+			elseif type(made) == "string" then
+				-- `to` makes text, which ends the stages' tables.
+				current, json = nil, made
+			else
+				current, json = made, nil
+			end
 		else
 			break
 		end
@@ -1353,10 +1619,23 @@ function M.pipeline(
 end
 
 -- The stages a line can go on with after a program, as no program has
--- their names; `sort` and `split` are programs too, so they only go on
--- from these.
-local STARTERS: { [string]: boolean } =
-	{ where = true, select = true, get = true, columns = true, from = true, lines = true }
+-- their names; `sort`, `split`, `uniq`, `sum` and `last` are programs too,
+-- so they only go on from these.
+local STARTERS: { [string]: boolean } = {
+	where = true,
+	select = true,
+	get = true,
+	columns = true,
+	from = true,
+	lines = true,
+	filter = true,
+	map = true,
+	count = true,
+	group = true,
+	first = true,
+	to = true,
+	each = true,
+}
 
 --- `line` cut where table stages start after programs, as in `kubectl get
 --- pods | where STATUS != Running`: the programs, then the stages and

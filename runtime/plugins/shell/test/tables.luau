@@ -609,3 +609,76 @@ test("esc in normal mode shows a filtered block's every line again", function(t)
 	t:keys("esc")
 	assert(shown(sh, block) == all)
 end)
+
+-- A block that printed PODS, the table to work on.
+local function pods_block(t: test.TestContext, sh: Shell): Block
+	local block = run(t, sh, `printf '%s' {shell.parse.quote(PODS)}`)
+	assert(block.table and #block.table.rows == 5, "a table of pods")
+	return block
+end
+
+test("count, first, last, uniq, sum, group and to work on a table's rows", function(t)
+	local sh = open(t, t:tempdir())
+	local n = pods_block(t, sh).number
+	local function rows(line: string): { { [string]: string } }
+		local block = run(t, sh, `${n} | {line}`)
+		assert(block.status == "done", `{line}: {block.stderr}`)
+		return assert(block.table, line).rows
+	end
+	assert(rows("count")[1].count == "5")
+	assert(#rows("first 2") == 2 and #rows("first") == 1)
+	local last = rows("last 2")
+	assert(last[1].NAME == "redis-0" and last[2].NAME == "db-migrate-x7k2p")
+	assert(#rows("uniq STATUS") == 3)
+	assert(rows("sum RESTARTS")[1].sum == "15", rows("sum RESTARTS")[1].sum)
+	local grouped = rows("group STATUS")
+	assert(grouped[1].STATUS == "Running" and grouped[1].count == "3", grouped[1].count)
+	assert(rows("where STATUS = Running | count")[1].count == "3", "they chain")
+	local csv = run(t, sh, `${n} | select NAME,RESTARTS | to csv`)
+	assert(
+		string.find(csv.output, "NAME,RESTARTS\napi-7d9f8b6c5-2xkqz,0\napi-", 1, true) == 1,
+		csv.output
+	)
+	local json = run(t, sh, `${n} | first 2 | to json`)
+	local list = greed.json.decode(json.output)
+	assert(type(list) == "table" and #list == 2 and list[1].NAME == "api-7d9f8b6c5-2xkqz")
+	-- Without a column, uniq is the program.
+	local program = run(t, sh, `${n} | uniq`)
+	assert(program.status == "done" and string.find(program.output, "CrashLoopBackOff", 1, true))
+end)
+
+test("filter and map run Luau on each row, in a sandbox", function(t)
+	local sh = open(t, t:tempdir())
+	local n = pods_block(t, sh).number
+	local restarted = run(t, sh, `${n} | filter n.RESTARTS > 0 and r.STATUS ~= "Running"`)
+	assert(restarted.table and #restarted.table.rows == 1, restarted.output)
+	assert(restarted.table.rows[1].NAME == "worker-5c6b7d8f9-abcde")
+	local mapped = run(t, sh, `${n} | map minutes = n.AGE / 60 | sort minutes | first`)
+	assert(mapped.table and mapped.table.rows[1].minutes == "0.75", mapped.output)
+	assert(table.find(mapped.table.columns, "minutes"), "a new column")
+	local wrong = run(t, sh, `${n} | filter n.NOPE > 1`)
+	assert(wrong.status == "failed" and string.find(wrong.stderr, "filter:", 1, true), wrong.stderr)
+	local escape = run(t, sh, `${n} | filter require("@greed").process.run(\{ "true" \}) ~= nil`)
+	assert(escape.status == "failed", "the sandbox runs no programs")
+	assert(string.find(escape.stderr, "needs approval", 1, true), escape.stderr)
+	assert(string.find(run(t, sh, `${n} | map x`).stderr, "map NAME = EXPR", 1, true) ~= nil)
+end)
+
+test("each runs a command for every row, with its cells quoted", function(t)
+	local sh = open(t, t:tempdir())
+	local n = pods_block(t, sh).number
+	local each = run(t, sh, `${n} | where STATUS != Running | each echo pod \{NAME\} is \{status\}`)
+	assert(each.status == "done", each.stderr)
+	assert(
+		each.output
+			== "pod worker-5c6b7d8f9-abcde is CrashLoopBackOff\npod db-migrate-x7k2p is Completed\n",
+		each.output
+	)
+	local odd = run(t, sh, `printf 'NAME\\na b\\n' | lines | each printf '<%s>' \{line\}`)
+	assert(string.find(odd.output, "<a b>", 1, true), "one argument: " .. odd.output)
+	local none = run(t, sh, `${n} | each echo hi`)
+	assert(none.status == "failed" and string.find(none.stderr, "{NAME}", 1, true), none.stderr)
+	-- After a program too.
+	local after = run(t, sh, `printf '%s' {shell.parse.quote(PODS)} | count`)
+	assert(after.table and after.table.rows[1].count == "5", after.output)
+end)

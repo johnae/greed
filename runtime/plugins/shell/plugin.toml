@@ -2,5 +2,6 @@ name = "shell"
 requires = ["core", "picker", "terminal"]
 # Shells run programs (proc), read folders for cd and completion (fs.read),
 # keep their history and very long output in your data and cache folders
-# (fs.write), and copy output (clipboard).
-capabilities = ["proc", "fs.read", "fs.write", "clipboard"]
+# (fs.write), copy output (clipboard), and run the Luau of filter and map
+# stages in a sandbox (eval).
+capabilities = ["proc", "fs.read", "fs.write", "clipboard", "eval"]

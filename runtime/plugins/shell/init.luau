@@ -396,6 +396,37 @@ local function capture(
 	return table.concat(parts), c:stderr(), code
 end
 
+-- `template` once for each row of `tbl`, a line each, its `{COL}`s the
+-- row's cells quoted for a shell; braces naming no column stay as they
+-- are. Nil and why when `tbl` isn't a table or `template` names no column.
+local function each_lines(tbl: tables.Table?, template: string): (string?, string?)
+	if tbl == nil then
+		return nil,
+			"each works on a table, and this isn't one; columns, from csv/tsv/json, split or lines make one"
+	end
+	local named = false
+	for name in string.gmatch(template, "{([^{}]+)}") do
+		named = named or tables.column(tbl, name) ~= nil
+	end
+	if not named then
+		local example = tbl.columns[1] or "COL"
+		return nil,
+			`each runs a command for every row with its cells in it, like each echo \{{example}\}; there's {table.concat(
+				tbl.columns,
+				", "
+			)}`
+	end
+	local lines: { string } = {}
+	for _, row in tbl.rows do
+		local line = string.gsub(template, "{([^{}]+)}", function(name: string): string
+			local column = tables.column(tbl, name)
+			return if column then parse.quote(row[column] or "") else "{" .. name .. "}"
+		end)
+		table.insert(lines, line)
+	end
+	return table.concat(lines, "\n"), nil
+end
+
 -- `text` read as JSON, when it's an object or an array.
 local function as_json(text: string): any
 	if string.match(text, "^%s*[%[{]") == nil then
@@ -440,6 +471,18 @@ local function flow(
 		end
 	end
 	block.via = "shell"
+	local template = string.match(line, "^%s*each%s+(.-)%s*$")
+	if template and text ~= nil and not flags.raw then
+		local script, why = each_lines(tbl or tables.from_value(value), template)
+		if script == nil then
+			run.fail(shell, block, why or "", 2)
+		elseif script == "" then
+			run.finish(shell, block, 0, nil)
+		else
+			fall_back(shell, block, script, opts, false, nil)
+		end
+		return
+	end
 	local programs, stages = tables.after_programs(line)
 	if programs == nil or stages == nil or flags.handoff then
 		fall_back(shell, block, line, opts, flags.handoff == true, text)

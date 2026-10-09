@@ -311,11 +311,48 @@ table, as a block's output is, and the stages run on that.
 ❯ $1 | grep api | where RESTARTS > 0
 ```
 
-`where`, `select`, `get`, `columns`, `from` and `lines` start the stages
-after a program, since no program goes by those names; `sort` and `split`
-go on from them. What the program prints before the stages isn't shown,
-only what comes out at the end, and its errors. A stage on output that
-isn't a table says so, and what makes one.
+`where`, `select`, `get`, `columns`, `from`, `lines`, `filter`, `map`,
+`count`, `group`, `first`, `to` and `each` start the stages after a
+program, since no program goes by those names; `sort`, `split`, `uniq`,
+`sum` and `last` are programs too, so they're stages only after one of
+those, and only when they name a column (a number for `last`). What the
+program prints before the stages isn't shown, only what comes out at the
+end, and its errors. A stage on output that isn't a table says so, and
+what makes one.
+
+### More stages
+
+| | |
+|---|---|
+| `filter EXPR` | The rows a Luau expression holds for, with the row's cells as r and its numbers as n |
+| `map COL = EXPR` | A column made (or changed) by a Luau expression on r and n |
+| `count` | How many rows there are |
+| `first [N]` | The first N rows, one without N |
+| `last N` | The last N rows |
+| `uniq COL` | The first row for each value in a column |
+| `sum COL` | The numbers in a column added up |
+| `group COL` | Each value in a column and how many rows have it |
+| `to json\|csv\|tsv` | The table as JSON, CSV or tab separated values |
+| `each COMMAND` | Run a command for every row, {COL} in it the row's cell, quoted |
+
+`filter` and `map` take Luau. In it, `r` is the row, its cells as text
+(`r.STATUS`, `r["CONTAINER ID"]`), and `n` the cells that read as numbers,
+sizes and ages included (`n.RESTARTS`, `n.AGE` in seconds). It runs in a
+sandbox that can read the editor and nothing more, so a line an agent
+wrote can't do anything else either.
+
+```text
+❯ kubectl get pods | filter n.RESTARTS > 0 and r.STATUS ~= "Running"
+❯ kubectl get pods | map hours = n.AGE / 3600 | sort hours -r | first 5
+❯ kubectl get pods | group STATUS
+❯ kubectl get pods | where STATUS = Evicted | each kubectl delete pod {NAME}
+❯ docker ps | to csv > buf:containers.csv
+```
+
+`each` runs its command once for every row, with `{COL}` the row's cell,
+quoted for your shell; the commands run one after another in your shell
+and print into the block. What comes after `each` is all the command, so
+`each echo {NAME} | wc -c` counts each name.
 
 ### JSON
 
