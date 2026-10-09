@@ -15,6 +15,8 @@
 local greed = require("@greed")
 local core = require("@core")
 
+core.search.kind("shell-filter", "ignore", "filtering a shell block with /")
+
 local M = {}
 
 --- Rows under named columns. Every cell is text, "" when empty. `starts`
@@ -1026,10 +1028,20 @@ function M.matching(tbl: Table, condition: Condition, rows: { number }?): { numb
 	return out
 end
 
+--- Whether `text` has `word` in it, as a filter typed in a block looks:
+--- minding case as `shell-filter-search-case` says.
+function M.has(text: string, word: string): boolean
+	local case = core.search.case("shell-filter")
+	if case == "match" or (case == "smart" and string.find(word, "%u")) then
+		return string.find(text, word, 1, true) ~= nil
+	end
+	return string.find(string.lower(text), string.lower(word), 1, true) ~= nil
+end
+
 --- The rows (indexes) of `tbl` a filter typed in a block keeps: each word
 --- of `text` is a condition on a column (`STATUS=Running`, `NAME~api`,
---- `RESTARTS>0`), or else text some cell of the row has in it, without
---- minding case. A row has to pass them all.
+--- `RESTARTS>0`), or else text some cell of the row has in it, minding
+--- case as `shell-filter-search-case` says. A row has to pass them all.
 function M.filter(tbl: Table, text: string): { number }
 	local rows = M.all(tbl)
 	for word in string.gmatch(text, "%S+") do
@@ -1037,11 +1049,10 @@ function M.filter(tbl: Table, text: string): { number }
 		if condition then
 			rows = M.matching(tbl, condition, rows)
 		else
-			local want = string.lower(word)
 			local kept: { number } = {}
 			for _, i in rows do
 				for _, column in tbl.columns do
-					if string.find(string.lower(tbl.rows[i][column] or ""), want, 1, true) then
+					if M.has(tbl.rows[i][column] or "", word) then
 						table.insert(kept, i)
 						break
 					end

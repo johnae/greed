@@ -24,7 +24,7 @@ local function key(path: string, line: number): string
 end
 
 local function grep(pattern: string, root: string): Found
-	local found, err = greed.fs.grep(core.search.smart_case(pattern), root)
+	local found, err = greed.fs.grep(core.search.pattern(pattern), root)
 	if found == nil then
 		error(err, 0)
 	end
@@ -74,7 +74,7 @@ greed.command({
 			pattern = query
 			-- A half-typed pattern that doesn't parse yet finds nothing.
 			local found: { greed.GrepLine } = greed.fs.grep(
-				core.search.smart_case(query),
+				core.search.pattern(query),
 				root,
 				{ limit = LIVE_LIMIT }
 			) or {}

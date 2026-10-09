@@ -242,7 +242,7 @@ local function search_match(buffer: Buffer, pos: number): (number?, number?)
 	if last == nil then
 		return nil, nil
 	end
-	local pattern = core.search.smart_case(last)
+	local pattern = core.search.pattern(last)
 	local start = buffer:line_start(buffer:line_of(pos))
 	while start <= pos do
 		local from, to = buffer:find(pattern, start)

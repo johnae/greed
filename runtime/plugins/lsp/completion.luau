@@ -202,7 +202,7 @@ end
 --- with it, then those holding it, then the other fuzzy matches, each in
 --- the fuzzy match's order.
 function M.rank(typed: string, labels: { string }): { number }
-	local order = greed.fuzzy(typed, labels)
+	local order = greed.fuzzy(typed, labels, { case = core.search.case() })
 	if typed == "" then
 		return order
 	end
@@ -266,7 +266,14 @@ local function render(o: Open)
 			line ..= `  {item.detail}`
 			table.insert(marks, { from = from + at, to = from + #line, style = "ui.menu.doc" })
 		end
-		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(typed, label), 1)
+		menu.mark_row(
+			marks,
+			from,
+			line,
+			i == o.current,
+			greed.fuzzy_positions(typed, label, { case = core.search.case() }),
+			1
+		)
 		table.insert(lines, line)
 		from += #line + 1
 	end

@@ -93,3 +93,42 @@ test("* matches whole words where the selection is one; alt-* anywhere", functio
 	t:keys("alt-* n")
 	t:expect("foo ^foo|bar foo")
 end)
+
+test("search-case says how every typed search minds case, fuzzy ones too", function(t)
+	local search = require("@core").search
+	assert(search.case() == "smart")
+	assert(search.pattern("abc") == "(?i)abc", "lowercase ignores case")
+	assert(search.pattern("Abc") == "Abc", "a capital minds it")
+	local items = { "Abc", "abc" }
+	local both = greed.fuzzy("abc", items, { case = search.case() })
+	assert(#both == 2, `smart, lowercase: {#both}`)
+	greed.option.set("search-case", "ignore")
+	assert(search.pattern("Abc") == "(?i)Abc")
+	assert(#greed.fuzzy("Abc", items, { case = search.case() }) == 2)
+	t:buffer("|One one")
+	t:keys("/ O n e enter")
+	t:expect("One ^one|")
+	greed.option.set("search-case", "match")
+	assert(search.pattern("abc") == "abc")
+	local exact = greed.fuzzy("abc", items, { case = search.case() })
+	assert(#exact == 1 and exact[1] == 2, "only the one in that case")
+	assert(#greed.fuzzy_positions("ABC", "abc", { case = "match" }) == 0)
+	greed.option.set("search-case", "smart")
+	assert(
+		not pcall(greed.fuzzy :: any, "a", items, { case = "loud" }),
+		"an unknown case is an error"
+	)
+end)
+
+test("a kind of search minds case its own way, or as search-case says", function()
+	local search = require("@core").search
+	search.kind("testing", "ignore", "testing")
+	assert(search.case("testing") == "ignore" and search.pattern("Abc", "testing") == "(?i)Abc")
+	assert(search.case("nothing-made") == "smart", "a kind nobody made is as search-case says")
+	greed.option.set("testing-search-case", "default")
+	assert(search.case("testing") == "smart", "default leaves it to search-case")
+	greed.option.set("search-case", "match")
+	assert(search.case("testing") == "match" and search.pattern("abc", "testing") == "abc")
+	greed.option.set("search-case", "smart")
+	greed.option.set("testing-search-case", "ignore")
+end)

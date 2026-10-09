@@ -4,6 +4,7 @@
 -- and table keep everything as it came.
 
 local greed = require("@greed")
+local core = require("@core")
 local state = require("./state")
 local log = require("./log")
 local tables = require("./tables")
@@ -76,14 +77,16 @@ local function row_texts(block: Block, before: { Line }): { string }
 end
 
 -- The indexes of `texts` that `filter` keeps: every word of it in them,
--- without minding case, or with a leading `/` a match of the regex after
--- it. Nil for a regex that isn't one (yet, while it's typed).
+-- or with a leading `/` a match of the regex after it, minding case as
+-- `shell-filter-search-case` says. Nil for a regex that isn't one (yet,
+-- while it's typed).
 local function keep(texts: { string }, filter: string): { number }?
 	local kept: { number } = {}
 	if string.sub(filter, 1, 1) == "/" then
 		-- The regex engine works on buffers: one holds the lines for it.
 		local buffer = greed.create_buffer("shell-filter", table.concat(texts, "\n"))
-		local matches = buffer:find_all("(?m)" .. string.sub(filter, 2))
+		local matches =
+			buffer:find_all("(?m)" .. core.search.pattern(string.sub(filter, 2), "shell-filter"))
 		local found: { [number]: boolean } = {}
 		if matches then
 			for _, match in matches do
@@ -102,14 +105,13 @@ local function keep(texts: { string }, filter: string): { number }?
 		return kept
 	end
 	local words: { string } = {}
-	for word in string.gmatch(string.lower(filter), "%S+") do
+	for word in string.gmatch(filter, "%S+") do
 		table.insert(words, word)
 	end
 	for i, text in texts do
-		local lower = string.lower(text)
 		local all = true
 		for _, word in words do
-			if not string.find(lower, word, 1, true) then
+			if not tables.has(text, word) then
 				all = false
 				break
 			end

@@ -1435,12 +1435,20 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
 
     greed.set(
         "fuzzy",
-        lua.create_function(|_, (query, items): (String, Vec<String>)| Ok(fuzzy(&query, &items)))?,
+        lua.create_function(
+            |_, (query, items, opts): (String, Vec<String>, Option<Table>)| {
+                Ok(fuzzy(&query, &items, case_matching(opts.as_ref())?))
+            },
+        )?,
     )?;
     greed.set(
         "fuzzy_positions",
-        lua.create_function(|_, (query, text): (String, String)| {
-            Ok(fuzzy_positions(&query, &text))
+        lua.create_function(|_, (query, text, opts): (String, String, Option<Table>)| {
+            Ok(fuzzy_positions(
+                &query,
+                &text,
+                case_matching(opts.as_ref())?,
+            ))
         })?,
     )?;
 
@@ -1520,11 +1528,25 @@ fn create_buffer_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     )
 }
 
+/// How a fuzzy query minds case, from its options' `case`: "smart" (the
+/// default: only when the query has a capital letter), "ignore" or "match".
+fn case_matching(opts: Option<&Table>) -> LuaResult<CaseMatching> {
+    let case: Option<String> = opts.map(|o| o.get("case")).transpose()?.flatten();
+    match case.as_deref() {
+        None | Some("smart") => Ok(CaseMatching::Smart),
+        Some("ignore") => Ok(CaseMatching::Ignore),
+        Some("match") => Ok(CaseMatching::Respect),
+        Some(other) => Err(mlua::Error::runtime(format!(
+            "case is \"smart\", \"ignore\" or \"match\", not \"{other}\""
+        ))),
+    }
+}
+
 /// The byte offsets of the characters in `text` that `query` matches, in
 /// order; empty if it doesn't match.
-fn fuzzy_positions(query: &str, text: &str) -> Vec<usize> {
+fn fuzzy_positions(query: &str, text: &str, case: CaseMatching) -> Vec<usize> {
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
-    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+    let pattern = Pattern::parse(query, case, Normalization::Smart);
     let mut buf = Vec::new();
     let mut indices = Vec::new();
     if pattern
@@ -1543,9 +1565,9 @@ fn fuzzy_positions(query: &str, text: &str) -> Vec<usize> {
 }
 
 /// The 1-based indices of `items` matching `query`, best match first.
-fn fuzzy(query: &str, items: &[String]) -> Vec<usize> {
+fn fuzzy(query: &str, items: &[String], case: CaseMatching) -> Vec<usize> {
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
-    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+    let pattern = Pattern::parse(query, case, Normalization::Smart);
     let mut buf = Vec::new();
     let mut scored: Vec<(usize, u32)> = items
         .iter()

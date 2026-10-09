@@ -5,6 +5,9 @@
 local greed = require("@greed")
 local core = require("@core")
 
+-- :s minds case, as in Vim; its i and I flags, or this option, say otherwise.
+core.search.kind("substitute", "match", ":s")
+
 local M = {}
 
 -- The first and last line the primary selection touches.
@@ -93,7 +96,7 @@ function M.substitutions(
 			if string.find(flags, "i", 1, true)
 				then "(?i)" .. pattern
 				elseif string.find(flags, "I", 1, true) then pattern
-				else core.search.smart_case(pattern)
+				else core.search.pattern(pattern, "substitute")
 		)
 	local edits: { Substitution } = {}
 	local last_changed = first

@@ -602,3 +602,17 @@ test("an agent rewriting a note that's there proposes it; a new one is written",
 	assert(string.find(tostring(said), "accepted 1", 1, true), said)
 	assert(greed.fs.read(`{dir}/a.md`) == "one\nTWO\n", (greed.fs.read(`{dir}/a.md`)))
 end)
+
+test("searching notes ignores case unless notes-search-case says otherwise", function(t)
+	folder(t, { ["inbox.md"] = "Call Detectiv about the contract\n" })
+	local core = require("@core")
+	local notes = require("@notes")
+	local found = notes.grep(core.search.pattern("detectiv", "notes")) or {}
+	assert(#found == 1, "a lowercase search finds it")
+	found = notes.grep(core.search.pattern("DETECTIV", "notes")) or {}
+	assert(#found == 1, "so does one in capitals")
+	greed.option.set("notes-search-case", "match")
+	found = notes.grep(core.search.pattern("detectiv", "notes")) or {}
+	assert(#found == 0, "unless it should mind case")
+	greed.option.set("notes-search-case", "ignore")
+end)

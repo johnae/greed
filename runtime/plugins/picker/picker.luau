@@ -155,7 +155,13 @@ local function render(o: Open)
 			from,
 			line,
 			i == o.current,
-			if o.source then {} else greed.fuzzy_positions(o.query or "", o.labels[index]),
+			if o.source
+				then {}
+				else greed.fuzzy_positions(
+					o.query or "",
+					o.labels[index],
+					{ case = core.search.case() }
+				),
 			1
 		)
 		table.insert(lines, line)
@@ -236,7 +242,7 @@ local function list_path(o: Open, q: string, paths: Paths)
 	end
 	o.given = o.given or { items = o.items, labels = o.labels }
 	o.items, o.labels = items, labels
-	o.matches = greed.fuzzy(typed :: string, names)
+	o.matches = greed.fuzzy(typed :: string, names, { case = core.search.case() })
 	o.current = 1
 	render(o)
 end
@@ -260,7 +266,7 @@ local function refresh(o: Open)
 	end
 	local source = o.source
 	if source == nil then
-		o.matches = greed.fuzzy(q, o.labels)
+		o.matches = greed.fuzzy(q, o.labels, { case = core.search.case() })
 		o.current = 1
 		render(o)
 		return

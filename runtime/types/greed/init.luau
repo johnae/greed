@@ -1766,11 +1766,11 @@ export type Greed = {
 	commands: () -> { CommandInfo },
 	--- Every event handler, by event and then the order they were added.
 	handlers: () -> { HandlerInfo },
-	--- The 1-based indices of `items` that match `query`, best first.
-	fuzzy: (query: string, items: { string }) -> { number },
+	--- The 1-based indices of `items` that match `query`, best first. `case` says how it minds case: "smart" (the default: only when `query` has a capital letter), "ignore" or "match"; `core.search.case()` gives what the user chose.
+	fuzzy: (query: string, items: { string }, opts: { case: ("smart" | "ignore" | "match")? }?) -> { number },
 	--- The byte offsets of the characters in `text` that `query` matches,
-	--- for highlighting them; empty if it doesn't match.
-	fuzzy_positions: (query: string, text: string) -> { number },
+	--- for highlighting them; empty if it doesn't match. `case` as for `fuzzy`.
+	fuzzy_positions: (query: string, text: string, opts: { case: ("smart" | "ignore" | "match")? }?) -> { number },
 	--- Files under `dir` (default: the current directory), skipping hidden
 	--- and ignored files.
 	files: (dir: string?) -> { string },

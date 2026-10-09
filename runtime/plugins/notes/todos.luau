@@ -275,6 +275,8 @@ greed.command({
 	end,
 })
 
+core.search.kind("notes", "ignore", "searching notes")
+
 greed.command({
 	name = "notes-search",
 	doc = "Search every note as you type",
@@ -284,7 +286,7 @@ greed.command({
 		end, {
 			source = function(query)
 				local items = {}
-				local found: { Found } = notes.grep(query) or {}
+				local found: { Found } = notes.grep(core.search.pattern(query, "notes")) or {}
 				for _, line in found do
 					table.insert(items, {
 						label = `{line.note}:{line.line + 1}: {line.text}`,

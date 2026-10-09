@@ -46,7 +46,7 @@ local function rank(word: string, items: { Candidate }): { Candidate }
 		texts[i] = item.text
 	end
 	local exact, prefix, rest = {}, {}, {}
-	for _, i in greed.fuzzy(word, texts) do
+	for _, i in greed.fuzzy(word, texts, { case = core.search.case() }) do
 		local item = items[i]
 		if item.text == word then
 			table.insert(exact, item)

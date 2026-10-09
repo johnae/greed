@@ -2,6 +2,7 @@
 -- a command.
 
 local greed = require("@greed")
+local core = require("@core")
 
 export type Parsed = {
 	--- The command as typed, without a trailing "!".
@@ -94,7 +95,8 @@ local function address(text: string, i: number, lines: Lines): (number?, number)
 		local from = if back
 			then buffer:line_start(lines.current)
 			else buffer:line_end(lines.current)
-		local found = buffer:find(pattern, from, { backward = back, wrap = true })
+		local found =
+			buffer:find(core.search.pattern(pattern), from, { backward = back, wrap = true })
 		if found == nil then
 			error(`pattern not found: {pattern}`, 0)
 		end

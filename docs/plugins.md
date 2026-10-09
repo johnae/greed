@@ -823,6 +823,15 @@ calls `step(t)` once a frame, which is all the flash on copy is.
 `greed.fs.watch(path)` makes a "file.changed" event come whenever that file
 changes, from anywhere; it's how your config reloads.
 
+A search the user types should mind case as they set it:
+`core.search.pattern(regex)` gives the regex to search with, as
+`search-case` says, and `greed.fuzzy(query, items, { case =
+core.search.case() })` the same for fuzzy matching. A kind of search with
+a better default of its own gets an option for it, `KIND-search-case`,
+from `core.search.kind(name, default, what)`, as notes do with
+`core.search.kind("notes", "ignore", "searching notes")`; then pass the
+kind, `core.search.pattern(query, "notes")`.
+
 `greed.run(name)` starts a command and returns as soon as that command
 waits for something, so the code after it doesn't see what the command
 did after a key or a reply. `greed.run(name, { wait = true })` waits until

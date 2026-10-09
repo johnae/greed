@@ -503,7 +503,24 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 | `alt-*` | The same, also inside longer words |
 | `space /` | Search the whole project as you type |
 
-Patterns are regexes; ones written in lowercase ignore case.
+Patterns are regexes. How searches you type mind case is one option,
+`search-case`: `"smart"` (the default) ignores case unless what you type
+has a capital letter, and `"ignore"` and `"match"` always do one thing.
+It covers searching a file, the project search, `:g` and the pickers'
+fuzzy matching. A few kinds of search have their own option, with the
+default that suits them, which `"default"` hands back to `search-case`:
+
+| Option | Default | |
+|---|---|---|
+| `notes-search-case` | `"ignore"` | Searching notes (`space n /`) |
+| `substitute-search-case` | `"match"` | `:s`, as in Vim; its `i` and `I` flags still say otherwise for one run |
+| `shell-filter-search-case` | `"ignore"` | `/` on a shell block's output |
+
+```luau
+local option = require("@greed").option
+option.set("search-case", "ignore") -- every search ignores case...
+option.set("substitute-search-case", "default") -- ...:s too
+```
 
 In the project search, `enter` opens a match and `ctrl-e` puts what was
 found in a panel, a third of the screen wide: a multibuffer, with each

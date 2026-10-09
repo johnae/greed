@@ -132,7 +132,7 @@ local function render(o: Open, to_end: boolean?)
 			table.insert(marks, { from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" })
 			line ..= candidate.doc
 		end
-		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text), 1)
+		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }), 1)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -309,7 +309,7 @@ local execute: (text: string, lines: { first: number, last: number }?) -> ()
 local function global(pattern: string, command: string, inverted: boolean, first: number, last: number)
 	local view = greed.view()
 	local buffer = view:buffer()
-	local regex = core.search.smart_case(if pattern == "" then core.search.last() or "" else pattern)
+	local regex = core.search.pattern(if pattern == "" then core.search.last() or "" else pattern)
 	local starts: { number } = {}
 	for line = first, last do
 		local from, to = buffer:line_start(line), buffer:line_end(line)

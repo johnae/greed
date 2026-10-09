@@ -278,11 +278,12 @@ can read out of it, and every layer below works on what's under it.
 ### Filtering a block
 
 `/` on a block's output keeps the lines with what you type in them, as you
-type it; several words keep the lines with all of them, in any case, and
-a filter that starts with `/` is a regex (`/^error|warn`). `enter` keeps
-the filter; `esc`, while typing it or after in normal mode on the block,
-shows every line again, and `space S` also undoes a sort. The block
-shows the lines kept and the status says so (`2 of 340 lines · / error`),
+type it; several words keep the lines with all of them, in any case
+(`shell-filter-search-case` changes that), and a filter that starts with
+`/` is a regex (`/^error|warn`). `enter` keeps the filter; `esc`, while
+typing it or after in normal mode on the block, shows every line again,
+and `space S` also undoes a sort. The block shows the lines kept and the
+status says so (`2 of 340 lines · / error`),
 while its record keeps them all, so `$3`, `space y` and `space v` give the
 whole output. On a block's command or at the prompt, `/` searches as
 usual.

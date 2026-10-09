@@ -1,6 +1,7 @@
 -- Search, like Helix: / and ? search forward and back as you type, n and N
 -- go to the next and previous match, and * searches for the selection.
--- Patterns are regexes; ones in lowercase ignore case.
+-- Patterns are regexes. How a search you type minds case is `search-case`,
+-- unless its kind has its own say, as notes and `:s` do (`kind`).
 
 local greed = require("@greed")
 local prompt = require("./prompt")
@@ -18,9 +19,48 @@ local function primary(view: greed.View): greed.Range
 	return selection.ranges[selection.primary]
 end
 
--- Lowercase patterns ignore case, like Helix's smart case.
-local function smart_case(pattern: string): string
-	return if string.find(pattern, "%u") then pattern else "(?i)" .. pattern
+export type Case = "smart" | "ignore" | "match"
+
+greed.option.define({
+	name = "search-case",
+	doc = 'How searches you type mind case, unless their kind says otherwise: "smart" (only when what you type has a capital letter), "ignore" or "match"',
+	default = "smart",
+	choices = { "smart", "ignore", "match" },
+})
+
+-- The value `option` has when it's a case, else nil.
+local function case_of(option: string): Case?
+	local value = greed.option.get(option)
+	return if value == "smart" or value == "ignore" or value == "match" then value else nil
+end
+
+-- How searches of `kind` mind case: as `KIND-search-case` says, or else
+-- `search-case`.
+local function case(kind: string?): Case
+	return (if kind then case_of(`{kind}-search-case`) else nil)
+		or case_of("search-case")
+		or "smart"
+end
+
+-- Makes `KIND-search-case`, how one kind of search minds case, as `default`
+-- unless set otherwise; "default" leaves it to `search-case`. It goes when
+-- the plugin that made it does.
+local function kind(name: string, default: Case | "default", what: string)
+	greed.option.define({
+		name = `{name}-search-case`,
+		doc = `How {what} minds case: "smart" (only when what you type has a capital letter), "ignore", "match", or "default" for as search-case says`,
+		default = default,
+		choices = { "default", "smart", "ignore", "match" },
+	})
+end
+
+-- `pattern`, a regex someone typed to search with, minding case as its
+-- `kind` says: smart, as Helix does, ignores it unless the pattern has a
+-- capital letter.
+local function typed(pattern: string, kind: string?): string
+	local how = case(kind)
+	local ignore = how == "ignore" or (how == "smart" and not string.find(pattern, "%u"))
+	return if ignore then "(?i)" .. pattern else pattern
 end
 
 -- Where a search for the next match starts: after the selection, or after
@@ -39,7 +79,7 @@ local function next_match(
 	back: boolean
 ): (number?, number?)
 	local start = if back then span(range) else after(buffer, range)
-	local from, to = buffer:find(smart_case(pattern), start, { backward = back, wrap = true })
+	local from, to = buffer:find(typed(pattern), start, { backward = back, wrap = true })
 	if from == nil then
 		return nil, nil
 	end
@@ -72,7 +112,7 @@ end
 local function highlight(buffer: greed.Buffer, pattern: string)
 	local marks: { greed.Mark } = {}
 	if pattern ~= "" then
-		local found: { { from: number, to: number } } = buffer:find_all(smart_case(pattern)) or {}
+		local found: { { from: number, to: number } } = buffer:find_all(typed(pattern)) or {}
 		for _, m in found do
 			if m.to > m.from then
 				table.insert(marks, { from = m.from, to = m.to, style = "ui.search.match" })
@@ -102,7 +142,7 @@ local function search(ctx: greed.Context, back: boolean)
 				return
 			end
 			-- Nil, nil and the error for a bad pattern.
-			local found, _, err = buffer:find(smart_case(pattern))
+			local found, _, err = buffer:find(typed(pattern))
 			if found == nil and err then
 				greed.echo(`bad pattern {pattern}: {err}`)
 				return
@@ -468,7 +508,17 @@ greed.command({
 })
 
 return {
-	smart_case = smart_case,
+	--- `pattern`, a regex someone typed, minding case as searches of `kind`
+	--- (made with `kind`) do, or else as `search-case` says.
+	pattern = typed,
+	--- How searches of `kind` mind case: "smart", "ignore" or "match", as
+	--- `greed.fuzzy` takes it; without a kind, as `search-case` says.
+	case = case,
+	--- Makes `KIND-search-case`, so one kind of search (notes, `:s`) minds
+	--- case its own way: `default` unless set otherwise, and "default" for
+	--- as `search-case` says. `what` names it in the option's doc, like
+	--- "searching notes".
+	kind = kind,
 	--- Modes where a search puts the cursor at the match's start instead of
 	--- selecting it; set with `start_at_match`.
 	at_start = at_start,

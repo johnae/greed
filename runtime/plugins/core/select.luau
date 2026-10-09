@@ -55,7 +55,7 @@ local function with_regex(ctx: greed.Context, title: string, apply: (Ranges, str
 	local function preview(pattern: string)
 		view:set_selection(origin)
 		if pattern ~= "" then
-			local ok, ranges = pcall(apply, origin.ranges, search.smart_case(pattern))
+			local ok, ranges = pcall(apply, origin.ranges, search.pattern(pattern))
 			if ok then
 				set(view, ranges)
 			end

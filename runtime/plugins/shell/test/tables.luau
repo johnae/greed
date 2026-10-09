@@ -682,3 +682,13 @@ test("each runs a command for every row, with its cells quoted", function(t)
 	local after = run(t, sh, `printf '%s' {shell.parse.quote(PODS)} | count`)
 	assert(after.table and after.table.rows[1].count == "5", after.output)
 end)
+
+test("a filter ignores case unless shell-filter-search-case says otherwise", function()
+	local tables = shell.tables
+	assert(tables.has("Running", "running") and tables.has("running", "Running"))
+	greed.option.set("shell-filter-search-case", "default")
+	assert(not tables.has("running", "Running"), "as search-case says: smart")
+	greed.option.set("shell-filter-search-case", "match")
+	assert(not tables.has("Running", "running"))
+	greed.option.set("shell-filter-search-case", "ignore")
+end)
