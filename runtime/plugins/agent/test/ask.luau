@@ -50,6 +50,48 @@ test("ask shows the questions as a page, and Send gives the answers back", funct
 	assert(got.answers.name == "tidy", tostring(got.answers.name))
 end)
 
+test("a question with choices takes words of your own too, alone or with a choice", function(t)
+	t:buffer("|")
+	local questions: { Question } = {
+		{ id = "next", question = "What now?", choices = { "Install it", "Something else" } },
+		{ id = "how", question = "How?", choices = { "Fast", "Slow" } },
+	}
+	local result = ask({ questions = questions })
+	t:wait(10)
+	local page = greed.view():buffer()
+	local text = page:text()
+	assert(string.find(text, "- ( ) Install it\n- ( ) Something else\nAnswer: ", 1, true), text)
+	local markdown = require("@markdown")
+	-- The second choice of the first question, then words after it.
+	markdown.choices.pick(page, 7)
+	local function type_after(n: number, words: string)
+		local seen = 0
+		for line = 0, page:line_count() - 1 do
+			if string.match(page:line_text(line), "^Answer:") then
+				seen += 1
+				if seen == n then
+					page:edit(function(e)
+						e:insert(page:line_end(line), words)
+					end)
+					return
+				end
+			end
+		end
+	end
+	type_after(1, "the try was older than the edit")
+	type_after(2, "neither")
+	t:run("ask-send")
+	t:wait_for(function()
+		return result() ~= nil
+	end)
+	local got = result()
+	assert(
+		got.answers.next == "Something else: the try was older than the edit",
+		tostring(got.answers.next)
+	)
+	assert(got.answers.how == "neither", tostring(got.answers.how))
+end)
+
 test("an agent's words can't bring controls of their own into the page", function(t)
 	t:buffer("|")
 	local result = ask({

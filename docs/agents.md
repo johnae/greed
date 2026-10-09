@@ -204,7 +204,8 @@ changes, and the right one keeps up as you edit, accept and reject.
 
 An agent that needs to know something can `ask`. Greed shows its questions
 as a page in a float: each with choices to pick one of (`enter` or a click),
-or a line to type after `Answer:`. **Send** gives your answers back to the
+if it has any, and a line to type your own answer after `Answer:`, alone or
+to go with a choice. **Send** gives your answers back to the
 agent, and **Cancel**, or closing the page, tells it you didn't answer.
 `enter` picks the choice under the cursor and goes on to the next
 question, starts typing on an `Answer:` line, and from there goes on to

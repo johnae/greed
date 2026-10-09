@@ -14,8 +14,8 @@ local registry = require("./registry")
 
 local M = {}
 
---- A question: its `id` (the key of its answer), the question, and either
---- `choices` to pick one of or nothing, for an answer typed in.
+--- A question: its `id` (the key of its answer), the question, and
+--- `choices` to pick one of, if any; an answer can be typed in too.
 export type Question = { id: string, question: string, choices: { string }? }
 
 -- A question being asked: its page, its questions, and who waits.
@@ -52,17 +52,17 @@ local function page(title: string, questions: { Question }): string
 			for _, choice in q.choices do
 				table.insert(lines, `- ( ) {plain(choice)}`)
 			end
-		else
-			table.insert(lines, "Answer: ")
 		end
+		-- Words of your own, for a question without choices or none that fits.
+		table.insert(lines, "Answer: ")
 		table.insert(lines, "")
 	end
 	table.insert(lines, "When you're done:")
 	return table.concat(lines, "\n")
 end
 
--- The answers on `buffer`'s page, by question id: the choice picked, or
--- the words after "Answer:", nil for none.
+-- The answers on `buffer`'s page, by question id: the choice picked, the
+-- words after "Answer:", or both as "choice: words"; nil for none.
 local function answers(buffer: greed.Buffer, questions: { Question }): { [string]: string }
 	local picked: { [number]: string } = {}
 	for _, group in markdown.choices.list(buffer) do
@@ -84,7 +84,8 @@ local function answers(buffer: greed.Buffer, questions: { Question }): { [string
 		if q then
 			local typed = string.match(text, "^Answer:%s*(.-)%s*$")
 			if typed and typed ~= "" then
-				out[q.id] = typed
+				-- After the question's choices, so with the one picked if any.
+				out[q.id] = if out[q.id] then `{out[q.id]}: {typed}` else typed
 			elseif picked[line] then
 				out[q.id] = picked[line]
 			end
@@ -237,8 +238,9 @@ end)
 registry.tool({
 	name = "ask",
 	description = "Ask the user questions and wait for their answers. Each question has an id "
-		.. "(the key of its answer), the question, and either choices to pick one of or none, "
-		.. "for a typed answer. Greed shows them as a page; the user answers and sends it, or "
+		.. "(the key of its answer), the question, and choices to pick one of if it has any; the "
+		.. 'user can type words of their own too, which come back alone or as "choice: words". '
+		.. "Greed shows them as a page; the user answers and sends it, or "
 		.. "cancels. Returns the answers by id and whether they cancelled. Ask only what you "
 		.. "can't settle yourself: pick names and sensible defaults on your own and say what "
 		.. "you picked.",
