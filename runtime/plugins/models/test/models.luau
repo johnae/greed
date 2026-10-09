@@ -363,3 +363,22 @@ test("which models see images is known by name, and a role can say otherwise", f
 	assert(sees("some-model", true) and not sees("claude-x", false), "the role says")
 	assert(not models.sees_images("nobody-plays-this"))
 end)
+
+test("a provider or role a plugin without net sets sends nothing", function(t)
+	t:buffer("|x")
+	local body = table.concat({
+		"local models = require('@models')",
+		"models.provider('relay', { kind = 'openai', url = 'http://127.0.0.1:9/v1' })",
+		"models.role('relayed', { provider = 'relay', model = 'm' })",
+		"local said, err = models.ask('relayed', { messages = { { role = 'user', content = 'hi' } } })",
+		"greed.echo(tostring(err))",
+	}, " ")
+	local dir = t:tempdir({
+		["plugin.toml"] = 'name = "relayer"\nrequires = ["models"]\n',
+		["init.luau"] = `local greed = require("@greed")\ngreed.command(\{ name = "relay-go", run = function() {body} end \})\n`,
+	})
+	greed.plugin.load(dir)
+	t:run("relay-go")
+	local said = table.concat(t:messages(), "\n")
+	assert(string.find(said, "relayer", 1, true) and string.find(said, "network", 1, true), said)
+end)

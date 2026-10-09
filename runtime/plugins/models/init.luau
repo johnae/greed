@@ -102,16 +102,43 @@ M.roles = {
 	["local"] = { provider = "ollama", model = "llama3.2" },
 } :: { [string]: Role? }
 
+-- The plugin that set each provider and role with `provider` and `role`,
+-- by name, with what it set: a request runs within that plugin's limit
+-- while it's still what's set, so one from a plugin without "net" sends
+-- nothing.
+type SetBy = { by: string?, value: any }
+local provider_by: { [string]: SetBy } = {}
+local role_by: { [string]: SetBy } = {}
+
 --- Adds or replaces the provider `name`, as your config can by setting
 --- `providers[name]`. It goes when the plugin that added it does.
 function M.provider(name: string, provider: Provider)
 	greed.plugin.tie(registry.set(M.providers, name, provider))
+	greed.plugin.tie(
+		registry.set(provider_by, name, { by = greed.plugin.caller(), value = provider })
+	)
 end
 
 --- Makes `role` played by `spec`, as your config can by setting
 --- `roles[role]`. It goes when the plugin that set it does.
 function M.role(role: string, spec: Role)
 	greed.plugin.tie(registry.set(M.roles, role, spec))
+	greed.plugin.tie(registry.set(role_by, role, { by = greed.plugin.caller(), value = spec }))
+end
+
+-- The plugin that set `value` in `set_by` under `name`, if it's still set.
+local function setter(set_by: { [string]: SetBy }, name: string, value: any): string?
+	local entry = set_by[name]
+	return if entry and rawequal(entry.value, value) then entry.by else nil
+end
+
+-- Runs `f` within the limits of the plugins that set role `role`'s model
+-- and its provider, if plugins did.
+local function as_set<A..., R...>(role: string, chosen: Role, f: (A...) -> R..., ...: A...): R...
+	local played = M.playing(role)
+	local by_role = setter(role_by, played, M.roles[played])
+	local by_provider = setter(provider_by, chosen.provider, M.providers[chosen.provider])
+	return greed.plugin.within(by_role, greed.plugin.within, by_provider, f, ...)
 end
 
 --- A role a plugin asks for that uses another role's model while none plays
@@ -216,7 +243,8 @@ M.presets = {
 -- How long an answer may be when the request doesn't say.
 local MAX_TOKENS = 4096
 
---- The provider and model playing `role`, or why there are none.
+--- The provider and model playing `role`, or why there are none. Copies:
+--- change them with `provider` and `role`.
 function M.resolve(role: string): (Role?, Provider?, string?)
 	local chosen = M.roles[role]
 	if chosen == nil then
@@ -228,7 +256,7 @@ function M.resolve(role: string): (Role?, Provider?, string?)
 			nil,
 			`the role "{role}" uses the provider "{chosen.provider}", which isn't set up`
 	end
-	return chosen, provider, nil
+	return table.clone(chosen), table.clone(provider), nil
 end
 
 -- Context windows of models known by name: the first pattern found in the
@@ -628,6 +656,20 @@ local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream
 	return response, nil
 end
 
+-- `open` as the plugins that set role `role`'s model and provider may, or
+-- why not when they may not.
+local function send(
+	role: string,
+	chosen: Role,
+	request: greed.HttpRequest
+): (greed.HttpStream?, string?)
+	local ok, response, err = pcall(as_set, role, chosen, open, chosen, request)
+	if not ok then
+		return nil, tostring(response)
+	end
+	return response, err
+end
+
 --- Asks the model playing `role`, and returns the answer as it arrives.
 --- Waits for the server to start answering. Works in commands, event
 --- handlers and greed.spawn.
@@ -637,7 +679,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 		return nil, why
 	end
 	local response, err =
-		greed.vouch(open, chosen, http_request(provider, chosen.model, request, key))
+		greed.vouch(send, role, chosen, http_request(provider, chosen.model, request, key))
 	-- Newer models refuse a temperature; they're asked again without one.
 	if
 		response == nil
@@ -646,7 +688,8 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	then
 		local plain = table.clone(request)
 		plain.temperature = nil
-		response, err = greed.vouch(open, chosen, http_request(provider, chosen.model, plain, key))
+		response, err =
+			greed.vouch(send, role, chosen, http_request(provider, chosen.model, plain, key))
 	end
 	if response == nil then
 		return nil, err
@@ -914,7 +957,7 @@ function M.turn(
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, M.output(role)))
-	local response, err = greed.vouch(open, chosen, sent)
+	local response, err = greed.vouch(send, role, chosen, sent)
 	if response == nil then
 		return nil, err
 	end
