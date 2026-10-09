@@ -602,6 +602,11 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
         })
         .transpose()
     });
+    methods.add_method("clipboard_image", |lua, _, png: Option<mlua::LuaString>| {
+        let png = png.map_or_else(Vec::new, |png| png.as_bytes().to_vec());
+        state_mut(lua).editor.fake_clipboard_image(Some(png));
+        Ok(())
+    });
     methods.add_method("notices", |lua, _, ()| {
         let notices = state_mut(lua).editor.take_notices();
         notices

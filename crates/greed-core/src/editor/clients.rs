@@ -69,6 +69,9 @@ pub struct ClientState {
     pub(super) copied: Option<String>,
     /// Notifications for the client, until it has been told.
     pub(super) notices: Vec<Notice>,
+    /// Requests for the image on the client's system clipboard, until it
+    /// has been asked.
+    pub(super) image_asks: Vec<u64>,
     /// The client asked to leave, with the editor running on.
     pub(super) detach_requested: bool,
     /// Where the client was asked to go instead of this session.
@@ -101,6 +104,7 @@ impl ClientState {
             undo_group: None,
             copied: None,
             notices: Vec::new(),
+            image_asks: Vec::new(),
             detach_requested: false,
             switch_requested: None,
             cell_size: (8, 16),

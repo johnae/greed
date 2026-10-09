@@ -34,6 +34,9 @@ pub struct ViewId(pub u32);
 /// `Buffer::undo` or `Buffer::redo`.
 type HistoryStep = fn(&mut Buffer, TxId, Author, &Selection) -> Result<Option<Selection>, Error>;
 
+/// Where a client's answer to an ask for its clipboard's image goes.
+type ImageAnswer = crossbeam_channel::Sender<Option<Vec<u8>>>;
+
 /// A buffer shown on screen, as one client sees it: with its selection and
 /// scroll position. Each client has its own of every view.
 #[derive(Debug, Clone)]
@@ -394,6 +397,12 @@ pub struct Editor {
     last_active: ClientId,
     /// Counts what clients do, for telling who did something last.
     activity: u64,
+    /// Asks for the image on a client's clipboard, by number, each with the
+    /// client asked and where its answer goes, and the last number given;
+    /// and an image every ask gets at once instead, for tests.
+    image_asks: HashMap<u64, (ClientId, ImageAnswer)>,
+    image_asked: u64,
+    fake_clipboard_image: Option<Vec<u8>>,
     /// Open projects, each with its own main view and panels. Empty until the
     /// first view opens.
     projects: Vec<Project>,
@@ -442,6 +451,9 @@ impl Editor {
             doer: FIRST_CLIENT,
             last_active: FIRST_CLIENT,
             activity: 0,
+            image_asks: HashMap::new(),
+            image_asked: 0,
+            fake_clipboard_image: None,
             projects: Vec::new(),
             shown: BTreeMap::from([(LayoutId::SHARED, 0)]),
             buffer_projects: HashMap::new(),
@@ -538,6 +550,10 @@ impl Editor {
         };
         client.parked = true;
         client.size = None;
+        // It won't answer what it was asked for its clipboard's image;
+        // dropping where the answers go tells those waiting it has none.
+        client.image_asks.clear();
+        self.image_asks.retain(|_, (asked, _)| *asked != id);
         if self.last_active == id
             && let Some(latest) = self.clients().max_by_key(|c| c.active_at)
         {
@@ -1892,6 +1908,51 @@ impl Editor {
     /// The notifications not yet sent to the acting client, oldest first.
     pub fn take_notices(&mut self) -> Vec<Notice> {
         std::mem::take(&mut self.acting_client_mut().notices)
+    }
+
+    /// Asks the acting client for the image on its system clipboard, which
+    /// it reads on its own machine: its answer, PNG or nothing, comes on
+    /// the channel returned. A client that has gone has none to give.
+    pub fn ask_clipboard_image(&mut self) -> crossbeam_channel::Receiver<Option<Vec<u8>>> {
+        let (answer, answered) = crossbeam_channel::bounded(1);
+        if let Some(fake) = &self.fake_clipboard_image {
+            let _ = answer.send(Some(fake.clone()).filter(|png| !png.is_empty()));
+            return answered;
+        }
+        if self.acting_client().parked {
+            let _ = answer.send(None);
+            return answered;
+        }
+        self.image_asked += 1;
+        let id = self.image_asked;
+        self.image_asks.insert(id, (self.acting, answer));
+        self.acting_client_mut().image_asks.push(id);
+        answered
+    }
+
+    /// The asks for the clipboard's image not yet sent to the acting client.
+    pub fn take_image_asks(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.acting_client_mut().image_asks)
+    }
+
+    /// Client `by`'s answer to ask `id`: the image on its clipboard, as PNG,
+    /// or none. Only the client that was asked answers.
+    pub fn answer_image_ask(&mut self, by: ClientId, id: u64, png: Option<Vec<u8>>) {
+        if self
+            .image_asks
+            .get(&id)
+            .is_some_and(|(asked, _)| *asked == by)
+            && let Some((_, answer)) = self.image_asks.remove(&id)
+        {
+            let _ = answer.send(png);
+        }
+    }
+
+    /// Makes every ask for the clipboard's image get `png` at once, as if a
+    /// client had answered, for tests: an empty one says there's none, and
+    /// `None` asks clients again.
+    pub fn fake_clipboard_image(&mut self, png: Option<Vec<u8>>) {
+        self.fake_clipboard_image = png;
     }
 
     /// The latest copy, if any.

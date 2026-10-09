@@ -46,7 +46,11 @@ fn start(
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
                  greed.command({ name = 'slow', run = function() greed.sleep(10000) end })
                  greed.command({ name = 'tab', run = function() greed.tab.new() end })
-                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow', ['ctrl-t'] = 'tab' })",
+                 greed.command({ name = 'clip', run = function(ctx)
+                     local png = greed.clipboard.image()
+                     ctx.buffer:edit(function(e) e:replace(0, ctx.buffer:len(), if png then 'got ' .. #png else 'none') end)
+                 end })
+                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow', ['ctrl-t'] = 'tab', ['ctrl-b'] = 'clip' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -355,6 +359,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
             | Output::Delta(_)
             | Output::Image(_)
             | Output::Clipboard(_)
+            | Output::ReadClipboardImage(_)
             | Output::Notify(_) => {}
             other @ (Output::Exit | Output::Switch(_)) => {
                 panic!("expected a detach, got {other:?}")
@@ -508,6 +513,7 @@ fn a_session_can_send_its_client_to_another_session() {
             | Output::Delta(_)
             | Output::Image(_)
             | Output::Clipboard(_)
+            | Output::ReadClipboardImage(_)
             | Output::Notify(_) => {}
             other => panic!("expected a switch, got {other:?}"),
         }
@@ -619,5 +625,34 @@ fn each_window_gets_its_own_font_size_in_its_frames() {
     b.keys("i B esc");
     b.until_row("1 Bhello");
     assert_eq!(size(&b), "15", "the other window's stays");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn the_clipboards_image_is_read_by_the_client_that_asked() {
+    use base64::Engine;
+    let (conn, attach, _) = start("clipimage");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-b");
+    let Output::ReadClipboardImage(ask) =
+        client.until(|o| matches!(o, Output::ReadClipboardImage(_)))
+    else {
+        unreachable!()
+    };
+    // The client reads its own clipboard, on its own machine, and answers.
+    let png = base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\nimage");
+    client.send(&Input::ClipboardImage(ask, Some(png)));
+    client.until_row("1 got 13");
+    // A client with none says so.
+    client.keys("ctrl-b");
+    let Output::ReadClipboardImage(ask) =
+        client.until(|o| matches!(o, Output::ReadClipboardImage(_)))
+    else {
+        unreachable!()
+    };
+    client.send(&Input::ClipboardImage(ask, None));
+    client.until_row("1 none");
     conn.input.send(Input::Quit).unwrap();
 }

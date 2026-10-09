@@ -612,3 +612,58 @@ test("shell code in a transcript has run, prompt and copy buttons", function(t)
 	assert(acp.code.risky("cd x && rm -rf y") and acp.code.risky("git push -f"))
 	assert(not acp.code.risky("git push origin fix-foo"))
 end)
+
+-- A 1 by 1 pixel PNG.
+local PIXEL = assert(
+	greed.base64.decode(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+	)
+)
+
+-- What the agent said last in `s`.
+local function last_said(s: any): string
+	for i = #s.entries, 1, -1 do
+		if s.entries[i].kind == "agent" then
+			return s.entries[i].text
+		end
+	end
+	return ""
+end
+
+test("an image pasted in a transcript goes with the next message", function(t)
+	local s = start(t)
+	t:clipboard_image(nil)
+	t:run("paste-image")
+	assert(table.find(t:messages(), "there's no image on the clipboard"), "says when there's none")
+	t:clipboard_image(PIXEL)
+	t:run("paste-image")
+	assert(s.attached and #s.attached == 1, "attached")
+	t:wait(30)
+	assert(
+		string.find(greed.view():buffer():text(), "🖼 image 1 · 1×1", 1, true),
+		"its chip in the box"
+	)
+	-- An agent that can't see images gets the file's path instead.
+	send(t, s, "pictures")
+	assert(last_said(s) == "image no, file yes", last_said(s))
+	assert(s.attached == nil, "sent with the message")
+	local user = s.entries[#s.entries - 1]
+	assert(user.kind == "user" and string.find(user.text, "🖼 image 1", 1, true), user.text)
+	-- One that sees them gets the image too.
+	local sees = assert(acp.start({
+		name = "seeing",
+		title = "Seeing",
+		commands = { { "sh", `{greed.plugin.dirs().acp}/test/fake-agent.sh`, "images" } },
+	}, t:tempdir()))
+	t:wait_for(function()
+		return sees.status == "idle"
+	end)
+	assert(sees.sees_images, "it said it takes images")
+	acp.show(sees)
+	t:run("paste-image")
+	t:run("agent-drop-images")
+	assert(sees.attached == nil, "alt-x drops them")
+	t:run("paste-image")
+	send(t, sees, "pictures")
+	assert(last_said(sees) == "image yes, file yes", last_said(sees))
+end)

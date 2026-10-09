@@ -597,14 +597,23 @@ function M.render(buffer: greed.Buffer, s: Session)
 	local top, top_styles = M.top(s, cells)
 	local row, row_marks = question.row(buffer, s, cells)
 	local head = if row then `{top}\n{row}` else top
+	-- The images pasted for your next message, under them.
+	local attached = s.attached
+	local chips = if attached then `  {session.chips(attached)} · alt-x drops them` else nil
+	if chips then
+		head ..= `\n{chips}`
+	end
 	local wanted = history.text .. head
-	-- The box's top line and its row of choices aren't Markdown either;
-	-- what you write under them is.
+	-- The box's top line, its row of choices and the images' chips aren't
+	-- Markdown either; what you write under them is.
 	local plain = table.clone(history.plain)
 	local _, lines = string.gsub(history.text, "\n", "")
 	plain[lines] = true
 	if row then
 		plain[lines + 1] = true
+	end
+	if chips then
+		plain[lines + (if row then 2 else 1)] = true
 	end
 	markdown.plain(buffer, plain)
 	local stop = prompt_end(buffer)

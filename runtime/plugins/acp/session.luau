@@ -109,13 +109,28 @@ export type Session = {
 	--- model's provider having no key: the transcript says it in place of
 	--- "ready".
 	problem: string?,
+	--- Images pasted for the next prompt, in order, and whether the agent
+	--- takes images in a prompt, as it said when it started.
+	attached: { Attachment }?,
+	sees_images: boolean?,
 	--- Why its last turn failed or it couldn't start, until a turn starts.
 	failed: string?,
 }
 
---- An agent run in the editor rather than as an ACP program.
+--- An image pasted for a prompt: where it's kept, its PNG bytes and its
+--- size in pixels.
+export type Attachment = { path: string, png: string, width: number, height: number }
+
+--- An agent run in the editor rather than as an ACP program. `shown` is what
+--- the transcript shows of a prompt, like its images' chips, when it isn't
+--- what the agent is told.
 export type Driver = {
-	prompt: (session: Session, text: string, context: string?) -> (boolean, string?),
+	prompt: (
+		session: Session,
+		text: string,
+		context: string?,
+		shown: string?
+	) -> (boolean, string?),
 	cancel: (session: Session) -> (),
 	set_model: (session: Session, id: string) -> (boolean, string?),
 	--- What keeps it from working now, like a missing key, if anything.
@@ -780,6 +795,7 @@ function M.start(
 			return
 		end
 		local can = init.agentCapabilities or {}
+		session.sees_images = can.promptCapabilities ~= nil and can.promptCapabilities.image == true
 		local params: any = { cwd = opts.cwd, mcpServers = greed.json.array(opts.servers) }
 		local method = "session/new"
 		if opts.load then
@@ -880,12 +896,90 @@ function M.check(session: Session): string?
 	return session.problem
 end
 
+--- Attaches the image `png` to `session`'s next prompt. It's kept in the
+--- cache folder too, so an agent that can't see images can still use the
+--- file. False and why when it isn't an image.
+function M.attach(session: Session, png: string): (boolean, string?)
+	local id, why = greed.image.decode(png)
+	if id == nil then
+		return false, why or "that isn't an image"
+	end
+	local width, height = greed.image.size(id)
+	greed.image.forget(id)
+	local attached = session.attached or {}
+	local dirs = greed.fs.dirs()
+	local cache = dirs.cache or dirs.data or "."
+	local path = `{cache}/agent-images/{session.id}-{os.time()}-{math.floor(greed.now() % 1000000)}-{#attached + 1}.png`
+	local ok, err = greed.fs.write(path, png)
+	if not ok then
+		return false, `couldn't keep the image: {err}`
+	end
+	table.insert(attached, { path = path, png = png, width = width or 0, height = height or 0 })
+	session.attached = attached
+	session.changed()
+	return true, nil
+end
+
+--- Drops the images attached to `session`'s next prompt, and their files,
+--- which no agent has been told of.
+function M.drop_images(session: Session)
+	local attached = session.attached
+	if attached == nil then
+		return
+	end
+	for _, image in attached do
+		greed.fs.remove(image.path)
+	end
+	session.attached = nil
+	session.changed()
+end
+
+--- What the chips for `attached` images say, in the box and in your
+--- message: "🖼 image 1 · 1280×720".
+function M.chips(attached: { Attachment }): string
+	local chips: { string } = {}
+	for i, image in attached do
+		table.insert(chips, `🖼 image {i} · {image.width}×{image.height}`)
+	end
+	return table.concat(chips, "  ")
+end
+
+-- What a prompt with `attached` images says of them to the agent: where
+-- each is kept, and for an agent that can't see them (`seen` false), that
+-- it can't and what it can do instead.
+local function about_images(attached: { Attachment }, seen: boolean): string
+	local lines: { string } = {}
+	for i, image in attached do
+		table.insert(
+			lines,
+			if seen
+				then `[Image {i}, {image.width}×{image.height} pixels, is also saved at {image.path}]`
+				else `[The user pasted image {i}, {image.width}×{image.height} pixels, saved at {image.path}. You can't see images: work with the file as you can, and ask the user what it shows if you need to know.]`
+		)
+	end
+	return table.concat(lines, "\n")
+end
+
 --- Sends `text` to the agent and waits for its turn to end; what it says
 --- and does meanwhile arrives as entries. `context` goes along before it,
---- unless the last prompt took the same. False and why when it can't.
+--- unless the last prompt took the same, and the images attached to the
+--- session go with it: as images to an agent that sees them, and as their
+--- files' paths to one that doesn't. False and why when it can't.
 function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
+	local attached = session.attached
+	local seen = session.driver == nil and session.sees_images == true
+	local said, shown = text, text
+	if attached then
+		said = `{text}\n\n{about_images(attached, seen)}`
+		shown = `{text}\n{M.chips(attached)}`
+	end
 	if session.driver then
-		return session.driver.prompt(session, text, context)
+		session.attached = nil
+		local ok, err = session.driver.prompt(session, said, context, shown)
+		if not ok then
+			session.attached = attached
+		end
+		return ok, err
 	end
 	local conn = session.conn
 	if conn == nil or session.session_id == nil then
@@ -896,12 +990,21 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	elseif session.status == "working" or session.status == "waiting" then
 		return false, "the agent is still working; stop it first"
 	end
+	session.attached = nil
 	session.failed = nil
-	table.insert(session.entries, { kind = "user", text = text })
+	table.insert(session.entries, { kind = "user", text = shown })
 	session.status = "working"
 	session.since = greed.now()
 	session.changed()
-	local blocks = { { type = "text", text = text } }
+	local blocks: { any } = { { type = "text", text = said } }
+	if attached and seen then
+		for _, image in attached do
+			table.insert(
+				blocks,
+				{ type = "image", mimeType = "image/png", data = greed.base64.encode(image.png) }
+			)
+		end
+	end
 	local fresh = M.fresh_context(session, context)
 	if fresh then
 		table.insert(blocks, 1, { type = "text", text = fresh })

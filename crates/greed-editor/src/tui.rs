@@ -98,6 +98,16 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
             match message {
                 Output::Image(image) => screen.graphics.add(image),
                 Output::Clipboard(text) => copy_to_system(&mut out, &text)?,
+                // Read off this thread: a clipboard tool can take a moment.
+                Output::ReadClipboardImage(ask) => {
+                    let input = input.clone();
+                    thread::spawn(move || {
+                        use base64::Engine;
+                        let png = crate::clipboard_image::read()
+                            .map(|png| base64::engine::general_purpose::STANDARD.encode(png));
+                        let _ = input.send(Input::ClipboardImage(ask, png));
+                    });
+                }
                 Output::Notify(notice) => {
                     if !focused.load(Ordering::Relaxed) {
                         let term = std::env::var("TERM").unwrap_or_default();

@@ -20,6 +20,7 @@ use std::process::ExitCode;
 
 mod bench;
 mod client;
+mod clipboard_image;
 mod ctl;
 mod graphics;
 mod runtime;

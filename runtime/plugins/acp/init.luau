@@ -900,6 +900,34 @@ greed.command({
 	run = list.filter,
 })
 
+-- An image pasted in a transcript goes with your next message.
+core.images.taker("agent-transcript", function(png, ctx)
+	local s = by_buffer[ctx.buffer:id()]
+	if s == nil then
+		return
+	end
+	local ok, err = session.attach(s, png)
+	if ok then
+		local count = #(s.attached or {})
+		greed.echo(`image {count} goes with your next message; alt-x drops them`)
+	else
+		greed.echo(err or "couldn't attach the image")
+	end
+end)
+
+greed.command({
+	name = "agent-drop-images",
+	doc = "Drop the images pasted for your next message to the agent",
+	run = function(ctx)
+		local s = by_buffer[ctx.buffer:id()]
+		if s == nil or s.attached == nil then
+			greed.echo("no images to drop")
+			return
+		end
+		session.drop_images(s)
+	end,
+})
+
 greed.command({
 	name = "agent-send",
 	doc = "Send what's in the transcript's box to its agent",
@@ -909,7 +937,7 @@ greed.command({
 			return
 		end
 		local text = trim(transcript.prompt(ctx.buffer))
-		if text == "" then
+		if text == "" and s.attached == nil then
 			greed.echo("write a message in the box first")
 			return
 		end
@@ -1264,6 +1292,8 @@ greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-q"] = "agent-answer",
 	["alt-m"] = "agent-mode",
 	["alt-M"] = "agent-model",
+	["alt-v"] = "paste-image",
+	["alt-x"] = "agent-drop-images",
 })
 greed.keymap.bind({ layer = "leader" }, {
 	["i n"] = "agent-new",

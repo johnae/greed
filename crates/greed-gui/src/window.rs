@@ -68,7 +68,7 @@ pub fn run(
                 crossbeam_channel::select! {
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
-                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) | Output::Notify(_));
+                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::Notify(_));
                         if proxy.send_event(Event::Output(message)).is_err() || last {
                             return;
                         }
@@ -138,6 +138,14 @@ impl App {
             .get_text()
             .ok()
             .filter(|text| !text.is_empty())
+    }
+
+    /// Whether the system clipboard holds an image. Reading it is the only
+    /// way to tell.
+    fn clipboard_has_image(&mut self) -> bool {
+        self.clipboard
+            .as_mut()
+            .is_some_and(|clipboard| clipboard.get_image().is_ok())
     }
 
     fn new(input: Sender<Input>) -> Self {
@@ -280,6 +288,22 @@ impl App {
                 }
                 return;
             }
+            // Made PNG off this thread: a big screenshot takes a moment.
+            Output::ReadClipboardImage(ask) => {
+                let image = self
+                    .clipboard
+                    .as_mut()
+                    .and_then(|clipboard| clipboard.get_image().ok());
+                let input = self.input.clone();
+                std::thread::spawn(move || {
+                    use base64::Engine;
+                    let png = image
+                        .and_then(png_of)
+                        .map(|png| base64::engine::general_purpose::STANDARD.encode(png));
+                    let _ = input.send(Input::ClipboardImage(ask, png));
+                });
+                return;
+            }
             // The window has no notifications of its own yet.
             Output::Notify(_) => return,
             // Kept as PNG; frames that place it make its texture.
@@ -389,6 +413,10 @@ impl ApplicationHandler<Event> for App {
                 if is_paste(&event.logical_key, self.mods) {
                     if let Some(text) = self.clipboard_text() {
                         let _ = self.input.send(Input::Paste(text));
+                    } else if self.clipboard_has_image() {
+                        // An image, which what you're in may take, like an
+                        // agent's box.
+                        let _ = self.input.send(Input::Run("paste-image".into()));
                     }
                 } else if let Some(key) = key(&event, self.mods) {
                     let _ = self.input.send(Input::Key(key));
@@ -528,6 +556,16 @@ fn present_mode(available: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     } else {
         wgpu::PresentMode::Fifo
     }
+}
+
+/// A clipboard image as PNG.
+fn png_of(image: arboard::ImageData<'_>) -> Option<Vec<u8>> {
+    let width = u32::try_from(image.width).ok()?;
+    let height = u32::try_from(image.height).ok()?;
+    let rgba = image::RgbaImage::from_raw(width, height, image.bytes.into_owned())?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    rgba.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
 }
 
 /// Whether a key press is the system's paste: ctrl-shift-v or shift-insert,

@@ -36,7 +36,7 @@ capabilities = ["proc", "fs.read"]
 | `proc` | Running programs: `greed.process.run` and `spawn`, `greed.terminal.spawn`, `greed.lsp.server`, typing into a terminal, and a language server's `workspace/executeCommand`. A program can do anything you can, so this is full access |
 | `fs.read` | Files by path: `greed.fs` reads, `greed.fs.copy`, `greed.hash.sha256_file`, `greed.files`, `greed.load`, `greed.open`, `greed.image.load`, `greed.pdf.open`, `greed.syntax.tags`, `greed.syntax.load_grammar` |
 | `fs.write` | `greed.fs.write`, `mkdir`, `remove`, `rename` and `copy`, `greed.http.request` with `save`, and `buffer:save(path)` to a path other than the buffer's own file |
-| `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`); setting it needs nothing |
+| `clipboard` | Reading what you copied (`greed.clipboard.get`, `history`, and `image` for the image on the system clipboard of the client you're at); setting it needs nothing |
 | `net` | The network: `greed.http` to any host, and the Claude Code connection |
 | `net:HOST` | `greed.http` to one host, e.g. `net:api.anthropic.com` |
 | `secrets:NAME` | `greed.secrets.get("NAME")`, e.g. `secrets:anthropic` for an API key |
@@ -347,6 +347,14 @@ linewise)` puts them in the register picked with `"` or on the clipboard,
 `registers.paste(ctx)` gives back what to paste, and `registers.join(r)`
 makes one text of it. Text on the clipboard that Greed didn't put there
 comes back with `linewise` false.
+
+`greed.clipboard.image()` waits for the image on the system clipboard of
+the client you're at, as PNG bytes, read on that client's own machine (so
+with `greed ssh` it's the laptop's), or nil. To take pasted images in a
+kind of buffer, register with `core.images.taker(kind, function(png, ctx)
+... end)`: `paste-image`, which the window's paste keys run when the
+clipboard holds only an image, then hands them to it. `greed.base64`
+encodes the bytes for JSON.
 
 `greed.open(path)` shows a file as text (`core.file.open`, below, also
 knows images and PDFs), `greed.load(path)` opens one without showing

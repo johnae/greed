@@ -80,6 +80,7 @@ const GATED: &[(&str, &str)] = &[
     ("fs.copy", "fs.write"),
     ("clipboard.get", "clipboard"),
     ("clipboard.history", "clipboard"),
+    ("clipboard.image", "clipboard"),
     ("eval", "eval"),
     ("plugin.load", "plugins"),
     ("plugin.unload", "plugins"),

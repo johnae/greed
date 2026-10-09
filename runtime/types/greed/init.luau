@@ -1237,6 +1237,8 @@ export type Clipboard = {
 	get: () -> { string }?,
 	--- Recent copies, newest first.
 	history: () -> { { string } },
+	--- The image on the system clipboard of the client acting now, as PNG bytes, read on that client's own machine (so with `greed ssh`, your laptop's); nil when there's none or the client can't read it. Waits like greed.sleep.
+	image: () -> string?,
 }
 
 --- A client attached to the editor: a terminal or window, on this machine or over `greed ssh`.
@@ -1779,6 +1781,8 @@ export type Greed = {
 	option: Options,
 	history: History,
 	clipboard: Clipboard,
+	--- Base64, as data goes in JSON, like an image for a model: `encode` takes bytes, `decode` gives them back, or nil for text that isn't base64.
+	base64: { encode: (bytes: string) -> string, decode: (text: string) -> string? },
 	client: Client,
 	lsp: Lsp,
 	fs: Fs,

@@ -31,6 +31,9 @@ pub enum Output {
     Child(u64, super::process::Piece),
     Pdf(super::pdf::Done),
     Tags(Vec<crate::syntax::FileTags>),
+    /// The image on a client's system clipboard, as PNG; none when it has
+    /// none, or didn't say.
+    ClipboardImage(Option<Vec<u8>>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -185,6 +188,10 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
         Output::Tags(files) => {
             tasks::deliver(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
+        }
+        Output::ClipboardImage(png) => {
+            let png = png.map(|bytes| lua.create_string(bytes)).transpose()?;
+            tasks::deliver(lua, done.token, png)
         }
     }
 }

@@ -554,6 +554,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("mode", mode_module(lua)?)?;
     greed.set("option", option_module(lua, owner)?)?;
     greed.set("history", history_module(lua)?)?;
+    greed.set("base64", base64_module(lua)?)?;
     greed.set("clipboard", clipboard_module(lua)?)?;
     greed.set("client", client_module(lua)?)?;
     greed.set("lsp", super::lsp::module(lua, owner)?)?;
@@ -924,6 +925,27 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
     Ok(mode)
 }
 
+fn base64_module(lua: &Lua) -> LuaResult<Table> {
+    use base64::Engine;
+    let base64 = lua.create_table()?;
+    base64.set(
+        "encode",
+        lua.create_function(|_, bytes: mlua::LuaString| {
+            Ok(base64::engine::general_purpose::STANDARD.encode(bytes.as_bytes()))
+        })?,
+    )?;
+    base64.set(
+        "decode",
+        lua.create_function(|lua, text: String| {
+            match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+                Ok(bytes) => Ok(Some(lua.create_string(bytes)?)),
+                Err(_) => Ok(None),
+            }
+        })?,
+    )?;
+    Ok(base64)
+}
+
 fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
     let clipboard = lua.create_table()?;
     clipboard.set(
@@ -956,6 +978,21 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
                 .map(<[String]>::to_vec)
                 .collect::<Vec<_>>())
         })?,
+    )?;
+    // The client reads its own clipboard, on its own machine, and answers;
+    // one that doesn't within a few seconds has none to give.
+    let ask = lua.create_function(|lua, ()| {
+        const WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+        let answer = state_mut(lua).editor.ask_clipboard_image();
+        Ok(super::jobs::start(
+            lua,
+            "greed.clipboard.image",
+            move || super::jobs::Output::ClipboardImage(answer.recv_timeout(WAIT).ok().flatten()),
+        ))
+    })?;
+    clipboard.set(
+        "image",
+        super::jobs::waiting(lua, "greed.clipboard.image", ask)?,
     )?;
     Ok(clipboard)
 }

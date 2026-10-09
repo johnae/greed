@@ -40,6 +40,9 @@ pub enum Input {
     /// What's on the system clipboard, which becomes the editor's clipboard,
     /// e.g. when a window gets focus after you copied in another program.
     Clipboard(String),
+    /// The answer to `Output::ReadClipboardImage`: the image on the system
+    /// clipboard, as PNG in base64, or none.
+    ClipboardImage(u64, Option<String>),
     Quit,
 }
 
@@ -59,6 +62,9 @@ pub enum Output {
     Switch(SwitchTo),
     /// Text Greed copied, for the client to put on the system clipboard.
     Clipboard(String),
+    /// Asks for the image on the system clipboard, read on the client's own
+    /// machine; the client answers with `Input::ClipboardImage` and this id.
+    ReadClipboardImage(u64),
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
@@ -285,7 +291,11 @@ fn turn_of(input: &Input) -> Turn {
             Turn::Interrupts
         }
         Input::Key(_) | Input::Mouse(_) | Input::Paste(_) | Input::Run(_) => Turn::Waits,
-        Input::Resize(_) | Input::CellSize(..) | Input::Clipboard(_) | Input::Quit => Turn::Never,
+        Input::Resize(_)
+        | Input::CellSize(..)
+        | Input::Clipboard(_)
+        | Input::ClipboardImage(..)
+        | Input::Quit => Turn::Never,
     }
 }
 
@@ -633,6 +643,10 @@ impl Server<'_> {
         }
         let ids: Vec<ClientId> = self.clients.keys().copied().collect();
         for id in ids {
+            // Each client reads its own clipboard, on its own machine.
+            for ask in self.as_client(id, Editor::take_image_asks) {
+                self.send_to(id, Output::ReadClipboardImage(ask));
+            }
             let local = self.clients.get(&id).is_some_and(|c| c.local);
             if let Some(to) = self.as_client(id, Editor::take_switch_request) {
                 // A client in this process can't go anywhere else.
@@ -702,6 +716,14 @@ impl Server<'_> {
             Input::Clipboard(ref text) => {
                 self.host
                     .with_editor_mut(|ed| ed.take_system_clipboard(text));
+            }
+            Input::ClipboardImage(ask, ref png) => {
+                use base64::Engine;
+                let png = png
+                    .as_ref()
+                    .and_then(|png| base64::engine::general_purpose::STANDARD.decode(png).ok());
+                self.host
+                    .with_editor_mut(|ed| ed.answer_image_ask(id, ask, png));
             }
             // The client in this process ends the editor; another leaves it.
             Input::Quit if id == FIRST_CLIENT => return false,

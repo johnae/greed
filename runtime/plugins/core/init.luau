@@ -41,6 +41,7 @@ local style = require("@self/style")
 require("@self/clients")
 local mouse = require("@self/mouse")
 local buttons = require("@self/buttons")
+local images = require("@self/images")
 local indent = require("@self/indent")
 local folds = require("@self/folds")
 local config = require("@self/config")
@@ -105,6 +106,8 @@ return {
 	style = style,
 	mouse = mouse,
 	buttons = buttons,
+	--- Pasting an image into what takes one, like an agent's box (images.luau).
+	images = images,
 	indent = indent,
 	folds = folds,
 	--- The view keys after z (scroll.luau).

@@ -336,6 +336,18 @@ it. A command that destroys or stops something (`rm`, `kill`, `git push
 --force`, `kubectl delete` and the like) asks y/n before it runs. A
 `console` block's commands are its lines after a `$ ` prompt.
 
+To show the agent a screenshot, copy it and press `alt-v` in the
+transcript; in the window, the paste keys do it too when the clipboard
+holds an image. The image goes with your next message, shown as a chip in
+the box (`🖼 image 1 · 1280×720`), and `alt-x` drops it. It's read from
+the clipboard of the machine you're at, so with `greed ssh` it's your
+laptop's, and kept in Greed's cache folder where the agent runs. An agent
+that can see images (Claude Code can) gets the image itself; one that
+can't, like Greed's own agent for now, is told where the file is and that
+it can't see it, so it can still work with the file. In a terminal, Greed
+reads the clipboard with `wl-paste` (Wayland), `xclip` (X11) or
+`osascript` (macOS).
+
 ### Greed's own agent
 
 Pick "Greed" in `space i n` for an agent that runs in the editor itself,

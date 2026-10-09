@@ -1249,14 +1249,19 @@ end
 
 -- Turns a prompt into an answer: the model's turns, and the tools it asks
 -- for between them, until it's done.
-local function prompt(s: Session, text: string, context: string?): (boolean, string?)
+local function prompt(
+	s: Session,
+	text: string,
+	context: string?,
+	shown: string?
+): (boolean, string?)
 	local state = states[s.id]
 	if s.status == "working" or s.status == "waiting" then
 		return false, "the agent is still working; stop it first"
 	end
 	state.cancelled = false
 	s.failed = nil
-	table.insert(s.entries, { kind = "user", text = text })
+	table.insert(s.entries, { kind = "user", text = shown or text })
 	local fresh = session.fresh_context(s, context)
 	local sent = `<time>{os.date("%A %Y-%m-%d %H:%M %Z")}</time>`
 	local said = if fresh then `{sent}\n{fresh}\n\n{text}` else `{sent}\n{text}`
