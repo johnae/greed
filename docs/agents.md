@@ -674,7 +674,8 @@ An agent can extend Greed while you work:
    types against the API, then the plugin's own tests in a headless editor,
    with none of its capabilities until you approve it. It runs without
    asking you, since nothing it does reaches your editor or your files.
-   The agent gets back what failed and tries again. Type errors count only in the plugin's own
+   The agent gets back what failed and tries again, sending only the files
+   it changed: the rest come from its last try. Type errors count only in the plugin's own
    files, and tests that fail only because a capability isn't approved yet
    don't stop it going to you: once you install it, they run again with
    what you approved, and the agent hears how they did.

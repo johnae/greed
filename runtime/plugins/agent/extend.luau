@@ -233,11 +233,22 @@ local function write_files(dir: string, files: { [string]: string })
 	end
 end
 
---- Writes `files` as a fresh try of plugin `name` and checks it. Returns
---- the report and whether everything passed.
-function M.try(name: string, files: { [string]: string }): (string, boolean)
-	check_files(name, files)
-	files = table.clone(files)
+--- Writes a fresh try of plugin `name`, the files of its last try with
+--- those `given` in their place, and checks it. Returns the files and the
+--- report, and whether everything passed.
+function M.try(name: string, given: { [string]: string }): (string, boolean)
+	check_files(name, given)
+	-- On from the last try: what's given replaces or adds to it, and a file
+	-- given empty goes.
+	local before = staged[name]
+	local files: { [string]: string } = if before then table.clone(before.files) else {}
+	for path, text in given do
+		if text == "" then
+			files[path] = nil
+		else
+			files[path] = text
+		end
+	end
 	if files["plugin.toml"] == nil then
 		files["plugin.toml"] = `name = "{name}"\nrequires = ["core"]\n`
 	end
@@ -253,7 +264,12 @@ function M.try(name: string, files: { [string]: string }): (string, boolean)
 	local report, passed = M.describe(check, declares)
 	local shown = M.describe(check, declares, true)
 	staged[name] = { files = files, dir = dir, report = report, passed = passed, shown = shown }
-	return report, passed
+	local paths = {}
+	for path in files do
+		table.insert(paths, path)
+	end
+	table.sort(paths)
+	return `files: {table.concat(paths, ", ")}\n{report}`, passed
 end
 
 -- The review waiting for the user, if any.
@@ -401,7 +417,9 @@ registry.tool({
 	sandboxed = true,
 	group = "plugins",
 	description = "Write a plugin's files and check them: strict types against Greed's API, "
-		.. "then its tests. Returns what failed; fix and try again until it passes. This is how "
+		.. "then its tests. Returns what failed; fix and try again until it passes, giving only the "
+		.. 'files that change: the rest are kept from the last try, and a file given as "" is '
+		.. "dropped. This is how "
 		.. "to add anything new to Greed for the user: the plugin is kept apart from the project "
 		.. "and installed in their config with plugin_install, so don't write plugins into the "
 		.. "project's files unless they ask you to change the project",

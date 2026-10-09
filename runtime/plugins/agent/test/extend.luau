@@ -64,6 +64,35 @@ test("a tried plugin is checked and the agent hears what failed", function(t)
 	)
 end)
 
+test("a try keeps the files left out from the last one, and drops those given empty", function(t)
+	local dir = sandbox(t)
+	in_command(t, function()
+		return (agent.try("shout", PLUGIN))
+	end)
+	local report = in_command(t, function()
+		return (
+			agent.try("shout", {
+				["test/shout.luau"] = 'local test = require("@greed/test")\ntest("fails", function() error("no", 0) end)\n',
+			})
+		)
+	end)()
+	-- init.luau came along, so its command still checks; the new test ran.
+	assert(report and string.find(report, "0 passed, 1 failed", 1, true), report)
+	assert(string.find(report, "files: init.luau, plugin.toml, test/shout.luau", 1, true), report)
+	local dropped = in_command(t, function()
+		return (agent.try("shout", { ["test/shout.luau"] = "" }))
+	end)()
+	assert(dropped and string.find(dropped, "files: init.luau, plugin.toml\n", 1, true), dropped)
+	local without = 0
+	local tries: { greed.DirEntry } = greed.fs.list(dir .. "/staging") or {}
+	for _, try in tries do
+		if greed.fs.stat(`{dir}/staging/{try.name}/test/shout.luau`) == nil then
+			without += 1
+		end
+	end
+	assert(without == 1, "the last try has no test file")
+end)
+
 test("installing waits for the user, then loads the plugin", function(t)
 	local dir = sandbox(t)
 	in_command(t, function()
