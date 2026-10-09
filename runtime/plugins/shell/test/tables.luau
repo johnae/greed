@@ -465,8 +465,9 @@ test("jc, when it's installed, reads the commands it knows", function(t)
 	local sh = open(t, t:tempdir())
 	fake_jc(t, sh)
 	local up = run(t, sh, "uptime")
+	-- The status follows the table a moment later on a busy machine.
 	t:wait_for(function()
-		return up.table ~= nil
+		return up.table ~= nil and string.find(status(sh, up), "table · 1 row", 1, true) ~= nil
 	end)
 	local tbl = assert(up.table)
 	assert(columns(tbl) == "time,uptime,users" and tbl.rows[1].users == "2", columns(tbl))
