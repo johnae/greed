@@ -1249,6 +1249,42 @@ shell.environment("dotenv", {
 
 `:set shell-environments "devenv dotenv"` then asks devenv first.
 
+`shell.stage(spec, run)` adds a [table stage](shell.md#filtering-and-tables)
+like `where`. `spec` has its `name`, `usage` and `doc` (for `help` and
+completion), `args` ("column", "columns", "condition" or "format", for
+completion), and `starts = true` when it may follow a program too, as in
+`kubectl get pods | NAME`; give that only to names no program has.
+`run(tbl, rest)` gets the table and the rest of the stage's words, and
+returns a new table (`{ columns, rows }`, each row a map of column to
+text), text (which ends the stages, as `to csv` does), or nil and why it
+can't.
+
+```luau
+-- `top COL N`: the N rows with the most in a column.
+shell.stage({ name = "top", usage = "top COL N", doc = "The rows with the most in a column", args = "column", starts = true }, function(tbl, rest)
+	local name, count = string.match(rest, "^(%S+)%s*(%d*)$")
+	local column = name and shell.tables.column(tbl, name)
+	if column == nil then
+		return nil, "top COL N, like top RESTARTS 5"
+	end
+	local rows = shell.tables.sorted(tbl, shell.tables.all(tbl), column, true)
+	local kept = {}
+	for i = 1, math.min(tonumber(count) or 10, #rows) do
+		kept[i] = tbl.rows[rows[i]]
+	end
+	return { columns = tbl.columns, rows = kept }
+end)
+```
+
+`shell.builtin(spec, run)` adds a command the shell runs itself, ahead of
+programs and aliases of that name (`^NAME` still runs the program).
+`spec` has `name`, `usage`, `doc` and `args` as builtins have them.
+`run(args, ctx)` gets the words after the name, and `ctx` with the `shell`,
+the `block`, its `cwd`, and `write(text)` and `error(text)` to print in
+the block; it returns the exit code, 0 when it returns nothing, and an
+error fails the block with its message. It can wait, as commands can.
+Neither can replace the shell's own, and both go when the plugin does.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

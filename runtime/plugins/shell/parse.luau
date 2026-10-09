@@ -13,8 +13,9 @@ local M = {}
 --- what its arguments are, for completion: "folder", "path" (files and
 --- `buf:` buffers), "assignment" (NAME=VALUE), "variable" or "topic" (of
 --- `help`); nil for none. `help`, completion and the shell's page in the
---- docs all show these.
-export type Builtin = { usage: string, doc: string, args: string? }
+--- docs all show these. `plugin` is the plugin that added it, for those
+--- not the shell's own.
+export type Builtin = { usage: string, doc: string, args: string?, plugin: string? }
 
 --- The commands the shell runs itself, by name.
 M.BUILTINS = {

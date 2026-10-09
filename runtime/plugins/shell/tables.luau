@@ -862,7 +862,8 @@ M.OPS = { "!=", "<=", ">=", "!~", "=", "~", "<", ">" }
 --- it does, and what its arguments are, for completion: "condition"
 --- (COL OP VALUE), "columns" (COL,...), "column" (COL and -r), "header"
 --- (-H), "format" (csv, tsv, json), "path" (a field of JSON); nil for none.
-export type Stage = { name: string, usage: string, doc: string, args: string? }
+--- `plugin` is the plugin that added it, for those not the shell's own.
+export type Stage = { name: string, usage: string, doc: string, args: string?, plugin: string? }
 
 --- The stages, in the order `help` lists them.
 M.STAGES = {
@@ -1649,6 +1650,52 @@ function M.after_programs(line: string): (string?, string?)
 		end
 	end
 	return nil, nil
+end
+
+--- What a plugin's stage does with the table it gets and the rest of its
+--- words: makes a table, or text (which ends the tables, as `to` does), or
+--- gives nil and why it can't.
+export type StageRun = (tbl: Table, rest: string) -> ((Table | string)?, string?)
+
+export type StageSpec = {
+	name: string,
+	--- How it's typed and what it does, for `help` and completion.
+	usage: string,
+	doc: string,
+	--- What its arguments are, for completion: "column", "columns",
+	--- "condition" or "format".
+	args: string?,
+	--- Whether it can follow a program too, as in `kubectl get pods |
+	--- NAME`: only for names no program has.
+	starts: boolean?,
+}
+
+--- Adds the table stage `spec.name`, which `run` does, in place of one a
+--- plugin added before; the shell's own can't be replaced. After `$3 |`,
+--- and after the shell's stages, it runs ahead of a program called the
+--- same. It goes when the plugin that added it does.
+function M.stage(spec: StageSpec, run: StageRun)
+	local name = spec.name
+	assert(string.match(name, "^[%w_%-]+$"), "a stage's name is one word")
+	for _, other in M.STAGES do
+		if other.name == name and other.plugin == nil then
+			error(`{name} is one of the shell's own stages`, 2)
+		end
+	end
+	local entry: Stage = {
+		name = name,
+		usage = spec.usage,
+		doc = spec.doc,
+		args = spec.args,
+		plugin = greed.plugin.caller(),
+	}
+	greed.plugin.tie(core.registry.put(M.STAGES, entry, function(other: Stage): boolean
+		return other.name == name
+	end))
+	greed.plugin.tie(core.registry.set(ROWS, name, run))
+	if spec.starts then
+		greed.plugin.tie(core.registry.set(STARTERS, name, true))
+	end
 end
 
 --- Reads a command's output as a table: `text`, and the block it's from.

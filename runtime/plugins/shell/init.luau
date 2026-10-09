@@ -99,6 +99,62 @@ M.completer = M.sources.completer
 --- look for one; see `tables.parser`.
 M.parser = tables.parser
 
+--- Adds a table stage, as in `$3 | NAME ...`; see `tables.stage`.
+M.stage = tables.stage
+
+--- What a plugin's builtin gets besides its arguments: the shell and the
+--- block it runs for, the block's folder, and how to print in the block,
+--- as output or as errors.
+export type BuiltinContext = {
+	shell: Shell,
+	block: Block,
+	cwd: string,
+	write: (text: string) -> (),
+	error: (text: string) -> (),
+}
+
+export type BuiltinSpec = {
+	name: string,
+	--- How it's typed and what it does, for `help`, `which` and completion.
+	usage: string,
+	doc: string,
+	--- What its arguments are, for completion: "folder", "path",
+	--- "assignment", "variable" or "topic".
+	args: string?,
+}
+
+--- Adds a command the shell runs itself, `spec.name`: `call(args, ctx)`
+--- does it, printing with `ctx.write`, and gives its exit code (0 when it
+--- gives none); an error fails it, saying why. It can wait, as a command
+--- can. It wins over a program or an alias of that name, and `^NAME` runs
+--- the program instead; the shell's own builtins can't be replaced. It
+--- goes when the plugin that added it does.
+function M.builtin(spec: BuiltinSpec, call: (args: { string }, ctx: BuiltinContext) -> number?)
+	local name = spec.name
+	assert(string.match(name, "^[%w_%-]+$"), "a builtin's name is one word")
+	local own = parse.BUILTINS[name]
+	if own and own.plugin == nil then
+		error(`{name} is one of the shell's own builtins`, 2)
+	end
+	local entry: parse.Builtin =
+		{ usage = spec.usage, doc = spec.doc, args = spec.args, plugin = greed.plugin.caller() }
+	local function runs(shell: Shell, block: Block, args: { string }): number
+		return call(args, {
+			shell = shell,
+			block = block,
+			cwd = block.cwd,
+			write = function(text: string)
+				run.write(shell, block, text, "stdout")
+			end,
+			error = function(text: string)
+				run.write(shell, block, text, "stderr")
+			end,
+		}) or 0
+	end
+	greed.plugin.tie(core.registry.set(parse.BUILTINS, name, entry))
+	greed.plugin.tie(core.registry.set(run.builtins, name, runs))
+end
+
 --- The shell shown in `buffer`, if it's one.
 M.of = state.of
 
@@ -667,11 +723,15 @@ local function which(shell: Shell, name: string): { string }
 	local found: { string } = {}
 	local builtin = parse.BUILTINS[name]
 	if builtin then
-		table.insert(found, `{name}: the shell's builtin, {builtin.usage}`)
+		local whose = if builtin.plugin
+			then `a builtin from {builtin.plugin}`
+			else "the shell's builtin"
+		table.insert(found, `{name}: {whose}, {builtin.usage}`)
 	end
 	for _, stage in tables.STAGES do
 		if stage.name == name then
-			table.insert(found, `{name}: a table stage after $3 |, {stage.usage}`)
+			local from = if stage.plugin then ` from {stage.plugin}` else ""
+			table.insert(found, `{name}: a table stage{from} after $3 |, {stage.usage}`)
 			break
 		end
 	end

@@ -381,12 +381,17 @@ test("the shell's page in the docs lists every builtin and stage as declared", f
 		local row = `| \`{(string.gsub(usage, "|", "\\|"))}\` | {doc} |`
 		assert(string.find(text, row, 1, true), row)
 	end
+	-- The shell's own; plugins document theirs.
 	for _, name in shell.parse.builtin_names() do
 		local builtin = shell.parse.BUILTINS[name]
-		listed(builtin.usage, builtin.doc)
+		if builtin.plugin == nil then
+			listed(builtin.usage, builtin.doc)
+		end
 	end
 	for _, stage in shell.tables.STAGES do
-		listed(stage.usage, stage.doc)
+		if stage.plugin == nil then
+			listed(stage.usage, stage.doc)
+		end
 	end
 end)
 

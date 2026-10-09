@@ -54,10 +54,14 @@ end
 -- Characters after which a new word starts.
 local BREAK = "[%s|;&()<>]"
 
--- The stages by name.
-local STAGES: { [string]: tables.Stage } = {}
-for _, stage in tables.STAGES do
-	STAGES[stage.name] = stage
+-- The stage called `name`, plugins' too.
+local function stage_named(name: string?): tables.Stage?
+	for _, stage in tables.STAGES do
+		if stage.name == name then
+			return stage
+		end
+	end
+	return nil
 end
 
 -- What's being completed: the word before the cursor, where it starts,
@@ -127,7 +131,7 @@ local function spot(shell: Shell, view: greed.View, explicit: boolean): Spot
 		source = head
 		for i = 2, #parts - 1 do
 			local name = string.match(parts[i].text, "^%s*(%S+)")
-			if parts[i].ends ~= "|" or name == nil or STAGES[name] == nil then
+			if parts[i].ends ~= "|" or stage_named(name) == nil then
 				source = nil
 				break
 			end
@@ -495,7 +499,7 @@ function M.items(view: greed.View, ask: { explicit: boolean }?): { Item }?
 	elseif not first then
 		local command = s.words[1]
 		local builtin = if s.first_command then parse.BUILTINS[command] else nil
-		local stage = if s.source then STAGES[command] else nil
+		local stage = if s.source then stage_named(command) else nil
 		if builtin then
 			builtin_args(items, s, builtin)
 		elseif stage then
