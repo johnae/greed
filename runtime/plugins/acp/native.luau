@@ -480,10 +480,11 @@ local function line_hash(line: string): string
 end
 
 -- Line `n` of `lines` as the model sees it: numbered, and with its hash
--- when it edits by hashlines ("12#a3f  text").
+-- when it edits by hashlines ("12#a3f|text": the bar, not spaces, so the
+-- line's own leading spaces can't be mistaken for padding).
 local function shown_line(lines: { string }, n: number, anchors: boolean): string
 	if anchors then
-		return `{n}#{line_hash(lines[n])}  {lines[n]}`
+		return `{n}#{line_hash(lines[n])}|{lines[n]}`
 	end
 	return string.format("%6d  %s", n, lines[n])
 end
@@ -494,7 +495,7 @@ local function anchored(text: string, first: number): string
 	local lines = lines_of(text)
 	local out = table.create(#lines)
 	for n, line in lines do
-		out[n] = `{first + n - 1}#{line_hash(line)}  {line}`
+		out[n] = `{first + n - 1}#{line_hash(line)}|{line}`
 	end
 	return table.concat(out, "\n")
 end
@@ -591,16 +592,18 @@ local function apply_lines(path: string, text: string, edits: { LineEdit }): str
 			local new: { string } = if e.text == ""
 				then {}
 				else string.split((string.gsub(e.text, "\n$", "")), "\n")
-			if e.after then
-				local at = if e.after == "0" then 0 else resolve_anchor(path, lines, e.after)
-				table.insert(spans, { from = at + 1, to = at, lines = new, n = n })
-			elseif e.from then
+			-- With both, from: models name the line they replace as where
+			-- the text goes, too.
+			if e.from then
 				local from = resolve_anchor(path, lines, e.from)
 				local to = if e.to then resolve_anchor(path, lines, e.to) else from
 				if to < from then
 					error(`{e.to} comes before {e.from}`, 0)
 				end
 				table.insert(spans, { from = from, to = to, lines = new, n = n })
+			elseif e.after then
+				local at = if e.after == "0" then 0 else resolve_anchor(path, lines, e.after)
+				table.insert(spans, { from = at + 1, to = at, lines = new, n = n })
 			else
 				error("give from (and to) for lines to replace, or after for where to add lines", 0)
 			end
@@ -701,8 +704,10 @@ local OWN: { Own } = {
 		edits = "hashline",
 		spec = {
 			name = "edit_file",
-			description = "Change lines of a file, named as read gives them (12#a3f: the line's "
-				.. "number and a hash of its text). Each edit replaces lines `from` to `to` (or just "
+			description = "Change lines of a file, named as read gives them: in `12#a3f|  let x = 1;` "
+				.. "the name is 12#a3f (the line's number and a hash of its text), and after the bar "
+				.. "is the line itself, its indentation included. `text` is whole lines, indented as "
+				.. "they should be. Each edit replaces lines `from` to `to` (or just "
 				.. "`from`) with `text`, which may be several lines or empty to delete them, or puts "
 				.. '`text` in after line `after` ("0" for the top). Copy the names exactly; never '
 				.. "retype the old lines. The edits are made together, or none is. An open file is "

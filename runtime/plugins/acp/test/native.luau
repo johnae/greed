@@ -320,7 +320,7 @@ end)
 local function name_of(request: any, text: string): string
 	local last = request.said[#request.said].text :: string
 	for line in string.gmatch(last, "[^\n]+") do
-		local name, rest = string.match(line, "^(%d+#%x%x%x)  (.*)$")
+		local name, rest = string.match(line, "^(%d+#%x%x%x)|(.*)$")
 		if rest == text then
 			return name :: string
 		end
@@ -362,10 +362,10 @@ test("a model that edits by hashlines reads named lines and edits by those names
 	end)
 	local said_last = asked[#asked].said
 	local read = said_last[3].text
-	assert(string.match(read, "^1#%x%x%x  one\n2#%x%x%x  two\n3#%x%x%x  three$"), read)
+	assert(string.match(read, "^1#%x%x%x|one\n2#%x%x%x|two\n3#%x%x%x|three$"), read)
 	local edited = said_last[5]
 	assert(not edited.error, edited.text)
-	assert(string.find(edited.text, "3#%x%x%x  2\n4#%x%x%x  three") ~= nil, edited.text)
+	assert(string.find(edited.text, "3#%x%x%x|2\n4#%x%x%x|three") ~= nil, edited.text)
 	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\n2\nthree\n", (greed.fs.read(`{dir}/a.txt`)))
 	-- Its tool takes names, not old text.
 	local spec: any
@@ -378,6 +378,27 @@ test("a model that edits by hashlines reads named lines and edits by those names
 	assert(spec.input.properties.old_text == nil, "no old text")
 	local used = models.usage(os.date("%Y-%m-%d"))[`{os.date("%H")} anthropic/test-model`]
 	assert(used and used.edits and used.edits.hashline.ok >= 1, "counted")
+	models.roles.agent = nil
+end)
+
+test("a hashline edit naming both from and after replaces from, as its text says", function(t)
+	models.roles.agent = { provider = "anthropic", model = "test-model", edits = "hashline" }
+	script({
+		calling("read", { path = "a.txt" }),
+		calling("edit_file", function(request)
+			local two = name_of(request, "two")
+			return { path = "a.txt", edits = { { from = two, after = two, text = "TWO" } } }
+		end),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go", { ["a.txt"] = "one\ntwo\nthree\n" })
+	t:wait_for(function()
+		if s.status == "waiting" then
+			waiting(s).answer:send("always")
+		end
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\nthree\n", (greed.fs.read(`{dir}/a.txt`)))
 	models.roles.agent = nil
 end)
 

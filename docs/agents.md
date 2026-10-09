@@ -363,7 +363,7 @@ left out.
 By default the model edits by giving the text to replace. Some models copy
 text badly and do better naming lines instead: with `edits = "hashline"`
 on the role (or the provider), `read` gives each line a name of its number
-and a short hash of its text (`12#a3f  local x = 1`), and the model edits
+and a short hash of its text (`12#a3f|local x = 1`), and the model edits
 lines by those names. A line that moved since it was read is found by its
 hash; one that changed is refused, so the model reads it again.
 
