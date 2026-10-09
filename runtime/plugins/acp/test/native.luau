@@ -9,7 +9,8 @@ local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, nativ
 -- Stands in for the model: each turn returns the next of `turns`, and the
 -- requests it got are kept, as they were then. Requests to summarise the
 -- conversation are answered with `summary` (false fails them) and kept
--- apart. A turn with `fail` fails with it.
+-- apart. A turn with `fail` fails with it; a function as a turn gives it,
+-- from the request.
 local function script(turns: { any }, summary: (string | false)?): ({ any }, { any })
 	local asked: { any } = {}
 	local summarised: { any } = {}
@@ -30,7 +31,11 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		end
 		table.insert(asked, copy)
 		at += 1
-		local turn = turns[at] or { text = "", calls = {}, stop = "done" }
+		local turn: any = turns[at] or { text = "", calls = {}, stop = "done" }
+		-- A turn that depends on what the model was sent, like names read gave it.
+		if type(turn) == "function" then
+			turn = (turn :: (any) -> any)(copy)
+		end
 		if turn.fail then
 			return nil, turn.fail
 		end
@@ -268,6 +273,121 @@ test("text standing in for code left out isn't written, unless the file had it",
 	assert(not got[4].error, got[4].text)
 	assert(greed.fs.read(`{dir}/a.lua`) == "local x = 1\n", "a.lua is untouched")
 	assert(string.find(got[6].text, "it went from 51 lines to 2", 1, true), got[6].text)
+end)
+
+-- The name read gave the line holding `text`, in the last tool result of
+-- `request`, as a model editing by hashlines copies it.
+local function name_of(request: any, text: string): string
+	local last = request.said[#request.said].text :: string
+	for line in string.gmatch(last, "[^\n]+") do
+		local name, rest = string.match(line, "^(%d+#%x%x%x)  (.*)$")
+		if rest == text then
+			return name :: string
+		end
+	end
+	error(`no line {text} in {last}`)
+end
+
+-- A turn calling `name` with `input`, made from the request when it's a function.
+local function calling(name: string, input: any): any
+	return function(request: any): any
+		local make: any = input
+		local args = if type(make) == "function" then (make :: (any) -> any)(request) else make
+		return {
+			text = "",
+			calls = { { id = `c{#request.said}`, name = name, input = args } },
+			stop = "tools",
+		}
+	end
+end
+
+test("a model that edits by hashlines reads named lines and edits by those names", function(t)
+	models.roles.agent = { provider = "anthropic", model = "test-model", edits = "hashline" }
+	local asked = script({
+		calling("read", { path = "a.txt" }),
+		calling("edit_file", function(request)
+			return {
+				path = "a.txt",
+				edits = { { from = name_of(request, "two"), text = "TWO\n2" } },
+			}
+		end),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go", { ["a.txt"] = "one\ntwo\nthree\n" })
+	t:wait_for(function()
+		if s.status == "waiting" then
+			waiting(s).answer:send("always")
+		end
+		return s.status == "idle"
+	end)
+	local said_last = asked[#asked].said
+	local read = said_last[3].text
+	assert(string.match(read, "^1#%x%x%x  one\n2#%x%x%x  two\n3#%x%x%x  three$"), read)
+	local edited = said_last[5]
+	assert(not edited.error, edited.text)
+	assert(string.find(edited.text, "3#%x%x%x  2\n4#%x%x%x  three") ~= nil, edited.text)
+	assert(greed.fs.read(`{dir}/a.txt`) == "one\nTWO\n2\nthree\n", (greed.fs.read(`{dir}/a.txt`)))
+	-- Its tool takes names, not old text.
+	local spec: any
+	for _, tool in asked[1].tools do
+		if tool.name == "edit_file" then
+			spec = tool
+		end
+	end
+	assert(spec.input.properties.edits.items.properties.from, "named lines")
+	assert(spec.input.properties.old_text == nil, "no old text")
+	local used = models.usage(os.date("%Y-%m-%d"))[`{os.date("%H")} anthropic/test-model`]
+	assert(used and used.edits and used.edits.hashline.ok >= 1, "counted")
+	models.roles.agent = nil
+end)
+
+test("a named line that moved is found by its hash, and one that changed is refused", function(t)
+	models.roles.agent = { provider = "anthropic", model = "test-model", edits = "hashline" }
+	local names: { [string]: string } = {}
+	local asked = script({
+		calling("read", { path = "a.txt" }),
+		calling("edit_file", function(request)
+			names.c = name_of(request, "c")
+			names.b = name_of(request, "b")
+			return { path = "a.txt", edits = { { after = "0", text = "top" } } }
+		end),
+		-- c is now line 4, but its name still says 3.
+		calling("edit_file", function()
+			return { path = "a.txt", edits = { { from = names.c, text = "C" } } }
+		end),
+		calling("edit_file", function()
+			return { path = "a.txt", edits = { { from = names.b, text = "B" } } }
+		end),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go", { ["a.txt"] = "a\nb\nc\n" })
+	-- The user changes b in the file's buffer while the agent works.
+	t:wait_for(function()
+		if s.status == "waiting" then
+			local buffer = greed.buffer_for(`{dir}/a.txt`)
+			if buffer and buffer:text() == "top\na\nb\nC\n" then
+				buffer:edit(function(e)
+					e:replace(6, 7, "bee")
+				end)
+			end
+			waiting(s).answer:send("once")
+		end
+		return s.status == "idle"
+	end)
+	local tools = {}
+	for _, one in asked[#asked].said do
+		if one.role == "tool" then
+			table.insert(tools, one)
+		end
+	end
+	assert(not tools[3].error, tools[3].text)
+	assert(
+		tools[4].error and string.find(tools[4].text, "isn't as you read it", 1, true),
+		tools[4].text
+	)
+	local buffer = assert(greed.buffer_for(`{dir}/a.txt`))
+	assert(buffer:text() == "top\na\nbee\nC\n", buffer:text())
+	models.roles.agent = nil
 end)
 
 test("a file changed since it was read isn't written over, and a failed edit says why", function(t)

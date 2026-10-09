@@ -130,6 +130,8 @@ type State = {
 	reported: { tokens: number, at: number }?,
 	--- The tools' names in the order it first had them, which stays.
 	order: { string },
+	--- How its model edits files (models.edits), worked out each prompt.
+	edits: string?,
 }
 
 local states: { [number]: State } = {}
@@ -144,6 +146,8 @@ end
 -- A tool of the agent's own: what the model is told, the kind of call it
 -- is (for asking you), and what it does.
 type Own = {
+	--- Offered only when the model edits this way (models.edits).
+	edits: string?,
 	spec: models.ToolSpec,
 	kind: string,
 	title: (args: any) -> string,
@@ -405,16 +409,54 @@ local SHOWN_LINES = 30
 
 -- Lines `first` to `last` (1-based) of `text`, numbered as an editor shows
 -- them, with two more on each side.
-local function numbered(text: string, first: number, last: number): string
+-- The lines of `text`, without the empty one after a last newline, which
+-- ends the last line rather than starting another.
+local function lines_of(text: string): { string }
 	local lines = string.split(text, "\n")
-	-- A last newline ends the last line; nothing comes after it.
 	if #lines > 1 and lines[#lines] == "" then
 		table.remove(lines)
 	end
+	return lines
+end
+
+-- A short hash of `line`, which with its number names it in hashline
+-- edits: three hex digits of its FNV-1a hash.
+local function line_hash(line: string): string
+	local h = 2166136261
+	for i = 1, #line do
+		h = bit32.bxor(h, string.byte(line, i))
+		-- Times FNV's prime, 2^24 + 403, kept to 32 bits without losing any.
+		h = (bit32.lshift(h, 24) + h * 403) % 4294967296
+	end
+	return string.format("%03x", bit32.band(h, 0xFFF))
+end
+
+-- Line `n` of `lines` as the model sees it: numbered, and with its hash
+-- when it edits by hashlines ("12#a3f  text").
+local function shown_line(lines: { string }, n: number, anchors: boolean): string
+	if anchors then
+		return `{n}#{line_hash(lines[n])}  {lines[n]}`
+	end
+	return string.format("%6d  %s", n, lines[n])
+end
+
+-- `text`, a read from line `first` on, with each line named by its number
+-- and hash, as a model editing by hashlines reads files.
+local function anchored(text: string, first: number): string
+	local lines = lines_of(text)
+	local out = table.create(#lines)
+	for n, line in lines do
+		out[n] = `{first + n - 1}#{line_hash(line)}  {line}`
+	end
+	return table.concat(out, "\n")
+end
+
+local function numbered(text: string, first: number, last: number, anchors: boolean): string
+	local lines = lines_of(text)
 	local from, to = math.max(first - 2, 1), math.min(last + 2, #lines)
 	local out = {}
 	for n = from, math.min(to, from + SHOWN_LINES - 1) do
-		table.insert(out, string.format("%6d  %s", n, lines[n]))
+		table.insert(out, shown_line(lines, n, anchors))
 	end
 	if to > from + SHOWN_LINES - 1 then
 		table.insert(out, `       (… to line {to})`)
@@ -422,8 +464,125 @@ local function numbered(text: string, first: number, last: number): string
 	return table.concat(out, "\n")
 end
 
+-- Writes `new` in place of `text`, the file at `path`, changing only the
+-- part that differs, and returns what the model hears: the changed lines,
+-- numbered (with hashes when `anchors`), and new problems.
+local function write_change(
+	s: Session,
+	path: string,
+	text: string,
+	new: string,
+	anchors: boolean
+): string
+	agent.memory.guard(path, s.cwd)
+	-- Through its buffer (opened if need be), so undo takes it back, cursors
+	-- elsewhere stay put and its language server sees it.
+	local head, tail = shared(text, new)
+	local buffer = core.file.write(
+		path,
+		string.sub(new, head + 1, #new - tail),
+		{ root = s.cwd, from = head, to = #text - tail, load = true }
+	)
+	saw(s, path, new)
+	local first = line_at(new, head + 1)
+	local last = math.max(line_at(new, #new - tail), first)
+	return changed(`edited {path}:\n{numbered(new, first, last, anchors)}`, buffer)
+end
+
+-- An edit by hashlines: lines `from` to `to` (or just `from`) replaced by
+-- `text`, or `text` put in after line `after` ("0" for the top).
+type LineEdit = { from: string?, to: string?, after: string?, text: string }
+
+-- The line of `lines` that `anchor` ("12#a3f") names: line 12 if its hash
+-- is still a3f, else the one line nearest it that has that hash (lines
+-- moved by an edit above); fails when it's gone.
+local function resolve_anchor(path: string, lines: { string }, anchor: string): number
+	local number, hash = string.match(anchor, "^%s*(%d+)#(%x%x%x)")
+	local n = tonumber(number)
+	if n == nil or hash == nil then
+		error(`"{anchor}" isn't a line as read gives them, like 12#a3f`, 0)
+	end
+	hash = string.lower(hash)
+	if lines[n] and line_hash(lines[n]) == hash then
+		return n
+	end
+	local nearest: number? = nil
+	for i, line in lines do
+		if
+			line_hash(line) == hash and (nearest == nil or math.abs(i - n) < math.abs(nearest - n))
+		then
+			nearest = i
+		end
+	end
+	if nearest then
+		return nearest
+	end
+	local now = if lines[n] then `; it's now "{lines[n]}"` else ""
+	error(`line {anchor} of {path} isn't as you read it{now}: read it again`, 0)
+end
+
+-- `text` of `path` with `edits` made, or a failure saying which and why,
+-- and then none is made.
+local function apply_lines(path: string, text: string, edits: { LineEdit }): string
+	local lines = string.split(text, "\n")
+	type Span = { from: number, to: number, lines: { string }, n: number }
+	local spans: { Span } = {}
+	for n, e in edits do
+		local which = if #edits > 1 then `edit {n} of {#edits}: ` else ""
+		local ok, err = pcall(function()
+			if type(e.text) ~= "string" then
+				error("give each edit its text", 0)
+			end
+			check_elision(path, e.text, text)
+			local new: { string } = if e.text == ""
+				then {}
+				else string.split((string.gsub(e.text, "\n$", "")), "\n")
+			if e.after then
+				local at = if e.after == "0" then 0 else resolve_anchor(path, lines, e.after)
+				table.insert(spans, { from = at + 1, to = at, lines = new, n = n })
+			elseif e.from then
+				local from = resolve_anchor(path, lines, e.from)
+				local to = if e.to then resolve_anchor(path, lines, e.to) else from
+				if to < from then
+					error(`{e.to} comes before {e.from}`, 0)
+				end
+				table.insert(spans, { from = from, to = to, lines = new, n = n })
+			else
+				error("give from (and to) for lines to replace, or after for where to add lines", 0)
+			end
+		end)
+		if not ok then
+			local none = if #edits > 1 then " (none of the edits were made)" else ""
+			error(which .. tostring(err) .. none, 0)
+		end
+	end
+	table.sort(spans, function(a: Span, b: Span)
+		return a.from < b.from
+	end)
+	for i = 2, #spans do
+		if spans[i].from <= spans[i - 1].to then
+			error(
+				`edits {spans[i - 1].n} and {spans[i].n} change the same lines (none were made)`,
+				0
+			)
+		end
+	end
+	-- From the bottom up, so the lines above keep their numbers.
+	for i = #spans, 1, -1 do
+		local span = spans[i]
+		for _ = span.from, span.to do
+			table.remove(lines, span.from)
+		end
+		for k, line in span.lines do
+			table.insert(lines, span.from + k - 1, line)
+		end
+	end
+	return table.concat(lines, "\n")
+end
+
 local OWN: { Own } = {
 	{
+		edits = "replace",
 		spec = {
 			name = "edit_file",
 			description = "Replace text in a file: `old_text` must appear in it exactly once (give enough "
@@ -481,20 +640,78 @@ local OWN: { Own } = {
 				error(`there's no file {args.path}`, 0)
 			end
 			local new = apply(args.path, text, changes_of(args), changed_since(s, args.path, text))
-			agent.memory.guard(args.path, s.cwd)
-			-- Only the part that changed, through its buffer (opened if need
-			-- be), so undo takes it back, cursors elsewhere stay put and its
-			-- language server sees it.
-			local head, tail = shared(text, new)
-			local buffer = core.file.write(
-				args.path,
-				string.sub(new, head + 1, #new - tail),
-				{ root = s.cwd, from = head, to = #text - tail, load = true }
-			)
-			saw(s, args.path, new)
-			local first = line_at(new, head + 1)
-			local last = math.max(line_at(new, #new - tail), first)
-			return changed(`edited {args.path}:\n{numbered(new, first, last)}`, buffer)
+			return write_change(s, args.path, text, new, false)
+		end,
+	},
+	{
+		edits = "hashline",
+		spec = {
+			name = "edit_file",
+			description = "Change lines of a file, named as read gives them (12#a3f: the line's "
+				.. "number and a hash of its text). Each edit replaces lines `from` to `to` (or just "
+				.. "`from`) with `text`, which may be several lines or empty to delete them, or puts "
+				.. '`text` in after line `after` ("0" for the top). Copy the names exactly; never '
+				.. "retype the old lines. The edits are made together, or none is. An open file is "
+				.. "edited as the user has it, and saved. Returns the changed lines with their new "
+				.. "names, for more edits without reading again, and new problems the language "
+				.. "server sees",
+			input = object({
+				path = { type = "string" },
+				edits = {
+					type = "array",
+					items = object({
+						from = {
+							type = "string",
+							description = "The first line to replace, e.g. 12#a3f",
+						},
+						to = {
+							type = "string",
+							description = "The last line to replace; from if left out",
+						},
+						after = {
+							type = "string",
+							description = "The line to add text after, in place of from",
+						},
+						text = { type = "string" },
+					}, { "text" }),
+				},
+			}, { "path", "edits" }),
+		},
+		kind = "edit",
+		title = function(args)
+			return `Edit {args.path}`
+		end,
+		preview = function(s, args)
+			local out = {}
+			local text = core.file.text(args.path, s.cwd)
+			local ok, new = pcall(apply_lines, args.path, text or "", args.edits or {})
+			if ok and text then
+				for _, hunk in greed.diff(text, new) do
+					local gone = string.sub(text, hunk.from + 1, hunk.to)
+					if gone ~= "" then
+						marked(out, "- ", (string.gsub(gone, "\n$", "")))
+					end
+					if hunk.text ~= "" then
+						marked(out, "+ ", (string.gsub(hunk.text, "\n$", "")))
+					end
+				end
+			end
+			return out
+		end,
+		widens = function(s, args)
+			local text = core.file.text(args.path, s.cwd)
+			if text == nil then
+				return nil
+			end
+			local ok, new = pcall(apply_lines, args.path, text, args.edits or {})
+			return if ok then agent.widens(args.path, text, new) else nil
+		end,
+		run = function(s, args)
+			local text = core.file.text(args.path, s.cwd)
+			if text == nil then
+				error(`there's no file {args.path}`, 0)
+			end
+			return write_change(s, args.path, text, apply_lines(args.path, text, args.edits), true)
 		end,
 	},
 	{
@@ -660,7 +877,10 @@ local function config_note(): string
 		.. "keeping what's there; don't look for it anywhere else."
 end
 
-local function system(s: Session, env: string?): string
+local function system(s: Session, env: string?, edits: string?): string
+	local how = if edits == "hashline"
+		then "Read gives each line a name (12#a3f): edit with edit_file by those names."
+		else "Edit with edit_file, giving enough of the old text to match once."
 	local lines = {
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
 			.. "search the project, edit files and run commands with the tools you have.",
@@ -671,7 +891,7 @@ local function system(s: Session, env: string?): string
 			.. "when nothing changed since their last message.",
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
-			.. "Edit with edit_file, giving enough of the old text to match once.",
+			.. how,
 		"More tools come in groups you switch on with the tools tool when you need them: the "
 			.. "repo map and the user's working set, renaming and the language server's fixes, "
 			.. "history, notes, plugins and more.",
@@ -707,8 +927,10 @@ local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agen
 		by_name[tool.name] = tool
 	end
 	for _, own in OWN do
-		offered[own.spec.name] = own.spec
-		by_name[own.spec.name] = own
+		if own.edits == nil or own.edits == (state.edits or "replace") then
+			offered[own.spec.name] = own.spec
+			by_name[own.spec.name] = own
+		end
 	end
 	-- In the order the session first had them: tools of a group switched on
 	-- later come last, so the list before them, which providers cache, stays.
@@ -852,9 +1074,21 @@ local function call(
 			input = table.clone(input)
 			input.path = core.project.resolve(path, s.cwd)
 		end
-		return agent.as_text(tool.run(input, state.caller))
+		local said = agent.as_text(tool.run(input, state.caller))
+		-- Each line named, for a model that edits by hashlines.
+		if c.name == "read" and state.edits == "hashline" then
+			said = anchored(said, tonumber(input.from_line) or 1)
+		end
+		return said
 	end)
 	local text = if ok then result else agent.error_text(result)
+	-- How edits go, by model and how they're made, to tell which way works.
+	if own and own.spec.name == "edit_file" then
+		local chosen = models.resolve(models.playing(state.role))
+		if chosen then
+			models.count_edit(chosen.provider, chosen.model, state.edits or "replace", ok)
+		end
+	end
 	tool.status = if ok then "completed" else "failed"
 	local lines = string.split(text, "\n")
 	while #lines > 0 and lines[#lines] == "" do
@@ -965,7 +1199,8 @@ local function prompt(s: Session, text: string, context: string?): (boolean, str
 	state.env = state.env or environment(s.root)
 	-- The same from turn to turn, so providers can cache it: the time goes
 	-- in each of your messages instead.
-	local said_system = system(s, state.env)
+	state.edits = models.edits(state.role)
+	local said_system = system(s, state.env, state.edits)
 	-- Once a summary fails, it isn't asked for again until the next prompt.
 	local may_compact = true
 	-- Answers cut off at their length in a row.

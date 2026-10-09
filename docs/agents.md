@@ -357,7 +357,21 @@ language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file
 over one it hasn't read, or over your changes made since it read it, and
 it can't write a line like `// ... existing code ...` in place of code it
-left out. Its system
+left out.
+
+By default the model edits by giving the text to replace. Some models copy
+text badly and do better naming lines instead: with `edits = "hashline"`
+on the role (or the provider), `read` gives each line a name of its number
+and a short hash of its text (`12#a3f  local x = 1`), and the model edits
+lines by those names. A line that moved since it was read is found by its
+hash; one that changed is refused, so the model reads it again.
+
+```luau
+models.roles.agent = { provider = "berget", model = "moonshotai/Kimi-K3", edits = "hashline" }
+```
+
+`:usage` shows how the edits went, by model and way of editing, to compare
+the two. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
 in the project itself, without a workspace of its own.
 

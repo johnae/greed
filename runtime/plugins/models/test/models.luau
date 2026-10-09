@@ -284,6 +284,36 @@ test("how long an answer may be: the role's, its provider's, or sized from the w
 	models.providers.small = nil
 end)
 
+test("how the agent edits is the role's, the provider's, or replace", function()
+	models.roles.poetry = { provider = "ollama", model = "some-model" }
+	assert(models.edits("poetry") == "replace", models.edits("poetry"))
+	models.providers.small = { kind = "openai", url = "http://localhost:1", edits = "hashline" }
+	models.roles.poetry = { provider = "small", model = "m" }
+	assert(models.edits("poetry") == "hashline", "the provider says")
+	models.roles.poetry = { provider = "small", model = "m", edits = "replace" }
+	assert(models.edits("poetry") == "replace", "the role says first")
+	models.roles.poetry = { provider = "small", model = "m", edits = "nonsense" }
+	assert(models.edits("poetry") == "hashline", "a way it doesn't know is passed over")
+	models.roles.poetry = nil
+	models.providers.small = nil
+end)
+
+test("edits are counted by model and how they were made, and :usage says how they went", function()
+	models.count_edit("anthropic", "claude-sonnet-5", "replace", true)
+	models.count_edit("anthropic", "claude-sonnet-5", "replace", false)
+	models.count_edit("anthropic", "claude-sonnet-5", "hashline", true)
+	local today = models.usage(os.date("%Y-%m-%d"))
+	local used = today[`{os.date("%H")} anthropic/claude-sonnet-5`]
+	assert(used and used.edits, "kept")
+	local edits: any = used.edits
+	assert(
+		edits.replace.ok == 1 and edits.replace.failed == 1 and edits.hashline.ok == 1,
+		"by format"
+	)
+	local report = table.concat(models.usage_report(), "\n")
+	assert(string.find(report, "edits: hashline 1 of 1, replace 1 of 2", 1, true), report)
+end)
+
 test("tokens used are counted a day at a time, and :usage says how many", function(t)
 	models.count("berget", "moonshotai/Kimi-K3", 1000, 50)
 	models.count("berget", "moonshotai/Kimi-K3", 3000, 20, 2500)

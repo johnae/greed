@@ -37,7 +37,8 @@ export type TurnRequest = turn.Request
 --- sign in to names its `login` (login.luau); once signed in, that's used
 --- instead of the key. `context` is how many tokens its models have room
 --- for, when you'd rather say than have it guessed from the model's name,
---- and `output` how long one of their answers may be.
+--- `output` how long one of their answers may be, and `edits` how Greed's
+--- agent has them edit files (see `M.edits`).
 export type Provider = {
 	kind: string,
 	url: string,
@@ -45,11 +46,19 @@ export type Provider = {
 	login: string?,
 	context: number?,
 	output: number?,
+	edits: string?,
 }
 
 --- Which provider and model play a role, and optionally how many tokens
---- the model has room for (its context window) and may write in one answer.
-export type Role = { provider: string, model: string, context: number?, output: number? }
+--- the model has room for (its context window) and may write in one answer,
+--- and how Greed's agent has it edit files (see `M.edits`).
+export type Role = {
+	provider: string,
+	model: string,
+	context: number?,
+	output: number?,
+	edits: string?,
+}
 
 export type Message = { role: "user" | "assistant", content: string }
 
@@ -279,6 +288,27 @@ function M.output(role: string): number
 		return said
 	end
 	return math.min(OUTPUT, M.window(role) // 4)
+end
+
+--- The ways Greed's agent can have a model edit files: "replace", old
+--- text to new, which models trained on it do best with, and "hashline",
+--- lines named by their number and a short hash of their text, which helps
+--- models that miscopy text.
+M.EDITS = { "replace", "hashline" }
+
+--- How Greed's agent has the model playing `role` edit files: the role's
+--- `edits`, its provider's, or "replace".
+function M.edits(role: string): string
+	local chosen, provider = M.resolve(M.playing(role))
+	local said = chosen and chosen.edits
+	if said and table.find(M.EDITS, said) then
+		return said
+	end
+	said = provider and provider.edits
+	if said and table.find(M.EDITS, said) then
+		return said
+	end
+	return "replace"
 end
 
 -- The request to send, as the provider's API wants it.
@@ -641,10 +671,20 @@ local function usage_path(day: string): string?
 	return data and `{data}/usage/{day}.json`
 end
 
+--- Edits Greed's agent made one way, that worked and that failed.
+export type Tally = { ok: number, failed: number }
+
 --- What was used on `day` ("2026-10-09"): `{ [hour .. " " .. model] = { requests,
---- input, output, cached } }`, models as "provider/model"; `cached` is the
---- part of `input` read from the provider''s cache.
-export type Used = { requests: number, input: number, output: number, cached: number? }
+--- input, output, cached, edits } }`, models as "provider/model"; `cached` is the
+--- part of `input` read from the provider's cache, and `edits` how Greed's
+--- agent's edits went, by how they were made (`M.EDITS`).
+export type Used = {
+	requests: number,
+	input: number,
+	output: number,
+	cached: number?,
+	edits: { [string]: Tally }?,
+}
 function M.usage(day: string): { [string]: Used }
 	local path = usage_path(day)
 	local text = if path then greed.fs.read(path) else nil
@@ -671,6 +711,35 @@ function M.count(provider: string, model: string, input: number?, output: number
 	greed.fs.write(path, greed.json.encode(kept))
 end
 
+local function count_edit(provider: string, model: string, how: string, ok: boolean)
+	local day, hour = os.date("%Y-%m-%d"), os.date("%H")
+	local path = usage_path(day)
+	if path == nil then
+		return
+	end
+	local kept = M.usage(day)
+	local key = `{hour} {provider}/{model}`
+	local used: Used = kept[key] or { requests = 0, input = 0, output = 0 }
+	local edits: { [string]: Tally } = used.edits or {}
+	local tally: Tally = edits[how] or { ok = 0, failed = 0 }
+	if ok then
+		tally.ok += 1
+	else
+		tally.failed += 1
+	end
+	edits[how] = tally
+	used.edits = edits
+	kept[key] = used
+	greed.fs.write(path, greed.json.encode(kept))
+end
+
+--- Counts an edit Greed's agent had `model` at `provider` make, the way
+--- `how` says (`M.EDITS`), and whether it worked. It's kept with what was
+--- used, as this plugin keeps it, whoever counts.
+function M.count_edit(provider: string, model: string, how: string, ok: boolean)
+	greed.vouch(count_edit, provider, model, how, ok)
+end
+
 -- `n` tokens, short: 950, 12.3k, 4.56M.
 local function short(n: number): string
 	if n >= 1e6 then
@@ -694,6 +763,30 @@ local function add(sum: Used, used: Used)
 	sum.input += used.input
 	sum.output += used.output
 	sum.cached = (sum.cached or 0) + (used.cached or 0)
+	local made: { [string]: Tally } = used.edits or {}
+	for how, tally in made do
+		local edits: { [string]: Tally } = sum.edits or {}
+		local into: Tally = edits[how] or { ok = 0, failed = 0 }
+		into.ok += tally.ok
+		into.failed += tally.failed
+		edits[how] = into
+		sum.edits = edits
+	end
+end
+
+-- How `used`'s edits went, in words: "hashline 1 of 1, replace 1 of 2"
+-- worked; nil when there were none.
+local function edits_of(used: Used): string?
+	local edits = used.edits
+	if edits == nil then
+		return nil
+	end
+	local parts = {}
+	for how, tally in edits do
+		table.insert(parts, `{how} {tally.ok} of {tally.ok + tally.failed}`)
+	end
+	table.sort(parts)
+	return if #parts > 0 then table.concat(parts, ", ") else nil
 end
 
 --- What models were used for over the last `days` days (7 by default),
@@ -719,6 +812,10 @@ function M.usage_report(days: number?): { string }
 	end
 	for _, model in models do
 		table.insert(lines, `  {model}: {amounts(by_model[model])}`)
+		local edits = edits_of(by_model[model])
+		if edits then
+			table.insert(lines, `    edits: {edits} worked`)
+		end
 	end
 	table.insert(lines, "")
 	table.insert(lines, "Each day")

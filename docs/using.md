@@ -799,7 +799,9 @@ the same: which variable sets it, and that `:models` adds one.
 model, and each day of the last week, as the providers reported them for
 Greed's agent and the features with tools. Tokens read from the provider's
 cache are shown apart, as "(52.1k cached)": they cost a fraction of the
-rest, so a low share means caching isn't working. It's kept a file a day in
+rest, so a low share means caching isn't working. Under each model, how
+many of Greed's agent's edits worked, by the way it made them. It's kept a
+file a day in
 Greed's data folder (`usage/2026-10-09.json`), by hour and model.
 
 Ollama needs no key, but it has to run: `ollama serve` starts it, and
