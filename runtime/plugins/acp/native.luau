@@ -220,6 +220,42 @@ local function trimmed(s: string): string
 	return string.match(s, "^%s*(.-)%s*$") or s
 end
 
+-- Words a model writes in place of code it left out, like
+-- "// ... existing code ..." or "# rest of file unchanged".
+local ELIDED = { "existing code", "unchanged", "rest of", "remaining", "omitted", "same as before" }
+
+-- The first line of `new` that stands in for text left out, with its number,
+-- unless `old` has it too: written to the file it would take the text's place.
+local function elision(new: string, old: string): (number?, string?)
+	for n, line in string.split(new, "\n") do
+		local bare = string.lower(trimmed(line))
+		local comment = string.match(bare, "^[/#%-;%*<%(%[]") ~= nil
+			or string.find(bare, "^%.%.%.") ~= nil
+		local dots = string.find(bare, "...", 1, true) or string.find(bare, "…", 1, true)
+		if comment and dots and #bare < 80 and not string.find(old, trimmed(line), 1, true) then
+			for _, words in ELIDED do
+				if string.find(bare, words, 1, true) then
+					return n, trimmed(line)
+				end
+			end
+		end
+	end
+	return nil, nil
+end
+
+-- Fails when `new`, going into `path` in place of `old`, leaves text out.
+local function check_elision(path: string, new: string, old: string)
+	local n, line = elision(new, old)
+	if n then
+		error(
+			`line {n} of what you'd write to {path}, "{line}", stands in for text left out; `
+				.. "it would replace that text in the file. Give the text itself, or change only "
+				.. "the parts that change with edit_file",
+			0
+		)
+	end
+end
+
 -- Why `old` isn't in `text` of `path`, with what's nearest, so the model
 -- can put it right without reading the whole file again.
 local function missing(path: string, text: string, old: string, stale: boolean): string
@@ -307,6 +343,7 @@ local function apply(path: string, text: string, changes: { Change }, stale: boo
 		if change.old_text == "" then
 			error(`{which}old_text is empty{none}`, 0)
 		end
+		check_elision(path, change.new_text, text)
 		local at = places(text, change.old_text)
 		if #at == 0 then
 			error(which .. missing(path, text, change.old_text, stale) .. none, 0)
@@ -510,10 +547,18 @@ local OWN: { Own } = {
 					)
 				end
 			end
+			check_elision(args.path, args.text, old or "")
 			agent.memory.guard(args.path, s.cwd)
 			local buffer = core.file.write(args.path, args.text, { root = s.cwd, load = true })
 			saw(s, args.path, args.text)
-			return changed(`wrote {args.path}`, buffer)
+			local said = `wrote {args.path}`
+			-- Much shorter than it was, which may not be what it meant.
+			local before = if old then #string.split(old, "\n") else 0
+			local after = #string.split(args.text, "\n")
+			if before >= 40 and after < before / 2 then
+				said ..= ` (it went from {before} lines to {after})`
+			end
+			return changed(said, buffer)
 		end,
 	},
 	{

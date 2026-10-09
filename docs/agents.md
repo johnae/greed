@@ -354,7 +354,9 @@ first. Its edits go
 through the file's buffer, so `u` takes them back, and it hears what the
 language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file
-over one it hasn't read, or over your changes made since it read it. Its system
+over one it hasn't read, or over your changes made since it read it, and
+it can't write a line like `// ... existing code ...` in place of code it
+left out. Its system
 prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
 in the project itself, without a workspace of its own.
 

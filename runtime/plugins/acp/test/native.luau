@@ -232,6 +232,44 @@ test("writing over a file needs it read first, as it is now", function(t)
 	assert(greed.fs.read(`{dir}/a.txt`) == "new\n", "written once read")
 end)
 
+test("text standing in for code left out isn't written, unless the file had it", function(t)
+	local long = string.rep("keep\n", 50)
+	local got, dir = results(t, {
+		{ "read", { path = "a.lua" } },
+		{
+			"write_file",
+			{ path = "a.lua", text = "local x = 1\n-- ... rest of the file unchanged ...\n" },
+		},
+		{
+			"edit_file",
+			{
+				path = "a.lua",
+				old_text = "local x = 1",
+				new_text = "local x = 2\n// ... existing code ...",
+			},
+		},
+		{ "edit_file", { path = "b.lua", old_text = "local y = 1", new_text = "local y = 2" } },
+		{ "read", { path = "c.txt" } },
+		{ "write_file", { path = "c.txt", text = "short\n" } },
+	}, {
+		["a.lua"] = "local x = 1\n",
+		-- Its own comment says the same, so editing next to it is fine.
+		["b.lua"] = "-- ... rest of the file unchanged ...\nlocal y = 1\n",
+		["c.txt"] = long,
+	})
+	assert(
+		got[2].error and string.find(got[2].text, "line 2 of what you'd write", 1, true),
+		got[2].text
+	)
+	assert(
+		got[3].error and string.find(got[3].text, "stands in for text left out", 1, true),
+		got[3].text
+	)
+	assert(not got[4].error, got[4].text)
+	assert(greed.fs.read(`{dir}/a.lua`) == "local x = 1\n", "a.lua is untouched")
+	assert(string.find(got[6].text, "it went from 51 lines to 2", 1, true), got[6].text)
+end)
+
 test("a file changed since it was read isn't written over, and a failed edit says why", function(t)
 	local turns = {
 		{
