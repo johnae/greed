@@ -1594,6 +1594,7 @@ a command works on; without one, it's the lines the selection touches
 | `:m 0` `:t $` | Move or copy the lines below a line (`0` is the top) |
 | `:norm keys` | Type the keys in normal mode on each line |
 | `:j` `:>` `:<` | Join, indent or dedent the lines |
+| `:sort` | Sort the lines (the whole file without a range): `:sort!` backwards, and `u` one of each, `i` ignoring case, `n` by the first number |
 | `:%!sort` | Put the lines through a program, as the pipe key does with a selection |
 | `:!cargo test` | Without a range, run it in this project's shell, where its output stays |
 | `:e!` | Load the file again from disk (an undo takes it back) |

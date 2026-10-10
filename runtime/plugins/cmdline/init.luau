@@ -716,6 +716,7 @@ local defaults: { [string]: string } = {
 	colo = "theme",
 	colorscheme = "theme",
 	checkhealth = "health",
+	sort = "sort-lines",
 	s = "substitute",
 	d = "delete-lines",
 	delete = "delete-lines",

@@ -308,4 +308,57 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "sort-lines",
+	doc = "Sort the selected lines (:sort): ! reverses, u keeps one of each, i ignores case, n sorts by the first number",
+	args = { { name = "flags", doc = "Any of u, i and n" } },
+	run = function(ctx)
+		local buffer = ctx.buffer
+		local first, last = M.selected_lines(ctx.view)
+		-- A lone line sorts the whole buffer, as :sort without a range does.
+		if first == last then
+			first, last = 0, buffer:line_count() - 1
+		end
+		local flags = table.concat(ctx.args, "")
+		local unique, fold, numeric =
+			string.find(flags, "u", 1, true),
+			string.find(flags, "i", 1, true),
+			string.find(flags, "n", 1, true)
+		local lines = string.split(core.text.lines(buffer, first, last), "\n")
+		local function key(line: string): any
+			if numeric then
+				return tonumber(string.match(line, "%-?%d+%.?%d*") or "") or -math.huge
+			end
+			return if fold then string.lower(line) else line
+		end
+		table.sort(lines, function(a, b)
+			local ka, kb = key(a), key(b)
+			if ka == kb then
+				return a < b
+			end
+			return ka < kb
+		end)
+		if ctx.force then
+			for i = 1, #lines // 2 do
+				lines[i], lines[#lines - i + 1] = lines[#lines - i + 1], lines[i]
+			end
+		end
+		if unique then
+			local kept, seen = {}, {}
+			for _, line in lines do
+				local k = key(line)
+				if not seen[k] then
+					seen[k] = true
+					table.insert(kept, line)
+				end
+			end
+			lines = kept
+		end
+		buffer:edit(function(e)
+			e:replace(buffer:line_start(first), buffer:line_end(last), table.concat(lines, "\n"))
+		end)
+		go_to_line(ctx.view, first)
+	end,
+})
+
 return M
