@@ -1,0 +1,136 @@
+# Builds the downloads for a release when a tag like v0.2.0 is pushed, and
+# puts them on a draft release to check and publish. Run by hand, it builds
+# them without a release, to try the builds.
+#
+# - Linux, with the window: built against glibc 2.28 (dist/linux.sh), so it
+#   runs on Debian 10, Ubuntu 20.04, RHEL 8 and anything newer.
+# - Linux, terminal only: one static binary (musl), for servers and any
+#   Linux at all, NixOS included.
+# - macOS: one binary for Apple silicon and Intel, as Greed.app and on its
+#   own (dist/macos.sh). Signed and notarized when the APPLE_* secrets are
+#   set; otherwise signed ad hoc.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            distros: ubuntu:20.04 debian:11 fedora:latest archlinux:latest opensuse/tumbleweed:latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            distros: ubuntu:20.04 debian:11 fedora:latest opensuse/tumbleweed:latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            quay.io/pypa/manylinux_2_28_${{ matrix.arch }} dist/linux.sh
+      - name: runs on other distributions
+        run: |
+          pkg=$(echo target/packages/greed-*-linux-${{ matrix.arch }})
+          for distro in ${{ matrix.distros }}; do
+            echo "$distro: $(docker run --rm -v "$PWD/$pkg:/pkg:ro" "$distro" /pkg/bin/greed --version)"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: target/packages/*.tar.gz
+
+  linux-tui:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: build
+        run: nix build .#static
+      - name: package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          name=greed-$version-linux-${{ matrix.arch }}-tui-only-static
+          mkdir -p "target/packages/$name/bin"
+          cp result/bin/greed "target/packages/$name/bin/"
+          cp LICENSE README.md THIRD-PARTY.md "target/packages/$name/"
+          "target/packages/$name/bin/greed" --version
+          tar -C target/packages -czf "target/packages/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tui-${{ matrix.arch }}
+          path: target/packages/*.tar.gz
+
+  macos:
+    runs-on: macos-latest
+    env:
+      SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: signing certificate
+        if: env.SIGNING == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+        run: |
+          keychain=$RUNNER_TEMP/signing.keychain-db
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          echo "$APPLE_NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          echo "GREED_NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      - name: build
+        env:
+          GREED_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+          GREED_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          GREED_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: dist/macos.sh
+      - run: target/packages/greed --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            target/packages/*.tar.gz
+            target/packages/*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, linux-tui, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: checksums
+        run: cd packages && sha256sum -- * > SHA256SUMS
+      - name: draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
+            --draft --title "Greed ${GITHUB_REF_NAME#v}" --generate-notes

@@ -72,3 +72,9 @@ debug = "line-tables-only"
 # its time.
 [profile.dev.package.mlua-sys]
 opt-level = 3
+
+# The binaries on the releases page (dist/).
+[profile.dist]
+inherits = "release"
+lto = "thin"
+strip = true
