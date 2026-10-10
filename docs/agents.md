@@ -58,6 +58,7 @@ to go. The tools:
 | `code_actions`, `code_action` | The language server's quick fixes and refactors for some lines, and proposing one; actions that would run a command in the server are refused, since they can't be shown first |
 | `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
+| `objects`, `inspect`, `act` | The objects of the running editor (buffers, views, tabs, terminals, shell blocks, language servers, proposals, plugins and what plugins add): list them by kind or by what they relate to, see one's state, relations and actions, and run an action on it as you would from the inspector (`space h i`). Agents in Greed ask before `act`; deciding on proposed changes stays yours |
 | `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |
 | `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
