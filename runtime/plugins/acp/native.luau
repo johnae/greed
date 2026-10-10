@@ -839,6 +839,48 @@ local OWN: { Own } = {
 	},
 	{
 		spec = {
+			name = "move_file",
+			description = "Move or rename a file or folder; files open in the editor go along",
+			input = object(
+				{ from = { type = "string" }, to = { type = "string" } },
+				{ "from", "to" }
+			),
+		},
+		kind = "move",
+		title = function(args)
+			return `Move {args.from} to {args.to}`
+		end,
+		run = function(s, args)
+			local from = core.project.resolve(args.from, s.cwd)
+			local to = core.project.resolve(args.to, s.cwd)
+			if greed.fs.stat(from) == nil then
+				error(`there's no {args.from}`, 0)
+			end
+			agent.memory.guard(args.from, s.cwd)
+			agent.memory.guard(args.to, s.cwd)
+			core.file.rename(from, to)
+			return `moved {args.from} to {args.to}`
+		end,
+	},
+	{
+		spec = {
+			name = "delete_file",
+			description = "Delete a file, or a folder and everything in it",
+			input = object({ path = { type = "string" } }, { "path" }),
+		},
+		kind = "delete",
+		title = function(args)
+			return `Delete {args.path}`
+		end,
+		run = function(s, args)
+			local path = core.project.resolve(args.path, s.cwd)
+			agent.memory.guard(args.path, s.cwd)
+			core.file.remove(path)
+			return `deleted {args.path}`
+		end,
+	},
+	{
+		spec = {
 			name = "run",
 			description = "Run a shell command in the project's folder and get what it printed and how "
 				.. "it exited: for tests, builds, version control. Don't use it to read or search files; "

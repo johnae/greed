@@ -1676,3 +1676,18 @@ test("a summary is asked for under fixed headings, folding in the one before", f
 	assert(string.find(system, "earlier summary", 1, true), "and how to fold one in")
 	assert(string.find(compact.NOTE, "plan_read", 1, true), "the agent is pointed at the plan")
 end)
+
+test("move_file and delete_file move and delete files", function(t)
+	local got, dir = results(t, {
+		{ "move_file", { from = "src/usr.rs", to = "src/user.rs" } },
+		{ "delete_file", { path = "old.txt" } },
+		{ "move_file", { from = "nope.rs", to = "x.rs" } },
+	}, { ["src/usr.rs"] = "struct Usr;\n", ["old.txt"] = "gone\n" })
+	assert(not got[1].error, got[1].text)
+	assert(
+		greed.fs.read(`{dir}/src/user.rs`) == "struct Usr;\n"
+			and greed.fs.stat(`{dir}/src/usr.rs`) == nil
+	)
+	assert(not got[2].error and greed.fs.stat(`{dir}/old.txt`) == nil, got[2].text)
+	assert(got[3].error and string.find(got[3].text, "there's no nope.rs", 1, true), got[3].text)
+end)

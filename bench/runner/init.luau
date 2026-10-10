@@ -107,7 +107,15 @@ end
 
 -- Calls that change something: before the first of these the agent was
 -- only finding its way.
-local CHANGES = { edit_file = true, write_file = true, plugin_try = true, run = true, eval = true }
+local CHANGES = {
+	edit_file = true,
+	write_file = true,
+	move_file = true,
+	delete_file = true,
+	plugin_try = true,
+	run = true,
+	eval = true,
+}
 
 -- What the saved conversation, `text`, says about the calls the agent made.
 local function calls_of(text: string?): { [string]: any }
