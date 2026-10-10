@@ -40,4 +40,7 @@ jobs:
         if: runner.os == 'Linux'
         run: devenv shell -- cargo deny check licenses
       - name: test
+        # Shared runners are slower than the machines the budgets were set on.
+        env:
+          GREED_BUDGET_SCALE: "2"
         run: devenv shell -- cargo test -q --workspace --no-fail-fast

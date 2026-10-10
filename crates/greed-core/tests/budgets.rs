@@ -12,7 +12,8 @@
 //!
 //! `GREED_BUDGETS=report cargo test --release --test budgets -- --nocapture`
 //! prints every measurement next to its budget; `--include-ignored` adds
-//! the ones that take minutes.
+//! the ones that take minutes. `GREED_BUDGET_SCALE=2` doubles every budget,
+//! for a slower machine than the one they were set on, like CI's runners.
 
 use std::fmt::Write as _;
 use std::io::{BufRead, Write as _};
@@ -176,17 +177,25 @@ fn isolated(test: &str) -> Found {
 /// only reported.
 fn check(test: &str, found: &Found, budgets: &[(&str, f64, f64)]) {
     let report = std::env::var("GREED_BUDGETS").is_ok_and(|v| v == "report");
+    // A slower machine than the budgets were set on, like CI's shared
+    // runners, scales them all: still small enough to catch a real
+    // slowdown, which is many times over, never a few percent.
+    let scale: f64 = std::env::var("GREED_BUDGET_SCALE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
     let mut over = String::new();
     for (name, value) in &found.0 {
         let budget = budgets
             .iter()
             .find(|b| b.0 == name)
             .map(|&(_, release, debug)| {
-                if cfg!(debug_assertions) {
-                    debug
-                } else {
-                    release
-                }
+                scale
+                    * if cfg!(debug_assertions) {
+                        debug
+                    } else {
+                        release
+                    }
             });
         if report {
             let budget = budget.map_or_else(String::new, |b| format!("  budget {b}"));
