@@ -251,6 +251,12 @@ it's kept in what was done to the thing (`actions.history(id)`, which
 `history` and the inspector show); `run` may give back the id of what it
 made, like a shell block, and `quiet = true` leaves an action that only
 looks out of it.
+An action that destroys or stops something says so with `danger = true`:
+`actions.run` then asks first, with a y/n for one of yours and a review of
+them all for several or for an agent's, saying what each will do
+(`says = function(target) return "kubectl delete ..." end`) and warning
+where it's due (`warns`). `actions.run_all(action, targets)` runs one on
+several, asking once, and gives back those it ran on.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the

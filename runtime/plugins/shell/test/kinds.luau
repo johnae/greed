@@ -154,7 +154,7 @@ test("an action that destroys asks first, and says when it's production", functi
 	greed.spawn(function()
 		for _, action in core.actions.for_kind("pod") do
 			if action.name == "delete" then
-				action.run(pod)
+				core.actions.run(action, pod)
 			end
 		end
 	end)

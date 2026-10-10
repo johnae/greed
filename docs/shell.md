@@ -596,7 +596,7 @@ path in any buffer included.
 Select several rows (`x` a few times in Helix, `V` in Vim, shift and the
 arrows in the vscode style) and `space .` offers each action once for all
 of them (`describe  3 × pod: api-0, api-1, api-2`), running it on each in
-turn. One that deletes or stops asks for each.
+turn. One that deletes or stops asks once for all of them (see below).
 
 `watch` on a row (or anything else, under `space .`) looks at it again
 every `watch-interval` seconds (10) and sends a notification when it
@@ -648,6 +648,15 @@ a context matching `shell-production-contexts`:
 
 ```text
 delete worker-5c6b7d8f9-abcde - in PRODUCTION (prod-eu)? y/n
+```
+
+For several at once, or for any an agent asks to run, a review lists each
+with the command it runs, every one ticked: `space` unticks one, `a`
+ticks or unticks them all, `enter` runs the ticked ones and `esc` none.
+
+```text
+[x] delete  worker-5c6b7d8f9-abcde   kubectl delete pods worker-5c6b7d8f9-abcde --context prod-eu -n payments   (in PRODUCTION (prod-eu))
+[ ] delete  api-7d9f8b6c5-2xkqz      kubectl delete pods api-7d9f8b6c5-2xkqz --context prod-eu -n payments   (in PRODUCTION (prod-eu))
 ```
 
 `shell` on a pod or a container opens a shell in it in a terminal.

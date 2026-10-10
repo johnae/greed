@@ -252,18 +252,69 @@ function M.fresh(object: Object): ({ [string]: any }?, string?)
 	return if now then M.inspect(now) else nil, nil
 end
 
+-- `object`'s action `name`, if its kind has one.
+local function action_named(object: Object, name: string): actions.Action?
+	for _, action in M.actions(object) do
+		if action.name == name then
+			return action
+		end
+	end
+	return nil
+end
+
 --- Runs `object`'s action `name`, with the cursor on it first when it's
 --- somewhere in a buffer; false when its kind has no action by that name.
 --- `by` says who for the history, as `actions.run` takes it.
 function M.act(object: Object, name: string, by: string?): boolean
-	for _, action in M.actions(object) do
-		if action.name == name then
-			go_to(object)
-			actions.run(action, M.target(object), by)
-			return true
+	local action = action_named(object, name)
+	if action == nil then
+		return false
+	end
+	go_to(object)
+	actions.run(action, M.target(object), by)
+	return true
+end
+
+--- Runs the action `name` on every one of `list` for `by`, as `act` does
+--- on one, asking once for all those its action destroys or stops something
+--- on. Gives back the ids it ran on, those it didn't (not chosen when asked)
+--- and those whose kind has no action by that name.
+function M.act_all(
+	list: { Object },
+	name: string,
+	by: string?
+): ({ string }, { string }, { string })
+	local ran, skipped, missing = {}, {}, {}
+	-- Those of one kind share an action, and are asked about together.
+	local groups: { { action: actions.Action, targets: { actions.Target } } } = {}
+	for _, object in list do
+		local found = action_named(object, name)
+		if found == nil then
+			table.insert(missing, object.id)
+		else
+			local target = M.target(object)
+			local joined = false
+			for _, g in groups do
+				if g.action == found then
+					table.insert(g.targets, target)
+					joined = true
+					break
+				end
+			end
+			if not joined then
+				table.insert(groups, { action = found, targets = { target } })
+			end
 		end
 	end
-	return false
+	for _, group in groups do
+		local chosen = actions.run_all(group.action, group.targets, by, function(target)
+			go_to(assert(M.from(target)))
+		end)
+		for _, target in group.targets do
+			table.insert(if table.find(chosen, target) then ran else skipped, assert(target.id))
+		end
+	end
+	return ran, skipped, missing
 end
 
 --- What's at the primary selection in `view` (actions.at) that can be

@@ -50,12 +50,18 @@ export type Finder = {
 --- `plugin`, once the plugin it came from, is ignored. `run` may give back
 --- what it made to look at, as an object id: a shell action its block.
 --- One that only looks (`history` itself) is `quiet`: it isn't kept.
+--- One that destroys or stops something (`delete`, `kill`) is `danger`:
+--- it asks first, saying what it will do (`says`, the command it runs) and
+--- warning where one is due (`warns`, "in PRODUCTION (prod-eu)").
 export type Action = {
 	kind: string,
 	name: string,
 	doc: string?,
 	plugin: string?,
 	quiet: boolean?,
+	danger: boolean?,
+	says: ((target: Target) -> string?)?,
+	warns: ((target: Target) -> string?)?,
 	run: (target: Target) -> ...any,
 }
 
@@ -120,9 +126,8 @@ function M.for_kind(kind: string): { Action }
 	return out
 end
 
---- Runs `action` on `target` for `by` ("you" by default, "agent" for an
---- agent's), keeping it in the history of what was done.
-function M.run(action: Action, target: Target, by: string?)
+-- Runs `action` on `target` for `by`, keeping it in the history.
+local function run_one(action: Action, target: Target, by: string?)
 	if action.quiet then
 		action.run(target)
 		return
@@ -147,6 +152,73 @@ function M.run(action: Action, target: Target, by: string?)
 	if type(made) == "string" then
 		entry.made = made
 	end
+end
+
+-- What `f` says about `target`, or nil when it says nothing or fails.
+local function asked(f: ((target: Target) -> string?)?, target: Target): string?
+	if f == nil then
+		return nil
+	end
+	local ok, said = pcall(f, target)
+	return if ok then said else nil
+end
+
+--- Asks before `action`, one that destroys or stops something, runs on
+--- `targets` for `by`: one of yours with a y/n, several or an agent's in a
+--- review listing what each will do. Gives back those it may run on.
+function M.confirm(action: Action, targets: { Target }, by: string?): { Target }
+	if #targets == 1 and (by or "you") == "you" then
+		local target = targets[1]
+		local warning = asked(action.warns, target)
+		greed.echo(`{action.name} {target.label}{if warning then " - " .. warning else ""}? y/n`)
+		local yes = greed.next_key() == "y"
+		greed.echo("")
+		return if yes then targets else {}
+	end
+	local items = {}
+	for _, target in targets do
+		table.insert(items, {
+			label = `{action.name}  {target.label}`,
+			says = asked(action.says, target),
+			warning = asked(action.warns, target),
+		})
+	end
+	local who = if by == "agent" then "An agent asks to " else ""
+	local ticked = require("./review").ask(`{who}{action.name} {#targets}`, items) or {}
+	local out = {}
+	for i, target in targets do
+		if ticked[i] then
+			table.insert(out, target)
+		end
+	end
+	return out
+end
+
+--- Runs `action` on each of `targets` for `by` ("you" by default, "agent"
+--- for an agent's), keeping each in the history of what was done. One
+--- that destroys or stops something asks first (`confirm`). `before`, if
+--- given, runs before each, as to put the cursor on it. Gives back those it
+--- ran on.
+function M.run_all(
+	action: Action,
+	targets: { Target },
+	by: string?,
+	before: ((target: Target) -> ())?
+): { Target }
+	local chosen: { Target } = if action.danger then M.confirm(action, targets, by) else targets
+	for _, target in chosen do
+		if before then
+			before(target)
+		end
+		run_one(action, target, by)
+	end
+	return chosen
+end
+
+--- Runs `action` on `target` for `by`, as `run_all` does on one; whether
+--- it ran.
+function M.run(action: Action, target: Target, by: string?): boolean
+	return #M.run_all(action, { target }, by) > 0
 end
 
 --- What was done to the thing with `id`, newest first; with no `id`,
@@ -279,9 +351,14 @@ for _, kind in { "file", "folder" } do
 	M.action({
 		kind = kind,
 		name = "delete",
-		doc = "Delete it, after you press y",
+		doc = "Delete it, after you say yes",
+		danger = true,
+		says = function(target)
+			return `delete {target.value}{if kind == "folder" then " and what's in it" else ""}`
+		end,
 		run = function(target)
-			require("./file").confirm_remove(target.value)
+			require("./file").remove(target.value)
+			greed.echo(`deleted {require("./project").short(target.value)}`)
 		end,
 	})
 end

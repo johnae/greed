@@ -94,3 +94,30 @@ test(
 		assert(not ok and string.find(tostring(err), "it has close", 1, true), tostring(err))
 	end
 )
+
+test("act on several ids reviews a destroying action once, and says which the user ran", function(t)
+	tickets()
+	local deleted: { string } = {}
+	core.actions.action({
+		kind = "ticket",
+		name = "delete",
+		danger = true,
+		run = function(target)
+			table.insert(deleted, target.value)
+		end,
+	})
+	t:buffer("|x")
+	local result: any = nil
+	greed.spawn(function()
+		result = run("act", { ids = { "ticket:A-1", "ticket:A-2" }, action = "delete" })
+	end)
+	local review = table.concat(t:floats(), "\n")
+	assert(string.find(review, "delete  ticket A-1", 1, true), review)
+	-- The user keeps A-1 and deletes A-2.
+	t:keys("space enter")
+	t:wait_for(function()
+		return result ~= nil
+	end)
+	assert(#deleted == 1 and deleted[1] == "A-2", table.concat(deleted, ","))
+	assert(result.on[1] == "ticket:A-2" and result.declined[1] == "ticket:A-1")
+end)

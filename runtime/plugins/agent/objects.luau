@@ -138,33 +138,52 @@ agent.tool({
 	kind = "execute",
 	description = "Run one of an object's actions (inspect lists them), on that object, as "
 		.. "the user would from the inspector: show a buffer, run a shell block again, "
-		.. "stop a terminal's program. Some ask the user first, and deciding on proposed "
-		.. "changes is only theirs. Gives back the object's state afterwards, if it's "
-		.. "still there",
+		.. "stop a terminal's program. Give `ids` to run it on several at once. Actions "
+		.. "that destroy or stop something (delete, kill) go to the user to review first, "
+		.. "all of them together, and they may run some and not others; deciding on "
+		.. "proposed changes is only theirs. Gives back the ids it ran on and those the "
+		.. "user turned down, and with one id the object's state afterwards",
 	input = object({
 		id = { type = "string", description = "The object's id" },
+		ids = {
+			type = "array",
+			items = { type = "string" },
+			description = "Several objects' ids, to run the action on each",
+		},
 		action = { type = "string", description = "The action's name, as inspect gives it" },
-	}, { "id", "action" }),
+	}, { "action" }),
 	run = function(args)
-		local found = find(args.id)
 		if type(args.action) ~= "string" then
 			error("give the action's name; inspect lists them", 0)
 		end
-		if not objects.act(found, args.action, "agent") then
+		local ids: { any } = if type(args.ids) == "table" then args.ids :: { any } else { args.id }
+		if #ids == 0 then
+			error("give the object's id, or ids for several", 0)
+		end
+		local list = {}
+		for _, id in ids do
+			table.insert(list, find(id))
+		end
+		local ran, declined, missing = objects.act_all(list, args.action, "agent")
+		if #missing > 0 then
 			local names = {}
-			for _, action in objects.actions(found) do
+			for _, action in objects.actions(assert(objects.get(missing[1]))) do
 				table.insert(names, action.name)
 			end
 			local have = if #names > 0 then table.concat(names, ", ") else "none"
-			error(`{found.id} has no action {args.action}; it has {have}`, 0)
+			error(`{missing[1]} has no action {args.action}; it has {have}`, 0)
 		end
-		local after = objects.get(found.id)
-		return {
+		local out: { [string]: any } = {
 			ran = args.action,
-			on = found.id,
-			state = if after then objects.plain(objects.inspect(after)) else nil,
-			gone = after == nil,
+			on = greed.json.array(ran),
+			declined = greed.json.array(declined),
 		}
+		if #list == 1 then
+			local after = objects.get(list[1].id)
+			out.state = if after then objects.plain(objects.inspect(after)) else nil
+			out.gone = after == nil
+		end
+		return out
 	end,
 })
 

@@ -78,7 +78,7 @@ local function run(kind: string, name: string, value: any)
 	for _, action in actions.for_kind(kind) do
 		if action.name == name then
 			greed.spawn(function()
-				action.run({ kind = kind, label = tostring(value), value = value })
+				actions.run(action, { kind = kind, label = tostring(value), value = value })
 			end)
 			return
 		end
@@ -132,4 +132,56 @@ test("actions run through actions.run are kept as what was done, newest first", 
 	-- One that only looks isn't kept.
 	actions.run({ kind = "test-done", name = "look", quiet = true, run = function() end }, target)
 	assert(#actions.history("test-done:it") == 2, "quiet")
+end)
+
+test("an action that destroys several, or an agent's, is reviewed together first", function(t)
+	local ran: { string } = {}
+	actions.action({
+		kind = "test-risky",
+		name = "wipe",
+		danger = true,
+		says = function(target)
+			return `wipe --hard {target.value}`
+		end,
+		warns = function(target)
+			return if target.value == "prod" then "in PRODUCTION (prod)" else nil
+		end,
+		run = function(target)
+			table.insert(ran, target.value)
+		end,
+	})
+	local wipe = actions.for_kind("test-risky")[1]
+	local function targets(...: string): { any }
+		local out = {}
+		for _, value in { ... } do
+			table.insert(out, { kind = "test-risky", label = value, value = value })
+		end
+		return out
+	end
+	t:buffer("|x")
+	local chosen: { any }? = nil
+	greed.spawn(function()
+		chosen = actions.run_all(wipe, targets("dev", "prod"))
+	end)
+	local review = table.concat(t:floats(), "\n")
+	assert(string.find(review, "[x] wipe  dev   wipe --hard dev", 1, true), review)
+	assert(string.find(review, "(in PRODUCTION (prod))", 1, true), review)
+	-- Untick prod, then run what's ticked.
+	t:keys("j space enter")
+	t:wait_for(function()
+		return chosen ~= nil
+	end)
+	assert(#ran == 1 and ran[1] == "dev", table.concat(ran, ","))
+	-- An agent's, even of one, is reviewed; esc runs none.
+	chosen = nil
+	greed.spawn(function()
+		chosen = actions.run_all(wipe, targets("stage"), "agent")
+	end)
+	local spec = assert(greed.view():float_spec())
+	assert(spec.title == "An agent asks to wipe 1", tostring(spec.title))
+	t:keys("esc")
+	t:wait_for(function()
+		return chosen ~= nil
+	end)
+	assert(#ran == 1 and #assert(chosen) == 0, "none ran")
 end)

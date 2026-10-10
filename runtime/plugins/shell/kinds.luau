@@ -735,20 +735,27 @@ function M.command(
 	command: string | (value: any) -> string?,
 	opts: CommandOptions
 )
+	-- The command line for `target`, or nil when there's none to run.
+	local function line_for(target: core.Target): string?
+		if type(command) == "string" then
+			return fill(command, target.value)
+		end
+		return command(target.value)
+	end
 	core.actions.action({
 		kind = kind,
 		name = name,
 		doc = opts.doc,
+		danger = opts.danger,
+		says = line_for,
+		warns = function(target)
+			local where = production(target.value)
+			return if where then `in PRODUCTION ({where})` else nil
+		end,
 		run = function(target)
-			local line: string
-			if type(command) == "string" then
-				line = fill(command, target.value)
-			else
-				local made = command(target.value)
-				if made == nil then
-					return
-				end
-				line = made
+			local line = line_for(target)
+			if line == nil then
+				return
 			end
 			local view = greed.view()
 			local shell = state.of(view:buffer()) or state.list(greed.project.current().id)[1]
@@ -763,16 +770,6 @@ function M.command(
 					peek.open(shell, block, { tail = opts.follow })
 					greed.echo(`already running as ${block.number}`)
 					return block_id(shell, block)
-				end
-			end
-			if opts.danger then
-				local where = production(target.value)
-				local warning = if where then ` - in PRODUCTION ({where})` else ""
-				greed.echo(`{name} {target.label}{warning}? y/n`)
-				local yes = greed.next_key() == "y"
-				greed.echo("")
-				if not yes then
-					return
 				end
 			end
 			if shell.buffer:views()[1] == nil then

@@ -603,9 +603,7 @@ function M.act(targets: { core.Target })
 	end
 	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
 	M.pick(title, items, function(item)
-		for _, target in item.value.targets do
-			core.actions.run(item.value.action, target)
-		end
+		core.actions.run_all(item.value.action, item.value.targets)
 	end)
 end
 
