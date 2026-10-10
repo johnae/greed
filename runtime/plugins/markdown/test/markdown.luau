@@ -611,3 +611,52 @@ test("another plugin's marks inside bold leave its stars hidden", function(t)
 	local rows = t:draw(60, 12)
 	assert(rows[1] == "a b TODO c d", rows[1])
 end)
+
+local QUESTIONS = table.concat({
+	"Will you use agents? <!-- id=agents -->",
+	"",
+	"- (x) Yes: they help",
+	"- ( ) No",
+	"",
+	"<!-- if agents=yes -->",
+	"Which model? <!-- id=provider -->",
+	"",
+	"- (x) Ollama: on this machine <!-- value=local -->",
+	"- ( ) Anthropic",
+	"<!-- end -->",
+	"",
+	"<!-- if agents!=yes -->",
+	"Nothing more to ask.",
+	"<!-- end -->",
+	"",
+	"done",
+}, "\n")
+
+test("named questions have answers, values from their text or a comment", function(t)
+	shown(t, QUESTIONS)
+	local buffer = greed.view():buffer()
+	local groups = markdown.choices.list(buffer)
+	assert(
+		groups[1].id == "agents" and groups[1].question == "Will you use agents?",
+		groups[1].question
+	)
+	assert(groups[1].options[1].value == "Yes" and groups[1].options[1].text == "Yes: they help")
+	assert(groups[2].options[1].value == "local", groups[2].options[1].value)
+	assert(groups[2].options[1].text == "Ollama: on this machine", groups[2].options[1].text)
+	local answers = markdown.questions.answers(buffer)
+	assert(answers.agents == "Yes" and answers.provider == "local", greed.json.encode(answers))
+end)
+
+test("a part shows only for the answers it names, and its questions count only then", function(t)
+	local rows = table.concat(shown(t, QUESTIONS), "\n")
+	assert(string.find(rows, "Which model?", 1, true), rows)
+	assert(not string.find(rows, "Nothing more to ask", 1, true), rows)
+	assert(not string.find(rows, "<!--", 1, true), "comments don't show: " .. rows)
+	local buffer = greed.view():buffer()
+	markdown.choices.pick(buffer, 3)
+	local answers = markdown.questions.answers(buffer)
+	assert(answers.agents == "No" and answers.provider == nil, greed.json.encode(answers))
+	rows = table.concat(t:draw(60, 14), "\n")
+	assert(not string.find(rows, "Which model?", 1, true), rows)
+	assert(string.find(rows, "Nothing more to ask", 1, true), rows)
+end)

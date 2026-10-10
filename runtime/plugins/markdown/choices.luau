@@ -2,10 +2,14 @@
 -- a question. Pressing one (a click, or enter on it) picks it and unpicks
 -- the others in its group, by editing the text, so the answer is the file:
 --
---     How do you like to edit?
+--     How do you like to edit? <!-- id=style -->
 --
 --     - (x) Helix: select first, then act
 --     - ( ) Vim: say what, then where
+--
+-- A comment on the question names it (`id=style`), for code to find its
+-- answer. An option's value is its text up to the first ":" ("Helix"), or
+-- what a `<!-- value=helix -->` comment on it says.
 --
 -- Plugins read the answers with `list` and hear each pick with `on_pick`.
 -- A choice only edits its own text; what a pick does is up to the plugin
@@ -17,17 +21,44 @@ local structure = require("./structure")
 
 local M = {}
 
---- One choice: its text after the box, whether it's picked, and its line
---- (0-based).
-export type Option = { text: string, picked: boolean, line: number }
+--- One choice: its text after the box (without comments), its value,
+--- whether it's picked, and its line (0-based).
+export type Option = { text: string, value: string, picked: boolean, line: number }
 
 --- A group of choices: the question above them (the nearest line of text,
---- a heading without its hashes), and the options in order.
-export type Group = { question: string?, options: { Option }, line: number }
+--- a heading without its hashes), its name from an `id=` comment on that
+--- line, and the options in order.
+export type Group = { question: string?, id: string?, options: { Option }, line: number }
 
 -- A choice line's indent, box mark and text, or nil.
 local function choice_of(text: string): (string?, string?, string?)
 	return string.match(text, "^(%s*)[-*+] %(([ xX])%) (.*)$")
+end
+
+--- What `key=` says in a `<!-- ... -->` comment in `text`, if one does.
+function M.comment_value(text: string, key: string): string?
+	for comment in string.gmatch(text, "<!%-%-(.-)%-%->") do
+		local value = string.match(comment, `%f[%w_-]{key}=([^%s]+)`)
+		if value then
+			return value
+		end
+	end
+	return nil
+end
+
+--- `text` without its `<!-- ... -->` comments, trimmed.
+function M.without_comments(text: string): string
+	return (string.match(string.gsub(text, "<!%-%-.-%-%->", ""), "^%s*(.-)%s*$") or "")
+end
+
+-- An option's value: its `value=` comment, or its text up to the first ":".
+local function value_of(rest: string): string
+	local given = M.comment_value(rest, "value")
+	if given then
+		return given
+	end
+	local text = M.without_comments(rest)
+	return string.match(text, "^%s*(.-)%s*:") or text
 end
 
 --- Every group of choices in `buffer`: runs of choice lines at the same
@@ -45,23 +76,26 @@ function M.list(buffer: greed.Buffer): { Group }
 		end
 		if spaces and mark and rest then
 			if current == nil or spaces ~= indent then
-				local question: string? = nil
+				local question: string?, id: string? = nil, nil
 				for above = n - 1, 0, -1 do
 					local line = s.lines[above + 1]
 					if not string.match(line, "^%s*$") then
-						local words = string.match(line, "^#*%s*(.-)%s*$")
+						local words = M.without_comments(string.match(line, "^#*%s*(.-)%s*$") or "")
 						question = if words ~= "" then words else nil
+						id = M.comment_value(line, "id")
 						break
 					end
 				end
-				current = { question = question, options = {}, line = n }
+				current = { question = question, id = id, options = {}, line = n }
 				indent = spaces
 				table.insert(groups, current :: Group)
 			end
-			table.insert(
-				(current :: Group).options,
-				{ text = rest, picked = mark ~= " ", line = n }
-			)
+			table.insert((current :: Group).options, {
+				text = M.without_comments(rest),
+				value = value_of(rest),
+				picked = mark ~= " ",
+				line = n,
+			})
 		else
 			current, indent = nil, nil
 		end

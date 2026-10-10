@@ -19,6 +19,7 @@ local greed = require("@greed")
 local core = require("@core")
 require("@self/folds")
 local choices = require("@self/choices")
+local questions = require("@self/questions")
 local tables = require("@self/tables")
 local links = require("@self/links")
 local structure = require("@self/structure")
@@ -28,6 +29,9 @@ local M = {}
 
 --- Choices, `- ( )` and `- (x)`: reading them and hearing picks.
 M.choices = choices
+
+--- Named questions, their answers, and parts shown only for some answers.
+M.questions = questions
 
 export type Structure = structure.Structure
 export type Heading = structure.Heading
@@ -524,7 +528,7 @@ local function look(buffer: greed.Buffer): boolean
 	return greed.option.get("markdown-look") == true
 end
 
-local redraw = conceal.add({
+local redraw_document = conceal.add({
 	ns = "markdown",
 	wants = function(buffer: greed.Buffer): boolean
 		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
@@ -538,6 +542,27 @@ local redraw = conceal.add({
 		return marks(buffer, s, first, last, reading[buffer:id()])
 	end,
 })
+
+-- Comments hidden, and the parts whose conditions don't hold folded away
+-- (questions.luau), wherever the rest shows as a document.
+local redraw_questions = conceal.add({
+	ns = "markdown-questions",
+	wants = function(buffer: greed.Buffer): boolean
+		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
+	end,
+	draw = questions.marks,
+})
+
+-- A pick can show or hide parts anywhere in the file.
+choices.on_pick(function(buffer)
+	redraw_questions(buffer)
+end)
+
+-- Draws `buffer` (or every Markdown buffer) again as a document.
+local function redraw(buffer: greed.Buffer?)
+	redraw_document(buffer)
+	redraw_questions(buffer)
+end
 
 --- Draws every Markdown buffer again.
 function M.refresh()
