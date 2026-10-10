@@ -151,6 +151,11 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Re
         )?;
         terminal = false;
         match show(reader, writer)? {
+            Output::Switch(SwitchTo {
+                host: Some(host),
+                session,
+                path,
+            }) => return ssh(&host, session.as_deref(), path.as_deref(), false),
             Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
                 println!("detached; greed attach {name} comes back");
@@ -319,25 +324,30 @@ pub fn ssh(
     file: Option<&str>,
     mut terminal: bool,
 ) -> Result<(), Error> {
-    let config = match send_config(host) {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("greed: couldn't bring your config to {host}, going on without it: {err}");
-            None
-        }
-    };
+    let mut host = host.to_owned();
+    let mut config = bring_config(&host);
     let mut to = SwitchTo {
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
+        host: None,
     };
     // A terminal is asked for once, not again after a switch.
     loop {
-        let ended = ssh_once(host, &to, config.as_deref(), terminal)?;
+        let ended = ssh_once(&host, &to, config.as_deref(), terminal)?;
         terminal = false;
         match ended {
             // The bridge on the other end finds (or starts) the session to
-            // switch to; a new connection is the simplest way to ask it.
-            Output::Switch(next) => to = next,
+            // switch to; a new connection is the simplest way to ask it. A
+            // switch to another machine brings the config there too.
+            Output::Switch(next) => {
+                if let Some(other) = &next.host
+                    && *other != host
+                {
+                    host.clone_from(other);
+                    config = bring_config(&host);
+                }
+                to = next;
+            }
             Output::Detached => {
                 println!("detached; greed ssh {host} comes back");
                 return Ok(());
@@ -351,6 +361,15 @@ pub fn ssh(
             | Output::Notify(_) => return Ok(()),
         }
     }
+}
+
+/// Your config, copied to `host` (see [`send_config`]), or `None` with a
+/// word on why when it couldn't be.
+fn bring_config(host: &str) -> Option<String> {
+    send_config(host).unwrap_or_else(|err| {
+        eprintln!("greed: couldn't bring your config to {host}, going on without it: {err}");
+        None
+    })
 }
 
 /// Shows the session `to` points at on `host` until it ends, lets go or
@@ -545,6 +564,7 @@ mod tests {
         let to = SwitchTo {
             session: Some("greed".to_owned()),
             path: Some("it's here.rs".to_owned()),
+            host: None,
         };
         assert_eq!(
             bridge_command("greed", &to, Some("$HOME/.cache/greed/config-from-box")),
@@ -553,6 +573,7 @@ mod tests {
         let plain = SwitchTo {
             session: None,
             path: None,
+            host: None,
         };
         assert_eq!(
             bridge_command("/opt/greed", &plain, None),

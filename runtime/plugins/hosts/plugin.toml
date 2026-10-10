@@ -1,0 +1,5 @@
+name = "hosts"
+requires = ["core", "picker"]
+# Reads the host names in ~/.ssh/config, and keeps the hosts you connected
+# to lately in Greed's data folder.
+capabilities = ["fs.read", "fs.write"]

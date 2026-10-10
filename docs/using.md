@@ -208,6 +208,7 @@ picker, project search and tree work within the shown one.
 | `:project PATH` | Open the project `PATH` is in, or switch to it |
 | `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; type a folder path (`~/src/`) to list the folders in it, `tab` to go into one |
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
+| `space C` or `:connect HOST` | Show a session on another machine here, as `greed ssh` does: pick from the hosts you connected to lately and those in `~/.ssh/config`, or type one |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |
 | `:q` | In the last pane of the last tab, close the shown project and leave; on the last project, end the session unless something runs in it |
@@ -250,7 +251,14 @@ search and agents all run on that machine, and only keys and screen updates
 cross the network. If the connection drops or you `:detach`, the session
 keeps running, and `greed ssh HOST` comes back to it.
 
-`greed ssh HOST --terminal` does the same and opens a terminal on that
+From inside Greed, `space C` (`:connect`, or Connect to Host… in the
+window's File menu) does the same without a terminal: it lists the hosts
+you connected to lately and those in `~/.ssh/config`, and the window or
+terminal you're in moves to that machine's session. That way Greed.app on
+a Mac, or a window on a Linux laptop, can be the screen for a workstation
+where the work runs.
+
+`greed ssh HOST --terminal` shows the session and opens a terminal on that
 machine in a new tab, for when a shell is what you're after. It runs in the
 session, so it's still there after you disconnect. `greed --terminal` does
 the same here.

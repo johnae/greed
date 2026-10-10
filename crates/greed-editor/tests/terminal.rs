@@ -133,21 +133,11 @@ fn the_terminal_follows_when_its_session_switches_to_another_project() {
     );
 }
 
-#[test]
-fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
-    let Some(world) = World::new("ssh") else {
-        return;
-    };
-    let project = world.project("remote", &[("main.rs", "fn main() {}")]);
-    std::fs::write(
-        world.root.join("config/greed/init.luau"),
-        "require('@greed').option.set('flash-duration', 123)\nrequire('@greed').option.set('terminal-shell', 'cat')\n",
-    )
-    .unwrap();
-    // Stands in for ssh: drops -T and the host, and runs the command here
-    // with a home of its own, as another machine would have. Like a login
-    // shell that isn't POSIX sh (fish, nushell), it takes only plain words,
-    // so anything in sh's own syntax fails.
+/// Stands in for ssh: drops -T and the host, and runs the command here
+/// with a home of its own, as another machine would have. Like a login
+/// shell that isn't POSIX sh (fish, nushell), it takes only plain words, so
+/// anything in sh's own syntax fails.
+fn fake_ssh(world: &World) -> std::path::PathBuf {
     let fake_ssh = world.root.join("fake-ssh");
     std::fs::write(
         &fake_ssh,
@@ -162,6 +152,63 @@ fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
         std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .unwrap();
+    fake_ssh
+}
+
+#[test]
+fn the_terminal_follows_when_its_session_switches_to_another_machine() {
+    let Some(world) = World::new("switch-host") else {
+        return;
+    };
+    let here = world.project("here", &[("a.txt", "on this machine")]);
+    let there = world.project("remote", &[("b.txt", "on the other machine")]);
+    let fake_ssh = fake_ssh(&world);
+    let script = format!(
+        "require('@greed').session.switch({{ host = 'somehost', path = {:?} }})",
+        there.join("b.txt").to_str().unwrap()
+    );
+    let world_ref = &world;
+    let out = std::thread::scope(|scope| {
+        let terminal = scope.spawn(|| {
+            world_ref.terminal(
+                &here,
+                "a.txt",
+                &[
+                    ("GREED_SSH", fake_ssh.to_str().unwrap()),
+                    ("GREED_REMOTE", GREED),
+                ],
+                &[
+                    Step::Until("the session", running),
+                    Step::Pause(3000),
+                    Step::Keys(":detach\r"),
+                ],
+            )
+        });
+        world_ref.wait_for("the first session", running);
+        std::thread::sleep(Duration::from_millis(500));
+        world_ref.eval("here", &script);
+        terminal.join().unwrap()
+    });
+    assert!(out.contains("on the other machine"), "{out}");
+    assert!(
+        out.contains("detached; greed ssh somehost comes back"),
+        "{out}"
+    );
+    world.eval("remote", "require('@greed').quit()");
+}
+
+#[test]
+fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
+    let Some(world) = World::new("ssh") else {
+        return;
+    };
+    let project = world.project("remote", &[("main.rs", "fn main() {}")]);
+    std::fs::write(
+        world.root.join("config/greed/init.luau"),
+        "require('@greed').option.set('flash-duration', 123)\nrequire('@greed').option.set('terminal-shell', 'cat')\n",
+    )
+    .unwrap();
+    let fake_ssh = fake_ssh(&world);
     let file = project.join("main.rs");
     let out = world.terminal(
         &project,

@@ -60,14 +60,16 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             let mut to = SwitchTo {
                 session: spec.get("name")?,
                 path: spec.get("path")?,
+                host: spec.get("host")?,
             };
-            if to.session.is_none() && to.path.is_none() {
+            if to.session.is_none() && to.path.is_none() && to.host.is_none() {
                 return Err(mlua::Error::runtime(
-                    "switch to what? give a session name or a path",
+                    "switch to what? give a session name, a path or a host",
                 ));
             }
-            // A session of its own, even if one runs for that project.
-            if spec.get::<Option<bool>>("new")?.unwrap_or(false)
+            // A session of its own, even if one runs for that project here.
+            if to.host.is_none()
+                && spec.get::<Option<bool>>("new")?.unwrap_or(false)
                 && let Some(path) = &to.path
             {
                 let taken: Vec<String> = control::sessions()

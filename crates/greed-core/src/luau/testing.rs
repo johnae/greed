@@ -598,6 +598,7 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
             let table = lua.create_table()?;
             table.set("session", to.session)?;
             table.set("path", to.path)?;
+            table.set("host", to.host)?;
             Ok::<_, mlua::Error>(table)
         })
         .transpose()
