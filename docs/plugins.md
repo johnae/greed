@@ -1410,11 +1410,20 @@ they're [things to act on](shell.md#rows-you-can-act-on) like any other
 `spec.capture(block, shell)` runs once as the block finishes and keeps
 what the rows can't say themselves, like the context a command ran
 against; returning nil says the block isn't this kind's after all.
-`spec.row(row, captured, block)` gives `{ kind, label, value }` for a row
-(its cells by column), and `spec.called(captured, block)` what one row
+`spec.row(row, captured, block)` gives `{ kind, label, value, key }` for a
+row (its cells by column), and `spec.called(captured, block)` what one row
 and several are called in the block's status ("pod", "pods"). Rows then
 take the actions of their kind, whoever added them; `ls -l` rows are
 `file` things, so every file action works on them.
+
+`key` names the thing as an [object](#objects), `kind:key`: the same for
+the same thing in any block, like a pod's context, namespace and name.
+Without one, a value that's a string (a file's path) names it, and rows
+that can't be named are plain rows of their block. `shell.object_kind(kind,
+doc)` makes the rows of a kind objects: listed from every shell's blocks,
+the newest first, inspected as their value with the row's cells (`row`),
+and related to their block. Leave it out for a kind the editor has
+already, like `file`.
 
 `spec.complete` makes the rows complete later commands. It maps a
 program's name to a function given the command's words (the word being
@@ -1447,12 +1456,13 @@ shell.kind({
 		if unit == nil or not string.match(unit, "%.service$") then
 			return nil
 		end
-		return { kind = "service", label = unit, value = { unit = unit } }
+		return { kind = "service", label = unit, value = { unit = unit }, key = unit }
 	end,
 	called = function()
 		return "unit", "units"
 	end,
 })
+shell.object_kind("service", "A systemd service, by its unit")
 shell.action_command("service", "status", "systemctl status {unit}", { doc = "How it's doing", default = true })
 shell.action_command("service", "restart", "sudo systemctl restart {unit}", { doc = "Restart it", danger = true })
 ```

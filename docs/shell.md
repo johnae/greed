@@ -599,6 +599,16 @@ context and namespace its flags name, or else kubectl's config now.
 `docker logs <tab>` offers the containers of a `docker ps` above, and
 `kill <tab>` the processes of a `ps`.
 
+Rows are objects too, so `space h i` on one shows its
+cells, the block it's in and its actions. A row of a known kind is named
+by what it is: `pod:prod-eu/payments/api-7d9f8b6c5-2xkqz`, `process:4711`,
+`container:web`, `file:/home/me/notes.txt`. The same pod in a newer block
+is the same object, and the newest row is the one found. The rows of any
+other table are plain rows of their block (`row:12.3.2`, the third block
+of buffer 12, its second row), with their cells as their state. Agents
+reach them the same way, through the `objects`, `inspect` and `act`
+tools: a block's rows are among the objects it relates to.
+
 Plugins add kinds of rows and actions of their own
 ([Writing plugins](plugins.md#the-shell)).
 

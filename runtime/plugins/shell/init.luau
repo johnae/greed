@@ -120,6 +120,10 @@ M.kind = kinds.kind
 --- Adds an action running a command made from a thing; see `kinds.command`.
 M.action_command = kinds.command
 
+--- Makes the rows that are things of a kind objects, by their key; see
+--- `kinds.object_kind`.
+M.object_kind = kinds.object_kind
+
 --- What a plugin's builtin gets besides its arguments: the shell and the
 --- block it runs for, the block's folder, and how to print in the block,
 --- as output or as errors.
@@ -1991,7 +1995,10 @@ core.objects.kind({
 		}
 	end,
 	relations = function(value: { shell: Shell, block: Block })
-		return { shell = { assert(core.objects.get(`buffer:{value.shell.buffer:id()}`)) } }
+		return {
+			shell = { assert(core.objects.get(`buffer:{value.shell.buffer:id()}`)) },
+			rows = kinds.row_objects(value.shell, value.block),
+		}
 	end,
 })
 for _, action in

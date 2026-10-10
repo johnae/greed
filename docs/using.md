@@ -1661,7 +1661,7 @@ tells you what a key does. `space h h` describes anything the editor is
 made of (commands, options with their values, events and who listens to
 them, the plugin API, plugins, modes and editing styles), and `enter` in
 the help window goes to where it's defined. `space h i` inspects what's
-under the cursor (a buffer, a shell block, a terminal, a file), or with
+under the cursor (a buffer, a shell block or a row of its table, a terminal, a file), or with
 nothing there the editor itself: its state, the objects it relates to
 (`enter` goes to one, `backspace` comes back) and what it can do (`enter`
 runs that). After a key like `space`, a hint at the bottom right shows

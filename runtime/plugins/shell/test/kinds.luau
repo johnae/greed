@@ -275,3 +275,90 @@ test("kubectl get -w shows each pod in place, the ones that changed marked", fun
 	local pod = assert(thing_here("pod"))
 	assert(pod.value.context == "prod-eu", tostring(pod.value.context))
 end)
+
+-- The ids of `objects`, in order.
+local function ids(objects: { core.Object }): string
+	local out = {}
+	for _, object in objects do
+		table.insert(out, object.id)
+	end
+	return table.concat(out, ",")
+end
+
+test(
+	"a pod row is an object by its context, namespace and name, acted on from anywhere",
+	function(t)
+		local sh = fake(t, "prod-eu")
+		local pods = ran(t, sh, "kubectl get pods")
+		local id = "pod:prod-eu/payments/api-7d9f8b6c5-2xkqz"
+		local pod = assert(core.objects.get(id), "found by id")
+		assert(pod.label == "api-7d9f8b6c5-2xkqz" and pod.buffer == sh.buffer)
+		local state = core.objects.inspect(pod)
+		assert(
+			state.namespace == "payments" and state.row.STATUS == "Running",
+			greed.json.encode(state)
+		)
+		local block = core.objects.related(pod).block
+		assert(block and block[1].id == `shell-block:{sh.buffer:id()}.{pods.number}`)
+		local listed = ids(core.objects.list("pod"))
+		assert(listed == `{id},pod:prod-eu/payments/worker-5c6b7d8f9-abcde`, listed)
+		-- The block's rows are the pods.
+		local rows = assert(core.objects.related(block[1]).rows)
+		assert(ids(rows) == listed, ids(rows))
+		-- Under the cursor it's the same object.
+		on(sh, pods, "worker-5c6b7d8f9-abcde")
+		local here = ids(core.objects.at(greed.view()))
+		assert(string.find(here, "pod:prod-eu/payments/worker-5c6b7d8f9-abcde", 1, true), here)
+		-- From a float, as the inspector or an agent would.
+		greed.float(greed.create_buffer("elsewhere", "elsewhere"))
+		local count = #sh.blocks
+		assert(core.objects.act(pod, "logs"))
+		t:wait_for(function()
+			return #sh.blocks > count and sh.blocks[#sh.blocks].status ~= "running"
+		end)
+		local logs = sh.blocks[#sh.blocks].command
+		assert(
+			logs == "kubectl logs api-7d9f8b6c5-2xkqz --tail 200 --context prod-eu -n payments",
+			logs
+		)
+		-- The newest row of a pod is the one found.
+		local again = ran(t, sh, "kubectl get pods")
+		local newest = assert(core.objects.related(assert(core.objects.get(id))).block)
+		assert(newest[1].id == `shell-block:{sh.buffer:id()}.{again.number}`, newest[1].id)
+	end
+)
+
+test("process rows are process:PID and container rows container:NAME", function(t)
+	local sh = fake(t, "staging")
+	ran(t, sh, "ps aux")
+	local process = assert(core.objects.get("process:4711"))
+	assert(process.label == "4711 greed", process.label)
+	assert(core.objects.inspect(process).row["%CPU"] == "1.5")
+	ran(t, sh, "docker ps")
+	local web = assert(core.objects.get("container:web"))
+	assert(core.objects.inspect(web).row.IMAGE == "nginx")
+end)
+
+test("the rows of a table no kind reads are plain rows of their block", function(t)
+	local sh = fake(t, "staging")
+	greed.fs.write(`{sh.cwd}/fruit.txt`, "NAME    COLOR\napple   red\npear    green\n")
+	local fruit = ran(t, sh, "cat fruit.txt")
+	local block = assert(core.objects.get(`shell-block:{sh.buffer:id()}.{fruit.number}`))
+	local rows = assert(core.objects.related(block).rows)
+	local prefix = `row:{sh.buffer:id()}.{fruit.number}`
+	assert(ids(rows) == `{prefix}.1,{prefix}.2`, ids(rows))
+	local pear = assert(core.objects.get(`{prefix}.2`))
+	assert(pear.kind == "row" and pear.label == "pear", pear.label)
+	assert(core.objects.inspect(pear).COLOR == "green")
+	assert(assert(core.objects.related(pear).block)[1].id == block.id)
+	on(sh, fruit, "pear")
+	assert(string.find(ids(core.objects.at(greed.view())), `{prefix}.2`, 1, true) ~= nil)
+	-- A filter shows fewer rows; the objects stay where they are.
+	shell.rows.set(sh, fruit, "pear")
+	local still = assert(core.objects.get(`{prefix}.2`))
+	local from = assert(still.from)
+	assert(string.sub(sh.buffer:text(), from + 1, from + 4) == "pear", "on its line")
+	assert(assert(core.objects.get(`{prefix}.1`)).from == nil, "apple isn't shown")
+	on(sh, fruit, "pear")
+	assert(string.find(ids(core.objects.at(greed.view())), `{prefix}.2`, 1, true) ~= nil)
+end)

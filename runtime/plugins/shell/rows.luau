@@ -235,6 +235,26 @@ function M.row_at(shell: Shell, block: Block, pos: number): number?
 	return if index >= 1 and index <= #tbl.rows then index else nil
 end
 
+--- The line of `shell`'s buffer showing row `index` of `block`'s table, or
+--- nil when it isn't shown (a filter hides it, or the output is cut).
+function M.row_line(shell: Shell, block: Block, index: number): number?
+	local tbl = block.table
+	local from, to = log.output_range(shell, block)
+	if tbl == nil or from == nil or to == nil then
+		return nil
+	end
+	local view = block.shown
+	local first = if view and drawn[block] then 1 else tbl.first
+	local shown = if view then table.find(view.rows, index) else index
+	if first == nil or shown == nil then
+		return nil
+	end
+	local buffer = shell.buffer
+	local header = if tbl.header ~= false then 1 else 0
+	local line = buffer:line_of(from) + first + header + shown - 2
+	return if line <= buffer:line_of(to) then line else nil
+end
+
 --- Shows `lines` as what `block`, a live one (`watch`), printed now, with
 --- the filter and sort it shows kept on them.
 function M.renew(shell: Shell, block: Block, lines: { Line })

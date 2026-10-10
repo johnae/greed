@@ -24,6 +24,7 @@ kinds.kind({
 			kind = "process",
 			label = `{pid} {command}`,
 			value = { pid = pid, command = command },
+			key = pid,
 		}
 	end,
 	called = function(): (string, string)
@@ -40,6 +41,8 @@ kinds.kind({
 		end,
 	},
 })
+
+kinds.object_kind("process", "A running program, by its PID, from a table that lists it")
 
 kinds.command("process", "stop", "kill {pid}", { doc = "Ask it to stop (TERM)", danger = true })
 kinds.command("process", "kill", "kill -9 {pid}", { doc = "Make it stop (KILL)", danger = true })

@@ -107,6 +107,7 @@ kinds.kind({
 			kind = "container",
 			label = which,
 			value = { name = which, context = captured.context },
+			key = if captured.context then `{captured.context}/{which}` else which,
 		}
 	end,
 	called = function(): (string, string)
@@ -127,6 +128,8 @@ kinds.kind({
 		end,
 	},
 })
+
+kinds.object_kind("container", "A docker container, by its name and docker context")
 
 kinds.command("container", "logs", function(value: any): string
 	return docker(`logs --tail 200 {parse.quote(value.name)}`, value)

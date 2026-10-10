@@ -282,9 +282,12 @@ kinds.kind({
 			then nil
 			elseif captured.all then row.NAMESPACE
 			else captured.namespace
+		local kind = kind_of(resource)
+		local place = `{captured.context or ""}/{namespace or ""}`
 		return {
-			kind = kind_of(resource),
+			kind = kind,
 			label = name,
+			key = if kind == "kubernetes" then `{place}/{resource}/{name}` else `{place}/{name}`,
 			value = {
 				resource = resource,
 				name = name,
@@ -331,6 +334,10 @@ kinds.kind({
 		end,
 	},
 })
+
+kinds.object_kind("pod", "A kubernetes pod, by its context, namespace and name")
+kinds.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name")
+kinds.object_kind("kubernetes", "A kubernetes object, by its context, namespace, resource and name")
 
 -- What every kubernetes object has.
 for _, kind in { "pod", "deployment", "kubernetes" } do

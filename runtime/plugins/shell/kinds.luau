@@ -25,8 +25,12 @@ type Block = state.Block
 local M = {}
 
 --- A thing to act on, as core.actions has them: its kind ("file",
---- "process", "pod"), how to show it, and the value its actions get.
-export type Thing = { kind: string, label: string, value: any }
+--- "process", "pod"), how to show it, and the value its actions get. Its
+--- `key` names it as an object, `kind:key` ("pod:prod/payments/api-7d9f"):
+--- the same for the same thing in any block, so the newest row showing it
+--- is the one found. Without one, a value that's a string (a file's path)
+--- names it.
+export type Thing = { kind: string, label: string, value: any, key: string? }
 
 export type Kind = {
 	--- What it's called, for replacing it.
@@ -212,20 +216,173 @@ function M.at(shell: Shell, pos: number): (Thing?, number?, number?)
 	return thing, buffer:line_start(line), buffer:line_end(line)
 end
 
+-- Where each row object's value came from, to inspect it: the row's cells
+-- and the block it's in. Values that are strings (a file's path) have none.
+type Origin = { shell: Shell, block: Block, cells: { [string]: string } }
+local origins: { [any]: Origin } = setmetatable({}, { __mode = "k" }) :: any
+
+-- What a plain row is called: its first cell with something in it.
+local function row_label(tbl: tables.Table, cells: { [string]: string }, index: number): string
+	for _, column in tbl.columns do
+		local cell = cells[column]
+		if cell and cell ~= "" then
+			return cell
+		end
+	end
+	return `row {index}`
+end
+
+--- Row `index` of `block`'s table as an object: the thing its kind says it
+--- is, else a plain row of the table (`row:BUFFER.BLOCK.INDEX`), whose
+--- value is its cells. It says where it shows in the buffer, if it does.
+function M.row_object(shell: Shell, block: Block, index: number): core.Object?
+	local tbl = block.table
+	local cells = if tbl then tbl.rows[index] else nil
+	if tbl == nil or cells == nil then
+		return nil
+	end
+	local thing = M.thing(block, index)
+	local id = if thing == nil
+		then nil
+		elseif thing.key then `{thing.kind}:{thing.key}`
+		else core.objects.id_of(thing.kind, thing.value)
+	local buffer = shell.buffer
+	local kind: string, label: string, value: any
+	if thing and id then
+		kind, label, value = thing.kind, thing.label, thing.value
+	else
+		kind, label, value = "row", row_label(tbl, cells, index), table.clone(cells)
+		id = `row:{buffer:id()}.{block.number}.{index}`
+	end
+	if type(value) == "table" then
+		origins[value] = { shell = shell, block = block, cells = cells }
+	end
+	local line = rows.row_line(shell, block, index)
+	return {
+		kind = kind,
+		id = assert(id),
+		label = label,
+		value = value,
+		buffer = if line then buffer else nil,
+		from = if line then buffer:line_start(line) else nil,
+		to = if line then buffer:line_end(line) else nil,
+	}
+end
+
+--- Every row of `block`'s table as an object.
+function M.row_objects(shell: Shell, block: Block): { core.Object }
+	local out: { core.Object } = {}
+	local tbl = block.table
+	if tbl then
+		for index in tbl.rows do
+			local object = M.row_object(shell, block, index)
+			if object then
+				table.insert(out, object)
+			end
+		end
+	end
+	return out
+end
+
+-- The rows of every shell's blocks that are objects of `kind`, the newest
+-- block's first, each id once; with `id`, only the newest that's it.
+local function rows_of(kind: string, id: string?): { core.Object }
+	local out: { core.Object } = {}
+	local seen: { [string]: boolean } = {}
+	for _, shell in state.list() do
+		for i = #shell.blocks, 1, -1 do
+			local block = shell.blocks[i]
+			-- Only a block some kind reads has rows of a kind.
+			if read[block] then
+				for _, object in M.row_objects(shell, block) do
+					if
+						object.kind == kind
+						and not seen[object.id]
+						and (id == nil or object.id == id)
+					then
+						seen[object.id] = true
+						table.insert(out, object)
+						if id then
+							return out
+						end
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- A row object's state: its value, with the row's cells.
+local function inspect_row(value: any): { [string]: any }
+	local out: { [string]: any } = if type(value) == "table"
+		then table.clone(value)
+		else { value = value }
+	local origin = origins[value]
+	if origin then
+		out.row = table.clone(origin.cells)
+	end
+	return out
+end
+
+-- The block a row object is in.
+local function row_relations(value: any): { [string]: { core.Object } }
+	local origin = origins[value]
+	local block = if origin
+		then core.objects.get(`shell-block:{origin.shell.buffer:id()}.{origin.block.number}`)
+		else nil
+	return if block then { block = { block } } else {}
+end
+
+--- Makes the rows that are things of `kind` objects, by their key: listed
+--- from every shell's blocks, the newest first, inspected as their value
+--- with the row's cells, and related to the block they're in. It goes when
+--- the plugin that made it does.
+function M.object_kind(kind: string, doc: string)
+	core.objects.kind({
+		name = kind,
+		doc = doc,
+		list = function()
+			return rows_of(kind)
+		end,
+		get = function(key)
+			return rows_of(kind, `{kind}:{key}`)[1]
+		end,
+		inspect = inspect_row,
+		relations = row_relations,
+	})
+end
+
+core.objects.kind({
+	name = "row",
+	doc = "A row of a table a shell block printed, by its cells",
+	get = function(key)
+		local buffer, number, index = string.match(key, "^(%d+)%.(%d+)%.(%d+)$")
+		for _, shell in state.list() do
+			if tostring(shell.buffer:id()) == buffer then
+				local block = state.block(shell, tonumber(number) :: number)
+				local object = if block
+					then M.row_object(shell, block, tonumber(index) :: number)
+					else nil
+				return if object and object.kind == "row" then object else nil
+			end
+		end
+		return nil
+	end,
+	relations = row_relations,
+})
+
 core.actions.finder({
 	name = "shell-row",
 	find = function(view, range)
 		local shell = state.of(view:buffer())
-		if shell == nil then
+		local block = if shell then log.block_at(shell, range.head) else nil
+		if shell == nil or block == nil then
 			return nil
 		end
-		local thing, from, to = M.at(shell, range.head)
-		if thing == nil then
-			return nil
-		end
-		return {
-			{ kind = thing.kind, label = thing.label, value = thing.value, from = from, to = to },
-		}
+		local index = rows.row_at(shell, block, range.head)
+		local object = if index then M.row_object(shell, block, index) else nil
+		return if object then { core.objects.target(object) } else nil
 	end,
 })
 
