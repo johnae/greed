@@ -465,7 +465,12 @@ greed.command({
 	name = "save-all",
 	doc = "Write every file with unsaved changes",
 	run = function()
-		save_all(all_unsaved())
+		local buffers = all_unsaved()
+		if #buffers == 0 then
+			greed.echo("nothing to save")
+			return
+		end
+		save_all(buffers)
 	end,
 })
 

@@ -518,3 +518,13 @@ test(
 		t:keys("esc")
 	end
 )
+
+test("typing that matches nothing says so", function(t)
+	t:buffer("|x")
+	local picker = require("@picker")
+	picker.pick("Fruit", { { label = "apple", value = 1 } }, function() end)
+	t:type("zzz")
+	local screen = table.concat(t:screen(80, 20), "\n")
+	assert(string.find(screen, "nothing matches", 1, true), screen)
+	t:keys("esc")
+end)

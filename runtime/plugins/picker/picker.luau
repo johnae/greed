@@ -167,6 +167,14 @@ local function render(o: Open)
 		table.insert(lines, line)
 		from += #line + 1
 	end
+	-- Typing that matches nothing says so, rather than leaving the list blank.
+	if #o.matches == 0 and (o.query or "") ~= "" then
+		local at = o.buffer:line_end(0)
+		table.insert(
+			marks,
+			{ from = at, to = at, text = "  nothing matches", eol = true, style = "comment" }
+		)
+	end
 	local selection = o.view:selection()
 	o.buffer:edit(function(e)
 		e:replace(o.buffer:line_end(0), o.buffer:len(), "\n" .. table.concat(lines, "\n"))
