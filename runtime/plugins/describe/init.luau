@@ -378,8 +378,9 @@ function M.text(name: string, kind: string?): string?
 end
 
 -- The help window: where what it describes is defined, or for an object in
--- the inspector, the object, what its lines lead to, and the objects
--- inspected before it, to go back to.
+-- the inspector, the object, what its lines lead to, the objects
+-- inspected before it, to go back to, and those gone back from, to go
+-- forward to again.
 type Open = {
 	view: greed.View,
 	path: string?,
@@ -387,6 +388,7 @@ type Open = {
 	object: core.Object?,
 	links: { [number]: inspect.Link }?,
 	back: { core.Object },
+	forward: { core.Object },
 }
 
 local open: Open? = nil
@@ -399,13 +401,17 @@ local function close()
 end
 
 --- Shows `object` in the inspector: its state, the objects it relates to
---- (enter goes to one, backspace comes back) and its actions (enter runs
---- one). `back` is the objects inspected before, newest last.
-function M.inspect(object: core.Object, back: { core.Object }?)
+--- (enter goes to one, backspace or ctrl-o comes back, ctrl-i goes forward
+--- again) and its actions (enter runs one). `back` is the objects inspected
+--- before, newest last, and `forward` those gone back from, nearest last.
+function M.inspect(object: core.Object, back: { core.Object }?, forward: { core.Object }?)
 	close()
 	local lines, links = inspect.page(object)
 	table.insert(lines, "")
-	table.insert(lines, "enter: inspect or run   backspace: back   r: again   esc: close")
+	table.insert(
+		lines,
+		"enter: inspect or run   ctrl-o ctrl-i: back, forward   r: again   esc: close"
+	)
 	local buffer = greed.create_buffer("help", table.concat(lines, "\n"))
 	open = {
 		view = greed.float(buffer, {
@@ -416,6 +422,7 @@ function M.inspect(object: core.Object, back: { core.Object }?)
 		object = object,
 		links = links,
 		back = back or {},
+		forward = forward or {},
 	}
 end
 
@@ -441,6 +448,7 @@ function M.show(entry: Entry)
 		path = entry.path,
 		line = entry.line,
 		back = {},
+		forward = {},
 	}
 end
 
@@ -560,7 +568,28 @@ greed.command({
 		end
 		local back = table.clone(o.back)
 		local previous = table.remove(back) :: core.Object
-		M.inspect(core.objects.get(previous.id) or previous, back)
+		local forward = table.clone(o.forward)
+		if o.object then
+			table.insert(forward, o.object)
+		end
+		M.inspect(core.objects.get(previous.id) or previous, back, forward)
+	end,
+})
+
+greed.command({
+	name = "help-forward",
+	doc = "In the inspector, go forward again to the object gone back from",
+	run = function()
+		local o = open
+		local object = o and o.object
+		if o == nil or object == nil or #o.forward == 0 then
+			return
+		end
+		local forward = table.clone(o.forward)
+		local ahead = table.remove(forward) :: core.Object
+		local back = table.clone(o.back)
+		table.insert(back, object)
+		M.inspect(core.objects.get(ahead.id) or ahead, back, forward)
 	end,
 })
 
@@ -576,7 +605,7 @@ greed.command({
 				greed.echo(`{object.label} is gone`)
 				return
 			end
-			M.inspect(now, o.back)
+			M.inspect(now, o.back, o.forward)
 		end
 	end,
 })
@@ -608,6 +637,10 @@ greed.keymap.bind({ kind = "help" }, {
 	q = "help-close",
 	enter = "help-goto",
 	backspace = "help-back",
+	["ctrl-o"] = "help-back",
+	["alt-left"] = "help-back",
+	["ctrl-i"] = "help-forward",
+	["alt-right"] = "help-forward",
 	r = "help-again",
 })
 

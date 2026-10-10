@@ -231,6 +231,10 @@ test(
 		assert(string.find(page, "lines", 1, true) and string.find(page, "Actions", 1, true), page)
 		t:keys("backspace")
 		assert(string.find(t:floats()[1], "(editor:)", 1, true), "back at the editor")
+		t:keys("ctrl-i")
+		assert(string.find(t:floats()[1], `(buffer:{buffer:id()})`, 1, true), "forward again")
+		t:keys("ctrl-o")
+		assert(string.find(t:floats()[1], "(editor:)", 1, true), "ctrl-o goes back too")
 		t:keys("esc")
 		assert(#t:floats() == 0)
 	end
