@@ -3,9 +3,12 @@ local greed = require("@greed")
 local agent = require("@agent")
 
 -- A notes folder of the test's own, holding `files`. Returns its path.
+-- The project's notes go in a folder of the test's own too, one that isn't
+-- there, so nothing lands in the project the tests run in.
 local function folder(t: test.TestContext, files: { [string]: string }?): string
 	local dir = t:tempdir(files)
 	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
 	return dir
 end
 
