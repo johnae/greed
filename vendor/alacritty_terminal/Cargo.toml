@@ -1,4 +1,4 @@
-# alacritty_terminal 0.26.0, vendored for Kern; see src/lib.rs for what
+# alacritty_terminal 0.26.0, vendored for Greed; see src/lib.rs for what
 # changed.
 [package]
 name = "alacritty_terminal"
@@ -17,6 +17,6 @@ regex-automata = "0.4.3"
 unicode-width = "0.2.0"
 vte = { version = "0.15.0", default-features = false, features = ["std", "ansi"] }
 
-# Off: Kern sends frames, not terminal state, so nothing needs it.
+# Off: Greed sends frames, not terminal state, so nothing needs it.
 [features]
 serde = []

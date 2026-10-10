@@ -129,7 +129,7 @@ pub struct CellExtra {
     image: Option<ImagePiece>,
 }
 
-/// Kern: the part of an image a cell shows. Writing over the cell or
+/// Greed: the part of an image a cell shows. Writing over the cell or
 /// erasing it drops it, and it moves with its row, so images behave like
 /// text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -227,13 +227,13 @@ impl Cell {
         }
     }
 
-    /// Kern: the part of an image this cell shows.
+    /// Greed: the part of an image this cell shows.
     #[inline]
     pub fn image(&self) -> Option<ImagePiece> {
         self.extra.as_ref()?.image
     }
 
-    /// Kern: shows part of an image in this cell, or no image.
+    /// Greed: shows part of an image in this cell, or no image.
     pub fn set_image(&mut self, image: Option<ImagePiece>) {
         if image.is_none() && self.extra.is_none() {
             return;
