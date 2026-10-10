@@ -731,15 +731,174 @@ function M.all(tbl: Table): { number }
 	return rows
 end
 
+-- The widest a cell shows when the shell draws a table; past it, it's cut
+-- with `…`, and the whole of it is in the row's state (`space h i`).
+local WIDEST = 48
+
+-- Columns whose whole numbers are sizes in bytes, as nu's `ls` gives them.
+local SIZES: { [string]: boolean } = { size = true, bytes = true, filesize = true }
+
+-- `text` read as a date and time in ISO 8601 ("2026-10-10T10:55:08.68+02:00"),
+-- in seconds since 1970; nil when it isn't one.
+local function iso_time(text: string): number?
+	local y, mo, d, h, mi, s, rest =
+		string.match(text, "^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)[%.%d]*(.*)$")
+	if y == nil or rest == nil then
+		return nil
+	end
+	local offset = 0
+	if rest ~= "Z" and rest ~= "" then
+		local sign, oh, om = string.match(rest, "^([+-])(%d%d):?(%d%d)$")
+		if sign == nil then
+			return nil
+		end
+		offset = (tonumber(oh) :: number * 3600 + tonumber(om) :: number * 60)
+			* (if sign == "-" then -1 else 1)
+	end
+	-- Days since 1970 of the date, as the proleptic Gregorian calendar
+	-- counts them.
+	local year, month, day = tonumber(y) :: number, tonumber(mo) :: number, tonumber(d) :: number
+	year -= if month <= 2 then 1 else 0
+	local era = year // 400
+	local yoe = year - era * 400
+	local doy = (153 * (month + (if month > 2 then -3 else 9)) + 2) // 5 + day - 1
+	local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+	local days = era * 146097 + doe - 719468
+	return days * 86400
+		+ tonumber(h) :: number * 3600
+		+ tonumber(mi) :: number * 60
+		+ tonumber(s) :: number
+		- offset
+end
+
+-- A size in bytes as people read it, as nu shows them: "899 B", "142.6 kB".
+local function bytes(n: number): string
+	if n < 1000 then
+		return `{n} B`
+	end
+	local units = { "kB", "MB", "GB", "TB", "PB" }
+	local value, unit = n / 1000, 1
+	while value >= 1000 and unit < #units do
+		value /= 1000
+		unit += 1
+	end
+	return string.format("%.1f %s", value, units[unit])
+end
+
+-- A moment, `seconds` since 1970: how long ago in the last week, else
+-- its date and time.
+local function when(seconds: number): string
+	local ago = os.time() - seconds
+	if ago >= 0 and ago < 7 * 86400 then
+		return core.text.ago(ago)
+	end
+	return os.date("%Y-%m-%d %H:%M", seconds) :: string
+end
+
+-- Nested JSON in a cell, in a few words: "{4 fields}", "[12 items]".
+local function nested(text: string): string?
+	local first = string.sub(text, 1, 1)
+	if first ~= "{" and first ~= "[" then
+		return nil
+	end
+	local ok, value = pcall(greed.json.decode, text)
+	if not ok or type(value) ~= "table" then
+		return nil
+	end
+	local count = 0
+	for _ in value do
+		count += 1
+	end
+	if first == "[" then
+		return `[{count} item{if count == 1 then "" else "s"}]`
+	end
+	return `\{{count} field{if count == 1 then "" else "s"}\}`
+end
+
+--- How a column's cells show when the shell draws a table: `show` turns a
+--- cell into what's drawn (sizes, dates and nested JSON as people read
+--- them), and `right` lines numbers up on the right. The cells themselves
+--- stay as they are, so stages sort and compare the real values.
+export type Look = { show: ((text: string) -> string)?, right: boolean }
+
+--- How `column`'s cells in `rows` of `tbl` show.
+function M.look(tbl: Table, column: string, rows: { number }?): Look
+	local all_numbers, all_times, any = true, true, false
+	local whole = true
+	for _, index in rows or M.all(tbl) do
+		local text = tbl.rows[index][column] or ""
+		if text ~= "" then
+			any = true
+			local number = tonumber(text)
+			all_numbers = all_numbers and number ~= nil
+			whole = whole and number ~= nil and number == math.floor(number)
+			all_times = all_times and iso_time(text) ~= nil
+		end
+	end
+	if not any then
+		return { right = false }
+	elseif all_times then
+		return {
+			show = function(text)
+				local seconds = iso_time(text)
+				return if seconds then when(seconds) else text
+			end,
+			right = false,
+		}
+	elseif all_numbers and whole and SIZES[string.lower(column)] then
+		return {
+			show = function(text)
+				local n = tonumber(text)
+				return if n then bytes(n) else text
+			end,
+			right = true,
+		}
+	elseif all_numbers then
+		return { right = true }
+	end
+	return {
+		show = function(text)
+			return nested(text) or text
+		end,
+		right = false,
+	}
+end
+
+-- `text` cut to `WIDEST` cells, ending in `…` when it was longer.
+local function cut(text: string): string
+	if core.text.width(text) <= WIDEST then
+		return text
+	end
+	local out, wide = {}, 0
+	for _, code in utf8.codes(text) do
+		local char = utf8.char(code)
+		local w = core.text.width(char)
+		if wide + w > WIDEST - 1 then
+			break
+		end
+		table.insert(out, char)
+		wide += w
+	end
+	return table.concat(out) .. "…"
+end
+
 --- `tbl` drawn as aligned lines, the header first, with `rows` (indexes
 --- into its rows; all of them by default), and where each column starts.
+--- Cells show as `look` says, cut when very wide.
 function M.draw(tbl: Table, rows: { number }?): ({ string }, { number })
 	local order = rows or M.all(tbl)
+	local looks: { Look } = {}
+	local shown: { { string } } = {}
 	local widths: { number } = {}
 	for i, column in tbl.columns do
+		looks[i] = M.look(tbl, column, order)
+		local show = looks[i].show
+		shown[i] = {}
 		widths[i] = core.text.width(column)
-		for _, index in order do
-			widths[i] = math.max(widths[i], core.text.width(tbl.rows[index][column] or ""))
+		for j, index in order do
+			local text = tbl.rows[index][column] or ""
+			shown[i][j] = cut(if show and text ~= "" then show(text) else text)
+			widths[i] = math.max(widths[i], core.text.width(shown[i][j]))
 		end
 	end
 	local starts: { number } = {}
@@ -748,21 +907,21 @@ function M.draw(tbl: Table, rows: { number }?): ({ string }, { number })
 		starts[i] = at
 		at += widths[i] + 3
 	end
+	-- Numbers line up on the right of their column, the rest on the left.
 	local function line(cells: { string }): string
 		local parts: { string } = {}
 		for i, text in cells do
-			local pad = if i < #cells
-				then string.rep(" ", widths[i] - core.text.width(text) + 3)
-				else ""
-			table.insert(parts, text .. pad)
+			local room = string.rep(" ", widths[i] - core.text.width(text))
+			local gap = if i < #cells then "   " else ""
+			table.insert(parts, if looks[i].right then room .. text .. gap else text .. room .. gap)
 		end
 		return (string.gsub(table.concat(parts), "%s+$", ""))
 	end
 	local lines = { line(tbl.columns) }
-	for _, index in order do
+	for j in order do
 		local cells: { string } = {}
-		for i, column in tbl.columns do
-			cells[i] = tbl.rows[index][column] or ""
+		for i in tbl.columns do
+			cells[i] = shown[i][j]
 		end
 		table.insert(lines, line(cells))
 	end

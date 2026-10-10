@@ -339,7 +339,7 @@ test("a JSON array's table filters as aligned columns, and comes back as JSON", 
 	local from = assert((shell.log.output_range(sh, block)))
 	greed.view():set_cursor(from)
 	t:keys("/ a enter")
-	assert(shown(sh, block) == "name   size\na      9\n", shown(sh, block))
+	assert(shown(sh, block) == "name   size\na       9 B\n", shown(sh, block))
 	-- The drawn columns sort too.
 	greed.view():set_cursor(from + 8)
 	t:keys("space s")
@@ -507,7 +507,7 @@ test("a JSON object works with the stages, and get picks a field", function(t)
 	assert(name.status == "done", name.stderr)
 	assert(name.output == "name\napi\n", name.output)
 	local port = run(t, sh, `${one.number} | where port > 10 | select port`)
-	assert(port.output == "port\n80\n", port.output)
+	assert(port.output == "port\n  80\n", port.output)
 	-- Columns of the array one field holds, like kubectl's items.
 	local list = run(t, sh, "cat list.json")
 	local failed = run(t, sh, `${list.number} | where phase = Failed | select name`)
@@ -773,5 +773,47 @@ test(
 		assert(program.output == "a\nb\n", program.output)
 		local flagged = run(t, sh, "printf '10\\n9\\n' | sort -n")
 		assert(flagged.output == "9\n10\n", flagged.output)
+	end
+)
+
+test(
+	"a drawn table shows sizes, dates and nested JSON as people read them, the cells kept",
+	function()
+		local recent = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time() - 3 * 3600) :: string
+		local tbl = assert(tables.from_value({
+			{
+				name = "Cargo.lock",
+				size = 142647,
+				modified = recent,
+				tags = { "a", "b" },
+				count = 7,
+				note = string.rep("x", 60),
+			},
+			{
+				name = "notes.md",
+				size = 899,
+				modified = "2025-01-02T03:04:05+00:00",
+				tags = { "c" },
+				count = 12,
+				note = "",
+			},
+		}))
+		local lines = tables.draw(tbl)
+		local drawn = table.concat(lines, "\n")
+		assert(
+			string.find(drawn, "142.6 kB", 1, true) and string.find(drawn, "899 B", 1, true),
+			drawn
+		)
+		assert(string.find(drawn, "3 h ago", 1, true), drawn)
+		assert(string.find(drawn, "2025-01-0", 1, true), drawn)
+		assert(
+			string.find(drawn, "[2 items]", 1, true) and string.find(drawn, "[1 item]", 1, true),
+			drawn
+		)
+		assert(string.find(drawn, string.rep("x", 47) .. "…", 1, true), "cut: " .. drawn)
+		-- Numbers line up on the right.
+		assert(string.find(lines[2], " 7", 1, true) and string.find(lines[3], "12", 1, true), drawn)
+		-- The cells are what they were, for the stages.
+		assert(tbl.rows[1].size == "142647" and tbl.rows[1].modified == recent)
 	end
 )
