@@ -141,7 +141,13 @@ kinds.kind({
 	},
 })
 
-kinds.object_kind("container", "A docker container, by its name and docker context")
+kinds.object_kind(
+	"container",
+	"A docker container, by its name and docker context",
+	function(value: any): string
+		return docker(`ps -a --filter {parse.quote(`name=^{value.name}$`)}`, value)
+	end
+)
 
 kinds.command("container", "logs", function(value: any): string
 	return docker(`logs --tail 200 {parse.quote(value.name)}`, value)

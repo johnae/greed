@@ -591,6 +591,19 @@ arrows in the vscode style) and `space .` offers each action once for all
 of them (`describe  3 × pod: api-0, api-1, api-2`), running it on each in
 turn. One that deletes or stops asks for each.
 
+`watch` on a row (or anything else, under `space .`) looks at it again
+every `watch-interval` seconds (10) and sends a notification when it
+changes, on the status line and to your desktop, saying how:
+
+```text
+worker-5c6b7d8f9-abcde: RESTARTS 12 → 13; STATUS Running → CrashLoopBackOff
+```
+
+A pod is looked at with `kubectl get pods NAME`, a container with `docker
+ps`, a process with `ps -p`, each run where its row came from. Once it's
+gone the notification says so and watching it stops. `watch` again stops
+it, and `:watches` lists what's watched.
+
 ```text
 ❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods
 NAME                     READY   STATUS             RESTARTS   AGE

@@ -580,3 +580,25 @@ test("space space switches to anything open, says what each is and keeps a kind 
 	end
 	scratch:set_kept(false)
 end)
+
+test(":watches lists what's watched, and enter stops watching one", function(t)
+	local core = require("@core")
+	t:buffer("|x")
+	t:messages()
+	t:run("watches")
+	assert((string.find(table.concat(t:messages(), "|"), "nothing is watched", 1, true)))
+	core.objects.kind({
+		name = "test-thing",
+		get = function(key)
+			return { kind = "test-thing", id = `test-thing:{key}`, label = key, value = key }
+		end,
+		fresh = function()
+			return { ok = true }
+		end,
+	})
+	assert(core.watch.toggle(assert(core.objects.get("test-thing:one"))))
+	t:run("watches")
+	assert((string.find(table.concat(t:floats(), "\n"), "test-thing  one", 1, true)))
+	t:keys("enter")
+	assert(#core.watch.list() == 0, "stopped")
+end)

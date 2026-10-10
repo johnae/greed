@@ -455,11 +455,52 @@ local function row_relations(value: any): { [string]: { core.Object } }
 	return out
 end
 
+-- `value` as it is now: the command `fresh` makes from it run again where
+-- its row came from (its block's folder and variables), its output read as
+-- that block's was, and the first row of it as `inspect` gives a row. Nil
+-- when it printed no rows, or the program says it isn't found: it's gone.
+local function fresh_row(value: any, line: string): { [string]: any }?
+	local origin = origins[value]
+	if origin == nil then
+		error("it isn't in a block any more", 0)
+	end
+	local block = origin.block
+	local child, err = greed.process.spawn(
+		{ "sh", "-c", line },
+		{ cwd = block.cwd, env = state.environment(block) }
+	)
+	if child == nil then
+		error(err or `can't run {line}`, 0)
+	end
+	child:close()
+	local parts: { string } = {}
+	while true do
+		local piece = child:read()
+		if piece == nil then
+			break
+		end
+		table.insert(parts, piece)
+	end
+	local code, errors = child:wait(), child:stderr()
+	local tbl = tables.parse(table.concat(parts), line, block)
+	if code ~= 0 or tbl == nil or tbl.rows[1] == nil then
+		if code == 0 or string.find(string.lower(errors), "not ?found") then
+			return nil
+		end
+		error(string.match(errors, "^%s*(.-)%s*$") or "", 0)
+	end
+	local out: { [string]: any } = if type(value) == "table" then table.clone(value) else {}
+	out.row = tbl.rows[1]
+	return out
+end
+
 --- Makes the rows that are things of `kind` objects, by their key, and
 --- the cells that are: listed from every shell's blocks, the newest first,
 --- inspected as their value (a row's with its cells), and related to the
---- block they're in. It goes when the plugin that made it does.
-function M.object_kind(kind: string, doc: string)
+--- block they're in. It goes when the plugin that made it does. With
+--- `fresh` (the command line that lists just the thing, `ps -p {pid}`),
+--- watching one runs it again to see it as it is now.
+function M.object_kind(kind: string, doc: string, fresh: ((value: any) -> string)?)
 	core.objects.kind({
 		name = kind,
 		doc = doc,
@@ -471,6 +512,11 @@ function M.object_kind(kind: string, doc: string)
 		end,
 		inspect = inspect_row,
 		relations = row_relations,
+		fresh = if fresh
+			then function(value: any)
+				return fresh_row(value, fresh(value))
+			end
+			else nil,
 	})
 end
 

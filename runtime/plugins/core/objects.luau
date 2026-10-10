@@ -53,6 +53,11 @@ export type Kind = {
 	inspect: ((value: any) -> { [string]: any })?,
 	--- The objects it relates to, by name: a buffer's views, a tab's panes.
 	relations: ((value: any) -> { [string]: { Object } })?,
+	--- Its state as it is now, asked of something outside the editor (a
+	--- program: `kubectl get pod`), the way `inspect` gives it; nil once it's
+	--- gone. It may wait. Watching uses it; kinds without it are found again
+	--- by id and inspected.
+	fresh: ((value: any) -> { [string]: any }?)?,
 }
 
 local kinds: { Kind } = {}
@@ -229,6 +234,22 @@ local function go_to(object: Object)
 		end
 	end
 	view:set_cursor(from)
+end
+
+--- `object`'s state as it is now: asked again by its kind's `fresh`, or
+--- found again by id and inspected. Nil once it's gone; nil and why when
+--- it can't tell now (a program failing). It may wait.
+function M.fresh(object: Object): ({ [string]: any }?, string?)
+	local kind = kind_named(object.kind)
+	if kind and kind.fresh then
+		local ok, state = pcall(kind.fresh, object.value)
+		if not ok then
+			return nil, tostring(state)
+		end
+		return state, nil
+	end
+	local now = M.get(object.id)
+	return if now then M.inspect(now) else nil, nil
 end
 
 --- Runs `object`'s action `name`, with the cursor on it first when it's

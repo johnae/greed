@@ -353,9 +353,18 @@ kinds.kind({
 	},
 })
 
-kinds.object_kind("pod", "A kubernetes pod, by its context, namespace and name")
-kinds.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name")
-kinds.object_kind("kubernetes", "A kubernetes object, by its context, namespace, resource and name")
+-- Watching one gets just it again: `kubectl get pods api-0 -n payments`.
+local function get(value: any): string
+	return kubectl(`get {object(value)}`, value)
+end
+
+kinds.object_kind("pod", "A kubernetes pod, by its context, namespace and name", get)
+kinds.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name", get)
+kinds.object_kind(
+	"kubernetes",
+	"A kubernetes object, by its context, namespace, resource and name",
+	get
+)
 
 -- What every kubernetes object has.
 for _, kind in { "pod", "deployment", "kubernetes" } do

@@ -42,7 +42,13 @@ kinds.kind({
 	},
 })
 
-kinds.object_kind("process", "A running program, by its PID, from a table that lists it")
+kinds.object_kind(
+	"process",
+	"A running program, by its PID, from a table that lists it",
+	function(value: any): string
+		return `ps -o pid,stat,%cpu,%mem,command -p {value.pid}`
+	end
+)
 
 kinds.command("process", "stop", "kill {pid}", { doc = "Ask it to stop (TERM)", danger = true })
 kinds.command("process", "kill", "kill -9 {pid}", { doc = "Make it stop (KILL)", danger = true })

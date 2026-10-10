@@ -304,6 +304,12 @@ path is. An object that is somewhere in a buffer says where (`buffer`,
 running the action, so actions that work on what's under the cursor work
 on it from anywhere, the inspector included.
 
+A kind can say how to get its state again from outside the editor with
+`fresh = function(value) ... end` (a table like `inspect`'s, or nil once
+the thing is gone; it may wait on a program). `watch`, an action every
+object has, uses it to look again every `watch-interval` seconds; a kind
+without it is found again by id and inspected.
+
 `objects.list(kind)`, `objects.get(id)`, `objects.inspect(object)`,
 `objects.related(object)` and `objects.at(view)` read them. A plugin's kinds
 go when it's unloaded.
@@ -1442,6 +1448,9 @@ doc)` makes the rows of a kind objects: listed from every shell's blocks,
 the newest first, inspected as their value with the row's cells (`row`),
 and related to their block. Leave it out for a kind the editor has
 already, like `file`.
+A third argument, a function from the value to a command line that lists
+just that thing (`ps -p {pid}`), lets `watch` see it as it is now: it runs
+where the row came from, and its first row is the thing's state.
 
 `spec.complete` makes the rows complete later commands. It maps a
 program's name to a function given the command's words (the word being

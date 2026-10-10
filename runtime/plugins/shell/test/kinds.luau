@@ -166,6 +166,41 @@ test("an action that destroys asks first, and says when it's production", functi
 	assert(#sh.blocks == count, "nothing ran")
 end)
 
+test("watching a pod gets just it again with kubectl and says how it changed", function(t)
+	local sh, dir = fake(t, "staging")
+	-- `kubectl get pods NAME` lists that one, from a file the test changes.
+	greed.fs.write(
+		`{dir}/bin/kubectl`,
+		'#!/bin/sh\nif [ "$1 $2" = "get pods" ]; then\n  case "$3" in ""|-*) cat "$(dirname "$0")/pods" ;; *) cat "$(dirname "$0")/one" ;; esac\nfi\n'
+	)
+	local header = "NAME                     READY   STATUS             RESTARTS   AGE\n"
+	local function one(restarts: string)
+		greed.fs.write(
+			`{dir}/bin/one`,
+			header .. `worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   {restarts}         2h\n`
+		)
+	end
+	one("12")
+	local pods = ran(t, sh, "kubectl get pods")
+	on(sh, pods, "worker-5c6b7d8f9-abcde")
+	local pod = assert(core.objects.from(assert(thing_here("pod"))))
+	greed.option.set("watch-interval", 1)
+	local watching = core.watch.toggle(pod)
+	assert(watching, table.concat(t:messages(), "|"))
+	one("13")
+	-- The watch sleeps its interval (time passes at once here), then runs
+	-- kubectl for real.
+	t:wait(1100)
+	local said = ""
+	t:wait_for(function()
+		said ..= table.concat(t:messages(), "|")
+		return string.find(said, "RESTARTS 12 → 13", 1, true) ~= nil
+	end)
+	assert(string.find(said, "worker-5c6b7d8f9-abcde: RESTARTS 12 → 13", 1, true), said)
+	assert(not core.watch.toggle(pod), "stopped")
+	greed.option.set("watch-interval", 10)
+end)
+
 test("a selection over several rows acts on each of them", function(t)
 	local sh = fake(t, "staging")
 	local pods = ran(t, sh, "kubectl get pods")

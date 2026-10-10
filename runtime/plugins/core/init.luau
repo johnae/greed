@@ -144,4 +144,6 @@ return {
 	registry = require("@self/registry"),
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
+	--- Watching objects for changes, with a notification saying how (watch.luau).
+	watch = require("@self/watch"),
 }

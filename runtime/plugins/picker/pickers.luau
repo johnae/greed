@@ -171,6 +171,24 @@ greed.command({
 })
 
 greed.command({
+	name = "watches",
+	doc = "List what's watched for changes; enter stops watching one",
+	run = function()
+		local items = {}
+		for _, object in core.watch.list() do
+			table.insert(items, { label = `{object.kind}  {object.label}`, value = object })
+		end
+		if #items == 0 then
+			greed.echo("nothing is watched: watch, on space ., starts")
+			return
+		end
+		picker.pick("Watched (enter stops one)", items, function(item)
+			core.watch.toggle(item.value)
+		end)
+	end,
+})
+
+greed.command({
 	name = "pick-jump",
 	doc = "Pick a place from the jumplist and go there",
 	run = function()
