@@ -924,3 +924,12 @@ test("undo of :%s puts the cursor on the first line changed, as in Vim", functio
 	t:keys("u")
 	t:expect("keep\n|a\nb a\nc\nd a")
 end)
+
+test("ctrl-n on an empty line says there's no word, and stays in normal mode", function(t)
+	t:buffer("a\n|\nb")
+	greed.option.set("editing-style", "vim")
+	t:keys("ctrl-n")
+	t:expect_mode("vim")
+	assert(string.find(table.concat(t:messages(), "\n"), "no word under the cursor", 1, true) ~= nil)
+	greed.option.set("editing-style", "helix")
+end)

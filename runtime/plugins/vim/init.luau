@@ -424,7 +424,18 @@ end)
 -- with them goes back to one cursor.
 command("multi-next", "Select the word under the cursor, or add its next match", function(ctx)
 	if greed.mode.get() ~= "vim-multi" then
+		-- On an empty line or blanks there's no word to look for, and
+		-- searching for a line break would only surprise.
+		local before = ctx.view:selection()
 		select_word(ctx)
+		local range = ctx.view:selection().ranges[1]
+		local text =
+			ctx.buffer:slice(math.min(range.anchor, range.head), math.max(range.anchor, range.head))
+		if not string.find(text, "[%w_]") then
+			ctx.view:set_selection(before)
+			greed.echo("no word under the cursor for ctrl-n")
+			return
+		end
 		greed.run("search-selection")
 		greed.mode.set("vim-multi")
 		return
