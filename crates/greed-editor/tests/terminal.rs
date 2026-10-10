@@ -162,7 +162,22 @@ fn greed_ssh_puts_greed_on_a_machine_without_it_once() {
     };
     let project = world.project("remote", &[("main.rs", "fn main() {}")]);
     let fake_ssh = fake_ssh(&world);
-    let env = [("GREED_SSH", fake_ssh.to_str().unwrap())];
+    // A greed of another version on the other machine's PATH, which doesn't
+    // do, in place of any this machine has.
+    let other = world.root.join("other-greed");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join("greed"), "#!/bin/sh\necho greed 0.0.1\n").unwrap();
+    std::fs::set_permissions(
+        other.join("greed"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!(
+        "{}:{}",
+        other.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let env = [("GREED_SSH", fake_ssh.to_str().unwrap()), ("PATH", &path)];
     let steps = [
         Step::Until("the remote session", running),
         Step::Shows("main"),
