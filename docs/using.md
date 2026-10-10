@@ -548,7 +548,7 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
-| `:w` `:w PATH` | Save, or save as |
+| `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it (`ctrl-s` too, in the vscode style) |
 | `:wa` (`:write-all`) | Save every file with unsaved changes |
 | `:e PATH` | Open a file |
 | `ctrl-s` | Save |

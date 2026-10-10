@@ -71,12 +71,12 @@ fn errors_and_messages_show_on_the_status_line() {
         }))
         .unwrap();
     frame(&conn);
-    keys(&conn, "ctrl-s");
+    keys(&conn, "n");
     let f = frame(&conn);
     assert!(
         screen_rows(&f)[1]
             .text()
-            .contains("this buffer has no file"),
+            .contains("nothing searched for yet"),
         "{:?}",
         screen_rows(&f)[1].text()
     );
@@ -85,7 +85,7 @@ fn errors_and_messages_show_on_the_status_line() {
     let mut f = frame(&conn);
     while screen_rows(&f)[1]
         .text()
-        .contains("this buffer has no file")
+        .contains("nothing searched for yet")
     {
         f = frame(&conn);
     }

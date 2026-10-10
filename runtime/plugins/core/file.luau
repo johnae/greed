@@ -2,6 +2,7 @@
 
 local greed = require("@greed")
 local project = require("./project")
+local prompt = require("./prompt")
 local recent = require("./recent")
 local registry = require("./registry")
 local transient = require("./transient")
@@ -48,6 +49,14 @@ local function save(buffer: greed.Buffer, path: string?)
 	if saver and path == nil then
 		saver(buffer)
 		return
+	end
+	if path == nil and buffer:path() == nil then
+		-- An untitled buffer asks where to go, as "Save As" does.
+		local given = prompt.ask("save as")
+		if given == nil or string.match(given, "^%s*$") then
+			error("not saved", 0)
+		end
+		path = project.resolve(given)
 	end
 	for _, hook in before_save do
 		xpcall(hook, function(err)

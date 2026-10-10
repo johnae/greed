@@ -51,13 +51,6 @@ test("ctrl-s saves from any mode", function(t)
 	assert(greed.fs.read(dir .. "/a.txt") == "yx", (greed.fs.read(dir .. "/a.txt")))
 end)
 
-test("a buffer without a file can't be saved without a path", function(t)
-	t:buffer("|abc")
-	assert(not pcall(function()
-		t:run("save")
-	end))
-end)
-
 test("buffers of a kind with a saver save through it", function(t)
 	local saved = nil
 	require("@core").file.on_save("notes", function(buffer)
@@ -663,3 +656,19 @@ test(
 		assert(greed.fs.stat(`{dir}/!cat`) == nil, "no file called !cat")
 	end
 )
+
+test("saving an untitled buffer asks where to save it", function(t)
+	local dir = t:tempdir({})
+	t:buffer("|")
+	greed.view():buffer():edit(function(e)
+		e:insert(0, "new text\n")
+	end)
+	t:keys(": w enter")
+	t:type(`{dir}/named.txt`)
+	t:keys("enter")
+	t:wait_for(function()
+		return greed.fs.read(`{dir}/named.txt`) ~= nil
+	end)
+	assert(greed.fs.read(`{dir}/named.txt`) == "new text\n")
+	assert(greed.view():buffer():path() == `{dir}/named.txt`, "the buffer is that file now")
+end)
