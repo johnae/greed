@@ -453,3 +453,24 @@ test(
 		greed.option.set("indent", indent)
 	end
 )
+
+test(":!cmd runs in the project's shell, and :%!cmd puts the lines through it", function(t)
+	-- Needs the pipe and shell plugins, which the command line runs without.
+	local have: { [string]: boolean } = {}
+	for _, command in greed.commands() do
+		have[command.name] = true
+	end
+	if not (have.pipe and have["shell-line"]) then
+		return
+	end
+	t:buffer("b\na\n|c")
+	t:keys(": % ! s o r t enter")
+	t:wait_for(function()
+		return greed.view():buffer():text() == "a\nb\nc\n"
+			or greed.view():buffer():text() == "a\nb\nc"
+	end)
+	t:keys(": ! e c h o space h i enter")
+	t:wait_for(function()
+		return greed.view():buffer():kind() == "shell"
+	end)
+end)

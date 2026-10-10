@@ -319,7 +319,14 @@ greed.command({
 		},
 	},
 	run = function(ctx)
-		save(ctx.buffer, ctx.args[1])
+		local path = ctx.args[1]
+		if path and string.sub(path, 1, 1) == "!" then
+			error(
+				"Greed doesn't write to a program: :%!cmd puts the lines through it, :!cmd runs it in the shell",
+				0
+			)
+		end
+		save(ctx.buffer, path)
 	end,
 })
 
@@ -434,9 +441,13 @@ greed.command({
 
 greed.command({
 	name = "save-quit",
-	doc = "Write the buffer to its file, then quit",
+	doc = "Write the buffer to its file if it changed, then quit",
 	run = function(ctx)
-		save(ctx.buffer)
+		-- Unchanged, there's nothing to write, as with an untitled buffer
+		-- nothing was typed in.
+		if unsaved.unsaved(ctx.buffer) or savers[ctx.buffer:kind()] then
+			save(ctx.buffer)
+		end
 		quit(ctx.force)
 	end,
 })
@@ -598,8 +609,16 @@ greed.command({
 	},
 	run = function(ctx)
 		local path = ctx.args[1]
-		if path == nil then
+		if path == nil and ctx.force then
+			-- :e! loads the file again, as in Vim.
+			greed.run("reload")
+			return
+		elseif path == nil then
 			error("open needs a path, e.g. :open src/main.rs", 0)
+		end
+		local info = greed.fs.stat(project.resolve(path))
+		if info and info.kind == "dir" then
+			error(`{path} is a folder: space f finds a file, space e shows the tree`, 0)
 		end
 		M.open(path)
 	end,

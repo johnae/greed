@@ -129,10 +129,20 @@ local function render(o: Open, to_end: boolean?)
 		local line = " " .. candidate.text
 		if candidate.doc and candidate.doc ~= "" then
 			line ..= "  "
-			table.insert(marks, { from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" })
+			table.insert(
+				marks,
+				{ from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" }
+			)
 			line ..= candidate.doc
 		end
-		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }), 1)
+		menu.mark_row(
+			marks,
+			from,
+			line,
+			i == o.current,
+			greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }),
+			1
+		)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -405,6 +415,13 @@ function execute(text: string, lines: { first: number, last: number }?)
 		return
 	elseif special then
 		greed.run(special, { args = pattern_args })
+		return
+	end
+	-- :!cmd runs it in this project's shell, where its output stays; with
+	-- lines (:%!sort), they go through it, as | does with a selection.
+	local bang = string.match(text, "^%s*!(.*)$")
+	if bang then
+		greed.run(if first then "pipe" else "shell-line", { args = { bang } })
 		return
 	end
 	local parsed = parse.parse(text)

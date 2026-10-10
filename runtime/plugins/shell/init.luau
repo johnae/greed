@@ -1220,6 +1220,25 @@ greed.command({
 })
 
 greed.command({
+	name = "shell-line",
+	doc = "Run a command line in this project's shell, opening one if there's none, as :!cmd does",
+	args = { { name = "line", doc = "What to run, as typed at the prompt" } },
+	run = function(ctx)
+		local line = table.concat(ctx.args, " ")
+		if string.match(line, "^%s*$") then
+			error("shell-line needs something to run, e.g. :!cargo test", 0)
+		end
+		local shell = state.list(greed.project.current().id)[1]
+		if shell then
+			M.show(shell, ctx.view)
+		else
+			shell = M.open({ view = ctx.view })
+		end
+		M.run(shell, line)
+	end,
+})
+
+greed.command({
 	name = "pick-shell",
 	doc = "Switch to a shell of this project, or open a new one",
 	run = function(ctx)
