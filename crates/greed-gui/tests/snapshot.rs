@@ -376,10 +376,20 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
             .filter(|&(x, y)| pixel(&rgba, size.0, x, y)[..3] == palette.fg)
             .count()
     };
-    // The block cursor covers all four cells of the big "H".
-    assert_ne!(
-        pixel(&rgba, size.0, (1.5 * cw) as u32, (1.5 * ch) as u32)[..3],
-        palette.bg
+    // The block cursor covers all four cells of the big "H": the lower two
+    // as well, mostly the cursor's color around the letter's strokes (one
+    // pixel could land on a stroke, wherever the font puts it).
+    let lower: Vec<(u32, u32)> = (0..(2.0 * cw) as u32)
+        .flat_map(|x| (ch as u32 + 1..(2.0 * ch) as u32).map(move |y| (x, y)))
+        .collect();
+    let covered = lower
+        .iter()
+        .filter(|&&(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg)
+        .count();
+    assert!(
+        covered * 2 > lower.len(),
+        "the cursor's lower half: {covered} of {}",
+        lower.len()
     );
     // The big "i" reaches down into the second row.
     assert!(inked(2.0..4.0, 1.0..2.0) > 0, "the big text spans two rows");
