@@ -1,7 +1,8 @@
 Greed, a General Runtime for Editing, Extending and Delegating, is an editor
-for the terminal and the environment around it: a small Rust core, and
-everything else in Luau. Keys, modes, commands, pickers, themes and the
-agent integration are plugins you can read, change or replace while it runs.
+you use in a terminal or a window, on your machine or on the one where the
+work runs. It's a small Rust core with everything else in Luau: keys, modes,
+commands, pickers, themes and the agent integration are plugins you can
+read, change or replace while it runs.
 
 ```text
 $ greed src/main.rs          # edit; the session keeps running if you detach

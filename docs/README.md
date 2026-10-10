@@ -1,12 +1,12 @@
 # Greed
 
 Greed, a General Runtime for Editing, Extending and Delegating, is an
-editor for the terminal and the environment around it, with a small Rust
-core and everything else in Luau plugins you can read, change or replace
-while it runs. You edit in the Vim, Helix or VS Code style, modal or
-without modes, and switch with `:style`. Agents use the editor through MCP,
-the shell and Claude Code's `/ide`, or run inside it, and propose edits you
-review in the buffer.
+editor you use in a terminal or a window, on your machine or on the one
+where the work runs, with a small Rust core and everything else in Luau
+plugins you can read, change or replace while it runs. You edit in the
+Vim, Helix or VS Code style, modal or without modes, and switch with
+`:style`. Agents use the editor through MCP, the shell and Claude Code's
+`/ide`, or run inside it, and propose edits you review in the buffer.
 
 New to Greed? Start it, answer its few questions, and run `:tutor`: it
 teaches your style's keys with lines to practise on, then shows you around.
