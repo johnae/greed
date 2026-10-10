@@ -85,21 +85,42 @@ CLI, Codex) or Greed's own agent, with any model you set up. Agents can
 write new plugins too: Greed type checks and tests them, and you review the
 code before it loads.
 
-## Try it
+## Install
 
-Greed builds with a recent stable Rust and cmake (for the WebAssembly
-runtime that loads downloaded grammars):
+The [releases page](https://github.com/johnae/greed/releases/latest) has
+one file to download for each system, each holding a single `greed`
+binary:
+
+| System | Download | |
+| --- | --- | --- |
+| Linux, x86_64 or arm64 | `greed-VERSION-linux-ARCH.tar.gz` | terminal and window; any distribution with glibc 2.28 or newer |
+| Linux, terminal only | `greed-VERSION-linux-ARCH-tui-only-static.tar.gz` | one static binary for any Linux, servers and NixOS too; no `--gui` |
+| macOS, Apple silicon or Intel | `greed-VERSION-macos.zip` | Greed.app, which opens the window |
+| macOS, for the terminal | `greed-VERSION-macos-universal.tar.gz` | the same binary on its own |
+
+The Linux tarballs are laid out like `/usr/local`, with a desktop entry and
+an icon, so unpacking one into `~/.local` installs it:
+
+```bash
+tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
+greed README.md        # in the terminal
+greed --gui README.md  # in a window
+```
+
+The macOS builds aren't notarized by Apple yet, so the first time, macOS
+won't open Greed.app from a download: allow it under System Settings →
+Privacy & Security. Downloaded with `curl`, the tarball doesn't need that.
+
+On NixOS, and anywhere with Nix, the flake builds it with the window:
+`nix run github:johnae/greed`, or `.#static` for the static binary.
+
+To build it yourself you need a recent stable Rust and cmake (for the
+WebAssembly runtime that loads downloaded grammars):
 
 ```bash
 cargo build --release
 ./target/release/greed README.md
 ```
-
-To install it, `cargo install --path crates/greed-editor`, or with Nix,
-`nix-build` here or `pkgs.callPackage ./nix/package.nix { }` in your own
-configuration. `nix-build -A static` builds a single statically linked
-binary without the window client that runs on any Linux of the same CPU,
-to copy to a server.
 
 The default plugins are built into the binary, so it runs from anywhere.
 To use your own copy of them, point `GREED_RUNTIME` at a folder shaped like

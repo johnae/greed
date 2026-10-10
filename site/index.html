@@ -264,14 +264,17 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
 
   <section class="install">
     <h2>Try it</h2>
-    <p>Greed builds with a recent stable Rust and cmake, on Linux and macOS:</p>
-    <pre class="term"><code><span class="prompt">$</span> git clone https://github.com/johnae/greed &amp;&amp; cd greed
-<span class="prompt">$</span> cargo build --release
-<span class="prompt">$</span> ./target/release/greed README.md</code></pre>
-    <p>To install it, <code>cargo install --path crates/greed-editor</code>, or with Nix,
-    <code>nix-build</code>. The default plugins are built into the binary, so it runs
-    from anywhere. The first start asks how you like to edit and which theme
-    you want, and writes a config with settings to try.</p>
+    <p>Download Greed for Linux or macOS, x86_64 or arm, from the
+    <a href="https://github.com/johnae/greed/releases/latest">releases page</a>:
+    one binary with the terminal and the window, or Greed.app on a Mac. On
+    Linux, unpack it into <code>~/.local</code>:</p>
+    <pre class="term"><code><span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
+<span class="prompt">$</span> greed --gui README.md</code></pre>
+    <p>On NixOS, <code>nix run github:johnae/greed</code>. For servers there's a
+    static build of the terminal side that runs on any Linux. The default
+    plugins are built into the binary, and the first start asks how you like
+    to edit and which theme you want, and writes a config with settings to
+    try.</p>
   </section>
 </main>
 
