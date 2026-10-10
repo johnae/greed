@@ -412,6 +412,9 @@ fn a_trusted_projects_own_config_runs_when_its_session_starts() {
     let root = world("trusted");
     let project = std::env::temp_dir().join(format!("greed-trusted-{}", std::process::id()));
     std::fs::create_dir_all(project.join(".git")).unwrap();
+    // Trusted as the session sees it: resolved, which on macOS isn't
+    // /var/... but /private/var/....
+    let project = project.canonicalize().unwrap();
     std::fs::create_dir_all(project.join(".greed")).unwrap();
     std::fs::write(
         project.join(".greed/init.luau"),

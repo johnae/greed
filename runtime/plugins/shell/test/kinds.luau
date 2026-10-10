@@ -30,17 +30,21 @@ contexts:
     cluster: st
 ]]
 
--- A shell whose `kubectl` and `docker` print tables for `get` and `ps` and
+-- A shell whose `kubectl`, `docker` and `ps` print tables for `get` and `ps` and
 -- say what they were asked otherwise, with kubectl's config in `context`.
 local function fake(t: test.TestContext, context: string): (Shell, string)
 	local dir = t:tempdir({
 		["bin/kubectl"] = '#!/bin/sh\nif [ "$1 $2" = "get pods" ]; then\n  case "$*" in *-w*) cat "$(dirname "$0")/pods"; sleep 0.3; printf "worker-5c6b7d8f9-abcde   0/1   CrashLoopBackOff   13 (5s ago)   2h\\n" ;; *-A*) cat "$(dirname "$0")/all" ;; *) cat "$(dirname "$0")/pods" ;; esac\nelse\n  echo "kubectl $*"\nfi\n',
 		["bin/docker"] = '#!/bin/sh\nif [ "$1" = "ps" ]; then\n  printf "CONTAINER ID   IMAGE      NAMES\\n3f2a1b4c5d6e   nginx      web\\n"\nelse\n  echo "docker $*"\nfi\n',
+		-- The same ps everywhere: macOS's prints other columns than Linux's.
+		["bin/ps"] = '#!/bin/sh\nprintf "USER         PID %%CPU %%MEM COMMAND\\nroot           1  0.0  0.1 /sbin/init\\nme          4711  1.5  2.0 greed\\n"\n',
 		["bin/pods"] = PODS,
 		["bin/all"] = ALL,
 		["kubeconfig"] = (string.gsub(CONFIG, "CONTEXT", context)),
 	})
-	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/kubectl`, `{dir}/bin/docker` }))
+	assert(
+		greed.process.run({ "chmod", "+x", `{dir}/bin/kubectl`, `{dir}/bin/docker`, `{dir}/bin/ps` })
+	)
 	t:run("shell")
 	local sh = assert(shell.of(greed.view():buffer()))
 	sh.cwd = dir
