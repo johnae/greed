@@ -626,3 +626,18 @@ test(":bd on an untitled buffer closes it quietly, and :q's hint fits what's uns
 	local said = if ok then table.concat(t:messages(), "\n") else tostring(err)
 	assert(string.find(said, ":w PATH saves it", 1, true), said)
 end)
+
+test(":e and :w take a relative path from the project you're in", function(t)
+	t:buffer("|x")
+	local dir = t:tempdir({ ["inside.txt"] = "in the project\n" })
+	local before = greed.project.current().id
+	greed.project.switch(greed.project.open(dir))
+	t:run("open", { "inside.txt" })
+	assert(
+		greed.view():buffer():path() == `{dir}/inside.txt`,
+		tostring(greed.view():buffer():path())
+	)
+	t:run("save", { "copy.txt" })
+	assert(greed.fs.read(`{dir}/copy.txt`) == "in the project\n", "written in the project")
+	greed.project.switch(before)
+end)

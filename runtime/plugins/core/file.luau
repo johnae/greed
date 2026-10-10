@@ -43,6 +43,7 @@ function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
 end
 
 local function save(buffer: greed.Buffer, path: string?)
+	path = path and project.resolve(path)
 	local saver = savers[buffer:kind()]
 	if saver and path == nil then
 		saver(buffer)
@@ -491,6 +492,8 @@ local as_text = false
 --- Shows the file at `path` in the main view and focuses it: as its
 --- opener shows it (an image, a PDF), otherwise as text.
 function M.open(path: string)
+	-- A relative path is from the project you're in, as in the picker.
+	path = project.resolve(path)
 	local opener = opener_for(path)
 	if opener then
 		local main = greed.tab.current().active

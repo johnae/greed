@@ -124,7 +124,7 @@ M.register("file", function(word)
 	local dir = string.match(word, "^(.*/)") or ""
 	local typed = string.sub(word, #dir + 1)
 	local entries: { greed.DirEntry } = greed.fs.list(
-		if dir == "" then "." else core.project.expand(dir),
+		core.project.resolve(if dir == "" then "." else dir),
 		{
 			hidden = string.sub(typed, 1, 1) == ".",
 			ignored = true,
