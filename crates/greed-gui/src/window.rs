@@ -361,6 +361,16 @@ impl ApplicationHandler<Event> for App {
         let attributes = Window::default_attributes()
             .with_title("Greed")
             .with_inner_size(self.size.unwrap_or(LogicalSize::new(1100.0, 720.0)));
+        // The app id desktops match against greed.desktop, for its icon and
+        // name in docks and task switchers.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let attributes = {
+            use winit::platform::{
+                wayland::WindowAttributesExtWayland, x11::WindowAttributesExtX11,
+            };
+            let attributes = WindowAttributesExtWayland::with_name(attributes, "greed", "greed");
+            WindowAttributesExtX11::with_name(attributes, "greed", "greed")
+        };
         let Ok(window) = event_loop.create_window(attributes) else {
             event_loop.exit();
             return;

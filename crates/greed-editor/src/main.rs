@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod bench;
+mod bundle;
 mod client;
 mod clipboard_image;
 mod ctl;
@@ -67,6 +68,11 @@ fn main() -> ExitCode {
             eprintln!("greed: {err}");
             return ExitCode::FAILURE;
         }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(err) = bundle::reopen_as_app(&args) {
+        eprintln!("greed: can't start as the app: {err}");
+        return ExitCode::FAILURE;
     }
     // Anywhere on the line: attach with a terminal open in the session.
     let terminal = args.iter().any(|arg| arg == "--terminal");
