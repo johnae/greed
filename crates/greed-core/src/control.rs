@@ -699,13 +699,17 @@ const HANG_UP_CHECK: Duration = Duration::from_millis(200);
 /// Whether the client on the other end of `reader` hung up. Anything it
 /// sent meanwhile stays in `reader` to be read.
 fn hung_up(reader: &mut BufReader<UnixStream>) -> bool {
-    if !reader.buffer().is_empty()
-        || reader
-            .get_ref()
-            .set_read_timeout(Some(Duration::from_millis(1)))
-            .is_err()
-    {
+    if !reader.buffer().is_empty() {
         return false;
+    }
+    // macOS refuses the timeout once the other end has closed, which is the
+    // answer; an open socket always takes it.
+    if reader
+        .get_ref()
+        .set_read_timeout(Some(Duration::from_millis(1)))
+        .is_err()
+    {
+        return true;
     }
     let gone = match reader.fill_buf() {
         Ok(sent) => sent.is_empty(),
