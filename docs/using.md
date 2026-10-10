@@ -588,8 +588,15 @@ terminal you run it in, the way `greed` does, and says how long that took,
 how many bytes went out, and how long your terminal took to take them in.
 
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
-the folder you're in, `r` reads the disk again and `q` closes it. A click
-does what `enter` does, and the row under the mouse lights up.
+the folder you're in, `r` reads the disk again and `q` closes it. `a`
+makes a file in the folder under the cursor (end the name with `/` for a
+folder), `R` renames or moves what's under the cursor, taking files you
+have open along, and `d` deletes it once you press `y`. A click does what
+`enter` does, and the row under the mouse lights up.
+
+Without the tree, `:file-rename NAME` renames the file you're in (a path
+moves it, from the project's root), and `:file-delete` deletes it once
+you press `y`.
 `:set tree-icons nerd` shows an icon by each name (see [Icons](#icons)).
 
 When a file changes on disk, from another program or an agent, its buffer

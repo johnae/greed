@@ -1,6 +1,7 @@
 -- A file tree in a side panel. `space e` opens it (or moves to it, or closes
 -- it if you're in it). In the tree: enter or l opens a file or folds a
--- folder, h folds the folder you're in, r reads the disk again, q closes.
+-- folder, h folds the folder you're in, r reads the disk again, q closes;
+-- a makes a file (or a folder, ending in /), R renames, d deletes.
 -- Hidden and ignored files are left out, like in the file picker.
 --
 -- It's only a plugin: to turn it off, `greed.plugin.unload("tree")` from your
@@ -246,6 +247,91 @@ greed.command({
 	run = M.close,
 })
 
+-- The folder new files go in from `node`: itself, or the one it's in.
+local function folder_of(t: Tree, node: Node?): string
+	if node == nil then
+		return t.root
+	end
+	return if node.dir then node.path else string.match(node.path, "^(.*)/[^/]*$") or t.root
+end
+
+greed.command({
+	name = "tree-add",
+	doc = "Make a file in the folder on the cursor, or a folder with a / at the end",
+	run = function()
+		local t = shown()
+		if t == nil then
+			return
+		end
+		local dir = folder_of(t, current(t))
+		local name =
+			core.prompt.ask(`new in {core.project.short(dir, t.root)}/ (end with / for a folder)`)
+		if name == nil or string.match(name, "^%s*$") then
+			return
+		end
+		local path = `{dir}/{name}`
+		if greed.fs.stat(path) then
+			error(`{name} is there already`, 0)
+		end
+		t.expanded[dir] = true
+		if string.sub(name, -1) == "/" then
+			path = string.sub(path, 1, -2)
+			greed.fs.mkdir(path)
+		else
+			local parent = string.match(path, "^(.*)/[^/]+$")
+			if parent then
+				greed.fs.mkdir(parent)
+			end
+			greed.fs.write(path, "")
+		end
+		render(t, path)
+	end,
+})
+
+greed.command({
+	name = "tree-rename",
+	doc = "Rename or move the file or folder on the cursor; open files go along",
+	run = function()
+		local t = shown()
+		local node = t and current(t)
+		if t == nil or node == nil then
+			return
+		end
+		local parent = string.match(node.path, "^(.*)/[^/]*$") or t.root
+		local view = core.prompt.open({
+			title = "rename to",
+			text = node.name,
+			selected = true,
+			on_submit = function(name)
+				if name == "" or name == node.name then
+					return
+				end
+				local to = if string.find(name, "/", 1, true)
+					then core.project.resolve(name, t.root)
+					else `{parent}/{name}`
+				core.file.rename(node.path, to)
+				render(t, to)
+			end,
+		})
+		view:focus()
+	end,
+})
+
+greed.command({
+	name = "tree-delete",
+	doc = "Delete the file or folder on the cursor, after you press y",
+	run = function()
+		local t = shown()
+		local node = t and current(t)
+		if t == nil or node == nil then
+			return
+		end
+		if core.file.confirm_remove(node.path) then
+			render(t)
+		end
+	end,
+})
+
 greed.option.define({
 	name = "tree-icons",
 	doc = 'Icons by the names in the file tree: "none", or "nerd" for a Nerd Font\'s',
@@ -307,6 +393,9 @@ greed.keymap.bind({ kind = "tree" }, {
 	l = "tree-open",
 	h = "tree-fold",
 	r = "tree-refresh",
+	a = "tree-add",
+	R = "tree-rename",
+	d = "tree-delete",
 	q = "tree-close",
 })
 

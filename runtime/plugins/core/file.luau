@@ -820,4 +820,104 @@ function M.write(path: string, text: string, opts: WriteOptions?): greed.Buffer?
 	return nil
 end
 
+--- Moves the file or folder at `from` to `to` (full paths), taking the
+--- buffers showing what's in it along. Refuses if `to` is there already, or
+--- a buffer in it has unsaved changes.
+function M.rename(from: string, to: string)
+	if greed.fs.stat(to) then
+		error(`{project.short(to)} is there already`, 0)
+	end
+	local moving: { { buffer: greed.Buffer, path: string } } = {}
+	for _, buffer in greed.buffers() do
+		local path = buffer:path()
+		if path and project.inside(path, from) then
+			if unsaved.unsaved(buffer) then
+				error(`{project.name(buffer)} has unsaved changes: save or undo them first`, 0)
+			end
+			table.insert(moving, { buffer = buffer, path = to .. string.sub(path, #from + 1) })
+		end
+	end
+	local parent = string.match(to, "^(.*)/[^/]+$")
+	if parent then
+		greed.fs.mkdir(parent)
+	end
+	local ok, err = greed.fs.rename(from, to)
+	if not ok then
+		error(err, 0)
+	end
+	-- Each buffer becomes the file at its new place: writing what it holds
+	-- there, which is what was moved.
+	for _, move in moving do
+		move.buffer:save(move.path)
+	end
+end
+
+--- Deletes the file or folder (and what's in it) at `path`, closing the
+--- buffers showing what was there.
+function M.remove(path: string)
+	local info = greed.fs.stat(path)
+	if info == nil then
+		error(`there's nothing at {path}`, 0)
+	end
+	local ok, err = greed.fs.remove(path, { recursive = info.kind == "dir" })
+	if not ok then
+		error(err, 0)
+	end
+	for _, buffer in greed.buffers() do
+		local at = buffer:path()
+		if at and project.inside(at, path) then
+			M.close(buffer, true)
+		end
+	end
+end
+
+--- Asks to press y before deleting `path`, so only you can confirm it (keys
+--- a plugin feeds don't answer). Says whether it was deleted.
+function M.confirm_remove(path: string): boolean
+	local info = greed.fs.stat(path)
+	local what = if info and info.kind == "dir" then "the folder" else "the file"
+	greed.echo(`delete {what} {project.short(path)}? y deletes it, anything else keeps it`)
+	local key = greed.next_key()
+	greed.echo("")
+	if key ~= "y" then
+		greed.echo("kept")
+		return false
+	end
+	M.remove(path)
+	greed.echo(`deleted {project.short(path)}`)
+	return true
+end
+
+greed.command({
+	name = "file-rename",
+	doc = "Rename or move this file: a name alone keeps it in its folder, a path is from the project",
+	args = { { name = "to", doc = "The new name, or a path", complete = "file" } },
+	run = function(ctx)
+		local from = ctx.buffer:path()
+		local to = ctx.args[1]
+		if from == nil then
+			error("this buffer has no file to rename; :w saves it as one", 0)
+		elseif to == nil then
+			error("file-rename needs the new name, e.g. :file-rename main.rs", 0)
+		end
+		local full = if string.find(to, "/", 1, true)
+			then project.resolve(to)
+			else (string.match(from, "^(.*)/[^/]+$") or "") .. "/" .. to
+		M.rename(from, full)
+		greed.echo(`renamed to {project.short(full)}`)
+	end,
+})
+
+greed.command({
+	name = "file-delete",
+	doc = "Delete this file from the disk, after you press y, and close it",
+	run = function(ctx)
+		local path = ctx.buffer:path()
+		if path == nil then
+			error("this buffer has no file to delete", 0)
+		end
+		M.confirm_remove(path)
+	end,
+})
+
 return M

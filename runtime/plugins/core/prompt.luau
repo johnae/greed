@@ -10,8 +10,8 @@ export type Options = {
 	title: string,
 	--- What it starts with, the cursor at its end.
 	text: string?,
-	--- Starts with `text` selected, so typing replaces it where typing
-	--- replaces a selection (the vscode style), as a find field does.
+	--- Starts with `text` selected, so typing at once replaces it, as a
+	--- find or rename field does.
 	selected: boolean?,
 	--- Called with the text as it's typed.
 	on_change: ((text: string) -> ())?,
@@ -106,6 +106,8 @@ function M.open(options: Options): greed.View
 		greed.run("prompt-cancel")
 	end
 	local start = options.text or ""
+	-- Nothing typed yet over a selected start.
+	local pristine = options.selected == true and start ~= ""
 	local o: Open
 	o = {
 		float = floats.typing(
@@ -113,6 +115,27 @@ function M.open(options: Options): greed.View
 			{ title = options.title, width = "100%", height = 3, anchor = "bottom" },
 			{
 				on_change = function()
+					-- Typing at once after a selected start replaces it, in
+					-- styles whose typing mode would add to it instead.
+					if pristine then
+						pristine = false
+						local now = text(o)
+						-- Typed after it (Vim's insert) or before it (Helix's).
+						local typed: string? = nil
+						if #now > #start and string.sub(now, 1, #start) == start then
+							typed = string.sub(now, #start + 1)
+						elseif #now > #start and string.sub(now, -#start) == start then
+							typed = string.sub(now, 1, #now - #start)
+						end
+						if typed then
+							local replacement: string = typed
+							o.float.buffer:edit(function(e)
+								e:replace(0, o.float.buffer:len(), replacement)
+							end)
+							o.float.view:set_cursor(#replacement)
+							return
+						end
+					end
 					mask(o)
 					if options.on_change then
 						options.on_change(text(o))

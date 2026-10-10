@@ -172,3 +172,47 @@ test("with tree-icons set to nerd, Nerd Font icons show by each name", function(
 	assert(lines()[1] == "\u{f07c} src/", "an open folder")
 	assert(lines()[2] == "│ \u{e7a8} lib.rs", lines()[2])
 end)
+
+test(
+	"a makes a file or a folder, R renames, taking an open file along, d deletes after y",
+	function(t)
+		local dir = project(t)
+		greed.open(`{dir}/notes.md`)
+		t:keys("space e")
+		-- On notes.md, at the top level: a new file beside it.
+		for i, line in lines() do
+			if string.find(line, "notes.md", 1, true) then
+				greed.view():set_cursor(greed.view():buffer():line_start(i - 1))
+			end
+		end
+		t:keys("a")
+		t:type("todo.txt")
+		t:keys("enter")
+		assert(greed.fs.stat(`{dir}/todo.txt`), "made the file")
+		t:keys("a")
+		t:type("docs/")
+		t:keys("enter")
+		local docs = greed.fs.stat(`{dir}/docs`)
+		assert(docs and docs.kind == "dir", "made the folder")
+		for i, line in lines() do
+			if string.find(line, "notes.md", 1, true) then
+				greed.view():set_cursor(greed.view():buffer():line_start(i - 1))
+			end
+		end
+		t:keys("R")
+		t:type("journal.md")
+		t:keys("enter")
+		assert(greed.fs.stat(`{dir}/journal.md`) and not greed.fs.stat(`{dir}/notes.md`), "renamed")
+		local open = greed.buffer_for(`{dir}/journal.md`)
+		assert(open ~= nil, "the open file went along")
+		for i, line in lines() do
+			if string.find(line, "todo.txt", 1, true) then
+				greed.view():set_cursor(greed.view():buffer():line_start(i - 1))
+			end
+		end
+		t:keys("d n")
+		assert(greed.fs.stat(`{dir}/todo.txt`), "kept without y")
+		t:keys("d y")
+		assert(greed.fs.stat(`{dir}/todo.txt`) == nil, "deleted with y")
+	end
+)
