@@ -359,9 +359,18 @@ fn a_plugin_loaded_while_an_agent_is_connected_tells_it_of_its_tools() {
     let (conn, mut client) = start_with("new-tool", "one two three", vec![loader]);
     assert!(!tool_names(&mut client).contains(&"echo_back".to_owned()));
     conn.input.send(Input::Run("load-offers".into())).unwrap();
-    // A request after it, so the notice that came first is in.
-    let names = tool_names(&mut client);
-    assert!(names.contains(&"echo_back".to_owned()), "{names:?}");
+    // The command and the agent's requests come on different channels, so
+    // it asks until the plugin has loaded; the notice comes before that
+    // answer.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let names = tool_names(&mut client);
+        if names.contains(&"echo_back".to_owned()) {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{names:?}");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert!(
         client
             .take_notifications()

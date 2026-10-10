@@ -360,9 +360,18 @@ test(
 		local buffer = greed.view():buffer()
 		local terminal = require("@terminal")
 		assert(terminal.cwd(buffer) == dir, terminal.cwd(buffer))
-		t:run("terminal", { "sh", "-c", "pwd; sleep 5" })
+		-- Said rather than shown: a long folder, like macOS's temporary ones,
+		-- wraps in the terminal.
+		t:run(
+			"terminal",
+			{
+				"sh",
+				"-c",
+				`[ "$(pwd -P)" = "$(cd '{dir}' && pwd -P)" ] && echo started-there; sleep 5`,
+			}
+		)
 		t:keys("esc esc")
-		shows(t, dir)
+		shows(t, "started-there")
 		t:run("terminal-close")
 		t:keys("ctrl-\\ g g g x")
 		assert(greed.view():buffer():path() == dir .. "/src/main.rs", greed.view():buffer():path())
