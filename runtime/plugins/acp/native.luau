@@ -988,7 +988,8 @@ local function system(s: Session, env: string?, edits: string?): string
 		`The project is at {s.root}; paths are relative to it.`
 			.. (if env and env ~= "" then " " .. env else ""),
 		"A user's message starts with a <time> tag, when they sent it, and may have an "
-			.. "<editor-context> block: what they had on screen as they wrote it. That's left out "
+			.. "<editor-context> block: what they had on screen as they wrote it, and a "
+			.. "<pinned-context> block: what they pinned for you, as it is now. They're left out "
 			.. "when nothing changed since their last message.",
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "

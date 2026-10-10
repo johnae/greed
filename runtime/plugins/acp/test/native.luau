@@ -737,6 +737,37 @@ test("the same context isn't sent twice, and a change sends it again", function(
 	assert(string.find(said, "File: a.txt, line 2, column 2", 1, true), said)
 end)
 
+test("what's pinned goes when it changed, apart from what's on screen", function(t)
+	local asked = script({})
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\n" })
+	local now: string? = "pod api: Running"
+	agent.context.pins(function(): string?
+		return now
+	end)
+	beside(dir, "a.txt", 0, 1)
+	send(t, "hi")
+	local first = asked[1].said[1].text :: string
+	assert(string.find(first, "<pinned-context>", 1, true), first)
+	assert(string.find(first, "pod api: Running", 1, true), first)
+	-- The cursor moves: what's on screen goes again, what's pinned doesn't.
+	local file = greed.load(`{dir}/a.txt`):views()[1]
+	file:set_selection({ ranges = { { anchor = 4, head = 5 } }, primary = 1 })
+	send(t, "moved")
+	local second = asked[2].said[3].text :: string
+	assert(string.find(second, "line 2", 1, true), second)
+	assert(not string.find(second, "<pinned-context>", 1, true), "the pins didn't change")
+	-- The pins change and the screen doesn't.
+	now = "pod api: CrashLoopBackOff"
+	send(t, "changed")
+	local third = asked[3].said[5].text :: string
+	assert(string.find(third, "CrashLoopBackOff", 1, true), third)
+	assert(not string.find(third, "<editor-context>", 1, true), "the screen didn't change")
+	now = nil
+	send(t, "unpinned")
+	local fourth = asked[4].said[7].text :: string
+	assert(string.find(fourth, "Nothing is pinned any more", 1, true), fourth)
+end)
+
 test("with agent-editor-context off, only what you wrote goes", function(t)
 	local asked = script({})
 	local dir = t:tempdir({ ["a.txt"] = "one\n" })

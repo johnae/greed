@@ -84,12 +84,15 @@ function M.command(kind: string, name: string, command: string, doc: string, _pl
 	})
 end
 
---- The actions for things of `kind`, in the order they were added.
+--- The actions for things of `kind`, in the order they were added, then
+--- those for every kind (an action of kind "*").
 function M.for_kind(kind: string): { Action }
 	local out = {}
-	for _, action in actions do
-		if action.kind == kind then
-			table.insert(out, action)
+	for _, wanted in { kind, "*" } do
+		for _, action in actions do
+			if action.kind == wanted then
+				table.insert(out, action)
+			end
 		end
 	end
 	return out

@@ -68,3 +68,43 @@ test("agents read the context with context_get", function(t)
 	end
 	error("no context_get tool")
 end)
+
+test("any object pins to the context, read as it is each time, and goes to agents", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	greed.project.open(dir)
+	greed.open(dir .. "/a.txt")
+	local core = require("@core")
+	local buffer = greed.view():buffer()
+	local id = `buffer:{buffer:id()}`
+	local object = assert(core.objects.get(id))
+	assert(core.objects.act(object, "pin to context"), "every kind can be pinned")
+	assert(core.objects.act(object, "pin to context"))
+	local items = context.list()
+	assert(#items == 1 and items[1].kind == "object" and items[1].object == id, "pinned once")
+	local before = context.text()
+	assert(string.find(before, `## {id} (`, 1, true), before)
+	assert(string.find(before, '"modified":false', 1, true), before)
+	t:keys("i t w o esc")
+	assert(string.find(context.text(), '"modified":true', 1, true), "read fresh")
+	-- Every message to an agent carries it.
+	local pinned = assert(require("@agent").context.pinned())
+	assert(string.find(pinned, "<pinned-context>", 1, true) and string.find(pinned, id, 1, true))
+	-- Gone, it says so.
+	greed.view():show(greed.create_buffer("other", ""))
+	buffer:close()
+	assert(string.find(context.text(), "(it's gone)", 1, true), context.text())
+	t:run("context-clear")
+	assert(require("@agent").context.pinned() == nil, "nothing pinned, nothing sent")
+end)
+
+test("space i p in a buffer that isn't a file pins what's under the cursor", function(t)
+	t:tempdir({})
+	local scratch = greed.create_buffer("notes", "hello")
+	greed.view():show(scratch)
+	t:keys("space i p")
+	local items = context.list()
+	assert(
+		#items == 1 and items[1].object == `buffer:{scratch:id()}`,
+		tostring(items[1] and items[1].object)
+	)
+end)

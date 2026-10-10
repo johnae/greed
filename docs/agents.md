@@ -44,7 +44,7 @@ to go. The tools:
 | `read` | A file as the editor has it, unsaved changes included |
 | `diagnostics` | Errors and warnings from language servers |
 | `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
-| `context_get` | What you pinned for agents: selections, files, problems, the changes in progress |
+| `context_get` | What you pinned for agents: selections, files, problems, the changes in progress, objects as they are now |
 | `working_set` | The files you've worked in lately, most active first, with how much you and agents edited each and the lines you were on |
 | `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward what you're working on (below) |
 | `symbols` | Functions and types anywhere in the project whose names match, with their files and lines |

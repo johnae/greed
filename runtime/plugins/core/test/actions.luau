@@ -10,6 +10,17 @@ local function kinds(): string
 	return table.concat(out, " ")
 end
 
+-- The actions of `kind` itself, without those for every kind.
+local function own(kind: string): { any }
+	local out = {}
+	for _, action in actions.for_kind(kind) do
+		if action.kind == kind then
+			table.insert(out, action)
+		end
+	end
+	return out
+end
+
 test("a path under the cursor that exists is a file to act on", function(t)
 	local dir = t:tempdir({ ["notes.txt"] = "hi" })
 	t:buffer(`see {dir}/no|tes.txt and more`)
@@ -49,7 +60,7 @@ return {}
 	greed.plugin.load(dir .. "/jira")
 	t:wait(0)
 	assert(string.find(kinds(), "ticket:ABC-12", 1, true), kinds())
-	assert(#actions.for_kind("ticket") == 1)
+	assert(#own("ticket") == 1)
 	local core = require("@core")
 	local features = table.concat(core.features.of(greed.view():buffer()), " ")
 	assert(features == "tickets", features)
@@ -57,7 +68,7 @@ return {}
 	greed.plugin.unload("jira")
 	t:wait(0)
 	assert(not string.find(kinds(), "ticket", 1, true), kinds())
-	assert(#actions.for_kind("ticket") == 0)
+	assert(#own("ticket") == 0)
 	assert(#core.features.of(greed.view():buffer()) == 0)
 	assert(core.style.typing_kinds.tickets == nil)
 end)

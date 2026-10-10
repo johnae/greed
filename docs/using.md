@@ -926,16 +926,25 @@ Pin what a model or an agent should see, and it goes with every question:
 
 | Keys | |
 |---|---|
-| `space i p` | Pin the selection, or the whole file when nothing is selected |
+| `space i p` | Pin the selection, or the whole file when nothing is selected; outside a file, what's under the cursor (a shell row, a block) |
 | `space i i` | Show what's pinned, one item a line with its size in tokens; delete a line (`x d`) to drop it |
 | `:context-add-problems` | Pin this file's problems from the language server |
 | `:context-add-diff` | Pin the changes in progress |
 | `:context-clear` | Drop everything |
 
+Anything you can inspect pins too: `pin to context` is among the actions
+of every object (`space .`, or the inspector), so a pod, a shell block or
+a terminal can go with your messages, as its state is when you send each
+one.
+
 Items are read fresh each time they're sent: a pinned selection follows the
-text as you edit, and the diff is the diff as it is now. The assist
-commands send the context with each question, and agents read it with the
-`context_get` tool. Each project keeps its own, across restarts.
+text as you edit, the diff is the diff as it is now, and a pinned pod is
+its row from the newest block that lists it. The assist commands send the
+context with each question. The agent pane sends it with a message when
+it changed since the last one, so a pinned file goes again only after it
+was edited; other agents read it with the `context_get` tool. Each
+project keeps its own across restarts, except pinned objects, which
+belong to the session.
 
 ## Formatting
 

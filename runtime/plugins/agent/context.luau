@@ -120,4 +120,47 @@ function M.describe(root: string?): string?
 	return table.concat(lines, "\n")
 end
 
+-- What gives the text of what the user pinned for agents, like the
+-- context plugin.
+local sources: { () -> string? } = {}
+
+--- Adds `source`, giving the text of what the user pinned (nil or "" for
+--- nothing), to send with every message to an agent. It goes when the
+--- plugin that added it does.
+function M.pins(source: () -> string?)
+	greed.plugin.tie(core.registry.put(sources, source))
+end
+
+--- What the user pinned, read now; nil when nothing is. Compare it with
+--- what went last to leave it out when it's the same.
+function M.pinned_text(): string?
+	local parts: { string } = {}
+	for _, source in sources do
+		local ok, text = pcall(source)
+		if ok and type(text) == "string" and text ~= "" then
+			table.insert(parts, text)
+		end
+	end
+	return if #parts > 0 then table.concat(parts, "\n\n") else nil
+end
+
+--- `text`, what the user pinned (`pinned_text`), as a block to send to an
+--- agent; nil, saying nothing is pinned any more.
+function M.pinned_block(text: string?): string
+	if text == nil then
+		return "<pinned-context>Nothing is pinned any more.</pinned-context>"
+	end
+	return "<pinned-context>\n"
+		.. "What the user pinned for you in the editor, read as they send this message: "
+		.. "the current state of each item.\n"
+		.. untrusted("what the user pinned in the editor", text)
+		.. "\n</pinned-context>"
+end
+
+--- A block of what the user pinned, read now; nil when nothing is.
+function M.pinned(): string?
+	local text = M.pinned_text()
+	return if text then M.pinned_block(text) else nil
+end
+
 return M

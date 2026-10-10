@@ -179,3 +179,23 @@ test("an action on something in a buffer runs with the cursor on it, from anywhe
 	assert(where == 5, `the cursor was at {where}`)
 	assert(greed.view() == main, "in the view showing its buffer")
 end)
+
+test("an action for every kind comes after a kind's own", function()
+	tickets()
+	core.actions.action({ kind = "ticket", name = "close", run = function() end })
+	core.actions.action({ kind = "*", name = "everywhere", run = function() end })
+	local names = {}
+	for _, action in objects.actions(ticket("A-1")) do
+		table.insert(names, action.name)
+	end
+	-- Other plugins loaded may add actions for every kind too.
+	assert(names[1] == "close" and names[#names] == "everywhere", table.concat(names, ","))
+	local buffers = objects.actions(assert(objects.get(`buffer:{greed.view():buffer():id()}`)))
+	assert(buffers[#buffers].name == "everywhere")
+end)
+
+test("plain gives an object's state as data JSON can carry", function()
+	local state = objects.plain({ view = greed.view(), count = 2, nested = { f = print } })
+	assert(type(state.view) == "string" and state.count == 2 and type(state.nested.f) == "string")
+	assert(greed.json.encode(state) ~= "")
+end)

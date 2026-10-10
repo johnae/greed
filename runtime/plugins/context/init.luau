@@ -23,12 +23,14 @@ local agent = require("@agent")
 local vcs = require("@vcs")
 
 --- An item: a selection (a range of a file, kept by a mark so it follows
---- edits), a whole file, a file's problems, the changes in progress, or one
+--- edits), a whole file, a file's problems, the changes in progress, an
+--- object (core.objects, by its id: a pod, a shell block, a buffer), or one
 --- worked out by a function `define` registered.
 export type Item = {
-	kind: "selection" | "file" | "problems" | "diff" | "computed",
+	kind: "selection" | "file" | "problems" | "diff" | "object" | "computed",
 	path: string?,
 	name: string?,
+	object: string?,
 	-- Where a selection was when last seen, kept for saving.
 	from: number?,
 	to: number?,
@@ -100,6 +102,14 @@ function M.read(item: Item): (string, string)
 	elseif item.kind == "diff" then
 		local diff = vcs.diff(root())
 		return diff or "(not in a repository)", "changes in progress"
+	elseif item.kind == "object" then
+		local id = item.object :: string
+		local found = core.objects.get(id)
+		if found == nil then
+			return "(it's gone)", id
+		end
+		local state = core.objects.plain(core.objects.inspect(found))
+		return greed.json.encode(state), `{id} ({found.label})`
 	end
 	local f = computed[item.name :: string]
 	local ok, text = pcall(f or function()
@@ -128,6 +138,10 @@ local function save()
 	for project, list in pinned do
 		local plain = {}
 		for _, item in list do
+			-- Objects' ids name what's in this session, so they aren't kept.
+			if item.kind == "object" then
+				continue
+			end
 			if item.kind == "selection" then
 				span(item)
 			end
@@ -250,13 +264,41 @@ greed.command({
 	end,
 })
 
+--- Pins the object `id` to the context, once.
+function M.pin(id: string)
+	for _, item in items() do
+		if item.kind == "object" and item.object == id then
+			greed.echo(`{id} is pinned already`)
+			return
+		end
+	end
+	M.add({ kind = "object", object = id })
+	greed.echo(`pinned {id}: agents see how it is with each message`)
+end
+
+core.actions.action({
+	kind = "*",
+	name = "pin to context",
+	doc = "Pin it for agents and models: how it is goes with each message",
+	run = function(target)
+		local object = core.objects.from(target)
+		if object == nil then
+			greed.echo(`a {target.kind} can't be pinned: it has no id`)
+			return
+		end
+		M.pin(object.id)
+	end,
+})
+
 greed.command({
 	name = "context-add",
-	doc = "Pin the selection to the context, or the file when nothing is selected",
+	doc = "Pin the selection to the context, or the file when nothing is selected; elsewhere, what's under the cursor",
 	run = function(ctx)
 		local path = ctx.buffer:path()
 		if path == nil then
-			greed.echo("only text in files can be pinned")
+			-- What's under the cursor, or else the buffer itself.
+			local here = core.objects.at(ctx.view)[1]
+			M.pin(if here then here.id else `buffer:{ctx.buffer:id()}`)
 			return
 		end
 		local selection = ctx.view:selection()
@@ -317,12 +359,16 @@ greed.command({
 agent.tool({
 	name = "context_get",
 	description = "What the user pinned for you in the editor: selections, files, problems, "
-		.. "the changes in progress. Each item under a heading saying what it is",
+		.. "the changes in progress, objects (a pod, a shell block) with how they are now. "
+		.. "Each item under a heading saying what it is",
 	run = function()
 		local text = M.text()
 		return if text == "" then "(nothing is pinned)" else text
 	end,
 })
+
+-- The agent pane sends it with every message.
+agent.context.pins(M.text)
 
 -- Back from the last session.
 local function restore()

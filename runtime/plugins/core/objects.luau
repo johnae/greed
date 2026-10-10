@@ -173,6 +173,26 @@ function M.inspect(object: Object): { [string]: any }
 	return { value = value }
 end
 
+--- `value` as plain data JSON can carry, for agents and models: the
+--- editor's handles and functions as text, tables some levels deep.
+function M.plain(value: any, depth: number?): any
+	local kind = type(value)
+	if kind == "string" or kind == "number" or kind == "boolean" or value == nil then
+		return value
+	elseif kind ~= "table" then
+		return tostring(value)
+	end
+	local left = (depth or 3) - 1
+	if left < 0 then
+		return "…"
+	end
+	local out = {}
+	for key, item in value do
+		out[tostring(key)] = M.plain(item, left)
+	end
+	return out
+end
+
 --- The objects `object` relates to, by name.
 function M.related(object: Object): { [string]: { Object } }
 	local kind = kind_named(object.kind)

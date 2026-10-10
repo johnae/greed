@@ -240,13 +240,16 @@ actions.action({
 
 An action that is an existing command has a short form:
 `actions.command("text", "search", "search-selection", "Search for it")`
-(kind, name, command, doc).
+(kind, name, command, doc). An action of kind `"*"` is offered for every
+kind, after a kind's own, like the context's `pin to context`.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
-`problem`, `change`, `button`, `text` (the selection) and `command`, and
-the shell's rows add `process`, `container`, `pod`, `deployment` and
-`shell-block`, so a plugin can add actions to those too. A plugin's finders and actions go
-when it's unloaded.
+`problem`, `change` (a changed part of a file), `button`, `text` (the
+selection) and `command`, and the shell adds `shell-block`, `row`,
+`cell`, `process`, `container`, `image`, `pod`, `deployment`,
+`kubernetes`, `changed-file`, `commit` and `revision`, so a plugin can add
+actions to those too. A plugin's finders and actions go when it's
+unloaded.
 
 ### Objects
 

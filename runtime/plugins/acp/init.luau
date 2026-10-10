@@ -958,6 +958,7 @@ greed.command({
 		local context = if greed.option.get("agent-editor-context") == true
 			then agent_context.describe(s.root)
 			else nil
+		s.pinned = agent_context.pinned_text()
 		local ok, err = session.prompt(s, text, context)
 		if not ok then
 			greed.echo(err :: string)

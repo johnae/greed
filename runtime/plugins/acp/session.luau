@@ -99,6 +99,12 @@ export type Session = {
 	driver: Driver?,
 	--- The editor context the last prompt took, so the same isn't sent again.
 	context_sent: string?,
+	--- What the user has pinned (agent.context.pinned_text), set as a
+	--- prompt is sent, and what the last prompt took: each part of the
+	--- context goes only when it changed, so a pinned file doesn't go
+	--- again with every move of the cursor.
+	pinned: string?,
+	pinned_sent: string?,
 	--- When the turn going on now started, on `greed.now()`'s clock.
 	since: number?,
 	--- How many tokens of the model's context the conversation takes, and
@@ -882,14 +888,20 @@ function M.start_driven(opts: {
 	}
 end
 
---- `context` (what you have on screen) to send with a prompt now, or nil
---- when it's what the last prompt took. Call it once the prompt is going.
+--- What to send with a prompt now: `context` (what you have on screen) and
+--- what's pinned (`session.pinned`), each only when it isn't what the last
+--- prompt took; nil for neither. Call it once the prompt is going.
 function M.fresh_context(session: Session, context: string?): string?
-	if context == nil or context == session.context_sent then
-		return nil
+	local parts: { string } = {}
+	if context and context ~= session.context_sent then
+		session.context_sent = context
+		table.insert(parts, context)
 	end
-	session.context_sent = context
-	return context
+	if session.pinned ~= session.pinned_sent then
+		session.pinned_sent = session.pinned
+		table.insert(parts, agent.context.pinned_block(session.pinned))
+	end
+	return if #parts > 0 then table.concat(parts, "\n\n") else nil
 end
 
 --- Works out again what keeps `session` from working now, like its model

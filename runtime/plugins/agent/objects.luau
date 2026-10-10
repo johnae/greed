@@ -19,26 +19,6 @@ local MOST = 500
 -- How many related objects `inspect` gives under each name.
 local RELATED = 20
 
--- `value` as plain data an agent can read: the editor's handles and
--- functions as text, tables some levels deep.
-local function plain(value: any, depth: number?): any
-	local kind = type(value)
-	if kind == "string" or kind == "number" or kind == "boolean" or value == nil then
-		return value
-	elseif kind ~= "table" then
-		return tostring(value)
-	end
-	local left = (depth or 3) - 1
-	if left < 0 then
-		return "…"
-	end
-	local out = {}
-	for key, item in value do
-		out[tostring(key)] = plain(item, left)
-	end
-	return out
-end
-
 local function brief(found: core.Object): { [string]: any }
 	return { id = found.id, kind = found.kind, label = found.label }
 end
@@ -132,7 +112,7 @@ agent.tool({
 			id = found.id,
 			kind = found.kind,
 			label = found.label,
-			state = plain(objects.inspect(found)),
+			state = objects.plain(objects.inspect(found)),
 			related = related(found, nil, RELATED),
 			actions = greed.json.array(actions),
 		}
@@ -168,7 +148,7 @@ agent.tool({
 		return {
 			ran = args.action,
 			on = found.id,
-			state = if after then plain(objects.inspect(after)) else nil,
+			state = if after then objects.plain(objects.inspect(after)) else nil,
 			gone = after == nil,
 		}
 	end,
