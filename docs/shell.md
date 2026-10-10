@@ -550,7 +550,10 @@ in every shell, this project's first, with each one's output beside it:
 
 Some tables' rows are things: an `ls -l` row is a file or a folder, a
 `ps` row a process, a `kubectl get` row a pod, deployment or other
-kubernetes object, a `docker ps` row a container. The status says so
+kubernetes object, a `docker ps` row a container. Some are known by their
+columns, whatever printed them: a row with a `PID` (from `ps` on any
+system, `lsof`, `docker top`) is a process, and rows with a name and a
+type of `file` or `dir`, as nu's `ls` gives, are files. The status says so
 (`table · 5 pods`). On such a row, `space .` lists what you can do with
 it, the same actions that kind of thing has anywhere in Greed, and
 `enter` does the usual one: a file opens, a folder becomes the shell's

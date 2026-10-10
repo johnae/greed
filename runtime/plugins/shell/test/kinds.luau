@@ -362,3 +362,38 @@ test("the rows of a table no kind reads are plain rows of their block", function
 	on(sh, fruit, "pear")
 	assert(string.find(ids(core.objects.at(greed.view())), `{prefix}.2`, 1, true) ~= nil)
 end)
+
+test("a PID column makes rows processes, whatever printed them", function(t)
+	local sh = fake(t, "staging")
+	greed.fs.write(
+		`{sh.cwd}/open.txt`,
+		"COMMAND    PID USER   FD   TYPE NAME\nnginx     812 root    6u  IPv4 *:http\nsshd      977 root    3u  IPv4 *:ssh\n"
+	)
+	local open = ran(t, sh, "cat open.txt")
+	assert(open.called and open.called.many == "processes", "read by its columns")
+	local nginx = assert(core.objects.get("process:812"))
+	assert(nginx.label == "812 nginx" and core.objects.inspect(nginx).row.FD == "6u", nginx.label)
+	-- nu's ps names its columns in lower case.
+	greed.fs.write(`{sh.cwd}/ps.json`, '[{"pid": 42, "ppid": 1, "name": "fish", "cpu": 0.1}]')
+	ran(t, sh, "cat ps.json")
+	assert(assert(core.objects.get("process:42")).label == "42 fish")
+end)
+
+test("name and type columns of files and folders make rows files, as nu's ls prints", function(t)
+	local sh = fake(t, "staging")
+	greed.fs.write(
+		`{sh.cwd}/ls.json`,
+		'[{"name": "notes.txt", "type": "file", "size": 6}, {"name": "src", "type": "dir", "size": 0}]'
+	)
+	local listing = ran(t, sh, "cat ls.json")
+	assert(listing.called and listing.called.many == "files")
+	local ids_of = ids(
+		core.objects.related(
+			assert(core.objects.get(`shell-block:{sh.buffer:id()}.{listing.number}`))
+		).rows or {}
+	)
+	assert(ids_of == `file:{sh.cwd}/notes.txt,folder:{sh.cwd}/src`, ids_of)
+	-- A type that isn't a file's (lsblk's disks) isn't read as files.
+	greed.fs.write(`{sh.cwd}/disks.txt`, "NAME   TYPE  SIZE\nsda    disk  1T\nsda1   part  512M\n")
+	assert(ran(t, sh, "cat disks.txt").called == nil, "not files")
+end)

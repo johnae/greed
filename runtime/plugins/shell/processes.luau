@@ -1,4 +1,5 @@
--- `ps`'s rows as processes, by their PID.
+-- Rows with a PID column as processes, by their PID: `ps` on Linux and
+-- macOS, nu's `ps`, `lsof`, `docker top`.
 
 local state = require("./state")
 local tables = require("./tables")
@@ -8,18 +9,17 @@ type Block = state.Block
 
 kinds.kind({
 	name = "processes",
-	match = "ps",
-	capture = function(block: Block): any
-		local tbl = block.table
-		return if tbl and tables.column(tbl, "PID") then true else nil
-	end,
+	columns = { "PID" },
 	row = function(row: { [string]: string }, _captured: any, block: Block): kinds.Thing?
 		local tbl = assert(block.table)
 		local pid = row[tables.column(tbl, "PID") or "PID"]
 		if pid == nil or not string.match(pid, "^%d+$") then
 			return nil
 		end
-		local command = row.COMMAND or row.CMD or ""
+		local named = tables.column(tbl, "COMMAND")
+			or tables.column(tbl, "CMD")
+			or tables.column(tbl, "name")
+		local command = if named then row[named] or "" else ""
 		return {
 			kind = "process",
 			label = `{pid} {command}`,

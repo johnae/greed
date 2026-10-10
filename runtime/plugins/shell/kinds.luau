@@ -37,7 +37,11 @@ export type Kind = {
 	name: string,
 	--- The commands whose rows it reads: a program's name ("kubectl"), or a
 	--- Luau pattern for the command line ("^docker ps").
-	match: string,
+	match: string?,
+	--- The columns a table must have for it to read the rows, in any case
+	--- ("PID"). Without `match`, whatever printed them: kinds naming the
+	--- command are asked first.
+	columns: { string }?,
 	--- What to keep from `block` as it finishes, for `row`: what the rows
 	--- can't say themselves, like the context a command ran against. Nil
 	--- when the block's rows aren't this kind's after all.
@@ -68,8 +72,8 @@ function M.streams(line: string): boolean
 		return false
 	end
 	for _, kind in kinds do
-		local streams = kind.streams
-		if streams and tables.matches(kind.match, line) then
+		local streams, match = kind.streams, kind.match
+		if streams and match and tables.matches(match, line) then
 			local ok, yes = pcall(streams, words)
 			if ok and yes then
 				return true
@@ -79,8 +83,9 @@ function M.streams(line: string): boolean
 	return false
 end
 
---- Says what the rows of the commands `kind.match` names are. The latest
---- added is asked first. It goes when the plugin that added it does.
+--- Says what the rows of the commands `kind.match` names are, or of
+--- tables with `kind.columns`. The latest added is asked first. It goes
+--- when the plugin that added it does.
 function M.kind(kind: Kind)
 	greed.plugin.tie(core.registry.put(kinds, kind, function(other: Kind): boolean
 		return other.name == kind.name
@@ -98,29 +103,53 @@ end
 type Read = { kind: Kind, captured: any }
 local read: { [Block]: Read } = setmetatable({}, { __mode = "k" }) :: any
 
+-- Whether `kind` reads the rows of `block`'s table `tbl`: on the pass by
+-- command, its `match` names the command; on the other, it has columns and
+-- no `match`. Either way the table has its columns.
+local function reads(kind: Kind, block: Block, tbl: tables.Table, by_command: boolean): boolean
+	local match = kind.match
+	local columns: { string } = kind.columns or {}
+	if by_command then
+		if match == nil or not tables.matches(match, M.command_line(block)) then
+			return false
+		end
+	elseif match ~= nil or #columns == 0 then
+		return false
+	end
+	for _, column in columns do
+		if tables.column(tbl, column) == nil then
+			return false
+		end
+	end
+	return true
+end
+
 --- Works out what `block`'s rows are, as it finishes, or each time a live
---- block shows new output: the first kind whose `match` names its command
---- and whose `capture` keeps something.
+--- block shows new output: the first kind that reads them and whose
+--- `capture` keeps something, those naming the command first.
 function M.finished(shell: Shell, block: Block)
 	read[block] = nil
 	block.called = nil
-	if block.table == nil then
+	local tbl = block.table
+	if tbl == nil then
 		return
 	end
-	for i = #kinds, 1, -1 do
-		local kind = kinds[i]
-		if tables.matches(kind.match, M.command_line(block)) then
-			local ok, captured = true, true
-			if kind.capture then
-				ok, captured = pcall(kind.capture, block, shell)
-			end
-			if ok and captured ~= nil then
-				read[block] = { kind = kind, captured = captured }
-				block.called = M.called(block)
-				if block.called then
-					log.draw_block(shell, block)
+	for _, by_command in { true, false } do
+		for i = #kinds, 1, -1 do
+			local kind = kinds[i]
+			if reads(kind, block, tbl, by_command) then
+				local ok, captured = true, true
+				if kind.capture then
+					ok, captured = pcall(kind.capture, block, shell)
 				end
-				return
+				if ok and captured ~= nil then
+					read[block] = { kind = kind, captured = captured }
+					block.called = M.called(block)
+					if block.called then
+						log.draw_block(shell, block)
+					end
+					return
+				end
 			end
 		end
 	end
@@ -542,6 +571,39 @@ M.kind({
 			label = name,
 			value = core.project.clean(`{dir}/{name}`),
 		}
+	end,
+	called = function(): (string, string)
+		return "file", "files"
+	end,
+})
+
+-- The types a listing gives files and folders, as nu's `ls` does: what
+-- each is, by its type.
+local FILE_TYPES: { [string]: string } = { file = "file", dir = "folder", symlink = "file" }
+
+-- Rows with a name and a type that are all files and folders, as nu's `ls`
+-- prints them, are those, by their names from the folder the block ran in.
+M.kind({
+	name = "files",
+	columns = { "name", "type" },
+	capture = function(block: Block): any
+		local tbl = assert(block.table)
+		local column = assert(tables.column(tbl, "type"))
+		for _, row in tbl.rows do
+			if FILE_TYPES[row[column]] == nil then
+				return nil
+			end
+		end
+		return block.cwd
+	end,
+	row = function(row: { [string]: string }, dir: any, block: Block): Thing?
+		local tbl = assert(block.table)
+		local name = row[tables.column(tbl, "name") or "name"]
+		local kind = FILE_TYPES[row[tables.column(tbl, "type") or "type"]]
+		if name == nil or name == "" or kind == nil then
+			return nil
+		end
+		return { kind = kind, label = name, value = core.project.resolve(name, dir) }
 	end,
 	called = function(): (string, string)
 		return "file", "files"

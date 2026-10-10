@@ -1407,6 +1407,11 @@ Neither can replace the shell's own, and both go when the plugin does.
 `shell.kind(spec)` says what the rows of some commands' tables are, so
 they're [things to act on](shell.md#rows-you-can-act-on) like any other
 (`core.actions`). `spec.match` names the commands as `shell.parser` does.
+`spec.columns` lists columns a table must have (in any case); without
+`match`, the kind reads any table with them, whatever printed it, after
+the kinds naming the command had their turn. A `PID` column is how `ps`
+on Linux and macOS, nu's `ps`, `lsof` and `docker top` all become
+processes.
 `spec.capture(block, shell)` runs once as the block finishes and keeps
 what the rows can't say themselves, like the context a command ran
 against; returning nil says the block isn't this kind's after all.
