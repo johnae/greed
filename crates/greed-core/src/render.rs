@@ -1430,9 +1430,37 @@ impl<M: Measure> Renderer<M> {
             actions: Vec::new(),
         }
     }
+    /// Status line segments this wide or narrower, like the mode, are left whole
+    /// while longer ones give way.
+    const SHORT: usize = 12;
+
+    /// Makes `spans` `excess` cells narrower, as far as their long ones
+    /// (wider than [`Self::SHORT`], and not a message, which is read from
+    /// its start) go: the widest keeps only its end, down to the next
+    /// widest, so they give way in turn.
+    fn give_way(&self, spans: &mut [Span], mut excess: usize) {
+        while excess > 0 {
+            let mut sizes: Vec<(usize, usize)> = (spans.iter().enumerate())
+                .map(|(i, s)| (i, self.text_width(&s.text)))
+                .filter(|&(i, w)| w > Self::SHORT && !spans[i].tags.contains(&Tag::MESSAGE))
+                .collect();
+            sizes.sort_by_key(|&(_, w)| std::cmp::Reverse(w));
+            let Some(&(i, w)) = sizes.first() else {
+                return;
+            };
+            let next = sizes.get(1).map_or(Self::SHORT, |&(_, w)| w);
+            let room = w
+                .saturating_sub(excess)
+                .max(next)
+                .min(w - 1)
+                .max(Self::SHORT);
+            spans[i].text = self.keep_end(&spans[i].text, room);
+            excess = excess.saturating_sub(w - self.text_width(&spans[i].text));
+        }
+    }
 
     /// Lays out a status line across `width` cells, on screen row `y`. If
-    /// it doesn't fit, the last segment on the left keeps only its end.
+    /// it doesn't fit, the widest segments keep only their ends.
     fn status_row(&self, status: &StatusLine, width: usize, y: u16) -> Row {
         let widths = |spans: &[Span]| {
             spans
@@ -1441,19 +1469,34 @@ impl<M: Measure> Renderer<M> {
                 .sum::<usize>()
         };
         let mut left = status.left.clone();
-        let right = widths(&status.right);
-        if let Some((last, rest)) = left.split_last_mut() {
-            // Leave at least one space between the two sides.
-            let room = width.saturating_sub(widths(rest) + right + 1);
+        let mut right = status.right.clone();
+        // Leave at least one space between the two sides. While it doesn't
+        // fit, long segments keep only their ends: the right side's first
+        // (what language, style and machine), then the left's, so the file
+        // name and a message stay longest; short ones, like the mode, stay
+        // whole.
+        let over = |left: &[Span], right: &[Span]| {
+            (widths(left) + widths(right) + 1).saturating_sub(width)
+        };
+        let excess = over(&left, &right);
+        self.give_way(&mut right, excess);
+        let excess = over(&left, &right);
+        self.give_way(&mut left, excess);
+        // Still too wide, the last segment on the left gives way further.
+        let excess = over(&left, &right);
+        if let Some(last) =
+            (left.last_mut()).filter(|last| excess > 0 && !last.tags.contains(&Tag::MESSAGE))
+        {
+            let room = self.text_width(&last.text).saturating_sub(excess);
             last.text = self.keep_end(&last.text, room);
         }
-        let padding = width.saturating_sub(widths(&left) + right);
+        let padding = width.saturating_sub(widths(&left) + widths(&right));
 
         let gap = Span::new(" ".repeat(padding), smallvec![Tag::STATUS]);
         let action = |i: usize| status.actions.get(i).cloned().flatten();
         let spans = (left.iter().enumerate().map(|(i, s)| (s, action(i))))
             .chain([(&gap, None)])
-            .chain((status.right.iter().enumerate()).map(|(i, s)| (s, action(left.len() + i))));
+            .chain((right.iter().enumerate()).map(|(i, s)| (s, action(left.len() + i))));
         let mut row = Row::default();
         let mut found = self.status_actions.borrow_mut();
         found.clear();

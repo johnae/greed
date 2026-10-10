@@ -454,3 +454,17 @@ test(":messages shows the last messages whole, stack traces too", function(t)
 	local text = greed.view():buffer():text()
 	assert(string.find(text, "saved\n\nit failed\nstack traceback:\n\tsomewhere", 1, true), text)
 end)
+
+test("a long path gives way, keeping its end, [+] and the right side", function(t)
+	local dir = t:tempdir({
+		["src/components/forms/inputs/validation/rules/required_field_validator.rs"] = "x\n",
+	})
+	greed.open(`{dir}/src/components/forms/inputs/validation/rules/required_field_validator.rs`)
+	greed.view():buffer():edit(function(e)
+		e:insert(0, "y")
+	end)
+	local screen = t:screen(80, 10)
+	local status = screen[#screen]
+	assert(string.find(status, "dator.rs [+]", 1, true), status)
+	assert(string.find(status, "1:%d"), status)
+end)

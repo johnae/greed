@@ -210,7 +210,7 @@ M.add("left", "file", function(ctx)
 	-- they were given, with their kind ("terminal: nu ~/src"), or as the
 	-- tab line has them ("untitled").
 	local name = if path
-		then core.project.relative(path)
+		then core.project.short(path)
 		elseif given and buffer:kind() ~= "file" then `{buffer:kind()}: {given}`
 		else buffer:title()
 	-- Only a file's changes are something to save; a shell's or a
