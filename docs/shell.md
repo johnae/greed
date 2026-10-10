@@ -192,6 +192,13 @@ line still runs in it, and its block says `cd` and `export` in it don't
 carry over. Your shell's startup files aren't read for each line, so its
 functions aren't there unless you `:set shell-fallback-rc true`.
 
+With nu, a table a line gives back (`ls`, `ps`, `open data.csv | where
+size > 10`) is data in the block as well as drawn by nu: its rows are
+things like any table's (see [Rows you can act on](#rows-you-can-act-on)),
+and the stages work on it with its real values: sizes in bytes, dates
+in full. Its first 10000 rows are kept that way. nu numbers each row so
+the shell knows which line is which.
+
 Your aliases are. The shell asks your shell for them once, with its
 startup files, and a line starting with one runs what it stands for, as
 in a terminal; the block shows what you typed. The shell's own commands

@@ -168,3 +168,30 @@ test("an error names the line of what you typed, and the shell it ran in", funct
 	assert(not string.find(block.output, "greed-shell", 1, true), block.output)
 	greed.option.set("shell-fallback", "")
 end)
+
+test("a table a nu line gives back is data: its rows things, on their lines", function(t)
+	if greed.which("nu") == nil then
+		return
+	end
+	greed.option.set("shell-fallback", "nu")
+	local dir = t:tempdir({ ["notes.txt"] = "hello\n", ["src/main.rs"] = "" })
+	local sh = open(t, dir)
+	local block = run(t, sh, "ls | sort-by name")
+	local tbl = assert(block.table, block.output)
+	assert(block.called and block.called.many == "files", block.output)
+	assert(tbl.rows[1].name == "notes.txt" and tbl.rows[2].type == "dir")
+	assert(type(block.value) == "table" and block.value[1].name == "notes.txt")
+	-- Each row is an object that says the line it's on.
+	local objects = require("@core").objects
+	local here = assert(objects.get(`shell-block:{sh.buffer:id()}.{block.number}`))
+	local rows = assert(objects.related(here).rows)
+	local folder: any = assert(rows[2])
+	assert(folder.id == `folder:{dir}/src`, folder.id)
+	local line = sh.buffer:line_of(assert(folder.from))
+	local text =
+		string.sub(sh.buffer:text(), sh.buffer:line_start(line) + 1, sh.buffer:line_end(line))
+	assert(string.find(text, "src", 1, true) and string.find(text, "1", 1, true), text)
+	-- What isn't a table prints as it did, and keeps nothing.
+	local said = run(t, sh, "echo hi | str upcase")
+	assert(said.data == nil and string.find(said.output, "HI", 1, true), said.output)
+end)

@@ -64,17 +64,25 @@ exit $__greed_status]]
 
 -- nu runs the line inside a command that keeps its environment changes,
 -- and prints what it gives back. An external program's exit code is lost
--- once its output is printed, so only errors make a nu line fail.
+-- once its output is printed, so only errors make a nu line fail. A table
+-- it gives back is also saved as JSON (its first 10000 rows, so a stream
+-- that doesn't end can't fill memory), and printed with its row numbers,
+-- which say which row each line of the drawn table is.
 local NU = [[
 def __greed_env [] {
 	if ($env.GREED_BIN? | is-not-empty) { ^$env.GREED_BIN --env0 } else { ^env -0 }
 }
+def __greed_keep [] {
+	let value = $in
+	if (($value | describe) starts-with "table") { $value | to json -r | save -f r#'DIR/value'# }
+}
 __greed_env | save -f --raw r#'DIR/before'#
+$env.config.table.index_mode = "always"
 def --env __greed_run [] {
 LINE
 }
 let __greed_code = try {
-	__greed_run | print
+	__greed_run | tee { try { first 10000 | __greed_keep } } | print
 	$env.LAST_EXIT_CODE? | default 0 | into int
 } catch {|e|
 	let code = ($env.LAST_EXIT_CODE? | default 0 | into int)
@@ -243,6 +251,11 @@ function M.collect(block: Block, run: Run): (string?, { [string]: string | false
 	local cwd = greed.fs.read(`{dir}/cwd`)
 	local moved = if cwd then string.match(cwd, "^(.-)\n?$") else nil
 	local changed = M.changes(dir)
+	local saved = greed.fs.read(`{dir}/value`)
+	if saved then
+		local ok, value = pcall(greed.json.decode, saved)
+		block.data = if ok then value else nil
+	end
 	greed.fs.remove(dir, { recursive = true })
 	if moved and moved ~= "" and moved ~= block.cwd then
 		block.cwd_after = moved

@@ -693,3 +693,36 @@ test("a filter ignores case unless shell-filter-search-case says otherwise", fun
 	assert(not tables.has("Running", "running"))
 	greed.option.set("shell-filter-search-case", "ignore")
 end)
+
+-- nu 0.115's `ls`, drawn as a stream comes: in two parts, numbered on.
+local NU_LS = [[
+╭───┬───────────┬──────┬────────╮
+│ # │   name    │ type │  size  │
+├───┼───────────┼──────┼────────┤
+│ 0 │ notes.txt │ file │    6 B │
+│ 1 │ src       │ dir  │ 4.0 kB │
+╰───┴───────────┴──────┴────────╯
+╭───┬───────────┬──────┬────────╮
+│ 2 │ todo.md   │ file │   12 B │
+╰───┴───────────┴──────┴────────╯
+]]
+
+test("a nu table's rows are on the lines its row numbers start", function()
+	local value = {
+		{ name = "notes.txt", type = "file", size = 6 },
+		{ name = "src", type = "dir", size = 4096 },
+		{ name = "todo.md", type = "file", size = 12 },
+	}
+	local tbl = assert(tables.drawn(value, NU_LS))
+	assert(tbl.rows[2].name == "src" and tbl.rows[2].size == "4096")
+	assert(table.concat(assert(tbl.at), ",") == "4,5,8", table.concat(tbl.at or {}, ","))
+	-- With the numbers switched off, or a basic border, still a table.
+	local plain = assert(tables.drawn(value, "name  type\nnotes.txt  file\n"))
+	assert(plain.at == nil and #plain.rows == 3)
+	local basic = assert(tables.drawn(value, "| 0 | notes.txt |\n| 1 | src |\n| 2 | todo.md |\n"))
+	assert(table.concat(assert(basic.at), ",") == "1,2,3")
+	-- No borders at all, and fewer rows saved than drawn.
+	local none = assert(tables.drawn({ value[1] }, "#  name\n0  notes.txt\n1  src\n"))
+	assert(table.concat(assert(none.at), ",") == "2")
+	assert(tables.drawn({ "not", "objects" }, "0 not\n1 objects\n") == nil)
+end)

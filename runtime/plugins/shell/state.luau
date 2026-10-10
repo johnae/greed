@@ -71,6 +71,9 @@ export type Block = {
 	note: string?,
 	--- The output read as JSON, when it's an object or an array.
 	value: any?,
+	--- What the line gave back as data besides what it printed: the table
+	--- a nu line gave back, as JSON has it.
+	data: any?,
 	--- The output read as a table, when it's one: aligned columns under a
 	--- header (kubectl, docker, ps), `ls -l`, or a JSON array of objects.
 	table: tables.Table?,

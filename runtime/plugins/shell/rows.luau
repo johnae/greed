@@ -224,7 +224,11 @@ function M.row_at(shell: Shell, block: Block, pos: number): number?
 		return nil
 	end
 	local view = block.shown
-	local first = if view and drawn[block] then 1 else tbl.first
+	local redrawn = view and drawn[block]
+	if tbl.at and not redrawn then
+		return table.find(tbl.at, line)
+	end
+	local first = if redrawn then 1 else tbl.first
 	if first == nil then
 		return nil
 	end
@@ -244,14 +248,24 @@ function M.row_line(shell: Shell, block: Block, index: number): number?
 		return nil
 	end
 	local view = block.shown
-	local first = if view and drawn[block] then 1 else tbl.first
-	local shown = if view then table.find(view.rows, index) else index
-	if first == nil or shown == nil then
-		return nil
-	end
 	local buffer = shell.buffer
-	local header = if tbl.header ~= false then 1 else 0
-	local line = buffer:line_of(from) + first + header + shown - 2
+	local redrawn = view and drawn[block]
+	local line: number
+	if tbl.at and not redrawn then
+		local found = tbl.at[index]
+		if found == nil then
+			return nil
+		end
+		line = buffer:line_of(from) + found - 1
+	else
+		local first = if redrawn then 1 else tbl.first
+		local shown = if view then table.find(view.rows, index) else index
+		if first == nil or shown == nil then
+			return nil
+		end
+		local header = if tbl.header ~= false then 1 else 0
+		line = buffer:line_of(from) + first + header + shown - 2
+	end
 	return if line <= buffer:line_of(to) then line else nil
 end
 

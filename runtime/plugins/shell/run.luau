@@ -289,11 +289,12 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 		pending[block.uid] = nil
 	end
 	if not block.truncated then
-		block.value = tables.json(block.stdout)
+		block.value = tables.json(block.stdout) or block.data
 		-- A stage's block has its table already; a table some lines of
 		-- which aren't shown is left alone.
 		if block.table == nil and block.omitted == 0 then
-			block.table = tables.from_value(block.value)
+			block.table = tables.drawn(block.data, plain(block.stdout))
+				or tables.from_value(block.value)
 				or tables.parse(plain(block.stdout), block.command, block)
 			if block.table == nil and block.stdout ~= "" then
 				from_jc(shell, block)

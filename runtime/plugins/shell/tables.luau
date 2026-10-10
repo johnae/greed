@@ -31,6 +31,9 @@ export type Table = {
 	starts: { number }?,
 	first: number?,
 	header: boolean?,
+	--- The line of the output (from 1) each row is on, when they aren't
+	--- all after `first`, as in nu's tables, drawn with borders.
+	at: { number }?,
 }
 
 -- Commands whose header isn't in capitals, but whose output is a table.
@@ -654,6 +657,38 @@ function M.from_value(value: any): Table?
 		table.insert(rows, row)
 	end
 	return { columns = columns, rows = rows }
+end
+
+-- What's left of `line` after a border at its start, as nu draws one.
+local function unbordered(line: string): string
+	for _, border in { "│", "┃", "|" } do
+		local rest = string.match(line, "^%s*" .. border .. "(.*)$")
+		if rest then
+			return rest
+		end
+	end
+	return line
+end
+
+--- The table `value` (an array of objects) is, drawn as `text` by a shell
+--- that numbers its rows from 0 at the start of each, as nu does: each
+--- row's line is the one starting with its number, in order (`at`). Nil
+--- when `value` isn't a table; without the lines when the numbers aren't
+--- all there, as with the numbers switched off.
+function M.drawn(value: any, text: string): Table?
+	local tbl = M.from_value(value)
+	if tbl == nil then
+		return nil
+	end
+	local at: { number } = {}
+	for i, line in string.split(text, "\n") do
+		local number = tonumber(string.match(unbordered(line), "^%s*(%d+)%s"))
+		if number == #at and #at < #tbl.rows then
+			table.insert(at, i)
+		end
+	end
+	tbl.at = if #at == #tbl.rows then at else nil
+	return tbl
 end
 
 --- `text` read as JSON for a table (`$3 | from json`): an array of objects,
