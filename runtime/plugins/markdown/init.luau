@@ -566,9 +566,11 @@ local function redraw(buffer: greed.Buffer?)
 	redraw_questions(buffer)
 end
 
---- Draws every Markdown buffer again.
-function M.refresh()
-	redraw()
+--- Draws `buffer`, or every Markdown buffer, again: for a page a plugin
+--- made and showed in a view that was already there, which is drawn
+--- otherwise only once the view changes size.
+function M.refresh(buffer: greed.Buffer?)
+	redraw(buffer)
 end
 
 --- Lets `claim` say, for each buffer, which parts it draws its own way;

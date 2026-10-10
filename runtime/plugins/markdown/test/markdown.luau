@@ -686,3 +686,27 @@ test("a part can name several answers, and shows for any of them", function(t)
 	hidden = markdown.questions.state(buffer)
 	assert(hidden[7] and not hidden[10], "vscode is modeless")
 end)
+
+test("hidden parts right after one another are each folded away", function(t)
+	local rows = shown(
+		t,
+		table.concat({
+			"Style? <!-- id=style -->",
+			"",
+			"- (x) vim",
+			"- ( ) helix",
+			"- ( ) vscode",
+			"<!-- if style=helix -->",
+			"helix keys",
+			"<!-- end -->",
+			"<!-- if style=vscode -->",
+			"vscode keys",
+			"<!-- end -->",
+			"after",
+		}, "\n")
+	)
+	local text = table.concat(rows, "\n")
+	assert(not string.find(text, "helix keys", 1, true), text)
+	assert(not string.find(text, "vscode keys", 1, true), text)
+	assert(string.find(text, "after", 1, true), text)
+end)

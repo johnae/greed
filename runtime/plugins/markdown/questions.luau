@@ -163,11 +163,22 @@ function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number
 		end
 	end
 	local hidden = M.state(buffer)
-	for _, section in M.sections(buffer) do
+	local sections = M.sections(buffer)
+	for _, section in sections do
 		if section.open >= first and section.open <= last and hidden[section.open] then
-			local above = hidden[section.open - 1]
 			-- Inside a hidden part, the outer one's fold covers it.
-			if not above or section.open == 0 then
+			local inside = false
+			for _, outer in sections do
+				if
+					outer.open < section.open
+					and outer.close >= section.close
+					and hidden[outer.open]
+				then
+					inside = true
+					break
+				end
+			end
+			if not inside then
 				table.insert(out, {
 					from = s.starts[section.open + 1],
 					to = buffer:line_end(section.close),
