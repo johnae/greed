@@ -265,6 +265,10 @@ fn host(text: &str, path: Option<PathBuf>) -> Host {
     let host = Host::new(editor).unwrap();
     host.set_lsp_launcher(Box::new(|_, _| Ok(None)));
     host.load_dirs(&default_plugins()).unwrap();
+    // A measurement isn't a first start to set up: the page would take the
+    // first client's keys.
+    host.eval("require('@greed').option.set('setup-first-start', false)")
+        .unwrap();
     host.announce_open_files().unwrap();
     host
 }
