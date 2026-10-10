@@ -362,14 +362,11 @@ test(
 		assert(terminal.cwd(buffer) == dir, terminal.cwd(buffer))
 		-- Said rather than shown: a long folder, like macOS's temporary ones,
 		-- wraps in the terminal.
-		t:run(
-			"terminal",
-			{
-				"sh",
-				"-c",
-				`[ "$(pwd -P)" = "$(cd '{dir}' && pwd -P)" ] && echo started-there; sleep 5`,
-			}
-		)
+		t:run("terminal", {
+			"sh",
+			"-c",
+			`[ "$(pwd -P)" = "$(cd '{dir}' && pwd -P)" ] && echo started-there; sleep 5`,
+		})
 		t:keys("esc esc")
 		shows(t, "started-there")
 		t:run("terminal-close")
