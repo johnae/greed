@@ -547,11 +547,12 @@ end
 --- Adds the action `name` to things of `kind`: it runs the command
 --- `command` makes from the thing's value (or a template whose `{field}`s
 --- are its fields, quoted) as a block in the shell the thing is in, or the
---- project's first. It goes when the plugin that added it does.
+--- project's first. A function giving nil runs nothing, having said why.
+--- It goes when the plugin that added it does.
 function M.command(
 	kind: string,
 	name: string,
-	command: string | (value: any) -> string,
+	command: string | (value: any) -> string?,
 	opts: CommandOptions
 )
 	core.actions.action({
@@ -559,9 +560,16 @@ function M.command(
 		name = name,
 		doc = opts.doc,
 		run = function(target)
-			local line = if type(command) == "string"
-				then fill(command, target.value)
-				else command(target.value)
+			local line: string
+			if type(command) == "string" then
+				line = fill(command, target.value)
+			else
+				local made = command(target.value)
+				if made == nil then
+					return
+				end
+				line = made
+			end
 			local view = greed.view()
 			local shell = state.of(view:buffer()) or state.list(greed.project.current().id)[1]
 			local runs = runner

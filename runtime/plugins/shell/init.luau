@@ -58,6 +58,7 @@ local peek = require("@self/peek")
 require("@self/kubernetes")
 require("@self/docker")
 require("@self/processes")
+require("@self/vcs")
 
 type Shell = state.Shell
 type Block = state.Block

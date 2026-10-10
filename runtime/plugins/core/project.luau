@@ -57,6 +57,19 @@ function M.inside(path: string, folder: string): boolean
 	return p == f or f == "/" or string.sub(p, 1, #f + 1) == f .. "/"
 end
 
+--- The nearest folder from `dir` up holding `marker` (a file or folder,
+--- like ".git"), if one does.
+function M.nearest(dir: string, marker: string): string?
+	local at: string? = M.clean(dir)
+	while at do
+		if greed.fs.stat(at .. "/" .. marker) then
+			return at
+		end
+		at = parent(at)
+	end
+	return nil
+end
+
 --- The root of the project `path` (a file or folder) is in: the nearest
 --- folder up holding a marker, or the folder itself when none does.
 --- Without a path, the current buffer's file is used, or else the shown

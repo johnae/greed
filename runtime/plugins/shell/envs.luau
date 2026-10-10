@@ -343,18 +343,6 @@ export PATH=$(__greed_join "${PATH-}${__greed_path:+:$__greed_path}")
 export XDG_DATA_DIRS=$(__greed_join "${XDG_DATA_DIRS-}${__greed_xdg:+:$__greed_xdg}")
 __greed_env > "$__greed_dir/after"]==]
 
--- The nearest folder from `dir` up holding `file`.
-local function nearest(dir: string, file: string): string?
-	local at: string? = dir
-	while at and at ~= "" do
-		if greed.fs.stat(`{at}/{file}`) then
-			return at
-		end
-		at = string.match(at, "^(.*)/[^/]*$")
-	end
-	return if greed.fs.stat(`/{file}`) then "/" else nil
-end
-
 -- Runs `argv` in `cwd` with `env` on top of the editor's, its input
 -- closed, and gives back its exit code, what it printed and its errors.
 local function run(
@@ -390,7 +378,7 @@ M.provider("devenv", {
 		if not yours() then
 			return nil, nil
 		end
-		local found = nearest(dir, "devenv.nix")
+		local found = core.project.nearest(dir, "devenv.nix")
 		if found == nil then
 			return nil, nil
 		end
@@ -482,7 +470,7 @@ end
 
 M.provider("direnv", {
 	root = function(dir: string, env: { [string]: string }): (string?, string?)
-		if not yours() or nearest(dir, ".envrc") == nil then
+		if not yours() or core.project.nearest(dir, ".envrc") == nil then
 			return nil, nil
 		end
 		local program = direnv(env.PATH)
