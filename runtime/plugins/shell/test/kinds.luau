@@ -397,3 +397,40 @@ test("name and type columns of files and folders make rows files, as nu's ls pri
 	greed.fs.write(`{sh.cwd}/disks.txt`, "NAME   TYPE  SIZE\nsda    disk  1T\nsda1   part  512M\n")
 	assert(ran(t, sh, "cat disks.txt").called == nil, "not files")
 end)
+
+test("a cell is an object to copy or filter by, and a plain row copies as text or JSON", function(t)
+	local sh = fake(t, "staging")
+	greed.fs.write(`{sh.cwd}/fruit.txt`, "NAME    COLOR\napple   red\npear    green\n")
+	local fruit = ran(t, sh, "cat fruit.txt")
+	on(sh, fruit, "green")
+	local here = core.objects.at(greed.view())
+	local cell = `cell:{sh.buffer:id()}.{fruit.number}.2.COLOR`
+	assert(here[1].id == cell and here[1].label == "COLOR: green", ids(here))
+	assert(here[2].id == `row:{sh.buffer:id()}.{fruit.number}.2`, ids(here))
+	local found = assert(core.objects.get(cell))
+	assert(assert(core.objects.related(found).row)[1].label == "pear")
+	assert(core.objects.act(found, "copy"))
+	assert(assert(greed.clipboard.get())[1] == "green")
+	assert(core.objects.act(found, "filter by this"))
+	assert(fruit.shown and fruit.shown.filter == "COLOR=green", "filtered")
+	assert(#fruit.shown.rows == 1 and fruit.shown.rows[1] == 2)
+	-- The row, as text and as JSON.
+	local row = here[2]
+	assert(core.objects.act(row, "copy"))
+	assert(assert(greed.clipboard.get())[1] == "pear\tgreen")
+	assert(core.objects.act(row, "copy as JSON"))
+	local copied = greed.json.decode(assert(greed.clipboard.get())[1])
+	assert(copied.NAME == "pear" and copied.COLOR == "green")
+end)
+
+test("filtering by a cell with spaces keeps the rows with its words", function(t)
+	local sh = fake(t, "staging")
+	ran(t, sh, "docker ps")
+	local status = ran(t, sh, "docker ps")
+	local cell = assert(core.objects.get(`cell:{sh.buffer:id()}.{status.number}.1.CONTAINER ID`))
+	assert(core.objects.act(cell, "filter by this"))
+	assert(
+		status.shown and status.shown.filter == "3f2a1b4c5d6e",
+		tostring(status.shown and status.shown.filter)
+	)
+end)

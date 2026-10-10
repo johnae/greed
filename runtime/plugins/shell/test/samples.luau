@@ -418,13 +418,13 @@ test("a pod's node and namespace are objects, with the actions kubernetes object
 	assert(core.objects.inspect(found).row == nil, "a node's state isn't the pod's row")
 	local described = act(t, sh, found, "describe")
 	assert(described == "kubectl describe nodes node-1 --context prod", described)
-	-- Under the cursor on its cell, the node comes before the pod.
+	-- Under the cursor on its cell, the node comes first, then the cell, then the pod.
 	local from = shell.log.output_range(sh, block)
 	assert(from, "a block with output")
 	local at = assert(string.find(sh.buffer:text(), "node-1", from + 1, true), "node-1")
 	greed.view():set_cursor(at - 1)
 	local here = core.objects.at(greed.view())
-	assert(here[1].id == node.id and here[2].id == pod.id, here[1].id)
+	assert(here[1].id == node.id and here[2].kind == "cell" and here[3].id == pod.id, here[1].id)
 end)
 
 test("a container's image is an object", function(t)

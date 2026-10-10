@@ -349,6 +349,20 @@ function M.cell_objects(shell: Shell, block: Block, index: number): { [string]: 
 	return out
 end
 
+--- The cell of row `index` of `block`'s table under `column` as an object,
+--- to copy or filter by: `cell:BUFFER.BLOCK.INDEX.COLUMN`.
+function M.cell_object(shell: Shell, block: Block, index: number, column: string): core.Object?
+	local tbl = block.table
+	local cells = if tbl then tbl.rows[index] else nil
+	local text = if cells then cells[column] else nil
+	if text == nil then
+		return nil
+	end
+	local id = `cell:{shell.buffer:id()}.{block.number}.{index}.{column}`
+	local value = { column = column, text = text }
+	return placed(shell, block, index, column, "cell", id, `{column}: {text}`, value)
+end
+
 --- Every row of `block`'s table as an object.
 function M.row_objects(shell: Shell, block: Block): { core.Object }
 	local out: { core.Object } = {}
@@ -478,8 +492,79 @@ core.objects.kind({
 	relations = row_relations,
 })
 
--- The row at the cursor, and before it the thing the cell under the
--- cursor is, when it's one.
+core.objects.kind({
+	name = "cell",
+	doc = "A cell of a table a shell block printed: its column and what's in it",
+	get = function(key)
+		local buffer, number, index, column = string.match(key, "^(%d+)%.(%d+)%.(%d+)%.(.+)$")
+		for _, shell in state.list() do
+			if tostring(shell.buffer:id()) == buffer then
+				local block = state.block(shell, tonumber(number) :: number)
+				return if block
+					then M.cell_object(shell, block, tonumber(index) :: number, column :: string)
+					else nil
+			end
+		end
+		return nil
+	end,
+	inspect = inspect_row,
+	relations = row_relations,
+})
+
+core.actions.action({
+	kind = "cell",
+	name = "copy",
+	doc = "Copy what's in it",
+	run = function(target)
+		greed.clipboard.set(target.value.text)
+	end,
+})
+
+core.actions.action({
+	kind = "cell",
+	name = "filter by this",
+	doc = "Keep the rows with the same in this column (with spaces, the rows with its words)",
+	run = function(target)
+		local origin = origins[target.value]
+		local column, text = target.value.column, target.value.text
+		if origin == nil or text == "" then
+			greed.echo("nothing in it to filter by")
+			return
+		end
+		local exact = not string.find(column, "%s") and not string.find(text, "%s")
+		rows.set(origin.shell, origin.block, if exact then `{column}={text}` else text)
+	end,
+})
+
+core.actions.action({
+	kind = "row",
+	name = "copy",
+	doc = "Copy its cells, with tabs between them",
+	run = function(target)
+		local origin = origins[target.value]
+		local tbl = if origin then origin.block.table else nil
+		if tbl == nil then
+			return
+		end
+		local cells: { string } = {}
+		for _, column in tbl.columns do
+			table.insert(cells, target.value[column] or "")
+		end
+		greed.clipboard.set(table.concat(cells, "\t"))
+	end,
+})
+
+core.actions.action({
+	kind = "row",
+	name = "copy as JSON",
+	doc = "Copy it as a JSON object of its cells",
+	run = function(target)
+		greed.clipboard.set(greed.json.encode(target.value))
+	end,
+})
+
+-- The row at the cursor; before it the cell under the cursor, and before
+-- that the thing the cell is, when it's one.
 core.actions.finder({
 	name = "shell-row",
 	find = function(view, range)
@@ -495,9 +580,15 @@ core.actions.finder({
 		end
 		local found = { core.objects.target(object) }
 		local column = rows.column_at(shell, block, range.head)
-		local cell = if column then M.cell_objects(shell, block, index)[column] else nil
-		if cell then
-			table.insert(found, 1, core.objects.target(cell))
+		if column then
+			local plain = M.cell_object(shell, block, index, column)
+			if plain then
+				table.insert(found, 1, core.objects.target(plain))
+			end
+			local thing = M.cell_objects(shell, block, index)[column]
+			if thing then
+				table.insert(found, 1, core.objects.target(thing))
+			end
 		end
 		return found
 	end,

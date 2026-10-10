@@ -626,9 +626,14 @@ Some cells are things of their own: the node a pod runs on (`kubectl get
 pods -o wide`) and its namespace (with `-A`) are kubernetes objects, and a
 container's image is an image, which `inspect`, `history` and `pull` work
 on. `space .` on such a cell offers its actions before the row's, and the
-inspector lists them among the row's relations. Agents
-reach them the same way, through the `objects`, `inspect` and `act`
-tools: a block's rows are among the objects it relates to.
+inspector lists them among the row's relations.
+
+Any cell of any table is something to act on too: `copy` copies what's
+in it, and `filter by this` keeps the rows with the same in that column
+(`STATUS=Running`; with spaces in it, the rows with its words). A plain
+row copies as text, its cells with tabs between them, or as a JSON
+object. Agents reach them the same way, through the `objects`, `inspect`
+and `act` tools: a block's rows are among the objects it relates to.
 
 Plugins add kinds of rows and actions of their own
 ([Writing plugins](plugins.md#the-shell)).
