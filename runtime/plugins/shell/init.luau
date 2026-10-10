@@ -541,6 +541,17 @@ local function open_stream(
 		end
 end
 
+-- What `programs` printed, `out`, as JSON and as a table for the stages
+-- after them: the table nu gave back when it drew one, else `out` read as
+-- JSON or as text. What nu gave back goes to the stages, so it isn't the
+-- block's own value in the end.
+local function read_output(block: Block, out: string, programs: string): (any, tables.Table?)
+	local given = block.data
+	block.data = nil
+	local json = if given ~= nil then given else tables.json(out)
+	return json, tables.from_value(json) or tables.parse(out, programs, block)
+end
+
 -- Runs `line` once as `flow` would, but gives back what it printed in the
 -- end rather than showing it: table stages after its programs included, as
 -- `kubectl get pods | where RESTARTS > 0`, and `each`. Also its errors and
@@ -586,8 +597,7 @@ local function capture_all(
 	if code == nil or (out == "" and code ~= 0) then
 		return out, errors, code
 	end
-	local json = tables.json(out)
-	local made = tables.from_value(json) or tables.parse(out, programs, block)
+	local json, made = read_output(block, out, programs)
 	local more, more_errors, more_code = capture_all(shell, block, stages, out, json, made)
 	return more, errors .. more_errors, more_code
 end
@@ -655,8 +665,7 @@ local function flow(
 		run.finish(shell, block, code, nil)
 		return
 	end
-	local json = tables.json(out)
-	local made = tables.from_value(json) or tables.parse(out, programs, block)
+	local json, made = read_output(block, out, programs)
 	flow(shell, block, stages, opts, out, json, made, {})
 end
 

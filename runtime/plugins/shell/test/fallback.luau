@@ -194,4 +194,12 @@ test("a table a nu line gives back is data: its rows things, on their lines", fu
 	-- What isn't a table prints as it did, and keeps nothing.
 	local said = run(t, sh, "echo hi | str upcase")
 	assert(said.data == nil and string.find(said.output, "HI", 1, true), said.output)
+	-- The shell's own stages after nu work on the table nu gave back, not
+	-- on how nu drew it.
+	local first = run(t, sh, "ls | sort-by name | first")
+	assert(first.code == 0, first.output)
+	local only = assert(first.table, first.output)
+	assert(#only.rows == 1 and only.rows[1].name == "notes.txt", first.output)
+	local small = run(t, sh, "ls | where type = file")
+	assert(small.code == 0 and #assert(small.table).rows == 1, small.output)
 end)
