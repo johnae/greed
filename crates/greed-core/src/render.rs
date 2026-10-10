@@ -1179,7 +1179,8 @@ impl<M: Measure> Renderer<M> {
 
     /// Where `view` starts, laid out `width` by `height`: at the screen, its
     /// buffer's last lines, when it's laid out at its buffer's screen size
-    /// (`screen`), else keeping its primary cursor on screen.
+    /// (`screen`), else keeping its primary cursor on screen; within the
+    /// lines it's narrowed to, if it is.
     fn scroll_for(
         &self,
         editor: &Editor,
@@ -1188,14 +1189,16 @@ impl<M: Measure> Renderer<M> {
         width: usize,
         height: usize,
     ) -> Scroll {
-        if !screen {
-            return self.scroll_to_cursor(editor, view, width, height);
-        }
         let lines = editor.buffer(view.buffer).text().len_lines();
-        Scroll {
-            line: lines.saturating_sub(height),
-            row: 0,
-        }
+        let scroll = if screen {
+            Scroll {
+                line: lines.saturating_sub(height),
+                row: 0,
+            }
+        } else {
+            self.scroll_to_cursor(editor, view, width, height)
+        };
+        within_lines(view, scroll, height, lines)
     }
 
     /// The scroll position that keeps the primary cursor on screen, moving
@@ -2023,13 +2026,13 @@ fn cursor_here(byte: usize, head: usize, lines: &Range<usize>, placed: bool) -> 
     byte == head || (!placed && byte > head && lines.contains(&head))
 }
 
-/// The lines folds hide in `view`: each fold's lines after its first, unless
-/// a cursor is in them.
+/// The lines hidden in `view`: each fold's lines after its first, unless a
+/// cursor is in them, and those outside the lines it's narrowed to.
 pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
     let cursors: Vec<usize> = cursor_lines(text, view).collect();
-    buffer
+    let mut hidden: Vec<Range<usize>> = buffer
         .all_marks()
         .filter(|m| m.fold)
         .filter_map(|m| {
@@ -2037,7 +2040,16 @@ pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
             let hidden = first + 1..last_line(text, &m.range) + 1;
             (!hidden.is_empty() && !cursors.iter().any(|c| hidden.contains(c))).then_some(hidden)
         })
-        .collect()
+        .collect();
+    if let Some(lines) = &view.lines {
+        let all = text.len_lines();
+        hidden.extend(
+            [0..lines.start.min(all), lines.end.min(all)..all]
+                .into_iter()
+                .filter(|r| !r.is_empty()),
+        );
+    }
+    hidden
 }
 
 /// The virtual lines shown under `line`, with the mark each comes from.
@@ -2101,6 +2113,27 @@ fn cursor_lines<'a>(text: &'a Rope, view: &'a View) -> impl Iterator<Item = usiz
 fn last_line(text: &Rope, range: &Range<usize>) -> usize {
     let last = range.end.saturating_sub(1).max(range.start);
     text.byte_to_line(last.min(text.len_bytes()))
+}
+
+/// `scroll` within the lines `view` is narrowed to, if it is: the first of
+/// them, or scrolled past the last, as many lines above it as `rows` fit;
+/// never past the last of the buffer's `all` lines.
+fn within_lines(view: &View, scroll: Scroll, rows: usize, all: usize) -> Scroll {
+    let lines = view
+        .lines
+        .as_ref()
+        .map(|l| l.start.min(all.saturating_sub(1))..l.end.min(all));
+    match &lines {
+        Some(lines) if scroll.line < lines.start => Scroll {
+            line: lines.start,
+            row: 0,
+        },
+        Some(lines) if scroll.line >= lines.end => Scroll {
+            line: lines.end.saturating_sub(rows).max(lines.start),
+            row: 0,
+        },
+        _ => scroll,
+    }
 }
 
 fn is_hidden(hidden: &[Range<usize>], line: usize) -> bool {

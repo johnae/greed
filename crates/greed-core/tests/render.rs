@@ -1812,3 +1812,25 @@ fn a_message_of_several_lines_shows_its_first_on_the_status_line() {
         "{text}"
     );
 }
+
+#[test]
+fn a_narrowed_view_shows_only_its_lines_wherever_the_cursor_is() {
+    let mut ed = editor("a\nb\nc\nd\ne|");
+    let main = ed.main();
+    ed.narrow(main, Some(&(1..3)));
+    assert_eq!(
+        body(&frame(&mut ed, 20, 5))[..3],
+        ["b", "c", ""],
+        "the cursor on e doesn't show it"
+    );
+    ed.view_mut(main).scroll = Scroll { line: 4, row: 0 };
+    assert_eq!(
+        body(&frame(&mut ed, 20, 5))[..2],
+        ["b", "c"],
+        "nor scrolling past"
+    );
+
+    ed.narrow(main, None);
+    ed.view_mut(main).scroll = Scroll::default();
+    assert_eq!(body(&frame(&mut ed, 20, 6))[..5], ["a", "b", "c", "d", "e"]);
+}

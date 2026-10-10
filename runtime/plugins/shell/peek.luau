@@ -49,14 +49,30 @@ local function height(shell: Shell, block: Block): number
 	return math.clamp(buffer:line_of(to) - buffer:line_of(from) + 2, 5, 30)
 end
 
--- Fits `p`'s float to its block, and scrolls its view back to the block's
--- command when it moved.
-local function fit(p: Peek)
-	local from = log.range(p.block)
-	if from == nil or not p.view:valid() then
+-- Keeps `p`'s cursor on its block, where the float can show it.
+local function keep_cursor(p: Peek)
+	local from, to = log.range(p.block)
+	if from == nil or to == nil or not p.view:valid() then
 		return
 	end
-	local line = p.shell.buffer:line_of(from)
+	local cursor = p.view:cursor()
+	if cursor < from or cursor >= to then
+		p.view:set_cursor(math.clamp(cursor, from, math.max(to - 1, from)))
+	end
+end
+
+-- Fits `p`'s float to its block, showing none of the shell around it, and
+-- scrolls its view back to the block's command when it moved.
+local function fit(p: Peek)
+	local from, to = log.range(p.block)
+	if from == nil or to == nil or not p.view:valid() then
+		return
+	end
+	local buffer = p.shell.buffer
+	local line = buffer:line_of(from)
+	local last = buffer:line_of(math.max(to - 1, from))
+	p.view:narrow(line, last)
+	keep_cursor(p)
 	local tall = height(p.shell, p.block)
 	if tall ~= p.height then
 		p.view:configure({ height = tall })
@@ -113,5 +129,12 @@ function M.follow(block: Block)
 		end
 	end
 end
+
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	local p = open
+	if p and p.view == event.view then
+		keep_cursor(p)
+	end
+end)
 
 return M

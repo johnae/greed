@@ -103,6 +103,15 @@ test("enter on a strip line opens its block in a float, and esc closes it", func
 	local float = greed.view()
 	assert(float ~= main and float:float_spec() ~= nil, "a float opened")
 	assert(shell.peek.of(float) == watch)
+	-- It shows the block and none of the shell around it, the prompt below
+	-- included, and the cursor can't leave it.
+	local from, to = log.range(watch)
+	local first, last = float:narrowed()
+	assert(first == sh.buffer:line_of(assert(from)), `{first}`)
+	assert(last == sh.buffer:line_of(assert(to) - 1), `{last}`)
+	assert(assert(last) < sh.buffer:line_of(sh.buffer:len()), "not the prompt")
+	t:keys("G")
+	assert(log.block_at(sh, float:cursor()) == watch, "G stays in the block")
 	-- In it, what's at the cursor is the block, so filtering it works.
 	assert(log.block_at(sh, float:cursor()) == watch)
 	shell.rows.set(sh, watch, "COUNT>1")

@@ -50,6 +50,9 @@ pub struct View {
     pub size: Option<(u16, u16)>,
     /// Where it was last drawn, gutter included.
     pub area: Option<crate::render::Rect>,
+    /// The only lines it shows, when narrowed to part of its buffer, as a
+    /// float showing one block of a shell.
+    pub lines: Option<std::ops::Range<usize>>,
 }
 
 impl View {
@@ -1034,8 +1037,19 @@ impl Editor {
             view.selection = Selection::point(0);
             view.scroll = Scroll::default();
             view.visible = None;
+            view.lines = None;
         }
         self.drop_if_unused(old);
+    }
+
+    /// Narrows `view` to `lines` of its buffer, for every client, or shows
+    /// all of it again with `None`.
+    pub fn narrow(&mut self, view: ViewId, lines: Option<&std::ops::Range<usize>>) {
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.lines = lines.cloned();
+            }
+        }
     }
 
     /// Shows `buffer` in a new view floating over the main one, focusing it
@@ -2046,6 +2060,7 @@ impl Editor {
             visible: None,
             size: None,
             area: None,
+            lines: None,
         })
     }
 

@@ -537,12 +537,13 @@ Such a line stands for its block, a line or two up from the prompt:
 `ctrl-c` or `space x` there stops that block rather than the latest,
 `space .` lists what you can do with it, and `space r` runs it again.
 `enter` (or a click on its number) opens the block in a float, and `/`
-opens it there to filter. In the float it's the block itself: `/`
-filters it, `enter` or `space .` on a row acts on the pod or file it is,
-and `ctrl-c` stops it. A watch's float follows it as it refreshes, and
-grows and shrinks with it. `esc` closes it, keeping the filter, which a
-watch keeps on each run. `space .` on any block offers "open in a float"
-too. A line goes when its block ends.
+opens it there to filter. The float shows that block and nothing around it,
+and works as the block does in the shell: `/` filters it, `enter` or
+`space .` on a row acts on the pod or file it is, and `ctrl-c` stops it.
+A watch's float follows it as it refreshes, and grows and shrinks with
+it. `esc` closes it, keeping the filter, which a watch keeps on each run.
+`space .` on any block offers "open in a float" too. A line goes when
+its block ends.
 
 At the prompt, `ctrl-c` stops the latest running block and says which
 others still run. `stop` lists them by number, `stop 7` stops block 7,

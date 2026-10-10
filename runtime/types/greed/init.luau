@@ -297,8 +297,12 @@ export type View = {
 	--- Where it was last drawn on the screen, in cells, its gutter included;
 	--- nil before it's drawn.
 	area: (self: View) -> { x: number, y: number, width: number, height: number }?,
-	--- The lines folds hide, 0-based and inclusive.
+	--- The lines folds hide, and those outside the lines it is narrowed to, 0-based and inclusive.
 	hidden_lines: (self: View) -> { { from: number, to: number } },
+	--- Shows only lines `from` to `to` (0-based, inclusive) of its buffer, as a float showing one part of it; no arguments shows all of it again. Showing another buffer does too.
+	narrow: (self: View, from: number?, to: number?) -> (),
+	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
+	narrowed: (self: View) -> (number?, number?),
 	--- The 0-based line at the top of the view.
 	scroll: (self: View) -> number,
 	--- Scrolls so `line` is at the top. Drawing scrolls again if the primary

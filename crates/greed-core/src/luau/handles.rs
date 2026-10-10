@@ -144,6 +144,24 @@ impl UserData for ViewRef {
             }
             Ok(list)
         });
+        methods.add_method(
+            "narrow",
+            |lua, this, (from, to): (Option<usize>, Option<usize>)| {
+                this.with_view(lua, |_| Ok(()))?;
+                let lines = match (from, to) {
+                    (Some(from), Some(to)) if to >= from => Some(from..to + 1),
+                    (None, None) => None,
+                    _ => return Err(mlua::Error::runtime("narrow takes a first and last line")),
+                };
+                state_mut(lua).editor.narrow(this.id, lines.as_ref());
+                Ok(())
+            },
+        );
+        methods.add_method("narrowed", |lua, this, ()| {
+            this.with_view(lua, |v| {
+                Ok(v.lines.as_ref().map(|l| (l.start, l.end - 1)).unzip())
+            })
+        });
         methods.add_method("scroll", |lua, this, ()| {
             this.with_view(lua, |v| Ok(v.scroll.line))
         });
