@@ -1454,8 +1454,11 @@ a command as a block in the shell, so what it does is there to read and
 run again. `command` is a template whose `{field}`s are the thing's
 value's fields, quoted, or a function from the value to the line.
 `opts.doc` says what it does, `opts.danger` makes it ask first (saying
-when the value's `context` is a production one), and `opts.default`
-makes it what `enter` on such a row does.
+when the value's `context` is a production one), `opts.default`
+makes it what `enter` on such a row does, and `opts.follow` opens the
+block of a command that keeps printing (`logs -f`) in a float following
+its last line. Run while the same command still runs in that shell, an
+action opens that block instead.
 
 ```luau
 -- `systemctl list-units`'s rows as services.

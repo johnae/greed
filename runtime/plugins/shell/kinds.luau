@@ -18,6 +18,7 @@ local tables = require("./tables")
 local parse = require("./parse")
 local segments = require("./segments")
 local aliases = require("./aliases")
+local peek = require("./peek")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -599,11 +600,12 @@ core.actions.finder({
 	end,
 })
 
--- Runs a command line in a shell, as typed: init.luau gives it.
-local runner: ((shell: Shell, line: string, view: greed.View) -> ())? = nil
+-- Runs a command line in a shell, as typed, giving its block: init.luau
+-- gives it.
+local runner: ((shell: Shell, line: string, view: greed.View) -> Block?)? = nil
 
 --- How actions run their commands, given by the plugin once it's set up.
-function M.runs_with(run: (shell: Shell, line: string, view: greed.View) -> ())
+function M.runs_with(run: (shell: Shell, line: string, view: greed.View) -> Block?)
 	runner = run
 end
 
@@ -617,6 +619,9 @@ export type CommandOptions = {
 	danger: boolean?,
 	--- What `enter` on such a row does.
 	default: boolean?,
+	--- It keeps showing what's new (`logs -f`): its block opens in a float
+	--- that follows its last line.
+	follow: boolean?,
 }
 
 --- The production context a thing belongs to, when its value names one
@@ -673,6 +678,14 @@ function M.command(
 				greed.echo("no shell to run it in: space o s opens one")
 				return
 			end
+			-- The same command still running is gone to, not run again.
+			for _, block in state.running(shell) do
+				if block.command == line then
+					peek.open(shell, block, { tail = opts.follow })
+					greed.echo(`already running as ${block.number}`)
+					return
+				end
+			end
 			if opts.danger then
 				local where = production(target.value)
 				local warning = if where then ` - in PRODUCTION ({where})` else ""
@@ -687,7 +700,10 @@ function M.command(
 				view:show(shell.buffer)
 			end
 			local in_view = if view:buffer() == shell.buffer then view else shell.buffer:views()[1]
-			runs(shell, line, in_view)
+			local block = runs(shell, line, in_view)
+			if block and opts.follow then
+				peek.open(shell, block, { tail = true })
+			end
 		end,
 	})
 	if opts.default then

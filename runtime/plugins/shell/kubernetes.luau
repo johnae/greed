@@ -384,7 +384,7 @@ kinds.command("pod", "logs", function(value: any): string
 end, { doc = "The end of what it logged" })
 kinds.command("pod", "follow logs", function(value: any): string
 	return kubectl(`logs -f {parse.quote(value.name)} --tail 50`, value)
-end, { doc = "What it logs, as it logs it" })
+end, { doc = "What it logs, as it logs it", follow = true })
 kinds.command("pod", "shell", function(value: any): string
 	return "!" .. kubectl(`exec -it {parse.quote(value.name)}`, value) .. " -- sh"
 end, { doc = "A shell in it, in a terminal" })

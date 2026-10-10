@@ -2046,8 +2046,8 @@ run.on_finish(function(shell: Shell, block: Block)
 	end)
 end)
 
-kinds.runs_with(function(shell: Shell, line: string, view: greed.View)
-	M.run(shell, line, { view = view })
+kinds.runs_with(function(shell: Shell, line: string, view: greed.View): Block?
+	return M.run(shell, line, { view = view })
 end)
 
 -- A running block keeps the session on :q (core's on-quit).

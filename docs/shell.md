@@ -590,6 +590,14 @@ it, can run it again and change it:
 ❯ 5 kubectl logs worker-5c6b7d8f9-abcde --tail 200 --context prod-eu -n payments
 ```
 
+`follow logs` on a pod or a container opens its block in a float that
+stays on the last line as lines come, like `tail -f`; move up to read and
+it stays put, go back to the last line and it follows again. `esc` closes
+the float and the logs keep coming in the line above the prompt, where
+`ctrl-c` stops them. An action whose command still runs in the shell
+doesn't start a second one: it opens the one running (`already running as
+$7`).
+
 A row remembers where it came from. The kubernetes context and namespace
 are the ones the command ran against, from its flags or else kubectl's
 config as it was when the block finished, so acting on a row of an old

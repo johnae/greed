@@ -924,6 +924,14 @@ M.add = function(shell: Shell, block: Block)
 	end)
 end
 
+-- What's told of a block showing new output.
+local updated: { (block: Block) -> () } = {}
+
+--- Calls `listener` each time a block shows new output.
+function M.on_update(listener: (block: Block) -> ())
+	table.insert(updated, listener)
+end
+
 M.update = function(
 	shell: Shell,
 	block: Block,
@@ -934,6 +942,9 @@ M.update = function(
 	exclusive(shell, function()
 		update(shell, block, lines, volatile, skipped)
 	end)
+	for _, listener in updated do
+		listener(block)
+	end
 end
 
 M.replace_output = function(shell: Shell, block: Block, lines: { Line })

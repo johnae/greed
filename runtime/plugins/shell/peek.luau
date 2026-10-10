@@ -14,7 +14,16 @@ type Block = state.Block
 
 local M = {}
 
-type Peek = { view: greed.View, shell: Shell, block: Block, line: number, height: number }
+-- `tail` while the cursor is on the block's last line, so it stays on the
+-- last line as more comes, like `tail -f`.
+type Peek = {
+	view: greed.View,
+	shell: Shell,
+	block: Block,
+	line: number,
+	height: number,
+	tail: boolean,
+}
 
 local open: Peek? = nil
 
@@ -49,16 +58,21 @@ local function height(shell: Shell, block: Block): number
 	return math.clamp(buffer:line_of(to) - buffer:line_of(from) + 2, 5, 30)
 end
 
--- Keeps `p`'s cursor on its block, where the float can show it.
+-- Keeps `p`'s cursor on its block, where the float can show it, and notes
+-- whether it's on the last line.
 local function keep_cursor(p: Peek)
 	local from, to = log.range(p.block)
 	if from == nil or to == nil or not p.view:valid() then
 		return
 	end
+	local last = math.max(to - 1, from)
 	local cursor = p.view:cursor()
 	if cursor < from or cursor >= to then
-		p.view:set_cursor(math.clamp(cursor, from, math.max(to - 1, from)))
+		cursor = math.clamp(cursor, from, last)
+		p.view:set_cursor(cursor)
 	end
+	local buffer = p.shell.buffer
+	p.tail = buffer:line_of(cursor) == buffer:line_of(last)
 end
 
 -- Fits `p`'s float to its block, showing none of the shell around it, and
@@ -72,6 +86,9 @@ local function fit(p: Peek)
 	local line = buffer:line_of(from)
 	local last = buffer:line_of(math.max(to - 1, from))
 	p.view:narrow(line, last)
+	if p.tail then
+		p.view:set_cursor(buffer:line_start(last))
+	end
 	keep_cursor(p)
 	local tall = height(p.shell, p.block)
 	if tall ~= p.height then
@@ -85,11 +102,12 @@ local function fit(p: Peek)
 end
 
 --- How a peek opens: without taking focus (`focus = false`, as when the
---- mouse rests on a block), and at screen row `y`.
-export type How = { focus: boolean?, y: number? }
+--- mouse rests on a block), at screen row `y`, and with `tail` on the
+--- block's last line, following it as it grows.
+export type How = { focus: boolean?, y: number?, tail: boolean? }
 
 --- Opens a float at `block` of `shell`, with the cursor on its first line
---- of output, in place of a peek open already.
+--- of output (or its last, with `tail`), in place of a peek open already.
 function M.open(shell: Shell, block: Block, how: How?): greed.View?
 	M.close()
 	local from = log.range(block)
@@ -107,7 +125,14 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 		footer = "/ filter · enter or space . on a row · ctrl-c stops · esc closes",
 	})
 	view:set_cursor(log.output_range(shell, block) or from)
-	local p: Peek = { view = view, shell = shell, block = block, line = -1, height = tall }
+	local p: Peek = {
+		view = view,
+		shell = shell,
+		block = block,
+		line = -1,
+		height = tall,
+		tail = how ~= nil and how.tail == true,
+	}
 	open = p
 	fit(p)
 	if focus then
@@ -129,6 +154,8 @@ function M.follow(block: Block)
 		end
 	end
 end
+
+log.on_update(M.follow)
 
 greed.on("selection.changed", function(event: greed.SelectionChanged)
 	local p = open

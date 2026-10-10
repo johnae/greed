@@ -148,7 +148,7 @@ kinds.command("container", "logs", function(value: any): string
 end, { doc = "The end of what it logged", default = true })
 kinds.command("container", "follow logs", function(value: any): string
 	return docker(`logs -f --tail 50 {parse.quote(value.name)}`, value)
-end, { doc = "What it logs, as it logs it" })
+end, { doc = "What it logs, as it logs it", follow = true })
 kinds.command("container", "shell", function(value: any): string
 	return "!" .. docker(`exec -it {parse.quote(value.name)} sh`, value)
 end, { doc = "A shell in it, in a terminal" })
