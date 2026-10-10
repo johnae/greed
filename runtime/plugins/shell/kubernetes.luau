@@ -110,7 +110,7 @@ local function thing_of(
 	local place = `{context or ""}/{namespace or ""}`
 	return {
 		kind = kind,
-		label = name,
+		label = if kind == "kubernetes" then `{singular(resource)}/{name}` else name,
 		key = if kind == "kubernetes" then `{place}/{resource}/{name}` else `{place}/{name}`,
 		value = { resource = resource, name = name, namespace = namespace, context = context },
 	}

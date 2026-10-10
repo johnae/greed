@@ -563,8 +563,9 @@ core.actions.action({
 	end,
 })
 
--- The row at the cursor; before it the cell under the cursor, and before
--- that the thing the cell is, when it's one.
+-- The row at the cursor and the cell under it. A row that's a thing (a pod,
+-- a file) comes first, then the thing the cell is when it's one (the pod's
+-- node), then the cell; a plain row comes after its cell.
 core.actions.finder({
 	name = "shell-row",
 	find = function(view, range)
@@ -578,17 +579,21 @@ core.actions.finder({
 		if index == nil or object == nil then
 			return nil
 		end
-		local found = { core.objects.target(object) }
+		local plain_row = object.kind == "row"
+		local found = if plain_row then {} else { core.objects.target(object) }
 		local column = rows.column_at(shell, block, range.head)
 		if column then
-			local plain = M.cell_object(shell, block, index, column)
-			if plain then
-				table.insert(found, 1, core.objects.target(plain))
-			end
 			local thing = M.cell_objects(shell, block, index)[column]
 			if thing then
-				table.insert(found, 1, core.objects.target(thing))
+				table.insert(found, core.objects.target(thing))
 			end
+			local plain = M.cell_object(shell, block, index, column)
+			if plain then
+				table.insert(found, core.objects.target(plain))
+			end
+		end
+		if plain_row then
+			table.insert(found, core.objects.target(object))
 		end
 		return found
 	end,

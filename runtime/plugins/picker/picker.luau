@@ -517,7 +517,9 @@ end
 --- Lists the actions for `targets` (see core's actions) and runs the one
 --- chosen. With several things, each action says which it's for.
 function M.act(targets: { core.Target })
-	local items = {}
+	-- Each thing's own actions, in the order the things came, then those
+	-- every kind has (pin to context), which would crowd the rest.
+	local items, everywhere = {}, {}
 	for _, target in targets do
 		for _, action in core.actions.for_kind(target.kind) do
 			local label = action.name
@@ -527,9 +529,11 @@ function M.act(targets: { core.Target })
 			if action.doc then
 				label ..= `  {action.doc}`
 			end
-			table.insert(items, { label = label, value = { action = action, target = target } })
+			local item = { label = label, value = { action = action, target = target } }
+			table.insert(if action.kind == "*" then everywhere else items, item)
 		end
 	end
+	table.move(everywhere, 1, #everywhere, #items + 1, items)
 	if #items == 0 then
 		greed.echo("nothing here to act on")
 		return

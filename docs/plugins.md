@@ -241,7 +241,8 @@ actions.action({
 An action that is an existing command has a short form:
 `actions.command("text", "search", "search-selection", "Search for it")`
 (kind, name, command, doc). An action of kind `"*"` is offered for every
-kind, after a kind's own, like the context's `pin to context`.
+kind, after the actions of everything under the cursor, like the
+context's `pin to context`.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the

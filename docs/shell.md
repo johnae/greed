@@ -627,8 +627,10 @@ of buffer 12, its second row), with their cells as their state.
 Some cells are things of their own: the node a pod runs on (`kubectl get
 pods -o wide`) and its namespace (with `-A`) are kubernetes objects, and a
 container's image is an image, which `inspect`, `history` and `pull` work
-on. `space .` on such a cell offers its actions before the row's, and the
-inspector lists them among the row's relations.
+on. `space .` on such a cell offers the row's actions first, then the
+cell's (a node's `describe`, an image's `pull`), and the inspector lists
+them among the row's relations. A namespace or a node is named as kubectl
+names it, `namespace/billing`.
 
 Any cell of any table is something to act on too: `copy` copies what's
 in it, and `filter by this` keeps the rows with the same in that column

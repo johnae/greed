@@ -528,3 +528,22 @@ test("typing that matches nothing says so", function(t)
 	assert(string.find(screen, "nothing matches", 1, true), screen)
 	t:keys("esc")
 end)
+
+test("each thing's own actions come before those every kind has", function(t)
+	local core = require("@core")
+	for _, kind in { "test-first", "test-second" } do
+		core.actions.action({ kind = kind, name = `{kind}-only`, run = function() end })
+	end
+	core.actions.action({ kind = "*", name = "test-everywhere", run = function() end })
+	t:buffer("|x")
+	require("@picker").act({
+		{ kind = "test-first", label = "one", value = 1 },
+		{ kind = "test-second", label = "two", value = 2 },
+	})
+	local shown = assert(t:floats()[1])
+	local first = assert((string.find(shown, "test-first-only", 1, true)))
+	local second = assert((string.find(shown, "test-second-only", 1, true)))
+	local everywhere = assert((string.find(shown, "test-everywhere", 1, true)))
+	assert(first < second and second < everywhere, shown)
+	t:keys("esc")
+end)
