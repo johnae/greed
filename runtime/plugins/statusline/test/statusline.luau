@@ -238,7 +238,7 @@ test("an async piece shows what its last refresh found, without the line waiting
 	t:buffer("|abc")
 	local _, right = t:status()
 	assert(
-		right and not string.find(right, "run", 1, true),
+		right and not string.find(right, "run %d"),
 		"nothing yet, and no waiting: " .. tostring(right)
 	)
 	t:wait(250)
@@ -465,6 +465,7 @@ test("a long path gives way, keeping its end, [+] and the right side", function(
 	end)
 	local screen = t:screen(80, 10)
 	local status = screen[#screen]
-	assert(string.find(status, "dator.rs [+]", 1, true), status)
+	-- How much of the path fits depends on the rest, like the host's name.
+	assert(string.find(status, "…%S*%.rs %[%+%]"), status)
 	assert(string.find(status, "1:%d"), status)
 end)

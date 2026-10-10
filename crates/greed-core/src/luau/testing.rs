@@ -776,6 +776,19 @@ fn test_body_line(lua: &Lua) -> Option<usize> {
     body.copied().flatten()
 }
 
+/// Making a test's repository, with the made-up user in its own config, so
+/// what plugins commit there works on a machine with no user set, like CI's.
+const JJ_INIT: &[&[&str]] = &[
+    &["git", "init"],
+    &["config", "set", "--repo", "user.name", "t"],
+    &["config", "set", "--repo", "user.email", "t@t"],
+];
+const GIT_INIT: &[&[&str]] = &[
+    &["init", "-q"],
+    &["config", "user.name", "t"],
+    &["config", "user.email", "t@t"],
+];
+
 /// `t:repo` and `t:vcs`: jj and git repositories to test against.
 fn add_repo_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     methods.add_method(
@@ -785,16 +798,13 @@ fn add_repo_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
             let commit = files.is_some();
             let dir = tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)?;
             let vcs = Vcs::new(&kind, &dir)?;
-            let steps: &[&[&str]] = match (kind.as_str(), commit) {
-                ("jj", false) => &[&["git", "init"]],
-                ("jj", true) => &[&["git", "init"], &["commit", "-m", "first"]],
-                (_, false) => &[&["init", "-q"]],
-                (_, true) => &[
-                    &["init", "-q"],
-                    &["add", "."],
-                    &["commit", "-q", "-m", "first"],
-                ],
+            let first: &[&[&str]] = match (kind.as_str(), commit) {
+                ("jj", true) => &[&["commit", "-m", "first"]],
+                (_, true) => &[&["add", "."], &["commit", "-q", "-m", "first"]],
+                (_, false) => &[],
             };
+            let init = if kind == "jj" { JJ_INIT } else { GIT_INIT };
+            let steps = init.iter().chain(first);
             for step in steps {
                 vcs.run(lua, step)?;
             }

@@ -39,16 +39,18 @@
 
   # What the window client (`greed --gui`) loads at run time: the display
   # server's libraries and the GPU driver's loader. macOS has them built in.
-  env.LD_LIBRARY_PATH = lib.mkIf pkgs.stdenv.isLinux (lib.makeLibraryPath [
-    pkgs.libGL
-    pkgs.libxkbcommon
-    pkgs.vulkan-loader
-    pkgs.wayland
-    pkgs.xorg.libX11
-    pkgs.xorg.libXcursor
-    pkgs.xorg.libXi
-    pkgs.xorg.libXrandr
-  ]);
+  env = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+    LD_LIBRARY_PATH = lib.makeLibraryPath [
+      pkgs.libGL
+      pkgs.libxkbcommon
+      pkgs.vulkan-loader
+      pkgs.wayland
+      pkgs.xorg.libX11
+      pkgs.xorg.libXcursor
+      pkgs.xorg.libXi
+      pkgs.xorg.libXrandr
+    ];
+  };
 
   git-hooks.hooks = {
     rustfmt.enable = true;
