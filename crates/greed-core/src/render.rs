@@ -894,9 +894,7 @@ impl<M: Measure> Renderer<M> {
         let text_rows = usize::from(area.height);
         let text_width = usize::from(area.width).saturating_sub(gutter).max(1);
 
-        let view = editor.view(view_id);
-        let scroll = self.scroll_for(editor, view, sized.is_some(), text_width, text_rows);
-        editor.view_mut(view_id).scroll = scroll;
+        let scroll = self.place(editor, view_id, sized.is_some(), text_width, text_rows);
 
         let view = editor.view(view_id);
         let text = editor.buffer(view.buffer).text();
@@ -1083,8 +1081,19 @@ impl<M: Measure> Renderer<M> {
     }
 
     /// Splits `line` into screen rows of at most `width` cells, breaking
-    /// after whitespace where it can.
+    /// after whitespace where it can; a line that doesn't wrap is one row,
+    /// of the cells from the view's `columns` on.
     fn layout(&self, editor: &Editor, view: &View, line: usize, width: usize) -> Vec<Vec<Cell>> {
+        let (cells, end) = self.line_cells(editor, view, line);
+        if nowrap(editor, view, line) {
+            vec![clip(cells, view.columns, width, end)]
+        } else {
+            wrap(cells, width, end)
+        }
+    }
+
+    /// The cells of `line` as one long row, and the byte its text ends at.
+    fn line_cells(&self, editor: &Editor, view: &View, line: usize) -> (Vec<Cell>, usize) {
         let buffer = editor.buffer(view.buffer);
         let text = buffer.text();
         let start = text.line_to_byte(line);
@@ -1165,8 +1174,32 @@ impl<M: Measure> Renderer<M> {
             });
             x += w;
         }
+        (cells, end)
+    }
 
-        wrap(cells, width, end)
+    /// How many columns `view` is scrolled sideways, `width` wide: as it
+    /// was, or as little moved from that as shows the primary cursor, when
+    /// its line doesn't wrap.
+    fn columns_for(&self, editor: &Editor, view: &View, width: usize) -> usize {
+        let text = editor.buffer(view.buffer).text();
+        let head = cursor_byte(text, view.selection.primary(), editor.cursor_shape());
+        let line = text.byte_to_line(head);
+        if !nowrap(editor, view, line) {
+            return view.columns;
+        }
+        let (cells, _) = self.line_cells(editor, view, line);
+        let x: usize = cells
+            .iter()
+            .take_while(|c| c.byte < head)
+            .map(|c| c.width)
+            .sum();
+        if x < view.columns {
+            x
+        } else if x >= view.columns + width {
+            x + 1 - width
+        } else {
+            view.columns
+        }
     }
 
     /// Which row of its line `pos` is on.
@@ -1177,10 +1210,28 @@ impl<M: Measure> Renderer<M> {
             .unwrap_or(rows.len() - 1)
     }
 
+    /// Scrolls `view_id` as `scroll_for` says, down and sideways, and gives
+    /// back where it starts.
+    fn place(
+        &self,
+        editor: &mut Editor,
+        view_id: ViewId,
+        screen: bool,
+        width: usize,
+        height: usize,
+    ) -> Scroll {
+        let (scroll, columns) =
+            self.scroll_for(editor, editor.view(view_id), screen, width, height);
+        let laid = editor.view_mut(view_id);
+        (laid.scroll, laid.columns) = (scroll, columns);
+        scroll
+    }
+
     /// Where `view` starts, laid out `width` by `height`: at the screen, its
     /// buffer's last lines, when it's laid out at its buffer's screen size
     /// (`screen`), else keeping its primary cursor on screen; within the
-    /// lines it's narrowed to, if it is.
+    /// lines it's narrowed to, if it is. And how many columns it's scrolled
+    /// sideways (see `columns_for`).
     fn scroll_for(
         &self,
         editor: &Editor,
@@ -1188,7 +1239,7 @@ impl<M: Measure> Renderer<M> {
         screen: bool,
         width: usize,
         height: usize,
-    ) -> Scroll {
+    ) -> (Scroll, usize) {
         let lines = editor.buffer(view.buffer).text().len_lines();
         let scroll = if screen {
             Scroll {
@@ -1198,7 +1249,8 @@ impl<M: Measure> Renderer<M> {
         } else {
             self.scroll_to_cursor(editor, view, width, height)
         };
-        within_lines(view, scroll, height, lines)
+        let columns = self.columns_for(editor, view, width);
+        (within_lines(view, scroll, height, lines), columns)
     }
 
     /// The scroll position that keeps the primary cursor on screen, moving
@@ -2154,6 +2206,49 @@ fn fitting_from_end(heights: &[usize], room: &mut usize) -> Option<usize> {
     first
 }
 
+/// Whether a mark says `line` of `view`'s buffer doesn't wrap.
+fn nowrap(editor: &Editor, view: &View, line: usize) -> bool {
+    let buffer = editor.buffer(view.buffer);
+    let text = buffer.text();
+    buffer.all_marks().any(|m| {
+        m.nowrap
+            && text.byte_to_line(m.range.start.min(text.len_bytes())) <= line
+            && line <= last_line(text, &m.range)
+    })
+}
+
+/// The cells of a line that doesn't wrap that show `width` columns from
+/// column `from`, with its end after them when that shows too.
+fn clip(cells: Vec<Cell>, from: usize, width: usize, end: usize) -> Vec<Cell> {
+    let mut row = Vec::new();
+    let mut x = 0;
+    for cell in cells {
+        let w = cell.width;
+        if x >= from && x + w <= from + width {
+            row.push(cell);
+        }
+        x += w;
+    }
+    if (from..from + width).contains(&x) {
+        row.push(end_cell(end));
+    }
+    row
+}
+
+/// The cell for the end of a line, at byte `end`, where a cursor can sit
+/// after its text.
+fn end_cell(end: usize) -> Cell {
+    Cell {
+        byte: end,
+        text: " ".to_owned(),
+        width: 1,
+        end_of_line: true,
+        inserted: None,
+        action: None,
+        scale: 1,
+    }
+}
+
 /// A line's `cells` in rows `width` cells wide, breaking after whitespace
 /// where it can, with a cell for the end of the line (byte `end`) where a
 /// cursor can sit after it, if there's room.
@@ -2183,15 +2278,9 @@ fn wrap(cells: Vec<Cell>, width: usize, end: usize) -> Vec<Vec<Cell>> {
         }
     }
     if x < width {
-        rows.last_mut().expect("at least one row").push(Cell {
-            byte: end,
-            text: " ".to_owned(),
-            width: 1,
-            end_of_line: true,
-            inserted: None,
-            action: None,
-            scale: 1,
-        });
+        rows.last_mut()
+            .expect("at least one row")
+            .push(end_cell(end));
     }
     rows
 }

@@ -253,6 +253,8 @@ export type Mark = {
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
+	--- Don't wrap the lines it touches: what's past the right edge is out of sight, and the view scrolls sideways to the cursor (`view:side_scroll()`), as for a wide table.
+	nowrap: boolean?,
 	--- Draw the text without syntax highlighting, like a tool's output in a
 	--- Markdown buffer.
 	plain: boolean?,
@@ -303,6 +305,10 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
+	--- How many columns the lines that don't wrap (a mark's `nowrap`) are scrolled to the left.
+	side_scroll: (self: View) -> number,
+	--- Scrolls the lines that don't wrap `columns` to the left. Drawing scrolls again if the primary cursor is on such a line and would be out of sight, so move it first.
+	set_side_scroll: (self: View, columns: number) -> (),
 	--- The 0-based line at the top of the view.
 	scroll: (self: View) -> number,
 	--- Scrolls so `line` is at the top. Drawing scrolls again if the primary

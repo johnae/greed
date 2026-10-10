@@ -331,6 +331,11 @@ says so (`table · 12 rows`). So is `ls -l`'s output. The shell looks for a
 header in capitals with the columns lined up under it in every row, and
 when it isn't sure, the output is text: prose is never taken for a table.
 
+A table's rows don't wrap in a narrow pane: what's past the edge is cut,
+and the view scrolls sideways when the cursor goes there (or with the
+wheel sideways, shift and the wheel in most terminals). Other output wraps
+as text does.
+
 In a table, `/` keeps rows: a word like `STATUS=Running` or `NAME~api`
 looks in one column, `RESTARTS>0` and `AGE<1h` compare numbers, and other
 words look in every cell. `space s` sorts the rows by the column under

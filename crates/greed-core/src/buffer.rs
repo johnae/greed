@@ -121,6 +121,10 @@ pub struct Mark {
     /// Hide the lines after the range's first line, up to its last, unless a
     /// cursor is in them, e.g. a section folded under its heading.
     pub fold: bool,
+    /// Don't wrap the lines the range touches: what's past the right edge is
+    /// out of sight, and the view scrolls sideways to show the cursor, as
+    /// for a wide table.
+    pub nowrap: bool,
     /// Draw the range's text without syntax highlighting, e.g. a tool's
     /// output in an agent's Markdown transcript.
     pub plain: bool,

@@ -1834,3 +1834,32 @@ fn a_narrowed_view_shows_only_its_lines_wherever_the_cursor_is() {
     ed.view_mut(main).scroll = Scroll::default();
     assert_eq!(body(&frame(&mut ed, 20, 6))[..5], ["a", "b", "c", "d", "e"]);
 }
+
+#[test]
+fn lines_that_dont_wrap_are_cut_at_the_edge_and_scroll_sideways_to_the_cursor() {
+    use greed_core::Mark;
+    let mut ed = editor("|abcdefghijklmnopqrstuvwxyz\nwrapped words go on and on\n");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "table",
+        vec![Mark {
+            range: 0..26,
+            nowrap: true,
+            ..Mark::default()
+        }],
+    );
+    let shown = body(&frame(&mut ed, 12, 6));
+    assert_eq!(shown[0], "abcdefghij", "cut at the edge");
+    assert_eq!(shown[1].trim_end(), "wrapped", "other lines still wrap");
+
+    let main = ed.main();
+    ed.view_mut(main).selection = greed_text::Selection::point(25);
+    let shown = body(&frame(&mut ed, 12, 6));
+    assert_eq!(shown[0], "qrstuvwxyz", "scrolled to show the cursor on z");
+    assert_eq!(ed.view(main).columns, 16);
+
+    ed.view_mut(main).selection = greed_text::Selection::point(2);
+    let shown = body(&frame(&mut ed, 12, 6));
+    assert_eq!(shown[0], "cdefghijkl", "back as little as shows it");
+}

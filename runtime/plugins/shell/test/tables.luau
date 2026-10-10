@@ -726,3 +726,32 @@ test("a nu table's rows are on the lines its row numbers start", function()
 	assert(table.concat(assert(none.at), ",") == "2")
 	assert(tables.drawn({ "not", "objects" }, "0 not\n1 objects\n") == nil)
 end)
+
+test("a table's rows stay one line each in a narrow pane, and scroll sideways", function(t)
+	local sh = open(t, t:tempdir())
+	local block = pods_block(t, sh)
+	-- Text that isn't a table still wraps.
+	run(t, sh, "echo " .. string.rep("word ", 20))
+	local function screen(): { string }
+		return t:draw(40, 30)
+	end
+	local drawn = screen()
+	local rows = assert(block.table).rows
+	-- Each row's screen line is followed by the next row's: the columns past
+	-- the edge are cut, not wrapped onto a line of their own.
+	local found = false
+	for i, text in drawn do
+		if string.find(text, rows[1].NAME, 1, true) then
+			found = true
+			assert(string.find(drawn[i + 1], rows[2].NAME, 1, true), table.concat(drawn, "\n"))
+		end
+	end
+	assert(found, table.concat(drawn, "\n"))
+	assert(string.find(table.concat(drawn, "\n"), "word word", 1, true), "the echo is there")
+	-- Put on the end of a row, the view scrolls to show it.
+	local _, last = shell.log.output_range(sh, block)
+	local line = sh.buffer:line_of(assert(last) - 1)
+	greed.view():set_cursor(sh.buffer:line_end(line) - 1)
+	screen()
+	assert(greed.view():side_scroll() > 0, "scrolled sideways")
+end)

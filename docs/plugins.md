@@ -725,7 +725,9 @@ greed.tab.set_layout({
   replaces only the marks starting from `a` up to `b`, for plugins that
   draw again just the lines an edit changed. `plain = true` draws a mark's
   text without syntax highlighting, as for a tool's output in a Markdown
-  buffer. A mark can fold lines away under the first one (`fold`),
+  buffer. A mark can fold lines away under the first one (`fold`), keep
+  the lines it touches from wrapping (`nowrap`, cut at the edge with the
+  view scrolling sideways to the cursor, `view:side_scroll()`),
   or show lines that aren't in the buffer under its own (`lines`), whole
   or in pieces with styles of their own. A mark's text with an `action`
   (a command name) is a button: clicking it, or `enter` on it in normal

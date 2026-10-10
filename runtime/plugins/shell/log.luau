@@ -409,6 +409,12 @@ function M.draw_block(shell: Shell, block: Block)
 	end
 	local after = buffer:line_end(last)
 	table.insert(marks, { from = after, to = after, style = "shell.separator", lines = { "" } })
+	-- A table's rows stay rows in a narrow pane: cut at the edge, and the
+	-- view scrolls sideways to the cursor, rather than wrapping.
+	if block.table and last > line then
+		local first = buffer:line_start(line + 1)
+		table.insert(marks, { from = first, to = after, style = "", nowrap = true })
+	end
 	buffer:decorate(ns_block(block), marks)
 	-- A folded block that printed more stays folded, all of it.
 	if last > line then

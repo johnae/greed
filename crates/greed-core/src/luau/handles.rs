@@ -144,24 +144,7 @@ impl UserData for ViewRef {
             }
             Ok(list)
         });
-        methods.add_method(
-            "narrow",
-            |lua, this, (from, to): (Option<usize>, Option<usize>)| {
-                this.with_view(lua, |_| Ok(()))?;
-                let lines = match (from, to) {
-                    (Some(from), Some(to)) if to >= from => Some(from..to + 1),
-                    (None, None) => None,
-                    _ => return Err(mlua::Error::runtime("narrow takes a first and last line")),
-                };
-                state_mut(lua).editor.narrow(this.id, lines.as_ref());
-                Ok(())
-            },
-        );
-        methods.add_method("narrowed", |lua, this, ()| {
-            this.with_view(lua, |v| {
-                Ok(v.lines.as_ref().map(|l| (l.start, l.end - 1)).unzip())
-            })
-        });
+        add_part_methods(methods);
         methods.add_method("scroll", |lua, this, ()| {
             this.with_view(lua, |v| Ok(v.scroll.line))
         });
@@ -365,6 +348,37 @@ impl BufferRef {
         drop(state);
         buffer_changed(lua, self.buffer, &self.author)
     }
+}
+
+/// The methods for showing part of a buffer: some of its lines
+/// (narrowing), and lines that don't wrap scrolled sideways.
+fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    methods.add_method(
+        "narrow",
+        |lua, this, (from, to): (Option<usize>, Option<usize>)| {
+            this.with_view(lua, |_| Ok(()))?;
+            let lines = match (from, to) {
+                (Some(from), Some(to)) if to >= from => Some(from..to + 1),
+                (None, None) => None,
+                _ => return Err(mlua::Error::runtime("narrow takes a first and last line")),
+            };
+            state_mut(lua).editor.narrow(this.id, lines.as_ref());
+            Ok(())
+        },
+    );
+    methods.add_method("narrowed", |lua, this, ()| {
+        this.with_view(lua, |v| {
+            Ok(v.lines.as_ref().map(|l| (l.start, l.end - 1)).unzip())
+        })
+    });
+    methods.add_method("side_scroll", |lua, this, ()| {
+        this.with_view(lua, |v| Ok(v.columns))
+    });
+    methods.add_method("set_side_scroll", |lua, this, columns: usize| {
+        this.with_view(lua, |_| Ok(()))?;
+        state_mut(lua).editor.view_mut(this.id).columns = columns;
+        Ok(())
+    });
 }
 
 /// The methods for floating views: changing how one is shown, bringing it
@@ -628,6 +642,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         conceal: flag("conceal")?,
                         reveal: reveal_from_lua(t.get("reveal"))?,
                         fold: flag("fold")?,
+                        nowrap: flag("nowrap")?,
                         plain: flag("plain")?,
                         lines: t
                             .get::<Option<Vec<Value>>>("lines")?
@@ -736,6 +751,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
         },
     )?;
     t.set("fold", mark.fold)?;
+    t.set("nowrap", mark.nowrap)?;
     t.set("plain", mark.plain)?;
     t.set("action", mark.action.as_deref())?;
     if mark.scale > 1 {

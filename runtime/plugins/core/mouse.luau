@@ -59,6 +59,29 @@ local function bottom_line(view: greed.View, top: number): number
 	return math.max(line - 1, top)
 end
 
+--- Scrolls the lines of `view` that don't wrap (a wide table) by `columns`
+--- (left when negative). A cursor on such a line comes along into sight,
+--- since drawing would scroll back to it.
+function M.side_scroll(view: greed.View, columns: number)
+	local from = math.max(view:side_scroll() + columns, 0)
+	view:set_side_scroll(from)
+	local buffer = view:buffer()
+	local pos = view:cursor()
+	local nowrap = false
+	for _, mark in buffer:marks_at(pos) do
+		nowrap = nowrap or mark.nowrap == true
+	end
+	local _, width = view:size()
+	if not nowrap or width == nil then
+		return
+	end
+	local col = buffer:display_column(pos)
+	if col < from or col >= from + width then
+		local line = buffer:line_of(pos)
+		point(view, buffer:at_display_column(line, math.clamp(col, from, from + width - 1)))
+	end
+end
+
 --- Scrolls `view` by `lines` (up when negative), bringing the cursor onto
 --- the screen with it, since drawing would scroll back to the cursor.
 function M.scroll(view: greed.View, lines: number)
@@ -169,6 +192,8 @@ local function handle(event: greed.MouseEvent, view: greed.View)
 		pressed[event.client] = nil
 	elseif event.kind == "scroll" and (event.dir == "up" or event.dir == "down") then
 		M.scroll(view, if event.dir == "up" then -M.lines else M.lines)
+	elseif event.kind == "scroll" and (event.dir == "left" or event.dir == "right") then
+		M.side_scroll(view, if event.dir == "left" then -M.lines * 2 else M.lines * 2)
 	end
 end
 

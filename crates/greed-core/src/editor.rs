@@ -53,6 +53,8 @@ pub struct View {
     /// The only lines it shows, when narrowed to part of its buffer, as a
     /// float showing one block of a shell.
     pub lines: Option<std::ops::Range<usize>>,
+    /// How many columns the lines that don't wrap are scrolled to the left.
+    pub columns: usize,
 }
 
 impl View {
@@ -1038,6 +1040,7 @@ impl Editor {
             view.scroll = Scroll::default();
             view.visible = None;
             view.lines = None;
+            view.columns = 0;
         }
         self.drop_if_unused(old);
     }
@@ -2061,6 +2064,7 @@ impl Editor {
             size: None,
             area: None,
             lines: None,
+            columns: 0,
         })
     }
 
