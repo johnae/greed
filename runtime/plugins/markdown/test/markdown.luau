@@ -660,3 +660,29 @@ test("a part shows only for the answers it names, and its questions count only t
 	assert(not string.find(rows, "Which model?", 1, true), rows)
 	assert(string.find(rows, "Nothing more to ask", 1, true), rows)
 end)
+
+test("a part can name several answers, and shows for any of them", function(t)
+	shown(
+		t,
+		table.concat({
+			"Style? <!-- id=style -->",
+			"",
+			"- ( ) vim",
+			"- (x) helix",
+			"- ( ) vscode",
+			"",
+			"<!-- if style=vim,helix -->",
+			"modal",
+			"<!-- end -->",
+			"<!-- if style!=vim,helix -->",
+			"modeless",
+			"<!-- end -->",
+		}, "\n")
+	)
+	local buffer = greed.view():buffer()
+	local hidden = markdown.questions.state(buffer)
+	assert(not hidden[7] and hidden[10], "helix is modal")
+	markdown.choices.pick(buffer, 4)
+	hidden = markdown.questions.state(buffer)
+	assert(hidden[7] and not hidden[10], "vscode is modeless")
+end)

@@ -1039,7 +1039,8 @@ require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
 - Every block gets `answers`, each named question's answer (programs get
   them as JSON in `ANSWERS`, and `ANSWER`).
 - `<!-- if NAME=VALUE -->` to `<!-- end -->` is a part that shows only for
-  that answer (`!=` for any other). Its questions don't count otherwise.
+  that answer (`!=` for any other), or for any of several, as in
+  `<!-- if style=vim,helix -->`. Its questions don't count otherwise.
 
 Blocks that make choices or hear picks hide behind the page, and buttons
 show as buttons: put the cursor there to see their code. They run as any

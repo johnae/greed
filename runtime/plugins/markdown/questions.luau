@@ -14,7 +14,8 @@
 --     <!-- end -->
 --
 -- A condition compares a question's answer, its picked option's value,
--- ignoring case: `if agents=yes`, or `if agents!=yes`. Parts nest. One
+-- ignoring case: `if agents=yes`, or `if agents!=yes`; `if style=vim,helix`
+-- holds for either. Parts nest. One
 -- whose condition doesn't hold is folded away when the file shows as a
 -- document, and its questions don't count in `answers`. On GitHub and
 -- the like, everything shows, and the comments don't.
@@ -75,7 +76,12 @@ end
 -- Whether `section` holds for `answers`.
 local function holds(section: Section, answers: { [string]: string }): boolean
 	local answer = answers[section.id]
-	local same = answer ~= nil and string.lower(answer) == string.lower(section.value)
+	local same = false
+	if answer ~= nil then
+		for value in string.gmatch(section.value, "[^,]+") do
+			same = same or string.lower(answer) == string.lower(value)
+		end
+	end
 	return same ~= section.negated
 end
 
