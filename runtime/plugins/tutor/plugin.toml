@@ -1,0 +1,4 @@
+name = "tutor"
+requires = ["core", "markdown", "blocks"]
+# The page is tutor.md, beside this file.
+capabilities = ["fs.read"]

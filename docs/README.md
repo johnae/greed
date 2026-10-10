@@ -8,6 +8,9 @@ without modes, and switch with `:style`. Agents use the editor through MCP,
 the shell and Claude Code's `/ide`, or run inside it, and propose edits you
 review in the buffer.
 
+New to Greed? Start it, answer its few questions, and run `:tutor`: it
+teaches your style's keys with lines to practise on, then shows you around.
+
 - [Using Greed](using.md): editing, searching, files, sessions,
   configuration.
 - [Several clients](clients.md): terminals and windows on one session.

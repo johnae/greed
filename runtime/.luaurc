@@ -32,6 +32,7 @@
 		"lsp": "./plugins/lsp",
 		"setup": "./plugins/setup",
 		"plan": "./plugins/plan",
-		"shell": "./plugins/shell"
+		"shell": "./plugins/shell",
+		"tutor": "./plugins/tutor"
 	}
 }

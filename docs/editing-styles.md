@@ -24,7 +24,8 @@ opens the same list. The mode on the left reads the way the style's
 editor says it: NORMAL, INSERT, SELECT in Helix's, VISUAL in Vim's.
 
 The first time you start Greed it asks which you'd like (`:setup` asks
-again). To start in a style every time, set it in `~/.config/greed/init.luau`
+again), and `:tutor` teaches your style's keys with lines to practise on.
+To start in a style every time, set it in `~/.config/greed/init.luau`
 (with none set, Greed starts in Helix's):
 
 ```luau

@@ -130,6 +130,13 @@ way it doesn't show again by itself, and `:setup` brings it back, or goes
 to it if it's open. Save never replaces a config that's there; it shows
 what to add instead, and `esc` closes that.
 
+`:tutor` teaches the keys of the style you picked, with a few lines to
+practise on in each lesson, which say done once you've got them right, and
+then shows you around Greed: the leader, finding files, panes, the shell
+and sessions. Picking another style on the page switches to it, and the
+lessons change with it. Nothing on the page is saved; `:tutor` gives you a
+fresh one.
+
 ### In a window
 
 `greed --gui [FILE]` shows the session in a window instead of the terminal,

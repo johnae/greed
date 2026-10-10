@@ -74,6 +74,7 @@ local defaults: { Menu } = {
 		items = {
 			{ label = "All Commands…", command = "command-palette" },
 			{ label = "Keys", command = "keys-help" },
+			{ label = "Tutor", command = "tutor" },
 		},
 	},
 }

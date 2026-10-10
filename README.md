@@ -107,6 +107,10 @@ greed README.md        # in the terminal
 greed --gui README.md  # in a window
 ```
 
+The first start asks how you like to edit and which theme you want. Then
+`:tutor` teaches that style's keys, with lines to practise on, and shows
+you around Greed.
+
 The macOS builds aren't notarized by Apple yet, so the first time, macOS
 won't open Greed.app from a download: allow it under System Settings →
 Privacy & Security. Downloaded with `curl`, the tarball doesn't need that.

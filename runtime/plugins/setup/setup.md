@@ -3,7 +3,7 @@
 A few questions to set Greed up. `tab` and `shift-tab` go from choice to
 choice, `enter`, `space` or a click picks one, and `esc` closes the page. A
 style or theme you pick switches now, so you can try it here; the rest waits
-for Save.
+for Save. New to a style? `:tutor` afterwards teaches its keys.
 
 ## How do you like to edit? <!-- id=style -->
 
