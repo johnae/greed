@@ -48,9 +48,22 @@ kinds.command("process", "stop", "kill {pid}", { doc = "Ask it to stop (TERM)", 
 kinds.command("process", "kill", "kill -9 {pid}", { doc = "Make it stop (KILL)", danger = true })
 kinds.command(
 	"process",
+	"interrupt",
+	"kill -INT {pid}",
+	{ doc = "Interrupt it, as ctrl-c would (INT)", danger = true }
+)
+kinds.command(
+	"process",
+	"hang up",
+	"kill -HUP {pid}",
+	{ doc = "Hang up on it (HUP): many servers read their config again", danger = true }
+)
+kinds.command(
+	"process",
 	"open files",
 	"lsof -p {pid}",
 	{ doc = "The files and sockets it has open" }
 )
+kinds.command("process", "its folder", "lsof -a -d cwd -p {pid}", { doc = "The folder it runs in" })
 
 return {}

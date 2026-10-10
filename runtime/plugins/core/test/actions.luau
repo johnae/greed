@@ -72,3 +72,34 @@ return {}
 	assert(#core.features.of(greed.view():buffer()) == 0)
 	assert(core.style.typing_kinds.tickets == nil)
 end)
+
+-- Runs the action `name` of `kind` on `value`, as space . would.
+local function run(kind: string, name: string, value: any)
+	for _, action in actions.for_kind(kind) do
+		if action.name == name then
+			greed.spawn(function()
+				action.run({ kind = kind, label = tostring(value), value = value })
+			end)
+			return
+		end
+	end
+	error(`no action {name} for a {kind}`)
+end
+
+test("a file renames in its folder or to a path, and deletes after y", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "aaa", ["keep.txt"] = "keep" })
+	greed.open(dir .. "/a.txt")
+	local buffer = greed.view():buffer()
+	run("file", "rename", dir .. "/a.txt")
+	t:keys("ctrl-u b . t x t enter")
+	assert(greed.fs.stat(dir .. "/b.txt") and not greed.fs.stat(dir .. "/a.txt"), "renamed")
+	assert(buffer:path() == dir .. "/b.txt", "the open file went along")
+	run("file", "delete", dir .. "/keep.txt")
+	t:keys("n")
+	assert(greed.fs.stat(dir .. "/keep.txt"), "n keeps it")
+	run("folder", "delete", dir)
+	t:keys("esc")
+	run("file", "delete", dir .. "/keep.txt")
+	t:keys("y")
+	assert(greed.fs.stat(dir .. "/keep.txt") == nil, "y deletes it")
+end)

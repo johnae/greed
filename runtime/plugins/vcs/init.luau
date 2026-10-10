@@ -564,6 +564,34 @@ core.actions.command(
 core.actions.command("change", "blame", "blame-line", "Who last changed the line, and when")
 core.actions.command("change", "stage", "stage-change", "Stage it for the next git commit")
 
+core.actions.action({
+	kind = "file",
+	name = "diff",
+	doc = "What changed in it since the last commit, in a buffer",
+	run = function(target)
+		local path = core.project.resolve(target.value)
+		local repo = repo_of(path)
+		if repo == nil then
+			greed.echo(`{core.project.short(path)} isn't in a repository`)
+			return
+		end
+		local relative = string.sub(path, #repo.root + 2)
+		local args = if repo.kind == "jj"
+			then { "diff", "--git", relative }
+			else { "diff", "HEAD", "--", relative }
+		local text, err = vcs(repo, args, true)
+		if text == nil then
+			greed.echo(`can't diff it: {err}`)
+		elseif text == "" then
+			greed.echo(`{core.project.short(path)} hasn't changed`)
+		else
+			local buffer = greed.create_buffer("diff", text, { readonly = true, language = "diff" })
+			buffer:set_name(`diff {core.project.short(path)}`)
+			greed.view():show(buffer)
+		end
+	end,
+})
+
 greed.command({
 	name = "blame-line",
 	doc = "Show who last changed the line under the cursor, and when",

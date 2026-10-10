@@ -114,3 +114,20 @@ test("results closed some other way open in a new panel", function(t)
 	assert(text() == "1 line matches baz\nbaz\n", text())
 	greed.run("grep-close")
 end)
+
+test("grep here on a folder searches only in it", function(t)
+	local dir = t:tempdir(FILES)
+	for _, action in require("@core").actions.for_kind("folder") do
+		if action.name == "grep here" then
+			greed.spawn(function()
+				action.run({ kind = "folder", label = "src", value = dir .. "/src" })
+			end)
+		end
+	end
+	t:keys("f o o enter")
+	t:wait_for(function()
+		return #headers() > 0
+	end)
+	local shown = table.concat(headers(), " ")
+	assert(string.find(shown, "b.rs", 1, true) and not string.find(shown, "a.txt", 1, true), shown)
+end)

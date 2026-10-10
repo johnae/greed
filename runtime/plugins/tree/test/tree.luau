@@ -216,3 +216,16 @@ test(
 		assert(greed.fs.stat(`{dir}/todo.txt`) == nil, "deleted with y")
 	end
 )
+
+test("reveal in tree opens the folders a file is in, with the cursor on it", function(t)
+	local dir = project(t)
+	for _, action in require("@core").actions.for_kind("file") do
+		if action.name == "reveal in tree" then
+			action.run({ kind = "file", label = "lib.rs", value = dir .. "/src/lib.rs" })
+		end
+	end
+	local buffer = greed.view():buffer()
+	assert(buffer:kind() == "tree", "focused")
+	local here = buffer:line_text(buffer:line_of(greed.view():cursor()))
+	assert(string.find(here, "lib.rs", 1, true), here)
+end)

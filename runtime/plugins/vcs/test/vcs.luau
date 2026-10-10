@@ -368,3 +368,23 @@ test("with jj, the status line shows the nearest bookmark and the change", funct
 	local _, right = t:status()
 	assert(right and string.match(right, " trunk · %w+ "), right)
 end)
+
+test("diff on a file shows what changed in it since the last commit", function(t)
+	local dir = t:repo("git", { ["a.txt"] = "one\n", ["b.txt"] = "same\n" })
+	greed.fs.write(dir .. "/a.txt", "two\n")
+	local function diff(path: string)
+		for _, action in require("@core").actions.for_kind("file") do
+			if action.name == "diff" then
+				action.run({ kind = "file", label = path, value = path })
+			end
+		end
+	end
+	t:buffer("|x")
+	diff(dir .. "/a.txt")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "-one", 1, true) and string.find(text, "+two", 1, true), text)
+	assert(not string.find(text, "b.txt", 1, true), "only that file")
+	diff(dir .. "/b.txt")
+	local said = table.concat(t:messages(), "|")
+	assert(string.find(said, "hasn't changed", 1, true), said)
+end)

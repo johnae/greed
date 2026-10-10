@@ -135,6 +135,18 @@ greed.command({
 	run = multibuffer.close,
 })
 
+core.actions.action({
+	kind = "folder",
+	name = "grep here",
+	doc = "Put the lines in it matching a regex in a panel",
+	run = function(target)
+		local pattern = core.prompt.ask(`grep in {core.project.short(target.value)}`)
+		if pattern and pattern ~= "" then
+			show(pattern, target.value, grep(pattern, target.value))
+		end
+	end,
+})
+
 greed.keymap.bind({ layer = "leader" }, { ["/"] = "search-project" })
 
 return {}

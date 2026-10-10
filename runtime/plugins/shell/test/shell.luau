@@ -545,3 +545,14 @@ test("open from the shell opens files in the style's own mode", function(t)
 	assert(greed.view():buffer():path() == dir .. "/notes.txt", "opened")
 	t:expect_mode(require("@core").style.home())
 end)
+
+test("new shell here on a folder opens a shell starting in it", function(t)
+	local dir = t:tempdir({ ["sub/x.txt"] = "" })
+	for _, action in core.actions.for_kind("folder") do
+		if action.name == "new shell here" then
+			action.run({ kind = "folder", label = "sub", value = dir .. "/sub" })
+		end
+	end
+	local sh = assert(shell.of(greed.view():buffer()), "a shell")
+	assert(sh.cwd == dir .. "/sub", sh.cwd)
+end)

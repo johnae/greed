@@ -2046,6 +2046,15 @@ run.on_finish(function(shell: Shell, block: Block)
 	end)
 end)
 
+core.actions.action({
+	kind = "folder",
+	name = "new shell here",
+	doc = "Open a shell of its own starting in it",
+	run = function(target)
+		M.open({ cwd = target.value })
+	end,
+})
+
 kinds.runs_with(function(shell: Shell, line: string, view: greed.View): Block?
 	return M.run(shell, line, { view = view })
 end)

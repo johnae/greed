@@ -170,6 +170,38 @@ function M.open(root: string?)
 	render(t)
 end
 
+--- Opens the tree on the project, if it isn't open, with the folders
+--- `path` is in unfolded and the cursor on it.
+function M.reveal(path: string)
+	local t = shown()
+	if t == nil or not core.project.inside(path, t.root) then
+		M.open()
+		t = shown()
+	end
+	if t == nil or not core.project.inside(path, t.root) then
+		greed.echo(`{core.project.short(path)} isn't in the project`)
+		return
+	end
+	local folder = string.match(path, "^(.*)/[^/]*$")
+	while folder and #folder > #t.root do
+		t.expanded[folder] = true
+		folder = string.match(folder, "^(.*)/[^/]*$")
+	end
+	render(t, path)
+	t.view:focus()
+end
+
+for _, kind in { "file", "folder" } do
+	core.actions.action({
+		kind = kind,
+		name = "reveal in tree",
+		doc = "Show it in the file tree",
+		run = function(target)
+			M.reveal(target.value)
+		end,
+	})
+end
+
 greed.command({
 	name = "tree",
 	doc = "Open the file tree, move to it, or close it if you're in it",

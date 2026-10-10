@@ -574,6 +574,13 @@ folder, a pod or another kubernetes object is described, a container
 shows its logs. `ctrl-o` (`alt-left` in the vscode style) comes back from
 a file you opened to the row you opened it from.
 
+A file offers `open`, `float`, `split`, `rename`, `delete`, `diff` (what
+changed since the last commit), `reveal in tree` and `copy-path`; a folder
+`cd`, `new shell here`, `grep here`, `rename`, `delete` and `reveal in
+tree`; a process `stop`, `interrupt`, `hang up`, `kill`, `open files` and
+`its folder`. These are the same wherever a file or folder shows up, a
+path in any buffer included.
+
 ```text
 ❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods
 NAME                     READY   STATUS             RESTARTS   AGE

@@ -194,6 +194,33 @@ for _, kind in { "file", "folder" } do
 			greed.echo(`copied {target.value}`)
 		end,
 	})
+	M.action({
+		kind = kind,
+		name = "rename",
+		doc = "Rename or move it: a name alone keeps it in its folder; open files go along",
+		run = function(target)
+			local path: string = target.value
+			local folder = string.match(path, "^(.*)/[^/]*$") or "."
+			local name = require("./prompt").ask("rename to", string.match(path, "[^/]*$"))
+			if name == nil or name == "" or `{folder}/{name}` == path then
+				return
+			end
+			local project = require("./project")
+			local to = if string.find(name, "/", 1, true)
+				then project.resolve(name)
+				else `{folder}/{name}`
+			require("./file").rename(path, to)
+			greed.echo(`renamed to {project.short(to)}`)
+		end,
+	})
+	M.action({
+		kind = kind,
+		name = "delete",
+		doc = "Delete it, after you press y",
+		run = function(target)
+			require("./file").confirm_remove(target.value)
+		end,
+	})
 end
 
 M.finder({
