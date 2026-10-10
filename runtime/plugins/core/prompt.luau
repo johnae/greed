@@ -10,6 +10,9 @@ export type Options = {
 	title: string,
 	--- What it starts with, the cursor at its end.
 	text: string?,
+	--- Starts with `text` selected, so typing replaces it where typing
+	--- replaces a selection (the vscode style), as a find field does.
+	selected: boolean?,
 	--- Called with the text as it's typed.
 	on_change: ((text: string) -> ())?,
 	on_submit: (text: string) -> (),
@@ -132,7 +135,11 @@ function M.open(options: Options): greed.View
 		options = options,
 	} :: Open
 	opened[client] = o
-	o.float.view:set_cursor(#start)
+	if options.selected and start ~= "" then
+		o.float.view:set_selection({ ranges = { { anchor = 0, head = #start } }, primary = 1 })
+	else
+		o.float.view:set_cursor(#start)
+	end
 	mask(o)
 	return o.float.view
 end

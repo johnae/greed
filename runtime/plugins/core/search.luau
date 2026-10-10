@@ -401,6 +401,7 @@ greed.command({
 		f.bar = prompt.open({
 			title = "find",
 			text = text,
+			selected = true,
 			kind = "find",
 			on_change = changed,
 			on_submit = close,
@@ -483,6 +484,7 @@ greed.command({
 		bar = prompt.open({
 			title = "replace",
 			text = text,
+			selected = true,
 			on_change = changed,
 			on_cancel = clear,
 			on_submit = function(typed)

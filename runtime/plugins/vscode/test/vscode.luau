@@ -249,3 +249,12 @@ test("ctrl-k starts VS Code's chords, and never deletes to the line's end", func
 	assert(more, "ctrl-k waits for the rest")
 	assert(greed.keymap.resolve("ctrl-\\") == "pane-split-right")
 end)
+
+test("typing in ctrl-h (and ctrl-f) replaces the selected text it starts with", function(t)
+	file(t, "^foo| bar foo")
+	greed.option.set("editing-style", "vscode")
+	t:keys("ctrl-h b a r enter")
+	assert(string.find(screen(t), "replace 1 match of bar with", 1, true), screen(t))
+	t:keys("esc")
+	greed.option.set("editing-style", "helix")
+end)
