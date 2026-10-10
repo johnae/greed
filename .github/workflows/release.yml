@@ -32,7 +32,7 @@ jobs:
             distros: ubuntu:20.04 debian:11 fedora:latest opensuse/tumbleweed:latest
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build
         run: |
           docker run --rm -v "$PWD:/src" -w /src \
@@ -43,7 +43,7 @@ jobs:
           for distro in ${{ matrix.distros }}; do
             echo "$distro: $(docker run --rm -v "$PWD/$pkg:/pkg:ro" "$distro" /pkg/bin/greed --version)"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: target/packages/*.tar.gz
@@ -58,7 +58,7 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - name: build
         run: nix build .#static
@@ -71,7 +71,7 @@ jobs:
           cp LICENSE README.md THIRD-PARTY.md "target/packages/$name/"
           "target/packages/$name/bin/greed" --version
           tar -C target/packages -czf "target/packages/$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-tui-${{ matrix.arch }}
           path: target/packages/*.tar.gz
@@ -81,7 +81,7 @@ jobs:
     env:
       SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: signing certificate
         if: env.SIGNING == 'true'
         env:
@@ -108,7 +108,7 @@ jobs:
           GREED_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
         run: dist/macos.sh
       - run: target/packages/greed --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: |
@@ -122,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
           merge-multiple: true
