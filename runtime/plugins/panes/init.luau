@@ -906,6 +906,28 @@ core.actions.action({
 	end,
 })
 
+-- Any buffer (a shell, a terminal) too, as the switcher (space space)
+-- opens them.
+core.actions.action({
+	kind = "buffer",
+	name = "float",
+	doc = "Show it in a floating view",
+	run = function(target)
+		M.focus(M.floats.open(target.value))
+	end,
+})
+for _, where in { { "beside", "right" }, { "below", "down" } } do
+	local word, side: Direction = where[1], where[2] :: any
+	core.actions.action({
+		kind = "buffer",
+		name = `split {word}`,
+		doc = `Show it in a new pane {word} this one`,
+		run = function(target)
+			M.focus(M.pane():split(side, target.value))
+		end,
+	})
+end
+
 -- Saves the tab as the layout named in `args`, or asks for a name.
 local function save_layout(args: { string }, mine: boolean)
 	local function save(name: string)

@@ -547,3 +547,36 @@ test("each thing's own actions come before those every kind has", function(t)
 	assert(first < second and second < everywhere, shown)
 	t:keys("esc")
 end)
+
+test("space space switches to anything open, says what each is and keeps a kind with @", function(t)
+	local dir = t:tempdir({ ["notes.txt"] = "the notes" })
+	greed.open(dir .. "/notes.txt")
+	local scratch = greed.create_buffer("scratch", "one\ntwo\nlast line")
+	scratch:set_name("jotted")
+	scratch:set_kept(true)
+	t:buffer("|here")
+	t:keys("space space")
+	local list = table.concat(t:floats(), "\n")
+	assert(string.find(list, "scratch  jotted", 1, true), list)
+	assert(string.find(list, "notes.txt", 1, true), list)
+	-- @ keeps a kind; the preview shows a buffer that isn't a file at its end.
+	t:keys("@ s c")
+	t:wait_for(function()
+		local shown = table.concat(t:floats(), "\n")
+		return not string.find(shown, "notes.txt", 1, true)
+	end)
+	assert((string.find(table.concat(t:floats(), "\n"), "last line", 1, true)))
+	t:keys("enter")
+	assert(greed.view():buffer():id() == scratch:id(), "switched to it")
+	-- ctrl-f shows it in a float instead, with the panes plugin there.
+	if greed.plugin.dirs().panes then
+		t:keys("space space n o t e s ctrl-f")
+		local float = greed.view()
+		assert(
+			float:float_spec() ~= nil and float:buffer():path() == dir .. "/notes.txt",
+			"a float"
+		)
+		float:close()
+	end
+	scratch:set_kept(false)
+end)

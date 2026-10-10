@@ -571,6 +571,7 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 | `space '` | Open the last picker again |
 | `space .` | What you can do with what's under the cursor (a file, link, symbol, problem, change or the selection), to pick one; `alt-.` in the vscode style |
 | `space b` | Switch to an open file |
+| `space space` | Switch to anything open: files, shells, terminals and other buffers, each saying what it is. `@shell` (or `@sh`) keeps one kind, `@modified` those with unsaved changes, `@shown` those in a pane; the preview shows a shell or terminal at its end. `enter` shows it here, `ctrl-v` beside, `ctrl-s` below and `ctrl-f` in a float |
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |

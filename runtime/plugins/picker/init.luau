@@ -17,6 +17,7 @@ export type Preview = picker.Preview
 export type Options = picker.Options
 
 require("@self/pickers")
+require("@self/switch")
 
 -- Several buttons under the cursor: pick which one enter presses.
 core.buttons.set_chooser(function(buttons, press)
@@ -55,6 +56,7 @@ core.style.typing_kind("picker")
 greed.keymap.bind({ layer = "leader" }, {
 	f = "pick-file",
 	b = "pick-buffer",
+	space = "pick-anything",
 	s = "pick-outline",
 	j = "pick-jump",
 	F = "pick-file-here",

@@ -789,6 +789,8 @@ greed.tab.set_layout({
   the current one and `on_cancel` hears `esc`, for trying things out live.
   With `paths = { dirs = true, choose = function(path) ... end }`, typing a
   path lists the folder's contents, and `tab` completes one into the query.
+  `tags = function(item, word) ... end` makes words like `@shell` in the
+  query keep the items it says have them, as `space space` does with kinds.
 - The completion menu asks sources before the language server, in any
   buffer, a file or not: `require("@lsp").completion.source(function(view,
   ask) ... end)` returns items like `{ label = "src/", text = "src/", from

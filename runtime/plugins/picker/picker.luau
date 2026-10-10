@@ -52,6 +52,10 @@ export type Options = {
 	--- typed after the last "/" (only folders with `dirs`). tab completes
 	--- the current one into the query, and enter gives `choose` its full path.
 	paths: Paths?,
+	--- Words of the query starting with `@` (`@shell`) keep the items it says
+	--- have them, and aren't matched against the labels. `word` comes
+	--- without its `@`, and may be only part of one, while it's typed.
+	tags: ((item: Item, word: string) -> boolean)?,
 }
 
 -- At most this many matches are shown.
@@ -87,6 +91,9 @@ type Open = {
 	moved_to: Item?,
 	on_cancel: (() -> ())?,
 	paths: Paths?,
+	tags: ((item: Item, word: string) -> boolean)?,
+	-- The query without its `@` words, as matched against the labels.
+	matched: string?,
 	-- The items and their labels as given, while a path's folder is listed
 	-- instead.
 	given: { items: { Item }, labels: { string } }?,
@@ -158,7 +165,7 @@ local function render(o: Open)
 			if o.source
 				then {}
 				else greed.fuzzy_positions(
-					o.query or "",
+					o.matched or o.query or "",
 					o.labels[index],
 					{ case = core.search.case() }
 				),
@@ -255,6 +262,36 @@ local function list_path(o: Open, q: string, paths: Paths)
 	render(o)
 end
 
+-- The items matching `q`, best first: its `@` words keep those `o.tags`
+-- says have them, and the rest of it is matched against their labels.
+local function matching(o: Open, q: string): { number }
+	local tags = o.tags
+	o.matched = q
+	if tags == nil then
+		return greed.fuzzy(q, o.labels, { case = core.search.case() })
+	end
+	local words: { string } = {}
+	local rest = string.gsub(q, "%s*@(%S*)", function(word: string): string
+		table.insert(words, word)
+		return ""
+	end)
+	o.matched = rest
+	local out = {}
+	for _, index in greed.fuzzy(rest, o.labels, { case = core.search.case() }) do
+		local keep = true
+		for _, word in words do
+			if word ~= "" and not tags(o.items[index], word) then
+				keep = false
+				break
+			end
+		end
+		if keep then
+			table.insert(out, index)
+		end
+	end
+	return out
+end
+
 -- Filters the items again if the query changed, or with a source, asks it
 -- once typing pauses.
 local function refresh(o: Open)
@@ -274,7 +311,7 @@ local function refresh(o: Open)
 	end
 	local source = o.source
 	if source == nil then
-		o.matches = greed.fuzzy(q, o.labels, { case = core.search.case() })
+		o.matches = matching(o, q)
 		o.current = 1
 		render(o)
 		return
@@ -490,6 +527,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		on_move = options and options.on_move,
 		on_cancel = options and options.on_cancel,
 		paths = options and options.paths,
+		tags = options and options.tags,
 		generation = 0,
 		searching = false,
 	} :: Open
