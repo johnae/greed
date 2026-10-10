@@ -1,8 +1,9 @@
-Greed, a General Runtime for Editing, Extending and Delegating, is an editor
-you use in a terminal or a window, on your machine or on the one where the
-work runs. It's a small Rust core with everything else in Luau: keys, modes,
-commands, pickers, themes and the agent integration are plugins you can
-read, change or replace while it runs.
+Greed (Get, Reflect, Eval, Edit, Delegate) is an execution environment
+with a good editor built in. You use it in a terminal or a window, on your
+machine or on the one where the work runs. It's a small Rust core with
+everything else in Luau: keys, modes, commands, pickers, themes and the
+agent integration are plugins you can read, change or replace while it
+runs.
 
 ```text
 $ greed src/main.rs          # edit; the session keeps running if you detach
@@ -148,7 +149,8 @@ To use your own copy of them, point `GREED_RUNTIME` at a folder shaped like
 - [How Greed is built](docs/design.md): what lives in Rust, what lives in
   Luau, and why.
 
-Greed is early and changes often.
+Or maybe it's Glorified REPL, Editor Eventually Discovered. Either way,
+it's early and changes often.
 
 Greed is licensed under the [Mozilla Public License 2.0](LICENSE); parts
 from other projects keep their own licenses, listed in

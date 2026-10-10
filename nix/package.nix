@@ -76,7 +76,7 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "A General Runtime for Editing, Extending and Delegating: an extensible editor and more";
+    description = "Get, Reflect, Eval, Edit, Delegate: an execution environment with a good editor built in";
     mainProgram = "greed";
     platforms = lib.platforms.unix;
   };

@@ -1,6 +1,6 @@
 [package]
 name = "greed-editor"
-description = "Greed, a General Runtime for Editing, Extending and Delegating: an extensible editor and more"
+description = "Greed (Get, Reflect, Eval, Edit, Delegate): an execution environment with a good editor built in"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

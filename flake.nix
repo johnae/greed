@@ -1,5 +1,5 @@
 {
-  description = "Greed, a General Runtime for Editing, Extending and Delegating";
+  description = "Greed (Get, Reflect, Eval, Edit, Delegate): an execution environment with a good editor built in";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
