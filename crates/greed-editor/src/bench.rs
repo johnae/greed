@@ -128,8 +128,10 @@ pub fn run(file: Option<&Path>, terminal: bool) -> Result<(), Error> {
     let conn = server::spawn_with_session(
         move || {
             let host = crate::host(&text, Some(opened), Some(requests))?;
-            // A benchmark isn't a session to come back to.
+            // A benchmark isn't a session to come back to, nor a first start
+            // to set up.
             host.eval("require('@greed').option.set('restore-session', false)")?;
+            host.eval("require('@greed').option.set('setup-first-start', false)")?;
             Ok(host)
         },
         Some(session),

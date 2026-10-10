@@ -390,16 +390,27 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 end)
 
 -- The first time someone attaches without a config, the page shows.
-greed.on("client.attached", function()
+greed.option.define({
+	name = "setup-first-start",
+	doc = "Show the setup page the first time a terminal or window attaches without a config",
+	default = true,
+})
+
+--- Whether the page opens by itself now: the first time, with no config,
+--- unless `setup-first-start` is off.
+function M.first_start(): boolean
 	local dirs = greed.fs.dirs()
-	if page or dirs.brought or dirs.config == nil then
-		return
+	if page or dirs.brought or dirs.config == nil or not greed.option.get("setup-first-start") then
+		return false
 	end
 	local seen = seen_path()
-	if greed.fs.stat(`{dirs.config}/init.luau`) or (seen and greed.fs.stat(seen)) then
-		return
+	return greed.fs.stat(`{dirs.config}/init.luau`) == nil and not (seen and greed.fs.stat(seen))
+end
+
+greed.on("client.attached", function()
+	if M.first_start() then
+		M.open()
 	end
-	M.open()
 end)
 
 --- Type checking for your config (types.luau).

@@ -204,3 +204,13 @@ test("the config's commented-out settings run once uncommented, and name real op
 	end
 	assert(names > 10, `{names} options`)
 end)
+
+test("the page opens by itself the first time without a config, unless turned off", function()
+	local setup = require("@setup")
+	assert(setup.first_start(), "no config yet")
+	greed.option.set("setup-first-start", false)
+	assert(not setup.first_start(), "turned off")
+	greed.option.set("setup-first-start", true)
+	greed.fs.write(config_file(), "-- mine\n")
+	assert(not setup.first_start(), "a config is there")
+end)
