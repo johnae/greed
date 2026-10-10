@@ -202,3 +202,79 @@ test("a type is found by its name alone, and as the list of names writes it", fu
 	assert(describe.text("api type ThemeEntry") == text, "as listed")
 	assert(describe.text("ThemeEntry", "api") == text, "as an api name")
 end)
+
+-- The inspector's lines, and puts the cursor on the first holding `text`.
+local function inspector_line(text: string): number
+	local buffer = greed.view():buffer()
+	for line = 0, buffer:line_count() - 1 do
+		if string.find(buffer:line_text(line), text, 1, true) then
+			greed.view():set_cursor(buffer:line_start(line))
+			return line
+		end
+	end
+	error(`no line with {text}: {buffer:text()}`)
+end
+
+test(
+	"space h i with nothing under the cursor inspects the editor; enter goes into an object, backspace comes back",
+	function(t)
+		t:buffer("|hello")
+		local buffer = greed.view():buffer()
+		t:keys("space h i")
+		local page = t:floats()[1]
+		assert(string.find(page, "Greed  (editor:)", 1, true), page)
+		assert(string.find(page, "Related", 1, true), page)
+		inspector_line(`(buffer:{buffer:id()})`)
+		t:keys("enter")
+		page = t:floats()[1]
+		assert(string.find(page, `(buffer:{buffer:id()})`, 1, true), page)
+		assert(string.find(page, "lines", 1, true) and string.find(page, "Actions", 1, true), page)
+		t:keys("backspace")
+		assert(string.find(t:floats()[1], "(editor:)", 1, true), "back at the editor")
+		t:keys("esc")
+		assert(#t:floats() == 0)
+	end
+)
+
+test("enter on an action in the inspector runs it on the object", function(t)
+	local core = require("@core")
+	local ran: string? = nil
+	core.objects.kind({
+		name = "ticket",
+		get = function(key)
+			return { kind = "ticket", id = `ticket:{key}`, label = key, value = key }
+		end,
+		inspect = function(key)
+			return { status = "open" }
+		end,
+	})
+	core.actions.action({
+		kind = "ticket",
+		name = "close",
+		doc = "Close the ticket",
+		run = function(target)
+			ran = target.value
+		end,
+	})
+	t:buffer("|")
+	require("@describe").inspect(assert(core.objects.get("ticket:A-1")))
+	local page = t:floats()[1]
+	assert(string.find(page, "status  open", 1, true), page)
+	inspector_line("Close the ticket")
+	t:keys("enter")
+	assert(ran == "A-1", "it ran on the ticket")
+	assert(#t:floats() == 0, "and the inspector made way")
+end)
+
+test("objects are described by id, for space h h and agents", function(t)
+	t:buffer("|hello")
+	local buffer = greed.view():buffer()
+	local describe = require("@describe")
+	local found = false
+	for _, entry in describe.entries("object") do
+		found = found or entry.name == `buffer:{buffer:id()}`
+	end
+	assert(found, "listed")
+	local text = describe.text(`buffer:{buffer:id()}`) or ""
+	assert(string.find(text, "lines", 1, true) and string.find(text, "views", 1, true), text)
+end)

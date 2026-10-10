@@ -10,7 +10,8 @@ how keymaps are organised.
 |---|---|
 | `space h k` | Press a key and see the command it runs, its other keys and where it's defined |
 | `space h c` | Pick a command and see what it does and which keys run it |
-| `space h h` | Describe anything: commands, options, events, functions of the plugin API, plugins, modes and editing styles, from one picker |
+| `space h h` | Describe anything: commands, options, events, functions of the plugin API, plugins, modes, editing styles and the objects of the running editor, from one picker |
+| `space h i` | Inspect what's under the cursor, or with nothing there the editor itself: an object's state, the objects it relates to (`enter` goes to one, `backspace` comes back) and its actions (`enter` runs one) |
 | `space h o` `space h e` `space h a` `space h p` `space h m` `space h s` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, a mode and its keys, or an editing style: its modes, the role each plays and its leader |
 | `space ?` | Every command, with its keys; enter runs one |
 | `space .` (`alt-.` in the vscode style) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |

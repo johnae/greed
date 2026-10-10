@@ -327,16 +327,18 @@ agent.tool({
 	name = "describe",
 	group = "plugins",
 	description = "What a command, option, event, API function or type, plugin or mode is: "
-		.. "its doc, keys, current value, who defined it and where. Give a name that "
-		.. "isn't exact and it lists the names that contain it",
+		.. "its doc, keys, current value, who defined it and where. Also the objects of the "
+		.. "running editor by id (buffer:12, tab:3, shell-block:7.2, terminal:9): their state, "
+		.. "the objects they relate to and their actions; editor: relates to them all. Give a "
+		.. "name that isn't exact and it lists the names that contain it",
 	input = object({
 		name = {
 			type = "string",
-			description = "e.g. next-word, text-width, buffer.changed, greed.option.set, Buffer:edit",
+			description = "e.g. next-word, text-width, buffer.changed, greed.option.set, Buffer:edit, editor:, buffer:12",
 		},
 		kind = {
 			type = "string",
-			enum = { "command", "option", "event", "api", "plugin", "mode", "style" },
+			enum = { "command", "option", "event", "api", "plugin", "mode", "style", "object" },
 			description = "To look in one kind only",
 		},
 	}, { "name" }),

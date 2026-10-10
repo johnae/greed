@@ -8,12 +8,16 @@
 --   space h e   an event           space h a   a function of the API
 --   space h p   a plugin           space h m   a mode and its keys
 --   space h k   press a key to see what it runs
+--   space h i   inspect what's under the cursor, or the editor: an
+--               object's state, what it relates to and what it can do
 --
 -- Agents get the same through the `describe` tool, from `text`.
 
 local greed = require("@greed")
+local core = require("@core")
 local picker = require("@picker")
 local api = require("@self/api")
+local inspect = require("@self/inspect")
 
 local M = {}
 
@@ -26,9 +30,12 @@ export type Entry = {
 	lines: () -> { string },
 	path: string?,
 	line: number?,
+	--- For a live object, the object, which shows in the inspector.
+	object: core.Object?,
 }
 
-local KINDS: { string } = { "command", "option", "event", "api", "plugin", "mode", "style" }
+local KINDS: { string } =
+	{ "command", "option", "event", "api", "plugin", "mode", "style", "object" }
 
 local function defined_at(source: string?, owner: string?): string
 	local where = source or "?"
@@ -261,7 +268,6 @@ end
 -- The editing styles: their modes, each with the role it plays and what the
 -- status line calls it, and the keys that open the leader.
 local function styles(): { Entry }
-	local core = require("@core")
 	local out: { Entry } = {}
 	for _, style in core.style.list() do
 		table.insert(out, {
@@ -294,6 +300,26 @@ local function styles(): { Entry }
 	return out
 end
 
+-- The objects of the running editor: everything that can be listed, and
+-- the editor itself, where the inspector starts.
+local function objects(): { Entry }
+	local out: { Entry } = {}
+	local listed = core.objects.list()
+	table.insert(listed, 1, assert(core.objects.get("editor:")))
+	for _, object in listed do
+		table.insert(out, {
+			kind = "object",
+			name = object.id,
+			doc = object.label,
+			lines = function()
+				return inspect.text(object)
+			end,
+			object = object,
+		})
+	end
+	return out
+end
+
 local SOURCES: { [string]: () -> { Entry } } = {
 	command = commands,
 	option = options,
@@ -302,6 +328,7 @@ local SOURCES: { [string]: () -> { Entry } } = {
 	plugin = plugins,
 	mode = modes,
 	style = styles,
+	object = objects,
 }
 
 --- Everything of `kind` ("command", "option", "event", "api", "plugin",
@@ -350,10 +377,16 @@ function M.text(name: string, kind: string?): string?
 		.. `{dir}/init.luau and the files it requires. Read them, or grep {dir} for {rest}.`
 end
 
+-- The help window: where what it describes is defined, or for an object in
+-- the inspector, the object, what its lines lead to, and the objects
+-- inspected before it, to go back to.
 type Open = {
 	view: greed.View,
 	path: string?,
 	line: number?,
+	object: core.Object?,
+	links: { [number]: inspect.Link }?,
+	back: { core.Object },
 }
 
 local open: Open? = nil
@@ -365,8 +398,33 @@ local function close()
 	end
 end
 
+--- Shows `object` in the inspector: its state, the objects it relates to
+--- (enter goes to one, backspace comes back) and its actions (enter runs
+--- one). `back` is the objects inspected before, newest last.
+function M.inspect(object: core.Object, back: { core.Object }?)
+	close()
+	local lines, links = inspect.page(object)
+	table.insert(lines, "")
+	table.insert(lines, "enter: inspect or run   backspace: back   r: again   esc: close")
+	local buffer = greed.create_buffer("help", table.concat(lines, "\n"))
+	open = {
+		view = greed.float(buffer, {
+			title = "Inspect",
+			width = "70%",
+			height = math.min(#lines + 2, 30),
+		}),
+		object = object,
+		links = links,
+		back = back or {},
+	}
+end
+
 --- Shows `entry` in the help window.
 function M.show(entry: Entry)
+	if entry.object then
+		M.inspect(entry.object)
+		return
+	end
 	close()
 	local lines = { `{entry.name}  ({entry.kind})`, "" }
 	for _, line in entry.lines() do
@@ -382,6 +440,7 @@ function M.show(entry: Entry)
 		view = greed.float(buffer, { title = "Help", width = "70%", height = height }),
 		path = entry.path,
 		line = entry.line,
+		back = {},
 	}
 end
 
@@ -458,14 +517,89 @@ greed.command({
 
 greed.command({
 	name = "help-goto",
-	doc = "Open the file what's described is defined in, at its definition",
-	run = function()
+	doc = "Open the file what's described is defined in, at its definition; in the inspector, "
+		.. "inspect the object on this line or run its action",
+	run = function(ctx)
 		local o = open
-		if o == nil or o.path == nil then
+		if o == nil then
+			return
+		end
+		local object = o.object
+		if object then
+			local link = o.links and o.links[ctx.buffer:line_of(ctx.view:cursor()) + 1]
+			if link == nil then
+				return
+			end
+			if link.object then
+				local back = table.clone(o.back)
+				table.insert(back, object)
+				M.inspect(link.object, back)
+				return
+			end
+			-- An action runs where you were, as if the inspector weren't
+			-- there.
+			close()
+			core.objects.act(object, assert(link.action))
+			return
+		end
+		if o.path == nil then
 			return
 		end
 		close()
-		require("@core").file.open_at(o.path, (o.line or 1) - 1)
+		core.file.open_at(o.path, (o.line or 1) - 1)
+	end,
+})
+
+greed.command({
+	name = "help-back",
+	doc = "In the inspector, go back to the object inspected before",
+	run = function()
+		local o = open
+		if o == nil or #o.back == 0 then
+			return
+		end
+		local back = table.clone(o.back)
+		local previous = table.remove(back) :: core.Object
+		M.inspect(core.objects.get(previous.id) or previous, back)
+	end,
+})
+
+greed.command({
+	name = "help-again",
+	doc = "In the inspector, look at the object again, as it is now",
+	run = function()
+		local o = open
+		local object = o and o.object
+		if o and object then
+			local now = core.objects.get(object.id)
+			if now == nil then
+				greed.echo(`{object.label} is gone`)
+				return
+			end
+			M.inspect(now, o.back)
+		end
+	end,
+})
+
+greed.command({
+	name = "inspect",
+	doc = "Inspect what's under the cursor: its state, what it relates to, what it can do; "
+		.. "with nothing there, start at the editor",
+	run = function(ctx)
+		local here = core.objects.at(ctx.view)
+		if #here == 0 then
+			M.inspect(assert(core.objects.get("editor:")))
+		elseif #here == 1 then
+			M.inspect(here[1])
+		else
+			local items = {}
+			for _, object in here do
+				table.insert(items, { label = `{object.kind}  {object.label}`, value = object })
+			end
+			picker.pick("Inspect", items, function(item)
+				M.inspect(item.value)
+			end)
+		end
 	end,
 })
 
@@ -473,6 +607,8 @@ greed.keymap.bind({ kind = "help" }, {
 	esc = "help-close",
 	q = "help-close",
 	enter = "help-goto",
+	backspace = "help-back",
+	r = "help-again",
 })
 
 greed.keymap.bind({ layer = "leader" }, {
@@ -485,6 +621,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["h m"] = "describe-mode",
 	["h k"] = "describe-key",
 	["h s"] = "describe-style",
+	["h i"] = "inspect",
 })
 
 -- Commands, wherever they show up as things to act on (the command

@@ -248,6 +248,59 @@ the shell's rows add `process`, `container`, `pod`, `deployment` and
 `shell-block`, so a plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
+### Objects
+
+The things in a running Greed are objects, each with a kind and an id
+(`buffer:12`, `tab:3`, `shell-block:7.2`). An object has its state, the
+objects it relates to and its kind's actions. `space h i` inspects one, and
+agents read them through the `describe` tool. Greed's own kinds are
+`editor` (where the inspector starts), `buffer`, `view`, `tab`, `plugin`,
+`client`, `file`, `folder`, `terminal`, `shell-block`, `language-server`
+and `proposal`.
+
+A plugin adds a kind for its own things. Everything but the name is
+optional: `list` when there's a way to list them all, `get` to find one by
+the key in its id, `inspect` for its state as a table, and `relations` for
+the objects it points at, by name.
+
+```luau
+local objects = require("@core").objects
+
+local function ticket(key: string): core.Object
+	return { kind = "ticket", id = `ticket:{key}`, label = key, value = key }
+end
+
+objects.kind({
+	name = "ticket",
+	doc = "A ticket in the tracker",
+	get = function(key)
+		return ticket(key)
+	end,
+	inspect = function(key)
+		local found = tracker.lookup(key)
+		return { status = found.status, owner = found.owner }
+	end,
+	relations = function(key)
+		local blocks = {}
+		for _, other in tracker.lookup(key).blocks do
+			table.insert(blocks, ticket(other))
+		end
+		return { blocks = blocks }
+	end,
+})
+```
+
+What a finder finds is an object once it has an id: the kind's `key(value)`
+gives one, or the value itself when it's a string or a number, as a file's
+path is. An object that is somewhere in a buffer says where (`buffer`,
+`from`, `to`); `objects.act(object, name)` then puts the cursor on it before
+running the action, so actions that work on what's under the cursor work
+on it from anywhere, the inspector included.
+
+`objects.list(kind)`, `objects.get(id)`, `objects.inspect(object)`,
+`objects.related(object)` and `objects.at(view)` read them. A plugin's kinds
+go when it's unloaded.
+
 ### Going to definitions and hover
 
 `g d` (going to where something is defined) and `space k` (what it is) ask
