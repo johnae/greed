@@ -570,7 +570,8 @@ names the repository the block ran in. The status says so
 it, the same actions that kind of thing has anywhere in Greed, and
 `enter` does the usual one: a file opens, a folder becomes the shell's
 folder, a pod or another kubernetes object is described, a container
-shows its logs.
+shows its logs. `ctrl-o` (`alt-left` in the vscode style) comes back from
+a file you opened to the row you opened it from.
 
 ```text
 ❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods

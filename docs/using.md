@@ -353,7 +353,7 @@ cursor is a selection one character wide.
 | `g n` `g p`, `g a`, `g m` | The next or previous open file, the one you were in before, the one you changed last |
 | `g .` `g \|`, `g f` | Where the file last changed, column N (`8 g \|`), the file named under the cursor |
 | `alt-.` | Do the last `f` or `t` again |
-| `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened) started, and forward again (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |
+| `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened from anywhere, the shell included) started, and forward again, like a browser's back and forward. Each pane has its own, and going back puts the cursor and scroll where they were (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |
 
 `:set line-numbers relative` numbers the lines by how far they are from the
 cursor's line, so the line marked 5 below is `5 j` away. `hybrid` does the

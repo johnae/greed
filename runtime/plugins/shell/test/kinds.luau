@@ -176,8 +176,15 @@ test("ls -l's rows are files and folders; enter opens one and goes into the othe
 	assert(file.value == `{sh.cwd}/notes.txt`, tostring(file.value))
 	t:keys("esc")
 	on(sh, listing, "notes.txt")
+	local row = greed.view():cursor()
 	t:keys("enter")
 	assert(greed.view():buffer():path() == `{sh.cwd}/notes.txt`, "opened")
+	-- Back comes to the row it opened from, forward to the file again.
+	t:run("jump-back")
+	assert(greed.view():buffer() == sh.buffer, "back in the shell")
+	assert(greed.view():cursor() == row, `{greed.view():cursor()} ~= {row}`)
+	t:run("jump-forward")
+	assert(greed.view():buffer():path() == `{sh.cwd}/notes.txt`, "forward to the file")
 end)
 
 test("ps's rows are processes and docker ps's containers", function(t)
