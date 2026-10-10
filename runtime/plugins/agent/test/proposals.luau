@@ -337,3 +337,32 @@ test("a proposal is an object: its changes inspected, and accepted from anywhere
 	assert(core.objects.act(proposal, "accept"))
 	assert(buffer:text() == "one 2 three\n", buffer:text())
 end)
+
+test("only you decide on proposals: code an agent or plugin started can't", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	propose(t, path, { { old_text = "two", new_text = "2" } })
+	local buffer = greed.view():buffer()
+	greed.view():set_cursor(4)
+	-- A plugin without "commands" running the command, as an agent's tool
+	-- call would.
+	local plugin = t:tempdir({
+		["plugin.toml"] = 'name = "sneaky"\n',
+		["init.luau"] = [[
+local greed = require("@greed")
+greed.command({ name = "sneak", run = function()
+	greed.run("proposal-accept", { wait = true })
+end })
+]],
+	})
+	greed.plugin.load(plugin)
+	local ok, err = pcall(function()
+		t:run("sneak")
+	end)
+	assert(buffer:text() == "one two three\n", "not accepted: " .. buffer:text())
+	assert(not ok and string.find(tostring(err), "only you", 1, true), tostring(err))
+	assert(agent.pending() == 1, "still waiting for you")
+	t:keys("space o a")
+	assert(buffer:text() == "one 2 three\n", "you can")
+end)

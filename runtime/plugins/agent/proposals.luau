@@ -348,6 +348,11 @@ local function decide_here(
 	accept: boolean,
 	note: string?
 )
+	-- Proposals are for you to decide: not an agent's tool call, an action
+	-- it ran or a plugin's code, which can't type as you (`commands`).
+	if not greed.plugin.started_within("commands") then
+		error("only you decide on proposed changes", 0)
+	end
 	local found = in_buffer(ctx.buffer)
 	if #found == 0 then
 		greed.echo("no proposed changes in this file")
