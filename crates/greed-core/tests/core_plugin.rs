@@ -236,7 +236,12 @@ fn lsp_plugin_tests_pass() {
 #[test]
 fn languages_plugin_tests_pass() {
     assert_all_pass(
-        &[core(), plugin("helix"), plugin("languages")],
+        &[
+            core(),
+            plugin("helix"),
+            plugin("cmdline"),
+            plugin("languages"),
+        ],
         &plugin("languages"),
     );
 }

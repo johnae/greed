@@ -363,3 +363,24 @@ test("m a T selects a test, m a e an entry", function(t)
 	t:keys("m a e")
 	t:expect('{"a": 1, ^"b": 2|}')
 end)
+
+test(
+	":language sets this buffer's language, says it with none, and refuses one it doesn't know",
+	function(t)
+		t:buffer("|# Title")
+		local buffer = greed.view():buffer()
+		t:run("language", { "markdown" })
+		assert(buffer:language() == "markdown", tostring(buffer:language()))
+		t:run("language")
+		local said = t:messages()
+		assert(string.find(said[#said], "markdown", 1, true), said[#said])
+		local ok, err = pcall(function()
+			t:run("language", { "klingon" })
+		end)
+		assert(
+			not ok and string.find(tostring(err), "no language called klingon", 1, true),
+			tostring(err)
+		)
+		assert(buffer:language() == "markdown", "unchanged")
+	end
+)

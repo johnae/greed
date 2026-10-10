@@ -433,7 +433,9 @@ closer like `end`, `else` or `}` lines up with its block when you press
 `enter` on it, and a closing bracket does as you type it at a line's
 start. Each language has its own indent, like two
 spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
-{ indent = 4 })`; the `indent` option is for files in no language.
+{ indent = 4 })`; the `indent` option is for files in no language. A file
+gets its language from its name; `:language NAME` gives a buffer another
+one (`:setf` too, as in Vim), and `:language` alone says which it has.
 
 **Many selections**
 
@@ -1669,7 +1671,7 @@ the keys of the mode you're in, in every mode. A message on the status line goes
 The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
 `:wq` `:wqa` `:x` `:e` `:b` `:bn` `:bp` `:bc` `:ls` `:sp` `:vs` `:only`
 `:tabnew` `:noh` `:rl` `:rla` `:set` `:toggle`, `:colo` (`:colorscheme`)
-for `:theme`, Neovim's `:checkhealth` for `:health`, and Helix's long ones like
+for `:theme`, `:setf` for `:language`, Neovim's `:checkhealth` for `:health`, and Helix's long ones like
 `:write-all` and `:buffer-close`. Arguments go after a space (`:w notes.md`);
 only Vim's line commands and `:b` take one right after the name (`:m0`,
 `:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says

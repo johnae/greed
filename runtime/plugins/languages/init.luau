@@ -152,6 +152,33 @@ greed.on("buffer.opened", function(event: greed.BufferChanged)
 end)
 
 greed.command({
+	name = "language",
+	doc = "Set this buffer's language, for its highlighting, indent and language server; "
+		.. "with none, say which it has",
+	args = { { name = "language", doc = "e.g. markdown", complete = "language" } },
+	run = function(ctx)
+		local name = ctx.args[1]
+		if name == nil then
+			greed.echo(`{ctx.buffer:title()} is {ctx.buffer:language() or "in no language"}`)
+			return
+		end
+		if languages[name] == nil then
+			error(`there's no language called {name}; tab after :language lists them`, 0)
+		end
+		ctx.buffer:set_language(name)
+		greed.echo(`{ctx.buffer:title()} is {name} now`)
+	end,
+})
+
+require("@cmdline").completer("language", function()
+	local items = {}
+	for _, name in M.list() do
+		table.insert(items, { text = name })
+	end
+	return items
+end)
+
+greed.command({
 	name = "grammar-fetch",
 	doc = "Download a grammar Greed knows where to get, ahead of opening a file in it",
 	args = { { name = "language", doc = "e.g. ruby" } },
