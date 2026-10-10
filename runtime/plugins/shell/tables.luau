@@ -1676,8 +1676,7 @@ function M.pipeline(
 end
 
 -- The stages a line can go on with after a program, as no program has
--- their names; `sort`, `split`, `uniq`, `sum` and `last` are programs too,
--- so they only go on from these.
+-- their names.
 local STARTERS: { [string]: boolean } = {
 	where = true,
 	select = true,
@@ -1694,14 +1693,35 @@ local STARTERS: { [string]: boolean } = {
 	each = true,
 }
 
+-- Stages that are programs' names too: after a program they're the stage
+-- given an argument that isn't a flag (`sort size -r`, `last 2`), which
+-- the program after a pipe has no use for, and the program otherwise
+-- (`sort`, `sort -n`). `^sort` is always the program.
+local SHARED: { [string]: boolean } = {
+	sort = true,
+	last = true,
+	uniq = true,
+	sum = true,
+	split = true,
+}
+
+-- Whether `part` of a line, after a program, starts a stage.
+local function starts_stage(part: string): boolean
+	local word, first = string.match(part, "^%s*(%S+)%s*(%S*)")
+	if word == nil or first == nil then
+		return false
+	end
+	return STARTERS[word] == true
+		or (SHARED[word] == true and first ~= "" and string.sub(first, 1, 1) ~= "-")
+end
+
 --- `line` cut where table stages start after programs, as in `kubectl get
 --- pods | where STATUS != Running`: the programs, then the stages and
 --- what follows them. Nil when no stage comes after a program.
 function M.after_programs(line: string): (string?, string?)
 	local parts = stages(line)
 	for i = 2, #parts do
-		local word = string.match(parts[i], "^%s*(%S+)")
-		if word and STARTERS[word] then
+		if starts_stage(parts[i]) then
 			return trim(table.concat(parts, "|", 1, i - 1)), trim(table.concat(parts, "|", i))
 		end
 	end

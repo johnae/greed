@@ -87,13 +87,15 @@ local function keep_cursor(p: Peek)
 	if from == nil or to == nil or not p.view:valid() then
 		return
 	end
-	local last = math.max(to - 1, from)
+	local buffer = p.shell.buffer
+	-- The block's last character, which may take several bytes (a table
+	-- nu drew ends in `╯`).
+	local last = if to > from then buffer:prev_char(to) else from
 	local cursor = p.view:cursor()
 	if cursor < from or cursor >= to then
-		cursor = math.clamp(cursor, from, last)
+		cursor = if cursor < from then from else last
 		p.view:set_cursor(cursor)
 	end
-	local buffer = p.shell.buffer
 	p.tail = buffer:line_of(cursor) == buffer:line_of(last)
 end
 

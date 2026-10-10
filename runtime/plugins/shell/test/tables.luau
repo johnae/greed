@@ -755,3 +755,23 @@ test("a table's rows stay one line each in a narrow pane, and scroll sideways", 
 	screen()
 	assert(greed.view():side_scroll() > 0, "scrolled sideways")
 end)
+
+test(
+	"after a program, sort, last, uniq, sum and split with a column or number are the stages",
+	function(t)
+		local sh = open(t, t:tempdir())
+		local pods = `printf '%s' {shell.parse.quote(PODS)}`
+		local last = run(t, sh, `{pods} | last 2`)
+		assert(last.status == "done" and #assert(last.table).rows == 2, last.stderr)
+		assert(assert(last.table).rows[2].NAME == "db-migrate-x7k2p", last.output)
+		local sorted = run(t, sh, `{pods} | sort NAME -r | first`)
+		assert(assert(sorted.table).rows[1].NAME == "worker-5c6b7d8f9-abcde", sorted.output)
+		local unique = run(t, sh, `{pods} | uniq STATUS | count`)
+		assert(assert(unique.table).rows[1].count == "3", unique.output)
+		-- Without an argument, or with a flag, it's the program.
+		local program = run(t, sh, "printf 'b\\na\\n' | sort")
+		assert(program.output == "a\nb\n", program.output)
+		local flagged = run(t, sh, "printf '10\\n9\\n' | sort -n")
+		assert(flagged.output == "9\n10\n", flagged.output)
+	end
+)

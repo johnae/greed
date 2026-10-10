@@ -235,3 +235,20 @@ test("floats opened on purpose stay, one for each block, while you work elsewher
 	shell.interrupt(one)
 	shell.interrupt(two)
 end)
+
+test(
+	"a block's float keeps the cursor on whole characters, at a block ending in one of several bytes",
+	function(t)
+		local sh = open(t)
+		local block = done(t, sh, "printf 'one\\n─╯'")
+		local float = assert(shell.peek.open(sh, block))
+		-- Past the block's end, the float brings the cursor back onto its last
+		-- character as it follows the block, `╯` here.
+		float:set_cursor(sh.buffer:len())
+		shell.peek.follow(block)
+		local cursor = float:cursor()
+		assert(sh.buffer:slice(cursor, sh.buffer:next_char(cursor)) ~= "", "on a character")
+		assert(log.block_at(sh, cursor) == block, "in the block")
+		shell.peek.close(float)
+	end
+)

@@ -371,7 +371,7 @@ program after them reads the table as text:
 ❯ $1 | where IMAGE ~ postgres > buf:databases
 ```
 
-`sort` without a column is the `sort` program, as always.
+`sort` without a column, or with a flag, is the `sort` program, as always.
 
 They work after a program too, in one line: what it prints is read as a
 table, as a block's output is, and the stages run on that.
@@ -384,12 +384,13 @@ table, as a block's output is, and the stages run on that.
 
 `where`, `select`, `get`, `columns`, `from`, `lines`, `filter`, `map`,
 `count`, `group`, `first`, `to` and `each` start the stages after a
-program, since no program goes by those names; `sort`, `split`, `uniq`,
-`sum` and `last` are programs too, so they're stages only after one of
-those, and only when they name a column (a number for `last`). What the
-program prints before the stages isn't shown, only what comes out at the
-end, and its errors. A stage on output that isn't a table says so, and
-what makes one.
+program, since no program goes by those names. `sort`, `split`, `uniq`,
+`sum` and `last` are programs too: after a program they're the stages
+when given something that isn't a flag (`ls | sort size -r`, `ls | last
+2`), and the programs otherwise (`sort`, `sort -n`); `^sort` is always
+the program. What the program prints before the stages isn't shown,
+only what comes out at the end, and its errors. A stage on output that
+isn't a table says so, and what makes one.
 
 ### More stages
 
