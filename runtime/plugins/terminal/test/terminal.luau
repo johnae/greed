@@ -594,3 +594,22 @@ test("a client typing into a terminal isn't left typing into what another client
 	t:run("terminal-close")
 	second:expect_mode("helix")
 end)
+
+test("a terminal is an object: what runs, where, and whether it still does", function(t)
+	local core = require("@core")
+	local dir = t:tempdir()
+	t:run("terminal", { "sh", "-c", `cd '{dir}'; echo ready; sleep 5` })
+	shows(t, "ready")
+	local buffer = greed.view():buffer()
+	local term = assert(core.objects.get(`terminal:{buffer:id()}`))
+	local listed = false
+	for _, object in core.objects.list("terminal") do
+		listed = listed or object.id == term.id
+	end
+	assert(listed, "listed")
+	local state = core.objects.inspect(term)
+	assert(state.running == true and state.program == "sh", greed.json.encode(state))
+	local related = core.objects.related(term)
+	assert(related.buffer[1].id == `buffer:{buffer:id()}`)
+	assert(related.views[1].id == `view:{greed.view():id()}`)
+end)

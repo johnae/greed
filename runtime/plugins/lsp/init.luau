@@ -399,6 +399,52 @@ actions.action({
 	end,
 })
 
+-- Running language servers as objects, by their language and the folder
+-- they run in.
+local function server_object(server: greed.LspServer): core.Object
+	return {
+		kind = "language-server",
+		id = `language-server:{server.language}@{server.root}`,
+		label = `{server.command[1] or server.language} for {server.language}`,
+		value = server,
+	}
+end
+
+core.objects.kind({
+	name = "language-server",
+	doc = "A language server running for a language in a project",
+	list = function()
+		local out = {}
+		for _, server in greed.lsp.running() do
+			table.insert(out, server_object(server))
+		end
+		return out
+	end,
+	inspect = function(server: greed.LspServer)
+		return {
+			language = server.language,
+			folder = server.root,
+			command = table.concat(server.command, " "),
+			ready = server.ready,
+			stderr = server.stderr[#server.stderr],
+		}
+	end,
+	relations = function(server: greed.LspServer)
+		local buffers = {}
+		for _, buffer in greed.buffers() do
+			local path = buffer:path()
+			if
+				buffer:language() == server.language
+				and path
+				and string.sub(path, 1, #server.root) == server.root
+			then
+				table.insert(buffers, assert(core.objects.get(`buffer:{buffer:id()}`)))
+			end
+		end
+		return { buffers = buffers }
+	end,
+})
+
 -- Other plugins can use these with `require("@lsp")`.
 return {
 	--- The language server piece of the status line, and the progress it shows.

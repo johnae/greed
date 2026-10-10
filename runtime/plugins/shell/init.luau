@@ -1924,16 +1924,74 @@ core.folds.provider(LANGUAGE, function(buffer: greed.Buffer, line: number): (num
 	return log.fold(shell, line)
 end)
 
--- Blocks as things to act on, with `space .`.
+-- A block as an object, by its shell's buffer and its number there, saying
+-- where it is in that buffer so its actions (commands on the block under
+-- the cursor) run on it from anywhere.
+local function block_object(shell: Shell, block: Block): core.Object
+	local from, to = log.range(block)
+	return {
+		kind = "shell-block",
+		id = `shell-block:{shell.buffer:id()}.{block.number}`,
+		label = string.match(block.command, "^[^\n]*") or block.command,
+		value = { shell = shell, block = block },
+		buffer = shell.buffer,
+		from = from,
+		to = to,
+	}
+end
+
+-- Blocks as things to act on, with `space .`, and as objects.
 core.actions.finder({
 	name = "shell-block",
 	find = function(view, range)
 		local shell = state.of(view:buffer())
 		local block = shell and log.block_for(shell, range.head)
-		if block == nil then
+		if shell == nil or block == nil then
 			return nil
 		end
-		return { { kind = "shell-block", label = block.command, value = block.number } }
+		return { core.objects.target(block_object(shell, block)) }
+	end,
+})
+
+core.objects.kind({
+	name = "shell-block",
+	doc = "A command run in a shell, with what it printed and how it ended",
+	list = function()
+		local out = {}
+		for _, shell in state.list() do
+			for _, block in shell.blocks do
+				table.insert(out, block_object(shell, block))
+			end
+		end
+		return out
+	end,
+	get = function(key)
+		local buffer, number = string.match(key, "^(%d+)%.(%d+)$")
+		for _, shell in state.list() do
+			if tostring(shell.buffer:id()) == buffer then
+				local block = state.block(shell, tonumber(number) :: number)
+				return if block then block_object(shell, block) else nil
+			end
+		end
+		return nil
+	end,
+	inspect = function(value: { shell: Shell, block: Block })
+		local block = value.block
+		local tbl = block.table
+		return {
+			command = block.command,
+			status = block.status,
+			exit_code = block.code,
+			signal = block.signal,
+			folder = block.cwd,
+			lines = block.lines,
+			seconds = if block.finished then (block.finished - block.started) / 1000 else nil,
+			by = block.by,
+			table = if tbl then `{#tbl.rows} rows: {table.concat(tbl.columns, ", ")}` else nil,
+		}
+	end,
+	relations = function(value: { shell: Shell, block: Block })
+		return { shell = { assert(core.objects.get(`buffer:{value.shell.buffer:id()}`)) } }
 	end,
 })
 for _, action in

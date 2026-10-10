@@ -811,4 +811,52 @@ function M.pending(): number
 	return n
 end
 
+-- Proposals as objects, by the buffer they're in: what's proposed and
+-- what's left to decide.
+local function proposal_object(proposal: Proposal): core.Object
+	local first = proposal.pending[1] or proposal.hunks[1]
+	local at = if first then position(proposal, first) else nil
+	return {
+		kind = "proposal",
+		id = `proposal:{proposal.buffer:id()}`,
+		label = `changes to {proposal.path}`,
+		value = proposal,
+		buffer = proposal.buffer,
+		from = if at then at.from else nil,
+	}
+end
+
+core.objects.kind({
+	name = "proposal",
+	doc = "Changes an agent proposed to a file, for you to accept or reject",
+	list = function()
+		local out = {}
+		for _, proposal in proposals do
+			table.insert(out, proposal_object(proposal))
+		end
+		return out
+	end,
+	get = function(key)
+		for _, proposal in proposals do
+			if tostring(proposal.buffer:id()) == key then
+				return proposal_object(proposal)
+			end
+		end
+		return nil
+	end,
+	inspect = function(proposal: Proposal)
+		local decided: { [string]: number } = {}
+		for _, hunk in proposal.hunks do
+			decided[hunk.status] = (decided[hunk.status] or 0) + 1
+		end
+		return { path = proposal.path, changes = #proposal.hunks, by_status = decided }
+	end,
+	relations = function(proposal: Proposal)
+		return { buffer = { assert(core.objects.get(`buffer:{proposal.buffer:id()}`)) } }
+	end,
+})
+core.actions.command("proposal", "accept", "proposal-accept", "Accept its first undecided change")
+core.actions.command("proposal", "reject", "proposal-reject", "Reject its first undecided change")
+core.actions.command("proposal", "accept all", "proposal-accept-all", "Accept every change in it")
+
 return M

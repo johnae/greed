@@ -1575,4 +1575,55 @@ core.file.running("terminals", function()
 	return found
 end)
 
+-- Terminals as objects, by their buffer's id: what runs, where, and how it
+-- ended, for the inspector and agents.
+local function term_object(term: Term): core.Object
+	return {
+		kind = "terminal",
+		id = `terminal:{term.buffer:id()}`,
+		label = term.terminal:title() or term.command,
+		value = term,
+	}
+end
+
+core.objects.kind({
+	name = "terminal",
+	doc = "A program running in a terminal",
+	list = function()
+		local out = {}
+		for _, term in terms do
+			if term.terminal:valid() then
+				table.insert(out, term_object(term))
+			end
+		end
+		return out
+	end,
+	get = function(key)
+		local term = terms[tonumber(key) or -1]
+		return if term and term.terminal:valid() then term_object(term) else nil
+	end,
+	inspect = function(term: Term)
+		local t = term.terminal
+		return {
+			command = term.command,
+			program = t:program(),
+			folder = t:cwd(),
+			running = t:exit_code() == nil,
+			exit_code = t:exit_code(),
+			busy = t:busy(),
+			failed_commands = #term.failures,
+		}
+	end,
+	relations = function(term: Term)
+		local views = {}
+		for _, view in term.buffer:views() do
+			table.insert(views, assert(core.objects.get(`view:{view:id()}`)))
+		end
+		return {
+			buffer = { assert(core.objects.get(`buffer:{term.buffer:id()}`)) },
+			views = views,
+		}
+	end,
+})
+
 return M
