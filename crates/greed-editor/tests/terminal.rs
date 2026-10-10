@@ -156,6 +156,35 @@ fn fake_ssh(world: &World) -> std::path::PathBuf {
 }
 
 #[test]
+fn greed_ssh_puts_greed_on_a_machine_without_it_once() {
+    let Some(world) = World::new("ssh-install") else {
+        return;
+    };
+    let project = world.project("remote", &[("main.rs", "fn main() {}")]);
+    let fake_ssh = fake_ssh(&world);
+    let env = [("GREED_SSH", fake_ssh.to_str().unwrap())];
+    let steps = [
+        Step::Until("the remote session", running),
+        Step::Shows("main"),
+        Step::Keys(":detach\r"),
+    ];
+    let command = format!("ssh somehost {}", project.join("main.rs").display());
+    let first = world.terminal(&project, &command, &env, &steps);
+    assert!(first.contains("putting greed"), "{first}");
+    let server = world.root.join("remote-home/.local/share/greed/server");
+    let installed: Vec<_> = std::fs::read_dir(&server).unwrap().flatten().collect();
+    assert_eq!(installed.len(), 1, "one version");
+    assert!(installed[0].path().join("greed").is_file());
+    let again = world.terminal(&project, &command, &env, &steps);
+    assert!(!again.contains("putting greed"), "there already: {again}");
+    assert!(
+        again.contains("detached; greed ssh somehost comes back"),
+        "{again}"
+    );
+    world.eval("remote", "require('@greed').quit()");
+}
+
+#[test]
 fn the_terminal_follows_when_its_session_switches_to_another_machine() {
     let Some(world) = World::new("switch-host") else {
         return;

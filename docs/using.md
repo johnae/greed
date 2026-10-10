@@ -291,12 +291,20 @@ and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
 a session it starts uses `/run/user/<uid>` like a login would, and so do
 the programs in its terminals.
 
-Greed has to be installed on both machines. The two ends check that they
-speak the same protocol and say so if they don't, so mismatched versions
-fail with a clear message. `GREED_REMOTE` sets the path of `greed` on the
-other machine, and `GREED_SSH` the ssh program to use. It's run as one
-program, so for options like a port use `~/.ssh/config` or a small wrapper
-script.
+Greed doesn't have to be installed on the other machine. The first time
+you connect with a version, `greed ssh` puts the same version there, in
+`~/.local/share/greed/server`, and uses it from then on. It copies the
+greed you run when it runs there; otherwise, as when the other machine is
+NixOS or an arm machine, it fetches that version's static build from the
+releases and checks it against the release's checksums. A greed of the same
+version already on the other machine's `PATH` is used as it is.
+
+`GREED_REMOTE` sets the path of `greed` on the other machine, and nothing
+is copied (the two ends check they speak the same protocol, and say so if
+they don't); `GREED_REMOTE_BINARY` names a greed built for it to copy (like
+`nix build .#static`'s, between releases). `GREED_SSH` sets the ssh
+program to use. It's run as one program, so for options like a port use
+`~/.ssh/config` or a small wrapper script.
 
 ## Editing
 

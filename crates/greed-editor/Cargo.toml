@@ -16,11 +16,13 @@ crossbeam-channel.workspace = true
 crossterm.workspace = true
 greed-core.workspace = true
 gethostname = "1.1"
+sha2 = "0.10"
 greed-gui = { path = "../greed-gui", optional = true }
 greed-text.workspace = true
 serde_json.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
+ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
 
 [lints]
 workspace = true

@@ -1469,8 +1469,10 @@ dependencies = [
  "greed-text",
  "mimalloc",
  "serde_json",
+ "sha2",
  "unicode-segmentation",
  "unicode-width",
+ "ureq",
 ]
 
 [[package]]

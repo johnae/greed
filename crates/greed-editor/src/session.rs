@@ -326,6 +326,7 @@ pub fn ssh(
 ) -> Result<(), Error> {
     let mut host = host.to_owned();
     let mut config = bring_config(&host);
+    let mut greed = remote_greed(&host)?;
     let mut to = SwitchTo {
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
@@ -333,7 +334,7 @@ pub fn ssh(
     };
     // A terminal is asked for once, not again after a switch.
     loop {
-        let ended = ssh_once(&host, &to, config.as_deref(), terminal)?;
+        let ended = ssh_once(&host, &greed, &to, config.as_deref(), terminal)?;
         terminal = false;
         match ended {
             // The bridge on the other end finds (or starts) the session to
@@ -345,6 +346,7 @@ pub fn ssh(
                 {
                     host.clone_from(other);
                     config = bring_config(&host);
+                    greed = remote_greed(&host)?;
                 }
                 to = next;
             }
@@ -363,6 +365,15 @@ pub fn ssh(
     }
 }
 
+/// The greed to run on `host`: `$GREED_REMOTE`, or this version, put there
+/// if it isn't (see [`crate::install`]).
+fn remote_greed(host: &str) -> Result<String, Error> {
+    match std::env::var("GREED_REMOTE") {
+        Ok(greed) => Ok(greed),
+        Err(_) => crate::install::ensure(host),
+    }
+}
+
 /// Your config, copied to `host` (see [`send_config`]), or `None` with a
 /// word on why when it couldn't be.
 fn bring_config(host: &str) -> Option<String> {
@@ -376,12 +387,12 @@ fn bring_config(host: &str) -> Option<String> {
 /// switches; returns which.
 fn ssh_once(
     host: &str,
+    remote_greed: &str,
     to: &SwitchTo,
     config: Option<&str>,
     terminal: bool,
 ) -> Result<Output, Error> {
-    let remote_greed = std::env::var("GREED_REMOTE").unwrap_or_else(|_| "greed".to_owned());
-    let line = bridge_command(&remote_greed, to, config);
+    let line = bridge_command(remote_greed, to, config);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
     handshake(&mut reader, &mut writer, to.session.as_deref(), terminal).map_err(attach_failed)?;
@@ -443,7 +454,10 @@ const READY: &str = "greed-ready";
 /// plain words every shell reads the same, and the line goes to that sh as
 /// input. Some shells (busybox's) read ahead of the line they run, so
 /// nothing more is sent until the line says it's running.
-fn remote(host: &str, line: &str) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), Error> {
+pub(crate) fn remote(
+    host: &str,
+    line: &str,
+) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), Error> {
     let mut child = ssh_command()
         .args(["-T", host, "sh", "-s"])
         .stdin(Stdio::piped())

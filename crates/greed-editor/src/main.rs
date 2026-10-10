@@ -24,6 +24,7 @@ mod client;
 mod clipboard_image;
 mod ctl;
 mod graphics;
+mod install;
 mod runtime;
 mod session;
 mod tui;
