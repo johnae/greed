@@ -77,10 +77,21 @@ greed.option.define({
 -- What's in use while no style is loaded at all.
 local NONE: Style = { name = "none", doc = "No editing style loaded", mode = "helix" }
 
--- The style in use: the option's, or Helix's if that style isn't known, or
--- any there is.
+-- The style in use before the option named one that isn't there, which
+-- stays in use until it does (a typo, or a style whose plugin hasn't
+-- loaded yet).
+local last: string? = nil
+
+-- The style in use: the option's, or the one in use before if that style
+-- isn't known, or Helix's, or any there is.
 local function current(): Style
-	local found = styles[greed.option.get("editing-style") :: string] or styles.helix
+	local name = greed.option.get("editing-style") :: string
+	local found = styles[name]
+	if found then
+		last = name
+		return found
+	end
+	found = (last and styles[last]) or styles.helix
 	if found then
 		return found
 	end
@@ -348,8 +359,12 @@ greed.on("option.changed", function(event)
 	if event.name ~= "editing-style" then
 		return
 	end
-	if styles[event.value :: string] == nil then
-		greed.echo(`no editing style called {event.value}; using {current().name}`)
+	if styles[event.value :: string] then
+		last = event.value :: string
+	else
+		greed.echo(
+			`no editing style called {event.value}; there are {table.concat(M.names(), ", ")}, and {current().name} stays`
+		)
 	end
 	greed.history.end_group()
 	greed.mode.set(M.home())

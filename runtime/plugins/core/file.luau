@@ -109,7 +109,12 @@ local function go_on(buffers: { greed.Buffer }, force: boolean, how: Unsaved): b
 	end
 	local list = names(buffers)
 	if not how.ask then
-		local saves = if #buffers == 1 then ":w saves it" else ":wa saves them"
+		local only = if #buffers == 1 then buffers[1] else nil
+		local saves = if only == nil
+			then ":wa saves them"
+			elseif only:path() == nil then ":w PATH saves it"
+			elseif only ~= greed.view():buffer() then ":wa saves it"
+			else ":w saves it"
 		error(`unsaved changes in {list} - {saves}, {how.forced} quits anyway`, 0)
 	end
 	local chosen: string? = nil
@@ -624,7 +629,10 @@ end
 --- with unsaved changes unless `force`.
 function M.close(buffer: greed.Buffer, force: boolean?)
 	if unsaved.unsaved(buffer) and not force then
-		error(`unsaved changes in {project.name(buffer)} - :w saves, :bc! closes anyway`, 0)
+		error(
+			`unsaved changes in {project.name(buffer)} - :w saves, and ! after the command closes anyway`,
+			0
+		)
 	end
 	local views = buffer:views()
 	if #views > 0 then
@@ -633,7 +641,11 @@ function M.close(buffer: greed.Buffer, force: boolean?)
 			view:show(instead)
 		end
 	end
-	buffer:close()
+	-- Showing another in its place may have closed it already, as it does
+	-- an untitled buffer nothing was typed in.
+	if buffer:valid() then
+		buffer:close()
+	end
 end
 
 greed.command({

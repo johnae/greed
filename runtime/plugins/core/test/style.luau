@@ -223,3 +223,21 @@ test("a new style gets everything without plugins naming it", function(t)
 	greed.plugin.unload("mine")
 	t:wait(0)
 end)
+
+test("a style name that isn't one keeps the style in use, and says which there are", function(t)
+	-- A style other than helix, the default: vim's, or one made here when
+	-- core runs alone.
+	local core = require("@core")
+	if not table.find(core.style.names(), "vim") then
+		greed.keymap.bind("other-home", {})
+		core.style.define({ name = "vim", doc = "for the test", mode = "other-home" })
+	end
+	greed.option.set("editing-style", "vim")
+	t:buffer("|x")
+	greed.option.set("editing-style", "vin")
+	assert(greed.mode.get() ~= "helix", "not back in helix")
+	local said = table.concat(t:messages(), "\n")
+	assert(string.find(said, "no editing style called vin", 1, true), said)
+	assert(string.find(said, "vim stays", 1, true), said)
+	greed.option.set("editing-style", "helix")
+end)

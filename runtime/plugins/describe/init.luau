@@ -410,7 +410,10 @@ greed.command({
 })
 
 for _, kind in KINDS do
-	local what = if kind == "api" then "a function or type of the plugin API" else "a " .. kind
+	local what = if kind == "api"
+		then "a function or type of the plugin API"
+		elseif string.find(kind, "^[aeiou]") then "an " .. kind
+		else "a " .. kind
 	greed.command({
 		name = `describe-{kind}`,
 		doc = `Describe {what}`,
