@@ -56,6 +56,8 @@ rustPlatform.buildRustPackage {
   env = lib.optionalAttrs stdenv.hostPlatform.isStatic {
     RUSTFLAGS = "-C relocation-model=static";
   };
+  # The release profile with full link-time optimization (Cargo.toml).
+  buildType = "dist";
   cargoBuildFlags = [ "--package" "greed-editor" ];
   buildNoDefaultFeatures = !gui;
 

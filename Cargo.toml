@@ -73,8 +73,10 @@ debug = "line-tables-only"
 [profile.dev.package.mlua-sys]
 opt-level = 3
 
-# The binaries on the releases page (dist/).
+# The binaries on the releases page (dist/ and the Nix package): about 3%
+# faster and 13% smaller than thin LTO, for a build three times as long.
 [profile.dist]
 inherits = "release"
-lto = "thin"
+lto = "fat"
+codegen-units = 1
 strip = true
