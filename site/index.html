@@ -38,9 +38,9 @@
   <section class="intro">
     <p class="lead">Greed is an editor you can change while it runs. Edit the Helix
     way, the Vim way or without modes. Around your files: shells, terminals,
-    tiled and floating panes, notes whose code runs, and agents. Use it in a
-    terminal or in its own window, on your machine or on the one where the
-    work happens.</p>
+    tiled and floating panes, notes whose code runs, and agents. In a
+    terminal or its own window, here or on the machine where the work
+    runs.</p>
     <p class="sub">A small Rust core does what needs speed. Keys, modes, commands,
     pickers, themes and the agents are Luau plugins you can read, change or
     replace.</p>
@@ -54,8 +54,7 @@
     <pre class="term"><code><span class="prompt">$</span> greed src/main.rs          <span class="c"># in this terminal</span>
 <span class="prompt">$</span> greed --gui                <span class="c"># the same session in a window drawn on the GPU</span>
 <span class="prompt">:</span>detach                      <span class="c"># leave it running: files, undo, servers, shells</span>
-<span class="prompt">$</span> greed attach               <span class="c"># and come back to it, from either</span>
-<span class="prompt">$</span> greed ssh build-box        <span class="c"># or work on another machine, your config brought along</span></code></pre>
+<span class="prompt">$</span> greed attach               <span class="c"># and come back to it, from either</span></code></pre>
   </section>
 
   <section class="showcase wide">
@@ -90,6 +89,36 @@
 
   <section class="showcase flip">
     <div class="text">
+      <h2>Here, or where the work runs</h2>
+      <p>The editor is a session you attach to, from a terminal or from its
+      own window. Run it on the machine with the code and the builds, and
+      look at it from your laptop: files, shells, terminals,
+      language servers and agents all run over there, while your keys, your
+      theme and your config come with you. Close the lid, and attach again
+      later to everything as you left it.</p>
+      <p><a href="docs/using.html#editing-on-another-machine">Editing on another machine</a></p>
+    </div>
+    <div class="remote">
+      <div class="machine here">
+        <span class="label">your laptop</span>
+        <p class="what">terminal or window</p>
+        <p class="what">keys, theme, config</p>
+      </div>
+      <div class="link"><span>ssh</span></div>
+      <div class="machine there">
+        <span class="label">build-box</span>
+        <p class="what">files and undo</p>
+        <p class="what">shells, terminals</p>
+        <p class="what">language servers</p>
+        <p class="what">agents</p>
+      </div>
+      <pre class="term"><code><span class="prompt">$</span> greed ssh build-box        <span class="c"># a terminal</span>
+<span class="prompt">$</span> greed ssh build-box --gui  <span class="c"># a window</span></code></pre>
+    </div>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
       <h2>Panes, tabs and floats</h2>
       <p>Split the screen yourself, or let a layout do it:
       <code>main-stack</code>, <code>columns</code>, <code>spiral</code> or
@@ -115,7 +144,7 @@
     </div>
   </section>
 
-  <section class="showcase">
+  <section class="showcase flip">
     <div class="text">
       <h2>A shell that keeps its output</h2>
       <p>Each command becomes a block you can search, fold, filter and run
@@ -136,7 +165,7 @@ worker-5c6b7d8f9-ab
 <span class="dim">⎇ main ⎈ prod:payments ~/s/infra</span> <span class="prompt">❯</span> |</code></pre>
   </section>
 
-  <section class="showcase flip">
+  <section class="showcase">
     <div class="text">
       <h2>Notes whose code runs</h2>
       <p>A fenced block in Markdown runs when you ask: <code>sh</code>,
@@ -171,7 +200,7 @@ primes = [n <span class="k">for</span> n <span class="k">in</span> <span class="
 <span class="c">```</span></code></pre>
   </section>
 
-  <section class="showcase">
+  <section class="showcase flip">
     <div class="text">
       <h2>Agents, as clients and inside</h2>
       <p>Claude Code, Gemini, Codex or Greed's own agent with the model of your
@@ -201,12 +230,6 @@ primes = [n <span class="k">for</span> n <span class="k">in</span> <span class="
       <p>The window draws on the GPU, with ligatures, images, PDFs, prose in a
       proportional font and Markdown shown as a document. The terminal gets
       the same session and the same theme.</p>
-    </article>
-    <article>
-      <h2>Close to the work</h2>
-      <p>Run the session on the machine with the code and the builds, and
-      attach from your laptop. Shells, terminals, language servers and agents
-      all run there; your keys and your config come with you.</p>
     </article>
   </section>
 
