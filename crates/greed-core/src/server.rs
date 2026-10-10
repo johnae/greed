@@ -799,7 +799,7 @@ impl Server<'_> {
             mut reader,
             mut writer,
             open,
-            terminal,
+            opening,
             remote,
             kind,
             name,
@@ -876,7 +876,7 @@ impl Server<'_> {
         }
         let attached = self
             .host
-            .client_attached(id, open.as_deref(), terminal, remote);
+            .client_attached(id, open.as_deref(), opening, remote);
         self.report(attached);
     }
 

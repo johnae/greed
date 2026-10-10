@@ -1080,6 +1080,8 @@ export type ClientAttached = {
 	path: string?,
 	--- Whether it asked for a terminal, e.g. `greed ssh HOST --terminal`.
 	terminal: boolean,
+	--- Whether it asked for the project's greed shell, e.g. `greed --shell`.
+	shell: boolean,
 	--- Whether it came over `greed ssh`.
 	remote: boolean,
 }

@@ -9,7 +9,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_core::SwitchTo;
-use greed_core::control::{self, Attachment};
+use greed_core::control::{self, Attachment, Opening};
 use greed_core::project;
 use greed_core::server::{self, Input, Output};
 use serde_json::{Value, json};
@@ -105,7 +105,7 @@ pub fn attach(name: Option<&str>) -> Result<(), Error> {
         )
         .into());
     }
-    follow(name, None, false)
+    follow(name, None, Opening::Nothing)
 }
 
 /// The session whose terminal this runs in (`$GREED_TERMINAL`), if it's
@@ -149,21 +149,29 @@ pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
 /// Shows the session called `name` in this terminal, asking it to open
 /// `open`, and follows the client to any session it switches to, until a
 /// session quits or lets the terminal go.
-fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Result<(), Error> {
-    // A terminal is asked for once, not again after a switch.
+fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> Result<(), Error> {
+    // A terminal or shell is asked for once, not again after a switch.
     loop {
         let Attachment { reader, writer, .. } = ctl::connect_to(Some(&name))?.attach_opening(
             client::kind(),
             open.as_deref(),
-            terminal,
+            opening,
         )?;
-        terminal = false;
+        opening = Opening::Nothing;
         match show(reader, writer)? {
             Output::Switch(SwitchTo {
                 host: Some(host),
                 session,
                 path,
-            }) => return ssh(&host, session.as_deref(), path.as_deref(), false, false),
+            }) => {
+                return ssh(
+                    &host,
+                    session.as_deref(),
+                    path.as_deref(),
+                    Opening::Nothing,
+                    false,
+                );
+            }
             Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
                 println!("detached; greed attach {name} comes back");
@@ -277,7 +285,7 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
 
 /// Plain `greed`: attaches to the session for `path`'s project (or the one
 /// called `name`), starting it in the background if it isn't running.
-pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<(), Error> {
+pub fn start(name: Option<&str>, path: Option<&Path>, opening: Opening) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
     // A running session opens what was asked for; a new one starts with it.
     let open = if running {
@@ -287,7 +295,7 @@ pub fn start(name: Option<&str>, path: Option<&Path>, terminal: bool) -> Result<
             .map_err(|err| format!("{err} (GREED_NO_SESSION=1 runs it in this terminal)"))?;
         None
     };
-    follow(name, open, terminal)
+    follow(name, open, opening)
 }
 
 /// `greed bridge`, run on the machine a session is on: connects this
@@ -331,7 +339,7 @@ pub fn ssh(
     host: &str,
     name: Option<&str>,
     file: Option<&str>,
-    mut terminal: bool,
+    mut opening: Opening,
     mut new: bool,
 ) -> Result<(), Error> {
     let mut host = host.to_owned();
@@ -342,10 +350,10 @@ pub fn ssh(
         path: file.map(str::to_owned),
         host: None,
     };
-    // A terminal is asked for once, not again after a switch.
+    // A terminal or shell is asked for once, not again after a switch.
     loop {
-        let ended = ssh_once(&host, &greed, &to, config.as_deref(), terminal, new)?;
-        terminal = false;
+        let ended = ssh_once(&host, &greed, &to, config.as_deref(), opening, new)?;
+        opening = Opening::Nothing;
         new = false;
         match ended {
             // The bridge on the other end finds (or starts) the session to
@@ -401,13 +409,13 @@ fn ssh_once(
     remote_greed: &str,
     to: &SwitchTo,
     config: Option<&str>,
-    terminal: bool,
+    opening: Opening,
     new: bool,
 ) -> Result<Output, Error> {
     let line = bridge_command(remote_greed, to, config, new);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
-    handshake(&mut reader, &mut writer, to.session.as_deref(), terminal).map_err(attach_failed)?;
+    handshake(&mut reader, &mut writer, to.session.as_deref(), opening).map_err(attach_failed)?;
     let ended = show(reader, writer)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
@@ -424,12 +432,10 @@ fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
     session: Option<&str>,
-    terminal: bool,
+    opening: Opening,
 ) -> Result<(), Error> {
     let mut params = control::attach_params(client::kind());
-    if terminal {
-        params["terminal"] = Value::Bool(true);
-    }
+    opening.ask(&mut params);
     let request = json!({
         "jsonrpc": "2.0",
         "id": 1,

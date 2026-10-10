@@ -272,6 +272,8 @@ where the work runs.
 machine in a new tab, for when a shell is what you're after. It runs in the
 session, so it's still there after you disconnect. `greed --terminal` does
 the same here.
+`greed --shell` (or `greed ssh HOST --shell`) shows the project's greed
+shell instead, opening one if there's none (see [The shell](shell.md)).
 
 Your config comes along: `greed ssh` copies `~/.config/greed` (your
 `init.luau` and plugins) to the other machine first, and a session it

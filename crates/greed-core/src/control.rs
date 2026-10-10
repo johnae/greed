@@ -69,6 +69,38 @@ pub fn handshake() -> Value {
     json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION"), "build": build() })
 }
 
+/// What a client asks a session to show as it attaches, beside a file: a
+/// terminal (`greed --terminal`) or a greed shell (`greed --shell`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Opening {
+    #[default]
+    Nothing,
+    Terminal,
+    Shell,
+}
+
+impl Opening {
+    /// What an attach request's `params` ask for.
+    fn asked(params: &Value) -> Self {
+        if params["terminal"].as_bool() == Some(true) {
+            Self::Terminal
+        } else if params["shell"].as_bool() == Some(true) {
+            Self::Shell
+        } else {
+            Self::Nothing
+        }
+    }
+
+    /// Says so in the attach request's `params`.
+    pub fn ask(self, params: &mut Value) {
+        match self {
+            Self::Terminal => params["terminal"] = Value::Bool(true),
+            Self::Shell => params["shell"] = Value::Bool(true),
+            Self::Nothing => {}
+        }
+    }
+}
+
 /// What a client of `kind` ("tui", "gui") asks to attach with: the
 /// handshake, and who it is, `kind@host`, so it gets its cursors, focus and
 /// mode back when it comes back.
@@ -504,9 +536,9 @@ pub struct Attachment {
     pub writer: UnixStream,
     /// A file or folder the client asked to open, e.g. from `greed FILE`.
     pub open: Option<String>,
-    /// Whether the client asked for a terminal, e.g. `greed ssh HOST
-    /// --terminal`.
-    pub terminal: bool,
+    /// What the client asked to be shown beside a file: a terminal (`greed
+    /// ssh HOST --terminal`) or a greed shell (`greed --shell`).
+    pub opening: Opening,
     /// Whether it came over `greed ssh`, through `greed bridge`.
     pub remote: bool,
     /// What sort of client it is: "tui" or "gui".
@@ -538,7 +570,7 @@ impl Attachment {
             reader,
             writer,
             open: params["open"].as_str().map(str::to_owned),
-            terminal: params["terminal"].as_bool() == Some(true),
+            opening: Opening::asked(params),
             remote: params["remote"].as_bool() == Some(true),
             kind,
             name,
@@ -825,24 +857,22 @@ impl Client {
     /// Attaches to the editor: from now on the connection carries input
     /// one way and frames the other, one JSON message per line.
     pub fn attach(self) -> io::Result<Attachment> {
-        self.attach_opening("tui", None, false)
+        self.attach_opening("tui", None, Opening::Nothing)
     }
 
     /// Like [`Client::attach`] as a client of `kind` ("tui", "gui"), asking
-    /// the session to open `path` too, and with `terminal`, a terminal.
+    /// the session to open `path` too, and what `opening` says.
     pub fn attach_opening(
         self,
         kind: &str,
         path: Option<&Path>,
-        terminal: bool,
+        opening: Opening,
     ) -> io::Result<Attachment> {
         let mut params = attach_params(kind);
         if let Some(path) = path {
             params["open"] = Value::from(path.to_string_lossy());
         }
-        if terminal {
-            params["terminal"] = Value::Bool(true);
-        }
+        opening.ask(&mut params);
         self.attach_with(&params)
     }
 

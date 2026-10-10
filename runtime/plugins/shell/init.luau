@@ -2057,6 +2057,21 @@ run.on_finish(function(shell: Shell, block: Block)
 	end)
 end)
 
+-- A client that asked for a shell (`greed --shell`, `greed ssh HOST
+-- --shell`) is shown the project's last shell, or a new one.
+greed.on("client.attached", function(event: greed.ClientAttached)
+	if not event.shell then
+		return
+	end
+	local shells = state.list(greed.project.current().id)
+	local shell = shells[#shells]
+	if shell then
+		M.show(shell)
+	else
+		M.open()
+	end
+end)
+
 core.actions.action({
 	kind = "folder",
 	name = "new shell here",

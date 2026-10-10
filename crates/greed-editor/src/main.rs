@@ -35,13 +35,13 @@ static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use crossbeam_channel::Sender;
 use greed_core::Editor;
-use greed_core::control::Request;
+use greed_core::control::{Opening, Request};
 use greed_core::dirs;
 use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -80,9 +80,7 @@ fn main() -> ExitCode {
         eprintln!("greed: can't start as the app: {err}");
         return ExitCode::FAILURE;
     }
-    // Anywhere on the line: attach with a terminal open in the session.
-    let terminal = args.iter().any(|arg| arg == "--terminal");
-    args.retain(|arg| arg != "--terminal");
+    let opening = opening_flag(&mut args);
     // Anywhere on the line too: show the editor in a window.
     if args.iter().any(|arg| arg == "--gui") {
         args.retain(|arg| arg != "--gui");
@@ -92,18 +90,18 @@ fn main() -> ExitCode {
         }
     }
     let result = match args.as_slice() {
-        [] => edit(None, None, terminal),
+        [] => edit(None, None, opening),
         [flag] if flag == "--env0" => print_environment(),
         [flag] if flag == "--version" || flag == "-V" => {
             print_version();
             Ok(())
         }
         [flag, name, rest @ ..] if flag == "--session" => {
-            edit(Some(name), rest.first().map(PathBuf::from), terminal)
+            edit(Some(name), rest.first().map(PathBuf::from), opening)
         }
         [flag, rest @ ..] if flag == "--new" => {
             let path = rest.first().map(PathBuf::from);
-            session::new_name(path.as_deref()).and_then(|name| edit(Some(&name), path, terminal))
+            session::new_name(path.as_deref()).and_then(|name| edit(Some(&name), path, opening))
         }
         [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
             session::serve(name, rest.first().map(Path::new))
@@ -122,7 +120,7 @@ fn main() -> ExitCode {
         }
         [cmd, host, rest @ ..] if cmd == "ssh" => {
             let (name, file, new) = session_and_file(rest);
-            session::ssh(host, name, file, terminal, new)
+            session::ssh(host, name, file, opening, new)
         }
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
@@ -143,9 +141,9 @@ fn main() -> ExitCode {
         }
         [cmd, file] if cmd == "bench" => bench::run(Some(Path::new(file)), false),
         [name, rest @ ..] if command_name(name) && !Path::new(name).exists() => {
-            plugin_command(name, rest, terminal)
+            plugin_command(name, rest, opening)
         }
-        [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file)), terminal),
+        [file] if !file.starts_with('-') => edit(None, Some(PathBuf::from(file)), opening),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -347,7 +345,7 @@ fn host(
 fn edit(
     name: Option<&str>,
     path: Option<PathBuf>,
-    terminal: bool,
+    opening: Opening,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("GREED_NO_SESSION").is_some() {
         return edit_here(path.filter(|p| !p.is_dir()));
@@ -357,7 +355,7 @@ fn edit(
     {
         return session::open_inside(&inside, path.as_deref());
     }
-    session::start(name, path.as_deref(), terminal)
+    session::start(name, path.as_deref(), opening)
 }
 
 /// The editor in this process, for when a background session can't start.
@@ -539,12 +537,12 @@ fn command_name(name: &str) -> bool {
 fn plugin_command(
     name: &str,
     args: &[String],
-    terminal: bool,
+    opening: Opening,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let host = host("", None, None)?;
     if !host.cli_commands().iter().any(|(n, _, _)| n == name) {
         if args.is_empty() {
-            return edit(None, Some(PathBuf::from(name)), terminal);
+            return edit(None, Some(PathBuf::from(name)), opening);
         }
         return Err(format!("there's no command {name} (greed commands lists them)").into());
     }
@@ -589,4 +587,18 @@ fn print_version() {
         env!("CARGO_PKG_VERSION"),
         runtime::BUILD
     );
+}
+
+/// `--terminal` or `--shell`, anywhere on the line, taken out of `args`:
+/// attach with a terminal, or the project's greed shell, shown.
+fn opening_flag(args: &mut Vec<String>) -> Opening {
+    let opening = if args.iter().any(|arg| arg == "--terminal") {
+        Opening::Terminal
+    } else if args.iter().any(|arg| arg == "--shell") {
+        Opening::Shell
+    } else {
+        Opening::Nothing
+    };
+    args.retain(|arg| arg != "--terminal" && arg != "--shell");
+    opening
 }

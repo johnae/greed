@@ -1,8 +1,9 @@
 # The shell
 
-`:shell` opens a shell in a buffer. You type a command at the prompt at the
-bottom, `enter` runs it, and it becomes a block above the prompt: the
-command, what it printed, and how it ended. Blocks stay, so you can
+`:shell` opens a shell in a buffer, and `greed --shell` starts Greed in
+one. You type a command at the prompt at the bottom, `enter` runs it,
+and it becomes a block above the prompt: the command, what it printed,
+and how it ended. Blocks stay, so you can
 search them, fold them, copy from them, run them again and send their
 output to the next command. It's meant for the commands you run while
 editing, and for output you want to keep working with; a terminal pane is

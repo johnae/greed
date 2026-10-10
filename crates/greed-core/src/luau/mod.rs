@@ -56,6 +56,7 @@ pub use jobs::Done as FinishedJob;
 pub use testing::{TestResult, run_suites, run_tests};
 
 use crate::Editor;
+use crate::control::Opening;
 use crate::keymap::{Key, ParseError};
 use crate::mouse::{Button, Mouse};
 use crate::registry::{PluginId, Registry};
@@ -784,13 +785,13 @@ impl Host {
     }
 
     /// Tells plugins `client` attached, with the file or folder it asked to
-    /// open, if any, whether it asked for a terminal and whether it came
-    /// over `greed ssh`. Its handlers run as that client.
+    /// open, if any, whether it asked for a terminal or a shell and whether
+    /// it came over `greed ssh`. Its handlers run as that client.
     pub fn client_attached(
         &self,
         client: ClientId,
         open: Option<&str>,
-        terminal: bool,
+        opening: Opening,
         remote: bool,
     ) -> Result<(), HostError> {
         {
@@ -802,7 +803,8 @@ impl Host {
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("path", open)?;
-            payload.set("terminal", terminal)?;
+            payload.set("terminal", opening == Opening::Terminal)?;
+            payload.set("shell", opening == Opening::Shell)?;
             payload.set("remote", remote)?;
             api::emit_for_client(&self.lua, "client.attached", &payload).map_err(HostError::from)
         })
