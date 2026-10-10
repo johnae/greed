@@ -849,3 +849,32 @@ test("a table's header and the cells saying how things are doing are colored", f
 	end
 	assert(kept == 3, tostring(kept))
 end)
+
+test("map and filter say what's wrong with a column, and fractions show to two places", function(t)
+	local sh = open(t, t:tempdir())
+	local n = pods_block(t, sh).number
+	local text = run(t, sh, `${n} | map loud = string.upper(n.NAME)`)
+	assert(text.status ~= "done", "fails")
+	assert(
+		string.find(
+			text.stderr,
+			'NAME isn\'t a number here ("api-7d9f8b6c5-2xkqz"); r.NAME is its text',
+			1,
+			true
+		),
+		text.stderr
+	)
+	local missing = run(t, sh, `${n} | filter r.NOPE == "x"`)
+	assert(
+		string.find(missing.stderr, "there's no column NOPE; there's NAME, READY", 1, true),
+		missing.stderr
+	)
+	local loud = run(t, sh, `${n} | map loud = string.upper(r.NAME) | select loud | first`)
+	assert(loud.output == "loud\nAPI-7D9F8B6C5-2XKQZ\n", loud.output)
+	local thirds =
+		run(t, sh, `${n} | map third = n.RESTARTS / 3 | select NAME,third | where NAME ~ worker`)
+	assert(string.find(thirds.output, " 4\n", 1, true), thirds.output)
+	local fraction = run(t, sh, `${n} | map third = (n.RESTARTS + 1) / 3 | select third | first 3`)
+	assert(string.find(fraction.output, "0.33", 1, true), fraction.output)
+	assert(string.find(fraction.output, "1.33", 1, true), fraction.output)
+end)

@@ -425,7 +425,10 @@ isn't a table says so, and what makes one.
 (`r.STATUS`, `r["CONTAINER ID"]`), and `n` the cells that read as numbers,
 sizes and ages included (`n.RESTARTS`, `n.AGE` in seconds). It runs in a
 sandbox that can read the editor and nothing more, so a line an agent
-wrote can't do anything else either.
+wrote can't do anything else either. A column that isn't there says which
+there are, and `n.NAME` of a cell that isn't a number says to read it as text,
+`r.NAME`. Fractions a `map` makes show to two places; the values stay as
+they are.
 
 ```text
 ❯ kubectl get pods | filter n.RESTARTS > 0 and r.STATUS ~= "Running"

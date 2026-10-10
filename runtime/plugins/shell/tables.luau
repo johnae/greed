@@ -853,8 +853,17 @@ function M.look(tbl: Table, column: string, rows: { number }?): Look
 			end,
 			right = true,
 		}
-	elseif all_numbers then
+	elseif all_numbers and whole then
 		return { right = true }
+	elseif all_numbers then
+		-- Fractions to two places, as `map kb = n.size / 1024` makes them.
+		return {
+			show = function(text)
+				local n = tonumber(text)
+				return if n then (string.gsub(string.format("%.2f", n), "%.?0+$", "")) else text
+			end,
+			right = true,
+		}
 	end
 	return {
 		show = function(text)
@@ -1527,13 +1536,37 @@ local function new(columns: { string }, rows: { { [string]: string } }): Table
 end
 
 -- Runs an expression for every row, in a sandbox: it reads the editor and
--- nothing else, as what's typed here may come from an agent.
+-- nothing else, as what's typed here may come from an agent. A column that
+-- isn't there, in `r` or `n`, says which there are; `n` of a cell that
+-- isn't a number says to read it as text from `r`.
 local PER_ROW = [==[
 local json = require("@greed").json
-local rows, numbers = json.decode(%q), json.decode(%q)
+local rows, numbers, columns = json.decode(%q), json.decode(%q), json.decode(%q)
+local named = {}
+for _, column in columns do
+	named[column] = true
+end
+local function missing(name)
+	error(`there's no column {name}; there's {table.concat(columns, ", ")}`, 0)
+end
 local out = {}
-for i, r in rows do
-	local n = numbers[i] or {}
+for i, row in rows do
+	local r = setmetatable(row, { __index = function(_, name)
+		if not named[name] then
+			missing(name)
+		end
+		return nil
+	end })
+	local n = setmetatable(numbers[i] or {}, { __index = function(_, name)
+		if not named[name] then
+			missing(name)
+		end
+		local text = rawget(row, name)
+		if text ~= nil and text ~= "" then
+			error(`{name} isn't a number here ("{text}"); r.{name} is its text`, 0)
+		end
+		return nil
+	end })
 	out[i] = { v = (function() return %s end)() }
 end
 return json.encode(out)]==]
@@ -1557,13 +1590,18 @@ local function per_row(tbl: Table, expr: string): ({ any }?, string?)
 		end
 		numbers[i] = n
 	end
-	local code =
-		string.format(PER_ROW, greed.json.encode(tbl.rows), greed.json.encode(numbers), expr)
+	local code = string.format(
+		PER_ROW,
+		greed.json.encode(tbl.rows),
+		greed.json.encode(numbers),
+		greed.json.encode(tbl.columns),
+		expr
+	)
 	local ok, result = greed.eval(code, { sandbox = true })
 	if not ok then
 		local message = string.match(result, "^[^\n]*") or result
 		message = string.gsub(message, "^runtime error: ", "")
-		return nil, (string.gsub(message, "^repl:%d+: ", ""))
+		return nil, (string.gsub(message, "^%a+:%d+: ", ""))
 	end
 	local decoded = greed.json.decode(result)
 	local out: { any } = {}
