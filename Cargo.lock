@@ -1409,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "greed-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "alacritty_terminal",
  "base64 0.22.1",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "greed-editor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "greed-gui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -1497,7 +1497,7 @@ dependencies = [
 
 [[package]]
 name = "greed-text"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "ropey",
