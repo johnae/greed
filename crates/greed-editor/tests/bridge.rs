@@ -21,7 +21,9 @@ fn greed() -> Command {
 /// Tests that write config get a world of their own: tests run in
 /// parallel, and a session starting while a plugin is half-written fails.
 fn world(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("greed-bridge-{name}-{}", std::process::id()))
+    // Sessions keep their sockets in it, whose paths have to stay short.
+    greed_core::control::socket_temp_dir()
+        .join(format!("greed-bridge-{name}-{}", std::process::id()))
 }
 
 /// `greed` in `world`.

@@ -15,6 +15,8 @@ fn env0_prints_each_variable_exactly_ended_by_a_nul() {
     assert!(output.status.success());
     let mut entries: Vec<&[u8]> = output.stdout.split(|&b| b == 0).collect();
     assert_eq!(entries.pop(), Some(&b""[..]), "every entry ends with a NUL");
+    // macOS gives every process its text encoding, whatever it was given.
+    entries.retain(|entry| !entry.starts_with(b"__CF_"));
     entries.sort_unstable();
     assert_eq!(
         entries,

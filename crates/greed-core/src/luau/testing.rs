@@ -223,7 +223,11 @@ fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Resul
     // Folders of the test's own, so plugins writing to the config or cache
     // never touch the user's. They only exist once something writes there.
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dirs = std::env::temp_dir().join(format!("greed-home-{}-{n}", std::process::id()));
+    // Resolved, since on macOS the temporary folder is behind a link
+    // (/var to /private/var) and plugins see the resolved paths of files.
+    let temp = std::env::temp_dir();
+    let temp = temp.canonicalize().unwrap_or(temp);
+    let dirs = temp.join(format!("greed-home-{}-{n}", std::process::id()));
     {
         let mut state = state_mut(&host.lua);
         state.dirs = Some(dirs);

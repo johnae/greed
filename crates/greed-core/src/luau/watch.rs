@@ -14,14 +14,17 @@ use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
-/// What a file looked like: when it was last written and how big it was,
-/// or nothing while it doesn't exist.
-type Stamp = Option<(Option<SystemTime>, u64)>;
+/// What a file looked like: when it was last written, how big it was and
+/// which file it was (its inode, new each time a write puts a new file in
+/// its place, as Greed's writes do, wherever the clock is too coarse to
+/// tell two writes apart), or nothing while it doesn't exist.
+type Stamp = Option<(Option<SystemTime>, u64, u64)>;
 
 fn stamp(path: &Path) -> Stamp {
+    use std::os::unix::fs::MetadataExt;
     std::fs::metadata(path)
         .ok()
-        .map(|meta| (meta.modified().ok(), meta.len()))
+        .map(|meta| (meta.modified().ok(), meta.len(), meta.ino()))
 }
 
 /// The watched files, each with how it looked when last checked and the

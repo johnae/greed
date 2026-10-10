@@ -139,7 +139,7 @@ fn a_session_says_which_project_it_is_for_as_soon_as_it_listens() {
     let root = std::path::Path::new("/some/project");
     let session = control::listen(&name, Some(root)).unwrap();
     assert!(
-        session.socket.starts_with(std::env::temp_dir()),
+        session.socket.starts_with(control::socket_temp_dir()),
         "a test's sessions stay out of the user's folder: {}",
         session.socket.display()
     );
@@ -337,9 +337,9 @@ fn a_line_too_long_ends_its_connection_and_the_session_goes_on() {
         }
         sent += chunk.len();
     }
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-        .unwrap();
+    // macOS refuses this once the session has closed its end, which is what
+    // the test is after.
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
     // Closed (or reset) without an answer.
     let mut rest = Vec::new();
     let _ = stream.read_to_end(&mut rest);

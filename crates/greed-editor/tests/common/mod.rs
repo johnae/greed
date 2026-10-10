@@ -95,8 +95,14 @@ impl World {
     pub fn terminal(&self, dir: &Path, args: &str, env: &[(&str, &str)], steps: &[Step]) -> String {
         let line = format!("stty cols 90 rows 20; {GREED} {args}");
         let mut command = Command::new("script");
+        // util-linux's script takes the command as an option, the BSD one
+        // macOS has as the words after the file.
+        if cfg!(target_os = "macos") {
+            command.args(["-q", "-F", "/dev/null", "sh", "-c", &line]);
+        } else {
+            command.args(["-qfec", &line, "/dev/null"]);
+        }
         command
-            .args(["-qfec", &line, "/dev/null"])
             .current_dir(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
