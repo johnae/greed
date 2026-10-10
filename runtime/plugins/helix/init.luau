@@ -121,7 +121,7 @@ greed.keymap.bind("helix", {
 	["[ space"] = "add-newline-above",
 })
 
-greed.keymap.bind("helix", core.objects.keys)
+greed.keymap.bind("helix", core.textobjects.keys)
 greed.keymap.bind("helix", core.syntax.keys)
 greed.keymap.bind("helix", core.folds.keys)
 greed.keymap.bind("helix", core.scroll.keys)

@@ -23,7 +23,7 @@ require("@self/stalls")
 require("@self/secrets")
 local scroll = require("@self/scroll")
 local goto_keys = require("@self/goto")
-local objects = require("@self/objects")
+local textobjects = require("@self/textobjects")
 local syntax = require("@self/syntax")
 require("@self/selections")
 local comment = require("@self/comment")
@@ -124,7 +124,7 @@ return {
 	hints = hints,
 	actions = actions,
 	transient = transient,
-	objects = objects,
+	textobjects = textobjects,
 	syntax = syntax,
 	words = words,
 	--- Editing without modes, for styles like vscode (modeless.luau).

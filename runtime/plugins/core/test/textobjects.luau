@@ -79,7 +79,7 @@ test("m i d takes the number at or after the cursor, m a d with its sign", funct
 	t:expect("x = ^-0x1f|")
 end)
 
--- `core.objects.find` on `before` (| is the cursor): the text it picks.
+-- `core.textobjects.find` on `before` (| is the cursor): the text it picks.
 local function found(
 	t: test.TestContext,
 	before: string,
@@ -90,7 +90,7 @@ local function found(
 	t:buffer(before)
 	local buffer = greed.view():buffer()
 	local from, to =
-		require("@core").objects.find(buffer, greed.view():cursor(), key, around, { vim = vim })
+		require("@core").textobjects.find(buffer, greed.view():cursor(), key, around, { vim = vim })
 	return if from and to then buffer:slice(from, to) else nil
 end
 
@@ -117,7 +117,7 @@ end)
 
 test("pair gives what surround wraps in, spaced inside for Vim's opening brackets", function()
 	local function wraps(char: string, spaced: boolean?): string
-		local open, close = require("@core").objects.pair(char, spaced)
+		local open, close = require("@core").textobjects.pair(char, spaced)
 		return open .. "x" .. close
 	end
 	assert(wraps("(") == "(x)")

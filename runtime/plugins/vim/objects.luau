@@ -48,7 +48,7 @@ local function text_object(
 	key: string,
 	around: boolean
 ): (number?, number?, boolean)
-	return core.objects.find(buffer, pos, OBJECT_KEYS[key] or key, around, { vim = true })
+	return core.textobjects.find(buffer, pos, OBJECT_KEYS[key] or key, around, { vim = true })
 end
 
 local function select_word(ctx: greed.Context)

@@ -24,12 +24,12 @@ local function after_line(buffer: Buffer, line: number): number
 	return buffer:len()
 end
 
-local blank, paragraph = core.objects.blank, core.objects.paragraph
+local blank, paragraph = core.textobjects.blank, core.textobjects.paragraph
 
--- Selects `core.objects.find`'s object for `key` at the selection's head.
+-- Selects `core.textobjects.find`'s object for `key` at the selection's head.
 local function object(key: string): (Buffer, Range, boolean) -> Range
 	return function(buffer, range, around)
-		local from, to = core.objects.find(buffer, range.head, key, around)
+		local from, to = core.textobjects.find(buffer, range.head, key, around)
 		return if from and to then { anchor = from, head = to } else range
 	end
 end

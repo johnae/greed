@@ -347,10 +347,10 @@ core.motions.replace_each(ctx.view, function(i, range)
 end)
 ```
 
-`core.objects.find(buffer, pos, key, around)` finds the text objects every
+`core.textobjects.find(buffer, pos, key, around)` finds the text objects every
 editing style uses, by Helix's keys: `"w"` a word, `"p"` a paragraph, `"("`
 the parentheses around `pos`, `"f"` a function from the syntax tree, and so
-on. It gives `from, to, linewise`, or nil. `core.objects.pair(char)` is
+on. It gives `from, to, linewise`, or nil. `core.textobjects.pair(char)` is
 what surround wraps text in for a key.
 
 `view:cursor()` is the head of the primary selection and

@@ -150,7 +150,7 @@ local PAIR_KEYS: { [string]: string } = { b = "(", B = "{", r = "[", a = "<" }
 -- it, an opening bracket adds spaces inside, and a closing one or a letter
 -- standing for one doesn't. Any other character goes on both sides.
 local function pair_for(char: string): (string, string)
-	return core.objects.pair(PAIR_KEYS[char] or char, PAIR_KEYS[char] == nil)
+	return core.textobjects.pair(PAIR_KEYS[char] or char, PAIR_KEYS[char] == nil)
 end
 
 -- Wraps `from`..`to` in the pair for the key typed next; whole lines wrap
@@ -282,7 +282,7 @@ local function operate(ctx: greed.Context, op: string)
 	if (op == "d" or op == "c") and key == "s" then
 		local char = greed.next_key()
 		local with = if op == "c" then greed.next_key() else nil
-		local open, close = core.objects.around(buffer, pos, PAIR_KEYS[char] or char)
+		local open, close = core.textobjects.around(buffer, pos, PAIR_KEYS[char] or char)
 		if open == nil or close == nil then
 			return
 		end
