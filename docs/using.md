@@ -112,7 +112,8 @@ model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
 for now). A style or theme you pick switches at once, so you can try it on
 the page.
 
-The page is a form in every editing style: `tab` and `shift-tab` go from
+The page is a [questionnaire](#questionnaires) in Markdown, and works the
+same in every editing style: `tab` and `shift-tab` go from
 choice to choice, `enter` or `space` picks one or presses a button, and a
 click does too. Under the models, a button sets the API key (it goes in the
 system keyring) or signs you in; for Ollama the page says whether it
@@ -1042,7 +1043,10 @@ require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
 
 Blocks that make choices or hear picks hide behind the page, and buttons
 show as buttons: put the cursor there to see their code. They run as any
-block does: in a file you haven't trusted, the first asks whether to.
+block does: in a file you haven't trusted, the first asks whether to. A
+Luau block can't wait, so one that asks for something, like a prompt or a
+secret, does it in `greed.spawn`. Greed's own setup page is a questionnaire
+like this: `setup.md` in the `setup` plugin.
 
 ### Runnable code blocks
 

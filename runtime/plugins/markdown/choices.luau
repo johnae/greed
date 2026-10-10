@@ -148,7 +148,16 @@ function M.pick(buffer: greed.Buffer, line: number)
 	if group == nil then
 		return
 	end
-	buffer:edit(function(e)
+	-- This plugin's own handle on the buffer, so a pick goes in a read-only
+	-- page too, like a page of questions: it's this plugin's edit there.
+	local own = buffer
+	for _, open in greed.buffers() do
+		if open == buffer then
+			own = open
+			break
+		end
+	end
+	own:edit(function(e)
 		for _, option in group.options do
 			local start = buffer:line_start(option.line)
 			local box = string.find(buffer:line_text(option.line), "%(", 1) :: number

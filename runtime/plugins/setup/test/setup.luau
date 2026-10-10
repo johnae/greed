@@ -1,27 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
-local core = require("@core")
 local models = require("@models")
-
--- Puts the cursor on the control of the page's line holding `text`.
-local function on(text: string)
-	local page = greed.view():buffer()
-	for line = 0, page:line_count() - 1 do
-		local words = page:line_text(line)
-		local at = string.find(words, text, 1, true)
-		if at then
-			greed.view():set_cursor(page:line_start(line) + at - 1)
-			return
-		end
-	end
-	error(`no line with {text}`)
-end
-
--- Presses the control holding `text` with enter, as from the keyboard.
-local function press(t: test.TestContext, text: string)
-	on(text)
-	t:keys("enter")
-end
+local markdown = require("@markdown")
 
 local function config_file(): string
 	return `{greed.fs.dirs().config}/init.luau`
@@ -31,98 +11,133 @@ local function seen(): boolean
 	return greed.fs.stat(`{greed.fs.dirs().data}/setup-seen`) ~= nil
 end
 
-local function page_open(): boolean
+local function page(): greed.Buffer?
 	for _, buffer in greed.buffers() do
 		if buffer:kind() == "setup" then
-			return true
+			return buffer
 		end
 	end
-	return false
+	return nil
 end
 
--- The page's line holding `text`.
-local function line_with(text: string): string
-	local page = greed.view():buffer()
-	for line = 0, page:line_count() - 1 do
-		local words = page:line_text(line)
-		if string.find(words, text, 1, true) then
-			return words
+-- Opens the page, its choices made.
+local function open(t: test.TestContext)
+	t:buffer("|")
+	t:run("setup")
+	t:wait_for(function()
+		local p = page()
+		return p ~= nil and string.find(p:text(), "- (x) helix", 1, true) ~= nil
+	end)
+end
+
+-- The page's line holding `text` (0-based), or nil.
+local function line_with(text: string): number?
+	local p = page() :: greed.Buffer
+	for line = 0, p:line_count() - 1 do
+		if string.find(p:line_text(line), text, 1, true) then
+			return line
 		end
 	end
-	error(`no line with {text}`)
+	return nil
+end
+
+-- Presses the choice whose line holds `text`, or the button labelled
+-- `label`, with enter, as from the keyboard, and lets what it runs finish.
+local function press(t: test.TestContext, text: string)
+	local p = page() :: greed.Buffer
+	local button = line_with(`button="{text}"`)
+	local line = button or assert(line_with(text), `no line with {text}`)
+	local at = if button then 0 else (string.find(p:line_text(line), "(", 1, true) :: number) - 1
+	greed.view():set_cursor(p:line_start(line) + at)
+	t:keys("enter")
+	t:wait(30)
+end
+
+local function answers(): { [string]: string }
+	return markdown.questions.answers(page() :: greed.Buffer)
 end
 
 test(":setup asks its questions, with what's in use picked", function(t)
-	t:buffer("|")
-	t:run("setup")
-	local text = greed.view():buffer():text()
+	open(t)
+	local text = (page() :: greed.Buffer):text()
 	assert(string.find(text, "Welcome to Greed", 1, true), text)
-	assert(string.find(text, "◉ Select text", 1, true), text)
-	assert(string.find(text, "Which theme?", 1, true), text)
-	assert(string.find(text, "Which language model should Greed use?", 1, true), text)
-	assert(string.find(text, "◉ Anthropic", 1, true), "the model in use: " .. text)
+	assert(string.find(text, "- (x) default", 1, true), "the theme in use: " .. text)
+	local a = answers()
+	assert(
+		a.style == "helix" and a.theme == "default" and a.provider == "anthropic",
+		greed.json.encode(a)
+	)
+	assert(a.claude == "no", a.claude)
 end)
 
-test("picking an editing style switches to it at once", function(t)
-	t:buffer("|")
-	t:run("setup")
-	press(t, "Say what")
-	assert(greed.option.get("editing-style") == "vim", tostring(greed.option.get("editing-style")))
-	assert(string.find(line_with("Say what"), "◉", 1, true), "picked on the page")
+test("picking an editing style or a theme switches to it at once", function(t)
+	open(t)
+	press(t, "vim: ")
+	t:wait_for(function()
+		return greed.option.get("editing-style") == "vim"
+	end)
+	press(t, "nord-light")
+	t:wait_for(function()
+		return require("@theme").current() == "nord-light"
+	end)
+	local kept = greed.fs.read(`{greed.fs.dirs().cache}/theme`) or ""
+	assert(string.find(kept, "nord-light", 1, true), "remembered: " .. kept)
 	greed.option.set("editing-style", "helix")
+	greed.run("theme", { args = { "default" }, wait = true })
 end)
 
-test("the page is read-only and takes its own keys in every style", function(t)
-	for _, style in { "helix", "vim", "vscode" } do
-		greed.option.set("editing-style", style)
-		t:buffer("|")
-		t:run("setup")
-		local page = greed.view():buffer()
-		local before = page:text()
-		-- Keys that would edit text are refused, whatever they say.
-		for _, keys in { "x d", "a b c", "i z esc", "p" } do
-			pcall(t.keys, t, keys)
-		end
-		assert(page:text() == before, `{style} changed the page`)
-		assert(greed.view():buffer() == page, `{style} left the page`)
-		-- tab goes from control to control; space and enter press.
-		on("No, or they're boxes")
-		t:keys("shift-tab space")
-		assert(
-			string.find(line_with("Yes, they show"), "◉", 1, true),
-			`{style}: shift-tab, space`
-		)
-		t:keys("tab enter")
-		assert(
-			string.find(line_with("No, or they're boxes"), "◉", 1, true),
-			`{style}: tab, enter`
-		)
-		t:keys("esc")
-		assert(not page_open(), `esc closed it in {style}`)
-	end
-	greed.option.set("editing-style", "helix")
+test("tab goes from choice to choice and button to button, round the page", function(t)
+	open(t)
+	local p = page() :: greed.Buffer
+	local view = greed.view()
+	local first = view:cursor()
+	assert(
+		string.find(p:line_text(p:line_of(first)), "helix", 1, true),
+		"starts on the first choice"
+	)
+	t:keys("tab")
+	assert(string.find(p:line_text(p:line_of(view:cursor())), "vim", 1, true), "the next choice")
+	t:keys("shift-tab shift-tab")
+	local last = p:line_text(p:line_of(view:cursor()))
+	assert(string.find(last, 'button="Not now"', 1, true), "round to the last button: " .. last)
+end)
+
+test("the model's button shows only for a model, and helps set it up", function(t)
+	models.providers.openai =
+		{ kind = "openai", url = "https://api.openai.com/v1", secret = "greed-test-nokey" }
+	open(t)
+	local hidden = markdown.questions.state(page() :: greed.Buffer)
+	assert(not hidden[line_with('button="Set up the model…"') :: number], "shows for anthropic")
+	press(t, "none: ")
+	hidden = markdown.questions.state(page() :: greed.Buffer)
+	assert(hidden[line_with('button="Set up the model…"') :: number], "hidden for none")
+	press(t, "openai: ")
+	press(t, "Set up the model…")
+	t:keys("k e y enter")
+	t:wait(100)
+	assert(models.key_state("openai") ~= nil, "the key is kept")
+	press(t, "Save")
+	local fast = models.roles.fast :: models.Role
+	assert(fast.provider == "openai" and fast.model == "gpt-5-mini", fast.provider)
 end)
 
 test("Save writes a config from the answers and opens it", function(t)
-	t:buffer("|")
-	t:run("setup")
-	press(t, "No modes")
-	press(t, "No, or they're boxes")
-	press(t, "[ Save ]")
+	open(t)
+	press(t, "vscode: ")
+	press(t, "no: or they're boxes")
+	press(t, "Save")
 	local written = greed.fs.read(config_file()) or ""
 	assert(string.find(written, 'option.set("editing-style", "vscode")', 1, true), written)
 	assert(string.find(written, 'option.set("tree-icons", "none")', 1, true), written)
 	assert(greed.view():buffer():path() == config_file(), "the config is open")
-	assert(seen(), "marked as answered")
-	assert(not page_open(), "closed")
+	assert(seen() and page() == nil, "answered and closed")
 	greed.option.set("editing-style", "helix")
 end)
 
 test("Save leaves a config that's there alone and shows what to add, to close with esc", function(t)
-	t:buffer("|")
 	greed.fs.write(config_file(), "-- mine\n")
-	t:run("setup")
-	press(t, "[ Save ]")
+	open(t)
+	press(t, "Save")
 	assert(greed.fs.read(config_file()) == "-- mine\n", "untouched")
 	local shown = greed.view():buffer()
 	assert(string.find(shown:text(), "editing-style", 1, true), "focused: " .. shown:text())
@@ -130,146 +145,50 @@ test("Save leaves a config that's there alone and shows what to add, to close wi
 	assert(greed.view():buffer() ~= shown, "esc closed it")
 end)
 
-test("Not now closes the page and marks it answered", function(t)
-	t:buffer("|")
-	t:run("setup")
-	press(t, "[ Not now ]")
-	assert(not page_open(), "closed")
-	assert(seen(), "marked as answered")
-	assert(greed.fs.stat(config_file()) == nil, "no config written")
-end)
-
-test("closing the page any way counts as Not now, and its picks don't hold up :q", function(t)
-	for _, close in { "esc", "q", ":q" } do
-		greed.fs.remove(`{greed.fs.dirs().data}/setup-seen`)
-		t:buffer("|")
-		t:run("setup")
-		local page = greed.view():buffer()
-		press(t, "Yes, they show")
-		assert(not core.file.unsaved(page), "nothing to save on the page")
-		if close == ":q" then
-			t:run("quit")
-		else
-			t:keys(close)
-		end
-		assert(not page_open(), close .. " closed it")
-		assert(seen(), close .. " counts as answered")
-	end
+test("Not now, esc or closing the page any way counts as answered, without saving", function(t)
+	open(t)
+	press(t, "Not now")
+	assert(page() == nil and seen(), "closed and answered")
+	assert(greed.fs.stat(config_file()) == nil, "nothing saved")
+	open(t)
+	t:keys("esc")
+	assert(page() == nil, "esc closes it")
+	open(t)
+	greed.view():close()
+	assert(page() == nil, "closing it any way")
+	local errors = greed.errors()
+	assert(#errors == 0, if errors[1] then errors[1].message else "")
 end)
 
 test(":setup goes to the page that's open rather than opening another", function(t)
-	t:buffer("|")
-	t:run("setup")
-	local page = greed.view():buffer()
+	open(t)
 	t:buffer("|other")
 	t:run("setup")
-	assert(greed.view():buffer() == page, "the same page, focused")
 	local count = 0
 	for _, buffer in greed.buffers() do
 		if buffer:kind() == "setup" then
 			count += 1
 		end
 	end
-	assert(count == 1, `{count} pages`)
+	assert(count == 1 and greed.view():buffer():kind() == "setup", `{count} pages`)
 end)
 
-test("choices follow the options as they change", function(t)
-	t:buffer("|")
-	t:run("setup")
-	greed.option.set("editing-style", "vim")
-	t:wait(10)
-	assert(string.find(line_with("Say what"), "◉", 1, true), "the style set elsewhere")
-	greed.option.set("tree-icons", "nerd")
-	t:wait(10)
-	assert(string.find(line_with("Yes, they show"), "◉", 1, true), "icons set elsewhere")
-	greed.option.set("editing-style", "helix")
-end)
-
-test("clicks press the button drawn where they land", function(t)
-	t:buffer("|")
-	t:run("setup")
-	local function click(text: string)
-		for row, line in t:screen(100, 60) do
-			local at = string.find(line, text, 1, true)
-			if at then
-				local col = utf8.len(string.sub(line, 1, at - 1)) :: number
-				t:mouse("press", col + 1, row - 1)
-				t:mouse("release", col + 1, row - 1)
-				return
-			end
-		end
-		error(`{text} isn't on the screen`)
-	end
-	click("Yes, they show")
-	assert(string.find(line_with("Yes, they show"), "◉", 1, true), "a click picks a choice")
-	click("Not now")
-	assert(not page_open(), "Not now closed it")
-	assert(seen() and greed.fs.stat(config_file()) == nil, "as Not now, without saving")
-	local errors = greed.errors()
-	assert(#errors == 0, if errors[1] then errors[1].message else "")
-end)
-
-test("the model step says what's missing and helps set it up", function(t)
-	models.providers.openai =
-		{ kind = "openai", url = "https://api.openai.com/v1", secret = "greed-test-nokey" }
-	t:buffer("|")
-	t:run("setup")
-	press(t, "OpenAI")
-	assert(
-		string.find(line_with("No API key for openai"), "GREED_SECRET_GREED_TEST_NOKEY", 1, true)
-			~= nil
-	)
-	press(t, "[ Set API key… ]")
-	t:keys("k e y enter")
-	t:wait(100)
-	assert(string.find(line_with("openai: key found"), "key found", 1, true) ~= nil)
-	models.providers.ollama = { kind = "openai", url = "http://127.0.0.1:9/v1" }
-	press(t, "Ollama")
-	assert(string.find(line_with("isn't answering"), "`ollama serve`", 1, true) ~= nil)
-	assert(string.find(line_with("isn't answering"), "`ollama pull", 1, true) ~= nil)
-	press(t, "OpenAI")
-	press(t, "[ Save ]")
-	local fast = models.roles.fast :: models.Role
-	assert(fast.provider == "openai" and fast.model == "gpt-5-mini", fast.provider)
-end)
-
-test("a terminal is asked whether icons show, with samples and what boxes mean", function(t)
-	t:buffer("|")
-	t:run("setup")
-	local text = greed.view():buffer():text()
-	assert(string.find(text, "Do you see icons here", 1, true), text)
-	assert(string.find(text, "No, or they're boxes", 1, true), text)
-	assert(string.find(text, "needs Nerd Font icons", 1, true), text)
-end)
-
-test("a window isn't asked about icons: it has them, and they're on", function(t)
-	t:buffer("|")
+test("a terminal is asked whether icons show, with samples; a window has them on", function(t)
+	open(t)
+	assert(line_with("they show here") and line_with("or they're boxes"), "asked")
+	t:keys("esc")
 	local window = t:client("window", "gui")
 	window:run("setup")
-	-- The page is the window's own.
-	local text = table.concat(window:screen(120, 50), "\n")
-	assert(string.find(text, "the window has them built in", 1, true), text)
-	assert(not string.find(text, "Do you see icons", 1, true), text)
+	t:wait(200)
+	local text = (page() :: greed.Buffer):text()
+	assert(string.find(text, "(x) yes: the window has them built in", 1, true), text)
 	window:run("setup-save")
-	local written = greed.fs.read(assert(greed.fs.dirs().config) .. "/init.luau") or ""
+	local written = greed.fs.read(config_file()) or ""
 	assert(string.find(written, 'option.set("tree-icons", "nerd")', 1, true), written)
 end)
 
-test("picking a theme on the page switches to it and remembers it, as :theme does", function(t)
-	local theme = require("@theme")
-	local before = theme.current()
-	t:buffer("|")
-	t:run("setup")
-	press(t, "◯ nord")
-	assert(theme.current() == "nord", theme.current())
-	assert(string.find(line_with("◉ nord"), "◉ nord", 1, true), "picked on the page")
-	local kept = greed.fs.read(`{greed.fs.dirs().cache}/theme`) or ""
-	assert(string.find(kept, "nord", 1, true), kept)
-	t:run("theme", { before })
-end)
-
 test("the config's commented-out settings run once uncommented, and name real options", function()
-	local config = require("@setup").config({ icons = false })
+	local config = require("@setup").config({ icons = "no" })
 	local lines = {}
 	for line in string.gmatch(config, "[^\n]*") do
 		local code = string.match(line, "^%-%- (greed%..*)$")

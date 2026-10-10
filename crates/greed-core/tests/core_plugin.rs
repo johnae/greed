@@ -63,6 +63,11 @@ fn core_plugin_tests_pass() {
         plugin("theme"),
         plugin("markdown"),
         plugin("models"),
+        plugin("terminal"),
+        plugin("operations"),
+        plugin("approvals"),
+        plugin("agent"),
+        plugin("blocks"),
         plugin("setup"),
         plugin("describe"),
     ];
