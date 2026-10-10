@@ -10,7 +10,8 @@ test("new makes a plugin with a test, and type checking above it", function(t)
 	local init = greed.fs.read(dir .. "/hello/init.luau") :: string
 	assert(string.find(init, 'name = "hello-greet"', 1, true), init)
 	assert(
-		string.find(greed.fs.read(dir .. "/.luaurc") :: string, ".greed-types/greed", 1, true) ~= nil
+		string.find(greed.fs.read(dir .. "/.luaurc") :: string, ".greed-types/greed", 1, true)
+			~= nil
 	)
 	assert(done[#done] == "run `greed test hello` to try it", done[#done])
 end)

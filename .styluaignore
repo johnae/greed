@@ -1,0 +1,7 @@
+# Kept as written: the API-table test reads one signature per line in the
+# type definitions, and these files predate the formatter's layout.
+runtime/types/greed/init.luau
+runtime/types/greed/test.luau
+runtime/plugins/core/menu.luau
+runtime/plugins/cmdline/init.luau
+runtime/plugins/theme/test/theme.luau

@@ -930,6 +930,8 @@ test("ctrl-n on an empty line says there's no word, and stays in normal mode", f
 	greed.option.set("editing-style", "vim")
 	t:keys("ctrl-n")
 	t:expect_mode("vim")
-	assert(string.find(table.concat(t:messages(), "\n"), "no word under the cursor", 1, true) ~= nil)
+	assert(
+		string.find(table.concat(t:messages(), "\n"), "no word under the cursor", 1, true) ~= nil
+	)
 	greed.option.set("editing-style", "helix")
 end)

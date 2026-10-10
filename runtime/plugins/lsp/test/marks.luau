@@ -27,6 +27,7 @@ end)
 
 test("messages can be left out", function(t)
 	t:buffer("|let a = b;")
-	local found = marks.diagnostic_marks(greed.view():buffer(), { diagnostic(4, 1, "not found") }, false)
+	local found =
+		marks.diagnostic_marks(greed.view():buffer(), { diagnostic(4, 1, "not found") }, false)
 	assert(#found == 1 and found[1].sign == "E", "just the sign")
 end)
