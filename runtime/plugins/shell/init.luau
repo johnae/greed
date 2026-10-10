@@ -1883,7 +1883,7 @@ greed.command({
 	doc = "Show every line, or row, of the filtered block at the cursor again, keeping its sort; in a block's float, close it",
 	run = function(ctx)
 		if peek.of(ctx.view) then
-			peek.close()
+			peek.close(ctx.view)
 			return
 		end
 		local shell, block = output_block(ctx.view)

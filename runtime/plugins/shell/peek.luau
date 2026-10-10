@@ -2,7 +2,14 @@
 -- so what works on a block there works in it too: `/` filters it, `enter`
 -- on a row acts on what the row is, `space .` lists the rest, `ctrl-c`
 -- stops it. A live block's peek follows it as it shows what's new. `esc`
--- closes it, keeping any filter. One is open at a time.
+-- closes it, keeping any filter.
+--
+-- A peek opened on purpose (`enter` on a running block's line, "open in a
+-- float", `follow logs`) is kept: a float of the tab, one for each block,
+-- open as long as you like while you work elsewhere, to keep an eye on
+-- things; the tab's float layouts (`alt-w`) arrange them. The one the
+-- mouse opens resting on a folded block is passing: one at a time, gone
+-- when the mouse moves away.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -15,7 +22,8 @@ type Block = state.Block
 local M = {}
 
 -- `tail` while the cursor is on the block's last line, so it stays on the
--- last line as more comes, like `tail -f`.
+-- last line as more comes, like `tail -f`. A `kept` one stays the size it
+-- opened at, or was given, rather than growing with its block.
 type Peek = {
 	view: greed.View,
 	shell: Shell,
@@ -23,26 +31,40 @@ type Peek = {
 	line: number,
 	height: number,
 	tail: boolean,
+	kept: boolean,
 }
 
-local open: Peek? = nil
+-- The peeks open, the oldest first.
+local peeks: { Peek } = {}
 
---- The block `view` peeks at, when it's a peek.
-function M.of(view: greed.View): Block?
-	local p = open
-	if p and p.view == view and view:valid() then
-		return p.block
+local function find(view: greed.View): Peek?
+	for _, p in peeks do
+		if p.view == view then
+			return p
+		end
 	end
 	return nil
 end
 
---- Closes the peek, if one is open; false when none is.
-function M.close(): boolean
-	local p = open
-	open = nil
-	if p and p.view:valid() then
-		p.view:close()
-		return true
+--- The block `view` peeks at, when it's a peek.
+function M.of(view: greed.View): Block?
+	local p = find(view)
+	return if p and view:valid() then p.block else nil
+end
+
+--- Closes the peek `view` is, or with no `view` the passing one (the
+--- mouse's); false when there's none.
+function M.close(view: greed.View?): boolean
+	for i = #peeks, 1, -1 do
+		local p = peeks[i]
+		if if view then p.view == view else not p.kept then
+			table.remove(peeks, i)
+			if p.view:valid() then
+				p.view:close()
+				return true
+			end
+			return false
+		end
 	end
 	return false
 end
@@ -91,7 +113,7 @@ local function fit(p: Peek)
 	end
 	keep_cursor(p)
 	local tall = height(p.shell, p.block)
-	if tall ~= p.height then
+	if tall ~= p.height and not p.kept then
 		p.view:configure({ height = tall })
 		p.height = tall
 	end
@@ -101,27 +123,50 @@ local function fit(p: Peek)
 	p.line = line
 end
 
---- How a peek opens: without taking focus (`focus = false`, as when the
---- mouse rests on a block), at screen row `y`, and with `tail` on the
---- block's last line, following it as it grows.
+--- How a peek opens: passing, without taking focus (`focus = false`, as
+--- when the mouse rests on a block), at screen row `y`, and with `tail` on
+--- the block's last line, following it as it grows.
 export type How = { focus: boolean?, y: number?, tail: boolean? }
 
 --- Opens a float at `block` of `shell`, with the cursor on its first line
---- of output (or its last, with `tail`), in place of a peek open already.
+--- of output (or its last, with `tail`). One that takes focus is kept, and
+--- goes to the one kept for `block` already, if there's one; a passing one
+--- takes the place of the passing one open.
 function M.open(shell: Shell, block: Block, how: How?): greed.View?
-	M.close()
+	local focus = how == nil or how.focus ~= false
+	local tail = how ~= nil and how.tail == true
+	if focus then
+		for _, p in peeks do
+			if p.kept and p.block == block and p.view:valid() then
+				p.view:raise()
+				p.view:focus()
+				if tail then
+					p.tail = true
+					fit(p)
+				end
+				greed.mode.set(core.style.home())
+				return p.view
+			end
+		end
+	else
+		M.close()
+	end
 	local from = log.range(block)
 	local tall = height(shell, block)
 	if from == nil or tall == 0 then
 		return nil
 	end
-	local focus = how == nil or how.focus ~= false
+	-- Each kept one opens a little below and right of the one before, so
+	-- they don't hide each other until they're arranged.
+	local kept = #peeks
 	local view = greed.float(shell.buffer, {
 		title = string.match(block.command, "^[^\n]*") or block.command,
-		width = "90%",
+		width = if focus then "70%" else "90%",
 		height = tall,
 		focus = focus,
-		y = how and how.y,
+		tab = focus,
+		x = if focus then 4 + 4 * (kept % 8) else nil,
+		y = if focus then 2 + 2 * (kept % 8) else how and how.y,
 		footer = "/ filter · enter or space . on a row · ctrl-c stops · esc closes",
 	})
 	view:set_cursor(log.output_range(shell, block) or from)
@@ -131,9 +176,10 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 		block = block,
 		line = -1,
 		height = tall,
-		tail = how ~= nil and how.tail == true,
+		tail = tail,
+		kept = focus,
 	}
-	open = p
+	table.insert(peeks, p)
 	fit(p)
 	if focus then
 		greed.mode.set(core.style.home())
@@ -141,16 +187,17 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 	return view
 end
 
---- After `block` shows something new: a peek at it grows or shrinks with
---- it, and scrolls back to it when what's above it moved it. Once the
---- block is gone, its peek closes.
+--- After `block` shows something new: the peeks at it follow it, and
+--- scroll back to it when what's above it moved it; a passing one grows
+--- and shrinks with it. Once the block is gone, they close.
 function M.follow(block: Block)
-	local p = open
-	if p and p.block == block then
-		if log.range(block) == nil then
-			M.close()
-		else
-			fit(p)
+	for _, p in table.clone(peeks) do
+		if p.block == block then
+			if log.range(block) == nil then
+				M.close(p.view)
+			else
+				fit(p)
+			end
 		end
 	end
 end
@@ -158,9 +205,17 @@ end
 log.on_update(M.follow)
 
 greed.on("selection.changed", function(event: greed.SelectionChanged)
-	local p = open
-	if p and p.view == event.view then
+	local p = find(event.view)
+	if p then
 		keep_cursor(p)
+	end
+end)
+
+greed.on("view.closed", function(event: greed.ViewClosed)
+	for i = #peeks, 1, -1 do
+		if peeks[i].view:id() == event.view then
+			table.remove(peeks, i)
+		end
 	end
 end)
 

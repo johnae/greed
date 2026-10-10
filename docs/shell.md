@@ -545,10 +545,17 @@ Such a line stands for its block, a line or two up from the prompt:
 opens it there to filter. The float shows that block and nothing around it,
 and works as the block does in the shell: `/` filters it, `enter` or
 `space .` on a row acts on the pod or file it is, and `ctrl-c` stops it.
-A watch's float follows it as it refreshes, and grows and shrinks with
-it. `esc` closes it, keeping the filter, which a watch keeps on each run.
-`space .` on any block offers "open in a float" too. A line goes when
-its block ends.
+A watch's float follows it as it refreshes. `esc` closes it, keeping the
+filter, which a watch keeps on each run. `space .` on any block offers
+"open in a float" too. A line goes when its block ends.
+
+These floats stay while you work elsewhere, one for each block, so you
+can keep several watches, logs and builds in sight at once: opening
+another leaves the others open, and opening one again goes to it. They
+are the tab's floats, so `alt-w` lays them out (`tiled`, `cascade`, one
+at a time), `alt-{` and `alt-}` go between them and `alt-f` hides them
+all and shows them again. The float the mouse opens resting on a folded
+block is the only one that goes by itself, when the mouse moves away.
 
 At the prompt, `ctrl-c` stops the latest running block and says which
 others still run. `stop` lists them by number, `stop 7` stops block 7,

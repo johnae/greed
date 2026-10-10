@@ -208,3 +208,30 @@ test("space o w lists what runs in every shell: enter peeks, ctrl-x stops", func
 	assert(second.status == "running")
 	shell.interrupt(second)
 end)
+
+test("floats opened on purpose stay, one for each block, while you work elsewhere", function(t)
+	local sh = open(t)
+	local one = watching(t, sh)
+	local two = watching(t, sh)
+	local main = greed.view()
+	local first = assert(shell.peek.open(sh, one))
+	main:focus()
+	local second = assert(shell.peek.open(sh, two))
+	assert(first:valid() and second:valid(), "both stay open")
+	assert(first:float_spec() and assert(first:float_spec()).tab, "a float of the tab")
+	-- Each follows its own block.
+	assert(shell.peek.of(first) == one and shell.peek.of(second) == two)
+	-- Opening the first again goes to it rather than making another.
+	main:focus()
+	assert(shell.peek.open(sh, one) == first and greed.view() == first)
+	-- The tab's float layouts take them in.
+	if greed.plugin.dirs().panes then
+		assert(#require("@panes").floats.all() >= 2, "the panes plugin arranges them")
+	end
+	-- esc closes the one it's in, and the other stays.
+	t:run("shell-unfilter")
+	assert(not first:valid() and second:valid())
+	shell.peek.close(second)
+	shell.interrupt(one)
+	shell.interrupt(two)
+end)
