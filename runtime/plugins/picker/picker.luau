@@ -555,19 +555,44 @@ end
 --- Lists the actions for `targets` (see core's actions) and runs the one
 --- chosen. With several things, each action says which it's for.
 function M.act(targets: { core.Target })
-	-- Each thing's own actions, in the order the things came, then those
+	-- Things of a kind found together (`group`), like a selection over five
+	-- pods, offer each action once, for all of them.
+	local groups: { { core.Target } } = {}
+	local together: { [string]: { core.Target } } = {}
+	for _, target in targets do
+		local key = if target.group then `{target.kind}\0{target.group}` else nil
+		local found = if key then together[key] else nil
+		if found then
+			table.insert(found, target)
+		else
+			local group = { target }
+			if key then
+				together[key] = group
+			end
+			table.insert(groups, group)
+		end
+	end
+	-- Each group's own actions, in the order the things came, then those
 	-- every kind has (pin to context), which would crowd the rest.
 	local items, everywhere = {}, {}
-	for _, target in targets do
-		for _, action in core.actions.for_kind(target.kind) do
+	for _, group in groups do
+		local first = group[1]
+		local names = {}
+		for _, target in group do
+			table.insert(names, target.label)
+		end
+		local what = if #group > 1
+			then `{#group} × {first.kind}: {table.concat(names, ", ")}`
+			else `{first.kind}: {first.label}`
+		for _, action in core.actions.for_kind(first.kind) do
 			local label = action.name
 			if #targets > 1 then
-				label ..= `  {target.kind}: {target.label}`
+				label ..= `  {what}`
 			end
 			if action.doc then
 				label ..= `  {action.doc}`
 			end
-			local item = { label = label, value = { action = action, target = target } }
+			local item = { label = label, value = { action = action, targets = group } }
 			table.insert(if action.kind == "*" then everywhere else items, item)
 		end
 	end
@@ -578,7 +603,9 @@ function M.act(targets: { core.Target })
 	end
 	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
 	M.pick(title, items, function(item)
-		item.value.action.run(item.value.target)
+		for _, target in item.value.targets do
+			item.value.action.run(target)
+		end
 	end)
 end
 

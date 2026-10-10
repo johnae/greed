@@ -243,6 +243,9 @@ An action that is an existing command has a short form:
 (kind, name, command, doc). An action of kind `"*"` is offered for every
 kind, after the actions of everything under the cursor, like the
 context's `pin to context`.
+Things a finder gives with the same `group` (a string of its choosing),
+like the rows a selection covers, are offered as one: each action runs on
+every one of them.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the

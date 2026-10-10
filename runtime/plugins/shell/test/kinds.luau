@@ -166,6 +166,33 @@ test("an action that destroys asks first, and says when it's production", functi
 	assert(#sh.blocks == count, "nothing ran")
 end)
 
+test("a selection over several rows acts on each of them", function(t)
+	local sh = fake(t, "staging")
+	local pods = ran(t, sh, "kubectl get pods")
+	local from = assert((string.find(sh.buffer:text(), "api-7d9f8b6c5-2xkqz", 1, true)))
+	local to = assert((string.find(sh.buffer:text(), "worker-5c6b7d8f9-abcde", 1, true)))
+	greed.view():set_selection({ ranges = { { anchor = from - 1, head = to } }, primary = 1 })
+	local here = core.actions.at(greed.view())
+	local found: { core.Target } = {}
+	for _, target in here do
+		if target.kind == "pod" then
+			table.insert(found, target)
+		end
+	end
+	assert(#found == 2 and found[1].group and found[1].group == found[2].group, "found together")
+	local count = #sh.blocks
+	require("@picker").act(here)
+	local menu = table.concat(t:floats(), "\n")
+	assert(string.find(menu, "2 × pod", 1, true), menu)
+	t:keys("d e s c r i b e enter")
+	t:wait_for(function()
+		return #sh.blocks == count + 2 and sh.blocks[#sh.blocks].status ~= "running"
+	end)
+	assert((string.find(sh.blocks[count + 1].command, "describe pods api", 1, true)))
+	assert((string.find(sh.blocks[count + 2].command, "describe pods worker", 1, true)))
+	assert(pods.called, "still pods")
+end)
+
 test("follow logs opens in a float on its last line; again goes to it, not a second", function(t)
 	local sh = fake(t, "staging")
 	local pods = ran(t, sh, "kubectl get pods")

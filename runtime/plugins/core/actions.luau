@@ -26,6 +26,8 @@ local M = {}
 --- to show it, and the value actions get. `from` and `to` are where it is
 --- in the buffer, for things found there; one that names itself as an
 --- object (objects.luau) gives its `id`, and the `buffer` it's in.
+--- Things of a kind with the same `group` were found together, like the
+--- rows a selection covers, and are acted on together.
 export type Target = {
 	kind: string,
 	label: string,
@@ -34,6 +36,7 @@ export type Target = {
 	buffer: greed.Buffer?,
 	from: number?,
 	to: number?,
+	group: string?,
 }
 
 --- Says what's at `range` (the primary selection) in `view`; nil or {}
@@ -109,7 +112,7 @@ function M.at(view: greed.View): { Target }
 		local ok, found = pcall(finder.find, view, range)
 		if ok and found then
 			for _, target in found do
-				local key = `{target.kind}\0{target.label}`
+				local key = target.id or `{target.kind}\0{target.label}`
 				if not seen[key] then
 					seen[key] = true
 					table.insert(out, target)

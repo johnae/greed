@@ -581,6 +581,11 @@ tree`; a process `stop`, `interrupt`, `hang up`, `kill`, `open files` and
 `its folder`. These are the same wherever a file or folder shows up, a
 path in any buffer included.
 
+Select several rows (`x` a few times in Helix, `V` in Vim, shift and the
+arrows in the vscode style) and `space .` offers each action once for all
+of them (`describe  3 × pod: api-0, api-1, api-2`), running it on each in
+turn. One that deletes or stops asks for each.
+
 ```text
 ❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods
 NAME                     READY   STATUS             RESTARTS   AGE

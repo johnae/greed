@@ -564,9 +564,33 @@ core.actions.action({
 	end,
 })
 
+-- The rows of `block` on the lines `range` covers, when it covers more
+-- than one, to act on all of them.
+local function rows_in(shell: Shell, block: Block, range: greed.Range): { core.Target }
+	local buffer = shell.buffer
+	local from, to = math.min(range.anchor, range.head), math.max(range.anchor, range.head)
+	local found: { core.Target } = {}
+	local seen: { [number]: boolean } = {}
+	for line = buffer:line_of(from), buffer:line_of(math.max(to - 1, from)) do
+		local pos = buffer:line_start(line)
+		local index = if log.block_at(shell, pos) == block
+			then rows.row_at(shell, block, pos)
+			else nil
+		local object = if index and not seen[index] then M.row_object(shell, block, index) else nil
+		if index and object then
+			seen[index] = true
+			local target = core.objects.target(object)
+			target.group = `rows of {block.uid}`
+			table.insert(found, target)
+		end
+	end
+	return found
+end
+
 -- The row at the cursor and the cell under it. A row that's a thing (a pod,
 -- a file) comes first, then the thing the cell is when it's one (the pod's
--- node), then the cell; a plain row comes after its cell.
+-- node), then the cell; a plain row comes after its cell. A selection over
+-- several rows is all of them, to act on together.
 core.actions.finder({
 	name = "shell-row",
 	find = function(view, range)
@@ -574,6 +598,10 @@ core.actions.finder({
 		local block = if shell then log.block_at(shell, range.head) else nil
 		if shell == nil or block == nil then
 			return nil
+		end
+		local several = rows_in(shell, block, range)
+		if #several > 1 then
+			return several
 		end
 		local index = rows.row_at(shell, block, range.head)
 		local object = if index then M.row_object(shell, block, index) else nil
