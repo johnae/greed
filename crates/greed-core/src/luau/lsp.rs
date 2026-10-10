@@ -268,6 +268,12 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             state.owned.remove_server(&language);
             Ok(())
         })?,
+    )?;
+    lsp.set(
+        "restart",
+        lua.create_function(|lua, language: Option<String>| {
+            Ok(state_mut(lua).lsp.restart(language.as_deref()))
+        })?,
     )
 }
 

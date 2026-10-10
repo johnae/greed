@@ -190,6 +190,26 @@ local function jump(ctx: greed.Context, forward: boolean)
 end
 
 greed.command({
+	name = "lsp-restart",
+	doc = "Start this file's language server again, as when it's stuck; with all, every server",
+	args = { { name = "language", doc = "A language, or all; this file's by default" } },
+	run = function(ctx)
+		local given = ctx.args[1]
+		local language = if given == "all" then nil else given or ctx.buffer:language()
+		if language == nil and given ~= "all" then
+			error("this buffer has no language; :lsp-restart all restarts every server", 0)
+		end
+		local stopped = greed.lsp.restart(language)
+		local which = language or "every language"
+		greed.echo(
+			if stopped == 0
+				then `no language server was running for {which}; one starts when a file needs it`
+				else `restarting the language server{if stopped == 1 then "" else "s"} for {which}`
+		)
+	end,
+})
+
+greed.command({
 	name = "next-diagnostic",
 	doc = "Go to the next problem in this file",
 	run = function(ctx)

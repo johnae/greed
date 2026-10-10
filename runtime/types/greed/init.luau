@@ -1310,6 +1310,8 @@ export type Lsp = {
 	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }? }) -> (),
 	--- Stops starting a server for a language; one running keeps running.
 	remove: (language: string) -> (),
+	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".
+	restart: (language: string?) -> number,
 	--- The commands set for each language's server, by language.
 	servers: () -> { [string]: { { string } } },
 	--- The servers running now, by language and then root.

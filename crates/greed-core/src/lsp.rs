@@ -367,6 +367,26 @@ impl Lsp {
         self.configs.retain(|c| c.language != language);
     }
 
+    /// Stops the servers running for `language` (every language with
+    /// `None`), forgetting that any failed or kept stopping, so the next
+    /// sync starts them fresh. Returns how many were running.
+    pub fn restart(&mut self, language: Option<&str>) -> usize {
+        let of = |l: &str| language.is_none_or(|language| l == language);
+        let ids: Vec<ServerId> = (self.servers.iter())
+            .filter(|(_, server)| of(&server.language))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &ids {
+            if let Some(server) = self.servers.remove(id) {
+                self.running
+                    .remove(&(server.language.clone(), server.root.clone()));
+            }
+        }
+        self.failed.retain(|(l, _)| !of(l));
+        self.stops.retain(|(l, _), _| !of(l));
+        ids.len()
+    }
+
     /// How each language's server starts.
     pub fn configs(&self) -> &[ServerConfig] {
         &self.configs
