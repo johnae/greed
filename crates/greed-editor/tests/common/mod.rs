@@ -130,8 +130,15 @@ impl World {
         for step in steps {
             match step {
                 Step::Keys(text) => {
-                    keys.write_all(text.as_bytes()).unwrap();
-                    keys.flush().unwrap();
+                    // It ended early: what it printed says why, which the
+                    // test's own assertions show.
+                    if keys
+                        .write_all(text.as_bytes())
+                        .and_then(|()| keys.flush())
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
                 Step::Until(what, check) => self.wait_for(what, check),
                 Step::Shows(text) => {
