@@ -92,6 +92,24 @@ function M.page(object: core.Object): ({ string }, { [number]: Link })
 			end
 		end
 	end
+	local history = core.actions.history(object.id)
+	if #history > 0 then
+		table.insert(lines, "")
+		table.insert(lines, "Done to it")
+		for i, entry in history do
+			if i > MOST then
+				table.insert(lines, `  … {#history - MOST} more`)
+				break
+			end
+			local made = if entry.made then core.objects.get(entry.made) else nil
+			local ago = core.text.ago((greed.now() - entry.at) // 1000)
+			local what = if made then `  → {made.label}` else ""
+			table.insert(lines, `  {ago}  {entry.by}  {entry.action}{what}`)
+			if made then
+				links[#lines] = { object = made }
+			end
+		end
+	end
 	local actions = core.objects.actions(object)
 	if #actions > 0 then
 		table.insert(lines, "")

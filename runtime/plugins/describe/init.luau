@@ -610,6 +610,36 @@ greed.command({
 	end,
 })
 
+-- What was done to anything, newest first: enter opens what an action
+-- made (a shell action's block) in the inspector, or else the thing.
+core.actions.action({
+	kind = "*",
+	name = "history",
+	quiet = true,
+	doc = "What was done to it, by you or an agent, and when; enter opens what each made",
+	run = function(target)
+		local object = core.objects.from(target)
+		local history = core.actions.history(if object then object.id else "")
+		if object == nil or #history == 0 then
+			greed.echo(`nothing done to {target.label} yet`)
+			return
+		end
+		local items = {}
+		for _, entry in history do
+			local made = if entry.made then core.objects.get(entry.made) else nil
+			local ago = core.text.ago((greed.now() - entry.at) // 1000)
+			local what = if made then `  → {made.label}` else ""
+			table.insert(items, {
+				label = `{ago}  {entry.by}  {entry.action}{what}`,
+				value = made or object,
+			})
+		end
+		picker.pick(`Done to {object.label}`, items, function(item)
+			M.inspect(core.objects.get(item.value.id) or item.value)
+		end)
+	end,
+})
+
 greed.command({
 	name = "inspect",
 	doc = "Inspect what's under the cursor: its state, what it relates to, what it can do; "

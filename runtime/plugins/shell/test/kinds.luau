@@ -111,6 +111,12 @@ test("kubectl get's rows are pods, in the context and namespace it ran against",
 			== "kubectl logs worker-5c6b7d8f9-abcde --tail 200 --context prod-eu -n payments",
 		logs.command
 	)
+	-- What was done to the pod is kept, with the block it ran.
+	local object = assert(core.objects.from(pod))
+	assert(core.objects.act(object, "events"))
+	local done = core.actions.history(object.id)
+	assert(done[1].action == "events" and done[1].made, "kept")
+	assert((string.find(assert(core.objects.get(assert(done[1].made))).label, "events", 1, true)))
 	-- With every namespace, each row says its own.
 	local all = ran(t, sh, "kubectl get pods -A --context prod-eu")
 	on(sh, all, "pay-0")

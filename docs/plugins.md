@@ -246,6 +246,11 @@ context's `pin to context`.
 Things a finder gives with the same `group` (a string of its choosing),
 like the rows a selection covers, are offered as one: each action runs on
 every one of them.
+Run an action with `actions.run(action, target)` rather than its `run`, so
+it's kept in what was done to the thing (`actions.history(id)`, which
+`history` and the inspector show); `run` may give back the id of what it
+made, like a shell block, and `quiet = true` leaves an action that only
+looks out of it.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the

@@ -72,6 +72,11 @@ export type Kind = {
 
 local kinds: { Kind } = {}
 
+-- The object id of `block` of `shell`.
+local function block_id(shell: Shell, block: Block): string
+	return `shell-block:{shell.buffer:id()}.{block.number}`
+end
+
 --- Whether `line` keeps printing rows again as they change, as a kind
 --- whose commands it names says.
 function M.streams(line: string): boolean
@@ -438,7 +443,7 @@ local function row_relations(value: any): { [string]: { core.Object } }
 	end
 	local shell, block, index = origin.shell, origin.block, origin.index
 	local out: { [string]: { core.Object } } = {}
-	local here = core.objects.get(`shell-block:{shell.buffer:id()}.{block.number}`)
+	local here = core.objects.get(block_id(shell, block))
 	if here then
 		out.block = { here }
 	end
@@ -757,7 +762,7 @@ function M.command(
 				if block.command == line then
 					peek.open(shell, block, { tail = opts.follow })
 					greed.echo(`already running as ${block.number}`)
-					return
+					return block_id(shell, block)
 				end
 			end
 			if opts.danger then
@@ -778,6 +783,7 @@ function M.command(
 			if block and opts.follow then
 				peek.open(shell, block, { tail = true })
 			end
+			return if block then block_id(shell, block) else nil
 		end,
 	})
 	if opts.default then
@@ -795,7 +801,10 @@ function M.default(shell: Shell, pos: number): boolean
 	end
 	for _, action in core.actions.for_kind(thing.kind) do
 		if action.name == name then
-			action.run({ kind = thing.kind, label = thing.label, value = thing.value })
+			core.actions.run(
+				action,
+				{ kind = thing.kind, label = thing.label, value = thing.value, id = id_of(thing) }
+			)
 			return true
 		end
 	end

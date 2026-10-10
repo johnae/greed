@@ -254,11 +254,12 @@ end
 
 --- Runs `object`'s action `name`, with the cursor on it first when it's
 --- somewhere in a buffer; false when its kind has no action by that name.
-function M.act(object: Object, name: string): boolean
+--- `by` says who for the history, as `actions.run` takes it.
+function M.act(object: Object, name: string, by: string?): boolean
 	for _, action in M.actions(object) do
 		if action.name == name then
 			go_to(object)
-			action.run(M.target(object))
+			actions.run(action, M.target(object), by)
 			return true
 		end
 	end

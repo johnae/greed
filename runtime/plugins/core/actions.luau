@@ -47,17 +47,36 @@ export type Finder = {
 	find: (view: greed.View, range: greed.Range) -> { Target }?,
 }
 
---- `plugin`, once the plugin it came from, is ignored.
+--- `plugin`, once the plugin it came from, is ignored. `run` may give back
+--- what it made to look at, as an object id: a shell action its block.
+--- One that only looks (`history` itself) is `quiet`: it isn't kept.
 export type Action = {
 	kind: string,
 	name: string,
 	doc: string?,
 	plugin: string?,
-	run: (target: Target) -> (),
+	quiet: boolean?,
+	run: (target: Target) -> ...any,
+}
+
+--- An action done: on what (its id when it has one, its kind and label),
+--- which action, by whom ("you", "agent"), when (milliseconds since 1970)
+--- and what it made, as an object id.
+export type Done = {
+	id: string?,
+	kind: string,
+	label: string,
+	action: string,
+	by: string,
+	at: number,
+	made: string?,
 }
 
 local finders: { Finder } = {}
 local actions: { Action } = {}
+-- What was done, oldest first; only so many are kept.
+local done: { Done } = {}
+local KEEP = 500
 
 --- Adds a finder, replacing one by the same name.
 function M.finder(finder: Finder)
@@ -96,6 +115,47 @@ function M.for_kind(kind: string): { Action }
 			if action.kind == wanted then
 				table.insert(out, action)
 			end
+		end
+	end
+	return out
+end
+
+--- Runs `action` on `target` for `by` ("you" by default, "agent" for an
+--- agent's), keeping it in the history of what was done.
+function M.run(action: Action, target: Target, by: string?)
+	if action.quiet then
+		action.run(target)
+		return
+	end
+	local id = target.id
+	if id == nil and (type(target.value) == "string" or type(target.value) == "number") then
+		id = `{target.kind}:{target.value}`
+	end
+	local entry: Done = {
+		id = id,
+		kind = target.kind,
+		label = target.label,
+		action = action.name,
+		by = by or "you",
+		at = greed.now(),
+	}
+	table.insert(done, entry)
+	if #done > KEEP then
+		table.remove(done, 1)
+	end
+	local made = action.run(target)
+	if type(made) == "string" then
+		entry.made = made
+	end
+end
+
+--- What was done to the thing with `id`, newest first; with no `id`,
+--- everything done.
+function M.history(id: string?): { Done }
+	local out: { Done } = {}
+	for i = #done, 1, -1 do
+		if id == nil or done[i].id == id then
+			table.insert(out, table.clone(done[i]))
 		end
 	end
 	return out

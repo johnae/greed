@@ -1674,7 +1674,9 @@ the help window goes to where it's defined. `space h i` inspects what's
 under the cursor (a buffer, a shell block or a row of its table, a terminal, a file), or with
 nothing there the editor itself: its state, the objects it relates to
 (`enter` goes to one, `backspace` or `ctrl-o` comes back, `ctrl-i` goes
-forward again) and what it can do (`enter` runs that). After a key like
+forward again), what was done to it, by you or an agent, and what it can
+do (`enter` runs that); `history` on `space .` lists what was done to
+anything. After a key like
 `space`, a hint at the bottom right shows what can follow, with groups of
 keys named (`w  panes…`), and `f1` shows the keys of the mode you're in, in every mode. A message on the status line goes away with the next key.
 

@@ -103,3 +103,33 @@ test("a file renames in its folder or to a path, and deletes after y", function(
 	t:keys("y")
 	assert(greed.fs.stat(dir .. "/keep.txt") == nil, "y deletes it")
 end)
+
+test("actions run through actions.run are kept as what was done, newest first", function(t)
+	actions.action({ kind = "test-done", name = "poke", run = function() end })
+	actions.action({
+		kind = "test-done",
+		name = "make",
+		run = function()
+			return "buffer:1"
+		end,
+	})
+	local function named(name: string): any
+		for _, action in actions.for_kind("test-done") do
+			if action.name == name then
+				return action
+			end
+		end
+		error(name)
+	end
+	local target = { kind = "test-done", label = "it", value = "it" }
+	actions.run(named("poke"), target)
+	actions.run(named("make"), target, "agent")
+	local done = actions.history("test-done:it")
+	assert(#done == 2, tostring(#done))
+	assert(done[1].action == "make" and done[1].by == "agent" and done[1].made == "buffer:1")
+	assert(done[2].action == "poke" and done[2].by == "you" and done[2].made == nil)
+	assert(#actions.history("test-done:other") == 0)
+	-- One that only looks isn't kept.
+	actions.run({ kind = "test-done", name = "look", quiet = true, run = function() end }, target)
+	assert(#actions.history("test-done:it") == 2, "quiet")
+end)

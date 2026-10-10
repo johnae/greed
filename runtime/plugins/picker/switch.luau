@@ -100,7 +100,7 @@ local function act(name: string, item: picker.Item?)
 	local buffer: greed.Buffer = item.value
 	for _, action in core.actions.for_kind("buffer") do
 		if action.name == name then
-			action.run({ kind = "buffer", label = buffer:title(), value = buffer })
+			core.actions.run(action, { kind = "buffer", label = buffer:title(), value = buffer })
 			return
 		end
 	end

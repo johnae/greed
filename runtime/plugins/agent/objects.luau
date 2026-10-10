@@ -97,8 +97,9 @@ agent.tool({
 agent.tool({
 	name = "inspect",
 	description = "One object of the running editor, by id (from objects, or like buffer:12): "
-		.. "its state, the objects it relates to (by relation, a few of each with the total) "
-		.. "and the actions it has, which act runs",
+		.. "its state, the objects it relates to (by relation, a few of each with the total), "
+		.. "the actions it has, which act runs, and what was done to it (the last few: which "
+		.. "action, by the user or an agent, when, and what it made, like a shell block)",
 	input = object({
 		id = { type = "string", description = "e.g. buffer:12, shell-block:7.2, editor:" },
 	}, { "id" }),
@@ -108,6 +109,18 @@ agent.tool({
 		for _, action in objects.actions(found) do
 			table.insert(actions, { name = action.name, doc = action.doc })
 		end
+		local done = {}
+		for i, entry in core.actions.history(found.id) do
+			if i > RELATED then
+				break
+			end
+			table.insert(done, {
+				action = entry.action,
+				by = entry.by,
+				seconds_ago = (greed.now() - entry.at) // 1000,
+				made = entry.made,
+			})
+		end
 		return {
 			id = found.id,
 			kind = found.kind,
@@ -115,6 +128,7 @@ agent.tool({
 			state = objects.plain(objects.inspect(found)),
 			related = related(found, nil, RELATED),
 			actions = greed.json.array(actions),
+			done = greed.json.array(done),
 		}
 	end,
 })
@@ -136,7 +150,7 @@ agent.tool({
 		if type(args.action) ~= "string" then
 			error("give the action's name; inspect lists them", 0)
 		end
-		if not objects.act(found, args.action) then
+		if not objects.act(found, args.action, "agent") then
 			local names = {}
 			for _, action in objects.actions(found) do
 				table.insert(names, action.name)

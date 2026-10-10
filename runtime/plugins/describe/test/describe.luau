@@ -268,6 +268,18 @@ test("enter on an action in the inspector runs it on the object", function(t)
 	t:keys("enter")
 	assert(ran == "A-1", "it ran on the ticket")
 	assert(#t:floats() == 0, "and the inspector made way")
+	-- It shows among what was done to it, and so does its history.
+	require("@describe").inspect(assert(core.objects.get("ticket:A-1")))
+	page = t:floats()[1]
+	assert(
+		string.find(page, "Done to it", 1, true) and string.find(page, "you  close", 1, true),
+		page
+	)
+	t:keys("esc")
+	core.objects.act(assert(core.objects.get("ticket:A-1")), "history")
+	local listed = table.concat(t:floats(), "\n")
+	assert(string.find(listed, "you  close", 1, true), listed)
+	t:keys("esc")
 end)
 
 test("objects are described by id, for space h h and agents", function(t)
