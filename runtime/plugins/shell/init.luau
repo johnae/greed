@@ -39,6 +39,7 @@ local parse = require("@self/parse")
 local state = require("@self/state")
 local log = require("@self/log")
 local run = require("@self/run")
+local folding = require("@self/folding")
 local pty = require("@self/pty")
 local fallback = require("@self/fallback")
 local history = require("@self/history")
@@ -662,6 +663,7 @@ local function add_block(shell: Shell, command: string, opts: RunOptions): Block
 		state.views[block.uid] = opts.view
 	end
 	log.add(shell, block)
+	folding.fold_older(shell, block)
 	tick(shell)
 	return block
 end

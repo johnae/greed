@@ -164,6 +164,28 @@ function M.fold(buffer: Buffer, first: number, last: number)
 	buffer:decorate("folds", marks)
 end
 
+--- Whether a fold starts on line `first` (0-based).
+function M.starts(buffer: Buffer, first: number): boolean
+	local start = buffer:line_start(first)
+	for _, mark in buffer:decorations("folds") do
+		if mark.fold and mark.from == start then
+			return true
+		end
+	end
+	return false
+end
+
+--- Makes the fold starting on line `first` reach line `last`, as when what
+--- it folds grew, like a command's output; nothing when no fold starts
+--- there.
+function M.extend(buffer: Buffer, first: number, last: number)
+	if not M.starts(buffer, first) then
+		return
+	end
+	unfold(buffer, { buffer:line_start(first) })
+	M.fold(buffer, first, last)
+end
+
 local function go_to_line(view: greed.View, line: number)
 	local start = view:buffer():line_start(line)
 	view:set_cursor(start)

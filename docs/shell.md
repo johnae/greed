@@ -124,15 +124,41 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `space c` | Take the finished blocks away |
 | `/` | On a block's output, keep the lines (or a table's rows) with what you type; elsewhere, search |
 | `space s` `space S` | Sort a table by the column under the cursor; show a block as it came |
+| `tab` `shift-tab` | On a block, fold it under its command or unfold it; fold or unfold every block (see [Folding blocks](#folding-blocks)) |
 
 In the vscode style you're always typing, so the keys that need normal
 mode have others: `ctrl-c` copies when something is selected and
 interrupts otherwise, `ctrl-up` and `ctrl-down` go between blocks, `f8`
 and `shift-f8` between the files and lines the output names, `ctrl-f`
-filters a block, and the `space` keys above are `ctrl-space` ones.
+filters a block, `ctrl-k ctrl-l` folds or unfolds a block (`ctrl-k ctrl-0` folds
+them all, `ctrl-k ctrl-j` unfolds them all), and the `space` keys above are
+`ctrl-space` ones.
 `space .` (`alt-.` in the vscode style) on a block, or on a row that's a
 thing (see [Rows you can act on](#rows-you-can-act-on)), lists what you
 can do with it.
+
+## Folding blocks
+
+A folded block shows only its command line, with how it ended and how many
+lines it hides (`⋯ 240 lines`), so a long session stays easy to look
+through. `tab` on a block folds or unfolds it, and `shift-tab` folds or
+unfolds them all. A block that's still printing stays folded as its output
+grows.
+
+Resting the mouse on a folded block shows it in a float without moving the
+cursor: scroll it there, or click into it to filter it with `/` and act on
+its rows. Moving the mouse away closes it.
+
+Blocks can fold by themselves. Blocks that failed never do, since those are
+the ones to read again:
+
+```luau
+local greed = require("@greed")
+-- Fold a block that printed more than 40 lines as it ends.
+greed.option.set("shell-fold-lines", 40)
+-- Running a command folds the finished blocks above it.
+greed.option.set("shell-fold-older", true)
+```
 
 ## What runs your commands
 

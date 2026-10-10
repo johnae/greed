@@ -410,6 +410,10 @@ function M.draw_block(shell: Shell, block: Block)
 	local after = buffer:line_end(last)
 	table.insert(marks, { from = after, to = after, style = "shell.separator", lines = { "" } })
 	buffer:decorate(ns_block(block), marks)
+	-- A folded block that printed more stays folded, all of it.
+	if last > line then
+		core.folds.extend(buffer, line, last)
+	end
 	M.draw_strip(shell)
 end
 

@@ -68,26 +68,35 @@ local function fit(p: Peek)
 	p.line = line
 end
 
+--- How a peek opens: without taking focus (`focus = false`, as when the
+--- mouse rests on a block), and at screen row `y`.
+export type How = { focus: boolean?, y: number? }
+
 --- Opens a float at `block` of `shell`, with the cursor on its first line
 --- of output, in place of a peek open already.
-function M.open(shell: Shell, block: Block): greed.View?
+function M.open(shell: Shell, block: Block, how: How?): greed.View?
 	M.close()
 	local from = log.range(block)
 	local tall = height(shell, block)
 	if from == nil or tall == 0 then
 		return nil
 	end
+	local focus = how == nil or how.focus ~= false
 	local view = greed.float(shell.buffer, {
 		title = string.match(block.command, "^[^\n]*") or block.command,
 		width = "90%",
 		height = tall,
+		focus = focus,
+		y = how and how.y,
 		footer = "/ filter · enter or space . on a row · ctrl-c stops · esc closes",
 	})
 	view:set_cursor(log.output_range(shell, block) or from)
 	local p: Peek = { view = view, shell = shell, block = block, line = -1, height = tall }
 	open = p
 	fit(p)
-	greed.mode.set(core.style.home())
+	if focus then
+		greed.mode.set(core.style.home())
+	end
 	return view
 end
 
