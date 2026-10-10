@@ -817,3 +817,35 @@ test(
 		assert(tbl.rows[1].size == "142647" and tbl.rows[1].modified == recent)
 	end
 )
+
+test("a table's header and the cells saying how things are doing are colored", function(t)
+	local sh = open(t, t:tempdir())
+	local block = pods_block(t, sh)
+	local styled: { [string]: string } = {}
+	for _, mark in sh.buffer:decorations(`shell.cells.{block.uid}`) do
+		styled[sh.buffer:slice(mark.from, mark.to)] = mark.style
+	end
+	assert(styled.Running == "shell.table.good", "Running")
+	assert(styled.CrashLoopBackOff == "shell.table.bad", "CrashLoopBackOff")
+	assert(styled.Completed == "shell.table.good", "Completed")
+	assert(styled["0/1"] == "shell.table.warn" and styled["1/1"] == "shell.table.good", "READY")
+	assert(styled["redis-0"] == nil, "a name says nothing")
+	local header = false
+	for text, style in styled do
+		header = header
+			or (style == "shell.table.header" and string.find(text, "STATUS", 1, true) ~= nil)
+	end
+	assert(header, "the header")
+	-- Filtered, it's colored as it shows now.
+	shell.rows.set(sh, block, "STATUS=Running")
+	local kept = 0
+	for _, mark in sh.buffer:decorations(`shell.cells.{block.uid}`) do
+		if
+			mark.style == "shell.table.good"
+			and sh.buffer:slice(mark.from, mark.to) == "Running"
+		then
+			kept += 1
+		end
+	end
+	assert(kept == 3, tostring(kept))
+end)

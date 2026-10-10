@@ -192,5 +192,10 @@ return {
 	["shell.separator"] = { fg = "bright-black" },
 	["shell.suggestion"] = { fg = "bright-black" },
 	["shell.changed"] = { fg = "yellow" },
+	["shell.table.header"] = { fg = "bright-black", bold = true },
+	["shell.table.good"] = { fg = "green" },
+	["shell.table.bad"] = { fg = "red" },
+	["shell.table.warn"] = { fg = "yellow" },
+	["shell.table.dim"] = { fg = "bright-black" },
 	["shell.strip"] = { italic = true },
 }

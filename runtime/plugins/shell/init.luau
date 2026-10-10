@@ -2047,9 +2047,11 @@ end
 -- What the prompt shows can change with any command: a cd, a checkout,
 -- `kubectl config use-context`; and so can the environment the folder
 -- brings. A block's rows are read as things as it finishes, while what
--- they came from (a kubernetes context) is still what it ran against.
+-- they came from (a kubernetes context) is still what it ran against, and
+-- a table's header and cells that say something are colored.
 run.on_finish(function(shell: Shell, block: Block)
 	kinds.finished(shell, block)
+	rows.paint(shell, block)
 	greed.spawn(function()
 		envs.refresh(shell)
 	end)

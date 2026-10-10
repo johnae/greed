@@ -933,9 +933,16 @@ end
 -- What's told of a block showing new output.
 local updated: { (block: Block) -> () } = {}
 
---- Calls `listener` each time a block shows new output.
+--- Calls `listener` each time a block shows new output, or shows its
+--- output again (filtered, sorted).
 function M.on_update(listener: (block: Block) -> ())
 	table.insert(updated, listener)
+end
+
+local function tell_updated(block: Block)
+	for _, listener in updated do
+		listener(block)
+	end
 end
 
 M.update = function(
@@ -948,15 +955,14 @@ M.update = function(
 	exclusive(shell, function()
 		update(shell, block, lines, volatile, skipped)
 	end)
-	for _, listener in updated do
-		listener(block)
-	end
+	tell_updated(block)
 end
 
 M.replace_output = function(shell: Shell, block: Block, lines: { Line })
 	exclusive(shell, function()
 		replace_output(shell, block, lines)
 	end)
+	tell_updated(block)
 end
 
 M.remove = function(shell: Shell, block: Block)

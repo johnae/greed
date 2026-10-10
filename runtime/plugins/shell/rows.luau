@@ -194,13 +194,18 @@ local function output_line(shell: Shell, block: Block, pos: number): number?
 	return buffer:line_of(pos) - buffer:line_of(from) + 1
 end
 
+-- Where each column of `block`'s table starts in the lines showing it.
+local function column_starts(block: Block, tbl: tables.Table): { number }?
+	return if block.shown and drawn[block] then drawn[block] else tbl.starts
+end
+
 --- The column of `block`'s table under `pos`, if it's in the table.
 function M.column_at(shell: Shell, block: Block, pos: number): string?
 	local tbl = block.table
 	if tbl == nil or output_line(shell, block, pos) == nil then
 		return nil
 	end
-	local starts: { number }? = if block.shown and drawn[block] then drawn[block] else tbl.starts
+	local starts = column_starts(block, tbl)
 	if starts == nil then
 		return nil
 	end
@@ -302,5 +307,152 @@ end
 function M.reset(shell: Shell, block: Block)
 	M.set(shell, block, "", nil, false)
 end
+
+-- Words in a status column that say a thing is well, wrong, or on its way.
+local function words(list: { string }): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	for _, word in list do
+		out[word] = true
+	end
+	return out
+end
+local GOOD = words({
+	"running",
+	"completed",
+	"succeeded",
+	"ready",
+	"active",
+	"bound",
+	"healthy",
+	"true",
+	"ok",
+	"up",
+})
+local BAD = words({
+	"error",
+	"failed",
+	"crashloopbackoff",
+	"imagepullbackoff",
+	"errimagepull",
+	"createcontainerconfigerror",
+	"oomkilled",
+	"evicted",
+	"false",
+	"unhealthy",
+	"dead",
+	"exited",
+	"notready",
+	"lost",
+})
+local WARN = words({
+	"pending",
+	"containercreating",
+	"podinitializing",
+	"terminating",
+	"unknown",
+	"restarting",
+	"paused",
+	"created",
+})
+
+-- Columns that say how a thing is doing.
+local STATUS = words({ "status", "state", "phase", "health", "ready", "conditions" })
+
+-- The style of a cell of `column` holding `text`, if it says something:
+-- how a thing is doing, in a status column ("Running", "0/1"), or nothing
+-- much ("<none>", nested JSON as a table draws it).
+local function cell_style(column: string, text: string): string?
+	if
+		text == "<none>"
+		or text == "<nil>"
+		or text == "-"
+		or string.match(text, "^%[%d+ items?%]$")
+		or string.match(text, "^{%d+ fields?}$")
+	then
+		return "shell.table.dim"
+	end
+	if not STATUS[string.lower(column)] then
+		return nil
+	end
+	local have, want = string.match(text, "^(%d+)/(%d+)$")
+	if have and want then
+		return if have == want then "shell.table.good" else "shell.table.warn"
+	end
+	local lower = string.lower(text)
+	local word = if string.match(lower, "^init:")
+		then "pending"
+		else string.match(lower, "^%w+") or ""
+	return if GOOD[word]
+		then "shell.table.good"
+		elseif BAD[word] then "shell.table.bad"
+		elseif WARN[word] then "shell.table.warn"
+		else nil
+end
+
+-- The blocks colored, to clear when they no longer have a table.
+local painted: { [Block]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
+--- Colors `block`'s table where it shows: its header, and the cells that
+--- say something (a status, an empty mark). A table nu drew, colored by nu,
+--- is left as it is.
+function M.paint(shell: Shell, block: Block)
+	local ns = `shell.cells.{block.uid}`
+	local tbl = block.table
+	local starts = tbl and column_starts(block, tbl)
+	local buffer = shell.buffer
+	if tbl == nil or starts == nil or (tbl.at and not drawn[block]) or not buffer:valid() then
+		if painted[block] and buffer:valid() then
+			buffer:decorate(ns, {})
+		end
+		painted[block] = nil
+		return
+	end
+	painted[block] = true
+	local marks: { greed.Mark } = {}
+	-- Marks the cells on `line`, each trimmed, that say something.
+	local function paint_line(line: number)
+		local start, stop = buffer:line_start(line), buffer:line_end(line)
+		for i, column in tbl.columns do
+			local from = buffer:at_display_column(line, starts[i])
+			local to = if starts[i + 1] then buffer:at_display_column(line, starts[i + 1]) else stop
+			from, to = math.clamp(from, start, stop), math.clamp(to, start, stop)
+			local text = buffer:slice(from, to)
+			local lead = #(string.match(text, "^%s*") or "")
+			local trimmed = string.match(text, "^%s*(.-)%s*$") or ""
+			local name = cell_style(column, trimmed)
+			if name then
+				local at = from + lead
+				table.insert(marks, { from = at, to = at + #trimmed, style = name })
+			end
+		end
+	end
+	local order: { number } = if block.shown then block.shown.rows else tables.all(tbl)
+	local first = order[1] and M.row_line(shell, block, order[1])
+	if first and tbl.header ~= false and first > 0 then
+		local header = first - 1
+		table.insert(marks, {
+			from = buffer:line_start(header),
+			to = buffer:line_end(header),
+			style = "shell.table.header",
+		})
+	end
+	for _, index in order do
+		local line = M.row_line(shell, block, index)
+		if line then
+			paint_line(line)
+		end
+	end
+	buffer:decorate(ns, marks)
+end
+
+-- A block shown again, or showing more, is colored again.
+log.on_update(function(block: Block)
+	for _, shell in state.list() do
+		if table.find(shell.blocks, block) then
+			M.paint(shell, block)
+			return
+		end
+	end
+end)
 
 return M

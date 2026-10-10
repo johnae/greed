@@ -338,6 +338,13 @@ its values as people read them: sizes in bytes as `142.6 kB`, dates as
 columns cut with `…`. The values stay as they were, so `sort size` sorts
 by bytes, and `space h i` on a row shows them whole.
 
+A table's header is set apart, and in a column saying how things are
+doing (`STATUS`, `STATE`, `PHASE`, `READY`) `Running` or `Completed`
+shows green, `Error` or `CrashLoopBackOff` red and `Pending` yellow, as
+does `READY` short of all (`0/1`); `<none>` and nested JSON show faint.
+The colors are the theme's `shell.table.header`, `.good`, `.bad`,
+`.warn` and `.dim`. A table nu drew keeps nu's own colors.
+
 A table's rows don't wrap in a narrow pane: what's past the edge is cut,
 and the view scrolls sideways when the cursor goes there (or with the
 wheel sideways, shift and the wheel in most terminals). Other output wraps
