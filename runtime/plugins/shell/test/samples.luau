@@ -250,3 +250,66 @@ test("this machine's ls -l and ps are read as files and processes", function(t)
 	local first = rows_of(sh, processes)[1]
 	assert(first and string.match(first.id, "^process:%d+$"), processes.output)
 end)
+
+-- A shell whose `program` prints `output`, whatever it's asked.
+local function printing(t: test.TestContext, program: string, output: string): Shell
+	local sh, dir = open(t, {
+		[`bin/{program}`] = `#!/bin/sh\ncat "$(dirname "$0")/output"\n`,
+		["bin/output"] = output,
+	})
+	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/{program}` }))
+	return sh
+end
+
+-- Runs `object`'s action `name` and gives back the command it ran.
+local function act(t: test.TestContext, sh: Shell, object: core.Object, name: string): string
+	local count = #sh.blocks
+	assert(core.objects.act(object, name), name)
+	t:wait_for(function()
+		return #sh.blocks > count and sh.blocks[#sh.blocks].status ~= "running"
+	end)
+	return sh.blocks[#sh.blocks].command
+end
+
+test("a pod's node and namespace are objects, with the actions kubernetes objects have", function(t)
+	local sh = printing(
+		t,
+		"kubectl",
+		"NAMESPACE   NAME    READY   STATUS    RESTARTS   AGE   IP          NODE     NOMINATED NODE   READINESS GATES\n"
+			.. "billing     pay-0   1/1     Running   0          1d    10.0.1.12   node-1   <none>           <none>\n"
+	)
+	local block = ran(t, sh, "kubectl get pods -A -o wide --context prod")
+	local pod = assert(core.objects.get("pod:prod/billing/pay-0"))
+	local related = core.objects.related(pod)
+	local node = assert(related.node)[1]
+	assert(node.id == "kubernetes:prod//nodes/node-1", node.id)
+	assert(assert(related.namespace)[1].id == "kubernetes:prod//namespaces/billing")
+	-- Found again by id, its row and block related.
+	local found = assert(core.objects.get(node.id))
+	assert(assert(core.objects.related(found).row)[1].id == pod.id)
+	assert(core.objects.inspect(found).row == nil, "a node's state isn't the pod's row")
+	local described = act(t, sh, found, "describe")
+	assert(described == "kubectl describe nodes node-1 --context prod", described)
+	-- Under the cursor on its cell, the node comes before the pod.
+	local from = shell.log.output_range(sh, block)
+	assert(from, "a block with output")
+	local at = assert(string.find(sh.buffer:text(), "node-1", from + 1, true), "node-1")
+	greed.view():set_cursor(at - 1)
+	local here = core.objects.at(greed.view())
+	assert(here[1].id == node.id and here[2].id == pod.id, here[1].id)
+end)
+
+test("a container's image is an object", function(t)
+	local sh = printing(
+		t,
+		"docker",
+		"CONTAINER ID   IMAGE          COMMAND   CREATED       STATUS       PORTS   NAMES\n"
+			.. '3f2a1b4c5d6e   nginx:latest   "nginx"   2 hours ago   Up 2 hours           web\n'
+	)
+	ran(t, sh, "docker ps")
+	local image =
+		assert(assert(core.objects.related(assert(core.objects.get("container:web")))).image)[1]
+	assert(image.id == "image:nginx:latest", image.id)
+	local inspected = act(t, sh, assert(core.objects.get(image.id)), "inspect")
+	assert(inspected == "docker image inspect nginx:latest", inspected)
+end)

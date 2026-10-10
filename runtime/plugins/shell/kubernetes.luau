@@ -98,6 +98,24 @@ local function kind_of(resource: string): string
 	return "kubernetes"
 end
 
+-- The kubernetes object `name` of `resource`, in `namespace` (nil for a
+-- cluster's own) and `context`, as a thing.
+local function thing_of(
+	resource: string,
+	name: string,
+	namespace: string?,
+	context: string?
+): kinds.Thing
+	local kind = kind_of(resource)
+	local place = `{context or ""}/{namespace or ""}`
+	return {
+		kind = kind,
+		label = name,
+		key = if kind == "kubernetes" then `{place}/{resource}/{name}` else `{place}/{name}`,
+		value = { resource = resource, name = name, namespace = namespace, context = context },
+	}
+end
+
 -- A kubectl command line read: the words that aren't flags (the command,
 -- then what it's about), and the flags saying where and how.
 type Read = {
@@ -282,19 +300,19 @@ kinds.kind({
 			then nil
 			elseif captured.all then row.NAMESPACE
 			else captured.namespace
-		local kind = kind_of(resource)
-		local place = `{captured.context or ""}/{namespace or ""}`
-		return {
-			kind = kind,
-			label = name,
-			key = if kind == "kubernetes" then `{place}/{resource}/{name}` else `{place}/{name}`,
-			value = {
-				resource = resource,
-				name = name,
-				namespace = namespace,
-				context = captured.context,
-			},
-		}
+		local thing = thing_of(resource, name, namespace, captured.context)
+		-- The node a pod runs on (with -o wide) and the namespace a row is
+		-- in (with -A) are objects of their own.
+		local cells: { [string]: kinds.Thing } = {}
+		local node = row.NODE
+		if node and node ~= "" and node ~= "<none>" then
+			cells.NODE = thing_of("nodes", node, nil, captured.context)
+		end
+		if captured.all and namespace then
+			cells.NAMESPACE = thing_of("namespaces", namespace, nil, captured.context)
+		end
+		thing.cells = cells
+		return thing
 	end,
 	called = function(captured: Captured): (string, string)
 		return singular(captured.resource), captured.resource

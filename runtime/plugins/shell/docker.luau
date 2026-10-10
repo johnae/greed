@@ -85,6 +85,16 @@ local function docker(args: string, value: any): string
 	return `docker{context} {args}`
 end
 
+-- The docker object `name` of `kind`, in `context`, as a thing.
+local function thing_of(kind: string, name: string, context: string?): kinds.Thing
+	return {
+		kind = kind,
+		label = name,
+		value = { name = name, context = context },
+		key = if context then `{context}/{name}` else name,
+	}
+end
+
 kinds.kind({
 	name = "docker",
 	match = "docker",
@@ -103,12 +113,14 @@ kinds.kind({
 		if which == nil or which == "" then
 			return nil
 		end
-		return {
-			kind = "container",
-			label = which,
-			value = { name = which, context = captured.context },
-			key = if captured.context then `{captured.context}/{which}` else which,
-		}
+		local thing = thing_of("container", which, captured.context)
+		-- The image it runs is an object of its own.
+		local image_column = if row.IMAGE then "IMAGE" else "Image"
+		local image = row[image_column]
+		if image and image ~= "" then
+			thing.cells = { [image_column] = thing_of("image", image, captured.context) }
+		end
+		return thing
 	end,
 	called = function(): (string, string)
 		return "container", "containers"
@@ -149,5 +161,17 @@ end, { doc = "Stop it and start it again", danger = true })
 kinds.command("container", "stop", function(value: any): string
 	return docker(`stop {parse.quote(value.name)}`, value)
 end, { doc = "Stop it", danger = true })
+
+kinds.object_kind("image", "A docker image, by its name and docker context")
+
+kinds.command("image", "inspect", function(value: any): string
+	return docker(`image inspect {parse.quote(value.name)}`, value)
+end, { doc = "Everything docker knows about it, as JSON", default = true })
+kinds.command("image", "history", function(value: any): string
+	return docker(`image history {parse.quote(value.name)}`, value)
+end, { doc = "The layers it's made of" })
+kinds.command("image", "pull", function(value: any): string
+	return docker(`pull {parse.quote(value.name)}`, value)
+end, { doc = "Fetch it again, for what's newest under its name" })
 
 return {}

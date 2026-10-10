@@ -615,7 +615,13 @@ by what it is: `pod:prod-eu/payments/api-7d9f8b6c5-2xkqz`, `process:4711`,
 `container:web`, `file:/home/me/notes.txt`. The same pod in a newer block
 is the same object, and the newest row is the one found. The rows of any
 other table are plain rows of their block (`row:12.3.2`, the third block
-of buffer 12, its second row), with their cells as their state. Agents
+of buffer 12, its second row), with their cells as their state.
+
+Some cells are things of their own: the node a pod runs on (`kubectl get
+pods -o wide`) and its namespace (with `-A`) are kubernetes objects, and a
+container's image is an image, which `inspect`, `history` and `pull` work
+on. `space .` on such a cell offers its actions before the row's, and the
+inspector lists them among the row's relations. Agents
 reach them the same way, through the `objects`, `inspect` and `act`
 tools: a block's rows are among the objects it relates to.
 

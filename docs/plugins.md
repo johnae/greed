@@ -1415,8 +1415,9 @@ processes.
 `spec.capture(block, shell)` runs once as the block finishes and keeps
 what the rows can't say themselves, like the context a command ran
 against; returning nil says the block isn't this kind's after all.
-`spec.row(row, captured, block)` gives `{ kind, label, value, key }` for a
-row (its cells by column), and `spec.called(captured, block)` what one row
+`spec.row(row, captured, block)` gives `{ kind, label, value, key, cells }`
+for a row (its cells by column, `cells` the things some of them are, by
+column, like a pod's `NODE`), and `spec.called(captured, block)` what one row
 and several are called in the block's status ("pod", "pods"). Rows then
 take the actions of their kind, whoever added them; `ls -l` rows are
 `file` things, so every file action works on them.
