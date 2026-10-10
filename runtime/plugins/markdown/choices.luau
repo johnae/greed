@@ -51,8 +51,9 @@ function M.without_comments(text: string): string
 	return (string.match(string.gsub(text, "<!%-%-.-%-%->", ""), "^%s*(.-)%s*$") or "")
 end
 
--- An option's value: its `value=` comment, or its text up to the first ":".
-local function value_of(rest: string): string
+--- An option's value, from its text after the box: its `value=` comment, or
+--- the text up to the first ":".
+function M.value_of(rest: string): string
 	local given = M.comment_value(rest, "value")
 	if given then
 		return given
@@ -68,6 +69,14 @@ function M.list(buffer: greed.Buffer): { Group }
 	local current: Group? = nil
 	local indent: string? = nil
 	local s = structure.of(buffer)
+	-- Code between a question and its choices, like a block that makes
+	-- them, is passed over looking for the question.
+	local code: { [number]: boolean } = {}
+	for _, block in s.code do
+		for n = block.open, block.close do
+			code[n] = true
+		end
+	end
 	for i, text in s.lines do
 		local n = i - 1
 		local spaces, mark, rest = nil :: string?, nil :: string?, nil :: string?
@@ -79,7 +88,7 @@ function M.list(buffer: greed.Buffer): { Group }
 				local question: string?, id: string? = nil, nil
 				for above = n - 1, 0, -1 do
 					local line = s.lines[above + 1]
-					if not string.match(line, "^%s*$") then
+					if not code[above] and not string.match(line, "^%s*$") then
 						local words = M.without_comments(string.match(line, "^#*%s*(.-)%s*$") or "")
 						question = if words ~= "" then words else nil
 						id = M.comment_value(line, "id")
@@ -92,7 +101,7 @@ function M.list(buffer: greed.Buffer): { Group }
 			end
 			table.insert((current :: Group).options, {
 				text = M.without_comments(rest),
-				value = value_of(rest),
+				value = M.value_of(rest),
 				picked = mark ~= " ",
 				line = n,
 			})
@@ -115,12 +124,16 @@ function M.at(buffer: greed.Buffer, line: number): Group?
 	return nil
 end
 
-local listeners: { { hear: (buffer: greed.Buffer, group: Group) -> () } } = {}
+--- What hears a pick: the buffer, the group as picked now, and the plugin
+--- that picked it, nil when you did.
+export type Hear = (buffer: greed.Buffer, group: Group, by: string?) -> ()
 
---- Calls `hear` with the buffer and the group after each pick, until the
+local listeners: { { hear: Hear } } = {}
+
+--- Calls `hear` after each pick (see `Hear`), until the
 --- plugin that called this goes or what it returns is called. A second
 --- argument, once the plugin's name, is ignored.
-function M.on_pick(hear: (buffer: greed.Buffer, group: Group) -> (), _plugin: string?): () -> ()
+function M.on_pick(hear: Hear, _plugin: string?): () -> ()
 	local stop = registry.put(listeners, { hear = hear })
 	greed.plugin.tie(stop)
 	return stop
@@ -128,6 +141,9 @@ end
 
 --- Picks the choice on `line` and unpicks the rest of its group.
 function M.pick(buffer: greed.Buffer, line: number)
+	-- A plugin picking for you is told to listeners, which may then do no
+	-- more than that plugin may.
+	local by = greed.plugin.caller()
 	local group = M.at(buffer, line)
 	if group == nil then
 		return
@@ -143,7 +159,7 @@ function M.pick(buffer: greed.Buffer, line: number)
 	for _, listener in listeners do
 		xpcall(listener.hear, function(err)
 			greed.echo(`a choice listener failed: {err}`)
-		end, buffer, picked)
+		end, buffer, picked, by)
 	end
 end
 

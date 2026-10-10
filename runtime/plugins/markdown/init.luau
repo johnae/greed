@@ -40,6 +40,8 @@ export type Item = structure.Item
 export type Table = structure.Table
 export type Link = structure.Link
 export type Concealer = conceal.Concealer
+export type Group = choices.Group
+export type Option = choices.Option
 
 --- The structure of a buffer (kept until it changes) or of a file's
 --- text: its headings, code blocks, list items, tables and links.

@@ -12,6 +12,8 @@ local M = {}
 --- option if it has one, its options, and the folder to run it in.
 --- `progress` takes how much output there is so far, for showing it while
 --- it runs; `started` takes a child process, so the run can be stopped.
+--- `answers` are the page's answers by question (markdown questions), and
+--- `answer` the one that just changed, for a block run by a pick.
 export type Run = {
 	code: string,
 	input: string?,
@@ -19,6 +21,8 @@ export type Run = {
 	dir: string,
 	progress: (output: string) -> (),
 	started: (child: greed.Child) -> (),
+	answers: { [string]: string }?,
+	answer: string?,
 }
 
 --- What a run gave: its output, how a program exited (nil for a runner
@@ -67,9 +71,14 @@ function M.program(command: { string }): Runner
 	return function(run: Run): Outcome
 		local args = table.clone(command)
 		table.insert(args, run.code)
+		-- What the page's questions were answered, for a block that asks.
+		local env: { [string]: string | false } = {
+			ANSWER = if run.answer then run.answer else false,
+			ANSWERS = if run.answers then greed.json.encode(run.answers) else false,
+		}
 		-- A group of its own, so stopping it stops what it started too, like a
 		-- server a script runs.
-		local child, err = greed.process.spawn(args, { cwd = run.dir, group = true })
+		local child, err = greed.process.spawn(args, { cwd = run.dir, group = true, env = env })
 		if child == nil then
 			return { output = "", error = err or `can't start {command[1]}` }
 		end
@@ -130,10 +139,13 @@ local function expression(code: string): boolean
 	return not string.match(trimmed, "^[%w_.%[%]\"']+%s*=[^=]")
 end
 
--- Runs the block's code with `input` set and `print` collected, and returns
--- what it printed followed by what it returned, each value on a line.
+-- Runs the block's code with `input`, `answer` and `answers` set and `print`
+-- collected, and returns what it printed followed by what it returned,
+-- each value on a line.
 local PRELUDE = [[
 local input = %s
+local answer = %s
+local answers = %s
 local __printed = {}
 local function __show(value)
 	if type(value) == "table" then
@@ -162,7 +174,12 @@ end
 M.add("luau", function(run: Run): Outcome
 	local input = if run.input then string.format("%q", run.input) else "nil"
 	local body = if expression(run.code) then "return " .. run.code else run.code
-	local prelude = string.format(PRELUDE, input) .. "return __finish((function()\n"
+	local answer = if run.answer then string.format("%q", run.answer) else "nil"
+	local answers = if run.answers
+		then `require("@greed").json.decode({string.format("%q", greed.json.encode(run.answers))})`
+		else "{}"
+	local prelude = string.format(PRELUDE, input, answer, answers)
+		.. "return __finish((function()\n"
 	local ok, output = greed.eval(prelude .. `{body}\nend)())`)
 	if not ok then
 		-- Just the message, with lines counted from the block's code.

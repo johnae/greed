@@ -29,6 +29,7 @@ local greed = require("@greed")
 local core = require("@core")
 local parse = require("@self/parse")
 local runners = require("@self/runners")
+local markdown = require("@markdown")
 
 type Block = parse.Block
 
@@ -304,6 +305,74 @@ local function save(buffer: greed.Buffer, block: Block, outcome: runners.Outcome
 	end)
 end
 
+-- The choices an `output=choices` block's output makes: a JSON list of
+-- strings, or its lines. One starting `(x) ` is picked to begin with.
+local function choices_of(output: string): { string }
+	local ok, list = pcall(greed.json.decode, output)
+	local items: { string } = {}
+	if ok and type(list) == "table" then
+		for _, item in list :: { any } do
+			table.insert(items, tostring(item))
+		end
+	else
+		for line in string.gmatch(output, "[^\n]+") do
+			if not string.match(line, "^%s*$") then
+				table.insert(items, line)
+			end
+		end
+	end
+	return items
+end
+
+-- Writes `output` as the choices under `block`, in place of the ones it
+-- made before, keeping the pick when that option is still there.
+local function save_choices(buffer: greed.Buffer, block: Block, output: string)
+	-- Its list: on the line after it, or after one blank line.
+	local old: markdown.Group? = nil
+	for _, line in { block.close + 1, block.close + 2 } do
+		old = old or markdown.choices.at(buffer, line)
+	end
+	local picked: string? = nil
+	for _, option in (if old then old.options else {}) :: { markdown.Option } do
+		if option.picked then
+			picked = option.value
+		end
+	end
+	local lines = {}
+	for _, item in choices_of(output) do
+		local text = string.match(item, "^%(x%) (.*)$") or item
+		local chosen = if picked then markdown.choices.value_of(text) == picked else text ~= item
+		table.insert(lines, `- ({if chosen then "x" else " "}) {text}`)
+	end
+	local list = table.concat(lines, "\n")
+	buffer:edit(function(e)
+		if old then
+			local last = old.options[#old.options].line
+			e:replace(buffer:line_start(old.options[1].line), buffer:line_end(last), list)
+		else
+			e:insert(buffer:line_end(block.close), "\n\n" .. list)
+		end
+	end)
+end
+
+-- Puts what a run gave where it goes: a block making choices writes them,
+-- a button or a block a pick runs says what it printed or what went wrong,
+-- and any other saves its result under it.
+local function deliver(buffer: greed.Buffer, block: Block, outcome: runners.Outcome)
+	if block.opts.output == "choices" and not outcome.error then
+		save_choices(buffer, block, outcome.output)
+	elseif block.opts.output == "choices" or block.opts.button or block.opts.when then
+		local said = if outcome.error
+			then `error: {outcome.error}`
+			else string.match(outcome.output, "^%s*(.-)%s*$") or ""
+		if said ~= "" then
+			greed.echo(said)
+		end
+	else
+		save(buffer, block, outcome)
+	end
+end
+
 -- The folder a block runs in: its `dir` option (from the file's folder),
 -- or the file's folder, or the project's root.
 local function dir_for(buffer: greed.Buffer, block: Block): string
@@ -315,7 +384,16 @@ end
 -- Says why a block may not run, when it may not; agents' runs have one.
 type Check = (block: Block) -> string?
 
-local run_block: (buffer: greed.Buffer, block: Block, chain: { [string]: boolean }, check: Check?) -> boolean
+-- How a run goes beyond the usual: `answer` is the answer whose pick ran it.
+type How = { answer: string? }
+
+local run_block: (
+	buffer: greed.Buffer,
+	block: Block,
+	chain: { [string]: boolean },
+	check: Check?,
+	how: How?
+) -> boolean
 
 -- The input for `block`: the result of the block its `input` option
 -- names, running that first if it has none. Nil and why when it can't.
@@ -358,7 +436,8 @@ function run_block(
 	buffer: greed.Buffer,
 	block: Block,
 	chain: { [string]: boolean },
-	check: Check?
+	check: Check?,
+	how: How?
 ): boolean
 	local runner = runners.get(block.lang)
 	if runner == nil then
@@ -386,7 +465,7 @@ function run_block(
 	failed = failed or (check and check(now))
 	if failed then
 		finish(run)
-		save(buffer, now, { output = "", error = failed })
+		deliver(buffer, now, { output = "", error = failed })
 		draw(buffer)
 		return false
 	end
@@ -401,6 +480,10 @@ function run_block(
 			end
 		end)
 	end
+	-- The page's answers, and the one this run is about: the pick that ran
+	-- it, or the question it listens to.
+	local answers = markdown.questions.answers(buffer)
+	local answer = (how and how.answer) or (now.opts.when and answers[now.opts.when])
 	local last = 0
 	local ok, outcome = pcall(
 		runner,
@@ -416,6 +499,8 @@ function run_block(
 					show(run, `■ running, {lines} line{if lines == 1 then "" else "s"} so far`)
 				end
 			end,
+			answers = answers,
+			answer = answer,
 			started = function(child: greed.Child)
 				run.child = child
 			end,
@@ -435,7 +520,7 @@ function run_block(
 		draw(buffer)
 		return false
 	end
-	save(buffer, done, result)
+	deliver(buffer, done, result)
 	draw(buffer)
 	return true
 end
@@ -607,6 +692,70 @@ greed.command({
 	end,
 })
 
+--- Runs every `output=choices` block in `buffer`, in order, so the choices
+--- they make are as they'd be now. Waits until they're done.
+function M.refresh_choices(buffer: greed.Buffer)
+	local i = 1
+	while true do
+		local list: { Block } = {}
+		for _, block in M.runnable(buffer) do
+			if block.opts.output == "choices" then
+				table.insert(list, block)
+			end
+		end
+		local block = list[i]
+		if block == nil then
+			break
+		end
+		run_block(buffer, block, {})
+		i += 1
+	end
+end
+
+-- A trusted file's choices are made afresh as it opens: they're what's
+-- there now, like the themes there are.
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	local buffer = event.buffer
+	if M.on(buffer) and M.trusted(buffer) then
+		greed.spawn(function()
+			M.refresh_choices(buffer)
+		end)
+	end
+end)
+
+-- A pick runs the blocks listening to its question (`when=ID`), with what
+-- was picked, once you let the file's blocks run.
+-- Running them is this plugin's own doing, as when you run a block, rather
+-- than the markdown plugin's that tells of the pick; a plugin that picked
+-- for you limits it to what that plugin may.
+local function heard(buffer: greed.Buffer, group: markdown.Group)
+	local id = group.id
+	if id == nil then
+		return
+	end
+	local answer: string? = nil
+	for _, option in group.options do
+		if option.picked then
+			answer = option.value
+		end
+	end
+	local asked = false
+	for _, block in M.runnable(buffer) do
+		if block.opts.when == id then
+			if not asked and not allow(buffer) then
+				return
+			end
+			asked = true
+			approve(buffer, { block })
+			run_block(buffer, block, {}, nil, { answer = answer })
+		end
+	end
+end
+
+markdown.choices.on_pick(function(buffer, group, by)
+	greed.vouch(greed.plugin.within, by, heard, buffer, group)
+end)
+
 -- A run button after each runnable block's fence, which enter on the fence
 -- presses too, in files where blocks show as runnable, and how each running
 -- block is doing, which a click stops.
@@ -630,9 +779,35 @@ function draw(buffer: greed.Buffer)
 			})
 		end
 	end
+	-- A button block shows as its button, and blocks working behind a page
+	-- of questions (making choices, hearing picks) as nothing; their code is
+	-- folded under the fence, and shows once the cursor goes there.
+	local behind: { [number]: boolean } = {}
+	if buffer:valid() and buffer:language() == "markdown" then
+		for _, block in M.runnable(buffer) do
+			local label = block.opts.button
+			if label or block.opts.when or block.opts.output == "choices" then
+				behind[block.from] = true
+				table.insert(marks, {
+					from = block.from,
+					to = buffer:line_end(block.open),
+					style = if label then "ui.button" else "markdown.marker",
+					text = if label then `[ {label} ]` else nil,
+					conceal = true,
+					action = if label then "block-run" else nil,
+				})
+				table.insert(marks, {
+					from = block.from,
+					to = block.to,
+					style = "markdown.marker",
+					fold = true,
+				})
+			end
+		end
+	end
 	if M.on(buffer) then
 		for _, block in M.runnable(buffer) do
-			if not busy[block.from] then
+			if not busy[block.from] and not behind[block.from] then
 				-- Over the whole fence, so enter anywhere on it presses it.
 				table.insert(marks, {
 					from = block.from,

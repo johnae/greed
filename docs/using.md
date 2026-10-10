@@ -989,7 +989,60 @@ How do you like to edit?
 ```
 
 Picking only changes the text. Plugins read the answers and act on them
-(see [Writing plugins](plugins.md)).
+(see [Writing plugins](plugins.md)), and so can code blocks in the file
+(below).
+
+### Questionnaires
+
+Choices and runnable blocks together make a page of questions that does
+things, which still reads as plain Markdown anywhere. Comments, which
+GitHub and the like don't show either, hold what makes it work:
+
+````markdown
+Which theme? <!-- id=theme -->
+
+```luau output=choices
+return require("@theme").list()
+```
+
+```luau when=theme
+require("@theme").use(answer)
+```
+
+Will you use agents? <!-- id=agents -->
+
+- (x) Yes
+- ( ) No
+
+<!-- if agents=yes -->
+Which language model? <!-- id=provider -->
+
+- ( ) Anthropic
+- ( ) Ollama: on this machine <!-- value=ollama -->
+<!-- end -->
+
+```luau button="Save"
+require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
+```
+````
+
+- `<!-- id=NAME -->` on a question names it. Its answer is the picked
+  option's value: its text up to the first `:` ("Ollama"), or a
+  `<!-- value=... -->` on the option.
+- A block with `output=choices` writes the choices it returns (a list, or
+  one per line; `(x) ` in front picks one) under itself, and running it
+  again keeps your pick. In a file you trust, these run as it opens.
+- A block with `when=NAME` runs each time that question's answer changes,
+  with `answer` set to it.
+- A block with `button="Label"` shows as a button, and runs when pressed.
+- Every block gets `answers`, each named question's answer (programs get
+  them as JSON in `ANSWERS`, and `ANSWER`).
+- `<!-- if NAME=VALUE -->` to `<!-- end -->` is a part that shows only for
+  that answer (`!=` for any other). Its questions don't count otherwise.
+
+Blocks that make choices or hear picks hide behind the page, and buttons
+show as buttons: put the cursor there to see their code. They run as any
+block does: in a file you haven't trusted, the first asks whether to.
 
 ### Runnable code blocks
 

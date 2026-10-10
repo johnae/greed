@@ -323,3 +323,70 @@ test("a running block shows so on its fence, and its result follows it as text m
 	assert(text() == "intro\n\n```sh\nsleep 0.3; echo done\n```\n\n```result\ndone\n```", text())
 	assert(status() == nil, "nothing shows as running once it's done")
 end)
+
+test("output=choices writes its list as choices, keeping the pick when it runs again", function(t)
+	t:buffer(
+		'Pick one <!-- id=fruit -->\n\n```luau output=choices\nreturn { "apple", "(x) pear" }\n```|\n\nafter'
+	)
+	greed.view():buffer():set_language("markdown")
+	blocks.refresh_choices(greed.view():buffer())
+	t:wait_for(has("- (x) pear"))
+	assert(string.find(text(), "```\n\n- ( ) apple\n- (x) pear\n\nafter", 1, true), text())
+	local buffer = greed.view():buffer()
+	require("@markdown").choices.pick(
+		buffer,
+		buffer:line_of(select(1, string.find(text(), "- ( ) apple", 1, true)) :: number)
+	)
+	blocks.refresh_choices(buffer)
+	t:wait(20)
+	assert(
+		string.find(text(), "- (x) apple\n- ( ) pear\n\nafter", 1, true),
+		"the pick stays: " .. text()
+	)
+	assert(require("@markdown").questions.answers(buffer).fruit == "apple")
+end)
+
+test(
+	"a pick runs the blocks listening to it, with the answer; a button runs with every answer",
+	function(t)
+		t:buffer(table.concat({
+			"Which? <!-- id=which -->",
+			"",
+			"- ( ) one",
+			"- ( ) two",
+			"",
+			"```luau when=which",
+			'require("@greed").echo("picked " .. answer)',
+			"```",
+			"",
+			'```luau button="Show answers"',
+			'require("@greed").echo("all: " .. answers.which)',
+			"```",
+			"|",
+		}, "\n"))
+		local buffer = greed.view():buffer()
+		buffer:set_language("markdown")
+		require("@markdown").choices.pick(buffer, 3)
+		t:wait_for(function()
+			return string.find(table.concat(t:messages(), "\n"), "picked two", 1, true) ~= nil
+		end)
+		assert(not string.find(text(), "```result", 1, true), "no result block")
+		-- The button shows as one, on its fence, and runs the block.
+		local fence = buffer:line_start(9)
+		local button = nil
+		for _, mark in buffer:decorations("blocks") do
+			if mark.from == fence and mark.text then
+				button = mark
+			end
+		end
+		assert(
+			button and button.text == "[ Show answers ]" and button.action == "block-run",
+			"a button"
+		)
+		greed.view():set_cursor(fence)
+		t:run("block-run")
+		t:wait_for(function()
+			return string.find(table.concat(t:messages(), "\n"), "all: two", 1, true) ~= nil
+		end)
+	end
+)
