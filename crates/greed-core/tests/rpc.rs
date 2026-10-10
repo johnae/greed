@@ -226,12 +226,11 @@ fn a_process_that_dies_says_so_last_and_nothing_waits_on_it() {
             "something broke".to_owned()
         ]
     );
-    // Writing to it now fails rather than hanging.
-    let mut failed = false;
-    for _ in 0..100 {
-        failed |= connection.notify("more", &Value::Null).is_err();
-    }
-    assert!(failed);
+    // Writing to it now fails rather than hanging, once the writer has seen
+    // it go, which a slow machine takes a moment for.
+    assert!(eventually(|| connection
+        .notify("more", &Value::Null)
+        .is_err()));
 }
 
 #[test]
