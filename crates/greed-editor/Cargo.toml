@@ -30,3 +30,8 @@ default = ["gui"]
 # The window client, `greed --gui`. Off for the static build that runs on
 # servers.
 gui = ["dep:greed-gui"]
+
+# musl's allocator takes a lock for every allocation, which made the static
+# build's plugin tests 13 times slower than glibc's.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1", default-features = false, features = ["override"] }

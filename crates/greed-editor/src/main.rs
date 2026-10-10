@@ -28,6 +28,10 @@ mod runtime;
 mod session;
 mod tui;
 
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use crossbeam_channel::Sender;
 use greed_core::Editor;
 use greed_core::control::Request;
