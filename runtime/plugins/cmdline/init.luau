@@ -122,27 +122,27 @@ local function render(o: Open, to_end: boolean?)
 	local lines = {}
 	local marks: { greed.Mark } = {}
 	local from = 0
+	-- A match's doc is cut to the width rather than wrapped, so every match
+	-- keeps one row and the first ones stay in sight.
+	local _, cols = o.view:size()
 	for i, candidate in o.candidates do
 		if i > SHOWN then
 			break
 		end
 		local line = " " .. candidate.text
-		if candidate.doc and candidate.doc ~= "" then
+		local doc = candidate.doc
+		if doc and doc ~= "" then
 			line ..= "  "
-			table.insert(
-				marks,
-				{ from = from + #line, to = from + #line + #candidate.doc, style = "ui.menu.doc" }
-			)
-			line ..= candidate.doc
+			local room = (cols or 1000) - (utf8.len(line) or #line) - 1
+			if (utf8.len(doc) or #doc) > room then
+				doc = if room > 1
+					then string.sub(doc, 1, (utf8.offset(doc, room) or room + 1) - 1) .. "…"
+					else ""
+			end
+			table.insert(marks, { from = from + #line, to = from + #line + #doc, style = "ui.menu.doc" })
+			line ..= doc
 		end
-		menu.mark_row(
-			marks,
-			from,
-			line,
-			i == o.current,
-			greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }),
-			1
-		)
+		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }), 1)
 		table.insert(lines, line)
 		from += #line + 1
 	end

@@ -474,3 +474,20 @@ test(":!cmd runs in the project's shell, and :%!cmd puts the lines through it", 
 		return greed.view():buffer():kind() == "shell"
 	end)
 end)
+
+test("matches keep one row each, their docs cut to fit, so the best ones show", function(t)
+	t:buffer("|x")
+	greed.command({
+		name = "zzbest",
+		doc = string.rep("a long description that would wrap ", 6),
+		run = function() end,
+	})
+	t:keys(": z z b")
+	t:screen(80, 24)
+	t:keys("e")
+	local floats = t:floats()
+	local text = floats[#floats]
+	assert(string.find(text, " zzbest  a long description", 1, true), text)
+	assert(string.find(text, "…", 1, true), "cut, with an ellipsis")
+	t:keys("esc")
+end)
