@@ -205,10 +205,22 @@ pub fn sessions_dir() -> PathBuf {
     runtime_dir().map_or_else(
         || {
             let user = std::env::var("USER").unwrap_or_else(|_| "user".to_owned());
-            std::env::temp_dir().join(format!("greed-{user}"))
+            socket_temp_dir().join(format!("greed-{user}"))
         },
         |dir| dir.join("greed"),
     )
+}
+
+/// A temporary folder short enough to keep sockets in. macOS's own
+/// (`/var/folders/…/T/`) leaves too little of the 104 bytes a socket's path
+/// may have, so there it's `/tmp`, as tmux has it; a sessions folder made
+/// there is checked to be yours and closed to others like any other.
+pub fn socket_temp_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
 }
 
 /// The user's runtime directory: `$XDG_RUNTIME_DIR`, or `/run/user/<uid>`

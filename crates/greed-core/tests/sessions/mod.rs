@@ -11,6 +11,7 @@ pub fn private() {
     let mut hasher = DefaultHasher::new();
     std::env::current_exe().unwrap().hash(&mut hasher);
     greed_core::control::use_sessions_dir(
-        std::env::temp_dir().join(format!("greed-sessions-{:x}", hasher.finish())),
+        greed_core::control::socket_temp_dir()
+            .join(format!("greed-sessions-{:x}", hasher.finish())),
     );
 }

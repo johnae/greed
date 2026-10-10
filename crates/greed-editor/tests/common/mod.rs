@@ -23,7 +23,9 @@ impl World {
             eprintln!("script isn't installed; skipping (it comes with the devenv shell)");
             return None;
         }
-        let root = std::env::temp_dir().join(format!("greed-world-{label}-{}", std::process::id()));
+        // Sessions keep their sockets in it, whose paths have to stay short.
+        let root = greed_core::control::socket_temp_dir()
+            .join(format!("greed-world-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for dir in ["run", "config/greed", "cache", "claude", "remote-home"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();

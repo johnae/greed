@@ -540,8 +540,13 @@ fn an_image_is_sent_once_before_the_frame_that_shows_it() {
     client.send(&Input::Resize(SIZE));
     client.first_row();
     client.keys("ctrl-p");
-    let Output::Image(image) = client.next() else {
-        panic!("expected the image first");
+    // Other updates may come first on a busy machine, but none placing it.
+    let image = loop {
+        match client.next() {
+            Output::Image(image) => break image,
+            Output::Delta(delta) => assert!(delta.images.is_none(), "placed before it was sent"),
+            other => panic!("expected the image first, got {other:?}"),
+        }
     };
     assert_eq!((image.width, image.height), (2, 1));
     match client.next() {

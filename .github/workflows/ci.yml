@@ -40,4 +40,4 @@ jobs:
         if: runner.os == 'Linux'
         run: devenv shell -- cargo deny check licenses
       - name: test
-        run: devenv shell -- cargo test -q --workspace
+        run: devenv shell -- cargo test -q --workspace --no-fail-fast
