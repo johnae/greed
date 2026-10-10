@@ -25,6 +25,13 @@ function M.claim(kind: string, handler: Handler)
 	greed.plugin.tie(registry.set(claims, kind, handler))
 end
 
+-- Runs a button's action: a command's name, then any arguments to it.
+local function act(action: string)
+	local args = string.split(action, " ")
+	local name = table.remove(args, 1) :: string
+	greed.run(name, if #args > 0 then { args = args } else nil)
+end
+
 local function point(view: greed.View, pos: number, anchor: number?)
 	view:set_selection({ ranges = { { anchor = anchor or pos, head = pos } }, primary = 1 })
 end
@@ -126,12 +133,20 @@ end
 -- What a click over `view` does: run a button, go to a plugin that
 -- claimed its kind of buffer, or move the cursor, select or scroll.
 local function handle(event: greed.MouseEvent, view: greed.View)
-	-- A mark's text with an action is a button: the click runs it.
-	if event.kind == "press" and event.button == "left" and event.action and event.pos then
-		view:focus()
-		point(view, event.pos)
-		greed.run(event.action)
-		return
+	local action, pos = event.action, event.pos
+	if event.kind == "press" and event.button == "left" and action then
+		-- A part of a float's border with one, like a label's arrows.
+		if event.border then
+			act(action)
+			return
+		end
+		-- A mark's text with one is a button: the click runs it.
+		if pos then
+			view:focus()
+			point(view, pos)
+			act(action)
+			return
+		end
 	end
 	local claim = claims[view:buffer():kind()]
 	if claim and claim(event) then
@@ -161,7 +176,7 @@ greed.on("mouse", function(event: greed.MouseEvent)
 	local view = event.view
 	if view == nil then
 		if event.kind == "press" and event.button == "left" and event.action then
-			greed.run(event.action)
+			act(event.action)
 		end
 		return
 	end

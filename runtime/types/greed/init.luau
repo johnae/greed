@@ -220,8 +220,8 @@ export type Tracked = {
 	forget: (self: Tracked) -> (),
 }
 
---- A line a mark shows under its range: text, or pieces with styles of their own.
-export type MarkLine = string | { { text: string, style: string? } }
+--- A line a mark shows under its range: text, or pieces with styles of their own. On a float's border (`label`, `footer`), a piece's `action` is a command that a click on it runs, with any arguments after its name ("float-go 3").
+export type MarkLine = string | { { text: string, style: string?, action: string? } }
 
 --- Text drawn with a style name, e.g. `{ from = 6, to = 11, style = "match" }`.
 --- Text typed at either edge stays outside it.

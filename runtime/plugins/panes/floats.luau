@@ -259,7 +259,7 @@ end
 --- pane plugin sets them from its keys.
 M.cycle_hint = ""
 
-type Piece = { text: string, style: string? }
+type Piece = { text: string, style: string?, action: string? }
 
 -- What the float in front shows on its border when the layout hides the
 -- others: where it is among them (with its neighbors' names when it's
@@ -267,7 +267,7 @@ type Piece = { text: string, style: string? }
 local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { Piece })
 	local n = #st.order
 	local label: { Piece } = {
-		{ text = "‹ ", style = "ui.float.title" },
+		{ text = "‹ ", style = "ui.float.title", action = "float-previous" },
 		{ text = `{i}/{n}`, style = "ui.float.title" },
 	}
 	if cells >= 60 then
@@ -277,20 +277,21 @@ local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { 
 		local before = if n > 2 or i > 1 then st.order[(i - 2) % n + 1] else nil
 		local after = if n > 2 or i < n then st.order[i % n + 1] else nil
 		if before then
-			table.insert(
-				label,
-				2,
-				{ text = core.text.clip(title_of(before), each) .. " · ", style = "ui.float.hint" }
-			)
+			table.insert(label, 2, {
+				text = core.text.clip(title_of(before), each) .. " · ",
+				style = "ui.float.hint",
+				action = "float-previous",
+			})
 		end
 		if after then
-			table.insert(
-				label,
-				{ text = " · " .. core.text.clip(title_of(after), each), style = "ui.float.hint" }
-			)
+			table.insert(label, {
+				text = " · " .. core.text.clip(title_of(after), each),
+				style = "ui.float.hint",
+				action = "float-next",
+			})
 		end
 	end
-	table.insert(label, { text = " ›", style = "ui.float.title" })
+	table.insert(label, { text = " ›", style = "ui.float.title", action = "float-next" })
 	local footer: { Piece } = {}
 	for j, view in st.order do
 		local dot, style = "○", nil
@@ -299,7 +300,10 @@ local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { 
 		elseif j == i then
 			dot, style = "●", "ui.float.title"
 		end
-		table.insert(footer, { text = if j == 1 then dot else " " .. dot, style = style })
+		if j > 1 then
+			table.insert(footer, { text = " " })
+		end
+		table.insert(footer, { text = dot, style = style, action = `float-go {j}` })
 	end
 	if M.cycle_hint ~= "" and 2 * n + core.text.width(M.cycle_hint) + 6 <= cells then
 		table.insert(footer, { text = "  " .. M.cycle_hint, style = "ui.float.hint" })
@@ -314,7 +318,7 @@ local marked: { [number]: string } = {}
 local function key_of(pieces: { Piece }): string
 	local parts = {}
 	for _, piece in pieces do
-		table.insert(parts, `{piece.style or ""}:{piece.text}`)
+		table.insert(parts, `{piece.style or ""}:{piece.action or ""}:{piece.text}`)
 	end
 	return table.concat(parts, "|")
 end
@@ -547,6 +551,19 @@ function M.cycle(offset: number)
 	end
 	local i = index_of(st.order, st.current) or n
 	M.focus(st.order[(i - 1 + offset) % n + 1])
+end
+
+--- Brings this tab's `n`th floating view to the front, as its dot on the
+--- border counts them.
+function M.go(n: number)
+	local st = state()
+	reconcile(st)
+	local view = st.order[n]
+	if view == nil then
+		greed.echo(`there's no floating view {n} in this tab`)
+		return
+	end
+	M.focus(view)
 end
 
 --- Shows the dock in the shown tab, or hides it. Without this it shows

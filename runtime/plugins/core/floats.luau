@@ -164,7 +164,14 @@ end
 greed.on("mouse", function(event: greed.MouseEvent)
 	local client = event.client
 	local drag = dragging[client]
-	if event.kind == "press" and event.button == "left" and event.border and event.view then
+	-- A part of the border with an action is a button, which mouse.luau runs.
+	if
+		event.kind == "press"
+		and event.button == "left"
+		and event.border
+		and event.view
+		and not event.action
+	then
 		local view = event.view
 		local box = box_of(view)
 		if box == nil then

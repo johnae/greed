@@ -5,7 +5,7 @@
 use super::{Measure, Rect, Renderer, hidden_lines, is_hidden, tab_label};
 use std::sync::Arc;
 
-use crate::{Editor, Side, TabId, ViewId};
+use crate::{Editor, FloatOptions, Side, TabId, ViewId};
 
 /// What a screen cell shows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -125,10 +125,10 @@ impl<M: Measure> Renderer<M> {
             .floats()
             .into_iter()
             .rev()
-            .map(|f| (f.view, f.options.border))
-            .chain(editor.panels().iter().map(|p| (p.view, false)))
-            .chain(panes.into_iter().map(|v| (v, false)));
-        for (view_id, bordered) in candidates {
+            .map(|f| (f.view, Some(&f.options)))
+            .chain(editor.panels().iter().map(|p| (p.view, None)))
+            .chain(panes.into_iter().map(|v| (v, None)));
+        for (view_id, float) in candidates {
             let Some(view) = editor.find_view(view_id) else {
                 continue;
             };
@@ -137,10 +137,13 @@ impl<M: Measure> Renderer<M> {
             };
             if !inside(area, col, row) {
                 // A float's border is part of it, for moving and resizing it.
-                if bordered && let Some(border) = border_at(area, col, row) {
+                if let Some(options) = float.filter(|o| o.border)
+                    && let Some(border) = border_at(area, col, row)
+                {
                     return Hit {
                         view: Some(view_id),
                         border: Some(border),
+                        action: self.border_action(options, area, col, row),
                         ..Hit::default()
                     };
                 }
@@ -169,6 +172,45 @@ impl<M: Measure> Renderer<M> {
             };
         }
         edge_at(editor, col, row).unwrap_or_default()
+    }
+
+    /// The action of the part of a float's border label or footer at
+    /// (`col`, `row`), around `area`, laid out as clients draw the border:
+    /// the label at the right of the top border, the footer in the middle
+    /// of the bottom one, each with a space either side.
+    fn border_action(
+        &self,
+        options: &FloatOptions,
+        area: Rect,
+        col: u16,
+        row: u16,
+    ) -> Option<Arc<str>> {
+        let width = usize::from(area.width);
+        let (line, start) = if row + 1 == area.y {
+            let line = options.label.as_ref()?;
+            let padded = self.text_width(&line.text) + 2;
+            // Too wide, it isn't drawn; it keeps a line before the corner.
+            if padded >= width {
+                return None;
+            }
+            (line, usize::from(area.x) + width - 1 - padded)
+        } else if row == area.y + area.height {
+            let line = options.footer.as_ref()?;
+            let padded = self.text_width(&line.text) + 2;
+            if padded > width {
+                return None;
+            }
+            (line, usize::from(area.x) + (width - padded) / 2)
+        } else {
+            return None;
+        };
+        // Past the space before the text.
+        let at = usize::from(col).checked_sub(start + 1)?;
+        line.actions.iter().find_map(|(range, action)| {
+            let from = self.text_width(&line.text[..range.start]);
+            let to = self.text_width(&line.text[..range.end]);
+            (from..to).contains(&at).then(|| action.clone())
+        })
     }
 
     /// The tab whose label is at (`col`, `row`) in the tab line, if one is.

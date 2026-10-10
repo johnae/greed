@@ -834,6 +834,20 @@ for _, c in commands do
 end
 
 greed.command({
+	name = "float-go",
+	doc = "Bring this tab's floating view number N to the front, as the dots on its border count",
+	args = { { name = "n", doc = "Which one, from 1" } },
+	run = function(ctx)
+		local n = tonumber(ctx.args[1])
+		if n == nil then
+			greed.echo("float-go: which one? a number from 1")
+			return
+		end
+		M.floats.go(n)
+	end,
+})
+
+greed.command({
 	name = "tab-next",
 	doc = "Show the next tab; with a count, tab N, as Vim's 3gt",
 	run = function(ctx)

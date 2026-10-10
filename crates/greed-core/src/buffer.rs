@@ -159,18 +159,21 @@ pub enum Reveal {
 
 /// A line a mark shows under the text: drawn in the mark's style, with
 /// `styles` on top of parts of it (byte ranges of `text`), like the words
-/// that changed in a proposed line.
+/// that changed in a proposed line. On a float's border, `actions` are the
+/// commands parts of it run when clicked (byte ranges too), like a label's
+/// arrows going to the float before or after.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VirtualLine {
     pub text: Arc<str>,
     pub styles: Vec<(Range<usize>, Arc<str>)>,
+    pub actions: Vec<(Range<usize>, Arc<str>)>,
 }
 
 impl From<&str> for VirtualLine {
     fn from(text: &str) -> Self {
         VirtualLine {
             text: text.into(),
-            styles: Vec::new(),
+            ..VirtualLine::default()
         }
     }
 }

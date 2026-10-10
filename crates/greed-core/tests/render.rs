@@ -989,6 +989,7 @@ fn parts_of_virtual_lines_can_have_styles_of_their_own() {
     let line = VirtualLine {
         text: "let x = 2;".into(),
         styles: vec![(8..9, "diff.plus.change".into())],
+        actions: Vec::new(),
     };
     ed.decorate(
         buffer,
@@ -1435,6 +1436,7 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
         label: Some(VirtualLine {
             text: "‹ 2/3 ›".into(),
             styles: vec![(0..3, "ui.float.title".into())],
+            actions: Vec::new(),
         }),
         footer: Some(VirtualLine::from("○●○")),
         border: true,
@@ -1476,6 +1478,65 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
     assert_eq!(line(0), "┌─ term ─ ‹ 2/3 › ─┐");
     assert_eq!(line(3), "└────── ○●○ ───────┘");
     assert_eq!(line(6), "bare                ");
+}
+
+#[test]
+fn a_click_on_a_floats_border_label_or_footer_finds_its_action() {
+    use greed_core::{Anchor, Extent, FloatOptions, VirtualLine};
+    let mut ed = editor("|main");
+    // ‹ and › are three bytes each.
+    let label = VirtualLine {
+        text: "‹ 2/3 ›".into(),
+        styles: Vec::new(),
+        actions: vec![
+            (0..3, "float-previous".into()),
+            (8..11, "float-next".into()),
+        ],
+    };
+    let footer = VirtualLine {
+        text: "○●○".into(),
+        styles: Vec::new(),
+        actions: vec![(0..3, "float-go 1".into()), (6..9, "float-go 3".into())],
+    };
+    let boxed = ed.create_buffer("x", "boxed");
+    ed.float(
+        boxed,
+        FloatOptions {
+            title: Some("term".into()),
+            width: Extent::Cells(20),
+            height: Extent::Cells(4),
+            anchor: Anchor::Top,
+            focus: false,
+            x: Some(Extent::Cells(0)),
+            y: Some(Extent::Cells(0)),
+            tab: false,
+            label: Some(label),
+            footer: Some(footer),
+            border: true,
+            hidden: false,
+            shared: false,
+        },
+    );
+    let renderer = Renderer::new(CellWidth);
+    let size = Size {
+        width: 20,
+        height: 9,
+    };
+    renderer.frame(&mut ed, size, &Status::Default { message: None }, &Plain);
+    let at = |col, row| renderer.hit(&ed, col, row).action.map(|a| a.to_string());
+    // As drawn: "┌─ term ─ ‹ 2/3 › ─┐" and "└────── ○●○ ───────┘".
+    assert_eq!(at(10, 0).as_deref(), Some("float-previous"));
+    assert_eq!(at(12, 0), None, "a part without one");
+    assert_eq!(at(16, 0).as_deref(), Some("float-next"));
+    assert_eq!(at(3, 0), None, "the title");
+    assert_eq!(at(8, 3).as_deref(), Some("float-go 1"));
+    assert_eq!(at(9, 3), None, "the dot without one");
+    assert_eq!(at(10, 3).as_deref(), Some("float-go 3"));
+    assert_eq!(
+        renderer.hit(&ed, 10, 0).border,
+        Some("top"),
+        "still the border"
+    );
 }
 
 #[test]

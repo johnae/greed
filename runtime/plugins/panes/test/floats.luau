@@ -205,13 +205,49 @@ test("the float in front says where it is among them, with a dot for each", func
 	assert(text_of((views[1]:float_spec() :: greed.FloatSpec).label) == "")
 end)
 
+-- The screen cell where `text` first shows, and its row.
+local function cell_of(t: test.TestContext, text: string): (number, number)
+	for row, line in t:screen(80, 24) do
+		local at = string.find(line, text, 1, true)
+		if at then
+			return utf8.len(string.sub(line, 1, at - 1)) :: number, row - 1
+		end
+	end
+	error(`{text} isn't on the screen`)
+end
+
+test("a click on the border's arrows or dots goes to that float", function(t)
+	local views = three(t, { width = 40, height = 10 })
+	floats.use("one")
+	t:draw(80, 24)
+	local col, row = cell_of(t, "›")
+	t:mouse("press", col, row)
+	assert(
+		text_of((views[1]:float_spec() :: greed.FloatSpec).label) == "‹ 1/3 ›",
+		"› goes to the next"
+	)
+	col, row = cell_of(t, "‹")
+	t:mouse("press", col, row)
+	assert(
+		text_of((views[3]:float_spec() :: greed.FloatSpec).label) == "‹ 3/3 ›",
+		"‹ to the one before"
+	)
+	col, row = cell_of(t, "○ ○ ●")
+	t:mouse("press", col + 2, row)
+	assert(
+		text_of((views[2]:float_spec() :: greed.FloatSpec).label) == "‹ 2/3 ›",
+		"the second dot, the second"
+	)
+	assert(greed.view() == views[2], "and it has focus")
+end)
+
 test("a float that needs you gets a colored dot, until its owner says it doesn't", function(t)
 	local views = three(t, { width = 40, height = 10 })
 	floats.use("one")
 	core.floats.attention(views[1]:buffer(), true)
 	assert(core.floats.needs_attention(views[1]:buffer()))
 	local footer = (views[3]:float_spec() :: greed.FloatSpec).footer
-	local first = (footer :: { { text: string, style: string? } })[1]
+	local first = (footer :: { { text: string, style: string?, action: string? } })[1]
 	assert(first.text == "●" and first.style == "ui.float.attention", first.text)
 	assert(
 		string.find((dock() :: greed.View):buffer():text(), "1 a ●", 1, true),

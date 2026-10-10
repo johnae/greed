@@ -1547,7 +1547,9 @@ In `one` the float in front says where it is on its border:
 `‹ 2/5 ›` at the right of the top, with the names of the floats either
 side when it's wide (`‹ nu ~/src · 2/5 · claude ›`; of two, the other on
 its side: `‹ 1/2 · claude ›`), and a dot for each
-float along the bottom, the one in front filled. A dock along the bottom
+float along the bottom, the one in front filled. Click `‹` or a name before
+it for the float before, `›` or a name after it for the next, or a dot
+for that float (`:float-go N` does the same). A dock along the bottom
 of the tab lists them all by number and name; click a name to bring that
 float to the front, or press `alt-W` and then its number (or move with the
 arrows and press `enter`). `:float-dock` shows or hides the dock in any

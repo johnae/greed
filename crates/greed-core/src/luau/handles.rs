@@ -760,6 +760,7 @@ pub(super) fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
     };
     let mut text = String::new();
     let mut styles = Vec::new();
+    let mut actions = Vec::new();
     for piece in pieces.sequence_values::<Table>() {
         let piece = piece?;
         let start = text.len();
@@ -767,36 +768,48 @@ pub(super) fn virtual_line_from_lua(value: Value) -> LuaResult<VirtualLine> {
         if let Some(style) = piece.get::<Option<String>>("style")? {
             styles.push((start..text.len(), style.into()));
         }
+        if let Some(action) = piece.get::<Option<String>>("action")? {
+            actions.push((start..text.len(), action.into()));
+        }
     }
     Ok(VirtualLine {
         text: text.into(),
         styles,
+        actions,
     })
 }
 
 /// A virtual line as Luau gets it back: a string, or pieces if parts of it
 /// have styles.
 pub(super) fn virtual_line_to_lua(lua: &Lua, line: &VirtualLine) -> LuaResult<Value> {
-    if line.styles.is_empty() {
+    if line.styles.is_empty() && line.actions.is_empty() {
         return Ok(Value::String(lua.create_string(&*line.text)?));
     }
-    let pieces = lua.create_table()?;
-    let push = |range: std::ops::Range<usize>, style: Option<&str>| -> LuaResult<()> {
-        if range.is_empty() {
-            return Ok(());
-        }
-        let piece = lua.create_table()?;
-        piece.set("text", &line.text[range])?;
-        piece.set("style", style)?;
-        pieces.push(piece)
+    // A piece wherever a style or an action starts or ends.
+    let mut cuts: Vec<usize> = line
+        .styles
+        .iter()
+        .chain(&line.actions)
+        .flat_map(|(range, _)| [range.start, range.end])
+        .chain([0, line.text.len()])
+        .collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    let covering = |spans: &[(std::ops::Range<usize>, std::sync::Arc<str>)], at: usize| {
+        spans
+            .iter()
+            .find(|(range, _)| range.contains(&at))
+            .map(|(_, name)| name.clone())
     };
-    let mut at = 0;
-    for (range, style) in &line.styles {
-        push(at..range.start, None)?;
-        push(range.clone(), Some(style))?;
-        at = range.end;
+    let pieces = lua.create_table()?;
+    for pair in cuts.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        let piece = lua.create_table()?;
+        piece.set("text", &line.text[from..to])?;
+        piece.set("style", covering(&line.styles, from).as_deref())?;
+        piece.set("action", covering(&line.actions, from).as_deref())?;
+        pieces.push(piece)?;
     }
-    push(at..line.text.len(), None)?;
     Ok(Value::Table(pieces))
 }
 
