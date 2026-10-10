@@ -16,14 +16,23 @@ alone.
 |---|---|
 | `greed [FILE or FOLDER]` | Attach to the project's session, or start it |
 | `greed --session NAME [PATH]` | Attach to or start a session with this name, e.g. a second one for a project |
+| `greed --new [PATH]` | Start another session for the project, beside the one running, with this greed: for trying a newer build |
 | `:detach` | Leave the session running |
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
-| `greed ls` | List running sessions and their projects |
+| `greed ls` | List running sessions and their projects, marking those running another build than this greed |
 | `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |
 | `greed edit [--wait] FILE...` | Open files in the running editor; with `--wait`, return once each is closed with `:q` or `:wq` (`:cq` fails it), as `$EDITOR` for `git commit`. Greed's own shells set this up already |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
+
+A session keeps running the greed it started with. `greed --version` says
+which build a greed is (`greed 0.1.0 (build b5432b407145)`, a hash of what it
+was built from), and attaching to a session of another build, as after
+rebuilding greed while it ran, says so on the status line: `greed --new`
+starts a session of your build beside it, and `greed ctl quit NAME` ends the
+old one. `greed ssh` puts your build on the other machine when it runs the
+same system, so a rebuild gets there too; the last few builds are kept there.
 
 Several terminals can show one session at once: run `greed` or `greed
 attach` in another terminal, or `greed ssh` from another machine, and both
@@ -245,8 +254,9 @@ editor starts. Each entry says where it came from.
 greed ssh build-box src/main.rs
 ```
 
-`greed ssh HOST [--session NAME] [FILE]` shows a session running on another
-machine, starting one there if none is running. Files, language servers,
+`greed ssh HOST [--session NAME | --new] [FILE]` shows a session running on
+another machine, starting one there if none is running; `--new` starts
+another one beside it. Files, language servers,
 search and agents all run on that machine, and only keys and screen updates
 cross the network. If the connection drops or you `:detach`, the session
 keeps running, and `greed ssh HOST` comes back to it.

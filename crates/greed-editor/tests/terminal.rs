@@ -185,13 +185,25 @@ fn greed_ssh_puts_greed_on_a_machine_without_it_once() {
     ];
     let command = format!("ssh somehost {}", project.join("main.rs").display());
     let first = world.terminal(&project, &command, &env, &steps);
-    assert!(first.contains("putting greed"), "{first}");
+    assert!(first.contains("putting this greed (build "), "{first}");
     let server = world.root.join("remote-home/.local/share/greed/server");
     let installed: Vec<_> = std::fs::read_dir(&server).unwrap().flatten().collect();
-    assert_eq!(installed.len(), 1, "one version");
+    assert_eq!(installed.len(), 1, "one build");
     assert!(installed[0].path().join("greed").is_file());
+    // In a folder of its build, which `greed --version` says.
+    let folder = installed[0].file_name().to_string_lossy().into_owned();
+    let version = std::process::Command::new(GREED)
+        .arg("--version")
+        .output()
+        .unwrap();
+    let version = String::from_utf8_lossy(&version.stdout).into_owned();
+    let build = folder.rsplit('-').next().unwrap();
+    assert!(
+        version.contains(&format!("(build {build})")),
+        "{folder}: {version}"
+    );
     let again = world.terminal(&project, &command, &env, &steps);
-    assert!(!again.contains("putting greed"), "there already: {again}");
+    assert!(!again.contains("putting"), "there already: {again}");
     assert!(
         again.contains("detached; greed ssh somehost comes back"),
         "{again}"

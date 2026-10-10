@@ -24,6 +24,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                 entry.set("current", current.as_deref() == Some(info.name.as_str()))?;
                 entry.set("name", info.name)?;
                 entry.set("root", info.root.map(|r| r.to_string_lossy().into_owned()))?;
+                entry.set("build", info.build)?;
                 list.push(entry)?;
             }
             Ok(list)
@@ -33,6 +34,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "current",
         lua.create_function(|lua, ()| Ok(state(lua).session_name.clone()))?,
     )?;
+    session.set("build", lua.create_function(|_, ()| Ok(control::build()))?)?;
     session.set(
         "remote",
         lua.create_function(|lua, ()| {

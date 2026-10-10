@@ -18,11 +18,18 @@ local M = {}
 
 greed.cli({
 	name = "ls",
-	doc = "List the running sessions and their projects",
+	doc = "List the running sessions, their projects, and those of another build than this greed",
 	run = function()
 		local lines = {}
+		local mine = greed.session.build()
 		for _, session in greed.session.list() do
-			table.insert(lines, string.format("%-20s %s", session.name, session.root or ""))
+			local other = if session.build and session.build ~= mine
+				then `  (build {session.build}, not this greed's)`
+				else ""
+			table.insert(
+				lines,
+				string.format("%-20s %s%s", session.name, session.root or "", other)
+			)
 		end
 		return table.concat(lines, "\n")
 	end,

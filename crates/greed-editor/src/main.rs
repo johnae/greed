@@ -41,7 +41,7 @@ use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -54,6 +54,7 @@ Type Luau to evaluate it, or one of:
   :quit           leave";
 
 fn main() -> ExitCode {
+    greed_core::control::set_build(runtime::BUILD);
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // Anywhere on the line: which folders Greed keeps things in. Greed runs
     // again with them in its environment, so the sessions, terminals and
@@ -94,16 +95,15 @@ fn main() -> ExitCode {
         [] => edit(None, None, terminal),
         [flag] if flag == "--env0" => print_environment(),
         [flag] if flag == "--version" || flag == "-V" => {
-            let window = if cfg!(feature = "gui") {
-                ""
-            } else {
-                " (terminal only: no --gui)"
-            };
-            println!("greed {}{window}", env!("CARGO_PKG_VERSION"));
+            print_version();
             Ok(())
         }
         [flag, name, rest @ ..] if flag == "--session" => {
             edit(Some(name), rest.first().map(PathBuf::from), terminal)
+        }
+        [flag, rest @ ..] if flag == "--new" => {
+            let path = rest.first().map(PathBuf::from);
+            session::new_name(path.as_deref()).and_then(|name| edit(Some(&name), path, terminal))
         }
         [cmd, flag, name, rest @ ..] if cmd == "serve" && flag == "--session" => {
             session::serve(name, rest.first().map(Path::new))
@@ -112,12 +112,17 @@ fn main() -> ExitCode {
         [cmd] if cmd == "attach" => session::attach(None),
         [cmd, name] if cmd == "attach" => session::attach(Some(name)),
         [cmd, rest @ ..] if cmd == "bridge" => {
-            let (name, file) = session_and_file(rest);
-            session::bridge(name, file.map(Path::new))
+            let (name, file, new) = session_and_file(rest);
+            let named = if new {
+                session::new_name(file.map(Path::new)).map(Some)
+            } else {
+                Ok(name.map(str::to_owned))
+            };
+            named.and_then(|name| session::bridge(name.as_deref(), file.map(Path::new)))
         }
         [cmd, host, rest @ ..] if cmd == "ssh" => {
-            let (name, file) = session_and_file(rest);
-            session::ssh(host, name, file, terminal)
+            let (name, file, new) = session_and_file(rest);
+            session::ssh(host, name, file, terminal, new)
         }
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
@@ -508,13 +513,15 @@ fn test(dirs: &[PathBuf]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// `[--session NAME] [FILE]` from the end of a command line.
-fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>) {
+/// `[--session NAME | --new] [FILE]` from the end of a command line: the
+/// session named, the file, and whether to start another session.
+fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>, bool) {
     match args {
         [flag, name, rest @ ..] if flag == "--session" => {
-            (Some(name.as_str()), rest.first().map(String::as_str))
+            (Some(name.as_str()), rest.first().map(String::as_str), false)
         }
-        rest => (None, rest.first().map(String::as_str)),
+        [flag, rest @ ..] if flag == "--new" => (None, rest.first().map(String::as_str), true),
+        rest => (None, rest.first().map(String::as_str), false),
     }
 }
 
@@ -566,4 +573,20 @@ fn commands() -> Result<(), Box<dyn std::error::Error>> {
         println!("       greed {:<15} {doc}", line.trim_end());
     }
     Ok(())
+}
+
+/// `greed --version`: the version and which build of it, and whether it
+/// can show a window. `greed ssh` matches what it prints on the other
+/// machine.
+fn print_version() {
+    let window = if cfg!(feature = "gui") {
+        ""
+    } else {
+        " (terminal only: no --gui)"
+    };
+    println!(
+        "greed {} (build {}){window}",
+        env!("CARGO_PKG_VERSION"),
+        runtime::BUILD
+    );
 }

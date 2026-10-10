@@ -1012,6 +1012,8 @@ export type SessionInfo = {
 	name: string,
 	--- The project it was started for.
 	root: string?,
+	--- The build of greed it runs, as `greed --version` says it, if it said.
+	build: string?,
 	--- Whether it's this session.
 	current: boolean,
 }
@@ -1021,6 +1023,8 @@ export type Sessions = {
 	list: () -> { SessionInfo },
 	--- This session's name, when the editor runs as one.
 	current: () -> string?,
+	--- Which build of greed this is, as `greed --version` says it.
+	build: () -> string,
 	--- Whether the attached client (or the last one) came over `greed ssh`; before any attached, whether `greed ssh` started the session.
 	remote: () -> boolean,
 	--- Whether a terminal or window is attached to the session.

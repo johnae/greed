@@ -48,10 +48,25 @@ pub(crate) fn read_line_within(reader: &mut impl BufRead, line: &mut Vec<u8>) ->
 /// `greed bridge`.
 pub const REMOTE_ENV: &str = "GREED_SSH_SESSION";
 
+/// Which build of greed this is, as the program set it with [`set_build`]
+/// ("dev" until then): a hash of the sources it was built from, so two
+/// builds of one version tell each other apart.
+static BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Says which build this is, once, as the program starts.
+pub fn set_build(build: &str) {
+    let _ = BUILD.set(build.to_owned());
+}
+
+/// Which build this is (see [`set_build`]).
+pub fn build() -> &'static str {
+    BUILD.get().map_or("dev", String::as_str)
+}
+
 /// What each side says about itself when a client attaches: the protocol it
-/// speaks and the greed version.
+/// speaks, the greed version and which build of it.
 pub fn handshake() -> Value {
-    json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })
+    json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION"), "build": build() })
 }
 
 /// What a client of `kind` ("tui", "gui") asks to attach with: the
@@ -309,7 +324,7 @@ impl Session {
 /// Writes down which project the session at `socket` is for, so `greed` in
 /// that project finds it and the switcher can list it.
 fn describe(socket: &Path, root: &Path) -> io::Result<()> {
-    let info = json!({ "pid": std::process::id(), "root": root });
+    let info = json!({ "pid": std::process::id(), "root": root, "build": build() });
     std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -333,6 +348,8 @@ pub struct SessionInfo {
     pub name: String,
     /// The project it was started for, if it said.
     pub root: Option<PathBuf>,
+    /// The build of greed it runs, if it said.
+    pub build: Option<String>,
 }
 
 /// The sessions running on this machine, by name.
@@ -350,11 +367,13 @@ pub fn sessions() -> io::Result<Vec<SessionInfo>> {
         })
         .filter_map(|path| {
             let name = path.file_stem()?.to_string_lossy().into_owned();
-            let root = std::fs::read_to_string(path.with_extension("json"))
+            let info = std::fs::read_to_string(path.with_extension("json"))
                 .ok()
                 .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-                .and_then(|info| info["root"].as_str().map(PathBuf::from));
-            Some(SessionInfo { name, root })
+                .unwrap_or_default();
+            let root = info["root"].as_str().map(PathBuf::from);
+            let build = info["build"].as_str().map(str::to_owned);
+            Some(SessionInfo { name, root, build })
         })
         .collect();
     found.sort_by(|a, b| a.name.cmp(&b.name));
@@ -501,6 +520,8 @@ pub struct Attachment {
     pub layout: Option<crate::ClientLayout>,
     /// Whether it asked to be the only client, letting the others go.
     pub takeover: bool,
+    /// The build of greed it is, when it said.
+    pub build: Option<String>,
 }
 
 impl Attachment {
@@ -525,6 +546,7 @@ impl Attachment {
                 .as_str()
                 .and_then(crate::ClientLayout::parse),
             takeover: params["takeover"].as_bool() == Some(true),
+            build: params["build"].as_str().map(str::to_owned),
         }
     }
 }

@@ -10,7 +10,12 @@
 //! 3. the release's static build for that machine, from the cache or
 //!    downloaded into it, checked against the release's checksums.
 //!
-//! A greed on the other machine's PATH of the same version is used as it is.
+//! This greed itself goes in a folder of its own build,
+//! `VERSION-pPROTOCOL-BUILD`, so a rebuild of the same version (while working
+//! on greed) gets there too, rather than the first copy staying; only the
+//! last few builds are kept. A greed on the other machine's PATH of the
+//! same version is used when this one can't be put there, and of the same
+//! build always.
 
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
@@ -19,6 +24,7 @@ use std::process::{Command, Stdio};
 use greed_core::control::PROTOCOL;
 use sha2::{Digest, Sha256};
 
+use crate::runtime::BUILD;
 use crate::session::remote;
 
 type Error = Box<dyn std::error::Error>;
@@ -28,18 +34,33 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Where releases are downloaded from.
 const RELEASES: &str = "https://github.com/johnae/greed/releases/download";
 
-/// The greed to run on `host`: there already, or put there now.
+/// The greed to run on `host`: this build, there already or put there now
+/// when the other machine runs the same system; else a greed of this
+/// version, there already or the release's put there now.
 pub fn ensure(host: &str) -> Result<String, Error> {
     let found = probe(host)?;
-    if let Some(path) = found.greed {
+    if let Some(path) = found.build {
         return Ok(path);
     }
     let system = found.system;
-    let folder = format!("{}/.local/share/greed/server/{}", found.home, folder_name());
+    let server = format!("{}/.local/share/greed/server", found.home);
+    let given = std::env::var_os("GREED_REMOTE_BINARY");
+    if given.is_none() && this_system().as_deref() == Some(system.as_str()) {
+        let folder = format!("{server}/{}", build_folder());
+        eprintln!("greed: putting this greed (build {BUILD}) on {host} ({system})");
+        if upload_this(host, &system, &folder) {
+            prune(host, &server);
+            return Ok(format!("{folder}/greed"));
+        }
+    }
+    if let Some(path) = found.version {
+        return Ok(path);
+    }
+    let folder = format!("{server}/{}", folder_name());
     eprintln!("greed: putting greed {VERSION} on {host} ({system}), once for this version");
-    if let Some(given) = std::env::var_os("GREED_REMOTE_BINARY") {
+    if let Some(given) = given {
         upload(host, Path::new(&given), &folder)?;
-    } else if !upload_this(host, &system, &folder) {
+    } else {
         upload(host, &fetched(host, &system)?, &folder)?;
     }
     Ok(format!("{folder}/greed"))
@@ -52,35 +73,68 @@ fn folder_name() -> String {
     format!("{VERSION}-p{PROTOCOL}")
 }
 
+/// The folder this very build goes in on the other machine, when it's put
+/// there itself: a rebuild of the same version gets a folder of its own.
+fn build_folder() -> String {
+    format!("{}-{BUILD}", folder_name())
+}
+
+/// How many builds of this version are kept on the other machine, the
+/// newest; each rebuild put there would otherwise stay.
+const BUILDS_KEPT: usize = 3;
+
+/// Removes all but the newest few builds of this version from `server` on
+/// `host`. A session running an older one goes on: the program it runs
+/// stays until it ends.
+fn prune(host: &str, server: &str) {
+    let line = format!(
+        "cd \"{server}\" && ls -1dt {}-*/ 2>/dev/null | tail -n +{} | while read -r d; do rm -rf \"$d\"; done",
+        folder_name(),
+        BUILDS_KEPT + 1
+    );
+    if let Ok((mut child, input, _)) = remote(host, &line) {
+        drop(input);
+        let _ = child.wait();
+    }
+}
+
 /// What `probe` found on the other machine.
 struct Found {
     /// Its system as releases name it, e.g. "linux-x86_64".
     system: String,
     home: String,
+    /// This very build of greed there, if it is.
+    build: Option<String>,
     /// A greed of this version there, if there is one.
-    greed: Option<String>,
+    version: Option<String>,
 }
 
-/// Asks `host` for its system, its home, and a greed of this version.
+/// Asks `host` for its system, its home, this build of greed and a greed of
+/// this version: in the folders they're put in, or on its PATH.
 fn probe(host: &str) -> Result<Found, Error> {
     let folder = folder_name();
+    let built = build_folder();
     let line = format!(
         "uname -s; uname -m; echo \"$HOME\"; \
-         p=\"$HOME/.local/share/greed/server/{folder}/greed\"; \
-         if [ -x \"$p\" ]; then echo \"$p\"; \
-         elif g=$(command -v greed) && [ \"$(greed --version 2>/dev/null)\" = 'greed {VERSION}' ]; then echo \"$g\"; \
+         s=\"$HOME/.local/share/greed/server\"; v=$(greed --version 2>/dev/null); \
+         if [ -x \"$s/{built}/greed\" ]; then echo \"$s/{built}/greed\"; \
+         elif [ \"${{v%%)*}})\" = 'greed {VERSION} (build {BUILD})' ]; then command -v greed; \
+         else echo; fi; \
+         if [ -x \"$s/{folder}/greed\" ]; then echo \"$s/{folder}/greed\"; \
+         elif [ \"${{v%% (*}}\" = 'greed {VERSION}' ]; then command -v greed; \
          else echo; fi"
     );
     let (mut child, input, mut output) = remote(host, &line)?;
     drop(input);
     let mut lines = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..5 {
         let mut line = String::new();
         output.read_line(&mut line)?;
         lines.push(line.trim().to_owned());
     }
     let _ = child.wait();
-    let [os, arch, home, greed] = <[String; 4]>::try_from(lines).map_err(|_| "no answer")?;
+    let [os, arch, home, exact, version] =
+        <[String; 5]>::try_from(lines).map_err(|_| "no answer")?;
     if home.is_empty() {
         return Err(format!("{host} didn't say where its home is").into());
     }
@@ -89,7 +143,8 @@ fn probe(host: &str) -> Result<Found, Error> {
             format!("there's no greed for {host}'s system ({os} {arch}); set GREED_REMOTE to one")
         })?,
         home,
-        greed: Some(greed).filter(|g| !g.is_empty()),
+        build: Some(exact).filter(|g| !g.is_empty()),
+        version: Some(version).filter(|g| !g.is_empty()),
     })
 }
 

@@ -68,6 +68,14 @@ fn find_session(name: Option<&str>, path: Option<&Path>) -> Result<(String, bool
     Ok((project::session_name(&root, &names), false, target))
 }
 
+/// A name for another session for `path`'s project, beside any running for
+/// it: the project's name, or that with `-2`, `-3`, ... after it.
+pub fn new_name(path: Option<&Path>) -> Result<String, Error> {
+    let root = project::root_of(&absolute(path)?);
+    let names: Vec<String> = control::sessions()?.into_iter().map(|s| s.name).collect();
+    Ok(project::session_name(&root, &names))
+}
+
 /// Where a background session's output goes.
 fn log_path(name: &str) -> PathBuf {
     control::sessions_dir().join(format!("{name}.log"))
@@ -155,7 +163,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut terminal: bool) -> Re
                 host: Some(host),
                 session,
                 path,
-            }) => return ssh(&host, session.as_deref(), path.as_deref(), false),
+            }) => return ssh(&host, session.as_deref(), path.as_deref(), false, false),
             Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
                 println!("detached; greed attach {name} comes back");
@@ -316,13 +324,15 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 }
 
 /// `greed ssh`: shows a session on `host`, through `greed bridge` run there
-/// over ssh, starting one if none is running. `$GREED_SSH` replaces the ssh
-/// command and `$GREED_REMOTE` the greed on the other end.
+/// over ssh, starting one if none is running, or with `new` another one
+/// beside it. `$GREED_SSH` replaces the ssh command and `$GREED_REMOTE` the
+/// greed on the other end.
 pub fn ssh(
     host: &str,
     name: Option<&str>,
     file: Option<&str>,
     mut terminal: bool,
+    mut new: bool,
 ) -> Result<(), Error> {
     let mut host = host.to_owned();
     let mut config = bring_config(&host);
@@ -334,8 +344,9 @@ pub fn ssh(
     };
     // A terminal is asked for once, not again after a switch.
     loop {
-        let ended = ssh_once(&host, &greed, &to, config.as_deref(), terminal)?;
+        let ended = ssh_once(&host, &greed, &to, config.as_deref(), terminal, new)?;
         terminal = false;
+        new = false;
         match ended {
             // The bridge on the other end finds (or starts) the session to
             // switch to; a new connection is the simplest way to ask it. A
@@ -391,8 +402,9 @@ fn ssh_once(
     to: &SwitchTo,
     config: Option<&str>,
     terminal: bool,
+    new: bool,
 ) -> Result<Output, Error> {
-    let line = bridge_command(remote_greed, to, config);
+    let line = bridge_command(remote_greed, to, config, new);
     let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
     handshake(&mut reader, &mut writer, to.session.as_deref(), terminal).map_err(attach_failed)?;
@@ -497,10 +509,12 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
 /// The sh line that runs `greed bridge` (in its place) on the other machine for `to`,
 /// with the config `greed ssh` brought along in `config` (a folder, which
 /// may use `$HOME`).
-fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>) -> String {
+fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>, new: bool) -> String {
     let mut args = vec![greed.to_owned(), "bridge".to_owned()];
     if let Some(name) = &to.session {
         args.extend(["--session".to_owned(), name.clone()]);
+    } else if new {
+        args.push("--new".to_owned());
     }
     args.extend(to.path.clone());
     // ssh joins its arguments into one command line for the remote shell.
@@ -581,7 +595,12 @@ mod tests {
             host: None,
         };
         assert_eq!(
-            bridge_command("greed", &to, Some("$HOME/.cache/greed/config-from-box")),
+            bridge_command(
+                "greed",
+                &to,
+                Some("$HOME/.cache/greed/config-from-box"),
+                false
+            ),
             r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/greed/config-from-box" exec 'greed' 'bridge' '--session' 'greed' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo {
@@ -590,7 +609,7 @@ mod tests {
             host: None,
         };
         assert_eq!(
-            bridge_command("/opt/greed", &plain, None),
+            bridge_command("/opt/greed", &plain, None, false),
             "exec '/opt/greed' 'bridge'"
         );
     }

@@ -805,6 +805,7 @@ impl Server<'_> {
             name,
             layout,
             takeover,
+            build,
         } = attachment;
         let others: Vec<ClientId> = self
             .clients
@@ -867,7 +868,7 @@ impl Server<'_> {
             return;
         }
         let mut client = Client::new(output, false, connection);
-        client.message = unseen;
+        client.message = unseen.or_else(|| other_build(build.as_deref()));
         self.clients.insert(id, client);
         if let Some(layout) = layout {
             let laid_out = self.host.set_client_layout(id, layout);
@@ -1016,6 +1017,20 @@ impl Decorations for Shown<'_> {
     fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         self.syntax.highlights(buffer, text, range)
     }
+}
+
+/// What a client of greed build `theirs` is told as it attaches to this
+/// session when that's another build, as after a rebuild while the session
+/// ran: which runs, and how to get a session of its own build.
+fn other_build(theirs: Option<&str>) -> Option<String> {
+    let ours = crate::control::build();
+    let theirs = theirs?;
+    (theirs != ours).then(|| {
+        format!(
+            "this session runs greed build {ours} and you attached with build {theirs}: \
+             greed --new starts a session of yours, greed ctl quit stops this one"
+        )
+    })
 }
 
 #[cfg(test)]

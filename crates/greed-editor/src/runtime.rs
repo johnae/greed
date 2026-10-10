@@ -7,6 +7,10 @@ mod embedded {
     include!(concat!(env!("OUT_DIR"), "/runtime.rs"));
 }
 
+/// Which build this is: a hash of the sources, runtime and dependencies it
+/// was built from.
+pub use embedded::BUILD;
+
 /// Where the runtime is, in the first of these places that has one:
 /// `$GREED_RUNTIME`, a folder chosen at build time (`GREED_RUNTIME_DIR`, for
 /// packagers), `share/greed/runtime` beside the binary's folder, the source

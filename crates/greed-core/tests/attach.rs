@@ -661,3 +661,34 @@ fn the_clipboards_image_is_read_by_the_client_that_asked() {
     client.until_row("1 none");
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn a_client_of_another_build_is_told_which_build_the_session_runs() {
+    let (conn, _, _) = start("build");
+    let session = format!("attach-build-{}", std::process::id());
+    let (socket, token) = control::session_files(&session);
+    let token = std::fs::read_to_string(token).unwrap();
+    let attach_built = |build: &str| {
+        let mut params = control::attach_params("tui");
+        params["build"] = serde_json::Value::from(build);
+        let client = Client::connect(&socket, &token).unwrap();
+        Attached(client.attach_with(&params).unwrap(), None)
+    };
+    let status = |client: &mut Attached| {
+        client.send(&Input::Resize(SIZE));
+        client.first_row();
+        greed_core::render::grid::text_rows(client.1.as_ref().unwrap())
+            .pop()
+            .unwrap()
+    };
+    let mut other = attach_built("0123456789ab");
+    let said = status(&mut other);
+    assert!(
+        said.contains("attached with build 0123456789ab") && said.contains("greed --new"),
+        "{said}"
+    );
+    let mut same = attach_built(control::build());
+    let said = status(&mut same);
+    assert!(!said.contains("attached with build"), "{said}");
+    conn.input.send(Input::Quit).unwrap();
+}
