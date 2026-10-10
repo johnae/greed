@@ -623,20 +623,6 @@ local commands: { { name: string, doc: string, run: () -> () } } = {
 			M.to_panel()
 		end,
 	},
-	{
-		name = "tab-next",
-		doc = "Show the next tab",
-		run = function()
-			M.cycle_tab(1)
-		end,
-	},
-	{
-		name = "tab-previous",
-		doc = "Show the tab before",
-		run = function()
-			M.cycle_tab(-1)
-		end,
-	},
 	{ name = "tab-rename", doc = "Name this tab", run = M.rename_tab },
 	{
 		name = "pane-mode",
@@ -846,6 +832,28 @@ for _, c in commands do
 	})
 	by_name[c.name] = c.run
 end
+
+greed.command({
+	name = "tab-next",
+	doc = "Show the next tab; with a count, tab N, as Vim's 3gt",
+	run = function(ctx)
+		if ctx.count then
+			M.go_to_tab(ctx.count)
+		else
+			M.cycle_tab(1)
+		end
+	end,
+})
+
+greed.command({
+	name = "tab-previous",
+	doc = "Show the tab before; with a count, that many tabs back",
+	run = function(ctx)
+		for _ = 1, ctx.count or 1 do
+			M.cycle_tab(-1)
+		end
+	end,
+})
 
 greed.command({
 	name = "tab-go",
