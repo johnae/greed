@@ -24,11 +24,14 @@ local M = {}
 
 --- A thing to act on: what kind it is ("file", "link", "symbol", ...), how
 --- to show it, and the value actions get. `from` and `to` are where it is
---- in the buffer, for things found there.
+--- in the buffer, for things found there; one that names itself as an
+--- object (objects.luau) gives its `id`, and the `buffer` it's in.
 export type Target = {
 	kind: string,
 	label: string,
 	value: any,
+	id: string?,
+	buffer: greed.Buffer?,
 	from: number?,
 	to: number?,
 }

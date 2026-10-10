@@ -24,6 +24,7 @@ require("@self/secrets")
 local scroll = require("@self/scroll")
 local goto_keys = require("@self/goto")
 local textobjects = require("@self/textobjects")
+local objects = require("@self/objects")
 local syntax = require("@self/syntax")
 require("@self/selections")
 local comment = require("@self/comment")
@@ -86,6 +87,9 @@ greed.keymap.bind({ role = "typing" }, {
 
 --- A thing to act on, from a finder or a picker item (see actions.luau).
 export type Target = actions.Target
+--- A thing in the editor with an id, to inspect and act on (see objects.luau).
+export type Object = objects.Object
+export type ObjectKind = objects.Kind
 export type TransientItem = transient.Item
 export type TransientMenu = transient.Menu
 --- A float being typed in, from `floats.typing`.
@@ -125,6 +129,7 @@ return {
 	actions = actions,
 	transient = transient,
 	textobjects = textobjects,
+	objects = objects,
 	syntax = syntax,
 	words = words,
 	--- Editing without modes, for styles like vscode (modeless.luau).
