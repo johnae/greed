@@ -286,14 +286,16 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 		local before: Snapshot? = nil
 		local code: number? = 0
 		local why = "stopped"
-		while not stopped do
+		-- While its command runs, the block's job is the command's: told to
+		-- stop just as that finishes, it's the block that says so.
+		while not stopped and not block.stopping do
 			local out, errors
 			out, errors, code = capture(shell, block, line)
 			-- The next run is `every` seconds after this one ended, however
 			-- long showing it takes.
 			local ended = greed.now()
 			block.job = own
-			if code == nil then
+			if code == nil or block.stopping then
 				break
 			end
 			if not shell.buffer:valid() then

@@ -69,6 +69,9 @@ export type Block = {
 	env_changed: { [string]: string | false }?,
 	--- A note about how it ran, e.g. that cd in it doesn't carry over.
 	note: string?,
+	--- Set once it's told to stop: a live block then ends even when told
+	--- just as its command finished, between runs.
+	stopping: boolean?,
 	--- The output read as JSON, when it's an object or an array.
 	value: any?,
 	--- What the line gave back as data besides what it printed: the table

@@ -963,6 +963,7 @@ function M.interrupt(block: Block): boolean
 	if job == nil or block.status ~= "running" then
 		return false
 	end
+	block.stopping = true
 	job.interrupt()
 	return true
 end
@@ -973,6 +974,7 @@ function M.kill(block: Block): boolean
 	if job == nil or block.status ~= "running" then
 		return false
 	end
+	block.stopping = true
 	job.kill()
 	return true
 end
