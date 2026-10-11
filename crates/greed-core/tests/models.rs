@@ -338,7 +338,8 @@ fn a_drafted_description_commits_what_is_staged() {
     .unwrap();
     host.run(FIRST_CLIENT, "press-a").unwrap();
     until(&host, |_| git(&["log", "-1", "--format=%s"]) == "Hello\n");
-    std::fs::remove_dir_all(&dir).unwrap();
+    // Git may still be tidying up in there (macOS), which is no failure.
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
