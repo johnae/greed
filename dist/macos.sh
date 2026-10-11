@@ -73,8 +73,25 @@ sign "$app"
 if [ "$identity" != - ] && [ -n "${GREED_NOTARY_KEY:-}" ]; then
   ditto -c -k --keepParent "$app" "$out/notarize.zip"
   zip -qj "$out/notarize.zip" "$out/greed"
-  xcrun notarytool submit "$out/notarize.zip" --wait \
-    --key "$GREED_NOTARY_KEY" --key-id "$GREED_NOTARY_KEY_ID" --issuer "$GREED_NOTARY_ISSUER"
+  key=(--key "$GREED_NOTARY_KEY" --key-id "$GREED_NOTARY_KEY_ID" --issuer "$GREED_NOTARY_ISSUER")
+  id=$(xcrun notarytool submit "$out/notarize.zip" "${key[@]}" --output-format plist |
+    plutil -extract id raw -)
+  echo "notarizing: submission $id"
+  # Asked every 30 seconds for up to three hours: the first submissions of a
+  # team can take Apple an hour or more, and a moment without the network
+  # isn't the end of it.
+  status="In Progress"
+  for _ in $(seq 360); do
+    status=$(xcrun notarytool info "$id" "${key[@]}" --output-format plist 2>/dev/null |
+      plutil -extract status raw - 2>/dev/null) || status="In Progress"
+    [ "$status" = "In Progress" ] || break
+    sleep 30
+  done
+  echo "notarizing: $status"
+  if [ "$status" != Accepted ]; then
+    xcrun notarytool log "$id" "${key[@]}" || true
+    exit 1
+  fi
   # The app carries its ticket; the bare binary's is looked up online.
   xcrun stapler staple "$app"
   rm "$out/notarize.zip"
