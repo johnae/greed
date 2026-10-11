@@ -9,8 +9,9 @@
 -- `every=SECONDS` runs it again that often (`live` every two seconds);
 -- without either it runs once, and again when the board refreshes, or as
 -- long as it runs by itself (`kubectl get pods -w`). `title` names the
--- card, `height` is how many lines of it show (10), and `dir` is the folder
--- it runs in, from the project's root.
+-- card, `height` is how many lines of it show (10), `span` how many
+-- columns of the board it takes (`wide` the whole row), and `dir` is the
+-- folder it runs in, from the project's root.
 
 local blocks = require("@blocks")
 local shell = require("@shell")
@@ -25,8 +26,14 @@ export type Card = {
 	every: number?,
 	height: number,
 	dir: string?,
+	--- How many columns of the board it takes; 0 for the whole row.
+	span: number,
 	--- The `## ` heading it's under.
 	section: string?,
+	--- The lines of the file it's on, from its opening fence to its
+	--- closing one, from 1.
+	first: number,
+	last: number,
 }
 
 --- A board as its file says: its title and its cards, in order.
@@ -44,6 +51,11 @@ local function title_of(command: string): string
 	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
 end
 
+-- Whether `info` has `word` on its own, as `live` or `wide`.
+local function has(info: string, word: string): boolean
+	return string.find(` {info} `, `%s{word}%s`) ~= nil
+end
+
 -- The card a code block with info string `info` and code `code` is, under
 -- `section`; nil for one that isn't a shell's.
 local function card_of(info: string, code: string, section: string?): Card?
@@ -53,7 +65,7 @@ local function card_of(info: string, code: string, section: string?): Card?
 		return nil
 	end
 	local every = tonumber(opts.every)
-	if every == nil and string.find(" " .. info .. " ", "%slive%s") then
+	if every == nil and has(info, "live") then
 		every = 2
 	end
 	return {
@@ -62,7 +74,10 @@ local function card_of(info: string, code: string, section: string?): Card?
 		every = if every then math.max(every, 0.5) else nil,
 		height = math.max(tonumber(opts.height) or HEIGHT, 1),
 		dir = opts.dir,
+		span = if has(info, "wide") then 0 else math.max(tonumber(opts.span) or 1, 1),
 		section = section,
+		first = 0,
+		last = 0,
 	}
 end
 
@@ -73,12 +88,14 @@ function M.parse(text: string): Parsed
 	local fence: string? = nil
 	local info = ""
 	local code: { string } = {}
-	for _, line in string.split(string.gsub(text, "\r", ""), "\n") do
+	local opened = 0
+	for n, line in string.split(string.gsub(text, "\r", ""), "\n") do
 		local open = fence
 		if open then
 			if string.match(line, "^%s*" .. open .. "%s*$") then
 				local card = card_of(info, table.concat(code, "\n"), section)
 				if card then
+					card.first, card.last = opened, n
 					table.insert(parsed.cards, card)
 				end
 				fence = nil
@@ -92,7 +109,7 @@ function M.parse(text: string): Parsed
 			ticks, rest = string.match(line, "^%s*(~~~+)(.*)$")
 		end
 		if ticks and rest then
-			fence, info, code = ticks, rest, {}
+			fence, info, code, opened = ticks, rest, {}, n
 		elseif string.match(line, "^##%s") then
 			section = string.match(line, "^##%s+(.-)%s*$")
 		elseif string.match(line, "^#%s") and parsed.title == nil then
@@ -127,6 +144,22 @@ function M.card_text(
 		info ..= ` dir={value(opts.dir)}`
 	end
 	return `\`\`\`{info}\n{command}\n\`\`\`\n`
+end
+
+--- `text`, a board's file, with its cards `a` and `b` (`a` the earlier)
+--- swapped, each with its options.
+function M.swap(text: string, a: Card, b: Card): string
+	local lines = string.split(text, "\n")
+	local out: { string } = {}
+	local function copy(from: number, to: number)
+		table.move(lines, from, to, #out + 1, out)
+	end
+	copy(1, a.first - 1)
+	copy(b.first, b.last)
+	copy(a.last + 1, b.first - 1)
+	copy(a.first, a.last)
+	copy(b.last + 1, #lines)
+	return table.concat(out, "\n")
 end
 
 --- `command` as a card runs it: what it runs each time, and how often,

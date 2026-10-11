@@ -2,20 +2,18 @@
 
 A board is a page of live shell commands, saved by name: pods that
 aren't running, the disks filling up, the last deploys. Each command is a
-card showing what it prints now, and cards go down the page, so a board
-scrolls like any other buffer however many it has.
+card showing what it prints now. Cards sit side by side as far as the
+window is wide and go on down the page, so a board scrolls like any other
+buffer however many it has.
 
 ```text
 ops
 
 payments
 
-◐ pods  every 5s · 1 changed · 14:05:02
-  NAME                     READY   STATUS             RESTARTS   AGE
-  worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   13         2h
-
-◐ disk  every 60s · 0 changed · 14:05:00
-  /dev/nvme0n1p2  468G  401G   44G  91% /
+◐ pods  every 5s · 1 changed · 14:05:02             ◐ disk  every 60s · 0 changed · 14:05:00
+NAME                    READY   STATUS              Filesystem      Size  Used Avail Use%
+worker-5c6b7d8f9-abcde  0/1     CrashLoopBackOff    /dev/nvme0n1p2  468G  401G   44G  91%
 ```
 
 ## Making one
@@ -60,9 +58,18 @@ After the language (`sh`, `bash`, `zsh`, `fish`, `nu` or `shell`):
 - `title=NAME` names the card, which is its command otherwise.
 - `height=LINES` is how many lines of it show (10); past that the card
   says how many more there are.
+- `span=COLUMNS` makes it as wide as that many cards side by side, and
+  `wide` as wide as the board.
 - `dir=PATH` runs it in another folder, from the project's root.
 
-`space e` opens the file, and saving it shows the board as it says.
+`space e` opens the file, and saving it shows the board as it says. Cards
+that run what they ran before keep running as they were; only the ones
+you changed start again.
+
+Cards are at least `board-card-width` columns wide (50), so a window of
+100 or more shows two side by side, and one of 150 three. Each section
+starts a row of its own, and a row is as tall as its tallest card. What's
+wider than a card is cut at its edge: `enter` shows all of it.
 
 ## Using one
 
@@ -75,9 +82,12 @@ same tables, filters and rows to act on.
 |---|---|
 | `enter` | Open the card's block in a float, all of it, to filter and act on its rows |
 | `space .` | Act on the card's block, as in a shell: change its command, filter, stop it |
+| `<` `>` | Move the card back or on along the board, in its file too |
 | `space a` | Add a command as a card |
 | `space e` | Open the board's file |
 | `space r` | Run every card again |
+
+`<` and `>` work in every editing style, as a board can't be typed in.
 
 A board stays open while you look at something else, and closing it stops
 its cards.

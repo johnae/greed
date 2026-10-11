@@ -88,15 +88,18 @@ test("a board shows each card's output, cut at its height, under its section", f
 	local shown = text()
 	assert(string.find(shown, "^ops\n"), shown)
 	assert(string.find(shown, "files\n\n✓ the list", 1, true), shown)
-	assert(string.find(shown, "  a\n  b\n  … 2 more lines", 1, true), shown)
-	assert(string.find(shown, `  {dir}/sub`, 1, true), "dir runs it in a folder: " .. shown)
-	assert(string.find(shown, "other\n", 1, true) and string.find(shown, "  live", 1, true), shown)
+	assert(string.find(shown, "\na\nb\n… 2 more lines", 1, true), shown)
+	assert(string.find(shown, `\n{dir}/sub\n`, 1, true), "dir runs it in a folder: " .. shown)
+	assert(
+		string.find(shown, "other\n", 1, true) and string.find(shown, "\nlive\n", 1, true),
+		shown
+	)
 	assert(not string.find(shown, "not a card", 1, true), shown)
 	-- The board's shell is out of sight, and goes with it.
 	local sh = b.shell
 	assert(#sh.buffer:views() == 0, "its shell isn't shown")
 	-- enter on a card opens its block in a float.
-	greed.view():set_cursor(assert((string.find(shown, "  b", 1, true))) - 1)
+	greed.view():set_cursor(assert((string.find(shown, "\nb\n", 1, true))))
 	t:keys("esc enter")
 	assert(#t:floats() == 1, "a float")
 	t:keys("esc")
@@ -181,7 +184,73 @@ test("a shell block pinned to a board becomes a card; space a adds one there", f
 	t:keys("esc space a")
 	t:keys("e c h o space a d d e d enter")
 	t:wait_for(function()
-		return string.find(b.buffer:text(), "  added", 1, true) ~= nil
+		return string.find(b.buffer:text(), "\nadded", 1, true) ~= nil
 	end)
 	assert((string.find(greed.fs.read(path) or "", "```sh\necho added\n```\n", 1, true)))
+end)
+
+local function piece(name: string, lines: { string }, section: string?, span: number?): any
+	return { head = name, title = #name, lines = lines, section = section, span = span or 1 }
+end
+
+test("cards lie side by side as the board is wide enough, a section starting a row", function()
+	local lay = board.layout.lay
+	assert(board.layout.columns(80, 30) == 2 and board.layout.columns(61, 30) == 1)
+	local laid = lay("ops", {
+		piece("one", { "a", "b" }, "s"),
+		piece("two", { "a much longer line than fits" }, "s"),
+		piece("three", {}, "s"),
+		piece("four", { "x" }, "t"),
+	}, 40, 15)
+	local expected = table.concat({
+		"ops",
+		"",
+		"s",
+		"",
+		"one                  two",
+		"a                    a much longer line…",
+		"b",
+		"",
+		"three",
+		"",
+		"t",
+		"",
+		"four",
+		"x",
+		"",
+	}, "\n")
+	assert(laid.text == expected, "\n" .. laid.text)
+	-- What's on each line, for the cursor.
+	assert(board.layout.card(laid.at[4], 0) == 1 and board.layout.card(laid.at[4], 21) == 2)
+	assert(board.layout.card(laid.at[4], 20) == 1, "in the gap, the one to the left")
+	assert(board.layout.card(laid.at[8], 0) == 3 and laid.at[2] == nil)
+	-- A wide card takes the whole row, and span columns at most all of them.
+	local wide =
+		lay(nil, { piece("one", {}, nil, 0), piece("two", {}), piece("three", {}, nil, 5) }, 40, 15)
+	assert(wide.text == "one\n\ntwo\n\nthree\n", "\n" .. wide.text)
+end)
+
+test("on a wide view cards show side by side, and < and > move them, in the file too", function(t)
+	local dir, path = make(t, "# ops\n\n```sh\necho first\n```\n\n```sh\necho second\n```\n")
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	t:draw(120, 30)
+	t:wait_for(function()
+		return b.width == 120
+	end)
+	settled(t, b)
+	local shown = b.buffer:text()
+	assert(string.find(shown, "\nfirst%s+second\n"), shown)
+	local first = b.blocks[1]
+	-- On the second card, < takes it before the first.
+	greed.view():set_cursor(assert((string.find(shown, "second", 1, true))) - 1)
+	t:keys("esc <")
+	local saved = greed.fs.read(path) or ""
+	assert(string.find(saved, "echo second\n```\n\n```sh\necho first", 1, true), saved)
+	assert(b.cards[1].command == "echo second", b.cards[1].command)
+	assert(b.blocks[2] == first, "it kept its block, without running it again")
+	local line = b.buffer:slice(greed.view():cursor(), greed.view():cursor() + 20)
+	assert(string.find(line, "second", 1, true), "the cursor went with it: " .. line)
+	t:keys(">")
+	assert(b.cards[2].command == "echo second", "and back")
 end)

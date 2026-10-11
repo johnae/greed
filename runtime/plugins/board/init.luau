@@ -22,6 +22,7 @@ local picker = require("@picker")
 local shell = require("@shell")
 local blocks = require("@blocks")
 local file = require("@self/file")
+local layout = require("@self/layout")
 
 type Shell = shell.Shell
 type Block = shell.Block
@@ -30,8 +31,15 @@ type Card = file.Card
 local M = {}
 
 M.file = file
+M.layout = layout
 
 local KIND = "board"
+
+greed.option.define({
+	name = "board-card-width",
+	doc = "How wide a board's cards are at least, in columns: a wider board puts more of them side by side",
+	default = 50,
+})
 
 --- An open board: its file, the shell its cards run in, the block each
 --- card shows and the buffer showing them.
@@ -44,8 +52,11 @@ export type Board = {
 	shell: Shell,
 	blocks: { Block },
 	buffer: greed.Buffer,
-	--- The card on each line of the buffer (0-based), by its index.
-	at: { [number]: number },
+	--- How wide it's laid out, in columns: as the view showing it last
+	--- said.
+	width: number,
+	--- The cards on each line of the buffer (0-based), by their index.
+	at: { [number]: { layout.Spot } },
 }
 
 -- The open boards, by their buffer's id.
@@ -122,53 +133,32 @@ local function draw(board: Board)
 	if not buffer:valid() then
 		return
 	end
-	local parts: { string } = {}
-	local marks: { greed.Mark } = {}
-	local at: { [number]: number } = {}
-	local pos, line = 0, 0
-	local function add(text: string, style: string?, card: number?)
-		if style and text ~= "" then
-			table.insert(marks, { from = pos, to = pos + #text, style = style })
-		end
-		if card then
-			at[line] = card
-		end
-		table.insert(parts, text)
-		pos += #text + 1
-		line += 1
-	end
-	if board.title then
-		add(board.title, "markdown.heading.1")
-		add("")
-	end
-	local section: string? = nil
+	local pieces: { layout.Piece } = {}
 	for i, card in board.cards do
-		if card.section and card.section ~= section then
-			section = card.section
-			add(card.section, "markdown.heading.2")
-			add("")
-		end
 		local block = board.blocks[i]
-		if block == nil then
-			continue
-		end
-		local status = shell.log.status_text(block)
-		local head = `{shell.log.glyph(block)} {card.title}`
-		table.insert(marks, { from = pos, to = pos + #head, style = "markdown.heading" })
-		add(if status ~= "" then `{head}  {status}` else head, nil, i)
-		local out = output_of(board, block)
-		for n = 1, math.min(#out, card.height) do
-			add("  " .. out[n], nil, i)
-		end
-		if #out > card.height then
-			add(`  … {#out - card.height} more lines · enter opens it all`, "shell.status", i)
-		end
-		add("")
+		local head = if block then `{shell.log.glyph(block)} {card.title}` else card.title
+		local status = if block then shell.log.status_text(block) else ""
+		local out = if block then output_of(board, block) else {}
+		local more = #out - card.height
+		table.insert(pieces, {
+			head = if status ~= "" then `{head}  {status}` else head,
+			title = #head,
+			lines = table.move(out, 1, math.min(#out, card.height), 1, {}),
+			more = if more > 0 then `… {more} more lines · enter opens it all` else nil,
+			section = card.section,
+			span = card.span,
+		})
 	end
+	local least = greed.option.get("board-card-width") :: number
+	local laid = layout.lay(board.title, pieces, board.width, least)
+	local text = laid.text
 	if #board.cards == 0 then
-		add("No cards yet: space a adds a command, space e edits the file.", "shell.status")
+		text ..= "\nNo cards yet: space a adds a command, space e edits the file."
 	end
-	local text = table.concat(parts, "\n")
+	local marks = laid.marks
+	-- Lines past the view's edge stay out of sight rather than wrap, as the
+	-- cards are lined up.
+	table.insert(marks, { from = 0, to = #text, style = "", nowrap = true })
 	local kept: { { view: greed.View, line: number, scroll: number } } = {}
 	for _, view in buffer:views() do
 		table.insert(
@@ -180,7 +170,7 @@ local function draw(board: Board)
 		e:replace(0, buffer:len(), text)
 	end, { undo = false })
 	buffer:decorate("board", marks)
-	board.at = at
+	board.at = laid.at
 	local last = buffer:line_count() - 1
 	for _, k in kept do
 		k.view:set_cursor(buffer:line_start(math.min(k.line, last)))
@@ -203,24 +193,41 @@ local function cwd_of(board: Board, card: Card): string
 	return if string.sub(dir, 1, 1) == "/" then dir else `{board.root}/{dir}`
 end
 
--- Runs every card of `board` in its shell: in the blocks it had, in their
--- place, so its shell doesn't fill up, and those it no longer needs go.
--- Waits for what ran before to stop.
-local function start(board: Board)
-	local old = board.blocks
-	board.blocks = {}
+-- Runs the cards of `board` in its shell. A card running what a block
+-- of the board runs already keeps it as it is, so moving cards or editing
+-- one doesn't run the others again, unless `again`. The others run in the
+-- blocks left, in their place, so its shell doesn't fill up, and those it
+-- no longer needs go. Waits for what ran before to stop.
+local function start(board: Board, again: boolean?)
+	local free = table.clone(board.blocks)
+	local blocks: { Block? } = {}
 	for i, card in board.cards do
 		local line, cwd = line_of(card), cwd_of(board, card)
-		local before = old[i]
-		local block = if before
-			then shell.change(board.shell, before, line, { cwd = cwd })
-			else shell.run(board.shell, line, { cwd = cwd })
-		table.insert(board.blocks, assert(block))
+		for k, block in free do
+			if block.command == line and block.cwd == cwd then
+				blocks[i] = block
+				table.remove(free, k)
+				if again then
+					shell.change(board.shell, block, line, { cwd = cwd })
+				end
+				break
+			end
+		end
 	end
-	for i = #board.cards + 1, #old do
-		shell.kill(old[i])
-		shell.wait(old[i])
-		shell.log.remove(board.shell, old[i])
+	for i, card in board.cards do
+		if blocks[i] == nil then
+			local line, cwd = line_of(card), cwd_of(board, card)
+			local before = table.remove(free, 1)
+			blocks[i] = if before
+				then shell.change(board.shell, before, line, { cwd = cwd })
+				else shell.run(board.shell, line, { cwd = cwd })
+		end
+	end
+	board.blocks = blocks :: { Block }
+	for _, block in free do
+		shell.kill(block)
+		shell.wait(block)
+		shell.log.remove(board.shell, block)
 	end
 end
 
@@ -231,11 +238,12 @@ local function stop(board: Board)
 	end
 end
 
--- Reads `board`'s file again and runs its cards as it says.
-local function load(board: Board)
+-- Reads `board`'s file again and runs its cards as it says: those it
+-- runs already as they are, unless `again`.
+local function load(board: Board, again: boolean?)
 	local parsed = file.parse(greed.fs.read(board.path) or "")
 	board.title, board.cards = parsed.title, parsed.cards
-	start(board)
+	start(board, again)
 	draw(board)
 end
 
@@ -281,6 +289,7 @@ function M.open(path: string, options: OpenOptions?): Board?
 		shell = shell.open({ name = `board {name}`, cwd = root, show = false }),
 		blocks = {},
 		buffer = buffer,
+		width = select(2, view:size()) or 80,
 		at = {},
 	}
 	boards[buffer:id()] = board
@@ -342,15 +351,37 @@ local function here(ctx: greed.Context): Board?
 	return board
 end
 
--- The block of the card on the cursor's line in `view`, when it shows a
--- board, and the board.
-local function card_at(view: greed.View): (Block?, Board?)
+-- The card under the cursor in `view`, when it shows a board: its index,
+-- and the board.
+local function card_index(view: greed.View): (number?, Board?)
 	local board = M.of(view:buffer())
 	if board == nil then
 		return nil, nil
 	end
-	local i = board.at[board.buffer:line_of(view:cursor())]
-	return if i then board.blocks[i] else nil, board
+	local buffer = board.buffer
+	local cursor = view:cursor()
+	local line = buffer:line_of(cursor)
+	return layout.card(board.at[line], cursor - buffer:line_start(line)), board
+end
+
+-- The block of the card under the cursor in `view`, when it shows a
+-- board, and the board.
+local function card_at(view: greed.View): (Block?, Board?)
+	local i, board = card_index(view)
+	return if i and board then board.blocks[i] else nil, board
+end
+
+-- Puts the cursor in `view` on card `i` of `board`, at its title.
+local function go_to_card(board: Board, view: greed.View, i: number)
+	for line = 0, board.buffer:line_count() - 1 do
+		local spots: { layout.Spot } = board.at[line] or {}
+		for _, spot in spots do
+			if spot.card == i then
+				view:set_cursor(board.buffer:line_start(line) + spot.from)
+				return
+			end
+		end
+	end
 end
 
 -- Picks a board and calls `pick` with its file; "new board" asks for a
@@ -454,8 +485,45 @@ greed.command({
 	run = function(ctx)
 		local board = here(ctx)
 		if board then
-			load(board)
+			load(board, true)
 		end
+	end,
+})
+
+-- Moves the card under the cursor `step` places along the board, in its
+-- file, taking the cursor with it.
+local function move_card(ctx: greed.Context, step: number)
+	local i, board = card_index(ctx.view)
+	if board == nil then
+		here(ctx)
+		return
+	end
+	if i == nil then
+		return
+	end
+	local other = i + step
+	if board.cards[other] == nil then
+		return
+	end
+	local a, b = board.cards[math.min(i, other)], board.cards[math.max(i, other)]
+	greed.fs.write(board.path, file.swap(greed.fs.read(board.path) or "", a, b))
+	load(board)
+	go_to_card(board, ctx.view, other)
+end
+
+greed.command({
+	name = "board-move-back",
+	doc = "Move the card under the cursor one place back on the board, in its file too",
+	run = function(ctx)
+		move_card(ctx, -1)
+	end,
+})
+
+greed.command({
+	name = "board-move-forward",
+	doc = "Move the card under the cursor one place on along the board, in its file too",
+	run = function(ctx)
+		move_card(ctx, 1)
 	end,
 })
 
@@ -522,6 +590,15 @@ end
 shell.log.on_update(redraw)
 shell.log.on_status(redraw)
 
+-- A board is laid out as wide as the view showing it.
+greed.on("view.resized", function(event: greed.ViewResized)
+	local board = M.of(event.view:buffer())
+	if board and board.width ~= event.cols then
+		board.width = event.cols
+		draw(board)
+	end
+end)
+
 -- Saving a board's file shows the board as it says now.
 greed.on("buffer.saved", function(event: greed.BufferChanged)
 	local path = event.buffer:path()
@@ -542,7 +619,14 @@ greed.on("buffer.closed", function(event)
 	end
 end)
 
-greed.keymap.bind({ role = "command", kind = KIND }, { enter = "board-open-card" })
+-- A board can't be typed in, so its keys are the same in every mode.
+for _, role in { "command", "typing" } do
+	greed.keymap.bind({ role = role, kind = KIND }, {
+		enter = "board-open-card",
+		["<"] = "board-move-back",
+		[">"] = "board-move-forward",
+	})
+end
 greed.keymap.bind(
 	{ layer = "leader", kind = KIND },
 	{ a = "board-add", e = "board-edit", r = "board-refresh" }
