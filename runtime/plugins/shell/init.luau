@@ -55,14 +55,16 @@ local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
-require("@self/kubernetes")
 require("@self/docker")
 require("@self/processes")
 require("@self/vcs")
 
-type Shell = state.Shell
-type Block = state.Block
+export type Shell = state.Shell
+export type Block = state.Block
 export type Table = tables.Table
+export type Thing = kinds.Thing
+export type SegmentContext = segments.Context
+export type Segment = segments.Segment
 export type EnvironmentProvider = envs.Provider
 export type LoadedEnvironment = envs.Loaded
 
@@ -97,6 +99,14 @@ M.starship = require("@self/starship")
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
 M.segment = segments.segment
+
+--- Gives segment `name` its icons, plain and from a Nerd Font, for
+--- `shell-icons` to pick; see `segments.add_icon`.
+M.segment_icon = segments.add_icon
+
+--- The editor's environment: what programs a shell starts get under the
+--- shell's own variables.
+M.editor_environment = state.editor_environment
 
 --- Loads the environment folders bring for provider `name` (as devenv
 --- does), for `shell-environments` to name; see `envs.provider`.
@@ -1082,17 +1092,13 @@ local TOPICS: { [string]: () -> { string } } = {
 		local lines = { "Before the folder, the prompt shows:" }
 		add_columns(lines, {
 			{ "⎇ main", "the branch of the repository the shell is in" },
-			{
-				"⎈ context:namespace",
-				"the kubernetes context kubectl would use, from its config",
-			},
 			{ "❄ devenv", "the environment the folder brings (env says more)" },
 		})
 		local production = greed.option.get("shell-production-contexts")
 		table.insert(lines, "")
 		table.insert(
 			lines,
-			`A context matching shell-production-contexts ({production}) shows in red, and so does ❯.`
+			`A segment that warns, like a context matching shell-production-contexts ({production}), shows in red, and so does ❯.`
 		)
 		table.insert(lines, "")
 		table.insert(
@@ -1101,7 +1107,7 @@ local TOPICS: { [string]: () -> { string } } = {
 		)
 		local others: { string } = {}
 		for _, name in segments.names() do
-			if name ~= "git" and name ~= "kubernetes" and name ~= "environment" then
+			if name ~= "git" and name ~= "environment" then
 				table.insert(others, name)
 			end
 		end

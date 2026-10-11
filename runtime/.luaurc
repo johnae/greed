@@ -34,6 +34,7 @@
 		"plan": "./plugins/plan",
 		"shell": "./plugins/shell",
 		"tutor": "./plugins/tutor",
-		"hosts": "./plugins/hosts"
+		"hosts": "./plugins/hosts",
+		"kubernetes": "./plugins/kubernetes"
 	}
 }

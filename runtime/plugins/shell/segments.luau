@@ -1,9 +1,8 @@
 -- Pieces of the prompt before the shell's folder: the branch of the
--- repository the shell is in, and the kubernetes context and namespace
--- kubectl would use, read from its config file without running it. A
--- context named like production (`shell-production-contexts`) shows as a
--- warning and turns the prompt's glyph red. Plugins add their own with
--- `segment`.
+-- repository the shell is in, and those plugins add with `segment`, like
+-- the kubernetes context. A segment can be a warning, like a context
+-- named like production (`shell-production-contexts`), which turns the
+-- prompt's glyph red.
 --
 -- They're worked out in the background, as some run programs, when a
 -- shell opens and after each command, and kept until the next time.
@@ -30,6 +29,9 @@ export type Segment = state.Segment
 --- Works out a segment for a shell, or nil to show nothing.
 export type Provider = (ctx: Context) -> Segment?
 
+--- A segment's icon: one any font has, and one from a Nerd Font.
+export type Icons = { plain: string, nerd: string }
+
 local providers: { { name: string, provider: Provider } } = {}
 
 greed.option.define({
@@ -47,20 +49,26 @@ greed.option.define({
 
 greed.option.define({
 	name = "shell-icons",
-	doc = 'The icons of a shell\'s own segments: "plain" ones any font has, or "nerd" ones a Nerd Font has',
+	doc = 'The icons of a shell\'s prompt segments: "plain" ones any font has, or "nerd" ones a Nerd Font has',
 	default = "plain",
 	choices = { "plain", "nerd" },
 })
 
--- The icon of each of the shell's own segments, plain and from a Nerd Font.
-local ICONS: { [string]: { plain: string, nerd: string } } = {
+-- The icon of each segment that has one, plain and from a Nerd Font.
+local ICONS: { [string]: Icons } = {
 	git = { plain = "⎇", nerd = "\u{e0a0}" },
-	kubernetes = { plain = "⎈", nerd = "\u{f10fe}" },
 	environment = { plain = "❄", nerd = "\u{f313}" },
 }
 
---- The icon segment `name` (one of the shell's own: "git", "kubernetes"
---- or "environment") starts with, as `shell-icons` says.
+--- Gives segment `name` its icon: `plain` any font has, `nerd` one from a
+--- Nerd Font, for `shell-icons` to pick. It goes when the plugin that gave
+--- it does.
+function M.add_icon(name: string, icons: Icons)
+	greed.plugin.tie(core.registry.set(ICONS, name, icons))
+end
+
+--- The icon segment `name` starts with, as `shell-icons` says; "" for a
+--- segment without one.
 function M.icon(name: string): string
 	local icons = ICONS[name]
 	if icons == nil then
@@ -165,87 +173,6 @@ function M.head_branch(dir: string): string?
 	return nil
 end
 
---- The kubeconfig files kubectl would read for `ctx`'s shell: those
---- KUBECONFIG names, else `~/.kube/config`. KUBECONFIG from the editor
---- counts only when Greed's home is the editor's, so a test's own home
---- never reads yours.
-function M.kubeconfigs(ctx: Context): { string }
-	local home = greed.fs.dirs().home
-	local own = ctx.shell.env.KUBECONFIG
-	local inherited = state.editor_environment()
-	local list = if type(own) == "string"
-		then own
-		elseif own == nil and home == inherited.HOME then inherited.KUBECONFIG
-		else nil
-	local files: { string } = {}
-	if list and list ~= "" then
-		for path in string.gmatch(list, "[^:]+") do
-			table.insert(files, path)
-		end
-	elseif home then
-		table.insert(files, `{home}/.kube/config`)
-	end
-	return files
-end
-
--- A YAML scalar without the quotes around it.
-local function scalar(text: string): string
-	local trimmed = string.match(text, "^%s*(.-)%s*$") or ""
-	return string.match(trimmed, '^"(.*)"$') or string.match(trimmed, "^'(.*)'$") or trimmed
-end
-
---- The context `yaml`, a kubeconfig, says is current, and its namespace
---- (nil when it sets none).
-function M.read_kubeconfig(yaml: string): (string?, string?)
-	local lines = string.split(string.gsub(yaml, "\r", ""), "\n")
-	local current: string? = nil
-	for _, line in lines do
-		local value = string.match(line, "^current%-context:(.*)$")
-		if value then
-			current = scalar(value)
-		end
-	end
-	if current == nil or current == "" then
-		return nil, nil
-	end
-	-- The contexts: a list of items each with a name and a context map,
-	-- under the top-level `contexts:`.
-	local inside = false
-	local name: string?, namespace: string? = nil, nil
-	local found: string? = nil
-	local function close()
-		if name == current then
-			found = namespace
-		end
-		name, namespace = nil, nil
-	end
-	for _, line in lines do
-		-- A top-level key; a list's items may start at the line's start too.
-		if string.match(line, "^[^%s%-]") then
-			if inside then
-				close()
-			end
-			inside = string.match(line, "^contexts:") ~= nil
-		elseif inside then
-			if string.match(line, "^%s*%- ") then
-				close()
-			end
-			local item = string.gsub(line, "^(%s*)%- ", "%1  ")
-			local key, value = string.match(item, "^%s*([%w_-]+):(.*)$")
-			if key == "name" and value then
-				name = scalar(value)
-			elseif key == "namespace" and value then
-				namespace = scalar(value)
-			end
-		end
-	end
-	if inside then
-		close()
-	end
-	local ns = found
-	return current, if ns and ns ~= "" then ns else nil
-end
-
 --- Whether `context` is a production one: it matches a pattern of
 --- `shell-production-contexts`.
 function M.production(context: string): boolean
@@ -267,22 +194,6 @@ M.segment("git", function(ctx: Context): Segment?
 	return if branch
 		then { text = `{M.icon("git")} {branch}`, style = "shell.segment.git" }
 		else nil
-end)
-
-M.segment("kubernetes", function(ctx: Context): Segment?
-	for _, path in M.kubeconfigs(ctx) do
-		local context, namespace = M.read_kubeconfig(greed.fs.read(path) or "")
-		if context then
-			local warn = M.production(context)
-			local icon = M.icon("kubernetes")
-			return {
-				text = if namespace then `{icon} {context}:{namespace}` else `{icon} {context}`,
-				style = if warn then "shell.segment.warning" else "shell.segment.kubernetes",
-				warning = warn,
-			}
-		end
-	end
-	return nil
 end)
 
 -- Another prompt or other icons show at once.

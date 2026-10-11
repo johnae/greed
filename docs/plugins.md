@@ -260,11 +260,11 @@ several, asking once, and gives back those it ran on.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the
-selection) and `command`, and the shell adds `shell-block`, `row`,
-`cell`, `process`, `container`, `image`, `pod`, `deployment`,
-`kubernetes`, `changed-file`, `commit` and `revision`, so a plugin can add
-actions to those too. A plugin's finders and actions go when it's
-unloaded.
+selection) and `command`; the shell adds `shell-block`, `row`, `cell`,
+`process`, `container`, `image`, `changed-file`, `commit` and `revision`,
+and the kubernetes plugin `pod`, `deployment` and `kubernetes`, so a
+plugin can add actions to those too. A plugin's finders and actions go
+when it's unloaded.
 
 ### Objects
 
@@ -1333,11 +1333,11 @@ end)
 ```
 
 `shell.segment(name, provider)` puts a piece in every shell's prompt
-before its folder, after the shell's own (the git branch, the kubernetes
-context and the project environment). `provider(ctx)` gets the `shell`,
-its `cwd` and the `env` its programs get, and returns `{ text, style,
-warning }` or nil for nothing; `warning = true` turns the prompt's `❯` red
-too. It runs in the background when a shell opens and after each command,
+before its folder, after the shell's own (the git branch and the project
+environment) and those added before it, like the kubernetes plugin's
+context. `provider(ctx)` gets the `shell`, its `cwd` and the `env` its
+programs get, and returns `{ text, style, warning }` or nil for nothing;
+`warning = true` turns the prompt's `❯` red too. It runs in the background when a shell opens and after each command,
 so it can run a program; the prompt shows the new pieces once every
 segment is done. With `shell-prompt` set to `starship`, starship draws the
 prompt instead, and segments only add their warnings.
@@ -1359,6 +1359,12 @@ shell.segment("aws", function(ctx)
 	}
 end)
 ```
+
+`shell.segment_icon(name, { plain = "☁", nerd = "\u{f0c2}" })` gives a
+segment an icon for `shell-icons` to pick, and `shell.segments.icon(name)`
+is the one in use, to start the segment's text with.
+`shell.segments.production(context)` says whether a context matches
+`shell-production-contexts`.
 
 `require("@vcs").branch(dir)` is the branch of the repository a folder is
 in, as the status line shows it.

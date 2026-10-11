@@ -1,5 +1,5 @@
 -- The rows of the commands people run most, as each system prints them:
--- GNU and macOS (BSD) `ls -l` and `ps`, `lsof`, `docker ps`, `kubectl get`,
+-- GNU and macOS (BSD) `ls -l` and `ps`, `lsof`, `docker ps`,
 -- `git status`, `git log`, `jj st` and `jj log`.
 -- Each sample is printed by a stand-in for its program and run as typed,
 -- so a change in how they're read shows here first. The last test runs
@@ -149,44 +149,6 @@ CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS    
 ]],
 		many = "containers",
 		rows = { { id = "container:web", label = "web" }, { id = "container:db" } },
-	},
-	{
-		name = "kubectl get pods -o wide",
-		program = "kubectl",
-		line = "kubectl get pods -o wide --context prod -n team",
-		output = [[
-NAME                  READY   STATUS    RESTARTS      AGE   IP          NODE     NOMINATED NODE   READINESS GATES
-api-7d9f8b6c5-2xkqz   1/1     Running   0             3d    10.0.1.12   node-1   <none>           <none>
-worker-5c6b7-abcde    0/1     Error     3 (2m ago)    1h    10.0.1.13   node-2   <none>           <none>
-]],
-		many = "pods",
-		rows = {
-			{ id = "pod:prod/team/api-7d9f8b6c5-2xkqz" },
-			{ id = "pod:prod/team/worker-5c6b7-abcde" },
-		},
-	},
-	{
-		name = "kubectl get deployments",
-		program = "kubectl",
-		line = "kubectl get deploy --context prod -n team",
-		output = [[
-NAME     READY   UP-TO-DATE   AVAILABLE   AGE
-api      3/3     3            3           12d
-worker   0/1     1            0           12d
-]],
-		many = "deployments",
-		rows = { { id = "deployment:prod/team/api" }, { id = "deployment:prod/team/worker" } },
-	},
-	{
-		name = "kubectl get nodes",
-		program = "kubectl",
-		line = "kubectl get nodes --context prod",
-		output = [[
-NAME     STATUS   ROLES           AGE   VERSION
-node-1   Ready    control-plane   40d   v1.31.2
-]],
-		many = "nodes",
-		rows = { { id = "kubernetes:prod//nodes/node-1" } },
 	},
 	{
 		name = "git status -s",
@@ -398,34 +360,6 @@ local function act(t: test.TestContext, sh: Shell, object: core.Object, name: st
 	end)
 	return sh.blocks[#sh.blocks].command
 end
-
-test("a pod's node and namespace are objects, with the actions kubernetes objects have", function(t)
-	local sh = printing(
-		t,
-		"kubectl",
-		"NAMESPACE   NAME    READY   STATUS    RESTARTS   AGE   IP          NODE     NOMINATED NODE   READINESS GATES\n"
-			.. "billing     pay-0   1/1     Running   0          1d    10.0.1.12   node-1   <none>           <none>\n"
-	)
-	local block = ran(t, sh, "kubectl get pods -A -o wide --context prod")
-	local pod = assert(core.objects.get("pod:prod/billing/pay-0"))
-	local related = core.objects.related(pod)
-	local node = assert(related.node)[1]
-	assert(node.id == "kubernetes:prod//nodes/node-1", node.id)
-	assert(assert(related.namespace)[1].id == "kubernetes:prod//namespaces/billing")
-	-- Found again by id, its row and block related.
-	local found = assert(core.objects.get(node.id))
-	assert(assert(core.objects.related(found).row)[1].id == pod.id)
-	assert(core.objects.inspect(found).row == nil, "a node's state isn't the pod's row")
-	local described = act(t, sh, found, "describe")
-	assert(described == "kubectl describe nodes node-1 --context prod", described)
-	-- Under the cursor on its cell, the pod comes first, then the node, then the cell.
-	local from = shell.log.output_range(sh, block)
-	assert(from, "a block with output")
-	local at = assert(string.find(sh.buffer:text(), "node-1", from + 1, true), "node-1")
-	greed.view():set_cursor(at - 1)
-	local here = core.objects.at(greed.view())
-	assert(here[1].id == pod.id and here[2].id == node.id and here[3].kind == "cell", here[1].id)
-end)
 
 test("a container's image is an object", function(t)
 	local sh = printing(

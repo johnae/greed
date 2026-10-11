@@ -5,13 +5,14 @@
 -- still goes where the row was, and every action spells them out.
 
 local greed = require("@greed")
-local state = require("./state")
-local parse = require("./parse")
-local segments = require("./segments")
-local kinds = require("./kinds")
+local shell = require("@shell")
+local config = require("./config")
 
-type Block = state.Block
-type Shell = state.Shell
+local parse = shell.parse
+
+type Block = shell.Block
+type Shell = shell.Shell
+type Thing = shell.Thing
 
 -- kubectl's short names for the resources people get most.
 local SHORT: { [string]: string } = {
@@ -100,12 +101,7 @@ end
 
 -- The kubernetes object `name` of `resource`, in `namespace` (nil for a
 -- cluster's own) and `context`, as a thing.
-local function thing_of(
-	resource: string,
-	name: string,
-	namespace: string?,
-	context: string?
-): kinds.Thing
+local function thing_of(resource: string, name: string, namespace: string?, context: string?): Thing
 	local kind = kind_of(resource)
 	local place = `{context or ""}/{namespace or ""}`
 	return {
@@ -231,18 +227,6 @@ end
 -- What a `kubectl get` block was about, kept as it finished.
 type Captured = { resource: string, context: string?, namespace: string?, all: boolean }
 
--- The context and namespace kubectl's config makes current for `shell`.
-local function current(shell: Shell, cwd: string): (string?, string?)
-	local ctx = { shell = shell, cwd = cwd, env = state.variables(shell) }
-	for _, path in segments.kubeconfigs(ctx) do
-		local context, namespace = segments.read_kubeconfig(greed.fs.read(path) or "")
-		if context then
-			return context, namespace
-		end
-	end
-	return nil, nil
-end
-
 -- The flags naming where `value` is: its context, and its namespace.
 local function where(value: any): string
 	local parts: { string } = {}
@@ -266,16 +250,16 @@ local function object(value: any): string
 	return `{value.resource} {parse.quote(value.name)}`
 end
 
-kinds.kind({
+shell.kind({
 	name = "kubernetes",
 	match = "kubectl",
-	capture = function(block: Block, shell: Shell): any
-		local words = parse.words(kinds.command_line(block), greed.fs.dirs().home)
+	capture = function(block: Block, sh: Shell): any
+		local words = parse.words(shell.kinds.command_line(block), greed.fs.dirs().home)
 		local got = if words then asked(words) else nil
 		if got == nil then
 			return nil
 		end
-		local context, namespace = current(shell, block.cwd)
+		local context, namespace = config.current(sh)
 		local captured: Captured = {
 			resource = got.resource,
 			context = got.context or context,
@@ -284,7 +268,7 @@ kinds.kind({
 		}
 		return captured
 	end,
-	row = function(row: { [string]: string }, captured: Captured): kinds.Thing?
+	row = function(row: { [string]: string }, captured: Captured): Thing?
 		local name = row.NAME
 		if name == nil or name == "" then
 			return nil
@@ -303,7 +287,7 @@ kinds.kind({
 		local thing = thing_of(resource, name, namespace, captured.context)
 		-- The node a pod runs on (with -o wide) and the namespace a row is
 		-- in (with -A) are objects of their own.
-		local cells: { [string]: kinds.Thing } = {}
+		local cells: { [string]: Thing } = {}
 		local node = row.NODE
 		if node and node ~= "" and node ~= "<none>" then
 			cells.NODE = thing_of("nodes", node, nil, captured.context)
@@ -321,7 +305,7 @@ kinds.kind({
 		return read_line(words).watch and asked(words) ~= nil
 	end,
 	complete = {
-		kubectl = function(words: { string }, shell: Shell): ((value: any) -> string?)?
+		kubectl = function(words: { string }, sh: Shell): ((value: any) -> string?)?
 			if string.sub(words[#words] or "", 1, 1) == "-" then
 				return nil
 			end
@@ -340,7 +324,7 @@ kinds.kind({
 			end
 			-- Only what's where this command goes: its flags, else kubectl's
 			-- config now.
-			local context, namespace = current(shell, shell.cwd)
+			local context, namespace = config.current(sh)
 			context = line.context or context
 			namespace = if line.all then nil else line.namespace or namespace or "default"
 			return function(value: any): string?
@@ -358,9 +342,9 @@ local function get(value: any): string
 	return kubectl(`get {object(value)}`, value)
 end
 
-kinds.object_kind("pod", "A kubernetes pod, by its context, namespace and name", get)
-kinds.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name", get)
-kinds.object_kind(
+shell.object_kind("pod", "A kubernetes pod, by its context, namespace and name", get)
+shell.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name", get)
+shell.object_kind(
 	"kubernetes",
 	"A kubernetes object, by its context, namespace, resource and name",
 	get
@@ -368,40 +352,40 @@ kinds.object_kind(
 
 -- What every kubernetes object has.
 for _, kind in { "pod", "deployment", "kubernetes" } do
-	kinds.command(kind, "describe", function(value: any): string
+	shell.action_command(kind, "describe", function(value: any): string
 		return kubectl(`describe {object(value)}`, value)
 	end, { doc = "What kubectl says about it, its events too", default = true })
-	kinds.command(kind, "yaml", function(value: any): string
+	shell.action_command(kind, "yaml", function(value: any): string
 		return kubectl(`get {object(value)} -o yaml`, value)
 	end, { doc = "Its whole definition, as YAML" })
-	kinds.command(kind, "json", function(value: any): string
+	shell.action_command(kind, "json", function(value: any): string
 		return kubectl(`get {object(value)} -o json`, value)
 	end, { doc = "Its whole definition, as JSON the shell keeps as a value" })
-	kinds.command(kind, "events", function(value: any): string
+	shell.action_command(kind, "events", function(value: any): string
 		local named = `involvedObject.name={value.name}`
 		local known = KIND[value.resource]
 		local selector = parse.quote(if known then `{named},involvedObject.kind={known}` else named)
 		return kubectl(`get events --field-selector {selector}`, value)
 	end, { doc = "The events about it" })
-	kinds.command(kind, "delete", function(value: any): string
+	shell.action_command(kind, "delete", function(value: any): string
 		return kubectl(`delete {object(value)}`, value)
 	end, { doc = "Delete it", danger = true })
 end
 
-kinds.command("pod", "logs", function(value: any): string
+shell.action_command("pod", "logs", function(value: any): string
 	return kubectl(`logs {parse.quote(value.name)} --tail 200`, value)
 end, { doc = "The end of what it logged" })
-kinds.command("pod", "follow logs", function(value: any): string
+shell.action_command("pod", "follow logs", function(value: any): string
 	return kubectl(`logs -f {parse.quote(value.name)} --tail 50`, value)
 end, { doc = "What it logs, as it logs it", follow = true })
-kinds.command("pod", "shell", function(value: any): string
+shell.action_command("pod", "shell", function(value: any): string
 	return "!" .. kubectl(`exec -it {parse.quote(value.name)}`, value) .. " -- sh"
 end, { doc = "A shell in it, in a terminal" })
 
-kinds.command("deployment", "restart", function(value: any): string
+shell.action_command("deployment", "restart", function(value: any): string
 	return kubectl(`rollout restart deployment {parse.quote(value.name)}`, value)
 end, { doc = "Start its pods again, one by one", danger = true })
-kinds.command("deployment", "rollout status", function(value: any): string
+shell.action_command("deployment", "rollout status", function(value: any): string
 	return kubectl(`rollout status deployment {parse.quote(value.name)}`, value)
 end, { doc = "How its rollout is going" })
 

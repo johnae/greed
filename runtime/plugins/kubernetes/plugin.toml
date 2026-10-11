@@ -1,0 +1,4 @@
+name = "kubernetes"
+requires = ["core", "shell"]
+# Reads kubectl's config files for the context and namespace in use.
+capabilities = ["fs.read"]

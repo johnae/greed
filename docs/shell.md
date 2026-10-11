@@ -33,8 +33,8 @@ the rest, and the keys in the style you use; `help TOPIC` shows one part.
 
 Before the folder, the prompt shows the branch of the repository the shell
 is in (with jj, the nearest bookmark and the change), and the kubernetes
-context and namespace `kubectl` would use. The context comes from
-kubectl's config file, the ones `KUBECONFIG` names or `~/.kube/config`,
+context and namespace `kubectl` would use, which the `kubernetes` plugin
+adds. The context comes from kubectl's config file, the ones `KUBECONFIG` names or `~/.kube/config`,
 read without running kubectl, so it's there at once and costs nothing.
 They're worked out again after every command, so a `cd`, a checkout or
 `kubectl config use-context` shows on the next prompt.
@@ -589,7 +589,8 @@ in every shell, this project's first, with each one's output beside it:
 
 Some tables' rows are things: an `ls -l` row is a file or a folder, a
 `ps` row a process, a `kubectl get` row a pod, deployment or other
-kubernetes object, a `docker ps` row a container. Some are known by their
+kubernetes object (from the `kubernetes` plugin), a `docker ps` row a
+container. Some are known by their
 columns, whatever printed them: a row with a `PID` (from `ps` on any
 system, `lsof`, `docker top`) is a process, and rows with a name and a
 type of `file` or `dir`, as nu's `ls` gives, are files. In a repository,
