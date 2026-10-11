@@ -14,8 +14,8 @@ use crate::scene::{Item, Point, SceneId, Spec};
 use crate::server::SceneData;
 use crate::theme::{Color, Medium, Theme};
 
-/// xterm's 16 colors, for themes naming terminal colors: the terminal's own
-/// may differ, which the image can't know.
+/// xterm's 16 colors, for themes naming terminal colors when the client
+/// doesn't say its own: a terminal's may differ, which the image can't know.
 const ANSI: [[u8; 3]; 16] = [
     [0x00, 0x00, 0x00],
     [0xcd, 0x00, 0x00],
@@ -41,12 +41,30 @@ const FOREGROUND: [u8; 3] = [0xd0, 0xd0, 0xd0];
 /// The most pixels along either side of a scene's image.
 const MAX_SIDE: u32 = 4096;
 
-/// The color of style `name` in `theme` on `medium`: its foreground.
-pub fn color(theme: &Theme, name: &str, medium: Medium) -> [u8; 3] {
+/// What a client shows the 16 terminal colors and its own foreground as,
+/// for themes that name those: the window its palette, a terminal xterm's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Colors {
+    pub fg: [u8; 3],
+    pub ansi: [[u8; 3]; 16],
+}
+
+impl Default for Colors {
+    fn default() -> Self {
+        Self {
+            fg: FOREGROUND,
+            ansi: ANSI,
+        }
+    }
+}
+
+/// The color of style `name` in `theme` on `medium`: its foreground, in
+/// `colors` when the theme names a terminal color.
+pub fn color(theme: &Theme, name: &str, medium: Medium, colors: &Colors) -> [u8; 3] {
     match theme.style(name, medium).fg {
         Some(Color::Rgb(r, g, b)) => [r, g, b],
-        Some(Color::Ansi(n)) => ANSI[usize::from(n % 16)],
-        None | Some(Color::Default) => FOREGROUND,
+        Some(Color::Ansi(n)) => colors.ansi[usize::from(n % 16)],
+        None | Some(Color::Default) => colors.fg,
     }
 }
 
@@ -83,6 +101,7 @@ pub fn draw(
     cell: (u16, u16),
     theme: &Theme,
     medium: Medium,
+    colors: &Colors,
 ) -> Option<Vec<u8>> {
     let cell = (cell.0.max(1), cell.1.max(1));
     let (cw, ch) = (f32::from(cell.0), f32::from(cell.1));
@@ -99,6 +118,7 @@ pub fn draw(
         height,
         theme,
         medium,
+        colors,
     };
     let all = [0.0, 0.0, f32::from(cols), f32::from(rows)];
     canvas.items(&mut pixmap, &spec.items, all);
@@ -106,7 +126,7 @@ pub fn draw(
 }
 
 /// What items are drawn with: the cell size, the image's size in pixels
-/// and the theme.
+/// and the theme's colors.
 struct Canvas<'a> {
     cw: f32,
     ch: f32,
@@ -114,6 +134,7 @@ struct Canvas<'a> {
     height: u32,
     theme: &'a Theme,
     medium: Medium,
+    colors: &'a Colors,
 }
 
 impl Canvas<'_> {
@@ -123,7 +144,7 @@ impl Canvas<'_> {
     }
 
     fn paint(&self, style: Option<&String>, opacity: Option<f32>) -> Option<Paint<'static>> {
-        let [r, g, b] = color(self.theme, style?, self.medium);
+        let [r, g, b] = color(self.theme, style?, self.medium, self.colors);
         let mut paint = Paint::default();
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let alpha = (opacity.unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -298,6 +319,7 @@ pub struct Drawer {
     /// The id the next image gets, from the first the client keeps for
     /// scenes, above the editor's own images'.
     next: u64,
+    colors: Colors,
 }
 
 /// A scene drawn into an image: which image, and what for.
@@ -337,6 +359,12 @@ impl Drawer {
         }
     }
 
+    /// Draws terminal colors as `colors` has them, as the client shows its
+    /// text.
+    pub fn set_colors(&mut self, colors: Colors) {
+        self.colors = colors;
+    }
+
     /// Keeps `scene` as it is now, for frames to place.
     pub fn add(&mut self, scene: SceneData) {
         if let Ok(spec) = serde_json::from_value::<Spec>(scene.spec) {
@@ -360,7 +388,10 @@ impl Drawer {
             };
             let mut names = Vec::new();
             styles(&spec.items, &mut names);
-            let colors: Vec<[u8; 3]> = names.iter().map(|n| color(theme, n, medium)).collect();
+            let colors: Vec<[u8; 3]> = names
+                .iter()
+                .map(|n| color(theme, n, medium, &self.colors))
+                .collect();
             let current = self.drawn.get(&placement.id).filter(|d| {
                 d.version == *version
                     && d.cols == placement.cols
@@ -371,8 +402,15 @@ impl Drawer {
             let id = if let Some(drawn) = current {
                 drawn.id
             } else {
-                let Some(png) = draw(spec, placement.cols, placement.rows, cell, theme, medium)
-                else {
+                let Some(png) = draw(
+                    spec,
+                    placement.cols,
+                    placement.rows,
+                    cell,
+                    theme,
+                    medium,
+                    &self.colors,
+                ) else {
                     continue;
                 };
                 let id = ImageId(self.next);
@@ -475,7 +513,16 @@ mod tests {
             { "kind": "rect", "at": [0, 0], "size": [1, 1], "fill": "chart.series.1" },
             { "kind": "text", "at": [1, 0], "text": "x", "style": "chart.label" },
         ]));
-        let png = draw(&drawn, 2, 1, (10, 20), &theme, Medium::Tui).unwrap();
+        let png = draw(
+            &drawn,
+            2,
+            1,
+            (10, 20),
+            &theme,
+            Medium::Tui,
+            &Colors::default(),
+        )
+        .unwrap();
         let image = crate::image::Image::from_file_bytes(&png).unwrap();
         assert_eq!((image.width, image.height), (20, 20));
         let pixmap = Pixmap::decode_png(&png).unwrap();
@@ -490,7 +537,16 @@ mod tests {
             "text isn't drawn: the terminal shows it"
         );
         assert!(
-            draw(&drawn, 1000, 1000, (10, 20), &theme, Medium::Tui).is_none(),
+            draw(
+                &drawn,
+                1000,
+                1000,
+                (10, 20),
+                &theme,
+                Medium::Tui,
+                &Colors::default()
+            )
+            .is_none(),
             "too big"
         );
     }
@@ -503,7 +559,16 @@ mod tests {
                 { "kind": "rect", "at": [0, 0], "size": [2, 1], "fill": "chart.series.1" },
             ] },
         ]));
-        let png = draw(&clipped, 2, 1, (10, 20), &theme, Medium::Tui).unwrap();
+        let png = draw(
+            &clipped,
+            2,
+            1,
+            (10, 20),
+            &theme,
+            Medium::Tui,
+            &Colors::default(),
+        )
+        .unwrap();
         let pixmap = Pixmap::decode_png(&png).unwrap();
         assert!(pixmap.pixel(5, 10).unwrap().alpha() > 0);
         assert_eq!(pixmap.pixel(15, 10).unwrap().alpha(), 0);

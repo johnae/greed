@@ -1906,4 +1906,20 @@ fn a_scene_is_placed_over_its_text_only_while_every_line_of_it_shows() {
     // Over fewer lines than its rows, as when its text changed: not placed.
     ed.decorate(buffer, "chart", vec![scene(10)]);
     assert!(frame(&mut ed, 20, 8).scenes.is_empty());
+    // A line added under its last line, as a shell adds space under a
+    // block, is below it: placed. One between its lines isn't.
+    let under = |line_end: usize| Mark {
+        range: line_end..line_end,
+        style: "".into(),
+        lines: vec![greed_core::VirtualLine::from("")],
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "chart", vec![scene(end), under(end)]);
+    assert_eq!(frame(&mut ed, 20, 8).scenes.len(), 1, "space under it");
+    let middle = "head\n⠉⠉".len();
+    ed.decorate(buffer, "chart", vec![scene(end), under(middle)]);
+    assert!(
+        frame(&mut ed, 20, 8).scenes.is_empty(),
+        "a line between its lines"
+    );
 }

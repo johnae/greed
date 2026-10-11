@@ -839,7 +839,11 @@ impl<M: Measure> Renderer<M> {
                 let first = text.byte_to_line(mark.range.start.min(text.len_bytes()));
                 let last = text.byte_to_line(mark.range.end.min(text.len_bytes()));
                 let lines = i64::try_from(last - first + 1).unwrap_or(i64::MAX);
-                if rows_of(first..last + 1) != lines || lines != i64::from(scene.rows) {
+                // Lines added under its last line, like the space under a
+                // shell's block, are below it.
+                let below = i64::try_from(virtual_lines(editor, view, last).count()).unwrap_or(0);
+                let shown = rows_of(first..last + 1) - below;
+                if shown != lines || lines != i64::from(scene.rows) {
                     continue;
                 }
             }
