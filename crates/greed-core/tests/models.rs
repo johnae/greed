@@ -249,6 +249,8 @@ fn load_assist(host: &Host, address: &str) {
         plugin("markdown"),
         plugin("agent"),
         plugin("statusline"),
+        plugin("terminal"),
+        plugin("shell"),
         plugin("vcs"),
         plugin("context"),
         plugin("models"),

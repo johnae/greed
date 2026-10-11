@@ -54,6 +54,15 @@ test("the prompt shows the git branch, and leaves it out outside a repository", 
 	assert(segments.head_branch(elsewhere) == nil)
 end)
 
+test("a plugin can find the branch the git segment shows", function(t)
+	local dir = t:tempdir()
+	local sh = open(t, dir)
+	shell.branch_finder(function(at: string): string?
+		return if at == dir then "trunk · abcd" else nil
+	end)
+	shows(t, sh, "⎇ trunk · abcd")
+end)
+
 test("a plugin's segment shows before the folder, after the shell's own", function(t)
 	local dir = t:tempdir()
 	local sh = open(t, dir)

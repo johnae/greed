@@ -597,8 +597,9 @@ type of `file` or `dir`, as nu's `ls` gives, are files. In a repository,
 `git status` (short or long) and `jj st` list changed files (`diff`,
 `open`, `restore`, and with git `stage` and `unstage`), `git log` lists
 commits (`show`, `checkout`, `cherry-pick`, `revert`) and `jj log`
-revisions (`show`, `diff`, `new`, `edit`, `squash`, `abandon`); each command
-names the repository the block ran in. The status says so
+revisions (`show`, `diff`, `new`, `edit`, `squash`, `abandon`), from the
+`vcs` plugin; each command names the repository the block ran in. The
+status says so
 (`table · 5 pods`). On such a row, `space .` lists what you can do with
 it, the same actions that kind of thing has anywhere in Greed, and
 `enter` does the usual one: a file opens, a folder becomes the shell's

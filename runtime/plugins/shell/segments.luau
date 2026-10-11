@@ -187,10 +187,24 @@ function M.production(context: string): boolean
 	return false
 end
 
+-- What finds a folder's branch for the git segment, the latest added
+-- last; `head_branch` when there's none.
+local branch_finders: { (dir: string) -> string? } = {}
+
+--- Has the git segment show the branch `find(dir)` gives for a shell's
+--- folder (nil outside a repository) instead of the one `.git/HEAD`
+--- names, as the vcs plugin does to show jj's too. It goes when the
+--- plugin that gave it does.
+function M.branch_finder(find: (dir: string) -> string?)
+	greed.plugin.tie(core.registry.put(branch_finders, find))
+	for _, shell in state.list() do
+		M.refresh(shell)
+	end
+end
+
 M.segment("git", function(ctx: Context): Segment?
-	local branch = if table.find(greed.plugin.list(), "vcs")
-		then require("@vcs").branch(ctx.cwd)
-		else M.head_branch(ctx.cwd)
+	local find: (dir: string) -> string? = branch_finders[#branch_finders] or M.head_branch
+	local branch = find(ctx.cwd)
 	return if branch
 		then { text = `{M.icon("git")} {branch}`, style = "shell.segment.git" }
 		else nil

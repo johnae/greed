@@ -56,7 +56,6 @@ local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
 require("@self/processes")
-require("@self/vcs")
 
 export type Shell = state.Shell
 export type Block = state.Block
@@ -102,6 +101,10 @@ M.segment = segments.segment
 --- Gives segment `name` its icons, plain and from a Nerd Font, for
 --- `shell-icons` to pick; see `segments.add_icon`.
 M.segment_icon = segments.add_icon
+
+--- Has the prompt's git segment find a folder's branch with `find(dir)`;
+--- see `segments.branch_finder`.
+M.branch_finder = segments.branch_finder
 
 --- The editor's environment: what programs a shell starts get under the
 --- shell's own variables.

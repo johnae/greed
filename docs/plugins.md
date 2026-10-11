@@ -260,10 +260,10 @@ several, asking once, and gives back those it ran on.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the
-selection) and `command`; the shell adds `shell-block`, `row`, `cell`,
-`process`, `changed-file`, `commit` and `revision`, the kubernetes plugin
-`pod`, `deployment` and `kubernetes`, and the docker plugin `container`
-and `image`, so a plugin can add actions to those too. A plugin's finders and actions go
+selection) and `command`; the shell adds `shell-block`, `row`, `cell` and
+`process`, the vcs plugin `changed-file`, `commit` and `revision`, the
+kubernetes plugin `pod`, `deployment` and `kubernetes`, and the docker
+plugin `container` and `image`, so a plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
 ### Objects
@@ -1367,7 +1367,10 @@ is the one in use, to start the segment's text with.
 `shell-production-contexts`.
 
 `require("@vcs").branch(dir)` is the branch of the repository a folder is
-in, as the status line shows it.
+in, as the status line shows it, and the vcs plugin has the prompt show it
+too. `shell.branch_finder(find)` does that: the git segment shows what
+`find(dir)` returns for the shell's folder instead of the branch
+`.git/HEAD` names.
 
 `shell.environment(name, provider)` adds a kind of [project
 environment](shell.md#project-environments), like devenv's, for

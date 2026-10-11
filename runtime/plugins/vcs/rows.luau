@@ -1,17 +1,19 @@
--- git's and jj's output as things: the files `git status` and `jj st` list
--- are changed files (diff, stage, restore), `git log`'s lines commits and
--- `jj log`'s revisions (show, new, edit, abandon). Actions name the
--- repository the block ran in, so an old block still acts there.
+-- git's and jj's output in the shell as things: the files `git status`
+-- and `jj st` list are changed files (diff, stage, restore), `git log`'s
+-- lines commits and `jj log`'s revisions (show, new, edit, abandon).
+-- Actions name the repository the block ran in, so an old block still
+-- acts there.
 
 local greed = require("@greed")
 local core = require("@core")
-local state = require("./state")
-local parse = require("./parse")
-local tables = require("./tables")
-local kinds = require("./kinds")
+local shell = require("@shell")
 
-type Block = state.Block
-type Table = tables.Table
+local parse = shell.parse
+
+type Block = shell.Block
+type Shell = shell.Shell
+type Table = shell.Table
+type Thing = shell.Thing
 
 -- `text`'s lines, without the carriage returns a terminal adds.
 local function lines_of(text: string): { string }
@@ -91,7 +93,7 @@ local function files_table(rows: { { string } }, at: { number }): Table?
 end
 
 -- `git status`, short (`-s`, `--porcelain`) or long.
-tables.parser("^git status", function(text: string): any
+shell.parser("^git status", function(text: string): any
 	local rows: { { string } } = {}
 	local at: { number } = {}
 	local section: string? = nil
@@ -123,7 +125,7 @@ tables.parser("^git status", function(text: string): any
 end)
 
 -- `jj st`'s working copy changes.
-tables.parser("^jj st", function(text: string): any
+shell.parser("^jj st", function(text: string): any
 	local rows: { { string } } = {}
 	local at: { number } = {}
 	local within = false
@@ -142,7 +144,7 @@ tables.parser("^jj st", function(text: string): any
 end)
 
 -- `git log`, as one line each (`--oneline`, with `--graph` too) or in full.
-tables.parser("^git log", function(text: string): any
+shell.parser("^git log", function(text: string): any
 	local rows: { { [string]: string } } = {}
 	local at: { number } = {}
 	local open: { [string]: string }? = nil
@@ -213,12 +215,12 @@ local function jj_log(text: string): any
 		then { columns = { "CHANGE", "DESCRIPTION", "COMMIT" }, rows = rows, at = at }
 		else nil
 end
-tables.parser("^jj log", jj_log)
-tables.parser("^jj%s*$", jj_log)
+shell.parser("^jj log", jj_log)
+shell.parser("^jj%s*$", jj_log)
 
 -- What a block of a repository's command keeps: the repository's root.
-local function repository(marker: string): (block: Block, shell: state.Shell) -> any
-	return function(block: Block, _shell: state.Shell): any
+local function repository(marker: string): (block: Block, sh: Shell) -> any
+	return function(block: Block, _sh: Shell): any
 		return core.project.nearest(block.cwd, marker)
 	end
 end
@@ -229,7 +231,7 @@ local function changed_file(
 	root: string,
 	block: Block,
 	vcs: string
-): kinds.Thing?
+): Thing?
 	local path = row.PATH
 	if path == nil or path == "" then
 		return nil
@@ -244,11 +246,11 @@ local function changed_file(
 	}
 end
 
-kinds.kind({
+shell.kind({
 	name = "git-status",
 	match = "^git status",
 	capture = repository(".git"),
-	row = function(row: { [string]: string }, root: any, block: Block): kinds.Thing?
+	row = function(row: { [string]: string }, root: any, block: Block): Thing?
 		return changed_file(row, root, block, "git")
 	end,
 	called = function(): (string, string)
@@ -256,11 +258,11 @@ kinds.kind({
 	end,
 })
 
-kinds.kind({
+shell.kind({
 	name = "jj-status",
 	match = "^jj st",
 	capture = repository(".jj"),
-	row = function(row: { [string]: string }, root: any, block: Block): kinds.Thing?
+	row = function(row: { [string]: string }, root: any, block: Block): Thing?
 		return changed_file(row, root, block, "jj")
 	end,
 	called = function(): (string, string)
@@ -268,11 +270,11 @@ kinds.kind({
 	end,
 })
 
-kinds.kind({
+shell.kind({
 	name = "git-log",
 	match = "^git log",
 	capture = repository(".git"),
-	row = function(row: { [string]: string }, root: any): kinds.Thing?
+	row = function(row: { [string]: string }, root: any): Thing?
 		local sha = row.SHA
 		if sha == nil or sha == "" then
 			return nil
@@ -290,11 +292,11 @@ kinds.kind({
 })
 
 for i, match in { "^jj log", "^jj%s*$" } do
-	kinds.kind({
+	shell.kind({
 		name = if i == 1 then "jj-log" else "jj",
 		match = match,
 		capture = repository(".jj"),
-		row = function(row: { [string]: string }, root: any): kinds.Thing?
+		row = function(row: { [string]: string }, root: any): Thing?
 			local id = row.CHANGE
 			if id == nil or id == "" then
 				return nil
@@ -313,9 +315,9 @@ for i, match in { "^jj log", "^jj%s*$" } do
 	})
 end
 
-kinds.object_kind("changed-file", "A file git or jj says has changed, by its path")
-kinds.object_kind("commit", "A git commit, by its hash")
-kinds.object_kind("revision", "A jj revision, by its change id")
+shell.object_kind("changed-file", "A file git or jj says has changed, by its path")
+shell.object_kind("commit", "A git commit, by its hash")
+shell.object_kind("revision", "A jj revision, by its change id")
 
 -- `git` with `args`, in the repository at `value.root`.
 local function git(args: string, value: any): string
@@ -334,27 +336,27 @@ local function fileset(value: any): string
 	return parse.quote(`root:"{escaped}"`)
 end
 
-kinds.command("changed-file", "diff", function(value: any): string
+shell.action_command("changed-file", "diff", function(value: any): string
 	if value.vcs == "jj" then
 		return jj(`diff {fileset(value)}`, value)
 	end
 	return git(`diff HEAD -- {parse.quote(value.path)}`, value)
 end, { doc = "What changed in it", default = true })
-kinds.command("changed-file", "stage", function(value: any): string?
+shell.action_command("changed-file", "stage", function(value: any): string?
 	if value.vcs == "jj" then
 		greed.echo("jj has no staging: jj split or jj squash -i pick what goes where")
 		return nil
 	end
 	return git(`add -- {parse.quote(value.path)}`, value)
 end, { doc = "Stage it for the next commit (git)" })
-kinds.command("changed-file", "unstage", function(value: any): string?
+shell.action_command("changed-file", "unstage", function(value: any): string?
 	if value.vcs == "jj" then
 		greed.echo("jj has no staging")
 		return nil
 	end
 	return git(`restore --staged -- {parse.quote(value.path)}`, value)
 end, { doc = "Take it out of what's staged (git)" })
-kinds.command("changed-file", "restore", function(value: any): string
+shell.action_command("changed-file", "restore", function(value: any): string
 	if value.vcs == "jj" then
 		return jj(`restore {fileset(value)}`, value)
 	end
@@ -369,35 +371,35 @@ core.actions.action({
 	end,
 })
 
-kinds.command("commit", "show", function(value: any): string
+shell.action_command("commit", "show", function(value: any): string
 	return git(`show {value.sha}`, value)
 end, { doc = "Its message and what it changed", default = true })
-kinds.command("commit", "checkout", function(value: any): string
+shell.action_command("commit", "checkout", function(value: any): string
 	return git(`checkout {value.sha}`, value)
 end, { doc = "Make the working copy what it was there" })
-kinds.command("commit", "cherry-pick", function(value: any): string
+shell.action_command("commit", "cherry-pick", function(value: any): string
 	return git(`cherry-pick {value.sha}`, value)
 end, { doc = "Make the same change on top of where you are" })
-kinds.command("commit", "revert", function(value: any): string
+shell.action_command("commit", "revert", function(value: any): string
 	return git(`revert {value.sha}`, value)
 end, { doc = "A new commit undoing it", danger = true })
 
-kinds.command("revision", "show", function(value: any): string
+shell.action_command("revision", "show", function(value: any): string
 	return jj(`show {value.id}`, value)
 end, { doc = "Its description and what it changed", default = true })
-kinds.command("revision", "diff", function(value: any): string
+shell.action_command("revision", "diff", function(value: any): string
 	return jj(`diff -r {value.id}`, value)
 end, { doc = "What it changed" })
-kinds.command("revision", "new", function(value: any): string
+shell.action_command("revision", "new", function(value: any): string
 	return jj(`new {value.id}`, value)
 end, { doc = "Start a new change on top of it" })
-kinds.command("revision", "edit", function(value: any): string
+shell.action_command("revision", "edit", function(value: any): string
 	return jj(`edit {value.id}`, value)
 end, { doc = "Make it the working copy, to change it" })
-kinds.command("revision", "squash", function(value: any): string
+shell.action_command("revision", "squash", function(value: any): string
 	return jj(`squash -r {value.id}`, value)
 end, { doc = "Move what it changed into its parent", danger = true })
-kinds.command("revision", "abandon", function(value: any): string
+shell.action_command("revision", "abandon", function(value: any): string
 	return jj(`abandon {value.id}`, value)
 end, { doc = "Drop it, keeping its children", danger = true })
 

@@ -13,6 +13,9 @@
 -- With jj the comparison is with the working copy's parent (@-), so the
 -- signs show what the change you're working on does to the file. With git
 -- it's with what's staged, so staged changes lose their signs.
+--
+-- In a shell, the rows of `git status`, `git log`, `jj st` and `jj log`
+-- are changed files, commits and revisions to act on (rows.luau).
 
 local core = require("@core")
 local greed = require("@greed")
@@ -20,9 +23,11 @@ local multibuffer = require("@multibuffer")
 local operations = require("@operations")
 local picker = require("@picker")
 local repos = require("@self/repo")
+local shell = require("@shell")
 local statusline = require("@statusline")
 local staging = require("@self/staging")
 require("@self/stack")
+require("@self/rows")
 
 export type Repo = repos.Repo
 local repo_of, locate, vcs = repos.repo_of, repos.locate, repos.run
@@ -200,6 +205,9 @@ function M.branch(dir: string): string?
 	read_branch(repo)
 	return branches[repo.root]
 end
+
+-- A shell's prompt shows the branch as the status line does, jj's too.
+shell.branch_finder(M.branch)
 
 -- The branch and the lines changed in the buffer, e.g. "main +3 ~1 -2".
 statusline.add("right", "branch", function(ctx)
