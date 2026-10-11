@@ -170,6 +170,29 @@ test("| chart in the shell draws the table, in the chart styles", function(t)
 	assert(string.find(bad.output, "there's no column DISK", 1, true), bad.output)
 end)
 
+test("a chart in the shell shows as an image on the screen, in a watch too", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/pods`, "NAME    CPU\napi     2\nworker  1\n")
+	local block = finished(t, assert(shell.run(sh, "cat pods | chart --width 30 --height 3")))
+	assert(block.status == "done", block.output)
+	local frame = t:frame(80, 24)
+	assert(#frame.scenes == 1, `{#frame.scenes} scenes placed`)
+	local placed = frame.scenes[1]
+	assert(placed.width == 30 and placed.height == 2, `{placed.width}x{placed.height}`)
+	-- On the chart's own rows: its first one holds the first bar's label.
+	assert(string.find(frame.rows[placed.row + 1], "api", 1, true), frame.rows[placed.row + 1])
+	-- A watch's chart too, with the shell's space under its block.
+	greed.fs.write(`{sh.cwd}/load`, "0.5 0.4 0.3 1/120 4567\n")
+	local watch = assert(shell.run(sh, "watch -n 1 cat load | chart --width 30 --height 4"))
+	t:wait_for(function()
+		return watch.drawn == true and require("@chart").drawing(watch) ~= nil
+	end)
+	t:wait_for(function()
+		return #t:frame(80, 30).scenes == 2
+	end)
+	shell.kill(watch)
+end)
+
 test("in a watch, | chart draws how the numbers went, without marking lines changed", function(t)
 	local sh = open(t)
 	greed.fs.write(`{sh.cwd}/load`, "0.5 0.4 0.3 1/120 4567\n")

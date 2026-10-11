@@ -1887,8 +1887,11 @@ printed plugin by plugin.
 
 `t:keys("i")` presses keys and `t:type("hello world")` types text a
 character at a time, newlines as `enter`. `t:draw(cols, rows)` and
-`t:screen(cols, rows)` give what a client would show, as lines of text,
-`t:status()` the status line, `t:floats()` the floats' text and
+`t:screen(cols, rows)` give what a client would show, as lines of text;
+`t:frame(cols, rows)` gives the screen as the window draws it, to check
+how it looks: its `rows`, the `images` and `scenes` (charts) placed and
+the cells they cover, and `cell(col, row)` for a cell's text, size and
+colors. `t:status()` the status line, `t:floats()` the floats' text and
 `t:notices()` the desktop notifications sent; `t:clipboard_image(png)`
 sets what `greed.clipboard.image()` gives. `t:wait(ms)` moves the clock
 forward for code that sleeps, `t:wait_for(check)` waits for real until

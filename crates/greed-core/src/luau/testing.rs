@@ -524,6 +524,13 @@ fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(meth
             .map(|row| row.iter().map(|c| c.text.as_str()).collect::<String>())
             .collect::<Vec<_>>())
     });
+    methods.add_method(
+        "frame",
+        |lua, this, (width, height, medium): (u16, u16, Option<String>)| {
+            let frame = as_client(lua, this.id(), || draw(lua, width, height))?;
+            frame_table(lua, &frame, medium.as_deref())
+        },
+    );
     methods.add_method("status", |lua, this, ()| {
         let join = |spans: &[crate::render::Span]| {
             spans.iter().map(|s| s.text.as_str()).collect::<String>()
@@ -624,6 +631,72 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
             })
             .collect::<mlua::Result<Vec<_>>>()
     });
+}
+
+/// `frame` as `t:frame` gives it: the screen as `medium` ("window", the
+/// default, or "terminal") draws it, a row of text each, the images and
+/// scenes placed on it, and `cell(col, row)` for one cell's text, size and
+/// look.
+fn frame_table(
+    lua: &Lua,
+    frame: &crate::render::Frame,
+    medium: Option<&str>,
+) -> mlua::Result<Table> {
+    use crate::render::grid::compose;
+    use crate::theme::Medium;
+    let medium = match medium {
+        None | Some("window") => Medium::Gui,
+        Some("terminal") => Medium::Tui,
+        Some(other) => {
+            return Err(mlua::Error::external(format!(
+                "a frame is drawn for a window or a terminal, not {other}"
+            )));
+        }
+    };
+    let grid = compose(frame, medium);
+    let out = lua.create_table()?;
+    let rows: Vec<String> = grid
+        .iter()
+        .map(|row| row.iter().map(|c| c.text.as_str()).collect())
+        .collect();
+    out.set("rows", rows)?;
+    let placed = |rect: crate::render::Rect, id: u64| -> mlua::Result<Table> {
+        let t = lua.create_table()?;
+        t.set("id", id)?;
+        t.set("col", rect.x)?;
+        t.set("row", rect.y)?;
+        t.set("width", rect.width)?;
+        t.set("height", rect.height)?;
+        Ok(t)
+    };
+    let scenes = frame
+        .scenes
+        .iter()
+        .map(|s| placed(s.rect, s.id.0))
+        .collect::<mlua::Result<Vec<_>>>()?;
+    out.set("scenes", scenes)?;
+    let images = frame
+        .images
+        .iter()
+        .map(|i| placed(i.rect, i.id.0))
+        .collect::<mlua::Result<Vec<_>>>()?;
+    out.set("images", images)?;
+    let cell = lua.create_function(move |lua, (col, row): (usize, usize)| {
+        let Some(cell) = grid.get(row).and_then(|r| r.get(col)) else {
+            return Ok(None);
+        };
+        let t = lua.create_table()?;
+        t.set("text", cell.text.as_str())?;
+        t.set("scale", cell.scale)?;
+        let color = |c: Option<crate::theme::Color>| c.map(|c| c.to_string());
+        t.set("fg", color(cell.style.fg))?;
+        t.set("bg", color(cell.style.bg))?;
+        t.set("bold", cell.style.bold.unwrap_or(false))?;
+        t.set("italic", cell.style.italic.unwrap_or(false))?;
+        Ok(Some(t))
+    })?;
+    out.set("cell", cell)?;
+    Ok(out)
 }
 
 /// A frame drawn at this size, for the acting client, with its renderer.

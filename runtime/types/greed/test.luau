@@ -4,6 +4,26 @@
 --- Buffers are written with markers: `|` at each cursor or selection head,
 --- and `^` at the anchor of a selection. "^hello |world" selects "hello ".
 
+--- Where an image or a scene is on the screen, from `t:frame`: its id and
+--- the cells it covers.
+export type Placed = { id: number, col: number, row: number, width: number, height: number }
+
+--- One cell of the screen, from a frame's `cell(col, row)`: its text (""
+--- for those after a wide or big character, or under big text), how many
+--- times bigger its text is (0 in the rows a big line takes), and its
+--- colors ("blue", "#89b4fa", or nil for the default) and weight.
+export type TestCell = { text: string, scale: number, fg: string?, bg: string?, bold: boolean, italic: boolean }
+
+--- The screen as a client draws it, from `t:frame`: its rows of text, the
+--- images and scenes (charts) placed on it, and `cell(col, row)` (from 0)
+--- for one cell.
+export type TestFrame = {
+	rows: { string },
+	images: { Placed },
+	scenes: { Placed },
+	cell: (col: number, row: number) -> TestCell?,
+}
+
 --- Another client, from `t:client`: what it does and sees, as `t`'s
 --- methods of the same names do for the first client.
 export type TestClient = {
@@ -16,6 +36,7 @@ export type TestClient = {
 	mouse: (self: TestClient, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> (),
 	draw: (self: TestClient, width: number, height: number) -> { string },
 	screen: (self: TestClient, width: number, height: number) -> { string },
+	frame: (self: TestClient, width: number, height: number, medium: ("window" | "terminal")?) -> TestFrame,
 	status: (self: TestClient) -> (string?, string?),
 	marked: (self: TestClient) -> string,
 	expect: (self: TestClient, marked: string) -> (),
@@ -65,6 +86,10 @@ export type TestContext = {
 	--- As `draw`, but the whole screen as a terminal shows it: floats over
 	--- the panes, with their borders.
 	screen: (self: TestContext, width: number, height: number) -> { string },
+	--- The whole screen as a window (or a terminal, with "terminal") draws
+	--- it, to check what it looks like: big text, colors, and which charts
+	--- show as images rather than characters.
+	frame: (self: TestContext, width: number, height: number, medium: ("window" | "terminal")?) -> TestFrame,
 	--- Does what a client sends for the mouse at screen cell (`col`, `row`),
 	--- against the last `draw`: `kind` is "press", "release", "drag",
 	--- "move" or "scroll", `which` a button (default "left") or a scroll

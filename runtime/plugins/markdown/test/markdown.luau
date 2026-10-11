@@ -38,6 +38,26 @@ test("headings lose their hashes, the top level twice the size", function(t)
 	assert(styled("markdown.heading.2")[1] == "Part")
 end)
 
+test("a big heading takes rows only in its own pane, in the window", function(t)
+	shown(t, "# Title\ntext")
+	t:keys("ctrl-w v")
+	local dir = t:tempdir({ ["plain.txt"] = "one\ntwo\nthree\n" })
+	greed.open(`{dir}/plain.txt`)
+	greed.view():buffer():set_line_numbers(false)
+	local frame = t:frame(60, 12)
+	local left = frame.cell(0, 0)
+	assert(left and left.text == "T" and left.scale == 2, "the heading is big")
+	assert(assert(frame.cell(0, 1)).scale == 0, "the row under it is the heading's")
+	-- The right pane's second line, on the second row, as usual.
+	local found = false
+	for col = 30, 59 do
+		local cell = assert(frame.cell(col, 1))
+		found = found or (cell.text == "t" and cell.scale == 1)
+	end
+	assert(found, table.concat(frame.rows, "\n"))
+	assert(string.find(frame.rows[2], "two", 1, true), frame.rows[2])
+end)
+
 test("emphasis, code and links show without their markup", function(t)
 	local rows = shown(t, "a **bold** and *slanted* ~~gone~~ `x = 1` [site](http://e.x) snake_case")
 	assert(rows[1] == "a bold and slanted gone x = 1 site snake_case", rows[1])
