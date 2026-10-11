@@ -6,6 +6,8 @@ card showing what it prints now. Cards sit side by side as far as the
 window is wide and go on down the page, so a board scrolls like any other
 buffer however many it has.
 
+[![A board of live charts: load average, memory used and restarts by pod](https://github.com/johnae/greed/releases/download/media/board.png)](https://github.com/johnae/greed/releases/download/media/board.mp4)
+
 ```text
 ops
 

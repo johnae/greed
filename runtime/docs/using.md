@@ -1110,6 +1110,8 @@ output is saved in a `result` block right under it. That way the file
 shows the output anywhere, from GitHub to your phone, and a diff shows
 what changed. Running a block again replaces its result.
 
+[![A note with a live load chart under a shell block, and a block filtering another block's table of pods](https://github.com/johnae/greed/releases/download/media/notes.png)](https://github.com/johnae/greed/releases/download/media/notes.mp4)
+
 ````markdown
 ```sh id=files
 ls *.md
@@ -1471,6 +1473,8 @@ Split the screen between files and terminals, the way a terminal
 multiplexer does, and keep tabs of layouts. Everything stays running in the
 session, so after `:detach` and `greed attach` (or over `greed ssh`) the
 panes, tabs and terminals are where you left them.
+
+[![The file tree, a file and a terminal side by side, then a floating terminal over them](https://github.com/johnae/greed/releases/download/media/panes.png)](https://github.com/johnae/greed/releases/download/media/panes.mp4)
 
 | Keys | |
 |---|---|

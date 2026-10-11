@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Greed: an editor you change while it runs</title>
-<meta name="description" content="Greed is an editor and workspace you can change while it runs: Helix, Vim or VS Code style editing, shells, terminals, tiled and floating panes, runnable notes and agents, in your terminal, in a window, or on a remote machine. A small Rust core, with everything else in Luau plugins.">
+<title>Greed: a text environment you change while it runs</title>
+<meta name="description" content="Greed is a text environment you can change while it runs: shells whose output is data, notes whose code runs, live boards, terminals and agents, with one editor through all of it in the Helix, Vim or VS Code style. In your terminal, in a window, or on a remote machine. A small Rust core, with everything else in Luau plugins.">
 <meta property="og:title" content="Greed">
-<meta property="og:description" content="An editor and workspace with a small Rust core and everything else in Luau plugins: modal or modeless, terminal or window, local or remote.">
+<meta property="og:description" content="A text environment with a small Rust core and everything else in Luau plugins: shells, notes, live boards, terminals and agents, with one editor through all of it. Terminal or window, local or remote.">
 <meta property="og:image" content="https://greed.rs/assets/social.jpg">
 <meta property="og:url" content="https://greed.rs/">
 <meta name="twitter:card" content="summary_large_image">
@@ -37,11 +37,12 @@
   </section>
 
   <section class="intro">
-    <p class="lead">Greed is an editor you can change while it runs. Edit the Helix
-    way, the Vim way or without modes. Around your files: shells, terminals,
-    tiled and floating panes, notes whose code runs, and agents. In a
-    terminal or its own window, here or on the machine where the work
-    runs.</p>
+    <p class="lead">Greed is a text environment for the work you do: shells whose
+    output is data, notes whose code runs, live boards, terminals and agents,
+    in one session you can leave and come back to. Everything in it is text,
+    so one editor runs through all of it, the Helix way, the Vim way or
+    without modes. In a terminal or its own window, here or on the machine
+    where the work runs.</p>
     <p class="sub">A small Rust core does what needs speed. Keys, modes, commands,
     pickers, themes and the agents are Luau plugins you can read, change or
     replace.</p>
@@ -128,21 +129,7 @@
       work everywhere, even while you type into a terminal.</p>
       <p><a href="docs/keys.html#panes-tabs-and-terminals">Panes and their keys</a></p>
     </div>
-    <div class="screen" aria-label="A Greed tab: code in the main pane, a shell and an agent stacked beside it, and a floating terminal above them">
-      <div class="pane main"><span class="label">src/server.rs</span>
-        <i style="width:62%"></i><i style="width:80%"></i><i style="width:45%"></i><i style="width:70%"></i><i style="width:55%"></i><i style="width:76%"></i><i style="width:38%"></i><i style="width:66%"></i>
-      </div>
-      <div class="pane"><span class="label">shell</span>
-        <i class="ok" style="width:58%"></i><i style="width:72%"></i><i class="ok" style="width:40%"></i>
-      </div>
-      <div class="pane"><span class="label">agent</span>
-        <i style="width:68%"></i><i style="width:52%"></i><i style="width:74%"></i>
-      </div>
-      <div class="pane float"><span class="label">terminal · htop</span>
-        <i style="width:84%"></i><i style="width:60%"></i><i style="width:72%"></i>
-      </div>
-      <div class="status"><span class="pill">NORMAL</span><span>1 work</span><span class="right">main-stack</span></div>
-    </div>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/panes.mp4" poster="https://github.com/johnae/greed/releases/download/media/panes.png" autoplay muted loop playsinline preload="metadata" aria-label="The file tree, a file and a terminal side by side, then a floating terminal over them"></video>
   </section>
 
   <section class="showcase flip">
@@ -156,49 +143,38 @@
       shell, a terminal pane runs whatever you like.</p>
       <p><a href="docs/shell.html">The shell</a></p>
     </div>
-    <pre class="term"><code><span class="prompt">❯</span> <span class="n">1</span> kubectl get pods                  <span class="ok">✓</span> <span class="c">0.4s · 2 rows</span>
-NAME                   READY   STATUS             RESTARTS
-api-7d9f8b6c5-2xkqz    1/1     Running            0
-worker-5c6b7d8f9-ab    0/1     CrashLoopBackOff   13
-<span class="prompt">❯</span> <span class="n">2</span> $1 | where RESTARTS &gt; 0 | select NAME   <span class="ok">✓</span>
-NAME
-worker-5c6b7d8f9-ab
-<span class="dim">⎇ main ⎈ prod:payments ~/s/infra</span> <span class="prompt">❯</span> |</code></pre>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, then a chart of their restarts"></video>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
+      <h2>Charts and live boards</h2>
+      <p>Add <code>| chart</code> to a command and its numbers become bars or
+      lines; in a <code>watch</code> the lines move. Keep the commands you
+      look at every day on a board, a Markdown file of live cards laid out in
+      a grid: load, memory, the pods that keep restarting, a Prometheus
+      query.</p>
+      <p><a href="docs/shell.html#charts">Charts</a> ·
+      <a href="docs/boards.html">Boards</a></p>
+    </div>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/board.mp4" poster="https://github.com/johnae/greed/releases/download/media/board.png" autoplay muted loop playsinline preload="metadata" aria-label="A board of live charts: load average, memory used and restarts by pod"></video>
   </section>
 
   <section class="showcase">
     <div class="text">
       <h2>Notes whose code runs</h2>
-      <p>A fenced block in Markdown runs when you ask: <code>sh</code>,
-      <code>python</code>, <code>luau</code> in the editor itself,
-      <code>http</code> requests and more. Its output is saved under it, so the
-      file reads well anywhere and a diff shows what changed. Name a block and
-      feed its result to the next one, and a page becomes a small pipeline.
-      Notes have links, todos and an agenda, all in plain files.</p>
+      <p>A fenced block in Markdown runs when you ask: <code>shell</code> in
+      the Greed shell, with its tables and charts, <code>python</code>,
+      <code>luau</code> in the editor itself, <code>http</code> requests and
+      more. Its output is saved under it, so the file reads well anywhere and
+      a diff shows what changed; with <code>every=5</code> it keeps up as it
+      goes. Name a block and feed its result to the next one, and a page
+      becomes a small pipeline. Notes have links, todos and an agenda, all in
+      plain files.</p>
       <p><a href="docs/using.html#runnable-code-blocks">Runnable blocks</a> ·
       <a href="docs/using.html#notes">Notes</a></p>
     </div>
-    <pre class="code"><code><span class="c">```python id=primes</span>
-primes = [n <span class="k">for</span> n <span class="k">in</span> <span class="f">range</span>(<span class="n">2</span>, <span class="n">30</span>)
-          <span class="k">if</span> <span class="f">all</span>(n % d <span class="k">for</span> d <span class="k">in</span> <span class="f">range</span>(<span class="n">2</span>, n))]
-<span class="f">print</span>(*primes)
-<span class="c">```</span>
-
-<span class="c">```result</span>
-2 3 5 7 11 13 17 19 23 29
-<span class="c">```</span>
-
-<span class="c">```luau input=primes</span>
-<span class="k">local</span> sum <span class="o">=</span> <span class="n">0</span>
-<span class="k">for</span> n <span class="k">in</span> string.<span class="f">gmatch</span>(input, <span class="s">"%d+"</span>) <span class="k">do</span>
-	sum <span class="o">+=</span> <span class="f">tonumber</span>(n)
-<span class="k">end</span>
-<span class="k">return</span> sum
-<span class="c">```</span>
-
-<span class="c">```result</span>
-129
-<span class="c">```</span></code></pre>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/notes.mp4" poster="https://github.com/johnae/greed/releases/download/media/notes.png" autoplay muted loop playsinline preload="metadata" aria-label="A note with a live load chart under a shell block, and a block that filters another block's table of pods"></video>
   </section>
 
   <section class="showcase flip">

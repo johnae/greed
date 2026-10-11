@@ -9,6 +9,8 @@ output to the next command. It's meant for the commands you run while
 editing, and for output you want to keep working with; a terminal pane is
 still the place for a long interactive session.
 
+[![kubectl get pods in the Greed shell, then the pods that aren't running, then a chart of their restarts](https://github.com/johnae/greed/releases/download/media/kubectl.png)](https://github.com/johnae/greed/releases/download/media/kubectl.mp4)
+
 ```text
 ❯ 1 cargo test -q                         ✗ exit 101 · 4.1s
 error[E0308]: mismatched types
@@ -575,6 +577,8 @@ resource or namespace flags changed, as k9s's views do:
 
 `| chart` draws a table as a chart, in characters every terminal shows:
 braille for lines, eighth blocks for bars, in the theme's colours.
+
+[![A table, the rows of it over 20, a bar chart of it, and the load average charted as it goes](https://github.com/johnae/greed/releases/download/media/shell-live.png)](https://github.com/johnae/greed/releases/download/media/shell.mp4)
 
 ```text
 ❯ 4 kubectl top pods | chart

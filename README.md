@@ -1,5 +1,5 @@
-Greed (Get, Reflect, Eval, Edit, Delegate) is an execution environment
-with a good editor built in. You use it in a terminal or a window, on your
+Greed (Get, Reflect, Eval, Edit, Delegate) is a text environment with a
+good editor built in. You use it in a terminal or a window, on your
 machine or on the one where the work runs. It's a small Rust core with
 everything else in Luau: keys, modes, commands, pickers, themes and the
 agent integration are plugins you can read, change or replace while it
