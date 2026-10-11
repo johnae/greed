@@ -155,7 +155,11 @@ A command name can't have spaces, so it can be typed after `:`. Defining
 a command that another plugin already has replaces it, and Greed says so
 in a message; your config can replace any command without one. When the
 editor starts, it names keys bound to commands that don't exist, which
-usually means a typo. `greed.plugin.check` reports both as warnings.
+usually means a typo. Binding keys another plugin bound to something else
+says so too, as does binding keys that hide another plugin's longer or
+shorter ones (`g` over `g z`); your config's keys stay quiet, and `space h
+k` shows what a key hides. `greed.plugin.check` reports all of these as
+warnings.
 
 Commands get a context: `ctx.buffer` and `ctx.view` where they run,
 `ctx.args` from the command line (`:greet world`), `ctx.count` when a count

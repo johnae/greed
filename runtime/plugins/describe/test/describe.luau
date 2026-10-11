@@ -45,6 +45,23 @@ test("describing a key waits for the keys and shows their command", function(t)
 	t:expect("|abc")
 end)
 
+test("describing a key says where it's bound and what it hides", function(t)
+	local layer: string? = nil
+	for _, binding in greed.keymap.find("goto-last-line") do
+		if binding.keys == "g e" then
+			layer = binding.layer
+		end
+	end
+	assert(layer, "g e runs goto-last-line somewhere")
+	greed.keymap.bind(layer, { ["g e"] = "goto-start" })
+	t:buffer("|abc")
+	t:keys("space h k g e")
+	local help = t:floats()[1]
+	assert(help and string.find(help, "goto-start", 1, true), help)
+	assert(string.find(help, `g e in {layer}, from the`, 1, true), help)
+	assert(string.find(help, `over goto-last-line in {layer}, from the`, 1, true), help)
+end)
+
 test("describing an unbound key says so", function(t)
 	t:buffer("|abc")
 	t:keys("space h k")

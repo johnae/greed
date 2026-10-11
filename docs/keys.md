@@ -44,7 +44,7 @@ After the leader's keys, a hint lists what can follow, the same in every
 style. Check a key is free first (`space h k`, or the hint): a binding
 replaces every longer sequence that starts with the same keys, so binding
 the leader's `w` alone would take away `space w v` and the other window
-keys.
+keys. `space h k` shows what a key hides, under the command it runs.
 
 Other keys belong to a role. Each style says which of its modes plays
 each one: `command` is where you move around and run commands (Helix's

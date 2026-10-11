@@ -315,6 +315,24 @@ pub struct Found {
     pub owner: PluginId,
 }
 
+/// A key sequence, the command it runs and the plugin that bound it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bound {
+    pub keys: Vec<Key>,
+    pub command: Arc<str>,
+    pub owner: PluginId,
+}
+
+/// A binding that hides another in the same layer, from
+/// [`Keymap::shadowed`]. `under` may be for the same keys, a shorter start
+/// of them or a longer sequence starting with them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shadow {
+    pub layer: Layer,
+    pub over: Bound,
+    pub under: Bound,
+}
+
 /// What happened to a layer, in order. The layer's trie is these replayed.
 #[derive(Debug, Clone)]
 enum Op {
@@ -333,6 +351,16 @@ struct Entry {
 struct Binding {
     command: Arc<str>,
     owner: PluginId,
+}
+
+impl Binding {
+    fn at(&self, keys: &[Key]) -> Bound {
+        Bound {
+            keys: keys.to_vec(),
+            command: self.command.clone(),
+            owner: self.owner.clone(),
+        }
+    }
 }
 
 /// A mode falling back to another mode's or layer's bindings.
@@ -840,6 +868,49 @@ impl Keymap {
         found
     }
 
+    /// The active bindings in `layer` that binding `keys` to `command` would
+    /// hide. Binding the same keys to the same command again hides nothing.
+    pub fn hides(&self, layer: &Layer, keys: &[Key], command: &str) -> Vec<Bound> {
+        self.layers
+            .get(layer)
+            .map(|children| hidden(children, keys, command))
+            .unwrap_or_default()
+    }
+
+    /// Every binding that hid another in its layer when it was made, and
+    /// still does, in the order they were made.
+    pub fn shadowed(&self) -> Vec<Shadow> {
+        let mut found = Vec::new();
+        for (layer, entries) in &self.log {
+            let mut children = HashMap::new();
+            for entry in entries {
+                if let Op::Bind(keys, command) = &entry.op {
+                    for under in hidden(&children, keys, command) {
+                        let over = Bound {
+                            keys: keys.clone(),
+                            command: command.clone(),
+                            owner: entry.owner.clone(),
+                        };
+                        found.push(Shadow {
+                            layer: layer.clone(),
+                            over,
+                            under,
+                        });
+                    }
+                }
+                apply(&mut children, entry);
+            }
+        }
+        found.retain(|shadow| {
+            matches!(
+                self.lookup(&shadow.layer, &shadow.over.keys),
+                Some(Node::Command(active)) if active.command == shadow.over.command
+                    && active.owner == shadow.over.owner
+            )
+        });
+        found
+    }
+
     /// Removes everything `owner` did.
     pub fn remove_owned_by(&mut self, owner: &str) {
         let changed: Vec<Layer> = self
@@ -901,6 +972,42 @@ fn conflicts(children: &HashMap<Key, Node>, keys: &[Key], owner: &str) -> bool {
     match children.get(last) {
         Some(Node::Prefix(next)) => owns_any(next, owner),
         Some(Node::Command(_)) | None => false,
+    }
+}
+
+/// The bindings in `children` that binding `keys` to `command` would hide:
+/// one for `keys` or a shorter start of them, or those for longer
+/// sequences starting with `keys`.
+fn hidden(children: &HashMap<Key, Node>, keys: &[Key], command: &str) -> Vec<Bound> {
+    let mut children = children;
+    for (i, key) in keys.iter().enumerate() {
+        match children.get(key) {
+            None => return Vec::new(),
+            Some(Node::Command(b)) => {
+                let same = i + 1 == keys.len() && *b.command == *command;
+                return if same {
+                    Vec::new()
+                } else {
+                    vec![b.at(&keys[..=i])]
+                };
+            }
+            Some(Node::Prefix(next)) => children = next,
+        }
+    }
+    let mut found = Vec::new();
+    bound_under(children, &mut keys.to_vec(), &mut found);
+    found
+}
+
+/// Every binding under `children`, whose sequences start with `prefix`.
+fn bound_under(children: &HashMap<Key, Node>, prefix: &mut Vec<Key>, found: &mut Vec<Bound>) {
+    for (key, node) in children {
+        prefix.push(*key);
+        match node {
+            Node::Command(b) => found.push(b.at(prefix)),
+            Node::Prefix(next) => bound_under(next, prefix, found),
+        }
+        prefix.pop();
     }
 }
 

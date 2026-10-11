@@ -450,6 +450,8 @@ export type Keymap = {
 	--- What `keys` runs in the current mode: the command, or nil and whether
 	--- more keys could still finish a sequence.
 	resolve: (keys: string) -> (string?, boolean),
+	--- What `keys` runs in the current mode and buffer and what that hides: the binding in each layer they're bound in, most specific first, each followed by those it hides in its own layer, with the plugin that bound it. The first runs.
+	describe: (keys: string) -> { { layer: string, command: string, plugin: string } },
 }
 
 export type Mode = {

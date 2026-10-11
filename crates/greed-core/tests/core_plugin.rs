@@ -354,3 +354,23 @@ fn every_style_name_the_plugins_use_is_in_the_theme() {
         .collect();
     assert!(missing.is_empty(), "no theme entry for {missing:?}");
 }
+
+/// No default plugin replaces another's command or hides another's keys,
+/// and every key runs a command that exists.
+#[test]
+fn the_default_plugins_leave_each_others_commands_and_keys_alone() {
+    let root = core().parent().unwrap().to_owned();
+    let mut all: Vec<PathBuf> = std::fs::read_dir(&root)
+        .unwrap()
+        .filter_map(|entry| Some(entry.ok()?.path()))
+        .filter(|dir| dir.join("plugin.toml").is_file())
+        .collect();
+    all.sort();
+    sessions::private();
+    let mut editor = greed_core::Editor::new(greed_text::ClientId(1));
+    editor.open("file", "", None);
+    let host = greed_core::luau::Host::new(editor).unwrap();
+    host.load_dirs(&all).unwrap();
+    let warnings = host.warnings();
+    assert!(warnings.is_empty(), "\n{}", warnings.join("\n"));
+}

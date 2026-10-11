@@ -14,7 +14,7 @@ use super::capabilities::{self, Limit};
 use super::handles::{self, BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
-use crate::keymap::{Key, KeyCode, Layer, Mods, Next, Resolution};
+use crate::keymap::{Bound, Found, Key, KeyCode, Layer, Mods, Next, Resolution};
 use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{
@@ -361,6 +361,15 @@ pub(super) fn registry_warnings(lua: &Lua) -> Vec<String> {
                 .filter_map(|earlier| replacing(&command.owner, &earlier.owner, &command.name))
         })
         .collect();
+    let mut shadows: Vec<String> = state
+        .editor
+        .keymap()
+        .shadowed()
+        .iter()
+        .filter_map(|s| shadowing(&s.layer, &s.over, &s.under))
+        .collect();
+    shadows.sort();
+    warnings.extend(shadows);
     warnings.extend(unknown_bindings(lua));
     warnings
 }
@@ -370,6 +379,31 @@ pub(super) fn registry_warnings(lua: &Lua) -> Vec<String> {
 fn replacing(owner: &str, earlier: &str, name: &str) -> Option<String> {
     (owner != earlier && !owner.starts_with("user/"))
         .then(|| format!("the {owner} plugin replaces the {earlier} plugin's command {name}"))
+}
+
+/// What to say when the binding `over` hides `under` in `layer`, if
+/// anything: not when it's your config's.
+fn shadowing(layer: &Layer, over: &Bound, under: &Bound) -> Option<String> {
+    if over.owner.starts_with("user/") {
+        return None;
+    }
+    let whose = if over.owner == under.owner {
+        "its own".to_owned()
+    } else {
+        format!("the {} plugin's", under.owner)
+    };
+    Some(format!(
+        "{} in {layer}: the {} plugin's {} hides {whose} {}{}",
+        keys_text(&over.keys),
+        over.owner,
+        over.command,
+        under.command,
+        if under.keys == over.keys {
+            String::new()
+        } else {
+            format!(" on {}", keys_text(&under.keys))
+        },
+    ))
 }
 
 /// Keys bound to commands that don't exist, as lines to show.
@@ -749,29 +783,85 @@ fn layer_functions(lua: &Lua, keymap: &Table, owner: &PluginId) -> LuaResult<()>
     )
 }
 
+/// `greed.keymap.describe(keys)`: the binding of `keys` in each layer of
+/// the current mode and buffer, each followed by those it hides there.
+fn describe_keys(lua: &Lua, keys: &str) -> LuaResult<Table> {
+    let keys = Key::parse_sequence(keys).map_err(mlua::Error::external)?;
+    let found: Vec<Found> = {
+        let state = state(lua);
+        let editor = &state.editor;
+        let kind = editor.buffer(editor.view(editor.focus()).buffer).kind();
+        let keymap = editor.keymap();
+        let shadows = keymap.shadowed();
+        let mut found = Vec::new();
+        for f in keymap.describe(editor.mode(), kind, &keys) {
+            let hidden: Vec<Found> = shadows
+                .iter()
+                .filter(|s| {
+                    s.layer == f.layer && s.over.command == f.command && s.over.owner == f.owner
+                })
+                .map(|s| Found {
+                    layer: s.layer.clone(),
+                    command: s.under.command.clone(),
+                    owner: s.under.owner.clone(),
+                })
+                .collect();
+            found.push(f);
+            found.extend(hidden);
+        }
+        found
+    };
+    let list = lua.create_table()?;
+    for f in found {
+        let entry = lua.create_table()?;
+        entry.set("layer", f.layer.to_string())?;
+        entry.set("command", &*f.command)?;
+        entry.set("plugin", &*f.owner)?;
+        list.push(entry)?;
+    }
+    Ok(list)
+}
+
+/// `greed.keymap.bind(layer, map)` for `owner`, which says when a binding
+/// hides another plugin's.
+fn bind_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let o = owner.clone();
+    lua.create_function(move |lua, (layer, map): (Value, Table)| {
+        let layer = layer_from_lua(layer)?;
+        // Keys from another plugin's module, like core's text objects.
+        let map = super::modules::plain(lua, map)?;
+        let mut state = state_mut(lua);
+        for pair in map.pairs::<String, String>() {
+            let (keys, command) = pair?;
+            let over = Bound {
+                keys: Key::parse_sequence(&keys).map_err(mlua::Error::external)?,
+                command: command.into(),
+                owner: o.clone(),
+            };
+            let said: Vec<String> = state
+                .editor
+                .keymap()
+                .hides(&layer, &over.keys, &over.command)
+                .iter()
+                .filter_map(|under| shadowing(&layer, &over, under))
+                .collect();
+            state
+                .editor
+                .keymap_mut()
+                .bind(layer.clone(), &over.keys, over.command, o.clone())
+                .map_err(mlua::Error::external)?;
+            for line in said {
+                state.editor.echo(line);
+            }
+        }
+        Ok(())
+    })
+}
+
 fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let keymap = lua.create_table()?;
 
-    let o = owner.clone();
-    keymap.set(
-        "bind",
-        lua.create_function(move |lua, (layer, map): (Value, Table)| {
-            let layer = layer_from_lua(layer)?;
-            // Keys from another plugin's module, like core's text objects.
-            let map = super::modules::plain(lua, map)?;
-            let mut state = state_mut(lua);
-            for pair in map.pairs::<String, String>() {
-                let (keys, command) = pair?;
-                let parsed = Key::parse_sequence(&keys).map_err(mlua::Error::external)?;
-                state
-                    .editor
-                    .keymap_mut()
-                    .bind(layer.clone(), &parsed, command, o.clone())
-                    .map_err(mlua::Error::external)?;
-            }
-            Ok(())
-        })?,
-    )?;
+    keymap.set("bind", bind_function(lua, owner)?)?;
 
     layer_functions(lua, &keymap, owner)?;
 
@@ -788,6 +878,11 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
                 Resolution::Unbound => (None, false),
             })
         })?,
+    )?;
+
+    keymap.set(
+        "describe",
+        lua.create_function(|lua, keys: String| describe_keys(lua, &keys))?,
     )?;
 
     keymap.set("overlay", lua.create_function(set_overlay)?)?;

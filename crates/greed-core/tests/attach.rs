@@ -40,7 +40,7 @@ fn start(
             host.load_dir(&runtime.join("core"))?;
             host.load_dir(&runtime.join("helix"))?;
             host.load_str(
-                "keys",
+                "user/keys",
                 "local greed = require('@greed')
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })

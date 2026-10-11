@@ -609,6 +609,56 @@ fn replacing_another_plugins_command_says_so_unless_its_your_config() {
 }
 
 #[test]
+fn hiding_another_plugins_keys_says_so_unless_its_your_config() {
+    let h = host();
+    let bind = |command: &str, keys: &str| {
+        format!("require('@greed').keymap.bind('normal', {{ [{keys:?}] = {command:?} }})")
+    };
+    h.load_str("one", &bind("first", "g z")).unwrap();
+    h.load_str("one", &bind("first", "g z")).unwrap();
+    assert!(messages(&h).is_empty(), "reloading binds its own again");
+    h.load_str("two", &bind("first", "g z")).unwrap();
+    assert!(messages(&h).is_empty(), "the same command on the same keys");
+    h.load_str("three", &bind("second", "g z")).unwrap();
+    assert_eq!(
+        messages(&h),
+        ["g z in normal: the three plugin's second hides the two plugin's first"]
+    );
+    h.load_str("four", &bind("third", "g")).unwrap();
+    assert_eq!(
+        messages(&h),
+        ["g in normal: the four plugin's third hides the three plugin's second on g z"]
+    );
+    h.load_str("five", &bind("fourth", "g a b")).unwrap();
+    assert_eq!(
+        messages(&h),
+        ["g a b in normal: the five plugin's fourth hides the four plugin's third on g"]
+    );
+    h.load_str(
+        "six",
+        &format!("{}; {}", bind("x", "space q"), bind("y", "space q")),
+    )
+    .unwrap();
+    assert_eq!(
+        messages(&h),
+        ["space q in normal: the six plugin's y hides its own x"]
+    );
+    h.load_str("user/config", &bind("mine", "space q")).unwrap();
+    assert!(messages(&h).is_empty(), "your config may");
+    // What's hidden now, for checking a plugin: a binding hidden since
+    // doesn't count.
+    let warnings: Vec<String> = h
+        .warnings()
+        .into_iter()
+        .filter(|w| w.contains(" hides "))
+        .collect();
+    assert_eq!(
+        warnings,
+        ["g a b in normal: the five plugin's fourth hides the four plugin's third on g"]
+    );
+}
+
+#[test]
 fn keys_bound_to_missing_commands_are_named_at_start() {
     let h = host();
     h.load_str(

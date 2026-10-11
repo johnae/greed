@@ -882,6 +882,13 @@ impl Host {
         state.tasks.forget_client(id);
     }
 
+    /// What looks wrong in what the loaded plugins registered: commands one
+    /// replaced from another, keys one hides from another, and keys bound
+    /// to commands that don't exist.
+    pub fn warnings(&self) -> Vec<String> {
+        api::registry_warnings(&self.lua)
+    }
+
     /// Tells plugins the editor is up and about to show itself, with
     /// "editor.started": once per run, so reloading a plugin doesn't repeat
     /// what it does then. Says which keys are bound to commands that don't

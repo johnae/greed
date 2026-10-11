@@ -490,6 +490,33 @@ for _, kind in KINDS do
 	})
 end
 
+-- `entry`, a command `keys` runs, with where they're bound and what that
+-- hides at the top: `bound` from `greed.keymap.describe`.
+local function with_hidden(
+	entry: Entry,
+	keys: string,
+	bound: { { layer: string, command: string, plugin: string } }
+): Entry
+	local first = bound[1]
+	if first == nil then
+		return entry
+	end
+	local top = { `{keys} in {first.layer}, from the {first.plugin} plugin` }
+	for i = 2, #bound do
+		local under = bound[i]
+		table.insert(top, `  over {under.command} in {under.layer}, from the {under.plugin} plugin`)
+	end
+	table.insert(top, "")
+	local shown = table.clone(entry)
+	shown.lines = function()
+		local lines = table.clone(top)
+		local rest = entry.lines()
+		table.move(rest, 1, #rest, #lines + 1, lines)
+		return lines
+	end
+	return shown
+end
+
 greed.command({
 	name = "describe-key",
 	doc = "Press keys to see what command they run",
@@ -501,9 +528,10 @@ greed.command({
 			keys = if keys == "" then key else `{keys} {key}`
 			local name, pending = greed.keymap.resolve(keys)
 			if name then
+				local bound = greed.keymap.describe(keys)
 				for _, entry in commands() do
 					if entry.name == name then
-						M.show(entry)
+						M.show(with_hidden(entry, keys, bound))
 						return
 					end
 				end
