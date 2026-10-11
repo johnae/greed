@@ -279,3 +279,39 @@ test("a watch drawing a chart says so above the prompt, not its first characters
 	assert(shell.log.running_status(block) == "a chart", shell.log.running_status(block))
 	shell.interrupt(block)
 end)
+
+test("ps: ids aren't charted, TIME isn't a time, and the greatest bars show", function()
+	local ps = tbl({ "PID", "TTY", "TIME", "CMD", "CPU" }, {
+		{ "1", "pts/0", "00:00:03", "bash", "0.5" },
+		{ "2", "pts/0", "00:01:00", "cargo", "9" },
+		{ "3", "pts/1", "00:00:01", "nu", "2" },
+		{ "4", "pts/1", "00:00:00", "ps", "0.1" },
+	})
+	local made = assert(read.chart(ps, assert(read.ask("")), nil, 0))
+	assert(made.kind == "bar", made.kind)
+	assert(made.series[1].name == "CPU", made.series[1].name)
+	-- Asked for, an id is charted all the same.
+	assert(assert(read.chart(ps, assert(read.ask("PID")), nil, 0)).series[1].name == "PID")
+	-- Two rows of room: the greatest, then how many more.
+	local text = require("@scene").text((assert(chart.lines(ps, "CPU by CMD", 30, 3))))
+	assert(string.find(text, "^cargo"), text)
+	assert(string.find(text, "\nnu ", 1, true), text)
+	assert(string.find(text, "2 more, the greatest above", 1, true), text)
+end)
+
+test("a watch of many rows draws the eight greatest now, on an axis from zero", function()
+	local history = read.history("")
+	local rows = {}
+	for i = 1, 20 do
+		rows[i] = { `p{i}`, if i == 15 then "50" else "0" }
+	end
+	local made = assert(read.chart(tbl({ "NAME", "CPU" }, rows), assert(read.ask("")), history, 1))
+	assert(#made.series == 8, tostring(#made.series))
+	local names = {}
+	for _, s in made.series do
+		names[s.name] = true
+	end
+	assert(names.p15, "the busiest is drawn")
+	local zero = scale.ticks(0, 0, 3)
+	assert(zero.lo == 0 and zero.hi >= 1, `{zero.lo} {zero.hi}`)
+end)

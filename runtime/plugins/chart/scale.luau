@@ -14,9 +14,14 @@ function M.ticks(lo: number, hi: number, count: number): Ticks
 	if lo > hi then
 		lo, hi = hi, lo
 	end
+	-- Numbers that never go below zero get no axis below it.
+	local positive = lo >= 0
 	if lo == hi then
 		local room = if lo == 0 then 1 else math.abs(lo) * 0.1
 		lo, hi = lo - room, hi + room
+	end
+	if positive then
+		lo = math.max(lo, 0)
 	end
 	local rough = (hi - lo) / math.max(count, 1)
 	local power = 10 ^ math.floor(math.log10(rough))

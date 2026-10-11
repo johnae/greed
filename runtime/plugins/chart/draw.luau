@@ -256,8 +256,22 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 	local per = if chart.stacked then 1 else #chart.series
 	local fits = math.max((rows - top) // per, 1)
 	local shown = if #labels > fits then fits - 1 else #labels
-	for i = 1, shown do
-		local row = top + (i - 1) * per
+	-- With more than fit, the greatest, as `top` lists them; else as they came.
+	local order: { number } = {}
+	for i = 1, #labels do
+		order[i] = i
+	end
+	if shown < #labels then
+		table.sort(order, function(a: number, b: number): boolean
+			if totals[a] ~= totals[b] then
+				return totals[a] > totals[b]
+			end
+			return a < b
+		end)
+	end
+	for n = 1, shown do
+		local i = order[n]
+		local row = top + (n - 1) * per
 		local label = labels[i]
 		if (utf8.len(label) or #label) > label_width then
 			label = string.sub(label, 1, (utf8.offset(label, label_width) or label_width + 1) - 1)
@@ -302,7 +316,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 		table.insert(items, {
 			kind = "text",
 			at = { 0, top + shown * per },
-			text = `… {#labels - shown} more`,
+			text = `… {#labels - shown} more, the greatest above`,
 			style = "chart.label",
 		})
 	end

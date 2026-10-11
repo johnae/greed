@@ -147,19 +147,30 @@ local function numeric(tbl: Table, column: string): boolean
 	return filled > 0 and numbers * 2 > filled
 end
 
--- Whether `column` holds times: it's called so, or every cell is a date
--- and time.
+-- Whether `column` holds times: every cell is a date and time, or it's
+-- called so and every cell is a number, as seconds are. `ps`'s TIME,
+-- hours of CPU like `00:01:02`, isn't.
 local function times(tbl: Table, column: string): boolean
 	local name = string.lower(column)
-	if name == "time" or name == "date" or name == "timestamp" or name == "ts" then
-		return true
-	end
+	local named = name == "time" or name == "date" or name == "timestamp" or name == "ts"
 	for _, row in tbl.rows do
-		if tables.iso_time(row[column] or "") == nil then
+		local cell = row[column] or ""
+		if tables.iso_time(cell) == nil and not (named and tonumber(cell)) then
 			return false
 		end
 	end
 	return #tbl.rows > 0
+end
+
+-- Columns of ids and counters people don't chart, like `ps`'s PID: left
+-- out of what's guessed, but charted when asked for.
+local IDS: { [string]: boolean } =
+	{ id = true, pid = true, ppid = true, uid = true, gid = true, ["#"] = true, index = true }
+
+-- Whether `column` is one of those, by its name: `PID`, `user_id`.
+local function id_like(column: string): boolean
+	local name = string.lower(column)
+	return IDS[name] == true or string.match(name, "[_ ]id$") ~= nil
 end
 
 -- `cell` as an x value: a date and time in seconds, or a number.
@@ -246,7 +257,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 	end
 	if #ys == 0 then
 		for _, c in tbl.columns do
-			if c ~= time and c ~= names and c ~= over and numeric(tbl, c) then
+			if c ~= time and c ~= names and c ~= over and not id_like(c) and numeric(tbl, c) then
 				table.insert(ys, c)
 				-- Rows with names, or words from text: their first number,
 				-- as other numbers are often of another kind (CPU, then
@@ -351,9 +362,24 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 				end
 			end
 		end
+		-- The eight greatest now, as `top` would show them, in the order
+		-- they first came so each keeps its colour while it stays.
+		local function latest_of(name: string): number
+			local points = history.series[name]
+			local last = points[#points]
+			return if last then last[2] :: number else -math.huge
+		end
+		local ranked = table.clone(history.order)
+		table.sort(ranked, function(a: string, b: string): boolean
+			return latest_of(a) > latest_of(b)
+		end)
+		local chosen: { [string]: boolean } = {}
+		for n = 1, math.min(8, #ranked) do
+			chosen[ranked[n]] = true
+		end
 		local series: { draw.Series } = {}
 		for _, name in history.order do
-			if #series < 8 then
+			if chosen[name] then
 				table.insert(series, { name = name, points = history.series[name] })
 			end
 		end
