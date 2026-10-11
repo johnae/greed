@@ -54,7 +54,7 @@ After the language (`sh`, `bash`, `zsh`, `fish`, `nu` or `shell`):
 - `every=SECONDS` runs it again that often; `live` alone is every two
   seconds. Without either it runs once, and again when the board does. A
   command that keeps printing, like `kubectl get pods -w`, stays live by
-  itself.
+  itself. It's the board's own `watch`: the command needs none.
 - `title=NAME` names the card, which is its command otherwise.
 - `height=LINES` is how many lines of it show (10); past that the card
   says how many more there are.
@@ -86,7 +86,7 @@ same tables, filters and rows to act on.
 | `space .` | Act on the card's block, as in a shell: change its command, filter, stop it |
 | `<` `>` | Move the card back or on along the board, in its file too |
 | `space a` | Add a command as a card |
-| `space e` | Open the board's file |
+| `space e`, or `i` `a` `c` `o` on a card | Open the board's file, at the card's command; saving it updates the board, and `ctrl-o` (`alt-left` in the vscode style) goes back to it |
 | `space r` | Run every card again |
 
 `<` and `>` work in every editing style, as a board can't be typed in.

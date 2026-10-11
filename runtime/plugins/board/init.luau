@@ -11,7 +11,8 @@
 --
 -- On a board, `enter` opens a card's block in a float, `space .` acts on
 -- it as on the block in its shell, `space a` adds a command, `space e`
--- edits the file and `space r` runs the cards again. Saving the file
+-- (or `i` on a card) edits the file at the card and `space r` runs the
+-- cards again. Saving the file
 -- shows the board as it says. A board from a file you didn't make asks
 -- before it runs anything, as code blocks do, and trusting one trusts the
 -- other.
@@ -476,12 +477,26 @@ greed.command({
 
 greed.command({
 	name = "board-edit",
-	doc = "Open this board's file; saving it shows the board as it says",
+	doc = "Open this board's file at the card under the cursor; saving it shows the board as it says",
 	run = function(ctx)
-		local board = here(ctx)
-		if board then
-			greed.open(board.path)
+		local i, board = card_index(ctx.view)
+		if board == nil then
+			here(ctx)
+			return
 		end
+		local card = if i then board.cards[i] else nil
+		-- At the card's command, the line after its fence.
+		core.file.open_at(board.path, if card then card.first else nil)
+		-- How to get back, in the keys of the style in use.
+		local back: string? = nil
+		for _, binding in greed.keymap.find("jump-back") do
+			if back == nil and greed.keymap.resolve(binding.keys) == "jump-back" then
+				back = binding.keys
+			end
+		end
+		greed.echo(
+			`saving puts your changes on the board{if back then `; {back} goes back to it` else ""}`
+		)
 	end,
 })
 
@@ -640,6 +655,12 @@ for _, role in { "command", "typing" } do
 		[">"] = "board-move-forward",
 	})
 end
+-- A board is drawn from its file, so what would change a card's text
+-- goes to the card in the file.
+greed.keymap.bind(
+	{ role = "command", kind = KIND },
+	{ i = "board-edit", a = "board-edit", c = "board-edit", o = "board-edit" }
+)
 greed.keymap.bind(
 	{ layer = "leader", kind = KIND },
 	{ a = "board-add", e = "board-edit", r = "board-refresh" }
