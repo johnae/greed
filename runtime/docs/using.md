@@ -27,7 +27,7 @@ alone.
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
 A session keeps running the greed it started with. `greed --version` says
-which build a greed is (`greed 0.1.1 (build b5432b407145)`, a hash of what it
+which build a greed is (`greed 0.1.2 (build b5432b407145)`, a hash of what it
 was built from), and attaching to a session of another build, as after
 rebuilding greed while it ran, says so on the status line: `greed --new`
 starts a session of your build beside it, and `greed ctl quit NAME` ends the
