@@ -334,3 +334,18 @@ test("a board's front matter sets its columns: a wide card a row, the others hal
 		board.layout.card_width(42, 50, 1, 2) == 20 and board.layout.card_width(42, 50, 0, 2) == 42
 	)
 end)
+
+test("a card narrower than its chart shows it cut, without an error", function(t)
+	local dir, path =
+		make(t, '# ops\n\n```sh height=3\nprintf "a 1\\nb 3\\n" | chart line --width 120\n```\n')
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	t:wait_for(function()
+		return string.find(b.buffer:text(), "…", 1, true) ~= nil
+	end)
+	local placed = nil
+	for _, mark in b.buffer:decorations("board") do
+		placed = mark.scene or placed
+	end
+	assert(placed == nil, "no scene over a chart cut short")
+end)

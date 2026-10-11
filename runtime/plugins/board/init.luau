@@ -159,7 +159,10 @@ local function chart_marks(board: Board, at: { [number]: { layout.Spot } }): { g
 				break
 			end
 			local start = buffer:line_start(where.line) + where.spot.from
-			if buffer:slice(start, start + #line.text) ~= line.text then
+			-- The card's line from where the card starts, whole characters:
+			-- one cut at the card's edge isn't the chart's.
+			local here = buffer:slice(start, buffer:line_end(where.line))
+			if string.sub(here, 1, #line.text) ~= line.text then
 				break
 			end
 			for _, mark in line.marks do
