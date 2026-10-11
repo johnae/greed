@@ -529,7 +529,11 @@ fn a_session_can_send_its_client_to_another_session() {
 fn picture() -> std::path::PathBuf {
     let image = greed_core::image::Image::from_pixels(2, 1, 3, &[255, 0, 0, 0, 0, 255]).unwrap();
     let path = std::env::temp_dir().join(format!("greed-attach-{}.png", std::process::id()));
-    std::fs::write(&path, &image.png).unwrap();
+    // Every test's session writes it as it starts, while another test may
+    // be reading it: written beside and renamed, it's never seen half done.
+    let beside = path.with_extension(format!("{:?}.part", std::thread::current().id()));
+    std::fs::write(&beside, &image.png).unwrap();
+    std::fs::rename(&beside, &path).unwrap();
     path
 }
 
