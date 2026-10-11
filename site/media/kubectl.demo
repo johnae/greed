@@ -1,0 +1,19 @@
+# kubectl in the Greed shell: its rows are pods, table stages read the
+# API's own fields, and a chart is one more stage.
+size 1280 800
+hide
+run shell
+wait-for ❯
+show
+wait 0.6
+type kubectl get pods
+keys enter
+wait 1.5
+type kubectl get pods | where STATUS != Running
+keys enter
+wait 1.5
+type kubectl get pods | chart RESTARTS
+keys enter
+wait 2.5
+shot kubectl
+wait 1

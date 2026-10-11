@@ -1,0 +1,23 @@
+#!/bin/sh
+# A cluster for the demos: three pods, one of them failing.
+case "$*" in
+  *"-o json"*)
+    cat <<'JSON'
+{"kind": "List", "items": [
+ {"kind": "Pod", "metadata": {"name": "api-7d9f8b6c5-2xkqz", "namespace": "shop", "creationTimestamp": "2026-10-08T09:00:00Z"},
+  "status": {"phase": "Running", "containerStatuses": [{"ready": true, "restartCount": 0, "state": {"running": {}}}]}},
+ {"kind": "Pod", "metadata": {"name": "worker-5c6b7d8f9-abcde", "namespace": "shop", "creationTimestamp": "2026-10-11T08:00:00Z"},
+  "status": {"phase": "Running", "containerStatuses": [{"ready": false, "restartCount": 12, "state": {"waiting": {"reason": "CrashLoopBackOff"}}}]}},
+ {"kind": "Pod", "metadata": {"name": "web-6f8d9c7b4-qwert", "namespace": "shop", "creationTimestamp": "2026-10-10T12:00:00Z"},
+  "status": {"phase": "Running", "containerStatuses": [{"ready": true, "restartCount": 2, "state": {"running": {}}}]}}
+]}
+JSON
+    ;;
+  "get pods"*)
+    printf 'NAME                     READY   STATUS             RESTARTS   AGE\n'
+    printf 'api-7d9f8b6c5-2xkqz      1/1     Running            0          3d\n'
+    printf 'worker-5c6b7d8f9-abcde   0/1     CrashLoopBackOff   12         4h\n'
+    printf 'web-6f8d9c7b4-qwert      1/1     Running            2          1d\n'
+    ;;
+  *) echo "kubectl $*" ;;
+esac

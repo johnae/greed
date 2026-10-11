@@ -1,0 +1,26 @@
+# A note with live shell blocks: a chart that keeps moving, and one block
+# reading another's result.
+size 1280 800
+hide
+keys :
+type open notes.md
+keys enter
+wait-for Machine
+show
+wait 1
+keys / 
+type every=1
+keys enter
+keys space m r
+wait 0.5
+keys a
+wait 5
+keys / 
+type input=pods
+keys enter
+keys space m r
+wait 1
+keys ctrl-d
+wait 2
+shot notes
+wait 2

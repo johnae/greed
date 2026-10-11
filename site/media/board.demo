@@ -1,0 +1,13 @@
+# A board: live charts and a table, laid out in two columns, from a
+# Markdown file.
+size 1280 800
+hide
+keys :
+type board machine
+keys enter
+wait 0.8
+keys a
+show
+wait 8
+shot board
+wait 2

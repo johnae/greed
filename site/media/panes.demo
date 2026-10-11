@@ -1,0 +1,29 @@
+# Panes, a file tree and floating terminals, as a terminal multiplexer
+# has them, in the editor.
+size 1280 800
+hide
+keys :
+type open README.md
+keys enter
+wait-for Shop
+show
+wait 1
+keys space e
+wait 1.5
+keys alt-l
+wait 0.5
+keys alt-n
+wait 1.5
+type cat README.md
+keys enter
+wait 1.5
+keys alt-f
+wait 1.5
+type git --version
+keys enter
+wait 1.5
+keys alt-w
+wait 1.5
+shot panes
+keys alt-f
+wait 1.5
