@@ -89,16 +89,18 @@ code before it loads.
 
 ## Install
 
-The [releases page](https://github.com/johnae/greed/releases/latest) has
-one file to download for each system, each holding a single `greed`
-binary:
+Each system has one file to download, holding a single `greed` binary.
+The links get the latest release; the
+[releases page](https://github.com/johnae/greed/releases/latest) has each
+version's, with its number in the name.
 
 | System | Download | |
 | --- | --- | --- |
-| Linux, x86_64 or arm64 | `greed-VERSION-linux-ARCH.tar.gz` | terminal and window; any distribution with glibc 2.28 or newer |
-| Linux, terminal only | `greed-VERSION-linux-ARCH-tui-only-static.tar.gz` | one static binary for any Linux, servers and NixOS too; no `--gui` |
-| macOS, Apple silicon or Intel | `greed-VERSION-macos.zip` | Greed.app, which opens the window |
-| macOS, for the terminal | `greed-VERSION-macos-universal.tar.gz` | the same binary on its own |
+| Linux, x86_64 | [greed-linux-x86_64.tar.gz](https://github.com/johnae/greed/releases/latest/download/greed-linux-x86_64.tar.gz) | terminal and window; any distribution with glibc 2.28 or newer |
+| Linux, arm64 | [greed-linux-aarch64.tar.gz](https://github.com/johnae/greed/releases/latest/download/greed-linux-aarch64.tar.gz) | the same, for arm64 |
+| Linux, terminal only | [x86_64](https://github.com/johnae/greed/releases/latest/download/greed-linux-x86_64-tui-only-static.tar.gz), [arm64](https://github.com/johnae/greed/releases/latest/download/greed-linux-aarch64-tui-only-static.tar.gz) | one static binary for any Linux, servers and NixOS too; no `--gui` |
+| macOS, Apple silicon or Intel | [greed-macos.zip](https://github.com/johnae/greed/releases/latest/download/greed-macos.zip) | Greed.app, which opens the window |
+| macOS, for the terminal | [greed-macos-universal.tar.gz](https://github.com/johnae/greed/releases/latest/download/greed-macos-universal.tar.gz) | the same binary on its own |
 
 The Linux tarballs are laid out like `/usr/local`, with a desktop entry and
 an icon, so unpacking one into `~/.local` installs it:
@@ -113,9 +115,8 @@ The first start asks how you like to edit and which theme you want. Then
 `:tutor` teaches that style's keys, with lines to practise on, and shows
 you around Greed.
 
-The macOS builds aren't notarized by Apple yet, so the first time, macOS
-won't open Greed.app from a download: allow it under System Settings →
-Privacy & Security. Downloaded with `curl`, the tarball doesn't need that.
+The macOS builds are signed and notarized by Apple, so Greed.app opens
+from a download like any other app.
 
 On NixOS, and anywhere with Nix, the flake builds it with the window:
 `nix run github:johnae/greed`, or `.#static` for the static binary.

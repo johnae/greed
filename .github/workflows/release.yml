@@ -126,6 +126,14 @@ jobs:
         with:
           path: packages
           merge-multiple: true
+      # The same files under names without the version too, so a link to
+      # releases/latest/download/greed-macos.zip always gets the newest.
+      - name: unversioned names
+        run: |
+          cd packages
+          for file in greed-*; do
+            cp "$file" "$(echo "$file" | sed 's/^greed-[0-9][0-9.]*-/greed-/')"
+          done
       - name: checksums
         run: cd packages && sha256sum -- * > SHA256SUMS
       - name: draft release

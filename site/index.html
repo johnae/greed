@@ -241,10 +241,17 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
 
   <section class="install">
     <h2>Try it</h2>
-    <p>Download Greed for Linux or macOS, x86_64 or arm, from the
-    <a href="https://github.com/johnae/greed/releases/latest">releases page</a>:
-    one binary with the terminal and the window, or Greed.app on a Mac. On
-    Linux, unpack it into <code>~/.local</code>:</p>
+    <p>Download the latest Greed: one binary with the terminal and the
+    window, or Greed.app on a Mac, signed and notarized by Apple.</p>
+    <p class="actions downloads">
+      <a class="button primary" href="https://github.com/johnae/greed/releases/latest/download/greed-macos.zip">macOS app</a>
+      <a class="button" href="https://github.com/johnae/greed/releases/latest/download/greed-linux-x86_64.tar.gz">Linux x86_64</a>
+      <a class="button" href="https://github.com/johnae/greed/releases/latest/download/greed-linux-aarch64.tar.gz">Linux arm64</a>
+    </p>
+    <p>The <a href="https://github.com/johnae/greed/releases/latest">releases page</a>
+    has the rest: the macOS binary for the terminal, and a static build of
+    the terminal side for servers and any Linux. On Linux, unpack it into
+    <code>~/.local</code>:</p>
     <pre class="term"><code><span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
 <span class="prompt">$</span> greed --gui README.md</code></pre>
     <p>On NixOS, <code>nix run github:johnae/greed</code>. For servers there's a
