@@ -956,10 +956,19 @@ function draw(buffer: greed.Buffer)
 	if M.on(buffer) then
 		for _, block in M.runnable(buffer) do
 			if not busy[block.from] and not behind[block.from] then
-				-- Over the whole fence, so enter anywhere on it presses it.
+				-- Over the whole fence, so enter anywhere on it presses it, and
+				-- the button after it: only the button looks like one, so the
+				-- fence reads as it does elsewhere.
+				local fence_end = buffer:line_end(block.open)
 				table.insert(marks, {
 					from = block.from,
-					to = buffer:line_end(block.open),
+					to = fence_end,
+					style = "",
+					action = "block-run",
+				})
+				table.insert(marks, {
+					from = fence_end,
+					to = fence_end,
 					style = "blocks.run",
 					text = "▶ run",
 					eol = true,
