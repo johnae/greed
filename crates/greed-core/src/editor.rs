@@ -1809,6 +1809,31 @@ impl Editor {
         self.acting_client_mut().overlay = keys;
     }
 
+    /// Whether `key`, pressed next by the acting client, would do something
+    /// of its own: run a command or go on with a sequence, rather than fall
+    /// to the mode's default (typing it) or to nothing.
+    #[must_use]
+    pub fn binds(&self, key: Key) -> bool {
+        let client = &self.clients[&self.acting];
+        let buffer = &self.buffers[&client.views[&client.focus].buffer];
+        let fresh = client.pending.is_empty() && client.count.is_none();
+        if fresh
+            && (client
+                .overlay
+                .as_ref()
+                .is_some_and(|o| o.contains_key(&key))
+                || buffer.key(key).is_some())
+        {
+            return true;
+        }
+        let mut keys = client.pending.clone();
+        keys.push(key);
+        !matches!(
+            self.keymap.resolve(&client.mode, buffer.kind(), &keys),
+            Resolution::Unbound
+        )
+    }
+
     /// Feeds a key press into the keymap for the acting client's mode and
     /// focused buffer.
     pub fn press(&mut self, key: Key) -> KeyOutcome {

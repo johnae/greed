@@ -28,6 +28,7 @@ mod install;
 mod runtime;
 mod session;
 mod tui;
+mod versions;
 
 #[cfg(target_env = "musl")]
 #[global_allocator]
@@ -150,6 +151,11 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("greed: {err}");
+            // Started from the Finder or a desktop launcher, the window is
+            // the only place to say it.
+            if client::kind() == "gui" && !io::stdin().is_terminal() {
+                let _ = versions::tell(&err.to_string());
+            }
             ExitCode::FAILURE
         }
     }

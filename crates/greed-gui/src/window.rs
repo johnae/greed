@@ -174,11 +174,17 @@ impl App {
         let Some(scene) = self.painter.paint(&mut shown.gpu) else {
             return;
         };
-        let (wgpu::CurrentSurfaceTexture::Success(texture)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(texture)) = shown.surface.get_current_texture()
-        else {
-            shown.surface.configure(&shown.gpu.device, &shown.config);
-            return;
+        let texture = match shown.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(texture)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            // Drawn again when the window shows (a window opened from
+            // Spotlight starts out covered).
+            wgpu::CurrentSurfaceTexture::Occluded => return,
+            _ => {
+                shown.surface.configure(&shown.gpu.device, &shown.config);
+                shown.window.request_redraw();
+                return;
+            }
         };
         let view = texture
             .texture
@@ -297,6 +303,8 @@ impl ApplicationHandler<Event> for App {
         };
         self.painter.set_scale(window.scale_factor());
         self.send_size(window.inner_size());
+        // Frames may have come before the window did.
+        window.request_redraw();
         self.shown = Some(shown);
     }
 
@@ -341,6 +349,8 @@ impl ApplicationHandler<Event> for App {
                         // agent's box.
                         let _ = self.input.send(Input::Run("paste-image".into()));
                     }
+                } else if let Some(input) = option_key(&event, self.mods) {
+                    let _ = self.input.send(input);
                 } else if let Some(key) = key(&event, self.mods) {
                     let _ = self.input.send(Input::Key(key));
                 }
@@ -405,6 +415,11 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             WindowEvent::RedrawRequested => self.redraw(),
+            WindowEvent::Occluded(false) => {
+                if let Some(shown) = &self.shown {
+                    shown.window.request_redraw();
+                }
+            }
             _ => {}
         }
     }
@@ -502,6 +517,48 @@ fn is_paste(logical: &WinitKey, mods: ModifiersState) -> bool {
         }
         _ => false,
     }
+}
+
+/// A character key with macOS's Option held, which types a character of
+/// its own (`π`, or `[` on a Swedish keyboard): it goes as Alt with the
+/// plain key, `alt-p`, and what it typed, for the editor to type that when
+/// the alt key isn't bound or it's plain ASCII. Shifted, a letter is its
+/// capital; another key's shifted character depends on the layout, so it's
+/// the one typed. None elsewhere, and with Control or Command held, which
+/// stop Option typing.
+#[cfg(target_os = "macos")]
+fn option_key(event: &KeyEvent, mods: ModifiersState) -> Option<Input> {
+    use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+    if !mods.alt_key() || mods.control_key() || mods.super_key() {
+        return None;
+    }
+    let WinitKey::Character(plain) = event.key_without_modifiers() else {
+        return None;
+    };
+    let one = |text: &str| {
+        let mut chars = text.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => Some(c),
+            _ => None,
+        }
+    };
+    let plain = one(&plain)?;
+    let typed = event.text.as_deref().unwrap_or_default();
+    let c = match (mods.shift_key(), plain.is_alphabetic()) {
+        (false, _) => plain,
+        (true, true) => plain.to_uppercase().next()?,
+        (true, false) => one(typed)?,
+    };
+    let key = Key {
+        code: KeyCode::Char(c),
+        mods: Mods::ALT,
+    };
+    Some(Input::KeyOrText(key, typed.to_owned()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn option_key(_event: &KeyEvent, _mods: ModifiersState) -> Option<Input> {
+    None
 }
 
 /// A key press as Greed names keys: shifted characters are the character

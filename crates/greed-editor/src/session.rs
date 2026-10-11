@@ -14,6 +14,7 @@ use greed_core::project;
 use greed_core::server::{self, Input, Output};
 use serde_json::{Value, json};
 
+use crate::versions::{self, Choice, Stale};
 use crate::{client, ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
@@ -152,11 +153,25 @@ pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
 fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> Result<(), Error> {
     // A terminal or shell is asked for once, not again after a switch.
     loop {
-        let Attachment { reader, writer, .. } = ctl::connect_to(Some(&name))?.attach_opening(
-            client::kind(),
-            open.as_deref(),
-            opening,
-        )?;
+        let attached =
+            ctl::connect_to(Some(&name))?.attach_opening(client::kind(), open.as_deref(), opening);
+        let Attachment { reader, writer, .. } = match attached {
+            Ok(attachment) => attachment,
+            Err(err) => {
+                let err: Error = err.into();
+                let Some(refused) = versions::other_version(&err) else {
+                    return Err(err);
+                };
+                // Another version runs it: what to do is the user's to say.
+                match settle(&name, &refused)? {
+                    Some(next) => {
+                        name = next;
+                        continue;
+                    }
+                    None => return Ok(()),
+                }
+            }
+        };
         opening = Opening::Nothing;
         match show(reader, writer)? {
             Output::Switch(SwitchTo {
@@ -187,6 +202,52 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             | Output::Notify(_) => return Ok(()),
         }
     }
+}
+
+/// Asks what to do about the session `name` here, which another version
+/// of greed runs (`refused` says which), and does it: the session to
+/// attach to then, or None to stop. Opening it with that version replaces
+/// this process.
+fn settle(name: &str, refused: &control::Refused) -> Result<Option<String>, Error> {
+    let stale = versions::here(name, refused);
+    match versions::ask(&stale)? {
+        Choice::End => {
+            ctl::quit(Some(name), !stale.state.unsaved.is_empty())?;
+            wait_gone(name)?;
+            spawn_server(name, stale.root.as_deref(), false)?;
+            Ok(Some(name.to_owned()))
+        }
+        Choice::Beside => {
+            let beside = new_name(stale.root.as_deref())?;
+            spawn_server(&beside, stale.root.as_deref(), false)?;
+            Ok(Some(beside))
+        }
+        Choice::Old => {
+            use std::os::unix::process::CommandExt;
+            let greed = stale
+                .greed
+                .ok_or("that version of greed isn't here any more")?;
+            let mut command = Command::new(greed);
+            command.args(["attach", name]);
+            if client::kind() == "gui" {
+                command.arg("--gui");
+            }
+            Err(command.exec().into())
+        }
+        Choice::Cancel => Ok(None),
+    }
+}
+
+/// Waits until the session `name` has gone, as after it was told to quit.
+fn wait_gone(name: &str) -> Result<(), Error> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ctl::live_sessions()?.iter().any(|live| live == name) {
+        if Instant::now() > deadline {
+            return Err(format!("the session {name} didn't end").into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Ok(())
 }
 
 /// The session `to` points at, started if it isn't running, and what to
@@ -353,7 +414,23 @@ pub fn ssh(
     };
     // A terminal or shell is asked for once, not again after a switch.
     loop {
-        let ended = ssh_once(&host, &greed, &to, config.as_deref(), opening, new)?;
+        let ended = match ssh_once(&host, &greed, &to, config.as_deref(), opening, new) {
+            Ok(ended) => ended,
+            Err(err) => {
+                let Some(refused) = versions::other_version(&err) else {
+                    return Err(err);
+                };
+                // Another version runs it there: what to do is the user's
+                // to say, and it's done there.
+                match settle_remote(&host, &greed, &refused)? {
+                    Some(beside) => {
+                        new = beside;
+                        continue;
+                    }
+                    None => return Ok(()),
+                }
+            }
+        };
         opening = Opening::Nothing;
         new = false;
         match ended {
@@ -386,6 +463,68 @@ pub fn ssh(
     }
 }
 
+/// Asks what to do about the session on `host` that another version of
+/// greed runs (`refused` says which), and does it there with `greed`, this
+/// version's greed on `host`: whether to attach again with a new session
+/// beside it (true) or in its place (false), or None to stop. Opening it
+/// with its own version isn't offered: that greed isn't here.
+fn settle_remote(
+    host: &str,
+    greed: &str,
+    refused: &control::Refused,
+) -> Result<Option<bool>, Error> {
+    let name = refused
+        .session
+        .clone()
+        .ok_or("the session there didn't say its name")?;
+    let open_there = remote_run(
+        host,
+        &format!("{} ctl state {}", quote(greed), quote(&name)),
+    )
+    .ok()
+    .and_then(|out| serde_json::from_str::<Value>(out.trim()).ok())
+    .map(|value| ctl::State::from_json(&value))
+    .unwrap_or_default();
+    let stale = Stale {
+        session: name.clone(),
+        host: Some(host.to_owned()),
+        version: refused.version.clone(),
+        state: open_there,
+        root: None,
+        greed: None,
+    };
+    match versions::ask(&stale)? {
+        Choice::End => {
+            let force = if stale.state.unsaved.is_empty() {
+                ""
+            } else {
+                " --force"
+            };
+            remote_run(
+                host,
+                &format!("{} ctl quit{force} {}", quote(greed), quote(&name)),
+            )?;
+            Ok(Some(false))
+        }
+        Choice::Beside => Ok(Some(true)),
+        Choice::Old | Choice::Cancel => Ok(None),
+    }
+}
+
+/// Runs `line` on `host` with its shell, giving back what it printed; its
+/// errors show here.
+fn remote_run(host: &str, line: &str) -> Result<String, Error> {
+    let (mut child, input, mut output) = remote(host, line)?;
+    // The shell there ends after the line once its input does.
+    drop(input);
+    let mut out = String::new();
+    output.read_to_string(&mut out)?;
+    if !child.wait()?.success() {
+        return Err(format!("{line} failed on {host}").into());
+    }
+    Ok(out)
+}
+
 /// The greed to run on `host`: `$GREED_REMOTE`, or this version, put there
 /// if it isn't (see [`crate::install`]).
 fn remote_greed(host: &str) -> Result<String, Error> {
@@ -415,7 +554,13 @@ fn ssh_once(
     new: bool,
 ) -> Result<Output, Error> {
     let line = bridge_command(remote_greed, to, config, new);
-    let attach_failed = |err: Error| format!("couldn't attach on {host}: {err}");
+    let attach_failed = |err: Error| -> Error {
+        // Another version there is for the caller to ask about.
+        if versions::other_version(&err).is_some() {
+            return err;
+        }
+        format!("couldn't attach on {host}: {err}").into()
+    };
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
     handshake(&mut reader, &mut writer, to.session.as_deref(), opening).map_err(attach_failed)?;
     let ended = show(reader, writer)?;
@@ -453,7 +598,7 @@ fn handshake(
     let response: Value = serde_json::from_str(&line)?;
     if let Some(error) = response.get("error") {
         let said = error["message"].as_str().unwrap_or("refused");
-        return Err(control::refused(session, said).into());
+        return Err(control::Refused::new(session, said).into());
     }
     Ok(())
 }

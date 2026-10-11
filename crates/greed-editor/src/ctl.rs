@@ -15,6 +15,8 @@ usage: greed ctl tools                 list the tools the editor offers
                                       run a tool, e.g. greed ctl read path=src/main.rs
        greed ctl TOOL --help           what a tool does and the arguments it takes
        greed ctl sessions              list running editors
+       greed ctl state SESSION         what's unsaved and running in a session, of any
+                                      greed version, as JSON
        greed ctl quit [--force] [SESSION]
                                       end a session, even one of another greed version,
                                       unless files in it have unsaved changes (--force
@@ -44,6 +46,14 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 [name] => quit(Some(name.as_str()), force),
                 _ => Err(USAGE.into()),
             }
+        }
+        [cmd, name] if cmd == "state" => {
+            let state = state(name)?;
+            println!(
+                "{}",
+                json!({ "unsaved": state.unsaved, "busy": state.busy })
+            );
+            Ok(())
         }
         [cmd] if cmd == "sessions" => {
             for session in control::sessions()? {
@@ -102,7 +112,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 /// Prints what the tool `name` does and the arguments it takes, from the
 /// editor's list; for ctl's own commands, the usage.
 fn tool_help(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if matches!(name, "tools" | "sessions" | "quit") {
+    if matches!(name, "tools" | "sessions" | "quit" | "state") {
         println!("{USAGE}");
         return Ok(());
     }
@@ -145,7 +155,7 @@ fn tool_help(name: &str) -> Result<(), Box<dyn std::error::Error>> {
 /// unless files in it have unsaved changes and not `force`. It asks through
 /// the `eval` tool, which a session of an older greed answers too, since a
 /// client of this one can't attach to that.
-fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = session_client(name, true)?;
     let code = format!("require('@greed').run('quit-session', {{ force = {force}, wait = true }})");
     let call = json!({ "name": "eval", "arguments": { "code": code } });
@@ -165,6 +175,72 @@ fn quit(name: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error
         return Err(format!("{why} (greed ctl quit --force ends it anyway)").into());
     }
     Ok(())
+}
+
+/// What's open in a session that matters before ending it.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct State {
+    /// The files with unsaved changes, as paths from home (`~/...`).
+    pub unsaved: Vec<String>,
+    /// What's running in it, as `core.file.busy` says.
+    pub busy: Vec<String>,
+}
+
+/// What's unsaved and running in the session `name`, asked through the
+/// `eval` tool, which a session of an older greed answers too.
+pub(crate) fn state(name: &str) -> Result<State, Box<dyn std::error::Error>> {
+    let code = r#"
+        local greed = require("@greed")
+        local ok, core = pcall(require, "@core")
+        local out = { unsaved = {}, busy = {} }
+        local home = greed.fs.dirs().home
+        if ok then
+            for _, buffer in greed.buffers() do
+                if core.file.unsaved(buffer) then
+                    local path = buffer:path() or "a buffer with no file"
+                    if home and string.sub(path, 1, #home + 1) == home .. "/" then
+                        path = "~" .. string.sub(path, #home + 1)
+                    end
+                    table.insert(out.unsaved, path)
+                end
+            end
+            local got, busy = pcall(core.file.busy)
+            if got then
+                out.busy = busy
+            end
+        end
+        return greed.json.encode(out)
+    "#;
+    let mut client = session_client(Some(name), true)?;
+    let call = json!({ "name": "eval", "arguments": { "code": code } });
+    let result = client
+        .call("tools/call", &call)?
+        .map_err(io::Error::other)?;
+    let text = result_text(&result);
+    if result["isError"].as_bool() == Some(true) {
+        return Err(text.into());
+    }
+    // The tool may quote what the code returned.
+    let json = serde_json::from_str::<String>(&text).unwrap_or(text);
+    Ok(State::from_json(&serde_json::from_str(&json)?))
+}
+
+impl State {
+    /// A state as `greed ctl state` prints it.
+    pub(crate) fn from_json(value: &Value) -> Self {
+        let list = |key: &str| -> Vec<String> {
+            value[key]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        };
+        Self {
+            unsaved: list("unsaved"),
+            busy: list("busy"),
+        }
+    }
 }
 
 /// `greed edit [--wait] FILE...`: shows the files in the running editor,

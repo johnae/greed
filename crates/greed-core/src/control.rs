@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 10;
+pub const PROTOCOL: u32 = 11;
 
 /// The longest line a session reads from a connection, in bytes: room for a
 /// big paste, short of letting anything that can reach the socket fill the
@@ -135,6 +135,44 @@ fn mismatch(name: &str, theirs: Option<u64>, version: Option<&str>) -> String {
         start_over(name)
     )
 }
+
+/// A session's refusal to let a client attach, with what it said. When it's
+/// because the session runs another version of greed, which this one can't
+/// show, `other_version` is set, with that version if it said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub session: Option<String>,
+    pub said: String,
+    pub other_version: bool,
+    pub version: Option<String>,
+}
+
+impl Refused {
+    /// The refusal of the session `session` (if known) that said `said`.
+    #[must_use]
+    pub fn new(session: Option<&str>, said: &str) -> Self {
+        // "the session NAME runs greed VERSION (protocol N) and ..."
+        let after = |marker: &str| {
+            said.split_once(marker)
+                .and_then(|(_, rest)| rest.split_whitespace().next())
+                .map(str::to_owned)
+        };
+        Self {
+            session: session.map(str::to_owned).or_else(|| after("the session ")),
+            said: said.to_owned(),
+            other_version: said.contains("protocol"),
+            version: after(" runs greed "),
+        }
+    }
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&refused(self.session.as_deref(), &self.said))
+    }
+}
+
+impl std::error::Error for Refused {}
 
 /// What to show when the session `session` refused to attach because it
 /// speaks another protocol, saying `said`. An older session's reason
@@ -356,7 +394,8 @@ impl Session {
 /// Writes down which project the session at `socket` is for, so `greed` in
 /// that project finds it and the switcher can list it.
 fn describe(socket: &Path, root: &Path) -> io::Result<()> {
-    let info = json!({ "pid": std::process::id(), "root": root, "build": build() });
+    let greed = std::env::current_exe().ok();
+    let info = json!({ "pid": std::process::id(), "root": root, "build": build(), "greed": greed });
     std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -382,6 +421,9 @@ pub struct SessionInfo {
     pub root: Option<PathBuf>,
     /// The build of greed it runs, if it said.
     pub build: Option<String>,
+    /// Its process, and the greed it runs, if it said.
+    pub pid: Option<u32>,
+    pub greed: Option<PathBuf>,
 }
 
 /// The sessions running on this machine, by name.
@@ -405,7 +447,15 @@ pub fn sessions() -> io::Result<Vec<SessionInfo>> {
                 .unwrap_or_default();
             let root = info["root"].as_str().map(PathBuf::from);
             let build = info["build"].as_str().map(str::to_owned);
-            Some(SessionInfo { name, root, build })
+            let pid = info["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok());
+            let greed = info["greed"].as_str().map(PathBuf::from);
+            Some(SessionInfo {
+                name,
+                root,
+                build,
+                pid,
+                greed,
+            })
         })
         .collect();
     found.sort_by(|a, b| a.name.cmp(&b.name));
@@ -880,7 +930,7 @@ impl Client {
     /// whatever else, like "open", "terminal" or "takeover".
     pub fn attach_with(mut self, params: &Value) -> io::Result<Attachment> {
         self.call("attach", params)?
-            .map_err(|said| io::Error::other(refused(self.session.as_deref(), &said)))?;
+            .map_err(|said| io::Error::other(Refused::new(self.session.as_deref(), &said)))?;
         Ok(Attachment::asked(self.reader, self.writer, params))
     }
 
@@ -920,6 +970,23 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refusal_says_when_its_another_version_and_which() {
+        // As 0.1.1 says it.
+        let said = "the session john runs greed 0.1.1 (protocol 9) and this client is greed \
+                    0.1.2 (protocol 10), and both need the same; if greed was upgraded while \
+                    the session ran, quit it with `greed ctl quit john` and start greed again";
+        let refused = Refused::new(None, said);
+        assert!(refused.other_version);
+        assert_eq!(refused.session.as_deref(), Some("john"));
+        assert_eq!(refused.version.as_deref(), Some("0.1.1"));
+        assert_eq!(refused.to_string(), said, "it reads as the session said it");
+        let other = Refused::new(Some("work"), "this terminal is in session work");
+        assert!(!other.other_version);
+        assert_eq!(other.session.as_deref(), Some("work"));
+        assert_eq!(other.version, None);
+    }
 
     #[test]
     fn the_runtime_dir_is_the_variable_or_the_users_own_folder_in_run_user() {

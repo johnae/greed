@@ -258,6 +258,56 @@ fn frames_carry_the_menus_and_a_window_runs_their_commands() {
 }
 
 #[test]
+fn an_option_key_runs_what_its_alt_key_is_bound_to_or_types_its_character() {
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor)?;
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+        host.load_dir(&runtime.join("core"))?;
+        host.load_dir(&runtime.join("helix"))?;
+        host.load_str(
+            "option",
+            "local greed = require('@greed')
+            greed.command { name = 'mark', run = function()
+                local b = greed.view():buffer()
+                b:edit(function(e) e:insert(#b:text(), 'M') end)
+            end }
+            greed.keymap.bind({}, { ['alt-q'] = 'mark', ['alt-8'] = 'mark' })",
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 30,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    keys(&conn, "i");
+    let alt = |c: char| Key {
+        code: greed_core::keymap::KeyCode::Char(c),
+        mods: greed_core::keymap::Mods::ALT,
+    };
+    // Bound: the command runs. Not bound, or typing plain ASCII, as `[` on
+    // a Swedish keyboard (though alt-8 is bound here): what Option typed
+    // goes in.
+    conn.input
+        .send(Input::KeyOrText(alt('q'), "œ".into()))
+        .unwrap();
+    conn.input
+        .send(Input::KeyOrText(alt('8'), "[".into()))
+        .unwrap();
+    conn.input
+        .send(Input::KeyOrText(alt('z'), "Ω".into()))
+        .unwrap();
+    let mut f = frame(&conn);
+    while !screen_rows(&f)[0].text().contains("M[Ω") {
+        f = frame(&conn);
+    }
+}
+
+#[test]
 fn a_command_a_client_runs_with_a_bang_is_forced() {
     let conn = server::spawn(|| {
         let mut editor = Editor::new(ClientId(1));

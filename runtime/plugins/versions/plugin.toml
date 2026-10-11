@@ -1,0 +1,4 @@
+name = "versions"
+requires = ["core", "markdown", "blocks"]
+# The answer goes to the file Greed reads it from (fs.write).
+capabilities = ["fs.write"]

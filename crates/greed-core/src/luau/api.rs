@@ -174,6 +174,35 @@ pub(super) fn press(lua: &Lua, key: Key) -> Result<(), HostError> {
     Ok(())
 }
 
+/// `key` where it's bound, or else `text`, a key at a time: what the key
+/// typed. Plain ASCII, like the `[` and `{` a Swedish Mac types with
+/// Option, is always typed: a keyboard puts those there to type them. A
+/// command waiting for the next key gets the text too, as it waits for a
+/// character.
+pub(super) fn press_or_type(lua: &Lua, key: Key, text: &str) -> Result<(), HostError> {
+    let typed = {
+        let state = state(lua);
+        let client = state.editor.client();
+        !text.is_empty()
+            && (text.chars().all(|c| c.is_ascii_graphic())
+                || state.key_waiter.contains_key(&client)
+                || !state.editor.binds(key))
+    };
+    if !typed {
+        return press(lua, key);
+    }
+    for c in text.chars() {
+        press(
+            lua,
+            Key {
+                code: KeyCode::Char(c),
+                mods: Mods::NONE,
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// The keys a `greed.keys.record` keeps.
 pub(crate) struct Recording {
     keys: Vec<Key>,
@@ -1634,7 +1663,11 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
     greed.set(
         "files",
         lua.create_function(|_, dir: Option<String>| {
-            Ok(files(Path::new(dir.as_deref().unwrap_or("."))))
+            let home = std::env::var_os("HOME").map(PathBuf::from);
+            Ok(files(
+                Path::new(dir.as_deref().unwrap_or(".")),
+                home.as_deref(),
+            ))
         })?,
     )?;
     Ok(())
@@ -1763,11 +1796,34 @@ fn fuzzy(query: &str, items: &[String], case: CaseMatching) -> Vec<usize> {
 /// At most this many files are listed.
 const MAX_FILES: usize = 100_000;
 
+/// The folders of a home folder that hold no one's work, and that macOS
+/// asks before letting a program read (iCloud Drive and other cloud storage
+/// are under Library): finding files there takes long and pops up prompts.
+const HOME_SKIPPED: [&str; 6] = [
+    "Library",
+    "Applications",
+    "Music",
+    "Movies",
+    "Pictures",
+    "Public",
+];
+
 /// Files under `dir`, relative to it and sorted, skipping hidden files and
-/// anything `.gitignore` excludes.
-fn files(dir: &Path) -> Vec<String> {
+/// anything `.gitignore` excludes, and when it's the `home` folder, what
+/// [`HOME_SKIPPED`] names.
+pub(crate) fn files(dir: &Path, home: Option<&Path>) -> Vec<String> {
+    let real = |path: &Path| std::fs::canonicalize(path).ok();
+    let in_home = home.is_some_and(|home| real(home).is_some_and(|home| real(dir) == Some(home)));
     let mut files: Vec<String> = ignore::WalkBuilder::new(dir)
         .require_git(false)
+        .filter_entry(move |entry| {
+            !(in_home
+                && entry.depth() == 1
+                && entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| HOME_SKIPPED.contains(&name)))
+        })
         .build()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
@@ -2320,4 +2376,33 @@ fn handlers(lua: &Lua, (): ()) -> LuaResult<Table> {
         }
     }
     Ok(list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn files_in_the_home_folder_leave_out_its_library_and_media_but_not_elsewhere() {
+        let home = std::env::temp_dir().join(format!("greed-files-home-{}", std::process::id()));
+        for path in [
+            "notes.md",
+            "code/main.rs",
+            "Library/Mobile Documents/x.txt",
+            "Music/a.mp3",
+        ] {
+            let path = home.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
+        }
+        assert_eq!(files(&home, Some(&home)), ["code/main.rs", "notes.md"]);
+        // Anywhere else, a folder called Library is a folder like any other.
+        let elsewhere = files(&home, None);
+        assert!(
+            elsewhere.contains(&"Music/a.mp3".to_owned()),
+            "{elsewhere:?}"
+        );
+        assert!(elsewhere.contains(&"Library/Mobile Documents/x.txt".to_owned()));
+        std::fs::remove_dir_all(&home).unwrap();
+    }
 }

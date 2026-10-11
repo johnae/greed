@@ -4,10 +4,14 @@
 use std::sync::Mutex;
 
 use greed_core::render::Menu;
+use muda::accelerator::{Accelerator, Code, Modifiers};
 use muda::{MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use winit::event_loop::EventLoopProxy;
 
 use crate::window::Event;
+
+/// The command of the menus' Quit item.
+const QUIT: &str = "quit";
 
 /// The menu bar as last shown, kept so it's only built again when the
 /// menus change.
@@ -34,6 +38,8 @@ impl MenuBar {
     }
 
     /// Shows `menus`, after the application's own menu, if they changed.
+    /// Quitting goes in the application's menu, as on any Mac app, not in
+    /// the menu a plugin put it in.
     pub fn show(&mut self, menus: &[Menu]) {
         if self.shown.as_deref() == Some(menus) {
             return;
@@ -45,10 +51,21 @@ impl MenuBar {
         let _ = app.append(&PredefinedMenuItem::hide(None));
         let _ = app.append(&PredefinedMenuItem::hide_others(None));
         let _ = app.append(&PredefinedMenuItem::show_all(None));
+        let quit = menus
+            .iter()
+            .flat_map(|m| &m.items)
+            .find(|item| item.command == QUIT);
+        if let Some(quit) = quit {
+            let _ = app.append(&PredefinedMenuItem::separator());
+            let accelerator = Accelerator::new(Some(Modifiers::SUPER), Code::KeyQ);
+            let entry =
+                MenuItem::with_id(quit.command.as_str(), "Quit Greed", true, Some(accelerator));
+            let _ = app.append(&entry);
+        }
         let _ = menu.append(&app);
         for m in menus {
             let submenu = Submenu::new(&m.title, true);
-            for item in &m.items {
+            for item in m.items.iter().filter(|item| item.command != QUIT) {
                 // The item's id is its command, which choosing it runs.
                 let entry = MenuItem::with_id(item.command.as_str(), &item.label, true, None);
                 let _ = submenu.append(&entry);

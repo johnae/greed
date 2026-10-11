@@ -932,6 +932,9 @@ function draw(buffer: greed.Buffer)
 					style = if label then "ui.button" else "markdown.marker",
 					text = if label then `[ {label} ]` else nil,
 					conceal = true,
+					-- On a page nobody edits, like setup's, a button stays one
+					-- under the cursor too.
+					reveal = if buffer:readonly() then "never" :: "never" else nil,
 					action = if label then "block-run" else nil,
 				})
 				table.insert(marks, {
@@ -986,6 +989,12 @@ end
 
 greed.on("buffer.opened", on_buffer)
 greed.on("buffer.changed", on_buffer)
+-- A page a plugin made with its text already in it never opens or changes:
+-- its buttons are drawn when a view first shows it, as views report their
+-- size then.
+greed.on("view.resized", function(event: greed.ViewResized)
+	draw(event.view:buffer())
+end)
 
 require("@self/tools")(M)
 

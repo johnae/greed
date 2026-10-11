@@ -34,6 +34,16 @@ starts a session of your build beside it, and `greed ctl quit NAME` ends the
 old one. `greed ssh` puts your build on the other machine when it runs the
 same system, so a rebuild gets there too; the last few builds are kept there.
 
+A session of another version of Greed, as after upgrading while it ran,
+can't be shown at all: the two don't speak the same protocol. Greed then
+shows a page saying so, with the files that have unsaved changes there and
+what's running, and asks what to do, in the terminal or the window, and
+over `greed ssh` too: end it and start your version in its place, open it
+with the version it runs to save your work first (when that greed is still
+on this machine), or start your version beside it. A number picks, `esc`
+leaves it as it is. `greed ctl state NAME` prints what's unsaved and running
+in a session of any version.
+
 Several terminals can show one session at once: run `greed` or `greed
 attach` in another terminal, or `greed ssh` from another machine, and both
 stay attached. They share the buffers and their undo history; each has its
@@ -66,9 +76,9 @@ If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.
 
 A session keeps running the greed it started with. After an upgrade, a
-session from before may not understand the new client, and `greed` says so
-with both versions. `greed ctl quit NAME` ends that session (it works
-across versions), and the next `greed` starts a new one.
+session from before may not understand the new client: Greed then asks what
+to do about it, as above. `greed ctl quit NAME` ends such a session from a
+shell (it works across versions), and the next `greed` starts a new one.
 
 A session that quits remembers its projects, their open files and where the
 cursor was, and opens them again the next time it starts. It writes this
@@ -578,7 +588,7 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 
 | Keys | |
 |---|---|
-| `space f` | Find a file in the project |
+| `space f` | Find a file in the project; in your home folder, not under Library, Music, Movies, Pictures, Applications or Public |
 | `space F` | Find a file under the folder Greed was started in |
 | `space '` | Open the last picker again |
 | `space .` | What you can do with what's under the cursor (a file, link, symbol, problem, change or the selection), to pick one; `alt-.` in the vscode style |
@@ -1499,6 +1509,14 @@ something (a terminal, a new tab, a prompt to name the tab, a picker of
 layouts) leave the mode, so what they open goes back to where you were.
 All the keys, and how to change them, are in
 [Keys](keys.md#panes-tabs-and-terminals).
+
+On a Mac, `alt` is Option, which also types characters of its own: `π`,
+or `[` and `{` on a Swedish keyboard. In the window, Option with a key is
+the `alt` key where that's bound, and types its character otherwise; plain
+characters like `[ ] { } | @ $ \` are always typed, since a keyboard puts
+them there to type them. With Shift, letters work as `alt` keys (`alt-F`),
+other keys type their character. In a terminal, the terminal decides
+(iTerm2, kitty, Ghostty and others can treat Option as Alt).
 
 To act on a pane without moving to it first, `alt-p g` puts a number over
 each pane; type one to go there, and you're still in the pane mode, so

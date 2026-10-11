@@ -28,6 +28,10 @@ use greed_text::{ClientId, Rope};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
     Key(Key),
+    /// A key, or the text it types when the key isn't bound where it's
+    /// pressed: macOS's Option keys, which are Alt to some and type
+    /// characters to others (`[` on a Swedish keyboard).
+    KeyOrText(Key, String),
     Resize(Size),
     Mouse(Mouse),
     /// How many pixels wide and high a cell is on the client's screen.
@@ -316,7 +320,11 @@ fn turn_of(input: &Input) -> Turn {
         {
             Turn::Interrupts
         }
-        Input::Key(_) | Input::Mouse(_) | Input::Paste(_) | Input::Run(_) => Turn::Waits,
+        Input::Key(_)
+        | Input::KeyOrText(..)
+        | Input::Mouse(_)
+        | Input::Paste(_)
+        | Input::Run(_) => Turn::Waits,
         Input::Resize(_)
         | Input::CellSize(..)
         | Input::Clipboard(_)
@@ -705,6 +713,16 @@ impl Server<'_> {
                 }
                 self.key_at = Some(Instant::now());
                 let pressed = self.host.timed("a key", || self.host.press(id, key));
+                self.report(pressed);
+            }
+            Input::KeyOrText(key, ref text) => {
+                if let Some(client) = self.clients.get_mut(&id) {
+                    client.message = None;
+                }
+                self.key_at = Some(Instant::now());
+                let pressed = self
+                    .host
+                    .timed("a key", || self.host.press_or_type(id, key, text));
                 self.report(pressed);
             }
             Input::Resize(new) => {

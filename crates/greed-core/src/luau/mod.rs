@@ -1066,6 +1066,13 @@ impl Host {
         budgeted(&self.lua, || api::press(&self.lua, key))
     }
 
+    /// Presses `key` for `client` where it's bound, or else types `text`, as
+    /// for macOS's Option keys. A command waiting for a key gets the text.
+    pub fn press_or_type(&self, client: ClientId, key: Key, text: &str) -> Result<(), HostError> {
+        self.act_for(client)?;
+        budgeted(&self.lua, || api::press_or_type(&self.lua, key, text))
+    }
+
     /// Whether the command the last key `client` typed ran is still at work:
     /// cut into time slices, or waiting on a timer, a job, or a command that
     /// is. Keys it types meanwhile should wait their turn. One waiting for
