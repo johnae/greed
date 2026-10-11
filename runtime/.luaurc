@@ -38,6 +38,7 @@
 		"kubernetes": "./plugins/kubernetes",
 		"board": "./plugins/board",
 		"scene": "./plugins/scene",
-		"chart": "./plugins/chart"
+		"chart": "./plugins/chart",
+		"docs": "./plugins/docs"
 	}
 }

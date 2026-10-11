@@ -14,6 +14,8 @@ how keymaps are organised.
 | `space h i` | Inspect what's under the cursor, or with nothing there the editor itself: an object's state, the objects it relates to (`enter` goes to one, `backspace` or `ctrl-o` comes back, `ctrl-i` goes forward again) and its actions (`enter` runs one) |
 | `space h o` `space h e` `space h a` `space h p` `space h m` `space h s` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, a mode and its keys, or an editing style: its modes, the role each plays and its leader |
 | `space ?` | Every command, with its keys; enter runs one |
+| `space h d` | Go to a page or heading of this manual, which comes with Greed (`:docs WORDS` goes straight to one) |
+| `space h /` | Search this manual as you type |
 | `space .` (`alt-.` in the vscode style) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |
 | `space`, `g`, `]`, ... | After the first key of a sequence, a hint lists what can follow, naming the groups of keys that lead further (`require("@hints").leader_groups` names your own) |
 

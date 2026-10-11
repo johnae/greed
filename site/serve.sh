@@ -15,7 +15,12 @@ for file in index.html style.css assets; do
   ln -s "$root/site/$file" "$out/$file"
 done
 
-mdbook watch "$root/docs" --dest-dir "$out/docs" &
+# The pages are copied into the book build.sh made as they change, and
+# mdbook rebuilds it.
+book=$root/target/book-src
+while sleep 1; do cp -ru "$root/runtime/docs/." "$book/src/"; done &
+copier=$!
+mdbook watch "$book" --dest-dir "$out/docs" &
 watcher=$!
-trap 'kill $watcher' EXIT
+trap 'kill $watcher $copier' EXIT
 miniserve "$out" --index index.html --port "$port" --interfaces 127.0.0.1

@@ -370,13 +370,13 @@ test("the shell's page in the docs lists every builtin and stage as declared", f
 	local page: string? = nil
 	local dir = greed.fs.cwd()
 	for _ = 1, 4 do
-		page = greed.fs.read(`{dir}/docs/shell.md`)
+		page = greed.fs.read(`{dir}/runtime/docs/shell.md`)
 		if page then
 			break
 		end
 		dir ..= "/.."
 	end
-	local text = assert(page, "docs/shell.md")
+	local text = assert(page, "runtime/docs/shell.md")
 	local function listed(usage: string, doc: string)
 		local row = `| \`{(string.gsub(usage, "|", "\\|"))}\` | {doc} |`
 		assert(string.find(text, row, 1, true), row)

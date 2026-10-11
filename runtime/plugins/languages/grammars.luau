@@ -104,7 +104,7 @@ M.sources = {
 } :: { [string]: Source }
 M.sources.cpp.inherits = { "c" }
 
--- Capture names other editors use, as Greed's (see docs/highlighting.md).
+-- Capture names other editors use, as Greed's (see the highlighting docs).
 local NAMES: { [string]: string? } = {
 	number = "constant.numeric",
 	float = "constant.numeric.float",

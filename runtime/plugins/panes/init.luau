@@ -18,7 +18,7 @@
 --   users know, and in Vim, g t and g T change tabs.
 --
 -- Every key is in `M.keys`; rebind or unbind them from your config like any
--- other (see docs/keys.md).
+-- other (see the keys docs).
 
 local greed = require("@greed")
 local core = require("@core")

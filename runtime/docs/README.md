@@ -12,6 +12,11 @@ review in the buffer.
 New to Greed? Start it, answer its few questions, and run `:tutor`: it
 teaches your style's keys with lines to practise on, then shows you around.
 
+This manual comes with Greed too, as the version you run has it:
+`space h d` goes to a page or heading (`:docs boards` straight to one),
+and `space h /` searches it. Pages open as documents, their links
+followed with `enter`; `esc` shows the Markdown.
+
 - [Using Greed](using.md): editing, searching, files, sessions,
   configuration.
 - [Several clients](clients.md): terminals and windows on one session.

@@ -125,7 +125,7 @@ return {
 	["diagnostic.message.info"] = { fg = "blue", italic = true },
 	["diagnostic.message.hint"] = { fg = "cyan", italic = true },
 
-	-- Code; docs/highlighting.md lists every name.
+	-- Code; the highlighting docs lists every name.
 	keyword = { fg = "magenta" },
 	string = { fg = "green" },
 	["string.special"] = { fg = "cyan" },

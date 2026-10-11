@@ -175,9 +175,9 @@ fn yaml() {
     check("sample.yaml");
 }
 
-/// The names docs/highlighting.md lists, from its tables.
+/// The names runtime/docs/highlighting.md lists, from its tables.
 fn documented() -> BTreeSet<String> {
-    let docs = std::fs::read_to_string(root().join("docs/highlighting.md")).unwrap();
+    let docs = std::fs::read_to_string(root().join("runtime/docs/highlighting.md")).unwrap();
     docs.lines()
         .filter_map(|line| line.strip_prefix("| `")?.split_once('`'))
         .map(|(name, _)| name.to_owned())
@@ -218,7 +218,7 @@ fn bundled_queries_only_use_documented_names() {
                     .collect();
                 assert!(
                     name.is_empty() || name.starts_with('_') || documented.contains(&name),
-                    "{} uses @{name}, which docs/highlighting.md doesn't list",
+                    "{} uses @{name}, which runtime/docs/highlighting.md doesn't list",
                     path.display()
                 );
             }

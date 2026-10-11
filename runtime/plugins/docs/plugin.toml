@@ -1,0 +1,4 @@
+name = "docs"
+requires = ["core", "picker", "markdown"]
+# Reads the manual's pages, beside the plugins.
+capabilities = ["fs.read"]

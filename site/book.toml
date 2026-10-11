@@ -1,12 +1,9 @@
-# Builds the docs as a website with mdBook. `site/build.sh` builds them into
-# greed.rs, with the reference pages generated first; `mdbook build docs`
-# alone works too.
+# Builds the docs as a website with mdBook. The pages are in runtime/docs,
+# where the editor has them too; `site/build.sh` copies them next to this
+# and the theme, with the reference pages generated from the editor.
 [book]
 title = "Greed"
-src = "."
-
-[build]
-build-dir = "../target/book"
+src = "src"
 
 [output.html]
 default-theme = "light"

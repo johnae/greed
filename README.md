@@ -32,7 +32,7 @@ opens: `space` in Vim and Helix, `ctrl-space` in the VS Code style. So
 and `space /` searches the project as you type. `:` runs any command in Vim and Helix;
 in the VS Code style `ctrl-P` picks one and `alt-x` opens the same command
 line. Language servers start on their own when they're installed;
-`:health` shows which ones were found. [Editing styles](docs/editing-styles.md)
+`:health` shows which ones were found. [Editing styles](runtime/docs/editing-styles.md)
 has the keys for each.
 
 Greed also has panes, tabs and floating views with zellij's `alt` keys,
@@ -134,19 +134,19 @@ To use your own copy of them, point `GREED_RUNTIME` at a folder shaped like
 
 ## Documentation
 
-- [Using Greed](docs/using.md): editing, searching, files, sessions,
+- [Using Greed](runtime/docs/using.md): editing, searching, files, sessions,
   configuration.
-- [Editing styles](docs/editing-styles.md) and [Keys](docs/keys.md): the
+- [Editing styles](runtime/docs/editing-styles.md) and [Keys](runtime/docs/keys.md): the
   Vim, Helix and VS Code styles, and binding your own keys.
-- [Several clients](docs/clients.md): terminals and windows on one
+- [Several clients](runtime/docs/clients.md): terminals and windows on one
   session, following each other or laid out on their own.
-- [The shell](docs/shell.md): commands as blocks you keep, search and run
+- [The shell](runtime/docs/shell.md): commands as blocks you keep, search and run
   again, sending output to buffers or the next command; agents use it too.
-- [Writing plugins](docs/plugins.md): commands, keys, decorations, panels,
+- [Writing plugins](runtime/docs/plugins.md): commands, keys, decorations, panels,
   tests and types.
-- [Agents](docs/agents.md): `greed ctl`, MCP, proposals, `/ide`, agents
+- [Agents](runtime/docs/agents.md): `greed ctl`, MCP, proposals, `/ide`, agents
   inside Greed and plugins written by agents.
-- [How Greed is built](docs/design.md): what lives in Rust, what lives in
+- [How Greed is built](runtime/docs/design.md): what lives in Rust, what lives in
   Luau, and why.
 
 Or maybe it's Glorified REPL, Editor Eventually Discovered. Either way,

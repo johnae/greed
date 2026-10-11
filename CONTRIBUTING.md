@@ -8,7 +8,7 @@ That opinion: if it can be Luau, it's Luau. Rust holds what needs speed,
 threads or the operating system, exposed as small, general primitives, and
 modes, keymaps, commands, pickers and the agent protocols are plugins in
 `runtime/plugins`. When adding a feature, look for the smallest Rust piece
-that lets Luau do the rest. [How Greed is built](docs/design.md) says more.
+that lets Luau do the rest. [How Greed is built](runtime/docs/design.md) says more.
 
 ### Building and checking
 
@@ -38,7 +38,7 @@ its tests.
 - An API change updates `runtime/types/greed` (a test checks they match).
   Don't run stylua on `runtime/types/greed/init.luau`: a test reads one
   signature per line.
-- A change users would notice updates `docs/` in the same commit.
+- A change users would notice updates `runtime/docs/` in the same commit.
 - A change to what clients and sessions send each other that an older one
   would misread bumps `control::PROTOCOL`.
 - Commits follow conventional commits, `type(scope): what it does`, kept
