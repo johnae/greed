@@ -32,7 +32,8 @@ pub enum Input {
     Mouse(Mouse),
     /// How many pixels wide and high a cell is on the client's screen.
     CellSize(u16, u16),
-    /// Run the command by this name, as from a window's menu.
+    /// Run the command by this name, as from a window's menu; `name!`
+    /// forces it, as on the command line.
     Run(String),
     /// Text pasted into the client, from the system clipboard: a terminal's
     /// bracketed paste, or a window's paste keys.

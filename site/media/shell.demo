@@ -1,0 +1,23 @@
+# The Greed shell: commands as blocks, table stages on any output, and a
+# chart of it with one more stage.
+size 1280 800
+fps 30
+hide
+run shell
+wait-for ❯
+show
+wait 0.8
+type printf 'NAME     CPU   MEM\napi      42    310\nworker   87    520\nweb      12    128\n'
+keys enter
+wait 1.2
+type $1 | where CPU > 20
+keys enter
+wait 1.2
+type $1 | chart CPU
+keys enter
+wait 2
+shot shell-chart
+type watch -n 1 cat /proc/loadavg | chart
+keys enter
+wait 6
+shot shell-live

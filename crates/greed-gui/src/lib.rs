@@ -19,6 +19,8 @@ pub mod draw;
 pub mod gpu;
 #[cfg(target_os = "macos")]
 mod menubar;
+mod paint;
+pub mod record;
 pub mod text;
 mod window;
 

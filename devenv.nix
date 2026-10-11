@@ -35,6 +35,8 @@
     # The website: site/build.sh and site/serve.sh
     pkgs.mdbook
     pkgs.miniserve
+    # Its videos: site/media/record.sh
+    pkgs.ffmpeg-headless
   ];
 
   # What the window client (`greed --gui`) loads at run time: the display

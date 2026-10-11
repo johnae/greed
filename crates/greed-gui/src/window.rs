@@ -2,18 +2,13 @@
 //! keys, the mouse and its size back, as the TUI does in a terminal.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
-use greed_core::image::ImageId;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
-use greed_core::render::{Frame, Size, grid};
-use greed_core::scene_image::Drawer;
 use greed_core::server::{Input, Output};
-use greed_core::theme::Medium;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -22,17 +17,9 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{Window, WindowId};
 
-use crate::color::Palette;
 use crate::columns::Columns;
-use crate::draw;
 use crate::gpu::Gpu;
-use crate::text::{self, Atlas, Fonts};
-
-/// The first id of the images scenes are drawn into, above any the session
-/// gives its own.
-const SCENE_IMAGES: u64 = 0x8000_0000;
-
-const ATLAS_SIZE: u32 = 2048;
+use crate::paint::{ATLAS_SIZE, Painter, Taken};
 
 /// What reaches the event loop from the session's thread.
 pub(crate) enum Event {
@@ -109,18 +96,7 @@ struct Shown {
 struct App {
     input: Sender<Input>,
     shown: Option<Shown>,
-    fonts: Fonts,
-    /// The fonts the options chose, with their size before the scale.
-    font: text::Choice,
-    scale: f64,
-    atlas: Atlas,
-    palette: Palette,
-    frame: Option<Frame>,
-    /// Every image the session sent, as PNG: it sends each only once. Scenes
-    /// drawn into images are here too, under ids from `SCENE_IMAGES`.
-    images: HashMap<ImageId, Vec<u8>>,
-    /// The scenes the session sent, and the images they're drawn into.
-    drawer: Drawer,
+    painter: Painter,
     /// Where the last frame put each row's cells, for the mouse.
     columns: Columns,
     mods: ModifiersState,
@@ -160,14 +136,7 @@ impl App {
         Self {
             input,
             shown: None,
-            fonts: Fonts::new(None, text::DEFAULT_SIZE),
-            font: text::Choice::default(),
-            scale: 1.0,
-            atlas: Atlas::new(ATLAS_SIZE),
-            palette: Palette::default(),
-            frame: None,
-            images: HashMap::new(),
-            drawer: Drawer::new(SCENE_IMAGES),
+            painter: Painter::new(),
             columns: Columns::default(),
             mods: ModifiersState::empty(),
             mouse: (0, 0),
@@ -181,112 +150,30 @@ impl App {
         }
     }
 
-    /// Fonts at the window's scale.
-    fn set_scale(&mut self, scale: f64) {
-        self.scale = scale;
-        self.refont();
-    }
-
-    /// The chosen font at the window's scale, from a fresh atlas.
-    fn refont(&mut self) {
-        let choice = &self.font;
-        self.fonts
-            .set(choice.family.clone(), choice.size * self.scale as f32);
-        self.fonts.set_prose(choice.prose.clone());
-        self.atlas.clear();
-    }
-
     /// Takes up the font the frame's options choose, if it's another one,
     /// and tells the session the cells' new size.
     fn follow_options(&mut self) {
-        let Some(frame) = &self.frame else { return };
-        let font = text::chosen(&frame.gui);
-        if font == self.font {
-            return;
-        }
-        self.font = font;
-        self.refont();
-        if let Some(shown) = &self.shown {
+        if self.painter.follow_options()
+            && let Some(shown) = &self.shown
+        {
             self.send_size(shown.window.inner_size());
         }
     }
 
     /// Tells the session how many cells fit in `size`, and how big a cell is.
     fn send_size(&self, size: PhysicalSize<u32>) {
-        let width = (size.width as f32 / self.fonts.cell_w).floor().max(1.0) as u16;
-        let height = (size.height as f32 / self.fonts.cell_h).floor().max(1.0) as u16;
-        let _ = self.input.send(Input::Resize(Size { width, height }));
-        let _ = self.input.send(Input::CellSize(
-            self.fonts.cell_w.round() as u16,
-            self.fonts.cell_h.round() as u16,
-        ));
+        for input in self.painter.size_inputs(size.width, size.height) {
+            let _ = self.input.send(input);
+        }
     }
 
     fn redraw(&mut self) {
-        let (Some(shown), Some(frame)) = (&mut self.shown, &self.frame) else {
+        let Some(shown) = &mut self.shown else {
             return;
         };
-        let mut grid = grid::compose(frame, Medium::Gui);
-        // Scenes are drawn into images under the text: the cells there keep
-        // only the scene's own text, its labels.
-        let cell = (
-            self.fonts.cell_w.round() as u16,
-            self.fonts.cell_h.round() as u16,
-        );
-        let drawing = self
-            .drawer
-            .draw(&frame.scenes, cell, &frame.theme, Medium::Gui);
-        for id in &drawing.gone {
-            self.images.remove(id);
-        }
-        for (id, png, _, _) in drawing.drawn {
-            self.images.insert(id, png);
-        }
-        let mut under = Vec::new();
-        for scene in &drawing.shown {
-            for (x, y) in self.drawer.uncovered(scene) {
-                if let Some(cell) = grid
-                    .get_mut(usize::from(y))
-                    .and_then(|r| r.get_mut(usize::from(x)))
-                {
-                    cell.text = " ".into();
-                }
-            }
-            under.push(scene.image);
-        }
-        // Views laid out at another size, like a terminal sized for another
-        // client's screen, are drawn scaled to fit, the cursor with them.
-        let contents = grid::compose_content(frame);
-        let cursor = frame
-            .cursor
-            .filter(|_| contents.iter().all(|c| c.cursor.is_none()))
-            .map(|c| (c, frame.cursor_shape));
-        let mut chrome = draw::Chrome::of(frame);
-        chrome.under = &under;
-        let build = |fonts: &mut _, atlas: &mut _| {
-            let mut scene = draw::build(&grid, cursor, &chrome, fonts, atlas, &self.palette)?;
-            draw::add_scaled(
-                &mut scene,
-                &contents,
-                frame.cursor_shape,
-                &chrome,
-                fonts,
-                atlas,
-                &self.palette,
-            )?;
-            Ok::<_, crate::text::Full>(scene)
-        };
-        let Ok(scene) = build(&mut self.fonts, &mut self.atlas).or_else(|_| {
-            // The atlas is full: start it again with this frame's glyphs.
-            self.atlas.clear();
-            build(&mut self.fonts, &mut self.atlas)
-        }) else {
+        let Some(scene) = self.painter.paint(&mut shown.gpu) else {
             return;
         };
-        shown.gpu.upload(&mut self.atlas);
-        let mut placed = frame.images.clone();
-        placed.extend_from_slice(&under);
-        shown.gpu.place_images(&placed, &self.images);
         let (wgpu::CurrentSurfaceTexture::Success(texture)
         | wgpu::CurrentSurfaceTexture::Suboptimal(texture)) = shown.surface.get_current_texture()
         else {
@@ -302,8 +189,9 @@ impl App {
         shown.window.pre_present_notify();
         shown.gpu.queue.present(texture);
         // An input method shows what it's composing by the cursor.
-        if let Some(at) = frame.cursor {
-            let (cw, ch) = (f64::from(self.fonts.cell_w), f64::from(self.fonts.cell_h));
+        if let Some(at) = self.painter.frame.as_ref().and_then(|frame| frame.cursor) {
+            let fonts = &self.painter.fonts;
+            let (cw, ch) = (f64::from(fonts.cell_w), f64::from(fonts.cell_h));
             let x = scene.columns.x(usize::from(at.row), usize::from(at.col));
             shown.window.set_ime_cursor_area(
                 PhysicalPosition::new(f64::from(x), f64::from(at.row) * ch),
@@ -314,21 +202,17 @@ impl App {
     }
 
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
-        match output {
-            Output::Frame(frame) => self.frame = Some(frame),
-            Output::Delta(delta) => {
-                if let Some(frame) = &mut self.frame {
-                    delta.apply(frame);
-                }
-            }
-            Output::Clipboard(text) => {
+        match self.painter.take(output) {
+            Ok(Taken::Frame) => {}
+            Ok(Taken::Kept) | Err(Output::Notify(_)) => return,
+            Err(Output::Clipboard(text)) => {
                 if let Some(clipboard) = &mut self.clipboard {
                     let _ = clipboard.set_text(text);
                 }
                 return;
             }
             // Made PNG off this thread: a big screenshot takes a moment.
-            Output::ReadClipboardImage(ask) => {
+            Err(Output::ReadClipboardImage(ask)) => {
                 let image = self
                     .clipboard
                     .as_mut()
@@ -343,21 +227,7 @@ impl App {
                 });
                 return;
             }
-            // The window has no notifications of its own yet.
-            Output::Notify(_) => return,
-            Output::Scene(scene) => {
-                self.drawer.add(scene);
-                return;
-            }
-            // Kept as PNG; frames that place it make its texture.
-            Output::Image(image) => {
-                use base64::Engine;
-                if let Ok(png) = base64::engine::general_purpose::STANDARD.decode(&image.png) {
-                    self.images.insert(image.id, png);
-                }
-                return;
-            }
-            other => {
+            Err(other) => {
                 self.ended = Some(other);
                 event_loop.exit();
                 return;
@@ -365,7 +235,7 @@ impl App {
         }
         self.follow_options();
         #[cfg(target_os = "macos")]
-        if let (Some(bar), Some(frame)) = (&mut self.menubar, &self.frame) {
+        if let (Some(bar), Some(frame)) = (&mut self.menubar, &self.painter.frame) {
             bar.show(&frame.menus);
         }
         if let Some(shown) = &self.shown {
@@ -376,7 +246,7 @@ impl App {
     /// The cell under `position`, as the last frame placed its text: in a
     /// row with prose, the cell of the character there.
     fn cell_at(&self, position: PhysicalPosition<f64>) -> (u16, u16) {
-        let row = (position.y / f64::from(self.fonts.cell_h)).max(0.0) as usize;
+        let row = (position.y / f64::from(self.painter.fonts.cell_h)).max(0.0) as usize;
         let col = self.columns.col_at(row, position.x as f32);
         (
             u16::try_from(col).unwrap_or(u16::MAX),
@@ -425,7 +295,7 @@ impl ApplicationHandler<Event> for App {
             event_loop.exit();
             return;
         };
-        self.set_scale(window.scale_factor());
+        self.painter.set_scale(window.scale_factor());
         self.send_size(window.inner_size());
         self.shown = Some(shown);
     }
@@ -452,11 +322,11 @@ impl ApplicationHandler<Event> for App {
                     shown.config.height = size.height.max(1);
                     shown.surface.configure(&shown.gpu.device, &shown.config);
                 }
-                self.size = Some(size.to_logical(self.scale));
+                self.size = Some(size.to_logical(self.painter.scale));
                 self.send_size(size);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.set_scale(scale_factor);
+                self.painter.set_scale(scale_factor);
                 if let Some(shown) = &self.shown {
                     self.send_size(shown.window.inner_size());
                 }
@@ -519,7 +389,7 @@ impl ApplicationHandler<Event> for App {
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, y) => f64::from(y),
                     MouseScrollDelta::PixelDelta(p) => {
-                        self.scrolled += p.y / f64::from(self.fonts.cell_h);
+                        self.scrolled += p.y / f64::from(self.painter.fonts.cell_h);
                         let whole = self.scrolled.trunc();
                         self.scrolled -= whole;
                         whole

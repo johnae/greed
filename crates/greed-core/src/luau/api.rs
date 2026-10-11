@@ -24,9 +24,19 @@ use crate::{
 
 type LuaResult<T> = mlua::Result<T>;
 
-/// Runs a command as the user.
+/// Runs a command as the user; `name!` forces it, as on the command line.
 pub(super) fn run_command(lua: &Lua, name: &str) -> Result<(), HostError> {
-    invoke(lua, name, Invocation::default())
+    let (name, force) = name
+        .strip_suffix('!')
+        .map_or((name, false), |name| (name, true));
+    invoke(
+        lua,
+        name,
+        Invocation {
+            force,
+            ..Invocation::default()
+        },
+    )
 }
 
 /// Runs a command with arguments, as from the command line.

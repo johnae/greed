@@ -1022,7 +1022,7 @@ impl Host {
         state_mut(&self.lua).lsp.set_launcher(launcher);
     }
 
-    /// Runs a command as the user, from `client`.
+    /// Runs a command as the user, from `client`; `name!` forces it.
     pub fn run(&self, client: ClientId, name: &str) -> Result<(), HostError> {
         self.act_for(client)?;
         budgeted(&self.lua, || api::run_command(&self.lua, name))

@@ -41,7 +41,7 @@ use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --gui                show the editor in a window rather than this terminal\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -81,13 +81,9 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let opening = opening_flag(&mut args);
-    // Anywhere on the line too: show the editor in a window.
-    if args.iter().any(|arg| arg == "--gui") {
-        args.retain(|arg| arg != "--gui");
-        if let Err(err) = client::use_gui() {
-            eprintln!("greed: {err}");
-            return ExitCode::FAILURE;
-        }
+    if let Err(err) = client_flags(&mut args) {
+        eprintln!("greed: {err}");
+        return ExitCode::FAILURE;
     }
     let result = match args.as_slice() {
         [] => edit(None, None, opening),
@@ -587,6 +583,22 @@ fn print_version() {
         env!("CARGO_PKG_VERSION"),
         runtime::BUILD
     );
+}
+
+/// `--gui` and `--record SCRIPT`, anywhere on the line, taken out of
+/// `args`: show the editor in a window, or record it as the script says,
+/// into pictures, with no window.
+fn client_flags(args: &mut Vec<String>) -> Result<(), String> {
+    if args.iter().any(|arg| arg == "--gui") {
+        args.retain(|arg| arg != "--gui");
+        client::use_gui()?;
+    }
+    if let Some(at) = args.iter().position(|arg| arg == "--record") {
+        let script = args.get(at + 1).cloned().ok_or("--record takes a script")?;
+        args.drain(at..=at + 1);
+        client::use_record(Path::new(&script))?;
+    }
+    Ok(())
 }
 
 /// `--terminal` or `--shell`, anywhere on the line, taken out of `args`:

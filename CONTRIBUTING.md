@@ -31,6 +31,16 @@ fails is a real slowdown to find. While working on a plugin,
 `cargo build && ./target/debug/greed test runtime/plugins/NAME` runs just
 its tests.
 
+### Videos and screenshots
+
+The demos for the docs and the website are scripts, `site/media/*.demo`:
+keys to press, text to type and what to wait for, a step a line (the
+recorder in `crates/greed-gui/src/record.rs` lists them).
+`site/media/record.sh [NAME]` plays each one in a fresh Greed and draws
+every frame as the window would, with no window, into `target/media/NAME`:
+the screenshots the script takes, and `NAME.mp4` when ffmpeg is installed.
+It needs a GPU, or software Vulkan like Mesa's lavapipe.
+
 ### Changes
 
 - Write the test first where you can: Rust integration tests in

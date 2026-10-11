@@ -257,6 +257,36 @@ fn frames_carry_the_menus_and_a_window_runs_their_commands() {
     }
 }
 
+#[test]
+fn a_command_a_client_runs_with_a_bang_is_forced() {
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "", None);
+        let host = Host::new(editor)?;
+        host.load_str(
+            "forced",
+            "local greed = require('@greed')
+            greed.command { name = 'say', run = function(ctx)
+                local b = greed.view():buffer()
+                b:edit(function(e) e:insert(#b:text(), if ctx.force then 'forced ' else 'asked ') end)
+            end }",
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 30,
+            height: 2,
+        }))
+        .unwrap();
+    conn.input.send(Input::Run("say".into())).unwrap();
+    conn.input.send(Input::Run("say!".into())).unwrap();
+    let mut f = frame(&conn);
+    while !screen_rows(&f)[0].text().contains("asked forced") {
+        f = frame(&conn);
+    }
+}
+
 /// Commands that take a while, and quick ones, each adding a letter at the
 /// end: `z` sleeps 150ms then adds "a", `x` adds "b" at once, `y` waits 3s
 /// then adds "c", `Z` sleeps 300ms then adds "c", `esc` adds "e", `q` adds
