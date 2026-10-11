@@ -31,6 +31,11 @@ function M.name(): string?
 	return greed.session.current()
 end
 
+--- Whether the session was started fresh, without restoring.
+function M.fresh(): boolean
+	return greed.session.fresh()
+end
+
 local function file(): string?
 	local name = M.name()
 	local cache = greed.fs.dirs().cache
@@ -127,7 +132,8 @@ end
 --- Opens what `save` wrote down. A file the session was started with stays
 --- shown, and its project stays the shown one.
 function M.restore()
-	local saved = if greed.option.get("restore-session") == true then read() else nil
+	local wanted = greed.option.get("restore-session") == true and not M.fresh()
+	local saved = if wanted then read() else nil
 	if saved == nil then
 		return
 	end

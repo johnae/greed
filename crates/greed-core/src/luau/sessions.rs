@@ -35,6 +35,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|lua, ()| Ok(state(lua).session_name.clone()))?,
     )?;
     session.set("build", lua.create_function(|_, ()| Ok(control::build()))?)?;
+    session.set("fresh", lua.create_function(|_, ()| Ok(control::fresh()))?)?;
     session.set(
         "remote",
         lua.create_function(|lua, ()| {

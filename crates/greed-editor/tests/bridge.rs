@@ -468,3 +468,30 @@ fn the_bridge_ends_when_its_session_does_even_with_its_input_open() {
     bridge.wait_for_exit();
     std::fs::remove_file(file).unwrap();
 }
+
+#[test]
+fn a_session_the_bridge_starts_with_fresh_knows_it() {
+    let fresh = |args: &[&str], label: &str| {
+        let file = temp_file(label, "text");
+        let name = format!("bridge-{label}-{}", std::process::id());
+        let _session = Session::named("shared", &name);
+        let mut all = args.to_vec();
+        all.extend(["--session", &name, file.to_str().unwrap()]);
+        let mut bridge = Bridge::start(&all);
+        bridge.attach();
+        let out = greed()
+            .args([
+                "ctl",
+                "eval",
+                "code=return tostring(require('@greed').session.fresh())",
+            ])
+            .env("GREED_SESSION", &name)
+            .output()
+            .unwrap();
+        bridge.quit();
+        std::fs::remove_file(file).unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+    assert_eq!(fresh(&["--fresh"], "fresh"), "true");
+    assert_eq!(fresh(&[], "restored"), "false");
+}

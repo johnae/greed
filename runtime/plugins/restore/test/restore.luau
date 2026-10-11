@@ -149,3 +149,15 @@ test("nothing is opened with restore-session off", function(t)
 	restore.restore()
 	assert(not open_paths()[dir .. "/a.txt"])
 end)
+
+test("nothing is opened in a session started fresh", function(t)
+	local file = session()
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local root = greed.project.current().root
+	remember(file, { current = root, projects = { { root = root, files = { dir .. "/a.txt" } } } })
+	restore.fresh = function()
+		return true
+	end
+	restore.restore()
+	assert(not open_paths()[dir .. "/a.txt"])
+end)

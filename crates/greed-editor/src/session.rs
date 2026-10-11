@@ -312,6 +312,9 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     let log = std::fs::File::create(&log_path)?;
     let mut command = Command::new(std::env::current_exe()?);
     command.args(["serve", "--session", name]);
+    if control::fresh() {
+        command.arg("--fresh");
+    }
     if let Some(file) = file {
         command.arg(file);
     }
@@ -345,12 +348,23 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     Ok(child)
 }
 
+/// Tells a `greed --fresh` that the session `name` is already running, so
+/// it keeps what it has open.
+fn fresh_does_nothing(name: &str) {
+    if control::fresh() {
+        eprintln!(
+            "greed: the session {name} is running, so --fresh does nothing; quit it first, or start another with --new"
+        );
+    }
+}
+
 /// Plain `greed`: attaches to the session for `path`'s project (or the one
 /// called `name`), starting it in the background if it isn't running.
 pub fn start(name: Option<&str>, path: Option<&Path>, opening: Opening) -> Result<(), Error> {
     let (name, running, target) = find_session(name, path)?;
     // A running session opens what was asked for; a new one starts with it.
     let open = if running {
+        fresh_does_nothing(&name);
         path.map(|_| target)
     } else {
         spawn_server(&name, Some(&target), false)
@@ -380,6 +394,7 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
         .ok_or_else(|| std::io::Error::other("the first message isn't an attach request"))?;
     params.insert("remote".into(), Value::Bool(true));
     if running {
+        fresh_does_nothing(&name);
         if path.is_some() {
             params.insert("open".into(), Value::from(target.to_string_lossy()));
         }
@@ -664,6 +679,9 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
 /// may use `$HOME`).
 fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>, new: bool) -> String {
     let mut args = vec![greed.to_owned(), "bridge".to_owned()];
+    if control::fresh() {
+        args.push("--fresh".to_owned());
+    }
     if let Some(name) = &to.session {
         args.extend(["--session".to_owned(), name.clone()]);
     } else if new {

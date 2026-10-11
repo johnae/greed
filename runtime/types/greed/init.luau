@@ -1038,6 +1038,8 @@ export type Sessions = {
 	current: () -> string?,
 	--- Which build of greed this is, as `greed --version` says it.
 	build: () -> string,
+	--- Whether the session was started with `greed --fresh`, to begin without what it had open before.
+	fresh: () -> boolean,
 	--- Whether the attached client (or the last one) came over `greed ssh`; before any attached, whether `greed ssh` started the session.
 	remote: () -> boolean,
 	--- Whether a terminal or window is attached to the session.

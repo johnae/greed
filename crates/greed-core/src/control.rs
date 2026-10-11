@@ -12,7 +12,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
@@ -61,6 +61,20 @@ pub fn set_build(build: &str) {
 /// Which build this is (see [`set_build`]).
 pub fn build() -> &'static str {
     BUILD.get().map_or("dev", String::as_str)
+}
+
+/// Whether this greed was started with `--fresh`: a session it starts
+/// begins without what it had open before.
+static FRESH: AtomicBool = AtomicBool::new(false);
+
+/// Says this greed was started with `--fresh`, as the program starts.
+pub fn set_fresh() {
+    FRESH.store(true, Ordering::Relaxed);
+}
+
+/// Whether this greed was started with `--fresh` (see [`set_fresh`]).
+pub fn fresh() -> bool {
+    FRESH.load(Ordering::Relaxed)
 }
 
 /// What each side says about itself when a client attaches: the protocol it

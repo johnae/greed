@@ -83,8 +83,11 @@ shell (it works across versions), and the next `greed` starts a new one.
 A session that quits remembers its projects, their open files and where the
 cursor was, and opens them again the next time it starts. It writes this
 down when it quits and whenever you save a file, in the cache folder
-(`~/.cache/greed/sessions`). Starting with a file keeps that file shown. Turn
-it off with `greed.option.set("restore-session", false)`.
+(`~/.cache/greed/sessions`). Starting with a file keeps that file shown. To
+start one session fresh, without them, use `greed --fresh` (or `greed ssh
+HOST --fresh`); it only matters when a session starts, so quit a running
+one first or start another with `--new`. Turn restoring off for good with
+`greed.option.set("restore-session", false)`.
 
 ### Quitting or keeping a session
 
