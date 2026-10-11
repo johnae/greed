@@ -1121,8 +1121,15 @@ using.md
 | `space m c` | Clear the block's result (`:blocks-results-clear` clears them all) |
 | `space m s` | Stop the block running under the cursor |
 
-Blocks run as `sh`, `bash`, `zsh`, `fish`, `python`, `node`, `ruby`,
-`luau` and `http`:
+Blocks run as `shell`, `sh`, `bash`, `zsh`, `fish`, `python`, `node`,
+`ruby`, `luau` and `http`:
+
+- A `shell` block runs in the Greed shell, a line at a time, stopping at
+  one that fails, so table stages and `| chart` work as they do there. A
+  chart shows in colour, and as an image in the window and terminals that
+  draw one. With `every=SECONDS` its line runs again that often and the
+  result keeps up, without filling undo, until `space m s` stops it; the
+  fence shows `● live` meanwhile.
 
 - A program gets the code to run, and prints the result. When it fails,
   the result block says how it exited (`result exit=1`).
@@ -1143,6 +1150,7 @@ Options go after the language:
   input runs again every time, so it never reads a stale result.
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
+- `every=SECONDS`, on a `shell` block, keeps it live (above).
 
 While a block runs, its fence shows `■ running`; click that or press
 `space m s` to stop it, along with anything it started, like a server. A

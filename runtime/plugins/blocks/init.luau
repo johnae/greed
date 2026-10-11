@@ -30,8 +30,11 @@ local core = require("@core")
 local parse = require("@self/parse")
 local runners = require("@self/runners")
 local markdown = require("@markdown")
+local scene = require("@scene")
 
 type Block = parse.Block
+export type Run = runners.Run
+export type Outcome = runners.Outcome
 
 local M = {}
 
@@ -219,15 +222,22 @@ core.features.add("blocks", M.on)
 
 -- Runs in progress, each tracking its block's fence as it moves with edits,
 -- so the result goes under the block wherever it is by the time it's done.
--- `status` shows after the fence.
+-- `status` shows after the fence. A live run stays until `stop` ends it.
 type Running = {
 	buffer: greed.Buffer,
 	fence: greed.Tracked,
 	status: string,
 	child: greed.Child?,
 	stopped: boolean,
+	stop: (() -> ())?,
 }
 local running: { Running } = {}
+
+-- What runs drew over their results, by the fence of their block.
+type Drawn = { buffer: greed.Buffer, fence: greed.Tracked, drawing: runners.Drawing }
+local drawn: { Drawn } = {}
+
+local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
 
 -- Where a run's block starts now, unless its fence went.
 local function where(run: Running): number?
@@ -247,6 +257,16 @@ local function finish(run: Running)
 	run.fence:forget()
 	table.remove(running, table.find(running, run) :: number)
 	draw(run.buffer)
+end
+
+-- Ends `run`, a live one.
+local function stop_live(run: Running)
+	local stop = run.stop
+	if stop and not run.stopped then
+		run.stopped = true
+		stop()
+		finish(run)
+	end
 end
 
 -- The block at `pos` in `buffer`: the one whose fences or code it's in, or
@@ -285,8 +305,33 @@ local function result_text(outcome: runners.Outcome): string
 	return `\n\n{fence}{info}\n{body}{if body == "" then "" else "\n"}{fence}`
 end
 
--- Saves `outcome` as the result of `block`, replacing the one it had.
-local function save(buffer: greed.Buffer, block: Block, outcome: runners.Outcome)
+-- Keeps what `outcome` drew to show over the result of `block`, in place
+-- of what a run of it drew before.
+local function keep_drawing(buffer: greed.Buffer, block: Block, outcome: runners.Outcome)
+	for i = #drawn, 1, -1 do
+		local d = drawn[i]
+		local at = d.fence:range()
+		if d.buffer == buffer and (at == nil or at == block.from) then
+			d.fence:forget()
+			table.remove(drawn, i)
+		end
+	end
+	local drawing = outcome.drawing
+	if drawing then
+		local fence = buffer:track_range(block.from, buffer:line_end(block.open))
+		table.insert(drawn, { buffer = buffer, fence = fence, drawing = drawing })
+	end
+end
+
+-- Saves `outcome` as the result of `block`, replacing the one it had,
+-- kept to undo unless `opts` says.
+local function save(
+	buffer: greed.Buffer,
+	block: Block,
+	outcome: runners.Outcome,
+	opts: { undo: boolean? }?
+)
+	keep_drawing(buffer, block, outcome)
 	local text = result_text(outcome)
 	-- After the closing fence's line break when there is one, so a cursor
 	-- at the fence's end stays there rather than going after the result.
@@ -302,7 +347,7 @@ local function save(buffer: greed.Buffer, block: Block, outcome: runners.Outcome
 		else
 			e:insert(from, text)
 		end
-	end)
+	end, opts)
 end
 
 -- The choices an `output=choices` block's output makes: a JSON list of
@@ -504,10 +549,32 @@ function run_block(
 			started = function(child: greed.Child)
 				run.child = child
 			end,
+			live = function(stop: () -> ()): (outcome: runners.Outcome) -> ()
+				run.stop = stop
+				return function(outcome: runners.Outcome)
+					if run.stopped then
+						return
+					end
+					local at = where(run)
+					local live = if at and buffer:valid() then block_at(buffer, at) else nil
+					if not live then
+						stop_live(run)
+						return
+					end
+					save(buffer, live, outcome, OUT_OF_UNDO)
+					draw(buffer)
+				end
+			end,
 		} :: runners.Run
 	)
 	local at = where(run)
-	finish(run)
+	if ok and run.stop and not run.stopped then
+		show(run, "● live")
+	elseif run.stop then
+		stop_live(run)
+	else
+		finish(run)
+	end
 	local result: runners.Outcome = if ok
 		then outcome
 		else { output = "", error = tostring(outcome) }
@@ -676,6 +743,10 @@ greed.command({
 		for _, run in running do
 			local at = where(run)
 			if run.buffer == ctx.buffer and block and at == block.from then
+				if run.stop then
+					stop_live(run)
+					return
+				end
 				run.stopped = true
 				local child = run.child
 				if child then
@@ -780,6 +851,49 @@ markdown.choices.on_pick(function(buffer, group, by)
 	greed.vouch(greed.plugin.within, by, heard, buffer, group)
 end)
 
+-- The marks showing `drawing` over `result`'s text: its lines' styles,
+-- and its scene over them, for the clients that draw one better. None when
+-- the result's text isn't the drawing's, as after an edit.
+local function drawing_marks(
+	buffer: greed.Buffer,
+	result: { from: number, to: number },
+	drawing: runners.Drawing
+): { greed.Mark }
+	-- The result's text starts the line after its opening fence.
+	local first = buffer:line_of(result.from) + 1
+	while first < buffer:line_count() and string.sub(buffer:line_text(first), 1, 3) ~= "```" do
+		first += 1
+	end
+	first += 1
+	local count = #drawing.lines
+	if first + count > buffer:line_of(result.to) then
+		return {}
+	end
+	local out: { greed.Mark } = {}
+	for k, line in drawing.lines do
+		local start = buffer:line_start(first + k - 1)
+		local here = buffer:line_text(first + k - 1)
+		if string.gsub(here, "%s+$", "") ~= string.gsub(line.text, "%s+$", "") then
+			return {}
+		end
+		for _, mark in line.marks do
+			table.insert(
+				out,
+				{ from = start + mark.from, to = start + mark.to, style = mark.style }
+			)
+		end
+	end
+	if scene.drawn() then
+		table.insert(out, {
+			from = buffer:line_start(first),
+			to = buffer:line_end(first + count - 1),
+			style = "",
+			scene = { id = drawing.scene, cols = drawing.cols, rows = count },
+		})
+	end
+	return out
+end
+
 -- A run button after each runnable block's fence, which enter on the fence
 -- presses too, in files where blocks show as runnable, and how each running
 -- block is doing, which a click stops.
@@ -826,6 +940,16 @@ function draw(buffer: greed.Buffer)
 					style = "markdown.marker",
 					fold = true,
 				})
+			end
+		end
+	end
+	for _, d in drawn do
+		local at = d.fence:range()
+		local block = if at and d.buffer == buffer then block_at(buffer, at) else nil
+		local result = block and block.result
+		if result then
+			for _, mark in drawing_marks(buffer, result, d.drawing) do
+				table.insert(marks, mark)
 			end
 		end
 	end

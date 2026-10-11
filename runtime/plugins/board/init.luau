@@ -26,6 +26,7 @@ local chart = require("@chart")
 local scene = require("@scene")
 local file = require("@self/file")
 local layout = require("@self/layout")
+require("@self/runner")
 
 type Shell = shell.Shell
 type Block = shell.Block

@@ -16,6 +16,10 @@ NAME                    READY   STATUS              Filesystem      Size  Used A
 worker-5c6b7d8f9-abcde  0/1     CrashLoopBackOff    /dev/nvme0n1p2  468G  401G   44G  91%
 ```
 
+For one live command in a note or a runbook rather than a page of them,
+a `shell` code block with `every=SECONDS` does the same where it is; see
+[Runnable code blocks](using.md#runnable-code-blocks).
+
 ## Making one
 
 `:board-new ops` makes a board in the project, at `.greed/boards/ops.md`,

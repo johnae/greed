@@ -5,6 +5,7 @@
 
 local greed = require("@greed")
 local registry = require("@core").registry
+local scene = require("@scene")
 
 local M = {}
 
@@ -13,7 +14,10 @@ local M = {}
 --- `progress` takes how much output there is so far, for showing it while
 --- it runs; `started` takes a child process, so the run can be stopped.
 --- `answers` are the page's answers by question (markdown questions), and
---- `answer` the one that just changed, for a block run by a pick.
+--- `answer` the one that just changed, for a block run by a pick. `live`
+--- is for a block that goes on after its runner returns, as a live shell
+--- block does: `stop` ends it when the block's stopped or goes away, and
+--- what `live` gives back saves a new outcome as its result, outside undo.
 export type Run = {
 	code: string,
 	input: string?,
@@ -23,11 +27,16 @@ export type Run = {
 	started: (child: greed.Child) -> (),
 	answers: { [string]: string }?,
 	answer: string?,
+	live: (stop: () -> ()) -> (outcome: Outcome) -> (),
 }
 
+--- What a run drew besides its text, as a chart does: its lines' styles,
+--- and a scene over them for the clients that draw one better.
+export type Drawing = { lines: { scene.Line }, scene: number, cols: number }
+
 --- What a run gave: its output, how a program exited (nil for a runner
---- without exit codes), or what went wrong.
-export type Outcome = { output: string, exit: number?, error: string? }
+--- without exit codes), or what went wrong, and what it drew.
+export type Outcome = { output: string, exit: number?, error: string?, drawing: Drawing? }
 
 export type Runner = (run: Run) -> Outcome
 
