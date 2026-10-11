@@ -212,7 +212,7 @@ end
 
 --- The actions `object`'s kind has.
 function M.actions(object: Object): { actions.Action }
-	return actions.for_kind(object.kind)
+	return actions.for_kind(object.kind, object :: any)
 end
 
 -- Puts the cursor on `object` when it's somewhere in a buffer, in a view

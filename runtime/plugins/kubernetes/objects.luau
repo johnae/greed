@@ -10,6 +10,8 @@ local config = require("./config")
 
 local parse = shell.parse
 
+local M = {}
+
 type Block = shell.Block
 type Shell = shell.Shell
 type Thing = shell.Thing
@@ -389,4 +391,20 @@ shell.action_command("deployment", "rollout status", function(value: any): strin
 	return kubectl(`rollout status deployment {parse.quote(value.name)}`, value)
 end, { doc = "How its rollout is going" })
 
-return {}
+--- The resources people get most, by their full plural names.
+function M.resources(): { string }
+	local seen: { [string]: boolean } = {}
+	local out: { string } = {}
+	for _, resource in SHORT do
+		if not seen[resource] then
+			seen[resource] = true
+			table.insert(out, resource)
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+M.VALUED = VALUED
+
+return M

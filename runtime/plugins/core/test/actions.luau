@@ -185,3 +185,29 @@ test("an action that destroys several, or an agent's, is reviewed together first
 	end)
 	assert(#ran == 1 and #assert(chosen) == 0, "none ran")
 end)
+
+test("an action that suits only some things of its kind is offered for those", function()
+	actions.action({
+		kind = "test-offered",
+		name = "only big",
+		offers = function(target)
+			return target.value > 10
+		end,
+		run = function() end,
+	})
+	actions.action({ kind = "test-offered", name = "always", run = function() end })
+	local function names(value: number): string
+		local out = {}
+		for _, action in
+			actions.for_kind("test-offered", { kind = "test-offered", label = "n", value = value })
+		do
+			if action.kind == "test-offered" then
+				table.insert(out, action.name)
+			end
+		end
+		return table.concat(out, ",")
+	end
+	assert(names(20) == "only big,always", names(20))
+	assert(names(1) == "always", names(1))
+	assert(#own("test-offered") == 2, "without a target, all of them")
+end)

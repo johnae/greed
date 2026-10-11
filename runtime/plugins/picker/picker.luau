@@ -584,7 +584,7 @@ function M.act(targets: { core.Target })
 		local what = if #group > 1
 			then `{#group} × {first.kind}: {table.concat(names, ", ")}`
 			else `{first.kind}: {first.label}`
-		for _, action in core.actions.for_kind(first.kind) do
+		for _, action in core.actions.for_kind(first.kind, first) do
 			local label = action.name
 			if #targets > 1 then
 				label ..= `  {what}`

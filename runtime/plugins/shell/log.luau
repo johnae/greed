@@ -798,6 +798,33 @@ local function replace_output(shell: Shell, block: Block, lines: { Line })
 	end
 end
 
+-- Shows `block`, run again in its place, as `add` shows a new one: its
+-- command, and nothing it printed.
+local function restart(shell: Shell, block: Block)
+	local from, to = M.range(block)
+	if from == nil or to == nil then
+		return
+	end
+	local buffer = shell.buffer
+	local last_block = M.blocks_end(shell) == to
+	local text = block.command .. "\n"
+	buffer:edit(function(e)
+		e:replace(from, to, text)
+	end, OUT_OF_UNDO)
+	local _, breaks = string.gsub(block.command, "\n", "")
+	shown[block.uid] = { command = breaks + 1, stable = 0, volatile = 0 }
+	track_block(shell, block, from, from + #text)
+	if last_block then
+		end_blocks(shell, from + #text)
+	end
+	buffer:decorate(ns_out(block), {})
+	M.draw_refs(shell, block)
+	M.draw_block(shell, block)
+	if last_block then
+		M.draw_prompt(shell)
+	end
+end
+
 --- The places in files `block`'s output names, like `src/main.rs:12:5`,
 --- with paths from the folder it ran in, as the buffer has them now.
 function M.references(shell: Shell, block: Block): { terminal.Reference }
@@ -962,6 +989,15 @@ end
 M.replace_output = function(shell: Shell, block: Block, lines: { Line })
 	exclusive(shell, function()
 		replace_output(shell, block, lines)
+	end)
+	tell_updated(block)
+end
+
+--- Shows `block`, run again in its place, as a new block shows: its
+--- command, and nothing it printed.
+M.restart = function(shell: Shell, block: Block)
+	exclusive(shell, function()
+		restart(shell, block)
 	end)
 	tell_updated(block)
 end

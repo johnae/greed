@@ -5,12 +5,15 @@
 -- context and namespace the command ran against, to describe, read the
 -- logs of, open a shell in, restart or delete; and they complete the
 -- next kubectl command. `space o k` and `space o K` switch the context and
--- namespace, everywhere or in one shell (context.luau).
+-- namespace, everywhere or in one shell (context.luau). A `kubectl get`
+-- block shows another resource or namespace in its place, live if it was
+-- (browse.luau).
 
 local shell = require("@shell")
 local config = require("@self/config")
 require("@self/objects")
 local context = require("@self/context")
+local browse = require("@self/browse")
 
 local M = {}
 
@@ -27,6 +30,10 @@ M.current = config.current
 --- Switching the context and namespace, everywhere or in one shell; see
 --- context.luau.
 M.context = context
+
+--- A `kubectl get` line showing another resource or namespace; see
+--- browse.luau.
+M.retarget = browse.retarget
 
 shell.segment_icon("kubernetes", { plain = "⎈", nerd = "\u{f10fe}" })
 

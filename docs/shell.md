@@ -131,6 +131,7 @@ work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
 | `g o` | Select the block's output |
 | `] e` `[ e` | The next or previous file and line the output names |
 | `space r` `space R` | Run the block again as it ran, or in the shell's folder now |
+| `space C` | Change the block's command and run it in the block's place |
 | `space y` `space Y` | Copy the block's output, or its command |
 | `space x` | Stop the running block for good |
 | `space v` | Open the block's whole output in a buffer |
@@ -544,6 +545,21 @@ up under the header, the ones that changed since they first showed
 marked, rather than a longer and longer list. Its rows are pods to act
 on, as any `kubectl get` block's are. It ends when kubectl does, or with
 `ctrl-c`.
+
+`space C` on a block changes its command and runs it in the block's
+place: the same number, where it was, its floats still showing it, with
+what it printed, its filter and its sort replaced. A watch or `-w` block
+stays live, so one block can go from pods to deployments rather than the
+shell filling up with them. On a `kubectl get` block, `space .` offers
+"another resource" (the ones the cluster has, its custom resources too)
+and "another namespace" (or all of them), which do the same with the
+resource or namespace flags changed, as k9s's views do:
+
+```text
+❯ 7 kubectl get pods -n payments -w        ◐ 2 changed · 14:05:02
+       ↓ another resource: deployments
+❯ 7 kubectl get deployments -n payments -w ◐ 0 changed · 14:05:09
+```
 
 ## Running blocks above the prompt
 

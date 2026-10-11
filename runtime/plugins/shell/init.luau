@@ -334,6 +334,9 @@ export type RunOptions = {
 	expanded: boolean?,
 	--- What was typed, shown in the block, when that isn't `line`.
 	typed: string?,
+	--- A finished block of the shell's to run in, in place of a new one;
+	--- see `change`.
+	block: Block?,
 }
 
 -- A new block for `command` in `shell`, running.
@@ -681,8 +684,33 @@ local function flow(
 	flow(shell, block, stages, opts, out, json, made, {})
 end
 
--- Adds a block for `command` to `shell`, running.
+-- Makes `block`, finished, a new block for `command`, running, in its
+-- place: its number and where it is stay, with what it printed, its filter
+-- and its sort gone.
+local function reuse(shell: Shell, block: Block, command: string, opts: RunOptions): Block
+	rows.reset(shell, block)
+	local fresh = new_block(shell, command, opts)
+	fresh.number, fresh.uid, fresh.range = block.number, block.uid, block.range
+	for key in block :: any do
+		(block :: any)[key] = nil
+	end
+	for key, value in fresh :: any do
+		(block :: any)[key] = value
+	end
+	if opts.view then
+		state.views[block.uid] = opts.view
+	end
+	log.restart(shell, block)
+	tick(shell)
+	return block
+end
+
+-- Adds a block for `command` to `shell`, running, or runs it in
+-- `opts.block`'s place.
 local function add_block(shell: Shell, command: string, opts: RunOptions): Block
+	if opts.block then
+		return reuse(shell, opts.block, command, opts)
+	end
 	shell.count += 1
 	local block = new_block(shell, command, opts)
 	if opts.view then
@@ -821,6 +849,24 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 		)
 	end
 	return block
+end
+
+--- Runs `line` in `block`'s place, with its folder and variables, as
+--- `run` would: the same number, place and floats, with what it printed,
+--- its filter and its sort replaced. A running block is stopped first. This
+--- is how a watch or `kubectl get -w` switches to showing something else.
+--- Waits (in a command, handler or greed.spawn) for that.
+function M.change(shell: Shell, block: Block, line: string, options: RunOptions?): Block?
+	if block.status == "running" then
+		M.kill(block)
+		M.wait(block)
+	end
+	local opts: RunOptions = if options then table.clone(options) else {}
+	opts.block = block
+	opts.cwd = opts.cwd or block.cwd
+	opts.env = opts.env or block.env
+	opts.by = opts.by or block.by
+	return M.run(shell, line, opts)
 end
 
 --- Waits for `block` to finish (in a command, handler or greed.spawn) and
@@ -1005,6 +1051,7 @@ local HELP_KEYS = {
 		{ "ctrl-up  ctrl-down", "the block before or after the cursor" },
 		{ "f8  shift-f8", "the next or previous file:line the output names" },
 		{ "ctrl-space r  R", "run the block again, as it ran or here" },
+		{ "ctrl-space C", "change the block's command, run in its place" },
 		{ "ctrl-space y  Y", "copy its output or its command" },
 		{ "ctrl-space x  v  c", "stop it, open its output, clear finished blocks" },
 		{ "ctrl-f", "keep a block's lines with what's typed, or a table's rows (COL=VALUE)" },
@@ -1022,6 +1069,7 @@ local HELP_KEYS = {
 		{ "] e  [ e", "the next or previous file:line the output names" },
 		{ "g o", "select the block's output" },
 		{ "space r  R", "run the block again, as it ran or here" },
+		{ "space C", "change the block's command, run in its place" },
 		{ "space y  Y", "copy its output or its command" },
 		{ "space x  v  c", "stop it, open its output, clear finished blocks" },
 		{ "/", "keep a block's lines with what's typed, or a table's rows (COL=VALUE)" },
@@ -1431,6 +1479,17 @@ greed.command({
 })
 
 block_command("shell-edit", "Put the block's command at the prompt, to change and run again", edit)
+
+block_command(
+	"shell-change",
+	"Change the block's command and run it in the block's place, as a watch switching to show something else",
+	function(shell, block)
+		local line = core.prompt.ask("change to", block.command)
+		if line and not string.match(line, "^%s*$") then
+			M.change(shell, block, line)
+		end
+	end
+)
 
 block_command(
 	"shell-peek",
@@ -2024,6 +2083,7 @@ for _, action in
 		{ "rerun", "shell-rerun", "Run it again as it ran" },
 		{ "rerun here", "shell-rerun-here", "Run it again in the shell's folder now" },
 		{ "edit", "shell-edit", "Put its command at the prompt" },
+		{ "change", "shell-change", "Change its command and run it in its place" },
 		{ "copy output", "shell-copy-output", "Copy what it printed" },
 		{ "copy command", "shell-copy-command", "Copy its command" },
 		{ "interrupt", "shell-interrupt", "Interrupt it" },
@@ -2153,6 +2213,7 @@ greed.keymap.bind({ layer = "leader", kind = KIND }, {
 	x = "shell-kill",
 	v = "shell-output-open",
 	c = "shell-clear",
+	C = "shell-change",
 	s = "shell-sort",
 	S = "shell-show-all",
 })

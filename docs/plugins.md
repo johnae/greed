@@ -260,7 +260,10 @@ An action that destroys or stops something says so with `danger = true`:
 them all for several or for an agent's, saying what each will do
 (`says = function(target) return "kubectl delete ..." end`) and warning
 where it's due (`warns`). `actions.run_all(action, targets)` runs one on
-several, asking once, and gives back those it ran on.
+several, asking once, and gives back those it ran on. An action that suits
+only some things of its kind says which with `offers = function(target)
+... end`, like the kubernetes plugin's "another resource" on blocks that
+run `kubectl get`.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the
@@ -1255,7 +1258,9 @@ terminal's rows into marks for a buffer of your own.
 
 `require("@shell")` is the [shell](shell.md): `shell.run(sh, line)` runs
 a line in a shell as a new block, `shell.of(buffer)` is the shell a buffer
-shows, and `shell.wait(block)` waits for a block to finish. A block's
+shows, and `shell.wait(block)` waits for a block to finish.
+`shell.change(sh, block, line)` runs a line in a block's place instead,
+stopping it first if it runs, as `space C` does. A block's
 record has what ran and how it ended, its output, and `block.value` when
 the output was JSON.
 

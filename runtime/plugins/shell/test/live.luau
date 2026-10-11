@@ -202,3 +202,55 @@ test("a watch says which rows changed and how, leaving out what ticks by itself"
 	assert(off == false)
 	shell.interrupt(block)
 end)
+
+test("a watch changed to another command shows it in the same block, its filter gone", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/pods`, "NAME  STATUS\napi   Running\n")
+	greed.fs.write(`{sh.cwd}/deploys`, "NAME  READY\nweb   1/1\n")
+	local block = assert(shell.run(sh, "watch -n 1 cat pods", { view = greed.view() }))
+	t:wait_for(function()
+		return block.table ~= nil
+	end)
+	shell.rows.set(sh, block, "api")
+	local number, uid, count = block.number, block.uid, #sh.blocks
+	local same = shell.change(sh, block, "watch -n 1 cat deploys")
+	assert(same == block, "the same block")
+	t:wait_for(function()
+		return string.find(block.output, "web", 1, true) ~= nil
+	end)
+	assert(block.number == number and block.uid == uid and #sh.blocks == count, "in its place")
+	assert(block.command == "watch -n 1 cat deploys" and block.watching == "cat deploys")
+	assert(block.status == "running" and block.shown == nil, "running, unfiltered")
+	local from, to = shell.log.output_range(sh, block)
+	local shown = sh.buffer:slice(assert(from), assert(to))
+	assert(not string.find(shown, "api", 1, true), shown)
+	assert(string.find(sh.buffer:text(), "watch -n 1 cat deploys", 1, true), "its header says so")
+	shell.interrupt(block)
+end)
+
+test("a finished block changed runs in its place; space C asks what to", function(t)
+	local sh = open(t)
+	local block = assert(shell.run(sh, "echo one", { view = greed.view() }))
+	local function finished()
+		t:wait_for(function()
+			return block.status ~= "running"
+		end)
+	end
+	finished()
+	local count = #sh.blocks
+	shell.change(sh, block, "echo two")
+	finished()
+	assert(#sh.blocks == count and block.status == "done", block.status)
+	assert(
+		string.find(block.output, "two", 1, true) and not string.find(block.output, "one", 1, true)
+	)
+	assert(not string.find(sh.buffer:text(), "echo one", 1, true), sh.buffer:text())
+	-- From the block, space C puts its command in a prompt to change.
+	local from = shell.log.range(block)
+	greed.view():set_cursor(assert(from))
+	t:keys("esc space C")
+	t:keys("backspace backspace backspace t h r e e enter")
+	finished()
+	assert(block.command == "echo three" and #sh.blocks == count, block.command)
+	assert(string.find(block.output, "three", 1, true), block.output)
+end)

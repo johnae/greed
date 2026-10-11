@@ -68,9 +68,9 @@ local function find(contexts: { config.Context }, name: string?): config.Context
 	return nil
 end
 
--- Runs kubectl with `args` as `sh` would, with its variables (its
--- KUBECONFIG, its PATH): what it printed, or nil and why it failed.
-local function kubectl(sh: Shell?, args: { string }): (string?, string?)
+--- Runs kubectl with `args` as `sh` would, with its variables (its
+--- KUBECONFIG, its PATH): what it printed, or nil and why it failed.
+function M.kubectl(sh: Shell?, args: { string }): (string?, string?)
 	local env: { [string]: string | false } = if sh then table.clone(sh.env) else {}
 	local argv = { "kubectl" }
 	table.move(args, 1, #args, 2, argv)
@@ -173,7 +173,7 @@ function M.use(name: string, sh: Shell?, only: boolean?)
 	if sh and own and string.find(sh.env.KUBECONFIG or "", own, 1, true) then
 		own_context(sh, nil, nil)
 	end
-	local _, err = kubectl(sh, { "config", "use-context", name })
+	local _, err = M.kubectl(sh, { "config", "use-context", name })
 	if err then
 		greed.echo(`can't switch to {name}: {err}`)
 		return
@@ -200,7 +200,8 @@ function M.use_namespace(namespace: string, sh: Shell?, only: boolean?)
 		greed.echo(`namespace {namespace} in this shell only`)
 		return
 	end
-	local _, err = kubectl(sh, { "config", "set-context", "--current", `--namespace={namespace}` })
+	local _, err =
+		M.kubectl(sh, { "config", "set-context", "--current", `--namespace={namespace}` })
 	if err then
 		greed.echo(`can't set the namespace: {err}`)
 		return
@@ -270,7 +271,7 @@ greed.command({
 			M.use_namespace(ctx.args[1], sh, ctx.force)
 			return
 		end
-		local listed, err = kubectl(sh, { "get", "namespaces", "-o", "name" })
+		local listed, err = M.kubectl(sh, { "get", "namespaces", "-o", "name" })
 		if listed == nil then
 			greed.echo(`can't list the namespaces: {err}`)
 			return

@@ -62,6 +62,9 @@ export type Action = {
 	danger: boolean?,
 	says: ((target: Target) -> string?)?,
 	warns: ((target: Target) -> string?)?,
+	--- Whether it's offered for `target`, for an action that suits only
+	--- some things of its kind: every one of them without.
+	offers: ((target: Target) -> boolean)?,
 	run: (target: Target) -> ...any,
 }
 
@@ -113,12 +116,14 @@ function M.command(kind: string, name: string, command: string, doc: string, _pl
 end
 
 --- The actions for things of `kind`, in the order they were added, then
---- those for every kind (an action of kind "*").
-function M.for_kind(kind: string): { Action }
+--- those for every kind (an action of kind "*"). Given `target`, only
+--- those its `offers` says suit it.
+function M.for_kind(kind: string, target: Target?): { Action }
 	local out = {}
 	for _, wanted in { kind, "*" } do
 		for _, action in actions do
-			if action.kind == wanted then
+			local offers = action.offers
+			if action.kind == wanted and (target == nil or offers == nil or offers(target)) then
 				table.insert(out, action)
 			end
 		end
