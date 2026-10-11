@@ -74,6 +74,30 @@ Cards are at least `board-card-width` columns wide (50), so a window of
 starts a row of its own, and a row is as tall as its tallest card. What's
 wider than a card is cut at its edge: `enter` shows all of it.
 
+For the same layout in any window, give the board its number of columns
+in front matter at the top of its file. With two, a card is half the
+row, and `wide` (or `span=2`) the whole of it; a window too narrow for
+two shows one.
+
+````markdown
+---
+columns: 2
+---
+# machine
+
+```sh every=2 chart wide height=12 title=load
+cat /proc/loadavg
+```
+
+```sh every=5 chart=area height=8 title="memory, MiB"
+free -m | awk '/Mem:/ { print $3 }'
+```
+
+```sh every=10 chart height=8 title="example.com, seconds"
+curl -o /dev/null -s -w '%{time_total}\n' https://example.com
+```
+````
+
 ## Using one
 
 `:board ops` opens a board, and `:board` alone picks one. Its cards run in

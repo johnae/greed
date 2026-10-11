@@ -40,7 +40,9 @@ export type Card = {
 }
 
 --- A board as its file says: its title and its cards, in order.
-export type Parsed = { title: string?, cards: { Card } }
+--- A board as its file says: its title, how many columns of cards it has
+--- when that's set (`columns: 2` in its front matter), and its cards.
+export type Parsed = { title: string?, columns: number?, cards: { Card } }
 
 -- The languages a card's command may be written as.
 local SHELLS: { [string]: boolean } =
@@ -87,7 +89,13 @@ end
 
 --- Reads a board's file, `text`.
 function M.parse(text: string): Parsed
-	local parsed: Parsed = { title = nil, cards = {} }
+	local parsed: Parsed = { title = nil, columns = nil, cards = {} }
+	-- The front matter, `---` lines at the top, says how it's laid out.
+	local front = string.match(text, "^%-%-%-\n(.-)\n%-%-%-")
+	if front then
+		local columns = tonumber(string.match(front, "columns:%s*(%d+)"))
+		parsed.columns = if columns and columns > 0 then columns else nil
+	end
 	local section: string? = nil
 	local fence: string? = nil
 	local info = ""

@@ -318,3 +318,19 @@ test("a card's chart is as big as the card, coloured, with its scene over it", f
 	assert(styled, "the chart's colours")
 	assert(placed and placed.rows == 2 and placed.cols == 80, "its scene over its two rows")
 end)
+
+test("a board's front matter sets its columns: a wide card a row, the others halves", function()
+	local parsed = board.file.parse("---\ncolumns: 2\n---\n# ops\n\n```sh wide\na\n```\n")
+	assert(parsed.columns == 2 and parsed.title == "ops" and #parsed.cards == 1)
+	assert(board.layout.columns(200, 50, 2) == 2, "two, however wide")
+	assert(board.layout.columns(30, 50, 2) == 1, "one, when two don't fit")
+	local laid = board.layout.lay(nil, {
+		piece("full", {}, nil, 0),
+		piece("left", {}),
+		piece("right", {}),
+	}, 42, 50, 2)
+	assert(laid.text == "full\n\nleft                  right\n", "\n" .. laid.text)
+	assert(
+		board.layout.card_width(42, 50, 1, 2) == 20 and board.layout.card_width(42, 50, 0, 2) == 42
+	)
+end)

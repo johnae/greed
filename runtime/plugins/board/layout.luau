@@ -34,14 +34,23 @@ export type Spot = { from: number, to: number, card: number }
 export type Laid = { text: string, marks: { greed.Mark }, at: { [number]: { Spot } } }
 
 --- How many columns of cards at least `least` wide fit in `width`.
-function M.columns(width: number, least: number): number
+-- The narrowest a card is when a board says how many columns it has: a
+-- narrower window has fewer.
+local NARROWEST = 20
+
+--- How many columns of cards at least `least` wide fit in `width`, or of
+--- the board's own `fixed` number, as many of those as fit.
+function M.columns(width: number, least: number, fixed: number?): number
+	if fixed then
+		return math.clamp((width + M.GAP) // (NARROWEST + M.GAP), 1, fixed)
+	end
 	return math.max(1, (width + M.GAP) // (least + M.GAP))
 end
 
 --- How wide a card taking `span` columns is on a board `width` wide,
 --- with cards at least `least` wide.
-function M.card_width(width: number, least: number, span: number): number
-	local columns = M.columns(width, least)
+function M.card_width(width: number, least: number, span: number, fixed: number?): number
+	local columns = M.columns(width, least, fixed)
 	local column = math.max((width - (columns - 1) * M.GAP) // columns, 1)
 	local cards = if span <= 0 then columns else math.min(span, columns)
 	return cards * column + (cards - 1) * M.GAP
@@ -76,8 +85,14 @@ end
 
 --- Lays out `pieces` under `title` in `width` columns of text, with cards
 --- at least `least` wide.
-function M.lay(title: string?, pieces: { Piece }, width: number, least: number): Laid
-	local columns = M.columns(width, least)
+function M.lay(
+	title: string?,
+	pieces: { Piece },
+	width: number,
+	least: number,
+	fixed: number?
+): Laid
+	local columns = M.columns(width, least, fixed)
 	local column = math.max((width - (columns - 1) * M.GAP) // columns, 1)
 	local parts: { string } = {}
 	local marks: { greed.Mark } = {}

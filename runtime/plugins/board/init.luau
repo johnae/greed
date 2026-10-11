@@ -52,6 +52,8 @@ export type Board = {
 	root: string,
 	title: string?,
 	cards: { Card },
+	--- How many columns of cards it has, when its file says.
+	columns: number?,
 	shell: Shell,
 	blocks: { Block },
 	buffer: greed.Buffer,
@@ -206,7 +208,7 @@ local function draw(board: Board)
 		})
 	end
 	local least = greed.option.get("board-card-width") :: number
-	local laid = layout.lay(board.title, pieces, board.width, least)
+	local laid = layout.lay(board.title, pieces, board.width, least, board.columns)
 	local text = laid.text
 	if #board.cards == 0 then
 		text ..= "\nNo cards yet: space a adds a command, space e edits the file."
@@ -242,7 +244,8 @@ end
 local function line_of(board: Board, card: Card): string
 	local command = card.command
 	local least = greed.option.get("board-card-width") :: number
-	local size = `--width {layout.card_width(board.width, least, card.span)} --height {card.height}`
+	local size =
+		`--width {layout.card_width(board.width, least, card.span, board.columns)} --height {card.height}`
 	if card.chart then
 		command ..= ` | chart {card.chart} {size}`
 	elseif
@@ -314,7 +317,7 @@ end
 -- runs already as they are, unless `again`.
 local function load(board: Board, again: boolean?)
 	local parsed = file.parse(greed.fs.read(board.path) or "")
-	board.title, board.cards = parsed.title, parsed.cards
+	board.title, board.cards, board.columns = parsed.title, parsed.cards, parsed.columns
 	start(board, again)
 	draw(board)
 end
@@ -358,6 +361,7 @@ function M.open(path: string, options: OpenOptions?): Board?
 		root = root,
 		title = nil,
 		cards = {},
+		columns = nil,
 		shell = shell.open({ name = `board {name}`, cwd = root, show = false }),
 		blocks = {},
 		buffer = buffer,
