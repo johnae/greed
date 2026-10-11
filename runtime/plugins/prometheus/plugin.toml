@@ -1,0 +1,4 @@
+name = "prometheus"
+requires = ["shell"]
+# Asks a Prometheus server.
+capabilities = ["net"]

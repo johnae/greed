@@ -164,6 +164,10 @@ export type BuiltinSpec = {
 --- can. It wins over a program or an alias of that name, and `^NAME` runs
 --- the program instead; the shell's own builtins can't be replaced. It
 --- goes when the plugin that added it does.
+-- The plugins' builtins, by name, to run where a line pipes what they
+-- print into table stages, as `prom 'up' | chart` does.
+local pluggable: { [string]: (args: { string }, ctx: BuiltinContext) -> number? } = {}
+
 function M.builtin(spec: BuiltinSpec, call: (args: { string }, ctx: BuiltinContext) -> number?)
 	local name = spec.name
 	assert(string.match(name, "^[%w_%-]+$"), "a builtin's name is one word")
@@ -188,6 +192,39 @@ function M.builtin(spec: BuiltinSpec, call: (args: { string }, ctx: BuiltinConte
 	end
 	greed.plugin.tie(core.registry.set(parse.BUILTINS, name, entry))
 	greed.plugin.tie(core.registry.set(run.builtins, name, runs))
+	greed.plugin.tie(core.registry.set(pluggable, name, call))
+end
+
+-- `line`, programs whose output goes to table stages, run by a plugin's
+-- builtin when it's one alone: what it printed, its errors and its exit
+-- code. Nil when it's something else.
+local function builtin_capture(shell: Shell, block: Block, line: string): (string?, string, number?)
+	if string.find(line, "|", 1, true) then
+		return nil, "", nil
+	end
+	local words = parse.words(line, greed.fs.dirs().home)
+	local call = if words then pluggable[words[1]] else nil
+	if words == nil or call == nil then
+		return nil, "", nil
+	end
+	local args = table.clone(words)
+	table.remove(args, 1)
+	local out, errors = {}, {}
+	local ok, code = pcall(call, args, {
+		shell = shell,
+		block = block,
+		cwd = block.cwd,
+		write = function(text: string)
+			table.insert(out, text)
+		end,
+		error = function(text: string)
+			table.insert(errors, text)
+		end,
+	})
+	if not ok then
+		return table.concat(out), `{words[1]}: {code}\n`, 1
+	end
+	return table.concat(out), table.concat(errors), (code :: number?) or 0
 end
 
 --- The shell shown in `buffer`, if it's one.
@@ -461,6 +498,10 @@ local function capture(
 	line: string,
 	input: string?
 ): (string, string, number?)
+	local own, own_errors, own_code = builtin_capture(shell, block, line)
+	if own then
+		return own, own_errors, own_code
+	end
 	envs.prepare(shell, block)
 	local program = if block.by == "agent" then "sh" else nil
 	local wrapped = fallback.prepare(block, line, { program = program, rc = false })

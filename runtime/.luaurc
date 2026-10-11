@@ -39,6 +39,7 @@
 		"board": "./plugins/board",
 		"scene": "./plugins/scene",
 		"chart": "./plugins/chart",
-		"docs": "./plugins/docs"
+		"docs": "./plugins/docs",
+		"prometheus": "./plugins/prometheus"
 	}
 }

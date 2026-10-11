@@ -191,6 +191,7 @@ The shell runs a few commands itself:
 | `which NAME ...` | What a word at the start of a line runs: a builtin, a table stage, one of your aliases or a program |
 | `stop [N ... \| all]` | Stop running blocks by their number, or all of them; without one, list them |
 | `watch [-n SECONDS] COMMAND` | Run a command again and again, every two seconds, its block showing what it printed last with the changes marked |
+| `prom QUERY [--range DURATION] [--step DURATION] [--url URL]` | Ask Prometheus: a row a series as it is now, or over a range a row a time, to table or chart |
 
 What `open` opens comes up in your style's own mode, to read and move
 around in, not typing as at the prompt. Plugins add commands of their own
@@ -618,6 +619,24 @@ drawing a chart doesn't mark its lines changed, as they all do.
 
 On a [board](boards.md), `chart` after a card's language draws it as a
 chart as big as the card.
+
+### Prometheus
+
+`prom QUERY` asks a Prometheus server (`prometheus-url`,
+`http://localhost:9090` unless you set it, or `--url`) and gives a row a
+series, named by its labels' values, as a table to read or chart:
+
+```text
+❯ prom 'sum by (job) (rate(http_requests_total[5m]))' | chart
+api      ███████████████████████████████████ 41.2
+worker   ████████▌ 9.8
+```
+
+`--range 1h` asks for the last hour instead, a row a time with a column a
+series, which `| chart` draws as a line a series (`--step 30s` sets the
+time between points). In a watch, `watch -n 5 prom 'QUERY' | chart`, each
+run adds a point, so the chart moves as Prometheus's numbers do; on a
+board, a card with `every=5` does the same.
 
 ## Running blocks above the prompt
 
