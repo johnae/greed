@@ -28,11 +28,13 @@ pub struct Finished {
     pub stderr: Vec<u8>,
 }
 
-/// How to run a program: its command line, its input and its folder.
+/// How to run a program: its command line, its input, its folder and the
+/// variables it gets besides the editor's.
 struct Run {
     command: Vec<String>,
     stdin: Option<Vec<u8>>,
     cwd: Option<String>,
+    env: Vec<(String, Option<String>)>,
 }
 
 /// Why `program` didn't start, naming it.
@@ -58,6 +60,12 @@ fn run(how: Run) -> std::io::Result<Finished> {
     if let Some(cwd) = &how.cwd {
         command.current_dir(cwd);
     }
+    for (name, value) in &how.env {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
     let mut child = command.spawn().map_err(|err| cant_run(program, &err))?;
     if let (Some(input), Some(mut stdin)) = (how.stdin, child.stdin.take()) {
         // Written on its own thread, so a program that prints while it reads
@@ -76,11 +84,16 @@ fn run(how: Run) -> std::io::Result<Finished> {
 
 /// A program's `env` option: each name to a string to set it, or `false` to
 /// leave the variable out of what it inherits.
-pub(super) fn env_from_lua(env: Option<Table>) -> LuaResult<Vec<(String, Option<String>)>> {
+pub(super) fn env_from_lua(
+    lua: &Lua,
+    env: Option<Table>,
+) -> LuaResult<Vec<(String, Option<String>)>> {
+    let mut out = super::testing::child_env(lua);
     let Some(env) = env else {
-        return Ok(Vec::new());
+        return Ok(out);
     };
-    env.pairs::<String, mlua::Value>()
+    let given = env
+        .pairs::<String, mlua::Value>()
         .map(|pair| {
             let (name, value) = pair?;
             match value {
@@ -92,10 +105,13 @@ pub(super) fn env_from_lua(env: Option<Table>) -> LuaResult<Vec<(String, Option<
                 ))),
             }
         })
-        .collect()
+        .collect::<LuaResult<Vec<_>>>()?;
+    // The program's own say comes after, so it wins.
+    out.extend(given);
+    Ok(out)
 }
 
-fn run_from_lua(command: Vec<String>, opts: Option<&Table>) -> LuaResult<Run> {
+fn run_from_lua(lua: &Lua, command: Vec<String>, opts: Option<&Table>) -> LuaResult<Run> {
     let (stdin, cwd) = match opts {
         Some(opts) => (
             opts.get::<Option<mlua::LuaString>>("stdin")?
@@ -108,6 +124,7 @@ fn run_from_lua(command: Vec<String>, opts: Option<&Table>) -> LuaResult<Run> {
         command,
         stdin,
         cwd,
+        env: super::testing::child_env(lua),
     })
 }
 
@@ -129,7 +146,7 @@ pub(super) fn to_lua(lua: &Lua, result: std::io::Result<Finished>) -> LuaResult<
 pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let process = lua.create_table()?;
     let start = lua.create_function(|lua, (command, opts): (Vec<String>, Option<Table>)| {
-        let how = run_from_lua(command, opts.as_ref())?;
+        let how = run_from_lua(lua, command, opts.as_ref())?;
         Ok(jobs::start(
             lua,
             format!("greed.process.run {}", how.command.join(" ")),
@@ -592,7 +609,7 @@ fn spawn(
     let options = match opts {
         Some(opts) => SpawnOptions {
             cwd: opts.get("cwd")?,
-            env: env_from_lua(opts.get("env")?)?,
+            env: env_from_lua(lua, opts.get("env")?)?,
             stream_stderr: match opts.get::<Option<String>>("stderr")?.as_deref() {
                 None | Some("keep") => false,
                 Some("stream") => true,
@@ -604,7 +621,10 @@ fn spawn(
             },
             group: opts.get::<Option<bool>>("group")?.unwrap_or(false),
         },
-        None => SpawnOptions::default(),
+        None => SpawnOptions {
+            env: env_from_lua(lua, None)?,
+            ..SpawnOptions::default()
+        },
     };
     let id = {
         let mut state = state_mut(lua);

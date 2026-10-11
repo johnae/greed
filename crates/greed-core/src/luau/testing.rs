@@ -893,6 +893,31 @@ fn add_repo_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
     });
 }
 
+/// What programs a test starts get besides the editor's variables: a git
+/// config of the test's own, a made-up user who signs nothing, so the
+/// user's (a signing key, say) never changes what git does in a test.
+/// Nothing outside tests.
+pub(super) fn child_env(lua: &Lua) -> Vec<(String, Option<String>)> {
+    let Some(dirs) = state(lua).dirs.clone() else {
+        return Vec::new();
+    };
+    let config = dirs.join("gitconfig");
+    if !config.exists() {
+        let _ = std::fs::create_dir_all(&dirs);
+        let _ = std::fs::write(
+            &config,
+            "[user]\n\tname = t\n\temail = t@t\n[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n",
+        );
+    }
+    vec![
+        (
+            "GIT_CONFIG_GLOBAL".into(),
+            Some(config.to_string_lossy().into_owned()),
+        ),
+        ("GIT_CONFIG_NOSYSTEM".into(), Some("1".into())),
+    ]
+}
+
 /// jj or git, run in a test's repository as a made-up user.
 struct Vcs {
     program: &'static str,
@@ -944,6 +969,11 @@ impl Vcs {
         let out = std::process::Command::new(self.program)
             .args(self.options)
             .args(args)
+            .envs(
+                child_env(lua)
+                    .into_iter()
+                    .filter_map(|(k, v)| Some((k, v?))),
+            )
             .current_dir(&self.dir)
             .stdin(std::process::Stdio::null())
             .output()

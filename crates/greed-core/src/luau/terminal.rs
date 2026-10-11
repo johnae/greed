@@ -57,7 +57,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             let options = Options {
                 command: spec.get("command")?,
                 cwd: spec.get::<Option<String>>("cwd")?.map(Into::into),
-                env: super::process::env_from_lua(spec.get("env")?)?,
+                env: super::process::env_from_lua(lua, spec.get("env")?)?,
                 rows: spec.get("rows")?,
                 cols: spec.get("cols")?,
                 scrollback: spec

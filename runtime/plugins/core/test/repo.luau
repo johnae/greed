@@ -31,3 +31,22 @@ test("t:vcs runs jj or git in a folder of your own", function(t)
 	git("init", "-q")
 	assert(greed.fs.stat(dir .. "/repo/.git"), "it ran in the folder")
 end)
+
+test("programs a test runs see a git config of the test's own, never the user's", function(t)
+	if greed.which("git") == nil then
+		return
+	end
+	local function global(key: string): string
+		local ran = assert(greed.process.run({ "git", "config", "--global", key }))
+		return (string.gsub(ran.stdout, "%s+$", ""))
+	end
+	assert(global("user.email") == "t@t", global("user.email"))
+	assert(global("commit.gpgsign") == "false", "nothing is signed")
+	-- A program started to talk to, and git in t:repo, too.
+	local child = assert(greed.process.spawn({ "git", "config", "--global", "user.name" }))
+	child:close()
+	assert(child:read() == "t\n")
+	child:wait()
+	local _, git = t:repo("git", { ["a.txt"] = "a\n" })
+	assert((string.find(git("log", "--format=%ae"), "t@t", 1, true)))
+end)
