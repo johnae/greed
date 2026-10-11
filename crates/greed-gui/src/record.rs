@@ -146,6 +146,52 @@ impl Script {
     }
 }
 
+/// `greed shot`'s arguments as a script that draws one picture, where it
+/// goes, and the file to open. The steps go in the order given:
+/// `--keys KEYS`, `--type TEXT`, `--run COMMAND`, `--wait SECONDS` and
+/// `--wait-for TEXT`; `--size WIDTHxHEIGHT` and `--out PATH` (a PNG,
+/// `greed-shot.png` by default) say how. The picture is taken a second
+/// after the last step, once things have settled.
+pub fn shot(args: &[String]) -> Result<(Script, PathBuf, Option<PathBuf>), String> {
+    let mut script = Script::parse("hide")?;
+    let mut out = PathBuf::from("greed-shot.png");
+    let mut file = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if !arg.starts_with("--") {
+            if file.replace(PathBuf::from(arg)).is_some() {
+                return Err("one file at a time".into());
+            }
+            continue;
+        }
+        let value = args.next().ok_or(format!("{arg} takes a value"))?;
+        match arg.as_str() {
+            "--size" => {
+                let line = format!("size {}", value.replace('x', " "));
+                script.size = Script::parse(&line)?.size;
+            }
+            "--out" => out = PathBuf::from(value),
+            "--keys" | "--type" | "--run" | "--wait" | "--wait-for" => {
+                let line = format!("{} {value}", &arg[2..]);
+                script.steps.extend(Script::parse(&line)?.steps);
+            }
+            _ => return Err(format!("what's {arg}?")),
+        }
+    }
+    script.steps.push(Step::Wait(Duration::from_secs(1)));
+    let name = out
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("greed-shot")
+        .to_owned();
+    script.steps.push(Step::Shot(name));
+    let folder = out
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    Ok((script, folder, file))
+}
+
 /// Where the script at `path` puts what it records: its own `output`
 /// (from the script's folder), or a folder named as the script beside it.
 #[must_use]
@@ -281,8 +327,10 @@ impl Recorder<'_> {
                     self.doing = Doing::WaitingFor(text.clone(), now + WAIT_FOR);
                 }
                 Step::Shot(name) => {
+                    std::fs::create_dir_all(self.out)?;
                     let path = self.out.join(format!("{name}.png"));
                     self.draw_to(&path)?;
+                    eprintln!("greed: {}", path.display());
                 }
             }
         }
@@ -298,6 +346,9 @@ impl Recorder<'_> {
             return Ok(false);
         }
         self.next_frame += Duration::from_secs_f64(1.0 / f64::from(self.script.fps));
+        if self.written == 0 {
+            std::fs::create_dir_all(&self.frames)?;
+        }
         let path = self.frames.join(format!("{:05}.png", self.written));
         match &self.last {
             // Unchanged, it's the last one again.
@@ -346,7 +397,6 @@ pub fn record(
     out: &Path,
 ) -> Result<Output, Error> {
     let frames = out.join("frames");
-    std::fs::create_dir_all(&frames)?;
     let gpu = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, ATLAS_SIZE)
         .ok_or("no GPU to draw the frames with (software Vulkan, like lavapipe, will do)")?;
     let mut recorder = Recorder {
@@ -394,11 +444,13 @@ pub fn record(
     };
     // The session was the recording's own.
     recorder.send(Input::Run("quit-session!".into()));
-    eprintln!(
-        "greed: {} frames in {}",
-        recorder.written,
-        recorder.frames.display()
-    );
+    if recorder.written > 0 {
+        eprintln!(
+            "greed: {} frames in {}",
+            recorder.written,
+            recorder.frames.display()
+        );
+    }
     ended
 }
 
@@ -447,6 +499,44 @@ mod tests {
             let err = Script::parse(text).unwrap_err();
             assert!(err.starts_with(said), "{text:?} gave {err:?}");
         }
+    }
+
+    #[test]
+    fn a_shot_is_its_steps_in_order_then_a_picture() {
+        let args: Vec<String> = [
+            "notes.md",
+            "--size",
+            "800x600",
+            "--keys",
+            "space e",
+            "--type",
+            "ls | chart",
+            "--wait-for",
+            "Files",
+            "--out",
+            "shots/tree.png",
+        ]
+        .map(String::from)
+        .to_vec();
+        let (script, folder, file) = shot(&args).unwrap();
+        assert_eq!(script.size, (800, 600));
+        assert_eq!(folder, PathBuf::from("shots"));
+        assert_eq!(file, Some(PathBuf::from("notes.md")));
+        assert_eq!(
+            script.steps,
+            vec![
+                Step::Hide,
+                Step::Keys(Key::parse_sequence("space e").unwrap()),
+                Step::Type("ls | chart".into()),
+                Step::WaitFor("Files".into()),
+                Step::Wait(Duration::from_secs(1)),
+                Step::Shot("tree".into()),
+            ]
+        );
+        let (_, folder, file) = shot(&[]).unwrap();
+        assert_eq!((folder, file), (PathBuf::from("."), None));
+        assert!(shot(&["--keys".into()]).is_err());
+        assert!(shot(&["--dance".into(), "now".into()]).is_err());
     }
 
     #[test]

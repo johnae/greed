@@ -626,6 +626,13 @@ until its echo shows. `greed bench --draw` also draws each frame in the
 terminal you run it in, the way `greed` does, and says how long that took,
 how many bytes went out, and how long your terminal took to take them in.
 
+`greed shot [FILE]` saves the editor as the window would show it, with
+your plugins and config, as a picture: for a bug report, or to show a
+setup. Steps before it go in order: `--keys "space e"`, `--type TEXT`,
+`--run COMMAND`, `--wait SECONDS` and `--wait-for TEXT` (until the screen
+shows it), then `--size 1280x800` and `--out PATH` (`greed-shot.png`). It
+needs no window, but a GPU or software Vulkan to draw with.
+
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
 the folder you're in, `r` reads the disk again and `q` closes it. `a`
 makes a file in the folder under the cursor (end the name with `/` for a

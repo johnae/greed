@@ -41,7 +41,7 @@ use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -130,6 +130,7 @@ fn main() -> ExitCode {
             test(&dirs.iter().map(PathBuf::from).collect::<Vec<_>>())
         }
         [cmd] if cmd == "commands" => commands(),
+        [cmd, rest @ ..] if cmd == "shot" => shot(rest),
         [cmd] if cmd == "bench" => bench::run(None, false),
         [cmd, flag] if cmd == "bench" && flag == "--draw" => bench::run(None, true),
         [cmd, flag, file] if cmd == "bench" && flag == "--draw" => {
@@ -151,6 +152,23 @@ fn main() -> ExitCode {
             eprintln!("greed: {err}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `greed shot [FILE] [STEPS] [--out PATH]`: the editor as the window
+/// shows it with your config, after the steps, as a picture. It runs in
+/// this process, so no session is left behind.
+fn shot(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "gui")]
+    {
+        let (script, out, file) = greed_gui::record::shot(args)?;
+        client::record_as(script, out);
+        edit_here(file)
+    }
+    #[cfg(not(feature = "gui"))]
+    {
+        let _ = args;
+        Err("this greed was built without the GUI (the gui feature), which takes pictures".into())
     }
 }
 

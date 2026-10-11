@@ -39,9 +39,7 @@ pub fn use_record(path: &Path) -> Result<(), String> {
             .map_err(|e| format!("can't read {}: {e}", path.display()))?;
         let script = Script::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         let out = output_of(&script, path);
-        // The session draws for a window: prose fonts, scenes as images.
-        GUI.store(true, Ordering::Relaxed);
-        let _ = RECORD.set((script, out));
+        record_as(script, out);
         Ok(())
     }
     #[cfg(not(feature = "gui"))]
@@ -49,6 +47,14 @@ pub fn use_record(path: &Path) -> Result<(), String> {
         let _ = path;
         Err("this greed was built without the GUI (the gui feature), which records".into())
     }
+}
+
+/// Records sessions from now on as `script` says, into `out`.
+#[cfg(feature = "gui")]
+pub fn record_as(script: greed_gui::record::Script, out: PathBuf) {
+    // The session draws for a window: prose fonts, scenes as images.
+    GUI.store(true, Ordering::Relaxed);
+    let _ = RECORD.set((script, out));
 }
 
 /// What sort of client this is, as it tells the session when attaching:
