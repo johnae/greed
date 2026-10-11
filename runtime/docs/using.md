@@ -1516,7 +1516,11 @@ the `alt` key where that's bound, and types its character otherwise; plain
 characters like `[ ] { } | @ $ \` are always typed, since a keyboard puts
 them there to type them. With Shift, letters work as `alt` keys (`alt-F`),
 other keys type their character. In a terminal, the terminal decides
-(iTerm2, kitty, Ghostty and others can treat Option as Alt).
+(iTerm2, kitty, Ghostty and others can treat Option as Alt). Command with
+a key is for the Mac and the menus (⌘V pastes, ⌘Q quits); the editor
+leaves it alone. A keyboard in Windows layout on a Mac may send Command
+from the key labelled Alt: switch it to its Windows mode, or swap the two
+in System Settings > Keyboard > Modifier Keys.
 
 To act on a pane without moving to it first, `alt-p g` puts a number over
 each pane; type one to go there, and you're still in the pane mode, so

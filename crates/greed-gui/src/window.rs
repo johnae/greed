@@ -601,6 +601,10 @@ fn key_from(logical: &WinitKey, text: Option<&str>, mods: ModifiersState) -> Opt
             NamedKey::F12 => KeyCode::F(12),
             _ => return None,
         },
+        // Command on a Mac (Super elsewhere) is for the system and the
+        // menus: with a character it's no key, rather than the plain one,
+        // which would be an editing key.
+        WinitKey::Character(_) if mods.super_key() => return None,
         WinitKey::Character(logical) => {
             let typed = text.filter(|_| !mods.control_key() && !mods.alt_key());
             let mut chars = typed.unwrap_or(logical).chars();
@@ -678,6 +682,31 @@ mod tests {
         );
         assert_eq!(char_key("´", None, ModifiersState::empty()), typed('´'));
         assert_eq!(char_key("e", Some("\u{7f}"), ModifiersState::empty()), None);
+    }
+
+    #[test]
+    fn a_character_with_command_or_super_held_is_no_key() {
+        assert_eq!(char_key("c", Some("c"), ModifiersState::SUPER), None);
+        assert_eq!(
+            char_key(
+                "P",
+                Some("P"),
+                ModifiersState::SUPER | ModifiersState::SHIFT
+            ),
+            None
+        );
+        assert_eq!(
+            key_from(
+                &WinitKey::Named(NamedKey::ArrowLeft),
+                None,
+                ModifiersState::SUPER
+            ),
+            Some(Key {
+                code: KeyCode::Left,
+                mods: Mods::NONE,
+            }),
+            "other keys still go"
+        );
     }
 
     #[test]
