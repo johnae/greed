@@ -185,13 +185,14 @@ local function paint(block: Block)
 	end
 	-- The whole chart showing, its scene goes over it, for the clients that
 	-- draw one better than the characters.
+	-- It covers the chart's characters, so it's drawn only while they all
+	-- show as they are: not once the block is folded, or its text changes.
 	if from and matched == #d.lines and scene.drawn() then
-		local start = buffer:line_start(buffer:line_of(from))
+		local first = buffer:line_of(from)
 		table.insert(marks, {
-			from = start,
-			to = start,
-			-- Empty, so its style shows nowhere.
-			style = "chart.label",
+			from = buffer:line_start(first),
+			to = buffer:line_end(first + #d.lines - 1),
+			style = "",
 			scene = { id = d.scene, cols = d.cols, rows = #d.lines },
 		})
 	end

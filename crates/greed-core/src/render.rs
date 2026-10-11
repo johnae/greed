@@ -832,6 +832,17 @@ impl<M: Measure> Renderer<M> {
             let Some(version) = editor.scenes().get(scene.id).map(|s| s.version) else {
                 continue;
             };
+            // A scene goes over the text drawn under it in characters, which
+            // its mark covers: only while every line of that shows, a row
+            // each. Folded, wrapped or changed, the characters show alone.
+            if !mark.range.is_empty() {
+                let first = text.byte_to_line(mark.range.start.min(text.len_bytes()));
+                let last = text.byte_to_line(mark.range.end.min(text.len_bytes()));
+                let lines = i64::try_from(last - first + 1).unwrap_or(i64::MAX);
+                if rows_of(first..last + 1) != lines || lines != i64::from(scene.rows) {
+                    continue;
+                }
+            }
             if let Some((rect, col, row)) =
                 place(mark, scene.cols, scene.rows, scene.col, scene.row)
             {

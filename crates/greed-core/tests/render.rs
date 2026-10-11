@@ -1863,3 +1863,47 @@ fn lines_that_dont_wrap_are_cut_at_the_edge_and_scroll_sideways_to_the_cursor() 
     let shown = body(&frame(&mut ed, 12, 6));
     assert_eq!(shown[0], "cdefghijkl", "back as little as shows it");
 }
+
+#[test]
+fn a_scene_is_placed_over_its_text_only_while_every_line_of_it_shows() {
+    use greed_core::{Mark, MarkScene};
+    // The chart's characters are lines 1 to 3; the cursor is after them.
+    let mut ed = editor("head\n⠉⠉\n⠒⠒\n⣀⣀\ntail|");
+    let buffer = ed.view(ed.main()).buffer;
+    let id = ed.scenes_mut().insert(greed_core::scene::Spec::default());
+    let scene = |to: usize| Mark {
+        range: 5..to,
+        style: "".into(),
+        scene: Some(MarkScene {
+            id,
+            cols: 2,
+            rows: 3,
+            col: 0,
+            row: 0,
+        }),
+        ..Mark::default()
+    };
+    // Over its three lines, each a row: placed.
+    let end = "head\n⠉⠉\n⠒⠒\n⣀⣀".len();
+    ed.decorate(buffer, "chart", vec![scene(end)]);
+    let placed = frame(&mut ed, 20, 8).scenes;
+    assert_eq!(placed.len(), 1);
+    assert_eq!((placed[0].rect.y, placed[0].rect.height), (1, 3));
+    // Its lines folded away under the first: the characters show, as they
+    // are, and nothing is drawn over what's after them.
+    let mut folded = vec![scene(end)];
+    folded.push(Mark {
+        range: 5..end,
+        style: "fold".into(),
+        fold: true,
+        ..Mark::default()
+    });
+    ed.decorate(buffer, "chart", folded);
+    assert!(
+        frame(&mut ed, 20, 8).scenes.is_empty(),
+        "not over the text after it"
+    );
+    // Over fewer lines than its rows, as when its text changed: not placed.
+    ed.decorate(buffer, "chart", vec![scene(10)]);
+    assert!(frame(&mut ed, 20, 8).scenes.is_empty());
+}
