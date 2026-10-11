@@ -554,6 +554,7 @@ function M.draw_prompt(shell: Shell)
 				to = start,
 				style = segment.style or "shell.segment",
 				text = if segment.tight then segment.text else segment.text .. " ",
+				action = segment.action,
 			})
 			warning = warning or segment.warning == true
 			folder = folder and not segment.folder

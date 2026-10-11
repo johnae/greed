@@ -34,10 +34,11 @@ the rest, and the keys in the style you use; `help TOPIC` shows one part.
 Before the folder, the prompt shows the branch of the repository the shell
 is in (with jj, the nearest bookmark and the change), and the kubernetes
 context and namespace `kubectl` would use, which the `kubernetes` plugin
-adds. The context comes from kubectl's config file, the ones `KUBECONFIG` names or `~/.kube/config`,
-read without running kubectl, so it's there at once and costs nothing.
-They're worked out again after every command, so a `cd`, a checkout or
-`kubectl config use-context` shows on the next prompt.
+adds. The context comes from kubectl's config file, the ones `KUBECONFIG`
+names or `~/.kube/config`, read without running kubectl, so it's there
+at once and costs nothing. They're worked out again after every command,
+so a `cd`, a checkout or `kubectl config use-context` shows on the next
+prompt.
 
 ```text
 ⎇ main ⎈ prod-eu:payments ~/s/infra ❯ kubectl get pods
@@ -50,6 +51,17 @@ A context matching a pattern in `shell-production-contexts` (`prod` by
 default; several go with spaces between them, as Luau patterns, like
 `:set shell-production-contexts "prod ^live%-"`) shows in red, and so
 does the `❯`, so a command about to run against production looks like it.
+
+`space o k` (`:kube-context`, or a click on the context in the prompt)
+switches the context, from a list of those your kubeconfig has with their
+namespaces, the current one and production ones marked; `space o K`
+(`:kube-namespace`) switches the namespace, from those the cluster has.
+`enter` switches everywhere, as `kubectl config use-context` does;
+`ctrl-s` switches only in this shell, which then reads a small kubeconfig
+of its own ahead of yours, so other shells and terminals keep theirs: prod
+in one shell and staging in the next. `:kube-context NAME` switches
+straight to one, and `:kube-context! NAME` only in this shell.
+
 Plugins add pieces of their own, like a cloud profile; `help prompt` lists
 them.
 

@@ -37,9 +37,13 @@ local function scalar(text: string): string
 	return string.match(trimmed, '^"(.*)"$') or string.match(trimmed, "^'(.*)'$") or trimmed
 end
 
---- The context `yaml`, a kubeconfig, says is current, and its namespace
---- (nil when it sets none).
-function M.read(yaml: string): (string?, string?)
+--- A context a kubeconfig defines: its name, and the namespace, cluster
+--- and user it names.
+export type Context = { name: string, namespace: string?, cluster: string?, user: string? }
+
+--- The context `yaml`, a kubeconfig, says is current (nil when it says
+--- none), and every context it defines, in order.
+function M.contexts(yaml: string): (string?, { Context })
 	local lines = string.split(string.gsub(yaml, "\r", ""), "\n")
 	local current: string? = nil
 	for _, line in lines do
@@ -48,19 +52,26 @@ function M.read(yaml: string): (string?, string?)
 			current = scalar(value)
 		end
 	end
-	if current == nil or current == "" then
-		return nil, nil
-	end
 	-- The contexts: a list of items each with a name and a context map,
 	-- under the top-level `contexts:`.
+	local out: { Context } = {}
 	local inside = false
-	local name: string?, namespace: string? = nil, nil
-	local found: string? = nil
+	local item: { [string]: string } = {}
 	local function close()
-		if name == current then
-			found = namespace
+		local name = item.name
+		if name and name ~= "" then
+			local function given(key: string): string?
+				local value = item[key]
+				return if value and value ~= "" then value else nil
+			end
+			table.insert(out, {
+				name = name,
+				namespace = given("namespace"),
+				cluster = given("cluster"),
+				user = given("user"),
+			})
 		end
-		name, namespace = nil, nil
+		item = {}
 	end
 	for _, line in lines do
 		-- A top-level key; a list's items may start at the line's start too.
@@ -73,20 +84,32 @@ function M.read(yaml: string): (string?, string?)
 			if string.match(line, "^%s*%- ") then
 				close()
 			end
-			local item = string.gsub(line, "^(%s*)%- ", "%1  ")
-			local key, value = string.match(item, "^%s*([%w_-]+):(.*)$")
-			if key == "name" and value then
-				name = scalar(value)
-			elseif key == "namespace" and value then
-				namespace = scalar(value)
+			local entry = string.gsub(line, "^(%s*)%- ", "%1  ")
+			local key, value = string.match(entry, "^%s*([%w_-]+):(.*)$")
+			if key and value and key ~= "context" then
+				item[key] = scalar(value)
 			end
 		end
 	end
 	if inside then
 		close()
 	end
-	local ns = found
-	return current, if ns and ns ~= "" then ns else nil
+	return if current == "" then nil else current, out
+end
+
+--- The context `yaml`, a kubeconfig, says is current, and its namespace
+--- (nil when it sets none).
+function M.read(yaml: string): (string?, string?)
+	local current, contexts = M.contexts(yaml)
+	if current == nil then
+		return nil, nil
+	end
+	for _, context in contexts do
+		if context.name == current then
+			return current, context.namespace
+		end
+	end
+	return current, nil
 end
 
 --- The context and namespace kubectl's config makes current for `sh`.

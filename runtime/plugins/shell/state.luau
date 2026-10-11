@@ -142,6 +142,8 @@ export type Segment = {
 	warning: boolean?,
 	tight: boolean?,
 	folder: boolean?,
+	--- A command a click on it runs, as on a button.
+	action: string?,
 }
 
 --- A shell: a buffer of blocks with a prompt at the end, its own folder and
