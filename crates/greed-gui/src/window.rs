@@ -11,6 +11,7 @@ use greed_core::image::ImageId;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
 use greed_core::render::{Frame, Size, grid};
+use greed_core::scene_image::Drawer;
 use greed_core::server::{Input, Output};
 use greed_core::theme::Medium;
 use winit::application::ApplicationHandler;
@@ -26,6 +27,10 @@ use crate::columns::Columns;
 use crate::draw;
 use crate::gpu::Gpu;
 use crate::text::{self, Atlas, Fonts};
+
+/// The first id of the images scenes are drawn into, above any the session
+/// gives its own.
+const SCENE_IMAGES: u64 = 0x8000_0000;
 
 const ATLAS_SIZE: u32 = 2048;
 
@@ -111,8 +116,11 @@ struct App {
     atlas: Atlas,
     palette: Palette,
     frame: Option<Frame>,
-    /// Every image the session sent, as PNG: it sends each only once.
+    /// Every image the session sent, as PNG: it sends each only once. Scenes
+    /// drawn into images are here too, under ids from `SCENE_IMAGES`.
     images: HashMap<ImageId, Vec<u8>>,
+    /// The scenes the session sent, and the images they're drawn into.
+    drawer: Drawer,
     /// Where the last frame put each row's cells, for the mouse.
     columns: Columns,
     mods: ModifiersState,
@@ -159,6 +167,7 @@ impl App {
             palette: Palette::default(),
             frame: None,
             images: HashMap::new(),
+            drawer: Drawer::new(SCENE_IMAGES),
             columns: Columns::default(),
             mods: ModifiersState::empty(),
             mouse: (0, 0),
@@ -217,7 +226,34 @@ impl App {
         let (Some(shown), Some(frame)) = (&mut self.shown, &self.frame) else {
             return;
         };
-        let grid = grid::compose(frame, Medium::Gui);
+        let mut grid = grid::compose(frame, Medium::Gui);
+        // Scenes are drawn into images under the text: the cells there keep
+        // only the scene's own text, its labels.
+        let cell = (
+            self.fonts.cell_w.round() as u16,
+            self.fonts.cell_h.round() as u16,
+        );
+        let drawing = self
+            .drawer
+            .draw(&frame.scenes, cell, &frame.theme, Medium::Gui);
+        for id in &drawing.gone {
+            self.images.remove(id);
+        }
+        for (id, png, _, _) in drawing.drawn {
+            self.images.insert(id, png);
+        }
+        let mut under = Vec::new();
+        for scene in &drawing.shown {
+            for (x, y) in self.drawer.uncovered(scene) {
+                if let Some(cell) = grid
+                    .get_mut(usize::from(y))
+                    .and_then(|r| r.get_mut(usize::from(x)))
+                {
+                    cell.text = " ".into();
+                }
+            }
+            under.push(scene.image);
+        }
         // Views laid out at another size, like a terminal sized for another
         // client's screen, are drawn scaled to fit, the cursor with them.
         let contents = grid::compose_content(frame);
@@ -225,7 +261,8 @@ impl App {
             .cursor
             .filter(|_| contents.iter().all(|c| c.cursor.is_none()))
             .map(|c| (c, frame.cursor_shape));
-        let chrome = draw::Chrome::of(frame);
+        let mut chrome = draw::Chrome::of(frame);
+        chrome.under = &under;
         let build = |fonts: &mut _, atlas: &mut _| {
             let mut scene = draw::build(&grid, cursor, &chrome, fonts, atlas, &self.palette)?;
             draw::add_scaled(
@@ -247,7 +284,9 @@ impl App {
             return;
         };
         shown.gpu.upload(&mut self.atlas);
-        shown.gpu.place_images(&frame.images, &self.images);
+        let mut placed = frame.images.clone();
+        placed.extend_from_slice(&under);
+        shown.gpu.place_images(&placed, &self.images);
         let (wgpu::CurrentSurfaceTexture::Success(texture)
         | wgpu::CurrentSurfaceTexture::Suboptimal(texture)) = shown.surface.get_current_texture()
         else {
@@ -304,9 +343,12 @@ impl App {
                 });
                 return;
             }
-            // The window has no notifications of its own yet, and shows
-            // scenes as the characters under them for now.
-            Output::Notify(_) | Output::Scene(_) => return,
+            // The window has no notifications of its own yet.
+            Output::Notify(_) => return,
+            Output::Scene(scene) => {
+                self.drawer.add(scene);
+                return;
+            }
             // Kept as PNG; frames that place it make its texture.
             Output::Image(image) => {
                 use base64::Engine;

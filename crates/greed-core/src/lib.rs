@@ -36,6 +36,7 @@ pub mod registry;
 pub mod render;
 pub mod rpc;
 pub mod scene;
+pub mod scene_image;
 pub mod search;
 pub mod server;
 pub mod syntax;

@@ -1,11 +1,18 @@
-//! Scenes drawn as images, for terminals with kitty graphics: each item in
-//! pixels at the terminal's cell size, on a clear background, so the image
-//! goes under the text. Text items aren't drawn: the terminal shows them,
-//! as the cells under the scene hold them.
+//! Scenes drawn as images, by clients that can show one under their text
+//! (a terminal with kitty graphics, the window): each item in pixels at the
+//! client's cell size, on a clear background. Text items aren't drawn: the
+//! client shows them as text, as the cells under the scene hold them, so
+//! no fonts are needed here.
 
-use greed_core::scene::{Item, Point, Spec};
-use greed_core::theme::{Color, Medium, Theme};
+use std::collections::{HashMap, HashSet};
+
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
+
+use crate::image::ImageId;
+use crate::render::{ImagePlacement, ScenePlacement};
+use crate::scene::{Item, Point, SceneId, Spec};
+use crate::server::SceneData;
+use crate::theme::{Color, Medium, Theme};
 
 /// xterm's 16 colors, for themes naming terminal colors: the terminal's own
 /// may differ, which the image can't know.
@@ -34,9 +41,9 @@ const FOREGROUND: [u8; 3] = [0xd0, 0xd0, 0xd0];
 /// The most pixels along either side of a scene's image.
 const MAX_SIDE: u32 = 4096;
 
-/// The color of style `name` in `theme`: its foreground.
-pub fn color(theme: &Theme, name: &str) -> [u8; 3] {
-    match theme.style(name, Medium::Tui).fg {
+/// The color of style `name` in `theme` on `medium`: its foreground.
+pub fn color(theme: &Theme, name: &str, medium: Medium) -> [u8; 3] {
+    match theme.style(name, medium).fg {
         Some(Color::Rgb(r, g, b)) => [r, g, b],
         Some(Color::Ansi(n)) => ANSI[usize::from(n % 16)],
         None | Some(Color::Default) => FOREGROUND,
@@ -69,7 +76,14 @@ pub fn styles(items: &[Item], out: &mut Vec<String>) {
 
 /// Draws `spec` over `cols` by `rows` cells of `cell` pixels each, as a
 /// PNG with a clear background; None when it's too big or can't be encoded.
-pub fn draw(spec: &Spec, cols: u16, rows: u16, cell: (u16, u16), theme: &Theme) -> Option<Vec<u8>> {
+pub fn draw(
+    spec: &Spec,
+    cols: u16,
+    rows: u16,
+    cell: (u16, u16),
+    theme: &Theme,
+    medium: Medium,
+) -> Option<Vec<u8>> {
     let cell = (cell.0.max(1), cell.1.max(1));
     let (cw, ch) = (f32::from(cell.0), f32::from(cell.1));
     let width = u32::from(cols) * u32::from(cell.0);
@@ -84,6 +98,7 @@ pub fn draw(spec: &Spec, cols: u16, rows: u16, cell: (u16, u16), theme: &Theme) 
         width,
         height,
         theme,
+        medium,
     };
     let all = [0.0, 0.0, f32::from(cols), f32::from(rows)];
     canvas.items(&mut pixmap, &spec.items, all);
@@ -98,6 +113,7 @@ struct Canvas<'a> {
     width: u32,
     height: u32,
     theme: &'a Theme,
+    medium: Medium,
 }
 
 impl Canvas<'_> {
@@ -107,7 +123,7 @@ impl Canvas<'_> {
     }
 
     fn paint(&self, style: Option<&String>, opacity: Option<f32>) -> Option<Paint<'static>> {
-        let [r, g, b] = color(self.theme, style?);
+        let [r, g, b] = color(self.theme, style?, self.medium);
         let mut paint = Paint::default();
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let alpha = (opacity.unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -272,6 +288,171 @@ impl Canvas<'_> {
     }
 }
 
+/// Scenes as a client has them, drawn into images as frames place them:
+/// each once for its version, the cells it's placed over, the client's
+/// cell size and the colors its styles have.
+#[derive(Debug, Default)]
+pub struct Drawer {
+    scenes: HashMap<SceneId, (u64, Spec)>,
+    drawn: HashMap<SceneId, Drawn>,
+    /// The id the next image gets, from the first the client keeps for
+    /// scenes, above the editor's own images'.
+    next: u64,
+}
+
+/// A scene drawn into an image: which image, and what for.
+#[derive(Debug)]
+struct Drawn {
+    id: ImageId,
+    version: u64,
+    cols: u16,
+    rows: u16,
+    cell: (u16, u16),
+    colors: Vec<[u8; 3]>,
+}
+
+/// A scene drawn as an image over part of the screen: where, and the
+/// image placed there.
+#[derive(Debug, Clone, Copy)]
+pub struct Shown {
+    pub placement: ScenePlacement,
+    pub image: ImagePlacement,
+}
+
+/// What a frame's scenes need: the images to place, those drawn now (their
+/// id, PNG and size in pixels), and those no longer wanted.
+#[derive(Debug, Default)]
+pub struct Drawing {
+    pub shown: Vec<Shown>,
+    pub drawn: Vec<(ImageId, Vec<u8>, u32, u32)>,
+    pub gone: Vec<ImageId>,
+}
+
+impl Drawer {
+    /// A drawer whose images' ids start at `first`.
+    pub fn new(first: u64) -> Self {
+        Self {
+            next: first,
+            ..Self::default()
+        }
+    }
+
+    /// Keeps `scene` as it is now, for frames to place.
+    pub fn add(&mut self, scene: SceneData) {
+        if let Ok(spec) = serde_json::from_value::<Spec>(scene.spec) {
+            self.scenes.insert(scene.id, (scene.version, spec));
+        }
+    }
+
+    /// Draws the scenes `placements` show into images where they changed,
+    /// at `cell` pixels a cell, in `theme`'s colors on `medium`.
+    pub fn draw(
+        &mut self,
+        placements: &[ScenePlacement],
+        cell: (u16, u16),
+        theme: &Theme,
+        medium: Medium,
+    ) -> Drawing {
+        let mut drawing = Drawing::default();
+        for placement in placements {
+            let Some((version, spec)) = self.scenes.get(&placement.id) else {
+                continue;
+            };
+            let mut names = Vec::new();
+            styles(&spec.items, &mut names);
+            let colors: Vec<[u8; 3]> = names.iter().map(|n| color(theme, n, medium)).collect();
+            let current = self.drawn.get(&placement.id).filter(|d| {
+                d.version == *version
+                    && d.cols == placement.cols
+                    && d.rows == placement.rows
+                    && d.cell == cell
+                    && d.colors == colors
+            });
+            let id = if let Some(drawn) = current {
+                drawn.id
+            } else {
+                let Some(png) = draw(spec, placement.cols, placement.rows, cell, theme, medium)
+                else {
+                    continue;
+                };
+                let id = ImageId(self.next);
+                self.next += 1;
+                let drawn = Drawn {
+                    id,
+                    version: *version,
+                    cols: placement.cols,
+                    rows: placement.rows,
+                    cell,
+                    colors,
+                };
+                if let Some(old) = self.drawn.insert(placement.id, drawn) {
+                    drawing.gone.push(old.id);
+                }
+                let width = u32::from(placement.cols) * u32::from(cell.0);
+                let height = u32::from(placement.rows) * u32::from(cell.1);
+                drawing.drawn.push((id, png, width, height));
+                id
+            };
+            drawing.shown.push(Shown {
+                placement: *placement,
+                image: ImagePlacement {
+                    id,
+                    rect: placement.rect,
+                    col: placement.col,
+                    row: placement.row,
+                    cols: placement.cols,
+                    rows: placement.rows,
+                },
+            });
+        }
+        drawing
+    }
+
+    /// The cells of scene `id` that hold its text, by column and row in the
+    /// scene: the client shows them over its image.
+    fn text_cells(&self, id: SceneId) -> HashSet<(i32, i32)> {
+        fn add(items: &[Item], cells: &mut HashSet<(i32, i32)>) {
+            for item in items {
+                match item {
+                    Item::Text {
+                        at, text, align, ..
+                    } => {
+                        let (column, row, width) = Item::text_cells(*at, text, align.as_deref());
+                        for x in column..column + width {
+                            cells.insert((x, row));
+                        }
+                    }
+                    Item::Group { items, .. } => add(items, cells),
+                    _ => {}
+                }
+            }
+        }
+        let mut cells = HashSet::new();
+        if let Some((_, spec)) = self.scenes.get(&id) {
+            add(&spec.items, &mut cells);
+        }
+        cells
+    }
+
+    /// The screen cells `shown` covers that don't hold its scene's text:
+    /// the ones to empty so its image shows, by column and row.
+    pub fn uncovered(&self, shown: &Shown) -> Vec<(u16, u16)> {
+        let text = self.text_cells(shown.placement.id);
+        let p = shown.placement;
+        let mut out = Vec::new();
+        for y in p.rect.y..p.rect.y.saturating_add(p.rect.height) {
+            let row = i32::from(p.row) + i32::from(y - p.rect.y);
+            for x in p.rect.x..p.rect.x.saturating_add(p.rect.width) {
+                let col = i32::from(p.col) + i32::from(x - p.rect.x);
+                if !text.contains(&(col, row)) {
+                    out.push((x, y));
+                }
+            }
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,17 +466,17 @@ mod tests {
         let mut theme = Theme::default();
         theme.set(
             "chart.series.1",
-            greed_core::theme::Entry::new(greed_core::theme::Style {
+            crate::theme::Entry::new(crate::theme::Style {
                 fg: Some(Color::Rgb(0x10, 0x20, 0x30)),
-                ..greed_core::theme::Style::default()
+                ..crate::theme::Style::default()
             }),
         );
         let drawn = spec(&serde_json::json!([
             { "kind": "rect", "at": [0, 0], "size": [1, 1], "fill": "chart.series.1" },
             { "kind": "text", "at": [1, 0], "text": "x", "style": "chart.label" },
         ]));
-        let png = draw(&drawn, 2, 1, (10, 20), &theme).unwrap();
-        let image = greed_core::image::Image::from_file_bytes(&png).unwrap();
+        let png = draw(&drawn, 2, 1, (10, 20), &theme, Medium::Tui).unwrap();
+        let image = crate::image::Image::from_file_bytes(&png).unwrap();
         assert_eq!((image.width, image.height), (20, 20));
         let pixmap = Pixmap::decode_png(&png).unwrap();
         let filled = pixmap.pixel(5, 10).unwrap();
@@ -309,7 +490,7 @@ mod tests {
             "text isn't drawn: the terminal shows it"
         );
         assert!(
-            draw(&drawn, 1000, 1000, (10, 20), &theme).is_none(),
+            draw(&drawn, 1000, 1000, (10, 20), &theme, Medium::Tui).is_none(),
             "too big"
         );
     }
@@ -322,7 +503,7 @@ mod tests {
                 { "kind": "rect", "at": [0, 0], "size": [2, 1], "fill": "chart.series.1" },
             ] },
         ]));
-        let png = draw(&clipped, 2, 1, (10, 20), &theme).unwrap();
+        let png = draw(&clipped, 2, 1, (10, 20), &theme, Medium::Tui).unwrap();
         let pixmap = Pixmap::decode_png(&png).unwrap();
         assert!(pixmap.pixel(5, 10).unwrap().alpha() > 0);
         assert_eq!(pixmap.pixel(15, 10).unwrap().alpha(), 0);

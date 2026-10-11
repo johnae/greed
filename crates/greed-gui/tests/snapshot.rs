@@ -331,6 +331,72 @@ fn images_are_drawn_over_their_cells_cut_where_the_placement_says() {
 }
 
 #[test]
+fn an_image_under_the_text_shows_the_text_over_it_as_scenes_are_drawn() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    frame.surfaces.truncate(2);
+    let id = ImageId(1);
+    // Over "    let x" on the second row: spaces, then text.
+    let placed = [ImagePlacement {
+        id,
+        rect: Rect {
+            x: 0,
+            y: 1,
+            width: 8,
+            height: 1,
+        },
+        col: 0,
+        row: 0,
+        cols: 8,
+        rows: 1,
+    }];
+    let pngs = HashMap::from([(id, halves(80, 20))]);
+    let grid = compose(&frame, Medium::Gui);
+    let drawn = |chrome: &Chrome, fonts: &mut Fonts, atlas: &mut Atlas| {
+        build(&grid, None, chrome, fonts, atlas, &palette).unwrap()
+    };
+    let mut under = Chrome::of(&frame);
+    under.under = &placed;
+    let scene = drawn(&under, &mut fonts, &mut atlas);
+    gpu.upload(&mut atlas);
+    gpu.place_images(&placed, &pngs);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("under.png", size, &rgba);
+    // The cells of `let`, 4 to 7, the text drawn over the image's blue
+    // half; a couple of pixels in, clear of where the image's edges blend.
+    let not_blue = |rgba: &[u8]| {
+        let mut count = 0;
+        for y in (ch * 1.0) as u32 + 2..(ch * 2.0) as u32 - 2 {
+            for x in (cw * 4.0) as u32 + 2..(cw * 7.0) as u32 - 2 {
+                if pixel(rgba, size.0, x, y)[..3] != [0, 0, 255] {
+                    count += 1;
+                }
+            }
+        }
+        count
+    };
+    let at = |rgba: &[u8], col: f32| pixel(rgba, size.0, (col * cw) as u32, (1.5 * ch) as u32);
+    assert_eq!(
+        at(&rgba, 1.5)[..3],
+        [255, 0, 0],
+        "the image shows where there's no text"
+    );
+    assert!(not_blue(&rgba) > 0, "the text is over it");
+    let mut over = Chrome::of(&frame);
+    over.images = &placed;
+    let covered = drawn(&over, &mut fonts, &mut atlas);
+    let rgba = gpu.snapshot(size, &covered);
+    assert_eq!(not_blue(&rgba), 0, "an image over the text hides it");
+}
+
+#[test]
 fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;

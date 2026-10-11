@@ -44,10 +44,14 @@ pub const ROUND: u32 = 3;
 pub const SHADOW: u32 = 4;
 
 /// What one frame draws: the background, then the quads in order, then the
-/// images over them.
+/// images over them. Scenes' images go between the quads' backgrounds and
+/// the rest, under the text.
 pub struct Scene {
     pub background: Rgba,
     pub instances: Vec<Instance>,
+    /// How many of the quads are backgrounds, drawn under scenes.
+    pub backgrounds: usize,
+    pub under: Vec<(ImageId, Instance)>,
     pub images: Vec<(ImageId, Instance)>,
     /// Where each row's cells went, for the mouse.
     pub columns: Columns,
@@ -96,6 +100,8 @@ fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
 #[derive(Debug, Default)]
 pub struct Chrome<'a> {
     pub images: &'a [ImagePlacement],
+    /// Images under the text, as scenes are drawn.
+    pub under: &'a [ImagePlacement],
     /// Each float's text, which its border goes around one cell out.
     pub floats: Vec<Rect>,
     /// Floats with rounded corners and an outline instead of box lines.
@@ -114,6 +120,7 @@ impl<'a> Chrome<'a> {
         let float = frame.theme.style("ui.float", Medium::Gui);
         Chrome {
             images: &frame.images,
+            under: &[],
             // A float without a border is plain cells, with no box drawn around it.
             floats: frame.bordered_floats().collect(),
             rounded: float.rounded == Some(true),
@@ -184,6 +191,7 @@ pub fn build(
     }
     float_shapes(&boxes, chrome, &mut instances);
     fill(Pass::Floats { border: !rounded }, &mut instances);
+    let backgrounds = instances.len();
     let border: Vec<Vec<bool>> = regions
         .iter()
         .map(|row| {
@@ -192,25 +200,7 @@ pub fn build(
                 .collect()
         })
         .collect();
-    // Underlines and strikethroughs, under the glyphs, on each row's shared
-    // baseline. Rows under scaled text have none of their own.
-    let thickness = (ch / 16.0).round().max(1.0);
-    for (y, row) in looks.iter().enumerate() {
-        let Some(height) = heights[y] else { continue };
-        let top = y as f32 * ch;
-        let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
-        for (x, l) in row.iter().enumerate() {
-            let (left, w) = columns.span(y, x, x + 1);
-            if let Some((_, color)) = l.underline {
-                let under = (top + baseline + thickness).min(top + bottom - thickness);
-                instances.push(rect(left, under, w, thickness, color));
-            }
-            if l.strikethrough {
-                let middle = top + (baseline * 0.65).round();
-                instances.push(rect(left, middle, w, thickness, l.fg));
-            }
-        }
-    }
+    lines_under(&looks, &heights, &columns, fonts, &mut instances);
     for (y, (row, row_looks)) in grid.iter().zip(&looks).enumerate() {
         if let Some(height) = heights[y] {
             let at = RowAt {
@@ -239,6 +229,8 @@ pub fn build(
     Ok(Scene {
         background,
         instances,
+        backgrounds,
+        under: images(chrome.under, cw, ch),
         images: images(chrome.images, cw, ch),
         columns,
     })
@@ -504,6 +496,35 @@ fn checkbox(
         }
     }
     Ok(())
+}
+
+/// Underlines and strikethroughs, under the glyphs, on each row's shared
+/// baseline. Rows under scaled text have none of their own.
+fn lines_under(
+    looks: &[Vec<Look>],
+    heights: &[Option<usize>],
+    columns: &Columns,
+    fonts: &Fonts,
+    instances: &mut Vec<Instance>,
+) {
+    let ch = fonts.cell_h;
+    let thickness = (ch / 16.0).round().max(1.0);
+    for (y, row) in looks.iter().enumerate() {
+        let Some(height) = heights[y] else { continue };
+        let top = y as f32 * ch;
+        let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
+        for (x, l) in row.iter().enumerate() {
+            let (left, w) = columns.span(y, x, x + 1);
+            if let Some((_, color)) = l.underline {
+                let under = (top + baseline + thickness).min(top + bottom - thickness);
+                instances.push(rect(left, under, w, thickness, color));
+            }
+            if l.strikethrough {
+                let middle = top + (baseline * 0.65).round();
+                instances.push(rect(left, middle, w, thickness, l.fg));
+            }
+        }
+    }
 }
 
 /// How many rows each row's text takes, as many as its largest scale; `None`

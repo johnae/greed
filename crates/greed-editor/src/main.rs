@@ -26,7 +26,6 @@ mod ctl;
 mod graphics;
 mod install;
 mod runtime;
-mod scene_image;
 mod session;
 mod tui;
 

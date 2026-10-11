@@ -314,13 +314,20 @@ impl Gpu {
         let screen = [size.0 as f32, size.1 as f32, 0.0, 0.0];
         self.queue
             .write_buffer(&self.screen, 0, bytemuck::cast_slice(&screen));
-        // The images' quads go after the rest, those without a texture left out.
-        let images: Vec<(&wgpu::BindGroup, Instance)> = scene
-            .images
-            .iter()
-            .filter_map(|(id, quad)| Some((self.images.get(id)?, *quad)))
-            .collect();
-        let mut quads = scene.instances.clone();
+        // Scenes' quads go after the backgrounds, under the text, and the
+        // images' after the rest; those without a texture are left out.
+        let textured = |placed: &[(ImageId, Instance)]| -> Vec<(&wgpu::BindGroup, Instance)> {
+            placed
+                .iter()
+                .filter_map(|(id, quad)| Some((self.images.get(id)?, *quad)))
+                .collect()
+        };
+        let under = textured(&scene.under);
+        let images = textured(&scene.images);
+        let backgrounds = scene.backgrounds.min(scene.instances.len());
+        let mut quads = scene.instances[..backgrounds].to_vec();
+        quads.extend(under.iter().map(|(_, quad)| *quad));
+        quads.extend_from_slice(&scene.instances[backgrounds..]);
         quads.extend(images.iter().map(|(_, quad)| *quad));
         if quads.len() > self.capacity {
             self.capacity = quads.len().next_power_of_two();
@@ -352,13 +359,23 @@ impl Gpu {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, self.quads.slice(..));
-            let first = u32::try_from(scene.instances.len()).unwrap_or(u32::MAX);
-            pass.draw(0..4, 0..first);
-            for (at, (group, _)) in (first..).zip(&images) {
-                pass.set_bind_group(0, *group, &[]);
+            let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+            let one = |pass: &mut wgpu::RenderPass, group: &wgpu::BindGroup, at: u32| {
+                pass.set_bind_group(0, group, &[]);
                 pass.draw(0..4, at..at + 1);
+            };
+            let (b, u) = (count(backgrounds), count(under.len()));
+            let end = count(scene.instances.len()) + u;
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.draw(0..4, 0..b);
+            for (at, (group, _)) in (b..).zip(&under) {
+                one(&mut pass, group, at);
+            }
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.draw(0..4, b + u..end);
+            for (at, (group, _)) in (end..).zip(&images) {
+                one(&mut pass, group, at);
             }
         }
         self.queue.submit([encoder.finish()]);

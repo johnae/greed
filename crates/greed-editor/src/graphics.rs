@@ -11,11 +11,9 @@ use base64::Engine;
 use crossterm::{cursor, queue};
 use greed_core::image::ImageId;
 use greed_core::render::{ImagePlacement, ScenePlacement};
-use greed_core::scene::{Item, SceneId, Spec};
+use greed_core::scene_image::{Drawer, Shown};
 use greed_core::server::{ImageData, SceneData};
-use greed_core::theme::Theme;
-
-use crate::scene_image;
+use greed_core::theme::{Medium, Theme};
 
 /// The first id of the images scenes are drawn into, above any the editor
 /// gives its own; kitty's ids are 32 bits.
@@ -48,7 +46,6 @@ pub fn detect() -> Option<Protocol> {
     kitty.then_some(Protocol::Kitty)
 }
 
-#[derive(Default)]
 pub struct Graphics {
     protocol: Option<Protocol>,
     images: HashMap<ImageId, ImageData>,
@@ -56,32 +53,23 @@ pub struct Graphics {
     sent: HashSet<ImageId>,
     /// What's on screen now.
     placed: Vec<ImagePlacement>,
-    /// Scenes as they are now: their version and what they draw.
-    scenes: HashMap<SceneId, (u64, Spec)>,
-    /// Each scene as last drawn into an image, and what it was drawn for.
-    drawn: HashMap<SceneId, Drawn>,
-    /// The id the next scene's image gets.
-    next: u64,
+    /// Scenes, and the images they're drawn into.
+    drawer: Drawer,
     /// A cell's size in pixels, once the terminal said.
     cell: Option<(u16, u16)>,
 }
 
-/// A scene drawn into an image: which image, and what for.
-struct Drawn {
-    id: ImageId,
-    version: u64,
-    cols: u16,
-    rows: u16,
-    cell: (u16, u16),
-    /// The colors of the styles it uses, as the theme had them.
-    colors: Vec<[u8; 3]>,
-}
-
-/// A scene drawn as an image over part of the screen: where, and the image
-/// placed there.
-pub struct SceneShown {
-    pub placement: ScenePlacement,
-    pub image: ImagePlacement,
+impl Default for Graphics {
+    fn default() -> Self {
+        Self {
+            protocol: None,
+            images: HashMap::new(),
+            sent: HashSet::new(),
+            placed: Vec::new(),
+            drawer: Drawer::new(SCENE_IMAGES),
+            cell: None,
+        }
+    }
 }
 
 impl Graphics {
@@ -105,9 +93,7 @@ impl Graphics {
 
     /// Keeps `scene` as it is now, for frames to place.
     pub fn add_scene(&mut self, scene: SceneData) {
-        if let Ok(spec) = serde_json::from_value::<Spec>(scene.spec) {
-            self.scenes.insert(scene.id, (scene.version, spec));
-        }
+        self.drawer.add(scene);
     }
 
     /// Says how big a cell is in pixels, as the terminal would.
@@ -137,99 +123,35 @@ impl Graphics {
         out: &mut impl Write,
         placements: &[ScenePlacement],
         theme: &Theme,
-    ) -> io::Result<Vec<SceneShown>> {
-        let mut shown = Vec::new();
+    ) -> io::Result<Vec<Shown>> {
         if self.protocol.is_none() {
-            return Ok(shown);
+            return Ok(Vec::new());
         }
         let Some(cell) = self.cell() else {
-            return Ok(shown);
+            return Ok(Vec::new());
         };
-        for placement in placements {
-            let Some((version, spec)) = self.scenes.get(&placement.id) else {
-                continue;
-            };
-            let mut names = Vec::new();
-            scene_image::styles(&spec.items, &mut names);
-            let colors: Vec<[u8; 3]> = names.iter().map(|n| scene_image::color(theme, n)).collect();
-            let current = self.drawn.get(&placement.id).filter(|d| {
-                d.version == *version
-                    && d.cols == placement.cols
-                    && d.rows == placement.rows
-                    && d.cell == cell
-                    && d.colors == colors
-            });
-            let id = if let Some(drawn) = current {
-                drawn.id
-            } else {
-                let Some(png) =
-                    scene_image::draw(spec, placement.cols, placement.rows, cell, theme)
-                else {
-                    continue;
-                };
-                let id = ImageId(SCENE_IMAGES + self.next);
-                self.next += 1;
-                let drawn = Drawn {
-                    id,
-                    version: *version,
-                    cols: placement.cols,
-                    rows: placement.rows,
-                    cell,
-                    colors,
-                };
-                if let Some(old) = self.drawn.insert(placement.id, drawn) {
-                    self.forget(out, old.id)?;
-                }
-                self.images.insert(
-                    id,
-                    ImageData {
-                        id,
-                        width: u32::from(placement.cols) * u32::from(cell.0),
-                        height: u32::from(placement.rows) * u32::from(cell.1),
-                        png: base64::engine::general_purpose::STANDARD.encode(png),
-                    },
-                );
-                id
-            };
-            shown.push(SceneShown {
-                placement: *placement,
-                image: ImagePlacement {
-                    id,
-                    rect: placement.rect,
-                    col: placement.col,
-                    row: placement.row,
-                    cols: placement.cols,
-                    rows: placement.rows,
-                },
-            });
+        let drawing = self.drawer.draw(placements, cell, theme, Medium::Tui);
+        for id in drawing.gone {
+            self.forget(out, id)?;
         }
-        Ok(shown)
+        for (id, png, width, height) in drawing.drawn {
+            let png = base64::engine::general_purpose::STANDARD.encode(png);
+            self.images.insert(
+                id,
+                ImageData {
+                    id,
+                    width,
+                    height,
+                    png,
+                },
+            );
+        }
+        Ok(drawing.shown)
     }
 
-    /// The cells of scene `id` that hold its text, by column and row in
-    /// the scene: the terminal shows them over its image.
-    pub fn text_cells(&self, id: SceneId) -> HashSet<(i32, i32)> {
-        fn add(items: &[Item], cells: &mut HashSet<(i32, i32)>) {
-            for item in items {
-                match item {
-                    Item::Text {
-                        at, text, align, ..
-                    } => {
-                        let (column, row, width) = Item::text_cells(*at, text, align.as_deref());
-                        for x in column..column + width {
-                            cells.insert((x, row));
-                        }
-                    }
-                    Item::Group { items, .. } => add(items, cells),
-                    _ => {}
-                }
-            }
-        }
-        let mut cells = HashSet::new();
-        if let Some((_, spec)) = self.scenes.get(&id) {
-            add(&spec.items, &mut cells);
-        }
-        cells
+    /// The screen cells `shown` covers that don't hold its scene's text.
+    pub fn uncovered(&self, shown: &Shown) -> Vec<(u16, u16)> {
+        self.drawer.uncovered(shown)
     }
 
     /// Takes image `id`, one a scene was drawn into before, off the
@@ -315,6 +237,7 @@ fn place(
 mod tests {
     use super::*;
     use greed_core::render::Rect;
+    use greed_core::scene::SceneId;
 
     fn image() -> ImageData {
         ImageData {
@@ -414,8 +337,9 @@ mod tests {
         let first = shown[0].image;
         assert!(first.id.0 >= SCENE_IMAGES && first.rect == scene_placement(1).rect);
         assert_eq!(
-            graphics.text_cells(SceneId(3)),
-            HashSet::from([(3, 0), (4, 0)])
+            graphics.uncovered(&shown[0]),
+            [(2, 1), (3, 1), (4, 1)],
+            "its text, in its fourth and fifth cells, stays"
         );
         graphics.draw(&mut out, &[first]).unwrap();
         let sent = text(&out);
