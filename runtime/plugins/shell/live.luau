@@ -289,6 +289,9 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 		while not stopped do
 			local out, errors
 			out, errors, code = capture(shell, block, line)
+			-- The next run is `every` seconds after this one ended, however
+			-- long showing it takes.
+			local ended = greed.now()
 			block.job = own
 			if code == nil then
 				break
@@ -321,7 +324,7 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			local signal = greed.signal()
 			wake = signal
 			greed.spawn(function()
-				greed.sleep(every * 1000)
+				greed.sleep(math.max(every * 1000 - (greed.now() - ended), 0))
 				signal:send(true)
 			end)
 			signal:wait()
