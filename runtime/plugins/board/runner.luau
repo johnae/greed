@@ -2,7 +2,9 @@
 -- board's cards do: table stages and `| chart` work there, a chart shows in
 -- colour (and as an image where the client draws one), and `every=N` runs
 -- the line again every N seconds, keeping its result up to date until
--- it's stopped (space m s). A card on a board is such a block in a grid.
+-- it's stopped (space m s). With `input=NAME`, the named block's result
+-- goes into the first line, as `buf:NAME | ...` would. A card on a board is
+-- such a block in a grid.
 
 local greed = require("@greed")
 local shell = require("@shell")
@@ -109,8 +111,26 @@ local function run_live(run: blocks.Run, sh: Shell, line: string, every: number)
 	return outcome_of(sh, watched)
 end
 
+-- `line` reading `run`'s input, when it has one: kept in a buffer named
+-- for the block it comes from, which the line starts from.
+local function with_input(run: blocks.Run, line: string): string
+	local input = run.input
+	if input == nil then
+		return line
+	end
+	local name = `input-{run.opts.input or "block"}`
+	local buffer = shell.data.target({ name = name, append = false }, run.dir)
+	buffer:edit(function(e)
+		e:insert(0, input)
+	end)
+	return `buf:{name} | {line}`
+end
+
 blocks.runner("shell", function(run: blocks.Run): Outcome
 	local lines = lines_of(run.code)
+	if lines[1] then
+		lines[1] = with_input(run, lines[1])
+	end
 	local sh = shell_for(run.dir)
 	local every = tonumber(run.opts.every)
 	if every then

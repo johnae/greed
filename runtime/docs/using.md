@@ -1144,7 +1144,9 @@ Blocks run as `shell`, `sh`, `bash`, `zsh`, `fish`, `python`, `node`,
 Options go after the language:
 
 - `id=NAME` names a block, and `input=NAME` gives another block that
-  block's result: on stdin for a program, as `input` in Luau. The named
+  block's result: on stdin for a program, as `input` in Luau, and into
+  the first line of a `shell` block, so `where STATUS != Running` alone
+  works on it. The named
   block runs first if it has no result yet, so a page of blocks works like
   a small pipeline. With `rerun=true` on the block taking the input, its
   input runs again every time, so it never reads a stale result.

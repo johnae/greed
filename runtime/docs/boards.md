@@ -44,16 +44,18 @@ block is a card; the rest is there to read in the file and isn't shown:
 
 ## payments
 
-```sh every=5 title=pods
+```shell every=5 title=pods
 kubectl get pods -n payments | where STATUS != Running
 ```
 
-```sh every=60 title=disk height=4
+```shell every=60 title=disk height=4
 df -h /
 ```
 ````
 
-After the language (`sh`, `bash`, `zsh`, `fish`, `nu` or `shell`):
+A card's language is `shell`, as for a [`shell` block](using.md#runnable-code-blocks)
+anywhere: it runs in the Greed shell. `sh`, `bash`, `zsh`, `fish` and `nu`
+blocks are cards too, and run the same way. After the language:
 
 - `every=SECONDS` runs it again that often; `live` alone is every two
   seconds. Without either it runs once, and again when the board does. A
@@ -89,15 +91,15 @@ columns: 2
 ---
 # machine
 
-```sh every=2 chart wide height=12 title=load
+```shell every=2 chart wide height=12 title=load
 cat /proc/loadavg
 ```
 
-```sh every=5 chart=area height=8 title="memory, MiB"
+```shell every=5 chart=area height=8 title="memory, MiB"
 free -m | awk '/Mem:/ { print $3 }'
 ```
 
-```sh every=10 chart height=8 title="example.com, seconds"
+```shell every=10 chart height=8 title="example.com, seconds"
 curl -o /dev/null -s -w '%{time_total}\n' https://example.com
 ```
 ````
@@ -135,21 +137,21 @@ of these is a whole board; save one as `.greed/boards/NAME.md` and
 
 ## load
 
-```sh every=2 chart title="load average" height=8
+```shell every=2 chart title="load average" height=8
 cat /proc/loadavg
 ```
 
-```sh every=5 chart=area title="memory used, MiB" height=8
+```shell every=5 chart=area title="memory used, MiB" height=8
 free -m | awk '/Mem:/ { print $3 }'
 ```
 
 ## disks and the web
 
-```sh every=60 chart="bar Use%" title=disks height=4
+```shell every=60 chart="bar Use%" title=disks height=4
 df -h -x tmpfs -x devtmpfs
 ```
 
-```sh every=10 chart title="example.com, seconds" height=4
+```shell every=10 chart title="example.com, seconds" height=4
 curl -o /dev/null -s -w '%{time_total}\n' https://example.com
 ```
 ````
@@ -159,15 +161,15 @@ A cluster, with metrics-server running in it:
 ````markdown
 # cluster
 
-```sh every=10 chart title="CPU by pod" wide
+```shell every=10 chart title="CPU by pod" wide
 kubectl top pods
 ```
 
-```sh every=10 chart="bar MEMORY(bytes)" title="memory by pod"
+```shell every=10 chart="bar MEMORY(bytes)" title="memory by pod"
 kubectl top pods
 ```
 
-```sh every=30 chart=bar title="restarts"
+```shell every=30 chart=bar title="restarts"
 kubectl get pods --no-headers | awk '{ print $1, $4 }'
 ```
 ````

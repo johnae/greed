@@ -2,7 +2,7 @@
 -- headings its sections, and each shell code block a card, the command to
 -- run with options after the language:
 --
---     ```sh every=5 title="pods" height=10
+--     ```shell every=5 title="pods" height=10
 --     kubectl get pods -n payments
 --     ```
 --
@@ -145,7 +145,7 @@ function M.card_text(
 	command: string,
 	opts: { every: number?, title: string?, dir: string? }
 ): string
-	local info = "sh"
+	local info = "shell"
 	if opts.every then
 		info ..= ` every={opts.every}`
 	end

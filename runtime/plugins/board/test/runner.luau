@@ -130,3 +130,20 @@ test("every=N takes one line", function(t)
 	t:wait_for(has("```result"))
 	assert(string.find(text(), "every=N runs one line", 1, true), text())
 end)
+
+test("input= gives a shell block another block's result to start from", function(t)
+	page(
+		t,
+		"```sh id=sizes\nprintf 'NAME     SIZE\\napple    1\\nbanana   20\\n'\n```\n\n"
+			.. "```shell input=sizes\nwhere SIZE > 5 | select NAME\n```"
+	)
+	greed.view():set_cursor(assert((string.find(text(), "```shell", 1, true))) - 1)
+	t:run("block-run")
+	t:wait_for(function()
+		local _, count = string.gsub(text(), "```result", "")
+		return count == 2
+	end)
+	local last = string.match(text(), "```shell.-```result\n(.-)\n```") or ""
+	assert(string.find(last, "banana", 1, true), text())
+	assert(not string.find(last, "apple", 1, true), text())
+end)

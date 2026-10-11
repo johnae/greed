@@ -47,7 +47,7 @@ end)
 test("a card's text, and a watch as a card", function()
 	local text =
 		board.file.card_text("kubectl get pods", { every = 5, title = "the pods", dir = "infra" })
-	assert(text == '```sh every=5 title="the pods" dir=infra\nkubectl get pods\n```\n', text)
+	assert(text == '```shell every=5 title="the pods" dir=infra\nkubectl get pods\n```\n', text)
 	local card = board.file.parse(text).cards[1]
 	assert(card.command == "kubectl get pods" and card.every == 5 and card.title == "the pods")
 	local line, every = board.file.unwatched("watch -n 3 df -h")
@@ -175,7 +175,7 @@ test("a shell block pinned to a board becomes a card; space a adds one there", f
 	t:keys("o p s enter")
 	board.list = listed
 	local saved = greed.fs.read(path) or ""
-	assert(string.find(saved, "```sh every=4 dir=", 1, true), saved)
+	assert(string.find(saved, "```shell every=4 dir=", 1, true), saved)
 	assert(string.find(saved, "\nls\n```\n", 1, true), saved)
 	local b = assert(board.open(path, { root = dir }))
 	t:wait_for(function()
@@ -186,7 +186,7 @@ test("a shell block pinned to a board becomes a card; space a adds one there", f
 	t:wait_for(function()
 		return string.find(b.buffer:text(), "\nadded", 1, true) ~= nil
 	end)
-	assert((string.find(greed.fs.read(path) or "", "```sh\necho added\n```\n", 1, true)))
+	assert((string.find(greed.fs.read(path) or "", "```shell\necho added\n```\n", 1, true)))
 end)
 
 local function piece(name: string, lines: { string }, section: string?, span: number?): any
