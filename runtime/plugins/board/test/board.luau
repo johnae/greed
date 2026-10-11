@@ -349,3 +349,30 @@ test("a card narrower than its chart shows it cut, without an error", function(t
 	end
 	assert(placed == nil, "no scene over a chart cut short")
 end)
+
+test("saved twice quickly, the board loads once after the other, as the file says last", function(t)
+	local dir, path = make(
+		t,
+		"# ops\n\n```sh every=1\nsleep 0.2; echo one\n```\n\n```sh every=1\nsleep 0.2; echo two\n```\n"
+	)
+	local b = assert(board.open(path, { root = dir }))
+	t:wait_for(function()
+		return b.blocks[2] ~= nil and b.blocks[2].output ~= ""
+	end)
+	greed.fs.write(path, "# ops\n\n```sh every=1\nsleep 0.2; echo three\n```\n")
+	-- Each add loads the board again: the second while the first runs.
+	board.add(path, "sleep 0.2; echo four")
+	board.add(path, "sleep 0.2; echo five")
+	t:wait_for(function()
+		local shown = b.buffer:text()
+		return #b.cards == 3
+			and #b.blocks == 3
+			and string.find(shown, "three", 1, true) ~= nil
+			and string.find(shown, "four", 1, true) ~= nil
+			and string.find(shown, "five", 1, true) ~= nil
+	end)
+	t:wait_for(function()
+		return #b.shell.blocks == 3
+	end)
+	assert(not string.find(b.buffer:text(), "two", 1, true), b.buffer:text())
+end)

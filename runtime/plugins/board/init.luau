@@ -54,6 +54,12 @@ export type Board = {
 	cards: { Card },
 	--- How many columns of cards it has, when its file says.
 	columns: number?,
+	--- Whether it's loading its file, and whether it's to load it again
+	--- after (with every card run again, when true).
+	loading: boolean?,
+	wanted: boolean?,
+	--- Why it couldn't show its file as it says, the last time it tried.
+	problem: string?,
 	shell: Shell,
 	blocks: { Block },
 	buffer: greed.Buffer,
@@ -216,6 +222,9 @@ local function draw(board: Board)
 	if #board.cards == 0 then
 		text ..= "\nNo cards yet: space a adds a command, space e edits the file."
 	end
+	if board.problem then
+		text ..= `\ncouldn't show the file as it says: {board.problem}`
+	end
 	local marks = laid.marks
 	-- Lines past the view's edge stay out of sight rather than wrap, as the
 	-- cards are lined up.
@@ -317,12 +326,28 @@ local function stop(board: Board)
 end
 
 -- Reads `board`'s file again and runs its cards as it says: those it
--- runs already as they are, unless `again`.
+-- runs already as they are, unless `again`. One load at a time: one asked
+-- for meanwhile, as when the file's saved twice, runs once after, so two
+-- never move the same blocks about. One that fails says why on the board.
 local function load(board: Board, again: boolean?)
-	local parsed = file.parse(greed.fs.read(board.path) or "")
-	board.title, board.cards, board.columns = parsed.title, parsed.cards, parsed.columns
-	start(board, again)
-	draw(board)
+	if board.loading then
+		board.wanted = (board.wanted or false) or again == true
+		return
+	end
+	board.loading = true
+	local more: boolean? = again
+	repeat
+		board.wanted = nil
+		local ok, err = pcall(function()
+			local parsed = file.parse(greed.fs.read(board.path) or "")
+			board.title, board.cards, board.columns = parsed.title, parsed.cards, parsed.columns
+			start(board, more)
+		end)
+		board.problem = if ok then nil else tostring(err)
+		draw(board)
+		more = board.wanted
+	until more == nil
+	board.loading = false
 end
 
 export type OpenOptions = {
@@ -365,6 +390,9 @@ function M.open(path: string, options: OpenOptions?): Board?
 		title = nil,
 		cards = {},
 		columns = nil,
+		loading = nil,
+		wanted = nil,
+		problem = nil,
 		shell = shell.open({ name = `board {name}`, cwd = root, show = false }),
 		blocks = {},
 		buffer = buffer,
